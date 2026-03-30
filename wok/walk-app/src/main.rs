@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 use std::error::Error;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use clap::Parser;
 use regex::Regex;
@@ -26,7 +26,7 @@ use walk_app::input::{InputEvent, KeyAction};
 use walk_app::keybindings::Action;
 use walk_app::plugin_host::PluginHost;
 use walk_app::scripting::{
-    QuickSelectPatternRequest, ThemeRequest, TriggerRequest, WorkflowRequest,
+    QuickSelectPatternRequest, StatusBarRequest, ThemeRequest, TriggerRequest, WorkflowRequest,
 };
 use walk_app::session::{
     block_from_state, block_to_state, default_session_path, history_entry_from_state,
@@ -64,6 +64,7 @@ use walk_ui::quick_select::{PatternRegistry, QuickSelectScope};
 use walk_ui::search::SearchLine;
 use walk_ui::selection::{CellPos, SelectionState};
 use walk_ui::splits::SplitManager;
+use walk_ui::status_bar::{StatusBarState, StatusSegment};
 use walk_ui::theme::Theme;
 use walk_ui::theme_watcher::ThemeWatcher;
 use walk_ui::vi_mode::{ViModeState, ViPending, ViSubMode};
@@ -232,6 +233,13 @@ struct PaneRuntime {
     inline_images: InlineImageStore,
 }
 
+#[derive(Clone, Default)]
+struct StatusBarSegments {
+    left: Vec<StatusSegment>,
+    center: Vec<StatusSegment>,
+    right: Vec<StatusSegment>,
+}
+
 /// Walk application handler.
 struct WalkHandler {
     config: WalkConfig,
@@ -244,6 +252,9 @@ struct WalkHandler {
     global_history: CommandHistory,
     plugins: Option<PluginHost>,
     status_message: Option<String>,
+    status_bar_state: StatusBarState,
+    status_bar_refresh_interval: Duration,
+    last_status_bar_refresh: Instant,
     hovered_link: Option<String>,
     theme_watcher: Option<ThemeWatcher>,
     background: BackgroundRenderer,
@@ -294,6 +305,9 @@ impl WalkHandler {
             global_history,
             plugins,
             status_message: None,
+            status_bar_state: StatusBarState::default(),
+            status_bar_refresh_interval: Duration::from_secs(5),
+            last_status_bar_refresh: Instant::now(),
             hovered_link: None,
             theme_watcher,
             background,
@@ -325,6 +339,61 @@ impl WalkHandler {
     fn active_pane_mut(&mut self) -> Option<&mut PaneRuntime> {
         let pane_id = self.active_pane_id()?;
         self.panes.get_mut(&pane_id)
+    }
+
+    fn compose_status_bar_segments(&self, pane: &PaneRuntime) -> StatusBarSegments {
+        let mut state = self.status_bar_state.clone();
+        state.shell = pane.app.config.shell.to_string();
+        state.cwd = pane
+            .app
+            .block_manager
+            .blocks
+            .last()
+            .map(|block| block.cwd.clone())
+            .filter(|cwd| !cwd.as_os_str().is_empty())
+            .unwrap_or_else(|| PathBuf::from("~"));
+        state.git_branch = pane.app.block_manager.blocks.last().and_then(|block| {
+            block
+                .git_branch
+                .clone()
+                .or_else(|| walk_ui::status_bar::detect_git_branch(&state.cwd))
+        });
+
+        let mut left = vec![
+            StatusSegment::plain(state.cwd.display().to_string()),
+            StatusSegment::plain(state.shell.clone()),
+        ];
+        if let Some(branch) = state.git_branch.as_ref() {
+            left.push(StatusSegment::plain(format!("git:{branch}")));
+        }
+        left.extend(state.custom_left.clone());
+
+        let mut center = Vec::new();
+        if self.workspace.broadcast_input {
+            center.push(StatusSegment {
+                text: "BROADCAST".to_string(),
+                fg: Some("#ffd166".to_string()),
+                bg: None,
+                bold: true,
+            });
+        }
+        if let Some(mode) = pane.app.vi_mode.as_ref().map(ViModeState::mode_label) {
+            center.push(StatusSegment::plain(mode));
+        }
+        if let Some(message) = self.hovered_link.as_ref().or(self.status_message.as_ref()) {
+            center.push(StatusSegment::plain(message.clone()));
+        }
+        center.extend(state.custom_center.clone());
+
+        let mut right = state.custom_right.clone();
+        let zoom_percent = (pane.app.zoom.current_size() / self.config.font_size * 100.0).round();
+        right.push(StatusSegment::plain(format!("Zoom {}%", zoom_percent as i32)));
+
+        StatusBarSegments {
+            left,
+            center,
+            right,
+        }
     }
 
     fn should_activate_owned_input(pane: &PaneRuntime) -> bool {
@@ -641,51 +710,9 @@ impl WalkHandler {
                 (index == self.workspace.active_tab, label)
             })
             .collect();
-        let status_text = self.active_pane().map(|active_pane| {
-            let cwd = active_pane
-                .app
-                .block_manager
-                .blocks
-                .last()
-                .map(|block| block.cwd.display().to_string())
-                .filter(|cwd| !cwd.is_empty())
-                .unwrap_or_else(|| "~".to_string());
-            let vi_mode = active_pane.app.vi_mode.as_ref().map(ViModeState::mode_label);
-            let broadcast = self
-                .workspace
-                .broadcast_input
-                .then_some("BROADCAST");
-            let ephemeral = self.hovered_link.as_ref().or(self.status_message.as_ref());
-            match (broadcast, vi_mode, ephemeral) {
-                (Some(broadcast), Some(mode), Some(message)) => format!(
-                    "{cwd}  |  {}  |  {broadcast}  |  {mode}  |  {message}",
-                    active_pane.app.config.shell
-                ),
-                (Some(broadcast), Some(mode), None) => {
-                    format!(
-                        "{cwd}  |  {}  |  {broadcast}  |  {mode}",
-                        active_pane.app.config.shell
-                    )
-                }
-                (Some(broadcast), None, Some(message)) => format!(
-                    "{cwd}  |  {}  |  {broadcast}  |  {message}",
-                    active_pane.app.config.shell
-                ),
-                (Some(broadcast), None, None) => {
-                    format!("{cwd}  |  {}  |  {broadcast}", active_pane.app.config.shell)
-                }
-                (None, Some(mode), Some(message)) => {
-                    format!("{cwd}  |  {}  |  {mode}  |  {message}", active_pane.app.config.shell)
-                }
-                (None, Some(mode), None) => {
-                    format!("{cwd}  |  {}  |  {mode}", active_pane.app.config.shell)
-                }
-                (None, None, Some(message)) => {
-                    format!("{cwd}  |  {}  |  {message}", active_pane.app.config.shell)
-                }
-                (None, None, None) => format!("{cwd}  |  {}", active_pane.app.config.shell),
-            }
-        });
+        let status_segments = self
+            .active_pane()
+            .map(|active_pane| self.compose_status_bar_segments(active_pane));
         let workspace_search = self.active_search_state();
         let cursor_shape = self.cursor_shape();
         let cursor_visible = self.cursor_visible();
@@ -722,7 +749,7 @@ impl WalkHandler {
                 render,
                 &mut self.font,
                 self.chrome_rects.status,
-                status_text.as_deref(),
+                status_segments.as_ref(),
                 window_opacity,
             );
         }
@@ -1468,8 +1495,25 @@ impl WalkHandler {
         for request in effects.workflow_requests {
             self.apply_workflow_request(request);
         }
+        for request in effects.status_bar_requests {
+            self.apply_status_bar_request(request);
+        }
         self.refresh_plugin_config();
         self.refresh_plugin_snapshot();
+    }
+
+    fn apply_status_bar_request(&mut self, request: StatusBarRequest) {
+        match request {
+            StatusBarRequest::SetLeft(segments) => self.status_bar_state.set_left(segments),
+            StatusBarRequest::SetCenter(segments) => self.status_bar_state.set_center(segments),
+            StatusBarRequest::SetRight(segments) => self.status_bar_state.set_right(segments),
+            StatusBarRequest::Clear => self.status_bar_state.clear_custom(),
+            StatusBarRequest::SetRefreshInterval(ms) => {
+                let clamped = ms.clamp(250, 60_000);
+                self.status_bar_refresh_interval = Duration::from_millis(clamped);
+            }
+        }
+        self.needs_redraw = true;
     }
 
     fn apply_trigger_request(&mut self, request: TriggerRequest) {
@@ -3722,6 +3766,16 @@ impl AppHandler for WalkHandler {
     }
 
     fn on_frame_tick(&mut self) -> bool {
+        self.drain_plugin_side_effects();
+
+        if self.last_status_bar_refresh.elapsed() >= self.status_bar_refresh_interval {
+            self.last_status_bar_refresh = Instant::now();
+            if let Some(pane_id) = self.active_pane_id() {
+                let payload = self.pane_hook_payload(pane_id);
+                self.run_plugin_hook("status_bar_refresh", &payload);
+            }
+        }
+
         let cursor_visible = self.cursor_visible();
         if cursor_visible != self.last_cursor_visible {
             self.last_cursor_visible = cursor_visible;
@@ -4184,7 +4238,7 @@ fn render_status_bar(
     render: &mut RenderState,
     font: &mut FontSystem,
     rect: Rect,
-    status_text: Option<&str>,
+    status_segments: Option<&StatusBarSegments>,
     surface_opacity: f32,
 ) {
     render.batch.push_bg_quad(
@@ -4194,17 +4248,121 @@ fn render_status_bar(
         rect.h,
         with_opacity([0.08, 0.09, 0.13, 1.0], surface_opacity),
     );
-    let Some(status_text) = status_text else {
+    let Some(status_segments) = status_segments else {
         return;
     };
-    push_text(
+
+    let mut left_x = rect.x + 8.0;
+    draw_status_segments(
         render,
         font,
-        rect.x + 10.0,
+        &status_segments.left,
+        &mut left_x,
         rect.y + 4.0,
-        status_text,
-        with_opacity([0.54, 0.58, 0.65, 1.0], surface_opacity),
+        false,
+        surface_opacity,
     );
+
+    let mut right_x = rect.x + rect.w - 8.0;
+    draw_status_segments(
+        render,
+        font,
+        &status_segments.right,
+        &mut right_x,
+        rect.y + 4.0,
+        true,
+        surface_opacity,
+    );
+
+    let center_width = status_segments
+        .center
+        .iter()
+        .map(|segment| status_segment_width(font, segment))
+        .sum::<f32>()
+        + ((status_segments.center.len().saturating_sub(1) as f32) * 4.0);
+    let mut center_x = rect.x + (rect.w - center_width) * 0.5;
+    draw_status_segments(
+        render,
+        font,
+        &status_segments.center,
+        &mut center_x,
+        rect.y + 4.0,
+        false,
+        surface_opacity,
+    );
+}
+
+fn status_segment_width(font: &FontSystem, segment: &StatusSegment) -> f32 {
+    let text_width = segment.text.chars().count() as f32 * font.metrics.cell_width;
+    text_width + 12.0
+}
+
+fn draw_status_segments(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    segments: &[StatusSegment],
+    cursor_x: &mut f32,
+    y: f32,
+    rtl: bool,
+    surface_opacity: f32,
+) {
+    for segment in segments {
+        let width = status_segment_width(font, segment);
+        let x = if rtl { *cursor_x - width } else { *cursor_x };
+        if let Some(bg) = segment.bg.as_deref().and_then(parse_hex_rgba) {
+            render.batch.push_bg_quad(
+                x,
+                y - 1.0,
+                width,
+                font.metrics.cell_height + 2.0,
+                with_opacity(bg, surface_opacity),
+            );
+        }
+        let color = segment
+            .fg
+            .as_deref()
+            .and_then(parse_hex_rgba)
+            .unwrap_or([0.54, 0.58, 0.65, 1.0]);
+        push_text(
+            render,
+            font,
+            x + 6.0,
+            y,
+            &segment.text,
+            with_opacity(color, surface_opacity),
+        );
+        if segment.bold {
+            push_text(
+                render,
+                font,
+                x + 6.6,
+                y,
+                &segment.text,
+                with_opacity(color, surface_opacity),
+            );
+        }
+        if rtl {
+            *cursor_x = x - 4.0;
+        } else {
+            *cursor_x = x + width + 4.0;
+        }
+    }
+}
+
+fn parse_hex_rgba(value: &str) -> Option<[f32; 4]> {
+    let hex = value.trim().trim_start_matches('#');
+    if hex.len() != 6 {
+        return None;
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    Some([
+        f32::from(r) / 255.0,
+        f32::from(g) / 255.0,
+        f32::from(b) / 255.0,
+        1.0,
+    ])
 }
 
 fn render_debug_overlay(

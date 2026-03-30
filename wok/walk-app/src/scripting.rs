@@ -11,6 +11,7 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tracing::{info, warn};
 use walk_input::workflows::{Workflow, WorkflowParam};
+use walk_ui::status_bar::StatusSegment;
 
 /// Collected keybinding overrides from Lua.
 #[derive(Debug, Clone)]
@@ -75,6 +76,21 @@ pub enum WorkflowRequest {
     Register(Workflow),
 }
 
+/// Status bar update work requested by Lua.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StatusBarRequest {
+    /// Replace custom left segments.
+    SetLeft(Vec<StatusSegment>),
+    /// Replace custom center segments.
+    SetCenter(Vec<StatusSegment>),
+    /// Replace custom right segments.
+    SetRight(Vec<StatusSegment>),
+    /// Clear all custom segments.
+    Clear,
+    /// Set refresh hook interval in milliseconds.
+    SetRefreshInterval(u64),
+}
+
 /// Shared state for Lua callbacks to write to.
 #[derive(Default, Clone)]
 pub struct LuaState {
@@ -98,6 +114,8 @@ pub struct LuaState {
     pub workflow_requests: Arc<Mutex<Vec<WorkflowRequest>>>,
     /// Lua-registered workflow cache for `walk.workflows()`.
     pub workflows: Arc<Mutex<Vec<Workflow>>>,
+    /// Pending status bar customization requests requested by Lua.
+    pub status_bar_requests: Arc<Mutex<Vec<StatusBarRequest>>>,
     /// Named commands registered from Lua as action aliases.
     pub commands: Arc<Mutex<HashMap<String, String>>>,
     /// Latest runtime snapshot exposed to plugin callbacks.
@@ -368,6 +386,60 @@ impl LuaRuntime {
         quick_select_table.set("remove_pattern", remove_quick_pattern_fn)?;
         walk.set("quick_select", quick_select_table)?;
 
+        // walk.status_bar.{set_left,set_center,set_right,clear,set_refresh_interval}
+        let status_bar_table = self.lua.create_table()?;
+
+        let status_bar_state = self.state.status_bar_requests.clone();
+        let set_left_fn = self.lua.create_function(move |_, segments: Table| {
+            let segments = parse_status_segments(segments)?;
+            status_bar_state
+                .lock()
+                .unwrap()
+                .push(StatusBarRequest::SetLeft(segments));
+            Ok(())
+        })?;
+        status_bar_table.set("set_left", set_left_fn)?;
+
+        let status_bar_state = self.state.status_bar_requests.clone();
+        let set_center_fn = self.lua.create_function(move |_, segments: Table| {
+            let segments = parse_status_segments(segments)?;
+            status_bar_state
+                .lock()
+                .unwrap()
+                .push(StatusBarRequest::SetCenter(segments));
+            Ok(())
+        })?;
+        status_bar_table.set("set_center", set_center_fn)?;
+
+        let status_bar_state = self.state.status_bar_requests.clone();
+        let set_right_fn = self.lua.create_function(move |_, segments: Table| {
+            let segments = parse_status_segments(segments)?;
+            status_bar_state
+                .lock()
+                .unwrap()
+                .push(StatusBarRequest::SetRight(segments));
+            Ok(())
+        })?;
+        status_bar_table.set("set_right", set_right_fn)?;
+
+        let status_bar_state = self.state.status_bar_requests.clone();
+        let clear_fn = self.lua.create_function(move |_, ()| {
+            status_bar_state.lock().unwrap().push(StatusBarRequest::Clear);
+            Ok(())
+        })?;
+        status_bar_table.set("clear", clear_fn)?;
+
+        let status_bar_state = self.state.status_bar_requests.clone();
+        let set_interval_fn = self.lua.create_function(move |_, ms: u64| {
+            status_bar_state
+                .lock()
+                .unwrap()
+                .push(StatusBarRequest::SetRefreshInterval(ms));
+            Ok(())
+        })?;
+        status_bar_table.set("set_refresh_interval", set_interval_fn)?;
+        walk.set("status_bar", status_bar_table)?;
+
         // walk.run_action(action) — queue a built-in runtime action
         let action_state = self.state.action_requests.clone();
         let run_action_fn = self.lua.create_function(move |_, action: String| {
@@ -515,6 +587,11 @@ impl LuaRuntime {
         std::mem::take(&mut *self.state.workflow_requests.lock().unwrap())
     }
 
+    /// Drain pending status bar requests queued from Lua.
+    pub fn take_status_bar_requests(&self) -> Vec<StatusBarRequest> {
+        std::mem::take(&mut *self.state.status_bar_requests.lock().unwrap())
+    }
+
     /// Resolve a named command alias registered from Lua to an action string.
     pub fn resolve_command_action(&self, name: &str) -> Option<String> {
         self.state.commands.lock().unwrap().get(name).cloned()
@@ -563,6 +640,21 @@ impl LuaRuntime {
 
         Ok(())
     }
+}
+
+fn parse_status_segments(table: Table) -> LuaResult<Vec<StatusSegment>> {
+    table
+        .sequence_values::<Table>()
+        .map(|item| {
+            let item = item?;
+            Ok(StatusSegment {
+                text: item.get::<String>("text")?,
+                fg: item.get::<Option<String>>("fg")?,
+                bg: item.get::<Option<String>>("bg")?,
+                bold: item.get::<Option<bool>>("bold")?.unwrap_or(false),
+            })
+        })
+        .collect::<LuaResult<Vec<_>>>()
 }
 
 #[cfg(test)]
@@ -667,5 +759,25 @@ mod tests {
             runtime.take_notifications(),
             vec!["Iosevka:17.0:zsh".to_string()]
         );
+    }
+
+    #[test]
+    fn test_status_bar_requests_are_queued() {
+        let mut runtime = LuaRuntime::new().expect("lua runtime");
+        runtime.init(&std::env::temp_dir()).expect("lua init");
+        runtime
+            .exec(
+                r##"
+                walk.status_bar.set_right({{ text = " K8s: prod ", fg = "#00ff00", bold = true }})
+                walk.status_bar.set_left({{ text = " left " }})
+                walk.status_bar.set_refresh_interval(2500)
+                "##,
+            )
+            .expect("status bar requests should queue");
+
+        let requests = runtime.take_status_bar_requests();
+        assert!(matches!(requests[0], StatusBarRequest::SetRight(_)));
+        assert!(matches!(requests[1], StatusBarRequest::SetLeft(_)));
+        assert_eq!(requests[2], StatusBarRequest::SetRefreshInterval(2500));
     }
 }

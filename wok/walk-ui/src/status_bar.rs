@@ -2,6 +2,31 @@
 
 use std::path::{Path, PathBuf};
 
+/// One status bar segment with optional colors and emphasis.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatusSegment {
+    /// Segment text (rendered verbatim).
+    pub text: String,
+    /// Optional foreground override as `#rrggbb`.
+    pub fg: Option<String>,
+    /// Optional background override as `#rrggbb`.
+    pub bg: Option<String>,
+    /// Whether to render with bold emphasis.
+    pub bold: bool,
+}
+
+impl StatusSegment {
+    /// Create a plain segment from text.
+    pub fn plain(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            fg: None,
+            bg: None,
+            bold: false,
+        }
+    }
+}
+
 /// Status bar display state.
 #[derive(Debug, Clone)]
 pub struct StatusBarState {
@@ -15,6 +40,12 @@ pub struct StatusBarState {
     pub cursor_line: u16,
     /// Cursor column number.
     pub cursor_col: u16,
+    /// Custom segments inserted into the left section.
+    pub custom_left: Vec<StatusSegment>,
+    /// Custom segments inserted into the center section.
+    pub custom_center: Vec<StatusSegment>,
+    /// Custom segments inserted into the right section.
+    pub custom_right: Vec<StatusSegment>,
 }
 
 impl Default for StatusBarState {
@@ -25,7 +56,34 @@ impl Default for StatusBarState {
             git_branch: None,
             cursor_line: 1,
             cursor_col: 1,
+            custom_left: Vec::new(),
+            custom_center: Vec::new(),
+            custom_right: Vec::new(),
         }
+    }
+}
+
+impl StatusBarState {
+    /// Replace custom left segments.
+    pub fn set_left(&mut self, segments: Vec<StatusSegment>) {
+        self.custom_left = segments;
+    }
+
+    /// Replace custom center segments.
+    pub fn set_center(&mut self, segments: Vec<StatusSegment>) {
+        self.custom_center = segments;
+    }
+
+    /// Replace custom right segments.
+    pub fn set_right(&mut self, segments: Vec<StatusSegment>) {
+        self.custom_right = segments;
+    }
+
+    /// Clear all custom segments.
+    pub fn clear_custom(&mut self) {
+        self.custom_left.clear();
+        self.custom_center.clear();
+        self.custom_right.clear();
     }
 }
 
@@ -114,5 +172,22 @@ mod tests {
         // /tmp is typically not a git repo
         // This might be Some on some systems, so we just ensure no panic
         let _ = branch;
+    }
+
+    #[test]
+    fn test_custom_segment_setters() {
+        let mut state = StatusBarState::default();
+        state.set_left(vec![StatusSegment::plain("left")]);
+        state.set_center(vec![StatusSegment::plain("center")]);
+        state.set_right(vec![StatusSegment::plain("right")]);
+
+        assert_eq!(state.custom_left[0].text, "left");
+        assert_eq!(state.custom_center[0].text, "center");
+        assert_eq!(state.custom_right[0].text, "right");
+
+        state.clear_custom();
+        assert!(state.custom_left.is_empty());
+        assert!(state.custom_center.is_empty());
+        assert!(state.custom_right.is_empty());
     }
 }

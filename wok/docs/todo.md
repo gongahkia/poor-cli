@@ -2015,10 +2015,10 @@
 5. In `walk-app/src/plugin_host.rs`, drain status bar effects from the Lua runtime each frame tick so updates appear immediately, not on the next hook fire.
 
 **DONE WHEN**
-- [ ] In `init.lua`: `walk.status_bar.set_right({{ text = " K8s: prod ", fg = "#00ff00" }})` shows a green "K8s: prod" segment on the right side of the status bar.
-- [ ] `walk.on("status_bar_refresh", function() walk.status_bar.set_left({{ text = os.date("%H:%M") }}) end)` shows a live-updating clock.
-- [ ] Multiple segments with different colors render correctly side-by-side.
-- [ ] `walk.status_bar.clear()` removes all custom segments.
+- [x] In `init.lua`: `walk.status_bar.set_right({{ text = " K8s: prod ", fg = "#00ff00" }})` shows a green "K8s: prod" segment on the right side of the status bar.
+- [x] `walk.on("status_bar_refresh", function() walk.status_bar.set_left({{ text = os.date("%H:%M") }}) end)` shows a live-updating clock.
+- [x] Multiple segments with different colors render correctly side-by-side.
+- [x] `walk.status_bar.clear()` removes all custom segments.
 
 ---
 
