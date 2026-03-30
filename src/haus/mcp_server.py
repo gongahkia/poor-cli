@@ -1739,6 +1739,86 @@ def apply_room_template(
 
 
 @mcp.tool()
+def suggest_placement_json(
+    furniture_type: str,
+    near_index: int | None = None,
+    face_index: int | None = None,
+    room_name: str = "",
+    min_distance: float = 1.0,
+    max_distance: float = 4.0,
+    require_clear_sightline: bool = False,
+    max_candidates: int = 5,
+    grid_size: float = 0.25,
+) -> str:
+    """Return placement candidates with per-component score breakdowns as JSON.
+
+    Each candidate includes *distance_component*, *sightline_component*,
+    and *accessibility_component* so the caller can understand exactly why
+    a candidate scored the way it did.
+    """
+    if min_distance < 0:
+        return json.dumps({"error": "min_distance must be >= 0"})
+    if max_distance <= 0 or max_distance < min_distance:
+        return json.dumps({"error": "max_distance must be >= min_distance and > 0"})
+
+    data = _load_layout()
+    candidates, err = _simulate_candidates(
+        data=data,
+        furniture_type=furniture_type,
+        room_name=room_name,
+        near_index=near_index,
+        face_index=face_index,
+        min_distance=min_distance,
+        max_distance=max_distance,
+        require_clear_sightline=require_clear_sightline,
+        max_candidates=max(1, max_candidates),
+        grid_size=max(0.1, grid_size),
+    )
+    if err:
+        return json.dumps({"error": err})
+    if not candidates:
+        return json.dumps({"candidates": [], "note": "no valid placements found"})
+
+    enriched: list[dict[str, Any]] = []
+    target = (min_distance + max_distance) / 2
+    for cand in candidates:
+        dist_comp = 0.0
+        if cand["distance_to_reference_m"] is not None:
+            near_dist = cand["distance_to_reference_m"]
+            dist_comp = round(max(0.0, 1.0 - abs(near_dist - target) / max(target, 0.1)) * 0.45, 4)
+        sight_comp = 0.0
+        if face_index is not None:
+            blockers = cand["blockers"]
+            sight_comp = round(0.35 if not blockers else max(0.0, 0.22 - 0.03 * len(blockers)), 4)
+        acc_comp = 0.0
+        if cand.get("accessibility_score") is not None:
+            acc_comp = round(cand["accessibility_score"] * 0.20, 4)
+        enriched.append({
+            "x": cand["x"],
+            "z": cand["z"],
+            "rotation_deg": cand["rotation_deg"],
+            "score": cand["score"],
+            "breakdown": {
+                "distance_component": dist_comp,
+                "distance_weight": 0.45,
+                "sightline_component": sight_comp,
+                "sightline_weight": 0.35,
+                "accessibility_component": acc_comp,
+                "accessibility_weight": 0.20,
+            },
+            "distance_to_reference_m": cand["distance_to_reference_m"],
+            "nearest_clearance_m": cand["nearest_clearance_m"],
+            "accessibility_score": cand.get("accessibility_score"),
+            "blockers": [
+                {"index": b["index"], "type": b["type"], "distance": round(b["distance"], 3)}
+                for b in cand["blockers"]
+            ],
+        })
+
+    return json.dumps({"candidates": enriched}, indent=2)
+
+
+@mcp.tool()
 def score_doorway_accessibility(
     door_x: float,
     door_z: float,
