@@ -18,13 +18,25 @@ const loadToolDefinitions = async () => {
   }
 };
 
-const output = execFileSync("node", ["./scripts/generate-openapi.mjs"], {
+const output = execFileSync(process.execPath, ["./scripts/generate-openapi.mjs"], {
   cwd: root,
   encoding: "utf8",
-  stdio: ["ignore", "pipe", "inherit"],
+  maxBuffer: 5 * 1024 * 1024,
 });
 
-const spec = JSON.parse(output);
+const trimmed = output.trim();
+if (trimmed === "") {
+  throw new Error("OpenAPI generator returned empty output.");
+}
+
+let spec;
+try {
+  spec = JSON.parse(trimmed);
+} catch (error) {
+  throw new Error(
+    `OpenAPI generator produced invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+  );
+}
 const toolDefinitions = await loadToolDefinitions();
 
 for (const definition of toolDefinitions) {
