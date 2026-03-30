@@ -247,8 +247,83 @@ def _point_in_rect(point: tuple[float, float], rect: tuple[float, float, float, 
     return rect[0] <= point[0] <= rect[1] and rect[2] <= point[1] <= rect[3]
 
 
-def _ccw(a: tuple[float, float], b: tuple[float, float], c: tuple[float, float]) -> float:
-    return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+def _item_polygon(item: dict[str, Any], padding: float = 0.0) -> list[tuple[float, float]]:
+    pos = item.get("pos", [0.0, 0.0, 0.0])
+    geo = item.get("geo", [1.0, 1.0, 1.0])
+    rot = _coerce_float(item.get("rot", 0.0), 0.0)
+
+    cx = _coerce_float(pos[0], 0.0)
+    cz = _coerce_float(pos[2], 0.0)
+    half_w = max(0.005, _coerce_float(geo[0], 1.0) / 2 + max(0.0, padding))
+    half_d = max(0.005, _coerce_float(geo[2], 1.0) / 2 + max(0.0, padding))
+
+    corners_local = [
+        (-half_w, -half_d),
+        (half_w, -half_d),
+        (half_w, half_d),
+        (-half_w, half_d),
+    ]
+    cos_r = math.cos(rot)
+    sin_r = math.sin(rot)
+
+    corners_world: list[tuple[float, float]] = []
+    for lx, lz in corners_local:
+        wx = cx + lx * cos_r + lz * sin_r
+        wz = cz - lx * sin_r + lz * cos_r
+        corners_world.append((wx, wz))
+    return corners_world
+
+
+def _polygon_edges(polygon: list[tuple[float, float]]) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+    if len(polygon) < 2:
+        return []
+    return [(polygon[i], polygon[(i + 1) % len(polygon)]) for i in range(len(polygon))]
+
+
+def _polygon_axes(polygon: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    axes: list[tuple[float, float]] = []
+    for a, b in _polygon_edges(polygon):
+        edge_x = b[0] - a[0]
+        edge_z = b[1] - a[1]
+        axis = (-edge_z, edge_x)
+        length = math.hypot(axis[0], axis[1])
+        if length > 1e-9:
+            axes.append((axis[0] / length, axis[1] / length))
+    return axes
+
+
+def _project_polygon(
+    polygon: list[tuple[float, float]],
+    axis: tuple[float, float],
+) -> tuple[float, float]:
+    dots = [point[0] * axis[0] + point[1] * axis[1] for point in polygon]
+    return min(dots), max(dots)
+
+
+def _polygons_intersect(a: list[tuple[float, float]], b: list[tuple[float, float]]) -> bool:
+    if not a or not b:
+        return False
+
+    for axis in _polygon_axes(a) + _polygon_axes(b):
+        a0, a1 = _project_polygon(a, axis)
+        b0, b1 = _project_polygon(b, axis)
+        if a1 < b0 or b1 < a0:
+            return False
+    return True
+
+
+def _orientation(a: tuple[float, float], b: tuple[float, float], c: tuple[float, float]) -> int:
+    val = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+    if abs(val) <= 1e-9:
+        return 0
+    return 1 if val > 0 else -1
+
+
+def _on_segment(a: tuple[float, float], p: tuple[float, float], b: tuple[float, float]) -> bool:
+    return (
+        min(a[0], b[0]) - 1e-9 <= p[0] <= max(a[0], b[0]) + 1e-9
+        and min(a[1], b[1]) - 1e-9 <= p[1] <= max(a[1], b[1]) + 1e-9
+    )
 
 
 def _segments_intersect(
@@ -257,17 +332,23 @@ def _segments_intersect(
     b1: tuple[float, float],
     b2: tuple[float, float],
 ) -> bool:
-    d1 = _ccw(a1, a2, b1)
-    d2 = _ccw(a1, a2, b2)
-    d3 = _ccw(b1, b2, a1)
-    d4 = _ccw(b1, b2, a2)
+    o1 = _orientation(a1, a2, b1)
+    o2 = _orientation(a1, a2, b2)
+    o3 = _orientation(b1, b2, a1)
+    o4 = _orientation(b1, b2, a2)
 
-    if d1 == d2 == d3 == d4 == 0:
-        return False
+    if o1 != o2 and o3 != o4:
+        return True
 
-    return (d1 == 0 or d2 == 0 or d1 > 0 != d2 > 0) and (
-        d3 == 0 or d4 == 0 or d3 > 0 != d4 > 0
-    )
+    if o1 == 0 and _on_segment(a1, b1, a2):
+        return True
+    if o2 == 0 and _on_segment(a1, b2, a2):
+        return True
+    if o3 == 0 and _on_segment(b1, a1, b2):
+        return True
+    if o4 == 0 and _on_segment(b1, a2, b2):
+        return True
+    return False
 
 
 def _segment_intersects_rect(
@@ -292,6 +373,87 @@ def _segment_intersects_rect(
     return False
 
 
+def _distance_point_to_segment(
+    point: tuple[float, float],
+    a: tuple[float, float],
+    b: tuple[float, float],
+) -> float:
+    ab_x = b[0] - a[0]
+    ab_z = b[1] - a[1]
+    ab_len_sq = ab_x * ab_x + ab_z * ab_z
+    if ab_len_sq <= 1e-12:
+        return math.hypot(point[0] - a[0], point[1] - a[1])
+
+    ap_x = point[0] - a[0]
+    ap_z = point[1] - a[1]
+    t = max(0.0, min(1.0, (ap_x * ab_x + ap_z * ab_z) / ab_len_sq))
+    proj_x = a[0] + t * ab_x
+    proj_z = a[1] + t * ab_z
+    return math.hypot(point[0] - proj_x, point[1] - proj_z)
+
+
+def _point_in_polygon(point: tuple[float, float], polygon: list[tuple[float, float]]) -> bool:
+    if len(polygon) < 3:
+        return False
+
+    for a, b in _polygon_edges(polygon):
+        if _distance_point_to_segment(point, a, b) <= 1e-9:
+            return True
+
+    inside = False
+    px, pz = point
+    for i, (x1, z1) in enumerate(polygon):
+        x2, z2 = polygon[(i + 1) % len(polygon)]
+        crosses = (z1 > pz) != (z2 > pz)
+        if not crosses:
+            continue
+        at_x = (x2 - x1) * (pz - z1) / max(z2 - z1, 1e-12) + x1
+        if px < at_x:
+            inside = not inside
+    return inside
+
+
+def _segment_intersects_polygon(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    polygon: list[tuple[float, float]],
+) -> bool:
+    if _point_in_polygon(start, polygon) or _point_in_polygon(end, polygon):
+        return True
+    return any(_segments_intersect(start, end, edge_start, edge_end) for edge_start, edge_end in _polygon_edges(polygon))
+
+
+def _polygon_distance(a: list[tuple[float, float]], b: list[tuple[float, float]]) -> float:
+    if _polygons_intersect(a, b):
+        return 0.0
+
+    min_dist = float("inf")
+    for point in a:
+        for edge_start, edge_end in _polygon_edges(b):
+            min_dist = min(min_dist, _distance_point_to_segment(point, edge_start, edge_end))
+    for point in b:
+        for edge_start, edge_end in _polygon_edges(a):
+            min_dist = min(min_dist, _distance_point_to_segment(point, edge_start, edge_end))
+    return min_dist
+
+
+def _segment_progress(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    point: tuple[float, float],
+) -> float:
+    sx, sz = start
+    ex, ez = end
+    seg_x = ex - sx
+    seg_z = ez - sz
+    seg_len_sq = seg_x * seg_x + seg_z * seg_z
+    if seg_len_sq <= 1e-12:
+        return 0.0
+    px = point[0] - sx
+    pz = point[1] - sz
+    return max(0.0, min(1.0, (px * seg_x + pz * seg_z) / seg_len_sq))
+
+
 def _collect_sightline_blockers(
     data: dict[str, Any],
     index_from: int,
@@ -305,6 +467,7 @@ def _collect_sightline_blockers(
 
     start = (src["pos"][0], src["pos"][2])
     end = (dst["pos"][0], dst["pos"][2])
+    line_len = math.hypot(end[0] - start[0], end[1] - start[1])
 
     blockers: list[dict[str, Any]] = []
     for i, item in enumerate(items):
@@ -312,15 +475,17 @@ def _collect_sightline_blockers(
             continue
         if not include_hidden and not item.get("visible", True):
             continue
-        rect = _item_rect(item, padding=max(0.0, safety_margin))
-        if _segment_intersects_rect(start, end, rect):
-            center = ((rect[0] + rect[1]) / 2, (rect[2] + rect[3]) / 2)
-            dist = math.sqrt((center[0] - start[0]) ** 2 + (center[1] - start[1]) ** 2)
+        polygon = _item_polygon(item, padding=max(0.0, safety_margin))
+        if _segment_intersects_polygon(start, end, polygon):
+            center = (item["pos"][0], item["pos"][2])
+            line_t = _segment_progress(start, end, center)
+            dist = line_t * line_len
             blockers.append(
                 {
                     "index": i,
                     "type": _item_label(item),
                     "distance": dist,
+                    "line_t": line_t,
                 }
             )
 
@@ -464,18 +629,19 @@ def _simulate_candidates(
     for x, z in points:
         rot_deg = _best_candidate_rot_deg(x, z, face_item)
         candidate = _build_furniture_item(furniture_type, x, z, rot_deg)
-        cand_rect = _item_rect(candidate, padding=0.02)
+        cand_polygon = _item_polygon(candidate, padding=0.02)
 
         overlap = False
-        nearest = float("inf")
+        nearest_clearance = float("inf")
         for idx, other in enumerate(data["items"]):
             if not other.get("visible", True):
                 continue
-            if _rect_intersects(cand_rect, _item_rect(other, padding=0.02)):
+            other_polygon = _item_polygon(other, padding=0.02)
+            if _polygons_intersect(cand_polygon, other_polygon):
                 overlap = True
                 break
             if idx != near_index:
-                nearest = min(nearest, _distance_xz(candidate, other))
+                nearest_clearance = min(nearest_clearance, _polygon_distance(cand_polygon, other_polygon))
 
         if overlap:
             continue
@@ -502,14 +668,24 @@ def _simulate_candidates(
             if require_clear_sightline and blockers:
                 continue
 
+        accessibility_clearance = (
+            nearest_clearance if nearest_clearance < float("inf") else None
+        )
+        if accessibility_clearance is not None and accessibility_clearance < 0.35:
+            continue
+
         score = 0.0
         if near_item is not None:
             target = (min_distance + max_distance) / 2
-            score += max(0.0, 1.0 - abs(near_dist - target) / max(target, 0.1)) * 0.5
+            score += max(0.0, 1.0 - abs(near_dist - target) / max(target, 0.1)) * 0.45
         if face_index is not None:
-            score += 0.4 if not blockers else max(0.0, 0.25 - 0.03 * len(blockers))
-        if nearest < float("inf"):
-            score += min(nearest, 1.5) / 1.5 * 0.1
+            score += 0.35 if not blockers else max(0.0, 0.22 - 0.03 * len(blockers))
+
+        if accessibility_clearance is not None:
+            accessibility_score = min(accessibility_clearance, 1.2) / 1.2
+            score += accessibility_score * 0.20
+        else:
+            accessibility_score = None
 
         candidates.append(
             {
@@ -519,7 +695,15 @@ def _simulate_candidates(
                 "score": round(score, 4),
                 "distance_to_reference_m": round(near_dist, 3) if near_item is not None else None,
                 "blockers": blockers,
-                "nearest_clearance_m": round(nearest, 3) if nearest < float("inf") else None,
+                "nearest_clearance_m": (
+                    round(accessibility_clearance, 3) if accessibility_clearance is not None else None
+                ),
+                "accessibility_clearance_m": (
+                    round(accessibility_clearance, 3) if accessibility_clearance is not None else None
+                ),
+                "accessibility_score": (
+                    round(accessibility_score, 3) if accessibility_score is not None else None
+                ),
             }
         )
 
@@ -1237,9 +1421,11 @@ def suggest_furniture_placement(
         )
         clearance = cand["nearest_clearance_m"]
         clear_text = f", nearest_clearance={clearance:.2f}m" if clearance is not None else ""
+        accessibility = cand.get("accessibility_score")
+        acc_text = f", accessibility={accessibility:.2f}" if accessibility is not None else ""
         lines.append(
             f"  {i}. x={cand['x']:.2f}, z={cand['z']:.2f}, rot={cand['rotation_deg']:.1f}°, "
-            f"score={cand['score']:.3f}, sightline={sight}{near_info}{clear_text}"
+            f"score={cand['score']:.3f}, sightline={sight}{near_info}{clear_text}{acc_text}"
         )
     return "\n".join(lines)
 

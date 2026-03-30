@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import pytest
@@ -60,6 +61,7 @@ def test_suggest_furniture_placement_returns_ranked_candidates(isolated_layout: 
         "version": 1,
         "items": [
             _obj(item_type="furniture", furniture_type="tv_console", x=0.0, z=0.0, w=1.5, h=0.5, d=0.4),
+            _obj(item_type="furniture", furniture_type="wardrobe", x=3.0, z=3.0, w=1.8, h=2.0, d=0.6),
         ],
     }
     assert mcp_server._save_layout(layout) is None
@@ -75,6 +77,38 @@ def test_suggest_furniture_placement_returns_ranked_candidates(isolated_layout: 
     )
     assert "Top" in result
     assert "score=" in result
+    assert "accessibility=" in result
+
+
+def test_oriented_polygon_collision_avoids_aabb_false_positive() -> None:
+    base = _obj(
+        item_type="furniture",
+        furniture_type="sofa_3",
+        x=0.0,
+        z=0.0,
+        w=2.8,
+        h=0.8,
+        d=0.3,
+        rot=math.radians(45),
+    )
+    other = _obj(
+        item_type="furniture",
+        furniture_type="sofa_3",
+        x=-2.5,
+        z=-1.2,
+        w=2.8,
+        h=0.8,
+        d=0.3,
+        rot=0.0,
+    )
+
+    base_rect = mcp_server._item_rect(base, padding=0.02)
+    other_rect = mcp_server._item_rect(other, padding=0.02)
+    assert mcp_server._rect_intersects(base_rect, other_rect)
+
+    base_poly = mcp_server._item_polygon(base, padding=0.02)
+    other_poly = mcp_server._item_polygon(other, padding=0.02)
+    assert not mcp_server._polygons_intersect(base_poly, other_poly)
 
 
 def test_simulate_and_apply_option_adds_objects(isolated_layout: Path) -> None:
