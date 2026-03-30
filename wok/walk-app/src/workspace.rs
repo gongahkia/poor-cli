@@ -24,6 +24,8 @@ pub struct WorkspaceState {
     pub tabs: Vec<WorkspaceTab>,
     /// Index of the active tab.
     pub active_tab: usize,
+    /// Whether raw input should be broadcast to every pane.
+    pub broadcast_input: bool,
     next_tab_id: u64,
     next_pane_id: PaneId,
 }
@@ -39,6 +41,7 @@ impl WorkspaceState {
                 split_manager: SplitManager::new(first_pane),
             }],
             active_tab: 0,
+            broadcast_input: false,
             next_tab_id: 2,
             next_pane_id: 2,
         };
@@ -60,6 +63,7 @@ impl WorkspaceState {
         Self {
             tabs,
             active_tab,
+            broadcast_input: false,
             next_tab_id,
             next_pane_id,
         }
@@ -215,6 +219,11 @@ impl WorkspaceState {
     pub fn active_pane_ids(&self) -> Vec<PaneId> {
         self.active_tab()
             .map_or_else(Vec::new, |tab| collect_leaf_ids(&tab.split_manager.root))
+    }
+
+    /// Return all pane ids in the currently active workspace tab.
+    pub fn all_pane_ids(&self) -> Vec<PaneId> {
+        self.active_pane_ids()
     }
 
     /// Find the index of the tab containing the given pane.

@@ -305,6 +305,9 @@ impl WalkApp {
             Action::EnterViMode => {
                 effects.push(RuntimeEffect::Status("Vi mode".to_string()));
             }
+            Action::ToggleBroadcast => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::ToggleBroadcast));
+            }
             Action::CommandPalette => {
                 effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenCommandPalette));
             }

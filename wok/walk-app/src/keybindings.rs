@@ -85,6 +85,8 @@ pub enum Action {
     SearchGlobal,
     /// Enter vi navigation mode.
     EnterViMode,
+    /// Toggle pane input broadcast mode.
+    ToggleBroadcast,
     /// Open the command palette.
     CommandPalette,
     /// Open pane-local command history search.
@@ -410,6 +412,13 @@ impl Default for KeybindingConfig {
                 modifiers: pma,
             },
             Action::QuickSelectBlock,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('b'),
+                modifiers: pma,
+            },
+            Action::ToggleBroadcast,
         );
         bindings.insert(
             KeyCombo {

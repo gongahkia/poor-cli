@@ -110,6 +110,8 @@ pub enum WorkspaceEffect {
     ResizeSplitUp,
     /// Resize the focused split downward.
     ResizeSplitDown,
+    /// Toggle raw input broadcast mode for the active tab.
+    ToggleBroadcast,
     /// Save a named workspace snapshot.
     SaveSession(String),
     /// Load a named workspace snapshot.

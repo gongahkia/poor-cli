@@ -648,18 +648,39 @@ impl WalkHandler {
                 .filter(|cwd| !cwd.is_empty())
                 .unwrap_or_else(|| "~".to_string());
             let vi_mode = active_pane.app.vi_mode.as_ref().map(ViModeState::mode_label);
+            let broadcast = self
+                .workspace
+                .broadcast_input
+                .then_some("BROADCAST");
             let ephemeral = self.hovered_link.as_ref().or(self.status_message.as_ref());
-            match (vi_mode, ephemeral) {
-                (Some(mode), Some(message)) => {
+            match (broadcast, vi_mode, ephemeral) {
+                (Some(broadcast), Some(mode), Some(message)) => format!(
+                    "{cwd}  |  {}  |  {broadcast}  |  {mode}  |  {message}",
+                    active_pane.app.config.shell
+                ),
+                (Some(broadcast), Some(mode), None) => {
+                    format!(
+                        "{cwd}  |  {}  |  {broadcast}  |  {mode}",
+                        active_pane.app.config.shell
+                    )
+                }
+                (Some(broadcast), None, Some(message)) => format!(
+                    "{cwd}  |  {}  |  {broadcast}  |  {message}",
+                    active_pane.app.config.shell
+                ),
+                (Some(broadcast), None, None) => {
+                    format!("{cwd}  |  {}  |  {broadcast}", active_pane.app.config.shell)
+                }
+                (None, Some(mode), Some(message)) => {
                     format!("{cwd}  |  {}  |  {mode}  |  {message}", active_pane.app.config.shell)
                 }
-                (Some(mode), None) => {
+                (None, Some(mode), None) => {
                     format!("{cwd}  |  {}  |  {mode}", active_pane.app.config.shell)
                 }
-                (None, Some(message)) => {
+                (None, None, Some(message)) => {
                     format!("{cwd}  |  {}  |  {message}", active_pane.app.config.shell)
                 }
-                (None, None) => format!("{cwd}  |  {}", active_pane.app.config.shell),
+                (None, None, None) => format!("{cwd}  |  {}", active_pane.app.config.shell),
             }
         });
         let workspace_search = self.active_search_state();
@@ -820,29 +841,34 @@ impl WalkHandler {
                 render.batch.append(row_batch);
             }
 
-            render.batch.push_bg_quad(
-                viewport.x,
-                viewport.y,
-                viewport.w,
-                1.0,
+            let border_color = if self.workspace.broadcast_input {
+                [
+                    theme.block_error_accent.r,
+                    theme.block_error_accent.g,
+                    theme.block_error_accent.b,
+                    0.95,
+                ]
+            } else {
                 [
                     theme.block_separator.r,
                     theme.block_separator.g,
                     theme.block_separator.b,
                     0.9,
-                ],
+                ]
+            };
+            render.batch.push_bg_quad(
+                viewport.x,
+                viewport.y,
+                viewport.w,
+                1.0,
+                border_color,
             );
             render.batch.push_bg_quad(
                 viewport.x,
                 viewport.y,
                 1.0,
                 viewport.h,
-                [
-                    theme.block_separator.r,
-                    theme.block_separator.g,
-                    theme.block_separator.b,
-                    0.9,
-                ],
+                border_color,
             );
             if focused {
                 render.batch.push_bg_quad(
@@ -1595,6 +1621,21 @@ impl WalkHandler {
         }
     }
 
+    fn send_raw_input_to_pty(&mut self, data: &[u8]) {
+        if !self.workspace.broadcast_input {
+            self.send_to_pty(data);
+            return;
+        }
+
+        for pane_id in self.workspace.all_pane_ids() {
+            if let Some(pane) = self.panes.get(&pane_id) {
+                if let Err(error) = pane.terminal.send_input(data) {
+                    warn!("failed to broadcast PTY input to pane {pane_id}: {error}");
+                }
+            }
+        }
+    }
+
     fn evaluate_triggers_for_latest_block(&mut self, pane_id: PaneId) {
         if self.trigger_engine.is_empty() {
             return;
@@ -1961,7 +2002,7 @@ impl WalkHandler {
                         let _ = active_pane.app.input_editor.buffer.insert_at(0, &text);
                         active_pane.history_nav = HistoryNavigationState::default();
                     } else {
-                        self.send_to_pty(text.as_bytes());
+                        self.send_raw_input_to_pty(text.as_bytes());
                     }
                 }
                 if refresh_command_search {
@@ -2202,6 +2243,14 @@ impl WalkHandler {
                 if let Some(window) = &self.window {
                     self.sync_workspace_layout(window.inner_size());
                 }
+            }
+            WorkspaceEffect::ToggleBroadcast => {
+                self.workspace.broadcast_input = !self.workspace.broadcast_input;
+                self.status_message = Some(if self.workspace.broadcast_input {
+                    "BROADCAST enabled".to_string()
+                } else {
+                    "BROADCAST disabled".to_string()
+                });
             }
         }
     }
@@ -2661,7 +2710,7 @@ impl WalkHandler {
             self.submit_owned_input(pane_id, command);
         }
         if send_eof {
-            self.send_to_pty(b"\x04");
+            self.send_raw_input_to_pty(b"\x04");
         }
 
         if let Some(window) = &self.window {
@@ -2799,7 +2848,7 @@ impl WalkHandler {
                     active_pane.app.command_palette.set_query(&query);
                 }
                 if send_eof {
-                    self.send_to_pty(b"\x04");
+                    self.send_raw_input_to_pty(b"\x04");
                 }
                 self.refresh_command_palette();
                 if let Some(window) = &self.window {
@@ -3100,9 +3149,9 @@ impl WalkHandler {
         }
 
         if !command.is_empty() {
-            self.send_to_pty(command.as_bytes());
+            self.send_raw_input_to_pty(command.as_bytes());
         }
-        self.send_to_pty(b"\r");
+        self.send_raw_input_to_pty(b"\r");
     }
 
     fn navigate_owned_history(&mut self, pane_id: PaneId, step_up: bool) {
@@ -3488,8 +3537,8 @@ impl WalkHandler {
             }
             self.handle_action(action);
         } else {
-            self.send_to_pty(command.as_bytes());
-            self.send_to_pty(b"\r");
+            self.send_raw_input_to_pty(command.as_bytes());
+            self.send_raw_input_to_pty(b"\r");
             if let Some(active_pane) = self.active_pane_mut() {
                 active_pane.app.close_command_palette();
             }
@@ -3807,7 +3856,7 @@ impl AppHandler for WalkHandler {
         }
 
         if let Some(data) = input_event_to_pty_bytes(&event) {
-            self.send_to_pty(&data);
+            self.send_raw_input_to_pty(&data);
             self.needs_redraw = true;
         }
     }
@@ -6321,6 +6370,7 @@ fn parse_lua_action(action: &str) -> Option<Action> {
         "command_search" | "history_search" => Some(Action::CommandSearch),
         "quick_select" => Some(Action::QuickSelect),
         "quick_select_block" => Some(Action::QuickSelectBlock),
+        "toggle_broadcast" | "broadcast_toggle" => Some(Action::ToggleBroadcast),
         "block_prev" => Some(Action::BlockPrev),
         "block_next" => Some(Action::BlockNext),
         "block_copy" | "copy_block" => Some(Action::BlockCopy),
@@ -6433,6 +6483,7 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::CommandSearch => "command_search".to_string(),
         Action::QuickSelect => "quick_select".to_string(),
         Action::QuickSelectBlock => "quick_select_block".to_string(),
+        Action::ToggleBroadcast => "toggle_broadcast".to_string(),
         Action::ToggleInputPosition => "toggle_input_position".to_string(),
         Action::ZoomIn => "zoom_in".to_string(),
         Action::ZoomOut => "zoom_out".to_string(),

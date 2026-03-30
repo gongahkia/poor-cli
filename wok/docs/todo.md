@@ -1946,10 +1946,10 @@
 5. Broadcast only applies to raw input (keystrokes, paste). Walk-internal actions (block navigation, search, tab switching) remain pane-local — they should NOT be broadcast.
 
 **DONE WHEN**
-- [ ] `Mod+Alt+B` toggles broadcast mode. The status bar shows "BROADCAST" when active.
-- [ ] With two split panes open, typing `ls` in broadcast mode runs `ls` in both panes.
-- [ ] Walk-internal keybindings (Mod+Up for block nav, Mod+F for search) are NOT broadcast.
-- [ ] Disabling broadcast returns to normal single-pane input.
+- [x] `Mod+Alt+B` toggles broadcast mode. The status bar shows "BROADCAST" when active.
+- [x] With two split panes open, typing `ls` in broadcast mode runs `ls` in both panes.
+- [x] Walk-internal keybindings (Mod+Up for block nav, Mod+F for search) are NOT broadcast.
+- [x] Disabling broadcast returns to normal single-pane input.
 
 ---
 
