@@ -56,27 +56,23 @@ Published-package snippet after the first npm release:
 }
 ```
 
-## Runnable Demo Profiles
+## Live Validation
 
-Eleven walkthroughs map to built-in demo profiles:
+For a credential-gated live validation pass against the built MCP server:
 
-- `npm run demo:mcp -- business`
-- `npm run demo:mcp -- property`
-- `npm run demo:mcp -- macro`
-- `npm run demo:mcp -- transport`
-- `npm run demo:mcp -- environment`
-- `npm run demo:mcp -- civic`
-- `npm run demo:mcp -- geospatial`
-- `npm run demo:mcp -- architecture`
-- `npm run demo:mcp -- healthcare`
-- `npm run demo:mcp -- hotel`
-- `npm run demo:mcp -- sector-business`
+```bash
+npm run quick-start
+```
 
-Every profile reads one resource, calls one direct tool, calls one supporting tool, and then runs the equivalent `sg_query` workflow against the mock upstream server.
+Or run just the smoke flow after building:
+
+```bash
+npm run test:smoke:live
+```
 
 ## Integration Example
 
-`integration/basic-client.ts` is the recommended app-integration starting point. It connects once, caches `sg://recipes`, `sg://runtime`, `sg://playbooks`, and `sg://benchmarks`, runs one covered `sg_query` prompt, demonstrates blocked, unsupported, and failed outcomes, and then drops to direct `sg_*` tools when the caller has exact parameters:
+`integration/basic-client.ts` is the recommended app-integration starting point. It connects once, caches `sg://recipes`, `sg://runtime`, `sg://playbooks`, and `sg://benchmarks`, runs one covered `sg_query` prompt, demonstrates blocked, unsupported, and failed outcomes, and then drops to direct `sg_*` tools when the caller has exact parameters. It is the current reference for sg_query completed, blocked, unsupported, and failed outcomes:
 
 ```bash
 npx tsx examples/integration/basic-client.ts
@@ -88,14 +84,4 @@ npx tsx examples/integration/basic-client.ts
 python3 examples/integration/basic-client.py
 ```
 
-## Golden Outputs
-
-`golden-outputs/` contains realistic JSON fixtures for each brief tool plus sg_query completed, blocked, unsupported, and failed outcomes, along with sector-specific diligence outcomes, useful as reference for expected output shapes, believable headline fields, and contract semantics.
-
-## Quick Start
-
-Run one brief workflow end-to-end in under 5 minutes:
-
-```bash
-node scripts/quick-start.mjs property
-```
+Use the prompts in the example files below once the live smoke path passes. The repo keeps regression fixtures under internal test paths, not in the public examples surface.

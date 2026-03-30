@@ -52,7 +52,7 @@ For developer onboarding and operations, pair the catalog resources with:
 - `sg_property_brief`
   Location and property brief across OneMap, URA, HDB, and optional live context.
 - `sg_macro_brief`
-  Compact Singapore macro starter brief using MAS values and SingStat entrypoints.
+  Compact Singapore macro starter brief using MAS values and validated SingStat GDP and CPI tables.
 - `sg_transport_brief`
   Live transport operations brief over LTA bus arrivals, train alerts, and traffic incidents.
 - `sg_environment_brief`
@@ -94,7 +94,7 @@ For developer onboarding and operations, pair the catalog resources with:
 - `sg_onemap_population`
 - `sg_onemap_convert_coords`
 
-Live OneMap calls require valid credentials. There is no silent unauthenticated fallback outside mock mode.
+Live OneMap calls require valid credentials. There is no silent unauthenticated fallback.
 
 ### URA
 
@@ -441,9 +441,16 @@ Public families:
 
 HDB, CEA, BCA, BOA, HSA, HLB, and ACRA are intentionally covered through the shared data.gov.sg path or official file-download path.
 
+`sg_health_check` probes SingStat, MAS, OneMap, URA, LTA DataMall, data.gov.sg, and NEA directly. OneMap, URA, and LTA are checked through the same authenticated runtime path used by the live tools.
+
+Credential-gated live validation:
+
+- `npm run quick-start`
+- `npm run test:smoke:live`
+
 ## Examples
 
-The workflow demos live in:
+The workflow examples live in:
 
 - `examples/business-dossier.md`
 - `examples/architecture-firm-diligence.md`

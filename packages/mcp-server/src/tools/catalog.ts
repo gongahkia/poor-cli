@@ -1,6 +1,7 @@
 import type { ToolCatalogEntry } from "./tool-definition.js";
 import { toToolCatalogEntry } from "./tool-definition.js";
 import { ALL_TOOL_DEFINITIONS } from "./tool-set.js";
+import { LIVE_API_SURFACE, LIVE_WORKFLOW_SMOKE_CASES, RELEASE_BLOCKING_COMMANDS } from "./runtime-surface.js";
 
 export type ApiCatalogEntry = {
   readonly name: string;
@@ -64,6 +65,17 @@ export type PlaybookCatalogEntry = {
 };
 
 export type RuntimeCatalog = {
+  readonly liveSurface: readonly {
+    readonly api: string;
+    readonly classification: string;
+    readonly authRequired: boolean;
+    readonly probeMode: string;
+    readonly productionUrl: string;
+    readonly representativeTool: string;
+    readonly releaseBlocking: boolean;
+    readonly coversFamilies: readonly string[];
+    readonly notes: readonly string[];
+  }[];
   readonly authDependencies: readonly {
     readonly api: string;
     readonly authRequired: boolean;
@@ -113,6 +125,20 @@ export type RuntimeCatalog = {
     readonly coversFamilies: readonly string[];
     readonly notes: readonly string[];
   }[];
+  readonly releaseReadiness: {
+    readonly blockingCommands: readonly string[];
+    readonly requiredSmokeCases: readonly {
+      readonly name: string;
+      readonly tool: string;
+      readonly layer: "api" | "workflow";
+      readonly releaseBlocking: boolean;
+      readonly arguments: Readonly<Record<string, unknown>>;
+      readonly expectation: Readonly<Record<string, unknown>>;
+      readonly notes: readonly string[];
+    }[];
+    readonly failureSemantics: readonly string[];
+    readonly notes: readonly string[];
+  };
   readonly queryStatusContract: readonly {
     readonly status: "planned" | "completed" | "blocked" | "unsupported" | "failed";
     readonly isError: boolean;
@@ -458,7 +484,7 @@ const LTA_AUTH_NOTES = [
 export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
   {
     name: "Macro Snapshot",
-    intent: "Build a compact Singapore macro starter brief with MAS values and SingStat entrypoints.",
+    intent: "Build a compact Singapore macro starter brief with MAS values and validated SingStat GDP and CPI tables.",
     entrypoints: [
       { tool: "sg_query", input: { query: "Macro snapshot of Singapore", mode: "execute" } },
       { tool: "sg_macro_brief", input: { currency: "USD" } },
@@ -1178,6 +1204,17 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
 ];
 
 export const RUNTIME_CATALOG: RuntimeCatalog = {
+  liveSurface: LIVE_API_SURFACE.map((surface) => ({
+    api: surface.api,
+    classification: surface.classification,
+    authRequired: surface.authRequired,
+    probeMode: surface.probeMode,
+    productionUrl: surface.productionUrl,
+    representativeTool: surface.representativeTool,
+    releaseBlocking: surface.releaseBlocking,
+    coversFamilies: surface.dependentFamilies,
+    notes: [...surface.notes, ...surface.healthNotes],
+  })),
   authDependencies: [
     {
       api: "OneMap",
@@ -1210,36 +1247,23 @@ export const RUNTIME_CATALOG: RuntimeCatalog = {
       ],
     },
     {
-      api: "data.gov.sg-backed families",
+      api: "data.gov.sg datastore",
       authRequired: false,
       envVars: [],
       keystoreKeys: [],
-      dependentFamilies: [
-        "HDB",
-        "CEA",
-        "BCA",
-        "BOA",
-        "ACRA",
-        "PA",
-        "Sport Singapore",
-        "ECDA",
-        "MSF Family Services",
-        "MSF Student Care Services",
-        "MSF Social Service Offices",
-        "GeBIZ",
-        "Hawker Centres",
-        "MOE Schools",
-        "MOH Healthcare",
-        "HSA",
-        "SFA",
-        "NParks",
-        "PUB",
-        "MOM",
-        "STB",
-        "HLB",
-      ],
+      dependentFamilies: LIVE_API_SURFACE.find((surface) => surface.api === "data.gov.sg datastore")?.dependentFamilies ?? [],
       notes: [
-        "These families inherit the shared data.gov.sg API or official file-download path instead of separate credentials.",
+        "These families inherit the shared data.gov.sg datastore contract instead of separate credentials.",
+      ],
+    },
+    {
+      api: "data.gov.sg file downloads",
+      authRequired: false,
+      envVars: [],
+      keystoreKeys: [],
+      dependentFamilies: LIVE_API_SURFACE.find((surface) => surface.api === "data.gov.sg file downloads")?.dependentFamilies ?? [],
+      notes: [
+        "These families inherit the shared official file-download contract behind data.gov.sg instead of separate credentials.",
       ],
     },
   ],
@@ -1247,18 +1271,16 @@ export const RUNTIME_CATALOG: RuntimeCatalog = {
     "Environment variables take precedence when upstream clients resolve credentials, with the keystore as the persistent fallback.",
     "sg_health_check reports credentialSource as env, keystore, mixed, none, or not_required per upstream.",
     "OneMap only reports configured when both the email and password are available from env or keystore.",
+    "Authenticated health probes use the same live runtime path as the protected direct tools, so missing or invalid credentials surface directly in the health record.",
   ],
   latency: {
     hardCapMs: 30000,
-    targets: [
-      { api: "SingStat", timeoutMs: 15000, typicalLatency: "2-8s", notes: "Large table queries can be slow." },
-      { api: "MAS", timeoutMs: 10000, typicalLatency: "1-3s", notes: "CKAN datastore queries." },
-      { api: "OneMap", timeoutMs: 10000, typicalLatency: "0.5-2s", notes: "Token refresh can add about one second on first call." },
-      { api: "URA", timeoutMs: 20000, typicalLatency: "3-10s", notes: "Token exchange and bulky property reads are the slow path." },
-      { api: "LTA DataMall", timeoutMs: 10000, typicalLatency: "0.5-2s", notes: "Realtime endpoints are fast when authenticated." },
-      { api: "NEA", timeoutMs: 10000, typicalLatency: "0.5-2s", notes: "Weather endpoints are typically responsive." },
-      { api: "data.gov.sg", timeoutMs: 10000, typicalLatency: "1-5s", notes: "Dataset size and CKAN load dominate latency." },
-    ],
+    targets: LIVE_API_SURFACE.map((surface) => ({
+      api: surface.api,
+      timeoutMs: surface.latency.timeoutMs,
+      typicalLatency: surface.latency.typicalLatency,
+      notes: surface.latency.notes,
+    })),
   },
   cacheTiers: [
     {
@@ -1288,8 +1310,8 @@ export const RUNTIME_CATALOG: RuntimeCatalog = {
     {
       tier: "ARCHIVAL",
       ttlSeconds: 604800,
-      usedBy: ["historical brief enrichments", "long-range time-series fixtures"],
-      rationale: "Historical records are effectively immutable.",
+      usedBy: ["historical brief enrichments", "long-range time-series slices"],
+      rationale: "Historical records are effectively immutable once the live source has published them.",
     },
   ],
   rateLimits: [
@@ -1320,15 +1342,47 @@ export const RUNTIME_CATALOG: RuntimeCatalog = {
     "Freshness is still reported for the successful sources so callers can reason about missing context explicitly.",
   ],
   healthCoverage: [
-    {
-      api: "sg_health_check",
-      coversFamilies: ["SingStat", "MAS", "OneMap", "URA", "LTA DataMall", "data.gov.sg", "NEA"],
+    ...LIVE_API_SURFACE.map((surface) => ({
+      api: surface.api,
+      coversFamilies: surface.dependentFamilies,
       notes: [
-        "The data.gov.sg probe also covers curated registry, amenity, procurement, and file-download families that share the same upstream path.",
-        "Structured records expose configured, credentialSource, reachable, latencyMs, dependentFamilies, and coverageNotes.",
+        ...surface.healthNotes,
+        `Structured health records expose classification, configured, credentialSource, reachable, latencyMs, representativeTool, and releaseBlocking for ${surface.api}.`,
       ],
-    },
+    })),
   ],
+  releaseReadiness: {
+    blockingCommands: RELEASE_BLOCKING_COMMANDS,
+    requiredSmokeCases: [
+      ...LIVE_API_SURFACE.map((surface) => ({
+        name: surface.smoke.name,
+        tool: surface.smoke.tool,
+        layer: surface.smoke.layer,
+        releaseBlocking: surface.smoke.releaseBlocking,
+        arguments: surface.smoke.arguments,
+        expectation: surface.smoke.expectation,
+        notes: surface.smoke.notes,
+      })),
+      ...LIVE_WORKFLOW_SMOKE_CASES.map((caseDef) => ({
+        name: caseDef.name,
+        tool: caseDef.tool,
+        layer: caseDef.layer,
+        releaseBlocking: caseDef.releaseBlocking,
+        arguments: caseDef.arguments,
+        expectation: caseDef.expectation,
+        notes: caseDef.notes,
+      })),
+    ],
+    failureSemantics: [
+      "A release-blocking health or smoke failure means the advertised live surface is not deployment-ready.",
+      "Unauthenticated families must return real upstream records; authenticated families must also report configured=true.",
+      "If a public workflow cannot pass its representative live smoke case, it should be removed from discovery until fixed.",
+    ],
+    notes: [
+      "npm run verify remains the credential-free correctness gate.",
+      "npm run test:smoke:live is the live release gate and must pass in the target environment before deployment.",
+    ],
+  },
   queryStatusContract: [
     { status: "planned", isError: false, notes: "Plan mode produced a bounded workflow without executing upstream calls." },
     { status: "completed", isError: false, notes: "Execution finished successfully and may include continuationHints or ops nextActions." },
@@ -1467,12 +1521,12 @@ export const BENCHMARK_CATALOG = {
     },
     {
       workflow: "Macro Snapshot",
-      typicalColdPath: "2-8s depending on SingStat discovery latency",
+      typicalColdPath: "2-8s depending on live MAS downloads and SingStat table latency",
       typicalWarmPath: "1-3s with cached MAS and SingStat responses",
       primaryCacheTier: "NEAR_REALTIME + DAILY",
-      freshnessRule: "Treat MAS dates as headline freshness and SingStat discovery as an entrypoint, not a final macro conclusion.",
+      freshnessRule: "Treat MAS dates and SingStat table metadata as the live freshness signals for the macro artifact.",
       notes: [
-        "Keep GDP and CPI entrypoints distinct in demos and tests.",
+        "Keep GDP, CPI YoY, and CPI index series distinct in live validation and tests.",
         "Named MAS metrics are mandatory for believable outputs.",
       ],
     },
@@ -1491,8 +1545,8 @@ export const BENCHMARK_CATALOG = {
   adoptionCheckpoints: [
     {
       name: "Five-minute success",
-      expectation: "A new developer should be able to run one mock-backed demo and one integration example locally.",
-      evidence: "Use npm run demo:mcp plus the examples/integration clients.",
+      expectation: "A new developer should be able to run one live quickstart and one integration example locally.",
+      evidence: "Use npm run quick-start plus the examples/integration clients.",
     },
     {
       name: "Bounded routing trust",
@@ -1501,18 +1555,25 @@ export const BENCHMARK_CATALOG = {
     },
     {
       name: "Artifact credibility",
-      expectation: "Golden outputs should validate both schema shape and believable headline fields for the strongest workflows.",
-      evidence: "Use the examples/golden-outputs fixtures and semantic tests.",
+      expectation: "Release blockers should prove that public workflows and representative upstream families return real live data, not placeholders.",
+      evidence: "Use sg://runtime plus npm run test:smoke:live in the release environment.",
     },
+  ],
+  releaseBlockingChecks: [
+    "A failing authenticated health probe blocks release until credentials and the live runtime path both work.",
+    "A failing workflow smoke case blocks release until the workflow is fixed or removed from public discovery.",
+    "Packaging smoke must confirm the published tarballs exclude tests, fixtures, mock servers, and internal audit artifacts.",
   ],
 } as const;
 
 export const RESOURCE_URIS = {
   apis: "sg://apis",
+  artifacts: "sg://artifacts",
   tools: "sg://tools",
   workflows: "sg://workflows",
   recipes: "sg://recipes",
   runtime: "sg://runtime",
   playbooks: "sg://playbooks",
   benchmarks: "sg://benchmarks",
+  mapPreviewUi: "ui://sg/map-preview",
 } as const;

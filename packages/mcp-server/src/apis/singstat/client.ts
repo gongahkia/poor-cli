@@ -1,18 +1,14 @@
-import { httpGet, getMockApiBaseUrl } from "@sg-apis/shared";
+import { httpGet } from "@sg-apis/shared";
 import type { SingStatSearchResponse, SingStatTableResponse, Dataset, TableData, NormalizedRow, TableMetadata, TimeSeriesRow, TableOptions } from "@sg-apis/shared";
 import { withCache, buildCacheKey } from "../../middleware/cache-middleware.js";
 
-const getBaseUrl = (): string => {
-  const mockApiBaseUrl = getMockApiBaseUrl();
-  return mockApiBaseUrl !== undefined
-    ? `${mockApiBaseUrl}/singstat`
-    : "https://tablebuilder.singstat.gov.sg/api/table";
-};
+const BASE_URL = "https://tablebuilder.singstat.gov.sg/api/table";
+const TEST_API_QUERY = "isTestApi=true";
 
 export const searchDatasets = async (keyword: string, limit = 20): Promise<Dataset[]> => {
   const cacheKey = buildCacheKey("singstat", "search", { keyword, limit });
   const { data } = await withCache(cacheKey, "DAILY", async () => {
-    const url = `${getBaseUrl()}/resourceId?keyword=${encodeURIComponent(keyword)}&searchOption=all&limit=${limit}`;
+    const url = `${BASE_URL}/resourceid?keyword=${encodeURIComponent(keyword)}&searchOption=all&${TEST_API_QUERY}`;
     const response = await httpGet<SingStatSearchResponse>(url, { apiName: "singstat" });
     if (response.StatusCode !== 200) {
       throw new (await import("@sg-apis/shared")).ApiError({
@@ -22,7 +18,7 @@ export const searchDatasets = async (keyword: string, limit = 20): Promise<Datas
         retryable: response.StatusCode >= 500,
       });
     }
-    return response.Data.records.map((r) => ({
+    return response.Data.records.slice(0, limit).map((r) => ({
       id: r.id,
       title: r.title,
       theme: r.theme,
@@ -43,8 +39,8 @@ export const getTableData = async (tableId: string, options?: TableOptions): Pro
 
   const cacheKey = buildCacheKey("singstat", "table", params);
   const { data } = await withCache(cacheKey, "DAILY", async () => {
-    let url = `${getBaseUrl()}/tabledata/${tableId}`;
-    const qp: string[] = [];
+    let url = `${BASE_URL}/tabledata/${tableId}`;
+    const qp: string[] = [TEST_API_QUERY];
     if (options?.timeFilter !== undefined) qp.push(`timeFilter=${encodeURIComponent(options.timeFilter)}`);
     if (options?.limit !== undefined) qp.push(`limit=${options.limit}`);
     if (options?.offset !== undefined) qp.push(`offset=${options.offset}`);

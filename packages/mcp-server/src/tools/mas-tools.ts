@@ -38,15 +38,11 @@ export const fetchNormalizedMasRecords = async (
   dataset: string,
   params: Readonly<{ date?: string | undefined; startDate?: string | undefined; endDate?: string | undefined }>,
 ): Promise<readonly Record<string, unknown>[]> => {
-  const filters: Record<string, string> = {};
-  if (params.date !== undefined) {
-    filters["end_of_day"] = params.date;
-  }
-
   const records = await query(dataset, {
     limit: 100,
-    sort: "end_of_day desc",
-    ...(Object.keys(filters).length === 0 ? {} : { filters }),
+    ...(params.date === undefined ? {} : { date: params.date }),
+    ...(params.startDate === undefined ? {} : { startDate: params.startDate }),
+    ...(params.endDate === undefined ? {} : { endDate: params.endDate }),
   });
 
   return filterMasRecordsByDate(

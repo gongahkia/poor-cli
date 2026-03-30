@@ -81,6 +81,11 @@ Before handing the server to an application team:
 4. Treat `sg_health_check`, `sg_cache_stats`, and `sg_config_get` as first-line operator tools.
 5. Use [`docs/troubleshooting.md`](./troubleshooting.md) as the standard incident runbook.
 
+## Live Smoke
+
+- `npm run quick-start` is the credential-gated live quickstart for real OneMap, URA, LTA, data.gov datastore, and official file-download validation.
+- `npm run test:smoke:live` runs the same live validation flow without the build wrapper.
+
 ## Useful Starter Paths
 
 ### Geospatial

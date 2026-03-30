@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import Database from "better-sqlite3";
-import { httpGet, httpGetText, ApiError, createLogger, getMockApiBaseUrl } from "@sg-apis/shared";
+import { httpGet, httpGetText, ApiError, createLogger } from "@sg-apis/shared";
 import type {
   DatagovColumnMetadata,
   DatagovDatastoreResult,
@@ -17,26 +17,9 @@ import { withCache, buildCacheKey } from "../../middleware/cache-middleware.js";
 
 const logger = createLogger("datagov-client");
 
-const getBaseUrl = (): string => {
-  const mockApiBaseUrl = getMockApiBaseUrl();
-  return mockApiBaseUrl !== undefined
-    ? `${mockApiBaseUrl}/datagov`
-    : "https://api-production.data.gov.sg/v2/public/api";
-};
-
-const getDatastoreBaseUrl = (): string => {
-  const mockApiBaseUrl = getMockApiBaseUrl();
-  return mockApiBaseUrl !== undefined
-    ? `${mockApiBaseUrl}/datagov/action`
-    : "https://data.gov.sg/api/action";
-};
-
-const getDownloadBaseUrl = (): string => {
-  const mockApiBaseUrl = getMockApiBaseUrl();
-  return mockApiBaseUrl !== undefined
-    ? `${mockApiBaseUrl}/datagov-open`
-    : "https://api-open.data.gov.sg/v1/public/api";
-};
+const BASE_URL = "https://api-production.data.gov.sg/v2/public/api";
+const DATASTORE_BASE_URL = "https://data.gov.sg/api/action";
+const DOWNLOAD_BASE_URL = "https://api-open.data.gov.sg/v1/public/api";
 
 type DatastoreQueryOptions = {
   readonly limit?: number;
@@ -193,7 +176,7 @@ const scheduleLocalIndexRefresh = (datasets: readonly DatagovDataset[]): void =>
 };
 
 const fetchDatasetsPage = async (page: number): Promise<DatagovV2ListResponse> => {
-  const url = `${getBaseUrl()}/datasets?page=${page}&resultSize=${DATASETS_PAGE_SIZE}`;
+  const url = `${BASE_URL}/datasets?page=${page}&resultSize=${DATASETS_PAGE_SIZE}`;
   return httpGet<DatagovV2ListResponse>(url, { apiName: "datagov" });
 };
 
@@ -443,7 +426,7 @@ export const getDatasetMetadata = async (
   const cacheKey = buildCacheKey("datagov", "dataset-metadata", { datasetId });
   const { data } = await withCache(cacheKey, "DAILY", async () => {
     try {
-      const url = `${getBaseUrl()}/datasets/${datasetId}/metadata`;
+      const url = `${BASE_URL}/datasets/${datasetId}/metadata`;
       const response = await httpGet<DatagovMetadataResponse>(url, { apiName: "datagov" });
       if (response.code !== 0) {
         return null;
@@ -545,7 +528,7 @@ export const getDatasetResources = async (
 };
 
 const getDatasetDownloadUrl = async (datasetId: string): Promise<string> => {
-  const url = `${getDownloadBaseUrl()}/datasets/${datasetId}/poll-download`;
+  const url = `${DOWNLOAD_BASE_URL}/datasets/${datasetId}/poll-download`;
   const response = await httpGet<DatagovDatasetDownloadResponse>(url, {
     apiName: "datagov",
   });
@@ -695,7 +678,7 @@ export const queryDatastoreResult = async <TRecord extends Readonly<Record<strin
     ...options,
   });
   const { data } = await withCache(cacheKey, "DAILY", async () => {
-    const url = new URL(`${getDatastoreBaseUrl()}/datastore_search`);
+    const url = new URL(`${DATASTORE_BASE_URL}/datastore_search`);
     url.searchParams.set("resource_id", resourceId);
     if (options.limit !== undefined) {
       url.searchParams.set("limit", String(options.limit));

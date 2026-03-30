@@ -25,9 +25,40 @@ export type ToolErrorPayload = {
 };
 
 export type ToolResult = {
-  readonly content: readonly { readonly type: "text"; readonly text: string }[];
+  readonly content: readonly ToolResultContent[];
   readonly isError?: boolean;
   readonly structuredContent?: Readonly<Record<string, unknown>>;
+  readonly _meta?: Readonly<Record<string, unknown>>;
+};
+
+export type ToolResultContent =
+  | ToolResultTextContent
+  | ToolResultResourceLinkContent;
+
+export type ToolResultTextContent = {
+  readonly type: "text";
+  readonly text: string;
+};
+
+export type ToolResultResourceLinkContent = {
+  readonly type: "resource_link";
+  readonly uri: string;
+  readonly name: string;
+  readonly title?: string;
+  readonly description?: string;
+  readonly mimeType?: string;
+  readonly annotations?: {
+    readonly audience?: ("assistant" | "user")[];
+    readonly priority?: number;
+    readonly lastModified?: string;
+  };
+  readonly icons?: {
+    readonly src: string;
+    readonly mimeType?: string;
+    readonly sizes?: string[];
+    readonly theme?: "light" | "dark";
+  }[];
+  readonly _meta?: Readonly<Record<string, unknown>>;
 };
 
 export type OutputFormat = "json" | "markdown" | "csv" | "geojson";
@@ -73,6 +104,11 @@ export type HealthStatus = {
   readonly credentialSource: CredentialSource;
   readonly reachable: boolean;
   readonly latencyMs: number;
+  readonly classification?: "live_public" | "live_authenticated" | "shared_datagov_datastore" | "shared_file_download";
+  readonly probeMode?: "runtime_client";
+  readonly productionUrl?: string;
+  readonly representativeTool?: string;
+  readonly releaseBlocking?: boolean;
   readonly dependentFamilies?: readonly string[];
   readonly coverageNotes?: readonly string[];
   readonly error?: string;

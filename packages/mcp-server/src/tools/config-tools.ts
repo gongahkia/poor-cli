@@ -23,7 +23,12 @@ export const configToolDefinitions: readonly RegisteredToolDefinition[] = [
     handler: async (_input: unknown): Promise<ToolResult> => {
       const config = loadConfig();
       const text = formatResponse(config as unknown as Record<string, unknown>, "json");
-      return { content: [{ type: "text", text }] };
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: {
+          record: config as unknown as Record<string, unknown>,
+        },
+      };
     },
   },
 

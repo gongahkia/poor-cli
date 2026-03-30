@@ -14,7 +14,6 @@ export type Config = {
   readonly timeouts: Readonly<Record<string, number>>;
   readonly defaultFormat: OutputFormat;
   readonly logLevel: "debug" | "info" | "warn" | "error";
-  readonly mockApiBaseUrl?: string;
 };
 
 const OUTPUT_FORMATS = new Set<OutputFormat>(["json", "markdown", "csv", "geojson"]);
@@ -46,7 +45,6 @@ const loadFileConfig = (): Partial<Config> => {
 
 const applyEnvOverrides = (config: Config): Config => {
   const logLevel = process.env["SG_APIS_LOG_LEVEL"];
-  const mockUrl = process.env["MOCK_API_BASE_URL"];
   const dailyTtl = process.env["SG_APIS_CACHE_TTL_DAILY"];
   const parsedDailyTtl = dailyTtl !== undefined && dailyTtl !== "" ? Number(dailyTtl) : undefined;
 
@@ -56,11 +54,6 @@ const applyEnvOverrides = (config: Config): Config => {
       logLevel !== undefined && logLevel !== "" && LOG_LEVELS.has(logLevel as Config["logLevel"])
         ? (logLevel as Config["logLevel"])
         : config.logLevel,
-    ...(mockUrl !== undefined && mockUrl !== ""
-      ? { mockApiBaseUrl: mockUrl }
-      : config.mockApiBaseUrl !== undefined
-        ? { mockApiBaseUrl: config.mockApiBaseUrl }
-        : {}),
     cache: {
       ...config.cache,
       ttl: {
@@ -120,10 +113,6 @@ export const resolveOutputFormat = (format?: OutputFormat): OutputFormat => {
   return format ?? loadConfig().defaultFormat;
 };
 
-export const getMockApiBaseUrl = (): string | undefined => {
-  return loadConfig().mockApiBaseUrl;
-};
-
 const parsePositiveInteger = (key: string, value: string): number => {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) {
@@ -144,7 +133,6 @@ export const getSupportedConfigKeys = (): string[] => {
   return [
     "defaultFormat",
     "logLevel",
-    "mockApiBaseUrl",
     ...TTL_KEYS.map((ttlKey) => `cache.ttl.${ttlKey}`),
     ...RATE_LIMIT_APIS.flatMap((apiName) => [
       `rateLimits.${apiName}.maxTokens`,
@@ -165,13 +153,6 @@ export const parseMutableConfigValue = (key: string, value: string): string | nu
   if (key === "logLevel") {
     if (!LOG_LEVELS.has(value as Config["logLevel"])) {
       throw new Error(`Invalid value for ${key}: expected one of ${Array.from(LOG_LEVELS).join(", ")}`);
-    }
-    return value;
-  }
-
-  if (key === "mockApiBaseUrl") {
-    if (value.trim() === "") {
-      throw new Error(`Invalid value for ${key}: expected a non-empty string`);
     }
     return value;
   }

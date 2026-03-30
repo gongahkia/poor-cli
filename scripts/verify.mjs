@@ -23,13 +23,14 @@ const runNodeScript = (label, scriptPath, env = process.env) => {
 
 const testEnv = {
   ...process.env,
-  MOCK_API_BASE_URL: process.env.MOCK_API_BASE_URL ?? "http://localhost:0",
   SG_APIS_LOG_LEVEL: process.env.SG_APIS_LOG_LEVEL ?? "error",
 };
 
 run("lint", ["run", "lint"]);
 run("build", ["run", "build"]);
 runNodeScript("diagnostics", "./scripts/dev-diagnostics.mjs");
+runNodeScript("server metadata parity", "./scripts/check-server-metadata.mjs");
+runNodeScript("live surface check", "./scripts/check-live-surface.mjs");
 runNodeScript("openapi parity", "./scripts/check-openapi.mjs");
 runNodeScript("docs parity", "./scripts/check-docs-parity.mjs");
 run("test", ["test"], testEnv);

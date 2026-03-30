@@ -5,6 +5,8 @@ import { createLogger } from "@sg-apis/shared";
 import { toToolErrorPayload } from "../middleware/error-handler.js";
 import { planQuery } from "../router/planner.js";
 import type { QueryExecutionContext, QueryPlan, QueryStep } from "../router/planner.js";
+import { buildArtifactResult, shouldUseArtifact } from "./artifacts.js";
+import { buildMapPayloadFromStructuredContent, withMapUiMetadata } from "./map-payload.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 import { executeQueryTool } from "./query/executors.js";
 import {
@@ -24,6 +26,7 @@ import {
   withRequestedFormat,
 } from "./query/rendering.js";
 
+const MAP_TOOL_META = withMapUiMetadata(undefined);
 const logger = createLogger("query-tool");
 
 const buildRoutingExplanation = (
@@ -66,12 +69,12 @@ const buildContinuationHints = (
     const record = structured["record"] ?? structured["records"];
     if (isRecord(record)) {
       const kpis = isRecord(record["kpis"]) ? record["kpis"] : undefined;
-      const singstatEntrypoints = kpis !== undefined && isRecord(kpis["singstatEntrypoints"])
-        ? kpis["singstatEntrypoints"]
+      const singstatSeries = kpis !== undefined && isRecord(kpis["singstatSeries"])
+        ? kpis["singstatSeries"]
         : undefined;
 
-      for (const key of ["gdpTableId", "cpiTableId"]) {
-        const tableId = singstatEntrypoints?.[key];
+      for (const key of ["gdpTableId", "cpiYoYTableId", "cpiIndexTableId"]) {
+        const tableId = singstatSeries?.[key];
         if (typeof tableId === "string" && tableId.trim() !== "") {
           hints.push(`Call sg_singstat_table with tableId "${tableId}" for detailed data.`);
         }
@@ -217,6 +220,36 @@ const executePlan = async (
   }
 
   return { status: "completed", steps: executedSteps };
+};
+
+const countStructuredRows = (value: unknown): number | undefined => {
+  if (Array.isArray(value)) {
+    return value.length;
+  }
+  if (isRecord(value)) {
+    if (Array.isArray(value["records"])) {
+      return value["records"].length;
+    }
+    if (isRecord(value["record"]) && Array.isArray(value["record"]["records"])) {
+      return value["record"]["records"].length;
+    }
+  }
+  return undefined;
+};
+
+const extractMapPayload = (
+  steps: readonly ExecutedQueryStep[],
+): Readonly<Record<string, unknown>> | undefined => {
+  for (const step of [...steps].reverse()) {
+    if (step.status !== "completed") {
+      continue;
+    }
+    const payload = buildMapPayloadFromStructuredContent(step.tool, step.structuredOutput);
+    if (payload !== null) {
+      return payload as Readonly<Record<string, unknown>>;
+    }
+  }
+  return undefined;
 };
 
 export const executeQueryStep = async (
@@ -397,26 +430,80 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
             ?? formatExecutionText(plan, execution.steps, execution.status, resolvedFormat, opsMetadata)
           : formatExecutionText(plan, execution.steps, execution.status, resolvedFormat, opsMetadata);
 
+      const mapPayload = execution.status === "completed"
+        ? extractMapPayload(execution.steps)
+        : undefined;
+      const structuredContent = {
+        status: execution.status,
+        mode,
+        workflow: plan.workflow,
+        intent: plan.intent,
+        apis: plan.apis,
+        confidence: plan.confidence,
+        toolsUsed: plan.steps.map((step) => step.tool),
+        steps: execution.steps,
+        ...(opsMetadata.resultSummary === undefined ? {} : { resultSummary: opsMetadata.resultSummary }),
+        ...(opsMetadata.nextActions === undefined ? {} : { nextActions: opsMetadata.nextActions }),
+        routingExplanation,
+        ...(continuationHints.length > 0 ? { continuationHints } : {}),
+        ...(execution.status === "failed"
+          ? { failedStep: execution.steps.find((step) => step.status === "failed") ?? null }
+          : {}),
+        ...(mapPayload === undefined ? {} : { mapPayload }),
+      } as const;
+
+      const finalStep = execution.steps[execution.steps.length - 1];
+      const rowCount = countStructuredRows(finalStep?.structuredOutput);
+      if (shouldUseArtifact(executionText, rowCount)) {
+        return buildArtifactResult({
+          toolName: "sg_query",
+          input: { query, format: resolvedFormat, mode },
+          kind: plan.workflow === "transport_brief" || plan.workflow === "environment_brief"
+            ? "realtime-query"
+            : "query",
+          title: `sg_query result for ${plan.workflow}`,
+          description: "Large sg_query response promoted to a transient artifact resource.",
+          fullText: executionText,
+          payload: {
+            text: executionText,
+            result: structuredContent,
+          },
+          preview: {
+            workflow: plan.workflow,
+            status: execution.status,
+            steps: execution.steps.slice(0, 3),
+            ...(mapPayload === undefined ? {} : { mapPayload }),
+          },
+          structuredContentBase: {
+            status: execution.status,
+            mode,
+            workflow: plan.workflow,
+            intent: plan.intent,
+            apis: plan.apis,
+            confidence: plan.confidence,
+            toolsUsed: plan.steps.map((step) => step.tool),
+            ...(opsMetadata.resultSummary === undefined ? {} : { resultSummary: opsMetadata.resultSummary }),
+            ...(opsMetadata.nextActions === undefined ? {} : { nextActions: opsMetadata.nextActions }),
+            routingExplanation,
+            ...(continuationHints.length > 0 ? { continuationHints } : {}),
+            ...(execution.status === "failed"
+              ? { failedStep: execution.steps.find((step) => step.status === "failed") ?? null }
+              : {}),
+            ...(mapPayload === undefined ? {} : { mapPayload }),
+          },
+          ...(plan.workflow === "transport_brief" || plan.workflow === "environment_brief"
+            ? { realtime: true }
+            : {}),
+          ...(mapPayload === undefined ? {} : { _meta: MAP_TOOL_META }),
+          isError: execution.status === "failed",
+        });
+      }
+
       return {
         isError: execution.status === "failed",
         content: [{ type: "text", text: executionText }],
-        structuredContent: {
-          status: execution.status,
-          mode,
-          workflow: plan.workflow,
-          intent: plan.intent,
-          apis: plan.apis,
-          confidence: plan.confidence,
-          toolsUsed: plan.steps.map((step) => step.tool),
-          steps: execution.steps,
-          ...(opsMetadata.resultSummary === undefined ? {} : { resultSummary: opsMetadata.resultSummary }),
-          ...(opsMetadata.nextActions === undefined ? {} : { nextActions: opsMetadata.nextActions }),
-          routingExplanation,
-          ...(continuationHints.length > 0 ? { continuationHints } : {}),
-          ...(execution.status === "failed"
-            ? { failedStep: execution.steps.find((step) => step.status === "failed") ?? null }
-            : {}),
-        },
+        structuredContent,
+        ...(mapPayload === undefined ? {} : { _meta: MAP_TOOL_META }),
       };
     },
   },

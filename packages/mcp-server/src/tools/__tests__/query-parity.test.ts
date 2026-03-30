@@ -971,14 +971,14 @@ describe("sg_query parity", () => {
   });
 
   it("matches the direct macro brief handler", async () => {
-    vi.mocked(masQuery).mockImplementation(async (resourceId) => {
-      if (resourceId === "95932927-c8bc-4e7a-b484-68a66a24edfe") {
+    vi.mocked(masQuery).mockImplementation(async (dataset) => {
+      if (dataset === "exchange_rates") {
         return [
           { _id: 1, end_of_day: "2024-01-31", preliminary: "0", usd_sgd: "1.35" },
           { _id: 2, end_of_day: "2024-01-30", preliminary: "0", usd_sgd: "1.34" },
         ];
       }
-      if (resourceId === "9a0bf149-308c-4bd2-832d-76c8e6cb47ed") {
+      if (dataset === "interest_rates_sora") {
         return [
           { _id: 1, end_of_day: "2024-01-31", preliminary: "0", sora_3m: "3.56" },
           { _id: 2, end_of_day: "2024-01-30", preliminary: "0", sora_3m: "3.51" },
@@ -989,19 +989,20 @@ describe("sg_query parity", () => {
         { _id: 2, end_of_day: "2024-01-30", preliminary: "0", total_deposits: "99" },
       ];
     });
-    vi.mocked(singstatSearch).mockImplementation(async (keyword) => {
-      if (keyword === "Singapore GDP") {
+    vi.mocked(getTableData).mockImplementation(async (tableId) => {
+      if (tableId === "M015631") {
         return [
-          { id: "M015631", title: "Singapore GDP", theme: "Economy", subject: "National Accounts", topic: "GDP", frequency: "Annual" },
-        ];
+          { rows: [{ period: "2024 4Q", variable: "GDP At Current Market Prices", value: 156000, unit: "million dollars" }], metadata: { title: "GDP", frequency: "Quarterly", source: "SingStat", lastUpdated: "2024-02-01" }, total: 1 },
+        ][0] as never;
       }
-      if (keyword === "Singapore CPI inflation") {
+      if (tableId === "M213781") {
         return [
-          { id: "M015631", title: "Singapore GDP", theme: "Economy", subject: "National Accounts", topic: "GDP", frequency: "Annual" },
-          { id: "M212261", title: "Singapore CPI", theme: "Economy", subject: "Prices", topic: "CPI", frequency: "Monthly" },
-        ];
+          { rows: [{ period: "2024 Jan", variable: "All Items", value: 1.2, unit: "percent" }], metadata: { title: "CPI YoY", frequency: "Monthly", source: "SingStat", lastUpdated: "2024-02-01" }, total: 1 },
+        ][0] as never;
       }
-      return [];
+      return [
+        { rows: [{ period: "2024 Jan", variable: "All Items", value: 114.7, unit: "index" }], metadata: { title: "CPI Index", frequency: "Monthly", source: "SingStat", lastUpdated: "2024-02-01" }, total: 1 },
+      ][0] as never;
     });
 
     const input = { currency: "USD", format: "json" } as const;
@@ -1017,8 +1018,9 @@ describe("sg_query parity", () => {
     const summaryByLabel = new Map(briefPayload.summary.map((item: { label: string; value: unknown }) => [item.label, item.value]));
     expect(evidenceByLabel.get("Primary SORA key")).toBe("sora_3m");
     expect(evidenceByLabel.get("Primary banking key")).toBe("total_deposits");
-    expect(summaryByLabel.get("CPI table ID")).toBe("M212261");
-    expect(summaryByLabel.get("CPI table ID")).not.toBe(summaryByLabel.get("GDP table ID"));
+    expect(summaryByLabel.get("CPI YoY table ID")).toBe("M213781");
+    expect(summaryByLabel.get("CPI index table ID")).toBe("M213751");
+    expect(summaryByLabel.get("CPI YoY table ID")).not.toBe(summaryByLabel.get("GDP table ID"));
   });
 
   it("matches the direct PA community outlets handler", async () => {

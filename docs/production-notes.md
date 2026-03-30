@@ -6,17 +6,37 @@ The same runtime contract is also exposed as the machine-readable `sg://runtime`
 
 Run `npm run diagnostics` after every build to validate catalog/resource integrity before deployment.
 
+Remote HTTP deployments support three auth modes:
+
+- `none`: local development or localhost-only binds
+- `mixed`: unauthenticated sessions expose `public,briefs,query,health`; authenticated sessions expose the full configured toolsets
+- `all`: every HTTP MCP session requires a valid bearer token before initialization
+
+Relevant env vars:
+
+- `SG_APIS_HTTP_AUTH_MODE`
+- `SG_APIS_REMOTE_BASE_URL`
+- `SG_APIS_ARTIFACT_DB_PATH`
+- `SG_APIS_OIDC_ISSUER`
+- `SG_APIS_OIDC_AUDIENCE`
+- `SG_APIS_OIDC_JWKS_URI`
+- `SG_APIS_OIDC_REQUIRED_SCOPES`
+- `SG_APIS_OIDC_CLOCK_SKEW_SEC`
+
+Protected-resource metadata is served at `/.well-known/oauth-protected-resource/mcp`.
+
 ## Latency Expectations
 
 | API Family | Timeout (ms) | Typical Latency | Notes |
 |---|---|---|---|
 | SingStat | 15000 | 2-8s | Large table queries can be slow |
-| MAS | 10000 | 1-3s | CKAN datastore queries |
+| MAS | 10000 | 1-3s | Live statistics-page CSV downloads |
 | OneMap | 10000 | 0.5-2s | Auth token refresh adds ~1s on first call |
 | URA | 20000 | 3-10s | Token endpoint can be slow; bulk transaction queries are heavy |
 | LTA DataMall | 10000 | 0.5-2s | Real-time endpoints are fast |
 | NEA | 10000 | 0.5-2s | Weather API is responsive |
-| data.gov.sg | 10000 | 1-5s | Depends on dataset size and CKAN load |
+| data.gov.sg datastore | 10000 | 1-5s | Depends on dataset size and data.gov.sg datastore load |
+| data.gov.sg file downloads | 10000 | 1-5s | Depends on download polling plus CSV or GeoJSON parsing |
 
 Hard cap timeout: **30000ms**. No single upstream call will block longer than this.
 
@@ -91,7 +111,7 @@ Token refresh: OneMap and URA tokens are refreshed automatically on 401. The key
 | API | Stability | Notes |
 |---|---|---|
 | SingStat TableBuilder | Stable | JSON API, versioned endpoints |
-| MAS | Stable | CKAN datastore, rarely changes |
+| MAS | Moderate | Statistics-page form contracts can change and should be covered by live smoke |
 | OneMap | Moderate | Endpoints stable, response shapes occasionally adjusted |
 | URA | Moderate | Token endpoint can change; transaction fields are stable |
 | LTA DataMall | Stable | OData-style, well-documented |
@@ -105,12 +125,43 @@ Runtime config file: `~/.sg-apis/config.json`
 Override any default via environment variables:
 - `SG_APIS_LOG_LEVEL` — debug, info, warn, error
 - `SG_APIS_CACHE_TTL_DAILY` — override daily TTL in seconds
-- `MOCK_API_BASE_URL` — redirect all upstream calls to a mock server
 
 ## Monitoring
 
-Use `sg_health_check` to probe all API families. Returns per-family: reachable status, latency, auth status, and errors.
+Use `sg_health_check` to probe all release-blocking API families. OneMap, URA, and LTA are checked through the same authenticated runtime path used by the live tools. SingStat, MAS, NEA, the shared data.gov.sg datastore path, and the shared data.gov.sg file-download path are also probed through their live runtime clients. Returns per-family: reachable status, latency, auth status, dependency coverage, representative tool, and release-blocking status.
+
+Use `npm run test:smoke:live` when you want the full release-blocking live smoke flow over the MCP server, including representative API and workflow checks.
 
 Use `sg_cache_stats` to inspect cache hit/miss rates and storage size.
 
-Structured JSON logs now include request or workflow context fields such as `traceId`, `requestId`, `workflow`, `tool`, and `stepId` where applicable. Set `SG_APIS_LOG_LEVEL=debug` in non-production environments to capture step-level routing and retry behavior.
+## Artifact Resources
+
+Large row, table, and routed query results now promote themselves into persisted JSON artifacts instead of forcing every host to render oversized inline payloads.
+
+- Resource template: `sg://artifacts/{kind}/{id}`
+- Inline threshold: more than 12 KB of rendered text or more than 50 returned rows
+- Default TTL: 15 minutes
+- Realtime TTL: 5 minutes for transport or environment artifacts
+- Storage: SQLite at `~/.sg-apis/artifacts.db` by default, or `SG_APIS_ARTIFACT_DB_PATH` when overridden
+- Cleanup: on startup and once per hour
+
+When artifact mode is used, the tool result keeps:
+
+- a short text preview
+- `structuredContent.preview`
+- a `resource_link` pointing to the artifact resource
+
+For the Docker VPS deployment bundle, the artifact database lives at `/var/lib/sg-apis/artifacts.db` inside the container and is backed by a persistent Docker volume. See [deployment.md](./deployment.md) for inspection and manual cleanup commands.
+
+## Map Preview
+
+Geospatial outputs now expose:
+
+- `structuredContent.mapPayload`
+- `_meta.ui.resourceUri = "ui://sg/map-preview"`
+
+The UI resource is additive only. Text-only hosts still receive the same direct and routed outputs without needing MCP App support.
+
+The current routing payload does not expose exact route geometry from OneMap, so route overlays remain explicitly marked as approximate in both the payload legend and the UI.
+
+Structured JSON logs include request or workflow context fields such as `traceId`, `requestId`, `workflow`, `tool`, and `stepId` where applicable. Set `SG_APIS_LOG_LEVEL=debug` in non-production environments to capture step-level routing and retry behavior.

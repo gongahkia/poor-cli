@@ -1,12 +1,4 @@
-# Transport Brief Demo
-
-## Run It
-
-```bash
-npm install
-npm run build
-npm run demo:mcp -- transport
-```
+# Transport Brief Example
 
 ## Prompt
 

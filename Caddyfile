@@ -1,0 +1,8 @@
+{$PUBLIC_HOSTNAME} {
+  encode zstd gzip
+
+  @mcp path /mcp /healthz /icon.svg /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/*
+  reverse_proxy @mcp sg-apis-mcp:3000
+
+  respond "Not Found" 404
+}

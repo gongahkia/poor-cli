@@ -162,6 +162,7 @@ def main() -> None:
         recipes = read_json_resource(client, "sg://recipes")
         runtime = read_json_resource(client, "sg://runtime")
         playbooks = read_json_resource(client, "sg://playbooks")
+        health = call_tool_payload(client, "sg_health_check", {})
 
         print("connected to sg-apis-mcp")
         print(f"cached {len(recipes)} recipes from sg://recipes")
@@ -171,6 +172,17 @@ def main() -> None:
             + ", ".join(
                 f"{entry['status']}:{'error' if entry['isError'] else 'ok'}"
                 for entry in runtime.get("queryStatusContract", [])
+            )
+        )
+        print(
+            "release gates: "
+            + ", ".join(runtime.get("releaseReadiness", {}).get("blockingCommands", []))
+        )
+        print(
+            "health probes: "
+            + ", ".join(
+                f"{entry.get('api')}:{'up' if entry.get('reachable') else 'down'}"
+                for entry in health.get("records", [])
             )
         )
 

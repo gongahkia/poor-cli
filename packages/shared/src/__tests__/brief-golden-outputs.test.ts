@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { BriefArtifactSchema } from "../index.js";
 
 const readGolden = (name: string) => {
-  const url = new URL(`../../../../examples/golden-outputs/${name}`, import.meta.url);
+  const url = new URL(`./fixtures/golden/${name}`, import.meta.url);
   return JSON.parse(readFileSync(url, "utf8"));
 };
 
@@ -51,13 +51,14 @@ describe("brief golden outputs", () => {
     expect(summaryLabels.has("SORA")).toBe(true);
     expect(summaryLabels.has("Total deposits")).toBe(true);
     expect(kpis).toMatchObject({
-      singstatEntrypoints: {
+      singstatSeries: {
         gdpTableId: "M015631",
-        cpiTableId: "M212261",
+        cpiYoYTableId: "M213781",
+        cpiIndexTableId: "M213751",
       },
     });
     expect(payload.summary.find((item) => item.label === "GDP table ID")?.value).not.toBe(
-      payload.summary.find((item) => item.label === "CPI table ID")?.value,
+      payload.summary.find((item) => item.label === "CPI YoY table ID")?.value,
     );
   });
 

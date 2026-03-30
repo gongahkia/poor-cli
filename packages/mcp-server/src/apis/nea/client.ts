@@ -1,4 +1,4 @@
-import { ApiError, getMockApiBaseUrl, httpGet } from "@sg-apis/shared";
+import { ApiError, httpGet } from "@sg-apis/shared";
 import type {
   NeaForecastResponse,
   NeaNormalizedAirQuality,
@@ -10,15 +10,10 @@ import type {
 } from "@sg-apis/shared";
 import { withCache, buildCacheKey } from "../../middleware/cache-middleware.js";
 
-const getBaseUrl = (): string => {
-  const mockApiBaseUrl = getMockApiBaseUrl();
-  return mockApiBaseUrl !== undefined
-    ? `${mockApiBaseUrl}/nea`
-    : "https://api-open.data.gov.sg/v2/real-time/api";
-};
+const BASE_URL = "https://api-open.data.gov.sg/v2/real-time/api";
 
 const neaGet = async <T>(path: string, params: Readonly<Record<string, string>> = {}): Promise<T> => {
-  const url = new URL(`${getBaseUrl()}/${path}`);
+  const url = new URL(`${BASE_URL}/${path}`);
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
   }

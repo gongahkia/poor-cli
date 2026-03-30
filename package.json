@@ -15,10 +15,11 @@
     "verify": "node ./scripts/verify.mjs",
     "diagnostics": "node ./scripts/dev-diagnostics.mjs",
     "dev": "tsc --build --watch",
-    "mock-server": "tsx packages/mcp-server/src/__tests__/mock-server/index.ts",
     "test:smoke:packaging": "node ./scripts/smoke-packages.mjs",
+    "test:smoke:container": "node ./scripts/smoke-container.mjs",
+    "test:smoke:remote": "node ./scripts/smoke-remote.mjs",
+    "test:smoke:live": "node ./scripts/live-smoke.mjs",
     "test:smoke:registry": "node ./scripts/registry-smoke.mjs",
-    "demo:mcp": "node ./scripts/demo-mcp-client.mjs",
     "rest-gateway": "node packages/mcp-server/dist/rest-gateway.js",
     "quick-start": "node ./scripts/quick-start.mjs"
   },

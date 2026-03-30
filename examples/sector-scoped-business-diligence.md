@@ -1,13 +1,5 @@
 # Sector Scoped Business Diligence
 
-## Runnable Walkthrough
-
-Run the built-in mock-backed profile end to end:
-
-```bash
-npm run demo:mcp -- sector-business
-```
-
 This walkthrough shows how to keep `sg_business_dossier` deterministic while still selecting a narrower business-compliance slice through explicit `modules` and `sectorHints`.
 
 ## Prompt

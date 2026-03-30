@@ -1,13 +1,5 @@
 # Hotel Operator Lookup
 
-## Runnable Walkthrough
-
-Run the built-in mock-backed profile end to end:
-
-```bash
-npm run demo:mcp -- hotel
-```
-
 ## Prompt
 
 ```text

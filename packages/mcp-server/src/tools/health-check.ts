@@ -1,27 +1,33 @@
-import { formatResponse, Keystore, getMockApiBaseUrl } from "@sg-apis/shared";
+import { formatResponse, Keystore, MasDataset } from "@sg-apis/shared";
 import type { CredentialSource, ToolResult, HealthStatus } from "@sg-apis/shared";
+import { getHdbResalePrices } from "../apis/hdb/client.js";
+import { getBusArrivals } from "../apis/lta/client.js";
+import { query as queryMas } from "../apis/mas/client.js";
+import { getForecast2Hr } from "../apis/nea/client.js";
+import { geocode } from "../apis/onemap/client.js";
+import { getTableData as getSingStatTableData } from "../apis/singstat/client.js";
+import { getBoaArchitectureFirms } from "../apis/boa/client.js";
+import { uraFetch } from "../apis/ura/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
+import { LIVE_API_SURFACE } from "./runtime-surface.js";
 
 type CredentialLookup = Pick<Keystore, "getKey">;
+type HealthProbeResult = Readonly<{ ok: boolean; status: number; statusText: string }>;
+type HealthClassification = NonNullable<HealthStatus["classification"]>;
 
 type HealthCheckTarget = {
   readonly api: string;
+  readonly classification: HealthClassification;
   readonly url: string;
+  readonly probeMode: "runtime_client";
+  readonly representativeTool: string;
+  readonly releaseBlocking: boolean;
   readonly authRequired: boolean;
   readonly configured: (lookup: CredentialLookup) => boolean;
   readonly credentialSource?: (lookup: CredentialLookup) => CredentialSource;
   readonly dependentFamilies?: readonly string[];
   readonly coverageNotes?: readonly string[];
-};
-
-type HealthFetch = (
-  input: string,
-  init?: Readonly<{ signal?: AbortSignal }>,
-) => Promise<Readonly<{ ok: boolean; status: number; statusText: string }>>;
-
-const getHealthBaseUrl = (apiPath: string, productionUrl: string): string => {
-  const mockApiBaseUrl = getMockApiBaseUrl();
-  return mockApiBaseUrl !== undefined ? `${mockApiBaseUrl}/${apiPath}` : productionUrl;
+  readonly probe: () => Promise<HealthProbeResult>;
 };
 
 const hasConfiguredValue = (value: string | null | undefined): boolean => {
@@ -72,28 +78,92 @@ export const getLtaCredentialSource = (lookup: CredentialLookup): CredentialSour
 };
 
 const NOT_REQUIRED: CredentialSource = "not_required";
+const HEALTH_TIMEOUT_MS = 15000;
+const OK_HEALTH_RESPONSE: HealthProbeResult = {
+  ok: true,
+  status: 200,
+  statusText: "OK",
+};
 
-const DATAGOV_DEPENDENT_FAMILIES = [
-  "HDB",
-  "CEA",
-  "BCA",
-  "ACRA",
-  "PA",
-  "Sport Singapore",
-  "ECDA",
-  "MSF Family Services",
-  "MSF Student Care Services",
-  "MSF Social Service Offices",
-  "GeBIZ",
-  "Hawker Centres",
-  "MOE Schools",
-  "MOH Healthcare",
-  "SFA",
-  "NParks",
-  "PUB",
-  "MOM",
-  "STB",
-] as const;
+const withHealthTimeout = async <T>(
+  task: Promise<T>,
+  onTimeout?: () => void,
+): Promise<T> => {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      onTimeout?.();
+      reject(new Error(`Health check timed out after ${HEALTH_TIMEOUT_MS}ms`));
+    }, HEALTH_TIMEOUT_MS);
+
+    task.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+};
+
+export const probeOneMapHealth = async (): Promise<HealthProbeResult> => {
+  await geocode("049178", 1);
+  return OK_HEALTH_RESPONSE;
+};
+
+export const probeUraHealth = async (): Promise<HealthProbeResult> => {
+  await uraFetch<{ readonly Status?: string; readonly Result?: readonly unknown[] }>("DC_Rates");
+  return OK_HEALTH_RESPONSE;
+};
+
+export const probeLtaHealth = async (): Promise<HealthProbeResult> => {
+  await getBusArrivals("83139");
+  return OK_HEALTH_RESPONSE;
+};
+
+export const probeSingStatHealth = async (): Promise<HealthProbeResult> => {
+  const table = await getSingStatTableData("M015631", {
+    variables: ["GDP At Current Market Prices"],
+  });
+  if (table.rows.length === 0) {
+    throw new Error("SingStat GDP probe returned no rows.");
+  }
+  return OK_HEALTH_RESPONSE;
+};
+
+export const probeMasHealth = async (): Promise<HealthProbeResult> => {
+  const records = await queryMas(MasDataset.INTEREST_RATES_SORA, { limit: 1 });
+  if (records.length === 0) {
+    throw new Error("MAS SORA probe returned no rows.");
+  }
+  return OK_HEALTH_RESPONSE;
+};
+
+export const probeDatagovDatastoreHealth = async (): Promise<HealthProbeResult> => {
+  const rows = await getHdbResalePrices({ town: "Bedok", flatType: "4 ROOM", limit: 1 });
+  if (rows.length === 0) {
+    throw new Error("data.gov.sg datastore probe returned no rows.");
+  }
+  return OK_HEALTH_RESPONSE;
+};
+
+export const probeDatagovFileDownloadHealth = async (): Promise<HealthProbeResult> => {
+  const rows = await getBoaArchitectureFirms({ limit: 1 });
+  if (rows.length === 0) {
+    throw new Error("data.gov.sg file-download probe returned no rows.");
+  }
+  return OK_HEALTH_RESPONSE;
+};
+
+export const probeNeaHealth = async (): Promise<HealthProbeResult> => {
+  const rows = await getForecast2Hr("Tampines");
+  if (rows.length === 0) {
+    throw new Error("NEA forecast probe returned no rows.");
+  }
+  return OK_HEALTH_RESPONSE;
+};
 
 export const hasOneMapCredentials = (lookup: CredentialLookup): boolean => {
   const email = process.env["SG_API_ONEMAP_EMAIL"] ?? lookup.getKey("onemap_email");
@@ -111,99 +181,68 @@ export const hasLtaKey = (lookup: CredentialLookup): boolean => {
   return hasConfiguredValue(key);
 };
 
+const PROBES = {
+  "SingStat": probeSingStatHealth,
+  "MAS": probeMasHealth,
+  "OneMap": probeOneMapHealth,
+  "URA": probeUraHealth,
+  "LTA DataMall": probeLtaHealth,
+  "data.gov.sg datastore": probeDatagovDatastoreHealth,
+  "data.gov.sg file downloads": probeDatagovFileDownloadHealth,
+  "NEA": probeNeaHealth,
+} as const;
+
 export const getHealthCheckTargets = (): readonly HealthCheckTarget[] => {
-  return [
-    {
-      api: "SingStat",
-      url: getHealthBaseUrl(
-        "singstat/resourceId?keyword=test&searchOption=all&limit=1",
-        "https://tablebuilder.singstat.gov.sg/api/table/resourceId?keyword=test&searchOption=all&limit=1",
-      ),
-      authRequired: false,
-      configured: () => true,
-      credentialSource: () => NOT_REQUIRED,
-    },
-    {
-      api: "MAS",
-      url: getHealthBaseUrl(
-        "mas/search.json?resource_id=95932927-c8bc-4e7a-b484-68a66a24edfe&limit=1",
-        "https://eservices.mas.gov.sg/api/action/datastore/search.json?resource_id=95932927-c8bc-4e7a-b484-68a66a24edfe&limit=1",
-      ),
-      authRequired: false,
-      configured: () => true,
-      credentialSource: () => NOT_REQUIRED,
-    },
-    {
-      api: "OneMap",
-      url: getHealthBaseUrl(
-        "onemap/common/elastic/search?searchVal=Singapore&returnGeom=Y&getAddrDetails=Y&pageNum=1",
-        "https://www.onemap.gov.sg/api/common/elastic/search?searchVal=Singapore&returnGeom=Y&getAddrDetails=Y&pageNum=1",
-      ),
-      authRequired: true,
-      configured: hasOneMapCredentials,
-      credentialSource: getOneMapCredentialSource,
-    },
-    {
-      api: "URA",
-      url: getHealthBaseUrl(
-        "ura/insertNewToken.action",
-        "https://www.ura.gov.sg/uraDataService/insertNewToken.action",
-      ),
-      authRequired: true,
-      configured: hasUraKey,
-      credentialSource: getUraCredentialSource,
-    },
-    {
-      api: "LTA",
-      url: getHealthBaseUrl(
-        "lta/v3/BusArrival?BusStopCode=83139",
-        "https://datamall2.mytransport.sg/ltaodataservice/v3/BusArrival?BusStopCode=83139",
-      ),
-      authRequired: true,
-      configured: hasLtaKey,
-      credentialSource: getLtaCredentialSource,
-    },
-    {
-      api: "data.gov.sg",
-      url: getHealthBaseUrl(
-        "datagov/datasets?page=0&resultSize=1",
-        "https://api-production.data.gov.sg/v2/public/api/datasets?page=0&resultSize=1",
-      ),
-      authRequired: false,
-      configured: () => true,
-      credentialSource: () => NOT_REQUIRED,
-      dependentFamilies: DATAGOV_DEPENDENT_FAMILIES,
-      coverageNotes: [
-        "This target also covers curated registry, civic-directory, amenity, procurement, and statistics families backed by the shared data.gov.sg API or official file-download path.",
-      ],
-    },
-    {
-      api: "NEA",
-      url: getHealthBaseUrl(
-        "nea/two-hr-forecast",
-        "https://api-open.data.gov.sg/v2/real-time/api/two-hr-forecast",
-      ),
-      authRequired: false,
-      configured: () => true,
-      credentialSource: () => NOT_REQUIRED,
-    },
-  ];
+  return LIVE_API_SURFACE.map((surface) => {
+    const probe = PROBES[surface.api as keyof typeof PROBES];
+    if (probe === undefined) {
+      throw new Error(`Missing health probe for ${surface.api}.`);
+    }
+    return {
+      api: surface.api,
+      classification: surface.classification,
+      url: surface.productionUrl,
+      probeMode: surface.probeMode,
+      representativeTool: surface.representativeTool,
+      releaseBlocking: surface.releaseBlocking,
+      authRequired: surface.authRequired,
+      configured:
+        surface.api === "OneMap"
+          ? hasOneMapCredentials
+          : surface.api === "URA"
+            ? hasUraKey
+            : surface.api === "LTA DataMall"
+              ? hasLtaKey
+              : () => true,
+      credentialSource:
+        surface.api === "OneMap"
+          ? getOneMapCredentialSource
+          : surface.api === "URA"
+            ? getUraCredentialSource
+            : surface.api === "LTA DataMall"
+              ? getLtaCredentialSource
+              : () => NOT_REQUIRED,
+      ...(surface.dependentFamilies.length === 0 ? {} : { dependentFamilies: surface.dependentFamilies }),
+      ...(surface.healthNotes.length === 0 ? {} : { coverageNotes: surface.healthNotes }),
+      probe,
+    };
+  });
 };
 
 export const checkApiHealth = async (
   target: HealthCheckTarget,
-  fetchFn: HealthFetch,
   lookup: CredentialLookup,
 ): Promise<HealthStatus> => {
   const configured = target.configured(lookup);
   const credentialSource = target.credentialSource?.(lookup) ?? (target.authRequired ? "none" : NOT_REQUIRED);
   const start = Date.now();
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
 
   try {
-    const response = await fetchFn(target.url, { signal: controller.signal });
-    clearTimeout(timeout);
+    const response = await withHealthTimeout(
+      target.probe(),
+      () => controller.abort(),
+    );
 
     return {
       api: target.api,
@@ -212,12 +251,16 @@ export const checkApiHealth = async (
       credentialSource,
       reachable: true,
       latencyMs: Date.now() - start,
+      classification: target.classification,
+      probeMode: target.probeMode,
+      productionUrl: target.url,
+      representativeTool: target.representativeTool,
+      releaseBlocking: target.releaseBlocking,
       ...(target.dependentFamilies === undefined ? {} : { dependentFamilies: target.dependentFamilies }),
       ...(target.coverageNotes === undefined ? {} : { coverageNotes: target.coverageNotes }),
       ...(response.ok ? {} : { error: `HTTP ${response.status} ${response.statusText}` }),
     };
   } catch (error) {
-    clearTimeout(timeout);
     return {
       api: target.api,
       authRequired: target.authRequired,
@@ -225,6 +268,11 @@ export const checkApiHealth = async (
       credentialSource,
       reachable: false,
       latencyMs: Date.now() - start,
+      classification: target.classification,
+      probeMode: target.probeMode,
+      productionUrl: target.url,
+      representativeTool: target.representativeTool,
+      releaseBlocking: target.releaseBlocking,
       ...(target.dependentFamilies === undefined ? {} : { dependentFamilies: target.dependentFamilies }),
       ...(target.coverageNotes === undefined ? {} : { coverageNotes: target.coverageNotes }),
       error: error instanceof Error ? error.message : String(error),
@@ -241,9 +289,7 @@ export const healthCheckToolDefinitions: readonly RegisteredToolDefinition[] = [
     handler: async (_input: unknown): Promise<ToolResult> => {
       const keystore = new Keystore();
       const statuses = await Promise.all(
-        getHealthCheckTargets().map((target) =>
-          checkApiHealth(target, (url, init) => fetch(url, init), keystore),
-        ),
+        getHealthCheckTargets().map((target) => checkApiHealth(target, keystore)),
       );
       keystore.close();
 

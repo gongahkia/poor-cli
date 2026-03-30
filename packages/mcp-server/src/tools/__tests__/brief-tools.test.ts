@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BriefArtifactSchema, MasDataset } from "@sg-apis/shared";
+import { BriefArtifactSchema, MasDataset, type ToolResult } from "@sg-apis/shared";
 
 vi.mock("../../apis/acra/client.js", () => ({
   getAcraEntities: vi.fn(),
@@ -53,7 +53,7 @@ vi.mock("../../apis/onemap/client.js", () => ({
 }));
 
 vi.mock("../../apis/singstat/client.js", () => ({
-  searchDatasets: vi.fn(),
+  getTableData: vi.fn(),
 }));
 
 vi.mock("../../apis/ura/client.js", () => ({
@@ -88,7 +88,7 @@ import {
   getForecast2Hr,
   getRainfall,
 } from "../../apis/nea/client.js";
-import { searchDatasets as searchSingStatDatasets } from "../../apis/singstat/client.js";
+import { getTableData as getSingStatTableData } from "../../apis/singstat/client.js";
 import { getPropertyTransactions } from "../../apis/ura/client.js";
 import { fetchNormalizedMasRecords } from "../mas-tools.js";
 import { lookupPlanningArea } from "../ura-tools.js";
@@ -102,6 +102,10 @@ import {
 
 const parseBrief = (resultText: string) => {
   return BriefArtifactSchema.parse(JSON.parse(resultText));
+};
+
+const getText = (result: ToolResult): string => {
+  return result.content.find((item): item is Extract<ToolResult["content"][number], { type: "text" }> => item.type === "text")?.text ?? "";
 };
 
 const expectMarkdownSections = (text: string) => {
@@ -128,7 +132,7 @@ describe("brief tools", () => {
     vi.mocked(getAirQuality).mockReset();
     vi.mocked(getForecast2Hr).mockReset();
     vi.mocked(getRainfall).mockReset();
-    vi.mocked(searchSingStatDatasets).mockReset();
+    vi.mocked(getSingStatTableData).mockReset();
     vi.mocked(getPropertyTransactions).mockReset();
     vi.mocked(fetchNormalizedMasRecords).mockReset();
     vi.mocked(lookupPlanningArea).mockReset();
@@ -161,7 +165,7 @@ describe("brief tools", () => {
       entityName: "ABC CONSTRUCTION PTE LTD",
       format: "json",
     });
-    const jsonText = jsonResult.content[0]?.text ?? "";
+    const jsonText = getText(jsonResult);
     const payload = parseBrief(jsonText);
 
     expect(payload.title).toBe("Business Dossier");
@@ -173,7 +177,7 @@ describe("brief tools", () => {
       entityName: "ABC CONSTRUCTION PTE LTD",
       format: "markdown",
     });
-    expectMarkdownSections(markdownResult.content[0]?.text ?? "");
+    expectMarkdownSections(getText(markdownResult));
   });
 
   it("supports explicit module selection, sector hints, and unmatched module reporting", async () => {
@@ -202,7 +206,7 @@ describe("brief tools", () => {
       sectorHints: ["architecture", "procurement"],
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
     const resolution = payload.records["resolution"] as Record<string, unknown>;
 
     expect(resolution).toMatchObject({
@@ -251,7 +255,7 @@ describe("brief tools", () => {
       sectorHints: ["hospitality"],
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
 
     expect(payload.riskFlags ?? []).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ code: "NO_ACRA_MATCH" })]),
@@ -290,7 +294,7 @@ describe("brief tools", () => {
       uen: "201912345K",
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
 
     expect(payload.riskFlags ?? []).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ code: "ENTITY_NOT_ACTIVE" })]),
@@ -334,7 +338,7 @@ describe("brief tools", () => {
       includeEnvironment: true,
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
 
     expect(payload.title).toBe("Property Brief");
     expect(payload.provenance.length).toBeGreaterThanOrEqual(6);
@@ -359,7 +363,7 @@ describe("brief tools", () => {
       includeEnvironment: true,
       format: "markdown",
     });
-    expectMarkdownSections(markdownResult.content[0]?.text ?? "");
+    expectMarkdownSections(getText(markdownResult));
   });
 
   it("returns the expanded macro brief envelope", async () => {
@@ -381,18 +385,57 @@ describe("brief tools", () => {
         { date: "2026-03-25", preliminary: 0, total_deposits: 980 },
       ] as never;
     });
-    vi.mocked(searchSingStatDatasets)
-      .mockResolvedValueOnce([{ id: "gdp", title: "Singapore GDP" }] as never)
-      .mockResolvedValueOnce([
-        { id: "gdp-wrong", title: "Gross Domestic Product, Year On Year Growth Rate, Quarterly", topic: "Gross Domestic Product (GDP)" },
-        { id: "cpi", title: "Consumer Price Index, All Items, Monthly", topic: "Consumer Price Index (CPI)" },
-      ] as never);
+    vi.mocked(getSingStatTableData).mockImplementation(async (tableId) => {
+      if (tableId === "M015631") {
+        return {
+          rows: [
+            { period: "2025 4Q", variable: "GDP At Current Market Prices", value: 156000, unit: "million dollars" },
+            { period: "2025 3Q", variable: "GDP At Current Market Prices", value: 154000, unit: "million dollars" },
+          ],
+          metadata: {
+            title: "Gross Domestic Product",
+            frequency: "Quarterly",
+            source: "SingStat",
+            lastUpdated: "2026-03-01",
+          },
+          total: 2,
+        } as never;
+      }
+      if (tableId === "M213781") {
+        return {
+          rows: [
+            { period: "2026 Feb", variable: "All Items", value: 1.6, unit: "percent" },
+            { period: "2026 Jan", variable: "All Items", value: 1.4, unit: "percent" },
+          ],
+          metadata: {
+            title: "Consumer Price Index - Year on Year",
+            frequency: "Monthly",
+            source: "SingStat",
+            lastUpdated: "2026-03-01",
+          },
+          total: 2,
+        } as never;
+      }
+      return {
+        rows: [
+          { period: "2026 Feb", variable: "All Items", value: 116.2, unit: "index" },
+          { period: "2026 Jan", variable: "All Items", value: 115.9, unit: "index" },
+        ],
+        metadata: {
+          title: "Consumer Price Index",
+          frequency: "Monthly",
+          source: "SingStat",
+          lastUpdated: "2026-03-01",
+        },
+        total: 2,
+      } as never;
+    });
 
     const jsonResult = await handleMacroBrief({
       currency: "USD",
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
     const summaryByLabel = new Map(payload.summary.map((item) => [item.label, item.value]));
     const evidenceByLabel = new Map(payload.evidence.map((item) => [item.label, item.value]));
 
@@ -401,8 +444,10 @@ describe("brief tools", () => {
     expect(payload.summary.some((item) => item.label === "GDP table ID")).toBe(true);
     expect(summaryByLabel.get("3M SORA")).toBe(3.2);
     expect(summaryByLabel.get("Total deposits")).toBe(1000);
-    expect(summaryByLabel.get("CPI table ID")).toBe("cpi");
-    expect(summaryByLabel.get("CPI table ID")).not.toBe(summaryByLabel.get("GDP table ID"));
+    expect(summaryByLabel.get("GDP at current prices")).toBe(156000);
+    expect(summaryByLabel.get("CPI YoY table ID")).toBe("M213781");
+    expect(summaryByLabel.get("CPI index table ID")).toBe("M213751");
+    expect(summaryByLabel.get("CPI YoY table ID")).not.toBe(summaryByLabel.get("GDP table ID"));
     expect(evidenceByLabel.get("Primary SORA key")).toBe("sora_3m");
     expect(evidenceByLabel.get("Primary banking key")).toBe("total_deposits");
     expect(evidenceByLabel.get("Primary SORA key")).not.toBe("preliminary");
@@ -411,14 +456,19 @@ describe("brief tools", () => {
       currency: "USD",
       interestRate: { metric: "3M SORA", key: "sora_3m", value: 3.2 },
       banking: { metric: "Total deposits", key: "total_deposits", value: 1000 },
-      singstatEntrypoints: { gdpTableId: "gdp", cpiTableId: "cpi" },
+      singstatSeries: {
+        gdpTableId: "M015631",
+        gdpPeriod: "2025 4Q",
+        cpiYoYTableId: "M213781",
+        cpiIndexTableId: "M213751",
+      },
     });
 
     const markdownResult = await handleMacroBrief({
       currency: "USD",
       format: "markdown",
     });
-    expectMarkdownSections(markdownResult.content[0]?.text ?? "");
+    expectMarkdownSections(getText(markdownResult));
   });
 
   it("returns the expanded transport brief envelope", async () => {
@@ -443,7 +493,7 @@ describe("brief tools", () => {
       serviceNo: "851",
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
 
     expect(payload.title).toBe("Transport Brief");
     expect(payload.provenance).toHaveLength(3);
@@ -470,7 +520,7 @@ describe("brief tools", () => {
       serviceNo: "851",
       format: "markdown",
     });
-    expectMarkdownSections(markdownResult.content[0]?.text ?? "");
+    expectMarkdownSections(getText(markdownResult));
   });
 
   it("returns advisory transport status when only traffic incidents are active", async () => {
@@ -485,7 +535,7 @@ describe("brief tools", () => {
     const jsonResult = await handleTransportBrief({
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
     const status = payload.records["status"] as Record<string, unknown>;
     const network = payload.records["network"] as Record<string, unknown>;
 
@@ -517,7 +567,7 @@ describe("brief tools", () => {
       serviceNo: "851",
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
     const status = payload.records["status"] as Record<string, unknown>;
     const followups = payload.records["followups"] as readonly Record<string, unknown>[];
     const stop = payload.records["stop"] as Record<string, unknown>;
@@ -552,7 +602,7 @@ describe("brief tools", () => {
       serviceNo: "851",
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
     const status = payload.records["status"] as Record<string, unknown>;
 
     expect(status["level"]).toBe("normal");
@@ -590,7 +640,7 @@ describe("brief tools", () => {
       stationId: "S107",
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
 
     expect(payload.title).toBe("Environment Brief");
     expect(payload.provenance).toHaveLength(3);
@@ -617,7 +667,7 @@ describe("brief tools", () => {
       stationId: "S107",
       format: "markdown",
     });
-    expectMarkdownSections(markdownResult.content[0]?.text ?? "");
+    expectMarkdownSections(getText(markdownResult));
   });
 
   it("returns caution environment status for thundery or heavy-rain forecasts", async () => {
@@ -650,7 +700,7 @@ describe("brief tools", () => {
       stationId: "S107",
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
 
     expect((payload.records["status"] as Record<string, unknown>)["level"]).toBe("caution");
     expect((payload.records["thresholds"] as Record<string, unknown>)["forecastRisk"]).toBe("caution");
@@ -687,7 +737,7 @@ describe("brief tools", () => {
       stationId: "S107",
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
     const followups = payload.records["followups"] as readonly Record<string, unknown>[];
 
     expect((payload.records["status"] as Record<string, unknown>)["level"]).toBe("watch");
@@ -727,7 +777,7 @@ describe("brief tools", () => {
       stationId: "S107",
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
 
     expect((payload.records["status"] as Record<string, unknown>)["level"]).toBe("clear");
     expect((payload.records["thresholds"] as Record<string, unknown>)["rainfallBand"]).toBe("clear");
@@ -744,7 +794,7 @@ describe("brief tools", () => {
       stationId: "S107",
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
 
     expect((payload.records["status"] as Record<string, unknown>)["level"]).toBe("unknown");
     expect(payload.gaps).toHaveLength(3);

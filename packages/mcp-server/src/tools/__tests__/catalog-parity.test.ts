@@ -9,7 +9,15 @@ import {
   TOOL_CATALOG,
   WORKFLOW_CATALOG,
 } from "../catalog.js";
+import {
+  NORMALIZED_PLAYBOOK_CATALOG,
+  NORMALIZED_RECIPE_CATALOG,
+  NORMALIZED_WORKFLOW_CATALOG,
+  buildApiCatalog,
+  buildToolCatalog,
+} from "../catalog-surface.js";
 import { registerAllTools } from "../registry.js";
+import { ALL_TOOL_DEFINITIONS } from "../tool-set.js";
 
 type ResourceHandler = () => Promise<{
   contents: readonly {
@@ -24,12 +32,20 @@ const collectSurface = () => {
   const resourceHandlers = new Map<string, ResourceHandler>();
 
   const server = {
-    tool: (name: string) => {
+    registerTool: (name: string) => {
       registeredTools.push(name);
     },
-    resource: (_name: string, uri: string, handler: ResourceHandler) => {
-      resourceHandlers.set(uri, handler);
+    registerResource: (
+      _name: string,
+      uriOrTemplate: string | { readonly uriTemplate?: unknown },
+      _config: unknown,
+      handler: ResourceHandler,
+    ) => {
+      if (typeof uriOrTemplate === "string") {
+        resourceHandlers.set(uriOrTemplate, handler);
+      }
     },
+    registerPrompt: () => undefined,
   };
 
   registerAllTools(server as unknown as Parameters<typeof registerAllTools>[0]);
@@ -37,10 +53,14 @@ const collectSurface = () => {
   return { registeredTools, resourceHandlers };
 };
 
+const LIVE_TOOL_CATALOG = buildToolCatalog(ALL_TOOL_DEFINITIONS);
+const LIVE_API_CATALOG = buildApiCatalog(ALL_TOOL_DEFINITIONS);
+const toSerializable = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
 describe("tool catalog parity", () => {
   it("contains exactly one entry for each registered public tool", () => {
     const { registeredTools } = collectSurface();
-    const catalogNames = TOOL_CATALOG.map((tool) => tool.name);
+    const catalogNames = LIVE_TOOL_CATALOG.map((tool) => tool.name);
 
     expect(new Set(catalogNames).size).toBe(catalogNames.length);
     expect(catalogNames.slice().sort()).toEqual(registeredTools.slice().sort());
@@ -165,11 +185,16 @@ describe("tool catalog parity", () => {
 });
 
 describe("resource catalog parity", () => {
+  it("keeps prompt metadata coverage in sync with every shipped recipe and playbook", () => {
+    expect(NORMALIZED_RECIPE_CATALOG.every((entry) => entry.promptMetadata !== undefined)).toBe(true);
+    expect(NORMALIZED_PLAYBOOK_CATALOG.every((entry) => entry.promptMetadata !== undefined)).toBe(true);
+  });
+
   it("serves the API catalog through sg://apis", async () => {
     const { resourceHandlers } = collectSurface();
     const result = await resourceHandlers.get(RESOURCE_URIS.apis)!();
 
-    expect(JSON.parse(result.contents[0]!.text!)).toEqual(API_CATALOG);
+    expect(JSON.parse(result.contents[0]!.text!)).toEqual(LIVE_API_CATALOG);
   });
 
   it("serves the tool catalog through sg://tools", async () => {
@@ -177,11 +202,14 @@ describe("resource catalog parity", () => {
     const result = await resourceHandlers.get(RESOURCE_URIS.tools)!();
     const payload = JSON.parse(result.contents[0]!.text!);
 
-    expect(payload).toEqual(TOOL_CATALOG);
+    expect(payload).toEqual(LIVE_TOOL_CATALOG);
     expect(payload.find((tool: { name: string }) => tool.name === "sg_query")).toMatchObject({
       name: "sg_query",
+      title: "Query",
       surface: "canonical",
       preferred: true,
+      annotations: expect.objectContaining({ readOnlyHint: true }),
+      hasOutputSchema: true,
     });
   });
 
@@ -189,14 +217,14 @@ describe("resource catalog parity", () => {
     const { resourceHandlers } = collectSurface();
     const result = await resourceHandlers.get(RESOURCE_URIS.workflows)!();
 
-    expect(JSON.parse(result.contents[0]!.text!)).toEqual(WORKFLOW_CATALOG);
+    expect(JSON.parse(result.contents[0]!.text!)).toEqual(NORMALIZED_WORKFLOW_CATALOG);
   });
 
   it("serves the recipe catalog through sg://recipes", async () => {
     const { resourceHandlers } = collectSurface();
     const result = await resourceHandlers.get(RESOURCE_URIS.recipes)!();
 
-    expect(JSON.parse(result.contents[0]!.text!)).toEqual(RECIPE_CATALOG);
+    expect(JSON.parse(result.contents[0]!.text!)).toEqual(toSerializable(NORMALIZED_RECIPE_CATALOG));
   });
 
   it("serves the runtime catalog through sg://runtime", async () => {
@@ -210,7 +238,7 @@ describe("resource catalog parity", () => {
     const { resourceHandlers } = collectSurface();
     const result = await resourceHandlers.get(RESOURCE_URIS.playbooks)!();
 
-    expect(JSON.parse(result.contents[0]!.text!)).toEqual(PLAYBOOK_CATALOG);
+    expect(JSON.parse(result.contents[0]!.text!)).toEqual(toSerializable(NORMALIZED_PLAYBOOK_CATALOG));
   });
 
   it("serves the benchmark catalog through sg://benchmarks", async () => {

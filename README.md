@@ -38,7 +38,7 @@ If you are evaluating whether the repo is actually useful for developers, start 
 | Healthcare Supplier Diligence | `sg_business_dossier` or `sg_query` | HSA, ACRA, and optional GeBIZ evidence stay bounded to healthcare supplier diligence with licensing-focused continuation hints | None | observed-at and upstream licence timestamps are returned per source | open-ended healthcare research |
 | Hotel Operator Lookup | `sg_hlb_hotels` or `sg_query` | HLB hotel and keeper facts stay bounded to hospitality diligence without widening into travel planning | None | observed-at plus HLB dataset timestamps are returned when available | hotel ranking or recommendation |
 | Property And Regulatory Due Diligence | `sg_property_brief` or `sg_query` | OneMap, URA, HDB, and optional NEA/LTA context are combined with explicit location resolution and workflow limits | OneMap optional, URA key for live planning data, LTA optional | observed-at plus first available market or live-signal timestamps | hidden property scoring or recommendations |
-| Macro Snapshot | `sg_macro_brief` or `sg_query` | MAS values and SingStat dataset entrypoints are returned as one starter brief with dataset IDs and scope notes | None | observed-at plus returned MAS dates | open-ended macro commentary |
+| Macro Snapshot | `sg_macro_brief` or `sg_query` | MAS values and validated SingStat GDP and CPI table reads are returned as one starter brief with explicit table IDs and scope notes | None | observed-at plus MAS dates and SingStat table metadata | open-ended macro commentary |
 | Transport Status | `sg_transport_brief` or `sg_query` | bus arrivals, train alerts, and traffic incidents are normalized into one operational snapshot | LTA key for live data | observed-at plus next ETA or alert timestamps when available | route planning or delay prediction |
 | Environment Snapshot | `sg_environment_brief` or `sg_query` | forecast, air quality, and rainfall are normalized into one live monitoring snapshot | None | observed-at plus forecast, air-quality, and rainfall timestamps when available | long-range forecasting or severe-weather alerting |
 | Dataset Discovery Fallback | `sg_datagov_search` -> `sg_datagov_resources` -> `sg_datagov_rows` | dataset discovery continues into resource inspection and bounded row reads | None | data.gov.sg metadata timestamps are returned directly by the direct tools | unbounded scraping or arbitrary joins |
@@ -107,7 +107,7 @@ Notes:
 - `sg_datagov_get` is metadata only.
 - `sg_datagov_resources` exposes the current machine-readable resource shape and columns for a dataset.
 - `sg_datagov_rows` performs bounded datastore reads with explicit `filters`, `limit`, `offset`, and `sort`.
-- OneMap now requires valid credentials for live requests. There is no silent unauthenticated fallback outside mock mode.
+- OneMap now requires valid credentials for live requests. There is no silent unauthenticated fallback.
 - HDB, CEA, BCA, BOA, HSA, HLB, and `sg_acra_entities` are curated tools over official public datasets and do not introduce separate credentials.
 - PA, Sport Singapore, ECDA, and the MSF civic directories stay no-auth by using the same official data.gov.sg download path.
 
@@ -117,7 +117,7 @@ Node 20.x is the supported runtime.
 
 ### Local Repo Install
 
-This is the truthful default until the first public npm release exists.
+Default local mode remains stdio. HTTP is now available explicitly for host-to-server or containerized setups, with OIDC-capable auth modes for remote deployments.
 
 ```bash
 npm install
@@ -125,7 +125,7 @@ npm run build
 node packages/mcp-server/dist/index.js
 ```
 
-Local Claude Desktop or Codex-style MCP config:
+Local stdio MCP config:
 
 ```json
 {
@@ -138,15 +138,73 @@ Local Claude Desktop or Codex-style MCP config:
 }
 ```
 
-Local Claude Code:
+VS Code setup:
+
+- add the `mcpServers.sg-apis-mcp` block above to your MCP settings JSON
+
+Cursor setup:
+
+- add the same `mcpServers.sg-apis-mcp` block to Cursor's MCP configuration
+
+Codex setup:
+
+- use the same stdio `command` and `args` pair when adding the server locally
+
+Claude Desktop setup:
+
+- add the same `mcpServers.sg-apis-mcp` block to `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS
+
+Claude Code:
 
 ```bash
 claude mcp add sg-apis-mcp -- node /absolute/path/to/sg-skills/packages/mcp-server/dist/index.js
 ```
 
+Local HTTP MCP server:
+
+```bash
+node packages/mcp-server/dist/index.js --transport http --host 127.0.0.1 --port 3000
+```
+
+Remote HTTP MCP server:
+
+```bash
+SG_APIS_HTTP_AUTH_MODE=mixed \
+SG_APIS_REMOTE_BASE_URL=https://mcp.example.com/mcp \
+SG_APIS_OIDC_ISSUER=https://issuer.example.com \
+SG_APIS_OIDC_AUDIENCE=sg-apis-mcp \
+node packages/mcp-server/dist/index.js --transport http --host 0.0.0.0 --port 3000
+```
+
+HTTP mode defaults to the safer `public,briefs,query,health` toolsets. Add ops tools explicitly only when you need them:
+
+```bash
+SG_APIS_TOOLSETS=public,briefs,query,health,ops \
+node packages/mcp-server/dist/index.js --transport http
+```
+
+HTTP auth modes:
+
+- `none`: local development and localhost-only binds
+- `mixed`: unauthenticated sessions see `public,briefs,query,health`; authenticated sessions see the full configured toolsets
+- `all`: every MCP HTTP session requires a valid bearer token before initialization
+
+Remote auth env vars:
+
+- `SG_APIS_HTTP_AUTH_MODE`
+- `SG_APIS_REMOTE_BASE_URL`
+- `SG_APIS_ARTIFACT_DB_PATH` optional SQLite path for persisted artifact resources
+- `SG_APIS_OIDC_ISSUER`
+- `SG_APIS_OIDC_AUDIENCE`
+- `SG_APIS_OIDC_JWKS_URI` optional override
+- `SG_APIS_OIDC_REQUIRED_SCOPES` optional comma list
+- `SG_APIS_OIDC_CLOCK_SKEW_SEC` optional, defaults to `60`
+
+The server also exposes OAuth protected-resource metadata at `/.well-known/oauth-protected-resource/mcp` in HTTP mode.
+
 ### Published npm Install
 
-Use this only after the first successful public npm release:
+Use this after a public npm release:
 
 ```bash
 npx -y sg-apis-mcp
@@ -165,39 +223,122 @@ Published-package client config:
 }
 ```
 
-### Quick Demo
+### Container Install
 
-After building locally, run one of the bundled end-to-end demos:
+GHCR image:
 
 ```bash
-npm run demo:mcp -- business
-npm run demo:mcp -- property
-npm run demo:mcp -- macro
-npm run demo:mcp -- transport
-npm run demo:mcp -- environment
-npm run demo:mcp -- civic
-npm run demo:mcp -- geospatial
-npm run demo:mcp -- architecture
-npm run demo:mcp -- healthcare
-npm run demo:mcp -- hotel
-npm run demo:mcp -- sector-business
+docker run --rm -i ghcr.io/gongahkia/sg-apis-mcp:latest
 ```
 
-Those demos start the mock upstream server, connect to the built MCP server, read a catalog resource, and call one direct tool, one supporting tool, and `sg_query`.
+GHCR HTTP mode:
+
+```bash
+docker run --rm -p 3000:3000 \
+  -e SG_APIS_HTTP_AUTH_MODE=mixed \
+  -e SG_APIS_REMOTE_BASE_URL=https://mcp.example.com/mcp \
+  -e SG_APIS_OIDC_ISSUER=https://issuer.example.com \
+  -e SG_APIS_OIDC_AUDIENCE=sg-apis-mcp \
+  ghcr.io/gongahkia/sg-apis-mcp:latest \
+  --transport http --host 0.0.0.0 --port 3000
+```
+
+Container release smoke:
+
+```bash
+npm run test:smoke:container
+```
+
+Remote deployment smoke:
+
+```bash
+SG_APIS_REMOTE_URL=https://mcp.example.com/mcp npm run test:smoke:remote
+```
+
+To validate a published image instead of a local build:
+
+```bash
+SG_APIS_CONTAINER_IMAGE=ghcr.io/gongahkia/sg-apis-mcp:latest npm run test:smoke:container
+```
+
+### Remote Docker VPS
+
+The repo now includes a single-node Docker VPS bundle for the public Streamable HTTP surface:
+
+- [`compose.yaml`](./compose.yaml)
+- [`Caddyfile`](./Caddyfile)
+- [`.env.deploy.example`](./.env.deploy.example)
+- [`docs/deployment.md`](./docs/deployment.md)
+
+This deployment keeps artifacts in SQLite on a persistent Docker volume and proxies `/mcp`, `/healthz`, `/.well-known/oauth-protected-resource*`, and `/icon.svg` through Caddy.
+
+### Quickstart
+
+Use this when you want to verify the real runtime surface against live upstreams and official no-auth datasets:
+
+```bash
+npm run quick-start
+```
+
+If you already built the server, run the smoke flow directly:
+
+```bash
+npm run test:smoke:live
+```
+
+The quickstart path checks:
+
+- all release-blocking live health probes from `sg_health_check`
+- representative live API smokes for SingStat, MAS, OneMap, URA, LTA DataMall, NEA, one data.gov.sg datastore family, and one file-download family
+- representative live workflow smokes for business, property, macro, transport, environment, and civic discovery
+
+It uses your existing environment variables or local keystore entries. See [docs/api-auth-guide.md](./docs/api-auth-guide.md) if any authenticated family is unconfigured.
 
 ### Discovery Resources
 
 Read the built-in catalogs before wiring your own client logic:
 
 - `sg://apis`
+- `sg://artifacts/{kind}/{id}`
 - `sg://tools`
 - `sg://workflows`
 - `sg://recipes`
 - `sg://runtime`
 - `sg://playbooks`
 - `sg://benchmarks`
+- `ui://sg/map-preview`
 
-`sg://recipes` is the fastest way to see which natural-language prompt shapes already map cleanly to `sg_query` versus direct fallback tools. `sg://runtime` exposes the machine-readable trust layer for auth dependencies, credential-source rules, timeouts, cache tiers, retry policy, health coverage, and the `planned | completed | blocked | unsupported | failed` query contract. `sg://playbooks` groups the strongest workflow combinations by agent job, and `sg://benchmarks` exposes adoption-grade latency, cache-tier, freshness, and credibility expectations for the headline workflows.
+Prompt discovery is exposed as `recipe-*` and `playbook-*` prompts. The strongest prompts now declare typed arguments and MCP completions for planning areas, regions, route modes, coordinate systems, and output formats.
+
+Large row, table, and query results can now promote themselves into persisted, TTL-bound JSON artifacts. Small results stay inline; large results keep a short preview in `structuredContent.preview` and add a `resource_link` pointing at `sg://artifacts/{kind}/{id}`.
+
+Geospatial outputs now expose a normalized `structuredContent.mapPayload` and reference the additive `ui://sg/map-preview` MCP App resource. Non-UI hosts still receive the same text and structured payloads.
+
+Dynamic discovery is also available through resource templates:
+
+- `sg://apis/{name}`
+- `sg://tools/{name}`
+- `sg://workflows/{id}`
+- `sg://recipes/{id}`
+
+Prompt discovery is now exposed directly over MCP as `recipe-*` and `playbook-*` prompts backed by the recipe and playbook catalogs. `sg://recipes` is still the fastest way to see which natural-language prompt shapes already map cleanly to `sg_query` versus direct fallback tools. `sg://runtime` exposes the machine-readable trust layer for auth dependencies, credential-source rules, timeouts, cache tiers, retry policy, health coverage, and the `planned | completed | blocked | unsupported | failed` query contract. `sg://playbooks` groups the strongest workflow combinations by agent job, and `sg://benchmarks` exposes adoption-grade latency, cache-tier, freshness, and credibility expectations for the headline workflows.
+
+Tracked remote registry metadata currently uses the same placeholder hostname used throughout the docs:
+
+```json
+{
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.example.com/mcp"
+    }
+  ]
+}
+```
+
+Replace `https://mcp.example.com/mcp` with the real public `/mcp` URL before a production release.
+
+The generated REST OpenAPI artifact is published with the npm package at `packages/mcp-server/openapi.json`.
 
 For application wiring, start with [`examples/integration/basic-client.ts`](./examples/integration/basic-client.ts) for the TypeScript planner pattern and [`examples/integration/basic-client.py`](./examples/integration/basic-client.py) for a minimal stdlib-only Python client. The TypeScript example caches `sg://recipes`, `sg://runtime`, `sg://playbooks`, and `sg://benchmarks`, uses `sg_query` for covered prompts, surfaces blocked or unsupported outcomes directly, demonstrates a failed execution, and falls back to direct `sg_*` tools when the caller already has exact parameters.
 
@@ -217,7 +358,7 @@ The keystore helpers are still available for local use:
 - `sg_key_set { "apiName": "ura", "key": "..." }`
 - `sg_key_set { "apiName": "lta", "key": "..." }`
 
-`sg_health_check` probes SingStat, MAS, OneMap, URA, LTA DataMall, data.gov.sg, and NEA directly. It now returns structured records with `configured`, `credentialSource`, `reachable`, `latencyMs`, and dependency notes. HDB, CEA, BCA, BOA, HSA, HLB, and ACRA are intentionally covered operationally through the shared data.gov.sg path or official file-download path.
+`sg_health_check` probes SingStat, MAS, OneMap, URA, LTA DataMall, data.gov.sg, and NEA directly. OneMap, URA, and LTA are checked through the same authenticated runtime path used by the live tools. It returns structured records with `configured`, `credentialSource`, `reachable`, `latencyMs`, and dependency notes. HDB, CEA, BCA, BOA, HSA, HLB, and ACRA are intentionally covered operationally through the shared data.gov.sg path or official file-download path.
 
 Auth troubleshooting and failure modes live in [docs/api-auth-guide.md](./docs/api-auth-guide.md).
 
@@ -379,7 +520,7 @@ sg_onemap_convert_coords { "from": "SVY21", "x": 28001, "y": 38744, "format": "j
 | Healthcare Supplier Diligence | call HSA licensee rows, optional pharmacy rows, ACRA, and GeBIZ separately, then reconcile exact and fuzzy matches yourself | `sg_business_dossier` or `sg_query` | one bounded healthcare supplier artifact with licensing emphasis, unmatched-module reporting, and next checks |
 | Hotel Operator Lookup | call `sg_hlb_hotels`, then optionally widen into company evidence yourself | `sg_hlb_hotels` or `sg_query` | one bounded hotel-operator lookup path with keeper facts, room counts, and explicit hospitality scope |
 | Property And Regulatory Due Diligence | geocode, resolve planning area, fetch URA transactions, fetch HDB market reads, then optionally stitch NEA and LTA signals | `sg_property_brief` or `sg_query` | resolved location, bounded live context, provenance per source, and clear non-recommendation boundaries |
-| Macro Snapshot | call 3 MAS series plus separate SingStat dataset search calls, then decide which dataset IDs to keep | `sg_macro_brief` or `sg_query` | one starter artifact with dataset entrypoints, freshness, and explicit limits |
+| Macro Snapshot | call 3 MAS series plus live SingStat GDP and CPI table reads, then reconcile the series yourself | `sg_macro_brief` or `sg_query` | one starter artifact with validated table IDs, freshness, and explicit limits |
 | Transport Status | call bus arrivals, train alerts, and traffic incidents separately, then decide what counts as a useful operations snapshot | `sg_transport_brief` or `sg_query` | one snapshot contract with stop-level optionality, provenance, and no hidden route-planning claims |
 | Environment Snapshot | call forecast, air quality, and rainfall separately, then reconcile area, region, and station coverage | `sg_environment_brief` or `sg_query` | one live snapshot contract with area and region caveats surfaced directly in `limits` |
 
@@ -426,6 +567,8 @@ npm run verify
 
 Useful follow-up commands:
 
+- `npm run quick-start`
+- `npm run test:smoke:live`
 - `npm run diagnostics`
 - `npm run demo:mcp -- transport`
 - `npm run test:smoke:packaging`

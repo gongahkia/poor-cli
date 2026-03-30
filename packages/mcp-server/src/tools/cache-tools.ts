@@ -12,8 +12,14 @@ export const cacheToolDefinitions: readonly RegisteredToolDefinition[] = [
     handler: async (_input: unknown): Promise<ToolResult> => {
       const stats = getCache().stats();
       const hitRate = stats.hits + stats.misses > 0 ? ((stats.hits / (stats.hits + stats.misses)) * 100).toFixed(1) : "0";
-      const text = formatResponse({ ...stats, hitRate: `${hitRate}%` } as unknown as Record<string, unknown>, "markdown");
-      return { content: [{ type: "text", text }] };
+      const record = { ...stats, hitRate: `${hitRate}%` };
+      const text = formatResponse(record as unknown as Record<string, unknown>, "markdown");
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: {
+          record,
+        },
+      };
     },
   },
 

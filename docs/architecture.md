@@ -125,7 +125,7 @@ Why:
 
 - this is where the repo creates user-facing value beyond raw wrappers
 - the brief remains inspectable and source-linked through the underlying records
-- provenance, freshness, and limits make the product useful for real developer-facing workflows instead of demo-only synthesis
+- provenance, freshness, and limits make the product useful for real developer-facing workflows instead of shallow synthesis
 
 Consequence:
 

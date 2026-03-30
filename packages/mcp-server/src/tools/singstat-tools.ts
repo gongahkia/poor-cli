@@ -2,6 +2,7 @@ import { validateInput, SingStatSearchSchema, SingStatTableSchema, SingStatTimes
 import type { ToolResult } from "@sg-apis/shared";
 import { searchDatasets, getTableData, getTimeSeries } from "../apis/singstat/client.js";
 import { compareIndicators } from "../apis/singstat/compare.js";
+import { buildArtifactResult, shouldUseArtifact } from "./artifacts.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 
 export const handleSingStatSearch = async (
@@ -36,6 +37,35 @@ export const handleSingStatTable = async (
   const data = await getTableData(params.tableId, opts as { timeFilter?: string; variables?: readonly string[] });
   const fmt = resolveOutputFormat(params.format);
   const text = formatResponse(data.rows as unknown as Record<string, unknown>[], fmt);
+
+  if (shouldUseArtifact(text, data.rows.length)) {
+    return buildArtifactResult({
+      toolName: "sg_singstat_table",
+      input: {
+        tableId: params.tableId,
+        ...(params.timeFilter === undefined ? {} : { timeFilter: params.timeFilter }),
+        ...(params.variables === undefined ? {} : { variables: params.variables }),
+        format: fmt,
+      },
+      kind: "table",
+      title: `SingStat table ${params.tableId}`,
+      description: "Large SingStat table result promoted to a transient artifact resource.",
+      fullText: `## ${data.metadata.title}\n\n${text}`,
+      payload: {
+        metadata: data.metadata,
+        records: data.rows,
+      },
+      preview: {
+        metadata: data.metadata,
+        records: data.rows.slice(0, 10),
+        returned: data.rows.length,
+      },
+      structuredContentBase: {
+        metadata: data.metadata,
+      },
+    });
+  }
+
   return {
     content: [{ type: "text", text: `## ${data.metadata.title}\n\n${text}` }],
     structuredContent: {
@@ -57,6 +87,41 @@ export const handleSingStatTimeseries = async (
   const results = await getTimeSeries(params.tableId, params.indicator, params.startYear, params.endYear);
   const fmt = resolveOutputFormat(params.format);
   const text = formatResponse(results as unknown as Record<string, unknown>[], fmt);
+
+  if (shouldUseArtifact(text, results.length)) {
+    return buildArtifactResult({
+      toolName: "sg_singstat_timeseries",
+      input: {
+        tableId: params.tableId,
+        indicator: params.indicator,
+        startYear: params.startYear,
+        endYear: params.endYear,
+        format: fmt,
+      },
+      kind: "timeseries",
+      title: `SingStat time series ${params.tableId}:${params.indicator}`,
+      description: "Large SingStat time-series result promoted to a transient artifact resource.",
+      fullText: text,
+      payload: {
+        tableId: params.tableId,
+        indicator: params.indicator,
+        startYear: params.startYear,
+        endYear: params.endYear,
+        records: results,
+      },
+      preview: {
+        tableId: params.tableId,
+        indicator: params.indicator,
+        records: results.slice(0, 10),
+        returned: results.length,
+      },
+      structuredContentBase: {
+        tableId: params.tableId,
+        indicator: params.indicator,
+      },
+    });
+  }
+
   return {
     content: [{ type: "text", text }],
     structuredContent: {
@@ -165,7 +230,43 @@ export const singstatToolDefinitions: readonly RegisteredToolDefinition[] = [
         return row;
       });
       const text = formatResponse(rows, fmt);
-      return { content: [{ type: "text", text }] };
+
+      if (shouldUseArtifact(text, rows.length)) {
+        return buildArtifactResult({
+          toolName: "sg_singstat_compare",
+          input: {
+            queries,
+            startYear,
+            endYear,
+            format: fmt,
+          },
+          kind: "compare",
+          title: "SingStat indicator comparison",
+          description: "Large SingStat comparison result promoted to a transient artifact resource.",
+          fullText: text,
+          payload: {
+            series: result.series,
+            periods: result.periods,
+            records: rows,
+          },
+          preview: {
+            series: result.series.map((series) => ({ label: series.label })),
+            periods: result.periods.slice(0, 10),
+            records: rows.slice(0, 10),
+          },
+          structuredContentBase: {
+            series: result.series,
+            periods: result.periods,
+          },
+        });
+      }
+
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: {
+          records: rows,
+        },
+      };
     },
   },
 
