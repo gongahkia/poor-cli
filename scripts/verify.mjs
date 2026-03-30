@@ -12,6 +12,15 @@ const run = (label, args, env = process.env) => {
   });
 };
 
+const runNodeScript = (label, scriptPath, env = process.env) => {
+  process.stdout.write(`\n==> ${label}\n`);
+  execFileSync(process.execPath, [scriptPath], {
+    cwd: root,
+    env,
+    stdio: "inherit",
+  });
+};
+
 const testEnv = {
   ...process.env,
   SG_APIS_LOG_LEVEL: process.env.SG_APIS_LOG_LEVEL ?? "error",
@@ -19,9 +28,15 @@ const testEnv = {
 
 run("lint", ["run", "lint"]);
 run("build", ["run", "build"]);
-run("server metadata parity", ["exec", "--", "node", "./scripts/check-server-metadata.mjs"]);
-run("live surface check", ["exec", "--", "node", "./scripts/check-live-surface.mjs"]);
-run("openapi parity", ["exec", "--", "node", "./scripts/check-openapi.mjs"]);
-run("docs parity", ["exec", "--", "node", "./scripts/check-docs-parity.mjs"]);
+runNodeScript("diagnostics", "./scripts/dev-diagnostics.mjs");
+runNodeScript("server metadata parity", "./scripts/check-server-metadata.mjs");
+runNodeScript("live surface check", "./scripts/check-live-surface.mjs");
+runNodeScript("openapi parity", "./scripts/check-openapi.mjs");
+runNodeScript("docs parity", "./scripts/check-docs-parity.mjs");
 run("test", ["test"], testEnv);
-run("packaging smoke", ["run", "test:smoke:packaging"]);
+
+if (process.env.SG_APIS_SKIP_PACKAGING_SMOKE === "1") {
+  process.stdout.write("\n==> packaging smoke (skipped via SG_APIS_SKIP_PACKAGING_SMOKE=1)\n");
+} else {
+  run("packaging smoke", ["run", "test:smoke:packaging"], testEnv);
+}

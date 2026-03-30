@@ -39,6 +39,12 @@ The repo currently exposes 68 `sg_*` tools total across 29 official data familie
 
 Use `sg://recipes` first when the caller has a goal-shaped prompt and you need the fastest honest entrypoint. Use `sg://runtime` when you need auth, timeout, cache, health, or `sg_query` status-contract details without opening the docs. Use `sg://playbooks` when the task is bigger than one prompt and you need the strongest bounded workflow combination for an agent job. Use `sg://benchmarks` when you need adoption-grade latency, cache-tier, freshness, and credibility expectations for the headline workflows.
 
+For developer onboarding and operations, pair the catalog resources with:
+
+- `npm run diagnostics` for fast local catalog and resource checks
+- `docs/troubleshooting.md` for blocked/unsupported/failed triage
+- `docs/market-conventions-audit.md` for ecosystem alignment and roadmap context
+
 ## Preferred Entry Points
 
 - `sg_business_dossier`

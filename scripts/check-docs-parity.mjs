@@ -53,6 +53,9 @@ ensureIncludes("README.md", [
   "sg://benchmarks",
   "docs/product-audit.md",
   "docs/agent-builder-quickstart.md",
+  "docs/market-conventions-audit.md",
+  "docs/troubleshooting.md",
+  "npm run diagnostics",
   "Route Planning",
   "SingStat Table Drilldown",
   "Dataset Collection Browse",
@@ -142,6 +145,8 @@ ensureIncludes("docs/agent-builder-quickstart.md", [
   "sg_onemap_route",
   "sg_singstat_browse",
   "sg_datagov_browse",
+  "npm run diagnostics",
+  "docs/troubleshooting.md",
 ]);
 
 ensureIncludes("examples/README.md", [
@@ -163,6 +168,16 @@ ensureIncludes("examples/README.md", [
 ensureIncludes("docs/production-notes.md", [
   "sg://runtime",
   "sg://benchmarks",
+  "npm run diagnostics",
+]);
+
+ensureIncludes("docs/contributing.md", [
+  "npm run diagnostics",
+  "do not silently drop source errors",
+]);
+
+ensureIncludes("examples/README.md", [
+  "npm run diagnostics",
 ]);
 
 ensureIncludes("CHANGELOG.md", [

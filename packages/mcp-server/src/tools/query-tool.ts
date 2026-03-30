@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { QuerySchema, resolveOutputFormat, validateInput } from "@sg-apis/shared";
 import type { OutputFormat, ToolResult } from "@sg-apis/shared";
+import { createLogger } from "@sg-apis/shared";
 import { toToolErrorPayload } from "../middleware/error-handler.js";
 import { planQuery } from "../router/planner.js";
 import type { QueryExecutionContext, QueryPlan, QueryStep } from "../router/planner.js";
@@ -25,6 +27,7 @@ import {
 } from "./query/rendering.js";
 
 const MAP_TOOL_META = withMapUiMetadata(undefined);
+const logger = createLogger("query-tool");
 
 const buildRoutingExplanation = (
   plan: Readonly<{
@@ -113,6 +116,7 @@ const buildContinuationHints = (
 const executePlan = async (
   plan: Extract<QueryPlan, { supported: true }>,
   format: OutputFormat,
+  runLogger: ReturnType<typeof logger.child>,
 ): Promise<{
   readonly status: "completed" | "failed";
   readonly steps: readonly ExecutedQueryStep[];
@@ -121,6 +125,12 @@ const executePlan = async (
   const results = new Map<string, { input: Readonly<Record<string, unknown>>; output: ToolResult }>();
 
   for (const step of plan.steps) {
+    runLogger.info("query step start", {
+      stepId: step.id,
+      tool: step.tool,
+      workflow: plan.workflow,
+      dependsOn: step.dependsOn ?? [],
+    });
     const context: QueryExecutionContext = { results };
 
     let resolvedInput: Readonly<Record<string, unknown>>;
@@ -128,6 +138,12 @@ const executePlan = async (
       const input = step.resolveInput === undefined ? step.input : await step.resolveInput(context);
       resolvedInput = withRequestedFormat(step, input, format);
     } catch (error) {
+      runLogger.error("query step input resolution failed", {
+        stepId: step.id,
+        tool: step.tool,
+        workflow: plan.workflow,
+        error,
+      });
       executedSteps.push({
         id: step.id,
         purpose: step.purpose,
@@ -143,6 +159,16 @@ const executePlan = async (
     try {
       const result = await executeQueryStep(step.tool, resolvedInput);
       if (result.isError === true) {
+        const payload = getResultErrorPayload(result, step.tool);
+        runLogger.warn("query step returned tool error", {
+          stepId: step.id,
+          tool: step.tool,
+          workflow: plan.workflow,
+          code: payload.code,
+          source: payload.source,
+          retryable: payload.retryable,
+          statusCode: payload.statusCode,
+        });
         executedSteps.push({
           id: step.id,
           purpose: step.purpose,
@@ -152,12 +178,17 @@ const executePlan = async (
           ...(step.dependsOn === undefined ? {} : { dependsOn: step.dependsOn }),
           outputText: getTextContent(result),
           ...(result.structuredContent === undefined ? {} : { structuredOutput: result.structuredContent }),
-          error: getResultErrorPayload(result, step.tool),
+          error: payload,
         });
         return { status: "failed", steps: executedSteps };
       }
 
       results.set(step.id, { input: resolvedInput, output: result });
+      runLogger.info("query step completed", {
+        stepId: step.id,
+        tool: step.tool,
+        workflow: plan.workflow,
+      });
       executedSteps.push({
         id: step.id,
         purpose: step.purpose,
@@ -169,6 +200,12 @@ const executePlan = async (
         ...(result.structuredContent === undefined ? {} : { structuredOutput: result.structuredContent }),
       });
     } catch (error) {
+      runLogger.error("query step execution failed", {
+        stepId: step.id,
+        tool: step.tool,
+        workflow: plan.workflow,
+        error,
+      });
       executedSteps.push({
         id: step.id,
         purpose: step.purpose,
@@ -238,8 +275,32 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
     inputSchema: QuerySchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
       const { query, format, mode = "execute" } = validateInput(QuerySchema, input);
+      const traceId = randomUUID();
+      const queryLogger = logger.child({ traceId, workflowInterface: "sg_query" });
       const resolvedFormat = resolveOutputFormat(format);
+      const preview = query.length > 160 ? `${query.slice(0, 160)}...` : query;
+      queryLogger.info("received sg_query request", {
+        mode,
+        format: resolvedFormat,
+        queryLength: query.length,
+        queryPreview: preview,
+      });
       const plan = planQuery(query);
+      if (!plan.supported) {
+        queryLogger.warn("query plan not executable", {
+          blocked: plan.blocked === true,
+          reason: plan.reason,
+          suggestion: plan.suggestion,
+          ...(plan.blocked === true ? { workflow: plan.workflow, blockers: plan.blockers.length } : {}),
+        });
+      } else {
+        queryLogger.info("query plan resolved", {
+          workflow: plan.workflow,
+          intent: plan.intent,
+          confidence: plan.confidence,
+          stepCount: plan.steps.length,
+        });
+      }
 
       if (!plan.supported) {
         if (plan.blocked === true) {
@@ -296,6 +357,11 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
       }
 
       if (mode === "plan") {
+        queryLogger.info("query returned plan mode response", {
+          workflow: plan.workflow,
+          intent: plan.intent,
+          stepCount: plan.steps.length,
+        });
         return {
           content: [{ type: "text", text: formatPlanText(plan, resolvedFormat) }],
           structuredContent: {
@@ -311,7 +377,7 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
         };
       }
 
-      const execution = await executePlan(plan, resolvedFormat);
+      const execution = await executePlan(plan, resolvedFormat, queryLogger);
       const routingExplanation = buildRoutingExplanation(plan);
       const continuationHints = execution.status === "completed"
         ? buildContinuationHints(plan, execution.steps)
@@ -319,6 +385,12 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
       const opsMetadata: WorkflowOpsMetadata = execution.status === "completed"
         ? { ...extractWorkflowOpsMetadata(execution.steps), continuationHints }
         : {};
+      queryLogger.info("query execution finished", {
+        workflow: plan.workflow,
+        status: execution.status,
+        completedSteps: execution.steps.filter((step) => step.status === "completed").length,
+        totalSteps: execution.steps.length,
+      });
 
       if (execution.status === "completed" && plan.steps.length === 1) {
         const step = execution.steps[0];

@@ -8,6 +8,9 @@ The format is based on Keep a Changelog, and the project follows semantic versio
 
 ### Added
 
+- Added `npm run diagnostics` (`scripts/dev-diagnostics.mjs`) for fast local catalog, workflow, recipe, and resource integrity checks.
+- Added market-alignment guidance in `docs/market-conventions-audit.md`.
+- Added operator runbook in `docs/troubleshooting.md` for blocked/unsupported/failed workflow triage.
 - Added BOA, HSA, and HLB direct tool families with `sg_boa_architects`, `sg_boa_architecture_firms`, `sg_hsa_licensed_pharmacies`, `sg_hsa_health_product_licensees`, and `sg_hlb_hotels`.
 - Added bounded workflows and recipes for Architecture Firm Diligence, Healthcare Supplier Diligence, Hotel Operator Lookup, and Sector Scoped Business Diligence.
 - Added explicit `modules` and `sectorHints` support to `sg_business_dossier`.
@@ -39,6 +42,9 @@ The format is based on Keep a Changelog, and the project follows semantic versio
 
 ### Changed
 
+- Shared logger now supports safer structured serialization, context inheritance, and sensitive-field redaction.
+- `sg_query`, additive brief handlers, middleware error wrapping, REST gateway, and CLI now emit richer structured runtime logs.
+- Verify script now runs local parity scripts via `node` directly instead of `npm exec -- node`.
 - Tool count increased from 63 to 68; API family count from 26 to 29; routed families from 17 to 20.
 - `sg_business_dossier` now stays backward-compatible by default while supporting explicit BOA, HSA, HLB, and GeBIZ module selection.
 - README, skill docs, architecture notes, auth docs, and docs parity checks now track BOA, HSA, HLB, and the new diligence workflows.

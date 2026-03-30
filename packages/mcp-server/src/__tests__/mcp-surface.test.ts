@@ -83,6 +83,7 @@ const quietLogger = {
   info: () => undefined,
   warn: () => undefined,
   error: () => undefined,
+  child: () => quietLogger,
 };
 const ALL_HTTP_TOOLSETS = new Set(["public", "briefs", "query", "health", "ops"] as const);
 

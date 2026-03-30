@@ -27,7 +27,7 @@ The value is not hidden magic. The value is:
 - provenance, freshness, and limits surfaced directly in brief artifacts
 - caching, rate limiting, auth handling, packaging, and parity checks already done
 
-If you are evaluating whether the repo is actually useful for developers, start with [docs/product-audit.md](./docs/product-audit.md), [docs/developer-adoption-audit.md](./docs/developer-adoption-audit.md), and [docs/agent-builder-quickstart.md](./docs/agent-builder-quickstart.md).
+If you are evaluating whether the repo is actually useful for developers, start with [docs/product-audit.md](./docs/product-audit.md), [docs/developer-adoption-audit.md](./docs/developer-adoption-audit.md), [docs/agent-builder-quickstart.md](./docs/agent-builder-quickstart.md), and [docs/market-conventions-audit.md](./docs/market-conventions-audit.md).
 
 ## Capability Matrix
 
@@ -362,6 +362,8 @@ The keystore helpers are still available for local use:
 
 Auth troubleshooting and failure modes live in [docs/api-auth-guide.md](./docs/api-auth-guide.md).
 
+Operational failure triage lives in [docs/troubleshooting.md](./docs/troubleshooting.md).
+
 ## Workflow Demos
 
 The primary walkthroughs for this tranche are:
@@ -567,10 +569,19 @@ Useful follow-up commands:
 
 - `npm run quick-start`
 - `npm run test:smoke:live`
+- `npm run diagnostics`
+- `npm run demo:mcp -- transport`
 - `npm run test:smoke:packaging`
 - `npm run test:smoke:registry`
 
 Release workflow notes live in [docs/release.md](./docs/release.md).
+
+### Debugging Notes
+
+- set `SG_APIS_LOG_LEVEL=debug` for request and workflow execution traces
+- `sg_query` now logs plan routing plus step-level execution metadata with trace IDs
+- additive brief source failures are logged and surfaced as gaps (no silent source drops)
+- run [docs/troubleshooting.md](./docs/troubleshooting.md) for the five-minute triage flow
 
 ## Current Limits
 

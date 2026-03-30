@@ -68,6 +68,7 @@ Examples:
 
 ## Testing
 
+- Run `npm run diagnostics` after `npm run build` for fast catalog/resource sanity checks.
 - Run `npm run verify` before shipping changes.
 - Mock `fetch` with `vi.stubGlobal`.
 - Avoid real HTTP requests in tests.
@@ -75,3 +76,4 @@ Examples:
 - Add schema and handler coverage when new brief envelopes or workflow types are introduced.
 - Update packaging smoke and registry smoke expectations when the public surface changes.
 - Update docs parity markers in the same patch when counts, workflow names, or install instructions change.
+- When recovering from partial failures, log structured context; do not silently drop source errors.

@@ -3,7 +3,7 @@
 // usage: node scripts/generate-openapi.mjs > openapi.json
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { ZodFirstPartyTypeKind } from "zod";
 
 const root = resolve(import.meta.dirname, "..");
@@ -144,38 +144,40 @@ const buildToolPath = (definition) => ({
   },
 });
 
-const toolDefinitions = await loadToolDefinitions();
+export const generateOpenApiSpec = async () => {
+  const toolDefinitions = await loadToolDefinitions();
 
-const toolPaths = Object.fromEntries(
-  [...toolDefinitions]
-    .sort((left, right) => left.name.localeCompare(right.name))
-    .map((definition) => [`/api/v1/${definition.name}`, buildToolPath(definition)]),
-);
+  const toolPaths = Object.fromEntries(
+    [...toolDefinitions]
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map((definition) => [`/api/v1/${definition.name}`, buildToolPath(definition)]),
+  );
 
-const spec = {
-  openapi: "3.1.0",
-  info: {
-    title: "sg-apis-mcp REST Gateway",
-    version: pkgJson.version,
-    description: "REST interface for Singapore public data tools. Each tool is exposed as a POST endpoint.",
-  },
-  servers: [{ url: "http://localhost:3000", description: "Local REST gateway" }],
-  paths: {
-    "/api/v1/tools": {
-      get: {
-        summary: "List all available tools",
-        responses: {
-          200: {
-            description: "Array of tool names and descriptions",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      name: { type: "string" },
-                      description: { type: "string" },
+  return {
+    openapi: "3.1.0",
+    info: {
+      title: "sg-apis-mcp REST Gateway",
+      version: pkgJson.version,
+      description: "REST interface for Singapore public data tools. Each tool is exposed as a POST endpoint.",
+    },
+    servers: [{ url: "http://localhost:3000", description: "Local REST gateway" }],
+    paths: {
+      "/api/v1/tools": {
+        get: {
+          summary: "List all available tools",
+          responses: {
+            200: {
+              description: "Array of tool names and descriptions",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        name: { type: "string" },
+                        description: { type: "string" },
+                      },
                     },
                   },
                 },
@@ -184,20 +186,20 @@ const spec = {
           },
         },
       },
-    },
-    "/api/v1/health": {
-      get: {
-        summary: "Health check",
-        responses: {
-          200: {
-            description: "Gateway health status",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    status: { type: "string" },
-                    tools: { type: "integer" },
+      "/api/v1/health": {
+        get: {
+          summary: "Health check",
+          responses: {
+            200: {
+              description: "Gateway health status",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      status: { type: "string" },
+                      tools: { type: "integer" },
+                    },
                   },
                 },
               },
@@ -205,9 +207,15 @@ const spec = {
           },
         },
       },
+      ...toolPaths,
     },
-    ...toolPaths,
-  },
+  };
 };
 
-process.stdout.write(`${JSON.stringify(spec, null, 2)}\n`);
+const isDirectRun = process.argv[1] !== undefined
+  && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
+
+if (isDirectRun) {
+  const spec = await generateOpenApiSpec();
+  process.stdout.write(`${JSON.stringify(spec, null, 2)}\n`);
+}
