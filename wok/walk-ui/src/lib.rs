@@ -38,5 +38,6 @@ pub mod tabs;
 pub mod theme;
 pub mod theme_loader;
 pub mod theme_watcher;
+pub mod vi_mode;
 pub mod viewport;
 pub mod zoom;

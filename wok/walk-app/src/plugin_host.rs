@@ -132,6 +132,7 @@ fn parse_lua_context(mode: &str) -> Option<Context> {
         "input" => Some(Context::InputEditor),
         "block" => Some(Context::BlockSelected),
         "search" => Some(Context::SearchActive),
+        "vi" => Some(Context::ViMode),
         _ => None,
     }
 }

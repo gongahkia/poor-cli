@@ -15,6 +15,7 @@ use walk_ui::quick_select::QuickSelectState;
 use walk_ui::search::GlobalSearch;
 use walk_ui::selection::SelectionManager;
 use walk_ui::theme::Theme;
+use walk_ui::vi_mode::ViModeState;
 use walk_ui::zoom::ZoomManager;
 
 use crate::config::WalkConfig;
@@ -60,6 +61,8 @@ pub struct WalkApp {
     pub quick_select: QuickSelectState,
     /// Block-local find/filter overlay state.
     pub block_query: Option<BlockQueryState>,
+    /// Active vi-mode state.
+    pub vi_mode: Option<ViModeState>,
     /// Draft to restore after dismissing the command palette.
     pub saved_draft: Option<String>,
     /// Font zoom manager.
@@ -112,6 +115,7 @@ impl WalkApp {
             command_palette: CommandPaletteState::new(),
             quick_select: QuickSelectState::new(),
             block_query: None,
+            vi_mode: None,
             saved_draft: None,
             keybindings: KeybindingConfig::default(),
         }
@@ -124,6 +128,8 @@ impl WalkApp {
             || self.command_search.is_some()
         {
             Context::SearchActive
+        } else if self.vi_mode.is_some() {
+            Context::ViMode
         } else if self.quick_select.active {
             Context::QuickSelect
         } else if self.input_mode == InputMode::CommandPalette
@@ -295,6 +301,9 @@ impl WalkApp {
             }
             Action::SearchGlobal => {
                 effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenSearch));
+            }
+            Action::EnterViMode => {
+                effects.push(RuntimeEffect::Status("Vi mode".to_string()));
             }
             Action::CommandPalette => {
                 effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenCommandPalette));

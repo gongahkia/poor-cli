@@ -31,6 +31,7 @@ struct ThemeToml {
     background: Option<String>,
     foreground: Option<String>,
     cursor: Option<String>,
+    vi_cursor_color: Option<String>,
     selection: Option<String>,
     opacity: Option<f32>,
     font_family: Option<String>,
@@ -147,6 +148,9 @@ pub fn load_theme(path: &Path) -> Result<Theme, ThemeError> {
     if let Some(c) = toml_theme.cursor {
         theme.cursor = parse_hex_color(&c)?;
     }
+    if let Some(c) = toml_theme.vi_cursor_color {
+        theme.vi_cursor_color = parse_hex_color(&c)?;
+    }
     if let Some(s) = toml_theme.selection {
         theme.selection = parse_hex_color(&s)?;
     }
@@ -248,6 +252,7 @@ pub fn apply_theme_overrides<S: std::hash::BuildHasher>(
             "background" => theme.background = parse_hex_color(value)?,
             "foreground" => theme.foreground = parse_hex_color(value)?,
             "cursor" => theme.cursor = parse_hex_color(value)?,
+            "vi_cursor_color" => theme.vi_cursor_color = parse_hex_color(value)?,
             "selection" => theme.selection = parse_hex_color(value)?,
             "opacity" => {
                 theme.opacity = value

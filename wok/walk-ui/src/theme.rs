@@ -74,6 +74,8 @@ pub struct Theme {
     pub foreground: Color,
     /// Cursor color.
     pub cursor: Color,
+    /// Vi-mode cursor color.
+    pub vi_cursor_color: Color,
     /// Selection highlight color.
     pub selection: Color,
     /// Standard 16 ANSI colors (8 normal + 8 bright).
@@ -145,6 +147,7 @@ impl Default for Theme {
             background: Color::rgb(0.102, 0.106, 0.149), // #1a1b26
             foreground: Color::rgb(0.753, 0.792, 0.961), // #c0caf5
             cursor: Color::rgb(0.969, 0.467, 0.557),     // #f7768e
+            vi_cursor_color: Color::rgb(0.956, 0.859, 0.475), // #f4db79
             selection: Color::new(0.478, 0.635, 0.969, 0.3), // #7aa2f7 semi-transparent
             ansi_colors: default_ansi_colors(),
             tab_bar_bg: Color::rgb(0.082, 0.086, 0.125), // #151620

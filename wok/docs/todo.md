@@ -1924,12 +1924,12 @@
 6. Render the vi cursor as a distinct block cursor (different color from the PTY cursor, theme-configurable: `theme.vi_cursor_color`). In visual mode, render selection highlight using `SelectionManager` from `walk-ui/src/selection.rs`. Show a mode indicator in the status bar ("-- VI --", "-- VISUAL --", etc.).
 
 **DONE WHEN**
-- [ ] `Mod+Shift+V` enters vi mode. `hjkl` moves a visible cursor through the terminal output. `w/b` jump by word. `gg/G` jump to top/bottom.
-- [ ] `[b` / `]b` jump between block boundaries. The viewport auto-scrolls to keep the vi cursor visible.
-- [ ] `v` enters visual mode; moving extends the selection. `y` copies the selection and exits.
-- [ ] `/ ` opens search; `n/N` jumps between matches with the vi cursor.
-- [ ] The status bar shows the current vi mode. The vi cursor is visually distinct from the shell cursor.
-- [ ] `Escape` or `q` exits vi mode cleanly, restoring normal terminal interaction.
+- [x] `Mod+Shift+V` enters vi mode. `hjkl` moves a visible cursor through the terminal output. `w/b` jump by word. `gg/G` jump to top/bottom.
+- [x] `[b` / `]b` jump between block boundaries. The viewport auto-scrolls to keep the vi cursor visible.
+- [x] `v` enters visual mode; moving extends the selection. `y` copies the selection and exits.
+- [x] `/ ` opens search; `n/N` jumps between matches with the vi cursor.
+- [x] The status bar shows the current vi mode. The vi cursor is visually distinct from the shell cursor.
+- [x] `Escape` or `q` exits vi mode cleanly, restoring normal terminal interaction.
 
 ---
 

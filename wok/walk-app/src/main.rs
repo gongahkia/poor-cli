@@ -65,6 +65,7 @@ use walk_ui::selection::{CellPos, SelectionState};
 use walk_ui::splits::SplitManager;
 use walk_ui::theme::Theme;
 use walk_ui::theme_watcher::ThemeWatcher;
+use walk_ui::vi_mode::{ViModeState, ViPending, ViSubMode};
 use walk_ui::viewport::ViewportRenderer;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::MouseButton;
@@ -646,12 +647,19 @@ impl WalkHandler {
                 .map(|block| block.cwd.display().to_string())
                 .filter(|cwd| !cwd.is_empty())
                 .unwrap_or_else(|| "~".to_string());
+            let vi_mode = active_pane.app.vi_mode.as_ref().map(ViModeState::mode_label);
             let ephemeral = self.hovered_link.as_ref().or(self.status_message.as_ref());
-            match ephemeral {
-                Some(message) => {
+            match (vi_mode, ephemeral) {
+                (Some(mode), Some(message)) => {
+                    format!("{cwd}  |  {}  |  {mode}  |  {message}", active_pane.app.config.shell)
+                }
+                (Some(mode), None) => {
+                    format!("{cwd}  |  {}  |  {mode}", active_pane.app.config.shell)
+                }
+                (None, Some(message)) => {
                     format!("{cwd}  |  {}  |  {message}", active_pane.app.config.shell)
                 }
-                None => format!("{cwd}  |  {}", active_pane.app.config.shell),
+                (None, None) => format!("{cwd}  |  {}", active_pane.app.config.shell),
             }
         });
         let workspace_search = self.active_search_state();
@@ -852,28 +860,100 @@ impl WalkHandler {
             }
 
             if focused && !pane.app.input_editor.is_active && pane.app.command_search.is_none() {
-                let cursor_x = viewport.x + cursor_col as f32 * cw;
-                let cursor_row = visible_rows
-                    .iter()
-                    .position(|row| *row == cursor_row)
-                    .and_then(|idx| row_positions.get(idx))
-                    .and_then(|row| *row)
-                    .unwrap_or_else(|| visible_rows.len().saturating_sub(1));
-                let cursor_y = viewport.y + cursor_row as f32 * ch;
-                if cursor_visible {
-                    render.batch.push_cursor(
-                        cursor_x,
-                        cursor_y,
-                        cw,
-                        ch,
-                        cursor_shape,
-                        [
-                            theme.cursor.r,
-                            theme.cursor.g,
-                            theme.cursor.b,
-                            0.7 * window_opacity,
-                        ],
-                    );
+                let viewport_row_for_abs = |absolute_row: usize| {
+                    visible_rows
+                        .iter()
+                        .position(|row| *row == absolute_row)
+                        .and_then(|idx| row_positions.get(idx))
+                        .and_then(|row| *row)
+                };
+
+                if let Some(vi_mode) = pane.app.vi_mode.as_ref() {
+                    if let Some((start, end)) = vi_mode.visual_range() {
+                        let row_start = start.0.min(end.0);
+                        let row_end = start.0.max(end.0);
+                        let col_start = start.1.min(end.1);
+                        let col_end = start.1.max(end.1).saturating_add(1);
+                        for absolute_row in row_start..=row_end {
+                            let Some(render_row) = viewport_row_for_abs(absolute_row) else {
+                                continue;
+                            };
+                            let (range_start, range_end) = match vi_mode.mode {
+                                ViSubMode::VisualLine => (0usize, total_cols),
+                                ViSubMode::VisualBlock => {
+                                    (col_start.min(total_cols), col_end.min(total_cols))
+                                }
+                                _ => {
+                                    if absolute_row == row_start && absolute_row == row_end {
+                                        (col_start.min(total_cols), col_end.min(total_cols))
+                                    } else if absolute_row == row_start {
+                                        (col_start.min(total_cols), total_cols)
+                                    } else if absolute_row == row_end {
+                                        (0, col_end.min(total_cols))
+                                    } else {
+                                        (0, total_cols)
+                                    }
+                                }
+                            };
+                            if range_end > range_start {
+                                render.batch.push_bg_quad(
+                                    viewport.x + range_start as f32 * cw,
+                                    viewport.y + render_row as f32 * ch,
+                                    (range_end - range_start) as f32 * cw,
+                                    ch,
+                                    [
+                                        theme.selection.r,
+                                        theme.selection.g,
+                                        theme.selection.b,
+                                        0.25 * window_opacity,
+                                    ],
+                                );
+                            }
+                        }
+                    }
+
+                    if cursor_visible {
+                        let vi_col = vi_mode.cursor_col.min(total_cols.saturating_sub(1));
+                        if let Some(render_row) = viewport_row_for_abs(vi_mode.cursor_row) {
+                            render.batch.push_cursor(
+                                viewport.x + vi_col as f32 * cw,
+                                viewport.y + render_row as f32 * ch,
+                                cw,
+                                ch,
+                                CursorShape::Block,
+                                [
+                                    theme.vi_cursor_color.r,
+                                    theme.vi_cursor_color.g,
+                                    theme.vi_cursor_color.b,
+                                    0.9 * window_opacity,
+                                ],
+                            );
+                        }
+                    }
+                } else {
+                    let cursor_x = viewport.x + cursor_col as f32 * cw;
+                    let cursor_row = visible_rows
+                        .iter()
+                        .position(|row| *row == cursor_row)
+                        .and_then(|idx| row_positions.get(idx))
+                        .and_then(|row| *row)
+                        .unwrap_or_else(|| visible_rows.len().saturating_sub(1));
+                    let cursor_y = viewport.y + cursor_row as f32 * ch;
+                    if cursor_visible {
+                        render.batch.push_cursor(
+                            cursor_x,
+                            cursor_y,
+                            cw,
+                            ch,
+                            cursor_shape,
+                            [
+                                theme.cursor.r,
+                                theme.cursor.g,
+                                theme.cursor.b,
+                                0.7 * window_opacity,
+                            ],
+                        );
+                    }
                 }
             }
 
@@ -1781,6 +1861,12 @@ impl WalkHandler {
     }
 
     fn handle_action(&mut self, action: Action) {
+        if matches!(action, Action::EnterViMode) {
+            self.enter_vi_mode();
+            self.needs_redraw = true;
+            return;
+        }
+
         if self.active_pane().is_some_and(|pane| {
             pane.terminal.state.is_alt_screen()
                 && matches!(
@@ -2725,6 +2811,251 @@ impl WalkHandler {
         }
     }
 
+    fn enter_vi_mode(&mut self) {
+        let Some(pane_id) = self.active_pane_id() else {
+            return;
+        };
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            let (cursor_col, _) = pane.terminal.state.cursor_position();
+            let cursor_row = pane.terminal.state.absolute_cursor_row();
+            pane.app.vi_mode = Some(ViModeState::new(cursor_row, cursor_col));
+            pane.app.input_editor.is_active = false;
+            self.status_message = Some("-- VI --".to_string());
+        }
+        self.needs_redraw = true;
+    }
+
+    fn exit_vi_mode(&mut self, status_message: Option<String>) {
+        if let Some(pane_id) = self.active_pane_id() {
+            if let Some(pane) = self.panes.get_mut(&pane_id) {
+                pane.app.vi_mode = None;
+            }
+        }
+        if let Some(message) = status_message {
+            self.status_message = Some(message);
+        }
+        self.needs_redraw = true;
+    }
+
+    fn handle_vi_mode_input(&mut self, event: &InputEvent) -> bool {
+        let Some(pane_id) = self.active_pane_id() else {
+            return false;
+        };
+        if !self
+            .panes
+            .get(&pane_id)
+            .is_some_and(|pane| pane.app.vi_mode.is_some())
+        {
+            return false;
+        }
+
+        let mut copy_range: Option<((usize, usize), (usize, usize))> = None;
+        let mut should_exit = false;
+
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            let mut vi = match pane.app.vi_mode.take() {
+                Some(vi) => vi,
+                None => return false,
+            };
+
+            let min_row = 0usize;
+            let max_row = pane.terminal.state.total_rows().saturating_sub(1);
+            let page_rows = pane.terminal.rows() as usize;
+            let total_cols = pane.terminal.state.columns().max(1);
+            let block_starts = pane
+                .app
+                .block_manager
+                .blocks
+                .iter()
+                .map(|block| block.output_start_row)
+                .collect::<Vec<_>>();
+            let block_ends = pane
+                .app
+                .block_manager
+                .blocks
+                .iter()
+                .map(|block| block.output_end_row)
+                .collect::<Vec<_>>();
+            let search_matches = pane
+                .app
+                .global_search
+                .matches
+                .iter()
+                .filter(|item| item.pane_id == pane_id && !item.is_command)
+                .map(|item| (item.row, item.col_start as usize))
+                .collect::<Vec<_>>();
+
+            match &event.action {
+                KeyAction::Escape => {
+                    should_exit = true;
+                }
+                KeyAction::Char('q') | KeyAction::Char('i') => {
+                    should_exit = true;
+                }
+                KeyAction::Char(ch) => {
+                    if let Some(pending) = vi.pending.take() {
+                        let line = pane.terminal.state.row_text(vi.cursor_row);
+                        match pending {
+                            ViPending::G => {
+                                if *ch == 'g' {
+                                    vi.top(min_row, line.chars().count().max(1));
+                                }
+                            }
+                            ViPending::BlockBackward => {
+                                if *ch == 'b' {
+                                    vi.prev_boundary(&block_starts);
+                                } else if *ch == 'e' {
+                                    vi.prev_boundary(&block_ends);
+                                }
+                            }
+                            ViPending::BlockForward => {
+                                if *ch == 'b' {
+                                    vi.next_boundary(&block_starts);
+                                } else if *ch == 'e' {
+                                    vi.next_boundary(&block_ends);
+                                }
+                            }
+                            ViPending::FindForward => vi.find_forward(&line, *ch),
+                            ViPending::FindBackward => vi.find_backward(&line, *ch),
+                        }
+                    } else {
+                        let line = pane.terminal.state.row_text(vi.cursor_row);
+                        let line_len = line.chars().count().max(1);
+                        match *ch {
+                            'h' => vi.left(),
+                            'l' => vi.right(line_len),
+                            'j' => {
+                                let next_line = pane
+                                    .terminal
+                                    .state
+                                    .row_text((vi.cursor_row + 1).min(max_row));
+                                vi.down(max_row, next_line.chars().count().max(1));
+                            }
+                            'k' => {
+                                let prev_line =
+                                    pane.terminal.state.row_text(vi.cursor_row.saturating_sub(1));
+                                vi.up(min_row, prev_line.chars().count().max(1));
+                            }
+                            'w' => vi.word_forward(&line),
+                            'b' => vi.word_backward(&line),
+                            'e' => vi.word_end(&line),
+                            '0' => vi.line_start(),
+                            '$' => vi.line_end(line_len),
+                            'G' => {
+                                let last_line = pane.terminal.state.row_text(max_row);
+                                vi.bottom(max_row, last_line.chars().count().max(1));
+                            }
+                            'g' => vi.pending = Some(ViPending::G),
+                            '[' => vi.pending = Some(ViPending::BlockBackward),
+                            ']' => vi.pending = Some(ViPending::BlockForward),
+                            'f' => vi.pending = Some(ViPending::FindForward),
+                            'F' => vi.pending = Some(ViPending::FindBackward),
+                            'v' => vi.enter_visual(ViSubMode::Visual),
+                            'V' => vi.enter_visual(ViSubMode::VisualLine),
+                            'y' => {
+                                if let Some(range) = vi.visual_range() {
+                                    copy_range = Some(range);
+                                    should_exit = true;
+                                }
+                            }
+                            'n' => vi.next_search_match(&search_matches),
+                            'N' => vi.prev_search_match(&search_matches),
+                            '/' => {
+                                pane.app.global_search.activate();
+                                pane.app.global_search.search_input.clear();
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                KeyAction::ArrowLeft => vi.left(),
+                KeyAction::ArrowRight => {
+                    let line = pane.terminal.state.row_text(vi.cursor_row);
+                    vi.right(line.chars().count().max(1));
+                }
+                KeyAction::ArrowUp => {
+                    let prev_line = pane.terminal.state.row_text(vi.cursor_row.saturating_sub(1));
+                    vi.up(min_row, prev_line.chars().count().max(1));
+                }
+                KeyAction::ArrowDown => {
+                    let next_line = pane
+                        .terminal
+                        .state
+                        .row_text((vi.cursor_row + 1).min(max_row));
+                    vi.down(max_row, next_line.chars().count().max(1));
+                }
+                _ => {}
+            }
+
+            if event.modifiers.ctrl && matches!(event.action, KeyAction::Char('d')) {
+                let line = pane.terminal.state.row_text(vi.cursor_row);
+                vi.half_page_down(max_row, page_rows, line.chars().count().max(1));
+            } else if event.modifiers.ctrl && matches!(event.action, KeyAction::Char('u')) {
+                let line = pane.terminal.state.row_text(vi.cursor_row);
+                vi.half_page_up(min_row, page_rows, line.chars().count().max(1));
+            } else if event.modifiers.ctrl && matches!(event.action, KeyAction::Char('v')) {
+                vi.enter_visual(ViSubMode::VisualBlock);
+            }
+
+            vi.cursor_col = vi.cursor_col.min(total_cols.saturating_sub(1));
+            pane.app.vi_mode = Some(vi);
+        }
+
+        if let Some((start, end)) = copy_range {
+            if let Some(text) = self
+                .panes
+                .get(&pane_id)
+                .map(|pane| extract_absolute_selection_text(&pane.terminal, start, end))
+            {
+                if let Some(pane) = self.panes.get_mut(&pane_id) {
+                    let _ = pane.app.clipboard.copy(&text);
+                }
+            }
+        }
+
+        if should_exit {
+            self.exit_vi_mode(Some("Exited vi mode".to_string()));
+            return true;
+        }
+
+        self.ensure_vi_cursor_visible(pane_id);
+        self.status_message = self
+            .panes
+            .get(&pane_id)
+            .and_then(|pane| pane.app.vi_mode.as_ref().map(|vi| vi.mode_label().to_string()));
+        self.needs_redraw = true;
+        true
+    }
+
+    fn ensure_vi_cursor_visible(&mut self, pane_id: PaneId) {
+        let Some(pane) = self.panes.get_mut(&pane_id) else {
+            return;
+        };
+        let Some(vi) = pane.app.vi_mode.as_ref() else {
+            return;
+        };
+
+        let screen_rows = pane.terminal.state.screen_lines().max(1);
+        let visible_start = pane.terminal.state.visible_start_row();
+        let visible_end = visible_start + screen_rows.saturating_sub(1);
+        if (visible_start..=visible_end).contains(&vi.cursor_row) {
+            return;
+        }
+
+        let top_row = if vi.cursor_row < visible_start {
+            vi.cursor_row
+        } else {
+            vi.cursor_row.saturating_sub(screen_rows.saturating_sub(1))
+        };
+        let scrollback = pane.terminal.state.scrollback_len();
+        let desired_offset = scrollback.saturating_sub(top_row);
+        let max_scroll = pane_max_scroll(pane);
+        pane.viewport.set_display_offset(desired_offset, max_scroll);
+        pane.terminal
+            .state
+            .set_display_offset(pane.viewport.display_offset());
+    }
+
     fn apply_zoom(&mut self, target_size: f32) {
         if (self.font.font_size - target_size).abs() <= f32::EPSILON {
             return;
@@ -3439,6 +3770,10 @@ impl AppHandler for WalkHandler {
     }
 
     fn on_key_event(&mut self, event: InputEvent) {
+        if self.handle_vi_mode_input(&event) {
+            return;
+        }
+
         if let Some(action) = self
             .active_pane()
             .and_then(|pane| pane.app.resolve_action(&event))
@@ -5261,6 +5596,46 @@ fn extract_selection_text(terminal: &Terminal, start: CellPos, end: CellPos) -> 
     lines.join("\n")
 }
 
+fn extract_absolute_selection_text(
+    terminal: &Terminal,
+    start: (usize, usize),
+    end: (usize, usize),
+) -> String {
+    let total_rows = terminal.state.total_rows();
+    if total_rows == 0 {
+        return String::new();
+    }
+
+    let (start, end) = if start <= end { (start, end) } else { (end, start) };
+    let start_row = start.0.min(total_rows.saturating_sub(1));
+    let end_row = end.0.min(total_rows.saturating_sub(1));
+    let mut lines = Vec::new();
+
+    for row in start_row..=end_row {
+        let row_text = terminal.state.row_text(row);
+        let row_chars = row_text.chars().collect::<Vec<_>>();
+        let row_start = if row == start_row {
+            start.1.min(row_chars.len())
+        } else {
+            0
+        };
+        let row_end = if row == end_row {
+            (end.1 + 1).min(row_chars.len())
+        } else {
+            row_chars.len()
+        };
+        lines.push(
+            row_chars[row_start..row_end]
+                .iter()
+                .collect::<String>()
+                .trim_end()
+                .to_string(),
+        );
+    }
+
+    lines.join("\n")
+}
+
 fn extract_block_text(terminal: &Terminal, block: &Block) -> String {
     let mut lines = Vec::new();
 
@@ -5941,6 +6316,7 @@ fn parse_lua_action(action: &str) -> Option<Action> {
         "focus_up" => Some(Action::FocusUp),
         "focus_down" => Some(Action::FocusDown),
         "search_global" | "toggle_search" | "search" => Some(Action::SearchGlobal),
+        "enter_vi_mode" | "vi_mode" => Some(Action::EnterViMode),
         "command_palette" | "palette" => Some(Action::CommandPalette),
         "command_search" | "history_search" => Some(Action::CommandSearch),
         "quick_select" => Some(Action::QuickSelect),
@@ -6052,6 +6428,7 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::BlockFilter => "block_filter".to_string(),
         Action::BlockRerun => "block_rerun".to_string(),
         Action::SearchGlobal => "search_global".to_string(),
+        Action::EnterViMode => "enter_vi_mode".to_string(),
         Action::CommandPalette => "command_palette".to_string(),
         Action::CommandSearch => "command_search".to_string(),
         Action::QuickSelect => "quick_select".to_string(),

@@ -83,6 +83,8 @@ pub enum Action {
     BlockRerun,
     /// Global terminal search.
     SearchGlobal,
+    /// Enter vi navigation mode.
+    EnterViMode,
     /// Open the command palette.
     CommandPalette,
     /// Open pane-local command history search.
@@ -131,6 +133,8 @@ pub enum Context {
     SearchActive,
     /// Quick-select label mode is active.
     QuickSelect,
+    /// Vi-mode navigation is active.
+    ViMode,
 }
 
 /// Keybinding configuration.
@@ -385,6 +389,13 @@ impl Default for KeybindingConfig {
                 modifiers: pm,
             },
             Action::CommandPalette,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('v'),
+                modifiers: pms,
+            },
+            Action::EnterViMode,
         );
         bindings.insert(
             KeyCombo {
