@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use regex::Regex;
 use serde::Serialize;
 use serde_json::json;
@@ -81,6 +81,14 @@ use winit::window::Window;
 #[derive(Parser, Debug)]
 #[command(name = "walk", version, about)]
 struct Cli {
+    /// Start a headless daemon session.
+    #[arg(long)]
+    daemon: Option<String>,
+
+    /// Session command.
+    #[command(subcommand)]
+    command: Option<CliCommand>,
+
     /// Override the default shell.
     #[arg(long)]
     shell: Option<String>,
@@ -92,6 +100,22 @@ struct Cli {
     /// Initial working directory.
     #[arg(long)]
     working_dir: Option<String>,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+enum CliCommand {
+    /// Attach to a running named session.
+    Attach {
+        /// Session name.
+        name: String,
+    },
+    /// List running daemon sessions.
+    List,
+    /// Terminate a running named session daemon.
+    Kill {
+        /// Session name.
+        name: String,
+    },
 }
 
 /// GPU render state, initialized after window creation.
@@ -7218,6 +7242,45 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     info!("starting Walk terminal");
 
+    if let Some(name) = cli.daemon.clone() {
+        info!("starting daemon session '{name}'");
+        walk_app::daemon::run_daemon(&name)?;
+        return Ok(());
+    }
+
+    let mut attached_session = None;
+    match cli.command.clone() {
+        Some(CliCommand::List) => {
+            for session in walk_app::daemon::list_sessions() {
+                println!(
+                    "{} ({} pane{}, {} attached)",
+                    session.name,
+                    session.pane_count,
+                    if session.pane_count == 1 { "" } else { "s" },
+                    session.attached_clients
+                );
+            }
+            return Ok(());
+        }
+        Some(CliCommand::Kill { name }) => {
+            walk_app::daemon::kill_session(&name)?;
+            println!("terminated session '{name}'");
+            return Ok(());
+        }
+        Some(CliCommand::Attach { name }) => {
+            let summary = walk_app::daemon::attach_session(&name)?;
+            info!(
+                "attached to session '{}' ({} pane{}, {} attached)",
+                summary.name,
+                summary.pane_count,
+                if summary.pane_count == 1 { "" } else { "s" },
+                summary.attached_clients
+            );
+            attached_session = Some(summary.name);
+        }
+        None => {}
+    }
+
     let mut config = WalkConfig::load();
 
     // Apply CLI overrides
@@ -7235,7 +7298,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         transparent: config.window_opacity < 1.0,
         ..WindowConfig::default()
     };
-    let handler = WalkHandler::new(config);
+    let mut handler = WalkHandler::new(config);
+    if let Some(session) = attached_session {
+        handler.status_message = Some(format!("Attached session '{session}'"));
+    }
 
     run_event_loop(window_config, handler)?;
     Ok(())

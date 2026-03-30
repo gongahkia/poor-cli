@@ -2129,13 +2129,13 @@
 7. Signal handling: `SIGHUP` causes the daemon to detach all clients but keep running. `SIGTERM` saves state and exits gracefully.
 
 **DONE WHEN**
-- [ ] `walk --daemon work` starts a background daemon named "work" with a shell.
-- [ ] `walk attach work` opens a window connected to the "work" session. Commands typed in the window execute in the daemon's PTY.
-- [ ] Closing the window (or `walk detach`) disconnects without killing the shell. The daemon keeps running.
-- [ ] `walk attach work` reconnects and shows the full terminal state including scrollback and blocks.
-- [ ] `walk list` shows `work (1 pane, attached)` or `work (1 pane, detached)`.
-- [ ] Multiple clients can attach to the same session (read-only viewers or collaborative input based on config).
-- [ ] `walk` with no args still works in standalone mode (no daemon).
+- [x] `walk --daemon work` starts a background daemon named "work" with a shell.
+- [x] `walk attach work` opens a window connected to the "work" session. Commands typed in the window execute in the daemon's PTY.
+- [x] Closing the window (or `walk detach`) disconnects without killing the shell. The daemon keeps running.
+- [x] `walk attach work` reconnects and shows the full terminal state including scrollback and blocks.
+- [x] `walk list` shows `work (1 pane, attached)` or `work (1 pane, detached)`.
+- [x] Multiple clients can attach to the same session (read-only viewers or collaborative input based on config).
+- [x] `walk` with no args still works in standalone mode (no daemon).
 
 ---
 
