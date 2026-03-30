@@ -25,7 +25,9 @@ use walk_app::handler::AppHandler;
 use walk_app::input::{InputEvent, KeyAction};
 use walk_app::keybindings::Action;
 use walk_app::plugin_host::PluginHost;
-use walk_app::scripting::{QuickSelectPatternRequest, ThemeRequest, TriggerRequest};
+use walk_app::scripting::{
+    QuickSelectPatternRequest, ThemeRequest, TriggerRequest, WorkflowRequest,
+};
 use walk_app::session::{
     block_from_state, block_to_state, default_session_path, history_entry_from_state,
     history_entry_to_state, load_session, named_session_path, save_session, split_node_from_state,
@@ -39,6 +41,7 @@ use walk_blocks::triggers::{
 };
 use walk_input::editor::{EditorAction, EditorKey};
 use walk_input::history::{prefix_matches, CommandHistory, HistoryEntry};
+use walk_input::workflows::{Workflow, WorkflowStore};
 use walk_renderer::atlas::GlyphAtlas;
 use walk_renderer::damage::DirtyRegion;
 use walk_renderer::font::FontSystem;
@@ -228,6 +231,7 @@ struct WalkHandler {
     config: WalkConfig,
     trigger_engine: TriggerEngine,
     pattern_registry: PatternRegistry,
+    workflow_store: WorkflowStore,
     workspace: WorkspaceState,
     panes: HashMap<PaneId, PaneRuntime>,
     pending_pane_restore: HashMap<PaneId, PaneState>,
@@ -256,6 +260,8 @@ impl WalkHandler {
         let plugins = PluginHost::new(&WalkConfig::config_dir());
         let trigger_engine = trigger_engine_from_config(&config);
         let pattern_registry = PatternRegistry::new();
+        let mut workflow_store = WorkflowStore::new();
+        workflow_store.load_from_dir(&WalkConfig::config_dir().join("workflows"));
         let background = {
             let mut background = BackgroundRenderer::new();
             if let Some(path) = resolve_background_image_path(&config) {
@@ -275,6 +281,7 @@ impl WalkHandler {
             config,
             trigger_engine,
             pattern_registry,
+            workflow_store,
             workspace,
             panes: HashMap::new(),
             pending_pane_restore: HashMap::new(),
@@ -891,6 +898,7 @@ impl WalkHandler {
             if focused && pane.app.input_mode == InputMode::CommandPalette {
                 let palette_commands = available_palette_commands(
                     &plugin_palette_aliases,
+                    self.workflow_store.workflows(),
                     &pane.app.input_editor.buffer.text(),
                 );
                 render_command_palette(
@@ -1242,6 +1250,7 @@ impl WalkHandler {
             "restore_session": self.config.restore_session,
             "debug_overlay": self.config.debug_overlay,
             "trigger_count": self.trigger_engine.len(),
+            "workflow_count": self.workflow_store.workflows().len(),
         })
     }
 
@@ -1353,6 +1362,9 @@ impl WalkHandler {
         for request in effects.quick_select_pattern_requests {
             self.apply_quick_select_pattern_request(request);
         }
+        for request in effects.workflow_requests {
+            self.apply_workflow_request(request);
+        }
         self.refresh_plugin_config();
         self.refresh_plugin_snapshot();
     }
@@ -1393,6 +1405,16 @@ impl WalkHandler {
             QuickSelectPatternRequest::Remove { name } => {
                 self.pattern_registry.remove_pattern(&name);
                 self.status_message = Some(format!("removed quick-select pattern '{name}'"));
+            }
+        }
+    }
+
+    fn apply_workflow_request(&mut self, request: WorkflowRequest) {
+        match request {
+            WorkflowRequest::Register(workflow) => {
+                let name = workflow.name.clone();
+                self.workflow_store.add(workflow);
+                self.status_message = Some(format!("registered workflow '{name}'"));
             }
         }
     }
@@ -2898,6 +2920,21 @@ impl WalkHandler {
             return;
         }
 
+        let workflow_name = trimmed.strip_prefix('@').unwrap_or(trimmed).trim();
+        if let Some(workflow) = self.workflow_store.by_name(workflow_name).cloned() {
+            if let Some(active_pane) = self.active_pane_mut() {
+                active_pane.app.close_command_palette();
+                active_pane.app.input_mode = InputMode::OwnedInput;
+                active_pane.app.input_editor.is_active = true;
+                active_pane.app.input_editor.load_workflow(&workflow);
+            }
+            self.status_message = Some(format!("Loaded workflow '{}'", workflow.name));
+            if let Some(window) = &self.window {
+                self.sync_workspace_layout(window.inner_size());
+            }
+            return;
+        }
+
         let mapped_action = self
             .plugins
             .as_ref()
@@ -3587,6 +3624,25 @@ fn render_owned_input(
     let padding_y = 8.0;
     let base_x = rect.x + padding_x;
     let base_y = rect.y + padding_y;
+
+    if let Some((row, col_start, col_end)) = input.parameter_placeholder {
+        let width = (col_end.saturating_sub(col_start).max(1) as f32) * font.metrics.cell_width;
+        render.batch.push_bg_quad(
+            base_x + col_start as f32 * font.metrics.cell_width,
+            base_y + row as f32 * font.metrics.cell_height,
+            width,
+            font.metrics.cell_height,
+            with_opacity(
+                [
+                    theme.highlight_current_match.r,
+                    theme.highlight_current_match.g,
+                    theme.highlight_current_match.b,
+                    0.3,
+                ],
+                surface_opacity,
+            ),
+        );
+    }
 
     for (row, line) in input.lines.iter().enumerate() {
         push_text(
@@ -4557,6 +4613,7 @@ fn input_event_to_editor_key(event: &InputEvent) -> Option<EditorKey> {
         KeyAction::Backspace => Some(EditorKey::Backspace),
         KeyAction::Delete => Some(EditorKey::Delete),
         KeyAction::Escape => Some(EditorKey::Escape),
+        KeyAction::Tab if event.modifiers.shift => Some(EditorKey::ShiftTab),
         KeyAction::Tab => Some(EditorKey::Tab),
         KeyAction::ArrowLeft if event.modifiers.ctrl => Some(EditorKey::WordLeft),
         KeyAction::ArrowLeft => Some(EditorKey::Left),
@@ -5505,11 +5562,21 @@ fn built_in_palette_commands() -> Vec<(String, String)> {
 
 fn available_palette_commands(
     plugin_aliases: &[(String, String)],
+    workflows: &[Workflow],
     query: &str,
 ) -> Vec<(String, String)> {
     let mut commands = built_in_palette_commands();
     for (name, action) in plugin_aliases {
         commands.push((name.clone(), format!("Plugin alias -> {action}")));
+    }
+    for workflow in workflows {
+        let label = format!("@{}", workflow.name);
+        let description = if workflow.description.is_empty() {
+            format!("Workflow template: {}", workflow.template)
+        } else {
+            format!("Workflow: {}", workflow.description)
+        };
+        commands.push((label, description));
     }
 
     let query = query.trim().to_ascii_lowercase();
@@ -5525,6 +5592,9 @@ fn available_palette_commands(
                 || description.to_ascii_lowercase().contains(&query)
         })
         .collect::<Vec<_>>();
+    if query.starts_with('@') {
+        filtered.sort_by_key(|(name, _)| !name.starts_with('@'));
+    }
     filtered.truncate(6);
     filtered
 }

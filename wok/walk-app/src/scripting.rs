@@ -10,6 +10,7 @@ use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Result as LuaResult, Table, 
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tracing::{info, warn};
+use walk_input::workflows::{Workflow, WorkflowParam};
 
 /// Collected keybinding overrides from Lua.
 #[derive(Debug, Clone)]
@@ -67,6 +68,13 @@ pub enum QuickSelectPatternRequest {
     },
 }
 
+/// Workflow registration work requested by Lua.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WorkflowRequest {
+    /// Register or replace a workflow.
+    Register(Workflow),
+}
+
 /// Shared state for Lua callbacks to write to.
 #[derive(Default, Clone)]
 pub struct LuaState {
@@ -86,6 +94,10 @@ pub struct LuaState {
     pub trigger_requests: Arc<Mutex<Vec<TriggerRequest>>>,
     /// Pending quick-select pattern requests requested by Lua.
     pub quick_select_pattern_requests: Arc<Mutex<Vec<QuickSelectPatternRequest>>>,
+    /// Pending workflow registration requests requested by Lua.
+    pub workflow_requests: Arc<Mutex<Vec<WorkflowRequest>>>,
+    /// Lua-registered workflow cache for `walk.workflows()`.
+    pub workflows: Arc<Mutex<Vec<Workflow>>>,
     /// Named commands registered from Lua as action aliases.
     pub commands: Arc<Mutex<HashMap<String, String>>>,
     /// Latest runtime snapshot exposed to plugin callbacks.
@@ -239,6 +251,65 @@ impl LuaRuntime {
                     Ok(())
                 })?;
         walk.set("register_command", register_command_fn)?;
+
+        // walk.register_workflow(table)
+        let workflow_request_state = self.state.workflow_requests.clone();
+        let workflow_state = self.state.workflows.clone();
+        let register_workflow_fn = self.lua.create_function(move |_, table: Table| {
+            let name: String = table.get("name")?;
+            let template: String = table.get("template")?;
+            let description = table
+                .get::<Option<String>>("description")?
+                .unwrap_or_default();
+            let params = table
+                .get::<Option<Table>>("params")?
+                .map(|params_table| {
+                    params_table
+                        .sequence_values::<Table>()
+                        .map(|item| {
+                            let item = item?;
+                            Ok(WorkflowParam {
+                                name: item.get::<String>("name")?,
+                                placeholder: item
+                                    .get::<Option<String>>("placeholder")?
+                                    .unwrap_or_default(),
+                                default: item.get::<Option<String>>("default")?,
+                                description: item
+                                    .get::<Option<String>>("description")?
+                                    .unwrap_or_default(),
+                            })
+                        })
+                        .collect::<LuaResult<Vec<_>>>()
+                })
+                .transpose()?
+                .unwrap_or_default();
+
+            let workflow = Workflow {
+                name,
+                description,
+                template,
+                params,
+            };
+            workflow_state
+                .lock()
+                .unwrap()
+                .retain(|existing| existing.name != workflow.name);
+            workflow_state.lock().unwrap().push(workflow.clone());
+            workflow_request_state
+                .lock()
+                .unwrap()
+                .push(WorkflowRequest::Register(workflow));
+            Ok(())
+        })?;
+        walk.set("register_workflow", register_workflow_fn)?;
+
+        // walk.workflows()
+        let workflow_state = self.state.workflows.clone();
+        let workflows_fn = self.lua.create_function(move |lua, ()| {
+            let workflows = workflow_state.lock().unwrap().clone();
+            lua.to_value(&workflows)
+        })?;
+        walk.set("workflows", workflows_fn)?;
 
         // walk.add_trigger(name, pattern, actions)
         let trigger_request_state = self.state.trigger_requests.clone();
@@ -437,6 +508,11 @@ impl LuaRuntime {
     /// Drain pending quick-select pattern requests queued from Lua.
     pub fn take_quick_select_pattern_requests(&self) -> Vec<QuickSelectPatternRequest> {
         std::mem::take(&mut *self.state.quick_select_pattern_requests.lock().unwrap())
+    }
+
+    /// Drain pending workflow registration requests queued from Lua.
+    pub fn take_workflow_requests(&self) -> Vec<WorkflowRequest> {
+        std::mem::take(&mut *self.state.workflow_requests.lock().unwrap())
     }
 
     /// Resolve a named command alias registered from Lua to an action string.

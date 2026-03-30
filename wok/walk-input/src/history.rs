@@ -274,7 +274,8 @@ pub fn fuzzy_search_entries(
     matches
 }
 
-fn fuzzy_score(text: &str, query: &str) -> Option<i64> {
+/// Score a text candidate against a fuzzy query.
+pub fn fuzzy_score(text: &str, query: &str) -> Option<i64> {
     if query.is_empty() {
         return Some(0);
     }

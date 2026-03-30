@@ -1857,10 +1857,10 @@
 6. Integrate workflows into the command palette (Task 78) as a dedicated section.
 
 **DONE WHEN**
-- [ ] A TOML file in `~/.config/walk/workflows/deploy.toml` appears in the command palette under "Workflows".
-- [ ] Selecting it fills the input editor with the template, highlighting `${branch}`. Typing replaces the placeholder. Tab moves to `${host}`. Enter submits the fully filled command.
-- [ ] `walk.register_workflow({ name = "quick-test", template = "cargo test $1", params = {{ name = "filter" }} })` in `init.lua` registers a workflow at runtime.
-- [ ] Workflows with default values auto-fill those defaults; the user can override by typing.
+- [x] A TOML file in `~/.config/walk/workflows/deploy.toml` appears in the command palette under "Workflows".
+- [x] Selecting it fills the input editor with the template, highlighting `${branch}`. Typing replaces the placeholder. Tab moves to `${host}`. Enter submits the fully filled command.
+- [x] `walk.register_workflow({ name = "quick-test", template = "cargo test $1", params = {{ name = "filter" }} })` in `init.lua` registers a workflow at runtime.
+- [x] Workflows with default values auto-fill those defaults; the user can override by typing.
 
 ---
 

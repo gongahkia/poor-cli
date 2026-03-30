@@ -28,3 +28,4 @@ pub mod cursor_ops;
 pub mod editor;
 pub mod highlighter;
 pub mod history;
+pub mod workflows;
