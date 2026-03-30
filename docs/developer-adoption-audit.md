@@ -12,6 +12,15 @@ That is real value for the right buyer.
 
 The current problem is not emptiness. The current problem is adoption depth. The repo feels credible as infrastructure, but not yet obvious as a default dependency for developers who need repeatable business, property, macro, transport, or environment workflows in production.
 
+## Implementation Update (2026-03-30)
+
+This pass tightened adoption-critical runtime behavior:
+
+- structured request/workflow logging now spans query planning, query execution steps, brief-source partial failures, REST gateway invocations, and CLI commands
+- internal verification removed avoidable network dependence from parity stages
+- `npm run diagnostics` now provides a fast local contract check before full verification
+- troubleshooting and market-convention guidance now live in dedicated docs for faster onboarding and incident triage
+
 ## Evidence That The Repo Is Real
 
 - The codebase now exposes 29 official data families and 68 public `sg_*` tools.
