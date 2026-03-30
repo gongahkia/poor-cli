@@ -15,6 +15,65 @@ pub struct UrlSpan {
     pub url: String,
 }
 
+/// Cell range for one link span.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CellRange {
+    /// Absolute row.
+    pub row: usize,
+    /// Start column (inclusive).
+    pub col_start: usize,
+    /// End column (exclusive).
+    pub col_end: usize,
+}
+
+/// Common interface for link types.
+pub trait Linkable {
+    /// Return the URI target.
+    fn uri(&self) -> &str;
+    /// Return the occupied cell range.
+    fn span(&self) -> CellRange;
+}
+
+/// Regex-detected URL link.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DetectedLink {
+    /// Link target URI.
+    pub uri: String,
+    /// Occupied range.
+    pub range: CellRange,
+}
+
+impl Linkable for DetectedLink {
+    fn uri(&self) -> &str {
+        &self.uri
+    }
+
+    fn span(&self) -> CellRange {
+        self.range
+    }
+}
+
+/// Explicit OSC 8 hyperlink.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExplicitLink {
+    /// Link target URI.
+    pub uri: String,
+    /// Optional OSC 8 id parameter.
+    pub id: Option<String>,
+    /// Occupied range.
+    pub range: CellRange,
+}
+
+impl Linkable for ExplicitLink {
+    fn uri(&self) -> &str {
+        &self.uri
+    }
+
+    fn span(&self) -> CellRange {
+        self.range
+    }
+}
+
 /// Detect URLs in a line of text.
 pub fn detect_urls(line_text: &str) -> Vec<UrlSpan> {
     static REGISTRY: OnceLock<PatternRegistry> = OnceLock::new();
@@ -28,6 +87,21 @@ pub fn detect_urls(line_text: &str) -> Vec<UrlSpan> {
                 col_end: candidate.col_end as u16,
                 url: candidate.text,
             })
+        })
+        .collect()
+}
+
+/// Detect URLs on one terminal row and return link objects.
+pub fn detect_links(row: usize, line_text: &str) -> Vec<DetectedLink> {
+    detect_urls(line_text)
+        .into_iter()
+        .map(|span| DetectedLink {
+            uri: span.url,
+            range: CellRange {
+                row,
+                col_start: span.col_start as usize,
+                col_end: span.col_end as usize,
+            },
         })
         .collect()
 }

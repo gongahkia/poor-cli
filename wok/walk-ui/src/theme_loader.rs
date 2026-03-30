@@ -43,6 +43,7 @@ struct ThemeToml {
     tab_inactive_bg: Option<String>,
     status_bar_bg: Option<String>,
     input_bg: Option<String>,
+    hyperlink_color: Option<String>,
 }
 
 /// ANSI color overrides.
@@ -176,6 +177,9 @@ pub fn load_theme(path: &Path) -> Result<Theme, ThemeError> {
     if let Some(c) = toml_theme.input_bg {
         theme.input_bg = parse_hex_color(&c)?;
     }
+    if let Some(c) = toml_theme.hyperlink_color {
+        theme.hyperlink_color = parse_hex_color(&c)?;
+    }
 
     // Apply ANSI overrides
     if let Some(ansi) = toml_theme.ansi {
@@ -271,6 +275,7 @@ pub fn apply_theme_overrides<S: std::hash::BuildHasher>(
             "block_error_accent" => theme.block_error_accent = parse_hex_color(value)?,
             "highlight_match" => theme.highlight_match = parse_hex_color(value)?,
             "highlight_current_match" => theme.highlight_current_match = parse_hex_color(value)?,
+            "hyperlink_color" => theme.hyperlink_color = parse_hex_color(value)?,
             "bracket_match" => theme.bracket_match = parse_hex_color(value)?,
             _ => {}
         }

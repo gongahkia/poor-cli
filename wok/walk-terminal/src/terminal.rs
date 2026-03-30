@@ -10,7 +10,7 @@ use tracing::{debug, instrument};
 use crate::async_io::{PtyEvent, PtyIoHandle};
 use crate::pty::{PtyError, PtyManager};
 use crate::shell::ShellType;
-use crate::state::{AbsoluteRow, TermEvent, TerminalState};
+use crate::state::{AbsoluteRow, HyperlinkInfo, TermEvent, TerminalState};
 
 /// Errors from terminal operations.
 #[derive(Debug, Error)]
@@ -170,63 +170,102 @@ impl Terminal {
     ///
     /// Looks for `\x1b]133;X\x07` patterns where X is A, B, C, or D.
     fn scan_osc_markers(&mut self, bytes: &[u8]) {
-        let cursor_row = self.state.absolute_cursor_row();
         let mut i = 0;
-        while i + 6 < bytes.len() {
-            // Look for ESC ] 133 ;
+        let mut absolute_row = self.state.absolute_cursor_row();
+        let mut col = self.state.cursor_position().0;
+
+        while i < bytes.len() {
             if bytes[i] == 0x1b && bytes.get(i + 1) == Some(&b']') {
-                // Find the ST (BEL \x07 or ESC \\ )
-                if let Some(end) = bytes[i..].iter().position(|&b| b == 0x07) {
-                    let payload = &bytes[i + 2..i + end];
+                if let Some((payload_end, terminator_len)) = find_osc_terminator(bytes, i + 2) {
+                    let payload = &bytes[i + 2..payload_end];
                     if let Ok(s) = std::str::from_utf8(payload) {
                         if let Some(rest) = s.strip_prefix("133;") {
                             match rest.chars().next() {
                                 Some('A') => {
                                     self.events
-                                        .push(SemanticEvent::PromptStart { row: cursor_row });
+                                        .push(SemanticEvent::PromptStart { row: absolute_row });
                                 }
                                 Some('B') => {
                                     self.events
-                                        .push(SemanticEvent::CommandStart { row: cursor_row });
+                                        .push(SemanticEvent::CommandStart { row: absolute_row });
                                 }
                                 Some('E') => {
                                     self.events.push(SemanticEvent::CommandText {
-                                        row: cursor_row,
+                                        row: absolute_row,
                                         text: rest.get(2..).unwrap_or_default().to_string(),
                                     });
                                 }
                                 Some('C') => {
                                     self.events
-                                        .push(SemanticEvent::OutputStart { row: cursor_row });
+                                        .push(SemanticEvent::OutputStart { row: absolute_row });
                                 }
                                 Some('D') => {
-                                    let exit_code = rest.get(2..).and_then(|s| {
-                                        s.trim_start_matches(';').parse::<i32>().ok()
+                                    let exit_code = rest.get(2..).and_then(|value| {
+                                        value.trim_start_matches(';').parse::<i32>().ok()
                                     });
                                     self.events.push(SemanticEvent::CommandEnd {
-                                        row: cursor_row,
+                                        row: absolute_row,
                                         exit_code,
                                     });
                                 }
                                 _ => {}
                             }
                         } else if let Some(rest) = s.strip_prefix("7;") {
-                            // OSC 7: CWD reporting
                             if let Some(path) = rest.strip_prefix("file://") {
-                                // Strip hostname: file://hostname/path
                                 if let Some(slash) = path.find('/') {
                                     self.events.push(SemanticEvent::CwdChanged(PathBuf::from(
                                         &path[slash..],
                                     )));
                                 }
                             }
+                        } else if let Some(rest) = s.strip_prefix("8;") {
+                            let (params, uri) = rest.split_once(';').unwrap_or((rest, ""));
+                            if uri.trim().is_empty() {
+                                self.state.set_current_hyperlink(None);
+                            } else {
+                                let parsed = parse_osc8_params(params);
+                                let id = parsed.get("id").cloned();
+                                self.state.set_current_hyperlink(Some(HyperlinkInfo {
+                                    uri: uri.to_string(),
+                                    id,
+                                    params: parsed,
+                                }));
+                            }
                         }
                     }
-                    i += end + 1;
+                    i = payload_end + terminator_len;
                     continue;
                 }
             }
-            i += 1;
+
+            if bytes[i] == b'\n' {
+                absolute_row = absolute_row.saturating_add(1);
+                col = 0;
+                i += 1;
+                continue;
+            }
+            if bytes[i] == b'\r' {
+                col = 0;
+                i += 1;
+                continue;
+            }
+            if bytes[i].is_ascii_control() {
+                i += 1;
+                continue;
+            }
+
+            let span_start = col;
+            while i < bytes.len()
+                && !bytes[i].is_ascii_control()
+                && !(bytes[i] == 0x1b && bytes.get(i + 1) == Some(&b']'))
+            {
+                col = col.saturating_add(1);
+                i += 1;
+            }
+            if self.state.current_hyperlink().is_some() && col > span_start {
+                self.state
+                    .record_hyperlink_span(absolute_row, span_start, col);
+            }
         }
     }
 
@@ -300,5 +339,53 @@ impl Terminal {
     /// Get the current number of rows.
     pub fn rows(&self) -> u16 {
         self.rows
+    }
+}
+
+fn find_osc_terminator(bytes: &[u8], start: usize) -> Option<(usize, usize)> {
+    let mut idx = start;
+    while idx < bytes.len() {
+        if bytes[idx] == 0x07 {
+            return Some((idx, 1));
+        }
+        if bytes[idx] == 0x1b && bytes.get(idx + 1) == Some(&b'\\') {
+            return Some((idx, 2));
+        }
+        idx += 1;
+    }
+    None
+}
+
+fn parse_osc8_params(params: &str) -> HashMap<String, String> {
+    let mut parsed = HashMap::new();
+    for token in params
+        .split(':')
+        .flat_map(|segment| segment.split(';'))
+        .filter(|segment| !segment.trim().is_empty())
+    {
+        if let Some((key, value)) = token.split_once('=') {
+            parsed.insert(key.trim().to_string(), value.trim().to_string());
+        }
+    }
+    parsed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_osc8_params_extracts_id() {
+        let params = parse_osc8_params("id=abc123:foo=bar");
+        assert_eq!(params.get("id"), Some(&"abc123".to_string()));
+        assert_eq!(params.get("foo"), Some(&"bar".to_string()));
+    }
+
+    #[test]
+    fn test_find_osc_terminator_supports_bel_and_st() {
+        let bel = b"\x1b]8;;https://example.com\x07";
+        let st = b"\x1b]8;;https://example.com\x1b\\";
+        assert_eq!(find_osc_terminator(bel, 2), Some((24, 1)));
+        assert_eq!(find_osc_terminator(st, 2), Some((24, 2)));
     }
 }

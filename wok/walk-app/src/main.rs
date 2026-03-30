@@ -52,6 +52,7 @@ use walk_terminal::terminal::SemanticEvent;
 use walk_terminal::terminal::Terminal;
 use walk_ui::background::BackgroundRenderer;
 use walk_ui::layout::Rect;
+use walk_ui::links::detect_links;
 use walk_ui::quick_select::{PatternRegistry, QuickSelectScope};
 use walk_ui::search::SearchLine;
 use walk_ui::selection::{CellPos, SelectionState};
@@ -233,6 +234,7 @@ struct WalkHandler {
     global_history: CommandHistory,
     plugins: Option<PluginHost>,
     status_message: Option<String>,
+    hovered_link: Option<String>,
     theme_watcher: Option<ThemeWatcher>,
     background: BackgroundRenderer,
     font: FontSystem,
@@ -279,6 +281,7 @@ impl WalkHandler {
             global_history,
             plugins,
             status_message: None,
+            hovered_link: None,
             theme_watcher,
             background,
             font,
@@ -633,7 +636,8 @@ impl WalkHandler {
                 .map(|block| block.cwd.display().to_string())
                 .filter(|cwd| !cwd.is_empty())
                 .unwrap_or_else(|| "~".to_string());
-            match &self.status_message {
+            let ephemeral = self.hovered_link.as_ref().or(self.status_message.as_ref());
+            match ephemeral {
                 Some(message) => {
                     format!("{cwd}  |  {}  |  {message}", active_pane.app.config.shell)
                 }
@@ -3233,9 +3237,35 @@ impl AppHandler for WalkHandler {
                 button: MouseButton::Left,
                 x,
                 y,
-                ..
+                modifiers,
             } => {
                 if let Some(cell) = self.pixel_to_cell(x, y) {
+                    let should_open_link = self.active_pane().is_some_and(|pane| {
+                        let absolute_row = pane
+                            .terminal
+                            .state
+                            .viewport_row_to_absolute(cell.row as usize);
+                        let has_explicit = pane
+                            .terminal
+                            .state
+                            .explicit_link_at(absolute_row, cell.col as usize)
+                            .is_some();
+                        has_explicit || modifiers.ctrl || modifiers.meta
+                    });
+                    if should_open_link {
+                        if let Some(uri) = self.active_pane().and_then(|pane| {
+                            let absolute_row = pane
+                                .terminal
+                                .state
+                                .viewport_row_to_absolute(cell.row as usize);
+                            link_at_cell(&pane.terminal, absolute_row, cell.col as usize)
+                        }) {
+                            walk_ui::links::open_url(&uri);
+                            self.status_message = Some(format!("Opened {uri}"));
+                            self.needs_redraw = true;
+                            return;
+                        }
+                    }
                     if let Some(active_pane) = self.active_pane_mut() {
                         active_pane.app.selection.handle_mouse_down(cell);
                     }
@@ -3271,6 +3301,20 @@ impl AppHandler for WalkHandler {
                         }
                         self.needs_redraw = true;
                     }
+                } else if let Some(cell) = self.pixel_to_cell(x, y) {
+                    let hovered = self.active_pane().and_then(|pane| {
+                        let absolute_row = pane
+                            .terminal
+                            .state
+                            .viewport_row_to_absolute(cell.row as usize);
+                        link_at_cell(&pane.terminal, absolute_row, cell.col as usize)
+                    });
+                    if self.hovered_link != hovered {
+                        self.hovered_link = hovered;
+                        self.needs_redraw = true;
+                    }
+                } else if self.hovered_link.take().is_some() {
+                    self.needs_redraw = true;
                 }
             }
             walk_app::input::MouseEvent::Scroll { delta_y, .. } => {
@@ -4779,6 +4823,64 @@ fn pane_overlay_signature(
     }
 }
 
+#[derive(Debug, Clone)]
+struct RowLinkSpan {
+    col_start: usize,
+    col_end: usize,
+    uri: String,
+}
+
+fn collect_row_links(terminal: &Terminal, absolute_row: usize) -> Vec<RowLinkSpan> {
+    let mut links = terminal
+        .state
+        .explicit_links_on_row(absolute_row)
+        .into_iter()
+        .map(|span| RowLinkSpan {
+            col_start: span.col_start,
+            col_end: span.col_end,
+            uri: span.link.uri.clone(),
+        })
+        .collect::<Vec<_>>();
+
+    let text = terminal.state.row_text(absolute_row);
+    for detected in detect_links(absolute_row, &text) {
+        let overlaps_explicit = links.iter().any(|span| {
+            spans_overlap(
+                span.col_start,
+                span.col_end,
+                detected.range.col_start,
+                detected.range.col_end,
+            )
+        });
+        if overlaps_explicit {
+            continue;
+        }
+        links.push(RowLinkSpan {
+            col_start: detected.range.col_start,
+            col_end: detected.range.col_end,
+            uri: detected.uri,
+        });
+    }
+
+    links.sort_by_key(|span| span.col_start);
+    links
+}
+
+fn link_at_cell(terminal: &Terminal, absolute_row: usize, col: usize) -> Option<String> {
+    if let Some(explicit) = terminal.state.explicit_link_at(absolute_row, col) {
+        return Some(explicit.uri.clone());
+    }
+
+    collect_row_links(terminal, absolute_row)
+        .into_iter()
+        .find(|span| (span.col_start..span.col_end).contains(&col))
+        .map(|span| span.uri)
+}
+
+fn spans_overlap(start_a: usize, end_a: usize, start_b: usize, end_b: usize) -> bool {
+    start_a < end_b && start_b < end_a
+}
+
 fn collect_row_cells(
     terminal: &Terminal,
     absolute_row: usize,
@@ -4815,17 +4917,29 @@ fn rebuild_visible_row_batch(
     };
 
     let row_y = viewport.y + render_row as f32 * cell_height;
+    let row_links = collect_row_links(terminal, absolute_row);
     for col_idx in 0..total_cols {
         let cell = terminal.state.cell_at_absolute(absolute_row, col_idx);
         let x = viewport.x + col_idx as f32 * cell_width;
         let mut bg = resolve_cell_color(&cell.bg, theme, true);
         let mut fg = resolve_cell_color(&cell.fg, theme, false);
+        let is_hyperlink_cell = row_links
+            .iter()
+            .any(|link| (link.col_start..link.col_end).contains(&col_idx));
 
         if cell.is_inverse {
             std::mem::swap(&mut bg, &mut fg);
         }
         if matches!(cell.bg, CellColor::Named(idx) if idx >= 16) {
             bg[3] *= terminal_surface_alpha;
+        }
+        if is_hyperlink_cell {
+            fg = [
+                theme.hyperlink_color.r,
+                theme.hyperlink_color.g,
+                theme.hyperlink_color.b,
+                theme.hyperlink_color.a,
+            ];
         }
 
         batch.push_bg_quad(x, row_y, cell_width, cell_height, bg);
@@ -4874,6 +4988,20 @@ fn rebuild_visible_row_batch(
 
         if cell.character != ' ' && cell.character != '\0' {
             push_glyph_to_batch(render, batch, font, x, row_y, cell.character, fg);
+        }
+        if is_hyperlink_cell {
+            batch.push_bg_quad(
+                x,
+                row_y + cell_height - 1.5,
+                cell_width,
+                1.0,
+                [
+                    theme.hyperlink_color.r,
+                    theme.hyperlink_color.g,
+                    theme.hyperlink_color.b,
+                    0.9,
+                ],
+            );
         }
     }
 

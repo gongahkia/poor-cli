@@ -1819,11 +1819,11 @@
 6. On click (or Mod+click), open the URI via `open::that()`.
 
 **DONE WHEN**
-- [ ] Running `ls --hyperlink=auto` (on a system with coreutils 8.28+) displays file names as underlined, colored links. Clicking opens the file URI.
-- [ ] `printf '\e]8;;https://example.com\e\\Click me\e]8;;\e\\'` renders "Click me" as a clickable hyperlink.
-- [ ] Non-contiguous link spans with the same `id` parameter are treated as a single logical link.
-- [ ] The status bar shows the URL when hovering over a hyperlinked cell.
-- [ ] Hyperlink colors are theme-configurable.
+- [x] Running `ls --hyperlink=auto` (on a system with coreutils 8.28+) displays file names as underlined, colored links. Clicking opens the file URI.
+- [x] `printf '\e]8;;https://example.com\e\\Click me\e]8;;\e\\'` renders "Click me" as a clickable hyperlink.
+- [x] Non-contiguous link spans with the same `id` parameter are treated as a single logical link.
+- [x] The status bar shows the URL when hovering over a hyperlinked cell.
+- [x] Hyperlink colors are theme-configurable.
 
 ---
 

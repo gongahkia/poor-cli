@@ -104,6 +104,8 @@ pub struct Theme {
     pub highlight_match: Color,
     /// Current search match highlight color.
     pub highlight_current_match: Color,
+    /// Hyperlink text color.
+    pub hyperlink_color: Color,
     /// Bracket match highlight color.
     pub bracket_match: Color,
     /// Syntax highlighting colors.
@@ -158,6 +160,7 @@ impl Default for Theme {
             block_error_accent: Color::rgb(0.969, 0.467, 0.557), // #f7768e
             highlight_match: Color::new(0.965, 0.820, 0.310, 0.3), // yellow semi-transparent
             highlight_current_match: Color::new(1.0, 0.647, 0.0, 0.5), // orange semi-transparent
+            hyperlink_color: Color::rgb(0.45, 0.74, 1.0), // #73bcff
             bracket_match: Color::new(0.478, 0.635, 0.969, 0.4), // blue semi-transparent
             syntax: SyntaxColors::default(),
             font_family: "JetBrains Mono".to_string(),

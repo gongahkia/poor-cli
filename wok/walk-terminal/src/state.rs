@@ -1,5 +1,6 @@
 //! Terminal state: wraps alacritty_terminal::Term for terminal emulation.
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use alacritty_terminal::event::{Event, EventListener};
@@ -94,6 +95,34 @@ pub struct TerminalState {
     parser: ansi::Processor,
     /// Event listener for collecting events.
     listener: WalkEventListener,
+    /// Current OSC 8 hyperlink context.
+    current_hyperlink: Option<HyperlinkInfo>,
+    /// Explicit OSC 8 hyperlink spans anchored to absolute rows.
+    explicit_links: Vec<ExplicitHyperlinkSpan>,
+}
+
+/// Hyperlink metadata from OSC 8 sequences.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HyperlinkInfo {
+    /// Link target URI.
+    pub uri: String,
+    /// Optional link id used to group disjoint spans.
+    pub id: Option<String>,
+    /// Parsed OSC 8 params map.
+    pub params: HashMap<String, String>,
+}
+
+/// Stored OSC 8 hyperlink span.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExplicitHyperlinkSpan {
+    /// Absolute row containing this span.
+    pub absolute_row: AbsoluteRow,
+    /// Start column (inclusive).
+    pub col_start: usize,
+    /// End column (exclusive).
+    pub col_end: usize,
+    /// Link metadata.
+    pub link: HyperlinkInfo,
 }
 
 impl TerminalState {
@@ -112,6 +141,8 @@ impl TerminalState {
             term,
             parser,
             listener,
+            current_hyperlink: None,
+            explicit_links: Vec::new(),
         }
     }
 
@@ -280,6 +311,62 @@ impl TerminalState {
         let history = self.scrollback_len() as i32;
         let clamped = absolute_row.min(self.total_rows().saturating_sub(1)) as i32;
         Line(clamped - history)
+    }
+
+    /// Set or clear the active OSC 8 hyperlink context.
+    pub fn set_current_hyperlink(&mut self, hyperlink: Option<HyperlinkInfo>) {
+        self.current_hyperlink = hyperlink;
+    }
+
+    /// Return the currently active OSC 8 hyperlink context.
+    pub fn current_hyperlink(&self) -> Option<&HyperlinkInfo> {
+        self.current_hyperlink.as_ref()
+    }
+
+    /// Record one OSC 8 span in absolute terminal coordinates.
+    pub fn record_hyperlink_span(
+        &mut self,
+        absolute_row: AbsoluteRow,
+        col_start: usize,
+        col_end: usize,
+    ) {
+        if col_end <= col_start {
+            return;
+        }
+        let Some(link) = self.current_hyperlink.clone() else {
+            return;
+        };
+
+        self.explicit_links.push(ExplicitHyperlinkSpan {
+            absolute_row,
+            col_start,
+            col_end,
+            link,
+        });
+    }
+
+    /// Return the explicit hyperlink at the given absolute row/column, if any.
+    pub fn explicit_link_at(
+        &self,
+        absolute_row: AbsoluteRow,
+        column: usize,
+    ) -> Option<&HyperlinkInfo> {
+        self.explicit_links
+            .iter()
+            .rev()
+            .find(|span| {
+                span.absolute_row == absolute_row
+                    && (span.col_start..span.col_end).contains(&column)
+            })
+            .map(|span| &span.link)
+    }
+
+    /// Return all explicit link spans currently known for one row.
+    pub fn explicit_links_on_row(&self, absolute_row: AbsoluteRow) -> Vec<&ExplicitHyperlinkSpan> {
+        self.explicit_links
+            .iter()
+            .filter(|span| span.absolute_row == absolute_row)
+            .collect()
     }
 }
 
