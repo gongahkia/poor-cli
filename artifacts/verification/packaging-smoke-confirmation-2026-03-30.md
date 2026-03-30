@@ -12,6 +12,7 @@
 ## CI / Release Runner Wiring
 
 - Workflow: `.github/workflows/ci.yml`
+- Trigger mode: `workflow_dispatch` (manual), so release operators can run the same gate when runner billing is available
 - `Verify repository` step runs `npm run verify` without `SG_APIS_SKIP_PACKAGING_SMOKE=1`.
 - This ensures packaging smoke executes inside the CI runner context where npm cache and child-process permissions are available.
 
