@@ -957,7 +957,8 @@ async def _chat(request: Request) -> JSONResponse:
     tool_log: list[dict[str, Any]] = []
     messages = history + [{"role": "user", "content": user_msg}]
 
-    dispatch = lambda name, args: _dispatch(name, args, request_id=request_id, tool_log=tool_log)
+    def dispatch(name: str, args: dict[str, Any]) -> str:
+        return _dispatch(name, args, request_id=request_id, tool_log=tool_log)
 
     log.info("[%s] chat request provider=%s model=%s", request_id, provider, model)
 
