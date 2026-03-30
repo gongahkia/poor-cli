@@ -1620,6 +1620,124 @@ def apply_simulated_option(option_index: int = 1) -> str:
     return f"Applied simulated option {option_index}. Added {len(items_to_add)} object(s)."
 
 
+ROOM_TEMPLATES: dict[str, dict[str, Any]] = {
+    "work_from_home": {
+        "description": "Home office setup with desk, chair, and bookshelf",
+        "items": [
+            {"type": "desk", "dx": 0.0, "dz": 0.0, "rot": 0},
+            {"type": "chair", "dx": 0.0, "dz": 0.8, "rot": 180},
+            {"type": "bookshelf", "dx": -1.5, "dz": 0.0, "rot": 0},
+        ],
+    },
+    "family_living": {
+        "description": "Family living room with L-sofa, coffee table, and TV console",
+        "items": [
+            {"type": "sofa_l", "dx": 0.0, "dz": 0.0, "rot": 0},
+            {"type": "coffee", "dx": 0.0, "dz": -1.2, "rot": 0},
+            {"type": "tv_console", "dx": 0.0, "dz": -2.8, "rot": 0},
+        ],
+    },
+    "family_bedroom": {
+        "description": "Master bedroom with queen bed, wardrobe, and two bedsides",
+        "items": [
+            {"type": "bed_queen", "dx": 0.0, "dz": 0.0, "rot": 0},
+            {"type": "wardrobe", "dx": -2.0, "dz": 0.0, "rot": 90},
+            {"type": "bedside", "dx": -1.0, "dz": 0.0, "rot": 0},
+            {"type": "bedside", "dx": 1.0, "dz": 0.0, "rot": 0},
+        ],
+    },
+    "family_dining": {
+        "description": "Dining area with 6-seat table and shoe rack",
+        "items": [
+            {"type": "dining_6", "dx": 0.0, "dz": 0.0, "rot": 0},
+            {"type": "shoe_rack", "dx": -1.8, "dz": 0.0, "rot": 90},
+        ],
+    },
+    "rental_bedroom": {
+        "description": "Minimal rental bedroom with single bed, wardrobe, and desk",
+        "items": [
+            {"type": "bed_single", "dx": 0.0, "dz": 0.0, "rot": 0},
+            {"type": "wardrobe_s", "dx": -1.5, "dz": 0.0, "rot": 90},
+            {"type": "desk", "dx": 1.5, "dz": 0.0, "rot": 0},
+            {"type": "chair", "dx": 1.5, "dz": 0.8, "rot": 180},
+        ],
+    },
+    "rental_studio": {
+        "description": "Compact studio with sofa, coffee table, TV console, and single bed",
+        "items": [
+            {"type": "sofa_2", "dx": 0.0, "dz": 0.0, "rot": 0},
+            {"type": "coffee", "dx": 0.0, "dz": -1.0, "rot": 0},
+            {"type": "tv_console", "dx": 0.0, "dz": -2.4, "rot": 0},
+            {"type": "bed_single", "dx": 3.0, "dz": 0.0, "rot": 0},
+        ],
+    },
+}
+
+
+@mcp.tool()
+def list_room_templates() -> str:
+    """List available room-template presets."""
+    lines = ["Available room templates:"]
+    for name, tpl in ROOM_TEMPLATES.items():
+        types = [e["type"] for e in tpl["items"]]
+        lines.append(f"  {name}: {tpl['description']} [{', '.join(types)}]")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def apply_room_template(
+    template_name: str,
+    origin_x: float = 0.0,
+    origin_z: float = 0.0,
+    room_name: str = "",
+) -> str:
+    """Place a room-template preset at the given origin.
+
+    Offsets in the template are relative to (origin_x, origin_z).
+    If *room_name* is provided, all placed items are tagged with it.
+    """
+    if template_name not in ROOM_TEMPLATES:
+        available = ", ".join(ROOM_TEMPLATES)
+        return f"Error: unknown template '{template_name}'. Available: {available}"
+
+    tpl = ROOM_TEMPLATES[template_name]
+    data = _load_layout()
+    placed: list[str] = []
+
+    for entry in tpl["items"]:
+        ft = entry["type"]
+        if ft not in FURNITURE_CATALOG:
+            continue
+        x = origin_x + entry["dx"]
+        z = origin_z + entry["dz"]
+        item = _build_furniture_item(ft, x, z, entry["rot"])
+        if room_name:
+            item["room"] = room_name
+        cand_poly = _item_polygon(item, padding=0.02)
+        collision = False
+        for existing in data["items"]:
+            if not existing.get("visible", True):
+                continue
+            if _polygons_intersect(cand_poly, _item_polygon(existing, padding=0.02)):
+                collision = True
+                break
+        if collision:
+            placed.append(f"{ft} SKIPPED (collision)")
+        else:
+            data["items"].append(item)
+            placed.append(f"{ft} at ({x:.2f}, {z:.2f})")
+
+    err = _save_layout(data)
+    if err:
+        return err
+
+    tag = f" in room '{room_name}'" if room_name else ""
+    lines = [f"Applied template '{template_name}'{tag}:"]
+    for p in placed:
+        lines.append(f"  {p}")
+    return "\n".join(lines)
+
+
 @mcp.tool()
 def score_doorway_accessibility(
     door_x: float,
