@@ -4,7 +4,7 @@
 
 - [x] Run full `npm run verify` with packaging smoke enabled in an unrestricted environment (no `SG_APIS_SKIP_PACKAGING_SMOKE=1`), since this sandbox blocks nested `npm` spawning (`spawnSync npm EPERM`).
 - [x] Run `npm run test:smoke:registry` after the latest reliability/docs changes and record baseline output.
-- [ ] Confirm packaging smoke behavior in CI/release runner where npm cache and child-process permissions are fully available.
+- [x] Confirm packaging smoke behavior in CI/release runner where npm cache and child-process permissions are fully available.
 
 ## Remaining Implementation Candidates
 
@@ -17,4 +17,4 @@
 ## Broken Flows / Stubs Status
 
 - No explicit code stubs/placeholders were found in core runtime paths during this pass.
-- One constrained-environment flow remains: packaging smoke cannot run in this sandbox without skip flag.
+- One expected pre-release flow remains: registry smoke fails until `@sg-apis/shared` and `sg-apis-mcp` versions are published to npm.
