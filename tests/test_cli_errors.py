@@ -6,6 +6,8 @@ import textwrap
 import unittest
 from pathlib import Path
 
+from poor_cli.config import Config
+
 
 def _clean_env(home: str) -> dict[str, str]:
     env = dict(os.environ)
@@ -18,6 +20,10 @@ def _clean_env(home: str) -> dict[str, str]:
 
 class CliErrorRenderingTests(unittest.TestCase):
     def test_exec_missing_api_key_exits_without_traceback(self) -> None:
+        cfg = Config()
+        expected_provider = cfg.model.provider
+        expected_env = cfg.model.providers[expected_provider].api_key_env_var
+
         with tempfile.TemporaryDirectory() as tmpdir:
             home = Path(tmpdir)
             keys_dir = home / ".poor-cli" / "keys"
@@ -39,8 +45,8 @@ class CliErrorRenderingTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertNotIn("Traceback", combined)
             self.assertNotIn("Failed to decrypt API key", combined)
-            self.assertIn("No API key found for provider: gemini", combined)
-            self.assertIn("Set `GEMINI_API_KEY`", combined)
+            self.assertIn(f"No API key found for provider: {expected_provider}", combined)
+            self.assertIn(f"Set `{expected_env}`", combined)
 
     def test_bridge_invalid_invite_exits_without_traceback(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
