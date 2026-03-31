@@ -750,10 +750,14 @@ def _run_preview_mode(argv: Sequence[str]) -> int:
         return 0
     result = asyncio.run(server.start())
     print(result.get("message", str(result)))
-    if result.get("mode") == "static":
+    if result.get("mode") in {"static", "proxy"}:
         print("Press Ctrl+C to stop.")
         try:
-            asyncio.get_event_loop().run_forever()
+            while True:
+                status = server.status()
+                if not status.get("running"):
+                    break
+                time.sleep(0.5)
         except KeyboardInterrupt:
             asyncio.run(server.stop())
     return 0
