@@ -3923,8 +3923,44 @@ class PoorCLICore:
         else:
             raise PoorCLIError(f"Unknown compaction strategy: {strategy}")
 
+    def _save_transcript(self, history: List[Dict[str, Any]]) -> Optional[str]:
+        """Save raw history to disk before compaction. Returns transcript path or None."""
+        if not self.config or not getattr(self.config.context_compression, "preserve_transcripts", True):
+            return None
+        transcript_dir = Path.cwd() / getattr(self.config.context_compression, "transcript_dir", ".poor-cli/transcripts")
+        try:
+            transcript_dir.mkdir(parents=True, exist_ok=True)
+            import json as _json
+            import uuid as _uuid
+            session_id = getattr(self, "_last_run_id", None) or _uuid.uuid4().hex[:12]
+            ts = time.strftime("%Y%m%dT%H%M%S")
+            filename = f"{session_id}_{ts}.json"
+            dest = transcript_dir / filename
+            import tempfile as _tf
+            fd, tmp = _tf.mkstemp(dir=str(transcript_dir), suffix=".tmp")
+            try:
+                data = _json.dumps(history, indent=None, default=str).encode()
+                os.write(fd, data)
+                os.fsync(fd)
+                os.close(fd)
+                os.replace(tmp, str(dest))
+            except Exception:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                if os.path.exists(tmp):
+                    os.unlink(tmp)
+                raise
+            logger.info("Saved pre-compaction transcript: %s (%d messages)", dest, len(history))
+            return str(dest)
+        except Exception as exc:
+            logger.warning("Failed to save transcript: %s", exc)
+            return None
+
     async def _compact_summarize(self, history: List[Dict[str, Any]], messages_before: int) -> Dict[str, Any]:
         """Summarize conversation in-place, re-seed provider."""
+        self._save_transcript(history)
         conversation_text = self._history_to_text(history)
         if not conversation_text.strip():
             return {"strategy": "compact", "summary": "(empty history)", "messages_before": messages_before, "messages_after": 0}
@@ -3946,6 +3982,7 @@ class PoorCLICore:
 
     def _compact_compress(self, history: List[Dict[str, Any]], messages_before: int) -> Dict[str, Any]:
         """Strip tool calls/results, keep user+assistant text only."""
+        self._save_transcript(history)
         compressed = []
         for msg in history:
             role = msg.get("role", "")
@@ -3982,6 +4019,7 @@ class PoorCLICore:
 
     async def _compact_handoff(self, history: List[Dict[str, Any]], messages_before: int) -> Dict[str, Any]:
         """Generate summary, start completely new session."""
+        self._save_transcript(history)
         conversation_text = self._history_to_text(history)
         if not conversation_text.strip():
             await self.clear_history()

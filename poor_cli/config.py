@@ -150,6 +150,8 @@ class ContextCompressionConfig:
     target_token_ratio: float = 0.3  # compress to ~30% of original tokens
     preserve_recent_turns: int = 8  # always keep last N turns uncompressed
     token_threshold_for_llm_compact: float = 0.8  # auto LLM compact at this fraction of model context
+    preserve_transcripts: bool = True  # save raw history before compaction
+    transcript_dir: str = ".poor-cli/transcripts"  # relative to repo root
 
 
 @dataclass
