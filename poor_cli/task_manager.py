@@ -20,7 +20,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from .core import PoorCLICore
-from .run_history import RunHistoryManager
+from .lifecycle_events import build_lifecycle_event
+from .run_history import RunHistoryManager, classify_error
 from .sandbox import (
     evaluate_tool_access,
     normalize_preset,
@@ -333,6 +334,7 @@ class TaskManager:
             error_message="cancelled by user",
             worker_pid=None,
         )
+        self._record_terminal_metadata(task.task_id, status="cancelled", reason_code="cancelled_by_user")
         return self._require_task(task.task_id)
 
     def retry_task(self, task_id: str, *, auto_start: Optional[bool] = None) -> TaskRecord:
@@ -418,7 +420,26 @@ class TaskManager:
     def attach_run(self, task_id: str, run_id: str) -> TaskRecord:
         task = self._require_task(task_id)
         metadata = dict(task.metadata)
-        metadata["lastRunId"] = str(run_id).strip()
+        resolved_run_id = str(run_id).strip()
+        metadata["lastRunId"] = resolved_run_id
+        run_record = self.run_history.get_run(resolved_run_id)
+        if run_record is not None:
+            run_metadata = run_record.metadata
+            transitions = run_metadata.get("turnTransitions")
+            turn_summaries = run_metadata.get("turnOrchestration")
+            metadata["lastRunStatus"] = run_record.status
+            metadata["lastRunFinishedAt"] = run_record.finished_at
+            metadata["lastRunCompletionReasonCode"] = str(
+                run_metadata.get("completionReasonCode", "") or ""
+            )
+            metadata["lastRunTransitionCount"] = len(transitions) if isinstance(transitions, list) else 0
+            metadata["lastRunTurnCount"] = len(turn_summaries) if isinstance(turn_summaries, list) else 0
+            metadata["resume"] = {
+                "runId": run_record.run_id,
+                "status": run_record.status,
+                "finishedAt": run_record.finished_at,
+                "completionReasonCode": str(run_metadata.get("completionReasonCode", "") or ""),
+            }
         self._update_task(
             task_id,
             metadata_json=json.dumps(metadata, ensure_ascii=False),
@@ -513,6 +534,8 @@ class TaskManager:
             error_message="",
         )
         task = self._require_task(task_id)
+        self._record_terminal_metadata(task.task_id, status="completed", reason_code="completed")
+        task = self._require_task(task_id)
         self._update_linked_automation_state(
             task,
             lastRunStatus="completed",
@@ -529,6 +552,9 @@ class TaskManager:
             error_message=error_message.strip(),
             worker_pid=None,
         )
+        task = self._require_task(task_id)
+        reason_code = classify_error(error_message) or "task_failed"
+        self._record_terminal_metadata(task.task_id, status="failed", reason_code=reason_code)
         task = self._require_task(task_id)
         self._update_linked_automation_state(
             task,
@@ -586,6 +612,14 @@ class TaskManager:
                 params,
             )
 
+    def _record_terminal_metadata(self, task_id: str, *, status: str, reason_code: str) -> None:
+        task = self._require_task(task_id)
+        metadata = dict(task.metadata)
+        metadata["lastTerminalStatus"] = str(status)
+        metadata["lastTerminalReasonCode"] = str(reason_code)
+        metadata["lastTerminalAt"] = _utc_now()
+        self._update_task(task_id, metadata_json=json.dumps(metadata, ensure_ascii=False))
+
     def _require_task(self, task_id: str) -> TaskRecord:
         task = self.get_task(task_id)
         if task is None:
@@ -639,6 +673,11 @@ class TaskManager:
             finished_at=_utc_now(),
             worker_pid=None,
             error_message="worker process exited unexpectedly",
+        )
+        self._record_terminal_metadata(
+            task.task_id,
+            status="failed",
+            reason_code="worker_process_exited",
         )
         refreshed = self._require_task(task.task_id)
         self._update_linked_automation_state(
@@ -735,6 +774,7 @@ async def run_task_worker(
     manager.mark_running(task.task_id, worker_pid=os.getpid())
 
     response_chunks: List[str] = []
+    done_reason = ""
     original_cwd = Path.cwd()
     target_cwd = Path(task.worktree_path) if task.worktree_path else repo_root
     execution = task.metadata.get("execution", {}) if isinstance(task.metadata, dict) else {}
@@ -842,6 +882,20 @@ async def run_task_worker(
                 },
             )
         with Path(task.events_path).open("w", encoding="utf-8") as event_handle:
+            event_handle.write(
+                json.dumps(
+                    build_lifecycle_event(
+                        stream="task",
+                        entity_id=task.task_id,
+                        stage="started",
+                        status="running",
+                        reason_code="worker_started",
+                        details={"sandboxPreset": task.sandbox_preset},
+                    ),
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
             async for event in core.send_message_events(
                 task.prompt,
                 context_files=context_files,
@@ -852,7 +906,7 @@ async def run_task_worker(
                 source_id=task.task_id,
                 artifact_dir=task.artifact_dir,
                 run_metadata=run_metadata,
-            ):
+                ):
                 event_handle.write(
                     json.dumps(
                         {"type": event.type, "data": event.data},
@@ -864,6 +918,8 @@ async def run_task_worker(
                     chunk = str(event.data.get("chunk", ""))
                     if chunk:
                         response_chunks.append(chunk)
+                elif event.type == "done":
+                    done_reason = str(event.data.get("reason", "") or "")
         run_id = core.get_last_run_id()
         if run_id:
             manager.attach_run(task.task_id, run_id)
@@ -879,6 +935,22 @@ async def run_task_worker(
             "runId": str(run_id or ""),
             "summary": completed_task.summary,
         }
+        with Path(task.events_path).open("a", encoding="utf-8") as event_handle:
+            event_handle.write(
+                json.dumps(
+                    build_lifecycle_event(
+                        stream="task",
+                        entity_id=task.task_id,
+                        stage="finished",
+                        status="completed",
+                        reason_code=done_reason or "completed",
+                        run_id=str(run_id or ""),
+                        details={"summary": completed_task.summary},
+                    ),
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
         await core._emit_policy_hooks("task_finished", finish_payload)
         if task.metadata.get("automationId"):
             await core._emit_policy_hooks(
@@ -897,6 +969,22 @@ async def run_task_worker(
             manager.attach_run(task.task_id, run_id)
         Path(task.response_path).write_text(message, encoding="utf-8")
         manager.mark_failed(task.task_id, error_message=message)
+        with Path(task.events_path).open("a", encoding="utf-8") as event_handle:
+            event_handle.write(
+                json.dumps(
+                    build_lifecycle_event(
+                        stream="task",
+                        entity_id=task.task_id,
+                        stage="finished",
+                        status="failed",
+                        reason_code=classify_error(message) or "task_failed",
+                        run_id=str(run_id or ""),
+                        details={"error": message},
+                    ),
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
         finish_payload = {
             "taskId": task.task_id,
             "title": task.title,

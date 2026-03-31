@@ -27,6 +27,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from .exceptions import setup_logger, ValidationError
+from .lifecycle_events import build_lifecycle_event
+from .run_history import classify_error
 
 logger = setup_logger(__name__)
 
@@ -323,6 +325,7 @@ class AgentManager:
             except ProcessLookupError:
                 pass
         self._update(agent_id, status="cancelled", finished_at=_utc_now())
+        self._record_terminal_metadata(agent_id, status="cancelled", reason_code="cancelled_by_user")
         return self.get_agent(agent_id) or agent
 
     def get_logs(self, agent_id: str, tail: int = 100) -> str:
@@ -404,8 +407,32 @@ class AgentManager:
             self._update(record.agent_id, status="failed",
                          finished_at=_utc_now(),
                          error_message="worker process exited unexpectedly")
+            self._record_terminal_metadata(
+                record.agent_id,
+                status="failed",
+                reason_code="worker_process_exited",
+            )
             return self.get_agent(record.agent_id) or record
         return record
+
+    def _record_terminal_metadata(
+        self,
+        agent_id: str,
+        *,
+        status: str,
+        reason_code: str,
+        run_id: str = "",
+    ) -> None:
+        record = self.get_agent(agent_id)
+        if record is None:
+            return
+        metadata = dict(record.metadata)
+        metadata["lastTerminalStatus"] = str(status)
+        metadata["lastTerminalReasonCode"] = str(reason_code)
+        metadata["lastTerminalAt"] = _utc_now()
+        if run_id:
+            metadata["lastRunId"] = str(run_id)
+        self._update(agent_id, metadata_json=json.dumps(metadata, ensure_ascii=False))
 
 
 # ── agent worker entry point ─────────────────────────────────────────────
@@ -428,34 +455,92 @@ async def run_agent_worker(agent_id: str, repo_root: str) -> None:
     events_path = Path(agent.events_path)
 
     core = PoorCLICore()
+
+    def _append_event(payload: Dict[str, Any]) -> None:
+        try:
+            with events_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
+        except Exception:
+            pass
+
     try:
         await core.initialize()
     except Exception as exc:
         mgr._update(agent_id, status="failed", finished_at=_utc_now(),
                      error_message=f"init failed: {exc}")
+        mgr._record_terminal_metadata(
+            agent_id,
+            status="failed",
+            reason_code="init_failed",
+        )
         result_path.write_text(f"Agent initialization failed: {exc}", encoding="utf-8")
+        _append_event(
+            build_lifecycle_event(
+                stream="agent",
+                entity_id=agent_id,
+                stage="finished",
+                status="failed",
+                reason_code="init_failed",
+                details={"error": str(exc)},
+            )
+        )
         return
 
     # auto-approve all tools based on sandbox preset
     core._permission_callback = _auto_approve_callback(agent.sandbox_preset)
 
     accumulated_text = ""
+    done_reason = ""
     try:
-        async for event in core.send_message_events(agent.prompt):
-            # log events
-            try:
-                with events_path.open("a", encoding="utf-8") as f:
-                    f.write(json.dumps({"type": event.type, "data": event.data}, default=str) + "\n")
-            except Exception:
-                pass
+        _append_event(
+            build_lifecycle_event(
+                stream="agent",
+                entity_id=agent_id,
+                stage="started",
+                status="running",
+                reason_code="worker_started",
+                details={"sandboxPreset": agent.sandbox_preset},
+            )
+        )
+        async for event in core.send_message_events(
+            agent.prompt,
+            request_id=f"agent-{agent.agent_id}",
+            source_kind="agent",
+            source_id=agent.agent_id,
+            artifact_dir=agent.artifact_dir,
+            run_metadata={
+                "agentId": agent.agent_id,
+                "agentSource": agent.source,
+            },
+        ):
+            _append_event({"type": event.type, "data": event.data})
             if event.type == "text_chunk":
                 accumulated_text += event.data.get("chunk", "")
             elif event.type == "done":
+                done_reason = str(event.data.get("reason", "") or "")
                 break
     except Exception as exc:
+        run_id = core.get_last_run_id() or ""
         mgr._update(agent_id, status="failed", finished_at=_utc_now(),
                      error_message=str(exc))
+        mgr._record_terminal_metadata(
+            agent_id,
+            status="failed",
+            reason_code=classify_error(str(exc)) or "agent_failed",
+            run_id=str(run_id),
+        )
         result_path.write_text(f"Agent failed: {exc}\n\n{accumulated_text}", encoding="utf-8")
+        _append_event(
+            build_lifecycle_event(
+                stream="agent",
+                entity_id=agent_id,
+                stage="finished",
+                status="failed",
+                reason_code=classify_error(str(exc)) or "agent_failed",
+                run_id=str(run_id),
+                details={"error": str(exc)},
+            )
+        )
         return
 
     # write result
@@ -464,8 +549,26 @@ async def run_agent_worker(agent_id: str, repo_root: str) -> None:
     # auto-commit if there are changes
     summary = _auto_commit_changes(agent, accumulated_text)
 
+    run_id = core.get_last_run_id() or ""
     mgr._update(agent_id, status="completed", finished_at=_utc_now(),
                 summary=summary or accumulated_text[:200])
+    mgr._record_terminal_metadata(
+        agent_id,
+        status="completed",
+        reason_code=done_reason or "completed",
+        run_id=str(run_id),
+    )
+    _append_event(
+        build_lifecycle_event(
+            stream="agent",
+            entity_id=agent_id,
+            stage="finished",
+            status="completed",
+            reason_code=done_reason or "completed",
+            run_id=str(run_id),
+            details={"summary": summary or accumulated_text[:200]},
+        )
+    )
     logger.info("agent %s completed", agent_id)
 
 
