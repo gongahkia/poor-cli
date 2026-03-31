@@ -285,8 +285,8 @@ def setup_logger(name: str = "poor_cli", log_file: Optional[str] = None,
             file_handler.addFilter(context_filter)
             logger.addHandler(file_handler)
         except Exception as e:
-            # Can't use logger.warning here as it might not be set up yet
-            pass
+            import sys
+            print(f"warning: could not create log file {log_file}: {e}", file=sys.stderr)
 
     return logger
 

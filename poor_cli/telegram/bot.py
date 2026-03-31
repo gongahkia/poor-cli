@@ -3,12 +3,13 @@
 import asyncio
 import os
 import time
+import traceback
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 from poor_cli.core import PoorCLICore, CoreEvent
-from poor_cli.exceptions import setup_logger, ConfigurationError
+from poor_cli.exceptions import setup_logger, ConfigurationError, log_context
 from poor_cli.telegram import formatter as fmt
 from poor_cli.telegram.keyboards import (
     parse_callback, provider_keyboard, model_keyboard,
@@ -122,6 +123,8 @@ class PoorCLITelegramBot:
         self._heartbeat = HeartbeatScheduler(self._heartbeat_callback)
         self._skills = SkillsBridge()
         self._multiplayer = MultiplayerBridge(self._mp_send_callback)
+        self._start_time: float = 0.0
+        self._log_file: Optional[str] = None
 
     def _is_authorized(self, user_id: int) -> bool:
         if not self._allowed_users:
@@ -180,18 +183,22 @@ class PoorCLITelegramBot:
             BotCommand("help", "show help"),
         ]
         await self._app.bot.set_my_commands(commands)
-        logger.info("Telegram bot starting (allowed users: %s)", self._allowed_users or "all")
+        logger.info("bot starting | allowed_users=%s sandbox=%s max_sessions=%d",
+                     self._allowed_users or "all", self._sandbox_preset, self._max_sessions)
         await self._app.initialize()
         await self._app.start()
+        self._start_time = time.monotonic()
         if self._webhook_url:
             from poor_cli.telegram.webhook import setup_webhook, run_webhook_server
+            logger.info("attempting webhook setup: url=%s port=%d", self._webhook_url, self._webhook_port)
             ok = await setup_webhook(self._app, self._webhook_url, self._webhook_port)
             if ok:
+                logger.info("webhook active at %s:%d", self._webhook_url, self._webhook_port)
                 await run_webhook_server(self._app, self._webhook_port)
                 return
-            logger.warning("webhook failed, falling back to polling")
+            logger.warning("webhook setup failed, falling back to long-polling")
         await self._app.updater.start_polling()
-        logger.info("Telegram bot running")
+        logger.info("bot running (long-polling)")
 
     async def stop(self) -> None:
         await self._heartbeat.shutdown()
@@ -207,12 +214,23 @@ class PoorCLITelegramBot:
 
     async def _handle_start(self, update: Any, context: Any) -> None:
         uid = update.effective_user.id
+        uname = getattr(update.effective_user, 'username', None) or str(uid)
         if not self._is_authorized(uid):
+            logger.warning("unauthorized /start from user %d (@%s)", uid, uname)
             await update.message.reply_text("not authorized")
             return
+        logger.info("user %d (@%s) /start", uid, uname)
         tid = self._threads.get_active_thread(uid)
         core = self._threads.get_core(uid, tid)
-        await self._threads.ensure_initialized(core)
+        try:
+            await self._threads.ensure_initialized(core)
+        except Exception as e:
+            logger.error("provider init failed for user %d: %s\n%s", uid, e, traceback.format_exc())
+            await update.message.reply_text(
+                f"failed to initialize provider: {e}\n"
+                "check your API keys and try /provider to switch"
+            )
+            return
         self._threads.update_session_meta(uid, tid, core)
         info = core.get_provider_info() if core._initialized else {}
         await update.message.reply_text(
@@ -243,13 +261,16 @@ class PoorCLITelegramBot:
         info = core.get_provider_info() if core._initialized else {}
         thread_count = self._threads.get_thread_count(uid)
         cost = self._costs.get_session_cost(uid)
+        uptime_s = time.monotonic() - self._start_time if self._start_time else 0
+        uptime_m = int(uptime_s // 60)
         await update.message.reply_text(
-            f"session active\n"
+            f"session active (uptime: {uptime_m}m)\n"
             f"provider: {info.get('name', 'unknown')}\n"
             f"model: {info.get('model', 'unknown')}\n"
             f"thread: {tid}\n"
             f"threads: {thread_count}\n"
-            f"{fmt.format_cost(cost)}"
+            f"{fmt.format_cost(cost)}\n"
+            f"use /doctor for full diagnostics"
         )
 
     async def _handle_provider(self, update: Any, context: Any) -> None:
@@ -264,13 +285,22 @@ class PoorCLITelegramBot:
         model_name = args[1] if len(args) > 1 else None
         tid = self._threads.get_active_thread(uid)
         core = self._threads.get_core(uid, tid)
+        logger.info("provider_switch user=%d provider=%s model=%s", uid, provider_name, model_name)
         try:
             await core.initialize(provider_name=provider_name, model_name=model_name)
             self._threads.update_session_meta(uid, tid, core)
             info = core.get_provider_info()
             await update.message.reply_text(f"switched to {info.get('name')} / {info.get('model')}")
         except Exception as e:
-            await update.message.reply_text(f"failed: {e}")
+            logger.error("provider_switch_failed user=%d provider=%s: %s\n%s",
+                         uid, provider_name, e, traceback.format_exc())
+            await update.message.reply_text(
+                f"failed to switch provider: {e}\n\n"
+                "common causes:\n"
+                "• missing API key (check env vars)\n"
+                "• invalid model name\n"
+                "• provider service down"
+            )
 
     async def _handle_threads(self, update: Any, context: Any) -> None:
         uid = update.effective_user.id
@@ -356,6 +386,7 @@ class PoorCLITelegramBot:
             return
         if not self._rate_limiter.check_rate(uid):
             wait = self._rate_limiter.get_wait_time(uid)
+            logger.info("rate limited user %d (wait %.0fs)", uid, wait)
             await update.message.reply_text(f"rate limited. wait {wait:.0f}s")
             return
         prompt = update.message.text
@@ -363,11 +394,21 @@ class PoorCLITelegramBot:
             return
         tid = self._threads.get_active_thread(uid)
         core = self._threads.get_core(uid, tid)
-        await self._threads.ensure_initialized(core)
-        self._threads.update_session_meta(uid, tid, core)
-        self._threads.evict_lru(self._max_sessions)
-        self._skills.set_core(core)
-        await self._stream_response(update, core, prompt, uid, tid)
+        request_id = uuid.uuid4().hex[:12]
+        with log_context(session_id=f"{uid}:{tid}", request_id=request_id):
+            logger.info("msg from user %d thread=%s len=%d", uid, tid, len(prompt))
+            try:
+                await self._threads.ensure_initialized(core)
+            except Exception as e:
+                logger.error("provider init failed: %s\n%s", e, traceback.format_exc())
+                await update.message.reply_text(
+                    f"provider initialization failed: {e}\ntry /provider to switch"
+                )
+                return
+            self._threads.update_session_meta(uid, tid, core)
+            self._threads.evict_lru(self._max_sessions)
+            self._skills.set_core(core)
+            await self._stream_response(update, core, prompt, uid, tid)
 
     async def _handle_photo(self, update: Any, context: Any) -> None:
         uid = update.effective_user.id
@@ -595,9 +636,11 @@ class PoorCLITelegramBot:
     async def _stream_response(self, update: Any, core: PoorCLICore,
                                 prompt: str, user_id: int, thread_id: str) -> None:
         sent = await update.effective_message.reply_text("thinking...")
+        t0 = time.monotonic()
         try:
             accumulated = ""
             last_edit = 0.0
+            tool_count = 0
             async for event in core.send_message_events(prompt):
                 etype = event.type
                 if etype == "text_chunk":
@@ -615,21 +658,28 @@ class PoorCLITelegramBot:
                 elif etype == "tool_call_start":
                     tool_name = event.data.get("toolName", "")
                     tool_args = event.data.get("toolArgs", {})
+                    tool_count += 1
+                    logger.debug("tool_call user=%d tool=%s args=%s", user_id, tool_name, list(tool_args.keys()))
                     tool_msg = fmt.format_tool_call(tool_name, tool_args)
                     accumulated += f"\n{tool_msg}\n"
                 elif etype == "tool_result":
                     tool_name = event.data.get("toolName", "")
                     result_text = event.data.get("toolResult", "")
-                    result_msg = fmt.format_tool_result(tool_name, str(result_text))
+                    success = not event.data.get("isError", False)
+                    if not success:
+                        logger.warning("tool_error user=%d tool=%s result=%s", user_id, tool_name, str(result_text)[:200])
+                    result_msg = fmt.format_tool_result(tool_name, str(result_text), success=success)
                     accumulated += f"\n{result_msg}\n"
                 elif etype == "permission_request":
                     prompt_id = event.data.get("promptId", str(uuid.uuid4()))
                     tool_name = event.data.get("toolName", "")
                     tool_args = event.data.get("toolArgs", {})
+                    logger.info("permission_request user=%d tool=%s", user_id, tool_name)
                     approved = await self._permissions.handle_permission_request(
                         update, None, tool_name, tool_args, prompt_id, user_id,
                     )
                     if not approved:
+                        logger.info("permission_denied user=%d tool=%s", user_id, tool_name)
                         accumulated += f"\n❌ `{tool_name}` denied\n"
                 elif etype == "cost_update":
                     self._costs.track_cost(user_id, thread_id, event.data)
@@ -641,8 +691,16 @@ class PoorCLITelegramBot:
                             await sent.edit_text(f"[{phase}] {msg}")
                         except Exception:
                             pass
+                elif etype == "error":
+                    err_msg = event.data.get("message", "unknown error")
+                    err_code = event.data.get("code", "")
+                    logger.error("stream_error user=%d code=%s msg=%s", user_id, err_code, err_msg)
+                    accumulated += f"\n❌ error: {err_msg}\n"
                 elif etype == "done":
                     break
+            elapsed = time.monotonic() - t0
+            logger.info("response_done user=%d thread=%s tools=%d time=%.1fs len=%d",
+                        user_id, thread_id, tool_count, elapsed, len(accumulated))
             if accumulated.strip():
                 pages = fmt.paginate(accumulated)
                 try:
@@ -654,7 +712,9 @@ class PoorCLITelegramBot:
             else:
                 await sent.edit_text("(no response)")
         except Exception as e:
-            logger.error("telegram message handling failed: %s", e)
+            elapsed = time.monotonic() - t0
+            logger.error("stream_failed user=%d thread=%s time=%.1fs error=%s\n%s",
+                         user_id, thread_id, elapsed, e, traceback.format_exc())
             try:
                 await sent.edit_text(f"error: {e}")
             except Exception:
