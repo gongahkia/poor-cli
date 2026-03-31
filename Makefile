@@ -61,8 +61,8 @@ install: ## install the Python package in dev mode
 dev: ## install deps + build TUI + launch CLI
 	pip install -e . && $(MAKE) build-tui && $(MAKE) cli
 
-test: ## run Python tests
-	python3 -m pytest tests/ -x -q
+test: ## run Python tests with coverage
+	python3 -m pytest tests/ -x -q --cov=poor_cli --cov-report=term-missing
 
 lint: ## run linters
 	ruff check poor_cli/

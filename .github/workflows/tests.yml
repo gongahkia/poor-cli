@@ -45,9 +45,12 @@ jobs:
           .venv/bin/poor-cli commands --help
           .venv/bin/poor-cli server --help
 
-      - name: Run Python test suite
+      - name: Install test dependencies
+        run: .venv/bin/pip install pytest pytest-cov
+
+      - name: Run Python test suite with coverage
         run: |
-          .venv/bin/python -Wdefault -m unittest discover -s tests -q
+          .venv/bin/python -m pytest tests/ -x -q --cov=poor_cli --cov-report=term-missing --cov-fail-under=40
 
   python-package:
     runs-on: ${{ matrix.os }}
