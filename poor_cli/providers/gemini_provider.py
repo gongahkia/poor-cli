@@ -439,6 +439,16 @@ class GeminiProvider(BaseProvider):
             history=history_parts if history_parts else None,
         )
 
+    def update_system_instruction(self, instruction: str) -> None:
+        self.system_instruction = instruction
+        if self._chat_config is not None:
+            self._chat_config = genai_types.GenerateContentConfig(
+                system_instruction=instruction,
+                tools=self._chat_config.tools if hasattr(self._chat_config, "tools") else None,
+            )
+            history = self.get_history()
+            self.set_history(history)
+
     def get_capabilities(self) -> ProviderCapabilities:
         """Get Gemini capabilities."""
         return ProviderCapabilities(

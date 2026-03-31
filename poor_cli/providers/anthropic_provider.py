@@ -434,6 +434,9 @@ class AnthropicProvider(BaseProvider):
     def set_history(self, messages: List[Dict[str, Any]]) -> None:
         self.messages = list(messages)
 
+    def update_system_instruction(self, instruction: str) -> None:
+        self.system_instruction = instruction
+
     def get_capabilities(self) -> ProviderCapabilities:
         """Get Anthropic capabilities"""
         # Claude 3.5 Sonnet has 200K context, Claude 3 Opus has 200K

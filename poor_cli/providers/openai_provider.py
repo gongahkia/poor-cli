@@ -420,6 +420,11 @@ class OpenAIProvider(BaseProvider):
         else:
             self.messages = list(messages)
 
+    def update_system_instruction(self, instruction: str) -> None:
+        self.system_instruction = instruction
+        if self.messages and self.messages[0].get("role") == "system":
+            self.messages[0] = {"role": "system", "content": instruction}
+
     def get_capabilities(self) -> ProviderCapabilities:
         """Get OpenAI capabilities"""
         # Determine capabilities based on model

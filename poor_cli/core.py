@@ -123,6 +123,7 @@ class PoorCLICore:
         self._config_path = config_path
         self._initialized = False
         self._system_instruction: Optional[str] = None
+        self._system_context_hash: Optional[str] = None
         self._instruction_manager: Optional[InstructionManager] = None
         self._hook_manager: Optional[PolicyHookManager] = None
         self._audit_logger: Optional[AuditLogger] = None
@@ -1692,6 +1693,45 @@ class PoorCLICore:
             pass
         return "\n\n".join(parts)
 
+    def _refresh_system_context(self) -> bool:
+        """Rebuild system instruction if git/instruction state changed. Returns True if updated."""
+        if not self._initialized or not self.provider or not self.config:
+            return False
+        try:
+            head = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, text=True, timeout=3,
+            ).strip()
+        except Exception:
+            head = ""
+        try:
+            status = subprocess.check_output(
+                ["git", "status", "--porcelain"], stderr=subprocess.DEVNULL, text=True, timeout=3,
+            ).strip()[:500]
+        except Exception:
+            status = ""
+        instr_key = self._instruction_manager._cache_key if self._instruction_manager else ""
+        new_hash = hashlib.sha256(f"{head}|{status}|{instr_key}".encode()).hexdigest()
+        if new_hash == self._system_context_hash:
+            return False
+        terse = getattr(self.config.economy, "terse_system_prompt", False)
+        batched = getattr(self.config.economy, "prefer_batched_reads", False)
+        repo_root = getattr(self, "_repo_root", Path.cwd())
+        self._system_instruction = build_tool_calling_system_instruction(
+            str(repo_root), provider=self.config.model.provider,
+            terse_mode=terse, batched_reads=batched,
+        )
+        memory_index = self._memory_manager.load_index() if self._memory_manager else ""
+        if memory_index:
+            self._system_instruction += (
+                "\n\n## Persistent Memory\n"
+                "The following memories were saved in previous sessions.\n\n"
+                f"{memory_index}\n"
+            )
+        self.provider.update_system_instruction(self._system_instruction)
+        self._system_context_hash = new_hash
+        logger.debug("System context refreshed (hash=%s)", new_hash[:12])
+        return True
+
     async def send_message_events(
         self,
         message: str,
@@ -1712,6 +1752,8 @@ class PoorCLICore:
         """
         if not self._initialized or not self.provider:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+
+        self._refresh_system_context()
 
         # Check cost guardrails before processing
         cost_reason = self._check_cost_guardrails()

@@ -169,6 +169,11 @@ class BaseProvider(ABC):
             for tool_result in tool_results
         )
 
+    def update_system_instruction(self, instruction: str) -> None:
+        """Update system instruction mid-session for dynamic context refresh.
+        Subclasses may override for provider-specific behavior."""
+        self.system_instruction = instruction
+
     def switch_model(self, model_name: str) -> None:
         """Switch to a different model (e.g. for economy downshift).
         Subclasses may override for provider-specific re-init."""
