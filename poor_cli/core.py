@@ -77,6 +77,8 @@ _MUTATING_TOOLS = {
     "apply_patch_unified",
     "json_yaml_edit",
 }
+_MAX_RUN_TRANSITIONS = 160
+_MAX_RUN_TURN_SUMMARIES = 80
 
 
 # ── CoreEvent: structured events yielded by the agentic loop ─────────
@@ -878,6 +880,123 @@ class PoorCLICore:
                 6,
             ),
         }
+
+    def _new_run_turn_diagnostics(self, *, max_iterations: int) -> Dict[str, Any]:
+        return {
+            "maxIterations": max(1, int(max_iterations)),
+            "turnTransitions": [],
+            "turnOrchestration": [],
+        }
+
+    def _append_turn_transition(
+        self,
+        diagnostics: Optional[Dict[str, Any]],
+        *,
+        reason_code: str,
+        iteration: Optional[int] = None,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if not diagnostics:
+            return
+        transitions = diagnostics.get("turnTransitions")
+        if not isinstance(transitions, list):
+            return
+        payload: Dict[str, Any] = {
+            "at": time.time(),
+            "reasonCode": str(reason_code or "").strip() or "unspecified",
+        }
+        if iteration is not None:
+            try:
+                payload["iterationIndex"] = int(iteration)
+            except (TypeError, ValueError):
+                pass
+        if details:
+            payload["details"] = dict(details)
+        transitions.append(payload)
+        if len(transitions) > _MAX_RUN_TRANSITIONS:
+            del transitions[:-_MAX_RUN_TRANSITIONS]
+
+    def _append_turn_orchestration(
+        self,
+        diagnostics: Optional[Dict[str, Any]],
+        *,
+        iteration: int,
+        call_count: int,
+        concurrency_safe_count: int,
+        sequential_count: int,
+        max_parallel: int,
+        plan_review: str,
+        had_mutations: bool,
+        auto_feedback_injected: bool,
+        tool_names: List[str],
+    ) -> None:
+        if not diagnostics:
+            return
+        summaries = diagnostics.get("turnOrchestration")
+        if not isinstance(summaries, list):
+            return
+        summaries.append(
+            {
+                "iterationIndex": max(0, int(iteration)),
+                "callCount": max(0, int(call_count)),
+                "concurrencySafeCount": max(0, int(concurrency_safe_count)),
+                "sequentialCount": max(0, int(sequential_count)),
+                "maxParallel": max(1, int(max_parallel)),
+                "planReview": str(plan_review or "approved"),
+                "hadMutations": bool(had_mutations),
+                "autoFeedbackInjected": bool(auto_feedback_injected),
+                "toolNames": [str(name) for name in tool_names if str(name).strip()],
+            }
+        )
+        if len(summaries) > _MAX_RUN_TURN_SUMMARIES:
+            del summaries[:-_MAX_RUN_TURN_SUMMARIES]
+
+    @staticmethod
+    def _extract_run_diagnostics(metadata: Any) -> Dict[str, Any]:
+        payload = metadata if isinstance(metadata, dict) else {}
+        transitions = payload.get("turnTransitions")
+        if not isinstance(transitions, list):
+            transitions = []
+        orchestration = payload.get("turnOrchestration")
+        if not isinstance(orchestration, list):
+            orchestration = []
+        return {
+            "completionReasonCode": str(payload.get("completionReasonCode", "") or "").strip(),
+            "turnTransitions": transitions,
+            "turnOrchestration": orchestration,
+            "maxIterations": int(payload.get("maxIterations", 0) or 0),
+        }
+
+    def _build_run_metadata_updates(
+        self,
+        *,
+        request_id: str = "",
+        diagnostics: Optional[Dict[str, Any]] = None,
+        completion_reason_code: str = "",
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        updates: Dict[str, Any] = {}
+        if request_id:
+            updates["requestId"] = request_id
+        if diagnostics:
+            transitions = diagnostics.get("turnTransitions")
+            if isinstance(transitions, list):
+                updates["turnTransitions"] = list(transitions)
+            orchestration = diagnostics.get("turnOrchestration")
+            if isinstance(orchestration, list):
+                updates["turnOrchestration"] = list(orchestration)
+            max_iterations = diagnostics.get("maxIterations")
+            try:
+                max_iterations_int = int(max_iterations)
+            except (TypeError, ValueError):
+                max_iterations_int = 0
+            if max_iterations_int > 0:
+                updates["maxIterations"] = max_iterations_int
+        if completion_reason_code:
+            updates["completionReasonCode"] = str(completion_reason_code)
+        if extra:
+            updates.update(extra)
+        return updates
 
     def _start_run_record(
         self,
@@ -1723,7 +1842,17 @@ class PoorCLICore:
         cancel_event = self._prepare_cancel_event(request_id)
         max_iterations = self.config.agentic.max_iterations if self.config else 25
         iteration = 0
+        turn_diagnostics = self._new_run_turn_diagnostics(max_iterations=max_iterations)
         resolved_source_id = str(source_id or request_id or "session").strip() or "session"
+        self._append_turn_transition(
+            turn_diagnostics,
+            reason_code="run_started",
+            iteration=0,
+            details={
+                "sourceKind": source_kind,
+                "sourceId": resolved_source_id,
+            },
+        )
         run_state = self._start_run_record(
             source_kind=source_kind,
             source_id=resolved_source_id,
@@ -1797,6 +1926,23 @@ class PoorCLICore:
             savings = self._economy_tracker.get_summary()
             if any(v for v in savings.values()):
                 yield CoreEvent.economy_savings(savings)
+            self._append_turn_transition(
+                turn_diagnostics,
+                reason_code="cache_hit",
+                iteration=0,
+            )
+            self._finish_run_record(
+                run_state,
+                status="completed",
+                summary="cache hit",
+                checkpoint_id=last_checkpoint_id,
+                artifact_dir=artifact_dir,
+                metadata_updates=self._build_run_metadata_updates(
+                    request_id=request_id,
+                    diagnostics=turn_diagnostics,
+                    completion_reason_code="cache_hit",
+                ),
+            )
             self._restore_model()
             yield CoreEvent.done(reason="cache_hit")
             return
@@ -1866,6 +2012,11 @@ class PoorCLICore:
 
             async for chunk in self.provider.send_message_stream(full_message):
                 if cancel_event.is_set():
+                    self._append_turn_transition(
+                        turn_diagnostics,
+                        reason_code="cancelled",
+                        iteration=iteration,
+                    )
                     self._finish_run_record(
                         run_state,
                         status="cancelled",
@@ -1873,11 +2024,22 @@ class PoorCLICore:
                         error_message="cancelled",
                         checkpoint_id=last_checkpoint_id,
                         artifact_dir=artifact_dir,
+                        metadata_updates=self._build_run_metadata_updates(
+                            request_id=request_id,
+                            diagnostics=turn_diagnostics,
+                            completion_reason_code="cancelled",
+                        ),
                     )
                     yield CoreEvent.done(reason="cancelled")
                     return
 
                 if chunk.function_calls:
+                    self._append_turn_transition(
+                        turn_diagnostics,
+                        reason_code="provider_requested_tools",
+                        iteration=iteration,
+                        details={"callCount": len(chunk.function_calls)},
+                    )
                     # extract usage from structured UsageMetadata or metadata dict
                     u = chunk.usage
                     if u:
@@ -1909,6 +2071,7 @@ class PoorCLICore:
                         max_iterations,
                         request_id,
                         message,
+                        turn_diagnostics=turn_diagnostics,
                     )
                     for ev in self._pending_events:
                         _observe_event(ev)
@@ -1925,6 +2088,11 @@ class PoorCLICore:
                     while response.function_calls:
                         iteration += 1
                         if cancel_event.is_set():
+                            self._append_turn_transition(
+                                turn_diagnostics,
+                                reason_code="cancelled",
+                                iteration=iteration,
+                            )
                             self._finish_run_record(
                                 run_state,
                                 status="cancelled",
@@ -1932,10 +2100,20 @@ class PoorCLICore:
                                 error_message="cancelled",
                                 checkpoint_id=last_checkpoint_id,
                                 artifact_dir=artifact_dir,
+                                metadata_updates=self._build_run_metadata_updates(
+                                    request_id=request_id,
+                                    diagnostics=turn_diagnostics,
+                                    completion_reason_code="cancelled",
+                                ),
                             )
                             yield CoreEvent.done(reason="cancelled")
                             return
                         if iteration >= max_iterations:
+                            self._append_turn_transition(
+                                turn_diagnostics,
+                                reason_code="iteration_cap_reached",
+                                iteration=iteration,
+                            )
                             self._finish_run_record(
                                 run_state,
                                 status="failed",
@@ -1943,6 +2121,11 @@ class PoorCLICore:
                                 error_message="iteration cap reached",
                                 checkpoint_id=last_checkpoint_id,
                                 artifact_dir=artifact_dir,
+                                metadata_updates=self._build_run_metadata_updates(
+                                    request_id=request_id,
+                                    diagnostics=turn_diagnostics,
+                                    completion_reason_code="iteration_cap",
+                                ),
                             )
                             yield CoreEvent.done(reason="iteration_cap")
                             return
@@ -1951,12 +2134,23 @@ class PoorCLICore:
                         eco_budget = getattr(self.config.economy, "tool_call_budget", 0) if self.config else 0
                         if eco_budget > 0 and iteration >= eco_budget:
                             self._economy_tracker.record_tool_calls_avoided(max_iterations - iteration)
+                            self._append_turn_transition(
+                                turn_diagnostics,
+                                reason_code="economy_tool_budget_reached",
+                                iteration=iteration,
+                                details={"budget": int(eco_budget)},
+                            )
                             self._finish_run_record(
                                 run_state,
                                 status="completed",
                                 summary="economy tool budget reached",
                                 checkpoint_id=last_checkpoint_id,
                                 artifact_dir=artifact_dir,
+                                metadata_updates=self._build_run_metadata_updates(
+                                    request_id=request_id,
+                                    diagnostics=turn_diagnostics,
+                                    completion_reason_code="economy_tool_budget",
+                                ),
                             )
                             yield CoreEvent.text_chunk(f"\n[Economy] Tool call budget reached ({eco_budget})", request_id)
                             yield CoreEvent.economy_savings(self._economy_tracker.get_summary())
@@ -1972,6 +2166,7 @@ class PoorCLICore:
                             max_iterations,
                             request_id,
                             message,
+                            turn_diagnostics=turn_diagnostics,
                         )
                         for ev in self._pending_events:
                             _observe_event(ev)
@@ -1988,6 +2183,12 @@ class PoorCLICore:
                         # Check cost guardrails mid-loop
                         cost_reason = self._check_cost_guardrails()
                         if cost_reason:
+                            self._append_turn_transition(
+                                turn_diagnostics,
+                                reason_code="cost_guardrail_triggered",
+                                iteration=iteration,
+                                details={"reason": str(cost_reason)},
+                            )
                             self._finish_run_record(
                                 run_state,
                                 status="failed",
@@ -1995,6 +2196,11 @@ class PoorCLICore:
                                 error_message=cost_reason,
                                 checkpoint_id=last_checkpoint_id,
                                 artifact_dir=artifact_dir,
+                                metadata_updates=self._build_run_metadata_updates(
+                                    request_id=request_id,
+                                    diagnostics=turn_diagnostics,
+                                    completion_reason_code="cost_limit",
+                                ),
                             )
                             yield CoreEvent.text_chunk(f"\n[Cost guardrail] {cost_reason}", request_id)
                             yield CoreEvent.done(reason="cost_limit")
@@ -2025,13 +2231,22 @@ class PoorCLICore:
             if self.history_adapter and accumulated_text:
                 self.history_adapter.add_message("model", accumulated_text)
 
+            self._append_turn_transition(
+                turn_diagnostics,
+                reason_code="completed",
+                iteration=iteration,
+            )
             self._finish_run_record(
                 run_state,
                 status="completed",
                 summary=accumulated_text or "completed",
                 checkpoint_id=last_checkpoint_id,
                 artifact_dir=artifact_dir,
-                metadata_updates={"requestId": request_id},
+                metadata_updates=self._build_run_metadata_updates(
+                    request_id=request_id,
+                    diagnostics=turn_diagnostics,
+                    completion_reason_code="complete",
+                ),
             )
 
             # Economy: store response in cache
@@ -2061,6 +2276,14 @@ class PoorCLICore:
                     system_instruction=self._system_instruction,
                 )
                 if fallback_provider:
+                    self._append_turn_transition(
+                        turn_diagnostics,
+                        reason_code="fallback_switch",
+                        details={
+                            "from": previous_provider,
+                            "to": fallback_provider.get_provider_name(),
+                        },
+                    )
                     self._last_fallback_summary = {
                         "from": previous_provider,
                         "to": fallback_provider.get_provider_name(),
@@ -2077,19 +2300,35 @@ class PoorCLICore:
                             if chunk.content:
                                 accumulated_text += chunk.content
                                 yield CoreEvent.text_chunk(chunk.content, request_id)
+                        self._append_turn_transition(
+                            turn_diagnostics,
+                            reason_code="completed",
+                            iteration=iteration,
+                            details={"viaFallback": True},
+                        )
                         self._finish_run_record(
                             run_state,
                             status="completed",
                             summary=accumulated_text or "completed",
                             checkpoint_id=last_checkpoint_id,
                             artifact_dir=artifact_dir,
-                            metadata_updates={"requestId": request_id},
+                            metadata_updates=self._build_run_metadata_updates(
+                                request_id=request_id,
+                                diagnostics=turn_diagnostics,
+                                completion_reason_code="complete",
+                            ),
                         )
                         yield CoreEvent.done(reason="complete")
                         return
                     except Exception as fallback_err:
                         self._last_provider_error = str(fallback_err)
                         logger.error("Fallback provider also failed: %s", fallback_err)
+            self._append_turn_transition(
+                turn_diagnostics,
+                reason_code="provider_error",
+                iteration=iteration,
+                details={"message": str(e)},
+            )
             self._finish_run_record(
                 run_state,
                 status="failed",
@@ -2097,12 +2336,22 @@ class PoorCLICore:
                 error_message=str(e),
                 checkpoint_id=last_checkpoint_id,
                 artifact_dir=artifact_dir,
-                metadata_updates={"requestId": request_id},
+                metadata_updates=self._build_run_metadata_updates(
+                    request_id=request_id,
+                    diagnostics=turn_diagnostics,
+                    completion_reason_code="provider_error",
+                ),
             )
             raise PoorCLIError(f"Failed to send message: {e}")
         except Exception as e:
             logger.exception("Error sending message (events)")
             self._last_provider_error = str(e)
+            self._append_turn_transition(
+                turn_diagnostics,
+                reason_code="exception",
+                iteration=iteration,
+                details={"message": str(e)},
+            )
             self._finish_run_record(
                 run_state,
                 status="failed",
@@ -2110,7 +2359,11 @@ class PoorCLICore:
                 error_message=str(e),
                 checkpoint_id=last_checkpoint_id,
                 artifact_dir=artifact_dir,
-                metadata_updates={"requestId": request_id},
+                metadata_updates=self._build_run_metadata_updates(
+                    request_id=request_id,
+                    diagnostics=turn_diagnostics,
+                    completion_reason_code="exception",
+                ),
             )
             raise PoorCLIError(f"Failed to send message: {e}")
         finally:
@@ -2368,6 +2621,7 @@ class PoorCLICore:
         max_iterations: int,
         request_id: str,
         user_request: str = "",
+        turn_diagnostics: Optional[Dict[str, Any]] = None,
     ) -> Any:
         """Handle function calls with auto-approve/deny guardrails and diff capture."""
         if not response.function_calls:
@@ -2383,6 +2637,24 @@ class PoorCLICore:
         )
         if not plan_allowed:
             rejection = "Execution plan rejected by user"
+            self._append_turn_transition(
+                turn_diagnostics,
+                reason_code="plan_rejected",
+                iteration=iteration,
+                details={"callCount": len(response.function_calls)},
+            )
+            self._append_turn_orchestration(
+                turn_diagnostics,
+                iteration=iteration,
+                call_count=len(response.function_calls),
+                concurrency_safe_count=0,
+                sequential_count=len(response.function_calls),
+                max_parallel=self._max_parallel_tool_calls(),
+                plan_review="rejected",
+                had_mutations=False,
+                auto_feedback_injected=False,
+                tool_names=[fc.name for fc in response.function_calls],
+            )
             for fc in response.function_calls:
                 self._pending_events.append(
                     CoreEvent.tool_result(
@@ -2403,10 +2675,10 @@ class PoorCLICore:
                 concurrency_safe_calls.append(fc)
             else:
                 sequential_calls.append(fc)
+        max_parallel = self._max_parallel_tool_calls()
 
         # execute safe calls in bounded parallel
         if concurrency_safe_calls:
-            max_parallel = self._max_parallel_tool_calls()
             if len(concurrency_safe_calls) == 1 or max_parallel <= 1:
                 parallel_results = []
                 for fc in concurrency_safe_calls:
@@ -2440,6 +2712,7 @@ class PoorCLICore:
 
         # execute sequential calls in order
         had_mutations = False
+        auto_feedback_injected = False
         for fc in sequential_calls:
             call_events, call_result = await self._execute_single_call_events(
                 fc, iteration, max_iterations, request_id,
@@ -2453,11 +2726,34 @@ class PoorCLICore:
         if had_mutations and self._should_auto_feedback():
             feedback_text = await self._run_auto_feedback()
             if feedback_text:
+                auto_feedback_injected = True
                 tool_results.append({
                     "id": "__auto_feedback__",
                     "name": "auto_feedback",
                     "result": feedback_text,
                 })
+        self._append_turn_transition(
+            turn_diagnostics,
+            reason_code="tool_turn_executed",
+            iteration=iteration,
+            details={
+                "callCount": len(response.function_calls),
+                "concurrencySafeCount": len(concurrency_safe_calls),
+                "sequentialCount": len(sequential_calls),
+            },
+        )
+        self._append_turn_orchestration(
+            turn_diagnostics,
+            iteration=iteration,
+            call_count=len(response.function_calls),
+            concurrency_safe_count=len(concurrency_safe_calls),
+            sequential_count=len(sequential_calls),
+            max_parallel=max_parallel,
+            plan_review="approved",
+            had_mutations=had_mutations,
+            auto_feedback_injected=auto_feedback_injected,
+            tool_names=[fc.name for fc in response.function_calls],
+        )
 
         if not self.provider:
             return tool_results
@@ -2813,6 +3109,17 @@ class PoorCLICore:
             artifact_dir=artifact_dir,
             metadata=run_metadata,
         )
+        max_iterations = self.config.agentic.max_iterations if self.config else 25
+        turn_diagnostics = self._new_run_turn_diagnostics(max_iterations=max_iterations)
+        self._append_turn_transition(
+            turn_diagnostics,
+            reason_code="run_started",
+            iteration=0,
+            details={
+                "sourceKind": source_kind,
+                "sourceId": str(source_id or "session").strip() or "session",
+            },
+        )
         await self._record_user_prompt_submission(
             message,
             context_files=context_files,
@@ -2834,13 +3141,25 @@ class PoorCLICore:
         try:
             response = await self.provider.send_message(full_message)
             accumulated_text = response.content or ""
-            max_iterations = self.config.agentic.max_iterations if self.config else 25
             iteration = 0
             last_checkpoint_id: Optional[str] = None
+            iteration_cap_reached = False
             
             # Handle function calls
             while response.function_calls:
+                self._append_turn_transition(
+                    turn_diagnostics,
+                    reason_code="provider_requested_tools",
+                    iteration=iteration,
+                    details={"callCount": len(response.function_calls)},
+                )
                 if iteration >= max_iterations:
+                    self._append_turn_transition(
+                        turn_diagnostics,
+                        reason_code="iteration_cap_reached",
+                        iteration=iteration,
+                    )
+                    iteration_cap_reached = True
                     break
                 tool_results = await self._handle_function_calls_events(
                     response,
@@ -2848,6 +3167,7 @@ class PoorCLICore:
                     max_iterations,
                     request_id="",
                     user_request=message,
+                    turn_diagnostics=turn_diagnostics,
                 )
                 for ev in self._pending_events:
                     if ev.type == "tool_result":
@@ -2870,12 +3190,22 @@ class PoorCLICore:
             if self.history_adapter and accumulated_text:
                 self.history_adapter.add_message("model", accumulated_text)
 
+            completion_reason = "iteration_cap" if iteration_cap_reached else "complete"
+            self._append_turn_transition(
+                turn_diagnostics,
+                reason_code="completed" if not iteration_cap_reached else "iteration_cap_reached",
+                iteration=iteration,
+            )
             self._finish_run_record(
                 run_state,
                 status="completed",
                 summary=accumulated_text or "completed",
                 checkpoint_id=last_checkpoint_id,
                 artifact_dir=artifact_dir,
+                metadata_updates=self._build_run_metadata_updates(
+                    diagnostics=turn_diagnostics,
+                    completion_reason_code=completion_reason,
+                ),
             )
             
             logger.info(f"Message complete (sync), {len(accumulated_text)} chars")
@@ -2884,12 +3214,21 @@ class PoorCLICore:
         except Exception as e:
             logger.exception("Error sending message (sync)")
             self._last_provider_error = str(e)
+            self._append_turn_transition(
+                turn_diagnostics,
+                reason_code="exception",
+                details={"message": str(e)},
+            )
             self._finish_run_record(
                 run_state,
                 status="failed",
                 summary=str(e),
                 error_message=str(e),
                 artifact_dir=artifact_dir,
+                metadata_updates=self._build_run_metadata_updates(
+                    diagnostics=turn_diagnostics,
+                    completion_reason_code="exception",
+                ),
             )
             raise PoorCLIError(f"Failed to send message: {e}")
 
@@ -3315,14 +3654,20 @@ class PoorCLICore:
     ) -> List[Dict[str, Any]]:
         if not self._run_history:
             return []
-        return [
-            record.to_dict()
-            for record in self._run_history.list_runs(
-                source_kind=source_kind,
-                source_id=source_id,
-                limit=limit,
-            )
-        ]
+        payloads: List[Dict[str, Any]] = []
+        for record in self._run_history.list_runs(
+            source_kind=source_kind,
+            source_id=source_id,
+            limit=limit,
+        ):
+            payload = record.to_dict()
+            diagnostics = self._extract_run_diagnostics(payload.get("metadata", {}))
+            payload["diagnostics"] = diagnostics
+            payload["completionReasonCode"] = diagnostics.get("completionReasonCode", "")
+            payload["transitionCount"] = len(diagnostics.get("turnTransitions", []))
+            payload["turnCount"] = len(diagnostics.get("turnOrchestration", []))
+            payloads.append(payload)
+        return payloads
 
     def build_status_view(self) -> Dict[str, Any]:
         provider_info = self.get_provider_info() if self._initialized else {}
@@ -3374,6 +3719,7 @@ class PoorCLICore:
                 "recent": recent_runs,
                 "activeCount": len(active_runs),
                 "lastRun": last_run,
+                "lastRunDiagnostics": (last_run or {}).get("diagnostics", {}),
             },
             "collaboration": {},
             "recovery": {
