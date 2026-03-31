@@ -59,6 +59,13 @@ class ProviderFactory:
         except ImportError as e:
             logger.warning(f"Ollama provider not available: {e}")
 
+        try:
+            from .openrouter_provider import OpenRouterProvider
+            cls._providers["openrouter"] = OpenRouterProvider
+            logger.debug("Registered OpenRouter provider")
+        except ImportError as e:
+            logger.warning(f"OpenRouter provider not available: {e}")
+
         cls._initialized = True
 
     @classmethod

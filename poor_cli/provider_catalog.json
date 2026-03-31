@@ -54,6 +54,26 @@
         "claude-3-5-haiku-20241022": { "tier": "cheap", "cost_1k_in": 0.0008, "cost_1k_out": 0.004, "speed_rank": 1 }
       }
     },
+    "openrouter": {
+      "displayName": "OpenRouter",
+      "envVar": "OPENROUTER_API_KEY",
+      "defaultModel": "anthropic/claude-sonnet-4-20250514",
+      "commonModels": [
+        "anthropic/claude-sonnet-4-20250514",
+        "openai/gpt-5",
+        "google/gemini-2.5-flash",
+        "meta-llama/llama-4-maverick",
+        "deepseek/deepseek-r1"
+      ],
+      "setupHelp": "OpenRouter routes to 200+ models via a single API key. Get one at openrouter.ai/keys.",
+      "capabilitySummary": "Streaming, function calling, system instructions, vision (model-dependent)",
+      "modelTiers": {
+        "anthropic/claude-sonnet-4-20250514": { "tier": "quality", "cost_1k_in": 0.003, "cost_1k_out": 0.015, "speed_rank": 3 },
+        "openai/gpt-5": { "tier": "balanced", "cost_1k_in": 0.0005, "cost_1k_out": 0.0015, "speed_rank": 2 },
+        "google/gemini-2.5-flash": { "tier": "cheap", "cost_1k_in": 0.00015, "cost_1k_out": 0.0006, "speed_rank": 1 },
+        "deepseek/deepseek-r1": { "tier": "cheap", "cost_1k_in": 0.00055, "cost_1k_out": 0.0022, "speed_rank": 2 }
+      }
+    },
     "ollama": {
       "displayName": "Ollama",
       "envVar": "OLLAMA_API_KEY",
