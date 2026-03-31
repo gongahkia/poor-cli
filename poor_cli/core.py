@@ -8,6 +8,7 @@ the Neovim plugin.
 import asyncio
 import difflib
 import hashlib
+import os
 import subprocess
 import re
 import threading
@@ -2452,16 +2453,65 @@ class PoorCLICore:
             total += len(str(text))
         return total
 
+    def _overflow_tool_result(self, result_text: str) -> str:
+        """Save oversized result to a temp file, return a reference string."""
+        overflow_dir = Path.cwd() / (getattr(self.config.agentic, "overflow_dir", ".poor-cli/overflow") if self.config else ".poor-cli/overflow")
+        overflow_dir.mkdir(parents=True, exist_ok=True)
+        content_hash = hashlib.sha256(result_text.encode()).hexdigest()[:16]
+        dest = overflow_dir / f"{content_hash}.txt"
+        if not dest.exists():
+            import tempfile as _tf
+            fd, tmp = _tf.mkstemp(dir=str(overflow_dir), suffix=".tmp")
+            try:
+                os.write(fd, result_text.encode())
+                os.fsync(fd)
+                os.close(fd)
+                os.replace(tmp, str(dest))
+            except Exception:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                if os.path.exists(tmp):
+                    os.unlink(tmp)
+                raise
+        preview = result_text[:200].rstrip()
+        return f"{preview}\n\n[Full result saved to {dest} ({len(result_text):,} chars). Use read_file to access specific sections.]"
+
+    def _gc_overflow_files(self) -> None:
+        """Remove overflow files older than 24 hours."""
+        overflow_dir = Path.cwd() / (getattr(self.config.agentic, "overflow_dir", ".poor-cli/overflow") if self.config else ".poor-cli/overflow")
+        if not overflow_dir.is_dir():
+            return
+        cutoff = time.time() - 86400
+        for f in overflow_dir.iterdir():
+            if f.suffix == ".txt" and f.stat().st_mtime < cutoff:
+                f.unlink(missing_ok=True)
+
     def _apply_tool_result_budget(
         self,
         tool_results: List[Dict[str, Any]],
     ) -> Tuple[List[Dict[str, Any]], Dict[str, int | bool]]:
+        overflow_threshold = int(getattr(self.config.agentic, "overflow_threshold_chars", 30000)) if self.config else 30000
+        overflow_count = 0
+        pre_overflow: List[Dict[str, Any]] = []
+        for payload in tool_results:
+            result_text = str(payload.get("result", ""))
+            if len(result_text) > overflow_threshold:
+                try:
+                    ref = self._overflow_tool_result(result_text)
+                    pre_overflow.append({**payload, "result": ref})
+                    overflow_count += 1
+                except Exception:
+                    pre_overflow.append(payload)
+            else:
+                pre_overflow.append(payload)
         budget = self._max_tool_result_chars_per_turn()
-        total_before = self._total_tool_result_chars(tool_results)
+        total_before = self._total_tool_result_chars(pre_overflow)
         remaining = budget
         truncated = 0
         bounded: List[Dict[str, Any]] = []
-        for payload in tool_results:
+        for payload in pre_overflow:
             result_text = str(payload.get("result", ""))
             if len(result_text) <= remaining:
                 bounded.append(payload)
@@ -2482,8 +2532,9 @@ class PoorCLICore:
             "budget": budget,
             "totalBefore": total_before,
             "totalAfter": total_after,
-            "applied": bool(truncated > 0),
+            "applied": bool(truncated > 0 or overflow_count > 0),
             "truncatedCount": truncated,
+            "overflowCount": overflow_count,
         }
 
     async def _execute_single_call_events(

@@ -167,6 +167,8 @@ class AgenticConfig:
     max_iterations: int = 25 # max tool-call round-trips per request
     max_parallel_tool_calls: int = 6  # cap for concurrent read-only tool calls
     max_tool_result_chars_per_turn: int = 60000  # cap tool-result payload per turn
+    overflow_threshold_chars: int = 30000  # single result overflow to temp file
+    overflow_dir: str = ".poor-cli/overflow"  # relative to repo root
     auto_approve_tools: list = field(default_factory=lambda: [
         "read_file", "glob_files", "grep_files", "git_status_diff",
         "list_directory", "diff_files",
