@@ -1996,10 +1996,75 @@ select {
 .mem-input:focus { border-color: var(--accent); }
 .mem-key { flex: 0 0 200px; }
 .mem-val { flex: 1; }
+.mem-graph-card { margin-bottom: 14px; }
+.mem-graph-stats {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+.memory-graph {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-height: 220px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-tertiary) 45%, transparent), transparent),
+    radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 46%);
+  overflow: hidden;
+}
+.memory-graph-svg {
+  width: 100%;
+  height: 340px;
+  display: block;
+}
+.mem-edge {
+  stroke: color-mix(in srgb, var(--accent) 25%, var(--border));
+  opacity: 0.65;
+}
+.mem-edge.match {
+  stroke: color-mix(in srgb, var(--accent) 60%, var(--text-primary));
+  opacity: 0.95;
+}
+.mem-edge.dim { opacity: 0.14; }
+.mem-node { cursor: pointer; transition: opacity 0.15s; }
+.mem-node circle {
+  fill: var(--bg-secondary);
+  stroke: color-mix(in srgb, var(--accent) 30%, var(--border));
+  stroke-width: 2;
+}
+.mem-node text {
+  fill: var(--text-primary);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  text-anchor: middle;
+  pointer-events: none;
+}
+.mem-node.match circle {
+  stroke: var(--accent);
+  fill: color-mix(in srgb, var(--accent) 10%, var(--bg-secondary));
+}
+.mem-node:hover circle {
+  stroke: var(--accent);
+  fill: color-mix(in srgb, var(--accent) 14%, var(--bg-secondary));
+}
+.mem-node.dim { opacity: 0.24; }
+.mem-item-card { margin-bottom: 10px; }
+.mem-item-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
 .mem-value {
   font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap;
   background: var(--bg-tertiary); padding: 8px 10px; border-radius: 6px; margin-top: 8px;
   max-height: 200px; overflow-y: auto;
+}
+@media (max-width: 900px) {
+  .mem-save-form { flex-wrap: wrap; }
+  .mem-key { flex: 1 1 100%; }
+  .mem-val { flex: 1 1 calc(100% - 82px); }
+  .memory-graph-svg { height: 280px; }
 }
 
 /* diagnostics view */

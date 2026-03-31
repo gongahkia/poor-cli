@@ -400,28 +400,29 @@ function renderThemeGroup(currentTheme) {
   group.appendChild(modeRow);
   // theme picker
   const themeRow = document.createElement('div');
-  themeRow.className = 'settings-row settings-row-wrap';
+  themeRow.className = 'settings-row';
   themeRow.innerHTML = `<div class="settings-row-info"><label>Theme</label><div class="desc">ui.theme</div></div>`;
-  const themeGrid = document.createElement('div');
-  themeGrid.className = 'theme-grid';
-  themeGrid.id = 'theme-grid';
+  const themeSelect = document.createElement('select');
+  themeSelect.className = 'theme-select';
+  themeSelect.id = 'theme-select';
   function populateThemes(themes, activeTheme) {
-    themeGrid.innerHTML = '';
+    const selectedTheme = themes.includes(activeTheme) ? activeTheme : themes[0];
+    themeSelect.innerHTML = '';
     themes.forEach(t => {
-      const btn = document.createElement('button');
-      btn.className = `theme-swatch${t === activeTheme ? ' active' : ''}`;
-      btn.dataset.theme = t;
-      btn.textContent = t.replace(/-/g, ' ');
-      btn.addEventListener('click', () => {
-        autoSave('ui.theme', t);
-        applySettingImmediate('ui.theme', t);
-        themeGrid.querySelectorAll('.theme-swatch').forEach(s => s.classList.toggle('active', s.dataset.theme === t));
-      });
-      themeGrid.appendChild(btn);
+      const option = document.createElement('option');
+      option.value = t;
+      option.textContent = t.split('-').map(capitalize).join(' ');
+      option.selected = t === selectedTheme;
+      themeSelect.appendChild(option);
     });
+    return selectedTheme;
   }
   populateThemes(isDark ? DARK_THEMES : LIGHT_THEMES, currentTheme);
-  themeRow.appendChild(themeGrid);
+  themeSelect.addEventListener('change', () => {
+    autoSave('ui.theme', themeSelect.value);
+    applySettingImmediate('ui.theme', themeSelect.value);
+  });
+  themeRow.appendChild(themeSelect);
   group.appendChild(themeRow);
   // mode toggle handler
   modeToggle.querySelectorAll('.theme-mode-btn').forEach(btn => {
@@ -429,10 +430,9 @@ function renderThemeGroup(currentTheme) {
       modeToggle.querySelectorAll('.theme-mode-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       const newThemes = btn.dataset.mode === 'dark' ? DARK_THEMES : LIGHT_THEMES;
-      const first = newThemes[0];
-      autoSave('ui.theme', first);
-      applySettingImmediate('ui.theme', first);
-      populateThemes(newThemes, first);
+      const selectedTheme = populateThemes(newThemes, newThemes[0]);
+      autoSave('ui.theme', selectedTheme);
+      applySettingImmediate('ui.theme', selectedTheme);
     });
   });
   // tab layout
