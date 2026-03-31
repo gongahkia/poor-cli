@@ -84,6 +84,7 @@ class RunDiagnosticsTests(unittest.TestCase):
             core._is_concurrency_safe_tool = lambda name, args: name == "read_file"
             core._is_mutating_tool_call = lambda name, args: name == "write_file"
             core._should_auto_feedback = lambda: False
+            core._max_tool_result_chars_per_turn = lambda: 10
 
             response = ProviderResponse(
                 function_calls=[
@@ -92,7 +93,7 @@ class RunDiagnosticsTests(unittest.TestCase):
                 ]
             )
             diagnostics = core._new_run_turn_diagnostics(max_iterations=5)
-            await core._handle_function_calls_events(
+            tool_results = await core._handle_function_calls_events(
                 response,
                 iteration=1,
                 max_iterations=5,
@@ -108,6 +109,10 @@ class RunDiagnosticsTests(unittest.TestCase):
             self.assertEqual(summary["concurrencySafeCount"], 1)
             self.assertEqual(summary["sequentialCount"], 1)
             self.assertTrue(summary["hadMutations"])
+            self.assertTrue(summary["toolResultBudgetApplied"])
+            self.assertGreater(summary["truncatedResultCount"], 0)
+            self.assertEqual(len(tool_results), 2)
+            self.assertIn("tool-result", tool_results[1]["result"])
 
         asyncio.run(_exercise())
 

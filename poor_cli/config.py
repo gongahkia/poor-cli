@@ -166,6 +166,7 @@ class AgenticConfig:
     """Configuration for agentic loop behavior"""
     max_iterations: int = 25 # max tool-call round-trips per request
     max_parallel_tool_calls: int = 6  # cap for concurrent read-only tool calls
+    max_tool_result_chars_per_turn: int = 60000  # cap tool-result payload per turn
     auto_approve_tools: list = field(default_factory=lambda: [
         "read_file", "glob_files", "grep_files", "git_status_diff",
         "list_directory", "diff_files",
@@ -679,6 +680,10 @@ class ConfigManager:
             raise ConfigurationError("agentic.max_parallel_tool_calls must be at least 1")
         if self.config.agentic.max_parallel_tool_calls > 32:
             raise ConfigurationError("agentic.max_parallel_tool_calls must be at most 32")
+        if self.config.agentic.max_tool_result_chars_per_turn < 1000:
+            raise ConfigurationError("agentic.max_tool_result_chars_per_turn must be at least 1000")
+        if self.config.agentic.max_tool_result_chars_per_turn > 500000:
+            raise ConfigurationError("agentic.max_tool_result_chars_per_turn must be at most 500000")
 
         # Validate security config
         if self.config.security.max_file_size_mb < 1:

@@ -886,6 +886,8 @@ class PoorCLICore:
             "maxIterations": max(1, int(max_iterations)),
             "turnTransitions": [],
             "turnOrchestration": [],
+            "compactionEvents": [],
+            "promptLayers": {},
         }
 
     def _append_turn_transition(
@@ -929,6 +931,10 @@ class PoorCLICore:
         had_mutations: bool,
         auto_feedback_injected: bool,
         tool_names: List[str],
+        tool_result_chars: int = 0,
+        tool_result_chars_after_budget: int = 0,
+        tool_result_budget_applied: bool = False,
+        truncated_results: int = 0,
     ) -> None:
         if not diagnostics:
             return
@@ -946,6 +952,10 @@ class PoorCLICore:
                 "hadMutations": bool(had_mutations),
                 "autoFeedbackInjected": bool(auto_feedback_injected),
                 "toolNames": [str(name) for name in tool_names if str(name).strip()],
+                "toolResultChars": max(0, int(tool_result_chars)),
+                "toolResultCharsAfterBudget": max(0, int(tool_result_chars_after_budget)),
+                "toolResultBudgetApplied": bool(tool_result_budget_applied),
+                "truncatedResultCount": max(0, int(truncated_results)),
             }
         )
         if len(summaries) > _MAX_RUN_TURN_SUMMARIES:
@@ -960,10 +970,18 @@ class PoorCLICore:
         orchestration = payload.get("turnOrchestration")
         if not isinstance(orchestration, list):
             orchestration = []
+        compaction_events = payload.get("compactionEvents")
+        if not isinstance(compaction_events, list):
+            compaction_events = []
+        prompt_layers = payload.get("promptLayers")
+        if not isinstance(prompt_layers, dict):
+            prompt_layers = {}
         return {
             "completionReasonCode": str(payload.get("completionReasonCode", "") or "").strip(),
             "turnTransitions": transitions,
             "turnOrchestration": orchestration,
+            "compactionEvents": compaction_events,
+            "promptLayers": prompt_layers,
             "maxIterations": int(payload.get("maxIterations", 0) or 0),
         }
 
@@ -992,6 +1010,12 @@ class PoorCLICore:
                 max_iterations_int = 0
             if max_iterations_int > 0:
                 updates["maxIterations"] = max_iterations_int
+            compaction_events = diagnostics.get("compactionEvents")
+            if isinstance(compaction_events, list):
+                updates["compactionEvents"] = list(compaction_events)
+            prompt_layers = diagnostics.get("promptLayers")
+            if isinstance(prompt_layers, dict):
+                updates["promptLayers"] = dict(prompt_layers)
         if completion_reason_code:
             updates["completionReasonCode"] = str(completion_reason_code)
         if extra:
@@ -1875,6 +1899,28 @@ class PoorCLICore:
             pinned_context_files=pinned_context_files,
             context_budget_tokens=context_budget_tokens,
         )
+        turn_diagnostics["promptLayers"] = {
+            "userPromptChars": len(message or ""),
+            "fullMessageChars": len(full_message or ""),
+            "explicitContextFileCount": len(context_files or []),
+            "pinnedContextFileCount": len(pinned_context_files or []),
+            "selectedContextFileCount": len(
+                (self._last_context_preview.get("selected") if isinstance(self._last_context_preview, dict) else [])
+                or []
+            ),
+            "gitContextInjected": "[Git context]" in (full_message or ""),
+        }
+        turn_diagnostics["promptLayers"] = {
+            "userPromptChars": len(message or ""),
+            "fullMessageChars": len(full_message or ""),
+            "explicitContextFileCount": len(context_files or []),
+            "pinnedContextFileCount": len(pinned_context_files or []),
+            "selectedContextFileCount": len(
+                (self._last_context_preview.get("selected") if isinstance(self._last_context_preview, dict) else [])
+                or []
+            ),
+            "gitContextInjected": "[Git context]" in (full_message or ""),
+        }
 
         # Economy: context dedup — strip file blocks already in session
         try:
@@ -1961,6 +2007,15 @@ class PoorCLICore:
                     self.provider.set_history(compressed)
                     after = len(compressed)
                     logger.info("Compressed conversation context: %d -> %d messages", before, after)
+                    compaction_events = turn_diagnostics.get("compactionEvents")
+                    if isinstance(compaction_events, list):
+                        compaction_events.append(
+                            {
+                                "strategy": "compress",
+                                "messagesBefore": before,
+                                "messagesAfter": after,
+                            }
+                        )
                     self._pending_events.append(CoreEvent(
                         type="progress",
                         data={"phase": "compression", "message": f"context compressed: {before} \u2192 {after} messages ({100 - after * 100 // max(before, 1)}% reduction)"},
@@ -1983,6 +2038,15 @@ class PoorCLICore:
                         if msgs_before > 2: # only compact if enough history
                             result = await self._compact_summarize(history, msgs_before)
                             logger.info("Auto LLM compact triggered: %s", result)
+                            compaction_events = turn_diagnostics.get("compactionEvents")
+                            if isinstance(compaction_events, list):
+                                compaction_events.append(
+                                    {
+                                        "strategy": str(result.get("strategy", "llm_compact") or "llm_compact"),
+                                        "messagesBefore": msgs_before,
+                                        "messagesAfter": int(result.get("messages_after", 0) or 0),
+                                    }
+                                )
                             self._pending_events.append(CoreEvent(
                                 type="progress",
                                 data={"phase": "llm_compact", "message": f"auto LLM compact: {msgs_before} \u2192 {result.get('messages_after', 0)} messages"},
@@ -2511,6 +2575,61 @@ class PoorCLICore:
             return 6
         return max(1, min(value, 32))
 
+    def _max_tool_result_chars_per_turn(self) -> int:
+        """Configured cap for tool-result payload size per turn."""
+        if not self.config:
+            return 60000
+        raw_value = getattr(self.config.agentic, "max_tool_result_chars_per_turn", 60000)
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            return 60000
+        return max(1000, min(value, 500000))
+
+    @staticmethod
+    def _total_tool_result_chars(tool_results: List[Dict[str, Any]]) -> int:
+        total = 0
+        for payload in tool_results:
+            text = payload.get("result")
+            if text is None:
+                continue
+            total += len(str(text))
+        return total
+
+    def _apply_tool_result_budget(
+        self,
+        tool_results: List[Dict[str, Any]],
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, int | bool]]:
+        budget = self._max_tool_result_chars_per_turn()
+        total_before = self._total_tool_result_chars(tool_results)
+        remaining = budget
+        truncated = 0
+        bounded: List[Dict[str, Any]] = []
+        for payload in tool_results:
+            result_text = str(payload.get("result", ""))
+            if len(result_text) <= remaining:
+                bounded.append(payload)
+                remaining -= len(result_text)
+                continue
+            truncated += 1
+            if remaining > 0:
+                clipped = (
+                    result_text[:remaining]
+                    + f"\n\n[tool-result truncated: {len(result_text) - remaining} chars omitted; per-turn budget reached]"
+                )
+                remaining = 0
+            else:
+                clipped = "[tool-result omitted: per-turn budget reached]"
+            bounded.append({**payload, "result": clipped})
+        total_after = self._total_tool_result_chars(bounded)
+        return bounded, {
+            "budget": budget,
+            "totalBefore": total_before,
+            "totalAfter": total_after,
+            "applied": bool(truncated > 0),
+            "truncatedCount": truncated,
+        }
+
     async def _execute_single_call_events(
         self,
         fc: FunctionCall,
@@ -2732,6 +2851,19 @@ class PoorCLICore:
                     "name": "auto_feedback",
                     "result": feedback_text,
                 })
+        bounded_tool_results, budget_info = self._apply_tool_result_budget(tool_results)
+        if budget_info.get("applied"):
+            self._append_turn_transition(
+                turn_diagnostics,
+                reason_code="tool_result_budget_applied",
+                iteration=iteration,
+                details={
+                    "budgetChars": int(budget_info.get("budget", 0) or 0),
+                    "beforeChars": int(budget_info.get("totalBefore", 0) or 0),
+                    "afterChars": int(budget_info.get("totalAfter", 0) or 0),
+                    "truncatedCount": int(budget_info.get("truncatedCount", 0) or 0),
+                },
+            )
         self._append_turn_transition(
             turn_diagnostics,
             reason_code="tool_turn_executed",
@@ -2753,11 +2885,15 @@ class PoorCLICore:
             had_mutations=had_mutations,
             auto_feedback_injected=auto_feedback_injected,
             tool_names=[fc.name for fc in response.function_calls],
+            tool_result_chars=int(budget_info.get("totalBefore", 0) or 0),
+            tool_result_chars_after_budget=int(budget_info.get("totalAfter", 0) or 0),
+            tool_result_budget_applied=bool(budget_info.get("applied", False)),
+            truncated_results=int(budget_info.get("truncatedCount", 0) or 0),
         )
 
         if not self.provider:
-            return tool_results
-        return self.provider.format_tool_results(tool_results)
+            return bounded_tool_results
+        return self.provider.format_tool_results(bounded_tool_results)
 
     def _should_auto_feedback(self) -> bool:
         """Check if auto-feedback loop is enabled in config."""
