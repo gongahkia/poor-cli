@@ -1,37 +1,144 @@
 # Fish completion for poor-cli
 # Copy to ~/.config/fish/completions/poor-cli.fish
 
-# Remove old completions
 complete -c poor-cli -e
 complete -c poor-cli-sync -e
 
-# Session Management
-complete -c poor-cli -f -n "__fish_use_subcommand" -a "/help" -d "Show help message"
-complete -c poor-cli -f -n "__fish_use_subcommand" -a "/quit" -d "Exit poor-cli"
-complete -c poor-cli -f -n "__fish_use_subcommand" -a "/exit" -d "Exit poor-cli"
-complete -c poor-cli -f -n "__fish_use_subcommand" -a "/clear" -d "Clear conversation"
-complete -c poor-cli -f -n "__fish_use_subcommand" -a "/history" -d "Show recent messages"
-complete -c poor-cli -f -n "__fish_use_subcommand" -a "/sessions" -d "List all sessions"
-complete -c poor-cli -f -n "__fish_use_subcommand" -a "/new-session" -d "Start fresh session"
+# Root command surface
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "help" -d "Show root help"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "version" -d "Print version"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "tui" -d "Launch Rust TUI"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "install" -d "Run installer wizard"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "install-info" -d "Inspect launcher selection"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "exec" -d "Run one shared-core request"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "task" -d "Manage durable tasks"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "automation" -d "Manage scheduled automations"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "github-task" -d "Create task from GitHub event"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "skills" -d "List and run skills"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "commands" -d "List and run command wrappers"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "server" -d "Run JSON-RPC server"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "telegram" -d "Run Telegram bot frontend"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "watch" -d "Watch files for inline instructions"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "deploy" -d "Deploy project"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "preview" -d "Run preview server"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "review-pr" -d "Review GitHub PR"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "agent" -d "Manage background agents"
 
-# Checkpoints & Undo
-complete -c poor-cli -f -n "__fish_use_subcommand" -a "/checkpoints" -d "List all checkpoints"
-complete -c poor-cli -f -n "__fish_use_subcommand" -a "/checkpoint" -d "Create manual checkpoint"
-complete -c poor-cli -f -n "__fish_use_subcommand" -a "/rewind" -d "Restore checkpoint"
-complete -c poor-cli -r -n "__fish_seen_subcommand_from /rewind" -d "Checkpoint ID or 'last'"
+# Nested subcommands
+complete -c poor-cli -f -n "__fish_seen_subcommand_from task" -a "create list show start wait approve cancel retry replay run"
+complete -c poor-cli -f -n "__fish_seen_subcommand_from automation" -a "create list show enable disable run-now run-due serve history replay"
+complete -c poor-cli -f -n "__fish_seen_subcommand_from agent" -a "start list logs result cancel run"
+complete -c poor-cli -f -n "__fish_seen_subcommand_from skills" -a "list show run"
+complete -c poor-cli -f -n "__fish_seen_subcommand_from commands" -a "list show run"
+complete -c poor-cli -f -n "__fish_seen_subcommand_from github-task" -a "create"
+complete -c poor-cli -f -n "__fish_seen_subcommand_from telegram" -a "setup"
 
-# Diff command with file completion
-complete -c poor-cli -f -n "__fish_use_subcommand" -a "/diff" -d "Compare two files"
-complete -c poor-cli -r -n "__fish_seen_subcommand_from /diff" -d "File path"
+# exec
+complete -c poor-cli -n "__fish_seen_subcommand_from exec" -l prompt -r
+complete -c poor-cli -n "__fish_seen_subcommand_from exec" -l output-format -r -a "text json stream-json"
+complete -c poor-cli -n "__fish_seen_subcommand_from exec" -l resume
+complete -c poor-cli -n "__fish_seen_subcommand_from exec" -l allow-tool -r
+complete -c poor-cli -n "__fish_seen_subcommand_from exec" -l deny-tool -r
+complete -c poor-cli -n "__fish_seen_subcommand_from exec" -l plan-only
+complete -c poor-cli -n "__fish_seen_subcommand_from exec" -l provider -r
+complete -c poor-cli -n "__fish_seen_subcommand_from exec" -l model -r
+complete -c poor-cli -n "__fish_seen_subcommand_from exec" -l routing-mode -r -a "manual quality speed cheap private"
+complete -c poor-cli -n "__fish_seen_subcommand_from exec" -l api-key -r
+complete -c poor-cli -n "__fish_seen_subcommand_from exec" -l config -r -a "(__fish_complete_path)"
+complete -c poor-cli -n "__fish_seen_subcommand_from exec" -l cwd -r -a "(__fish_complete_directories)"
+complete -c poor-cli -n "__fish_seen_subcommand_from exec" -l sandbox-preset -r -a "read-only review-only workspace-write full-access"
+complete -c poor-cli -n "__fish_seen_subcommand_from exec" -l permission-mode -r -a "prompt auto-safe danger-full-access"
+complete -c poor-cli -n "__fish_seen_subcommand_from exec" -l auto-approve
+complete -c poor-cli -n "__fish_seen_subcommand_from exec" -l context-file -r -a "(__fish_complete_path)"
+complete -c poor-cli -n "__fish_seen_subcommand_from exec" -l pinned-context-file -r -a "(__fish_complete_path)"
+complete -c poor-cli -n "__fish_seen_subcommand_from exec" -l context-budget-tokens -r
 
-# Provider Management
-complete -c poor-cli -f -n "__fish_use_subcommand" -a "/provider" -d "Show provider info"
-complete -c poor-cli -f -n "__fish_use_subcommand" -a "/switch" -d "Switch AI provider"
+# task create
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l title -r
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l prompt -r
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l preset -r -a "read-only review-only workspace-write full-access"
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l source -r
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l requires-approval
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l auto-approve
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l approve
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l auto-start
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l no-auto-start
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l provider -r
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l model -r
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l routing-mode -r -a "manual quality speed cheap private"
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l timezone -r
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l execution-mode -r -a "worktree local"
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l reasoning-effort -r -a "low medium high"
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l config -r -a "(__fish_complete_path)"
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l context-file -r -a "(__fish_complete_path)"
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l pinned-context-file -r -a "(__fish_complete_path)"
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l context-budget-tokens -r
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l wait
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l wait-timeout-seconds -r
+complete -c poor-cli -n "__fish_seen_subcommand_from task create" -l json
 
-# Configuration
-complete -c poor-cli -f -n "__fish_use_subcommand" -a "/config" -d "Show configuration"
-complete -c poor-cli -f -n "__fish_use_subcommand" -a "/verbose" -d "Toggle verbose logging"
-complete -c poor-cli -f -n "__fish_use_subcommand" -a "/plan-mode" -d "Toggle plan mode"
+# automation create
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l name -r
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l prompt -r
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l every-minutes -r
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l daily -r
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l weekly -r
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l preset -r -a "read-only review-only workspace-write full-access"
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l requires-approval
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l auto-approve
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l disabled
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l provider -r
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l model -r
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l routing-mode -r -a "manual quality speed cheap private"
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l timezone -r
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l execution-mode -r -a "worktree local"
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l reasoning-effort -r -a "low medium high"
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l config -r -a "(__fish_complete_path)"
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l context-file -r -a "(__fish_complete_path)"
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l pinned-context-file -r -a "(__fish_complete_path)"
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l context-budget-tokens -r
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l run-now
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l wait
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l wait-timeout-seconds -r
+complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l json
 
-# Copy all completions for poor-cli-sync
+# server
+complete -c poor-cli -n "__fish_seen_subcommand_from server" -l stdio
+complete -c poor-cli -n "__fish_seen_subcommand_from server" -l host
+complete -c poor-cli -n "__fish_seen_subcommand_from server" -l bind -r
+complete -c poor-cli -n "__fish_seen_subcommand_from server" -l port -r
+complete -c poor-cli -n "__fish_seen_subcommand_from server" -l room -r
+complete -c poor-cli -n "__fish_seen_subcommand_from server" -l permission-mode -r -a "prompt auto-safe danger-full-access"
+complete -c poor-cli -n "__fish_seen_subcommand_from server" -l ngrok
+complete -c poor-cli -n "__fish_seen_subcommand_from server" -l bridge
+complete -c poor-cli -n "__fish_seen_subcommand_from server" -l invite -r
+complete -c poor-cli -n "__fish_seen_subcommand_from server" -l verbose
+
+# telegram
+complete -c poor-cli -n "__fish_seen_subcommand_from telegram" -l token -r
+complete -c poor-cli -n "__fish_seen_subcommand_from telegram" -l allowed-users -r
+complete -c poor-cli -n "__fish_seen_subcommand_from telegram" -l sandbox-preset -r
+complete -c poor-cli -n "__fish_seen_subcommand_from telegram" -l max-sessions -r
+complete -c poor-cli -n "__fish_seen_subcommand_from telegram" -l edit-interval -r
+complete -c poor-cli -n "__fish_seen_subcommand_from telegram" -l webhook-url -r
+complete -c poor-cli -n "__fish_seen_subcommand_from telegram" -l webhook-port -r
+complete -c poor-cli -n "__fish_seen_subcommand_from telegram" -l verbose
+complete -c poor-cli -n "__fish_seen_subcommand_from telegram" -s v
+complete -c poor-cli -n "__fish_seen_subcommand_from telegram" -l debug
+complete -c poor-cli -n "__fish_seen_subcommand_from telegram" -l log-file -r -a "(__fish_complete_path)"
+
+# Utility command options
+complete -c poor-cli -n "__fish_seen_subcommand_from watch" -l debounce -r
+complete -c poor-cli -n "__fish_seen_subcommand_from watch" -l scan
+complete -c poor-cli -n "__fish_seen_subcommand_from deploy" -l target -s t -r -a "vercel netlify fly railway cloudflare"
+complete -c poor-cli -n "__fish_seen_subcommand_from deploy" -l prod
+complete -c poor-cli -n "__fish_seen_subcommand_from deploy" -l list
+complete -c poor-cli -n "__fish_seen_subcommand_from deploy" -l json
+complete -c poor-cli -n "__fish_seen_subcommand_from preview" -l port -r
+complete -c poor-cli -n "__fish_seen_subcommand_from preview" -l stop
+complete -c poor-cli -n "__fish_seen_subcommand_from review-pr" -l post
+complete -c poor-cli -n "__fish_seen_subcommand_from review-pr" -l json
+complete -c poor-cli -n "__fish_seen_subcommand_from review-pr" -l ci
+
+# Mirror to legacy alias if present
 complete -c poor-cli-sync -w poor-cli
