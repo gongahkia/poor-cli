@@ -27,26 +27,27 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg pkg-config libavformat-dev libavcodec-dev libavdevice-dev libavutil-dev libavfilter-dev libswscale-dev libswresample-dev
 
-      - name: Install Python package and dependencies
+      - name: Create venv and install Python package/dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -e .
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install -e .
 
       - name: Run Python backend smoke checks
         run: |
-          python -m compileall poor_cli
-          python -m poor_cli.command_manifest --check
-          poor-cli --help
-          poor-cli exec --help
-          poor-cli task --help
-          poor-cli automation --help
-          poor-cli skills --help
-          poor-cli commands --help
-          poor-cli server --help
+          .venv/bin/python -m compileall poor_cli
+          .venv/bin/python -m poor_cli.command_manifest --check
+          .venv/bin/poor-cli --help
+          .venv/bin/poor-cli exec --help
+          .venv/bin/poor-cli task --help
+          .venv/bin/poor-cli automation --help
+          .venv/bin/poor-cli skills --help
+          .venv/bin/poor-cli commands --help
+          .venv/bin/poor-cli server --help
 
       - name: Run Python test suite
         run: |
-          python -m unittest discover -s tests
+          .venv/bin/python -Wdefault -m unittest discover -s tests -q
 
   python-package:
     runs-on: ${{ matrix.os }}

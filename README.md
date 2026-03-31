@@ -257,6 +257,25 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 - `/pass` - Hand driver role to the next collaborator
 - `/suggest` - Send suggestion to the active driver
 - `/leave` - Disconnect from collaboration session
+
+**Workflows:**
+- `/standup` - Summarize yesterday's git activity for standup
+- `/weekly-update` - Synthesize this week's PRs into a weekly update
+- `/pr-summary` - Summarize recent PRs by teammate and theme
+- `/release-notes` - Draft release notes from merged PRs
+- `/release-check` - Pre-release verification: changelog, migrations, tests
+- `/changelog` - Update changelog with this week's highlights
+- `/ci-failures` - Summarize CI failures and flaky tests; suggest fixes
+- `/ci-debug` - Debug latest CI failure; find root cause
+- `/triage` - Triage new issues; suggest owner, priority, labels
+- `/scan-bugs` - Scan recent commits for likely bugs
+- `/test-coverage` - Find untested paths and add focused tests
+- `/perf-audit` - Audit recent changes for performance regressions
+- `/dep-drift` - Detect dependency drift and propose alignment
+- `/dep-upgrade` - Scan outdated deps; propose safe upgrades
+- `/update-docs` - Update project docs with recent changes
+- `/skill-suggest` - Suggest next skills to deepen from recent work
+- `/perf-opportunity` - Find top performance improvement opportunities
 ## Available Tools
 
 `poor-cli` can currently use these tools.
