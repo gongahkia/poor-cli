@@ -1,0 +1,343 @@
+"""Configuration and diagnostics CLI subcommands."""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+from pathlib import Path
+from typing import Any, Sequence
+
+from ..config import Config, ConfigManager
+from ..core import PoorCLICore
+
+
+def _print_json(payload: Any) -> None:
+    print(json.dumps(payload, indent=2, default=str))
+
+
+def _load_cli_config(config_path_hint: str | None = None) -> Config:
+    manager = ConfigManager(config_path=Path(config_path_hint).expanduser() if config_path_hint else None)
+    return manager.load() if manager.config_path.exists() else Config()
+
+
+def run_config_mode(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(prog="poor-cli config")
+    sub = parser.add_subparsers(dest="subcommand", required=True)
+    p_list = sub.add_parser("list")
+    p_list.add_argument("--json", action="store_true")
+    p_get = sub.add_parser("get")
+    p_get.add_argument("key")
+    p_get.add_argument("--json", action="store_true")
+    p_set = sub.add_parser("set")
+    p_set.add_argument("key")
+    p_set.add_argument("value")
+    p_set.add_argument("--json", action="store_true")
+    p_toggle = sub.add_parser("toggle")
+    p_toggle.add_argument("key")
+    p_toggle.add_argument("--json", action="store_true")
+    args = parser.parse_args(list(argv))
+    manager = ConfigManager()
+    config = manager.load() if manager.config_path.exists() else Config()
+    if args.subcommand == "list":
+        payload = config.to_dict() if hasattr(config, "to_dict") else {}
+        if args.json:
+            _print_json(payload)
+        else:
+            for k, v in payload.items():
+                print(f"  {k}: {v}")
+        return 0
+    if args.subcommand == "get":
+        parts = args.key.split(".")
+        obj: Any = config
+        for p in parts:
+            obj = getattr(obj, p, None)
+            if obj is None:
+                raise SystemExit(f"Unknown config key: {args.key}")
+        if args.json:
+            _print_json({"key": args.key, "value": obj})
+        else:
+            print(obj)
+        return 0
+    if args.subcommand == "set":
+        parts = args.key.split(".")
+        obj: Any = config
+        for p in parts[:-1]:
+            obj = getattr(obj, p, None)
+            if obj is None:
+                raise SystemExit(f"Unknown config key: {args.key}")
+        current = getattr(obj, parts[-1], None)
+        if current is None:
+            raise SystemExit(f"Unknown config key: {args.key}")
+        if isinstance(current, bool):
+            value: Any = args.value.lower() in ("true", "1", "yes")
+        elif isinstance(current, int):
+            value = int(args.value)
+        elif isinstance(current, float):
+            value = float(args.value)
+        else:
+            value = args.value
+        setattr(obj, parts[-1], value)
+        manager.config = config
+        manager.save()
+        if args.json:
+            _print_json({"key": args.key, "value": value})
+        else:
+            print(f"{args.key} = {value}")
+        return 0
+    if args.subcommand == "toggle":
+        parts = args.key.split(".")
+        obj: Any = config
+        for p in parts[:-1]:
+            obj = getattr(obj, p, None)
+            if obj is None:
+                raise SystemExit(f"Unknown config key: {args.key}")
+        current = getattr(obj, parts[-1], None)
+        if not isinstance(current, bool):
+            raise SystemExit(f"Config key {args.key} is not boolean (got {type(current).__name__})")
+        new_value = not current
+        setattr(obj, parts[-1], new_value)
+        manager.config = config
+        manager.save()
+        if args.json:
+            _print_json({"key": args.key, "value": new_value})
+        else:
+            print(f"{args.key} = {new_value}")
+        return 0
+    raise SystemExit(f"Unknown config subcommand: {args.subcommand}")
+
+
+def run_profile_mode(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(prog="poor-cli profile")
+    sub = parser.add_subparsers(dest="subcommand", required=True)
+    p_list = sub.add_parser("list")
+    p_list.add_argument("--json", action="store_true")
+    p_apply = sub.add_parser("apply")
+    p_apply.add_argument("name")
+    p_apply.add_argument("--json", action="store_true")
+    args = parser.parse_args(list(argv))
+    from ..profiles import ProfileManager
+    mgr = ProfileManager()
+    if args.subcommand == "list":
+        profiles = mgr.list_profiles()
+        payload = [p.to_dict() for p in profiles]
+        if args.json:
+            _print_json(payload)
+        else:
+            if not payload:
+                print("No profiles found.")
+            for p in payload:
+                print(f"  {p['name']:15s} {p['description']} ({p['source']})")
+        return 0
+    if args.subcommand == "apply":
+        config = _load_cli_config()
+        mgr.apply_to_config(config, args.name)
+        cm = ConfigManager()
+        cm.config = config
+        cm.save()
+        if args.json:
+            _print_json({"applied": args.name})
+        else:
+            print(f"Profile '{args.name}' applied.")
+        return 0
+    raise SystemExit(f"Unknown profile subcommand: {args.subcommand}")
+
+
+def run_trust_mode(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(prog="poor-cli trust")
+    sub = parser.add_subparsers(dest="subcommand")
+    sub.add_parser("status")
+    p_add = sub.add_parser("trust")
+    p_add.add_argument("--path")
+    p_rm = sub.add_parser("untrust")
+    p_rm.add_argument("--path")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args(list(argv))
+    from ..trust import TrustManager
+    mgr = TrustManager()
+    cmd = args.subcommand or "status"
+    if cmd == "status":
+        payload = mgr.to_dict()
+        if args.json:
+            _print_json(payload)
+        else:
+            trusted = payload.get("trusted", [])
+            current = payload.get("currentRepo", "")
+            is_trusted = payload.get("currentRepoTrusted", False)
+            print(f"Current repo: {current} ({'trusted' if is_trusted else 'not trusted'})")
+            if trusted:
+                for t in trusted:
+                    print(f"  {t}")
+            else:
+                print("  No trusted repos.")
+        return 0
+    if cmd == "trust":
+        canonical = mgr.trust(getattr(args, "path", None))
+        payload = {"trusted": True, "path": canonical}
+        if args.json:
+            _print_json(payload)
+        else:
+            print(f"Trusted: {canonical}")
+        return 0
+    if cmd == "untrust":
+        removed = mgr.untrust(getattr(args, "path", None))
+        path = getattr(args, "path", None) or str(Path.cwd())
+        payload = {"untrusted": removed, "path": path}
+        if args.json:
+            _print_json(payload)
+        else:
+            print(f"Untrusted: {path}" if removed else f"Not trusted: {path}")
+        return 0
+    raise SystemExit(f"Unknown trust subcommand: {cmd}")
+
+
+def run_provider_mode(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(prog="poor-cli provider")
+    sub = parser.add_subparsers(dest="subcommand", required=True)
+    p_list = sub.add_parser("list")
+    p_list.add_argument("--json", action="store_true")
+    p_info = sub.add_parser("info")
+    p_info.add_argument("--config", help="config file path")
+    p_info.add_argument("--json", action="store_true")
+    p_switch = sub.add_parser("switch")
+    p_switch.add_argument("name")
+    p_switch.add_argument("model", nargs="?")
+    p_switch.add_argument("--config", help="config file path")
+    p_switch.add_argument("--json", action="store_true")
+    args = parser.parse_args(list(argv))
+    if args.subcommand == "list":
+        from ..providers.provider_factory import ProviderFactory
+        providers = ProviderFactory.list_providers()
+        payload = [{"name": name} for name in sorted(providers)]
+        if args.json:
+            _print_json(payload)
+        else:
+            for p in payload:
+                print(f"  {p['name']}")
+        return 0
+    if args.subcommand == "info":
+        async def _info():
+            core = PoorCLICore(config_path=Path(args.config).expanduser() if args.config else None)
+            await core.initialize()
+            try:
+                return core.get_provider_info()
+            finally:
+                await core.shutdown()
+        info = asyncio.run(_info())
+        if args.json:
+            _print_json(info)
+        else:
+            for k, v in info.items():
+                print(f"  {k}: {v}")
+        return 0
+    if args.subcommand == "switch":
+        async def _switch():
+            core = PoorCLICore(config_path=Path(args.config).expanduser() if args.config else None)
+            await core.initialize()
+            try:
+                await core.switch_provider(args.name, model_name=args.model)
+                return core.get_provider_info()
+            finally:
+                await core.shutdown()
+        info = asyncio.run(_switch())
+        if args.json:
+            _print_json(info)
+        else:
+            print(f"Switched to {info.get('name', args.name)} / {info.get('model', args.model or 'default')}")
+        return 0
+    raise SystemExit(f"Unknown provider subcommand: {args.subcommand}")
+
+
+def run_core_info_command(method_name: str, argv: Sequence[str], prog: str) -> int:
+    """Generic handler for core info queries (doctor, status, policy, tools, mcp, cost)."""
+    parser = argparse.ArgumentParser(prog=prog)
+    parser.add_argument("--config", help="config file path")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args(list(argv))
+    async def _query():
+        core = PoorCLICore(config_path=Path(args.config).expanduser() if args.config else None)
+        await core.initialize()
+        try:
+            return getattr(core, method_name)()
+        finally:
+            await core.shutdown()
+    result = asyncio.run(_query())
+    if args.json:
+        _print_json(result)
+    else:
+        _print_json(result)
+    return 0
+
+
+def run_cost_mode(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(prog="poor-cli cost")
+    sub = parser.add_subparsers(dest="subcommand")
+    sub.add_parser("summary")
+    p_economy = sub.add_parser("economy")
+    p_economy.add_argument("preset", nargs="?", choices=("frugal", "balanced", "quality"))
+    p_savings = sub.add_parser("savings")
+    parser.add_argument("--config", help="config file path")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args(list(argv))
+    cmd = args.subcommand or "summary"
+    async def _run():
+        core = PoorCLICore(config_path=Path(args.config).expanduser() if getattr(args, "config", None) else None)
+        await core.initialize()
+        try:
+            if cmd == "summary":
+                return core.get_session_cost_summary()
+            if cmd == "savings":
+                return core.get_economy_savings()
+            if cmd == "economy":
+                preset = getattr(args, "preset", None)
+                if preset:
+                    return core.set_economy_preset(preset)
+                return {"current_preset": getattr(core.config, "economy_preset", "balanced")}
+        finally:
+            await core.shutdown()
+        return {}
+    result = asyncio.run(_run())
+    if args.json:
+        _print_json(result)
+    else:
+        _print_json(result)
+    return 0
+
+
+def run_search_mode(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(prog="poor-cli search")
+    parser.add_argument("query", nargs="?")
+    parser.add_argument("--mode", choices=("semantic", "hybrid"), default="hybrid")
+    parser.add_argument("--limit", type=int, default=10)
+    parser.add_argument("--json", action="store_true")
+    sub = parser.add_subparsers(dest="subcommand")
+    sub.add_parser("index")
+    sub.add_parser("stats")
+    args = parser.parse_args(list(argv))
+    from ..indexer import CodebaseIndexer
+    async def _run():
+        indexer = CodebaseIndexer(Path.cwd())
+        if args.subcommand == "index":
+            indexer.index()
+            return {"indexed": True}
+        if args.subcommand == "stats":
+            return indexer.get_stats().to_dict()
+        if not args.query:
+            raise SystemExit("Search requires a query argument.")
+        results = await indexer.hybrid_search(args.query, max_results=args.limit)
+        return [r.to_dict() for r in results]
+    result = asyncio.run(_run())
+    if args.json:
+        _print_json(result)
+    else:
+        if isinstance(result, list):
+            if not result:
+                print("No results found.")
+            for r in result:
+                print(f"  {r.get('score', 0):.3f}  {r.get('filePath', '?')}")
+                snippet = r.get("content", "").strip()
+                if snippet:
+                    print(f"         {snippet[:100]}")
+        else:
+            _print_json(result)
+    return 0

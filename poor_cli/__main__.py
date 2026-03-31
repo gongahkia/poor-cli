@@ -17,6 +17,22 @@ from .automation_manager import (
     parse_weekly_schedule,
     schedule_interval,
 )
+from .cli import (
+    run_checkpoint_mode,
+    run_history_mode,
+    run_session_mode,
+    run_memory_mode,
+    run_config_mode,
+    run_profile_mode,
+    run_trust_mode,
+    run_provider_mode,
+    run_core_info_command,
+    run_cost_mode,
+    run_search_mode,
+    run_review_file_mode,
+    run_commit_mode,
+)
+from ._exec_helpers import build_exec_permission_callback, _trusted_workspace_roots
 from .config import Config, ConfigManager, PermissionMode
 from .core import PoorCLICore
 from .cli_errors import run_with_cli_error_handling
@@ -195,80 +211,7 @@ def _build_resume_prefix() -> str:
     return "\n\n".join(lines)
 
 
-def _build_exec_permission_callback(
-    core: PoorCLICore,
-    allow_tools: set[str],
-    deny_tools: set[str],
-    *,
-    plan_only: bool,
-    permission_mode: str,
-    sandbox_preset: str,
-    auto_approve: bool,
-):
-    async def _callback(tool_name: str, tool_args: dict[str, Any], preview: Optional[dict[str, Any]] = None):
-        if plan_only:
-            return {"allowed": False, "approvedPaths": [], "approvedChunks": []}
-        if tool_name in deny_tools:
-            return {"allowed": False, "approvedPaths": [], "approvedChunks": []}
-        if allow_tools and tool_name not in allow_tools:
-            return {"allowed": False, "approvedPaths": [], "approvedChunks": []}
-        if not core.tool_registry:
-            return {"allowed": False, "approvedPaths": [], "approvedChunks": []}
-
-        mutation_paths = list(preview.get("paths") or []) if isinstance(preview, dict) else []
-        if not mutation_paths:
-            mutation_paths = core.tool_registry.inspect_mutation_targets(tool_name, tool_args)
-
-        security_cfg = getattr(core.config, "security", None)
-        trusted_roots = _trusted_workspace_roots(security_cfg)
-        enforce_trusted_workspace = bool(
-            getattr(security_cfg, "enforce_trusted_workspace", True)
-        ) if security_cfg is not None else True
-        safe_commands = getattr(security_cfg, "safe_commands", None) if security_cfg is not None else None
-
-        decision = evaluate_tool_access(
-            tool_name=tool_name,
-            tool_args=tool_args,
-            tool_capabilities=core.tool_registry.get_tool_capabilities(tool_name),
-            permission_mode=permission_mode,
-            sandbox_preset=sandbox_preset,
-            trusted_roots=trusted_roots,
-            mutation_paths=mutation_paths,
-            enforce_trusted_workspace=enforce_trusted_workspace,
-            safe_process_commands=safe_commands,
-        )
-        if not decision.allowed:
-            return {"allowed": False, "approvedPaths": [], "approvedChunks": []}
-        if decision.requires_approval and not auto_approve:
-            return {"allowed": False, "approvedPaths": [], "approvedChunks": []}
-        return {"allowed": True, "approvedPaths": [], "approvedChunks": []}
-
-    return _callback
-
-
-def _trusted_workspace_roots(security_cfg: Any) -> list[Path]:
-    roots: list[Path] = []
-    raw_roots = getattr(security_cfg, "trusted_roots", []) if security_cfg is not None else []
-    if isinstance(raw_roots, list):
-        for raw_root in raw_roots:
-            if not isinstance(raw_root, str) or not raw_root.strip():
-                continue
-            root_path = Path(raw_root).expanduser()
-            if not root_path.is_absolute():
-                root_path = Path.cwd() / root_path
-            roots.append(root_path.resolve())
-    if not roots:
-        roots.append(Path.cwd().resolve())
-
-    deduped: list[Path] = []
-    seen: set[str] = set()
-    for root in roots:
-        key = str(root)
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(root)
-    return deduped
+_build_exec_permission_callback = build_exec_permission_callback
 
 
 async def _run_exec_mode_async(args: argparse.Namespace) -> int:
@@ -1723,608 +1666,55 @@ def _run_telegram_mode(argv: Sequence[str]) -> int:
 
 
 def _run_checkpoint_mode(argv: Sequence[str]) -> int:
-    parser = argparse.ArgumentParser(prog="poor-cli checkpoint")
-    sub = parser.add_subparsers(dest="subcommand", required=True)
-    p_list = sub.add_parser("list")
-    p_list.add_argument("--limit", type=int)
-    p_list.add_argument("--json", action="store_true")
-    p_create = sub.add_parser("create")
-    p_create.add_argument("--description", "-d", default="manual checkpoint")
-    p_create.add_argument("files", nargs="*")
-    p_create.add_argument("--json", action="store_true")
-    p_preview = sub.add_parser("preview")
-    p_preview.add_argument("checkpoint_id")
-    p_preview.add_argument("--json", action="store_true")
-    p_restore = sub.add_parser("restore")
-    p_restore.add_argument("checkpoint_id")
-    p_restore.add_argument("--json", action="store_true")
-    args = parser.parse_args(list(argv))
-    from .checkpoint import CheckpointManager
-    mgr = CheckpointManager(workspace_root=Path.cwd())
-    if args.subcommand == "list":
-        checkpoints = mgr.list_checkpoints(limit=args.limit)
-        payload = [c.to_dict() for c in checkpoints]
-        if args.json:
-            _print_json(payload)
-        else:
-            if not payload:
-                print("No checkpoints found.")
-            for c in payload:
-                print(f"  {c['checkpoint_id']}  {c['created_at']}  {c['description']}  ({c['file_count']} files)")
-        return 0
-    if args.subcommand == "create":
-        cp = mgr.create_checkpoint(file_paths=args.files or [], description=args.description)
-        payload = cp.to_dict()
-        if args.json:
-            _print_json(payload)
-        else:
-            print(f"Checkpoint {payload['checkpoint_id']} created ({payload['file_count']} files)")
-        return 0
-    if args.subcommand == "preview":
-        diffs = mgr.preview_checkpoint(args.checkpoint_id)
-        if args.json:
-            _print_json(diffs)
-        else:
-            if not diffs:
-                print("No file changes in checkpoint.")
-            for d in diffs:
-                print(f"  {d.get('status', '?'):10s} {d.get('filePath', '?')}")
-        return 0
-    if args.subcommand == "restore":
-        count = mgr.restore_checkpoint(args.checkpoint_id)
-        payload = {"checkpoint_id": args.checkpoint_id, "restored_files": count}
-        if args.json:
-            _print_json(payload)
-        else:
-            print(f"Restored {count} files from checkpoint {args.checkpoint_id}")
-        return 0
-    raise SystemExit(f"Unknown checkpoint subcommand: {args.subcommand}")
+    return run_checkpoint_mode(argv)
 
 
 def _run_history_mode(argv: Sequence[str]) -> int:
-    parser = argparse.ArgumentParser(prog="poor-cli history")
-    sub = parser.add_subparsers(dest="subcommand", required=True)
-    p_list = sub.add_parser("list")
-    p_list.add_argument("--limit", type=int, default=10)
-    p_list.add_argument("--json", action="store_true")
-    p_search = sub.add_parser("search")
-    p_search.add_argument("query")
-    p_search.add_argument("--limit", type=int, default=20)
-    p_search.add_argument("--json", action="store_true")
-    p_export = sub.add_parser("export")
-    p_export.add_argument("session_id")
-    p_export.add_argument("--output", "-o", required=True)
-    args = parser.parse_args(list(argv))
-    from .history import HistoryManager
-    mgr = HistoryManager()
-    if args.subcommand == "list":
-        sessions = mgr.list_sessions(limit=args.limit)
-        if args.json:
-            _print_json([{"session_id": s[0], "started_at": s[1], "message_count": s[2]} for s in sessions])
-        else:
-            if not sessions:
-                print("No sessions found.")
-            for sid, started, count in sessions:
-                print(f"  {sid}  {started}  ({count} messages)")
-        return 0
-    if args.subcommand == "search":
-        results = mgr.search_messages(args.query, limit=args.limit)
-        if args.json:
-            _print_json(results)
-        else:
-            if not results:
-                print("No results found.")
-            for r in results:
-                print(f"  [{r.get('role', '?')}] {r.get('content', '')[:120]}")
-        return 0
-    if args.subcommand == "export":
-        mgr.export_session(args.session_id, Path(args.output).expanduser())
-        print(f"Exported session {args.session_id} to {args.output}")
-        return 0
-    raise SystemExit(f"Unknown history subcommand: {args.subcommand}")
+    return run_history_mode(argv)
 
 
 def _run_session_mode(argv: Sequence[str]) -> int:
-    parser = argparse.ArgumentParser(prog="poor-cli session")
-    sub = parser.add_subparsers(dest="subcommand", required=True)
-    p_list = sub.add_parser("list")
-    p_list.add_argument("--limit", type=int, default=10)
-    p_list.add_argument("--json", action="store_true")
-    p_create = sub.add_parser("create")
-    p_create.add_argument("--label", default="")
-    p_create.add_argument("--json", action="store_true")
-    p_fork = sub.add_parser("fork")
-    p_fork.add_argument("source_id")
-    p_fork.add_argument("--label", default="")
-    p_fork.add_argument("--json", action="store_true")
-    p_destroy = sub.add_parser("destroy")
-    p_destroy.add_argument("session_id")
-    p_destroy.add_argument("--json", action="store_true")
-    args = parser.parse_args(list(argv))
-    from .session_manager import SessionManager
-    mgr = SessionManager()
-    if args.subcommand == "list":
-        sessions = mgr.list_sessions()
-        if args.json:
-            _print_json(sessions)
-        else:
-            if not sessions:
-                print("No sessions found.")
-            for s in sessions:
-                sid = s.get("session_id", s.get("id", "?"))
-                label = s.get("label", "")
-                status = s.get("status", "")
-                print(f"  {sid}  {label}  {status}")
-        return 0
-    if args.subcommand == "create":
-        session = mgr.create_session(label=args.label)
-        payload = {"session_id": session.session_id, "label": args.label}
-        if args.json:
-            _print_json(payload)
-        else:
-            print(f"Session {session.session_id} created")
-        return 0
-    if args.subcommand == "fork":
-        session = mgr.fork_session(args.source_id, label=args.label)
-        payload = {"session_id": session.session_id, "forked_from": args.source_id}
-        if args.json:
-            _print_json(payload)
-        else:
-            print(f"Session {session.session_id} forked from {args.source_id}")
-        return 0
-    if args.subcommand == "destroy":
-        mgr.destroy_session(args.session_id)
-        if args.json:
-            _print_json({"destroyed": args.session_id})
-        else:
-            print(f"Session {args.session_id} destroyed")
-        return 0
-    raise SystemExit(f"Unknown session subcommand: {args.subcommand}")
+    return run_session_mode(argv)
 
 
 def _run_memory_mode(argv: Sequence[str]) -> int:
-    parser = argparse.ArgumentParser(prog="poor-cli memory")
-    sub = parser.add_subparsers(dest="subcommand", required=True)
-    p_list = sub.add_parser("list")
-    p_list.add_argument("--type")
-    p_list.add_argument("--json", action="store_true")
-    p_save = sub.add_parser("save")
-    p_save.add_argument("--name", required=True)
-    p_save.add_argument("--type", default="project")
-    p_save.add_argument("--description", default="")
-    p_save.add_argument("--content", required=True)
-    p_save.add_argument("--json", action="store_true")
-    p_search = sub.add_parser("search")
-    p_search.add_argument("query")
-    p_search.add_argument("--limit", type=int, default=10)
-    p_search.add_argument("--json", action="store_true")
-    p_delete = sub.add_parser("delete")
-    p_delete.add_argument("name")
-    p_delete.add_argument("--json", action="store_true")
-    args = parser.parse_args(list(argv))
-    from .memory import MemoryManager, MemoryEntry
-    mgr = MemoryManager()
-    mgr.load()
-    if args.subcommand == "list":
-        entries = mgr.list_all(type_filter=args.type)
-        payload = [e.to_dict() for e in entries]
-        if args.json:
-            _print_json(payload)
-        else:
-            if not payload:
-                print("No memory entries found.")
-            for e in payload:
-                print(f"  [{e.get('type', '?')}] {e.get('name', '?')}: {e.get('description', '')}")
-        return 0
-    if args.subcommand == "save":
-        entry = MemoryEntry(name=args.name, type=args.type, description=args.description, content=args.content)
-        mgr.save(entry)
-        if args.json:
-            _print_json(entry.to_dict())
-        else:
-            print(f"Saved memory entry: {args.name}")
-        return 0
-    if args.subcommand == "search":
-        results = mgr.search(args.query, max_results=args.limit)
-        payload = [e.to_dict() for e in results]
-        if args.json:
-            _print_json(payload)
-        else:
-            if not payload:
-                print("No results found.")
-            for e in payload:
-                print(f"  [{e.get('type', '?')}] {e.get('name', '?')}: {e.get('description', '')}")
-        return 0
-    if args.subcommand == "delete":
-        deleted = mgr.delete(args.name)
-        if not deleted:
-            raise SystemExit(f"Memory entry not found: {args.name}")
-        if args.json:
-            _print_json({"deleted": args.name})
-        else:
-            print(f"Deleted memory entry: {args.name}")
-        return 0
-    raise SystemExit(f"Unknown memory subcommand: {args.subcommand}")
+    return run_memory_mode(argv)
 
 
 def _run_config_mode(argv: Sequence[str]) -> int:
-    parser = argparse.ArgumentParser(prog="poor-cli config")
-    sub = parser.add_subparsers(dest="subcommand", required=True)
-    p_list = sub.add_parser("list")
-    p_list.add_argument("--json", action="store_true")
-    p_get = sub.add_parser("get")
-    p_get.add_argument("key")
-    p_get.add_argument("--json", action="store_true")
-    p_set = sub.add_parser("set")
-    p_set.add_argument("key")
-    p_set.add_argument("value")
-    p_set.add_argument("--json", action="store_true")
-    p_toggle = sub.add_parser("toggle")
-    p_toggle.add_argument("key")
-    p_toggle.add_argument("--json", action="store_true")
-    args = parser.parse_args(list(argv))
-    manager = ConfigManager()
-    config = manager.load() if manager.config_path.exists() else Config()
-    if args.subcommand == "list":
-        payload = config.to_dict() if hasattr(config, "to_dict") else {}
-        if args.json:
-            _print_json(payload)
-        else:
-            for k, v in payload.items():
-                print(f"  {k}: {v}")
-        return 0
-    if args.subcommand == "get":
-        parts = args.key.split(".")
-        obj: Any = config
-        for p in parts:
-            obj = getattr(obj, p, None)
-            if obj is None:
-                raise SystemExit(f"Unknown config key: {args.key}")
-        if args.json:
-            _print_json({"key": args.key, "value": obj})
-        else:
-            print(obj)
-        return 0
-    if args.subcommand == "set":
-        parts = args.key.split(".")
-        obj: Any = config
-        for p in parts[:-1]:
-            obj = getattr(obj, p, None)
-            if obj is None:
-                raise SystemExit(f"Unknown config key: {args.key}")
-        current = getattr(obj, parts[-1], None)
-        if current is None:
-            raise SystemExit(f"Unknown config key: {args.key}")
-        if isinstance(current, bool):
-            value: Any = args.value.lower() in ("true", "1", "yes")
-        elif isinstance(current, int):
-            value = int(args.value)
-        elif isinstance(current, float):
-            value = float(args.value)
-        else:
-            value = args.value
-        setattr(obj, parts[-1], value)
-        manager.config = config
-        manager.save()
-        if args.json:
-            _print_json({"key": args.key, "value": value})
-        else:
-            print(f"{args.key} = {value}")
-        return 0
-    if args.subcommand == "toggle":
-        parts = args.key.split(".")
-        obj: Any = config
-        for p in parts[:-1]:
-            obj = getattr(obj, p, None)
-            if obj is None:
-                raise SystemExit(f"Unknown config key: {args.key}")
-        current = getattr(obj, parts[-1], None)
-        if not isinstance(current, bool):
-            raise SystemExit(f"Config key {args.key} is not boolean (got {type(current).__name__})")
-        new_value = not current
-        setattr(obj, parts[-1], new_value)
-        manager.config = config
-        manager.save()
-        if args.json:
-            _print_json({"key": args.key, "value": new_value})
-        else:
-            print(f"{args.key} = {new_value}")
-        return 0
-    raise SystemExit(f"Unknown config subcommand: {args.subcommand}")
+    return run_config_mode(argv)
 
 
 def _run_profile_mode(argv: Sequence[str]) -> int:
-    parser = argparse.ArgumentParser(prog="poor-cli profile")
-    sub = parser.add_subparsers(dest="subcommand", required=True)
-    p_list = sub.add_parser("list")
-    p_list.add_argument("--json", action="store_true")
-    p_apply = sub.add_parser("apply")
-    p_apply.add_argument("name")
-    p_apply.add_argument("--json", action="store_true")
-    args = parser.parse_args(list(argv))
-    from .profiles import ProfileManager
-    mgr = ProfileManager()
-    if args.subcommand == "list":
-        profiles = mgr.list_profiles()
-        payload = [p.to_dict() for p in profiles]
-        if args.json:
-            _print_json(payload)
-        else:
-            if not payload:
-                print("No profiles found.")
-            for p in payload:
-                print(f"  {p['name']:15s} {p['description']} ({p['source']})")
-        return 0
-    if args.subcommand == "apply":
-        config = _load_cli_config()
-        mgr.apply_to_config(config, args.name)
-        cm = ConfigManager()
-        cm.config = config
-        cm.save()
-        if args.json:
-            _print_json({"applied": args.name})
-        else:
-            print(f"Profile '{args.name}' applied.")
-        return 0
-    raise SystemExit(f"Unknown profile subcommand: {args.subcommand}")
+    return run_profile_mode(argv)
 
 
 def _run_trust_mode(argv: Sequence[str]) -> int:
-    parser = argparse.ArgumentParser(prog="poor-cli trust")
-    sub = parser.add_subparsers(dest="subcommand")
-    sub.add_parser("status")
-    p_add = sub.add_parser("trust")
-    p_add.add_argument("--path")
-    p_rm = sub.add_parser("untrust")
-    p_rm.add_argument("--path")
-    parser.add_argument("--json", action="store_true")
-    args = parser.parse_args(list(argv))
-    from .trust import TrustManager
-    mgr = TrustManager()
-    cmd = args.subcommand or "status"
-    if cmd == "status":
-        payload = mgr.to_dict()
-        if args.json:
-            _print_json(payload)
-        else:
-            trusted = payload.get("trusted", [])
-            current = payload.get("currentRepo", "")
-            is_trusted = payload.get("currentRepoTrusted", False)
-            print(f"Current repo: {current} ({'trusted' if is_trusted else 'not trusted'})")
-            if trusted:
-                for t in trusted:
-                    print(f"  {t}")
-            else:
-                print("  No trusted repos.")
-        return 0
-    if cmd == "trust":
-        canonical = mgr.trust(getattr(args, "path", None))
-        payload = {"trusted": True, "path": canonical}
-        if args.json:
-            _print_json(payload)
-        else:
-            print(f"Trusted: {canonical}")
-        return 0
-    if cmd == "untrust":
-        removed = mgr.untrust(getattr(args, "path", None))
-        path = getattr(args, "path", None) or str(Path.cwd())
-        payload = {"untrusted": removed, "path": path}
-        if args.json:
-            _print_json(payload)
-        else:
-            print(f"Untrusted: {path}" if removed else f"Not trusted: {path}")
-        return 0
-    raise SystemExit(f"Unknown trust subcommand: {cmd}")
+    return run_trust_mode(argv)
 
 
 def _run_provider_mode(argv: Sequence[str]) -> int:
-    parser = argparse.ArgumentParser(prog="poor-cli provider")
-    sub = parser.add_subparsers(dest="subcommand", required=True)
-    p_list = sub.add_parser("list")
-    p_list.add_argument("--json", action="store_true")
-    p_info = sub.add_parser("info")
-    p_info.add_argument("--config", help="config file path")
-    p_info.add_argument("--json", action="store_true")
-    p_switch = sub.add_parser("switch")
-    p_switch.add_argument("name")
-    p_switch.add_argument("model", nargs="?")
-    p_switch.add_argument("--config", help="config file path")
-    p_switch.add_argument("--json", action="store_true")
-    args = parser.parse_args(list(argv))
-    if args.subcommand == "list":
-        from .providers.provider_factory import ProviderFactory
-        providers = ProviderFactory.list_providers()
-        payload = [{"name": name} for name in sorted(providers)]
-        if args.json:
-            _print_json(payload)
-        else:
-            for p in payload:
-                print(f"  {p['name']}")
-        return 0
-    if args.subcommand == "info":
-        async def _info():
-            core = PoorCLICore(config_path=Path(args.config).expanduser() if args.config else None)
-            await core.initialize()
-            try:
-                return core.get_provider_info()
-            finally:
-                await core.shutdown()
-        info = asyncio.run(_info())
-        if args.json:
-            _print_json(info)
-        else:
-            for k, v in info.items():
-                print(f"  {k}: {v}")
-        return 0
-    if args.subcommand == "switch":
-        async def _switch():
-            core = PoorCLICore(config_path=Path(args.config).expanduser() if args.config else None)
-            await core.initialize()
-            try:
-                await core.switch_provider(args.name, model_name=args.model)
-                return core.get_provider_info()
-            finally:
-                await core.shutdown()
-        info = asyncio.run(_switch())
-        if args.json:
-            _print_json(info)
-        else:
-            print(f"Switched to {info.get('name', args.name)} / {info.get('model', args.model or 'default')}")
-        return 0
-    raise SystemExit(f"Unknown provider subcommand: {args.subcommand}")
+    return run_provider_mode(argv)
 
 
 def _run_core_info_command(method_name: str, argv: Sequence[str], prog: str) -> int:
-    """Generic handler for core info queries (doctor, status, policy, tools, mcp, cost)."""
-    parser = argparse.ArgumentParser(prog=prog)
-    parser.add_argument("--config", help="config file path")
-    parser.add_argument("--json", action="store_true")
-    args = parser.parse_args(list(argv))
-    async def _query():
-        core = PoorCLICore(config_path=Path(args.config).expanduser() if args.config else None)
-        await core.initialize()
-        try:
-            return getattr(core, method_name)()
-        finally:
-            await core.shutdown()
-    result = asyncio.run(_query())
-    if args.json:
-        _print_json(result)
-    else:
-        _print_json(result)
-    return 0
+    return run_core_info_command(method_name, argv, prog)
 
 
 def _run_cost_mode(argv: Sequence[str]) -> int:
-    parser = argparse.ArgumentParser(prog="poor-cli cost")
-    sub = parser.add_subparsers(dest="subcommand")
-    sub.add_parser("summary")
-    p_economy = sub.add_parser("economy")
-    p_economy.add_argument("preset", nargs="?", choices=("frugal", "balanced", "quality"))
-    p_savings = sub.add_parser("savings")
-    parser.add_argument("--config", help="config file path")
-    parser.add_argument("--json", action="store_true")
-    args = parser.parse_args(list(argv))
-    cmd = args.subcommand or "summary"
-    async def _run():
-        core = PoorCLICore(config_path=Path(args.config).expanduser() if getattr(args, "config", None) else None)
-        await core.initialize()
-        try:
-            if cmd == "summary":
-                return core.get_session_cost_summary()
-            if cmd == "savings":
-                return core.get_economy_savings()
-            if cmd == "economy":
-                preset = getattr(args, "preset", None)
-                if preset:
-                    return core.set_economy_preset(preset)
-                return {"current_preset": getattr(core.config, "economy_preset", "balanced")}
-        finally:
-            await core.shutdown()
-        return {}
-    result = asyncio.run(_run())
-    if args.json:
-        _print_json(result)
-    else:
-        _print_json(result)
-    return 0
+    return run_cost_mode(argv)
 
 
 def _run_search_mode(argv: Sequence[str]) -> int:
-    parser = argparse.ArgumentParser(prog="poor-cli search")
-    parser.add_argument("query", nargs="?")
-    parser.add_argument("--mode", choices=("semantic", "hybrid"), default="hybrid")
-    parser.add_argument("--limit", type=int, default=10)
-    parser.add_argument("--json", action="store_true")
-    sub = parser.add_subparsers(dest="subcommand")
-    sub.add_parser("index")
-    sub.add_parser("stats")
-    args = parser.parse_args(list(argv))
-    from .indexer import CodebaseIndexer
-    async def _run():
-        indexer = CodebaseIndexer(Path.cwd())
-        if args.subcommand == "index":
-            indexer.index()
-            return {"indexed": True}
-        if args.subcommand == "stats":
-            return indexer.get_stats().to_dict()
-        if not args.query:
-            raise SystemExit("Search requires a query argument.")
-        results = await indexer.hybrid_search(args.query, max_results=args.limit)
-        return [r.to_dict() for r in results]
-    result = asyncio.run(_run())
-    if args.json:
-        _print_json(result)
-    else:
-        if isinstance(result, list):
-            if not result:
-                print("No results found.")
-            for r in result:
-                print(f"  {r.get('score', 0):.3f}  {r.get('filePath', '?')}")
-                snippet = r.get("content", "").strip()
-                if snippet:
-                    print(f"         {snippet[:100]}")
-        else:
-            _print_json(result)
-    return 0
+    return run_search_mode(argv)
 
 
 def _run_review_file_mode(argv: Sequence[str]) -> int:
-    parser = argparse.ArgumentParser(prog="poor-cli review")
-    parser.add_argument("file", nargs="?", help="file to review (default: staged diff)")
-    parser.add_argument("--output-format", choices=("text", "json"), default="text")
-    parser.add_argument("--config", help="config file path")
-    args = parser.parse_args(list(argv))
-    if args.file:
-        prompt = f"Review the following file for issues, improvements, and best practices:\n\nFile: {args.file}"
-    else:
-        prompt = "Review the current staged git diff for issues, improvements, and best practices. Use git_diff to inspect changes."
-    async def _run():
-        core = PoorCLICore(config_path=Path(args.config).expanduser() if args.config else None)
-        await core.initialize()
-        core.permission_callback = _build_exec_permission_callback(
-            core, set(), set(), plan_only=False, permission_mode="auto-safe",
-            sandbox_preset="review-only", auto_approve=True,
-        )
-        try:
-            return await core.send_message_sync(prompt, source_kind="exec", source_id="cli-review")
-        finally:
-            await core.shutdown()
-    result = asyncio.run(_run())
-    if args.output_format == "json":
-        _print_json({"review": result})
-    else:
-        print(result)
-    return 0
+    return run_review_file_mode(argv)
 
 
 def _run_commit_mode(argv: Sequence[str]) -> int:
-    parser = argparse.ArgumentParser(prog="poor-cli commit")
-    parser.add_argument("--output-format", choices=("text", "json"), default="text")
-    parser.add_argument("--config", help="config file path")
-    args = parser.parse_args(list(argv))
-    prompt = (
-        "Generate a concise, conventional commit message for the currently staged git changes. "
-        "Use git_diff and git_status to inspect the staged changes. "
-        "Output ONLY the commit message, nothing else."
-    )
-    async def _run():
-        core = PoorCLICore(config_path=Path(args.config).expanduser() if args.config else None)
-        await core.initialize()
-        core.permission_callback = _build_exec_permission_callback(
-            core, set(), set(), plan_only=False, permission_mode="auto-safe",
-            sandbox_preset="review-only", auto_approve=True,
-        )
-        try:
-            return await core.send_message_sync(prompt, source_kind="exec", source_id="cli-commit")
-        finally:
-            await core.shutdown()
-    result = asyncio.run(_run())
-    if args.output_format == "json":
-        _print_json({"commit_message": result})
-    else:
-        print(result)
-    return 0
+    return run_commit_mode(argv)
 
 
 def _main() -> None:

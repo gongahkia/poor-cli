@@ -61,7 +61,7 @@ Repository = "https://github.com/gongahkia/poor-cli"
 Issues = "https://github.com/gongahkia/poor-cli/issues"
 
 [tool.setuptools]
-packages = ["poor_cli", "poor_cli.integrations", "poor_cli.providers", "poor_cli.readers", "poor_cli.server", "poor_cli.telegram", "poor_cli.telegram.commands"]
+packages = ["poor_cli", "poor_cli.cli", "poor_cli.integrations", "poor_cli.providers", "poor_cli.readers", "poor_cli.server", "poor_cli.telegram", "poor_cli.telegram.commands"]
 
 [tool.setuptools.package-data]
 poor_cli = ["*.json"]
