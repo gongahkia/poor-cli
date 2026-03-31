@@ -41,6 +41,12 @@ def _main() -> None:
         help="Default permission mode for multiplayer room engines",
     )
     parser.add_argument("--ngrok", action="store_true", help="Launch ngrok helper in --host mode")
+    parser.add_argument(
+        "--turn-url",
+        action="append",
+        default=[],
+        help="TURN relay URL for NAT traversal (repeatable, reads POOR_CLI_TURN_USERNAME/POOR_CLI_TURN_CREDENTIAL env vars for auth)",
+    )
     parser.add_argument("--bridge", action="store_true", help="Run stdio <-> P2P bridge mode")
     parser.add_argument("--invite", help="Invite code for --bridge mode")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
@@ -83,6 +89,7 @@ def _main() -> None:
                 rooms=args.room,
                 permission_mode=args.permission_mode,
                 enable_ngrok=args.ngrok,
+                turn_urls=args.turn_url,
             )
         )
         return

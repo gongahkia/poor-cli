@@ -324,11 +324,18 @@ async def _run_multiplayer_host(
     rooms: List[str],
     permission_mode: str,
     enable_ngrok: bool,
+    turn_urls: Optional[List[str]] = None,
 ) -> None:
     """Run multiplayer signaling host mode."""
+    import os
     from ..multiplayer import MultiplayerHost
 
     config = ConfigManager().load()
+    if turn_urls:
+        existing = list(config.multiplayer.turn_urls or [])
+        existing.extend(url.strip() for url in turn_urls if url.strip())
+        config.multiplayer.turn_urls = existing
+        logger.info("TURN URLs from CLI: %s", turn_urls)
     share_host = str(config.multiplayer.share_host or "").strip()
     if not share_host:
         share_host = PoorCLIServer._resolve_multiplayer_share_host(bind_host)
