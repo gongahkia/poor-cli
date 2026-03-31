@@ -10,7 +10,9 @@ This module builds a deterministic per-request instruction stack from:
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
@@ -70,8 +72,31 @@ class InstructionSnapshot:
 class InstructionManager:
     """Load deterministic instruction sources for the current repository."""
 
+    _WATCHED_PATHS: tuple[str, ...] = (
+        *INSTRUCTION_FILE_NAMES,
+        os.path.join(".poor-cli", "memory.md"),
+        os.path.join(".poor-cli", "focus.json"),
+    )
+
     def __init__(self, repo_root: Optional[Path] = None):
         self.repo_root = (repo_root or Path.cwd()).resolve()
+        self._cache_key: Optional[str] = None
+        self._cached_snapshot: Optional[InstructionSnapshot] = None
+
+    def invalidate_cache(self) -> None:
+        """Force the next build_snapshot call to rebuild from disk."""
+        self._cache_key = None
+        self._cached_snapshot = None
+
+    def _compute_cache_key(self, plan_mode_enabled: bool, repo_summary_hash: str) -> str:
+        parts: list[str] = [str(self.repo_root), str(plan_mode_enabled), repo_summary_hash]
+        for rel in self._WATCHED_PATHS:
+            path = self.repo_root / rel
+            try:
+                parts.append(f"{rel}:{os.stat(path).st_mtime_ns}")
+            except OSError:
+                parts.append(f"{rel}:0")
+        return hashlib.sha256("|".join(parts).encode()).hexdigest()
 
     def build_snapshot(
         self,
@@ -80,6 +105,12 @@ class InstructionManager:
         plan_mode_enabled: bool = False,
         repo_summary: str = "",
     ) -> InstructionSnapshot:
+        if not referenced_files: # only cache when no path-local files requested
+            summary_hash = hashlib.sha256(repo_summary.encode()).hexdigest()[:8] if repo_summary else ""
+            key = self._compute_cache_key(plan_mode_enabled, summary_hash)
+            if key == self._cache_key and self._cached_snapshot is not None:
+                return self._cached_snapshot
+
         sources: List[InstructionSource] = []
         sources.extend(self._load_runtime_policy(plan_mode_enabled))
         sources.extend(self._load_repo_root_instructions())
@@ -92,7 +123,12 @@ class InstructionManager:
             sources.append(focus)
         if repo_summary:
             sources.append(self._load_repo_graph_summary(repo_summary))
-        return InstructionSnapshot(repo_root=str(self.repo_root), sources=sources)
+        snapshot = InstructionSnapshot(repo_root=str(self.repo_root), sources=sources)
+        if not referenced_files:
+            summary_hash = hashlib.sha256(repo_summary.encode()).hexdigest()[:8] if repo_summary else ""
+            self._cache_key = self._compute_cache_key(plan_mode_enabled, summary_hash)
+            self._cached_snapshot = snapshot
+        return snapshot
 
     @staticmethod
     def _load_repo_graph_summary(summary: str) -> InstructionSource:
