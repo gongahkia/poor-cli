@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# enforce conventional commits: type(scope): description
+# types: feat fix docs style refactor perf test build ci chore revert
+set -euo pipefail
+MSG_FILE="$1"
+MSG=$(head -1 "$MSG_FILE")
+PATTERN='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?: .{1,72}'
+if ! echo "$MSG" | grep -qE "$PATTERN"; then
+    echo "ERROR: commit message must match conventional commits format:"
+    echo "  type(scope): description  (max 72 chars in first line)"
+    echo "  types: feat fix docs style refactor perf test build ci chore revert"
+    echo ""
+    echo "  got: $MSG"
+    exit 1
+fi

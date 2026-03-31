@@ -1,4 +1,4 @@
-.PHONY: cli server tui build-tui install installer install-info dev test lint clean help
+.PHONY: cli server tui build-tui install installer install-info dev test lint clean help hooks
 
 # ── venv guard ──────────────────────────────────────────────────────
 REQUIRE_VENV := cli server exec agent-start agent-list watch preview deploy review-pr installer install-info install dev test lint index
@@ -70,6 +70,9 @@ lint: ## run linters
 
 index: ## build/refresh the semantic search index
 	python3 -c "from poor_cli.indexer import CodebaseIndexer; i=CodebaseIndexer(); s=i.index(); print(f'{s.total_files} files, {s.total_chunks} chunks')"
+
+hooks: ## activate git hooks from .githooks/
+	git config core.hooksPath .githooks
 
 clean: ## remove build artifacts
 	rm -rf build/ dist/ *.egg-info poor-cli-tui/target/release .poor-cli/index/
