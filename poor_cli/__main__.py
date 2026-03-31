@@ -1157,6 +1157,9 @@ def _build_automation_parser() -> argparse.ArgumentParser:
     create.add_argument("--provider")
     create.add_argument("--model")
     create.add_argument("--routing-mode", choices=("manual", "quality", "speed", "cheap", "private"))
+    create.add_argument("--timezone", help="IANA timezone for daily/weekly schedules (defaults to local timezone)")
+    create.add_argument("--execution-mode", choices=("worktree", "local"), default="worktree")
+    create.add_argument("--reasoning-effort", choices=("low", "medium", "high"))
     create.add_argument("--config")
     create.add_argument("--context-file", action="append", default=[])
     create.add_argument("--pinned-context-file", action="append", default=[])
@@ -1221,12 +1224,13 @@ def _coerce_automation_prompt(args: argparse.Namespace) -> str:
 
 
 def _automation_schedule_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    timezone_name = str(getattr(args, "timezone", "") or "").strip() or None
     if args.every_minutes is not None:
         return schedule_interval(args.every_minutes)
     if args.daily:
-        return parse_daily_schedule(args.daily, timezone_name=args.timezone)
+        return parse_daily_schedule(args.daily, timezone_name=timezone_name)
     if args.weekly:
-        return parse_weekly_schedule(args.weekly, timezone_name=args.timezone)
+        return parse_weekly_schedule(args.weekly, timezone_name=timezone_name)
     raise SystemExit("Missing automation schedule.")
 
 

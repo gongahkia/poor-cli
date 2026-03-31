@@ -236,6 +236,36 @@ class ProductContractTests(unittest.TestCase):
             self.assertEqual(payload["reasoningEffort"], "high")
             self.assertIn("Asia/Singapore", payload["scheduleSummary"])
 
+    def test_automation_cli_create_parser_accepts_timezone_and_execution_controls(self) -> None:
+        from poor_cli.__main__ import _automation_schedule_from_args, _build_automation_parser
+
+        parser = _build_automation_parser()
+        args = parser.parse_args(
+            [
+                "create",
+                "--name",
+                "daily-check",
+                "--prompt",
+                "Run daily checks.",
+                "--daily",
+                "09:30",
+                "--timezone",
+                "Asia/Singapore",
+                "--execution-mode",
+                "local",
+                "--reasoning-effort",
+                "high",
+            ]
+        )
+
+        self.assertEqual(args.timezone, "Asia/Singapore")
+        self.assertEqual(args.execution_mode, "local")
+        self.assertEqual(args.reasoning_effort, "high")
+
+        schedule = _automation_schedule_from_args(args)
+        self.assertEqual(schedule.get("kind"), "daily")
+        self.assertEqual(schedule.get("timezone"), "Asia/Singapore")
+
     def test_local_execution_mode_uses_repo_root_instead_of_worktree(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
