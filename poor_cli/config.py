@@ -165,6 +165,7 @@ class OutputTruncationConfig:
 class AgenticConfig:
     """Configuration for agentic loop behavior"""
     max_iterations: int = 25 # max tool-call round-trips per request
+    max_parallel_tool_calls: int = 6  # cap for concurrent read-only tool calls
     auto_approve_tools: list = field(default_factory=lambda: [
         "read_file", "glob_files", "grep_files", "git_status_diff",
         "list_directory", "diff_files",
@@ -670,6 +671,14 @@ class ConfigManager:
         # Validate history config
         if self.config.history.max_turns < 1:
             raise ConfigurationError("max_turns must be at least 1")
+
+        # Validate agentic config
+        if self.config.agentic.max_iterations < 1:
+            raise ConfigurationError("agentic.max_iterations must be at least 1")
+        if self.config.agentic.max_parallel_tool_calls < 1:
+            raise ConfigurationError("agentic.max_parallel_tool_calls must be at least 1")
+        if self.config.agentic.max_parallel_tool_calls > 32:
+            raise ConfigurationError("agentic.max_parallel_tool_calls must be at most 32")
 
         # Validate security config
         if self.config.security.max_file_size_mb < 1:

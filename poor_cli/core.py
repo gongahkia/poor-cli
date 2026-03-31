@@ -2227,10 +2227,36 @@ class PoorCLICore:
         ))
         return "".join(diff_lines)
 
-    @staticmethod
-    def _is_readonly_tool(tool_name: str) -> bool:
-        """Check if a tool is read-only (safe for parallel execution)."""
-        return tool_name not in _MUTATING_TOOLS
+    def _is_mutating_tool_call(self, tool_name: str, tool_args: Dict[str, Any]) -> bool:
+        """Check whether this tool invocation mutates state."""
+        if tool_name == "apply_patch_unified" and bool(tool_args.get("check_only")):
+            return False
+        if self.tool_registry:
+            try:
+                return bool(self.tool_registry.is_mutating_tool(tool_name, tool_args))
+            except Exception as error:
+                logger.debug("Failed mutating check for %s: %s", tool_name, error)
+        return tool_name in _MUTATING_TOOLS
+
+    def _is_concurrency_safe_tool(self, tool_name: str, tool_args: Dict[str, Any]) -> bool:
+        """Check whether this tool invocation is safe for parallel execution."""
+        if self.tool_registry:
+            try:
+                return bool(self.tool_registry.is_concurrency_safe_tool(tool_name, tool_args))
+            except Exception as error:
+                logger.debug("Failed concurrency-safety check for %s: %s", tool_name, error)
+        return not self._is_mutating_tool_call(tool_name, tool_args)
+
+    def _max_parallel_tool_calls(self) -> int:
+        """Configured cap for concurrent safe tool calls."""
+        if not self.config:
+            return 6
+        raw_value = getattr(self.config.agentic, "max_parallel_tool_calls", 6)
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            return 6
+        return max(1, min(value, 32))
 
     async def _execute_single_call_events(
         self,
@@ -2369,29 +2395,59 @@ class PoorCLICore:
                 return tool_results
             return self.provider.format_tool_results(tool_results)
 
-        # partition into readonly (parallelizable) and mutating (sequential)
-        readonly_calls = [fc for fc in response.function_calls if self._is_readonly_tool(fc.name)]
-        mutating_calls = [fc for fc in response.function_calls if not self._is_readonly_tool(fc.name)]
+        # partition into concurrency-safe (bounded parallel) and sequential calls
+        concurrency_safe_calls: List[FunctionCall] = []
+        sequential_calls: List[FunctionCall] = []
+        for fc in response.function_calls:
+            if self._is_concurrency_safe_tool(fc.name, fc.arguments):
+                concurrency_safe_calls.append(fc)
+            else:
+                sequential_calls.append(fc)
 
-        # execute readonly calls in parallel
-        if readonly_calls:
-            parallel_results = await asyncio.gather(*[
-                self._execute_single_call_events(fc, iteration, max_iterations, request_id)
-                for fc in readonly_calls
-            ])
+        # execute safe calls in bounded parallel
+        if concurrency_safe_calls:
+            max_parallel = self._max_parallel_tool_calls()
+            if len(concurrency_safe_calls) == 1 or max_parallel <= 1:
+                parallel_results = []
+                for fc in concurrency_safe_calls:
+                    parallel_results.append(
+                        await self._execute_single_call_events(
+                            fc,
+                            iteration,
+                            max_iterations,
+                            request_id,
+                        )
+                    )
+            else:
+                semaphore = asyncio.Semaphore(max_parallel)
+
+                async def _run_safe_call(fc: FunctionCall) -> Tuple[List["CoreEvent"], Dict[str, Any]]:
+                    async with semaphore:
+                        return await self._execute_single_call_events(
+                            fc,
+                            iteration,
+                            max_iterations,
+                            request_id,
+                        )
+
+                parallel_results = await asyncio.gather(
+                    *[_run_safe_call(fc) for fc in concurrency_safe_calls]
+                )
+
             for call_events, call_result in parallel_results:
                 self._pending_events.extend(call_events)
                 tool_results.append(call_result)
 
-        # execute mutating calls sequentially
+        # execute sequential calls in order
         had_mutations = False
-        for fc in mutating_calls:
+        for fc in sequential_calls:
             call_events, call_result = await self._execute_single_call_events(
                 fc, iteration, max_iterations, request_id,
             )
             self._pending_events.extend(call_events)
             tool_results.append(call_result)
-            had_mutations = True
+            if self._is_mutating_tool_call(fc.name, fc.arguments):
+                had_mutations = True
 
         # auto-feedback: run lint/test after mutations and inject errors
         if had_mutations and self._should_auto_feedback():

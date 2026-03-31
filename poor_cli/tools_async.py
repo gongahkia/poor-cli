@@ -115,6 +115,29 @@ DEFAULT_TOOL_CAPABILITIES: Dict[str, List[str]] = {
 
 _CACHEABLE_TOOLS = frozenset({"read_file", "glob_files", "grep_files", "git_status", "git_diff", "git_log", "list_directory", "diff_files"})
 _MUTATION_TOOLS = frozenset({"write_file", "edit_file", "delete_file", "copy_file", "move_file", "bash", "git_add", "git_commit", "create_directory", "apply_patch_unified", "json_yaml_edit"})
+_STATE_MUTATION_TOOLS = frozenset(
+    {
+        "compact_conversation",
+        "write_todos",
+        "update_todo",
+        "memory_save",
+        "memory_delete",
+    }
+)
+_READ_ONLY_CAPABILITIES = frozenset(
+    {
+        ToolCapability.FILESYSTEM_READ.value,
+        ToolCapability.GIT_READ.value,
+        ToolCapability.NETWORK_ACCESS.value,
+    }
+)
+_UNSAFE_CONCURRENCY_CAPABILITIES = frozenset(
+    {
+        ToolCapability.FILESYSTEM_WRITE.value,
+        ToolCapability.GIT_WRITE.value,
+        ToolCapability.PROCESS_EXECUTE.value,
+    }
+)
 
 DEFAULT_MUTATING_TOOLS = {
     "write_file",
@@ -1166,6 +1189,51 @@ class ToolRegistryAsync:
             "declaration": declaration,
             "capabilities": capabilities,
         }
+
+    def is_mutating_tool(
+        self,
+        tool_name: str,
+        arguments: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Return whether the tool invocation mutates state."""
+        args = arguments or {}
+        if tool_name == "apply_patch_unified" and bool(args.get("check_only")):
+            return False
+        if tool_name in _MUTATION_TOOLS or tool_name in _STATE_MUTATION_TOOLS:
+            return True
+
+        declaration = self.tools.get(tool_name, {}).get("declaration", {})
+        if isinstance(declaration, dict):
+            metadata = declaration.get("x-poor-cli")
+            if isinstance(metadata, dict) and metadata.get("mutating") is True:
+                return True
+
+        capabilities = set(self.get_tool_capabilities(tool_name))
+        if ToolCapability.FILESYSTEM_WRITE.value in capabilities:
+            return True
+        if ToolCapability.GIT_WRITE.value in capabilities:
+            return True
+        return False
+
+    def is_concurrency_safe_tool(
+        self,
+        tool_name: str,
+        arguments: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """
+        Return whether this tool call is safe to execute in parallel.
+
+        Conservative by default: unknown/no-capability tools execute sequentially.
+        """
+        if self.is_mutating_tool(tool_name, arguments):
+            return False
+
+        capabilities = set(self.get_tool_capabilities(tool_name))
+        if not capabilities:
+            return False
+        if capabilities.intersection(_UNSAFE_CONCURRENCY_CAPABILITIES):
+            return False
+        return capabilities.issubset(_READ_ONLY_CAPABILITIES)
 
     async def execute_tool_raw(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """Execute a tool and return its raw result."""
