@@ -1,7 +1,7 @@
-.PHONY: cli server tui build-tui install dev test lint clean help
+.PHONY: cli server tui build-tui install installer install-info dev test lint clean help
 
 # ── venv guard ──────────────────────────────────────────────────────
-REQUIRE_VENV := cli server exec agent-start agent-list watch preview deploy review-pr install dev test lint index
+REQUIRE_VENV := cli server exec agent-start agent-list watch preview deploy review-pr installer install-info install dev test lint index
 $(foreach t,$(REQUIRE_VENV),$(eval $(t): _check-venv))
 
 _check-venv:
@@ -39,6 +39,14 @@ deploy: ## deploy project (TARGET=vercel make deploy)
 
 review-pr: ## review a PR (PR=123 make review-pr)
 	python3 -m poor_cli review-pr $(PR)
+
+# ── installer ────────────────────────────────────────────────────────
+
+installer: ## run the interactive installer and setup wizard
+	python3 -m poor_cli install
+
+install-info: ## inspect which TUI launcher the current install can use
+	python3 -m poor_cli install-info
 
 # ── build ────────────────────────────────────────────────────────────
 
