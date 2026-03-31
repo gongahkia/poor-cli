@@ -21,8 +21,12 @@ except ImportError:
 class SkillsBridge:
     """bridge between Telegram commands and the poor-cli skill system."""
 
-    def __init__(self, repo_root: Optional[Path] = None):
+    def __init__(self, repo_root: Optional[Path] = None, core: Any = None):
         self._registry = SkillRegistry(repo_root=repo_root)
+        self._core = core
+
+    def set_core(self, core: Any) -> None:
+        self._core = core
 
     def list_skills(self) -> List[Dict[str, Any]]:
         return [s.to_dict() for s in self._registry.list_skills()]
@@ -59,10 +63,26 @@ class SkillsBridge:
             request = " ".join(args[2:]) if len(args) > 2 else ""
             try:
                 prompt = self.render_skill_prompt(name, request)
-                await update.message.reply_text(f"🛠 running skill `{name}`...\nprompt ready ({len(prompt)} chars)")
+                await update.message.reply_text(f"running skill `{name}`...")
+                if self._core:
+                    result = ""
+                    async for event in self._core.send_message_events(prompt):
+                        if event.type == "text_chunk":
+                            result += event.data.get("chunk", "")
+                        elif event.type == "done":
+                            break
+                    if result.strip():
+                        from poor_cli.telegram import formatter as fmt
+                        pages = fmt.paginate(result)
+                        for page in pages:
+                            await update.message.reply_text(page)
+                    else:
+                        await update.message.reply_text("skill complete (no output)")
+                else:
+                    await update.message.reply_text(f"prompt ready ({len(prompt)} chars) but no core attached")
             except FileNotFoundError:
                 await update.message.reply_text(f"skill `{name}` not found")
             except Exception as e:
-                await update.message.reply_text(f"❌ skill error: {e}")
+                await update.message.reply_text(f"skill error: {e}")
         else:
             await update.message.reply_text("usage: /skill list | /skill run <name> [args] | /skill info <name>")

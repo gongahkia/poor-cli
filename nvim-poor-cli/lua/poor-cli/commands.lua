@@ -708,6 +708,289 @@ function M.setup()
     create_command("PoorCliAcceptLine", function()
         inline.accept_line()
     end, { desc = "Accept current line of inline completion" })
+
+    -- deploy / preview
+    create_command("PoorCliDeploy", function(opts)
+        local target = opts.args ~= "" and opts.args or nil
+        local msg = "/deploy" .. (target and (" --target " .. target) or "")
+        rpc.request("poor-cli/chat", { message = msg }, function(result, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] deploy: " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if result and result.content then open_scratch("[poor-cli deploy]", result.content) end
+            end)
+        end)
+    end, { nargs = "?", desc = "Deploy project (optional target: vercel, netlify, fly, railway, cloudflare)" })
+
+    create_command("PoorCliPreview", function(opts)
+        local port = opts.args ~= "" and opts.args or nil
+        local msg = "/preview" .. (port and (" --port " .. port) or "")
+        rpc.request("poor-cli/chat", { message = msg }, function(result, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] preview: " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if result and result.content then vim.notify("[poor-cli] " .. result.content, vim.log.levels.INFO) end
+            end)
+        end)
+    end, { nargs = "?", desc = "Start preview server (optional port)" })
+
+    create_command("PoorCliPreviewStop", function()
+        rpc.request("poor-cli/chat", { message = "/preview --stop" }, function(_, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                else vim.notify("[poor-cli] preview stopped", vim.log.levels.INFO) end
+            end)
+        end)
+    end, { desc = "Stop preview server" })
+
+    -- workspace map
+    create_command("PoorCliWorkspaceMap", function()
+        rpc.request("poor-cli/chat", { message = "/workspace-map" }, function(result, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if result and result.content then open_scratch("[poor-cli workspace-map]", result.content) end
+            end)
+        end)
+    end, { desc = "Show project workspace map" })
+
+    -- onboarding
+    create_command("PoorCliOnboarding", function(opts)
+        local step = opts.args ~= "" and opts.args or nil
+        local msg = "/onboarding" .. (step and (" " .. step) or "")
+        rpc.request("poor-cli/chat", { message = msg }, function(result, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if result and result.content then open_scratch("[poor-cli onboarding]", result.content) end
+            end)
+        end)
+    end, { nargs = "?", desc = "Interactive onboarding guide" })
+
+    -- bootstrap
+    create_command("PoorCliBootstrap", function()
+        rpc.restart_with_bootstrap({}, function(_, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] bootstrap: " .. vim.inspect(err), vim.log.levels.ERROR)
+                else vim.notify("[poor-cli] bootstrapped", vim.log.levels.INFO) end
+            end)
+        end)
+    end, { desc = "Bootstrap project with recommendations" })
+
+    -- search / indexing
+    create_command("PoorCliSearch", function(opts)
+        if opts.args == "" then vim.notify("[poor-cli] usage: PoorCliSearch <query>", vim.log.levels.WARN); return end
+        rpc.hybrid_search(opts.args, 20, function(result, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] search: " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                local results = (result or {}).results or result or {}
+                local lines = { "# search: " .. opts.args, "" }
+                for i, r in ipairs(results) do
+                    local path = r.path or r.file or "?"
+                    local score = r.score and string.format(" (%.2f)", r.score) or ""
+                    table.insert(lines, string.format("%d. `%s`%s", i, path, score))
+                    if r.snippet or r.content then table.insert(lines, "   " .. (r.snippet or r.content):sub(1, 120)) end
+                end
+                if #results == 0 then table.insert(lines, "no results") end
+                open_scratch("[poor-cli search]", table.concat(lines, "\n"))
+            end)
+        end)
+    end, { nargs = "+", desc = "Semantic/hybrid search across codebase" })
+
+    create_command("PoorCliIndex", function()
+        vim.notify("[poor-cli] indexing codebase...", vim.log.levels.INFO)
+        rpc.index_codebase(function(result, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] index: " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                local stats = result or {}
+                vim.notify(string.format("[poor-cli] indexed: %s files, %s chunks",
+                    tostring(stats.total_files or stats.totalFiles or "?"),
+                    tostring(stats.total_chunks or stats.totalChunks or "?")), vim.log.levels.INFO)
+            end)
+        end)
+    end, { desc = "Build/refresh codebase search index" })
+
+    create_command("PoorCliIndexStats", function()
+        local result, err = rpc.get_index_stats(10000)
+        if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+        open_scratch("[poor-cli index stats]", vim.inspect(result or {}), "lua")
+    end, { desc = "Show search index statistics" })
+
+    -- service management
+    create_command("PoorCliService", function(opts)
+        local args = vim.split(opts.args or "", " ", { trimempty = true })
+        local sub = args[1] or ""
+        if sub == "start" and args[2] then
+            local cmd_str = table.concat(args, " ", 3)
+            rpc.start_service(args[2], cmd_str ~= "" and cmd_str or nil, function(_, err)
+                vim.schedule(function()
+                    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                    else vim.notify("[poor-cli] service " .. args[2] .. " started", vim.log.levels.INFO) end
+                end)
+            end)
+        elseif sub == "stop" and args[2] then
+            rpc.stop_service(args[2], function(_, err)
+                vim.schedule(function()
+                    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                    else vim.notify("[poor-cli] service " .. args[2] .. " stopped", vim.log.levels.INFO) end
+                end)
+            end)
+        elseif sub == "status" and args[2] then
+            local result, err = rpc.get_service_status(args[2], 10000)
+            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            open_scratch("[poor-cli service " .. args[2] .. "]", vim.inspect(result or {}), "lua")
+        elseif sub == "logs" and args[2] then
+            local tail = tonumber(args[3]) or 50
+            local result, err = rpc.get_service_logs(args[2], tail, 10000)
+            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            local log_lines = type(result) == "table" and (result.logs or result.lines or result) or { tostring(result) }
+            if type(log_lines) == "table" then log_lines = vim.inspect(log_lines) end
+            open_scratch("[poor-cli service logs " .. args[2] .. "]", tostring(log_lines))
+        else
+            vim.notify("[poor-cli] usage: PoorCliService {start <name> [cmd]|stop <name>|status <name>|logs <name> [n]}", vim.log.levels.WARN)
+        end
+    end, { nargs = "+", desc = "Manage background services" })
+
+    -- policy
+    create_command("PoorCliPolicy", function()
+        local result, err = rpc.get_policy_status(10000)
+        if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+        open_scratch("[poor-cli policy]", vim.inspect(result or {}), "lua")
+    end, { desc = "Show policy status" })
+
+    -- mcp
+    create_command("PoorCliMcp", function()
+        local result, err = rpc.get_mcp_status(10000)
+        if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+        local lines = { "# MCP servers", "" }
+        local servers = type(result) == "table" and (result.servers or result) or {}
+        if type(servers) == "table" then
+            for name, info in pairs(servers) do
+                local status = type(info) == "table" and (info.status or "unknown") or tostring(info)
+                local tools_count = type(info) == "table" and info.tools_count or ""
+                table.insert(lines, string.format("- **%s**: %s%s", tostring(name), status,
+                    tools_count ~= "" and (" (" .. tools_count .. " tools)") or ""))
+            end
+        end
+        if #lines == 2 then table.insert(lines, "no MCP servers configured") end
+        open_scratch("[poor-cli mcp]", table.concat(lines, "\n"))
+    end, { desc = "Show MCP server status" })
+
+    create_command("PoorCliMcpHealth", function()
+        vim.notify("[poor-cli] running MCP health check...", vim.log.levels.INFO)
+        rpc.mcp_health_check(function(result, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                open_scratch("[poor-cli mcp health]", vim.inspect(result or {}), "lua")
+            end)
+        end)
+    end, { desc = "Run MCP health check" })
+
+    -- pr review / explain-diff / fix-failures
+    create_command("PoorCliReviewPr", function(opts)
+        if opts.args == "" then vim.notify("[poor-cli] usage: PoorCliReviewPr <pr_number>", vim.log.levels.WARN); return end
+        vim.notify("[poor-cli] reviewing PR #" .. opts.args .. "...", vim.log.levels.INFO)
+        rpc.request("poor-cli/chat", { message = "/review-pr " .. opts.args }, function(result, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if result and result.content then open_scratch("[poor-cli PR #" .. opts.args .. " review]", result.content) end
+            end)
+        end)
+    end, { nargs = 1, desc = "Review a pull request" })
+
+    create_command("PoorCliExplainDiff", function(opts)
+        local file = opts.args ~= "" and opts.args or nil
+        local msg = "/explain-diff" .. (file and (" " .. file) or "")
+        rpc.request("poor-cli/chat", { message = msg }, function(result, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if result and result.content then open_scratch("[poor-cli explain-diff]", result.content) end
+            end)
+        end)
+    end, { nargs = "?", desc = "Explain git diff (optional file)" })
+
+    create_command("PoorCliFixFailures", function(opts)
+        local cmd = opts.args ~= "" and opts.args or nil
+        local msg = "/fix-failures" .. (cmd and (" " .. cmd) or "")
+        rpc.request("poor-cli/chat", { message = msg }, function(result, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if result and result.content then open_scratch("[poor-cli fix-failures]", result.content) end
+            end)
+        end)
+    end, { nargs = "?", desc = "Propose fixes for test/lint failures" })
+
+    -- lint
+    create_command("PoorCliLint", function()
+        rpc.request("poor-cli/chat", { message = "/lint" }, function(result, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if result and result.content then open_scratch("[poor-cli lint]", result.content) end
+            end)
+        end)
+    end, { desc = "Run linter on project" })
+
+    -- qa mode toggle
+    create_command("PoorCliQaToggle", function()
+        local config_mgr = require("poor-cli.config_mgr")
+        config_mgr.toggle({ key = "qa_mode_enabled" }, function(_, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                else vim.notify("[poor-cli] QA mode toggled", vim.log.levels.INFO) end
+            end)
+        end)
+    end, { desc = "Toggle QA watch mode" })
+
+    -- execution profiles
+    create_command("PoorCliExecProfile", function(opts)
+        local profile = opts.args
+        if profile == "" or not vim.tbl_contains({ "safe", "speed", "deep-review" }, profile) then
+            vim.notify("[poor-cli] usage: PoorCliExecProfile {safe|speed|deep-review}", vim.log.levels.WARN)
+            return
+        end
+        local config_mgr = require("poor-cli.config_mgr")
+        config_mgr.set({ key = "execution_profile", value = profile }, function(_, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                else vim.notify("[poor-cli] profile: " .. profile, vim.log.levels.INFO) end
+            end)
+        end)
+    end, { nargs = 1, desc = "Set execution profile (safe|speed|deep-review)" })
+
+    -- diff / compare two files
+    create_command("PoorCliDiff", function(opts)
+        local args = vim.split(opts.args or "", " ", { trimempty = true })
+        if #args < 2 then vim.notify("[poor-cli] usage: PoorCliDiff <file1> <file2>", vim.log.levels.WARN); return end
+        local result, err = rpc.compare_files(args[1], args[2], 15000)
+        if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+        local diff_text = type(result) == "table" and (result.diff or vim.inspect(result)) or tostring(result)
+        open_scratch("[poor-cli diff]", diff_text, "diff")
+    end, { nargs = "+", desc = "Compare two files" })
+
+    -- host server standalone
+    create_command("PoorCliHostServer", function(opts)
+        local args = vim.split(opts.args or "", " ", { trimempty = true })
+        local sub = args[1] or ""
+        if sub == "start" then
+            local preset = args[2]
+            rpc.start_host_server(preset and { preset = preset } or {}, function(result, err)
+                vim.schedule(function()
+                    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                    local info = result or {}
+                    vim.notify("[poor-cli] host started" .. (info.url and (": " .. info.url) or ""), vim.log.levels.INFO)
+                end)
+            end)
+        elseif sub == "stop" then
+            rpc.stop_host_server(function(_, err)
+                vim.schedule(function()
+                    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                    else vim.notify("[poor-cli] host stopped", vim.log.levels.INFO) end
+                end)
+            end)
+        elseif sub == "status" then
+            local result, err = rpc.get_host_server_status(10000)
+            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            open_scratch("[poor-cli host status]", vim.inspect(result or {}), "lua")
+        else
+            vim.notify("[poor-cli] usage: PoorCliHostServer {start [preset]|stop|status}", vim.log.levels.WARN)
+        end
+    end, { nargs = "+", desc = "Manage multiplayer host server" })
 end
 
 function M.explain_code(range, line1, line2)

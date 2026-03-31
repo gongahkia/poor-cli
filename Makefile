@@ -1,4 +1,4 @@
-.PHONY: cli desktop server tui build-tui build-desktop install dev test lint clean help
+.PHONY: cli server tui build-tui install dev test lint clean help
 
 # ── venv guard ──────────────────────────────────────────────────────
 REQUIRE_VENV := cli server exec agent-start agent-list watch preview deploy review-pr install dev test lint index
@@ -13,9 +13,6 @@ endif
 
 cli: ## launch the Rust TUI (default surface)
 	python3 -m poor_cli
-
-desktop: ## launch the Tauri desktop app
-	cd poor-cli-desktop && cargo tauri dev
 
 server: ## start the JSON-RPC server (for editor plugins)
 	python3 -m poor_cli server
@@ -47,9 +44,6 @@ review-pr: ## review a PR (PR=123 make review-pr)
 
 build-tui: ## build the Rust TUI binary
 	cd poor-cli-tui && cargo build --release
-
-build-desktop: ## build the Tauri desktop app
-	cd poor-cli-desktop && cargo tauri build
 
 install: ## install the Python package in dev mode
 	pip install -e ".[dev]"

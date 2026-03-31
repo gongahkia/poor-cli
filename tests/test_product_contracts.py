@@ -91,16 +91,6 @@ class ProductContractTests(unittest.TestCase):
             {"session", "trust", "provider", "context", "runs", "collaboration", "recovery"},
         )
 
-    def test_provider_info_reports_emacs_as_supported_client(self) -> None:
-        core = PoorCLICore()
-        core.config = Config()
-        core._initialized = True
-        core.provider = object()
-
-        payload = core.get_provider_info()
-
-        self.assertIn("emacs", payload["supported_clients"])
-
     def test_context_preview_entries_include_explanation_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

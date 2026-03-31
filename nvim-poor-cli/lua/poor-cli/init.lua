@@ -30,6 +30,7 @@ M.context_mgr = nil
 M.cost = nil
 M.providers = nil
 M.collab_ext = nil
+M.search = nil
 M._setup_complete = false
 
 -- Setup function - call this from your Neovim config
@@ -63,6 +64,7 @@ function M.setup(opts)
     M.cost = require("poor-cli.cost")
     M.providers = require("poor-cli.providers")
     M.collab_ext = require("poor-cli.collab_ext")
+    M.search = require("poor-cli.search")
 
     M.commands.setup()
     M.keymaps.setup()

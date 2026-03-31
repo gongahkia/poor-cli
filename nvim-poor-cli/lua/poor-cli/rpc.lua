@@ -705,6 +705,65 @@ function M.get_workflow(name, timeout_ms)
     }, timeout_ms)
 end
 
+-- search / indexing
+function M.semantic_search(query, limit, callback)
+    return M.request("poor-cli/semanticSearch", { query = query, limit = limit or 10 }, callback)
+end
+function M.vector_search(query, limit, callback)
+    return M.request("poor-cli/vectorSearch", { query = query, limit = limit or 10 }, callback)
+end
+function M.hybrid_search(query, limit, callback)
+    return M.request("poor-cli/hybridSearch", { query = query, limit = limit or 10 }, callback)
+end
+function M.index_codebase(callback)
+    return M.request("poor-cli/indexCodebase", {}, callback)
+end
+function M.get_index_stats(timeout_ms)
+    return M.request_sync("poor-cli/getIndexStats", {}, timeout_ms)
+end
+-- service management
+function M.start_service(name, command, callback)
+    return M.request("poor-cli/startService", { name = name, command = command }, callback)
+end
+function M.stop_service(name, callback)
+    return M.request("poor-cli/stopService", { name = name }, callback)
+end
+function M.get_service_status(name, timeout_ms)
+    return M.request_sync("poor-cli/getServiceStatus", { name = name }, timeout_ms)
+end
+function M.get_service_logs(name, tail, timeout_ms)
+    return M.request_sync("poor-cli/getServiceLogs", { name = name, tail = tail or 50 }, timeout_ms)
+end
+-- mcp
+function M.get_mcp_status(timeout_ms)
+    return M.request_sync("poor-cli/getMcpStatus", {}, timeout_ms)
+end
+function M.mcp_health_check(callback)
+    return M.request("poor-cli/mcpHealthCheck", {}, callback)
+end
+-- policy
+function M.get_policy_status(timeout_ms)
+    return M.request_sync("poor-cli/getPolicyStatus", {}, timeout_ms)
+end
+-- workspace file search
+function M.search_workspace_files(query, limit, callback)
+    return M.request("poor-cli/searchWorkspaceFiles", { query = query, limit = limit or 20 }, callback)
+end
+-- compare files
+function M.compare_files(file1, file2, timeout_ms)
+    return M.request_sync("poor-cli/compareFiles", { file1 = file1, file2 = file2 }, timeout_ms)
+end
+-- host server standalone
+function M.start_host_server(opts, callback)
+    return M.request("poor-cli/startHostServer", opts or {}, callback)
+end
+function M.stop_host_server(callback)
+    return M.request("poor-cli/stopHostServer", {}, callback)
+end
+function M.get_host_server_status(timeout_ms)
+    return M.request_sync("poor-cli/getHostServerStatus", {}, timeout_ms)
+end
+
 function M.get_collab_summary(timeout_ms)
     return M.request_sync("poor-cli/getCollabSummary", {}, timeout_ms)
 end

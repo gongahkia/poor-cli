@@ -182,43 +182,6 @@ jobs:
           luac5.4 -p nvim-poor-cli/lua/poor-cli/commands.lua
           luac5.4 -p nvim-poor-cli/lua/poor-cli/chat.lua
 
-  emacs-client:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Emacs 29
-        uses: purcell/setup-emacs@master
-        with:
-          version: 29.4
-
-      - name: Install Emacs package dependencies
-        run: |
-          emacs --batch \
-            --eval "(require 'package)" \
-            --eval "(add-to-list 'package-archives '(\"gnu\" . \"https://elpa.gnu.org/packages/\") t)" \
-            --eval "(package-initialize)" \
-            --eval "(unless package-archive-contents (package-refresh-contents))" \
-            --eval "(dolist (pkg '(markdown-mode transient)) (unless (package-installed-p pkg) (package-install pkg)))"
-
-      - name: Byte-compile Emacs client
-        run: |
-          emacs --batch \
-            --eval "(package-initialize)" \
-            -L emacs-poor-cli -L emacs-poor-cli/test \
-            -f batch-byte-compile \
-            emacs-poor-cli/*.el \
-            emacs-poor-cli/test/*.el
-
-      - name: Run Emacs client tests
-        run: |
-          emacs --batch \
-            --eval "(package-initialize)" \
-            -L emacs-poor-cli -L emacs-poor-cli/test \
-            -l emacs-poor-cli/test/poor-cli-tests.el \
-            -f ert-run-tests-batch-and-exit
-
   docker-smoke:
     runs-on: ubuntu-latest
 

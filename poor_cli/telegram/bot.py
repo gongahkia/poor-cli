@@ -12,8 +12,9 @@ from poor_cli.exceptions import setup_logger, ConfigurationError
 from poor_cli.telegram import formatter as fmt
 from poor_cli.telegram.keyboards import (
     parse_callback, provider_keyboard, model_keyboard,
-    thread_keyboard, action_keyboard,
+    thread_keyboard, action_keyboard, heartbeat_keyboard,
 )
+from poor_cli.telegram.commands import register_all
 from poor_cli.telegram.persistence import TelegramSessionStore
 from poor_cli.telegram.threads import ThreadManager
 from poor_cli.telegram.cost_tracker import CostTracker
@@ -38,16 +39,43 @@ except ImportError:
     Update = None # type: ignore[assignment,misc]
     Application = None # type: ignore[assignment,misc]
 
-HELP_TEXT = """🤖 poor-cli Telegram bot
+HELP_TEXT = """poor-cli Telegram bot
 
-commands:
+core:
 /start — initialize session
 /clear — clear conversation history
 /status — show session status
 /provider — switch provider/model
 /threads — list conversation threads
-/thread <name> — switch/create thread
+/thread <name> — switch/create/delete thread
 /cost — show cost summary
+/heartbeat — manage periodic check-ins
+
+workspace:
+/sessions — manage sessions
+/tasks — manage durable tasks
+/automations — manage scheduled automations
+/agents — manage background agents
+/checkpoints — manage checkpoints
+/git — git operations
+/memory — persistent memory store
+/search — semantic codebase search
+
+admin:
+/config — view/edit configuration
+/trust — trust/sandbox management
+/doctor — health diagnostics
+/context — context preview/compact
+/tools — list available tools
+/services — manage background services
+/economy — cost optimization presets
+
+workflows:
+/workflows — list/run workflow templates
+/export — export conversation
+/deploy — deploy project
+/review — review a PR
+/pair — multiplayer pairing
 /skill — manage skills
 /help — show this help
 
@@ -112,20 +140,43 @@ class PoorCLITelegramBot:
         self._app.add_handler(CommandHandler("thread", self._handle_thread))
         self._app.add_handler(CommandHandler("cost", self._handle_cost))
         self._app.add_handler(CommandHandler("skill", self._handle_skill))
+        self._app.add_handler(CommandHandler("heartbeat", self._handle_heartbeat))
         self._app.add_handler(CommandHandler("help", self._handle_help))
+        register_all(self._app, self)
         self._app.add_handler(CallbackQueryHandler(self._handle_callback))
         self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
         self._app.add_handler(MessageHandler(filters.PHOTO, self._handle_photo))
         self._app.add_handler(MessageHandler(filters.Document.ALL, self._handle_document))
         commands = [
-            BotCommand("start", "initialize a new session"),
-            BotCommand("clear", "clear conversation history"),
-            BotCommand("status", "show session status"),
+            BotCommand("start", "initialize session"),
+            BotCommand("clear", "clear history"),
+            BotCommand("status", "session status"),
             BotCommand("provider", "switch provider/model"),
-            BotCommand("threads", "list conversation threads"),
-            BotCommand("thread", "switch/create thread"),
-            BotCommand("cost", "show cost summary"),
+            BotCommand("threads", "list threads"),
+            BotCommand("thread", "switch/create/delete thread"),
+            BotCommand("cost", "cost summary"),
             BotCommand("skill", "manage skills"),
+            BotCommand("heartbeat", "periodic check-ins"),
+            BotCommand("sessions", "manage sessions"),
+            BotCommand("tasks", "manage tasks"),
+            BotCommand("automations", "manage automations"),
+            BotCommand("agents", "manage agents"),
+            BotCommand("checkpoints", "manage checkpoints"),
+            BotCommand("git", "git operations"),
+            BotCommand("memory", "memory store"),
+            BotCommand("config", "configuration"),
+            BotCommand("trust", "trust/sandbox"),
+            BotCommand("doctor", "diagnostics"),
+            BotCommand("context", "context preview"),
+            BotCommand("tools", "list tools"),
+            BotCommand("search", "codebase search"),
+            BotCommand("workflows", "workflow templates"),
+            BotCommand("export", "export conversation"),
+            BotCommand("deploy", "deploy project"),
+            BotCommand("review", "review PR"),
+            BotCommand("pair", "multiplayer pair"),
+            BotCommand("economy", "cost presets"),
+            BotCommand("services", "manage services"),
             BotCommand("help", "show help"),
         ]
         await self._app.bot.set_my_commands(commands)
@@ -236,7 +287,14 @@ class PoorCLITelegramBot:
             return
         args = (context.args or []) if context else []
         if not args:
-            await update.message.reply_text("usage: /thread <name>")
+            await update.message.reply_text("usage: /thread <name> | /thread delete <name>")
+            return
+        if args[0] == "delete" and len(args) > 1:
+            name = args[1]
+            if self._threads.archive_thread(uid, name):
+                await update.message.reply_text(f"deleted thread `{name}`")
+            else:
+                await update.message.reply_text(f"thread `{name}` not found")
             return
         name = args[0]
         if self._threads.switch_thread(uid, name):
@@ -244,6 +302,29 @@ class PoorCLITelegramBot:
         else:
             tid = self._threads.create_thread(uid, name)
             await update.message.reply_text(f"created and switched to thread `{tid}`")
+
+    async def _handle_heartbeat(self, update: Any, context: Any) -> None:
+        uid = update.effective_user.id
+        if not self._is_authorized(uid):
+            return
+        chat_id = update.effective_chat.id
+        args = (context.args or []) if context else []
+        if not args:
+            await update.message.reply_text(
+                "heartbeat: periodic AI check-ins\n"
+                "usage: /heartbeat start [interval_min] [prompt] | /heartbeat stop",
+                reply_markup=heartbeat_keyboard(uid),
+            )
+            return
+        sub = args[0]
+        if sub == "start":
+            interval = int(args[1]) if len(args) > 1 and args[1].isdigit() else 30
+            prompt = " ".join(args[2:]) if len(args) > 2 else None
+            self._heartbeat.schedule_heartbeat(uid, chat_id, interval_minutes=interval, prompt=prompt)
+            await update.message.reply_text(f"heartbeat started (every {interval}m)")
+        elif sub == "stop":
+            self._heartbeat.cancel_heartbeat(uid)
+            await update.message.reply_text("heartbeat stopped")
 
     async def _handle_cost(self, update: Any, context: Any) -> None:
         uid = update.effective_user.id
@@ -285,6 +366,7 @@ class PoorCLITelegramBot:
         await self._threads.ensure_initialized(core)
         self._threads.update_session_meta(uid, tid, core)
         self._threads.evict_lru(self._max_sessions)
+        self._skills.set_core(core)
         await self._stream_response(update, core, prompt, uid, tid)
 
     async def _handle_photo(self, update: Any, context: Any) -> None:
@@ -382,6 +464,117 @@ class PoorCLITelegramBot:
             if value == "cost":
                 cost = self._costs.get_session_cost(uid)
                 await query.edit_message_text(fmt.format_cost(cost))
+            elif value == "retry":
+                await query.edit_message_text("send your message again to retry")
+            elif value == "cancel":
+                await query.edit_message_text("request cancelled")
+            elif value == "export":
+                tid = self._threads.get_active_thread(uid)
+                core = self._threads.get_core(uid, tid)
+                try:
+                    export = core.export_conversation(format="markdown") if hasattr(core, 'export_conversation') else None
+                    if export:
+                        content = export.get("content", str(export)) if isinstance(export, dict) else str(export)
+                        await query.edit_message_text(content[:4000])
+                    else:
+                        await query.edit_message_text("nothing to export")
+                except Exception as e:
+                    await query.edit_message_text(f"export error: {e}")
+        elif action == "sess":
+            from poor_cli.telegram.commands.sessions import _handle_session_callback
+            await _handle_session_callback(self, query, data)
+        elif action == "task":
+            from poor_cli.telegram.commands.tasks import _handle_task_callback
+            await _handle_task_callback(self, query, data)
+        elif action == "gitcmd":
+            sub = value
+            tid = self._threads.get_active_thread(uid)
+            core = self._threads.get_core(uid, tid)
+            await self._threads.ensure_initialized(core)
+            result = ""
+            try:
+                cmd_map = {"status": "/git status", "log": "/git log --oneline -n 10",
+                           "diff": "/git diff", "branches": "/git branch -a"}
+                async for event in core.send_message_events(cmd_map.get(sub, "/git status")):
+                    if event.type == "text_chunk":
+                        result += event.data.get("chunk", "")
+                    elif event.type == "done":
+                        break
+                await query.edit_message_text(result[:4000] or "no output")
+            except Exception as e:
+                await query.edit_message_text(f"error: {e}")
+        elif action == "econ":
+            preset = value
+            tid = self._threads.get_active_thread(uid)
+            core = self._threads.get_core(uid, tid)
+            if hasattr(core, 'config') and core.config:
+                core.config.economy_preset = preset
+            await query.edit_message_text(f"economy: {preset}")
+        elif action == "auto":
+            tid = self._threads.get_active_thread(uid)
+            core = self._threads.get_core(uid, tid)
+            await self._threads.ensure_initialized(core)
+            cmd = f"/automations {value} {extra}".strip()
+            result = ""
+            try:
+                async for event in core.send_message_events(cmd):
+                    if event.type == "text_chunk":
+                        result += event.data.get("chunk", "")
+                    elif event.type == "done":
+                        break
+                await query.edit_message_text(result[:4000] or f"automation {value} done")
+            except Exception as e:
+                await query.edit_message_text(f"error: {e}")
+        elif action == "agent":
+            tid = self._threads.get_active_thread(uid)
+            core = self._threads.get_core(uid, tid)
+            await self._threads.ensure_initialized(core)
+            cmd = f"/agents {value} {extra}".strip()
+            result = ""
+            try:
+                async for event in core.send_message_events(cmd):
+                    if event.type == "text_chunk":
+                        result += event.data.get("chunk", "")
+                    elif event.type == "done":
+                        break
+                await query.edit_message_text(result[:4000] or f"agent {value} done")
+            except Exception as e:
+                await query.edit_message_text(f"error: {e}")
+        elif action == "cp":
+            tid = self._threads.get_active_thread(uid)
+            core = self._threads.get_core(uid, tid)
+            await self._threads.ensure_initialized(core)
+            if value == "gc":
+                cm = getattr(core, 'checkpoint_manager', None)
+                if cm:
+                    try:
+                        result = cm.gc_checkpoints()
+                        freed = result.get("freed_bytes", 0) if isinstance(result, dict) else 0
+                        await query.edit_message_text(f"gc complete. freed {freed} bytes")
+                    except Exception as e:
+                        await query.edit_message_text(f"error: {e}")
+                else:
+                    await query.edit_message_text("checkpoint manager not available")
+            elif value == "restore" and extra:
+                cm = getattr(core, 'checkpoint_manager', None)
+                if cm:
+                    try:
+                        cm.restore_checkpoint(extra)
+                        await query.edit_message_text(f"restored checkpoint `{extra}`")
+                    except Exception as e:
+                        await query.edit_message_text(f"error: {e}")
+                else:
+                    await query.edit_message_text("checkpoint manager not available")
+            elif value == "preview" and extra:
+                cm = getattr(core, 'checkpoint_manager', None)
+                if cm:
+                    try:
+                        preview = cm.preview_checkpoint(extra)
+                        await query.edit_message_text(str(preview)[:4000])
+                    except Exception as e:
+                        await query.edit_message_text(f"error: {e}")
+                else:
+                    await query.edit_message_text("checkpoint manager not available")
         elif action == "skill":
             info = self._skills.get_skill_info(value)
             if info:

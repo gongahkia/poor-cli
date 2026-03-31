@@ -61,34 +61,3 @@ def build_vision_prompt(images: List[Tuple[str, str]], caption: str = "") -> str
     if len(images) > 1:
         text += f" ({len(images)} images attached)"
     return text
-
-
-def build_openai_vision_content(images: List[Tuple[str, str]], text: str) -> List[Dict[str, Any]]:
-    """build OpenAI-compatible multimodal content from base64 images."""
-    content: List[Dict[str, Any]] = [{"type": "text", "text": text}]
-    for b64, mime in images:
-        content.append({
-            "type": "image_url",
-            "image_url": {"url": f"data:{mime};base64,{b64}"},
-        })
-    return content
-
-
-def build_anthropic_vision_content(images: List[Tuple[str, str]], text: str) -> List[Dict[str, Any]]:
-    """build Anthropic-compatible multimodal content from base64 images."""
-    content: List[Dict[str, Any]] = []
-    for b64, mime in images:
-        content.append({
-            "type": "image", "source": {"type": "base64", "media_type": mime, "data": b64},
-        })
-    content.append({"type": "text", "text": text})
-    return content
-
-
-def build_gemini_vision_parts(images: List[Tuple[str, str]], text: str) -> List[Dict[str, Any]]:
-    """build Gemini-compatible multimodal parts from base64 images."""
-    parts: List[Dict[str, Any]] = []
-    for b64, mime in images:
-        parts.append({"inline_data": {"mime_type": mime, "data": b64}})
-    parts.append({"text": text})
-    return parts

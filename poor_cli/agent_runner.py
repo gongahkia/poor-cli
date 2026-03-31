@@ -5,7 +5,7 @@ Runs autonomous AI agents as background processes that can be:
 - Started from CLI: poor-cli agent start --prompt "..."
 - Triggered by GitHub events (issue assignment, PR comments)
 - Scheduled via automations
-- Managed via RPC from TUI/Desktop
+- Managed via RPC from TUI
 
 Each agent gets its own artifact directory with logs, events, and results.
 Optionally creates a git worktree for isolation.

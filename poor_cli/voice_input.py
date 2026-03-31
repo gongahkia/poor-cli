@@ -4,9 +4,8 @@ Voice input support for poor-cli.
 Provides speech-to-text via multiple backends:
 1. macOS system dictation (subprocess to say/dictation API)
 2. Whisper via Ollama (local, cross-platform)
-3. Browser Web Speech API (desktop app only, via RPC)
 
-The TUI/desktop triggers recording, this module handles transcription.
+The TUI triggers recording, this module handles transcription.
 """
 
 from __future__ import annotations
