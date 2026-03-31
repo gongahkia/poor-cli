@@ -10,7 +10,7 @@ _poor_cli_complete() {
     cmd="${COMP_WORDS[1]}"
     subcmd="${COMP_WORDS[2]}"
 
-    local root_commands="help version tui install install-info exec task automation github-task skills commands server telegram watch deploy preview review-pr agent"
+    local root_commands="help version tui install install-info exec task automation github-task skills commands server telegram watch deploy preview review-pr agent checkpoint history session memory config profile trust provider doctor status policy tools mcp cost search review commit"
     local sandbox_presets="read-only review-only workspace-write full-access"
     local routing_modes="manual quality speed cheap private"
     local permission_modes="prompt auto-safe danger-full-access"
@@ -361,6 +361,140 @@ _poor_cli_complete() {
             if [[ ${cur} == -* ]]; then
                 COMPREPLY=( $(compgen -W "--post --json --ci" -- "${cur}") )
             fi
+            return 0
+            ;;
+
+        checkpoint)
+            if [[ ${COMP_CWORD} -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "list create preview restore" -- "${cur}") )
+                return 0
+            fi
+            case "${subcmd}" in
+                list) [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--limit --json" -- "${cur}") ) ;;
+                create) [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--description -d --json" -- "${cur}") ) ;;
+                preview|restore) [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--json" -- "${cur}") ) ;;
+            esac
+            return 0
+            ;;
+
+        history)
+            if [[ ${COMP_CWORD} -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "list search export" -- "${cur}") )
+                return 0
+            fi
+            case "${subcmd}" in
+                list) [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--limit --json" -- "${cur}") ) ;;
+                search) [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--limit --json" -- "${cur}") ) ;;
+                export) [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--output -o" -- "${cur}") ) ;;
+            esac
+            return 0
+            ;;
+
+        session)
+            if [[ ${COMP_CWORD} -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "list create fork destroy" -- "${cur}") )
+                return 0
+            fi
+            case "${subcmd}" in
+                list) [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--limit --json" -- "${cur}") ) ;;
+                create) [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--label --json" -- "${cur}") ) ;;
+                fork) [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--label --json" -- "${cur}") ) ;;
+                destroy) [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--json" -- "${cur}") ) ;;
+            esac
+            return 0
+            ;;
+
+        memory)
+            if [[ ${COMP_CWORD} -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "list save search delete" -- "${cur}") )
+                return 0
+            fi
+            case "${subcmd}" in
+                list) [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--type --json" -- "${cur}") ) ;;
+                save) [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--name --type --description --content --json" -- "${cur}") ) ;;
+                search) [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--limit --json" -- "${cur}") ) ;;
+                delete) [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--json" -- "${cur}") ) ;;
+            esac
+            return 0
+            ;;
+
+        config)
+            if [[ ${COMP_CWORD} -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "list get set toggle" -- "${cur}") )
+                return 0
+            fi
+            [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--json" -- "${cur}") )
+            return 0
+            ;;
+
+        profile)
+            if [[ ${COMP_CWORD} -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "list apply" -- "${cur}") )
+                return 0
+            fi
+            [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--json" -- "${cur}") )
+            return 0
+            ;;
+
+        trust)
+            if [[ ${COMP_CWORD} -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "status trust untrust" -- "${cur}") )
+                return 0
+            fi
+            [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--path --json" -- "${cur}") )
+            return 0
+            ;;
+
+        provider)
+            if [[ ${COMP_CWORD} -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "list info switch" -- "${cur}") )
+                return 0
+            fi
+            [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--config --json" -- "${cur}") )
+            return 0
+            ;;
+
+        doctor|status|policy|tools|mcp)
+            [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--config --json" -- "${cur}") )
+            return 0
+            ;;
+
+        cost)
+            if [[ ${COMP_CWORD} -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "summary economy savings" -- "${cur}") )
+                return 0
+            fi
+            case "${subcmd}" in
+                economy)
+                    if [[ ${COMP_CWORD} -eq 3 ]]; then
+                        COMPREPLY=( $(compgen -W "frugal balanced quality" -- "${cur}") )
+                        return 0
+                    fi
+                    ;;
+            esac
+            [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--config --json" -- "${cur}") )
+            return 0
+            ;;
+
+        search)
+            if [[ ${COMP_CWORD} -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "index stats" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --mode) COMPREPLY=( $(compgen -W "semantic hybrid" -- "${cur}") ); return 0 ;;
+            esac
+            [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--mode --limit --json" -- "${cur}") )
+            return 0
+            ;;
+
+        review)
+            [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--output-format --config" -- "${cur}") )
+            return 0
+            ;;
+
+        commit)
+            [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--output-format --config" -- "${cur}") )
             return 0
             ;;
     esac

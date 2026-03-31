@@ -822,4 +822,13 @@ function M.clear()
     end
 end
 
+function M.get_last_user_message()
+    for i = #M.history, 1, -1 do
+        if M.history[i].role == "user" then
+            return M.history[i].content
+        end
+    end
+    return nil
+end
+
 return M

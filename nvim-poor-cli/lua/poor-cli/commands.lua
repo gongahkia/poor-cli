@@ -991,6 +991,198 @@ function M.setup()
             vim.notify("[poor-cli] usage: PoorCliHostServer {start [preset]|stop|status}", vim.log.levels.WARN)
         end
     end, { nargs = "+", desc = "Manage multiplayer host server" })
+
+    -- response modes
+    create_command("PoorCliBroke", function()
+        rpc.request("poor-cli/setConfig", { key = "economy.terse_system_prompt", value = true }, function(_, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                else vim.notify("[poor-cli] Terse mode enabled", vim.log.levels.INFO) end
+            end)
+        end)
+    end, { desc = "Enable terse response mode (save tokens)" })
+
+    create_command("PoorCliMyTreat", function()
+        rpc.request("poor-cli/setConfig", { key = "economy.terse_system_prompt", value = false }, function(_, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                else vim.notify("[poor-cli] Rich mode enabled", vim.log.levels.INFO) end
+            end)
+        end)
+    end, { desc = "Enable rich response mode (quality)" })
+
+    -- commit message generation
+    create_command("PoorCliCommit", function()
+        chat.open()
+        rpc.request("poor-cli/chat", {
+            message = "Generate a concise, conventional commit message for the currently staged git changes. "
+                .. "Use git_diff and git_status to inspect the staged changes. Output ONLY the commit message.",
+        }, function(result, err)
+            vim.schedule(function()
+                if err then chat.append_message("assistant", "Error: " .. vim.inspect(err))
+                elseif result and result.content then
+                    chat.append_message("user", "Generate commit message")
+                    chat.append_message("assistant", result.content)
+                end
+            end)
+        end)
+    end, { desc = "Generate commit message from staged diff" })
+
+    -- file / staged diff review
+    create_command("PoorCliReview", function(opts)
+        local target = opts.args ~= "" and opts.args or nil
+        local prompt = target
+            and ("Review the file " .. target .. " for issues, improvements, and best practices.")
+            or "Review the current staged git diff for issues, improvements, and best practices. Use git_diff to inspect changes."
+        chat.open()
+        rpc.request("poor-cli/chat", { message = prompt }, function(result, err)
+            vim.schedule(function()
+                if err then chat.append_message("assistant", "Error: " .. vim.inspect(err))
+                elseif result and result.content then
+                    chat.append_message("user", target and ("Review " .. target) or "Review staged diff")
+                    chat.append_message("assistant", result.content)
+                end
+            end)
+        end)
+    end, { nargs = "?", desc = "Review file or staged diff" })
+
+    -- inbox (pending tasks)
+    create_command("PoorCliInbox", function()
+        rpc.request("poor-cli/listTasks", { inbox = true }, function(result, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                local tasks = (result or {}).tasks or {}
+                if #tasks == 0 then vim.notify("[poor-cli] Inbox empty", vim.log.levels.INFO); return end
+                local lines = { "# inbox", "" }
+                for _, t in ipairs(tasks) do
+                    table.insert(lines, "- `" .. tostring(t.taskId or "?") .. "` [" .. tostring(t.status or "?") .. "] " .. tostring(t.title or ""))
+                end
+                open_scratch("[poor-cli inbox]", table.concat(lines, "\n"), "markdown")
+            end)
+        end)
+    end, { desc = "Show pending tasks inbox" })
+
+    -- tools listing
+    create_command("PoorCliTools", function()
+        rpc.request("poor-cli/getTools", {}, function(result, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                local tools = (result or {}).tools or result or {}
+                local lines = { "# available tools", "" }
+                if type(tools) == "table" then
+                    for _, tool in ipairs(tools) do
+                        local name = type(tool) == "table" and (tool.name or "?") or tostring(tool)
+                        local desc = type(tool) == "table" and (tool.description or "") or ""
+                        table.insert(lines, "- `" .. name .. "`: " .. desc)
+                    end
+                end
+                open_scratch("[poor-cli tools]", table.concat(lines, "\n"), "markdown")
+            end)
+        end)
+    end, { desc = "List available tools" })
+
+    -- instruction stack
+    create_command("PoorCliInstructions", function(opts)
+        local files = {}
+        if opts.args ~= "" then files = vim.split(opts.args, " ", { trimempty = true }) end
+        local current = vim.api.nvim_buf_get_name(0)
+        if current ~= "" and #files == 0 then table.insert(files, current) end
+        rpc.request("poor-cli/getInstructionStack", { files = files }, function(result, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                open_scratch("[poor-cli instructions]", vim.inspect(result or {}), "lua")
+            end)
+        end)
+    end, { nargs = "*", desc = "Inspect active instruction stack" })
+
+    -- permission mode
+    create_command("PoorCliPermissionMode", function(opts)
+        local mode = opts.args
+        if mode == "" then
+            vim.ui.select({ "prompt", "auto-safe", "danger-full-access" }, { prompt = "Permission mode:" }, function(choice)
+                if choice then
+                    rpc.request("poor-cli/setConfig", { key = "security.permission_mode", value = choice }, function(_, err)
+                        vim.schedule(function()
+                            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                            else vim.notify("[poor-cli] Permission mode: " .. choice, vim.log.levels.INFO) end
+                        end)
+                    end)
+                end
+            end)
+            return
+        end
+        rpc.request("poor-cli/setConfig", { key = "security.permission_mode", value = mode }, function(_, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                else vim.notify("[poor-cli] Permission mode: " .. mode, vim.log.levels.INFO) end
+            end)
+        end)
+    end, { nargs = "?", desc = "Set permission mode" })
+
+    -- sandbox preset
+    create_command("PoorCliSandbox", function(opts)
+        local preset = opts.args
+        if preset == "" then
+            vim.ui.select({ "read-only", "review-only", "workspace-write", "full-access" }, { prompt = "Sandbox preset:" }, function(choice)
+                if choice then
+                    rpc.request("poor-cli/setConfig", { key = "sandbox.default_preset", value = choice }, function(_, err)
+                        vim.schedule(function()
+                            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                            else vim.notify("[poor-cli] Sandbox: " .. choice, vim.log.levels.INFO) end
+                        end)
+                    end)
+                end
+            end)
+            return
+        end
+        rpc.request("poor-cli/setConfig", { key = "sandbox.default_preset", value = preset }, function(_, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                else vim.notify("[poor-cli] Sandbox: " .. preset, vim.log.levels.INFO) end
+            end)
+        end)
+    end, { nargs = "?", desc = "Set sandbox preset" })
+
+    -- context budget
+    create_command("PoorCliContextBudget", function(opts)
+        if opts.args == "" then
+            rpc.request("poor-cli/getConfig", { key = "context_compression.budget_tokens" }, function(result, err)
+                vim.schedule(function()
+                    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                    else vim.notify("[poor-cli] Context budget: " .. vim.inspect((result or {}).value or "default"), vim.log.levels.INFO) end
+                end)
+            end)
+        else
+            rpc.request("poor-cli/setConfig", { key = "context_compression.budget_tokens", value = tonumber(opts.args) }, function(_, err)
+                vim.schedule(function()
+                    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                    else vim.notify("[poor-cli] Context budget set: " .. opts.args, vim.log.levels.INFO) end
+                end)
+            end)
+        end
+    end, { nargs = "?", desc = "Get/set context budget tokens" })
+
+    -- retry last message
+    create_command("PoorCliRetry", function()
+        local last_msg = chat.get_last_user_message and chat.get_last_user_message()
+        if not last_msg or last_msg == "" then
+            vim.notify("[poor-cli] No previous message to retry", vim.log.levels.WARN)
+            return
+        end
+        chat.open()
+        chat.send(last_msg)
+    end, { desc = "Retry last user message" })
+
+    -- compact with strategy
+    create_command("PoorCliCompact", function(opts)
+        local strategy = opts.args ~= "" and opts.args or "compact"
+        rpc.request("poor-cli/compactContext", { strategy = strategy }, function(result, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                else vim.notify("[poor-cli] Context compacted (" .. strategy .. "): " .. vim.inspect(result or {}), vim.log.levels.INFO) end
+            end)
+        end)
+    end, { nargs = "?", desc = "Compact context (compact|compress|handoff)" })
 end
 
 function M.explain_code(range, line1, line2)

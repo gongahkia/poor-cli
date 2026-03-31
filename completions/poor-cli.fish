@@ -23,6 +23,23 @@ complete -c poor-cli -f -n "__fish_use_subcommand" -a "deploy" -d "Deploy projec
 complete -c poor-cli -f -n "__fish_use_subcommand" -a "preview" -d "Run preview server"
 complete -c poor-cli -f -n "__fish_use_subcommand" -a "review-pr" -d "Review GitHub PR"
 complete -c poor-cli -f -n "__fish_use_subcommand" -a "agent" -d "Manage background agents"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "checkpoint" -d "Manage checkpoints"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "history" -d "Search and export history"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "session" -d "Manage sessions"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "memory" -d "Manage memory entries"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "config" -d "Manage configuration"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "profile" -d "List and apply profiles"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "trust" -d "Manage repository trust"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "provider" -d "List and switch providers"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "doctor" -d "Run diagnostics"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "status" -d "Show session status"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "policy" -d "Show policy status"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "tools" -d "List available tools"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "mcp" -d "Show MCP status"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "cost" -d "Show cost and economy"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "search" -d "Search the codebase"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "review" -d "Review file or staged diff"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "commit" -d "Generate commit message"
 
 # Nested subcommands
 complete -c poor-cli -f -n "__fish_seen_subcommand_from task" -a "create list show start wait approve cancel retry replay run"
@@ -32,6 +49,16 @@ complete -c poor-cli -f -n "__fish_seen_subcommand_from skills" -a "list show ru
 complete -c poor-cli -f -n "__fish_seen_subcommand_from commands" -a "list show run"
 complete -c poor-cli -f -n "__fish_seen_subcommand_from github-task" -a "create"
 complete -c poor-cli -f -n "__fish_seen_subcommand_from telegram" -a "setup"
+complete -c poor-cli -f -n "__fish_seen_subcommand_from checkpoint" -a "list create preview restore"
+complete -c poor-cli -f -n "__fish_seen_subcommand_from history" -a "list search export"
+complete -c poor-cli -f -n "__fish_seen_subcommand_from session" -a "list create fork destroy"
+complete -c poor-cli -f -n "__fish_seen_subcommand_from memory" -a "list save search delete"
+complete -c poor-cli -f -n "__fish_seen_subcommand_from config" -a "list get set toggle"
+complete -c poor-cli -f -n "__fish_seen_subcommand_from profile" -a "list apply"
+complete -c poor-cli -f -n "__fish_seen_subcommand_from trust" -a "status trust untrust"
+complete -c poor-cli -f -n "__fish_seen_subcommand_from provider" -a "list info switch"
+complete -c poor-cli -f -n "__fish_seen_subcommand_from cost" -a "summary economy savings"
+complete -c poor-cli -f -n "__fish_seen_subcommand_from search" -a "index stats"
 
 # exec
 complete -c poor-cli -n "__fish_seen_subcommand_from exec" -l prompt -r
@@ -139,6 +166,48 @@ complete -c poor-cli -n "__fish_seen_subcommand_from preview" -l stop
 complete -c poor-cli -n "__fish_seen_subcommand_from review-pr" -l post
 complete -c poor-cli -n "__fish_seen_subcommand_from review-pr" -l json
 complete -c poor-cli -n "__fish_seen_subcommand_from review-pr" -l ci
+
+# New subcommand options
+complete -c poor-cli -n "__fish_seen_subcommand_from checkpoint" -l limit -r
+complete -c poor-cli -n "__fish_seen_subcommand_from checkpoint" -l description -s d -r
+complete -c poor-cli -n "__fish_seen_subcommand_from checkpoint" -l json
+complete -c poor-cli -n "__fish_seen_subcommand_from history" -l limit -r
+complete -c poor-cli -n "__fish_seen_subcommand_from history" -l json
+complete -c poor-cli -n "__fish_seen_subcommand_from history" -l output -s o -r -a "(__fish_complete_path)"
+complete -c poor-cli -n "__fish_seen_subcommand_from session" -l limit -r
+complete -c poor-cli -n "__fish_seen_subcommand_from session" -l label -r
+complete -c poor-cli -n "__fish_seen_subcommand_from session" -l json
+complete -c poor-cli -n "__fish_seen_subcommand_from memory" -l name -r
+complete -c poor-cli -n "__fish_seen_subcommand_from memory" -l type -r
+complete -c poor-cli -n "__fish_seen_subcommand_from memory" -l description -r
+complete -c poor-cli -n "__fish_seen_subcommand_from memory" -l content -r
+complete -c poor-cli -n "__fish_seen_subcommand_from memory" -l limit -r
+complete -c poor-cli -n "__fish_seen_subcommand_from memory" -l json
+complete -c poor-cli -n "__fish_seen_subcommand_from config" -l json
+complete -c poor-cli -n "__fish_seen_subcommand_from profile" -l json
+complete -c poor-cli -n "__fish_seen_subcommand_from trust" -l path -r -a "(__fish_complete_directories)"
+complete -c poor-cli -n "__fish_seen_subcommand_from trust" -l json
+complete -c poor-cli -n "__fish_seen_subcommand_from provider" -l config -r -a "(__fish_complete_path)"
+complete -c poor-cli -n "__fish_seen_subcommand_from provider" -l json
+complete -c poor-cli -n "__fish_seen_subcommand_from doctor" -l config -r -a "(__fish_complete_path)"
+complete -c poor-cli -n "__fish_seen_subcommand_from doctor" -l json
+complete -c poor-cli -n "__fish_seen_subcommand_from status" -l config -r -a "(__fish_complete_path)"
+complete -c poor-cli -n "__fish_seen_subcommand_from status" -l json
+complete -c poor-cli -n "__fish_seen_subcommand_from policy" -l config -r -a "(__fish_complete_path)"
+complete -c poor-cli -n "__fish_seen_subcommand_from policy" -l json
+complete -c poor-cli -n "__fish_seen_subcommand_from tools" -l config -r -a "(__fish_complete_path)"
+complete -c poor-cli -n "__fish_seen_subcommand_from tools" -l json
+complete -c poor-cli -n "__fish_seen_subcommand_from mcp" -l config -r -a "(__fish_complete_path)"
+complete -c poor-cli -n "__fish_seen_subcommand_from mcp" -l json
+complete -c poor-cli -n "__fish_seen_subcommand_from cost" -l config -r -a "(__fish_complete_path)"
+complete -c poor-cli -n "__fish_seen_subcommand_from cost" -l json
+complete -c poor-cli -n "__fish_seen_subcommand_from search" -l mode -r -a "semantic hybrid"
+complete -c poor-cli -n "__fish_seen_subcommand_from search" -l limit -r
+complete -c poor-cli -n "__fish_seen_subcommand_from search" -l json
+complete -c poor-cli -n "__fish_seen_subcommand_from review" -l output-format -r -a "text json"
+complete -c poor-cli -n "__fish_seen_subcommand_from review" -l config -r -a "(__fish_complete_path)"
+complete -c poor-cli -n "__fish_seen_subcommand_from commit" -l output-format -r -a "text json"
+complete -c poor-cli -n "__fish_seen_subcommand_from commit" -l config -r -a "(__fish_complete_path)"
 
 # Mirror to legacy alias if present
 complete -c poor-cli-sync -w poor-cli

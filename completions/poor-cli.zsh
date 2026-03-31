@@ -26,6 +26,23 @@ _poor_cli() {
         'preview:Run preview server'
         'review-pr:Review GitHub PR'
         'agent:Manage background agents'
+        'checkpoint:Manage checkpoints'
+        'history:Search and export history'
+        'session:Manage sessions'
+        'memory:Manage memory entries'
+        'config:Manage configuration'
+        'profile:List and apply profiles'
+        'trust:Manage repository trust'
+        'provider:List and switch providers'
+        'doctor:Run diagnostics'
+        'status:Show session status'
+        'policy:Show policy status'
+        'tools:List available tools'
+        'mcp:Show MCP status'
+        'cost:Show cost and economy'
+        'search:Search the codebase'
+        'review:Review file or staged diff'
+        'commit:Generate commit message'
     )
     task_subcommands=(
         'create:Create a task'
@@ -320,6 +337,120 @@ _poor_cli() {
 
         review-pr)
             _arguments '1:PR number:' '--post[Post review as PR comment]' '--json[Emit JSON payload]' '--ci[Return non-zero if checks fail]'
+            ;;
+
+        checkpoint)
+            if (( CURRENT == 3 )); then
+                _describe -t checkpoint_subcommands 'checkpoint commands' '(list create preview restore)'
+                return
+            fi
+            case "$words[3]" in
+                list) _arguments '--limit=[Max entries]' '--json[Emit JSON]' ;;
+                create) _arguments '--description=[Description]' '-d[Description]' '--json[Emit JSON]' '*:files:_files' ;;
+                preview|restore) _arguments '1:checkpoint id:' '--json[Emit JSON]' ;;
+            esac
+            ;;
+
+        history)
+            if (( CURRENT == 3 )); then
+                _describe -t history_subcommands 'history commands' '(list search export)'
+                return
+            fi
+            case "$words[3]" in
+                list) _arguments '--limit=[Max entries]' '--json[Emit JSON]' ;;
+                search) _arguments '1:query:' '--limit=[Max results]' '--json[Emit JSON]' ;;
+                export) _arguments '1:session id:' '--output=[Output path]:file:_files' '-o[Output path]:file:_files' ;;
+            esac
+            ;;
+
+        session)
+            if (( CURRENT == 3 )); then
+                _describe -t session_subcommands 'session commands' '(list create fork destroy)'
+                return
+            fi
+            case "$words[3]" in
+                list) _arguments '--limit=[Max entries]' '--json[Emit JSON]' ;;
+                create) _arguments '--label=[Session label]' '--json[Emit JSON]' ;;
+                fork) _arguments '1:source id:' '--label=[Fork label]' '--json[Emit JSON]' ;;
+                destroy) _arguments '1:session id:' '--json[Emit JSON]' ;;
+            esac
+            ;;
+
+        memory)
+            if (( CURRENT == 3 )); then
+                _describe -t memory_subcommands 'memory commands' '(list save search delete)'
+                return
+            fi
+            case "$words[3]" in
+                list) _arguments '--type=[Filter by type]' '--json[Emit JSON]' ;;
+                save) _arguments '--name=[Entry name]' '--type=[Entry type]' '--description=[Description]' '--content=[Content]' '--json[Emit JSON]' ;;
+                search) _arguments '1:query:' '--limit=[Max results]' '--json[Emit JSON]' ;;
+                delete) _arguments '1:entry name:' '--json[Emit JSON]' ;;
+            esac
+            ;;
+
+        config)
+            if (( CURRENT == 3 )); then
+                _describe -t config_subcommands 'config commands' '(list get set toggle)'
+                return
+            fi
+            _arguments '--json[Emit JSON]'
+            ;;
+
+        profile)
+            if (( CURRENT == 3 )); then
+                _describe -t profile_subcommands 'profile commands' '(list apply)'
+                return
+            fi
+            _arguments '--json[Emit JSON]'
+            ;;
+
+        trust)
+            if (( CURRENT == 3 )); then
+                _describe -t trust_subcommands 'trust commands' '(status trust untrust)'
+                return
+            fi
+            _arguments '--path=[Repository path]:directory:_files -/' '--json[Emit JSON]'
+            ;;
+
+        provider)
+            if (( CURRENT == 3 )); then
+                _describe -t provider_subcommands 'provider commands' '(list info switch)'
+                return
+            fi
+            _arguments '--config=[Config file]:file:_files' '--json[Emit JSON]'
+            ;;
+
+        doctor|status|policy|tools|mcp)
+            _arguments '--config=[Config file]:file:_files' '--json[Emit JSON]'
+            ;;
+
+        cost)
+            if (( CURRENT == 3 )); then
+                _describe -t cost_subcommands 'cost commands' '(summary economy savings)'
+                return
+            fi
+            if [[ "$words[3]" == 'economy' && CURRENT == 4 ]]; then
+                _describe -t presets 'economy presets' '(frugal balanced quality)'
+                return
+            fi
+            _arguments '--config=[Config file]:file:_files' '--json[Emit JSON]'
+            ;;
+
+        search)
+            if (( CURRENT == 3 )); then
+                _describe -t search_subcommands 'search commands' '(index stats)'
+                return
+            fi
+            _arguments '--mode=[Search mode]:mode:(semantic hybrid)' '--limit=[Max results]' '--json[Emit JSON]'
+            ;;
+
+        review)
+            _arguments '1:file:_files' '--output-format=[Output format]:format:(text json)' '--config=[Config file]:file:_files'
+            ;;
+
+        commit)
+            _arguments '--output-format=[Output format]:format:(text json)' '--config=[Config file]:file:_files'
             ;;
     esac
 }

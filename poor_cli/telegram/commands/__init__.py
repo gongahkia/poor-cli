@@ -9,11 +9,14 @@ from poor_cli.telegram.commands.git import register as register_git
 from poor_cli.telegram.commands.memory import register as register_memory
 from poor_cli.telegram.commands.admin import register as register_admin
 from poor_cli.telegram.commands.workflows import register as register_workflows
+from poor_cli.telegram.commands.code import register as register_code
+from poor_cli.telegram.commands.execution import register as register_execution
 
 
 def register_all(app, bot_instance):
     """register all command handlers with the Telegram Application."""
     for reg in (register_sessions, register_tasks, register_automations,
                 register_agents, register_checkpoints, register_git,
-                register_memory, register_admin, register_workflows):
+                register_memory, register_admin, register_workflows,
+                register_code, register_execution):
         reg(app, bot_instance)
