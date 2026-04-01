@@ -124,6 +124,7 @@ class PoorCLICore:
         self._initialized = False
         self._system_instruction: Optional[str] = None
         self._system_context_hash: Optional[str] = None
+        self._approved_write_paths: set = set()
         self._instruction_manager: Optional[InstructionManager] = None
         self._hook_manager: Optional[PolicyHookManager] = None
         self._audit_logger: Optional[AuditLogger] = None
@@ -1249,12 +1250,25 @@ class PoorCLICore:
             }
         return {"allowed": bool(decision), "approvedPaths": [], "approvedChunks": []}
 
+    def clear_approved_paths(self) -> None:
+        """Reset session-scoped path approvals."""
+        self._approved_write_paths.clear()
+
+    def get_approved_paths(self) -> List[str]:
+        """Return currently approved write paths."""
+        return sorted(self._approved_write_paths)
+
     async def _request_permission(
         self,
         tool_name: str,
         tool_args: Dict[str, Any],
         preview: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        if self.config and getattr(self.config.agentic, "path_scoped_approval", True) and tool_name in _MUTATING_TOOLS:
+            target_paths = self._inspect_tool_targets(tool_name, tool_args)
+            resolved = {str(Path(p).resolve()) for p in target_paths if p}
+            if resolved and resolved.issubset(self._approved_write_paths):
+                return {"allowed": True, "approvedPaths": list(resolved), "approvedChunks": []}
         if not self._permission_callback:
             decision = {"allowed": True, "approvedPaths": [], "approvedChunks": []}
             await self._emit_policy_hooks(
@@ -1276,6 +1290,14 @@ class PoorCLICore:
         except TypeError:
             decision = await self._permission_callback(tool_name, tool_args)
         normalized = self._normalize_permission_decision(decision)
+        if normalized["allowed"] and self.config and getattr(self.config.agentic, "path_scoped_approval", True):
+            target_paths = self._inspect_tool_targets(tool_name, tool_args)
+            for p in target_paths:
+                if p:
+                    self._approved_write_paths.add(str(Path(p).resolve()))
+            for p in normalized.get("approvedPaths", []):
+                if p:
+                    self._approved_write_paths.add(str(Path(p).resolve()))
         await self._emit_policy_hooks(
             "permission_decision",
             {

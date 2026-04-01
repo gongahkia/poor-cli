@@ -173,6 +173,7 @@ class AgenticConfig:
     overflow_dir: str = ".poor-cli/overflow"  # relative to repo root
     context_pressure_stop_ratio: float = 0.2  # stop if remaining context < 20%
     context_pressure_warn_ratio: float = 0.5  # warn if remaining context < 50%
+    path_scoped_approval: bool = True  # remember approved write paths per session
     auto_approve_tools: list = field(default_factory=lambda: [
         "read_file", "glob_files", "grep_files", "git_status_diff",
         "list_directory", "diff_files",
