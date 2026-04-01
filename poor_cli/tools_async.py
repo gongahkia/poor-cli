@@ -4059,7 +4059,11 @@ class ToolRegistryAsync:
                 agentic_cfg = getattr(self._core.config, "agentic", None) if self._core.config else None
                 denied_tools = set(getattr(agentic_cfg, "sub_agent_default_denied_tools", []) if agentic_cfg else [])
             agent = SubAgent(self._core, max_iterations=max_iterations, allowed_tools=allowed_tools, denied_tools=denied_tools)
-            return await agent.run(prompt, context_files=context_files)
+            result = await agent.run(prompt, context_files=context_files)
+            usage = agent.get_usage()
+            if usage.get("input_tokens") or usage.get("output_tokens"):
+                self._core._track_cost(usage.get("input_tokens", 0), usage.get("output_tokens", 0))
+            return result
         except Exception as e:
             return f"sub-agent error: {e}"
 

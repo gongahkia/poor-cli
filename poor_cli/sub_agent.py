@@ -25,6 +25,8 @@ class SubAgent:
         cfg_max_iter = getattr(agentic_cfg, "sub_agent_max_iterations", 10) if agentic_cfg else 10
         self._max_iterations = min(max_iterations, cfg_max_iter, 25)
         self._timeout = getattr(agentic_cfg, "sub_agent_timeout", timeout) if agentic_cfg else timeout
+        self._total_input_tokens: int = 0
+        self._total_output_tokens: int = 0
         self._depth = getattr(parent_core, "_sub_agent_depth", 0) + 1
         if self._depth > max_depth:
             raise RuntimeError(f"sub-agent recursion depth exceeded (max {max_depth})")
@@ -78,6 +80,7 @@ class SubAgent:
         iteration = 0
         try:
             async for chunk in provider.send_message_stream(full_prompt):
+                self._accumulate_usage(chunk)
                 if chunk.content:
                     accumulated += chunk.content
                 if chunk.function_calls:
@@ -91,6 +94,7 @@ class SubAgent:
                     formatted = provider.format_tool_results(tool_results)
                     response = None
                     async for next_chunk in provider.send_message_stream(formatted):
+                        self._accumulate_usage(next_chunk)
                         if next_chunk.content:
                             accumulated += next_chunk.content
                         if next_chunk.function_calls:
@@ -120,3 +124,13 @@ class SubAgent:
             logger.error("sub-agent error: %s", e, exc_info=True)
             accumulated += f"\n[sub-agent error: {e}]"
         return accumulated.strip() or "(no response from sub-agent)"
+
+    def _accumulate_usage(self, response: Any) -> None:
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return
+        self._total_input_tokens += getattr(usage, "input_tokens", 0) or getattr(usage, "prompt_tokens", 0) or 0
+        self._total_output_tokens += getattr(usage, "output_tokens", 0) or getattr(usage, "completion_tokens", 0) or 0
+
+    def get_usage(self) -> Dict[str, int]:
+        return {"input_tokens": self._total_input_tokens, "output_tokens": self._total_output_tokens}
