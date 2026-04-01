@@ -36,7 +36,8 @@ class OpenAIProvider(BaseProvider):
     """OpenAI API provider implementation"""
 
     def __init__(self, api_key: str, model_name: str = default_model_for_provider("openai"),
-                 max_retries: int = 3, retry_delay: float = 1.0, timeout: float = 60.0):
+                 max_retries: int = 3, retry_delay: float = 1.0, timeout: float = 60.0,
+                 prompt_caching: bool = True, **kwargs):
         """
         Initialize OpenAI provider
 
@@ -69,6 +70,7 @@ class OpenAIProvider(BaseProvider):
         except Exception as e:
             raise ConfigurationError(f"Failed to initialize OpenAI: {e}")
 
+        self.prompt_caching = prompt_caching
         self.messages = []  # Conversation history
         self.tools = None
         self.system_instruction = None

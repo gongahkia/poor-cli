@@ -79,6 +79,7 @@ class GeminiProvider(BaseProvider):
 
         self.chat = None
         self._chat_config = None
+        # TODO: explore genai CachedContent for system instruction caching on gemini-1.5+/2.5+ models
 
     async def initialize(
         self,
