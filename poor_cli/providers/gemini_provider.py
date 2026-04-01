@@ -79,7 +79,7 @@ class GeminiProvider(BaseProvider):
 
         self.chat = None
         self._chat_config = None
-        # TODO: explore genai CachedContent for system instruction caching on gemini-1.5+/2.5+ models
+        self._cached_content_name: Optional[str] = None
 
     async def initialize(
         self,
@@ -102,6 +102,24 @@ class GeminiProvider(BaseProvider):
 
             if system_instruction:
                 config_kwargs["system_instruction"] = system_instruction
+
+            # attempt server-side context caching for large system instructions (32k+ chars)
+            if system_instruction and len(system_instruction) > 32000:
+                try:
+                    cached = await self.client.caches.create(
+                        model=self.model_name,
+                        config=genai_types.CreateCachedContentConfig(
+                            system_instruction=system_instruction,
+                            display_name="poor-cli-system-instruction",
+                        ),
+                    )
+                    if cached and getattr(cached, "name", None):
+                        self._cached_content_name = cached.name
+                        config_kwargs.pop("system_instruction", None)
+                        config_kwargs["cached_content"] = cached.name
+                        logger.info("Gemini context cache created: %s", cached.name)
+                except Exception as exc:
+                    logger.debug("Gemini context caching unavailable: %s", exc)
 
             self._chat_config = genai_types.GenerateContentConfig(**config_kwargs)
             self.chat = self.client.chats.create(

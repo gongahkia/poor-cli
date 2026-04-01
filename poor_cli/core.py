@@ -432,6 +432,10 @@ class PoorCLICore:
             )
             
             self._initialized = True
+            try:
+                self._gc_overflow_files()
+            except Exception:
+                pass
             logger.info("PoorCLICore initialization complete")
             
         except ConfigurationError:
