@@ -1141,7 +1141,8 @@ class ToolRegistryAsync:
                             "items": {"type": "STRING"},
                             "description": "File paths to include as context"
                         },
-                        "max_iterations": {"type": "INTEGER", "description": "Max tool iterations for sub-agent (default 10)"}
+                        "max_iterations": {"type": "INTEGER", "description": "Max tool iterations for sub-agent (default 10)"},
+                        "tools": {"type": "STRING", "description": "Comma-separated allowed tools (e.g. 'read_file,grep_files'). If omitted, write/exec tools are denied by default."}
                     },
                     "required": ["prompt"]
                 }
@@ -4045,12 +4046,19 @@ class ToolRegistryAsync:
         except Exception as exc:
             return f"error listing memories: {exc}"
 
-    async def delegate_task(self, prompt: str, context_files: Optional[List[str]] = None, max_iterations: int = 10) -> str:
+    async def delegate_task(self, prompt: str, context_files: Optional[List[str]] = None, max_iterations: int = 10, tools: Optional[str] = None) -> str:
         if not self._core:
             return "error: core engine not available for delegation"
         try:
             from .sub_agent import SubAgent
-            agent = SubAgent(self._core, max_iterations=max_iterations)
+            allowed_tools = None
+            denied_tools = None
+            if tools and tools.strip():
+                allowed_tools = {t.strip() for t in tools.split(",") if t.strip()}
+            else:
+                agentic_cfg = getattr(self._core.config, "agentic", None) if self._core.config else None
+                denied_tools = set(getattr(agentic_cfg, "sub_agent_default_denied_tools", []) if agentic_cfg else [])
+            agent = SubAgent(self._core, max_iterations=max_iterations, allowed_tools=allowed_tools, denied_tools=denied_tools)
             return await agent.run(prompt, context_files=context_files)
         except Exception as e:
             return f"sub-agent error: {e}"

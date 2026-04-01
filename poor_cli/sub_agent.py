@@ -14,8 +14,12 @@ class SubAgent:
         parent_core: Any, # PoorCLICore (avoid circular import)
         max_iterations: int = 10,
         timeout: float = 120.0,
+        allowed_tools: Optional[set] = None,
+        denied_tools: Optional[set] = None,
     ):
         self._parent = parent_core
+        self._allowed_tools = allowed_tools
+        self._denied_tools = denied_tools or set()
         agentic_cfg = getattr(parent_core.config, "agentic", None) if parent_core.config else None
         max_depth = getattr(agentic_cfg, "sub_agent_max_depth", 2) if agentic_cfg else 2
         cfg_max_iter = getattr(agentic_cfg, "sub_agent_max_iterations", 10) if agentic_cfg else 10
@@ -47,8 +51,11 @@ class SubAgent:
             **extra_kwargs,
         )
         tool_declarations = self._parent.tool_registry.get_tool_declarations()
-        # filter out delegate_task to prevent recursive delegation tool
-        filtered_tools = [t for t in tool_declarations if t.get("name") != "delegate_task"]
+        denied = self._denied_tools | {"delegate_task"} # always prevent recursion
+        if self._allowed_tools is not None:
+            filtered_tools = [t for t in tool_declarations if t.get("name") in self._allowed_tools and t.get("name") not in denied]
+        else:
+            filtered_tools = [t for t in tool_declarations if t.get("name") not in denied]
         system_instruction = (
             "You are a focused sub-agent. Complete the given task concisely. "
             "Do not delegate further sub-tasks."
