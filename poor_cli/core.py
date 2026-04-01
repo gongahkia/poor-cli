@@ -1693,6 +1693,28 @@ class PoorCLICore:
             pass
         return "\n\n".join(parts)
 
+    def _check_context_pressure(self) -> Optional[str]:
+        """Check if context window is under pressure. Returns reason string or None."""
+        if not self.provider or not self.config:
+            return None
+        caps = self.provider.get_capabilities()
+        max_ctx = caps.max_context_tokens
+        if max_ctx <= 0:
+            return None
+        try:
+            history = self.provider.get_history()
+            current_tokens = sum(len(str(m.get("content", ""))) for m in history) // 4
+        except Exception:
+            return None
+        remaining_ratio = max(0.0, 1.0 - (current_tokens / max_ctx))
+        stop_ratio = getattr(self.config.agentic, "context_pressure_stop_ratio", 0.2)
+        warn_ratio = getattr(self.config.agentic, "context_pressure_warn_ratio", 0.5)
+        if remaining_ratio < stop_ratio:
+            return "context_pressure"
+        if remaining_ratio < warn_ratio:
+            logger.warning("Context pressure: %.0f%% remaining (warn threshold %.0f%%)", remaining_ratio * 100, warn_ratio * 100)
+        return None
+
     def _refresh_system_context(self) -> bool:
         """Rebuild system instruction if git/instruction state changed. Returns True if updated."""
         if not self._initialized or not self.provider or not self.config:
@@ -2091,6 +2113,21 @@ class PoorCLICore:
                                 ),
                             )
                             yield CoreEvent.done(reason="iteration_cap")
+                            return
+
+                        # Context pressure check
+                        pressure_reason = self._check_context_pressure()
+                        if pressure_reason:
+                            self._append_turn_transition(turn_diagnostics, reason_code="context_pressure", iteration=iteration)
+                            self._finish_run_record(
+                                run_state, status="stopped", summary="context pressure",
+                                checkpoint_id=last_checkpoint_id, artifact_dir=artifact_dir,
+                                metadata_updates=self._build_run_metadata_updates(
+                                    request_id=request_id, diagnostics=turn_diagnostics,
+                                    completion_reason_code="context_pressure",
+                                ),
+                            )
+                            yield CoreEvent.done(reason="context_pressure")
                             return
 
                         # Economy: tool call budget enforcement

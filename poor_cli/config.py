@@ -171,6 +171,8 @@ class AgenticConfig:
     max_tool_result_chars_per_turn: int = 60000  # cap tool-result payload per turn
     overflow_threshold_chars: int = 30000  # single result overflow to temp file
     overflow_dir: str = ".poor-cli/overflow"  # relative to repo root
+    context_pressure_stop_ratio: float = 0.2  # stop if remaining context < 20%
+    context_pressure_warn_ratio: float = 0.5  # warn if remaining context < 50%
     auto_approve_tools: list = field(default_factory=lambda: [
         "read_file", "glob_files", "grep_files", "git_status_diff",
         "list_directory", "diff_files",
