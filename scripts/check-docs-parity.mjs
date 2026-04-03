@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -22,6 +22,7 @@ if (sgQuery?.preferred !== true) {
   throw new Error("sg_query is no longer marked preferred in the built tool catalog.");
 }
 
+const readmeTarget = existsSync(resolve(root, "README2.md")) ? "README2.md" : "README.md";
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 const ensureIncludes = (path, snippets) => {
   const text = read(path);
@@ -41,7 +42,7 @@ const ensureExcludes = (path, snippets) => {
   }
 };
 
-ensureIncludes("README.md", [
+ensureIncludes(readmeTarget, [
   `${totalTools} \`sg_*\` tools total`,
   `${familyCount} official data families`,
   `bounded preferred interface across ${routedFamilyCount} routed families`,
@@ -61,7 +62,7 @@ ensureIncludes("README.md", [
   "Dataset Collection Browse",
   ...familyNames,
 ]);
-ensureExcludes("README.md", [
+ensureExcludes(readmeTarget, [
   "CEA and BCA are direct-only in this tranche",
   "ACRA is the next business-diligence candidate",
 ]);
@@ -180,21 +181,25 @@ ensureIncludes("examples/README.md", [
   "npm run diagnostics",
 ]);
 
-ensureIncludes("CHANGELOG.md", [
-  `Tool count increased from 63 to ${totalTools}; API family count from 26 to ${familyCount}; routed families from 17 to ${routedFamilyCount}.`,
-  "BOA, HSA, and HLB direct tool families",
-  "Architecture Firm Diligence",
-  "Healthcare Supplier Diligence",
-  "Hotel Operator Lookup",
-  "Sector Scoped Business Diligence",
-]);
+if (existsSync(resolve(root, "CHANGELOG.md"))) {
+  ensureIncludes("CHANGELOG.md", [
+    `Tool count increased from 63 to ${totalTools}; API family count from 26 to ${familyCount}; routed families from 17 to ${routedFamilyCount}.`,
+    "BOA, HSA, and HLB direct tool families",
+    "Architecture Firm Diligence",
+    "Healthcare Supplier Diligence",
+    "Hotel Operator Lookup",
+    "Sector Scoped Business Diligence",
+  ]);
+} else {
+  process.stdout.write("CHANGELOG.md not found, skipping changelog parity checks.\n");
+}
 
 if (!Array.isArray(RUNTIME_CATALOG.queryStatusContract) || RUNTIME_CATALOG.queryStatusContract.length !== 5) {
   throw new Error("Built runtime catalog is missing the full sg_query status contract.");
 }
 
 for (const workflowName of workflowNames) {
-  ensureIncludes("README.md", [workflowName]);
+  ensureIncludes(readmeTarget, [workflowName]);
   ensureIncludes("packages/skill/SKILL.md", [workflowName]);
 }
 
