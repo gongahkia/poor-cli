@@ -63,7 +63,8 @@ fn daemon_lifecycle_supports_attach_input_snapshot_and_kill() {
     });
     assert!(listed, "daemon session should appear in session list");
 
-    walk_app::daemon::send_input(&session, 0, b"echo WALK_DAEMON_LIFECYCLE\n")
+    let command = "echo WALK_DAEMON_LIFECYCLE\necho \"$WALK_SESSION\"\nif [ -n \"$WALK_SESSION_SOCKET\" ]; then echo WALK_SESSION_SOCKET_SET; fi\n".to_string();
+    walk_app::daemon::send_input(&session, 0, command.as_bytes())
         .expect("daemon should accept pane input");
     walk_app::daemon::resize_pane(&session, 0, 100, 30).expect("daemon should resize pane");
 
@@ -78,11 +79,17 @@ fn daemon_lifecycle_supports_attach_input_snapshot_and_kill() {
                         .cloned()
                 })
                 .is_some_and(|rows| {
-                    rows.iter().any(|row| {
-                        row.get("text")
-                            .and_then(serde_json::Value::as_str)
-                            .is_some_and(|text| text.contains("WALK_DAEMON_LIFECYCLE"))
-                    })
+                    let texts = rows
+                        .iter()
+                        .filter_map(|row| row.get("text").and_then(serde_json::Value::as_str))
+                        .collect::<Vec<_>>();
+                    texts
+                        .iter()
+                        .any(|text| text.contains("WALK_DAEMON_LIFECYCLE"))
+                        && texts.iter().any(|text| text.contains(&session))
+                        && texts
+                            .iter()
+                            .any(|text| text.contains("WALK_SESSION_SOCKET_SET"))
                 })
         });
     assert!(

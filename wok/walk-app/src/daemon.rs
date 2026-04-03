@@ -43,6 +43,16 @@ mod imp {
         runtime_dir().join(format!("{name}.sock"))
     }
 
+    fn daemon_terminal_env(name: &str) -> HashMap<String, String> {
+        let mut env = HashMap::new();
+        env.insert("WALK_SESSION".to_string(), name.to_string());
+        env.insert(
+            "WALK_SESSION_SOCKET".to_string(),
+            session_socket_path(name).display().to_string(),
+        );
+        env
+    }
+
     /// Run a daemon loop for one named session.
     pub fn run_daemon(name: &str, shell: &ShellType) -> Result<(), Box<dyn std::error::Error>> {
         let dir = runtime_dir();
@@ -59,7 +69,7 @@ mod imp {
         let pane_count = 1usize;
         let mut running = true;
         let mut last_housekeeping = Instant::now();
-        let mut terminal = Terminal::new(shell, 80, 24, 10_000, HashMap::new(), None)?;
+        let mut terminal = Terminal::new(shell, 80, 24, 10_000, daemon_terminal_env(name), None)?;
 
         while running {
             terminal.process_pty_output();
@@ -336,6 +346,16 @@ mod imp {
         runtime_dir().join(format!("{name}.port"))
     }
 
+    fn daemon_terminal_env(name: &str) -> HashMap<String, String> {
+        let mut env = HashMap::new();
+        env.insert("WALK_SESSION".to_string(), name.to_string());
+        env.insert(
+            "WALK_SESSION_ENDPOINT".to_string(),
+            session_socket_path(name).display().to_string(),
+        );
+        env
+    }
+
     /// Run a daemon loop for one named session.
     pub fn run_daemon(name: &str, shell: &ShellType) -> Result<(), Box<dyn std::error::Error>> {
         let dir = runtime_dir();
@@ -354,7 +374,7 @@ mod imp {
         let pane_count = 1usize;
         let mut running = true;
         let mut last_housekeeping = Instant::now();
-        let mut terminal = Terminal::new(shell, 80, 24, 10_000, HashMap::new(), None)?;
+        let mut terminal = Terminal::new(shell, 80, 24, 10_000, daemon_terminal_env(name), None)?;
 
         while running {
             terminal.process_pty_output();
