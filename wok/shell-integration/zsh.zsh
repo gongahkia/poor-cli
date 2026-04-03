@@ -10,6 +10,7 @@ __walk_precmd() {
 }
 
 __walk_preexec() {
+    printf '\033]133;E;%s\007' "$1"
     printf '\033]133;B\007'
     printf '\033]133;C\007'
 }

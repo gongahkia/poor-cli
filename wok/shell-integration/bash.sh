@@ -10,6 +10,7 @@ __walk_prompt_command() {
 }
 
 __walk_preexec() {
+    printf '\033]133;E;%s\007' "$BASH_COMMAND"
     printf '\033]133;B\007'
     printf '\033]133;C\007'
 }
