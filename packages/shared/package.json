@@ -18,6 +18,9 @@
       "types": "./dist/index.d.ts"
     }
   },
+  "scripts": {
+    "prepublishOnly": "tsc --build"
+  },
   "publishConfig": {
     "access": "public"
   },

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // sg-data CLI: quick lookups without full MCP setup
 // usage: sg-data <command> [args]
-import { createLogger } from "@sg-apis/shared";
+import { createLogger, Keystore } from "@sg-apis/shared";
 import type { ToolResult } from "@sg-apis/shared";
 import { handleBusinessDossier, handleEnvironmentBrief, handleMacroBrief, handlePropertyBrief, handleTransportBrief } from "./tools/brief-tools.js";
 import { handleHdbResalePrices } from "./tools/hdb-tools.js";
@@ -30,7 +30,97 @@ const parseArgs = (args: string[]): Record<string, string> => {
   return parsed;
 };
 
+type CredentialEntry = { name: string; envVars: string[]; keystoreKeys: string[]; required: boolean };
+const CREDENTIALS: CredentialEntry[] = [
+  { name: "OneMap", envVars: ["SG_API_ONEMAP_EMAIL", "SG_API_ONEMAP_PASSWORD"], keystoreKeys: ["onemap_email", "onemap_password"], required: true },
+  { name: "URA", envVars: ["SG_API_URA_KEY"], keystoreKeys: ["ura"], required: true },
+  { name: "LTA DataMall", envVars: ["SG_API_LTA_KEY"], keystoreKeys: ["lta"], required: false },
+];
+
+const checkCredentialStatus = (entry: CredentialEntry, ks: Keystore): { configured: boolean; source: string } => {
+  const fromEnv = entry.envVars.every((v) => process.env[v] !== undefined && process.env[v] !== "");
+  const fromKs = entry.keystoreKeys.every((k) => { const v = ks.getKey(k); return v !== null && v !== ""; });
+  if (fromEnv && fromKs) return { configured: true, source: "env+keystore" };
+  if (fromEnv) return { configured: true, source: "env" };
+  if (fromKs) return { configured: true, source: "keystore" };
+  return { configured: false, source: "none" };
+};
+
 const commands: Record<string, (args: string[]) => Promise<void>> = {
+  async init(args) {
+    const opts = parseArgs(args);
+    const ks = new Keystore();
+    const hasAnyOpt = opts["lta-key"] || opts["ura-key"] || opts["onemap-email"] || opts["onemap-password"];
+    if (hasAnyOpt) {
+      if (opts["lta-key"]) { ks.setKey("lta", opts["lta-key"]); console.log("  stored: lta"); }
+      if (opts["ura-key"]) { ks.setKey("ura", opts["ura-key"]); console.log("  stored: ura"); }
+      if (opts["onemap-email"]) { ks.setKey("onemap_email", opts["onemap-email"]); console.log("  stored: onemap_email"); }
+      if (opts["onemap-password"]) { ks.setKey("onemap_password", opts["onemap-password"]); console.log("  stored: onemap_password"); }
+      console.log("\nrun 'sg-data doctor' to validate connectivity.");
+      ks.close();
+      return;
+    }
+    console.log("sg-data init — credential setup\n");
+    for (const cred of CREDENTIALS) {
+      const status = checkCredentialStatus(cred, ks);
+      const icon = status.configured ? "+" : "-";
+      const tag = cred.required ? "required" : "optional";
+      console.log(`  [${icon}] ${cred.name} (${tag}) — ${status.configured ? `configured via ${status.source}` : "not configured"}`);
+    }
+    console.log("\nto set credentials:\n");
+    console.log("  sg-data init --ura-key <key>");
+    console.log("  sg-data init --lta-key <key>");
+    console.log("  sg-data init --onemap-email <email> --onemap-password <pass>");
+    console.log("\nor via environment variables:\n");
+    console.log("  export SG_API_URA_KEY=<key>");
+    console.log("  export SG_API_LTA_KEY=<key>");
+    console.log("  export SG_API_ONEMAP_EMAIL=<email>");
+    console.log("  export SG_API_ONEMAP_PASSWORD=<pass>");
+    ks.close();
+  },
+  async doctor() {
+    console.log("sg-data doctor\n");
+    const nodeVersion = parseInt(process.versions.node.split(".")[0]!, 10);
+    const nodeOk = nodeVersion >= 20;
+    console.log(`[${nodeOk ? "+" : "!"}] node ${process.versions.node} ${nodeOk ? "" : "(>= 20 required)"}`);
+    const ks = new Keystore();
+    console.log("\ncredentials:");
+    for (const cred of CREDENTIALS) {
+      const status = checkCredentialStatus(cred, ks);
+      const icon = status.configured ? "+" : (cred.required ? "!" : "-");
+      console.log(`  [${icon}] ${cred.name} — ${status.configured ? status.source : "missing"}`);
+    }
+    console.log("\napi connectivity:");
+    const { getHealthCheckTargets, checkApiHealth } = await import("./tools/health-check.js");
+    const targets = getHealthCheckTargets();
+    const results = await Promise.all(targets.map((t) => checkApiHealth(t, ks)));
+    let allOk = true;
+    for (const r of results) {
+      const icon = r.reachable ? "+" : "!";
+      if (!r.reachable) allOk = false;
+      const latency = r.reachable ? ` (${r.latencyMs}ms)` : "";
+      const err = r.error ? ` — ${r.error}` : "";
+      console.log(`  [${icon}] ${r.api}${latency}${err}`);
+    }
+    if (!allOk) {
+      console.log("\nfix suggestions:");
+      for (const r of results) {
+        if (r.reachable) continue;
+        if (r.authRequired && r.credentialSource === "none") {
+          const cred = CREDENTIALS.find((c) => c.name === r.api);
+          if (cred) {
+            const envHint = cred.envVars.map((v) => `export ${v}=<value>`).join(" && ");
+            console.log(`  ${r.api}: ${envHint}`);
+            console.log(`    or: sg-data init --${cred.keystoreKeys[0]!.replace("_", "-")}-key <value>`);
+          }
+        } else {
+          console.log(`  ${r.api}: upstream may be down — retry later`);
+        }
+      }
+    }
+    console.log(allOk ? "\nall checks passed." : "\nsome checks failed. see suggestions above.");
+    ks.close();
+  },
   async health() {
     const { getHealthCheckTargets } = await import("./tools/health-check.js");
     const targets = getHealthCheckTargets();
@@ -94,6 +184,8 @@ const main = async () => {
     console.log(`sg-data - Singapore public data CLI
 
 commands:
+  init                        configure API credentials
+  doctor                      diagnose setup and connectivity
   query <prompt>              natural-language query
   health                      check API health
   forecast --area <area>      2-hour weather forecast

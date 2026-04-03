@@ -17,6 +17,9 @@
     "sg-apis-mcp": "./dist/index.js",
     "sg-data": "./dist/cli.js"
   },
+  "scripts": {
+    "prepublishOnly": "tsc --build"
+  },
   "publishConfig": {
     "access": "public"
   },

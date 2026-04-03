@@ -5,6 +5,21 @@ const logger = createLogger("error-handler");
 
 type ToolHandler = (input: unknown) => Promise<ToolResult>;
 
+const CREDENTIAL_HINTS: Record<string, string> = {
+  onemap: "Fix: export SG_API_ONEMAP_EMAIL=<email> SG_API_ONEMAP_PASSWORD=<pass>, or: sg-data init --onemap-email <email> --onemap-password <pass>",
+  ura: "Fix: export SG_API_URA_KEY=<key>, or: sg-data init --ura-key <key>",
+  lta: "Fix: export SG_API_LTA_KEY=<key>, or: sg-data init --lta-key <key>",
+};
+
+const enrichCredentialAction = (source: string, statusCode?: number): string | undefined => {
+  if (statusCode !== 401 && statusCode !== 403) return undefined;
+  const key = source.toLowerCase().replace(/\s+/g, "");
+  if (key.includes("onemap")) return CREDENTIAL_HINTS["onemap"];
+  if (key.includes("ura")) return CREDENTIAL_HINTS["ura"];
+  if (key.includes("lta")) return CREDENTIAL_HINTS["lta"];
+  return undefined;
+};
+
 const formatErrorText = (payload: ToolErrorPayload): string => {
   const retryHint = payload.retryable ? "Yes" : "No";
   const lines = [
@@ -54,13 +69,15 @@ export const toToolErrorPayload = (error: unknown, tool: string): ToolErrorPaylo
   }
 
   if (error instanceof ApiError) {
+    const credHint = enrichCredentialAction(error.source, error.statusCode);
+    const action = credHint ?? error.suggestedAction;
     return {
       source: error.source,
       tool: error.tool ?? tool,
       code: error.code,
       retryable: error.retryable,
       message: error.message,
-      ...(error.suggestedAction !== undefined ? { suggestedAction: error.suggestedAction } : {}),
+      ...(action !== undefined ? { suggestedAction: action } : {}),
       statusCode: error.statusCode,
       ...(error.details === undefined ? {} : { details: error.details }),
     };

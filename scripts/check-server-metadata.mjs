@@ -22,22 +22,18 @@ if (!Array.isArray(serverMetadata.packages) || serverMetadata.packages.length ==
   throw new Error("server.json must declare at least one package install source.");
 }
 
-if (!Array.isArray(serverMetadata.remotes) || serverMetadata.remotes.length === 0) {
-  throw new Error("server.json must declare at least one remote MCP endpoint.");
-}
-
-for (const remote of serverMetadata.remotes) {
-  if (remote.type !== "streamable-http") {
-    throw new Error(`server.json remote ${remote.url ?? "<missing-url>"} must declare streamable-http transport.`);
-  }
-
-  if (typeof remote.url !== "string" || remote.url.trim() === "") {
-    throw new Error("server.json remote entries must include a non-empty url.");
-  }
-
-  const remoteUrl = new URL(remote.url);
-  if (remoteUrl.pathname !== "/mcp") {
-    throw new Error(`server.json remote ${remote.url} must point directly at /mcp.`);
+if (Array.isArray(serverMetadata.remotes)) {
+  for (const remote of serverMetadata.remotes) {
+    if (remote.type !== "streamable-http") {
+      throw new Error(`server.json remote ${remote.url ?? "<missing-url>"} must declare streamable-http transport.`);
+    }
+    if (typeof remote.url !== "string" || remote.url.trim() === "") {
+      throw new Error("server.json remote entries must include a non-empty url.");
+    }
+    const remoteUrl = new URL(remote.url);
+    if (remoteUrl.pathname !== "/mcp") {
+      throw new Error(`server.json remote ${remote.url} must point directly at /mcp.`);
+    }
   }
 }
 

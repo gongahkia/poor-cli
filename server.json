@@ -8,12 +8,6 @@
     "url": "https://github.com/gongahkia/sg-skills",
     "source": "github"
   },
-  "remotes": [
-    {
-      "type": "streamable-http",
-      "url": "https://mcp.example.com/mcp"
-    }
-  ],
   "packages": [
     {
       "registryType": "npm",
