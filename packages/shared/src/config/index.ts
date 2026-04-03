@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
 import type { OutputFormat } from "../types/index.js";
+import { resolveStatePath } from "../state-dir.js";
 import { TTL } from "./ttl.js";
 import type { TTLKey } from "./ttl.js";
 import { RATE_LIMITS } from "./rate-limits.js";
@@ -34,7 +33,7 @@ const DEFAULT_CONFIG: Config = {
 let cachedConfig: Config | null = null;
 
 const loadFileConfig = (): Partial<Config> => {
-  const configPath = join(homedir(), ".sg-apis", "config.json");
+  const configPath = resolveStatePath("config.json");
   try {
     const raw = readFileSync(configPath, "utf-8");
     return JSON.parse(raw) as Partial<Config>;

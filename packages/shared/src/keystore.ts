@@ -1,14 +1,14 @@
 import { mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { homedir } from "node:os";
+import { dirname } from "node:path";
 import Database from "better-sqlite3";
 import type { KeyInfo } from "./types/index.js";
+import { resolveStatePath } from "./state-dir.js";
 
 export class Keystore {
   private readonly db: Database.Database;
 
   constructor(dbPath?: string) {
-    const path = dbPath ?? join(homedir(), ".sg-apis", "keys.db");
+    const path = dbPath ?? resolveStatePath("keys.db");
     if (path !== ":memory:") {
       mkdirSync(dirname(path), { recursive: true });
     }

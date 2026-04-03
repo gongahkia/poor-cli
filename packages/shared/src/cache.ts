@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { homedir } from "node:os";
+import { dirname } from "node:path";
 import Database from "better-sqlite3";
+import { resolveStatePath } from "./state-dir.js";
 
 export class Cache {
   private readonly db: Database.Database;
@@ -9,7 +9,7 @@ export class Cache {
   private misses = 0;
 
   constructor(dbPath?: string) {
-    const path = dbPath ?? join(homedir(), ".sg-apis", "cache.db");
+    const path = dbPath ?? resolveStatePath("cache.db");
     if (path !== ":memory:") {
       mkdirSync(dirname(path), { recursive: true });
     }
