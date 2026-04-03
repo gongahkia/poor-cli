@@ -20,6 +20,10 @@ if ! command -v dpkg-deb >/dev/null 2>&1; then
     printf 'dpkg-deb is required to build a .deb package\n' >&2
     exit 1
 fi
+if ! command -v python3 >/dev/null 2>&1; then # needed for icon/man gen
+    printf 'python3 is required\n' >&2
+    exit 1
+fi
 
 BUILD_ARGS=(build --release -p walk --manifest-path "$ROOT_DIR/Cargo.toml")
 if [[ -n "$TARGET" ]]; then
@@ -45,6 +49,11 @@ if [[ "${WALK_SKIP_BUILD:-0}" != "1" ]]; then
     cargo "${BUILD_ARGS[@]}"
 fi
 
+if [ ! -f "$BINARY_PATH" ]; then
+    printf "Error: Binary not found at %s. Run 'cargo build --release -p walk' first.\n" "$BINARY_PATH" >&2
+    exit 1
+fi
+
 mkdir -p \
     "$PACKAGE_DIR/DEBIAN" \
     "$PACKAGE_DIR/usr/bin" \
@@ -55,6 +64,12 @@ mkdir -p \
 cp "$BINARY_PATH" "$PACKAGE_DIR/usr/bin/walk"
 cp "$ROOT_DIR/packaging/linux/walk.desktop" \
     "$PACKAGE_DIR/usr/share/applications/walk.desktop"
+
+# include shell integration scripts
+if [ -d "$ROOT_DIR/shell-integration" ]; then
+    mkdir -p "$PACKAGE_DIR/usr/share/walk/shell-integration"
+    cp "$ROOT_DIR/shell-integration"/* "$PACKAGE_DIR/usr/share/walk/shell-integration/"
+fi
 
 python3 - "$PACKAGE_DIR/usr/share/icons/hicolor/256x256/apps/walk.png" <<'PY'
 import base64
