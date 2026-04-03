@@ -1457,7 +1457,7 @@ export const handleMacroBrief = async (
       deltaPercent: soraDelta,
     },
     banking: {
-      metric: bankingMetric === null ? "Banking metric" : formatMetricLabel(bankingMetric.key),
+      metric: bankingMetric === null ? "MAS Banking (unavailable)" : formatMetricLabel(bankingMetric.key),
       key: bankingMetric?.key ?? null,
       value: bankingMetric?.value ?? null,
     },
@@ -1482,7 +1482,7 @@ export const handleMacroBrief = async (
       { label: "FX period delta %", value: fxDelta, source: "MAS" },
       { label: soraMetric === null ? "SORA" : formatMetricLabel(soraMetric.key), value: soraMetric?.value ?? null, source: "MAS" },
       { label: "SORA period delta %", value: soraDelta, source: "MAS" },
-      { label: bankingMetric === null ? "Banking metric" : formatMetricLabel(bankingMetric.key), value: bankingMetric?.value ?? null, source: "MAS" },
+      { label: bankingMetric === null ? "MAS Banking (unavailable)" : formatMetricLabel(bankingMetric.key), value: bankingMetric?.value ?? null, source: "MAS" },
       { label: "GDP period", value: typeof latestGdp?.["period"] === "string" ? latestGdp["period"] : null, source: "SingStat" },
       { label: "GDP at current prices", value: typeof latestGdp?.["value"] === "number" || typeof latestGdp?.["value"] === "string" ? latestGdp["value"] : null, source: "SingStat" },
       { label: "GDP table ID", value: gdpTableId, source: "SingStat" },
