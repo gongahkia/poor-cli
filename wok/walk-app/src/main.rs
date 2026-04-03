@@ -312,12 +312,8 @@ struct PaneRuntime {
 
 const ATTACHED_DAEMON_PANE_ID: u64 = 0;
 
-fn attached_daemon_pane_id(_local_pane_id: PaneId) -> u64 {
-    ATTACHED_DAEMON_PANE_ID
-}
-
-fn attached_mode_blocks_workspace_effect(_effect: &WorkspaceEffect) -> bool {
-    true
+fn attached_mode_blocks_workspace_effect(effect: &WorkspaceEffect) -> bool {
+    matches!(effect, WorkspaceEffect::SaveSession(_) | WorkspaceEffect::LoadSession(_))
 }
 
 #[derive(Clone, Default)]
@@ -357,6 +353,7 @@ struct WalkHandler {
     remote_control: Option<RemoteControlServer>,
     remote_socket_path: Option<PathBuf>,
     attached_session: Option<String>,
+    daemon_pane_by_local: HashMap<PaneId, u64>,
     status_message: Option<String>,
     status_bar_state: StatusBarState,
     status_bar_refresh_interval: Duration,
@@ -429,6 +426,7 @@ impl WalkHandler {
             remote_control,
             remote_socket_path,
             attached_session: None,
+            daemon_pane_by_local: HashMap::new(),
             status_message: None,
             status_bar_state: StatusBarState::default(),
             status_bar_refresh_interval: Duration::from_secs(5),
@@ -455,6 +453,10 @@ impl WalkHandler {
 
     fn active_pane_id(&self) -> Option<PaneId> {
         self.workspace.active_pane_id()
+    }
+
+    fn attached_daemon_pane_id(&self, local_pane_id: PaneId) -> u64 {
+        self.daemon_pane_by_local.get(&local_pane_id).copied().unwrap_or(ATTACHED_DAEMON_PANE_ID)
     }
 
     fn active_pane(&self) -> Option<&PaneRuntime> {
@@ -700,6 +702,7 @@ impl WalkHandler {
                 continue;
             }
 
+            let daemon_pane_id = self.attached_daemon_pane_id(pane_id);
             let Some(pane) = self.panes.get_mut(&pane_id) else {
                 continue;
             };
@@ -722,7 +725,6 @@ impl WalkHandler {
                     warn!("failed to resize pane terminal: {error}");
                 }
                 if let Some(session) = self.attached_session.as_deref() {
-                    let daemon_pane_id = attached_daemon_pane_id(pane_id);
                     if let Err(error) =
                         walk_app::daemon::resize_pane(session, daemon_pane_id, cols, rows)
                     {
@@ -2022,7 +2024,7 @@ impl WalkHandler {
     fn send_to_pty(&mut self, data: &[u8]) {
         if let Some(session) = self.attached_session.as_deref() {
             if let Some(pane_id) = self.active_pane_id() {
-                let daemon_pane_id = attached_daemon_pane_id(pane_id);
+                let daemon_pane_id = self.attached_daemon_pane_id(pane_id);
                 if let Err(error) = walk_app::daemon::send_input(session, daemon_pane_id, data) {
                     warn!("failed to send daemon input for session '{session}': {error}");
                 }
@@ -5014,17 +5016,36 @@ mod tests {
     }
 
     #[test]
-    fn test_attached_daemon_pane_id_maps_to_single_runtime_pane() {
-        assert_eq!(attached_daemon_pane_id(1), 0);
-        assert_eq!(attached_daemon_pane_id(99), 0);
+    fn test_attached_daemon_pane_id_defaults_to_zero() {
+        let handler = WalkHandler::new(WalkConfig::default());
+        assert_eq!(handler.attached_daemon_pane_id(1), ATTACHED_DAEMON_PANE_ID);
+        assert_eq!(handler.attached_daemon_pane_id(99), ATTACHED_DAEMON_PANE_ID);
     }
 
     #[test]
-    fn test_attached_mode_blocks_workspace_mutations() {
+    fn test_attached_daemon_pane_id_uses_mapping() {
+        let mut handler = WalkHandler::new(WalkConfig::default());
+        handler.daemon_pane_by_local.insert(5, 42);
+        assert_eq!(handler.attached_daemon_pane_id(5), 42);
+        assert_eq!(handler.attached_daemon_pane_id(6), ATTACHED_DAEMON_PANE_ID);
+    }
+
+    #[test]
+    fn test_attached_mode_blocks_session_save_load() {
         assert!(attached_mode_blocks_workspace_effect(
-            &WorkspaceEffect::SplitVertical
+            &WorkspaceEffect::SaveSession("x".to_string())
         ));
         assert!(attached_mode_blocks_workspace_effect(
+            &WorkspaceEffect::LoadSession("x".to_string())
+        ));
+    }
+
+    #[test]
+    fn test_attached_mode_allows_splits_and_tabs() {
+        assert!(!attached_mode_blocks_workspace_effect(
+            &WorkspaceEffect::SplitVertical
+        ));
+        assert!(!attached_mode_blocks_workspace_effect(
             &WorkspaceEffect::NewTab
         ));
     }

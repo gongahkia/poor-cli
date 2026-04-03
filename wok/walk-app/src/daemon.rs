@@ -1,9 +1,10 @@
 //! Lightweight daemon/session lifecycle management.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use crate::ipc::{read_frame, write_frame, ClientMessage, ServerMessage};
+use crate::ipc::{read_frame, write_frame, ClientMessage, PaneInfo, ServerMessage};
 use walk_terminal::shell::ShellType;
 use walk_terminal::terminal::Terminal;
 
@@ -20,11 +21,153 @@ pub struct SessionSummary {
     pub running: bool,
 }
 
+struct DaemonPane {
+    terminal: Terminal,
+    cols: u16,
+    rows: u16,
+}
+
+struct DaemonSession {
+    name: String,
+    shell: ShellType,
+    env: HashMap<String, String>,
+    panes: HashMap<u64, DaemonPane>,
+    focused_pane: u64,
+    next_pane_id: u64,
+    attached_clients: usize,
+    running: bool,
+}
+
+impl DaemonSession {
+    fn new(
+        name: &str,
+        shell: &ShellType,
+        env: HashMap<String, String>,
+        terminal: Terminal,
+    ) -> Self {
+        let cols = terminal.cols();
+        let rows = terminal.rows();
+        let mut panes = HashMap::new();
+        panes.insert(0, DaemonPane { terminal, cols, rows });
+        Self {
+            name: name.to_string(),
+            shell: shell.clone(),
+            env,
+            panes,
+            focused_pane: 0,
+            next_pane_id: 1,
+            attached_clients: 0,
+            running: true,
+        }
+    }
+    fn pane_count(&self) -> usize { self.panes.len() }
+    fn process_pty_output(&mut self) {
+        for pane in self.panes.values_mut() {
+            pane.terminal.process_pty_output();
+        }
+    }
+    fn snapshot(&self) -> serde_json::Value {
+        let focused = self.panes.get(&self.focused_pane)
+            .or_else(|| self.panes.values().next());
+        let panes_json: Vec<_> = self.pane_ids().iter().map(|&id| {
+            let pane = self.panes.get(&id).unwrap();
+            serde_json::json!({
+                "pane_id": id,
+                "rows": pane.terminal.state.text_rows().into_iter().map(|row| {
+                    serde_json::json!({
+                        "absolute_row": row.absolute_row,
+                        "viewport_row": row.viewport_row,
+                        "text": row.text
+                    })
+                }).collect::<Vec<_>>(),
+                "display_offset": pane.terminal.state.display_offset(),
+                "cols": pane.terminal.cols(),
+                "rows_visible": pane.terminal.rows()
+            })
+        }).collect();
+        serde_json::json!({
+            "session": self.name,
+            "pane_count": self.pane_count(),
+            "attached_clients": self.attached_clients,
+            "rows": focused.map(|p| p.terminal.state.text_rows().into_iter().map(|row| {
+                serde_json::json!({
+                    "absolute_row": row.absolute_row,
+                    "viewport_row": row.viewport_row,
+                    "text": row.text
+                })
+            }).collect::<Vec<_>>()).unwrap_or_default(),
+            "display_offset": focused.map(|p| p.terminal.state.display_offset()).unwrap_or(0),
+            "cols": focused.map(|p| p.terminal.cols()).unwrap_or(80),
+            "rows_visible": focused.map(|p| p.terminal.rows()).unwrap_or(24),
+            "panes": panes_json
+        })
+    }
+    fn handle_input(&self, pane_id: u64, data: &[u8]) -> ServerMessage {
+        match self.panes.get(&pane_id) {
+            Some(pane) => pane.terminal.send_input(data).map_or_else(
+                |error| ServerMessage::Error { message: error.to_string() },
+                |()| ServerMessage::Ack,
+            ),
+            None => ServerMessage::Error { message: format!("pane {pane_id} not found") },
+        }
+    }
+    fn handle_resize(&mut self, pane_id: u64, cols: u16, rows: u16) -> ServerMessage {
+        match self.panes.get_mut(&pane_id) {
+            Some(pane) => {
+                pane.cols = cols;
+                pane.rows = rows;
+                pane.terminal.resize(cols, rows).map_or_else(
+                    |error| ServerMessage::Error { message: error.to_string() },
+                    |()| ServerMessage::Ack,
+                )
+            }
+            None => ServerMessage::Error { message: format!("pane {pane_id} not found") },
+        }
+    }
+    fn create_pane(&mut self, _direction: &str) -> ServerMessage {
+        let id = self.next_pane_id;
+        self.next_pane_id += 1;
+        match Terminal::new(&self.shell, 80, 24, 10_000, self.env.clone(), None) {
+            Ok(terminal) => {
+                let cols = terminal.cols();
+                let rows = terminal.rows();
+                self.panes.insert(id, DaemonPane { terminal, cols, rows });
+                ServerMessage::PaneCreated { pane_id: id }
+            }
+            Err(e) => ServerMessage::Error { message: format!("failed to create pane: {e}") },
+        }
+    }
+    fn close_pane(&mut self, pane_id: u64) -> ServerMessage {
+        if self.panes.len() <= 1 {
+            return ServerMessage::Error { message: "cannot close last pane".to_string() };
+        }
+        if self.panes.remove(&pane_id).is_some() {
+            if self.focused_pane == pane_id {
+                self.focused_pane = self.panes.keys().copied().min().unwrap_or(0);
+            }
+            ServerMessage::Ack
+        } else {
+            ServerMessage::Error { message: format!("pane {pane_id} not found") }
+        }
+    }
+    fn pane_ids(&self) -> Vec<u64> {
+        let mut ids: Vec<u64> = self.panes.keys().copied().collect();
+        ids.sort_unstable();
+        ids
+    }
+    fn pane_list(&self) -> Vec<PaneInfo> {
+        self.pane_ids().iter().map(|&id| {
+            let pane = self.panes.get(&id).unwrap();
+            PaneInfo { pane_id: id, cols: pane.cols, rows: pane.rows }
+        }).collect()
+    }
+}
+
 #[cfg(unix)]
 mod imp {
     use super::{
-        read_frame, write_frame, ClientMessage, Duration, Instant, Path, PathBuf, ServerMessage,
-        SessionSummary, ShellType, Terminal,
+        read_frame, write_frame, ClientMessage, DaemonSession, Duration, Instant, PaneInfo, Path,
+        PathBuf, ServerMessage, SessionSummary, ShellType, Terminal,
     };
     use std::collections::HashMap;
     use std::fs;
@@ -65,103 +208,58 @@ mod imp {
         fs::set_permissions(&socket, fs::Permissions::from_mode(0o600))?;
         listener.set_nonblocking(true)?;
 
-        let mut attached_clients = 0usize;
-        let pane_count = 1usize;
-        let mut running = true;
+        let env = daemon_terminal_env(name);
+        let terminal = Terminal::new(shell, 80, 24, 10_000, env.clone(), None)?;
+        let mut session = DaemonSession::new(name, shell, env, terminal);
         let mut last_housekeeping = Instant::now();
-        let mut terminal = Terminal::new(shell, 80, 24, 10_000, daemon_terminal_env(name), None)?;
 
-        while running {
-            terminal.process_pty_output();
+        while session.running {
+            session.process_pty_output();
             match listener.accept() {
                 Ok((mut stream, _)) => {
                     let response = match read_frame::<ClientMessage>(&mut stream) {
                         Ok(message) => match message {
                             ClientMessage::Attach { .. } => {
-                                attached_clients = attached_clients.saturating_add(1);
+                                session.attached_clients = session.attached_clients.saturating_add(1);
                                 ServerMessage::SessionState {
                                     session: name.to_string(),
-                                    pane_count,
-                                    attached_clients,
+                                    pane_count: session.pane_count(),
+                                    attached_clients: session.attached_clients,
                                     running: true,
                                 }
                             }
                             ClientMessage::Detach { .. } => {
-                                attached_clients = attached_clients.saturating_sub(1);
+                                session.attached_clients = session.attached_clients.saturating_sub(1);
                                 ServerMessage::Ack
                             }
                             ClientMessage::SessionState { .. } => ServerMessage::SessionState {
                                 session: name.to_string(),
-                                pane_count,
-                                attached_clients,
+                                pane_count: session.pane_count(),
+                                attached_clients: session.attached_clients,
                                 running: true,
                             },
                             ClientMessage::Kill { .. } => {
-                                running = false;
+                                session.running = false;
                                 ServerMessage::Ack
                             }
                             ClientMessage::Snapshot => ServerMessage::Snapshot {
-                                payload: serde_json::json!({
-                                    "session": name,
-                                    "pane_count": pane_count,
-                                    "attached_clients": attached_clients,
-                                    "rows": terminal.state.text_rows().into_iter().map(|row| {
-                                        serde_json::json!({
-                                            "absolute_row": row.absolute_row,
-                                            "viewport_row": row.viewport_row,
-                                            "text": row.text
-                                        })
-                                    }).collect::<Vec<_>>(),
-                                    "display_offset": terminal.state.display_offset(),
-                                    "cols": terminal.cols(),
-                                    "rows_visible": terminal.rows(),
-                                    "panes": [{
-                                        "pane_id": 0,
-                                        "rows": terminal.state.text_rows().into_iter().map(|row| {
-                                            serde_json::json!({
-                                                "absolute_row": row.absolute_row,
-                                                "viewport_row": row.viewport_row,
-                                                "text": row.text
-                                            })
-                                        }).collect::<Vec<_>>(),
-                                        "display_offset": terminal.state.display_offset(),
-                                        "cols": terminal.cols(),
-                                        "rows_visible": terminal.rows()
-                                    }]
-                                }),
+                                payload: session.snapshot(),
                             },
                             ClientMessage::Input { pane_id, data } => {
-                                if pane_id != 0 {
-                                    ServerMessage::Error {
-                                        message: format!("pane {pane_id} not found"),
-                                    }
-                                } else {
-                                    terminal.send_input(&data).map_or_else(
-                                        |error| ServerMessage::Error {
-                                            message: error.to_string(),
-                                        },
-                                        |()| ServerMessage::Ack,
-                                    )
-                                }
+                                session.handle_input(pane_id, &data)
                             }
-                            ClientMessage::Resize {
-                                pane_id,
-                                cols,
-                                rows,
-                            } => {
-                                if pane_id != 0 {
-                                    ServerMessage::Error {
-                                        message: format!("pane {pane_id} not found"),
-                                    }
-                                } else {
-                                    terminal.resize(cols, rows).map_or_else(
-                                        |error| ServerMessage::Error {
-                                            message: error.to_string(),
-                                        },
-                                        |()| ServerMessage::Ack,
-                                    )
-                                }
+                            ClientMessage::Resize { pane_id, cols, rows } => {
+                                session.handle_resize(pane_id, cols, rows)
                             }
+                            ClientMessage::CreatePane { direction } => {
+                                session.create_pane(&direction)
+                            }
+                            ClientMessage::ClosePane { pane_id } => {
+                                session.close_pane(pane_id)
+                            }
+                            ClientMessage::GetPanes => ServerMessage::Panes {
+                                items: session.pane_list(),
+                            },
                         },
                         Err(error) => ServerMessage::Error {
                             message: error.to_string(),
@@ -354,13 +452,49 @@ mod imp {
             _ => Err("unexpected daemon response".into()),
         }
     }
+
+    /// Create a new pane in a daemon session.
+    pub fn create_pane(name: &str, direction: &str) -> Result<u64, Box<dyn std::error::Error>> {
+        let socket = session_socket_path(name);
+        let mut stream = UnixStream::connect(&socket)?;
+        write_frame(&mut stream, &ClientMessage::CreatePane { direction: direction.to_string() })?;
+        match read_frame::<ServerMessage>(&mut stream)? {
+            ServerMessage::PaneCreated { pane_id } => Ok(pane_id),
+            ServerMessage::Error { message } => Err(message.into()),
+            _ => Err("unexpected daemon response".into()),
+        }
+    }
+
+    /// Close a pane in a daemon session.
+    pub fn close_pane(name: &str, pane_id: u64) -> Result<(), Box<dyn std::error::Error>> {
+        let socket = session_socket_path(name);
+        let mut stream = UnixStream::connect(&socket)?;
+        write_frame(&mut stream, &ClientMessage::ClosePane { pane_id })?;
+        match read_frame::<ServerMessage>(&mut stream)? {
+            ServerMessage::Ack => Ok(()),
+            ServerMessage::Error { message } => Err(message.into()),
+            _ => Err("unexpected daemon response".into()),
+        }
+    }
+
+    /// List panes in a daemon session.
+    pub fn list_panes(name: &str) -> Result<Vec<PaneInfo>, Box<dyn std::error::Error>> {
+        let socket = session_socket_path(name);
+        let mut stream = UnixStream::connect(&socket)?;
+        write_frame(&mut stream, &ClientMessage::GetPanes)?;
+        match read_frame::<ServerMessage>(&mut stream)? {
+            ServerMessage::Panes { items } => Ok(items),
+            ServerMessage::Error { message } => Err(message.into()),
+            _ => Err("unexpected daemon response".into()),
+        }
+    }
 }
 
 #[cfg(not(unix))]
 mod imp {
     use super::{
-        read_frame, write_frame, ClientMessage, Duration, Instant, Path, PathBuf, ServerMessage,
-        SessionSummary, ShellType, Terminal,
+        read_frame, write_frame, ClientMessage, DaemonSession, Duration, Instant, PaneInfo, Path,
+        PathBuf, ServerMessage, SessionSummary, ShellType, Terminal,
     };
     use std::collections::HashMap;
     use std::fs;
@@ -399,103 +533,58 @@ mod imp {
         let port = listener.local_addr()?.port();
         fs::write(&metadata, port.to_string())?;
 
-        let mut attached_clients = 0usize;
-        let pane_count = 1usize;
-        let mut running = true;
+        let env = daemon_terminal_env(name);
+        let terminal = Terminal::new(shell, 80, 24, 10_000, env.clone(), None)?;
+        let mut session = DaemonSession::new(name, shell, env, terminal);
         let mut last_housekeeping = Instant::now();
-        let mut terminal = Terminal::new(shell, 80, 24, 10_000, daemon_terminal_env(name), None)?;
 
-        while running {
-            terminal.process_pty_output();
+        while session.running {
+            session.process_pty_output();
             match listener.accept() {
                 Ok((mut stream, _)) => {
                     let response = match read_frame::<ClientMessage>(&mut stream) {
                         Ok(message) => match message {
                             ClientMessage::Attach { .. } => {
-                                attached_clients = attached_clients.saturating_add(1);
+                                session.attached_clients = session.attached_clients.saturating_add(1);
                                 ServerMessage::SessionState {
                                     session: name.to_string(),
-                                    pane_count,
-                                    attached_clients,
+                                    pane_count: session.pane_count(),
+                                    attached_clients: session.attached_clients,
                                     running: true,
                                 }
                             }
                             ClientMessage::Detach { .. } => {
-                                attached_clients = attached_clients.saturating_sub(1);
+                                session.attached_clients = session.attached_clients.saturating_sub(1);
                                 ServerMessage::Ack
                             }
                             ClientMessage::SessionState { .. } => ServerMessage::SessionState {
                                 session: name.to_string(),
-                                pane_count,
-                                attached_clients,
+                                pane_count: session.pane_count(),
+                                attached_clients: session.attached_clients,
                                 running: true,
                             },
                             ClientMessage::Kill { .. } => {
-                                running = false;
+                                session.running = false;
                                 ServerMessage::Ack
                             }
                             ClientMessage::Snapshot => ServerMessage::Snapshot {
-                                payload: serde_json::json!({
-                                    "session": name,
-                                    "pane_count": pane_count,
-                                    "attached_clients": attached_clients,
-                                    "rows": terminal.state.text_rows().into_iter().map(|row| {
-                                        serde_json::json!({
-                                            "absolute_row": row.absolute_row,
-                                            "viewport_row": row.viewport_row,
-                                            "text": row.text
-                                        })
-                                    }).collect::<Vec<_>>(),
-                                    "display_offset": terminal.state.display_offset(),
-                                    "cols": terminal.cols(),
-                                    "rows_visible": terminal.rows(),
-                                    "panes": [{
-                                        "pane_id": 0,
-                                        "rows": terminal.state.text_rows().into_iter().map(|row| {
-                                            serde_json::json!({
-                                                "absolute_row": row.absolute_row,
-                                                "viewport_row": row.viewport_row,
-                                                "text": row.text
-                                            })
-                                        }).collect::<Vec<_>>(),
-                                        "display_offset": terminal.state.display_offset(),
-                                        "cols": terminal.cols(),
-                                        "rows_visible": terminal.rows()
-                                    }]
-                                }),
+                                payload: session.snapshot(),
                             },
                             ClientMessage::Input { pane_id, data } => {
-                                if pane_id != 0 {
-                                    ServerMessage::Error {
-                                        message: format!("pane {pane_id} not found"),
-                                    }
-                                } else {
-                                    terminal.send_input(&data).map_or_else(
-                                        |error| ServerMessage::Error {
-                                            message: error.to_string(),
-                                        },
-                                        |()| ServerMessage::Ack,
-                                    )
-                                }
+                                session.handle_input(pane_id, &data)
                             }
-                            ClientMessage::Resize {
-                                pane_id,
-                                cols,
-                                rows,
-                            } => {
-                                if pane_id != 0 {
-                                    ServerMessage::Error {
-                                        message: format!("pane {pane_id} not found"),
-                                    }
-                                } else {
-                                    terminal.resize(cols, rows).map_or_else(
-                                        |error| ServerMessage::Error {
-                                            message: error.to_string(),
-                                        },
-                                        |()| ServerMessage::Ack,
-                                    )
-                                }
+                            ClientMessage::Resize { pane_id, cols, rows } => {
+                                session.handle_resize(pane_id, cols, rows)
                             }
+                            ClientMessage::CreatePane { direction } => {
+                                session.create_pane(&direction)
+                            }
+                            ClientMessage::ClosePane { pane_id } => {
+                                session.close_pane(pane_id)
+                            }
+                            ClientMessage::GetPanes => ServerMessage::Panes {
+                                items: session.pane_list(),
+                            },
                         },
                         Err(error) => ServerMessage::Error {
                             message: error.to_string(),
@@ -712,6 +801,54 @@ mod imp {
             _ => Err("unexpected daemon response".into()),
         }
     }
+
+    /// Create a new pane in a daemon session.
+    pub fn create_pane(name: &str, direction: &str) -> Result<u64, Box<dyn std::error::Error>> {
+        let metadata = session_socket_path(name);
+        let Some(port) = read_port(&metadata) else {
+            return Err("session not found".into());
+        };
+        let mut stream = TcpStream::connect(("127.0.0.1", port))?;
+        write_frame(
+            &mut stream,
+            &ClientMessage::CreatePane { direction: direction.to_string() },
+        )?;
+        match read_frame::<ServerMessage>(&mut stream)? {
+            ServerMessage::PaneCreated { pane_id } => Ok(pane_id),
+            ServerMessage::Error { message } => Err(message.into()),
+            _ => Err("unexpected daemon response".into()),
+        }
+    }
+
+    /// Close a pane in a daemon session.
+    pub fn close_pane(name: &str, pane_id: u64) -> Result<(), Box<dyn std::error::Error>> {
+        let metadata = session_socket_path(name);
+        let Some(port) = read_port(&metadata) else {
+            return Err("session not found".into());
+        };
+        let mut stream = TcpStream::connect(("127.0.0.1", port))?;
+        write_frame(&mut stream, &ClientMessage::ClosePane { pane_id })?;
+        match read_frame::<ServerMessage>(&mut stream)? {
+            ServerMessage::Ack => Ok(()),
+            ServerMessage::Error { message } => Err(message.into()),
+            _ => Err("unexpected daemon response".into()),
+        }
+    }
+
+    /// List panes in a daemon session.
+    pub fn list_panes(name: &str) -> Result<Vec<PaneInfo>, Box<dyn std::error::Error>> {
+        let metadata = session_socket_path(name);
+        let Some(port) = read_port(&metadata) else {
+            return Err("session not found".into());
+        };
+        let mut stream = TcpStream::connect(("127.0.0.1", port))?;
+        write_frame(&mut stream, &ClientMessage::GetPanes)?;
+        match read_frame::<ServerMessage>(&mut stream)? {
+            ServerMessage::Panes { items } => Ok(items),
+            ServerMessage::Error { message } => Err(message.into()),
+            _ => Err("unexpected daemon response".into()),
+        }
+    }
 }
 
 /// Return the socket path for a named session.
@@ -779,4 +916,125 @@ pub fn resize_pane(
 /// Fetch one daemon snapshot payload.
 pub fn snapshot_session(session: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     imp::snapshot_session(session)
+}
+
+/// Create a new pane in a daemon session.
+pub fn create_pane(session: &str, direction: &str) -> Result<u64, Box<dyn std::error::Error>> {
+    imp::create_pane(session, direction)
+}
+
+/// Close a pane in a daemon session.
+pub fn close_pane(session: &str, pane_id: u64) -> Result<(), Box<dyn std::error::Error>> {
+    imp::close_pane(session, pane_id)
+}
+
+/// List panes in a daemon session.
+pub fn list_panes(session: &str) -> Result<Vec<crate::ipc::PaneInfo>, Box<dyn std::error::Error>> {
+    imp::list_panes(session)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ipc::ServerMessage;
+
+    fn make_session() -> DaemonSession {
+        let shell = ShellType::Bash;
+        let env = HashMap::new();
+        let terminal = Terminal::new(&shell, 80, 24, 10_000, env.clone(), None)
+            .expect("terminal should spawn");
+        DaemonSession::new("test", &shell, env, terminal)
+    }
+
+    #[test]
+    fn test_daemon_session_initial_state() {
+        let session = make_session();
+        assert_eq!(session.pane_count(), 1);
+        assert_eq!(session.attached_clients, 0);
+        assert!(session.running);
+        assert_eq!(session.focused_pane, 0);
+        assert_eq!(session.next_pane_id, 1);
+    }
+
+    #[test]
+    fn test_daemon_session_create_pane() {
+        let mut session = make_session();
+        let response = session.create_pane("vertical");
+        match response {
+            ServerMessage::PaneCreated { pane_id } => {
+                assert_eq!(pane_id, 1);
+                assert_eq!(session.pane_count(), 2);
+                assert_eq!(session.next_pane_id, 2);
+            }
+            _ => panic!("expected PaneCreated"),
+        }
+    }
+
+    #[test]
+    fn test_daemon_session_close_pane() {
+        let mut session = make_session();
+        session.create_pane("vertical");
+        assert_eq!(session.pane_count(), 2);
+        let response = session.close_pane(1);
+        assert!(matches!(response, ServerMessage::Ack));
+        assert_eq!(session.pane_count(), 1);
+    }
+
+    #[test]
+    fn test_daemon_session_close_last_pane_fails() {
+        let mut session = make_session();
+        let response = session.close_pane(0);
+        assert!(matches!(response, ServerMessage::Error { .. }));
+        assert_eq!(session.pane_count(), 1);
+    }
+
+    #[test]
+    fn test_daemon_session_close_nonexistent_pane() {
+        let mut session = make_session();
+        session.create_pane("vertical");
+        let response = session.close_pane(99);
+        assert!(matches!(response, ServerMessage::Error { .. }));
+        assert_eq!(session.pane_count(), 2);
+    }
+
+    #[test]
+    fn test_daemon_session_pane_list() {
+        let mut session = make_session();
+        session.create_pane("vertical");
+        let list = session.pane_list();
+        assert_eq!(list.len(), 2);
+        assert!(list.iter().any(|p| p.pane_id == 0));
+        assert!(list.iter().any(|p| p.pane_id == 1));
+    }
+
+    #[test]
+    fn test_daemon_session_close_focused_pane_updates_focus() {
+        let mut session = make_session();
+        session.create_pane("vertical");
+        session.focused_pane = 1;
+        session.close_pane(1);
+        assert_eq!(session.focused_pane, 0);
+    }
+
+    #[test]
+    fn test_daemon_session_handle_input_nonexistent_pane() {
+        let session = make_session();
+        let response = session.handle_input(99, b"hello");
+        assert!(matches!(response, ServerMessage::Error { .. }));
+    }
+
+    #[test]
+    fn test_daemon_session_handle_resize_nonexistent_pane() {
+        let mut session = make_session();
+        let response = session.handle_resize(99, 100, 50);
+        assert!(matches!(response, ServerMessage::Error { .. }));
+    }
+
+    #[test]
+    fn test_daemon_session_snapshot_has_panes_array() {
+        let session = make_session();
+        let snap = session.snapshot();
+        assert!(snap.get("panes").and_then(|v| v.as_array()).is_some());
+        assert_eq!(snap["pane_count"], 1);
+    }
 }

@@ -16,53 +16,69 @@ impl WalkHandler {
             }
         };
 
-        let Some(pane_id) = self.active_pane_id() else {
-            return;
-        };
-        let daemon_pane_id = attached_daemon_pane_id(pane_id);
+        let daemon_panes = snapshot.get("panes").and_then(Value::as_array);
 
-        let rows = snapshot
-            .get("panes")
-            .and_then(Value::as_array)
-            .and_then(|panes| {
-                panes
-                    .iter()
-                    .find(|pane| {
-                        pane.get("pane_id")
-                            .and_then(Value::as_u64)
-                            .is_some_and(|value| value == daemon_pane_id)
-                    })
-                    .and_then(|pane| pane.get("rows"))
-                    .and_then(Value::as_array)
-            })
-            .or_else(|| snapshot.get("rows").and_then(Value::as_array));
-        let Some(rows) = rows else {
-            return;
-        };
+        // iterate all local panes mapped to daemon panes
+        let local_pane_ids: Vec<PaneId> = self.panes.keys().copied().collect();
+        for local_pane_id in local_pane_ids {
+            let daemon_pane_id = self.attached_daemon_pane_id(local_pane_id);
 
-        let Some(pane) = self.panes.get_mut(&pane_id) else {
-            return;
-        };
-
-        let mut latest_row = pane.daemon_last_synced_row;
-        let mut new_lines = Vec::new();
-        for row in rows {
-            let Some(absolute_row) = row.get("absolute_row").and_then(Value::as_u64) else {
+            let rows = daemon_panes
+                .and_then(|panes| {
+                    panes
+                        .iter()
+                        .find(|pane| {
+                            pane.get("pane_id")
+                                .and_then(Value::as_u64)
+                                .is_some_and(|value| value == daemon_pane_id)
+                        })
+                        .and_then(|pane| pane.get("rows"))
+                        .and_then(Value::as_array)
+                })
+                .or_else(|| {
+                    if daemon_pane_id == 0 {
+                        snapshot.get("rows").and_then(Value::as_array)
+                    } else {
+                        None
+                    }
+                });
+            let Some(rows) = rows else {
                 continue;
             };
-            let Some(text) = row.get("text").and_then(Value::as_str) else {
+
+            let Some(pane) = self.panes.get_mut(&local_pane_id) else {
                 continue;
             };
-            if latest_row.map_or(true, |latest| absolute_row as usize > latest) {
-                new_lines.push(text.to_string());
-                latest_row = Some(absolute_row as usize);
+
+            let mut latest_row = pane.daemon_last_synced_row;
+            let mut new_lines = Vec::new();
+            let mut reset_detected = false;
+            for row in rows {
+                let Some(absolute_row) = row.get("absolute_row").and_then(Value::as_u64) else {
+                    continue;
+                };
+                let Some(text) = row.get("text").and_then(Value::as_str) else {
+                    continue;
+                };
+                // detect reset: absolute_row went backwards
+                if latest_row.is_some_and(|latest| (absolute_row as usize) < latest.saturating_sub(100)) {
+                    reset_detected = true;
+                }
+                if reset_detected || latest_row.map_or(true, |latest| absolute_row as usize > latest) {
+                    new_lines.push(text.to_string());
+                    latest_row = Some(absolute_row as usize);
+                }
             }
-        }
 
-        if !new_lines.is_empty() {
-            pane.terminal.restore_scrollback(&new_lines);
-            pane.daemon_last_synced_row = latest_row;
-            self.needs_redraw = true;
+            if reset_detected {
+                pane.daemon_last_synced_row = None;
+            }
+
+            if !new_lines.is_empty() {
+                pane.terminal.restore_scrollback(&new_lines);
+                pane.daemon_last_synced_row = latest_row;
+                self.needs_redraw = true;
+            }
         }
     }
 

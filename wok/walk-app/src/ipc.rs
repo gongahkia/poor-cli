@@ -45,6 +45,18 @@ pub enum ClientMessage {
     },
     /// Request a full state snapshot.
     Snapshot,
+    /// Create a new pane. Direction is informational ("vertical", "horizontal").
+    CreatePane {
+        /// Split direction hint.
+        direction: String,
+    },
+    /// Close an existing pane.
+    ClosePane {
+        /// Target pane id.
+        pane_id: u64,
+    },
+    /// List all panes.
+    GetPanes,
 }
 
 /// Daemon-to-client messages.
@@ -73,6 +85,27 @@ pub enum ServerMessage {
         /// Snapshot payload.
         payload: serde_json::Value,
     },
+    /// Pane was created.
+    PaneCreated {
+        /// New pane id.
+        pane_id: u64,
+    },
+    /// List of panes.
+    Panes {
+        /// Pane info items.
+        items: Vec<PaneInfo>,
+    },
+}
+
+/// Information about one pane.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaneInfo {
+    /// Pane identifier.
+    pub pane_id: u64,
+    /// Column count.
+    pub cols: u16,
+    /// Row count.
+    pub rows: u16,
 }
 
 /// Write one length-prefixed JSON message.
@@ -118,5 +151,89 @@ mod tests {
         let mut cursor = std::io::Cursor::new(buffer);
         let message: ClientMessage = read_frame(&mut cursor).expect("frame should read");
         assert!(matches!(message, ClientMessage::Attach { .. }));
+    }
+
+    #[test]
+    fn test_round_trip_create_pane() {
+        let mut buffer = Vec::new();
+        write_frame(
+            &mut buffer,
+            &ClientMessage::CreatePane {
+                direction: "vertical".to_string(),
+            },
+        )
+        .expect("frame should write");
+        let mut cursor = std::io::Cursor::new(buffer);
+        let msg: ClientMessage = read_frame(&mut cursor).expect("frame should read");
+        match msg {
+            ClientMessage::CreatePane { direction } => assert_eq!(direction, "vertical"),
+            _ => panic!("expected CreatePane"),
+        }
+    }
+
+    #[test]
+    fn test_round_trip_close_pane() {
+        let mut buffer = Vec::new();
+        write_frame(
+            &mut buffer,
+            &ClientMessage::ClosePane { pane_id: 42 },
+        )
+        .expect("frame should write");
+        let mut cursor = std::io::Cursor::new(buffer);
+        let msg: ClientMessage = read_frame(&mut cursor).expect("frame should read");
+        match msg {
+            ClientMessage::ClosePane { pane_id } => assert_eq!(pane_id, 42),
+            _ => panic!("expected ClosePane"),
+        }
+    }
+
+    #[test]
+    fn test_round_trip_get_panes() {
+        let mut buffer = Vec::new();
+        write_frame(&mut buffer, &ClientMessage::GetPanes).expect("frame should write");
+        let mut cursor = std::io::Cursor::new(buffer);
+        let msg: ClientMessage = read_frame(&mut cursor).expect("frame should read");
+        assert!(matches!(msg, ClientMessage::GetPanes));
+    }
+
+    #[test]
+    fn test_round_trip_pane_created() {
+        let mut buffer = Vec::new();
+        write_frame(
+            &mut buffer,
+            &ServerMessage::PaneCreated { pane_id: 7 },
+        )
+        .expect("frame should write");
+        let mut cursor = std::io::Cursor::new(buffer);
+        let msg: ServerMessage = read_frame(&mut cursor).expect("frame should read");
+        match msg {
+            ServerMessage::PaneCreated { pane_id } => assert_eq!(pane_id, 7),
+            _ => panic!("expected PaneCreated"),
+        }
+    }
+
+    #[test]
+    fn test_round_trip_panes() {
+        let items = vec![
+            PaneInfo { pane_id: 0, cols: 80, rows: 24 },
+            PaneInfo { pane_id: 1, cols: 40, rows: 24 },
+        ];
+        let mut buffer = Vec::new();
+        write_frame(
+            &mut buffer,
+            &ServerMessage::Panes { items },
+        )
+        .expect("frame should write");
+        let mut cursor = std::io::Cursor::new(buffer);
+        let msg: ServerMessage = read_frame(&mut cursor).expect("frame should read");
+        match msg {
+            ServerMessage::Panes { items } => {
+                assert_eq!(items.len(), 2);
+                assert_eq!(items[0].pane_id, 0);
+                assert_eq!(items[1].pane_id, 1);
+                assert_eq!(items[1].cols, 40);
+            }
+            _ => panic!("expected Panes"),
+        }
     }
 }
