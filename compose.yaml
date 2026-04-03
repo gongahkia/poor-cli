@@ -12,7 +12,7 @@ services:
       SG_APIS_OIDC_CLOCK_SKEW_SEC: ${SG_APIS_OIDC_CLOCK_SKEW_SEC:-60}
       SG_APIS_TOOLSETS: ${SG_APIS_TOOLSETS:-public,briefs,query,health,ops}
       SG_APIS_LOG_LEVEL: ${SG_APIS_LOG_LEVEL:-info}
-      SG_APIS_ARTIFACT_DB_PATH: /var/lib/sg-apis/artifacts.db
+      SG_APIS_STATE_DIR: /var/lib/sg-apis
       SG_API_ONEMAP_EMAIL: ${SG_API_ONEMAP_EMAIL:-}
       SG_API_ONEMAP_PASSWORD: ${SG_API_ONEMAP_PASSWORD:-}
       SG_API_URA_KEY: ${SG_API_URA_KEY:-}

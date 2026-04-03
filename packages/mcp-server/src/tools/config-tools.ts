@@ -34,7 +34,7 @@ export const configToolDefinitions: readonly RegisteredToolDefinition[] = [
 
   {
     name: "sg_config_set",
-    description: "Update sg-apis-mcp configuration. Changes persist in ~/.sg-apis/config.json.",
+    description: "Update sg-apis-mcp configuration. Changes persist in $SG_APIS_STATE_DIR/config.json (default ~/.sg-apis/config.json).",
     surface: "operational",
     inputSchema: ConfigSetSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
