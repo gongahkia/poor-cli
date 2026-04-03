@@ -67,6 +67,14 @@ fn daemon_lifecycle_supports_attach_input_snapshot_and_kill() {
     walk_app::daemon::send_input(&session, 0, command.as_bytes())
         .expect("daemon should accept pane input");
     walk_app::daemon::resize_pane(&session, 0, 100, 30).expect("daemon should resize pane");
+    assert!(
+        walk_app::daemon::send_input(&session, 9, b"echo SHOULD_NOT_APPEAR\n").is_err(),
+        "daemon should reject unknown pane ids for input"
+    );
+    assert!(
+        walk_app::daemon::resize_pane(&session, 9, 80, 24).is_err(),
+        "daemon should reject unknown pane ids for resize"
+    );
 
     let snapshot_contains_output =
         wait_until(Duration::from_secs(5), Duration::from_millis(75), || {

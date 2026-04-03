@@ -117,21 +117,37 @@ mod imp {
                                     "rows_visible": terminal.rows()
                                 }),
                             },
-                            ClientMessage::Input { data, .. } => {
-                                terminal.send_input(&data).map_or_else(
-                                    |error| ServerMessage::Error {
-                                        message: error.to_string(),
-                                    },
-                                    |()| ServerMessage::Ack,
-                                )
+                            ClientMessage::Input { pane_id, data } => {
+                                if pane_id != 0 {
+                                    ServerMessage::Error {
+                                        message: format!("pane {pane_id} not found"),
+                                    }
+                                } else {
+                                    terminal.send_input(&data).map_or_else(
+                                        |error| ServerMessage::Error {
+                                            message: error.to_string(),
+                                        },
+                                        |()| ServerMessage::Ack,
+                                    )
+                                }
                             }
-                            ClientMessage::Resize { cols, rows, .. } => {
-                                terminal.resize(cols, rows).map_or_else(
-                                    |error| ServerMessage::Error {
-                                        message: error.to_string(),
-                                    },
-                                    |()| ServerMessage::Ack,
-                                )
+                            ClientMessage::Resize {
+                                pane_id,
+                                cols,
+                                rows,
+                            } => {
+                                if pane_id != 0 {
+                                    ServerMessage::Error {
+                                        message: format!("pane {pane_id} not found"),
+                                    }
+                                } else {
+                                    terminal.resize(cols, rows).map_or_else(
+                                        |error| ServerMessage::Error {
+                                            message: error.to_string(),
+                                        },
+                                        |()| ServerMessage::Ack,
+                                    )
+                                }
                             }
                         },
                         Err(error) => ServerMessage::Error {
@@ -422,21 +438,37 @@ mod imp {
                                     "rows_visible": terminal.rows()
                                 }),
                             },
-                            ClientMessage::Input { data, .. } => {
-                                terminal.send_input(&data).map_or_else(
-                                    |error| ServerMessage::Error {
-                                        message: error.to_string(),
-                                    },
-                                    |()| ServerMessage::Ack,
-                                )
+                            ClientMessage::Input { pane_id, data } => {
+                                if pane_id != 0 {
+                                    ServerMessage::Error {
+                                        message: format!("pane {pane_id} not found"),
+                                    }
+                                } else {
+                                    terminal.send_input(&data).map_or_else(
+                                        |error| ServerMessage::Error {
+                                            message: error.to_string(),
+                                        },
+                                        |()| ServerMessage::Ack,
+                                    )
+                                }
                             }
-                            ClientMessage::Resize { cols, rows, .. } => {
-                                terminal.resize(cols, rows).map_or_else(
-                                    |error| ServerMessage::Error {
-                                        message: error.to_string(),
-                                    },
-                                    |()| ServerMessage::Ack,
-                                )
+                            ClientMessage::Resize {
+                                pane_id,
+                                cols,
+                                rows,
+                            } => {
+                                if pane_id != 0 {
+                                    ServerMessage::Error {
+                                        message: format!("pane {pane_id} not found"),
+                                    }
+                                } else {
+                                    terminal.resize(cols, rows).map_or_else(
+                                        |error| ServerMessage::Error {
+                                            message: error.to_string(),
+                                        },
+                                        |()| ServerMessage::Ack,
+                                    )
+                                }
                             }
                         },
                         Err(error) => ServerMessage::Error {
