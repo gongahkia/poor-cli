@@ -337,6 +337,30 @@ struct FloatingDragState {
     last_y: f64,
 }
 
+#[derive(Default)]
+#[allow(dead_code)]
+struct RuntimeMetrics {
+    frame_count: u64,
+    last_frame_duration_us: u64,
+    pane_count: usize,
+    replay_snapshot_count: usize,
+    daemon_sync_lag_ms: Option<u64>,
+}
+
+impl RuntimeMetrics {
+    fn summary_line(&self) -> String {
+        let mut parts = vec![
+            format!("frames:{}", self.frame_count),
+            format!("panes:{}", self.pane_count),
+            format!("replays:{}", self.replay_snapshot_count),
+        ];
+        if let Some(lag) = self.daemon_sync_lag_ms {
+            parts.push(format!("sync_lag:{}ms", lag));
+        }
+        parts.join(" ")
+    }
+}
+
 /// Walk application handler.
 struct WalkHandler {
     config: WalkConfig,
@@ -372,6 +396,7 @@ struct WalkHandler {
     redraw_history_ms: VecDeque<f32>,
     theme_overrides: HashMap<String, String>,
     floating_drag: Option<FloatingDragState>,
+    metrics: RuntimeMetrics,
 }
 
 impl WalkHandler {
@@ -445,6 +470,7 @@ impl WalkHandler {
             redraw_history_ms: VecDeque::with_capacity(60),
             theme_overrides: HashMap::new(),
             floating_drag: None,
+            metrics: RuntimeMetrics::default(),
         };
         handler.refresh_plugin_config();
         handler.refresh_plugin_snapshot();
@@ -1579,6 +1605,7 @@ impl WalkHandler {
             format!("atlas {} glyphs {:.1}% full", atlas_entries, atlas_usage),
             format!("scrollback {} rows", active_scrollback),
             format!("session ~{} KiB", total_session_bytes / 1024),
+            self.metrics.summary_line(),
         ]
     }
 
@@ -4212,6 +4239,12 @@ impl AppHandler for WalkHandler {
             }
         }
 
+        self.metrics.pane_count = self.panes.len();
+        self.metrics.replay_snapshot_count = self.panes.values()
+            .map(|p| p.replay_store.len())
+            .sum();
+        self.metrics.frame_count += 1;
+
         self.needs_redraw
     }
 
@@ -5155,5 +5188,29 @@ mod tests {
             String::from_utf8(encoded).expect("utf8"),
             "\u{1b}[57442;5;1u"
         );
+    }
+
+    #[test]
+    fn runtime_metrics_summary_line_without_daemon_lag() {
+        let m = RuntimeMetrics {
+            frame_count: 42,
+            last_frame_duration_us: 500,
+            pane_count: 2,
+            replay_snapshot_count: 10,
+            daemon_sync_lag_ms: None,
+        };
+        assert_eq!(m.summary_line(), "frames:42 panes:2 replays:10");
+    }
+
+    #[test]
+    fn runtime_metrics_summary_line_with_daemon_lag() {
+        let m = RuntimeMetrics {
+            frame_count: 1,
+            last_frame_duration_us: 0,
+            pane_count: 1,
+            replay_snapshot_count: 0,
+            daemon_sync_lag_ms: Some(15),
+        };
+        assert_eq!(m.summary_line(), "frames:1 panes:1 replays:0 sync_lag:15ms");
     }
 }
