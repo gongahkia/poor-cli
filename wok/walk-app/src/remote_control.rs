@@ -347,7 +347,10 @@ mod imp {
                 match Self::read_client(client, &mut requests) {
                     Ok(()) => {}
                     Err(error) => {
-                        warn!("remote control read error for client {}: {error}", client.id);
+                        warn!(
+                            "remote control read error for client {}: {error}",
+                            client.id
+                        );
                         remove_ids.push(client.id);
                     }
                 }
@@ -438,7 +441,8 @@ mod imp {
                     }
                     Ok(bytes_read) => {
                         client.buffer.extend_from_slice(&scratch[..bytes_read]);
-                        if client.buffer.len() > 1_048_576 { // 1 MiB guard
+                        if client.buffer.len() > 1_048_576 {
+                            // 1 MiB guard
                             client.buffer.clear();
                             client.closed = true;
                             break;
@@ -449,7 +453,8 @@ mod imp {
                 }
             }
             while let Some(newline_idx) = client.buffer.iter().position(|byte| *byte == b'\n') {
-                let line = client.buffer
+                let line = client
+                    .buffer
                     .drain(..=newline_idx)
                     .filter(|byte| *byte != b'\n' && *byte != b'\r')
                     .collect::<Vec<_>>();
@@ -460,9 +465,19 @@ mod imp {
             }
             if client.closed && !client.buffer.is_empty() {
                 let trailing = std::mem::take(&mut client.buffer);
-                let start = trailing.iter().position(|b| !b.is_ascii_whitespace()).unwrap_or(trailing.len());
-                let end = trailing.iter().rposition(|b| !b.is_ascii_whitespace()).map_or(0, |i| i + 1);
-                let trimmed = if start >= end { Vec::new() } else { trailing[start..end].to_vec() };
+                let start = trailing
+                    .iter()
+                    .position(|b| !b.is_ascii_whitespace())
+                    .unwrap_or(trailing.len());
+                let end = trailing
+                    .iter()
+                    .rposition(|b| !b.is_ascii_whitespace())
+                    .map_or(0, |i| i + 1);
+                let trimmed = if start >= end {
+                    Vec::new()
+                } else {
+                    trailing[start..end].to_vec()
+                };
                 if !trimmed.is_empty() {
                     Self::decode_request(client.id, &trimmed, requests);
                 }

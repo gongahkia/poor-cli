@@ -19,10 +19,18 @@ fn wait_for_session(name: &str, timeout: Duration) -> bool {
     false
 }
 
-struct SessionCleanup { name: String }
-impl SessionCleanup { fn new(name: String) -> Self { Self { name } } }
+struct SessionCleanup {
+    name: String,
+}
+impl SessionCleanup {
+    fn new(name: String) -> Self {
+        Self { name }
+    }
+}
 impl Drop for SessionCleanup {
-    fn drop(&mut self) { let _ = walk_app::daemon::kill_session(&self.name); }
+    fn drop(&mut self) {
+        let _ = walk_app::daemon::kill_session(&self.name);
+    }
 }
 
 #[test]

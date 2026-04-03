@@ -1905,7 +1905,10 @@ pub(crate) fn collect_block_output_lines(terminal: &Terminal, block: &Block) -> 
     lines
 }
 
-pub(crate) fn build_visible_row_positions(visible_rows: &[usize], blocks: &[Block]) -> Vec<Option<usize>> {
+pub(crate) fn build_visible_row_positions(
+    visible_rows: &[usize],
+    blocks: &[Block],
+) -> Vec<Option<usize>> {
     let mut hidden_rows = vec![false; visible_rows.len()];
 
     for block in blocks {

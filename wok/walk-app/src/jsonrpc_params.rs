@@ -14,15 +14,24 @@ pub(crate) struct RpcError {
 impl RpcError {
     /// `-32601` method not found.
     pub fn method_not_found(msg: impl Into<String>) -> Self {
-        Self { code: -32601, message: msg.into() }
+        Self {
+            code: -32601,
+            message: msg.into(),
+        }
     }
     /// `-32602` invalid params.
     pub fn invalid_params(msg: impl Into<String>) -> Self {
-        Self { code: -32602, message: msg.into() }
+        Self {
+            code: -32602,
+            message: msg.into(),
+        }
     }
     /// `-32000` server/runtime error.
     pub fn server_error(msg: impl Into<String>) -> Self {
-        Self { code: -32000, message: msg.into() }
+        Self {
+            code: -32000,
+            message: msg.into(),
+        }
     }
 }
 
@@ -110,10 +119,9 @@ pub(crate) fn extract_pane_id(params: &Value) -> Result<u64, RpcError> {
 
 /// Extract a row range (start_row, end_row) from params with `-32602` on failure.
 pub(crate) fn extract_row_range(params: &Value) -> Result<(usize, usize), RpcError> {
-    let start = jsonrpc_u64_param(params, 1, "start_row")
-        .map_err(RpcError::invalid_params)? as usize;
-    let end = jsonrpc_u64_param(params, 2, "end_row")
-        .map_err(RpcError::invalid_params)? as usize;
+    let start =
+        jsonrpc_u64_param(params, 1, "start_row").map_err(RpcError::invalid_params)? as usize;
+    let end = jsonrpc_u64_param(params, 2, "end_row").map_err(RpcError::invalid_params)? as usize;
     if start > end {
         return Err(RpcError::invalid_params("start_row must be <= end_row"));
     }
