@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::error::Error;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -123,6 +123,23 @@ enum CliCommand {
     Kill {
         /// Session name.
         name: String,
+    },
+    /// Send one JSON-RPC request to a running Walk instance.
+    Rpc {
+        /// JSON-RPC method name (for example: walk.get_panes).
+        method: String,
+        /// JSON value for request params (object or array).
+        #[arg(long, default_value = "null")]
+        params: String,
+        /// Explicit remote-control socket path. Defaults to $WALK_SOCKET.
+        #[arg(long)]
+        socket: Option<String>,
+        /// Optional JSON-RPC id value. Parsed as JSON, fallback to string.
+        #[arg(long)]
+        id: Option<String>,
+        /// Send as notification (no id, no response expected).
+        #[arg(long, default_value_t = false)]
+        notify: bool,
     },
 }
 
@@ -2140,7 +2157,9 @@ impl WalkHandler {
         let action_name = jsonrpc_string_param(params, 0, "action_name")
             .or_else(|_| jsonrpc_string_param(params, 0, "action"))?;
         let normalized = normalize_remote_action_name(&action_name);
-        let Some(action) = parse_lua_action(&normalized) else {
+        let action_params = jsonrpc_optional_value_param(params, 1, "params");
+        let Some(action) = parse_remote_action_with_params(&normalized, action_params.as_ref())
+        else {
             return Err(format!("unknown action '{action_name}'"));
         };
         self.handle_action(action);
@@ -7772,6 +7791,51 @@ fn parse_shell_type(value: &str) -> ShellType {
     }
 }
 
+#[cfg(unix)]
+fn send_remote_rpc_request(
+    socket_path: &Path,
+    request: &Value,
+    expect_response: bool,
+) -> Result<Option<Value>, Box<dyn Error>> {
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::UnixStream;
+
+    let mut stream = UnixStream::connect(socket_path)?;
+    let mut payload = serde_json::to_vec(request)?;
+    payload.push(b'\n');
+    stream.write_all(&payload)?;
+    stream.flush()?;
+
+    if !expect_response {
+        return Ok(None);
+    }
+
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+    if reader.read_line(&mut line)? == 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "remote control server closed without a response",
+        )
+        .into());
+    }
+    let response: Value = serde_json::from_str(line.trim())?;
+    Ok(Some(response))
+}
+
+#[cfg(not(unix))]
+fn send_remote_rpc_request(
+    _socket_path: &Path,
+    _request: &Value,
+    _expect_response: bool,
+) -> Result<Option<Value>, Box<dyn Error>> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "walk rpc is currently supported on Unix only",
+    )
+    .into())
+}
+
 fn jsonrpc_u64_param(params: &Value, index: usize, key: &str) -> Result<u64, String> {
     if let Some(value) = params
         .as_array()
@@ -7819,6 +7883,14 @@ fn jsonrpc_optional_string_param(params: &Value, index: usize, key: &str) -> Opt
         })
 }
 
+fn jsonrpc_optional_value_param(params: &Value, index: usize, key: &str) -> Option<Value> {
+    params
+        .as_array()
+        .and_then(|items| items.get(index))
+        .cloned()
+        .or_else(|| params.as_object().and_then(|items| items.get(key)).cloned())
+}
+
 fn normalize_remote_action_name(action_name: &str) -> String {
     let normalized = action_name.trim().replace(['-', ' '], "_");
     if normalized.contains('_') {
@@ -7837,6 +7909,65 @@ fn normalize_remote_action_name(action_name: &str) -> String {
         }
     }
     snake
+}
+
+fn parse_remote_action_with_params(action_name: &str, params: Option<&Value>) -> Option<Action> {
+    if let Some(action) = parse_lua_action(action_name) {
+        return Some(action);
+    }
+
+    match action_name {
+        "save_session" => {
+            let name = params.and_then(jsonrpc_string_like_value)?;
+            Some(Action::SaveSession(name))
+        }
+        "load_session" => {
+            let name = params.and_then(jsonrpc_string_like_value)?;
+            Some(Action::LoadSession(name))
+        }
+        "switch_to_tab" => {
+            let index = params.and_then(jsonrpc_tab_index_value)?;
+            Some(Action::SwitchToTab(index))
+        }
+        _ => None,
+    }
+}
+
+fn jsonrpc_string_like_value(value: &Value) -> Option<String> {
+    if let Some(text) = value.as_str() {
+        return Some(text.to_string());
+    }
+    if let Some(items) = value.as_array() {
+        return items.first().and_then(Value::as_str).map(str::to_string);
+    }
+    value
+        .as_object()
+        .and_then(|items| items.get("name"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+fn jsonrpc_tab_index_value(value: &Value) -> Option<u8> {
+    if let Some(index) = value.as_u64().and_then(|index| u8::try_from(index).ok()) {
+        return (index > 0).then_some(index);
+    }
+
+    if let Some(items) = value.as_array() {
+        if let Some(index) = items
+            .first()
+            .and_then(Value::as_u64)
+            .and_then(|index| u8::try_from(index).ok())
+        {
+            return (index > 0).then_some(index);
+        }
+    }
+
+    value
+        .as_object()
+        .and_then(|items| items.get("index"))
+        .and_then(Value::as_u64)
+        .and_then(|index| u8::try_from(index).ok())
+        .filter(|index| *index > 0)
 }
 
 fn parse_lua_action(action: &str) -> Option<Action> {
@@ -8115,6 +8246,50 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut attached_session = None;
     match cli.command.clone() {
+        Some(CliCommand::Rpc {
+            method,
+            params,
+            socket,
+            id,
+            notify,
+        }) => {
+            let params_value: Value = serde_json::from_str(&params).map_err(|error| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("invalid --params JSON: {error}"),
+                )
+            })?;
+
+            let socket_path = socket
+                .or_else(|| std::env::var("WALK_SOCKET").ok())
+                .ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "missing remote-control socket; pass --socket or set WALK_SOCKET",
+                    )
+                })?;
+
+            let mut request_map = serde_json::Map::new();
+            request_map.insert("jsonrpc".to_string(), Value::String("2.0".to_string()));
+            request_map.insert("method".to_string(), Value::String(method));
+            request_map.insert("params".to_string(), params_value);
+
+            if !notify {
+                let id_value = id.map_or_else(
+                    || Value::from(1_u64),
+                    |raw| serde_json::from_str::<Value>(&raw).unwrap_or(Value::String(raw)),
+                );
+                request_map.insert("id".to_string(), id_value);
+            }
+
+            let request = Value::Object(request_map);
+            if let Some(response) =
+                send_remote_rpc_request(Path::new(&socket_path), &request, !notify)?
+            {
+                println!("{}", serde_json::to_string_pretty(&response)?);
+            }
+            return Ok(());
+        }
         Some(CliCommand::List) => {
             for session in walk_app::daemon::list_sessions() {
                 println!(
@@ -8203,6 +8378,22 @@ mod tests {
             Some(Action::LoadSession("demo".to_string()))
         );
         assert_eq!(parse_lua_action("save_session:"), None);
+    }
+
+    #[test]
+    fn test_parse_remote_action_with_params_supports_named_forms() {
+        assert_eq!(
+            parse_remote_action_with_params("save_session", Some(&json!("demo"))),
+            Some(Action::SaveSession("demo".to_string()))
+        );
+        assert_eq!(
+            parse_remote_action_with_params("load_session", Some(&json!({"name": "nightly"}))),
+            Some(Action::LoadSession("nightly".to_string()))
+        );
+        assert_eq!(
+            parse_remote_action_with_params("switch_to_tab", Some(&json!({"index": 3}))),
+            Some(Action::SwitchToTab(3))
+        );
     }
 
     #[test]

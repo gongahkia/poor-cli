@@ -344,3 +344,121 @@ pub fn error_response(id: Option<Value>, code: i64, message: impl Into<String>) 
         "id": id.unwrap_or(Value::Null)
     })
 }
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::UnixStream;
+    use std::sync::{Mutex, OnceLock};
+    use std::time::Duration;
+
+    fn test_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn collect_requests(server: &mut RemoteControlServer, expected: usize) -> Vec<RemoteRequest> {
+        for _ in 0..20 {
+            let requests = server.poll_requests();
+            if requests.len() >= expected {
+                return requests;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        server.poll_requests()
+    }
+
+    #[test]
+    fn test_remote_server_handles_multiple_clients() {
+        let _guard = test_lock().lock().expect("test lock should be available");
+        let mut server = RemoteControlServer::bind_default().expect("server should bind");
+        let socket = server.socket_path().to_path_buf();
+
+        let mut client_one = UnixStream::connect(&socket).expect("client one should connect");
+        let mut client_two = UnixStream::connect(&socket).expect("client two should connect");
+
+        client_one
+            .write_all(br#"{"jsonrpc":"2.0","method":"walk.get_panes","id":1}"#)
+            .expect("client one request should write");
+        client_one
+            .write_all(b"\n")
+            .expect("client one newline should write");
+
+        client_two
+            .write_all(
+                br#"{"jsonrpc":"2.0","method":"walk.notify","params":{"message":"hi"},"id":2}"#,
+            )
+            .expect("client two request should write");
+        client_two
+            .write_all(b"\n")
+            .expect("client two newline should write");
+
+        let requests = collect_requests(&mut server, 2);
+        assert_eq!(requests.len(), 2);
+        assert!(requests
+            .iter()
+            .any(|request| request.method == "walk.get_panes"));
+        assert!(requests
+            .iter()
+            .any(|request| request.method == "walk.notify"));
+
+        for request in requests {
+            let response = result_response(request.id, json!({"ok": true}));
+            server.send_response(request.client_id, &response);
+        }
+
+        let mut first = String::new();
+        let mut second = String::new();
+        let _ = client_one.set_read_timeout(Some(Duration::from_secs(1)));
+        let _ = client_two.set_read_timeout(Some(Duration::from_secs(1)));
+        BufReader::new(client_one)
+            .read_line(&mut first)
+            .expect("client one should receive response");
+        BufReader::new(client_two)
+            .read_line(&mut second)
+            .expect("client two should receive response");
+
+        let first_json: Value = serde_json::from_str(first.trim()).expect("first response json");
+        let second_json: Value = serde_json::from_str(second.trim()).expect("second response json");
+        assert_eq!(
+            first_json.get("jsonrpc").and_then(Value::as_str),
+            Some("2.0")
+        );
+        assert_eq!(
+            second_json.get("jsonrpc").and_then(Value::as_str),
+            Some("2.0")
+        );
+    }
+
+    #[test]
+    fn test_remote_server_rejects_connections_over_limit() {
+        let _guard = test_lock().lock().expect("test lock should be available");
+        let mut server = RemoteControlServer::bind_default().expect("server should bind");
+        let socket = server.socket_path().to_path_buf();
+
+        let mut clients = Vec::new();
+        for _ in 0..MAX_CLIENTS {
+            clients.push(UnixStream::connect(&socket).expect("client should connect"));
+        }
+        assert_eq!(clients.len(), MAX_CLIENTS);
+        let mut overflow = UnixStream::connect(&socket).expect("overflow client should connect");
+
+        let _ = server.poll_requests();
+
+        let mut line = String::new();
+        let _ = overflow.set_read_timeout(Some(Duration::from_secs(1)));
+        BufReader::new(&mut overflow)
+            .read_line(&mut line)
+            .expect("overflow client should receive rejection");
+
+        let payload: Value = serde_json::from_str(line.trim()).expect("valid rejection payload");
+        assert_eq!(
+            payload
+                .get("error")
+                .and_then(|error| error.get("code"))
+                .and_then(Value::as_i64),
+            Some(-32000)
+        );
+    }
+}
