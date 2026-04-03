@@ -44,7 +44,7 @@ mod imp {
     }
 
     /// Run a daemon loop for one named session.
-    pub fn run_daemon(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn run_daemon(name: &str, shell: &ShellType) -> Result<(), Box<dyn std::error::Error>> {
         let dir = runtime_dir();
         fs::create_dir_all(&dir)?;
         let socket = session_socket_path(name);
@@ -59,7 +59,7 @@ mod imp {
         let pane_count = 1usize;
         let mut running = true;
         let mut last_housekeeping = Instant::now();
-        let mut terminal = Terminal::new(&ShellType::Bash, 80, 24, 10_000, HashMap::new(), None)?;
+        let mut terminal = Terminal::new(shell, 80, 24, 10_000, HashMap::new(), None)?;
 
         while running {
             terminal.process_pty_output();
@@ -337,7 +337,7 @@ mod imp {
     }
 
     /// Run a daemon loop for one named session.
-    pub fn run_daemon(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn run_daemon(name: &str, shell: &ShellType) -> Result<(), Box<dyn std::error::Error>> {
         let dir = runtime_dir();
         fs::create_dir_all(&dir)?;
         let metadata = session_socket_path(name);
@@ -354,7 +354,7 @@ mod imp {
         let pane_count = 1usize;
         let mut running = true;
         let mut last_housekeeping = Instant::now();
-        let mut terminal = Terminal::new(&ShellType::Bash, 80, 24, 10_000, HashMap::new(), None)?;
+        let mut terminal = Terminal::new(shell, 80, 24, 10_000, HashMap::new(), None)?;
 
         while running {
             terminal.process_pty_output();
@@ -643,7 +643,15 @@ pub fn session_socket_path(name: &str) -> PathBuf {
 
 /// Run a named daemon session until killed.
 pub fn run_daemon(name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    imp::run_daemon(name)
+    imp::run_daemon(name, &ShellType::Bash)
+}
+
+/// Run a named daemon session with an explicit shell type.
+pub fn run_daemon_with_shell(
+    name: &str,
+    shell: &ShellType,
+) -> Result<(), Box<dyn std::error::Error>> {
+    imp::run_daemon(name, shell)
 }
 
 /// Query one session by name.

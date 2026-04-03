@@ -8103,8 +8103,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     info!("starting Walk terminal");
 
     if let Some(name) = cli.daemon.clone() {
+        let daemon_shell = cli
+            .shell
+            .as_deref()
+            .map(parse_shell_type)
+            .unwrap_or_else(|| WalkConfig::load().shell);
         info!("starting daemon session '{name}'");
-        walk_app::daemon::run_daemon(&name)?;
+        walk_app::daemon::run_daemon_with_shell(&name, &daemon_shell)?;
         return Ok(());
     }
 
