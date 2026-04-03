@@ -264,19 +264,26 @@ export class ArtifactStore {
   }
 }
 
-let artifactStoreSingleton = new ArtifactStore();
+let artifactStoreSingleton: ArtifactStore | null = null;
+
+const getArtifactStore = (): ArtifactStore => {
+  if (artifactStoreSingleton === null) {
+    artifactStoreSingleton = new ArtifactStore();
+  }
+  return artifactStoreSingleton;
+};
 
 export const artifactStore = {
-  upsert: (options: Parameters<ArtifactStore["upsert"]>[0]) => artifactStoreSingleton.upsert(options),
-  read: (uri: string) => artifactStoreSingleton.read(uri),
-  clear: () => artifactStoreSingleton.clear(),
-  cleanupExpired: (now?: number) => artifactStoreSingleton.cleanupExpired(now),
-  close: () => artifactStoreSingleton.close(),
-  getDbPath: () => artifactStoreSingleton.dbPath,
+  upsert: (options: Parameters<ArtifactStore["upsert"]>[0]) => getArtifactStore().upsert(options),
+  read: (uri: string) => getArtifactStore().read(uri),
+  clear: () => getArtifactStore().clear(),
+  cleanupExpired: (now?: number) => getArtifactStore().cleanupExpired(now),
+  close: () => { if (artifactStoreSingleton !== null) { artifactStoreSingleton.close(); artifactStoreSingleton = null; } },
+  getDbPath: () => getArtifactStore().dbPath,
 };
 
 export const resetArtifactStoreForTests = (dbPath = ":memory:"): void => {
-  artifactStoreSingleton.close();
+  if (artifactStoreSingleton !== null) { artifactStoreSingleton.close(); }
   artifactStoreSingleton = new ArtifactStore(dbPath);
 };
 
