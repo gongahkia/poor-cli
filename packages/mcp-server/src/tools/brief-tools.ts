@@ -3,6 +3,7 @@ import {
   BriefArtifactSchema,
   BusinessDossierBaseSchema,
   BusinessDossierSchema,
+  CivicBriefSchema,
   EnvironmentBriefSchema,
   MacroBriefSchema,
   PropertyBriefBaseSchema,
@@ -39,6 +40,11 @@ import { geocode } from "../apis/onemap/client.js";
 import { getTableData as getSingStatTableData } from "../apis/singstat/client.js";
 import { normalizeTransactions } from "../apis/ura/normalizer.js";
 import { getPropertyTransactions } from "../apis/ura/client.js";
+import { getEcdaChildcareCentres } from "../apis/ecda/client.js";
+import { getHawkerCentres } from "../apis/hawker/client.js";
+import { getMsfFamilyServices, getMsfStudentCareServices, getMsfSocialServiceOffices } from "../apis/msf/client.js";
+import { getPaCommunityOutlets, getPaResidentNetworkCentres } from "../apis/pa/client.js";
+import { getSportSgFacilities } from "../apis/sportsg/client.js";
 import { buildBusinessDossierArtifact } from "../diligence/business-dossier.js";
 import { fetchNormalizedMasRecords } from "./mas-tools.js";
 import { buildMapPayloadFromPoints, withMapUiMetadata } from "./map-payload.js";
@@ -1859,6 +1865,99 @@ export const handleEnvironmentBrief = async (
   });
 };
 
+const CivicBriefInputSchema = {
+  postalCode: z.string().regex(/^\d{6}$/).optional(),
+  address: z.string().min(1).optional(),
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+  radiusKm: z.number().positive().max(20).optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+};
+
+type CivicSourceResult = { category: string; count: number; records: readonly Record<string, unknown>[] };
+
+export const handleCivicBrief = async (
+  params: Readonly<{
+    postalCode?: string | undefined;
+    address?: string | undefined;
+    lat?: number | undefined;
+    lng?: number | undefined;
+    radiusKm?: number | undefined;
+    format?: "json" | "markdown" | undefined;
+  }>,
+): Promise<ToolResult> => {
+  const observedAt = new Date().toISOString();
+  const gaps: EvidenceGap[] = [];
+  let lat = params.lat;
+  let lng = params.lng;
+  const searchVal = params.postalCode ?? params.address;
+  if (lat === undefined && lng === undefined && searchVal !== undefined) {
+    const geo = await safeRead("GEOCODE_FAILED", "OneMap geocode failed", () => geocode(searchVal, 1), gaps);
+    const first = geo?.[0];
+    if (first !== undefined) {
+      lat = first.lat;
+      lng = first.lng;
+    }
+  }
+  if (lat === undefined || lng === undefined) {
+    gaps.push(toGap("NO_LOCATION", "No resolvable location provided. Supply postalCode, address, or lat/lng."));
+  }
+  const coordParams = { lat, lng, radiusKm: params.radiusKm ?? 3, limit: 10 };
+  const [pa, paRn, sport, ecda, msfFamily, msfStudent, msfSso, hawker] = await Promise.all([
+    safeRead("PA_OUTLETS_FAILED", "PA community outlets lookup failed", () => getPaCommunityOutlets(coordParams), gaps),
+    safeRead("PA_RESIDENT_FAILED", "PA resident network centres lookup failed", () => getPaResidentNetworkCentres(coordParams), gaps),
+    safeRead("SPORTSG_FAILED", "SportSG facilities lookup failed", () => getSportSgFacilities(coordParams), gaps),
+    safeRead("ECDA_FAILED", "ECDA childcare centres lookup failed", () => getEcdaChildcareCentres(coordParams), gaps),
+    safeRead("MSF_FAMILY_FAILED", "MSF family services lookup failed", () => getMsfFamilyServices(coordParams), gaps),
+    safeRead("MSF_STUDENT_FAILED", "MSF student care services lookup failed", () => getMsfStudentCareServices(coordParams), gaps),
+    safeRead("MSF_SSO_FAILED", "MSF social service offices lookup failed", () => getMsfSocialServiceOffices(coordParams), gaps),
+    safeRead("HAWKER_FAILED", "Hawker centres lookup failed", () => getHawkerCentres({ ...coordParams }), gaps),
+  ]);
+  const sources: CivicSourceResult[] = [
+    { category: "Community Clubs", count: pa?.length ?? 0, records: (pa ?? []) as unknown as Record<string, unknown>[] },
+    { category: "Resident Network Centres", count: paRn?.length ?? 0, records: (paRn ?? []) as unknown as Record<string, unknown>[] },
+    { category: "Sports Facilities", count: sport?.length ?? 0, records: (sport ?? []) as unknown as Record<string, unknown>[] },
+    { category: "Childcare Centres", count: ecda?.length ?? 0, records: (ecda ?? []) as unknown as Record<string, unknown>[] },
+    { category: "Family Services", count: msfFamily?.length ?? 0, records: (msfFamily ?? []) as unknown as Record<string, unknown>[] },
+    { category: "Student Care", count: msfStudent?.length ?? 0, records: (msfStudent ?? []) as unknown as Record<string, unknown>[] },
+    { category: "Social Service Offices", count: msfSso?.length ?? 0, records: (msfSso ?? []) as unknown as Record<string, unknown>[] },
+    { category: "Hawker Centres", count: hawker?.length ?? 0, records: (hawker ?? []) as unknown as Record<string, unknown>[] },
+  ];
+  const totalFacilities = sources.reduce((sum, s) => sum + s.count, 0);
+  const locationLabel = params.postalCode ?? params.address ?? (lat !== undefined ? `${lat}, ${lng}` : "unknown");
+  const records: Record<string, unknown> = {};
+  for (const s of sources) records[s.category] = s.records;
+  const payload: BriefArtifact = {
+    title: "Civic Brief",
+    summary: [
+      { label: "Location", value: locationLabel, source: "OneMap" },
+      { label: "Search radius", value: `${coordParams.radiusKm} km`, source: "input" },
+      { label: "Total facilities found", value: totalFacilities, source: "aggregated" },
+      ...sources.filter((s) => s.count > 0).map((s) => ({ label: s.category, value: s.count, source: s.category })),
+    ],
+    evidence: sources.map((s) => ({ label: s.category, value: s.count, source: s.category })),
+    records,
+    gaps,
+    provenance: [
+      toProvenance("PA", "sg_pa_community_outlets", "Community clubs and PAssion WaVe outlets within the search radius.", false, pa?.length ?? 0),
+      toProvenance("PA", "sg_pa_resident_network_centres", "Residents' committee and network centres within the search radius.", false, paRn?.length ?? 0),
+      toProvenance("SportSG", "sg_sportsg_facilities", "Sport facilities within the search radius.", false, sport?.length ?? 0),
+      toProvenance("ECDA", "sg_ecda_childcare_centres", "Childcare centres within the search radius.", false, ecda?.length ?? 0),
+      toProvenance("MSF", "sg_msf_family_services", "Family service centres within the search radius.", false, msfFamily?.length ?? 0),
+      toProvenance("MSF", "sg_msf_student_care_services", "Student care services within the search radius.", false, msfStudent?.length ?? 0),
+      toProvenance("MSF", "sg_msf_social_service_offices", "Social service offices within the search radius.", false, msfSso?.length ?? 0),
+      toProvenance("Hawker", "sg_hawker_centres", "Hawker centres within the search radius.", false, hawker?.length ?? 0),
+    ],
+    freshness: [toFreshness("Civic directories", observedAt, null)],
+    limits: [
+      toLimit("RADIUS_BOUND", `Results bounded to ${coordParams.radiusKm} km radius from the search location.`),
+      toLimit("PER_CATEGORY_CAP", "Each category returns at most 10 nearest facilities."),
+      toLimit("NO_OPERATING_HOURS", "Operating hours and real-time availability are not included."),
+    ],
+  };
+  return toToolResult(payload, resolveOutputFormat(params.format) === "json" ? "json" : "markdown");
+};
+
 export const briefToolDefinitions: readonly RegisteredToolDefinition[] = [
   {
     name: "sg_business_dossier",
@@ -1905,5 +2004,14 @@ export const briefToolDefinitions: readonly RegisteredToolDefinition[] = [
     inputSchema: EnvironmentBriefInputSchema,
     handler: async (input: unknown): Promise<ToolResult> =>
       handleEnvironmentBrief(validateInput(EnvironmentBriefSchema, input)),
+  },
+  {
+    name: "sg_civic_brief",
+    description: "Build a unified civic facilities brief showing all community clubs, sports facilities, childcare centres, family services, student care, social service offices, and hawker centres near a Singapore location.",
+    surface: "canonical",
+    positioning: "High-value additive brief over the direct civic directory tools.",
+    inputSchema: CivicBriefInputSchema,
+    handler: async (input: unknown): Promise<ToolResult> =>
+      handleCivicBrief(validateInput(CivicBriefSchema, input)),
   },
 ];

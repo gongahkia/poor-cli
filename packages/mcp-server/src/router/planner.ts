@@ -1,10 +1,10 @@
 import { ApiError } from "@sg-apis/shared";
 import { DEFAULT_CIVIC_RADIUS_KM } from "../apis/civic/utils.js";
 import { classifyIntent, resolveToolInput } from "./classifier.js";
+import { PLANNING_AREAS, toTitleCase } from "./domain-constants.js";
 import {
   buildBlockedPlan,
   buildDirectToolBlockedPlan,
-  buildUnsupportedPlan,
   createBlocker,
   type QueryExecutionContext,
   type QueryPlan,
@@ -1435,16 +1435,48 @@ const buildDirectToolPlan = (query: string): QueryPlan => {
   };
 };
 
+const extractAllPlanningAreas = (text: string): string[] => {
+  const lower = text.toLowerCase();
+  return PLANNING_AREAS.filter((area) => lower.includes(area)).map(toTitleCase);
+};
+
+type ComparisonMapping = { tool: string; paramKey: string };
+const COMPARISON_TOOL_MAP: readonly { pattern: RegExp; mapping: ComparisonMapping }[] = [
+  { pattern: /\bhdb|resale/i, mapping: { tool: "sg_hdb_resale_prices", paramKey: "town" } },
+  { pattern: /\bproperty|housing|condo|private/i, mapping: { tool: "sg_property_brief", paramKey: "planningArea" } },
+  { pattern: /\bcivic|facilities|community|nearby/i, mapping: { tool: "sg_civic_brief", paramKey: "address" } },
+  { pattern: /\btransport|bus|mrt|train/i, mapping: { tool: "sg_transport_brief", paramKey: "busStopCode" } },
+  { pattern: /\benvironment|weather|air|forecast/i, mapping: { tool: "sg_environment_brief", paramKey: "area" } },
+];
+
+const buildComparisonPlan = (query: string): QueryPlan | null => {
+  const parts = query.split(/\s+(?:vs\.?|versus|compared?\s+to)\s+/i);
+  if (parts.length !== 2) return null;
+  const areas = extractAllPlanningAreas(query);
+  if (areas.length !== 2) return null; // only support location-based comparison for now
+  const matched = COMPARISON_TOOL_MAP.find((m) => m.pattern.test(query));
+  const { tool, paramKey } = matched?.mapping ?? { tool: "sg_property_brief", paramKey: "planningArea" }; // default to property
+  return {
+    supported: true,
+    workflow: "comparison",
+    intent: "comparison",
+    confidence: 0.85,
+    apis: [],
+    steps: [
+      { id: "compare_a", purpose: `Fetch data for ${areas[0]}`, tool, input: { [paramKey]: areas[0], format: "json" } },
+      { id: "compare_b", purpose: `Fetch data for ${areas[1]}`, tool, input: { [paramKey]: areas[1], format: "json" } },
+    ],
+  };
+};
+
 export const planQuery = (query: string): QueryPlan => {
   const lower = query.toLowerCase();
   const intent = classifyIntent(query);
   const isComparison = /compare|vs\.?|versus|between\s+.+\s+and\s+.+/i.test(lower);
 
   if (isComparison) {
-    return buildUnsupportedPlan(
-      "sg_query does not run comparison workflows automatically.",
-      "Call the relevant direct tool separately for each item you want to compare.",
-    );
+    const comparisonPlan = buildComparisonPlan(lower);
+    if (comparisonPlan !== null) return comparisonPlan;
   }
 
   switch (intent.workflow) {

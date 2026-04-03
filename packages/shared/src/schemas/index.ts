@@ -439,6 +439,17 @@ export const EnvironmentBriefBaseSchema = z.object({
 
 export const EnvironmentBriefSchema = EnvironmentBriefBaseSchema;
 
+export const CivicBriefBaseSchema = z.object({
+  postalCode: z.string().regex(/^\d{6}$/).optional(),
+  address: z.string().min(1).optional(),
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+  radiusKm: z.number().positive().max(20).optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+export const CivicBriefSchema = requireLatLngPair(CivicBriefBaseSchema);
+
 const RiskFlagSchema = z.object({
   code: z.string().min(1),
   severity: z.enum(["high", "medium", "low"]),
@@ -667,11 +678,16 @@ export const MsfSocialServiceOfficesInputSchema = CivicDirectoryBaseSchema;
 
 export const MsfSocialServiceOfficesSchema = requireLatLngPair(MsfSocialServiceOfficesInputSchema);
 
-export const HawkerCentresSchema = z.object({
+export const HawkerCentresInputSchema = z.object({
   name: z.string().min(1).optional(),
-  limit: z.number().int().positive().optional(),
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+  radiusKm: z.number().positive().max(20).optional(),
+  limit: z.number().int().positive().max(200).optional(),
   format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
 }).strict();
+
+export const HawkerCentresSchema = requireLatLngPair(HawkerCentresInputSchema);
 
 export const MoeSchoolsSchema = z.object({
   level: z.string().min(1).optional(),

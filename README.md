@@ -6,7 +6,7 @@ Official Singapore public data for agents with deterministic contracts.
 
 ## Surface Snapshot
 
-The repo currently exposes 68 `sg_*` tools total across 29 official data families.
+The repo currently exposes 69 `sg_*` tools total across 29 official data families.
 
 - 54 direct data tools
 - 5 additive brief tools: `sg_business_dossier`, `sg_property_brief`, `sg_macro_brief`, `sg_transport_brief`, `sg_environment_brief`

@@ -614,6 +614,67 @@
         }
       }
     },
+    "/api/v1/sg_civic_brief": {
+      "post": {
+        "summary": "Build a unified civic facilities brief showing all community clubs, sports facilities, childcare centres, family services, student care, social service offices, and hawker centres near a Singapore location.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "postalCode": {
+                    "type": "string"
+                  },
+                  "address": {
+                    "type": "string"
+                  },
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lng": {
+                    "type": "number"
+                  },
+                  "radiusKm": {
+                    "type": "number"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
     "/api/v1/sg_config_get": {
       "post": {
         "summary": "Show current sg-apis-mcp configuration including cache TTLs, rate limits, and timeouts.",
@@ -1158,7 +1219,7 @@
     },
     "/api/v1/sg_hawker_centres": {
       "post": {
-        "summary": "List hawker centres in Singapore with address, coordinates, and stall counts from data.gov.sg.",
+        "summary": "Search hawker centres in Singapore with optional proximity filtering by coordinates and radius.",
         "tags": [
           "canonical"
         ],
@@ -1171,6 +1232,15 @@
                 "properties": {
                   "name": {
                     "type": "string"
+                  },
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lng": {
+                    "type": "number"
+                  },
+                  "radiusKm": {
+                    "type": "number"
                   },
                   "limit": {
                     "type": "integer"

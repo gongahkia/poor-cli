@@ -26,11 +26,12 @@ describe("E2E Pipeline", () => {
     expect(intent.apis).toContain("datagov");
   });
 
-  it("rejects comparison queries that need multiple direct calls", () => {
-    const plan = planQuery("Compare property prices in Orchard and Tampines");
-    expect(plan.supported).toBe(false);
-    if (!plan.supported) {
-      expect(plan.reason).toContain("comparison workflows");
+  it("supports comparison queries with two planning areas", () => {
+    const plan = planQuery("Compare property prices in Orchard vs Tampines");
+    expect(plan.supported).toBe(true);
+    if (plan.supported) {
+      expect(plan.workflow).toBe("comparison");
+      expect(plan.steps).toHaveLength(2);
     }
   });
 

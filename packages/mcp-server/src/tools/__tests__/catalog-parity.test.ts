@@ -90,7 +90,7 @@ describe("tool catalog parity", () => {
 
   it("tracks the expected post-tranche public surface counts", () => {
     expect(API_CATALOG).toHaveLength(29);
-    expect(TOOL_CATALOG).toHaveLength(68);
+    expect(TOOL_CATALOG).toHaveLength(69);
   });
 
   it("keeps the business-diligence tool families visible in catalog resources", () => {
