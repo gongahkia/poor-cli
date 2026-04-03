@@ -14,6 +14,32 @@ Walk is a 6-crate Rust workspace implementing a GPU-accelerated workspace termin
         walk-renderer  walk-terminal --+
 ```
 
+## Module Map (walk-app)
+
+The `walk-app` binary crate has been decomposed into focused modules:
+
+| Module | Responsibility |
+| --- | --- |
+| `main.rs` | Entry point, event loop wiring, top-level dispatch |
+| `workspace_runtime.rs` | Workspace effect handlers (tab/split/focus/layout/session actions) |
+| `render_runtime.rs` | Frame rendering orchestration (status bar, overlays, replay, quad batching) |
+| `cli_runtime.rs` | CLI argument dispatch and session bootstrap |
+| `remote_runtime.rs` | Attached-session snapshot sync and JSON-RPC request handling |
+| `daemon.rs` | `DaemonSession` / `DaemonPane` model, daemon lifecycle loop |
+| `ipc.rs` | Length-prefixed JSON framing, `ClientMessage` / `ServerMessage` enums |
+| `remote_control.rs` | Platform-specific JSON-RPC server (Unix socket on unix, TCP loopback on Windows) |
+| `jsonrpc_params.rs` | Typed parameter extraction helpers, `RpcError` with standard codes |
+| `rpc_cli.rs` | `walk rpc` CLI client |
+| `input_codec.rs` | Input encoding helpers |
+| `app.rs` | Core `WalkApp` per-pane state |
+| `workspace.rs` | Workspace/tab/split state |
+| `session.rs` | Session persistence and restore |
+| `config.rs` | TOML config loading |
+| `keybindings.rs` | Keybinding resolution |
+| `plugin_host.rs` | Lua plugin host |
+| `scripting.rs` | Lua scripting surface |
+| `event_loop.rs` | winit event loop integration |
+
 ## Runtime Model
 
 The live runtime is an IDE-style workspace:
@@ -68,6 +94,68 @@ Walk treats scrollback rows as the stable identity for block bookkeeping.
 - search, copy, and collapse read from logical buffer snapshots rather than viewport-relative rows
 
 That keeps block boundaries stable after scrolling, search jumps, and resize reflow.
+
+## Daemon Session Architecture
+
+Walk supports headless daemon sessions that own terminal state independently of the GUI window.
+
+### DaemonSession / DaemonPane
+
+```
+DaemonSession
+  name: String
+  shell: ShellType
+  panes: HashMap<u64, DaemonPane>
+  focused_pane: u64
+  next_pane_id: u64
+  attached_clients: usize
+
+DaemonPane
+  terminal: Terminal
+  cols: u16
+  rows: u16
+```
+
+A `DaemonSession` starts with one pane (id 0) and can grow via `CreatePane` IPC messages. Each pane owns its own `Terminal` instance with independent PTY, scrollback, and dimensions.
+
+### IPC Protocol
+
+Client-to-daemon messages (`ClientMessage`):
+
+| Variant | Purpose |
+| --- | --- |
+| `Attach { session }` | Request attach to a named session |
+| `Detach { session }` | Notify detach |
+| `SessionState { session }` | Request session metadata |
+| `Kill { session }` | Request daemon shutdown |
+| `Input { pane_id, data }` | Forward terminal input bytes to a pane |
+| `Resize { pane_id, cols, rows }` | Resize a pane |
+| `Snapshot` | Request full state snapshot (all panes) |
+| `CreatePane { direction }` | Create a new pane |
+| `ClosePane { pane_id }` | Close an existing pane |
+| `GetPanes` | List all panes |
+
+Daemon-to-client messages (`ServerMessage`):
+
+| Variant | Purpose |
+| --- | --- |
+| `Ack` | Acknowledge |
+| `Error { message }` | Error response |
+| `SessionState { session, pane_count, attached_clients, running }` | Session metadata |
+| `Snapshot { payload }` | Serialized workspace snapshot (per-pane rows, offsets, dimensions) |
+| `PaneCreated { pane_id }` | New pane confirmation |
+| `Panes { items }` | List of `PaneInfo { pane_id, cols, rows }` |
+
+Messages are framed as length-prefixed JSON (4-byte big-endian length + JSON payload).
+
+### Attached-Mode Pane Mapping
+
+When a GUI client attaches to a daemon (`walk attach <name>`), local workspace panes are mapped to daemon pane ids. The attached client:
+
+- Periodically fetches per-pane snapshots from the daemon
+- Applies transcript updates to each mapped local pane
+- Routes workspace mutations (create/close pane) through the daemon rather than executing locally
+- Blocks local workspace mutations that would desynchronize state
 
 ## Threading Model
 
@@ -141,7 +229,7 @@ The current runtime is coherent, but a few edges are still intentionally narrow:
 
 - search is workspace-global, but the overlay is still rendered in the focused pane
 - plugins do not own custom rendering or arbitrary layout mutation
-- the renderer now caches viewport row batches, but the runtime is still concentrated in `walk-app/src/main.rs` rather than a fully split module tree
-- runtime orchestration is still concentrated in `walk-app/src/main.rs`
+- runtime orchestration is partially concentrated in `main.rs`, with large sections extracted to `workspace_runtime`, `render_runtime`, and `cli_runtime`
+- remote control on non-Unix platforms uses TCP loopback rather than native named pipes
 
 For the product framing and demo script, use [README.md](README.md) and [docs/INTERVIEW.md](docs/INTERVIEW.md).
