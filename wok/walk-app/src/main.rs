@@ -313,7 +313,10 @@ struct PaneRuntime {
 const ATTACHED_DAEMON_PANE_ID: u64 = 0;
 
 fn attached_mode_blocks_workspace_effect(effect: &WorkspaceEffect) -> bool {
-    matches!(effect, WorkspaceEffect::SaveSession(_) | WorkspaceEffect::LoadSession(_))
+    matches!(
+        effect,
+        WorkspaceEffect::SaveSession(_) | WorkspaceEffect::LoadSession(_)
+    )
 }
 
 #[derive(Clone, Default)]
@@ -482,7 +485,10 @@ impl WalkHandler {
     }
 
     fn attached_daemon_pane_id(&self, local_pane_id: PaneId) -> u64 {
-        self.daemon_pane_by_local.get(&local_pane_id).copied().unwrap_or(ATTACHED_DAEMON_PANE_ID)
+        self.daemon_pane_by_local
+            .get(&local_pane_id)
+            .copied()
+            .unwrap_or(ATTACHED_DAEMON_PANE_ID)
     }
 
     fn active_pane(&self) -> Option<&PaneRuntime> {
@@ -4240,9 +4246,8 @@ impl AppHandler for WalkHandler {
         }
 
         self.metrics.pane_count = self.panes.len();
-        self.metrics.replay_snapshot_count = self.panes.values()
-            .map(|p| p.replay_store.len())
-            .sum();
+        self.metrics.replay_snapshot_count =
+            self.panes.values().map(|p| p.replay_store.len()).sum();
         self.metrics.frame_count += 1;
 
         self.needs_redraw
@@ -4595,7 +4600,6 @@ impl AppHandler for WalkHandler {
         true
     }
 }
-
 
 fn trigger_engine_from_config(config: &WalkConfig) -> TriggerEngine {
     let mut engine = TriggerEngine::new();

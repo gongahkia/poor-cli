@@ -48,7 +48,14 @@ impl DaemonSession {
         let cols = terminal.cols();
         let rows = terminal.rows();
         let mut panes = HashMap::new();
-        panes.insert(0, DaemonPane { terminal, cols, rows });
+        panes.insert(
+            0,
+            DaemonPane {
+                terminal,
+                cols,
+                rows,
+            },
+        );
         Self {
             name: name.to_string(),
             shell: shell.clone(),
@@ -60,31 +67,39 @@ impl DaemonSession {
             running: true,
         }
     }
-    fn pane_count(&self) -> usize { self.panes.len() }
+    fn pane_count(&self) -> usize {
+        self.panes.len()
+    }
     fn process_pty_output(&mut self) {
         for pane in self.panes.values_mut() {
             pane.terminal.process_pty_output();
         }
     }
     fn snapshot(&self) -> serde_json::Value {
-        let focused = self.panes.get(&self.focused_pane)
+        let focused = self
+            .panes
+            .get(&self.focused_pane)
             .or_else(|| self.panes.values().next());
-        let panes_json: Vec<_> = self.pane_ids().iter().map(|&id| {
-            let pane = self.panes.get(&id).unwrap();
-            serde_json::json!({
-                "pane_id": id,
-                "rows": pane.terminal.state.text_rows().into_iter().map(|row| {
-                    serde_json::json!({
-                        "absolute_row": row.absolute_row,
-                        "viewport_row": row.viewport_row,
-                        "text": row.text
-                    })
-                }).collect::<Vec<_>>(),
-                "display_offset": pane.terminal.state.display_offset(),
-                "cols": pane.terminal.cols(),
-                "rows_visible": pane.terminal.rows()
+        let panes_json: Vec<_> = self
+            .pane_ids()
+            .iter()
+            .map(|&id| {
+                let pane = self.panes.get(&id).unwrap();
+                serde_json::json!({
+                    "pane_id": id,
+                    "rows": pane.terminal.state.text_rows().into_iter().map(|row| {
+                        serde_json::json!({
+                            "absolute_row": row.absolute_row,
+                            "viewport_row": row.viewport_row,
+                            "text": row.text
+                        })
+                    }).collect::<Vec<_>>(),
+                    "display_offset": pane.terminal.state.display_offset(),
+                    "cols": pane.terminal.cols(),
+                    "rows_visible": pane.terminal.rows()
+                })
             })
-        }).collect();
+            .collect();
         serde_json::json!({
             "session": self.name,
             "pane_count": self.pane_count(),
@@ -105,10 +120,14 @@ impl DaemonSession {
     fn handle_input(&self, pane_id: u64, data: &[u8]) -> ServerMessage {
         match self.panes.get(&pane_id) {
             Some(pane) => pane.terminal.send_input(data).map_or_else(
-                |error| ServerMessage::Error { message: error.to_string() },
+                |error| ServerMessage::Error {
+                    message: error.to_string(),
+                },
                 |()| ServerMessage::Ack,
             ),
-            None => ServerMessage::Error { message: format!("pane {pane_id} not found") },
+            None => ServerMessage::Error {
+                message: format!("pane {pane_id} not found"),
+            },
         }
     }
     fn handle_resize(&mut self, pane_id: u64, cols: u16, rows: u16) -> ServerMessage {
@@ -117,11 +136,15 @@ impl DaemonSession {
                 pane.cols = cols;
                 pane.rows = rows;
                 pane.terminal.resize(cols, rows).map_or_else(
-                    |error| ServerMessage::Error { message: error.to_string() },
+                    |error| ServerMessage::Error {
+                        message: error.to_string(),
+                    },
                     |()| ServerMessage::Ack,
                 )
             }
-            None => ServerMessage::Error { message: format!("pane {pane_id} not found") },
+            None => ServerMessage::Error {
+                message: format!("pane {pane_id} not found"),
+            },
         }
     }
     fn create_pane(&mut self, _direction: &str) -> ServerMessage {
@@ -131,15 +154,26 @@ impl DaemonSession {
             Ok(terminal) => {
                 let cols = terminal.cols();
                 let rows = terminal.rows();
-                self.panes.insert(id, DaemonPane { terminal, cols, rows });
+                self.panes.insert(
+                    id,
+                    DaemonPane {
+                        terminal,
+                        cols,
+                        rows,
+                    },
+                );
                 ServerMessage::PaneCreated { pane_id: id }
             }
-            Err(e) => ServerMessage::Error { message: format!("failed to create pane: {e}") },
+            Err(e) => ServerMessage::Error {
+                message: format!("failed to create pane: {e}"),
+            },
         }
     }
     fn close_pane(&mut self, pane_id: u64) -> ServerMessage {
         if self.panes.len() <= 1 {
-            return ServerMessage::Error { message: "cannot close last pane".to_string() };
+            return ServerMessage::Error {
+                message: "cannot close last pane".to_string(),
+            };
         }
         if self.panes.remove(&pane_id).is_some() {
             if self.focused_pane == pane_id {
@@ -147,7 +181,9 @@ impl DaemonSession {
             }
             ServerMessage::Ack
         } else {
-            ServerMessage::Error { message: format!("pane {pane_id} not found") }
+            ServerMessage::Error {
+                message: format!("pane {pane_id} not found"),
+            }
         }
     }
     fn pane_ids(&self) -> Vec<u64> {
@@ -156,10 +192,17 @@ impl DaemonSession {
         ids
     }
     fn pane_list(&self) -> Vec<PaneInfo> {
-        self.pane_ids().iter().map(|&id| {
-            let pane = self.panes.get(&id).unwrap();
-            PaneInfo { pane_id: id, cols: pane.cols, rows: pane.rows }
-        }).collect()
+        self.pane_ids()
+            .iter()
+            .map(|&id| {
+                let pane = self.panes.get(&id).unwrap();
+                PaneInfo {
+                    pane_id: id,
+                    cols: pane.cols,
+                    rows: pane.rows,
+                }
+            })
+            .collect()
     }
 }
 
@@ -220,7 +263,8 @@ mod imp {
                     let response = match read_frame::<ClientMessage>(&mut stream) {
                         Ok(message) => match message {
                             ClientMessage::Attach { .. } => {
-                                session.attached_clients = session.attached_clients.saturating_add(1);
+                                session.attached_clients =
+                                    session.attached_clients.saturating_add(1);
                                 ServerMessage::SessionState {
                                     session: name.to_string(),
                                     pane_count: session.pane_count(),
@@ -229,7 +273,8 @@ mod imp {
                                 }
                             }
                             ClientMessage::Detach { .. } => {
-                                session.attached_clients = session.attached_clients.saturating_sub(1);
+                                session.attached_clients =
+                                    session.attached_clients.saturating_sub(1);
                                 ServerMessage::Ack
                             }
                             ClientMessage::SessionState { .. } => ServerMessage::SessionState {
@@ -248,15 +293,15 @@ mod imp {
                             ClientMessage::Input { pane_id, data } => {
                                 session.handle_input(pane_id, &data)
                             }
-                            ClientMessage::Resize { pane_id, cols, rows } => {
-                                session.handle_resize(pane_id, cols, rows)
-                            }
+                            ClientMessage::Resize {
+                                pane_id,
+                                cols,
+                                rows,
+                            } => session.handle_resize(pane_id, cols, rows),
                             ClientMessage::CreatePane { direction } => {
                                 session.create_pane(&direction)
                             }
-                            ClientMessage::ClosePane { pane_id } => {
-                                session.close_pane(pane_id)
-                            }
+                            ClientMessage::ClosePane { pane_id } => session.close_pane(pane_id),
                             ClientMessage::GetPanes => ServerMessage::Panes {
                                 items: session.pane_list(),
                             },
@@ -457,7 +502,12 @@ mod imp {
     pub fn create_pane(name: &str, direction: &str) -> Result<u64, Box<dyn std::error::Error>> {
         let socket = session_socket_path(name);
         let mut stream = UnixStream::connect(&socket)?;
-        write_frame(&mut stream, &ClientMessage::CreatePane { direction: direction.to_string() })?;
+        write_frame(
+            &mut stream,
+            &ClientMessage::CreatePane {
+                direction: direction.to_string(),
+            },
+        )?;
         match read_frame::<ServerMessage>(&mut stream)? {
             ServerMessage::PaneCreated { pane_id } => Ok(pane_id),
             ServerMessage::Error { message } => Err(message.into()),
@@ -545,7 +595,8 @@ mod imp {
                     let response = match read_frame::<ClientMessage>(&mut stream) {
                         Ok(message) => match message {
                             ClientMessage::Attach { .. } => {
-                                session.attached_clients = session.attached_clients.saturating_add(1);
+                                session.attached_clients =
+                                    session.attached_clients.saturating_add(1);
                                 ServerMessage::SessionState {
                                     session: name.to_string(),
                                     pane_count: session.pane_count(),
@@ -554,7 +605,8 @@ mod imp {
                                 }
                             }
                             ClientMessage::Detach { .. } => {
-                                session.attached_clients = session.attached_clients.saturating_sub(1);
+                                session.attached_clients =
+                                    session.attached_clients.saturating_sub(1);
                                 ServerMessage::Ack
                             }
                             ClientMessage::SessionState { .. } => ServerMessage::SessionState {
@@ -573,15 +625,15 @@ mod imp {
                             ClientMessage::Input { pane_id, data } => {
                                 session.handle_input(pane_id, &data)
                             }
-                            ClientMessage::Resize { pane_id, cols, rows } => {
-                                session.handle_resize(pane_id, cols, rows)
-                            }
+                            ClientMessage::Resize {
+                                pane_id,
+                                cols,
+                                rows,
+                            } => session.handle_resize(pane_id, cols, rows),
                             ClientMessage::CreatePane { direction } => {
                                 session.create_pane(&direction)
                             }
-                            ClientMessage::ClosePane { pane_id } => {
-                                session.close_pane(pane_id)
-                            }
+                            ClientMessage::ClosePane { pane_id } => session.close_pane(pane_id),
                             ClientMessage::GetPanes => ServerMessage::Panes {
                                 items: session.pane_list(),
                             },
@@ -811,7 +863,9 @@ mod imp {
         let mut stream = TcpStream::connect(("127.0.0.1", port))?;
         write_frame(
             &mut stream,
-            &ClientMessage::CreatePane { direction: direction.to_string() },
+            &ClientMessage::CreatePane {
+                direction: direction.to_string(),
+            },
         )?;
         match read_frame::<ServerMessage>(&mut stream)? {
             ServerMessage::PaneCreated { pane_id } => Ok(pane_id),

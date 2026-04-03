@@ -54,7 +54,8 @@ impl WalkHandler {
                         match walk_app::daemon::create_pane(session, direction) {
                             Ok(_daemon_pane_id) => {} // fall through to local split
                             Err(e) => {
-                                self.status_message = Some(format!("daemon pane create failed: {e}"));
+                                self.status_message =
+                                    Some(format!("daemon pane create failed: {e}"));
                                 return;
                             }
                         }
@@ -65,14 +66,16 @@ impl WalkHandler {
                         let daemon_id = self.attached_daemon_pane_id(pane_id);
                         if let Some(session) = &self.attached_session {
                             if let Err(e) = walk_app::daemon::close_pane(session, daemon_id) {
-                                self.status_message = Some(format!("daemon pane close failed: {e}"));
+                                self.status_message =
+                                    Some(format!("daemon pane close failed: {e}"));
                                 return;
                             }
                         }
                     }
                 }
                 _ if attached_mode_blocks_workspace_effect(&effect) => {
-                    self.status_message = Some("Session save/load not supported in attached mode".to_string());
+                    self.status_message =
+                        Some("Session save/load not supported in attached mode".to_string());
                     return;
                 }
                 _ => {} // allow tabs, focus, resize, broadcast, floating, layout

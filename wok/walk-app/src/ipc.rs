@@ -174,11 +174,8 @@ mod tests {
     #[test]
     fn test_round_trip_close_pane() {
         let mut buffer = Vec::new();
-        write_frame(
-            &mut buffer,
-            &ClientMessage::ClosePane { pane_id: 42 },
-        )
-        .expect("frame should write");
+        write_frame(&mut buffer, &ClientMessage::ClosePane { pane_id: 42 })
+            .expect("frame should write");
         let mut cursor = std::io::Cursor::new(buffer);
         let msg: ClientMessage = read_frame(&mut cursor).expect("frame should read");
         match msg {
@@ -199,11 +196,8 @@ mod tests {
     #[test]
     fn test_round_trip_pane_created() {
         let mut buffer = Vec::new();
-        write_frame(
-            &mut buffer,
-            &ServerMessage::PaneCreated { pane_id: 7 },
-        )
-        .expect("frame should write");
+        write_frame(&mut buffer, &ServerMessage::PaneCreated { pane_id: 7 })
+            .expect("frame should write");
         let mut cursor = std::io::Cursor::new(buffer);
         let msg: ServerMessage = read_frame(&mut cursor).expect("frame should read");
         match msg {
@@ -215,15 +209,19 @@ mod tests {
     #[test]
     fn test_round_trip_panes() {
         let items = vec![
-            PaneInfo { pane_id: 0, cols: 80, rows: 24 },
-            PaneInfo { pane_id: 1, cols: 40, rows: 24 },
+            PaneInfo {
+                pane_id: 0,
+                cols: 80,
+                rows: 24,
+            },
+            PaneInfo {
+                pane_id: 1,
+                cols: 40,
+                rows: 24,
+            },
         ];
         let mut buffer = Vec::new();
-        write_frame(
-            &mut buffer,
-            &ServerMessage::Panes { items },
-        )
-        .expect("frame should write");
+        write_frame(&mut buffer, &ServerMessage::Panes { items }).expect("frame should write");
         let mut cursor = std::io::Cursor::new(buffer);
         let msg: ServerMessage = read_frame(&mut cursor).expect("frame should read");
         match msg {

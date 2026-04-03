@@ -62,10 +62,14 @@ impl WalkHandler {
                     continue;
                 };
                 // detect reset: absolute_row went backwards
-                if latest_row.is_some_and(|latest| (absolute_row as usize) < latest.saturating_sub(100)) {
+                if latest_row
+                    .is_some_and(|latest| (absolute_row as usize) < latest.saturating_sub(100))
+                {
                     reset_detected = true;
                 }
-                if reset_detected || latest_row.map_or(true, |latest| absolute_row as usize > latest) {
+                if reset_detected
+                    || latest_row.map_or(true, |latest| absolute_row as usize > latest)
+                {
                     new_lines.push(text.to_string());
                     latest_row = Some(absolute_row as usize);
                 }
@@ -158,9 +162,9 @@ impl WalkHandler {
         let Some(pane) = self.panes.get(&pane_id) else {
             return Err(RpcError::server_error(format!("pane {pane_id} not found")));
         };
-        pane.terminal
-            .send_input(text.as_bytes())
-            .map_err(|error| RpcError::server_error(format!("failed to write to pane {pane_id}: {error}")))?;
+        pane.terminal.send_input(text.as_bytes()).map_err(|error| {
+            RpcError::server_error(format!("failed to write to pane {pane_id}: {error}"))
+        })?;
         self.needs_redraw = true;
         Ok(json!({
             "ok": true,
@@ -174,7 +178,9 @@ impl WalkHandler {
         let Some(action) =
             action_parser::parse_remote_action_with_params(&normalized, action_params.as_ref())
         else {
-            return Err(RpcError::server_error(format!("unknown action '{action_name}'")));
+            return Err(RpcError::server_error(format!(
+                "unknown action '{action_name}'"
+            )));
         };
         self.handle_action(action);
         Ok(json!({
@@ -248,7 +254,11 @@ impl WalkHandler {
             "vertical" => Action::SplitVertical,
             "horizontal" => Action::SplitHorizontal,
             "floating" => Action::NewFloatingPane,
-            _ => return Err(RpcError::invalid_params(format!("unsupported pane direction '{direction}'"))),
+            _ => {
+                return Err(RpcError::invalid_params(format!(
+                    "unsupported pane direction '{direction}'"
+                )))
+            }
         };
         let before = self.panes.keys().copied().collect::<HashSet<_>>();
         self.handle_action(action);
@@ -271,12 +281,16 @@ impl WalkHandler {
             return Err(RpcError::server_error(format!("pane {pane_id} not found")));
         }
         if !self.workspace.focus_pane(pane_id) {
-            return Err(RpcError::server_error(format!("failed to focus pane {pane_id}")));
+            return Err(RpcError::server_error(format!(
+                "failed to focus pane {pane_id}"
+            )));
         }
         let before = self.panes.len();
         self.handle_action(Action::CloseSplit);
         if self.panes.len() >= before {
-            return Err(RpcError::server_error("unable to close pane (likely last remaining pane)"));
+            return Err(RpcError::server_error(
+                "unable to close pane (likely last remaining pane)",
+            ));
         }
         Ok(json!({
             "closed": pane_id
