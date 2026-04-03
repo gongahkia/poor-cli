@@ -18,6 +18,7 @@ Relevant env vars:
 - `SG_APIS_REMOTE_BASE_URL`
 - `SG_APIS_TOOLSETS`
 - `SG_APIS_BENCHMARK_SNAPSHOT_PATH`
+- `SG_APIS_STATE_DIR`
 - `SG_APIS_ARTIFACT_DB_PATH`
 - `SG_APIS_OIDC_ISSUER`
 - `SG_APIS_OIDC_AUDIENCE`
@@ -152,7 +153,7 @@ Large row, table, and routed query results now promote themselves into persisted
 - Inline threshold: more than 12 KB of rendered text or more than 50 returned rows
 - Default TTL: 15 minutes
 - Realtime TTL: 5 minutes for transport or environment artifacts
-- Storage: SQLite at `~/.sg-apis/artifacts.db` by default, or `SG_APIS_ARTIFACT_DB_PATH` when overridden
+- Storage: SQLite at `$SG_APIS_STATE_DIR/artifacts.db` (default `~/.sg-apis/artifacts.db`), or `SG_APIS_ARTIFACT_DB_PATH` when overridden
 - Cleanup: on startup and once per hour
 
 When artifact mode is used, the tool result keeps:
