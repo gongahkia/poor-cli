@@ -311,6 +311,10 @@ fn attached_daemon_pane_id(_local_pane_id: PaneId) -> u64 {
     ATTACHED_DAEMON_PANE_ID
 }
 
+fn attached_mode_blocks_workspace_effect(_effect: &WorkspaceEffect) -> bool {
+    true
+}
+
 #[derive(Clone, Default)]
 struct StatusBarSegments {
     left: Vec<StatusSegment>,
@@ -2685,6 +2689,12 @@ impl WalkHandler {
     }
 
     fn apply_workspace_effect(&mut self, effect: WorkspaceEffect) {
+        if self.attached_session.is_some() && attached_mode_blocks_workspace_effect(&effect) {
+            self.status_message =
+                Some("Attached daemon mode currently supports a single pane".to_string());
+            return;
+        }
+
         match effect {
             WorkspaceEffect::SaveSession(name) => {
                 let session = self.snapshot_session();
@@ -7719,6 +7729,16 @@ mod tests {
     fn test_attached_daemon_pane_id_maps_to_single_runtime_pane() {
         assert_eq!(attached_daemon_pane_id(1), 0);
         assert_eq!(attached_daemon_pane_id(99), 0);
+    }
+
+    #[test]
+    fn test_attached_mode_blocks_workspace_mutations() {
+        assert!(attached_mode_blocks_workspace_effect(
+            &WorkspaceEffect::SplitVertical
+        ));
+        assert!(attached_mode_blocks_workspace_effect(
+            &WorkspaceEffect::NewTab
+        ));
     }
 
     #[test]
