@@ -1,16 +1,34 @@
 #!/usr/bin/env node
 // REST gateway: exposes sg_* tools as HTTP POST endpoints
 // usage: node packages/mcp-server/dist/rest-gateway.js
-// env: PORT (default 3000)
+// env: PORT (default 3000), SG_APIS_TOOLSETS (default public,briefs,query,health)
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { createLogger } from "@sg-apis/shared";
 import { ALL_TOOL_DEFINITIONS } from "./tools/tool-set.js";
+import { isToolEnabled } from "./tools/tool-metadata.js";
+import type { ToolSet } from "./tools/tool-definition.js";
 
 const PORT = Number(process.env["PORT"] ?? 3000);
 const logger = createLogger("rest-gateway");
 
-const toolMap = new Map(ALL_TOOL_DEFINITIONS.map((t) => [t.name, t]));
+const DEFAULT_TOOLSETS: readonly ToolSet[] = ["public", "briefs", "query", "health"];
+const ALL_TOOLSETS: readonly ToolSet[] = ["public", "briefs", "query", "health", "ops", "diligence", "property"];
+
+const parseToolsets = (): ReadonlySet<ToolSet> => {
+  const configured = process.env["SG_APIS_TOOLSETS"];
+  if (configured === undefined || configured.trim() === "") {
+    return new Set(DEFAULT_TOOLSETS);
+  }
+  const toolsets = configured.split(",").map((v) => v.trim()).filter((v): v is ToolSet => (ALL_TOOLSETS as readonly string[]).includes(v));
+  return toolsets.length > 0 ? new Set(toolsets) : new Set(DEFAULT_TOOLSETS);
+};
+
+const enabledToolsets = parseToolsets();
+const enabledTools = ALL_TOOL_DEFINITIONS.filter((t) => isToolEnabled(t, enabledToolsets));
+const toolMap = new Map(enabledTools.map((t) => [t.name, t]));
+
+logger.info("gateway started", { toolsets: [...enabledToolsets], tools: enabledTools.length, total: ALL_TOOL_DEFINITIONS.length });
 
 const readBody = (req: import("node:http").IncomingMessage): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -27,28 +45,28 @@ const server = createServer(async (req, res) => {
   res.setHeader("Content-Type", "application/json");
   requestLogger.debug("incoming request");
 
-  // GET /api/v1/tools — list all tools
+  // GET /api/v1/tools — list enabled tools only
   if (req.method === "GET" && url.pathname === "/api/v1/tools") {
-    requestLogger.info("listing tools", { toolCount: ALL_TOOL_DEFINITIONS.length });
-    res.end(JSON.stringify(ALL_TOOL_DEFINITIONS.map((t) => ({ name: t.name, description: t.description }))));
+    requestLogger.info("listing tools", { toolCount: enabledTools.length });
+    res.end(JSON.stringify(enabledTools.map((t) => ({ name: t.name, description: t.description }))));
     return;
   }
 
   // GET /api/v1/health
   if (req.method === "GET" && url.pathname === "/api/v1/health") {
     requestLogger.info("health check");
-    res.end(JSON.stringify({ status: "ok", tools: ALL_TOOL_DEFINITIONS.length }));
+    res.end(JSON.stringify({ status: "ok", tools: enabledTools.length }));
     return;
   }
 
   // POST /api/v1/<tool-name>
   if (req.method === "POST" && url.pathname.startsWith("/api/v1/")) {
-    const toolName = url.pathname.slice(8).replace(/-/g, "_"); // normalize kebab to snake
+    const toolName = url.pathname.slice(8).replace(/-/g, "_");
     const tool = toolMap.get(toolName) ?? toolMap.get(`sg_${toolName}`);
     if (!tool) {
-      requestLogger.warn("tool not found", { toolName });
+      requestLogger.warn("tool not found or not enabled", { toolName });
       res.writeHead(404);
-      res.end(JSON.stringify({ error: `tool not found: ${toolName}` }));
+      res.end(JSON.stringify({ error: `tool not found or not enabled: ${toolName}` }));
       return;
     }
     try {
@@ -88,6 +106,6 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`sg-apis REST gateway listening on http://localhost:${PORT}`);
-  console.log(`tools: ${ALL_TOOL_DEFINITIONS.length}`);
+  console.log(`tools: ${enabledTools.length}/${ALL_TOOL_DEFINITIONS.length} (toolsets: ${[...enabledToolsets].join(",")})`);
   console.log(`try: curl -X POST http://localhost:${PORT}/api/v1/sg_nea_forecast_2hr -d '{"area":"Bedok"}'`);
 });
