@@ -107,13 +107,18 @@ fn remove_leaf(node: SplitNode, target: u64) -> Option<SplitNode> {
     match node {
         SplitNode::Leaf { tab_id } if tab_id == target => None,
         SplitNode::Leaf { .. } => Some(node),
-        SplitNode::Split { first, second, .. } => {
+        SplitNode::Split {
+            direction,
+            ratio,
+            first,
+            second,
+        } => {
             let f = remove_leaf(*first, target);
             let s = remove_leaf(*second, target);
             match (f, s) {
                 (Some(f), Some(s)) => Some(SplitNode::Split {
-                    direction: SplitDirection::Vertical,
-                    ratio: 0.5,
+                    direction,
+                    ratio,
                     first: Box::new(f),
                     second: Box::new(s),
                 }),
@@ -233,5 +238,39 @@ mod tests {
         sm.split_active(SplitDirection::Vertical, 3);
         let rects = sm.compute_rects(Rect::new(0.0, 0.0, 800.0, 600.0));
         assert_eq!(rects.len(), 3);
+    }
+
+    #[test]
+    fn test_close_split_preserves_parent_direction_and_ratio() {
+        let mut sm = SplitManager::new(1);
+        sm.root = SplitNode::Split {
+            direction: SplitDirection::Horizontal,
+            ratio: 0.7,
+            first: Box::new(SplitNode::Leaf { tab_id: 1 }),
+            second: Box::new(SplitNode::Split {
+                direction: SplitDirection::Vertical,
+                ratio: 0.4,
+                first: Box::new(SplitNode::Leaf { tab_id: 2 }),
+                second: Box::new(SplitNode::Leaf { tab_id: 3 }),
+            }),
+        };
+        sm.focused_leaf = 2;
+
+        sm.close_split(2);
+
+        match sm.root {
+            SplitNode::Split {
+                direction,
+                ratio,
+                first,
+                second,
+            } => {
+                assert_eq!(direction, SplitDirection::Horizontal);
+                assert!((ratio - 0.7).abs() < f32::EPSILON);
+                assert!(matches!(*first, SplitNode::Leaf { tab_id: 1 }));
+                assert!(matches!(*second, SplitNode::Leaf { tab_id: 3 }));
+            }
+            SplitNode::Leaf { .. } => panic!("expected split root after close"),
+        }
     }
 }
