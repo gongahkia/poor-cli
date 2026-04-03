@@ -14,15 +14,15 @@ export class RateLimiter {
   }
 
   async acquire(): Promise<void> {
-    this.refill();
-    if (this.tokens > 0) {
-      this.tokens--;
-      return;
+    for (;;) {
+      this.refill();
+      if (this.tokens > 0) {
+        this.tokens--;
+        return;
+      }
+      const waitMs = Math.ceil(1000 / this.refillPerSecond);
+      await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
     }
-    const waitMs = Math.ceil(1000 / this.refillPerSecond);
-    await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
-    this.refill();
-    this.tokens--;
   }
 
   private refill(): void {
