@@ -36,7 +36,7 @@ cargo build --workspace
 cargo build --workspace --release
 
 # Run the application (debug)
-cargo run -p walk-app
+cargo run -p walk
 
 # Run all tests
 cargo test --workspace
