@@ -31,7 +31,7 @@ sg_key_set { "apiName": "ura", "key": "your-ura-api-key" }
 sg_key_set { "apiName": "lta", "key": "your-lta-api-key" }
 ```
 
-The local keystore is convenient for local development only. It is not a secret-management system.
+The local keystore is convenient for local development only. It is not a secret-management system. Keystore data is stored at `$SG_APIS_STATE_DIR/keys.db` (default `~/.sg-apis/keys.db`).
 
 ## Public APIs
 

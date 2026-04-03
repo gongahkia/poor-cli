@@ -7,7 +7,7 @@ This repo now ships a single-node Docker VPS deployment bundle for the public St
 - `caddy` terminates TLS for `https://<public-hostname>`
 - `sg-apis-mcp` serves MCP over `/mcp`
 - `/.well-known/oauth-protected-resource*`, `/healthz`, and `/icon.svg` are proxied to the same server
-- SQLite-backed artifacts are persisted on the `sg_apis_state` Docker volume at `/var/lib/sg-apis/artifacts.db`
+- All persistent state (cache, keys, config, artifacts) lives under `SG_APIS_STATE_DIR` (`/var/lib/sg-apis` in the container) on the `sg_apis_state` Docker volume
 
 ## Files
 
@@ -29,6 +29,7 @@ docker compose --env-file .env.deploy up -d
 
 ## Required Runtime Invariants
 
+- `SG_APIS_STATE_DIR` must point to a persistent, writable directory (defaults to `~/.sg-apis` locally, `/var/lib/sg-apis` in compose)
 - `SG_APIS_REMOTE_BASE_URL` must resolve to `https://<public-hostname>/mcp`
 - `server.json.remotes[0].url` must match that same public `/mcp` URL before a real release
 - the protected-resource metadata `resource` value must match the same `/mcp` URL
