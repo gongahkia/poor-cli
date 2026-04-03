@@ -16,12 +16,30 @@ impl WalkHandler {
             }
         };
 
-        let Some(rows) = snapshot.get("rows").and_then(Value::as_array) else {
-            return;
-        };
         let Some(pane_id) = self.active_pane_id() else {
             return;
         };
+        let daemon_pane_id = attached_daemon_pane_id(pane_id);
+
+        let rows = snapshot
+            .get("panes")
+            .and_then(Value::as_array)
+            .and_then(|panes| {
+                panes
+                    .iter()
+                    .find(|pane| {
+                        pane.get("pane_id")
+                            .and_then(Value::as_u64)
+                            .is_some_and(|value| value == daemon_pane_id)
+                    })
+                    .and_then(|pane| pane.get("rows"))
+                    .and_then(Value::as_array)
+            })
+            .or_else(|| snapshot.get("rows").and_then(Value::as_array));
+        let Some(rows) = rows else {
+            return;
+        };
+
         let Some(pane) = self.panes.get_mut(&pane_id) else {
             return;
         };

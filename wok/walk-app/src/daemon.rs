@@ -114,7 +114,20 @@ mod imp {
                                     }).collect::<Vec<_>>(),
                                     "display_offset": terminal.state.display_offset(),
                                     "cols": terminal.cols(),
-                                    "rows_visible": terminal.rows()
+                                    "rows_visible": terminal.rows(),
+                                    "panes": [{
+                                        "pane_id": 0,
+                                        "rows": terminal.state.text_rows().into_iter().map(|row| {
+                                            serde_json::json!({
+                                                "absolute_row": row.absolute_row,
+                                                "viewport_row": row.viewport_row,
+                                                "text": row.text
+                                            })
+                                        }).collect::<Vec<_>>(),
+                                        "display_offset": terminal.state.display_offset(),
+                                        "cols": terminal.cols(),
+                                        "rows_visible": terminal.rows()
+                                    }]
                                 }),
                             },
                             ClientMessage::Input { pane_id, data } => {
@@ -435,7 +448,20 @@ mod imp {
                                     }).collect::<Vec<_>>(),
                                     "display_offset": terminal.state.display_offset(),
                                     "cols": terminal.cols(),
-                                    "rows_visible": terminal.rows()
+                                    "rows_visible": terminal.rows(),
+                                    "panes": [{
+                                        "pane_id": 0,
+                                        "rows": terminal.state.text_rows().into_iter().map(|row| {
+                                            serde_json::json!({
+                                                "absolute_row": row.absolute_row,
+                                                "viewport_row": row.viewport_row,
+                                                "text": row.text
+                                            })
+                                        }).collect::<Vec<_>>(),
+                                        "display_offset": terminal.state.display_offset(),
+                                        "cols": terminal.cols(),
+                                        "rows_visible": terminal.rows()
+                                    }]
                                 }),
                             },
                             ClientMessage::Input { pane_id, data } => {

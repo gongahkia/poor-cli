@@ -105,6 +105,32 @@ fn daemon_lifecycle_supports_attach_input_snapshot_and_kill() {
         "daemon snapshot should include command output text"
     );
 
+    let pane_snapshot_ok = wait_until(Duration::from_secs(3), Duration::from_millis(75), || {
+        walk_app::daemon::snapshot_session(&session)
+            .ok()
+            .and_then(|snapshot| {
+                snapshot
+                    .get("panes")
+                    .and_then(serde_json::Value::as_array)
+                    .cloned()
+            })
+            .is_some_and(|panes| {
+                panes.iter().any(|pane| {
+                    pane.get("pane_id")
+                        .and_then(serde_json::Value::as_u64)
+                        .is_some_and(|pane_id| pane_id == 0)
+                        && pane
+                            .get("rows")
+                            .and_then(serde_json::Value::as_array)
+                            .is_some()
+                })
+            })
+    });
+    assert!(
+        pane_snapshot_ok,
+        "daemon snapshot should include pane-scoped rows payload"
+    );
+
     walk_app::daemon::detach_session(&session).expect("daemon should accept detach");
     walk_app::daemon::kill_session(&session).expect("daemon should accept kill");
 
