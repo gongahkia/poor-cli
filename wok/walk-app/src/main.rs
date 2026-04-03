@@ -81,10 +81,15 @@ use winit::event::MouseButton;
 use winit::window::Window;
 
 mod action_parser;
+mod jsonrpc_params;
 mod rpc_cli;
 
 use action_parser::{
     normalize_remote_action_name, parse_lua_action, parse_remote_action_with_params,
+};
+use jsonrpc_params::{
+    jsonrpc_optional_string_param, jsonrpc_optional_value_param, jsonrpc_string_param,
+    jsonrpc_u64_param,
 };
 
 /// Walk — a GPU-accelerated terminal emulator with Blocks.
@@ -301,6 +306,12 @@ struct PaneRuntime {
     daemon_last_synced_row: Option<usize>,
     inline_images: InlineImageStore,
     last_output_line_row: Option<usize>,
+}
+
+const ATTACHED_DAEMON_PANE_ID: u64 = 0;
+
+fn attached_daemon_pane_id(_local_pane_id: PaneId) -> u64 {
+    ATTACHED_DAEMON_PANE_ID
 }
 
 #[derive(Clone, Default)]
@@ -705,7 +716,9 @@ impl WalkHandler {
                     warn!("failed to resize pane terminal: {error}");
                 }
                 if let Some(session) = self.attached_session.as_deref() {
-                    if let Err(error) = walk_app::daemon::resize_pane(session, pane_id, cols, rows)
+                    let daemon_pane_id = attached_daemon_pane_id(pane_id);
+                    if let Err(error) =
+                        walk_app::daemon::resize_pane(session, daemon_pane_id, cols, rows)
                     {
                         warn!("failed to resize daemon pane for session '{session}': {error}");
                     }
@@ -2003,7 +2016,8 @@ impl WalkHandler {
     fn send_to_pty(&mut self, data: &[u8]) {
         if let Some(session) = self.attached_session.as_deref() {
             if let Some(pane_id) = self.active_pane_id() {
-                if let Err(error) = walk_app::daemon::send_input(session, pane_id, data) {
+                let daemon_pane_id = attached_daemon_pane_id(pane_id);
+                if let Err(error) = walk_app::daemon::send_input(session, daemon_pane_id, data) {
                     warn!("failed to send daemon input for session '{session}': {error}");
                 }
             }
@@ -7798,61 +7812,6 @@ fn parse_shell_type(value: &str) -> ShellType {
     }
 }
 
-fn jsonrpc_u64_param(params: &Value, index: usize, key: &str) -> Result<u64, String> {
-    if let Some(value) = params
-        .as_array()
-        .and_then(|items| items.get(index))
-        .and_then(Value::as_u64)
-    {
-        return Ok(value);
-    }
-    if let Some(value) = params.as_object().and_then(|items| items.get(key)) {
-        if let Some(value) = value.as_u64() {
-            return Ok(value);
-        }
-    }
-    Err(format!("missing or invalid '{key}' parameter"))
-}
-
-fn jsonrpc_string_param(params: &Value, index: usize, key: &str) -> Result<String, String> {
-    if let Some(value) = params
-        .as_array()
-        .and_then(|items| items.get(index))
-        .and_then(Value::as_str)
-    {
-        return Ok(value.to_string());
-    }
-    if let Some(value) = params.as_object().and_then(|items| items.get(key)) {
-        if let Some(value) = value.as_str() {
-            return Ok(value.to_string());
-        }
-    }
-    Err(format!("missing or invalid '{key}' parameter"))
-}
-
-fn jsonrpc_optional_string_param(params: &Value, index: usize, key: &str) -> Option<String> {
-    params
-        .as_array()
-        .and_then(|items| items.get(index))
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .or_else(|| {
-            params
-                .as_object()
-                .and_then(|items| items.get(key))
-                .and_then(Value::as_str)
-                .map(str::to_string)
-        })
-}
-
-fn jsonrpc_optional_value_param(params: &Value, index: usize, key: &str) -> Option<Value> {
-    params
-        .as_array()
-        .and_then(|items| items.get(index))
-        .cloned()
-        .or_else(|| params.as_object().and_then(|items| items.get(key)).cloned())
-}
-
 #[cfg(test)]
 fn parse_lua_key_combo(key: &str) -> Option<walk_app::keybindings::KeyCombo> {
     let mut modifiers = walk_app::input::Modifiers::default();
@@ -8174,6 +8133,12 @@ mod tests {
             Some(Action::LoadSession("demo".to_string()))
         );
         assert_eq!(parse_lua_action("save_session:"), None);
+    }
+
+    #[test]
+    fn test_attached_daemon_pane_id_maps_to_single_runtime_pane() {
+        assert_eq!(attached_daemon_pane_id(1), 0);
+        assert_eq!(attached_daemon_pane_id(99), 0);
     }
 
     #[test]
