@@ -1,7 +1,9 @@
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
+const optionalFile = (rel) => existsSync(resolve(root, rel)) ? [rel] : [];
 
 const checks = [
   {
@@ -9,7 +11,8 @@ const checks = [
     pattern: "MOCK_API_BASE_URL|getMockApiBaseUrl|mockApiBaseUrl",
     paths: [
       "README.md",
-      "CHANGELOG.md",
+      ...optionalFile("README2.md"),
+      ...optionalFile("CHANGELOG.md"),
       "docs",
       "examples",
       "packages/skill",
@@ -23,7 +26,8 @@ const checks = [
     pattern: "golden-outputs|fixture-backed|mock-backed|outside mock mode",
     paths: [
       "README.md",
-      "CHANGELOG.md",
+      ...optionalFile("README2.md"),
+      ...optionalFile("CHANGELOG.md"),
       "docs",
       "examples",
       "packages/skill",
