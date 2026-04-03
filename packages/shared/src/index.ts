@@ -18,6 +18,7 @@ export { createLogger } from "./logger.js";
 export { subscribeLogEntries } from "./logger.js";
 export type { LogEntry, LogLevel, Logger } from "./logger.js";
 export { getRateLimiter, RateLimiter } from "./rate-limiter.js";
+export { resolveStatePath } from "./state-dir.js";
 export { resetRateLimiters } from "./rate-limiter.js";
 export { validateInput } from "./schemas/index.js";
 export {
