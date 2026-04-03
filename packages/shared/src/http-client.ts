@@ -1,10 +1,22 @@
 import { ApiError } from "./errors.js";
+import { CircuitBreaker } from "./circuit-breaker.js";
 import { getRateLimiter } from "./rate-limiter.js";
 import { createLogger } from "./logger.js";
 import { getTimeout } from "./config/index.js";
 import { HARD_CAP_TIMEOUT } from "./config/timeouts.js";
 
 const logger = createLogger("http-client");
+
+const breakers = new Map<string, CircuitBreaker>();
+const getBreaker = (apiName: string): CircuitBreaker => {
+  let breaker = breakers.get(apiName);
+  if (breaker === undefined) {
+    breaker = new CircuitBreaker(apiName);
+    breakers.set(apiName, breaker);
+  }
+  return breaker;
+};
+export const resetCircuitBreakers = (): void => { breakers.clear(); };
 
 export type HttpOptions = {
   readonly headers?: Readonly<Record<string, string>>;
@@ -65,6 +77,8 @@ const suggestedActionForStatus = (status: number): string | undefined => {
 };
 
 export const httpGet = async <T>(url: string, options: HttpOptions): Promise<T> => {
+  const breaker = getBreaker(options.apiName);
+  return breaker.execute(async () => {
   const retries = options.retries ?? DEFAULT_RETRIES;
   const apiTimeout = options.timeout ?? getTimeout(options.apiName);
   const timeout = Math.min(apiTimeout, HARD_CAP_TIMEOUT);
@@ -200,9 +214,12 @@ export const httpGet = async <T>(url: string, options: HttpOptions): Promise<T> 
     retryable: true,
     suggestedAction: "Retry later. The upstream service did not recover within the retry budget.",
   });
+  });
 };
 
 export const httpGetText = async (url: string, options: HttpOptions): Promise<string> => {
+  const breaker = getBreaker(options.apiName);
+  return breaker.execute(async () => {
   const retries = options.retries ?? DEFAULT_RETRIES;
   const apiTimeout = options.timeout ?? getTimeout(options.apiName);
   const timeout = Math.min(apiTimeout, HARD_CAP_TIMEOUT);
@@ -337,5 +354,6 @@ export const httpGetText = async (url: string, options: HttpOptions): Promise<st
     message: `${options.apiName} request failed after ${retries} retries`,
     retryable: true,
     suggestedAction: "Retry later. The upstream service did not recover within the retry budget.",
+  });
   });
 };
