@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import Database from "better-sqlite3";
+import { resolveStatePath } from "@sg-apis/shared";
 import type { ToolResult, ToolResultResourceLinkContent } from "@sg-apis/shared";
 
 const JSON_MIME_TYPE = "application/json";
@@ -68,7 +68,7 @@ const stableStringify = (value: unknown): string => {
 };
 
 const getDefaultArtifactDbPath = (): string => {
-  return process.env["SG_APIS_ARTIFACT_DB_PATH"] ?? join(homedir(), ".sg-apis", "artifacts.db");
+  return process.env["SG_APIS_ARTIFACT_DB_PATH"] ?? resolveStatePath("artifacts.db");
 };
 
 const toInputHash = (

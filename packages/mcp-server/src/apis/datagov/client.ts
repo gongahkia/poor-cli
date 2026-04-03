@@ -1,8 +1,7 @@
 import { mkdirSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
+import { dirname } from "node:path";
 import Database from "better-sqlite3";
-import { httpGet, httpGetText, ApiError, createLogger } from "@sg-apis/shared";
+import { httpGet, httpGetText, ApiError, createLogger, resolveStatePath } from "@sg-apis/shared";
 import type {
   DatagovColumnMetadata,
   DatagovDatastoreResult,
@@ -55,9 +54,9 @@ export const resetLocalIndexState = (): void => {
 
 const getIndexDb = (): Database.Database => {
   if (indexDb !== null) return indexDb;
-  const dbDir = join(homedir(), ".sg-apis");
-  mkdirSync(dbDir, { recursive: true });
-  const db = new Database(join(dbDir, "cache.db"));
+  const dbPath = resolveStatePath("cache.db");
+  mkdirSync(dirname(dbPath), { recursive: true });
+  const db = new Database(dbPath);
   db.exec(`
     CREATE TABLE IF NOT EXISTS datagov_index (
       id TEXT PRIMARY KEY,
