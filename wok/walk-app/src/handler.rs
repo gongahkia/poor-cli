@@ -28,6 +28,9 @@ pub trait AppHandler {
     /// Called when the window is resized.
     fn on_resize(&mut self, _new_size: PhysicalSize<u32>) {}
 
+    /// Called when the window scale factor changes.
+    fn on_scale_factor_changed(&mut self, _new_scale_factor: f64, _new_size: PhysicalSize<u32>) {}
+
     /// Called when a keyboard event is received.
     fn on_key_event(&mut self, _event: InputEvent) {}
 

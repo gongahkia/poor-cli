@@ -130,6 +130,7 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
                 if let Some(win) = &mut self.window {
                     win.scale_factor = scale_factor;
                     win.size = win.window.inner_size();
+                    self.handler.on_scale_factor_changed(scale_factor, win.size);
                 }
             }
             WindowEvent::ModifiersChanged(modifiers) => {

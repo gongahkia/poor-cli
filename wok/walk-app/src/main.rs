@@ -4806,6 +4806,21 @@ impl AppHandler for WalkHandler {
         self.needs_redraw = true;
     }
 
+    fn on_scale_factor_changed(&mut self, _new_scale_factor: f64, new_size: PhysicalSize<u32>) {
+        if new_size.width == 0 || new_size.height == 0 {
+            return;
+        }
+
+        if let Some(ref mut render) = self.render {
+            render
+                .gpu
+                .resize(&render.surface, new_size.width, new_size.height);
+        }
+
+        self.update_grid(new_size);
+        self.needs_redraw = true;
+    }
+
     fn on_key_event(&mut self, event: InputEvent) {
         if self.handle_replay_input(&event) {
             return;
