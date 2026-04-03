@@ -2183,11 +2183,11 @@
 5. Security: the socket is user-readable only (`chmod 600`). No authentication beyond filesystem permissions.
 
 **DONE WHEN**
-- [ ] `echo '{"jsonrpc":"2.0","method":"walk.get_panes","id":1}' | socat - UNIX-CONNECT:$WALK_SOCKET` returns a JSON list of panes.
-- [ ] `walk.send_text(pane_id, "ls\n")` from an external script executes `ls` in the target pane.
-- [ ] `walk.run_action("SplitVertical")` creates a new vertical split from an external script.
-- [ ] The `$WALK_SOCKET` variable is available in spawned shells.
-- [ ] Multiple external scripts can connect simultaneously without interference.
+- [x] `echo '{"jsonrpc":"2.0","method":"walk.get_panes","id":1}' | socat - UNIX-CONNECT:$WALK_SOCKET` returns a JSON list of panes.
+- [x] `walk.send_text(pane_id, "ls\n")` from an external script executes `ls` in the target pane.
+- [x] `walk.run_action("SplitVertical")` creates a new vertical split from an external script.
+- [x] The `$WALK_SOCKET` variable is available in spawned shells.
+- [x] Multiple external scripts can connect simultaneously without interference.
 
 ---
 
@@ -2205,9 +2205,9 @@
 6. Memory management: snapshots store only the viewport-visible cells (not full scrollback) to keep memory bounded. At 80x24 cells * 300 snapshots, this is approximately 15MB.
 
 **DONE WHEN**
-- [ ] `Mod+Alt+Shift+R` enters replay mode. Left/Right arrow scrubs through past terminal states.
-- [ ] Block completion timestamps appear as markers on the timeline. `[` / `]` jumps between them.
-- [ ] The status bar shows "REPLAY 2m30s ago" with the timestamp of the current snapshot.
-- [ ] Exiting replay mode returns to the live terminal state.
-- [ ] Memory usage does not grow unbounded — old snapshots are discarded.
-- [ ] Replay works correctly with split panes (each pane has its own replay store).
+- [x] `Mod+Alt+Shift+R` enters replay mode. Left/Right arrow scrubs through past terminal states.
+- [x] Block completion timestamps appear as markers on the timeline. `[` / `]` jumps between them.
+- [x] The status bar shows "REPLAY 2m30s ago" with the timestamp of the current snapshot.
+- [x] Exiting replay mode returns to the live terminal state.
+- [x] Memory usage does not grow unbounded — old snapshots are discarded.
+- [x] Replay works correctly with split panes (each pane has its own replay store).

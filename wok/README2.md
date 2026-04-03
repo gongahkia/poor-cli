@@ -34,6 +34,8 @@ cargo run -p walk -- --shell wsl:Ubuntu
 cargo run -p walk -- --daemon work
 cargo run -p walk -- attach work
 cargo run -p walk -- list
+cargo run -p walk -- rpc walk.get_panes
+cargo run -p walk -- rpc walk.run_action --params '["SplitVertical", {"index": 2}]'
 ```
 
 ## Key Runtime Surfaces
@@ -62,6 +64,14 @@ Example JSON-RPC call:
 ```bash
 echo '{"jsonrpc":"2.0","method":"walk.get_panes","id":1}' \
   | socat - UNIX-CONNECT:"$WALK_SOCKET"
+```
+
+Built-in client shortcut:
+
+```bash
+walk rpc walk.get_panes
+walk rpc walk.send_text --params '{"pane_id":1,"text":"ls\n"}'
+walk rpc walk.run_action --params '["save_session", {"name":"manual"}]'
 ```
 
 Supported methods:
