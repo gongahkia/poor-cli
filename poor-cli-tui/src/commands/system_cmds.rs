@@ -530,7 +530,7 @@ pub(super) fn handle_system_commands(
             .unwrap_or("")
             .trim()
             .to_ascii_lowercase();
-        let usage = "Usage: /memory\n       /memory show\n       /memory edit\n       /memory set <text>\n       /memory append <text>\n       /memory clear";
+        let usage = "Usage: /memory\n       /memory show\n       /memory edit\n       /memory set <text>\n       /memory append <text>\n       /memory clear\n       /memory list-includes\n       /memory allow-include <path>";
 
         if subcommand.is_empty() {
             let items = vec![
@@ -539,6 +539,8 @@ pub(super) fn handle_system_commands(
                 ListSelectorItem { label: "set: Replace repo memory".into(), value: "set".into() },
                 ListSelectorItem { label: "append: Append to repo memory".into(), value: "append".into() },
                 ListSelectorItem { label: "clear: Clear repo memory".into(), value: "clear".into() },
+                ListSelectorItem { label: "list-includes: Show approved external @includes".into(), value: "list-includes".into() },
+                ListSelectorItem { label: "allow-include: Approve one external @include path".into(), value: "allow-include".into() },
             ];
             app.open_list_selector(ListSelectorState {
                 title: "Memory".into(), items, selected_idx: 0,
@@ -593,6 +595,45 @@ pub(super) fn handle_system_commands(
                     app,
                     raw,
                     format!("Cleared repo memory at `{}`.", path.display()),
+                ),
+                Err(error) => app.push_message(ChatMessage::error(error)),
+            }
+            return Some(false);
+        }
+
+        if subcommand == "list-includes" {
+            match list_approved_external_includes(app) {
+                Ok(paths) if paths.is_empty() => show_command_info_popup(
+                    app,
+                    raw,
+                    "No approved external include paths.\nUse `/memory allow-include <path>`."
+                        .to_string(),
+                ),
+                Ok(paths) => {
+                    let mut lines = vec!["**Approved External @include Paths**".to_string(), String::new()];
+                    for path in paths {
+                        lines.push(format!("- `{path}`"));
+                    }
+                    show_command_info_popup(app, raw, lines.join("\n"));
+                }
+                Err(error) => app.push_message(ChatMessage::error(error)),
+            }
+            return Some(false);
+        }
+
+        if subcommand == "allow-include" {
+            let payload = args.get(2).copied().unwrap_or("").trim();
+            if payload.is_empty() {
+                show_command_info_popup(app, raw, usage.to_string());
+                return Some(false);
+            }
+            match approve_external_include(app, payload) {
+                Ok((settings_path, approved_path)) => show_command_info_popup(
+                    app,
+                    raw,
+                    format!(
+                        "Approved external include path:\n`{approved_path}`\n\nSaved in `{settings_path}`."
+                    ),
                 ),
                 Err(error) => app.push_message(ChatMessage::error(error)),
             }
@@ -711,4 +752,76 @@ fn normalize_permission_mode_input(raw: &str) -> Option<String> {
         "danger-full-access" => Some("danger-full-access".to_string()),
         _ => None,
     }
+}
+
+fn list_approved_external_includes(app: &App) -> Result<Vec<String>, String> {
+    let payload = load_repo_local_settings(app)?;
+    let paths = payload
+        .get("approvedExternalIncludes")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut result = Vec::new();
+    for value in paths {
+        if let Some(path) = value.as_str() {
+            let trimmed = path.trim();
+            if !trimmed.is_empty() {
+                result.push(trimmed.to_string());
+            }
+        }
+    }
+    Ok(result)
+}
+
+fn approve_external_include(app: &App, raw_path: &str) -> Result<(String, String), String> {
+    let approved = normalize_include_path(app, raw_path)?;
+    let mut payload = load_repo_local_settings(app)?;
+    if !payload.is_object() {
+        payload = serde_json::json!({});
+    }
+    let object = payload
+        .as_object_mut()
+        .ok_or_else(|| "Invalid local settings payload".to_string())?;
+    let existing = object
+        .entry("approvedExternalIncludes".to_string())
+        .or_insert_with(|| Value::Array(Vec::new()));
+    if !existing.is_array() {
+        *existing = Value::Array(Vec::new());
+    }
+    let array = existing
+        .as_array_mut()
+        .ok_or_else(|| "Failed to update approvedExternalIncludes".to_string())?;
+    let already_present = array
+        .iter()
+        .any(|entry| entry.as_str().map(str::trim) == Some(approved.as_str()));
+    if !already_present {
+        array.push(Value::String(approved.clone()));
+    }
+    let settings_path = save_repo_local_settings(app, &payload)?;
+    Ok((settings_path.display().to_string(), approved))
+}
+
+fn normalize_include_path(app: &App, raw_path: &str) -> Result<String, String> {
+    let trimmed = raw_path.trim();
+    if trimmed.is_empty() {
+        return Err("Path cannot be empty".to_string());
+    }
+    let resolved = if let Some(suffix) = trimmed.strip_prefix("~/") {
+        let home = std::env::var("HOME")
+            .map_err(|_| "Failed to resolve home directory".to_string())?;
+        Path::new(&home).join(suffix)
+    } else {
+        let candidate = Path::new(trimmed);
+        if candidate.is_absolute() {
+            candidate.to_path_buf()
+        } else {
+            Path::new(&app.cwd).join(candidate)
+        }
+    };
+    let normalized = if let Ok(canonical) = resolved.canonicalize() {
+        canonical
+    } else {
+        resolved
+    };
+    Ok(normalized.to_string_lossy().to_string())
 }

@@ -27,6 +27,7 @@ DEFAULT_MANAGED_MEMORY = "/etc/poor-cli/CLAUDE.md"
 DISABLE_MEMORY_ENV = "CLAUDE_CODE_DISABLE_CLAUDE_MDS"
 DISABLE_MEMORY_ENV_ALT = "POOR_CLI_DISABLE_CLAUDE_MDS"
 ALLOW_EXTERNAL_INCLUDES_ENV = "POOR_CLI_ALLOW_EXTERNAL_INCLUDES"
+EXTERNAL_INCLUDE_ALLOWLIST_ENV = "POOR_CLI_EXTERNAL_INCLUDE_ALLOWLIST"
 MAX_MEMORY_CHARACTER_COUNT = 40_000
 RULES_DIR = ".claude/rules"
 RULES_FILE_NAME = ".claude/CLAUDE.md"
@@ -350,6 +351,67 @@ class InstructionManager:
             deduped.append(pattern)
         return deduped
 
+    def _approved_external_include_patterns(self) -> List[str]:
+        env_raw = str(os.getenv(EXTERNAL_INCLUDE_ALLOWLIST_ENV, "")).strip()
+        env_patterns = [
+            token.strip()
+            for token in env_raw.split(",")
+            if token.strip()
+        ]
+
+        file_patterns: List[str] = []
+        settings_paths = [
+            Path.home() / ".poor-cli" / "settings.json",
+            self.repo_root / ".poor-cli" / "settings.json",
+            self.repo_root / ".poor-cli" / "settings.local.json",
+        ]
+        for settings_path in settings_paths:
+            payload = self._read_json(settings_path)
+            if not isinstance(payload, dict):
+                continue
+            raw_value = payload.get("approvedExternalIncludes")
+            if isinstance(raw_value, list):
+                for value in raw_value:
+                    if isinstance(value, str) and value.strip():
+                        file_patterns.append(value.strip())
+
+        seen: set[str] = set()
+        deduped: List[str] = []
+        for pattern in [*env_patterns, *file_patterns]:
+            if pattern in seen:
+                continue
+            seen.add(pattern)
+            deduped.append(pattern)
+        return deduped
+
+    def _is_external_include_allowed(self, candidate: Path) -> bool:
+        patterns = self._approved_external_include_patterns()
+        if not patterns:
+            return False
+        candidate_abs = str(candidate.resolve())
+        for pattern in patterns:
+            if not pattern:
+                continue
+            expanded = str(Path(pattern).expanduser())
+            if any(ch in expanded for ch in "*?[]"):
+                if fnmatch.fnmatch(candidate_abs, expanded):
+                    return True
+                continue
+            approved_path = Path(expanded)
+            if not approved_path.is_absolute():
+                approved_path = (self.repo_root / approved_path).resolve()
+            else:
+                approved_path = approved_path.resolve()
+            if approved_path.is_dir():
+                try:
+                    candidate.relative_to(approved_path)
+                    return True
+                except ValueError:
+                    continue
+            if candidate == approved_path:
+                return True
+        return False
+
     def _build_memory_source(
         self,
         path: Path,
@@ -533,6 +595,8 @@ class InstructionManager:
             candidate.relative_to(self.repo_root)
             return candidate
         except ValueError:
+            if self._is_external_include_allowed(candidate):
+                return candidate
             return None
 
     def _load_repo_root_instructions(self) -> List[InstructionSource]:

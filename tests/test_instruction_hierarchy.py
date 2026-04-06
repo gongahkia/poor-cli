@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -179,3 +180,27 @@ class TestInstructionHierarchy(unittest.TestCase):
                 allowed = InstructionManager(repo).build_snapshot()
             allowed_text = "\n".join(source.content for source in allowed.sources)
             self.assertIn("outside include", allowed_text)
+
+    def test_external_include_allowed_by_local_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as home_tmp:
+            repo = Path(repo_tmp)
+            managed = repo / "managed-missing.md"
+            external = Path(home_tmp) / "external-allowed.md"
+            external.write_text("approved external include", encoding="utf-8")
+
+            memory_file = repo / ".claude" / "CLAUDE.md"
+            memory_file.parent.mkdir(parents=True, exist_ok=True)
+            memory_file.write_text(f"@{external}\nproject text", encoding="utf-8")
+
+            settings_path = repo / ".poor-cli" / "settings.local.json"
+            settings_path.parent.mkdir(parents=True, exist_ok=True)
+            settings_path.write_text(
+                json.dumps({"approvedExternalIncludes": [str(external)]}),
+                encoding="utf-8",
+            )
+
+            with patch.dict(os.environ, self._base_env(home_tmp, managed)):
+                snapshot = InstructionManager(repo).build_snapshot()
+
+            rendered = "\n".join(source.content for source in snapshot.sources)
+            self.assertIn("approved external include", rendered)

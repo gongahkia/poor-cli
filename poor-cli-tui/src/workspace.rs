@@ -495,6 +495,10 @@ pub(crate) fn repo_memory_path(app: &App) -> PathBuf {
     command_data_dir(app).join("memory.md")
 }
 
+pub(crate) fn repo_local_settings_path(app: &App) -> PathBuf {
+    command_data_dir(app).join("settings.local.json")
+}
+
 pub(crate) fn load_repo_memory(app: &App) -> Result<Option<String>, String> {
     let path = repo_memory_path(app);
     if !path.exists() {
@@ -511,6 +515,33 @@ pub(crate) fn save_repo_memory(app: &App, content: &str) -> Result<PathBuf, Stri
         .map_err(|error| format!("Failed to create data directory: {error}"))?;
     let path = repo_memory_path(app);
     fs::write(&path, content).map_err(|error| format!("Failed to write repo memory: {error}"))?;
+    Ok(path)
+}
+
+pub(crate) fn load_repo_local_settings(app: &App) -> Result<serde_json::Value, String> {
+    let path = repo_local_settings_path(app);
+    if !path.exists() {
+        return Ok(serde_json::json!({}));
+    }
+    let content = fs::read_to_string(&path)
+        .map_err(|error| format!("Failed to read repo local settings: {error}"))?;
+    let parsed: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|error| format!("Invalid repo local settings JSON: {error}"))?;
+    if !parsed.is_object() {
+        return Ok(serde_json::json!({}));
+    }
+    Ok(parsed)
+}
+
+pub(crate) fn save_repo_local_settings(app: &App, value: &serde_json::Value) -> Result<PathBuf, String> {
+    let root = command_data_dir(app);
+    fs::create_dir_all(&root)
+        .map_err(|error| format!("Failed to create data directory: {error}"))?;
+    let path = repo_local_settings_path(app);
+    let payload = serde_json::to_string_pretty(value)
+        .map_err(|error| format!("Failed to serialize repo local settings: {error}"))?;
+    fs::write(&path, payload)
+        .map_err(|error| format!("Failed to write repo local settings: {error}"))?;
     Ok(path)
 }
 
