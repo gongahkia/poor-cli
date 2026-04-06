@@ -37,6 +37,7 @@ from .core_events import CoreEvent, HistoryAdapter, RepoHistoryAdapter
 from .repo_config import RepoConfig, get_repo_config
 from .context import ContextManager, get_context_manager
 from .instructions import InstructionManager, InstructionSnapshot
+from .context_contract import ContextContractManager
 from .mcp_client import MCPManager
 from .plan_analyzer import PlanAnalyzer
 from .policy_hooks import HookExecutionResult, PolicyHookManager
@@ -126,6 +127,7 @@ class PoorCLICore:
         self._system_context_hash: Optional[str] = None
         self._approved_write_paths: set = set()
         self._instruction_manager: Optional[InstructionManager] = None
+        self._context_contract: Optional[ContextContractManager] = None
         self._hook_manager: Optional[PolicyHookManager] = None
         self._audit_logger: Optional[AuditLogger] = None
         self._mcp_manager: Optional[MCPManager] = None
@@ -264,6 +266,10 @@ class PoorCLICore:
                 )
             self._run_history = RunHistoryManager(repo_root)
             self._instruction_manager = InstructionManager(repo_root)
+            self._context_contract = ContextContractManager(
+                repo_root=repo_root,
+                instruction_manager=self._instruction_manager,
+            )
             self._hook_manager = PolicyHookManager(repo_root)
 
             # persistent memory
@@ -1063,7 +1069,16 @@ class PoorCLICore:
                 ))
 
         instruction_snapshot = self._inspect_instruction_snapshot(referenced_files)
-        instruction_prefix = instruction_snapshot.render_prompt_prefix()
+        context_contract = getattr(self, "_context_contract", None)
+        if context_contract:
+            contract_snapshot = context_contract.build_snapshot(
+                referenced_files=referenced_files,
+                plan_mode_enabled=bool(self.config and self.config.plan_mode.enabled),
+                instruction_snapshot=instruction_snapshot,
+            )
+            instruction_prefix = contract_snapshot.rendered_prompt_prefix
+        else:
+            instruction_prefix = instruction_snapshot.render_prompt_prefix()
 
         # inject agent todo list into context if non-empty
         todo_ctx = ""
@@ -1777,6 +1792,9 @@ class PoorCLICore:
             )
         self.provider.update_system_instruction(self._system_instruction)
         self._system_context_hash = new_hash
+        context_contract = getattr(self, "_context_contract", None)
+        if context_contract:
+            context_contract.invalidate_cache()
         logger.debug("System context refreshed (hash=%s)", new_hash[:12])
         return True
 
