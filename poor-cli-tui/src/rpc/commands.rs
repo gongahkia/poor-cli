@@ -99,6 +99,7 @@ pub enum RpcCommand {
         reply: SyncSender<Result<Value, String>>,
     },
     RestoreSession {
+        session_id: Option<String>,
         reply: SyncSender<Result<Value, String>>,
     },
     GetEconomySavings {

@@ -154,8 +154,8 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             Ok(RpcCommand::SaveSession { reply }) => {
                 let _ = reply.send(client.save_session());
             }
-            Ok(RpcCommand::RestoreSession { reply }) => {
-                let _ = reply.send(client.restore_session());
+            Ok(RpcCommand::RestoreSession { session_id, reply }) => {
+                let _ = reply.send(client.restore_session(session_id.as_deref()));
             }
             Ok(RpcCommand::GetEconomySavings { reply }) => {
                 let _ = reply.send(client.get_economy_savings());

@@ -258,10 +258,20 @@ pub(crate) fn rpc_save_session_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -
         .map_err(|_| "Timed out saving session".to_string())?
 }
 
-pub(crate) fn rpc_restore_session_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+pub(crate) fn rpc_restore_session_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    session_id: Option<&str>,
+) -> Result<Value, String> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    let requested = session_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string());
     rpc_cmd_tx
-        .send(RpcCommand::RestoreSession { reply: reply_tx })
+        .send(RpcCommand::RestoreSession {
+            session_id: requested,
+            reply: reply_tx,
+        })
         .map_err(|e| format!("Failed to restore session: {e}"))?;
     reply_rx
         .recv_timeout(Duration::from_secs(30))

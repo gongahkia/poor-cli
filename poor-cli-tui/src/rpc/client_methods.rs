@@ -295,8 +295,15 @@ impl RpcClient {
     pub fn save_session(&self) -> Result<Value, String> {
         self.call("poor-cli/saveSession", Value::Object(Default::default()))
     }
-    pub fn restore_session(&self) -> Result<Value, String> {
-        self.call("poor-cli/restoreSession", Value::Object(Default::default()))
+    pub fn restore_session(&self, session_id: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if let Some(value) = session_id {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                params.insert("sessionId".into(), Value::String(trimmed.to_string()));
+            }
+        }
+        self.call("poor-cli/restoreSession", Value::Object(params))
     }
     pub fn get_economy_savings(&self) -> Result<Value, String> {
         self.call("poor-cli/getEconomySavings", Value::Object(Default::default()))

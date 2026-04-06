@@ -311,12 +311,25 @@ Submitting any slash command will cancel capture."
         return Some(false);
     }
 
-    if lowered == "/restore-session" {
-        match rpc_restore_session_blocking(rpc_cmd_tx) {
+    if lowered == "/restore-session" || lowered.starts_with("/restore-session ") {
+        let session_id = raw.split_whitespace().nth(1);
+        match rpc_restore_session_blocking(rpc_cmd_tx, session_id) {
             Ok(payload) => {
                 let restored = payload.get("restored").and_then(|v| v.as_bool()).unwrap_or(false);
-                let msg = if restored { "Session restored successfully." } else { "No saved session found to restore." };
-                show_command_info_popup(app, raw, msg.to_string());
+                let restored_id = payload
+                    .get("sessionId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let msg = if restored {
+                    if restored_id.is_empty() {
+                        "Session restored successfully.".to_string()
+                    } else {
+                        format!("Session restored successfully: `{restored_id}`")
+                    }
+                } else {
+                    "No saved session found to restore.".to_string()
+                };
+                show_command_info_popup(app, raw, msg);
             }
             Err(e) => app.push_message(ChatMessage::error(format!("Failed to restore session: {e}"))),
         }
