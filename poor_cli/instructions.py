@@ -2,22 +2,51 @@
 Instruction stack loading for poor-cli.
 
 This module builds a deterministic per-request instruction stack from:
-- repo-root instruction files
-- path-local instruction files for referenced files
-- repo-local memory
-- active focus state
+- runtime policy
+- hierarchical memory files (managed -> user -> project -> local)
+- repo/path-local instruction files (compatibility)
+- repo-local memory + focus state
 """
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+
+import yaml
 
 INSTRUCTION_FILE_NAMES: tuple[str, ...] = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
+MAX_INCLUDE_DEPTH = 5
+MANAGED_MEMORY_ENV = "POOR_CLI_MANAGED_MEMORY"
+DEFAULT_MANAGED_MEMORY = "/etc/poor-cli/CLAUDE.md"
+RULES_DIR = ".claude/rules"
+RULES_FILE_NAME = ".claude/CLAUDE.md"
+LOCAL_MEMORY_FILE_NAME = "CLAUDE.local.md"
+PROJECT_MEMORY_FILE_NAME = "CLAUDE.md"
+USER_MEMORY_FILE_NAME = "CLAUDE.md"
+_TEXT_INCLUDE_SUFFIXES = {
+    ".md",
+    ".txt",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".py",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".toml",
+    ".cfg",
+    ".ini",
+    ".sh",
+    ".zsh",
+    ".bash",
+}
 
 
 @dataclass
@@ -76,6 +105,9 @@ class InstructionManager:
         *INSTRUCTION_FILE_NAMES,
         os.path.join(".poor-cli", "memory.md"),
         os.path.join(".poor-cli", "focus.json"),
+        PROJECT_MEMORY_FILE_NAME,
+        LOCAL_MEMORY_FILE_NAME,
+        RULES_FILE_NAME,
     )
 
     def __init__(self, repo_root: Optional[Path] = None):
@@ -88,8 +120,18 @@ class InstructionManager:
         self._cache_key = None
         self._cached_snapshot = None
 
-    def _compute_cache_key(self, plan_mode_enabled: bool, repo_summary_hash: str) -> str:
-        parts: list[str] = [str(self.repo_root), str(plan_mode_enabled), repo_summary_hash]
+    def _compute_cache_key(
+        self,
+        plan_mode_enabled: bool,
+        repo_summary_hash: str,
+        hierarchy_signature: str = "",
+    ) -> str:
+        parts: list[str] = [
+            str(self.repo_root),
+            str(plan_mode_enabled),
+            repo_summary_hash,
+            hierarchy_signature,
+        ]
         for rel in self._WATCHED_PATHS:
             path = self.repo_root / rel
             try:
@@ -105,16 +147,21 @@ class InstructionManager:
         plan_mode_enabled: bool = False,
         repo_summary: str = "",
     ) -> InstructionSnapshot:
+        referenced_files = list(referenced_files or [])
+        summary_hash = hashlib.sha256(repo_summary.encode()).hexdigest()[:8] if repo_summary else ""
+        hierarchy_sig = self._hierarchy_signature(referenced_files)
+
         if not referenced_files: # only cache when no path-local files requested
-            summary_hash = hashlib.sha256(repo_summary.encode()).hexdigest()[:8] if repo_summary else ""
-            key = self._compute_cache_key(plan_mode_enabled, summary_hash)
+            key = self._compute_cache_key(plan_mode_enabled, summary_hash, hierarchy_signature=hierarchy_sig)
             if key == self._cache_key and self._cached_snapshot is not None:
                 return self._cached_snapshot
 
         sources: List[InstructionSource] = []
         sources.extend(self._load_runtime_policy(plan_mode_enabled))
+        sources.extend(self._load_hierarchical_memory(referenced_files))
         sources.extend(self._load_repo_root_instructions())
-        sources.extend(self._load_path_local_instructions(referenced_files or []))
+        sources.extend(self._load_path_local_instructions(referenced_files))
+
         memory = self._load_memory()
         if memory is not None:
             sources.append(memory)
@@ -123,10 +170,18 @@ class InstructionManager:
             sources.append(focus)
         if repo_summary:
             sources.append(self._load_repo_graph_summary(repo_summary))
-        snapshot = InstructionSnapshot(repo_root=str(self.repo_root), sources=sources)
+
+        snapshot = InstructionSnapshot(
+            repo_root=str(self.repo_root),
+            sources=self._dedupe_sources(sources),
+        )
+
         if not referenced_files:
-            summary_hash = hashlib.sha256(repo_summary.encode()).hexdigest()[:8] if repo_summary else ""
-            self._cache_key = self._compute_cache_key(plan_mode_enabled, summary_hash)
+            self._cache_key = self._compute_cache_key(
+                plan_mode_enabled,
+                summary_hash,
+                hierarchy_signature=hierarchy_sig,
+            )
             self._cached_snapshot = snapshot
         return snapshot
 
@@ -154,10 +209,257 @@ class InstructionManager:
             )
         ]
 
+    def _load_hierarchical_memory(self, referenced_files: Sequence[str]) -> List[InstructionSource]:
+        normalized_refs = self._normalize_referenced_paths(referenced_files)
+        sources: List[InstructionSource] = []
+
+        # 1) managed memory (lowest priority)
+        for path in self._managed_memory_paths():
+            source = self._build_memory_source(
+                path,
+                kind="memory_managed",
+                label="Managed Memory",
+                normalized_refs=normalized_refs,
+            )
+            if source is not None:
+                sources.append(source)
+
+        # 2) user memory
+        for path in self._user_memory_paths():
+            source = self._build_memory_source(
+                path,
+                kind="memory_user",
+                label="User Memory",
+                normalized_refs=normalized_refs,
+            )
+            if source is not None:
+                sources.append(source)
+
+        # 3 + 4) project + local memory from root -> cwd
+        for directory in self._dirs_root_to_cwd(self.repo_root):
+            project_candidates = [
+                directory / PROJECT_MEMORY_FILE_NAME,
+                directory / RULES_FILE_NAME,
+            ]
+            for path in project_candidates:
+                source = self._build_memory_source(
+                    path,
+                    kind="memory_project",
+                    label="Project Memory",
+                    normalized_refs=normalized_refs,
+                )
+                if source is not None:
+                    sources.append(source)
+
+            rules_dir = directory / RULES_DIR
+            if rules_dir.is_dir():
+                for path in sorted(rules_dir.rglob("*.md")):
+                    source = self._build_memory_source(
+                        path,
+                        kind="memory_rule",
+                        label="Path Rule",
+                        normalized_refs=normalized_refs,
+                    )
+                    if source is not None:
+                        sources.append(source)
+
+            local_source = self._build_memory_source(
+                directory / LOCAL_MEMORY_FILE_NAME,
+                kind="memory_local",
+                label="Local Memory",
+                normalized_refs=normalized_refs,
+            )
+            if local_source is not None:
+                sources.append(local_source)
+
+        return sources
+
+    def _managed_memory_paths(self) -> List[Path]:
+        raw = str(os.getenv(MANAGED_MEMORY_ENV, DEFAULT_MANAGED_MEMORY)).strip()
+        if not raw:
+            return []
+        return [Path(raw).expanduser().resolve()]
+
+    def _user_memory_paths(self) -> List[Path]:
+        home = Path.home()
+        candidates: List[Path] = [home / ".poor-cli" / USER_MEMORY_FILE_NAME]
+        rules_dir = home / ".poor-cli" / "rules"
+        if rules_dir.is_dir():
+            candidates.extend(sorted(rules_dir.rglob("*.md")))
+        return [path.resolve() for path in candidates]
+
+    def _build_memory_source(
+        self,
+        path: Path,
+        *,
+        kind: str,
+        label: str,
+        normalized_refs: Sequence[str],
+    ) -> Optional[InstructionSource]:
+        if not path.is_file():
+            return None
+        raw = self._read_text_raw(path)
+        if not raw.strip():
+            return None
+
+        metadata: Dict[str, Any] = {}
+        body = raw
+        scoped_paths, stripped = self._extract_paths_frontmatter(raw)
+        if scoped_paths:
+            if not self._rule_paths_match(scoped_paths, normalized_refs):
+                return None
+            metadata["paths"] = list(scoped_paths)
+            metadata["scoped"] = True
+            body = stripped
+
+        content = self._expand_includes(
+            body,
+            including_path=path,
+            seen={path.resolve()},
+            depth=0,
+        ).strip()
+        if not content:
+            return None
+
+        return InstructionSource(
+            kind=kind,
+            label=label,
+            content=content,
+            path=self._relative_or_absolute(path),
+            metadata=metadata,
+        )
+
+    def _extract_paths_frontmatter(self, raw_text: str) -> Tuple[List[str], str]:
+        if not raw_text.startswith("---"):
+            return [], raw_text
+        parts = raw_text.split("---", 2)
+        if len(parts) < 3:
+            return [], raw_text
+        frontmatter = parts[1]
+        body = parts[2]
+        try:
+            parsed = yaml.safe_load(frontmatter) or {}
+        except Exception:
+            return [], raw_text
+        if not isinstance(parsed, dict):
+            return [], raw_text
+        paths = parsed.get("paths")
+        if not isinstance(paths, list):
+            return [], body
+        normalized = [
+            str(path).strip()
+            for path in paths
+            if isinstance(path, str) and str(path).strip()
+        ]
+        return normalized, body
+
+    def _rule_paths_match(self, globs: Sequence[str], normalized_refs: Sequence[str]) -> bool:
+        if not globs:
+            return True
+        if not normalized_refs:
+            return False
+        for ref in normalized_refs:
+            for pattern in globs:
+                if fnmatch.fnmatch(ref, pattern):
+                    return True
+        return False
+
+    def _normalize_referenced_paths(self, referenced_files: Sequence[str]) -> List[str]:
+        normalized: List[str] = []
+        for raw in referenced_files:
+            if not raw:
+                continue
+            candidate = Path(str(raw)).expanduser()
+            if not candidate.is_absolute():
+                candidate = (self.repo_root / candidate).resolve()
+            else:
+                candidate = candidate.resolve()
+            try:
+                rel = candidate.relative_to(self.repo_root)
+            except ValueError:
+                continue
+            normalized.append(str(rel).replace("\\", "/"))
+        return normalized
+
+    def _expand_includes(
+        self,
+        text: str,
+        *,
+        including_path: Path,
+        seen: set[Path],
+        depth: int,
+    ) -> str:
+        if depth >= MAX_INCLUDE_DEPTH:
+            return text
+
+        lines = text.splitlines()
+        expanded: List[str] = []
+        in_fence = False
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("```"):
+                in_fence = not in_fence
+                expanded.append(line)
+                continue
+            if in_fence:
+                expanded.append(line)
+                continue
+
+            include_target = self._parse_include_target(stripped)
+            if include_target is None:
+                expanded.append(line)
+                continue
+
+            include_path = self._resolve_include_path(include_target, including_path.parent)
+            if include_path is None:
+                continue
+            if include_path in seen:
+                continue
+            if not include_path.is_file():
+                continue
+            if include_path.suffix.lower() not in _TEXT_INCLUDE_SUFFIXES:
+                continue
+
+            include_text = self._read_text_raw(include_path)
+            if not include_text:
+                continue
+            nested = self._expand_includes(
+                include_text,
+                including_path=include_path,
+                seen={*seen, include_path},
+                depth=depth + 1,
+            ).strip()
+            if nested:
+                expanded.append(nested)
+
+        return "\n".join(expanded)
+
+    @staticmethod
+    def _parse_include_target(stripped_line: str) -> Optional[str]:
+        if not stripped_line.startswith("@"):
+            return None
+        token = stripped_line[1:].strip()
+        if not token:
+            return None
+        if (token.startswith('"') and token.endswith('"')) or (
+            token.startswith("'") and token.endswith("'")
+        ):
+            token = token[1:-1].strip()
+        return token or None
+
+    @staticmethod
+    def _resolve_include_path(token: str, base_dir: Path) -> Optional[Path]:
+        if token.startswith("~/"):
+            return (Path.home() / token[2:]).expanduser().resolve()
+        if token.startswith("/"):
+            return Path(token).expanduser().resolve()
+        return (base_dir / token).expanduser().resolve()
+
     def _load_repo_root_instructions(self) -> List[InstructionSource]:
         # trust check: skip repo instructions in untrusted repos
         try:
             from .trust import TrustManager
+
             if not TrustManager().is_trusted(str(self.repo_root)):
                 return []
         except Exception:
@@ -165,7 +467,7 @@ class InstructionManager:
         sources: List[InstructionSource] = []
         for file_name in INSTRUCTION_FILE_NAMES:
             path = self.repo_root / file_name
-            content = self._read_text(path)
+            content = self._load_text_with_includes(path)
             if not content:
                 continue
             label = (
@@ -200,7 +502,7 @@ class InstructionManager:
 
         sources: List[InstructionSource] = []
         for path in ordered_instruction_paths:
-            content = self._read_text(path)
+            content = self._load_text_with_includes(path)
             if not content:
                 continue
             label = (
@@ -218,6 +520,17 @@ class InstructionManager:
                 )
             )
         return sources
+
+    def _load_text_with_includes(self, path: Path) -> str:
+        raw = self._read_text_raw(path)
+        if not raw:
+            return ""
+        return self._expand_includes(
+            raw,
+            including_path=path,
+            seen={path.resolve()},
+            depth=0,
+        ).strip()
 
     def _referenced_directories(self, referenced_files: Sequence[str]) -> List[Path]:
         directories: List[Path] = []
@@ -254,9 +567,66 @@ class InstructionManager:
         chain.reverse()
         return chain
 
+    def _dirs_root_to_cwd(self, cwd: Path) -> List[Path]:
+        current = cwd.resolve()
+        chain = [current]
+        while current.parent != current:
+            current = current.parent
+            chain.append(current)
+        chain.reverse()
+        return chain
+
+    def _discover_hierarchical_memory_paths(self) -> List[Path]:
+        discovered: List[Path] = []
+        seen: set[Path] = set()
+
+        for path in self._managed_memory_paths():
+            if path in seen:
+                continue
+            seen.add(path)
+            discovered.append(path)
+
+        for path in self._user_memory_paths():
+            if path in seen:
+                continue
+            seen.add(path)
+            discovered.append(path)
+
+        for directory in self._dirs_root_to_cwd(self.repo_root):
+            for path in (
+                directory / PROJECT_MEMORY_FILE_NAME,
+                directory / RULES_FILE_NAME,
+                directory / LOCAL_MEMORY_FILE_NAME,
+            ):
+                resolved = path.resolve()
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                discovered.append(resolved)
+            rules_dir = directory / RULES_DIR
+            if rules_dir.is_dir():
+                for path in sorted(rules_dir.rglob("*.md")):
+                    resolved = path.resolve()
+                    if resolved in seen:
+                        continue
+                    seen.add(resolved)
+                    discovered.append(resolved)
+        return discovered
+
+    def _hierarchy_signature(self, referenced_files: Sequence[str]) -> str:
+        refs = ",".join(self._normalize_referenced_paths(referenced_files))
+        entries = [refs]
+        for path in self._discover_hierarchical_memory_paths():
+            try:
+                stat = path.stat()
+                entries.append(f"{path}:{stat.st_mtime_ns}:{stat.st_size}")
+            except OSError:
+                entries.append(f"{path}:0:0")
+        return hashlib.sha256("|".join(entries).encode("utf-8", errors="replace")).hexdigest()
+
     def _load_memory(self) -> Optional[InstructionSource]:
         path = self.repo_root / ".poor-cli" / "memory.md"
-        content = self._read_text(path)
+        content = self._load_text_with_includes(path)
         if not content:
             return None
         return InstructionSource(
@@ -310,6 +680,26 @@ class InstructionManager:
             return path.read_text(encoding="utf-8").strip()
         except OSError:
             return ""
+
+    @staticmethod
+    def _read_text_raw(path: Path) -> str:
+        try:
+            return path.read_text(encoding="utf-8")
+        except OSError:
+            return ""
+
+    @staticmethod
+    def _dedupe_sources(sources: Sequence[InstructionSource]) -> List[InstructionSource]:
+        deduped: List[InstructionSource] = []
+        seen_paths: set[str] = set()
+        for source in sources:
+            path_key = source.path or ""
+            if path_key and path_key in seen_paths:
+                continue
+            if path_key:
+                seen_paths.add(path_key)
+            deduped.append(source)
+        return deduped
 
     def _relative_or_absolute(self, path: Path) -> str:
         try:
