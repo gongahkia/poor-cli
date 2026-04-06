@@ -45,6 +45,7 @@ from ..sandbox import (
     summarize_capabilities,
 )
 from ..skills import SkillRegistry
+from ..session_store import SessionStore
 from ..task_manager import TaskManager
 from ..exceptions import (
     ConfigurationError,
@@ -1849,6 +1850,25 @@ class PoorCLIServer:
         self._ensure_initialized()
 
         limit = self._clamp_count(params.get("limit"), default=10, min_value=1, max_value=200)
+        session_store = SessionStore(Path.cwd())
+        snapshots = session_store.list(limit=limit)
+        if snapshots:
+            return {
+                "sessions": [
+                    {
+                        "sessionId": str(entry.get("sessionId", "")),
+                        "startedAt": str(entry.get("savedAt", "")),
+                        "endedAt": None,
+                        "model": str(entry.get("model") or "unknown"),
+                        "messageCount": int(entry.get("messageCount") or 0),
+                        "isActive": str(entry.get("sessionId", "")) == self.session_id,
+                        "source": "snapshot",
+                    }
+                    for entry in snapshots
+                ],
+                "activeSessionId": self.session_id,
+            }
+
         repo_config = self._get_repo_config()
         sessions = repo_config.list_sessions(limit=limit)
         active_session_id = (
@@ -4472,26 +4492,29 @@ class PoorCLIServer:
 
     async def handle_save_session(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Save current session transcript for later restore."""
+        del params
         self._ensure_initialized()
         if not self.core.provider:
             return {"saved": False, "error": "No active provider"}
         history = self.core.provider.get_history()
-        session_path = Path.cwd() / ".poor-cli" / "sessions"
-        session_path.mkdir(parents=True, exist_ok=True)
-        session_file = session_path / f"session-{self.session_id}.json"
         try:
-            import json as _json
-            with open(session_file, "w", encoding="utf-8") as f:
-                _json.dump({
-                    "session_id": self.session_id,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+            store = SessionStore(Path.cwd())
+            entry = store.save(
+                self.session_id,
+                {
                     "provider": self.core.config.model.provider if self.core.config else "",
                     "model": self.core.config.model.model_name if self.core.config else "",
-                    "message_count": len(history),
-                    "messages": history,
+                    "history": history,
                     "cost": self.core.get_session_cost_summary(),
-                }, f, indent=2, default=str)
-            return {"saved": True, "path": str(session_file)}
+                },
+            )
+            return {
+                "saved": True,
+                "path": str(entry.get("path", "")),
+                "sessionId": str(entry.get("sessionId", self.session_id)),
+                "savedAt": str(entry.get("savedAt", "")),
+                "messageCount": int(entry.get("messageCount") or 0),
+            }
         except Exception as e:
             return {"saved": False, "error": str(e)}
 
@@ -4510,28 +4533,24 @@ class PoorCLIServer:
     async def handle_restore_session(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Restore the most recent saved session transcript."""
         self._ensure_initialized()
-        session_dir = Path.cwd() / ".poor-cli" / "sessions"
-        if not session_dir.exists():
-            return {"restored": False, "error": "No saved sessions found"}
         try:
-            import json as _json
-            session_files = sorted(session_dir.glob("session-*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-            if not session_files:
+            requested_session_id = str(params.get("sessionId", "")).strip()
+            store = SessionStore(Path.cwd())
+            data = store.load(requested_session_id or None)
+            if not data:
                 return {"restored": False, "error": "No saved sessions found"}
-            session_file = session_files[0]  # most recent
-            with open(session_file, "r", encoding="utf-8") as f:
-                data = _json.load(f)
-            messages = data.get("messages", [])
-            if not messages:
+            messages = data.get("history") or data.get("messages") or []
+            if not isinstance(messages, list) or not messages:
                 return {"restored": False, "error": "Session has no messages"}
             if self.core.provider:
                 self.core.provider.set_history(messages)
             return {
                 "restored": True,
-                "session_id": data.get("session_id", ""),
+                "sessionId": data.get("session_id", ""),
                 "message_count": len(messages),
                 "provider": data.get("provider", ""),
                 "model": data.get("model", ""),
+                "savedAt": data.get("saved_at", ""),
             }
         except Exception as e:
             return {"restored": False, "error": str(e)}

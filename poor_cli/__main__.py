@@ -39,6 +39,7 @@ from .cli_errors import run_with_cli_error_handling
 from .custom_commands import CustomCommandRegistry
 from .github_task import create_task_from_context, default_mode_for_context, load_github_context
 from .repo_config import get_repo_config
+from .session_store import SessionStore
 from .sandbox import PRESET_DESCRIPTION, evaluate_tool_access, normalize_preset
 from .skills import SkillRegistry
 from .task_manager import APPROVAL_REQUIRED_PRESETS, TaskManager, run_task_worker
@@ -186,6 +187,30 @@ def _coerce_prompt(args: argparse.Namespace) -> str:
 
 
 def _build_resume_prefix() -> str:
+    session_store = SessionStore(Path.cwd())
+    latest_snapshot = session_store.load_latest()
+    if latest_snapshot:
+        history = latest_snapshot.get("history") or latest_snapshot.get("messages") or []
+        if isinstance(history, list) and history:
+            lines = [
+                "[Recent saved session context]",
+                f"Session: {latest_snapshot.get('session_id', '')}",
+                f"Model: {latest_snapshot.get('model', '')}",
+            ]
+            for message in history[-8:]:
+                if not isinstance(message, dict):
+                    continue
+                role = str(message.get("role", "assistant")).strip() or "assistant"
+                role = "assistant" if role == "model" else role
+                content = str(message.get("content", "")).strip()
+                if not content:
+                    continue
+                if len(content) > 1200:
+                    content = f"{content[:1200]}\n... (truncated)"
+                lines.append(f"{role}: {content}")
+            if len(lines) > 3:
+                return "\n\n".join(lines)
+
     repo_config = get_repo_config(enable_legacy_history_migration=False)
     sessions = repo_config.list_sessions(limit=1)
     if not sessions:
