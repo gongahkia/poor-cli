@@ -246,9 +246,9 @@ fn draw_header_bar(frame: &mut Frame, app: &App, area: Rect) {
     if !app.permission_mode_label.is_empty() {
         spans.push(Span::styled("  ", Style::default()));
         let sandbox_color = match app.permission_mode_label.as_str() {
-            "prompt" => theme::success(mode),
-            "auto-safe" => theme::warning(mode),
-            _ => theme::error(mode), // danger-full-access or unknown
+            "default" | "prompt" | "plan" => theme::success(mode),
+            "acceptEdits" | "auto-safe" => theme::warning(mode),
+            _ => theme::error(mode), // bypassPermissions/dontAsk/danger-full-access/unknown
         };
         spans.push(Span::styled(
             app.permission_mode_label.clone(),

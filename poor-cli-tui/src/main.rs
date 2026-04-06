@@ -103,7 +103,19 @@ struct Cli {
     #[arg(long)]
     cwd: Option<String>,
     /// Permission behavior for tool execution
-    #[arg(long, value_parser = ["prompt", "auto-safe", "danger-full-access"])]
+    #[arg(
+        long,
+        value_parser = [
+            "default",
+            "acceptEdits",
+            "plan",
+            "bypassPermissions",
+            "dontAsk",
+            "prompt",
+            "auto-safe",
+            "danger-full-access",
+        ]
+    )]
     permission_mode: Option<String>,
     /// Disable permission prompts and allow all operations
     #[arg(long)]
@@ -306,13 +318,13 @@ fn run_app(
     let provider = cli.provider.clone();
     let model = cli.model.clone();
     let permission_mode = if cli.dangerously_skip_permissions {
-        Some("danger-full-access".to_string())
+        Some("bypassPermissions".to_string())
     } else {
         cli.permission_mode.clone()
     };
     app.permission_mode_label = permission_mode
         .clone()
-        .unwrap_or_else(|| "prompt".to_string());
+        .unwrap_or_else(|| "default".to_string());
     let backend_log_path_string = backend_log_path
         .as_ref()
         .map(|path| path.to_string_lossy().to_string());

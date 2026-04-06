@@ -48,7 +48,12 @@ async def _handle_permission_mode(bot, update: Any, context: Any) -> None:
     await bot._threads.ensure_initialized(core)
     if not args:
         mode = getattr(getattr(core.config, "security", None), "permission_mode", "unknown")
-        await update.message.reply_text(f"current mode: {mode}\noptions: prompt, auto-safe, danger-full-access")
+        await update.message.reply_text(
+            "current mode: "
+            f"{mode}\n"
+            "options: default, acceptEdits, plan, bypassPermissions, dontAsk "
+            "(legacy: prompt, auto-safe, danger-full-access)"
+        )
         return
     try:
         result = await _chat_cmd(core, f"/permission-mode {args[0]}")

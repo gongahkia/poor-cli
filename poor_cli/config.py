@@ -22,9 +22,57 @@ logger = setup_logger(__name__)
 class PermissionMode(str, Enum):
     """Permission behavior for potentially unsafe operations."""
 
+    DEFAULT = "default"
+    ACCEPT_EDITS = "acceptEdits"
+    PLAN = "plan"
+    BYPASS_PERMISSIONS = "bypassPermissions"
+    DONT_ASK = "dontAsk"
+
+    # legacy values kept for backward compatibility
     PROMPT = "prompt"
     AUTO_SAFE = "auto-safe"
     DANGER_FULL_ACCESS = "danger-full-access"
+
+
+_PERMISSION_MODE_ALIASES = {
+    "default": PermissionMode.DEFAULT,
+    "prompt": PermissionMode.PROMPT,
+    "acceptedits": PermissionMode.ACCEPT_EDITS,
+    "accept-edits": PermissionMode.ACCEPT_EDITS,
+    "accept_edits": PermissionMode.ACCEPT_EDITS,
+    "auto-safe": PermissionMode.AUTO_SAFE,
+    "plan": PermissionMode.PLAN,
+    "bypasspermissions": PermissionMode.BYPASS_PERMISSIONS,
+    "bypass-permissions": PermissionMode.BYPASS_PERMISSIONS,
+    "bypass_permissions": PermissionMode.BYPASS_PERMISSIONS,
+    "dontask": PermissionMode.DONT_ASK,
+    "dont-ask": PermissionMode.DONT_ASK,
+    "dont_ask": PermissionMode.DONT_ASK,
+    "danger-full-access": PermissionMode.DANGER_FULL_ACCESS,
+}
+
+
+def parse_permission_mode(raw_mode: Any) -> PermissionMode:
+    """Parse permission mode with Claude-compatible aliases."""
+    if isinstance(raw_mode, PermissionMode):
+        return raw_mode
+    if not isinstance(raw_mode, str):
+        raise ConfigurationError("Invalid security.permission_mode type. Expected a string.")
+    key = raw_mode.strip()
+    if not key:
+        raise ConfigurationError("Invalid security.permission_mode value.")
+    try:
+        return PermissionMode(key)
+    except ValueError:
+        normalized = key.replace(" ", "").lower()
+        resolved = _PERMISSION_MODE_ALIASES.get(normalized)
+        if resolved is not None:
+            return resolved
+        raise ConfigurationError(
+            "Invalid security.permission_mode value. "
+            "Expected one of: default, acceptEdits, plan, bypassPermissions, dontAsk, "
+            "prompt, auto-safe, danger-full-access."
+        )
 
 
 @dataclass
@@ -213,7 +261,7 @@ class SecurityConfig:
     ])
     trusted_roots: list = field(default_factory=lambda: [])
     enforce_trusted_workspace: bool = True
-    permission_mode: PermissionMode = PermissionMode.PROMPT
+    permission_mode: PermissionMode = PermissionMode.DEFAULT
     require_permission_for_write: bool = True
     require_permission_for_bash: bool = True
     enable_bash_execution: bool = True
@@ -232,22 +280,8 @@ class SecurityConfig:
     def from_dict(cls, data: Dict[str, Any]) -> "SecurityConfig":
         """Create SecurityConfig with validated permission mode."""
         data = data.copy()
-        raw_mode = data.get("permission_mode", PermissionMode.PROMPT)
-
-        if isinstance(raw_mode, PermissionMode):
-            mode = raw_mode
-        elif isinstance(raw_mode, str):
-            try:
-                mode = PermissionMode(raw_mode)
-            except ValueError as e:
-                raise ConfigurationError(
-                    "Invalid security.permission_mode value. "
-                    "Expected one of: prompt, auto-safe, danger-full-access."
-                ) from e
-        else:
-            raise ConfigurationError(
-                "Invalid security.permission_mode type. Expected a string."
-            )
+        raw_mode = data.get("permission_mode", PermissionMode.DEFAULT)
+        mode = parse_permission_mode(raw_mode)
 
         data["permission_mode"] = mode
         return cls(**data)

@@ -6,7 +6,15 @@ from poor_cli.sandbox import ToolCapability, evaluate_tool_access
 
 
 class SandboxCapabilityInferenceTests(unittest.TestCase):
-    def _evaluate(self, *, tool_name: str, command: str = "", mutation_paths=None):
+    def _evaluate(
+        self,
+        *,
+        tool_name: str,
+        command: str = "",
+        mutation_paths=None,
+        permission_mode: str = "default",
+        sandbox_preset: str = "workspace-write",
+    ):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir).resolve()
             original_cwd = Path.cwd()
@@ -23,8 +31,8 @@ class SandboxCapabilityInferenceTests(unittest.TestCase):
                     tool_capabilities=[ToolCapability.PROCESS_EXECUTE.value]
                     if tool_name == "bash"
                     else [ToolCapability.NETWORK_ACCESS.value],
-                    permission_mode="prompt",
-                    sandbox_preset="workspace-write",
+                    permission_mode=permission_mode,
+                    sandbox_preset=sandbox_preset,
                     trusted_roots=[root],
                     mutation_paths=list(mutation_paths or []),
                 )
@@ -73,6 +81,31 @@ class SandboxCapabilityInferenceTests(unittest.TestCase):
         decision = self._evaluate(tool_name="bash", command="touch ../outside.txt")
         self.assertFalse(decision.allowed)
         self.assertIn("trusted workspace roots", decision.reason)
+
+    def test_plan_mode_blocks_mutating_commands(self) -> None:
+        decision = self._evaluate(tool_name="bash", command="touch plan-blocked.txt", permission_mode="plan")
+        self.assertFalse(decision.allowed)
+        self.assertIn("plan", decision.reason)
+
+    def test_accept_edits_prompts_for_process_execution(self) -> None:
+        decision = self._evaluate(tool_name="bash", command="ls", permission_mode="acceptEdits")
+        self.assertTrue(decision.allowed)
+        self.assertTrue(decision.requires_approval)
+
+    def test_bypass_permissions_allows_network_tool(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir).resolve()
+            decision = evaluate_tool_access(
+                tool_name="fetch_url",
+                tool_args={"url": "https://example.com"},
+                tool_capabilities=[ToolCapability.NETWORK_ACCESS.value],
+                permission_mode="bypassPermissions",
+                sandbox_preset="workspace-write",
+                trusted_roots=[root],
+                mutation_paths=[],
+            )
+        self.assertTrue(decision.allowed)
+        self.assertFalse(decision.requires_approval)
 
 
 if __name__ == "__main__":

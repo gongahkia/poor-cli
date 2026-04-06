@@ -180,7 +180,7 @@ pub(super) fn handle_system_commands(
     }
 
     if lowered == "/permissions" || lowered.starts_with("/permissions ") {
-        let usage = "Usage: /permissions\n       /permissions mode <prompt|auto-safe|danger-full-access>\n       /permissions <prompt|auto-safe|danger-full-access>\n       /permissions <allow|deny|ask> <tool> [pattern] [scope]\n       /permissions clear-session";
+        let usage = "Usage: /permissions\n       /permissions mode <default|acceptEdits|plan|bypassPermissions|dontAsk>\n       /permissions <default|acceptEdits|plan|bypassPermissions|dontAsk>\n       /permissions <allow|deny|ask> <tool> [pattern] [scope]\n       /permissions clear-session";
         let args: Vec<&str> = raw.split_whitespace().collect();
         if args.len() == 1 {
             match rpc_get_permissions_blocking(rpc_cmd_tx) {
@@ -207,22 +207,17 @@ pub(super) fn handle_system_commands(
             return Some(false);
         }
 
-        let mut mode_override: Option<&str> = None;
+        let mut mode_override: Option<String> = None;
         if subcommand == "mode" {
-            mode_override = args.get(2).copied();
-        } else if matches!(
-            subcommand.as_str(),
-            "prompt" | "auto-safe" | "danger-full-access"
-        ) {
-            mode_override = Some(subcommand.as_str());
+            mode_override = args
+                .get(2)
+                .and_then(|value| normalize_permission_mode_input(value));
+        } else if let Some(mode) = normalize_permission_mode_input(subcommand.as_str()) {
+            mode_override = Some(mode);
         }
 
         if let Some(mode) = mode_override {
-            if !matches!(mode, "prompt" | "auto-safe" | "danger-full-access") {
-                show_command_info_popup(app, raw, usage.to_string());
-                return Some(false);
-            }
-            match rpc_set_permissions_blocking(rpc_cmd_tx, Some(mode), None, false) {
+            match rpc_set_permissions_blocking(rpc_cmd_tx, Some(mode.as_str()), None, false) {
                 Ok(payload) => show_command_info_popup(app, raw, format_permissions_payload(&payload)),
                 Err(error) => show_command_info_popup(
                     app,
@@ -275,13 +270,18 @@ pub(super) fn handle_system_commands(
     if lowered.starts_with("/permission-mode") {
         let maybe_mode = raw.split_whitespace().nth(1);
         if let Some(mode) = maybe_mode {
-            let normalized = mode.trim().to_lowercase();
-            if !matches!(
-                normalized.as_str(),
-                "prompt" | "auto-safe" | "danger-full-access"
-            ) {
+            let normalized = match normalize_permission_mode_input(mode) {
+                Some(value) => value,
+                None => {
+                    app.push_message(ChatMessage::error(
+                        "Invalid mode. Use one of: default, acceptEdits, plan, bypassPermissions, dontAsk".to_string(),
+                    ));
+                    return Some(false);
+                }
+            };
+            if normalized.is_empty() {
                 app.push_message(ChatMessage::error(
-                    "Invalid mode. Use one of: prompt, auto-safe, danger-full-access".to_string(),
+                    "Invalid mode. Use one of: default, acceptEdits, plan, bypassPermissions, dontAsk".to_string(),
                 ));
                 return Some(false);
             }
@@ -308,10 +308,14 @@ pub(super) fn handle_system_commands(
                 let current = cfg
                     .get("permissionMode")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("prompt");
-                let modes = [("prompt", "ask before each action"),
-                    ("auto-safe", "auto-approve safe actions"),
-                    ("danger-full-access", "approve all actions")];
+                    .unwrap_or("default");
+                let modes = [
+                    ("default", "ask before mutating actions"),
+                    ("acceptEdits", "auto-approve file edits; prompt for commands"),
+                    ("plan", "read-only planning mode"),
+                    ("bypassPermissions", "skip all permission prompts"),
+                    ("dontAsk", "suppress prompts for scripted sessions"),
+                ];
                 let items: Vec<ListSelectorItem> = modes.iter().map(|(name, desc)| {
                     let active = if *name == current { " (active)" } else { "" };
                     ListSelectorItem { label: format!("{name}{active}: {desc}"), value: name.to_string() }
@@ -623,7 +627,7 @@ fn format_permissions_payload(payload: &Value) -> String {
     let mode = payload
         .get("permissionMode")
         .and_then(|value| value.as_str())
-        .unwrap_or("prompt");
+        .unwrap_or("default");
     let preset = payload
         .get("sandboxPreset")
         .and_then(|value| value.as_str())
@@ -677,4 +681,20 @@ fn format_permissions_payload(payload: &Value) -> String {
     }
 
     lines.join("\n")
+}
+
+fn normalize_permission_mode_input(raw: &str) -> Option<String> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "default" => Some("default".to_string()),
+        "acceptedits" | "accept-edits" | "accept_edits" => Some("acceptEdits".to_string()),
+        "plan" => Some("plan".to_string()),
+        "bypasspermissions" | "bypass-permissions" | "bypass_permissions" => {
+            Some("bypassPermissions".to_string())
+        }
+        "dontask" | "dont-ask" | "dont_ask" => Some("dontAsk".to_string()),
+        "prompt" => Some("prompt".to_string()),
+        "auto-safe" => Some("auto-safe".to_string()),
+        "danger-full-access" => Some("danger-full-access".to_string()),
+        _ => None,
+    }
 }

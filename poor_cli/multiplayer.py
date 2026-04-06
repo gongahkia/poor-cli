@@ -196,7 +196,7 @@ class MultiplayerHost:
         server_factory: Callable[[], Any],
         message_cls: Any,
         rpc_error_cls: Any,
-        default_permission_mode: str = "prompt",
+        default_permission_mode: str = "default",
         requests_per_minute: int = 10,
         invite_secret: Optional[str] = None,
         invite_ttl_seconds: int = 900,

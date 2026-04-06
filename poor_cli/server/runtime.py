@@ -30,7 +30,7 @@ from urllib.request import Request, urlopen
 
 from ..automation_manager import AutomationManager
 from ..command_validator import CommandRisk, get_command_validator
-from ..config import Config, ConfigManager, PermissionMode
+from ..config import Config, ConfigManager, PermissionMode, parse_permission_mode
 from ..core import PoorCLICore, CoreEvent
 from ..custom_commands import CustomCommandRegistry
 from ..permission_rules import PermissionRuleEngine
@@ -85,7 +85,7 @@ class PoorCLIServer:
         self._session_manager.set_permission_callback(self._server_permission_callback)
         self.handlers: Dict[str, Callable] = {}
         self.initialized = False
-        self.permission_mode: str = "prompt"
+        self.permission_mode: str = PermissionMode.DEFAULT.value
         self.logger = setup_logger("poor_cli.server")
         self.session_id = f"server-{uuid.uuid4().hex[:8]}"
         set_log_context(session_id=self.session_id)
@@ -801,11 +801,12 @@ class PoorCLIServer:
             requested_permission_mode = params.get("permissionMode")
             if requested_permission_mode is not None:
                 try:
-                    self.permission_mode = PermissionMode(str(requested_permission_mode)).value
-                except ValueError as e:
+                    self.permission_mode = parse_permission_mode(requested_permission_mode).value
+                except ConfigurationError as e:
                     raise InvalidParamsError(
                         "Invalid permissionMode. "
-                        "Expected one of: prompt, auto-safe, danger-full-access."
+                        "Expected one of: default, acceptEdits, plan, bypassPermissions, "
+                        "dontAsk, prompt, auto-safe, danger-full-access."
                     ) from e
             requested_sandbox_preset = params.get("sandboxPreset")
             if requested_sandbox_preset is not None:
@@ -1495,7 +1496,7 @@ class PoorCLIServer:
         Update permission mode and/or permission rules.
 
         Params:
-            mode?: prompt | auto-safe | danger-full-access
+            mode?: default | acceptEdits | plan | bypassPermissions | dontAsk | prompt | auto-safe | danger-full-access
             addRule?: {scope, toolName, behavior, ruleContent}
             clearSessionRules?: bool
         """
@@ -1506,10 +1507,11 @@ class PoorCLIServer:
         mode = params.get("mode")
         if mode is not None:
             try:
-                parsed_mode = PermissionMode(str(mode).strip())
-            except ValueError:
+                parsed_mode = parse_permission_mode(mode)
+            except ConfigurationError:
                 raise InvalidParamsError(
-                    "Invalid mode. Expected one of: prompt, auto-safe, danger-full-access."
+                    "Invalid mode. Expected one of: default, acceptEdits, plan, bypassPermissions, "
+                    "dontAsk, prompt, auto-safe, danger-full-access."
                 )
             self.permission_mode = parsed_mode.value
             self.core.config.security.permission_mode = parsed_mode
@@ -4286,7 +4288,16 @@ class PoorCLIServer:
         "model.provider": ["gemini", "openai", "anthropic", "ollama"],
         "model.routing_mode": ["manual", "quality", "speed", "cheap", "private"],
         "sandbox.default_preset": ["read-only", "review-only", "workspace-write", "full-access"],
-        "security.permission_mode": ["prompt", "auto-safe", "danger-full-access"],
+        "security.permission_mode": [
+            "default",
+            "acceptEdits",
+            "plan",
+            "bypassPermissions",
+            "dontAsk",
+            "prompt",
+            "auto-safe",
+            "danger-full-access",
+        ],
         "economy.preset": ["frugal", "balanced", "quality"],
     }
 

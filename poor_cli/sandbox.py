@@ -12,7 +12,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 
 from .command_capabilities import inspect_shell_command
 from .command_validator import CommandRisk, get_command_validator
-from .config import PermissionMode
+from .config import PermissionMode, parse_permission_mode
 from .exceptions import PermissionDeniedError
 
 
@@ -32,7 +32,12 @@ class ToolCapability(str, Enum):
     GIT_WRITE = "git:write"
 
 
-LEGACY_PERMISSION_MODE_TO_PRESET = {
+PERMISSION_MODE_TO_PRESET = {
+    PermissionMode.DEFAULT.value: SandboxPreset.WORKSPACE_WRITE.value,
+    PermissionMode.ACCEPT_EDITS.value: SandboxPreset.WORKSPACE_WRITE.value,
+    PermissionMode.PLAN.value: SandboxPreset.READ_ONLY.value,
+    PermissionMode.BYPASS_PERMISSIONS.value: SandboxPreset.FULL_ACCESS.value,
+    PermissionMode.DONT_ASK.value: SandboxPreset.FULL_ACCESS.value,
     PermissionMode.PROMPT.value: SandboxPreset.WORKSPACE_WRITE.value,
     PermissionMode.AUTO_SAFE.value: SandboxPreset.WORKSPACE_WRITE.value,
     PermissionMode.DANGER_FULL_ACCESS.value: SandboxPreset.FULL_ACCESS.value,
@@ -69,25 +74,22 @@ class SandboxDecision:
 
 
 def preset_from_permission_mode(raw_mode: str) -> str:
-    try:
-        mode = PermissionMode(str(raw_mode))
-    except ValueError:
-        return SandboxPreset.WORKSPACE_WRITE.value
-    return LEGACY_PERMISSION_MODE_TO_PRESET.get(mode.value, SandboxPreset.WORKSPACE_WRITE.value)
+    mode = _canonical_permission_mode(raw_mode)
+    return PERMISSION_MODE_TO_PRESET.get(mode, SandboxPreset.WORKSPACE_WRITE.value)
 
 
 def permission_mode_from_preset(preset: str) -> str:
     normalized = str(preset).strip().lower()
     if normalized == SandboxPreset.FULL_ACCESS.value:
-        return PermissionMode.DANGER_FULL_ACCESS.value
+        return PermissionMode.BYPASS_PERMISSIONS.value
     if normalized == SandboxPreset.READ_ONLY.value:
-        return PermissionMode.PROMPT.value
+        return PermissionMode.PLAN.value
     if normalized == SandboxPreset.REVIEW_ONLY.value:
-        return PermissionMode.AUTO_SAFE.value
-    return PermissionMode.PROMPT.value
+        return PermissionMode.DEFAULT.value
+    return PermissionMode.DEFAULT.value
 
 
-def normalize_preset(raw_preset: Optional[str], *, fallback_permission_mode: str = "prompt") -> str:
+def normalize_preset(raw_preset: Optional[str], *, fallback_permission_mode: str = "default") -> str:
     candidate = str(raw_preset or "").strip().lower()
     if candidate in {preset.value for preset in SandboxPreset}:
         return candidate
@@ -131,16 +133,27 @@ def approval_capabilities_for_preset(preset: str) -> Set[str]:
 
 
 def requires_safe_process_mode(permission_mode: str, preset: str) -> bool:
+    normalized_mode = _canonical_permission_mode(permission_mode)
     normalized_preset = normalize_preset(preset, fallback_permission_mode=permission_mode)
     if normalized_preset == SandboxPreset.REVIEW_ONLY.value:
         return True
-    return str(permission_mode).strip().lower() == PermissionMode.AUTO_SAFE.value
+    return normalized_mode == PermissionMode.AUTO_SAFE.value
 
 
 def summarize_capabilities(capabilities: Sequence[str]) -> str:
     if not capabilities:
         return "none"
     return ", ".join(sorted(dict.fromkeys(str(cap) for cap in capabilities)))
+
+
+def _canonical_permission_mode(raw_mode: str) -> str:
+    try:
+        return parse_permission_mode(raw_mode).value
+    except Exception:
+        value = str(raw_mode or "").strip().lower()
+        if not value:
+            return PermissionMode.DEFAULT.value
+        return value
 
 
 def tool_capability_metadata(
@@ -179,6 +192,7 @@ def evaluate_tool_access(
     enforce_trusted_workspace: bool = True,
     safe_process_commands: Optional[Sequence[str]] = None,
 ) -> SandboxDecision:
+    normalized_mode = _canonical_permission_mode(permission_mode)
     normalized_preset = normalize_preset(sandbox_preset, fallback_permission_mode=permission_mode)
     inferred = inspect_shell_command(tool_name, tool_args)
     normalized_caps = _dedupe_capabilities(
@@ -188,8 +202,33 @@ def evaluate_tool_access(
     if not normalized_caps:
         return SandboxDecision(allowed=True, capabilities=[])
 
+    if normalized_mode in {
+        PermissionMode.BYPASS_PERMISSIONS.value,
+        PermissionMode.DONT_ASK.value,
+        PermissionMode.DANGER_FULL_ACCESS.value,
+    }:
+        return SandboxDecision(allowed=True, capabilities=normalized_caps)
+
     if normalized_preset == SandboxPreset.FULL_ACCESS.value:
         return SandboxDecision(allowed=True, capabilities=normalized_caps)
+
+    if normalized_mode == PermissionMode.PLAN.value:
+        mutating_caps = {
+            ToolCapability.FILESYSTEM_WRITE.value,
+            ToolCapability.PROCESS_EXECUTE.value,
+            ToolCapability.NETWORK_ACCESS.value,
+            ToolCapability.GIT_WRITE.value,
+        }
+        blocked = [cap for cap in normalized_caps if cap in mutating_caps]
+        if blocked:
+            return SandboxDecision(
+                allowed=False,
+                capabilities=normalized_caps,
+                reason=(
+                    f"`{tool_name}` requires {summarize_capabilities(blocked)}, "
+                    "blocked by `plan` permission mode"
+                ),
+            )
 
     allowed_capabilities = allowed_capabilities_for_preset(normalized_preset)
     denied = [cap for cap in normalized_caps if cap not in allowed_capabilities]
@@ -220,9 +259,23 @@ def evaluate_tool_access(
                 reason=f"`{tool_name}` is blocked by safe-process mode",
             )
 
-    requires_approval = bool(
-        set(normalized_caps).intersection(approval_capabilities_for_preset(normalized_preset))
-    ) and str(permission_mode).strip().lower() != PermissionMode.AUTO_SAFE.value
+    approval_caps = set(normalized_caps).intersection(
+        approval_capabilities_for_preset(normalized_preset)
+    )
+    if normalized_mode == PermissionMode.ACCEPT_EDITS.value:
+        requires_approval = bool(
+            approval_caps.intersection(
+                {
+                    ToolCapability.PROCESS_EXECUTE.value,
+                    ToolCapability.NETWORK_ACCESS.value,
+                    ToolCapability.GIT_WRITE.value,
+                }
+            )
+        )
+    elif normalized_mode == PermissionMode.AUTO_SAFE.value:
+        requires_approval = False
+    else:
+        requires_approval = bool(approval_caps)
     return SandboxDecision(
         allowed=True,
         capabilities=normalized_caps,

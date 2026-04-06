@@ -33,7 +33,7 @@ from .cli import (
     run_commit_mode,
 )
 from ._exec_helpers import build_exec_permission_callback, _trusted_workspace_roots
-from .config import Config, ConfigManager, PermissionMode
+from .config import Config, ConfigManager, PermissionMode, parse_permission_mode
 from .core import PoorCLICore
 from .cli_errors import run_with_cli_error_handling
 from .custom_commands import CustomCommandRegistry
@@ -276,7 +276,7 @@ async def _run_exec_mode_async(args: argparse.Namespace) -> int:
         core.set_routing_mode(args.routing_mode)
     if core.config is not None:
         if args.permission_mode:
-            core.config.security.permission_mode = PermissionMode(args.permission_mode)
+            core.config.security.permission_mode = parse_permission_mode(args.permission_mode)
         effective_permission_mode = (
             args.permission_mode
             or getattr(core.config.security.permission_mode, "value", str(core.config.security.permission_mode))
@@ -287,7 +287,7 @@ async def _run_exec_mode_async(args: argparse.Namespace) -> int:
         )
         core.config.sandbox.default_preset = effective_sandbox_preset
     else:
-        effective_permission_mode = args.permission_mode or PermissionMode.PROMPT.value
+        effective_permission_mode = args.permission_mode or PermissionMode.DEFAULT.value
         effective_sandbox_preset = normalize_preset(
             args.sandbox_preset,
             fallback_permission_mode=effective_permission_mode,
