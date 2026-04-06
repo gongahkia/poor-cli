@@ -24,6 +24,10 @@ INSTRUCTION_FILE_NAMES: tuple[str, ...] = ("AGENTS.md", "CLAUDE.md", "GEMINI.md"
 MAX_INCLUDE_DEPTH = 5
 MANAGED_MEMORY_ENV = "POOR_CLI_MANAGED_MEMORY"
 DEFAULT_MANAGED_MEMORY = "/etc/poor-cli/CLAUDE.md"
+DISABLE_MEMORY_ENV = "CLAUDE_CODE_DISABLE_CLAUDE_MDS"
+DISABLE_MEMORY_ENV_ALT = "POOR_CLI_DISABLE_CLAUDE_MDS"
+ALLOW_EXTERNAL_INCLUDES_ENV = "POOR_CLI_ALLOW_EXTERNAL_INCLUDES"
+MAX_MEMORY_CHARACTER_COUNT = 40_000
 RULES_DIR = ".claude/rules"
 RULES_FILE_NAME = ".claude/CLAUDE.md"
 LOCAL_MEMORY_FILE_NAME = "CLAUDE.local.md"
@@ -210,6 +214,8 @@ class InstructionManager:
         ]
 
     def _load_hierarchical_memory(self, referenced_files: Sequence[str]) -> List[InstructionSource]:
+        if self._memory_loading_disabled():
+            return []
         normalized_refs = self._normalize_referenced_paths(referenced_files)
         sources: List[InstructionSource] = []
 
@@ -288,6 +294,62 @@ class InstructionManager:
             candidates.extend(sorted(rules_dir.rglob("*.md")))
         return [path.resolve() for path in candidates]
 
+    def _memory_loading_disabled(self) -> bool:
+        return self._env_flag_enabled(DISABLE_MEMORY_ENV) or self._env_flag_enabled(DISABLE_MEMORY_ENV_ALT)
+
+    def _allow_external_includes(self) -> bool:
+        return self._env_flag_enabled(ALLOW_EXTERNAL_INCLUDES_ENV)
+
+    def _is_memory_path_excluded(self, path: Path) -> bool:
+        resolved = path.resolve()
+        patterns = self._memory_exclude_patterns()
+        if not patterns:
+            return False
+        candidates = {str(resolved), resolved.name}
+        try:
+            candidates.add(str(resolved.relative_to(self.repo_root)).replace("\\", "/"))
+        except ValueError:
+            pass
+        for pattern in patterns:
+            if any(fnmatch.fnmatch(candidate, pattern) for candidate in candidates):
+                return True
+        return False
+
+    def _memory_exclude_patterns(self) -> List[str]:
+        env_raw = str(os.getenv("POOR_CLI_MEMORY_EXCLUDES", "")).strip()
+        env_patterns = [
+            token.strip()
+            for token in env_raw.split(",")
+            if token.strip()
+        ]
+
+        file_patterns: List[str] = []
+        settings_paths = [
+            Path.home() / ".poor-cli" / "settings.json",
+            self.repo_root / ".poor-cli" / "settings.json",
+            self.repo_root / ".poor-cli" / "settings.local.json",
+        ]
+        for settings_path in settings_paths:
+            payload = self._read_json(settings_path)
+            if not isinstance(payload, dict):
+                continue
+            for key in ("claudeMdExcludes", "memoryExcludes"):
+                raw_value = payload.get(key)
+                if not isinstance(raw_value, list):
+                    continue
+                for value in raw_value:
+                    if isinstance(value, str) and value.strip():
+                        file_patterns.append(value.strip())
+
+        seen: set[str] = set()
+        deduped: List[str] = []
+        for pattern in [*env_patterns, *file_patterns]:
+            if pattern in seen:
+                continue
+            seen.add(pattern)
+            deduped.append(pattern)
+        return deduped
+
     def _build_memory_source(
         self,
         path: Path,
@@ -297,6 +359,8 @@ class InstructionManager:
         normalized_refs: Sequence[str],
     ) -> Optional[InstructionSource]:
         if not path.is_file():
+            return None
+        if self._is_memory_path_excluded(path):
             return None
         raw = self._read_text_raw(path)
         if not raw.strip():
@@ -320,6 +384,14 @@ class InstructionManager:
         ).strip()
         if not content:
             return None
+        if len(content) > MAX_MEMORY_CHARACTER_COUNT:
+            omitted = len(content) - MAX_MEMORY_CHARACTER_COUNT
+            content = (
+                content[:MAX_MEMORY_CHARACTER_COUNT]
+                + f"\n\n[memory truncated: {omitted} chars omitted; size cap is {MAX_MEMORY_CHARACTER_COUNT}]"
+            )
+            metadata["truncated"] = True
+            metadata["maxChars"] = MAX_MEMORY_CHARACTER_COUNT
 
         return InstructionSource(
             kind=kind,
@@ -447,13 +519,21 @@ class InstructionManager:
             token = token[1:-1].strip()
         return token or None
 
-    @staticmethod
-    def _resolve_include_path(token: str, base_dir: Path) -> Optional[Path]:
+    def _resolve_include_path(self, token: str, base_dir: Path) -> Optional[Path]:
         if token.startswith("~/"):
-            return (Path.home() / token[2:]).expanduser().resolve()
-        if token.startswith("/"):
-            return Path(token).expanduser().resolve()
-        return (base_dir / token).expanduser().resolve()
+            candidate = (Path.home() / token[2:]).expanduser().resolve()
+        elif token.startswith("/"):
+            candidate = Path(token).expanduser().resolve()
+        else:
+            candidate = (base_dir / token).expanduser().resolve()
+
+        if self._allow_external_includes():
+            return candidate
+        try:
+            candidate.relative_to(self.repo_root)
+            return candidate
+        except ValueError:
+            return None
 
     def _load_repo_root_instructions(self) -> List[InstructionSource]:
         # trust check: skip repo instructions in untrusted repos
@@ -577,6 +657,8 @@ class InstructionManager:
         return chain
 
     def _discover_hierarchical_memory_paths(self) -> List[Path]:
+        if self._memory_loading_disabled():
+            return []
         discovered: List[Path] = []
         seen: set[Path] = set()
 
@@ -687,6 +769,21 @@ class InstructionManager:
             return path.read_text(encoding="utf-8")
         except OSError:
             return ""
+
+    @staticmethod
+    def _read_json(path: Path) -> Optional[Dict[str, Any]]:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+        return payload
+
+    @staticmethod
+    def _env_flag_enabled(name: str) -> bool:
+        raw = str(os.getenv(name, "")).strip().lower()
+        return raw in {"1", "true", "yes", "on"}
 
     @staticmethod
     def _dedupe_sources(sources: Sequence[InstructionSource]) -> List[InstructionSource]:

@@ -8,7 +8,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from poor_cli.instructions import InstructionManager, MANAGED_MEMORY_ENV
+from poor_cli.instructions import (
+    ALLOW_EXTERNAL_INCLUDES_ENV,
+    DISABLE_MEMORY_ENV,
+    InstructionManager,
+    MANAGED_MEMORY_ENV,
+    MAX_MEMORY_CHARACTER_COUNT,
+)
 
 
 class TestInstructionHierarchy(unittest.TestCase):
@@ -94,3 +100,82 @@ class TestInstructionHierarchy(unittest.TestCase):
             hit_text = "\n".join(source.content for source in hit_snapshot.sources)
             self.assertNotIn("Use strict API validation.", miss_text)
             self.assertIn("Use strict API validation.", hit_text)
+
+    def test_disable_memory_loading_via_env(self) -> None:
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as home_tmp:
+            repo = Path(repo_tmp)
+            managed = repo / "managed-missing.md"
+            hidden_memory = repo / ".claude" / "CLAUDE.md"
+            hidden_memory.parent.mkdir(parents=True, exist_ok=True)
+            hidden_memory.write_text("hidden memory", encoding="utf-8")
+
+            env = self._base_env(home_tmp, managed)
+            env[DISABLE_MEMORY_ENV] = "1"
+            with patch.dict(os.environ, env):
+                snapshot = InstructionManager(repo).build_snapshot()
+
+            rendered = "\n".join(source.content for source in snapshot.sources)
+            self.assertNotIn("hidden memory", rendered)
+
+    def test_memory_excludes_from_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as home_tmp:
+            repo = Path(repo_tmp)
+            managed = repo / "managed-missing.md"
+            memory_file = repo / ".claude" / "CLAUDE.md"
+            memory_file.parent.mkdir(parents=True, exist_ok=True)
+            memory_file.write_text("excluded memory content", encoding="utf-8")
+
+            settings_path = repo / ".poor-cli" / "settings.json"
+            settings_path.parent.mkdir(parents=True, exist_ok=True)
+            settings_path.write_text(
+                '{"claudeMdExcludes":[".claude/CLAUDE.md"]}',
+                encoding="utf-8",
+            )
+
+            with patch.dict(os.environ, self._base_env(home_tmp, managed)):
+                snapshot = InstructionManager(repo).build_snapshot()
+
+            rendered = "\n".join(source.content for source in snapshot.sources)
+            self.assertNotIn("excluded memory content", rendered)
+
+    def test_large_memory_file_is_truncated(self) -> None:
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as home_tmp:
+            repo = Path(repo_tmp)
+            managed = repo / "managed-missing.md"
+            memory_file = repo / ".claude" / "CLAUDE.md"
+            memory_file.parent.mkdir(parents=True, exist_ok=True)
+            oversized = "A" * (MAX_MEMORY_CHARACTER_COUNT + 2500)
+            memory_file.write_text(oversized, encoding="utf-8")
+
+            with patch.dict(os.environ, self._base_env(home_tmp, managed)):
+                snapshot = InstructionManager(repo).build_snapshot()
+
+            target = next((source for source in snapshot.sources if source.path == ".claude/CLAUDE.md"), None)
+            self.assertIsNotNone(target)
+            self.assertTrue(bool(target.metadata.get("truncated", False)))
+            self.assertIn("memory truncated", target.content)
+
+    def test_external_include_blocked_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as home_tmp:
+            repo = Path(repo_tmp)
+            managed = repo / "managed-missing.md"
+            external = Path(home_tmp) / "outside.md"
+            external.write_text("outside include", encoding="utf-8")
+
+            memory_file = repo / ".claude" / "CLAUDE.md"
+            memory_file.parent.mkdir(parents=True, exist_ok=True)
+            memory_file.write_text(f"@{external}\nlocal text", encoding="utf-8")
+
+            with patch.dict(os.environ, self._base_env(home_tmp, managed)):
+                blocked = InstructionManager(repo).build_snapshot()
+
+            blocked_text = "\n".join(source.content for source in blocked.sources)
+            self.assertIn("local text", blocked_text)
+            self.assertNotIn("outside include", blocked_text)
+
+            env = self._base_env(home_tmp, managed)
+            env[ALLOW_EXTERNAL_INCLUDES_ENV] = "1"
+            with patch.dict(os.environ, env):
+                allowed = InstructionManager(repo).build_snapshot()
+            allowed_text = "\n".join(source.content for source in allowed.sources)
+            self.assertIn("outside include", allowed_text)
