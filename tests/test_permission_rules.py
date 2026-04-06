@@ -56,3 +56,20 @@ class TestPermissionRuleEngine(unittest.TestCase):
             match = engine.evaluate("write_file", {"file_path": "/tmp/secret.txt"})
             self.assertIsNotNone(match)
             self.assertEqual(match.behavior, "deny")
+
+    def test_blanket_denied_tools_returns_first_blanket_rule(self) -> None:
+        with tempfile.TemporaryDirectory() as repo_tmp:
+            engine = PermissionRuleEngine(Path(repo_tmp))
+            engine.add_session_rule("bash", "allow", "*")
+            engine.add_session_rule("bash", "deny", "*")
+            engine.add_session_rule("read_file", "deny", "")
+            hidden = engine.blanket_denied_tools()
+            self.assertIn("bash", hidden)
+            self.assertIn("read_file", hidden)
+
+    def test_blanket_denied_tools_ignores_scoped_patterns(self) -> None:
+        with tempfile.TemporaryDirectory() as repo_tmp:
+            engine = PermissionRuleEngine(Path(repo_tmp))
+            engine.add_session_rule("write_file", "deny", "*secret*")
+            hidden = engine.blanket_denied_tools()
+            self.assertNotIn("write_file", hidden)

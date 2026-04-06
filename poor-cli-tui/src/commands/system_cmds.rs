@@ -445,6 +445,11 @@ pub(super) fn handle_system_commands(
                     .and_then(|v| v.as_array())
                     .cloned()
                     .unwrap_or_default();
+                let hidden_tools = value
+                    .get("hiddenTools")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
 
                 if tools.is_empty() {
                     show_command_info_popup(
@@ -469,6 +474,15 @@ pub(super) fn handle_system_commands(
                         .and_then(|v| v.as_str())
                         .unwrap_or("No description");
                     lines.push(format!("- **{name}**: {desc}"));
+                }
+                if !hidden_tools.is_empty() {
+                    lines.push(String::new());
+                    lines.push("**Hidden by permission rules:**".to_string());
+                    for tool in hidden_tools {
+                        if let Some(name) = tool.as_str() {
+                            lines.push(format!("- `{name}`"));
+                        }
+                    }
                 }
 
                 show_command_info_popup(app, raw, lines.join("\n"));

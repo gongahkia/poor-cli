@@ -2949,13 +2949,6 @@ class PoorCLICore:
         if not self._initialized or not self.config:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
 
-        previous_history: List[Dict[str, Any]] = []
-        if self.provider:
-            try:
-                previous_history = self.provider.get_history()
-            except Exception as error:
-                logger.debug("Failed to capture provider history before MCP reload: %s", error)
-
         if self._mcp_manager is not None:
             await self._mcp_manager.shutdown()
             self._mcp_manager = None
@@ -2982,30 +2975,44 @@ class PoorCLICore:
                     _call_mcp_tool,
                     declaration,
                 )
-
-        if self.provider and self._system_instruction:
-            capabilities = self.provider.get_capabilities()
-            tools = (
-                self.tool_registry.get_tool_declarations()
-                if capabilities.supports_function_calling
-                else []
-            )
-            await self.provider.initialize(
-                tools=tools,
-                system_instruction=self._system_instruction,
-            )
-            if previous_history:
-                history_to_restore = [
-                    message
-                    for message in previous_history
-                    if message.get("role") != "system"
-                ]
-                try:
-                    self.provider.set_history(history_to_restore)
-                except Exception as error:
-                    logger.debug("Failed to restore provider history after MCP reload: %s", error)
+        await self.refresh_provider_tools()
 
         return self.get_mcp_status()
+
+    async def refresh_provider_tools(
+        self,
+        tool_declarations: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
+        """Reinitialize the active provider with updated tool declarations."""
+        if not self._initialized or not self.provider:
+            return
+        previous_history: List[Dict[str, Any]] = []
+        try:
+            previous_history = self.provider.get_history()
+        except Exception as error:
+            logger.debug("Failed to capture provider history before tool refresh: %s", error)
+        capabilities = self.provider.get_capabilities()
+        tools = (
+            list(tool_declarations)
+            if tool_declarations is not None
+            else (self.tool_registry.get_tool_declarations() if self.tool_registry else [])
+        )
+        if not capabilities.supports_function_calling:
+            tools = []
+        await self.provider.initialize(
+            tools=tools,
+            system_instruction=self._system_instruction or "",
+        )
+        if previous_history:
+            history_to_restore = [
+                message
+                for message in previous_history
+                if message.get("role") != "system"
+            ]
+            try:
+                self.provider.set_history(history_to_restore)
+            except Exception as error:
+                logger.debug("Failed to restore provider history after tool refresh: %s", error)
 
     async def send_message(
         self,

@@ -110,6 +110,22 @@ class PermissionRuleEngine:
             "user": [rule.to_dict() for rule in self._load_user_rules()],
         }
 
+    def blanket_denied_tools(self) -> List[str]:
+        """Return tool names hidden by the first blanket rule in precedence order."""
+        first_blanket_behavior: Dict[str, str] = {}
+        for rule in self._effective_rules():
+            tool_key = rule.tool_name.strip().lower()
+            if not tool_key or tool_key in first_blanket_behavior:
+                continue
+            if not self._is_blanket_pattern(rule.rule_content):
+                continue
+            first_blanket_behavior[tool_key] = rule.behavior
+        return sorted(
+            tool_name
+            for tool_name, behavior in first_blanket_behavior.items()
+            if behavior == "deny"
+        )
+
     def evaluate(self, tool_name: str, tool_args: Dict[str, Any]) -> Optional[PermissionRuleMatch]:
         normalized_tool = str(tool_name or "").strip().lower()
         if not normalized_tool:
@@ -196,6 +212,11 @@ class PermissionRuleEngine:
         if subject == normalized_pattern:
             return True
         return fnmatch(subject, normalized_pattern)
+
+    @staticmethod
+    def _is_blanket_pattern(pattern: str) -> bool:
+        normalized = str(pattern or "").strip()
+        return not normalized or normalized == "*"
 
     @staticmethod
     def _render_tool_subject(tool_args: Dict[str, Any]) -> str:

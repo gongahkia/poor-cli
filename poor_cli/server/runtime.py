@@ -478,6 +478,30 @@ class PoorCLIServer:
 
             return list(DEFAULT_TOOL_CAPABILITIES.get(tool_name, []))
 
+    def _hidden_tool_names(self) -> Set[str]:
+        return set(self._permission_rules.blanket_denied_tools())
+
+    def _visible_tool_declarations(self) -> List[Dict[str, Any]]:
+        declarations = self.core.get_available_tools()
+        hidden = self._hidden_tool_names()
+        if not hidden:
+            return declarations
+        visible: List[Dict[str, Any]] = []
+        for declaration in declarations:
+            tool_name = str(declaration.get("name") or "").strip().lower()
+            if tool_name and tool_name in hidden:
+                continue
+            visible.append(declaration)
+        return visible
+
+    async def _sync_provider_tool_visibility(self) -> None:
+        if not self.initialized:
+            return
+        try:
+            await self.core.refresh_provider_tools(self._visible_tool_declarations())
+        except Exception as error:
+            self.logger.warning("Failed to sync provider tool visibility: %s", error)
+
     def _evaluate_tool_access(
         self,
         tool_name: str,
@@ -887,6 +911,7 @@ class PoorCLIServer:
                     fallback_permission_mode=self.permission_mode,
                 )
                 self.permission_mode = permission_mode_from_preset(self._sandbox_preset)
+            await self._sync_provider_tool_visibility()
             provider_info = self.core.get_provider_info()
             self._sandbox_preset = self._current_sandbox_preset()
             set_log_context(provider=provider_info.get("name"))
@@ -1182,8 +1207,13 @@ class PoorCLIServer:
             tools: List of tool declarations
         """
         self._ensure_initialized()
+        del params
 
-        return {"tools": self.core.get_available_tools()}
+        hidden = sorted(self._hidden_tool_names())
+        return {
+            "tools": self._visible_tool_declarations(),
+            "hiddenTools": hidden,
+        }
 
     async def handle_switch_provider(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -1544,6 +1574,8 @@ class PoorCLIServer:
                     behavior=behavior,
                     rule_content=rule_content,
                 )
+
+        await self._sync_provider_tool_visibility()
 
         return {
             "permissionMode": self.permission_mode,
