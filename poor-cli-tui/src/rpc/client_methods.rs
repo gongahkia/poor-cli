@@ -184,6 +184,32 @@ impl RpcClient {
         self.call("getConfig", Value::Object(Default::default()))
     }
 
+    pub fn get_permissions(&self) -> Result<Value, String> {
+        self.call(
+            "poor-cli/getPermissions",
+            Value::Object(Default::default()),
+        )
+    }
+
+    pub fn set_permissions(
+        &self,
+        mode: Option<&str>,
+        add_rule: Option<Value>,
+        clear_session_rules: bool,
+    ) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if let Some(value) = mode {
+            params.insert("mode".into(), Value::String(value.to_string()));
+        }
+        if let Some(rule) = add_rule {
+            params.insert("addRule".into(), rule);
+        }
+        if clear_session_rules {
+            params.insert("clearSessionRules".into(), Value::Bool(true));
+        }
+        self.call("poor-cli/setPermissions", Value::Object(params))
+    }
+
     pub fn get_provider_info(&self) -> Result<Value, String> {
         self.call(
             "poor-cli/getProviderInfo",

@@ -59,6 +59,40 @@ pub(crate) fn rpc_get_config_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> 
         .map_err(|_| "Timed out waiting for backend config".to_string())?
 }
 
+pub(crate) fn rpc_get_permissions_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetPermissions { reply: reply_tx })
+        .map_err(|e| format!("Failed to request permissions: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for backend permissions".to_string())?
+}
+
+pub(crate) fn rpc_set_permissions_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    mode: Option<&str>,
+    add_rule: Option<Value>,
+    clear_session_rules: bool,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::SetPermissions {
+            mode: mode.map(|value| value.to_string()),
+            add_rule,
+            clear_session_rules,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request permission update: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for permission update".to_string())?
+}
+
 pub(crate) fn rpc_get_provider_info_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     rpc_cmd_tx

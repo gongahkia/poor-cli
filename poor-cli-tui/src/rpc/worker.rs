@@ -97,6 +97,21 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             Ok(RpcCommand::GetConfig { reply }) => {
                 let _ = reply.send(client.get_config_value());
             }
+            Ok(RpcCommand::GetPermissions { reply }) => {
+                let _ = reply.send(client.get_permissions());
+            }
+            Ok(RpcCommand::SetPermissions {
+                mode,
+                add_rule,
+                clear_session_rules,
+                reply,
+            }) => {
+                let _ = reply.send(client.set_permissions(
+                    mode.as_deref(),
+                    add_rule,
+                    clear_session_rules,
+                ));
+            }
             Ok(RpcCommand::GetProviderInfo { reply }) => {
                 let _ = reply.send(client.get_provider_info());
             }

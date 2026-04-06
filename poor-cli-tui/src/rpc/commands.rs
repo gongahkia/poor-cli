@@ -49,6 +49,15 @@ pub enum RpcCommand {
     GetConfig {
         reply: SyncSender<Result<Value, String>>,
     },
+    GetPermissions {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    SetPermissions {
+        mode: Option<String>,
+        add_rule: Option<Value>,
+        clear_session_rules: bool,
+        reply: SyncSender<Result<Value, String>>,
+    },
     GetProviderInfo {
         reply: SyncSender<Result<Value, String>>,
     },

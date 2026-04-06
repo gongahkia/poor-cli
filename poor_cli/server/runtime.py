@@ -33,8 +33,10 @@ from ..command_validator import CommandRisk, get_command_validator
 from ..config import Config, ConfigManager, PermissionMode
 from ..core import PoorCLICore, CoreEvent
 from ..custom_commands import CustomCommandRegistry
+from ..permission_rules import PermissionRuleEngine
 from ..sandbox import (
     PRESET_DESCRIPTION,
+    SandboxDecision,
     evaluate_tool_access,
     normalize_preset,
     permission_mode_from_preset,
@@ -112,6 +114,7 @@ class PoorCLIServer:
         self._task_manager: Optional[TaskManager] = None
         self._automation_manager: Optional[AutomationManager] = None
         self._sandbox_preset: str = "workspace-write"
+        self._permission_rules = PermissionRuleEngine(Path.cwd())
 
         self._register_handlers()
 
@@ -480,6 +483,16 @@ class PoorCLIServer:
         tool_args: Dict[str, Any],
         preview: Optional[Dict[str, Any]] = None,
     ):
+        rule_match = self._permission_rules.evaluate(tool_name, tool_args)
+        if rule_match is not None and rule_match.behavior == "deny":
+            capabilities = self._tool_capabilities(tool_name)
+            return SandboxDecision(
+                allowed=False,
+                reason=f"denied by permission rule ({rule_match.rule.source}:{rule_match.rule.rule_content or '*'})",
+                requires_approval=False,
+                capabilities=capabilities,
+            )
+
         mutation_paths = list(preview.get("paths") or []) if isinstance(preview, dict) else []
         if not mutation_paths:
             mutation_paths = self._mutation_paths_for_tool(tool_name, tool_args, preview)
@@ -498,9 +511,28 @@ class PoorCLIServer:
                 None,
             ),
         )
+
+        if decision.allowed and rule_match is not None:
+            if rule_match.behavior == "allow":
+                decision = SandboxDecision(
+                    allowed=True,
+                    reason=f"allowed by permission rule ({rule_match.rule.source}:{rule_match.rule.rule_content or '*'})",
+                    requires_approval=False,
+                    capabilities=decision.capabilities,
+                )
+            elif rule_match.behavior == "ask":
+                decision = SandboxDecision(
+                    allowed=True,
+                    reason=f"requires approval by permission rule ({rule_match.rule.source}:{rule_match.rule.rule_content or '*'})",
+                    requires_approval=True,
+                    capabilities=decision.capabilities,
+                )
+
         if preview is not None and isinstance(preview, dict):
             preview["capabilities"] = decision.capabilities
             preview["sandboxPreset"] = self._current_sandbox_preset()
+            if rule_match is not None:
+                preview["permissionRule"] = rule_match.to_dict()
             if not preview.get("message"):
                 capability_text = summarize_capabilities(decision.capabilities)
                 preview["message"] = (
@@ -610,6 +642,8 @@ class PoorCLIServer:
             "switchProvider": self.handle_switch_provider,
             "getConfig": self.handle_get_config,
             "setConfig": self.handle_set_config,
+            "getPermissions": self.handle_get_permissions,
+            "setPermissions": self.handle_set_permissions,
             "setApiKey": self.handle_set_api_key,
             "getApiKeyStatus": self.handle_get_api_key_status,
             "startService": self.handle_start_service,
@@ -642,6 +676,8 @@ class PoorCLIServer:
             "poor-cli/getWorkflow": self.handle_get_workflow,
             "poor-cli/listConfigOptions": self.handle_list_config_options,
             "poor-cli/setConfig": self.handle_set_config,
+            "poor-cli/getPermissions": self.handle_get_permissions,
+            "poor-cli/setPermissions": self.handle_set_permissions,
             "poor-cli/toggleConfig": self.handle_toggle_config,
             "poor-cli/setApiKey": self.handle_set_api_key,
             "poor-cli/getApiKeyStatus": self.handle_get_api_key_status,
@@ -1441,6 +1477,75 @@ class PoorCLIServer:
             "permissionMode": self.permission_mode,
             "sandboxPreset": self._current_sandbox_preset(),
             "configFile": config_path,
+        }
+
+    async def handle_get_permissions(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return current permission mode and effective rule scopes."""
+        del params
+        self._ensure_initialized()
+        return {
+            "permissionMode": self.permission_mode,
+            "sandboxPreset": self._current_sandbox_preset(),
+            "rules": self._permission_rules.list_rules(),
+        }
+
+    async def handle_set_permissions(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Update permission mode and/or permission rules.
+
+        Params:
+            mode?: prompt | auto-safe | danger-full-access
+            addRule?: {scope, toolName, behavior, ruleContent}
+            clearSessionRules?: bool
+        """
+        self._ensure_initialized()
+        if self.core.config is None:
+            raise RuntimeError("Core configuration unavailable")
+
+        mode = params.get("mode")
+        if mode is not None:
+            try:
+                parsed_mode = PermissionMode(str(mode).strip())
+            except ValueError:
+                raise InvalidParamsError(
+                    "Invalid mode. Expected one of: prompt, auto-safe, danger-full-access."
+                )
+            self.permission_mode = parsed_mode.value
+            self.core.config.security.permission_mode = parsed_mode
+            self._sandbox_preset = preset_from_permission_mode(self.permission_mode)
+            if self.core._config_manager is not None:
+                self.core._config_manager.config = self.core.config
+                self.core._config_manager.save()
+
+        if bool(params.get("clearSessionRules", False)):
+            self._permission_rules.clear_session_rules()
+
+        add_rule = params.get("addRule")
+        if isinstance(add_rule, dict):
+            scope = str(add_rule.get("scope", "session")).strip().lower() or "session"
+            tool_name = str(add_rule.get("toolName") or add_rule.get("tool_name") or "").strip()
+            behavior = str(add_rule.get("behavior", "ask")).strip().lower()
+            rule_content = str(add_rule.get("ruleContent") or add_rule.get("rule_content") or "").strip()
+            if not tool_name:
+                raise InvalidParamsError("addRule.toolName is required")
+            if scope == "session":
+                self._permission_rules.add_session_rule(
+                    tool_name=tool_name,
+                    behavior=behavior,
+                    rule_content=rule_content,
+                )
+            else:
+                self._permission_rules.add_persistent_rule(
+                    scope=scope,
+                    tool_name=tool_name,
+                    behavior=behavior,
+                    rule_content=rule_content,
+                )
+
+        return {
+            "permissionMode": self.permission_mode,
+            "sandboxPreset": self._current_sandbox_preset(),
+            "rules": self._permission_rules.list_rules(),
         }
 
     async def handle_list_config_options(self, params: Dict[str, Any]) -> Dict[str, Any]:

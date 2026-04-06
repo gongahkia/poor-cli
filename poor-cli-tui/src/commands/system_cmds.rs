@@ -179,6 +179,99 @@ pub(super) fn handle_system_commands(
         return Some(false);
     }
 
+    if lowered == "/permissions" || lowered.starts_with("/permissions ") {
+        let usage = "Usage: /permissions\n       /permissions mode <prompt|auto-safe|danger-full-access>\n       /permissions <prompt|auto-safe|danger-full-access>\n       /permissions <allow|deny|ask> <tool> [pattern] [scope]\n       /permissions clear-session";
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        if args.len() == 1 {
+            match rpc_get_permissions_blocking(rpc_cmd_tx) {
+                Ok(payload) => show_command_info_popup(app, raw, format_permissions_payload(&payload)),
+                Err(error) => show_command_info_popup(
+                    app,
+                    raw,
+                    format!("Failed to fetch permissions: {error}"),
+                ),
+            }
+            return Some(false);
+        }
+
+        let subcommand = args[1].trim().to_ascii_lowercase();
+        if subcommand == "clear-session" {
+            match rpc_set_permissions_blocking(rpc_cmd_tx, None, None, true) {
+                Ok(payload) => show_command_info_popup(app, raw, format_permissions_payload(&payload)),
+                Err(error) => show_command_info_popup(
+                    app,
+                    raw,
+                    format!("Failed to clear session rules: {error}"),
+                ),
+            }
+            return Some(false);
+        }
+
+        let mut mode_override: Option<&str> = None;
+        if subcommand == "mode" {
+            mode_override = args.get(2).copied();
+        } else if matches!(
+            subcommand.as_str(),
+            "prompt" | "auto-safe" | "danger-full-access"
+        ) {
+            mode_override = Some(subcommand.as_str());
+        }
+
+        if let Some(mode) = mode_override {
+            if !matches!(mode, "prompt" | "auto-safe" | "danger-full-access") {
+                show_command_info_popup(app, raw, usage.to_string());
+                return Some(false);
+            }
+            match rpc_set_permissions_blocking(rpc_cmd_tx, Some(mode), None, false) {
+                Ok(payload) => show_command_info_popup(app, raw, format_permissions_payload(&payload)),
+                Err(error) => show_command_info_popup(
+                    app,
+                    raw,
+                    format!("Failed to set permission mode: {error}"),
+                ),
+            }
+            return Some(false);
+        }
+
+        if matches!(subcommand.as_str(), "allow" | "deny" | "ask") {
+            let tool_name = match args.get(2).copied().map(str::trim).filter(|value| !value.is_empty()) {
+                Some(value) => value,
+                None => {
+                    show_command_info_popup(app, raw, usage.to_string());
+                    return Some(false);
+                }
+            };
+            let pattern = args.get(3).copied().unwrap_or("").trim();
+            let scope = args.get(4).copied().unwrap_or("session").trim().to_ascii_lowercase();
+            if !matches!(scope.as_str(), "session" | "local" | "project" | "user") {
+                show_command_info_popup(
+                    app,
+                    raw,
+                    "Scope must be one of: session, local, project, user".to_string(),
+                );
+                return Some(false);
+            }
+            let add_rule = serde_json::json!({
+                "scope": scope,
+                "toolName": tool_name,
+                "behavior": subcommand,
+                "ruleContent": pattern,
+            });
+            match rpc_set_permissions_blocking(rpc_cmd_tx, None, Some(add_rule), false) {
+                Ok(payload) => show_command_info_popup(app, raw, format_permissions_payload(&payload)),
+                Err(error) => show_command_info_popup(
+                    app,
+                    raw,
+                    format!("Failed to save permission rule: {error}"),
+                ),
+            }
+            return Some(false);
+        }
+
+        show_command_info_popup(app, raw, usage.to_string());
+        return Some(false);
+    }
+
     if lowered.starts_with("/permission-mode") {
         let maybe_mode = raw.split_whitespace().nth(1);
         if let Some(mode) = maybe_mode {
@@ -524,4 +617,64 @@ pub(super) fn handle_system_commands(
     }
 
     None
+}
+
+fn format_permissions_payload(payload: &Value) -> String {
+    let mode = payload
+        .get("permissionMode")
+        .and_then(|value| value.as_str())
+        .unwrap_or("prompt");
+    let preset = payload
+        .get("sandboxPreset")
+        .and_then(|value| value.as_str())
+        .unwrap_or("workspace-write");
+
+    let mut lines = vec![
+        "**Permissions**".to_string(),
+        format!("- Mode: `{mode}`"),
+        format!("- Sandbox preset: `{preset}`"),
+        String::new(),
+    ];
+
+    let rules = payload.get("rules").and_then(|value| value.as_object());
+    if rules.is_none() {
+        lines.push("No permission rules found.".to_string());
+        return lines.join("\n");
+    }
+
+    for scope in ["session", "local", "project", "user"] {
+        lines.push(format!("### {} rules", scope));
+        let entries = rules
+            .and_then(|map| map.get(scope))
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        if entries.is_empty() {
+            lines.push("- (none)".to_string());
+            lines.push(String::new());
+            continue;
+        }
+        for entry in entries {
+            let behavior = entry
+                .get("behavior")
+                .and_then(|value| value.as_str())
+                .unwrap_or("ask");
+            let tool_name = entry
+                .get("toolName")
+                .and_then(|value| value.as_str())
+                .unwrap_or("*");
+            let rule_content = entry
+                .get("ruleContent")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            if rule_content.is_empty() {
+                lines.push(format!("- `{behavior}` `{tool_name}`"));
+            } else {
+                lines.push(format!("- `{behavior}` `{tool_name}` when `{rule_content}`"));
+            }
+        }
+        lines.push(String::new());
+    }
+
+    lines.join("\n")
 }
