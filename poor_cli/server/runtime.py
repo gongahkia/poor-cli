@@ -479,7 +479,14 @@ class PoorCLIServer:
             return list(DEFAULT_TOOL_CAPABILITIES.get(tool_name, []))
 
     def _hidden_tool_names(self) -> Set[str]:
-        return set(self._permission_rules.blanket_denied_tools())
+        hidden: Set[str] = set()
+        for declaration in self.core.get_available_tools():
+            tool_name = str(declaration.get("name") or "").strip().lower()
+            if not tool_name:
+                continue
+            if self._permission_rules.is_tool_blanket_denied(tool_name):
+                hidden.add(tool_name)
+        return hidden
 
     def _visible_tool_declarations(self) -> List[Dict[str, Any]]:
         declarations = self.core.get_available_tools()

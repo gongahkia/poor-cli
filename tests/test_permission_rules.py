@@ -73,3 +73,18 @@ class TestPermissionRuleEngine(unittest.TestCase):
             engine.add_session_rule("write_file", "deny", "*secret*")
             hidden = engine.blanket_denied_tools()
             self.assertNotIn("write_file", hidden)
+
+    def test_mcp_server_prefix_rule_matches_server_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as repo_tmp:
+            engine = PermissionRuleEngine(Path(repo_tmp))
+            engine.add_session_rule("mcp__myserver", "deny", "*")
+            match = engine.evaluate("mcp__myserver__read_database", {"query": "select 1"})
+            self.assertIsNotNone(match)
+            self.assertEqual(match.behavior, "deny")
+
+    def test_is_tool_blanket_denied_supports_mcp_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as repo_tmp:
+            engine = PermissionRuleEngine(Path(repo_tmp))
+            engine.add_session_rule("mcp__untrusted", "deny", "")
+            self.assertTrue(engine.is_tool_blanket_denied("mcp__untrusted__query"))
+            self.assertFalse(engine.is_tool_blanket_denied("mcp__trusted__query"))

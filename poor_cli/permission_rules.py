@@ -126,6 +126,18 @@ class PermissionRuleEngine:
             if behavior == "deny"
         )
 
+    def is_tool_blanket_denied(self, tool_name: str) -> bool:
+        actual = str(tool_name or "").strip().lower()
+        if not actual:
+            return False
+        for rule in self._effective_rules():
+            if not self._tool_name_matches(rule.tool_name, actual):
+                continue
+            if not self._is_blanket_pattern(rule.rule_content):
+                continue
+            return rule.behavior == "deny"
+        return False
+
     def evaluate(self, tool_name: str, tool_args: Dict[str, Any]) -> Optional[PermissionRuleMatch]:
         normalized_tool = str(tool_name or "").strip().lower()
         if not normalized_tool:
@@ -137,7 +149,7 @@ class PermissionRuleEngine:
 
         subject = self._render_tool_subject(tool_args)
         for rule in rules:
-            if rule.tool_name.lower() != normalized_tool:
+            if not self._tool_name_matches(rule.tool_name, normalized_tool):
                 continue
             if not self._rule_content_matches(rule.rule_content, subject):
                 continue
@@ -191,7 +203,7 @@ class PermissionRuleEngine:
         if not normalized_segment:
             return None
         for rule in rules:
-            if rule.tool_name.lower() != "bash":
+            if not self._tool_name_matches(rule.tool_name, "bash"):
                 continue
             if not self._rule_content_matches(rule.rule_content, normalized_segment):
                 continue
@@ -212,6 +224,22 @@ class PermissionRuleEngine:
         if subject == normalized_pattern:
             return True
         return fnmatch(subject, normalized_pattern)
+
+    @staticmethod
+    def _tool_name_matches(rule_tool_name: str, actual_tool_name: str) -> bool:
+        rule = str(rule_tool_name or "").strip().lower()
+        actual = str(actual_tool_name or "").strip().lower()
+        if not rule or not actual:
+            return False
+        if rule == "*":
+            return True
+        if any(ch in rule for ch in "*?[]"):
+            return fnmatch(actual, rule)
+        if actual == rule:
+            return True
+        if rule.startswith("mcp__") and actual.startswith(f"{rule}__"):
+            return True
+        return False
 
     @staticmethod
     def _is_blanket_pattern(pattern: str) -> bool:
