@@ -77,4 +77,6 @@ target/
 
 conversation*.json
 CLAUDE.md
+AGENTS.md
+copilot-instructions.md
 GEMINI.md
