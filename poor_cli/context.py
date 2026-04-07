@@ -280,6 +280,8 @@ class ContextManager:
         )
 
         self._apply_recency_boost(files_to_include)
+        for fc in files_to_include: # apply implicit access history boost
+            fc.priority += self.implicit_priority_boost(fc.path)
         files_to_include.sort(key=lambda f: (-f.priority, f.path))
 
         limited_files = files_to_include[:effective_max_files]
