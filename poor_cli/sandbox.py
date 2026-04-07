@@ -368,3 +368,74 @@ def _is_safe_process_command(
     if len(argv) >= 2 and " ".join(argv[:2]) in allowlist:
         return True
     return command in allowlist
+
+
+# ── OS-level sandboxing (macOS sandbox-exec) ──────────────────────────────
+
+import platform
+import shutil
+import subprocess
+import tempfile
+
+_SEATBELT_READ_ONLY = """(version 1)
+(deny default)
+(allow process-exec)
+(allow process-fork)
+(allow sysctl-read)
+(allow mach-lookup)
+(allow signal (target self))
+(allow file-read*)
+(allow file-write* (subpath "/dev") (subpath "/private/tmp") (subpath "/tmp"))
+(deny file-write*)
+(deny network*)
+"""
+
+_SEATBELT_WORKSPACE_WRITE_TEMPLATE = """(version 1)
+(deny default)
+(allow process-exec)
+(allow process-fork)
+(allow sysctl-read)
+(allow mach-lookup)
+(allow signal (target self))
+(allow file-read*)
+(allow file-write* (subpath "{workspace}") (subpath "/dev") (subpath "/private/tmp") (subpath "/tmp"))
+(deny network*)
+"""
+
+_SEATBELT_FULL_ACCESS = """(version 1)
+(allow default)
+"""
+
+
+def os_sandbox_available() -> bool:
+    """Check if OS-level sandboxing is available on this platform."""
+    return platform.system() == "Darwin" and shutil.which("sandbox-exec") is not None
+
+
+def build_seatbelt_profile(preset: str, workspace: Optional[Path] = None) -> str:
+    """Generate a macOS Seatbelt profile for the given sandbox preset."""
+    normalized = normalize_preset(preset)
+    if normalized == SandboxPreset.FULL_ACCESS.value:
+        return _SEATBELT_FULL_ACCESS
+    if normalized in (SandboxPreset.READ_ONLY.value, SandboxPreset.REVIEW_ONLY.value):
+        return _SEATBELT_READ_ONLY
+    ws = str((workspace or Path.cwd()).resolve())
+    return _SEATBELT_WORKSPACE_WRITE_TEMPLATE.replace("{workspace}", ws)
+
+
+def sandboxed_command(
+    command: str,
+    preset: str,
+    workspace: Optional[Path] = None,
+    timeout: Optional[int] = None,
+) -> List[str]:
+    """Wrap a bash command in sandbox-exec if available. Returns argv list."""
+    if not os_sandbox_available():
+        return ["bash", "-c", command]
+    profile = build_seatbelt_profile(preset, workspace)
+    # write profile to temp file (sandbox-exec -f requires a file path)
+    fd, profile_path = tempfile.mkstemp(suffix=".sb", prefix="poor_cli_")
+    import os
+    os.write(fd, profile.encode("utf-8"))
+    os.close(fd)
+    return ["sandbox-exec", "-f", profile_path, "bash", "-c", command]

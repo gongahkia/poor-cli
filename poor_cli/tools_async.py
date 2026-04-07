@@ -2705,7 +2705,13 @@ class ToolRegistryAsync:
                 raise CommandExecutionError(command, "Command is empty after parsing")
 
             wrapped_cmd = f"{command}; echo __CWD__=$(pwd)"  # track cwd after execution
-            argv = ["sh", "-c", wrapped_cmd]
+            # use OS-level sandbox if available and configured
+            from .sandbox import os_sandbox_available, sandboxed_command
+            sandbox_preset = getattr(self, "_sandbox_preset", None) or getattr(getattr(self._core, "_sandbox_preset", None), "", "workspace-write") if self._core else "workspace-write"
+            if os_sandbox_available() and sandbox_preset != "full-access":
+                argv = sandboxed_command(wrapped_cmd, sandbox_preset)
+            else:
+                argv = ["sh", "-c", wrapped_cmd]
 
             process = await asyncio.create_subprocess_exec(
                 *argv,
