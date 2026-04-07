@@ -1,9 +1,9 @@
-"""Conversation context compression via extractive summarization."""
+"""Conversation context compression via extractive and LLM-based summarization."""
 
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 from .config import ContextCompressionConfig
 from .exceptions import setup_logger
@@ -20,6 +20,13 @@ _DECISION_RE = re.compile( # phrases signalling a decision or outcome
     r'(?:decided|chosen|approved|rejected|confirmed|created|deleted|modified|fixed|resolved)',
     re.I,
 )
+_LLM_SUMMARIZE_PROMPT = (
+    "Summarize the following conversation history into a concise context block. "
+    "Preserve: (1) user intents and goals, (2) key decisions made, (3) files modified, "
+    "(4) tools used, (5) any unresolved issues. Be factual and terse. "
+    "Output only the summary, no preamble.\n\n"
+)
+_LLM_SUMMARY_MAX_INPUT_CHARS = 60000 # cap input to avoid blowing context on the summarizer call
 
 
 class ContextCompressor:
@@ -54,6 +61,54 @@ class ContextCompressor:
             len(summary_text) / max(1, sum(len(t.get("content", "")) for t in old_turns)),
         )
         return compressed
+
+    async def compress_with_llm(
+        self,
+        history: List[Dict[str, Any]],
+        config: Any,
+        provider: Any,
+    ) -> List[Dict[str, Any]]:
+        """Compress using LLM summarization, falling back to extractive on failure."""
+        if not self.should_compress(history, config):
+            return history
+        split = len(history) - getattr(config, "preserve_recent_turns", 8)
+        if split <= 0:
+            return history
+        old_turns = history[:split]
+        recent_turns = history[split:]
+        try:
+            summary_text = await self._llm_summarize(old_turns, provider)
+        except Exception as e:
+            logger.warning("LLM compression failed, falling back to extractive: %s", e)
+            summary_text = self._summarize_turns(old_turns)
+        summary_msg: Dict[str, Any] = {
+            "role": "user",
+            "content": f"[COMPRESSED CONTEXT]\n{summary_text}\n({len(old_turns)} turns compressed via LLM)",
+        }
+        compressed = [summary_msg] + recent_turns
+        logger.info(
+            "LLM-compressed %d old turns, kept %d recent (ratio %.2f)",
+            len(old_turns), len(recent_turns),
+            len(summary_text) / max(1, sum(len(t.get("content", "")) for t in old_turns)),
+        )
+        return compressed
+
+    async def _llm_summarize(self, turns: List[Dict[str, Any]], provider: Any) -> str:
+        """Send old turns to LLM for summarization."""
+        conversation_text = []
+        total_chars = 0
+        for turn in turns:
+            content = str(turn.get("content", ""))
+            role = turn.get("role", "unknown")
+            entry = f"[{role}]: {content}"
+            if total_chars + len(entry) > _LLM_SUMMARY_MAX_INPUT_CHARS:
+                conversation_text.append(f"... ({len(turns) - len(conversation_text)} more turns omitted)")
+                break
+            conversation_text.append(entry)
+            total_chars += len(entry)
+        full_prompt = _LLM_SUMMARIZE_PROMPT + "\n".join(conversation_text)
+        response = await provider.send_message(full_prompt)
+        return response.content.strip() if response.content else self._summarize_turns(turns)
 
     def _summarize_turns(self, turns: List[Dict[str, Any]]) -> str:
         tools_used: Set[str] = set()

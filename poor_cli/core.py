@@ -1957,7 +1957,11 @@ class PoorCLICore:
                 history = self.provider.get_history()
                 if self._context_compressor.should_compress(history, cc_cfg):
                     before = len(history)
-                    compressed = self._context_compressor.compress(history, cc_cfg)
+                    use_llm = getattr(cc_cfg, "use_llm", True)
+                    if use_llm and self.provider:
+                        compressed = await self._context_compressor.compress_with_llm(history, cc_cfg, self.provider)
+                    else:
+                        compressed = self._context_compressor.compress(history, cc_cfg)
                     self.provider.set_history(compressed)
                     after = len(compressed)
                     logger.info("Compressed conversation context: %d -> %d messages", before, after)
