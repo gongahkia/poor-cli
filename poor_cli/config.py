@@ -236,6 +236,8 @@ class AgenticConfig:
     sub_agent_max_depth: int = 2  # max sub-agent recursion depth
     sub_agent_max_iterations: int = 10  # max iterations per sub-agent
     sub_agent_timeout: float = 120.0  # sub-agent timeout in seconds
+    auto_lint: bool = True  # run lint after file mutations and feed errors back to LLM
+    auto_lint_timeout: int = 30  # lint command timeout in seconds
 
 
 @dataclass

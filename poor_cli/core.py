@@ -2922,7 +2922,12 @@ class PoorCLICore:
         """Check if auto-feedback loop is enabled in config."""
         if not self.config:
             return False
-        return getattr(self.config, "_auto_feedback_enabled", False)
+        if getattr(self.config, "_auto_feedback_enabled", False):
+            return True
+        agentic = getattr(self.config, "agentic", None)
+        if agentic and getattr(agentic, "auto_lint", False):
+            return True
+        return False
 
     async def _run_auto_feedback(self) -> str:
         """Run lint/test and return formatted errors, or empty string if all passed."""
