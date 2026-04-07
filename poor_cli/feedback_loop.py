@@ -169,3 +169,20 @@ def format_feedback_for_model(results: List[FeedbackResult]) -> str:
         parts.append(r.summary())
     parts.append("\nPlease fix these issues.")
     return "\n\n".join(parts)
+
+
+def toggle_feedback_loop(config: Any, enable: Optional[bool] = None) -> str:
+    """Toggle or set auto-lint feedback loop. Returns status message."""
+    agentic = getattr(config, "agentic", None) if config else None
+    if agentic is None:
+        return "feedback-loop: no agentic config available"
+    current = getattr(agentic, "auto_lint", False)
+    if enable is None:
+        new_val = not current
+    else:
+        new_val = enable
+    agentic.auto_lint = new_val
+    # also sync the legacy flag
+    if hasattr(config, "_auto_feedback_enabled"):
+        config._auto_feedback_enabled = new_val
+    return f"feedback-loop: {'enabled' if new_val else 'disabled'}"
