@@ -243,6 +243,7 @@ class AgenticConfig:
     architect_model: str = "" # model for reasoning (e.g. "claude-sonnet-4-20250514")
     editor_provider: str = "" # provider for editing (e.g. "gemini")
     editor_model: str = "" # model for editing (e.g. "gemini-2.5-flash")
+    auto_commit: bool = False # auto-commit file mutations with descriptive messages
 
 
 @dataclass

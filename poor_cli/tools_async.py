@@ -1370,6 +1370,8 @@ class ToolRegistryAsync:
         diff = ""
         if before is not None and after is not None and (before != after):
             diff = self._text_diff(str(path), before, after)
+        if changed and operation in ("write_file", "edit_file"):
+            self._maybe_auto_commit(str(path), operation)
         return ToolOutcome(
             ok=True,
             operation=operation,
@@ -1379,6 +1381,25 @@ class ToolRegistryAsync:
             message=message,
             metadata=metadata or {},
         )
+
+    def _maybe_auto_commit(self, file_path: str, operation: str) -> None:
+        """Auto-commit a file mutation if agentic.auto_commit is enabled."""
+        try:
+            agentic = getattr(getattr(self, "config", None), "agentic", None)
+            if not agentic or not getattr(agentic, "auto_commit", False):
+                return
+            import subprocess as _sp
+            check = _sp.run(["git", "rev-parse", "--is-inside-work-tree"], capture_output=True, text=True, timeout=5)
+            if check.returncode != 0:
+                return
+            ignored = _sp.run(["git", "check-ignore", "-q", file_path], capture_output=True, timeout=5)
+            if ignored.returncode == 0: # file is gitignored
+                return
+            rel = os.path.relpath(file_path)
+            _sp.run(["git", "add", "--", file_path], capture_output=True, timeout=10)
+            _sp.run(["git", "commit", "-m", f"Auto: {operation} {rel}"], capture_output=True, timeout=15)
+        except Exception as e:
+            logger.debug("auto-commit skipped: %s", e)
 
     def inspect_mutation_targets(self, tool_name: str, arguments: Dict[str, Any]) -> List[str]:
         """Return candidate file paths touched by a mutating tool invocation."""
