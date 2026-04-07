@@ -44,7 +44,7 @@ class ContextCompressor:
         recent_turns = history[split:]
         summary_text = self._summarize_turns(old_turns)
         summary_msg: Dict[str, Any] = {
-            "role": "system",
+            "role": "user", # use "user" role for provider compatibility (Anthropic rejects mid-conversation "system")
             "content": summary_text,
         }
         compressed = [summary_msg] + recent_turns
