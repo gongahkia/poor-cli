@@ -1882,8 +1882,8 @@ class PoorCLICore:
                 full_message, dedup_saved = self._dedup_context_files(full_message)
                 if dedup_saved > 0:
                     self._economy_tracker.record_dedup(dedup_saved)
-        except (AttributeError, TypeError):
-            pass
+        except (AttributeError, TypeError) as e:
+            logger.warning("economy context_dedup failed: %s", e)
 
         # Economy: prompt distillation
         try:
@@ -1893,33 +1893,33 @@ class PoorCLICore:
                 full_message, tokens_saved = distill_prompt(full_message, "", eco)
                 if tokens_saved > 0:
                     self._economy_tracker.record_distillation(tokens_before, tokens_before - tokens_saved)
-        except (AttributeError, TypeError):
-            pass
+        except (AttributeError, TypeError) as e:
+            logger.warning("economy prompt_distill failed: %s", e)
 
         # Economy: smart model downshift for simple prompts
         try:
             self._maybe_downshift_model(message)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("economy model_downshift failed: %s", e)
 
         # Economy: apply output token cap
         try:
             self._apply_economy_max_tokens()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("economy max_tokens cap failed: %s", e)
 
         # Economy: reset idle auto-compact timer
         try:
             self._reset_idle_compact_timer()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("economy idle_compact_timer failed: %s", e)
 
         # Economy: response cache lookup
         cached_response = None
         try:
             cached_response = self._cache_lookup(full_message)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("economy cache_lookup failed: %s", e)
         if cached_response is not None:
             self._economy_tracker.record_cache_hit()
             yield CoreEvent.text_chunk(cached_response, request_id)
@@ -1974,8 +1974,8 @@ class PoorCLICore:
                         type="progress",
                         data={"phase": "compression", "message": f"context compressed: {before} \u2192 {after} messages ({100 - after * 100 // max(before, 1)}% reduction)"},
                     ))
-        except (AttributeError, TypeError):
-            pass
+        except (AttributeError, TypeError) as e:
+            logger.warning("context compression failed: %s", e)
 
         # Auto LLM compaction when token usage exceeds threshold
         try:
@@ -2005,8 +2005,8 @@ class PoorCLICore:
                                 type="progress",
                                 data={"phase": "llm_compact", "message": f"auto LLM compact: {msgs_before} \u2192 {result.get('messages_after', 0)} messages"},
                             ))
-        except (AttributeError, TypeError):
-            pass
+        except (AttributeError, TypeError) as e:
+            logger.warning("auto LLM compaction failed: %s", e)
 
         try:
             accumulated_text = ""
