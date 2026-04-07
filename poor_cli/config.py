@@ -244,6 +244,10 @@ class AgenticConfig:
     editor_provider: str = "" # provider for editing (e.g. "gemini")
     editor_model: str = "" # model for editing (e.g. "gemini-2.5-flash")
     auto_commit: bool = False # auto-commit file mutations with descriptive messages
+    cloud_agent_provider: str = "none" # none | fly-io | github-codespaces
+    cloud_agent_api_key: str = "" # API key for cloud agent provider
+    cloud_agent_image: str = "" # docker image for cloud execution
+    cloud_agent_region: str = "iad" # cloud region
 
 
 @dataclass
