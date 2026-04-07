@@ -32,7 +32,7 @@ class TestOpenAIPromptCaching(unittest.TestCase):
                 self.skipTest("openai not installed")
             import asyncio
             provider = OpenAIProvider(api_key="test-key", model_name="gpt-4")
-            asyncio.get_event_loop().run_until_complete(
+            asyncio.run(
                 provider.initialize(system_instruction="You are helpful.")
             )
             self.assertEqual(provider.messages[0]["role"], "system")

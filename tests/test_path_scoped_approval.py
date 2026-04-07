@@ -22,7 +22,7 @@ class TestPathScopedApproval(unittest.TestCase):
     def test_approved_path_auto_approves(self):
         core = self._make_core()
         core._approved_write_paths.add(str(Path("/tmp/foo.py").resolve()))
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             core._request_permission("write_file", {"path": "/tmp/foo.py"})
         )
         self.assertTrue(result["allowed"])
@@ -30,7 +30,7 @@ class TestPathScopedApproval(unittest.TestCase):
 
     def test_unapproved_path_prompts(self):
         core = self._make_core()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             core._request_permission("write_file", {"path": "/tmp/foo.py"})
         )
         self.assertTrue(result["allowed"])
@@ -38,7 +38,7 @@ class TestPathScopedApproval(unittest.TestCase):
 
     def test_approval_recorded_after_grant(self):
         core = self._make_core()
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             core._request_permission("write_file", {"path": "/tmp/foo.py"})
         )
         self.assertIn(str(Path("/tmp/foo.py").resolve()), core._approved_write_paths)
@@ -52,7 +52,7 @@ class TestPathScopedApproval(unittest.TestCase):
     def test_disabled_skips_cache(self):
         core = self._make_core(path_scoped=False)
         core._approved_write_paths.add(str(Path("/tmp/foo.py").resolve()))
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             core._request_permission("write_file", {"path": "/tmp/foo.py"})
         )
         core._permission_callback.assert_called_once()
