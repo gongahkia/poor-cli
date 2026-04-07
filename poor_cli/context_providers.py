@@ -12,7 +12,7 @@ from .exceptions import setup_logger
 
 logger = setup_logger(__name__)
 
-_MENTION_RE = re.compile(r'@(codebase|diff|terminal|docs|web)\b(?:\s+(.+?))?(?=\s*@|\s*$)', re.IGNORECASE)
+_MENTION_RE = re.compile(r'@(codebase|diff|terminal|docs|web|symbol)\b(?:\s+(.+?))?(?=\s*@|\s*$)', re.IGNORECASE)
 _FILE_MENTION_RE = re.compile(r'@"([^"]+)"|@([\w./\-]+\.\w+)')
 
 
@@ -106,12 +106,46 @@ async def _resolve_web(query: str, core: Any) -> str:
     return f"[web: search unavailable for '{query}']"
 
 
+async def _resolve_symbol(query: str, core: Any) -> str:
+    """@symbol <name> — look up symbol definition in repo graph."""
+    if not query.strip():
+        return "[symbol: no name provided]"
+    try:
+        from .repo_graph import RepoGraph
+        rg = RepoGraph(Path.cwd())
+        matches = rg.symbols_matching(query.strip(), limit=5)
+        if not matches:
+            return f"[symbol: '{query}' not found in repo graph]"
+        results = []
+        for m in matches:
+            fp = m["file_path"]
+            ls = m.get("line_start", 1)
+            le = m.get("line_end", ls)
+            kind = m.get("kind", "symbol")
+            sig = m.get("signature", "")
+            # read source lines with padding
+            try:
+                content = Path(fp).read_text(encoding="utf-8", errors="ignore")
+                lines = content.splitlines()
+                start = max(0, ls - 1)
+                end = min(len(lines), le + 5)
+                snippet = "\n".join(lines[start:end])
+                rel = str(Path(fp).relative_to(Path.cwd())) if fp.startswith(str(Path.cwd())) else fp
+                results.append(f"[{kind}: {m['name']} @ {rel}:{ls}]\n```\n{snippet}\n```")
+            except Exception:
+                results.append(f"[{kind}: {m['name']} @ {fp}:{ls}] {sig}")
+        return "\n\n".join(results)
+    except Exception as e:
+        return f"[symbol: error: {e}]"
+
+
 _PROVIDERS: Dict[str, Callable] = {
     "codebase": _resolve_codebase,
     "diff": _resolve_diff,
     "terminal": _resolve_terminal,
     "docs": _resolve_docs,
     "web": _resolve_web,
+    "symbol": _resolve_symbol,
 }
 
 
