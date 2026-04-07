@@ -1431,7 +1431,16 @@ class PoorCLICore:
         }
 
         try:
-            result = await self.tool_registry.execute_tool_raw(tool_name, arguments)
+            from .retry import with_retry, RetryConfig as _RetryConfig
+            from .exceptions import APITimeoutError, APIRateLimitError
+            retry_cfg = _RetryConfig(max_retries=2, base_delay=1.0, max_delay=10.0)
+            def _is_transient(exc: BaseException) -> bool:
+                return isinstance(exc, (APITimeoutError, APIRateLimitError, TimeoutError, ConnectionError))
+            result = await with_retry(
+                lambda: self.tool_registry.execute_tool_raw(tool_name, arguments),
+                config=retry_cfg,
+                retryable=_is_transient,
+            )
         except Exception as error:
             self._log_audit_event(
                 AuditEventType.TOOL_EXECUTION,
