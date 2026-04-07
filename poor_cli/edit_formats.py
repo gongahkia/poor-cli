@@ -77,6 +77,8 @@ class UnifiedDiffFormat(EditFormat):
         old_lines: List[str] = []
         new_lines: List[str] = []
         for line in body.splitlines():
+            if line.startswith("\\ "): # "\ No newline at end of file" — skip metadata
+                continue
             if line.startswith("-"):
                 old_lines.append(line[1:])
             elif line.startswith("+"):
@@ -84,7 +86,7 @@ class UnifiedDiffFormat(EditFormat):
             elif line.startswith(" "):
                 old_lines.append(line[1:])
                 new_lines.append(line[1:])
-            elif not line.startswith("\\"):
+            elif line.strip(): # non-empty, non-prefixed line treated as context
                 old_lines.append(line)
                 new_lines.append(line)
         return old_lines, new_lines

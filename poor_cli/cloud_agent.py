@@ -128,29 +128,91 @@ class FlyIoProvider(CloudAgentProvider):
             return False
 
     async def get_output(self, agent_id: str, remote_id: str) -> str:
-        return f"[fly-io agent {remote_id}] output retrieval not yet implemented"
+        """Retrieve agent output from Fly machine logs."""
+        import aiohttp
+        headers = {"Authorization": f"Bearer {self._api_key}"}
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"https://api.machines.dev/v1/apps/poor-cli-agents/machines/{remote_id}/logs",
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    if resp.status >= 400:
+                        return f"[fly-io agent {remote_id}] log retrieval failed (HTTP {resp.status})"
+                    data = await resp.text()
+                    return data[:10000] if data else f"[fly-io agent {remote_id}] no output"
+        except Exception as e:
+            return f"[fly-io agent {remote_id}] log retrieval error: {e}"
 
 
 class GitHubCodespacesProvider(CloudAgentProvider):
-    """Run agents in GitHub Codespaces."""
+    """Run agents in GitHub Codespaces via the GitHub REST API."""
 
     def __init__(self, config: CloudAgentConfig):
         self._api_key = config.api_key or os.environ.get("GITHUB_TOKEN", "")
+        self._api_base = "https://api.github.com"
+
+    def _headers(self) -> Dict[str, str]:
+        return {"Authorization": f"Bearer {self._api_key}", "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
 
     async def launch(self, agent_id: str, prompt: str, sandbox_preset: str, max_runtime: int) -> CloudAgentStatus:
         if not self._api_key:
             return CloudAgentStatus(agent_id=agent_id, provider="github-codespaces", remote_id="", status="failed", error="GITHUB_TOKEN not set")
-        # codespaces API requires repo context — placeholder implementation
-        return CloudAgentStatus(agent_id=agent_id, provider="github-codespaces", remote_id="", status="failed", error="codespaces provider not yet fully implemented")
+        import aiohttp
+        body = {
+            "ref": "main",
+            "machine": "basicLinux32gb",
+            "display_name": f"poor-cli-{agent_id[:8]}",
+            "idle_timeout_minutes": max(10, max_runtime // 60),
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self._api_base}/user/codespaces",
+                    json=body, headers=self._headers(),
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as resp:
+                    data = await resp.json()
+                    if resp.status >= 400:
+                        return CloudAgentStatus(agent_id=agent_id, provider="github-codespaces", remote_id="", status="failed", error=str(data.get("message", data)))
+                    remote_id = data.get("name", "")
+                    return CloudAgentStatus(agent_id=agent_id, provider="github-codespaces", remote_id=remote_id, status="running", metadata={"codespace_url": data.get("web_url", "")})
+        except Exception as e:
+            return CloudAgentStatus(agent_id=agent_id, provider="github-codespaces", remote_id="", status="failed", error=str(e))
 
     async def poll(self, agent_id: str, remote_id: str) -> CloudAgentStatus:
-        return CloudAgentStatus(agent_id=agent_id, provider="github-codespaces", remote_id=remote_id, status="failed", error="not implemented")
+        import aiohttp
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{self._api_base}/user/codespaces/{remote_id}",
+                    headers=self._headers(),
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    data = await resp.json()
+                    state = data.get("state", "Unknown")
+                    status_map = {"Available": "running", "Shutdown": "completed", "Deleted": "completed", "Provisioning": "running", "Created": "running"}
+                    status = status_map.get(state, "running" if state not in ("Failed",) else "failed")
+                    return CloudAgentStatus(agent_id=agent_id, provider="github-codespaces", remote_id=remote_id, status=status)
+        except Exception as e:
+            return CloudAgentStatus(agent_id=agent_id, provider="github-codespaces", remote_id=remote_id, status="failed", error=str(e))
 
     async def cancel(self, agent_id: str, remote_id: str) -> bool:
-        return False
+        import aiohttp
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self._api_base}/user/codespaces/{remote_id}/stop",
+                    headers=self._headers(),
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    return resp.status < 400
+        except Exception:
+            return False
 
     async def get_output(self, agent_id: str, remote_id: str) -> str:
-        return "[codespaces] not implemented"
+        return f"[codespaces:{remote_id}] use 'gh cs logs -c {remote_id}' to retrieve output"
 
 
 _PROVIDERS: Dict[str, type] = {
