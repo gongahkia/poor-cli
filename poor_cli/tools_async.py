@@ -1142,7 +1142,8 @@ class ToolRegistryAsync:
                             "description": "File paths to include as context"
                         },
                         "max_iterations": {"type": "INTEGER", "description": "Max tool iterations for sub-agent (default 10)"},
-                        "tools": {"type": "STRING", "description": "Comma-separated allowed tools (e.g. 'read_file,grep_files'). If omitted, write/exec tools are denied by default."}
+                        "tools": {"type": "STRING", "description": "Comma-separated allowed tools (e.g. 'read_file,grep_files'). If omitted, write/exec tools are denied by default."},
+                        "archetype": {"type": "STRING", "description": "Sub-agent archetype: 'generic', 'research' (read-only), 'code' (full edit), 'test' (run tests), 'review' (code review). Overrides tool restrictions with archetype-specific defaults."}
                     },
                     "required": ["prompt"]
                 }
@@ -4046,19 +4047,20 @@ class ToolRegistryAsync:
         except Exception as exc:
             return f"error listing memories: {exc}"
 
-    async def delegate_task(self, prompt: str, context_files: Optional[List[str]] = None, max_iterations: int = 10, tools: Optional[str] = None) -> str:
+    async def delegate_task(self, prompt: str, context_files: Optional[List[str]] = None, max_iterations: int = 10, tools: Optional[str] = None, archetype: Optional[str] = None) -> str:
         if not self._core:
             return "error: core engine not available for delegation"
         try:
             from .sub_agent import SubAgent
+            archetype = archetype or "generic"
             allowed_tools = None
             denied_tools = None
             if tools and tools.strip():
                 allowed_tools = {t.strip() for t in tools.split(",") if t.strip()}
-            else:
+            elif archetype == "generic":
                 agentic_cfg = getattr(self._core.config, "agentic", None) if self._core.config else None
                 denied_tools = set(getattr(agentic_cfg, "sub_agent_default_denied_tools", []) if agentic_cfg else [])
-            agent = SubAgent(self._core, max_iterations=max_iterations, allowed_tools=allowed_tools, denied_tools=denied_tools)
+            agent = SubAgent(self._core, max_iterations=max_iterations, allowed_tools=allowed_tools, denied_tools=denied_tools, archetype=archetype)
             result = await agent.run(prompt, context_files=context_files)
             usage = agent.get_usage()
             if usage.get("input_tokens") or usage.get("output_tokens"):

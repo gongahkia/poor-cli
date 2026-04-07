@@ -2,10 +2,75 @@
 
 from __future__ import annotations
 import asyncio
-from typing import Any, Dict, List, Optional
+from enum import Enum
+from typing import Any, Dict, List, Optional, Set
 from .exceptions import setup_logger
 
 logger = setup_logger(__name__)
+
+
+class SubAgentArchetype(str, Enum):
+    GENERIC = "generic"
+    RESEARCH = "research" # read-only exploration
+    CODE = "code" # full edit capabilities
+    TEST = "test" # run tests + read
+    REVIEW = "review" # read + git diff analysis
+
+_ARCHETYPE_CONFIGS: Dict[str, Dict[str, Any]] = {
+    "research": {
+        "allowed_tools": {
+            "read_file", "glob_files", "grep_files", "list_directory",
+            "git_status", "git_diff", "git_log", "git_status_diff",
+            "diff_files", "dependency_inspect", "fetch_url",
+            "semantic_search", "process_logs",
+        },
+        "system_prompt": (
+            "You are a research sub-agent. Your job is to explore and gather information.\n"
+            "- Read files, search code, inspect dependencies, and analyze git state\n"
+            "- Synthesize findings into a clear, structured summary\n"
+            "- Do NOT modify any files or run destructive commands\n"
+        ),
+    },
+    "code": {
+        "allowed_tools": None, # all tools except delegate_task
+        "system_prompt": (
+            "You are a coding sub-agent. Your job is to implement a specific change.\n"
+            "- Read relevant files before editing\n"
+            "- Make minimal, focused changes — do not refactor surrounding code\n"
+            "- Verify your changes compile/lint if possible\n"
+            "- Prefer edit_file over write_file for existing files\n"
+        ),
+    },
+    "test": {
+        "allowed_tools": {
+            "read_file", "glob_files", "grep_files", "list_directory",
+            "bash", "run_tests", "run_affected_tests", "git_status",
+            "git_diff", "diff_files", "format_and_lint",
+        },
+        "system_prompt": (
+            "You are a test sub-agent. Your job is to run tests and report results.\n"
+            "- Run the relevant test suite for the project\n"
+            "- Analyze failures and provide clear diagnostics\n"
+            "- Do NOT fix code — just report what's broken and why\n"
+        ),
+    },
+    "review": {
+        "allowed_tools": {
+            "read_file", "glob_files", "grep_files", "list_directory",
+            "git_status", "git_diff", "git_log", "git_status_diff",
+            "diff_files", "dependency_inspect",
+        },
+        "system_prompt": (
+            "You are a code review sub-agent. Your job is to review changes.\n"
+            "- Read the diff and relevant source files\n"
+            "- Check for bugs, security issues, and style problems\n"
+            "- Provide specific, actionable feedback with file:line references\n"
+            "- Do NOT modify any files\n"
+        ),
+    },
+}
+
+
 class SubAgent:
     """Lightweight in-process sub-agent wrapping a fresh provider conversation."""
 
@@ -16,9 +81,15 @@ class SubAgent:
         timeout: float = 120.0,
         allowed_tools: Optional[set] = None,
         denied_tools: Optional[set] = None,
+        archetype: str = "generic",
     ):
         self._parent = parent_core
-        self._allowed_tools = allowed_tools
+        self._archetype = archetype
+        arch_cfg = _ARCHETYPE_CONFIGS.get(archetype, {})
+        if archetype != "generic" and arch_cfg.get("allowed_tools") is not None:
+            self._allowed_tools = arch_cfg["allowed_tools"]
+        else:
+            self._allowed_tools = allowed_tools
         self._denied_tools = denied_tools or set()
         agentic_cfg = getattr(parent_core.config, "agentic", None) if parent_core.config else None
         max_depth = getattr(agentic_cfg, "sub_agent_max_depth", 2) if agentic_cfg else 2
@@ -58,19 +129,7 @@ class SubAgent:
             filtered_tools = [t for t in tool_declarations if t.get("name") in self._allowed_tools and t.get("name") not in denied]
         else:
             filtered_tools = [t for t in tool_declarations if t.get("name") not in denied]
-        sandbox_preset = getattr(self._parent, "_sandbox_preset", "workspace-write")
-        tool_names = sorted(t.get("name", "") for t in filtered_tools)
-        system_instruction = (
-            "You are a focused sub-agent within a larger coding assistant. "
-            "Complete the given task concisely using the tools available to you.\n\n"
-            "## Constraints\n"
-            f"- Sandbox: {sandbox_preset} (do not attempt operations beyond this scope)\n"
-            "- Do not delegate further sub-tasks\n"
-            "- Stay focused on the specific task — do not refactor surrounding code\n"
-            "- Prefer reading files before editing them\n"
-            "- For bash commands: use short, targeted commands; avoid destructive operations\n\n"
-            f"## Available tools\n{', '.join(tool_names)}"
-        )
+        system_instruction = self._build_system_instruction(filtered_tools)
         await provider.initialize(tools=filtered_tools, system_instruction=system_instruction)
         # build context prefix
         ctx_parts = []
@@ -133,6 +192,30 @@ class SubAgent:
             logger.error("sub-agent error: %s", e, exc_info=True)
             accumulated += f"\n[sub-agent error: {e}]"
         return accumulated.strip() or "(no response from sub-agent)"
+
+    def _build_system_instruction(self, filtered_tools: List[Dict[str, Any]]) -> str:
+        """Build system instruction based on archetype and available tools."""
+        arch_cfg = _ARCHETYPE_CONFIGS.get(self._archetype, {})
+        arch_prompt = arch_cfg.get("system_prompt", "")
+        sandbox_preset = getattr(self._parent, "_sandbox_preset", "workspace-write")
+        tool_names = sorted(t.get("name", "") for t in filtered_tools)
+        parts = [
+            f"You are a {self._archetype} sub-agent within a larger coding assistant.",
+            "",
+        ]
+        if arch_prompt:
+            parts.append(arch_prompt)
+        parts.extend([
+            "## Constraints",
+            f"- Sandbox: {sandbox_preset} (do not attempt operations beyond this scope)",
+            "- Do not delegate further sub-tasks",
+            "- Stay focused on the specific task — do not refactor surrounding code",
+            "- Prefer reading files before editing them",
+            "- For bash commands: use short, targeted commands; avoid destructive operations",
+            "",
+            f"## Available tools\n{', '.join(tool_names)}",
+        ])
+        return "\n".join(parts)
 
     def _accumulate_usage(self, response: Any) -> None:
         usage = getattr(response, "usage", None)
