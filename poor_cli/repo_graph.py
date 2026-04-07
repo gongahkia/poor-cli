@@ -205,6 +205,64 @@ class RepoGraph:
 
     # -- symbol extraction ------------------------------------------------
 
+    def _extract_symbols_treesitter(self, abs_path: str, content: str, lang: str) -> Optional[List[Dict]]:
+        """Extract symbols using tree-sitter for accurate AST-based parsing. Returns None if unavailable."""
+        try:
+            import tree_sitter
+        except ImportError:
+            return None
+        lang_map = {
+            "python": "python", "javascript": "javascript", "typescript": "typescript",
+            "go": "go", "rust": "rust", "java": "java", "c": "c", "cpp": "cpp",
+            "ruby": "ruby",
+        }
+        ts_lang = lang_map.get(lang)
+        if not ts_lang:
+            return None
+        try:
+            import importlib
+            grammar_module = importlib.import_module(f"tree_sitter_{ts_lang}")
+            language = tree_sitter.Language(grammar_module.language())
+            parser = tree_sitter.Parser(language)
+        except (ImportError, Exception):
+            return None
+        try:
+            tree = parser.parse(content.encode("utf-8"))
+        except Exception:
+            return None
+        syms: List[Dict] = []
+        query_patterns = {
+            "python": "(function_definition name: (identifier) @fn) (class_definition name: (identifier) @cls)",
+            "javascript": "(function_declaration name: (identifier) @fn) (class_declaration name: (identifier) @cls) (variable_declarator name: (identifier) @fn)",
+            "typescript": "(function_declaration name: (identifier) @fn) (class_declaration name: (identifier) @cls) (interface_declaration name: (type_identifier) @type) (type_alias_declaration name: (type_identifier) @type)",
+            "go": "(function_declaration name: (identifier) @fn) (method_declaration name: (field_identifier) @fn) (type_declaration (type_spec name: (type_identifier) @type))",
+            "rust": "(function_item name: (identifier) @fn) (struct_item name: (type_identifier) @cls) (enum_item name: (type_identifier) @type) (trait_item name: (type_identifier) @type)",
+            "java": "(method_declaration name: (identifier) @fn) (class_declaration name: (identifier) @cls) (interface_declaration name: (identifier) @type)",
+            "c": "(function_definition declarator: (function_declarator declarator: (identifier) @fn)) (struct_specifier name: (type_identifier) @cls)",
+            "cpp": "(function_definition declarator: (function_declarator declarator: (identifier) @fn)) (class_specifier name: (type_identifier) @cls)",
+        }
+        pattern = query_patterns.get(ts_lang)
+        if not pattern:
+            return None
+        try:
+            query = language.query(pattern)
+            captures = query.captures(tree.root_node)
+            for node, capture_name in captures:
+                kind_map = {"fn": "function", "cls": "class", "type": "type"}
+                kind = kind_map.get(capture_name, "symbol")
+                syms.append({
+                    "name": node.text.decode("utf-8") if node.text else "",
+                    "kind": kind,
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "scope": "",
+                    "signature": "",
+                })
+        except Exception as e:
+            logger.debug("tree-sitter query failed for %s: %s", ts_lang, e)
+            return None
+        return syms if syms else None
+
     def _extract_symbols_ctags(self, files: List[Tuple[str, str]]) -> Dict[str, List[Dict]]:
         """Use universal-ctags JSON output for symbol extraction."""
         if not self._tools["ctags"]:
@@ -391,7 +449,10 @@ class RepoGraph:
                 # symbols
                 syms = ctags_syms.get(abs_path, [])
                 if not syms and content:
-                    if lang == "python":
+                    ts_syms = self._extract_symbols_treesitter(abs_path, content, lang)
+                    if ts_syms is not None:
+                        syms = ts_syms
+                    elif lang == "python":
                         syms = self._extract_symbols_python_ast(abs_path, content)
                     else:
                         syms = self._extract_symbols_regex(abs_path, content, lang)
@@ -495,7 +556,10 @@ class RepoGraph:
                 conn.execute("DELETE FROM edges WHERE source_path = ? OR target_path = ?", (abs_path, abs_path))
                 syms = ctags_syms.get(abs_path, [])
                 if not syms and content:
-                    if lang == "python":
+                    ts_syms = self._extract_symbols_treesitter(abs_path, content, lang)
+                    if ts_syms is not None:
+                        syms = ts_syms
+                    elif lang == "python":
                         syms = self._extract_symbols_python_ast(abs_path, content)
                     else:
                         syms = self._extract_symbols_regex(abs_path, content, lang)
