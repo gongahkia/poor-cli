@@ -1132,6 +1132,21 @@ class ToolRegistryAsync:
             }
         }
 
+        self.tools["mcp_scaffold"] = {
+            "function": self._mcp_scaffold,
+            "declaration": {
+                "name": "mcp_scaffold",
+                "description": "Scaffold a new MCP server from a template (Python or Node.js). Creates server file, README, and config snippet.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "name": {"type": "STRING", "description": "Server name (used for directory and config key)"},
+                        "language": {"type": "STRING", "description": "Server language: 'python' or 'node' (default: python)"},
+                    },
+                    "required": ["name"]
+                }
+            }
+        }
         self.tools["delegate_task"] = {
             "function": self.delegate_task,
             "declaration": {
@@ -4096,6 +4111,13 @@ class ToolRegistryAsync:
             return "\n".join(lines)
         except Exception as exc:
             return f"error listing memories: {exc}"
+
+    async def _mcp_scaffold(self, name: str, language: str = "python") -> str:
+        try:
+            from .mcp_scaffold import scaffold_mcp_server
+            return scaffold_mcp_server(name=name, language=language)
+        except Exception as e:
+            return f"error scaffolding MCP server: {e}"
 
     async def delegate_task(self, prompt: str, context_files: Optional[List[str]] = None, max_iterations: int = 10, tools: Optional[str] = None, archetype: Optional[str] = None) -> str:
         if not self._core:
