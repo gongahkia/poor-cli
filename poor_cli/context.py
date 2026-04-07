@@ -106,9 +106,14 @@ class ContextManager:
         
         # File content cache: path -> (content, timestamp)
         self._cache: Dict[str, Tuple[str, float]] = {}
-        
+
         # Recently edited files (for priority)
         self._recent_edits: Dict[str, float] = {}
+
+        # Implicit context: tracks files accessed across turns for Cascade-style boosting
+        # key: file_path, value: (turn_id, timestamp, access_count, last_reason)
+        self._implicit_history: Dict[str, Tuple[int, float, int, str]] = {}
+        self._current_turn: int = 0
 
         # Repo knowledge graph (injected by core.py if available)
         self._repo_graph: Any = None
@@ -149,12 +154,41 @@ class ContextManager:
     def mark_file_edited(self, file_path: str) -> None:
         """
         Mark a file as recently edited for priority boosting.
-        
+
         Args:
             file_path: Path to the edited file
         """
         self._recent_edits[str(Path(file_path).resolve())] = time.time()
-    
+
+    def advance_turn(self) -> None:
+        """Advance the turn counter and decay old implicit history entries."""
+        self._current_turn += 1
+        stale = [k for k, (turn, _, _, _) in self._implicit_history.items() if self._current_turn - turn > 20]
+        for k in stale:
+            del self._implicit_history[k]
+
+    def record_access(self, file_path: str, reason: str = "tool") -> None:
+        """Record a file access for implicit context boosting."""
+        resolved = str(Path(file_path).resolve())
+        existing = self._implicit_history.get(resolved)
+        if existing:
+            _, _, count, _ = existing
+            self._implicit_history[resolved] = (self._current_turn, time.time(), count + 1, reason)
+        else:
+            self._implicit_history[resolved] = (self._current_turn, time.time(), 1, reason)
+
+    def implicit_priority_boost(self, file_path: str) -> float:
+        """Calculate priority boost from implicit access history."""
+        resolved = str(Path(file_path).resolve())
+        entry = self._implicit_history.get(resolved)
+        if not entry:
+            return 0.0
+        turn_id, _, access_count, _ = entry
+        turns_ago = max(1, self._current_turn - turn_id)
+        if turns_ago > 10:
+            return access_count * 0.15 / turns_ago # halved for old entries
+        return access_count * 0.3 / turns_ago
+
     def clear_cache(self) -> None:
         """Clear the file content cache."""
         self._cache.clear()

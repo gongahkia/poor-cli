@@ -55,11 +55,11 @@ class TestMentionRegex(unittest.TestCase):
 
 
 class TestProviderRegistry(unittest.TestCase):
-    def test_five_providers_registered(self):
-        self.assertEqual(len(_PROVIDERS), 5)
+    def test_six_providers_registered(self):
+        self.assertEqual(len(_PROVIDERS), 6)
 
     def test_expected_providers(self):
-        expected = {"codebase", "diff", "terminal", "docs", "web"}
+        expected = {"codebase", "diff", "terminal", "docs", "web", "symbol"}
         self.assertEqual(set(_PROVIDERS.keys()), expected)
 
     def test_all_providers_callable(self):

@@ -1468,9 +1468,12 @@ class PoorCLICore:
         if isinstance(result, ToolOutcome):
             if checkpoint_id and not result.checkpoint_id:
                 result.checkpoint_id = checkpoint_id
-            if result.ok and result.changed and self._context_manager:
-                for file_path in self._tool_result_paths(tool_name, arguments, result):
-                    self._context_manager.mark_file_edited(file_path)
+            if result.ok and self._context_manager:
+                paths = self._tool_result_paths(tool_name, arguments, result)
+                for file_path in paths:
+                    self._context_manager.record_access(file_path, reason=tool_name)
+                    if result.changed:
+                        self._context_manager.mark_file_edited(file_path)
 
         self._log_audit_event(
             AuditEventType.TOOL_EXECUTION,
@@ -1849,6 +1852,8 @@ class PoorCLICore:
         cancel_event = self._prepare_cancel_event(request_id)
         max_iterations = self.config.agentic.max_iterations if self.config else 25
         iteration = 0
+        if self._context_manager:
+            self._context_manager.advance_turn()
         turn_diagnostics = self._new_run_turn_diagnostics(max_iterations=max_iterations)
         resolved_source_id = str(source_id or request_id or "session").strip() or "session"
         self._append_turn_transition(
