@@ -158,6 +158,23 @@ class PoorCLICore:
         # Context compressor
         self._context_compressor: ContextCompressor = ContextCompressor()
 
+        # Architect/editor dual-model mode
+        self._architect_mode = None
+        try:
+            agentic = getattr(config, "agentic", None) if config else None
+            if agentic and getattr(agentic, "architect_mode", False):
+                from .architect_mode import ArchitectConfig, ArchitectMode
+                arch_cfg = ArchitectConfig(
+                    enabled=True,
+                    architect_provider=getattr(agentic, "architect_provider", ""),
+                    architect_model=getattr(agentic, "architect_model", ""),
+                    editor_provider=getattr(agentic, "editor_provider", ""),
+                    editor_model=getattr(agentic, "editor_model", ""),
+                )
+                self._architect_mode = ArchitectMode(arch_cfg)
+        except Exception:
+            pass
+
         # Economy mode savings tracker + downshift state
         self._economy_tracker: EconomySavingsTracker = EconomySavingsTracker()
         self._original_model_name: Optional[str] = None
@@ -2287,6 +2304,19 @@ class PoorCLICore:
             accumulated_text, confidence_suffix = self._ensure_confidence_line(accumulated_text)
             if confidence_suffix:
                 yield CoreEvent.text_chunk(confidence_suffix, request_id)
+
+            # architect mode: if architect responded with a plan, switch to editor for next turn
+            if self._architect_mode and self._architect_mode.enabled and accumulated_text:
+                if self._architect_mode.should_switch_to_editor(accumulated_text):
+                    try:
+                        await self._architect_mode.switch_to_editor(self, accumulated_text)
+                    except Exception as e:
+                        logger.warning("architect->editor switch failed: %s", e)
+                elif self._architect_mode.phase == "editor":
+                    try:
+                        await self._architect_mode.reset_to_architect(self)
+                    except Exception as e:
+                        logger.warning("editor->architect reset failed: %s", e)
 
             if self.history_adapter and accumulated_text:
                 self.history_adapter.add_message("model", accumulated_text)
