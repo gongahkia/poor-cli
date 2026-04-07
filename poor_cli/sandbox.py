@@ -409,7 +409,44 @@ _SEATBELT_FULL_ACCESS = """(version 1)
 
 def os_sandbox_available() -> bool:
     """Check if OS-level sandboxing is available on this platform."""
-    return platform.system() == "Darwin" and shutil.which("sandbox-exec") is not None
+    if platform.system() == "Darwin":
+        return shutil.which("sandbox-exec") is not None
+    if platform.system() == "Linux":
+        return shutil.which("firejail") is not None or shutil.which("bwrap") is not None
+    return False
+
+
+def _linux_sandbox_tool() -> Optional[str]:
+    """Return 'firejail' or 'bwrap' if available on Linux, else None."""
+    for tool in ("firejail", "bwrap"):
+        if shutil.which(tool):
+            return tool
+    return None
+
+
+def _build_firejail_args(preset: str, workspace: Optional[Path] = None) -> List[str]:
+    """Build firejail arguments for the given sandbox preset."""
+    normalized = normalize_preset(preset)
+    if normalized == SandboxPreset.FULL_ACCESS.value:
+        return [] # no sandboxing
+    ws = str((workspace or Path.cwd()).resolve())
+    if normalized in (SandboxPreset.READ_ONLY.value, SandboxPreset.REVIEW_ONLY.value):
+        return ["firejail", "--noprofile", "--read-only=/", "--tmpfs=/tmp", "--net=none"]
+    # workspace-write
+    return ["firejail", "--noprofile", "--read-only=/", f"--read-write={ws}", "--tmpfs=/tmp", "--net=none"]
+
+
+def _build_bwrap_args(preset: str, workspace: Optional[Path] = None) -> List[str]:
+    """Build bubblewrap arguments for the given sandbox preset."""
+    normalized = normalize_preset(preset)
+    if normalized == SandboxPreset.FULL_ACCESS.value:
+        return []
+    ws = str((workspace or Path.cwd()).resolve())
+    base = ["bwrap", "--ro-bind", "/", "/", "--tmpfs", "/tmp", "--dev", "/dev", "--proc", "/proc", "--unshare-net"]
+    if normalized in (SandboxPreset.READ_ONLY.value, SandboxPreset.REVIEW_ONLY.value):
+        return base
+    # workspace-write: overlay a writable bind on the workspace
+    return base + ["--bind", ws, ws]
 
 
 def build_seatbelt_profile(preset: str, workspace: Optional[Path] = None) -> str:
@@ -429,13 +466,23 @@ def sandboxed_command(
     workspace: Optional[Path] = None,
     timeout: Optional[int] = None,
 ) -> List[str]:
-    """Wrap a bash command in sandbox-exec if available. Returns argv list."""
+    """Wrap a bash command in OS-level sandbox if available. Returns argv list."""
     if not os_sandbox_available():
         return ["bash", "-c", command]
-    profile = build_seatbelt_profile(preset, workspace)
-    # write profile to temp file (sandbox-exec -f requires a file path)
-    fd, profile_path = tempfile.mkstemp(suffix=".sb", prefix="poor_cli_")
-    import os
-    os.write(fd, profile.encode("utf-8"))
-    os.close(fd)
-    return ["sandbox-exec", "-f", profile_path, "bash", "-c", command]
+    system = platform.system()
+    if system == "Darwin":
+        profile = build_seatbelt_profile(preset, workspace)
+        fd, profile_path = tempfile.mkstemp(suffix=".sb", prefix="poor_cli_")
+        import os
+        os.write(fd, profile.encode("utf-8"))
+        os.close(fd)
+        return ["sandbox-exec", "-f", profile_path, "bash", "-c", command]
+    if system == "Linux":
+        tool = _linux_sandbox_tool()
+        if tool == "firejail":
+            args = _build_firejail_args(preset, workspace)
+            return args + ["bash", "-c", command] if args else ["bash", "-c", command]
+        if tool == "bwrap":
+            args = _build_bwrap_args(preset, workspace)
+            return args + ["--", "bash", "-c", command] if args else ["bash", "-c", command]
+    return ["bash", "-c", command]
