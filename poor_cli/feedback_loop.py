@@ -182,7 +182,4 @@ def toggle_feedback_loop(config: Any, enable: Optional[bool] = None) -> str:
     else:
         new_val = enable
     agentic.auto_lint = new_val
-    # also sync the legacy flag
-    if hasattr(config, "_auto_feedback_enabled"):
-        config._auto_feedback_enabled = new_val
     return f"feedback-loop: {'enabled' if new_val else 'disabled'}"

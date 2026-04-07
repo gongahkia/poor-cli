@@ -2972,15 +2972,11 @@ class PoorCLICore:
         return self.provider.format_tool_results(bounded_tool_results)
 
     def _should_auto_feedback(self) -> bool:
-        """Check if auto-feedback loop is enabled in config."""
+        """Check if auto lint/test feedback is enabled via agentic.auto_lint."""
         if not self.config:
             return False
-        if getattr(self.config, "_auto_feedback_enabled", False):
-            return True
         agentic = getattr(self.config, "agentic", None)
-        if agentic and getattr(agentic, "auto_lint", False):
-            return True
-        return False
+        return bool(agentic and getattr(agentic, "auto_lint", False))
 
     async def _run_auto_feedback(self) -> str:
         """Run lint/test and return formatted errors, or empty string if all passed."""
