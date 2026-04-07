@@ -1025,6 +1025,15 @@ class PoorCLICore:
         referenced_files.extend(context_files or [])
         referenced_files.extend(pinned_context_files or [])
 
+        # Resolve @mention context providers (@codebase, @diff, @terminal, @docs, @web)
+        try:
+            from .context_providers import resolve_mentions
+            message, mention_blocks = await resolve_mentions(message, self)
+            if mention_blocks:
+                message = message + "\n\n" + "\n\n".join(mention_blocks)
+        except Exception as e:
+            logger.warning("context provider resolution failed: %s", e)
+
         # Inject git context for change-related queries
         git_keywords = {"commit", "change", "diff", "push", "merge", "rebase", "staged", "recent"}
         if any(kw in message.lower() for kw in git_keywords):
