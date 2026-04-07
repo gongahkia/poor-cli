@@ -3965,23 +3965,32 @@ class ToolRegistryAsync:
 
     # ── semantic search implementations ────────────────────────────────
 
-    async def semantic_search(self, query: str, max_results: int = 10, file_filter: str = "") -> str:
+    async def semantic_search(self, query: str, max_results: int = 10, file_filter: str = "", rerank: bool = True) -> str:
         try:
             from .indexer import CodebaseIndexer
             indexer = CodebaseIndexer()
             stats = indexer.get_stats()
             if stats.total_files == 0:
                 indexer.index()
-            # use hybrid search (FTS5 + embeddings) when embeddings available
-            results = await indexer.hybrid_search(
-                query, max_results=max_results,
-                file_filter=file_filter or None,
-            )
+            if rerank:
+                # auto-index embeddings on first vector search if missing
+                emb_stats = indexer.get_embedding_stats() if hasattr(indexer, "get_embedding_stats") else {}
+                if not emb_stats.get("total_embeddings", 0):
+                    try:
+                        await indexer.index_embeddings()
+                    except Exception:
+                        pass # fall through to hybrid (which falls back to FTS-only)
+                results = await indexer.hybrid_search(
+                    query, max_results=max_results, file_filter=file_filter or None,
+                )
+            else:
+                results = indexer.search(query, max_results=max_results, file_filter=file_filter or None)
             if not results:
                 return f"no results for: {query}"
             parts = [f"Found {len(results)} results for '{query}':\n"]
             for r in results:
-                parts.append(f"### {r.file_path} (chunk {r.chunk_index}, score={r.score}, {r.language})\n```\n{r.content[:800]}\n```\n")
+                score_label = f"relevance: {r.score:.2f}" if r.score else ""
+                parts.append(f"### {r.file_path} (chunk {r.chunk_index}, {score_label}, {r.language})\n```\n{r.content[:800]}\n```\n")
             return "\n".join(parts)
         except Exception as exc:
             return f"error: {exc}"
