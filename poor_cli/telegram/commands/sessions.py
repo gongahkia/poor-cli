@@ -53,7 +53,33 @@ async def _handle_session_callback(bot, query, data) -> None:
         await query.edit_message_text("unknown session action")
 
 
+async def _handle_history(bot, update: Any, context: Any) -> None:
+    uid = update.effective_user.id
+    if not bot._is_authorized(uid):
+        return
+    args = (context.args or []) if context else []
+    tid = bot._threads.get_active_thread(uid)
+    core = bot._threads.get_core(uid, tid)
+    if not core:
+        await update.message.reply_text("no active session")
+        return
+    history = core.get_history() if hasattr(core, 'get_history') else []
+    if args and args[0] == "search" and len(args) > 1:
+        term = " ".join(args[1:]).lower()
+        history = [h for h in history if term in str(h).lower()]
+    lines = []
+    for entry in (history or [])[-20:]:
+        role = entry.get("role", "?")
+        content = str(entry.get("content", ""))[:100]
+        lines.append(f"[{role}] {content}")
+    text = "\n".join(lines) if lines else "no history"
+    await update.message.reply_text(text[:4000])
+
+
 def register(app, bot):
     async def handler(update, context):
         await _handle_sessions(bot, update, context)
     app.add_handler(CommandHandler("sessions", handler))
+    async def history_handler(update, context):
+        await _handle_history(bot, update, context)
+    app.add_handler(CommandHandler("history", history_handler))

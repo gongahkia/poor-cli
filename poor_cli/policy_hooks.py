@@ -32,6 +32,7 @@ HOOK_EVENTS: tuple[str, ...] = (
     "automation_finished",
     "checkpoint_restored",
     "collaboration_event",
+    "session_end",
 )
 SUPPORTED_SCHEMA_VERSIONS: tuple[int, ...] = (1,)
 
@@ -49,6 +50,7 @@ class HookDefinition:
     name: str = ""
     source_path: str = ""
     schema_version: Optional[int] = None
+    priority: int = 100
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -61,6 +63,7 @@ class HookDefinition:
             "name": self.name,
             "sourcePath": self.source_path,
             "schemaVersion": self.schema_version,
+            "priority": self.priority,
         }
 
 
@@ -121,7 +124,7 @@ class PolicyHookManager:
         }
 
     async def run(self, event: str, payload: Dict[str, Any]) -> List[HookExecutionResult]:
-        hooks = self._hooks_by_event.get(event, [])
+        hooks = sorted(self._hooks_by_event.get(event, []), key=lambda h: h.priority)
         if not hooks:
             return []
 
@@ -281,6 +284,7 @@ class PolicyHookManager:
                     name=str(entry.get("name", "")).strip() or source_path.stem,
                     source_path=str(source_path),
                     schema_version=schema_version,
+                    priority=max(0, int(entry.get("priority", 100))),
                 )
             )
         return hooks

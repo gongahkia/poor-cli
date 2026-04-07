@@ -1384,6 +1384,516 @@ pub(crate) fn rpc_pass_driver_blocking(
         .map_err(|_| "Timed out waiting for pass driver response".to_string())?
 }
 
+// ── Group A: Agent Management ──────────────────────────────────────
+
+pub(crate) fn rpc_create_agent_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    prompt: &str,
+    sandbox_preset: &str,
+    auto_start: bool,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::CreateAgent {
+            prompt: prompt.to_string(),
+            sandbox_preset: sandbox_preset.to_string(),
+            auto_start,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to create agent: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for agent creation".to_string())?
+}
+
+pub(crate) fn rpc_list_agents_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    statuses: Option<Vec<String>>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ListAgents {
+            statuses,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to list agents: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for agent list".to_string())?
+}
+
+pub(crate) fn rpc_get_agent_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    agent_id: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetAgent {
+            agent_id: agent_id.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to get agent: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for agent".to_string())?
+}
+
+pub(crate) fn rpc_start_agent_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    agent_id: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::StartAgent {
+            agent_id: agent_id.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to start agent: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for agent start".to_string())?
+}
+
+pub(crate) fn rpc_cancel_agent_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    agent_id: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::CancelAgent {
+            agent_id: agent_id.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to cancel agent: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for agent cancel".to_string())?
+}
+
+pub(crate) fn rpc_get_agent_logs_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    agent_id: &str,
+    tail: u64,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetAgentLogs {
+            agent_id: agent_id.to_string(),
+            tail,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to get agent logs: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for agent logs".to_string())?
+}
+
+pub(crate) fn rpc_get_agent_result_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    agent_id: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetAgentResult {
+            agent_id: agent_id.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to get agent result: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for agent result".to_string())?
+}
+
+// ── Group B: Memory System ─────────────────────────────────────────
+
+pub(crate) fn rpc_memory_list_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    type_filter: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::MemoryList {
+            type_filter: type_filter.map(|v| v.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to list memories: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for memory list".to_string())?
+}
+
+pub(crate) fn rpc_memory_save_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    name: &str,
+    type_: &str,
+    description: &str,
+    content: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::MemorySave {
+            name: name.to_string(),
+            type_: type_.to_string(),
+            description: description.to_string(),
+            content: content.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to save memory: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for memory save".to_string())?
+}
+
+pub(crate) fn rpc_memory_search_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    query: &str,
+    type_filter: Option<&str>,
+    max_results: u64,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::MemorySearch {
+            query: query.to_string(),
+            type_filter: type_filter.map(|v| v.to_string()),
+            max_results,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to search memories: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for memory search".to_string())?
+}
+
+pub(crate) fn rpc_memory_delete_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    name: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::MemoryDelete {
+            name: name.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to delete memory: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for memory delete".to_string())?
+}
+
+// ── Group C: Deploy Pipeline ───────────────────────────────────────
+
+pub(crate) fn rpc_deploy_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    target: Option<&str>,
+    prod: bool,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::Deploy {
+            target: target.map(|v| v.to_string()),
+            prod,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to deploy: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(120))
+        .map_err(|_| "Timed out waiting for deploy".to_string())?
+}
+
+pub(crate) fn rpc_deploy_targets_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::DeployTargets { reply: reply_tx })
+        .map_err(|e| format!("Failed to get deploy targets: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for deploy targets".to_string())?
+}
+
+pub(crate) fn rpc_deploy_validate_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::DeployValidate { reply: reply_tx })
+        .map_err(|e| format!("Failed to validate deploy: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for deploy validation".to_string())?
+}
+
+pub(crate) fn rpc_deploy_history_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    limit: u64,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::DeployHistory {
+            limit,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to get deploy history: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for deploy history".to_string())?
+}
+
+// ── Group D: Trust/Profile Management ──────────────────────────────
+
+pub(crate) fn rpc_list_profiles_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ListProfiles { reply: reply_tx })
+        .map_err(|e| format!("Failed to list profiles: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for profiles".to_string())?
+}
+
+pub(crate) fn rpc_apply_profile_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    name: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ApplyProfile {
+            name: name.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to apply profile: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for profile apply".to_string())?
+}
+
+pub(crate) fn rpc_get_trust_status_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetTrustStatus { reply: reply_tx })
+        .map_err(|e| format!("Failed to get trust status: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for trust status".to_string())?
+}
+
+pub(crate) fn rpc_trust_repo_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    path: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::TrustRepo {
+            path: path.map(|v| v.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to trust repo: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for trust repo".to_string())?
+}
+
+pub(crate) fn rpc_untrust_repo_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    path: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::UntrustRepo {
+            path: path.map(|v| v.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to untrust repo: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for untrust repo".to_string())?
+}
+
+// ── Group E: Preview/Watch ─────────────────────────────────────────
+
+pub(crate) fn rpc_preview_start_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    port: Option<u64>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::PreviewStart {
+            port,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to start preview: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for preview start".to_string())?
+}
+
+pub(crate) fn rpc_preview_stop_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::PreviewStop { reply: reply_tx })
+        .map_err(|e| format!("Failed to stop preview: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for preview stop".to_string())?
+}
+
+pub(crate) fn rpc_preview_status_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::PreviewStatus { reply: reply_tx })
+        .map_err(|e| format!("Failed to get preview status: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for preview status".to_string())?
+}
+
+pub(crate) fn rpc_watch_scan_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    root: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::WatchScan {
+            root: root.map(|v| v.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to scan watch: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for watch scan".to_string())?
+}
+
+// ── Group F: Docker Sandbox Status ─────────────────────────────────
+
+pub(crate) fn rpc_get_docker_sandbox_status_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetDockerSandboxStatus { reply: reply_tx })
+        .map_err(|e| format!("Failed to get Docker sandbox status: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for Docker sandbox status".to_string())?
+}
+
+// ── Group G: Search/Indexing ───────────────────────────────────────
+
+pub(crate) fn rpc_semantic_search_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    query: &str,
+    max_results: u64,
+    file_filter: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::SemanticSearch {
+            query: query.to_string(),
+            max_results,
+            file_filter: file_filter.map(|v| v.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to run semantic search: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(60))
+        .map_err(|_| "Timed out waiting for semantic search".to_string())?
+}
+
+pub(crate) fn rpc_index_codebase_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    force: bool,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::IndexCodebase {
+            force,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to index codebase: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(120))
+        .map_err(|_| "Timed out waiting for codebase indexing".to_string())?
+}
+
+pub(crate) fn rpc_get_index_stats_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetIndexStats { reply: reply_tx })
+        .map_err(|e| format!("Failed to get index stats: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for index stats".to_string())?
+}
+
+pub(crate) fn rpc_index_embeddings_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    provider: Option<&str>,
+    force: bool,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::IndexEmbeddings {
+            provider: provider.map(|v| v.to_string()),
+            force,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to index embeddings: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(120))
+        .map_err(|_| "Timed out waiting for embedding indexing".to_string())?
+}
+
+pub(crate) fn rpc_vector_search_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    query: &str,
+    max_results: u64,
+    file_filter: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::VectorSearch {
+            query: query.to_string(),
+            max_results,
+            file_filter: file_filter.map(|v| v.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to run vector search: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(60))
+        .map_err(|_| "Timed out waiting for vector search".to_string())?
+}
+
+pub(crate) fn rpc_hybrid_search_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    query: &str,
+    max_results: u64,
+    file_filter: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::HybridSearch {
+            query: query.to_string(),
+            max_results,
+            file_filter: file_filter.map(|v| v.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to run hybrid search: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(60))
+        .map_err(|_| "Timed out waiting for hybrid search".to_string())?
+}
+
 pub(crate) fn copy_to_clipboard(content: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {

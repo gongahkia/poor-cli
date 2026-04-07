@@ -1,9 +1,11 @@
-"""Execution control commands: sandbox, permission-mode, profile, mcp, policy, instructions, broke/my-treat, inbox, workspace-map, bootstrap, onboarding, runs, savings."""
+"""Execution control commands: sandbox, permission-mode, profile, mcp, policy, instructions, broke/my-treat, inbox, workspace-map, bootstrap, onboarding, runs, savings, plan, cancel, routing."""
 
+import asyncio
 from typing import Any
 from poor_cli.telegram import formatter as fmt
 
 try:
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     from telegram.ext import CommandHandler
 except ImportError:
     pass
@@ -257,6 +259,73 @@ async def _handle_bootstrap(bot, update: Any, context: Any) -> None:
         await update.message.reply_text(f"error: {e}")
 
 
+async def _handle_plan(bot, update: Any, context: Any) -> None:
+    """toggle plan mode. /plan on|off|status"""
+    uid = update.effective_user.id
+    if not bot._is_authorized(uid):
+        return
+    args = (context.args or []) if context else []
+    chat_id = update.effective_chat.id
+    tid = bot._threads.get_active_thread(uid)
+    core = bot._threads.get_core(uid, tid)
+    if not core:
+        await update.message.reply_text("no active session")
+        return
+    if not args or args[0] == "status":
+        enabled = getattr(core, '_plan_mode_enabled', False)
+        await update.message.reply_text(f"plan mode: {'on' if enabled else 'off'}")
+        return
+    if args[0] == "on":
+        core._plan_mode_enabled = True
+        async def _plan_callback(plan_data):
+            text = f"📋 Plan Review\n\n{plan_data.get('summary', str(plan_data))[:3000]}"
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("✓ Approve", callback_data="plan:approve:"),
+                InlineKeyboardButton("✗ Reject", callback_data="plan:reject:"),
+            ]])
+            await update.message.reply_text(text, reply_markup=keyboard)
+            future = asyncio.get_event_loop().create_future()
+            bot._pending_plan_futures[chat_id] = future
+            return await future
+        core.plan_callback = _plan_callback
+        await update.message.reply_text("plan mode enabled — plans require approval before execution")
+    elif args[0] == "off":
+        core._plan_mode_enabled = False
+        core.plan_callback = None
+        await update.message.reply_text("plan mode disabled")
+
+
+async def _handle_cancel(bot, update: Any, context: Any) -> None:
+    uid = update.effective_user.id
+    if not bot._is_authorized(uid):
+        return
+    tid = bot._threads.get_active_thread(uid)
+    core = bot._threads.get_core(uid, tid)
+    if core and hasattr(core, 'cancel_request'):
+        core.cancel_request()
+        await update.message.reply_text("request cancelled")
+    else:
+        await update.message.reply_text("no active request")
+
+
+async def _handle_routing(bot, update: Any, context: Any) -> None:
+    uid = update.effective_user.id
+    if not bot._is_authorized(uid):
+        return
+    args = (context.args or []) if context else []
+    tid = bot._threads.get_active_thread(uid)
+    core = bot._threads.get_core(uid, tid)
+    if not core:
+        await update.message.reply_text("no active session")
+        return
+    if not args:
+        mode = core.get_routing_mode() if hasattr(core, 'get_routing_mode') else "unknown"
+        await update.message.reply_text(f"routing: {mode}\noptions: manual, cost, quality, auto")
+        return
+    result = core.set_routing_mode(args[0]) if hasattr(core, 'set_routing_mode') else None
+    await update.message.reply_text(f"routing set: {result or args[0]}")
+
+
 def register(app, bot):
     for cmd, handler_fn in [
         ("sandbox", _handle_sandbox),
@@ -272,6 +341,9 @@ def register(app, bot):
         ("savings", _handle_savings),
         ("workspace_map", _handle_workspace_map),
         ("bootstrap", _handle_bootstrap),
+        ("plan", _handle_plan),
+        ("cancel", _handle_cancel),
+        ("routing", _handle_routing),
     ]:
         fn = handler_fn
         async def make_handler(update, context, _fn=fn):

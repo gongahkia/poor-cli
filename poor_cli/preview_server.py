@@ -14,7 +14,7 @@ import shutil
 import signal
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from .exceptions import setup_logger
 
@@ -41,6 +41,8 @@ class PreviewServer:
         self._server: Any = None
         self._proxy_proc: Any = None
         self._detected = self._detect_dev_server()
+        self._reload_pending = False
+        self._watch_task: Any = None
 
     def _detect_dev_server(self) -> Optional[Dict[str, Any]]:
         """Detect if the project has a built-in dev server."""
@@ -79,7 +81,7 @@ class PreviewServer:
 
         cmd = self._detected["command"]
         logger.info("starting dev server: %s", cmd)
-
+        self._audit_log("preview_server:start", str(self.root), {"mode": "proxy", "command": cmd})
         self._proxy_proc = await asyncio.create_subprocess_shell(
             cmd,
             cwd=str(self.root),
@@ -108,6 +110,8 @@ class PreviewServer:
                 stderr=asyncio.subprocess.PIPE,
             )
             logger.info("static server started on port %d", self.port)
+            self._audit_log("preview_server:start", str(self.root), {"mode": "static", "port": self.port})
+            self._watch_task = asyncio.ensure_future(self._watch_files())
             return {
                 "mode": "static",
                 "url": f"http://localhost:{self.port}",
@@ -131,6 +135,9 @@ class PreviewServer:
 
         self._server = None
         self._proxy_proc = None
+        if self._watch_task and not self._watch_task.done():
+            self._watch_task.cancel()
+        self._audit_log("preview_server:stop", details={"stopped": stopped})
         return {"stopped": stopped}
 
     def status(self) -> Dict[str, Any]:
@@ -154,4 +161,40 @@ class PreviewServer:
             "port": self.port,
             "detectedDevServer": self._detected,
             "root": str(self.root),
+            "reloadPending": self._reload_pending,
         }
+
+    async def health(self) -> Dict[str, Any]:
+        """return health status for monitoring."""
+        s = self.status()
+        return {"healthy": s["running"], **s}
+
+    def _audit_log(self, operation: str, target: str = "", details: dict = None) -> None:
+        try:
+            from .audit_log import get_audit_logger, AuditEventType
+            get_audit_logger().log_event(AuditEventType.TOOL_EXECUTION, operation=operation, target=target, details=details)
+        except Exception:
+            pass
+
+    async def _watch_files(self) -> None:
+        """poll for file changes to set reload flag."""
+        mtimes: Dict[str, float] = {}
+        watch_exts = {".html", ".css", ".js", ".htm", ".json"}
+        while True:
+            changed = False
+            try:
+                for f in self.root.rglob("*"):
+                    if f.is_file() and f.suffix in watch_exts:
+                        try:
+                            mt = f.stat().st_mtime
+                            key = str(f)
+                            if key not in mtimes or mtimes[key] < mt:
+                                mtimes[key] = mt
+                                changed = True
+                        except OSError:
+                            pass
+            except Exception:
+                pass
+            if changed:
+                self._reload_pending = True
+            await asyncio.sleep(1)

@@ -4053,6 +4053,20 @@ class PoorCLICore:
 
     async def shutdown(self) -> None:
         """Release external resources owned by the core."""
+        # emit session_end hook
+        try:
+            await self._emit_policy_hooks("session_end", {
+                "inputTokens": getattr(self, "_session_total_input_tokens", 0),
+                "outputTokens": getattr(self, "_session_total_output_tokens", 0),
+            })
+        except Exception:
+            pass
+        # clean up headless browser if used
+        try:
+            from .browser_tool import shutdown_browser
+            await shutdown_browser()
+        except Exception:
+            pass
         # auto-save memorable patterns from this session
         if self.provider and self._initialized:
             try:

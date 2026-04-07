@@ -12,10 +12,24 @@ logger = setup_logger(__name__)
 _browser_context: Dict[str, Any] = {"browser": None, "page": None, "playwright": None}
 
 
+def _log_browser_event(operation: str, target: str = "", details: dict = None) -> None:
+    """log browser operation to audit trail."""
+    try:
+        from .audit_log import get_audit_logger, AuditEventType
+        get_audit_logger().log_event(AuditEventType.TOOL_EXECUTION, operation=f"browser:{operation}", target=target, details=details)
+    except Exception:
+        pass
+
+
 async def _ensure_browser() -> Any:
-    """Lazy-init headless Chromium, return active page."""
+    """lazy-init headless chromium, return active page."""
     if _browser_context["page"] is not None:
-        return _browser_context["page"]
+        try: # crash recovery: verify page still alive
+            await _browser_context["page"].title()
+            return _browser_context["page"]
+        except Exception:
+            logger.warning("browser page dead, relaunching")
+            await shutdown_browser()
     try:
         from playwright.async_api import async_playwright
     except ImportError:
@@ -23,8 +37,9 @@ async def _ensure_browser() -> Any:
     pw = await async_playwright().start()
     browser = await pw.chromium.launch(headless=True)
     page = await browser.new_page()
+    page.set_default_timeout(30000)
     _browser_context.update(playwright=pw, browser=browser, page=page)
-    logger.info("launched headless Chromium")
+    logger.info("launched headless chromium")
     return page
 
 
@@ -45,6 +60,7 @@ async def shutdown_browser() -> None:
 
 async def browser_navigate(url: str, wait_until: str = "domcontentloaded") -> str:
     """Navigate to a URL and return page title + text excerpt."""
+    _log_browser_event("navigate", url, {"wait_until": wait_until})
     page = await _ensure_browser()
     response = await page.goto(url, wait_until=wait_until, timeout=30000)
     status = response.status if response else "unknown"
@@ -56,6 +72,7 @@ async def browser_navigate(url: str, wait_until: str = "domcontentloaded") -> st
 
 async def browser_screenshot(selector: Optional[str] = None, full_page: bool = False) -> str:
     """Take a screenshot, return as base64 PNG."""
+    _log_browser_event("screenshot", selector or "full_page", {"full_page": full_page})
     page = await _ensure_browser()
     if selector:
         element = await page.query_selector(selector)
@@ -70,6 +87,7 @@ async def browser_screenshot(selector: Optional[str] = None, full_page: bool = F
 
 async def browser_click(selector: str) -> str:
     """Click an element by CSS selector."""
+    _log_browser_event("click", selector)
     page = await _ensure_browser()
     try:
         await page.click(selector, timeout=10000)
@@ -82,6 +100,7 @@ async def browser_click(selector: str) -> str:
 
 async def browser_type(selector: str, text: str, submit: bool = False) -> str:
     """Type text into an input field."""
+    _log_browser_event("type", selector, {"submit": submit})
     page = await _ensure_browser()
     try:
         await page.fill(selector, text, timeout=10000)
@@ -95,6 +114,7 @@ async def browser_type(selector: str, text: str, submit: bool = False) -> str:
 
 async def browser_evaluate(expression: str) -> str:
     """Evaluate JavaScript in the page context."""
+    _log_browser_event("evaluate", expression[:100])
     page = await _ensure_browser()
     try:
         result = await page.evaluate(expression)

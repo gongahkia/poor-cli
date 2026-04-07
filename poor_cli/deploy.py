@@ -11,6 +11,7 @@ import asyncio
 import json
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -111,6 +112,58 @@ def detect_deploy_targets(root: Optional[str] = None) -> List[DeployTarget]:
     return targets
 
 
+def validate_pre_deploy(root: Optional[str] = None) -> Dict[str, Any]:
+    """run pre-deploy checks: git clean, configured targets present."""
+    root_path = Path(root or ".").resolve()
+    issues: List[str] = []
+    try:
+        result = subprocess.run(["git", "status", "--porcelain"], capture_output=True, cwd=str(root_path), timeout=10)
+        if result.stdout.strip():
+            issues.append("uncommitted changes detected")
+    except Exception:
+        issues.append("git status check failed")
+    targets = detect_deploy_targets(str(root_path))
+    configured = [t for t in targets if t.config_file and t.available]
+    if not configured:
+        issues.append("no configured deploy target found")
+    return {"valid": len(issues) == 0, "issues": issues, "targets": [t.name for t in configured]}
+
+
+def _audit_deploy(operation: str, target: str, details: dict = None, success: bool = True) -> None:
+    try:
+        from .audit_log import get_audit_logger, AuditEventType
+        get_audit_logger().log_event(AuditEventType.TOOL_EXECUTION, operation=operation, target=target, details=details, success=success)
+    except Exception:
+        pass
+
+
+def _record_deploy_history(result: DeployResult, root: str = "") -> None:
+    """append deploy result to local history file."""
+    history_path = Path(root or ".").resolve() / ".poor-cli" / "deploy_history.jsonl"
+    history_path.parent.mkdir(parents=True, exist_ok=True)
+    entry = {**result.to_dict(), "timestamp": time.time()}
+    try:
+        with open(history_path, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception:
+        pass
+
+
+def get_deploy_history(root: Optional[str] = None, limit: int = 20) -> List[Dict[str, Any]]:
+    """read recent deployment history."""
+    history_path = Path(root or ".").resolve() / ".poor-cli" / "deploy_history.jsonl"
+    if not history_path.exists():
+        return []
+    entries: List[Dict[str, Any]] = []
+    try:
+        for line in history_path.read_text().strip().splitlines():
+            if line.strip():
+                entries.append(json.loads(line))
+    except Exception:
+        return []
+    return entries[-limit:]
+
+
 async def deploy(
     target: Optional[str] = None,
     root: Optional[str] = None,
@@ -153,6 +206,7 @@ async def deploy(
 
     cmd = _build_deploy_command(chosen, prod)
     logger.info("deploying via %s: %s", chosen.name, cmd)
+    _audit_deploy("deploy:start", chosen.name, {"command": cmd, "prod": prod, "root": str(root_path)})
 
     try:
         proc = await asyncio.create_subprocess_shell(
@@ -166,19 +220,24 @@ async def deploy(
         stderr_str = stderr.decode("utf-8", errors="replace")
         success = proc.returncode == 0
         url = _extract_url(stdout_str + stderr_str)
-        return DeployResult(
-            target=chosen.name,
-            success=success,
-            url=url,
+        result = DeployResult(
+            target=chosen.name, success=success, url=url,
             message=f"deployed to {chosen.name}" if success else f"deploy failed (exit {proc.returncode})",
-            stdout=stdout_str,
-            stderr=stderr_str,
+            stdout=stdout_str, stderr=stderr_str,
         )
+        _audit_deploy("deploy:complete", chosen.name, {"success": success, "url": url, "exitCode": proc.returncode}, success=success)
+        _record_deploy_history(result, str(root_path))
+        return result
     except asyncio.TimeoutError:
-        return DeployResult(target=chosen.name, success=False,
-                            message=f"deploy timed out after {timeout}s")
+        result = DeployResult(target=chosen.name, success=False, message=f"deploy timed out after {timeout}s")
+        _audit_deploy("deploy:complete", chosen.name, {"success": False, "error": "timeout"}, success=False)
+        _record_deploy_history(result, str(root_path))
+        return result
     except Exception as exc:
-        return DeployResult(target=chosen.name, success=False, message=str(exc))
+        result = DeployResult(target=chosen.name, success=False, message=str(exc))
+        _audit_deploy("deploy:complete", chosen.name, {"success": False, "error": str(exc)}, success=False)
+        _record_deploy_history(result, str(root_path))
+        return result
 
 
 def _build_deploy_command(target: DeployTarget, prod: bool) -> str:

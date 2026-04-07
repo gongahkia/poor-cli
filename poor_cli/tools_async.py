@@ -2757,6 +2757,11 @@ class ToolRegistryAsync:
             sandbox_preset = getattr(self, "_sandbox_preset", None) or getattr(getattr(self._core, "_sandbox_preset", None), "", "workspace-write") if self._core else "workspace-write"
             if docker_sandbox_enabled() and sandbox_preset != "full-access":
                 argv = docker_sandboxed_command(wrapped_cmd, sandbox_preset)
+                try:
+                    from .audit_log import get_audit_logger, AuditEventType
+                    get_audit_logger().log_event(AuditEventType.BASH_COMMAND, operation="docker_sandbox_wrap", target=command, details={"preset": sandbox_preset})
+                except Exception:
+                    pass
             elif os_sandbox_available() and sandbox_preset != "full-access":
                 argv = sandboxed_command(wrapped_cmd, sandbox_preset)
             else:

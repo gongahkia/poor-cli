@@ -70,6 +70,13 @@ admin:
 /tools — list available tools
 /services — manage background services
 /economy — cost optimization presets
+/readiness — provider readiness check
+
+execution:
+/plan — toggle plan mode (approve/reject plans)
+/cancel — cancel active request
+/routing — view/set model routing mode
+/history — search conversation history
 
 workflows:
 /workflows — list/run workflow templates
@@ -125,6 +132,7 @@ class PoorCLITelegramBot:
         self._multiplayer = MultiplayerBridge(self._mp_send_callback)
         self._start_time: float = 0.0
         self._log_file: Optional[str] = None
+        self._pending_plan_futures: Dict[int, asyncio.Future] = {}
 
     def _is_authorized(self, user_id: int) -> bool:
         if not self._allowed_users:
@@ -180,6 +188,11 @@ class PoorCLITelegramBot:
             BotCommand("pair", "multiplayer pair"),
             BotCommand("economy", "cost presets"),
             BotCommand("services", "manage services"),
+            BotCommand("readiness", "provider readiness"),
+            BotCommand("plan", "plan mode toggle"),
+            BotCommand("cancel", "cancel request"),
+            BotCommand("routing", "model routing"),
+            BotCommand("history", "conversation history"),
             BotCommand("help", "show help"),
         ]
         await self._app.bot.set_my_commands(commands)
@@ -203,6 +216,12 @@ class PoorCLITelegramBot:
     async def stop(self) -> None:
         await self._heartbeat.shutdown()
         await self._multiplayer.shutdown()
+        for core in self._threads.get_all_cores():
+            if hasattr(core, 'shutdown'):
+                try:
+                    await core.shutdown()
+                except Exception as e:
+                    logger.warning("core shutdown error: %s", e)
         if self._app:
             if self._app.updater and self._app.updater.running:
                 await self._app.updater.stop()
@@ -263,13 +282,20 @@ class PoorCLITelegramBot:
         cost = self._costs.get_session_cost(uid)
         uptime_s = time.monotonic() - self._start_time if self._start_time else 0
         uptime_m = int(uptime_s // 60)
+        extra = ""
+        if hasattr(core, 'build_status_view'):
+            status = core.build_status_view()
+            if isinstance(status, dict):
+                extra_lines = [f"{k}: {v}" for k, v in status.items()]
+                extra = "\n" + "\n".join(extra_lines)
         await update.message.reply_text(
             f"session active (uptime: {uptime_m}m)\n"
             f"provider: {info.get('name', 'unknown')}\n"
             f"model: {info.get('model', 'unknown')}\n"
             f"thread: {tid}\n"
             f"threads: {thread_count}\n"
-            f"{fmt.format_cost(cost)}\n"
+            f"{fmt.format_cost(cost)}"
+            f"{extra}\n"
             f"use /doctor for full diagnostics"
         )
 
@@ -362,10 +388,20 @@ class PoorCLITelegramBot:
             return
         session_cost = self._costs.get_session_cost(uid)
         total_cost = self._costs.get_user_total_cost(uid)
-        await update.message.reply_text(
+        text = (
             f"session: {fmt.format_cost(session_cost)}\n"
             f"total: {fmt.format_cost(total_cost)}"
         )
+        tid = self._threads.get_active_thread(uid)
+        core = self._threads.get_core(uid, tid)
+        if hasattr(core, 'get_session_cost_summary'):
+            summary = core.get_session_cost_summary()
+            if isinstance(summary, dict):
+                lines = [f"{k}: {v}" for k, v in summary.items()]
+                text += "\n\n" + "\n".join(lines)
+            elif summary:
+                text += f"\n\n{summary}"
+        await update.message.reply_text(text)
 
     async def _handle_skill(self, update: Any, context: Any) -> None:
         uid = update.effective_user.id
@@ -465,6 +501,13 @@ class PoorCLITelegramBot:
         action = data.get("action", "")
         value = data.get("value", "")
         extra = data.get("extra", "")
+        if action == "plan" and value in ("approve", "reject"):
+            chat_id = query.message.chat_id
+            future = self._pending_plan_futures.pop(chat_id, None)
+            if future and not future.done():
+                future.set_result(value == "approve")
+            await query.edit_message_text(f"plan {value}d")
+            return
         if action == "perm":
             if value == "approve":
                 await self._permissions.handle_permission_response(extra, True)

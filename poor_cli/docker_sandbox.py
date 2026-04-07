@@ -13,6 +13,9 @@ from .sandbox import SandboxPreset, normalize_preset
 logger = setup_logger(__name__)
 
 _DOCKER_IMAGE = os.environ.get("POOR_CLI_DOCKER_SANDBOX_IMAGE", "python:3.12-slim")
+_DOCKER_MEM_LIMIT = os.environ.get("POOR_CLI_DOCKER_MEM_LIMIT", "512m")
+_DOCKER_CPU_LIMIT = os.environ.get("POOR_CLI_DOCKER_CPU_LIMIT", "1.0")
+_DOCKER_PIDS_LIMIT = os.environ.get("POOR_CLI_DOCKER_PIDS_LIMIT", "256")
 
 
 def is_inside_docker() -> bool:
@@ -46,6 +49,19 @@ def docker_sandbox_enabled() -> bool:
     return False
 
 
+def docker_sandbox_status() -> dict:
+    """return docker sandbox configuration summary."""
+    return {
+        "enabled": docker_sandbox_enabled(),
+        "available": docker_available(),
+        "insideDocker": is_inside_docker(),
+        "image": _DOCKER_IMAGE,
+        "memLimit": _DOCKER_MEM_LIMIT,
+        "cpuLimit": _DOCKER_CPU_LIMIT,
+        "pidsLimit": _DOCKER_PIDS_LIMIT,
+    }
+
+
 def docker_sandboxed_command(
     command: str,
     preset: str,
@@ -53,19 +69,23 @@ def docker_sandboxed_command(
     image: Optional[str] = None,
 ) -> List[str]:
     """Wrap a bash command in a Docker container. Returns argv list."""
+    if is_inside_docker(): # prevent nested docker
+        logger.warning("nested docker detected, skipping sandbox wrapper")
+        return ["sh", "-c", command]
     normalized = normalize_preset(preset)
     ws = str((workspace or Path.cwd()).resolve())
     img = image or _DOCKER_IMAGE
+    limits = ["--memory", _DOCKER_MEM_LIMIT, "--cpus", _DOCKER_CPU_LIMIT, "--pids-limit", _DOCKER_PIDS_LIMIT]
     if normalized == SandboxPreset.FULL_ACCESS.value:
         return [
-            "docker", "run", "--rm",
+            "docker", "run", "--rm", *limits,
             "-v", f"{ws}:/workspace",
             "-w", "/workspace",
             img, "bash", "-c", command,
         ]
     if normalized in (SandboxPreset.READ_ONLY.value, SandboxPreset.REVIEW_ONLY.value):
         return [
-            "docker", "run", "--rm",
+            "docker", "run", "--rm", *limits,
             "--read-only",
             "--tmpfs", "/tmp",
             "-v", f"{ws}:/workspace:ro",
@@ -75,7 +95,7 @@ def docker_sandboxed_command(
         ]
     # workspace-write
     return [
-        "docker", "run", "--rm",
+        "docker", "run", "--rm", *limits,
         "--tmpfs", "/tmp",
         "-v", f"{ws}:/workspace",
         "-w", "/workspace",

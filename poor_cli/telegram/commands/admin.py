@@ -151,7 +151,15 @@ async def _handle_doctor(bot, update: Any, context: Any) -> None:
     if core._initialized:
         try:
             await bot._threads.ensure_initialized(core)
-            core_result = await _chat_cmd(core, "/doctor")
+            if hasattr(core, 'build_doctor_report'):
+                report = await core.build_doctor_report()
+                if isinstance(report, dict):
+                    import json
+                    core_result = json.dumps(report, indent=2, ensure_ascii=False)
+                else:
+                    core_result = str(report)
+            else:
+                core_result = await _chat_cmd(core, "/doctor")
             if core_result and core_result.strip():
                 diag += "\n\n── core ──\n" + core_result
         except Exception as e:
@@ -171,10 +179,29 @@ async def _handle_context(bot, update: Any, context: Any) -> None:
     await bot._threads.ensure_initialized(core)
     sub = args[0] if args else "preview"
     try:
-        result = await _chat_cmd(core, f"/context {sub}")
-        pages = fmt.paginate(result or "context done")
-        for page in pages:
-            await update.effective_message.reply_text(page)
+        if sub == "compact":
+            strategy = args[1] if len(args) > 1 else "auto"
+            if hasattr(core, 'compact_context'):
+                result = await core.compact_context(strategy)
+                await update.message.reply_text(f"context compacted ({strategy})\n{result}")
+            else:
+                result = await _chat_cmd(core, f"/context compact {strategy}")
+                await update.message.reply_text(result or f"context compacted ({strategy})")
+        elif sub == "preview":
+            if hasattr(core, 'preview_context'):
+                result = await core.preview_context(message="", context_files=[], pinned_context_files=[])
+                text = str(result)[:3000]
+                await update.message.reply_text(f"context preview:\n{text}")
+            else:
+                result = await _chat_cmd(core, "/context preview")
+                pages = fmt.paginate(result or "context preview unavailable")
+                for page in pages:
+                    await update.effective_message.reply_text(page)
+        else:
+            result = await _chat_cmd(core, f"/context {sub}")
+            pages = fmt.paginate(result or "context done")
+            for page in pages:
+                await update.effective_message.reply_text(page)
     except Exception as e:
         await update.message.reply_text(f"error: {e}")
 
@@ -237,6 +264,26 @@ async def _handle_economy(bot, update: Any, context: Any) -> None:
         await update.message.reply_text(f"error: {e}")
 
 
+async def _handle_readiness(bot, update: Any, context: Any) -> None:
+    uid = update.effective_user.id
+    if not bot._is_authorized(uid):
+        return
+    tid = bot._threads.get_active_thread(uid)
+    core = bot._threads.get_core(uid, tid)
+    if core and hasattr(core, 'get_provider_readiness'):
+        result = core.get_provider_readiness()
+        lines = [f"{k}: {'✓' if v else '✗'}" for k, v in result.items()]
+        await update.message.reply_text("provider readiness:\n" + "\n".join(lines))
+    else:
+        checks = {
+            "core": core is not None,
+            "initialized": getattr(core, '_initialized', False) if core else False,
+            "provider": bool(getattr(core, 'provider', None)) if core else False,
+        }
+        lines = [f"{k}: {'✓' if v else '✗'}" for k, v in checks.items()]
+        await update.message.reply_text("provider readiness:\n" + "\n".join(lines))
+
+
 def register(app, bot):
     for cmd, handler_fn in [
         ("config", _handle_config),
@@ -246,6 +293,7 @@ def register(app, bot):
         ("tools", _handle_tools),
         ("services", _handle_services),
         ("economy", _handle_economy),
+        ("readiness", _handle_readiness),
     ]:
         fn = handler_fn
         async def make_handler(update, context, _fn=fn):

@@ -413,5 +413,144 @@ pub enum RpcCommand {
         room: Option<String>,
         reply: SyncSender<Result<Value, String>>,
     },
+    // ── Group A: Agent Management ────────────────────────────────────
+    CreateAgent {
+        prompt: String,
+        sandbox_preset: String,
+        auto_start: bool,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    ListAgents {
+        statuses: Option<Vec<String>>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetAgent {
+        agent_id: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    StartAgent {
+        agent_id: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    CancelAgent {
+        agent_id: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetAgentLogs {
+        agent_id: String,
+        tail: u64,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetAgentResult {
+        agent_id: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    // ── Group B: Memory System ─────────────────────────────────────
+    MemoryList {
+        type_filter: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    MemorySave {
+        name: String,
+        type_: String,
+        description: String,
+        content: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    MemorySearch {
+        query: String,
+        type_filter: Option<String>,
+        max_results: u64,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    MemoryDelete {
+        name: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    // ── Group C: Deploy Pipeline ───────────────────────────────────
+    Deploy {
+        target: Option<String>,
+        prod: bool,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    DeployTargets {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    DeployValidate {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    DeployHistory {
+        limit: u64,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    // ── Group D: Trust/Profile Management ──────────────────────────
+    ListProfiles {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    ApplyProfile {
+        name: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetTrustStatus {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    TrustRepo {
+        path: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    UntrustRepo {
+        path: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    // ── Group E: Preview/Watch ─────────────────────────────────────
+    PreviewStart {
+        port: Option<u64>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    PreviewStop {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    PreviewStatus {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    WatchScan {
+        root: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    // ── Group F: Docker Sandbox Status ─────────────────────────────
+    GetDockerSandboxStatus {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    // ── Group G: Search/Indexing ───────────────────────────────────
+    SemanticSearch {
+        query: String,
+        max_results: u64,
+        file_filter: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    IndexCodebase {
+        force: bool,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetIndexStats {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    IndexEmbeddings {
+        provider: Option<String>,
+        force: bool,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    VectorSearch {
+        query: String,
+        max_results: u64,
+        file_filter: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    HybridSearch {
+        query: String,
+        max_results: u64,
+        file_filter: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
     Shutdown,
 }

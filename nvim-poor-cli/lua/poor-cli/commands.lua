@@ -732,14 +732,63 @@ function M.setup()
         end)
     end, { nargs = "?", desc = "Start preview server (optional port)" })
 
+    create_command("PoorCliPreviewStart", function(opts)
+        local port = tonumber(opts.args) or nil
+        rpc.request("poor-cli/previewStart", { port = port }, function(result, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] preview start: " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                local info = result or {}
+                vim.notify("[poor-cli] preview started" .. (info.url and (": " .. info.url) or ""), vim.log.levels.INFO)
+            end)
+        end)
+    end, { nargs = "?", desc = "Start preview server (optional port)" })
+
     create_command("PoorCliPreviewStop", function()
-        rpc.request("poor-cli/chat", { message = "/preview --stop" }, function(_, err)
+        rpc.request("poor-cli/previewStop", {}, function(_, err)
             vim.schedule(function()
                 if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
                 else vim.notify("[poor-cli] preview stopped", vim.log.levels.INFO) end
             end)
         end)
     end, { desc = "Stop preview server" })
+
+    create_command("PoorCliPreviewStatus", function()
+        local result, err = rpc.request_sync("poor-cli/previewStatus", {}, 5000)
+        if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+        local info = result or {}
+        vim.notify(string.format("[poor-cli] preview: %s%s",
+            tostring(info.running and "running" or "stopped"),
+            info.url and (" at " .. info.url) or ""), vim.log.levels.INFO)
+    end, { desc = "Show preview server status" })
+
+    create_command("PoorCliListSessions", function(opts)
+        local limit = tonumber(opts.args) or 20
+        rpc.request("poor-cli/listSessions", { limit = limit }, function(result, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                local sessions = (result or {}).sessions or {}
+                local lines = { "# sessions", "" }
+                for _, s in ipairs(sessions) do
+                    table.insert(lines, string.format("- `%s` [%s] %s",
+                        tostring(s.sessionId or s.id or "?"),
+                        tostring(s.status or "?"),
+                        tostring(s.title or s.label or "")))
+                end
+                if #sessions == 0 then table.insert(lines, "no sessions found") end
+                open_scratch("[poor-cli sessions]", table.concat(lines, "\n"))
+            end)
+        end)
+    end, { nargs = "?", desc = "List sessions (optional limit)" })
+
+    create_command("PoorCliIndexEmbeddings", function()
+        vim.notify("[poor-cli] indexing embeddings...", vim.log.levels.INFO)
+        rpc.request("poor-cli/indexEmbeddings", { force = false }, function(result, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] index embeddings: " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                vim.notify("[poor-cli] embeddings indexed: " .. vim.inspect(result or {}), vim.log.levels.INFO)
+            end)
+        end)
+    end, { desc = "Index embeddings for semantic search" })
 
     -- workspace map
     create_command("PoorCliWorkspaceMap", function()

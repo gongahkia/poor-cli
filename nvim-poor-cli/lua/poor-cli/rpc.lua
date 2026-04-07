@@ -835,6 +835,21 @@ function M.list_host_room_members(room, callback)
     return M.request("poor-cli/listHostMembers", params, callback)
 end
 
+-- deploy
+function M.deploy_targets(callback) return M.request("poor-cli/deployTargets", {}, callback) end
+function M.deploy_validate(callback) return M.request("poor-cli/deployValidate", {}, callback) end
+function M.deploy_history(params, callback) return M.request("poor-cli/deployHistory", params or {}, callback) end
+-- preview
+function M.preview_start(params, callback) return M.request("poor-cli/previewStart", params or {}, callback) end
+function M.preview_stop(callback) return M.request("poor-cli/previewStop", {}, callback) end
+function M.preview_status(timeout_ms) return M.request_sync("poor-cli/previewStatus", {}, timeout_ms) end
+-- sandbox diagnostics
+function M.sandbox_status(timeout_ms) return M.request_sync("poor-cli/getSandboxStatus", {}, timeout_ms) end
+function M.docker_sandbox_status(timeout_ms) return M.request_sync("poor-cli/getDockerSandboxStatus", {}, timeout_ms) end
+-- sessions / embeddings
+function M.list_sessions_all(params, callback) return M.request("poor-cli/listSessions", params or {}, callback) end
+function M.index_embeddings(params, callback) return M.request("poor-cli/indexEmbeddings", params or {}, callback) end
+
 function M.cancel_request(id, err)
     if not id then
         return false

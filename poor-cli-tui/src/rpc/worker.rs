@@ -551,6 +551,106 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
                     room.as_deref(),
                 ));
             }
+            // ── Group A: Agent Management ────────────────────────────
+            Ok(RpcCommand::CreateAgent { prompt, sandbox_preset, auto_start, reply }) => {
+                let _ = reply.send(client.create_agent(&prompt, &sandbox_preset, auto_start));
+            }
+            Ok(RpcCommand::ListAgents { statuses, reply }) => {
+                let _ = reply.send(client.list_agents(statuses.as_deref()));
+            }
+            Ok(RpcCommand::GetAgent { agent_id, reply }) => {
+                let _ = reply.send(client.get_agent(&agent_id));
+            }
+            Ok(RpcCommand::StartAgent { agent_id, reply }) => {
+                let _ = reply.send(client.start_agent(&agent_id));
+            }
+            Ok(RpcCommand::CancelAgent { agent_id, reply }) => {
+                let _ = reply.send(client.cancel_agent(&agent_id));
+            }
+            Ok(RpcCommand::GetAgentLogs { agent_id, tail, reply }) => {
+                let _ = reply.send(client.get_agent_logs(&agent_id, tail));
+            }
+            Ok(RpcCommand::GetAgentResult { agent_id, reply }) => {
+                let _ = reply.send(client.get_agent_result(&agent_id));
+            }
+            // ── Group B: Memory System ─────────────────────────────
+            Ok(RpcCommand::MemoryList { type_filter, reply }) => {
+                let _ = reply.send(client.memory_list(type_filter.as_deref()));
+            }
+            Ok(RpcCommand::MemorySave { name, type_, description, content, reply }) => {
+                let _ = reply.send(client.memory_save(&name, &type_, &description, &content));
+            }
+            Ok(RpcCommand::MemorySearch { query, type_filter, max_results, reply }) => {
+                let _ = reply.send(client.memory_search(&query, type_filter.as_deref(), max_results));
+            }
+            Ok(RpcCommand::MemoryDelete { name, reply }) => {
+                let _ = reply.send(client.memory_delete(&name));
+            }
+            // ── Group C: Deploy Pipeline ───────────────────────────
+            Ok(RpcCommand::Deploy { target, prod, reply }) => {
+                let _ = reply.send(client.deploy(target.as_deref(), prod));
+            }
+            Ok(RpcCommand::DeployTargets { reply }) => {
+                let _ = reply.send(client.deploy_targets());
+            }
+            Ok(RpcCommand::DeployValidate { reply }) => {
+                let _ = reply.send(client.deploy_validate());
+            }
+            Ok(RpcCommand::DeployHistory { limit, reply }) => {
+                let _ = reply.send(client.deploy_history(limit));
+            }
+            // ── Group D: Trust/Profile Management ──────────────────
+            Ok(RpcCommand::ListProfiles { reply }) => {
+                let _ = reply.send(client.list_profiles());
+            }
+            Ok(RpcCommand::ApplyProfile { name, reply }) => {
+                let _ = reply.send(client.apply_profile(&name));
+            }
+            Ok(RpcCommand::GetTrustStatus { reply }) => {
+                let _ = reply.send(client.get_trust_status());
+            }
+            Ok(RpcCommand::TrustRepo { path, reply }) => {
+                let _ = reply.send(client.trust_repo(path.as_deref()));
+            }
+            Ok(RpcCommand::UntrustRepo { path, reply }) => {
+                let _ = reply.send(client.untrust_repo(path.as_deref()));
+            }
+            // ── Group E: Preview/Watch ─────────────────────────────
+            Ok(RpcCommand::PreviewStart { port, reply }) => {
+                let _ = reply.send(client.preview_start(port));
+            }
+            Ok(RpcCommand::PreviewStop { reply }) => {
+                let _ = reply.send(client.preview_stop());
+            }
+            Ok(RpcCommand::PreviewStatus { reply }) => {
+                let _ = reply.send(client.preview_status());
+            }
+            Ok(RpcCommand::WatchScan { root, reply }) => {
+                let _ = reply.send(client.watch_scan(root.as_deref()));
+            }
+            // ── Group F: Docker Sandbox Status ─────────────────────
+            Ok(RpcCommand::GetDockerSandboxStatus { reply }) => {
+                let _ = reply.send(client.get_docker_sandbox_status());
+            }
+            // ── Group G: Search/Indexing ───────────────────────────
+            Ok(RpcCommand::SemanticSearch { query, max_results, file_filter, reply }) => {
+                let _ = reply.send(client.semantic_search(&query, max_results, file_filter.as_deref()));
+            }
+            Ok(RpcCommand::IndexCodebase { force, reply }) => {
+                let _ = reply.send(client.index_codebase(force));
+            }
+            Ok(RpcCommand::GetIndexStats { reply }) => {
+                let _ = reply.send(client.get_index_stats());
+            }
+            Ok(RpcCommand::IndexEmbeddings { provider, force, reply }) => {
+                let _ = reply.send(client.index_embeddings(provider.as_deref(), force));
+            }
+            Ok(RpcCommand::VectorSearch { query, max_results, file_filter, reply }) => {
+                let _ = reply.send(client.vector_search(&query, max_results, file_filter.as_deref()));
+            }
+            Ok(RpcCommand::HybridSearch { query, max_results, file_filter, reply }) => {
+                let _ = reply.send(client.hybrid_search(&query, max_results, file_filter.as_deref()));
+            }
             Ok(RpcCommand::Shutdown) | Err(_) => break,
         }
     }

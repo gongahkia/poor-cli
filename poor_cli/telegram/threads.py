@@ -99,5 +99,9 @@ class ThreadManager:
             del self._cores[k]
             logger.info("evicted core %s", k)
 
+    def get_all_cores(self) -> List[PoorCLICore]:
+        """return all active PoorCLICore instances."""
+        return list(self._cores.values())
+
     def get_thread_count(self, user_id: int) -> int:
         return len(self._store.list_user_threads(user_id))

@@ -293,35 +293,6 @@ class AgentManager:
         if agent.status != "queued":
             return agent
 
-        # check for cloud agent provider
-        try:
-            from .cloud_agent import CloudAgentConfig, get_cloud_provider
-            agentic = getattr(self._config, "agentic", None) if hasattr(self, "_config") else None
-            cloud_provider_name = getattr(agentic, "cloud_agent_provider", "none") if agentic else "none"
-            if cloud_provider_name and cloud_provider_name != "none":
-                cloud_cfg = CloudAgentConfig(
-                    provider=cloud_provider_name,
-                    api_key=getattr(agentic, "cloud_agent_api_key", ""),
-                    image=getattr(agentic, "cloud_agent_image", ""),
-                    region=getattr(agentic, "cloud_agent_region", "iad"),
-                )
-                cloud_provider = get_cloud_provider(cloud_cfg)
-                if cloud_provider:
-                    import asyncio
-                    status = asyncio.run(cloud_provider.launch(
-                        agent_id, agent.prompt, agent.sandbox_preset, agent.max_runtime,
-                    ))
-                    if status.status == "running":
-                        self._update(agent_id, status="running", started_at=_utc_now(),
-                                     metadata_json=json.dumps({"cloud_remote_id": status.remote_id, "cloud_provider": cloud_provider_name}))
-                        logger.info("started cloud agent %s via %s (remote_id=%s)", agent_id, cloud_provider_name, status.remote_id)
-                        return self.get_agent(agent_id) or agent
-                    else:
-                        logger.warning("cloud launch failed for %s: %s", agent_id, status.error)
-                        # fall through to local execution
-        except Exception as e:
-            logger.debug("cloud agent check failed, using local: %s", e)
-
         log_path = Path(agent.log_path)
         log_path.parent.mkdir(parents=True, exist_ok=True)
 

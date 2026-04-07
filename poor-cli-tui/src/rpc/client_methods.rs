@@ -941,6 +941,199 @@ impl RpcClient {
         self.call("poor-cli/passDriver", Value::Object(params))
     }
 
+    // ── Group A: Agent Management ────────────────────────────────────
+    pub fn create_agent(&self, prompt: &str, sandbox_preset: &str, auto_start: bool) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("prompt".into(), Value::String(prompt.to_string()));
+        params.insert("sandboxPreset".into(), Value::String(sandbox_preset.to_string()));
+        params.insert("autoStart".into(), Value::Bool(auto_start));
+        self.call("poor-cli/createAgent", Value::Object(params))
+    }
+    pub fn list_agents(&self, statuses: Option<&[String]>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if let Some(s) = statuses {
+            params.insert("statuses".into(), Value::Array(s.iter().map(|v| Value::String(v.clone())).collect()));
+        }
+        self.call("poor-cli/listAgents", Value::Object(params))
+    }
+    pub fn get_agent(&self, agent_id: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("agentId".into(), Value::String(agent_id.to_string()));
+        self.call("poor-cli/getAgent", Value::Object(params))
+    }
+    pub fn start_agent(&self, agent_id: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("agentId".into(), Value::String(agent_id.to_string()));
+        self.call("poor-cli/startAgent", Value::Object(params))
+    }
+    pub fn cancel_agent(&self, agent_id: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("agentId".into(), Value::String(agent_id.to_string()));
+        self.call("poor-cli/cancelAgent", Value::Object(params))
+    }
+    pub fn get_agent_logs(&self, agent_id: &str, tail: u64) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("agentId".into(), Value::String(agent_id.to_string()));
+        params.insert("tail".into(), Value::Number(tail.into()));
+        self.call("poor-cli/getAgentLogs", Value::Object(params))
+    }
+    pub fn get_agent_result(&self, agent_id: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("agentId".into(), Value::String(agent_id.to_string()));
+        self.call("poor-cli/getAgentResult", Value::Object(params))
+    }
+
+    // ── Group B: Memory System ─────────────────────────────────────
+    pub fn memory_list(&self, type_filter: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if let Some(t) = type_filter {
+            params.insert("typeFilter".into(), Value::String(t.to_string()));
+        }
+        self.call("poor-cli/memoryList", Value::Object(params))
+    }
+    pub fn memory_save(&self, name: &str, type_: &str, description: &str, content: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("name".into(), Value::String(name.to_string()));
+        params.insert("type".into(), Value::String(type_.to_string()));
+        params.insert("description".into(), Value::String(description.to_string()));
+        params.insert("content".into(), Value::String(content.to_string()));
+        self.call("poor-cli/memorySave", Value::Object(params))
+    }
+    pub fn memory_search(&self, query: &str, type_filter: Option<&str>, max_results: u64) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("query".into(), Value::String(query.to_string()));
+        if let Some(t) = type_filter {
+            params.insert("typeFilter".into(), Value::String(t.to_string()));
+        }
+        params.insert("maxResults".into(), Value::Number(max_results.into()));
+        self.call("poor-cli/memorySearch", Value::Object(params))
+    }
+    pub fn memory_delete(&self, name: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("name".into(), Value::String(name.to_string()));
+        self.call("poor-cli/memoryDelete", Value::Object(params))
+    }
+
+    // ── Group C: Deploy Pipeline ───────────────────────────────────
+    pub fn deploy(&self, target: Option<&str>, prod: bool) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if let Some(t) = target {
+            params.insert("target".into(), Value::String(t.to_string()));
+        }
+        params.insert("prod".into(), Value::Bool(prod));
+        self.call("poor-cli/deploy", Value::Object(params))
+    }
+    pub fn deploy_targets(&self) -> Result<Value, String> {
+        self.call("poor-cli/deployTargets", Value::Object(Default::default()))
+    }
+    pub fn deploy_validate(&self) -> Result<Value, String> {
+        self.call("poor-cli/deployValidate", Value::Object(Default::default()))
+    }
+    pub fn deploy_history(&self, limit: u64) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("limit".into(), Value::Number(limit.into()));
+        self.call("poor-cli/deployHistory", Value::Object(params))
+    }
+
+    // ── Group D: Trust/Profile Management ──────────────────────────
+    pub fn list_profiles(&self) -> Result<Value, String> {
+        self.call("poor-cli/listProfiles", Value::Object(Default::default()))
+    }
+    pub fn apply_profile(&self, name: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("name".into(), Value::String(name.to_string()));
+        self.call("poor-cli/applyProfile", Value::Object(params))
+    }
+    pub fn get_trust_status(&self) -> Result<Value, String> {
+        self.call("poor-cli/getTrustStatus", Value::Object(Default::default()))
+    }
+    pub fn trust_repo(&self, path: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if let Some(p) = path {
+            params.insert("path".into(), Value::String(p.to_string()));
+        }
+        self.call("poor-cli/trustRepo", Value::Object(params))
+    }
+    pub fn untrust_repo(&self, path: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if let Some(p) = path {
+            params.insert("path".into(), Value::String(p.to_string()));
+        }
+        self.call("poor-cli/untrustRepo", Value::Object(params))
+    }
+
+    // ── Group E: Preview/Watch ─────────────────────────────────────
+    pub fn preview_start(&self, port: Option<u64>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if let Some(p) = port {
+            params.insert("port".into(), Value::Number(p.into()));
+        }
+        self.call("poor-cli/previewStart", Value::Object(params))
+    }
+    pub fn preview_stop(&self) -> Result<Value, String> {
+        self.call("poor-cli/previewStop", Value::Object(Default::default()))
+    }
+    pub fn preview_status(&self) -> Result<Value, String> {
+        self.call("poor-cli/previewStatus", Value::Object(Default::default()))
+    }
+    pub fn watch_scan(&self, root: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if let Some(r) = root {
+            params.insert("root".into(), Value::String(r.to_string()));
+        }
+        self.call("poor-cli/watchScan", Value::Object(params))
+    }
+
+    // ── Group F: Docker Sandbox Status ─────────────────────────────
+    pub fn get_docker_sandbox_status(&self) -> Result<Value, String> {
+        self.call("poor-cli/getDockerSandboxStatus", Value::Object(Default::default()))
+    }
+
+    // ── Group G: Search/Indexing ───────────────────────────────────
+    pub fn semantic_search(&self, query: &str, max_results: u64, file_filter: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("query".into(), Value::String(query.to_string()));
+        params.insert("maxResults".into(), Value::Number(max_results.into()));
+        if let Some(f) = file_filter {
+            params.insert("fileFilter".into(), Value::String(f.to_string()));
+        }
+        self.call("poor-cli/semanticSearch", Value::Object(params))
+    }
+    pub fn index_codebase(&self, force: bool) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("force".into(), Value::Bool(force));
+        self.call("poor-cli/indexCodebase", Value::Object(params))
+    }
+    pub fn get_index_stats(&self) -> Result<Value, String> {
+        self.call("poor-cli/getIndexStats", Value::Object(Default::default()))
+    }
+    pub fn index_embeddings(&self, provider: Option<&str>, force: bool) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if let Some(p) = provider {
+            params.insert("provider".into(), Value::String(p.to_string()));
+        }
+        params.insert("force".into(), Value::Bool(force));
+        self.call("poor-cli/indexEmbeddings", Value::Object(params))
+    }
+    pub fn vector_search(&self, query: &str, max_results: u64, file_filter: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("query".into(), Value::String(query.to_string()));
+        params.insert("maxResults".into(), Value::Number(max_results.into()));
+        if let Some(f) = file_filter {
+            params.insert("fileFilter".into(), Value::String(f.to_string()));
+        }
+        self.call("poor-cli/vectorSearch", Value::Object(params))
+    }
+    pub fn hybrid_search(&self, query: &str, max_results: u64, file_filter: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("query".into(), Value::String(query.to_string()));
+        params.insert("maxResults".into(), Value::Number(max_results.into()));
+        if let Some(f) = file_filter {
+            params.insert("fileFilter".into(), Value::String(f.to_string()));
+        }
+        self.call("poor-cli/hybridSearch", Value::Object(params))
+    }
+
     pub fn shutdown(&self) -> Result<(), String> {
         let _ = self.call("shutdown", Value::Object(Default::default()));
         if let Ok(mut child) = self.child.lock() {

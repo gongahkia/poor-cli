@@ -87,11 +87,13 @@ class FileWatcher:
         extensions: Optional[Set[str]] = None,
         debounce: float = DEFAULT_DEBOUNCE_SECONDS,
         on_instruction: Optional[Callable] = None,
+        on_execute: Optional[Callable] = None,
     ):
         self._root = Path(root or os.getcwd()).resolve()
         self._extensions = extensions or DEFAULT_EXTENSIONS
         self._debounce = debounce
         self._on_instruction = on_instruction
+        self._on_execute = on_execute
         self._running = False
         self._mtimes: Dict[str, float] = {}
         self._processed: Set[str] = set() # instruction hashes already handled
@@ -113,11 +115,21 @@ class FileWatcher:
                     self._processed.add(key)
                     logger.info("found instruction in %s:%d: %s",
                                 instr["file"], instr["line"], instr["instruction"])
+                    try: # audit log
+                        from .audit_log import get_audit_logger, AuditEventType
+                        get_audit_logger().log_event(AuditEventType.TOOL_EXECUTION, operation="ide_watch:instruction_found", target=instr["file"], details={"line": instr["line"], "instruction": instr["instruction"]})
+                    except Exception:
+                        pass
                     if self._on_instruction:
                         try:
                             await self._on_instruction(instr)
                         except Exception as exc:
                             logger.error("instruction handler failed: %s", exc)
+                    if self._on_execute:
+                        try:
+                            await self._on_execute(instr)
+                        except Exception as exc:
+                            logger.error("execute handler failed: %s", exc)
             await asyncio.sleep(self._debounce)
 
     def stop(self) -> None:

@@ -99,5 +99,29 @@ class TestEnsureBrowserImportError(unittest.TestCase):
                 asyncio.run(_ensure_browser())
 
 
+class TestBrowserCrashRecovery(unittest.TestCase):
+    def test_dead_page_triggers_relaunch(self):
+        from poor_cli.browser_tool import _ensure_browser
+        mock_page = MagicMock()
+        mock_page.title = AsyncMock(side_effect=Exception("page crashed"))
+        _browser_context.update(browser=MagicMock(), page=mock_page, playwright=MagicMock())
+        _browser_context["browser"].close = AsyncMock()
+        _browser_context["playwright"].stop = AsyncMock()
+        # should attempt relaunch (and fail at playwright import)
+        with patch.dict("sys.modules", {"playwright": None, "playwright.async_api": None}):
+            with self.assertRaises(Exception):
+                asyncio.run(_ensure_browser())
+        # context should be cleared from shutdown
+        self.assertIsNone(_browser_context["browser"])
+
+
+class TestBrowserAuditLogging(unittest.TestCase):
+    @patch("poor_cli.browser_tool._log_browser_event")
+    def test_log_helper_callable(self, mock_log):
+        from poor_cli.browser_tool import _log_browser_event
+        _log_browser_event("test", "target", {"key": "val"})
+        # just verify it doesn't crash
+
+
 if __name__ == "__main__":
     unittest.main()

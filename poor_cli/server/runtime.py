@@ -809,6 +809,15 @@ class PoorCLIServer:
             "poor-cli/memorySave": self.handle_memory_save,
             "poor-cli/memorySearch": self.handle_memory_search,
             "poor-cli/memoryDelete": self.handle_memory_delete,
+            "poor-cli/getDockerSandboxStatus": self.handle_get_docker_sandbox_status,
+            "poor-cli/watchScan": self.handle_watch_scan,
+            "poor-cli/previewStart": self.handle_preview_start,
+            "poor-cli/previewStop": self.handle_preview_stop,
+            "poor-cli/previewStatus": self.handle_preview_status,
+            "poor-cli/deploy": self.handle_deploy,
+            "poor-cli/deployTargets": self.handle_deploy_targets,
+            "poor-cli/deployValidate": self.handle_deploy_validate,
+            "poor-cli/deployHistory": self.handle_deploy_history,
         }
 
     # =========================================================================
@@ -5191,6 +5200,55 @@ class PoorCLIServer:
             return {"error": "name required"}
         deleted = mgr.delete(name)
         return {"deleted": deleted, "name": name}
+
+    # =========================================================================
+    # Docker / Watch / Preview / Deploy Handlers
+    # =========================================================================
+
+    async def handle_get_docker_sandbox_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..docker_sandbox import docker_sandbox_status
+        return docker_sandbox_status()
+
+    async def handle_watch_scan(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..ide_watch import scan_directory_for_instructions
+        root = params.get("root")
+        instructions = scan_directory_for_instructions(root=root)
+        return {"instructions": instructions, "count": len(instructions)}
+
+    async def handle_preview_start(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..preview_server import PreviewServer
+        port = params.get("port", 3456)
+        if not hasattr(self, "_preview_server"):
+            self._preview_server = PreviewServer(port=port)
+        return await self._preview_server.start()
+
+    async def handle_preview_stop(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        if hasattr(self, "_preview_server"):
+            return await self._preview_server.stop()
+        return {"stopped": []}
+
+    async def handle_preview_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        if hasattr(self, "_preview_server"):
+            return self._preview_server.status()
+        return {"running": False, "mode": "none"}
+
+    async def handle_deploy(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..deploy import deploy
+        result = await deploy(target=params.get("target"), prod=params.get("prod", False))
+        return result.to_dict()
+
+    async def handle_deploy_targets(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..deploy import detect_deploy_targets
+        targets = detect_deploy_targets()
+        return {"targets": [t.to_dict() for t in targets]}
+
+    async def handle_deploy_validate(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..deploy import validate_pre_deploy
+        return validate_pre_deploy()
+
+    async def handle_deploy_history(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..deploy import get_deploy_history
+        return {"history": get_deploy_history(limit=params.get("limit", 20))}
 
     # =========================================================================
     # Message Dispatch

@@ -173,6 +173,12 @@
       "category": "Review & Safety"
     },
     {
+      "command": "/docker-sandbox",
+      "description": "Show Docker sandbox status and resource limits",
+      "recommended": false,
+      "category": "Review & Safety"
+    },
+    {
       "command": "/context",
       "description": "Open backend context inspector or `/context explain`",
       "recommended": true,
@@ -506,6 +512,18 @@
     {
       "command": "/doctor",
       "description": "Open structured diagnostics with remediation guidance",
+      "recommended": false,
+      "category": "Services & Shell"
+    },
+    {
+      "command": "/preview",
+      "description": "Start or manage web preview server with live reload",
+      "recommended": false,
+      "category": "Services & Shell"
+    },
+    {
+      "command": "/deploy",
+      "description": "Detect targets and deploy project to cloud platforms",
       "recommended": false,
       "category": "Services & Shell"
     },

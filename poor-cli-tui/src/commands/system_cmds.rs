@@ -675,6 +675,363 @@ pub(super) fn handle_system_commands(
         return Some(false);
     }
 
+    // ── /agents, /agent ────────────────────────────────────────────
+    if lowered == "/agents" || lowered == "/agents list" {
+        match rpc_list_agents_blocking(rpc_cmd_tx, None) {
+            Ok(payload) => {
+                let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                show_command_info_popup(app, raw, format!("**Agents**\n\n{msg}"));
+            }
+            Err(e) => show_command_info_popup(app, raw, format!("Failed to list agents: {e}")),
+        }
+        return Some(false);
+    }
+
+    if lowered.starts_with("/agent ") {
+        let args: Vec<&str> = raw.splitn(4, ' ').collect();
+        let subcommand = args.get(1).copied().unwrap_or("").trim().to_ascii_lowercase();
+
+        if subcommand == "create" {
+            let prompt = args.get(2).copied().unwrap_or("").trim();
+            if prompt.is_empty() {
+                show_command_info_popup(app, raw, "Usage: /agent create <prompt>".to_string());
+                return Some(false);
+            }
+            match rpc_create_agent_blocking(rpc_cmd_tx, prompt, "default", true) {
+                Ok(payload) => {
+                    let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                    show_command_info_popup(app, raw, format!("**Agent Created**\n\n{msg}"));
+                }
+                Err(e) => show_command_info_popup(app, raw, format!("Failed to create agent: {e}")),
+            }
+            return Some(false);
+        }
+
+        let agent_id = args.get(2).copied().unwrap_or("").trim();
+        if agent_id.is_empty() {
+            show_command_info_popup(app, raw, "Usage: /agent <start|cancel|logs|result> <id>".to_string());
+            return Some(false);
+        }
+
+        match subcommand.as_str() {
+            "start" => match rpc_start_agent_blocking(rpc_cmd_tx, agent_id) {
+                Ok(payload) => {
+                    let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                    show_command_info_popup(app, raw, format!("**Agent Started**\n\n{msg}"));
+                }
+                Err(e) => show_command_info_popup(app, raw, format!("Failed to start agent: {e}")),
+            },
+            "cancel" => match rpc_cancel_agent_blocking(rpc_cmd_tx, agent_id) {
+                Ok(payload) => {
+                    let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                    show_command_info_popup(app, raw, format!("**Agent Cancelled**\n\n{msg}"));
+                }
+                Err(e) => show_command_info_popup(app, raw, format!("Failed to cancel agent: {e}")),
+            },
+            "logs" => match rpc_get_agent_logs_blocking(rpc_cmd_tx, agent_id, 100) {
+                Ok(payload) => {
+                    let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                    show_command_info_popup(app, raw, format!("**Agent Logs**\n\n{msg}"));
+                }
+                Err(e) => show_command_info_popup(app, raw, format!("Failed to get agent logs: {e}")),
+            },
+            "result" => match rpc_get_agent_result_blocking(rpc_cmd_tx, agent_id) {
+                Ok(payload) => {
+                    let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                    show_command_info_popup(app, raw, format!("**Agent Result**\n\n{msg}"));
+                }
+                Err(e) => show_command_info_popup(app, raw, format!("Failed to get agent result: {e}")),
+            },
+            _ => show_command_info_popup(
+                app,
+                raw,
+                "Usage: /agent create <prompt>\n       /agent start|cancel|logs|result <id>".to_string(),
+            ),
+        }
+        return Some(false);
+    }
+
+    // ── /mem (structured memory system) ────────────────────────────
+    if lowered == "/mem" || lowered.starts_with("/mem ") {
+        let args: Vec<&str> = raw.splitn(4, ' ').collect();
+        let subcommand = args.get(1).copied().unwrap_or("list").trim().to_ascii_lowercase();
+        let usage = "Usage: /mem [list|save|search|delete] [args]\n       /mem list [type]\n       /mem save <name> <type> <description> <content>\n       /mem search <query> [type]\n       /mem delete <name>";
+
+        if subcommand == "list" || args.len() == 1 {
+            let type_filter = args.get(2).copied().map(str::trim).filter(|v| !v.is_empty());
+            match rpc_memory_list_blocking(rpc_cmd_tx, type_filter) {
+                Ok(payload) => {
+                    let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                    show_command_info_popup(app, raw, format!("**Memories**\n\n{msg}"));
+                }
+                Err(e) => show_command_info_popup(app, raw, format!("Failed to list memories: {e}")),
+            }
+            return Some(false);
+        }
+
+        if subcommand == "search" {
+            let query = args.get(2).copied().unwrap_or("").trim();
+            if query.is_empty() {
+                show_command_info_popup(app, raw, usage.to_string());
+                return Some(false);
+            }
+            let type_filter = args.get(3).copied().map(str::trim).filter(|v| !v.is_empty());
+            match rpc_memory_search_blocking(rpc_cmd_tx, query, type_filter, 20) {
+                Ok(payload) => {
+                    let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                    show_command_info_popup(app, raw, format!("**Memory Search**\n\n{msg}"));
+                }
+                Err(e) => show_command_info_popup(app, raw, format!("Failed to search memories: {e}")),
+            }
+            return Some(false);
+        }
+
+        if subcommand == "delete" {
+            let name = args.get(2).copied().unwrap_or("").trim();
+            if name.is_empty() {
+                show_command_info_popup(app, raw, usage.to_string());
+                return Some(false);
+            }
+            match rpc_memory_delete_blocking(rpc_cmd_tx, name) {
+                Ok(payload) => {
+                    let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                    show_command_info_popup(app, raw, format!("**Memory Deleted**\n\n{msg}"));
+                }
+                Err(e) => show_command_info_popup(app, raw, format!("Failed to delete memory: {e}")),
+            }
+            return Some(false);
+        }
+
+        if subcommand == "save" {
+            // /mem save <name> <rest...> -- minimal: name is required, rest passed as content
+            let payload = args.get(2).copied().unwrap_or("").trim();
+            if payload.is_empty() {
+                show_command_info_popup(app, raw, usage.to_string());
+                return Some(false);
+            }
+            let parts: Vec<&str> = payload.splitn(2, ' ').collect();
+            let name = parts[0];
+            let content = parts.get(1).copied().unwrap_or("");
+            match rpc_memory_save_blocking(rpc_cmd_tx, name, "note", name, content) {
+                Ok(val) => {
+                    let msg = serde_json::to_string_pretty(&val).unwrap_or_else(|_| format!("{val:?}"));
+                    show_command_info_popup(app, raw, format!("**Memory Saved**\n\n{msg}"));
+                }
+                Err(e) => show_command_info_popup(app, raw, format!("Failed to save memory: {e}")),
+            }
+            return Some(false);
+        }
+
+        show_command_info_popup(app, raw, usage.to_string());
+        return Some(false);
+    }
+
+    // ── /deploy ────────────────────────────────────────────────────
+    if lowered == "/deploy" || lowered.starts_with("/deploy ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        let subcommand = args.get(1).copied().unwrap_or("").trim().to_ascii_lowercase();
+
+        if subcommand.is_empty() {
+            match rpc_deploy_blocking(rpc_cmd_tx, None, false) {
+                Ok(payload) => {
+                    let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                    show_command_info_popup(app, raw, format!("**Deploy**\n\n{msg}"));
+                }
+                Err(e) => show_command_info_popup(app, raw, format!("Deploy failed: {e}")),
+            }
+            return Some(false);
+        }
+
+        match subcommand.as_str() {
+            "targets" => match rpc_deploy_targets_blocking(rpc_cmd_tx) {
+                Ok(payload) => {
+                    let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                    show_command_info_popup(app, raw, format!("**Deploy Targets**\n\n{msg}"));
+                }
+                Err(e) => show_command_info_popup(app, raw, format!("Failed to get deploy targets: {e}")),
+            },
+            "validate" => match rpc_deploy_validate_blocking(rpc_cmd_tx) {
+                Ok(payload) => {
+                    let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                    show_command_info_popup(app, raw, format!("**Deploy Validation**\n\n{msg}"));
+                }
+                Err(e) => show_command_info_popup(app, raw, format!("Deploy validation failed: {e}")),
+            },
+            "history" => {
+                let limit = args.get(2).and_then(|v| v.parse::<u64>().ok()).unwrap_or(20);
+                match rpc_deploy_history_blocking(rpc_cmd_tx, limit) {
+                    Ok(payload) => {
+                        let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                        show_command_info_popup(app, raw, format!("**Deploy History**\n\n{msg}"));
+                    }
+                    Err(e) => show_command_info_popup(app, raw, format!("Failed to get deploy history: {e}")),
+                }
+            },
+            _ => {
+                // treat as target name
+                let prod = args.iter().any(|a| *a == "--prod");
+                match rpc_deploy_blocking(rpc_cmd_tx, Some(&subcommand), prod) {
+                    Ok(payload) => {
+                        let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                        show_command_info_popup(app, raw, format!("**Deploy**\n\n{msg}"));
+                    }
+                    Err(e) => show_command_info_popup(app, raw, format!("Deploy failed: {e}")),
+                }
+            },
+        }
+        return Some(false);
+    }
+
+    // ── /profiles, /profile ────────────────────────────────────────
+    if lowered == "/profiles" {
+        match rpc_list_profiles_blocking(rpc_cmd_tx) {
+            Ok(payload) => {
+                let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                show_command_info_popup(app, raw, format!("**Profiles**\n\n{msg}"));
+            }
+            Err(e) => show_command_info_popup(app, raw, format!("Failed to list profiles: {e}")),
+        }
+        return Some(false);
+    }
+
+    if lowered.starts_with("/profile ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        let subcommand = args.get(1).copied().unwrap_or("").trim().to_ascii_lowercase();
+        if subcommand == "apply" {
+            let name = args.get(2).copied().unwrap_or("").trim();
+            if name.is_empty() {
+                show_command_info_popup(app, raw, "Usage: /profile apply <name>".to_string());
+                return Some(false);
+            }
+            match rpc_apply_profile_blocking(rpc_cmd_tx, name) {
+                Ok(payload) => {
+                    let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                    show_command_info_popup(app, raw, format!("**Profile Applied**\n\n{msg}"));
+                }
+                Err(e) => show_command_info_popup(app, raw, format!("Failed to apply profile: {e}")),
+            }
+        } else {
+            show_command_info_popup(app, raw, "Usage: /profile apply <name>".to_string());
+        }
+        return Some(false);
+    }
+
+    // ── /preview ───────────────────────────────────────────────────
+    if lowered == "/preview" || lowered.starts_with("/preview ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        let subcommand = args.get(1).copied().unwrap_or("status").trim().to_ascii_lowercase();
+
+        match subcommand.as_str() {
+            "start" => {
+                let port = args.get(2).and_then(|v| v.parse::<u64>().ok());
+                match rpc_preview_start_blocking(rpc_cmd_tx, port) {
+                    Ok(payload) => {
+                        let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                        show_command_info_popup(app, raw, format!("**Preview Started**\n\n{msg}"));
+                    }
+                    Err(e) => show_command_info_popup(app, raw, format!("Failed to start preview: {e}")),
+                }
+            },
+            "stop" => match rpc_preview_stop_blocking(rpc_cmd_tx) {
+                Ok(payload) => {
+                    let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                    show_command_info_popup(app, raw, format!("**Preview Stopped**\n\n{msg}"));
+                }
+                Err(e) => show_command_info_popup(app, raw, format!("Failed to stop preview: {e}")),
+            },
+            "status" | "" => match rpc_preview_status_blocking(rpc_cmd_tx) {
+                Ok(payload) => {
+                    let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                    show_command_info_popup(app, raw, format!("**Preview Status**\n\n{msg}"));
+                }
+                Err(e) => show_command_info_popup(app, raw, format!("Failed to get preview status: {e}")),
+            },
+            _ => show_command_info_popup(app, raw, "Usage: /preview start|stop|status [port]".to_string()),
+        }
+        return Some(false);
+    }
+
+    // ── /watch ─────────────────────────────────────────────────────
+    if lowered == "/watch scan" || lowered.starts_with("/watch scan ") {
+        let root = raw.split_whitespace().nth(2).map(str::trim).filter(|v| !v.is_empty());
+        match rpc_watch_scan_blocking(rpc_cmd_tx, root) {
+            Ok(payload) => {
+                let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                show_command_info_popup(app, raw, format!("**Watch Scan**\n\n{msg}"));
+            }
+            Err(e) => show_command_info_popup(app, raw, format!("Watch scan failed: {e}")),
+        }
+        return Some(false);
+    }
+
+    // ── /docker-status ─────────────────────────────────────────────
+    if lowered == "/docker-status" {
+        match rpc_get_docker_sandbox_status_blocking(rpc_cmd_tx) {
+            Ok(payload) => {
+                let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                show_command_info_popup(app, raw, format!("**Docker Sandbox Status**\n\n{msg}"));
+            }
+            Err(e) => show_command_info_popup(app, raw, format!("Failed to get Docker sandbox status: {e}")),
+        }
+        return Some(false);
+    }
+
+    // ── /search ────────────────────────────────────────────────────
+    if lowered.starts_with("/search ") {
+        let query = raw.split_once(' ').map(|x| x.1).map(str::trim).unwrap_or("");
+        if query.is_empty() {
+            show_command_info_popup(app, raw, "Usage: /search <query>".to_string());
+            return Some(false);
+        }
+        match rpc_semantic_search_blocking(rpc_cmd_tx, query, 20, None) {
+            Ok(payload) => {
+                let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                show_command_info_popup(app, raw, format!("**Search Results**\n\n{msg}"));
+            }
+            Err(e) => show_command_info_popup(app, raw, format!("Search failed: {e}")),
+        }
+        return Some(false);
+    }
+
+    // ── /index ─────────────────────────────────────────────────────
+    if lowered == "/index" || lowered.starts_with("/index ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        let subcommand = args.get(1).copied().unwrap_or("").trim().to_ascii_lowercase();
+
+        match subcommand.as_str() {
+            "stats" => match rpc_get_index_stats_blocking(rpc_cmd_tx) {
+                Ok(payload) => {
+                    let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                    show_command_info_popup(app, raw, format!("**Index Stats**\n\n{msg}"));
+                }
+                Err(e) => show_command_info_popup(app, raw, format!("Failed to get index stats: {e}")),
+            },
+            "embeddings" => {
+                let provider = args.get(2).copied().map(str::trim).filter(|v| !v.is_empty());
+                let force = args.iter().any(|a| *a == "--force");
+                match rpc_index_embeddings_blocking(rpc_cmd_tx, provider, force) {
+                    Ok(payload) => {
+                        let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                        show_command_info_popup(app, raw, format!("**Embedding Index**\n\n{msg}"));
+                    }
+                    Err(e) => show_command_info_popup(app, raw, format!("Failed to index embeddings: {e}")),
+                }
+            },
+            _ => {
+                // default: index codebase
+                let force = args.iter().any(|a| *a == "--force");
+                match rpc_index_codebase_blocking(rpc_cmd_tx, force) {
+                    Ok(payload) => {
+                        let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                        show_command_info_popup(app, raw, format!("**Index Codebase**\n\n{msg}"));
+                    }
+                    Err(e) => show_command_info_popup(app, raw, format!("Failed to index codebase: {e}")),
+                }
+            },
+        }
+        return Some(false);
+    }
+
     None
 }
 

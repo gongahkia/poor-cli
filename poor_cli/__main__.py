@@ -680,6 +680,7 @@ def _run_watch_mode(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="poor-cli watch")
     parser.add_argument("--debounce", type=float, default=2.0, help="Debounce seconds")
     parser.add_argument("--scan", action="store_true", help="Scan once and exit (don't watch)")
+    parser.add_argument("--execute", action="store_true", help="Execute found instructions via core engine")
     args = parser.parse_args(list(argv))
     from .ide_watch import scan_directory_for_instructions, FileWatcher
     if args.scan:
@@ -691,7 +692,18 @@ def _run_watch_mode(argv: Sequence[str]) -> int:
         return 0
     async def _on_instruction(instr: dict) -> None:
         print(f"[watch] {instr['file']}:{instr['line']}: {instr['instruction']}")
-    watcher = FileWatcher(debounce=args.debounce, on_instruction=_on_instruction)
+    on_execute = None
+    if args.execute:
+        async def _exec_instruction(instr: dict) -> None:
+            from .core import PoorCLICore
+            core = PoorCLICore()
+            await core.initialize()
+            prompt = f"In file {instr['file']} at line {instr['line']}: {instr['instruction']}"
+            async for _ in core.run(prompt):
+                pass
+            await core.shutdown()
+        on_execute = _exec_instruction
+    watcher = FileWatcher(debounce=args.debounce, on_instruction=_on_instruction, on_execute=on_execute)
     print(f"Watching for # poor-cli: instructions (debounce={args.debounce}s)...")
     try:
         asyncio.run(watcher.start())
@@ -707,9 +719,32 @@ def _run_deploy_mode(argv: Sequence[str]) -> int:
     parser.add_argument("--target", "-t", help="Deploy target (vercel, netlify, fly, railway, cloudflare)")
     parser.add_argument("--prod", action="store_true", help="Deploy to production")
     parser.add_argument("--list", action="store_true", help="List detected targets")
+    parser.add_argument("--validate", action="store_true", help="Run pre-deploy validation only")
+    parser.add_argument("--history", action="store_true", help="Show deployment history")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(list(argv))
-    from .deploy import detect_deploy_targets, deploy
+    from .deploy import detect_deploy_targets, deploy, validate_pre_deploy, get_deploy_history
+    if args.validate:
+        result = validate_pre_deploy()
+        if args.json:
+            import json
+            print(json.dumps(result, indent=2))
+        else:
+            print("Pre-deploy: " + ("PASS" if result["valid"] else "FAIL"))
+            for issue in result["issues"]:
+                print(f"  - {issue}")
+        return 0 if result["valid"] else 1
+    if args.history:
+        entries = get_deploy_history()
+        if args.json:
+            import json
+            print(json.dumps(entries, indent=2))
+        else:
+            if not entries:
+                print("No deployment history.")
+            for e in entries:
+                print(f"  [{e.get('target')}] {'OK' if e.get('success') else 'FAIL'} {e.get('url', '')} {e.get('message', '')}")
+        return 0
     if args.list:
         targets = detect_deploy_targets()
         for t in targets:
@@ -734,9 +769,14 @@ def _run_preview_mode(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="poor-cli preview")
     parser.add_argument("--port", type=int, default=3456)
     parser.add_argument("--stop", action="store_true")
+    parser.add_argument("--health", action="store_true", help="Check server health status")
     args = parser.parse_args(list(argv))
     from .preview_server import PreviewServer
     server = PreviewServer(port=args.port)
+    if args.health:
+        import json
+        print(json.dumps(server.status(), indent=2))
+        return 0
     if args.stop:
         result = asyncio.run(server.stop())
         print(f"Stopped: {result}")

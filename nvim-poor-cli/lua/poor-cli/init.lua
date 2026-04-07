@@ -31,6 +31,8 @@ M.cost = nil
 M.providers = nil
 M.collab_ext = nil
 M.search = nil
+M.deploy_ext = nil
+M.diagnostics_ext = nil
 M._setup_complete = false
 
 -- Setup function - call this from your Neovim config
@@ -65,6 +67,8 @@ function M.setup(opts)
     M.providers = require("poor-cli.providers")
     M.collab_ext = require("poor-cli.collab_ext")
     M.search = require("poor-cli.search")
+    M.deploy_ext = require("poor-cli.deploy_ext")
+    M.diagnostics_ext = require("poor-cli.diagnostics_ext")
 
     M.commands.setup()
     M.keymaps.setup()
@@ -86,6 +90,8 @@ function M.setup(opts)
     M.cost.setup()
     M.providers.setup()
     M.collab_ext.setup()
+    M.deploy_ext.setup()
+    M.diagnostics_ext.setup()
     M._setup_complete = true
 
     if M.config.get("check_health_on_setup") then
