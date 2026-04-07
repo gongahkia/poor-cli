@@ -111,6 +111,11 @@ DEFAULT_TOOL_CAPABILITIES: Dict[str, List[str]] = {
     "spawn_parallel_agents": [ToolCapability.PROCESS_EXECUTE.value],
     "semantic_search": [ToolCapability.FILESYSTEM_READ.value],
     "index_codebase": [ToolCapability.FILESYSTEM_READ.value],
+    "browser_navigate": [ToolCapability.NETWORK_ACCESS.value],
+    "browser_screenshot": [ToolCapability.NETWORK_ACCESS.value],
+    "browser_click": [ToolCapability.NETWORK_ACCESS.value],
+    "browser_type": [ToolCapability.NETWORK_ACCESS.value],
+    "browser_evaluate": [ToolCapability.NETWORK_ACCESS.value],
 }
 
 _CACHEABLE_TOOLS = frozenset({"read_file", "glob_files", "grep_files", "git_status", "git_diff", "git_log", "list_directory", "diff_files"})
@@ -1149,6 +1154,15 @@ class ToolRegistryAsync:
                 }
             }
         }
+
+        # register browser automation tools (lazy — playwright imported on first use)
+        try:
+            from .browser_tool import BROWSER_TOOLS, BROWSER_TOOL_DECLARATIONS
+            for decl in BROWSER_TOOL_DECLARATIONS:
+                name = decl["name"]
+                self.tools[name] = {"function": BROWSER_TOOLS[name], "declaration": decl}
+        except Exception as e:
+            logger.debug("browser tools not registered: %s", e)
 
         for name, tool in self.tools.items():
             capabilities = DEFAULT_TOOL_CAPABILITIES.get(name, [])
