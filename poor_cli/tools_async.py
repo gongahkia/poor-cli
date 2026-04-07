@@ -2755,10 +2755,13 @@ class ToolRegistryAsync:
                 raise CommandExecutionError(command, "Command is empty after parsing")
 
             wrapped_cmd = f"{command}; echo __CWD__=$(pwd)"  # track cwd after execution
-            # use OS-level sandbox if available and configured
+            # use OS-level or Docker sandbox if available
             from .sandbox import os_sandbox_available, sandboxed_command
+            from .docker_sandbox import docker_sandbox_enabled, docker_sandboxed_command
             sandbox_preset = getattr(self, "_sandbox_preset", None) or getattr(getattr(self._core, "_sandbox_preset", None), "", "workspace-write") if self._core else "workspace-write"
-            if os_sandbox_available() and sandbox_preset != "full-access":
+            if docker_sandbox_enabled() and sandbox_preset != "full-access":
+                argv = docker_sandboxed_command(wrapped_cmd, sandbox_preset)
+            elif os_sandbox_available() and sandbox_preset != "full-access":
                 argv = sandboxed_command(wrapped_cmd, sandbox_preset)
             else:
                 argv = ["sh", "-c", wrapped_cmd]
