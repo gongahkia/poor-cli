@@ -4010,7 +4010,7 @@ class PoorCLICore:
                 from .auto_memory import auto_save_session_memories
                 history = self.provider.get_history()
                 if history:
-                    saved = await auto_save_session_memories(history)
+                    saved = await auto_save_session_memories(history, provider=self.provider)
                     if saved:
                         logger.info("auto-saved %d memories on shutdown", len(saved))
             except Exception as exc:
