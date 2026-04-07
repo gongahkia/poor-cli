@@ -1875,17 +1875,6 @@ class PoorCLICore:
             ),
             "gitContextInjected": "[Git context]" in (full_message or ""),
         }
-        turn_diagnostics["promptLayers"] = {
-            "userPromptChars": len(message or ""),
-            "fullMessageChars": len(full_message or ""),
-            "explicitContextFileCount": len(context_files or []),
-            "pinnedContextFileCount": len(pinned_context_files or []),
-            "selectedContextFileCount": len(
-                (self._last_context_preview.get("selected") if isinstance(self._last_context_preview, dict) else [])
-                or []
-            ),
-            "gitContextInjected": "[Git context]" in (full_message or ""),
-        }
 
         # Economy: context dedup — strip file blocks already in session
         try:
