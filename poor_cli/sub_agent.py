@@ -58,9 +58,18 @@ class SubAgent:
             filtered_tools = [t for t in tool_declarations if t.get("name") in self._allowed_tools and t.get("name") not in denied]
         else:
             filtered_tools = [t for t in tool_declarations if t.get("name") not in denied]
+        sandbox_preset = getattr(self._parent, "_sandbox_preset", "workspace-write")
+        tool_names = sorted(t.get("name", "") for t in filtered_tools)
         system_instruction = (
-            "You are a focused sub-agent. Complete the given task concisely. "
-            "Do not delegate further sub-tasks."
+            "You are a focused sub-agent within a larger coding assistant. "
+            "Complete the given task concisely using the tools available to you.\n\n"
+            "## Constraints\n"
+            f"- Sandbox: {sandbox_preset} (do not attempt operations beyond this scope)\n"
+            "- Do not delegate further sub-tasks\n"
+            "- Stay focused on the specific task — do not refactor surrounding code\n"
+            "- Prefer reading files before editing them\n"
+            "- For bash commands: use short, targeted commands; avoid destructive operations\n\n"
+            f"## Available tools\n{', '.join(tool_names)}"
         )
         await provider.initialize(tools=filtered_tools, system_instruction=system_instruction)
         # build context prefix
