@@ -238,6 +238,11 @@ class AgenticConfig:
     sub_agent_timeout: float = 120.0  # sub-agent timeout in seconds
     auto_lint: bool = True  # run lint after file mutations and feed errors back to LLM
     auto_lint_timeout: int = 30  # lint command timeout in seconds
+    architect_mode: bool = False  # dual-model: expensive for reasoning, cheap for editing
+    architect_provider: str = "" # provider for reasoning (e.g. "anthropic")
+    architect_model: str = "" # model for reasoning (e.g. "claude-sonnet-4-20250514")
+    editor_provider: str = "" # provider for editing (e.g. "gemini")
+    editor_model: str = "" # model for editing (e.g. "gemini-2.5-flash")
 
 
 @dataclass
