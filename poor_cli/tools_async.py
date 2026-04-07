@@ -349,6 +349,14 @@ class ToolRegistryAsync:
                             "replace_all": {
                                 "type": "BOOLEAN",
                                 "description": "Replace all occurrences of old_text (default false)"
+                            },
+                            "format": {
+                                "type": "STRING",
+                                "description": "Edit format: 'search_replace' (default), 'whole_file', 'unified_diff', 'line_range'"
+                            },
+                            "diff_text": {
+                                "type": "STRING",
+                                "description": "Unified diff text to apply (only for format='unified_diff')"
                             }
                         },
                         "required": ["file_path", "new_text"]
@@ -2161,39 +2169,27 @@ class ToolRegistryAsync:
 
     async def edit_file(self, file_path: str, new_text: str, old_text: Optional[str] = None,
                        start_line: Optional[int] = None, end_line: Optional[int] = None,
-                       replace_all: bool = False) -> ToolOutcome:
-        """Edit file by replacing text or lines
-
-        Args:
-            file_path: Path to file
-            new_text: New text to insert
-            old_text: Old text to replace (for text replacement mode)
-            start_line: Start line for line-based editing (1-indexed)
-            end_line: End line for line-based editing (1-indexed)
-
-        Returns:
-            Success message
-
-        Raises:
-            FileOperationError: If edit fails
-        """
+                       replace_all: bool = False, format: Optional[str] = None,
+                       diff_text: Optional[str] = None) -> ToolOutcome:
+        """Edit file by replacing text, lines, whole file, or applying a unified diff."""
         try:
-            # Validate path
             file_path = validate_file_path(file_path, must_exist=True, must_be_file=True)
             path_obj = Path(file_path)
-
-            # Read current content
             async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
                 content = await f.read()
-
-            new_content, metadata = self._render_edit_content(
-                content=content,
-                new_text=new_text,
-                old_text=old_text,
-                start_line=start_line,
-                end_line=end_line,
-                replace_all=replace_all,
-            )
+            # route to edit_formats module for non-default formats
+            if format and format in ("unified_diff", "whole_file"):
+                from .edit_formats import get_format
+                fmt = get_format(format)
+                new_content, mode_desc = fmt.apply(content, new_text=new_text, old_text=old_text or "",
+                                                    diff_text=diff_text or "", replace_all=replace_all,
+                                                    start_line=start_line or 0, end_line=end_line or 0)
+                metadata = {"mode": mode_desc}
+            else:
+                new_content, metadata = self._render_edit_content(
+                    content=content, new_text=new_text, old_text=old_text,
+                    start_line=start_line, end_line=end_line, replace_all=replace_all,
+                )
 
             changed = new_content != content
             if changed:
