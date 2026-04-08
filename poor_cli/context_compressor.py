@@ -29,8 +29,33 @@ _LLM_SUMMARIZE_PROMPT = (
 _LLM_SUMMARY_MAX_INPUT_CHARS = 60000 # cap input to avoid blowing context on the summarizer call
 
 
+class CompactionStrategy:
+    """Available compaction strategies, selected based on conversation shape."""
+    EXTRACTIVE = "extractive" # keyword-based extraction (fast, no LLM call)
+    LLM = "llm" # LLM-based summarization (best quality, costs tokens)
+    SLIDING_WINDOW = "sliding_window" # keep every Nth old turn verbatim
+    TOOL_STRIP = "tool_strip" # strip verbose tool results, keep tool names + outcomes
+
+
 class ContextCompressor:
-    """Compresses conversation history by extractively summarizing old turns."""
+    """Compresses conversation history via multiple strategies."""
+
+    def select_strategy(self, history: List[Dict[str, Any]], config: Any) -> str:
+        """Pick the best compaction strategy for the current history shape."""
+        if not history:
+            return CompactionStrategy.EXTRACTIVE
+        tool_result_chars = sum(
+            len(t.get("content", ""))
+            for t in history
+            if t.get("role") == "function" or t.get("role") == "tool"
+        )
+        total_chars = sum(len(t.get("content", "")) for t in history)
+        if total_chars > 0 and tool_result_chars / total_chars > 0.6:
+            return CompactionStrategy.TOOL_STRIP # conversation is mostly tool output
+        threshold = getattr(config, "compress_after_turns", 20)
+        if len(history) > threshold * 2:
+            return CompactionStrategy.LLM # very long conversation, use LLM
+        return CompactionStrategy.EXTRACTIVE # default
 
     def should_compress(self, history: List[Dict[str, Any]], config: Any) -> bool:
         try:
@@ -109,6 +134,91 @@ class ContextCompressor:
         full_prompt = _LLM_SUMMARIZE_PROMPT + "\n".join(conversation_text)
         response = await provider.send_message(full_prompt)
         return response.content.strip() if response.content else self._summarize_turns(turns)
+
+    def compress_sliding_window(
+        self,
+        history: List[Dict[str, Any]],
+        config: Any,
+        keep_every_n: int = 4,
+    ) -> List[Dict[str, Any]]:
+        """Sliding window: keep every Nth old turn verbatim, summarize the rest."""
+        if not self.should_compress(history, config):
+            return history
+        split = len(history) - getattr(config, "preserve_recent_turns", 8)
+        if split <= 0:
+            return history
+        old_turns = history[:split]
+        recent_turns = history[split:]
+        kept: List[Dict[str, Any]] = []
+        discarded: List[Dict[str, Any]] = []
+        for i, turn in enumerate(old_turns):
+            if i % keep_every_n == 0:
+                kept.append(turn)
+            else:
+                discarded.append(turn)
+        summary_text = self._summarize_turns(discarded) if discarded else ""
+        result: List[Dict[str, Any]] = []
+        if summary_text:
+            result.append({"role": "user", "content": summary_text})
+        result.extend(kept)
+        result.extend(recent_turns)
+        logger.info(
+            "sliding-window compressed %d old turns: kept %d verbatim, summarized %d",
+            len(old_turns), len(kept), len(discarded),
+        )
+        return result
+
+    def compress_tool_strip(
+        self,
+        history: List[Dict[str, Any]],
+        config: Any,
+        max_tool_result_chars: int = 200,
+    ) -> List[Dict[str, Any]]:
+        """Strip verbose tool results from old turns, keeping only tool name + truncated outcome."""
+        if not self.should_compress(history, config):
+            return history
+        split = len(history) - getattr(config, "preserve_recent_turns", 8)
+        if split <= 0:
+            return history
+        old_turns = history[:split]
+        recent_turns = history[split:]
+        stripped: List[Dict[str, Any]] = []
+        for turn in old_turns:
+            role = turn.get("role", "")
+            if role in ("function", "tool"):
+                content = str(turn.get("content", ""))
+                name = turn.get("name", turn.get("tool_call_id", "tool"))
+                truncated = content[:max_tool_result_chars]
+                if len(content) > max_tool_result_chars:
+                    truncated += f"... [{len(content) - max_tool_result_chars} chars stripped]"
+                stripped.append({**turn, "content": f"[{name}] {truncated}"})
+            else:
+                stripped.append(turn)
+        result = stripped + recent_turns
+        logger.info(
+            "tool-strip compressed %d old turns (tool results truncated to %d chars)",
+            len(old_turns), max_tool_result_chars,
+        )
+        return result
+
+    async def compress_auto(
+        self,
+        history: List[Dict[str, Any]],
+        config: Any,
+        provider: Any = None,
+    ) -> List[Dict[str, Any]]:
+        """Auto-select and apply the best compression strategy."""
+        if not self.should_compress(history, config):
+            return history
+        strategy = self.select_strategy(history, config)
+        logger.info("auto-compaction selected strategy: %s", strategy)
+        if strategy == CompactionStrategy.TOOL_STRIP:
+            return self.compress_tool_strip(history, config)
+        if strategy == CompactionStrategy.SLIDING_WINDOW:
+            return self.compress_sliding_window(history, config)
+        if strategy == CompactionStrategy.LLM and provider is not None:
+            return await self.compress_with_llm(history, config, provider)
+        return self.compress(history, config) # extractive fallback
 
     def _summarize_turns(self, turns: List[Dict[str, Any]]) -> str:
         tools_used: Set[str] = set()
