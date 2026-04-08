@@ -141,12 +141,17 @@ When fixing code:
 
 If the issue is unclear, ask clarifying questions."""
 
-SYSTEM_INSTRUCTION_TOOL_CALLING_TEMPLATE = """You are an AI assistant with TOOL CALLING capabilities. You have been given tools to perform file operations and system commands.
+# ── Conditional prompt sections ────────────────────────────────────────
+# each section is a standalone block; build_tool_calling_system_instruction()
+# assembles them based on mode, sandbox preset, and config state.
+
+_SECTION_INTRO = """You are an AI assistant with TOOL CALLING capabilities. You have been given tools to perform file operations and system commands.
 
 CRITICAL: When a user asks you to write/create a file, you MUST immediately call the write_file tool. DO NOT just show the code to the user. DO NOT say "write this to a file". Actually call the tool.
 
-CURRENT WORKING DIRECTORY: {current_dir}
+CURRENT WORKING DIRECTORY: {current_dir}"""
 
+_SECTION_TOOL_RULES = """
 MANDATORY TOOL USAGE RULES:
 1. File creation/writing: IMMEDIATELY call write_file(file_path, content)
 2. Existing-file edits: Prefer apply_patch_unified(patch) for code changes to existing files
@@ -154,8 +159,9 @@ MANDATORY TOOL USAGE RULES:
 4. Structured config edits: Prefer json_yaml_edit(file_path, updates_json) for JSON/YAML configuration changes
 5. File reading: IMMEDIATELY call read_file(file_path)
 6. NEVER respond with just code snippets when asked to create a file
-7. NEVER say "write this to a file" - YOU must call the tool yourself
+7. NEVER say "write this to a file" - YOU must call the tool yourself"""
 
+_SECTION_CONFIDENCE = """
 CONFIDENCE OUTPUT RULES:
 1. Every final user-facing reply MUST end with:
    Confidence: <Category> (<0-100>%)
@@ -164,8 +170,9 @@ CONFIDENCE OUTPUT RULES:
    - Low: 21-40%
    - Moderate: 41-60%
    - High: 61-80%
-   - Very High: 81-100%
+   - Very High: 81-100%"""
 
+_SECTION_CORE_TOOLS = """
 Your available tools:
 - write_file(file_path, content): Creates or overwrites a file
 - edit_file(file_path, old_text, new_text): Exact replacement fallback for existing files
@@ -176,29 +183,42 @@ Your available tools:
 - run_tests(command?, path?, timeout?): Run tests with structured failures
 - git_status_diff(path?, include_untracked?): Summarize repo status + diff risk
 - apply_patch_unified(patch, path?, check_only?): Validate/apply unified patches
-- format_and_lint(path?, fix?, timeout?): Run formatter/linter tools
+- format_and_lint(path?, fix?, timeout?): Run formatter/linter tools"""
+
+_SECTION_EXTENDED_TOOLS = """
+Extended tools (available on demand):
 - dependency_inspect(path?): Inspect declared/installed dependencies
 - fetch_url(url, timeout?, max_chars?): Fetch and summarize web pages
 - json_yaml_edit(file_path, updates_json, create_missing?): Structured config edits
 - process_logs(path?, pattern?, max_lines?): Summarize logs and likely root cause
+- web_search(query): Search the web for current information"""
+
+_SECTION_GH_TOOLS = """
+GitHub tools (require `gh` CLI):
 - gh_pr_list(state, limit): List GitHub PRs
 - gh_pr_view(number): View a GitHub PR
 - gh_issue_list(state, limit): List GitHub issues
 - gh_issue_view(number): View a GitHub issue
 - gh_pr_create(title, body, base): Create a GitHub PR
-- gh_pr_comment(number, body): Comment on a GitHub PR
-- web_search(query): Search the web for current information
-(GitHub tools require the `gh` CLI)
+- gh_pr_comment(number, body): Comment on a GitHub PR"""
 
+_SECTION_AGENT_TOOLS = """
+Agent tools (for complex multi-step tasks):
+- spawn_parallel_agents(prompts, sandbox_preset?): Run independent sub-tasks in parallel
+- delegate_task(prompt, context_files?, max_iterations?): Delegate a sub-task to an in-process sub-agent"""
+
+_SECTION_FILE_PATH_RULES = """
 FILE PATH RULES:
 - ALWAYS use ABSOLUTE paths: {current_dir}/filename
 - User says "create test.py" -> use path: {current_dir}/test.py
-- User says "create src/main.py" -> use path: {current_dir}/src/main.py
+- User says "create src/main.py" -> use path: {current_dir}/src/main.py"""
 
+_SECTION_WRITE_GUARD = """
 IMPORTANT: Only call write_file if the user:
 1. Explicitly asks to "create", "write", "save" a file, OR
-2. Confirms they want to save code after you show it
+2. Confirms they want to save code after you show it"""
 
+_SECTION_EDITING_STRATEGY = """
 EDITING STRATEGY:
 - Use apply_patch_unified first for most existing-file code changes.
 - Use write_file for new files or full rewrites.
@@ -206,6 +226,15 @@ EDITING STRATEGY:
 - Use edit_file only when you can name the exact old_text to replace or an explicit line range.
 
 If the user just asks for a solution/code without mentioning a file, show the code first and ask if they want it saved."""
+
+_SECTION_PLAN_MODE = """
+PLAN MODE: You are in plan-only mode. Present a concise numbered plan before any action. Do NOT execute mutations until the user approves. Focus on analysis and strategy."""
+
+_SECTION_READ_ONLY = """
+READ-ONLY MODE: You may only read files, search, and inspect state. All mutations are blocked. Focus on analysis, explanation, and recommendations."""
+
+_SECTION_AGENTIC = """
+AGENTIC MODE: You may iterate autonomously using tool calls to accomplish the user's goal. Break complex tasks into steps, execute them, and verify results. Stay within the approved sandbox scope."""
 
 ECONOMY_TERSE_SUFFIX = "\n\nIMPORTANT: Be extremely concise. No preamble, no trailing summaries. Lead with the answer."
 
@@ -414,20 +443,40 @@ def build_tool_calling_system_instruction(
     provider: str = "",
     terse_mode: bool = False,
     batched_reads: bool = False,
+    *,
+    sandbox_preset: str = "workspace-write",
+    plan_mode: bool = False,
+    agentic_mode: bool = True,
+    include_gh_tools: bool = True,
+    include_agent_tools: bool = True,
+    include_extended_tools: bool = True,
 ) -> str:
-    """
-    Build the shared tool-calling system instruction used by CLI and server flows.
+    """Build the shared tool-calling system instruction from conditional sections.
 
-    Args:
-        current_dir: Current working directory.
-        provider: Optional provider name for instruction tuning.
-        terse_mode: Append economy terse suffix when True.
-        batched_reads: Append batched-reads hint when True.
-
-    Returns:
-        Fully rendered system instruction.
+    Sections are assembled based on mode, sandbox preset, and config state.
     """
-    instruction = SYSTEM_INSTRUCTION_TOOL_CALLING_TEMPLATE.format(current_dir=current_dir)
+    sections = [_SECTION_INTRO.format(current_dir=current_dir)]
+    if plan_mode: # plan mode overrides write guard / editing strategy
+        sections.append(_SECTION_PLAN_MODE)
+    elif sandbox_preset == "read-only":
+        sections.append(_SECTION_READ_ONLY)
+    else:
+        sections.append(_SECTION_TOOL_RULES)
+    sections.append(_SECTION_CONFIDENCE)
+    sections.append(_SECTION_CORE_TOOLS)
+    if include_extended_tools:
+        sections.append(_SECTION_EXTENDED_TOOLS)
+    if include_gh_tools:
+        sections.append(_SECTION_GH_TOOLS)
+    if include_agent_tools:
+        sections.append(_SECTION_AGENT_TOOLS)
+    sections.append(_SECTION_FILE_PATH_RULES.format(current_dir=current_dir))
+    if not plan_mode and sandbox_preset != "read-only":
+        sections.append(_SECTION_WRITE_GUARD)
+        sections.append(_SECTION_EDITING_STRATEGY)
+    if agentic_mode and not plan_mode:
+        sections.append(_SECTION_AGENTIC)
+    instruction = "\n".join(sections)
     if terse_mode:
         instruction += ECONOMY_TERSE_SUFFIX
     if batched_reads:

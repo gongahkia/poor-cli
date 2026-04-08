@@ -323,9 +323,15 @@ class PoorCLICore:
             # Build system instruction (provider-tuned for constrained models)
             terse = getattr(self.config.economy, "terse_system_prompt", False)
             batched = getattr(self.config.economy, "prefer_batched_reads", False)
+            _sandbox_preset = getattr(self.config.sandbox, "default_preset", "workspace-write")
+            _plan = bool(self.config.plan_mode.enabled)
             self._system_instruction = build_tool_calling_system_instruction(
                 str(repo_root), provider=self.config.model.provider,
                 terse_mode=terse, batched_reads=batched,
+                sandbox_preset=_sandbox_preset,
+                plan_mode=_plan,
+                include_gh_tools=getattr(self.config.tools, "enable_git_tools", True),
+                include_agent_tools=not _plan,
             )
 
             # inject persistent memory context
@@ -337,7 +343,7 @@ class PoorCLICore:
                     "Use memory_save/memory_search/memory_delete/memory_list tools to manage them.\n\n"
                     f"{memory_index}\n"
                 )
-            
+
             provider_capabilities = self.provider.get_capabilities()
             init_tools = (
                 tool_declarations if provider_capabilities.supports_function_calling else []
@@ -1817,9 +1823,15 @@ class PoorCLICore:
         terse = getattr(self.config.economy, "terse_system_prompt", False)
         batched = getattr(self.config.economy, "prefer_batched_reads", False)
         repo_root = getattr(self, "_repo_root", Path.cwd())
+        _sandbox_preset = getattr(self.config.sandbox, "default_preset", "workspace-write")
+        _plan = bool(self.config.plan_mode.enabled)
         self._system_instruction = build_tool_calling_system_instruction(
             str(repo_root), provider=self.config.model.provider,
             terse_mode=terse, batched_reads=batched,
+            sandbox_preset=_sandbox_preset,
+            plan_mode=_plan,
+            include_gh_tools=getattr(self.config.tools, "enable_git_tools", True),
+            include_agent_tools=not _plan,
         )
         memory_index = self._memory_manager.load_index() if self._memory_manager else ""
         if memory_index:
