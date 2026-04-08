@@ -25,6 +25,19 @@ logger = logging.getLogger(__name__)
 # Approximate tokens per character (conservative estimate)
 CHARS_PER_TOKEN = 4
 
+# calibrated ratios per provider (chars per token, lower = more tokens per char)
+_PROVIDER_CHARS_PER_TOKEN = {
+    "anthropic": 3.5, # claude tokenizer is denser on code
+    "openai": 3.5,    # tiktoken cl100k is similar
+    "gemini": 4.0,    # gemini tokenizer is slightly coarser
+    "ollama": 3.8,    # varies by model, conservative estimate
+    "openrouter": 3.5, # depends on downstream model, use dense default
+}
+
+def chars_per_token(provider: str = "") -> float:
+    """Return calibrated chars-per-token ratio for a provider."""
+    return _PROVIDER_CHARS_PER_TOKEN.get(provider.lower(), CHARS_PER_TOKEN)
+
 # Default context limits
 DEFAULT_MAX_TOKENS = 8000
 DEFAULT_MAX_FILES = 12

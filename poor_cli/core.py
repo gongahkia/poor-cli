@@ -36,7 +36,7 @@ from .tools_async import ToolRegistryAsync, ToolOutcome
 from .checkpoint import CheckpointManager
 from .core_events import CoreEvent, HistoryAdapter, RepoHistoryAdapter
 from .repo_config import RepoConfig, get_repo_config
-from .context import ContextManager, get_context_manager
+from .context import ContextManager, get_context_manager, chars_per_token
 from .instructions import InstructionManager, InstructionSnapshot
 from .context_contract import ContextContractManager
 from .context_engine import ContextEngineMixin
@@ -1776,14 +1776,15 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         """Return context window utilization metrics."""
         if not self.provider:
             return {"used_tokens": 0, "max_tokens": 0, "pressure_pct": 0, "strategy_hint": "ok"}
+        cpt = self._cpt
         caps = self.provider.get_capabilities()
         max_ctx = caps.max_context_tokens
         try:
             history = self.provider.get_history()
-            used = sum(len(str(m.get("content", ""))) for m in history) // 4
+            used = int(sum(len(str(m.get("content", ""))) for m in history) / cpt)
         except Exception:
             used = 0
-        sys_tokens = len(self._system_instruction or "") // 4
+        sys_tokens = int(len(self._system_instruction or "") / cpt)
         total = used + sys_tokens
         pct = round(total / max(max_ctx, 1) * 100, 1)
         hint = "compress" if pct > 70 else ("warn" if pct > 50 else "ok")
@@ -1791,7 +1792,8 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
 
     def get_context_breakdown(self) -> Dict[str, Any]:
         """Return token breakdown by category: system, history, tool results."""
-        sys_tokens = len(self._system_instruction or "") // 4
+        cpt = self._cpt
+        sys_tokens = int(len(self._system_instruction or "") / cpt)
         if not self.provider:
             return {"system_tokens": sys_tokens, "history_tokens": 0, "tool_result_tokens": 0,
                     "total_tokens": sys_tokens, "max_context_tokens": 0, "pressure_pct": 0, "turn_count": 0}
@@ -1803,7 +1805,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         tool_tokens = 0
         user_turns = 0
         for m in history:
-            toks = len(str(m.get("content", ""))) // 4
+            toks = int(len(str(m.get("content", ""))) / cpt)
             if m.get("role") in ("tool", "function"):
                 tool_tokens += toks
             else:
@@ -1821,16 +1823,17 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
 
     def estimate_cost(self, message: str) -> Dict[str, Any]:
         """Estimate token cost of a message before sending (no API call)."""
-        sys_tokens = len(self._system_instruction or "") // 4
+        cpt = self._cpt
+        sys_tokens = int(len(self._system_instruction or "") / cpt)
         if self.provider:
             try:
                 history = self.provider.get_history()
-                hist_tokens = sum(len(str(m.get("content", ""))) for m in history) // 4
+                hist_tokens = int(sum(len(str(m.get("content", ""))) for m in history) / cpt)
             except Exception:
                 hist_tokens = 0
         else:
             hist_tokens = 0
-        prompt_tokens = len(message) // 4
+        prompt_tokens = int(len(message) / cpt)
         total_input = sys_tokens + hist_tokens + prompt_tokens
         est_output = min(total_input, 4000)
         cost = self._estimate_cost(total_input, est_output)
@@ -2149,15 +2152,22 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             except (asyncio.TimeoutError, Exception):
                 pass # graph not ready yet, proceed without it
 
+    @property
+    def _cpt(self) -> float:
+        """Chars-per-token ratio for current provider."""
+        provider = self.config.model.provider if self.config else ""
+        return chars_per_token(provider)
+
     def _compute_token_breakdown(self) -> Tuple[int, int, int]:
         """Compute (system_tokens, history_tokens, tool_result_tokens) for current state."""
-        sys_tok = len(self._system_instruction or "") // 4
+        cpt = self._cpt
+        sys_tok = int(len(self._system_instruction or "") / cpt)
         hist_tok = 0
         tool_tok = 0
         if self.provider:
             try:
                 for m in self.provider.get_history():
-                    toks = len(str(m.get("content", ""))) // 4
+                    toks = int(len(str(m.get("content", ""))) / cpt)
                     if m.get("role") in ("tool", "function"):
                         tool_tok += toks
                     else:
@@ -2176,7 +2186,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             return None
         try:
             history = self.provider.get_history()
-            current_tokens = sum(len(str(m.get("content", ""))) for m in history) // 4
+            current_tokens = int(sum(len(str(m.get("content", ""))) for m in history) / self._cpt)
         except Exception:
             return None
         remaining_ratio = max(0.0, 1.0 - (current_tokens / max_ctx))
