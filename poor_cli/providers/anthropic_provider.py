@@ -276,13 +276,21 @@ class AnthropicProvider(BaseProvider):
             logger.error(f"Anthropic streaming error: {e}")
             raise APIError(f"Anthropic streaming error: {e}", str(e))
 
+    _CACHE_CONTROL_MSG_THRESHOLD = 4000 # chars; wrap large user messages with cache_control
+
     def _append_message(self, message: Any) -> None:
         """Append user/tool messages in Anthropic-compatible format."""
         if isinstance(message, str):
-            self.messages.append({
-                "role": "user",
-                "content": message
-            })
+            if self.prompt_caching and len(message) > self._CACHE_CONTROL_MSG_THRESHOLD:
+                self.messages.append({
+                    "role": "user",
+                    "content": [{"type": "text", "text": message, "cache_control": {"type": "ephemeral"}}],
+                })
+            else:
+                self.messages.append({
+                    "role": "user",
+                    "content": message,
+                })
             return
 
         if (

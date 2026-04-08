@@ -103,21 +103,31 @@ class GeminiProvider(BaseProvider):
             if system_instruction:
                 config_kwargs["system_instruction"] = system_instruction
 
-            # attempt server-side context caching for large system instructions (32k+ chars)
-            if system_instruction and len(system_instruction) > 32000:
+            # attempt server-side context caching for large system+tools payload
+            # Gemini context caching minimum is ~32K tokens (~128K chars)
+            cacheable_chars = len(system_instruction or "")
+            if tools:
+                import json as _json
+                cacheable_chars += len(_json.dumps(translated_tools))
+            if cacheable_chars > 32000:
                 try:
+                    cache_config = genai_types.CreateCachedContentConfig(
+                        display_name="poor-cli-context-cache",
+                    )
+                    if system_instruction:
+                        cache_config.system_instruction = system_instruction
+                    if tools and translated_tools:
+                        cache_config.tools = [genai_types.Tool(function_declarations=translated_tools)]
                     cached = await self.client.caches.create(
                         model=self.model_name,
-                        config=genai_types.CreateCachedContentConfig(
-                            system_instruction=system_instruction,
-                            display_name="poor-cli-system-instruction",
-                        ),
+                        config=cache_config,
                     )
                     if cached and getattr(cached, "name", None):
                         self._cached_content_name = cached.name
                         config_kwargs.pop("system_instruction", None)
+                        config_kwargs.pop("tools", None)
                         config_kwargs["cached_content"] = cached.name
-                        logger.info("Gemini context cache created: %s", cached.name)
+                        logger.info("Gemini context cache created (system+tools): %s", cached.name)
                 except Exception as exc:
                     logger.debug("Gemini context caching unavailable: %s", exc)
 

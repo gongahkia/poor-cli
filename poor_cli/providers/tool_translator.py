@@ -8,11 +8,20 @@ Converts canonical tool format to provider-specific schemas for:
 - Ollama
 """
 
-from typing import List, Dict, Any
+import json
+from typing import Dict, Any, List, Optional, Tuple
 from enum import Enum
 from ..exceptions import setup_logger
 
 logger = setup_logger(__name__)
+
+_translation_cache: Dict[Tuple[int, str], List[Dict[str, Any]]] = {} # (tools_hash, provider) -> translated
+
+
+def _tools_cache_key(tools: List[Dict[str, Any]], provider_value: str) -> Tuple[int, str]:
+    """Compute a stable cache key from canonical tool list + provider."""
+    raw = json.dumps(tools, sort_keys=True, separators=(",", ":"))
+    return (hash(raw), provider_value)
 
 
 class ProviderType(Enum):
@@ -26,6 +35,12 @@ class ProviderType(Enum):
 
 class ToolTranslator:
     """Translates canonical tool format to provider-specific formats"""
+
+    @classmethod
+    def invalidate_cache(cls) -> None:
+        """Clear the translation cache (call on MCP reload / discover_tools toggle)."""
+        _translation_cache.clear()
+        logger.debug("tool translation cache invalidated")
 
     @staticmethod
     def _strip_vendor_extensions(payload: Any) -> Any:
@@ -249,6 +264,12 @@ class ToolTranslator:
             except ValueError:
                 raise ValueError(f"Unsupported provider: {provider}")
 
+        cache_key = _tools_cache_key(tools, provider.value)
+        cached = _translation_cache.get(cache_key)
+        if cached is not None:
+            logger.debug("tool translation cache hit for %s (%d tools)", provider.value, len(tools))
+            return cached
+
         translators = {
             ProviderType.GEMINI: cls.to_gemini,
             ProviderType.OPENAI: cls.to_openai,
@@ -262,7 +283,9 @@ class ToolTranslator:
             raise ValueError(f"Unsupported provider: {provider}")
 
         logger.info(f"Translating tools to {provider.value} format")
-        return translator(tools)
+        result = translator(tools)
+        _translation_cache[cache_key] = result
+        return result
 
     @classmethod
     def from_provider_format(cls, tools: List[Dict[str, Any]], provider: ProviderType) -> List[Dict[str, Any]]:
