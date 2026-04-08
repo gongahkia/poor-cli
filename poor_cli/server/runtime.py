@@ -786,6 +786,7 @@ class PoorCLIServer:
             "poor-cli/estimateCost": self.handle_estimate_cost,
             "poor-cli/compareModelCost": self.handle_compare_model_cost,
             "poor-cli/exportCostReport": self.handle_export_cost_report,
+            "poor-cli/getTokensVisualization": self.handle_get_tokens_visualization,
             "poor-cli/createSession": self.handle_create_session,
             "poor-cli/destroySession": self.handle_destroy_session,
             "poor-cli/switchSession": self.handle_switch_session,
@@ -4540,6 +4541,11 @@ class PoorCLIServer:
         """Export full session cost report for accounting/auditing."""
         self._ensure_initialized()
         return self.core.export_cost_report()
+
+    async def handle_get_tokens_visualization(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return text-based context window visualization."""
+        self._ensure_initialized()
+        return self.core.get_tokens_visualization()
 
     async def handle_get_cache_stats(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return tool cache + response cache hit/miss stats."""

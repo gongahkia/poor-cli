@@ -1684,6 +1684,24 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             },
         }
 
+    def get_tokens_visualization(self, width: int = 50) -> Dict[str, Any]:
+        """Return text-based context window bar chart."""
+        bd = self.get_context_breakdown()
+        total = bd.get("total_tokens", 0)
+        max_ctx = bd.get("max_context_tokens", 1)
+        free = max(0, max_ctx - total)
+        def _bar(label: str, tokens: int) -> str:
+            pct = tokens / max(max_ctx, 1)
+            filled = max(1, int(pct * width)) if tokens > 0 else 0
+            return f"[{label}: {'█' * filled}{' ' * (width - filled)}] {tokens:>7} tok ({pct*100:.1f}%)"
+        bars = [
+            _bar("sys ", bd.get("system_tokens", 0)),
+            _bar("hist", bd.get("history_tokens", 0)),
+            _bar("tool", bd.get("tool_result_tokens", 0)),
+            _bar("free", free),
+        ]
+        return {"visualization": "\n".join(bars), "breakdown": bd}
+
     def get_cache_stats(self) -> Dict[str, Any]:
         """Return tool cache + response cache stats."""
         tool_stats = self.tool_registry.get_tool_cache_stats() if self.tool_registry else {}
