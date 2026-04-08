@@ -38,6 +38,8 @@ from .repo_config import RepoConfig, get_repo_config
 from .context import ContextManager, get_context_manager
 from .instructions import InstructionManager, InstructionSnapshot
 from .context_contract import ContextContractManager
+from .context_engine import ContextEngineMixin
+from .permission_engine import PermissionEngineMixin
 from .mcp_client import MCPManager
 from .plan_analyzer import PlanAnalyzer
 from .policy_hooks import HookExecutionResult, PolicyHookManager
@@ -87,7 +89,7 @@ _MAX_RUN_TURN_SUMMARIES = 80
 
 # ── CoreEvent: structured events yielded by the agentic loop ─────────
 
-class PoorCLICore:
+class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
     """
     Headless AI coding assistant engine.
     
@@ -146,6 +148,7 @@ class PoorCLICore:
 
         # Repo knowledge graph (initialized if repo_index.enabled)
         self._repo_graph: Any = None
+        self._repo_graph_task: Optional[asyncio.Task] = None # background indexing task
 
         # Cancel events for in-flight request cancellation.
         self._cancel_event: threading.Event = threading.Event()
@@ -183,11 +186,14 @@ class PoorCLICore:
         self._response_cache: Dict[str, Tuple[str, float]] = {} # prompt_hash -> (response, timestamp)
         self._files_seen_in_session: Dict[str, str] = {} # path -> content hash for context dedup
         self._last_file_contents: Dict[str, str] = {} # path -> last read content for diff-only reads
+        self._git_context_cache: Optional[Tuple[str, str]] = None # (git_state_hash, context_text)
+        self._turn_tool_cache: Dict[str, str] = {} # per-turn cache for read-only tool results
         self._idle_compact_task: Optional[asyncio.TimerHandle] = None
         self._idle_loop: Optional[asyncio.AbstractEventLoop] = None
 
         # Sub-agent delegation depth (0 = top-level)
         self._sub_agent_depth: int = 0
+        self._pending_llm_compression: Optional[asyncio.Task] = None # background LLM compression
 
         # Provider fallback manager (initialized after config load)
         self._fallback_manager: Optional[ProviderFallbackManager] = None
@@ -412,35 +418,33 @@ class PoorCLICore:
             self._context_manager = get_context_manager()
             logger.info("Context manager initialized")
 
-            # Initialize repo knowledge graph
+            # Initialize repo knowledge graph (lazy: index builds in background)
             if self.config.repo_index.enabled:
                 from .repo_graph import RepoGraph
                 self._repo_graph = RepoGraph(repo_root)
                 if self.config.repo_index.auto_index_on_start:
-                    def _progress(msg: str) -> None:
-                        logger.info("[repo-index] %s", msg)
-                        self._pending_events.append(CoreEvent(
-                            type="progress", data={"phase": "repo_index", "message": msg},
-                        ))
-                        if self._init_progress_callback:
-                            self._init_progress_callback(msg)
                     reindex_mode = self._repo_graph.should_reindex()
                     if reindex_mode == "skip":
                         stats = self._repo_graph.get_stats()
                         dir_count = self._repo_graph._count_directories()
-                        _progress(
-                            f"repo index up to date: {dir_count} directories, {stats['files']} files, "
-                            f"{stats['symbols']} symbols, {stats['edges']} edges"
-                        )
                         logger.info("Repo index (skipped): %s", stats)
+                        self._pending_events.append(CoreEvent(
+                            type="progress", data={"phase": "repo_index", "message": (
+                                f"repo index up to date: {dir_count} directories, {stats['files']} files, "
+                                f"{stats['symbols']} symbols, {stats['edges']} edges"
+                            )},
+                        ))
                     else:
-                        _progress(f"repo index: {reindex_mode} reindex starting...")
-                        loop = asyncio.get_event_loop()
-                        if reindex_mode == "full" or not self.config.repo_index.incremental:
-                            stats = await loop.run_in_executor(None, lambda: self._repo_graph.build_index(on_progress=_progress))
-                        else:
-                            stats = await loop.run_in_executor(None, lambda: self._repo_graph.incremental_update(on_progress=_progress))
-                        logger.info("Repo index (%s): %s", reindex_mode, stats)
+                        async def _build_index_bg(graph, mode, incremental):
+                            loop = asyncio.get_event_loop()
+                            if mode == "full" or not incremental:
+                                stats = await loop.run_in_executor(None, graph.build_index)
+                            else:
+                                stats = await loop.run_in_executor(None, graph.incremental_update)
+                            logger.info("Repo index (%s): %s", mode, stats)
+                        self._repo_graph_task = asyncio.create_task(
+                            _build_index_bg(self._repo_graph, reindex_mode, self.config.repo_index.incremental)
+                        )
                 self._context_manager._repo_graph = self._repo_graph
             provider_status = self.get_provider_readiness()
             # emit provider probe results
@@ -1019,6 +1023,7 @@ class PoorCLICore:
     ) -> InstructionSnapshot:
         manager = self._instruction_manager or InstructionManager(Path.cwd())
         repo_summary = ""
+        await self._ensure_repo_graph()
         if self._repo_graph is not None:
             try:
                 repo_summary = self._repo_graph.build_repo_summary()
@@ -1075,7 +1080,7 @@ class PoorCLICore:
         # Inject git context for change-related queries
         git_keywords = {"commit", "change", "diff", "push", "merge", "rebase", "staged", "recent"}
         if any(kw in message.lower() for kw in git_keywords):
-            git_ctx = self._git_context_summary()
+            git_ctx = self._git_context_summary_cached()
             if git_ctx:
                 message = f"{message}\n\n[Git context]\n{git_ctx}"
 
@@ -1455,9 +1460,22 @@ class PoorCLICore:
             logger.warning("Failed to create pre-mutation checkpoint for %s: %s", tool_name, error)
             return None
 
+    def _turn_cache_key(self, tool_name: str, arguments: Dict[str, Any]) -> str:
+        """Stable cache key for per-turn read-only tool result dedup."""
+        import json as _json
+        return f"{tool_name}:{_json.dumps(arguments, sort_keys=True, separators=(',', ':'))}"
+
     async def _execute_tool_internal(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         if not self.tool_registry:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+
+        # Per-turn cache for read-only tools (avoid redundant I/O within same turn)
+        if tool_name not in _MUTATING_TOOLS and self._is_concurrency_safe_tool(tool_name, arguments):
+            cache_key = self._turn_cache_key(tool_name, arguments)
+            cached = self._turn_tool_cache.get(cache_key)
+            if cached is not None:
+                logger.debug("turn cache hit: %s", tool_name)
+                return cached
 
         targets = self._inspect_tool_targets(tool_name, arguments)
         pre_payload = {
@@ -1550,6 +1568,10 @@ class PoorCLICore:
                 "message": self._tool_result_message(result),
             },
         )
+        # Cache read-only tool results for this turn
+        if tool_name not in _MUTATING_TOOLS and self._is_concurrency_safe_tool(tool_name, arguments):
+            cache_key = self._turn_cache_key(tool_name, arguments)
+            self._turn_tool_cache[cache_key] = result
         return result
 
     def _estimate_cost(self, input_tokens: int, output_tokens: int) -> float:
@@ -1788,6 +1810,28 @@ class PoorCLICore:
             self.provider.economy_max_output_tokens = 0
 
     @staticmethod
+    def _git_context_summary_cached(self) -> str:
+        """Return git context, reusing cache when git state unchanged."""
+        try:
+            head = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, text=True, timeout=3,
+            ).strip()
+        except Exception:
+            head = ""
+        try:
+            status = subprocess.check_output(
+                ["git", "status", "--porcelain"], stderr=subprocess.DEVNULL, text=True, timeout=3,
+            ).strip()[:500]
+        except Exception:
+            status = ""
+        git_hash = hashlib.sha256(f"{head}|{status}".encode()).hexdigest()
+        if self._git_context_cache and self._git_context_cache[0] == git_hash:
+            return self._git_context_cache[1]
+        text = self._git_context_summary()
+        self._git_context_cache = (git_hash, text)
+        return text
+
+    @staticmethod
     def _git_context_summary() -> str:
         """Build git-aware context (staged diff + recent commits) for injection."""
         parts = []
@@ -1808,6 +1852,14 @@ class PoorCLICore:
         except Exception:
             pass
         return "\n\n".join(parts)
+
+    async def _ensure_repo_graph(self, timeout: float = 0.1) -> None:
+        """Wait briefly for background repo graph indexing to complete."""
+        if self._repo_graph_task and not self._repo_graph_task.done():
+            try:
+                await asyncio.wait_for(asyncio.shield(self._repo_graph_task), timeout=timeout)
+            except (asyncio.TimeoutError, Exception):
+                pass # graph not ready yet, proceed without it
 
     def _check_context_pressure(self) -> Optional[str]:
         """Check if context window is under pressure. Returns reason string or None."""
@@ -1851,6 +1903,7 @@ class PoorCLICore:
         new_hash = hashlib.sha256(f"{head}|{status}|{instr_key}".encode()).hexdigest()
         if new_hash == self._system_context_hash:
             return False
+        self._git_context_cache = None # git state changed, invalidate
         terse = getattr(self.config.economy, "terse_system_prompt", False)
         batched = getattr(self.config.economy, "prefer_batched_reads", False)
         repo_root = getattr(self, "_repo_root", Path.cwd())
@@ -1909,6 +1962,7 @@ class PoorCLICore:
         if not self._initialized or not self.provider:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
 
+        self._turn_tool_cache.clear() # reset per-turn read-only tool cache
         self._refresh_system_context()
 
         # Check cost guardrails before processing
@@ -2042,18 +2096,44 @@ class PoorCLICore:
         if self.history_adapter:
             self.history_adapter.add_message("user", message)
 
+        # Apply pending background LLM compression from previous turn
+        try:
+            if self._pending_llm_compression and self._pending_llm_compression.done() and self.provider:
+                compressed = self._pending_llm_compression.result()
+                if compressed:
+                    self.provider.set_history(compressed)
+                    logger.info("Applied deferred LLM compression: %d messages", len(compressed))
+                self._pending_llm_compression = None
+        except Exception as e:
+            logger.warning("deferred LLM compression failed: %s", e)
+            self._pending_llm_compression = None
+
         # Compress conversation context if configured and threshold exceeded
         try:
             cc_cfg = getattr(self.config, "context_compression", None) if self.config else None
+            eco_compress = getattr(self.config.economy, "compress_after_turns", 0) if self.config else 0
+            if cc_cfg and eco_compress > 0: # economy preset overrides compression threshold
+                cc_cfg.compress_after_turns = eco_compress
             if cc_cfg and getattr(cc_cfg, "enabled", False) and self.provider:
                 history = self.provider.get_history()
                 if self._context_compressor.should_compress(history, cc_cfg):
                     before = len(history)
-                    compressed = await self._context_compressor.compress_auto(
-                        history, cc_cfg, provider=self.provider,
-                    )
-                    self.provider.set_history(compressed)
-                    after = len(compressed)
+                    from .context_compressor import CompactionStrategy
+                    strategy = self._context_compressor.select_strategy(history, cc_cfg)
+                    if strategy == CompactionStrategy.LLM:
+                        # apply instant non-LLM compression now, defer LLM to background
+                        compressed = self._context_compressor.compress(history, cc_cfg)
+                        self.provider.set_history(compressed)
+                        after = len(compressed)
+                        self._pending_llm_compression = asyncio.create_task(
+                            self._context_compressor.compress_with_llm(history, cc_cfg, self.provider)
+                        )
+                    else:
+                        compressed = await self._context_compressor.compress_auto(
+                            history, cc_cfg, provider=self.provider,
+                        )
+                        self.provider.set_history(compressed)
+                        after = len(compressed)
                     logger.info("Compressed conversation context: %d -> %d messages", before, after)
                     compaction_events = turn_diagnostics.get("compactionEvents")
                     if isinstance(compaction_events, list):
@@ -2762,6 +2842,7 @@ class PoorCLICore:
         iteration: int,
         max_iterations: int,
         request_id: str,
+        expected_call_count: int = 1,
     ) -> Tuple[List["CoreEvent"], Dict[str, Any]]:
         """Execute a single function call with permission checks. Returns (events, result_dict)."""
         events: List[CoreEvent] = []
@@ -2849,6 +2930,12 @@ class PoorCLICore:
         except Exception:
             pass
 
+        # Per-call truncation: prevent any single tool result from dominating the budget
+        per_call_cap = self._max_tool_result_chars_per_turn() // max(1, expected_call_count)
+        if len(result_text) > per_call_cap:
+            omitted = len(result_text) - per_call_cap
+            result_text = result_text[:per_call_cap] + f"\n[truncated: {omitted} chars omitted]"
+
         events.append(CoreEvent.tool_result(
             tool_name, result_text, fc.id, iteration, max_iterations,
             diff=self._tool_result_diff(result),
@@ -2921,6 +3008,7 @@ class PoorCLICore:
             else:
                 sequential_calls.append(fc)
         max_parallel = self._max_parallel_tool_calls()
+        total_call_count = len(response.function_calls) # for per-call result budgeting
 
         # execute safe calls in bounded parallel
         if concurrency_safe_calls:
@@ -2933,6 +3021,7 @@ class PoorCLICore:
                             iteration,
                             max_iterations,
                             request_id,
+                            expected_call_count=total_call_count,
                         )
                     )
             else:
@@ -2945,6 +3034,7 @@ class PoorCLICore:
                             iteration,
                             max_iterations,
                             request_id,
+                            expected_call_count=total_call_count,
                         )
 
                 parallel_results = await asyncio.gather(
@@ -2955,17 +3045,62 @@ class PoorCLICore:
                 self._pending_events.extend(call_events)
                 tool_results.append(call_result)
 
-        # execute sequential calls in order
+        # execute sequential/mutating calls — parallelize if targeting different files
         had_mutations = False
         auto_feedback_injected = False
-        for fc in sequential_calls:
-            call_events, call_result = await self._execute_single_call_events(
-                fc, iteration, max_iterations, request_id,
-            )
-            self._pending_events.extend(call_events)
-            tool_results.append(call_result)
-            if self._is_mutating_tool_call(fc.name, fc.arguments):
+        if len(sequential_calls) > 1 and max_parallel > 1:
+            target_groups: Dict[str, List[FunctionCall]] = {}
+            no_target: List[FunctionCall] = []
+            for fc in sequential_calls:
+                targets = self._inspect_tool_targets(fc.name, fc.arguments)
+                key = "|".join(sorted(targets)) if targets else ""
+                if key:
+                    target_groups.setdefault(key, []).append(fc)
+                else:
+                    no_target.append(fc)
+            independent_calls: List[FunctionCall] = []
+            truly_sequential: List[FunctionCall] = list(no_target)
+            seen_targets: set = set()
+            for key, group in target_groups.items():
+                targets_set = set(key.split("|"))
+                if targets_set & seen_targets:
+                    truly_sequential.extend(group)
+                else:
+                    seen_targets.update(targets_set)
+                    independent_calls.extend(group)
+            if len(independent_calls) > 1:
+                sem = asyncio.Semaphore(max_parallel)
+                async def _run_mut(fc_inner: FunctionCall):
+                    async with sem:
+                        return await self._execute_single_call_events(
+                            fc_inner, iteration, max_iterations, request_id,
+                            expected_call_count=total_call_count,
+                        )
+                par_results = await asyncio.gather(*[_run_mut(fc) for fc in independent_calls])
+                for call_events, call_result in par_results:
+                    self._pending_events.extend(call_events)
+                    tool_results.append(call_result)
                 had_mutations = True
+            else:
+                truly_sequential = independent_calls + truly_sequential
+            for fc in truly_sequential:
+                call_events, call_result = await self._execute_single_call_events(
+                    fc, iteration, max_iterations, request_id, expected_call_count=total_call_count,
+                )
+                self._pending_events.extend(call_events)
+                tool_results.append(call_result)
+                if self._is_mutating_tool_call(fc.name, fc.arguments):
+                    had_mutations = True
+        else:
+            for fc in sequential_calls:
+                call_events, call_result = await self._execute_single_call_events(
+                    fc, iteration, max_iterations, request_id,
+                    expected_call_count=total_call_count,
+                )
+                self._pending_events.extend(call_events)
+                tool_results.append(call_result)
+                if self._is_mutating_tool_call(fc.name, fc.arguments):
+                    had_mutations = True
 
         # auto-feedback: run lint/test after mutations and inject errors
         if had_mutations and self._should_auto_feedback():
@@ -3081,6 +3216,8 @@ class PoorCLICore:
         tool_declarations: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         """Reinitialize the active provider with updated tool declarations."""
+        from .providers.tool_translator import ToolTranslator
+        ToolTranslator.invalidate_cache() # tools changed, bust translation cache
         if not self._initialized or not self.provider:
             return
         previous_history: List[Dict[str, Any]] = []
