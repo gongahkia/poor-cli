@@ -50,9 +50,13 @@ class ContextCompressor:
             if t.get("role") == "function" or t.get("role") == "tool"
         )
         total_chars = sum(len(t.get("content", "")) for t in history)
+        if total_chars > 80000: # very large context — always use LLM for best compression
+            return CompactionStrategy.LLM
         if total_chars > 0 and tool_result_chars / total_chars > 0.6:
             return CompactionStrategy.TOOL_STRIP # conversation is mostly tool output
         threshold = getattr(config, "compress_after_turns", 20)
+        if total_chars > 40000 and len(history) > threshold:
+            return CompactionStrategy.LLM # large context beyond threshold — LLM preferred
         if len(history) > threshold * 2:
             return CompactionStrategy.LLM # very long conversation, use LLM
         return CompactionStrategy.EXTRACTIVE # default
@@ -206,6 +210,7 @@ class ContextCompressor:
         history: List[Dict[str, Any]],
         config: Any,
         provider: Any = None,
+        tool_strip_chars: int = 200,
     ) -> List[Dict[str, Any]]:
         """Auto-select and apply the best compression strategy."""
         if not self.should_compress(history, config):
@@ -213,7 +218,7 @@ class ContextCompressor:
         strategy = self.select_strategy(history, config)
         logger.info("auto-compaction selected strategy: %s", strategy)
         if strategy == CompactionStrategy.TOOL_STRIP:
-            return self.compress_tool_strip(history, config)
+            return self.compress_tool_strip(history, config, max_tool_result_chars=tool_strip_chars)
         if strategy == CompactionStrategy.SLIDING_WINDOW:
             return self.compress_sliding_window(history, config)
         if strategy == CompactionStrategy.LLM and provider is not None:

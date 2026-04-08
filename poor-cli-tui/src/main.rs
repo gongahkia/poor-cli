@@ -220,6 +220,12 @@ enum ServerMsg {
         request_id: String,
         input_tokens: u64,
         output_tokens: u64,
+        system_tokens: u64,
+        history_tokens: u64,
+        tool_result_tokens: u64,
+    },
+    ContextPressure {
+        pressure_pct: f32,
     },
     RoomEvent {
         room: String,

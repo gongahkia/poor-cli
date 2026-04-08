@@ -217,6 +217,9 @@ pub(crate) fn spawn_backend_worker(
                                 request_id,
                                 input_tokens,
                                 output_tokens,
+                                system_tokens,
+                                history_tokens,
+                                tool_result_tokens,
                                 ..
                             } => {
                                 session::write_session_log(
@@ -230,7 +233,16 @@ pub(crate) fn spawn_backend_worker(
                                     request_id,
                                     input_tokens,
                                     output_tokens,
+                                    system_tokens,
+                                    history_tokens,
+                                    tool_result_tokens,
                                 }
+                            }
+                            ServerNotification::ContextPressure {
+                                pressure_pct,
+                                ..
+                            } => {
+                                ServerMsg::ContextPressure { pressure_pct }
                             }
                             ServerNotification::RoomEvent {
                                 room,

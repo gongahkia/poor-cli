@@ -95,7 +95,9 @@ class CoreEvent:
     def cost_update(input_tokens: int = 0, output_tokens: int = 0, estimated_cost: float = 0.0,
                     cache_creation_input_tokens: int = 0, cache_read_input_tokens: int = 0,
                     is_estimate: bool = False,
-                    cumulative_input_tokens: int = 0, cumulative_output_tokens: int = 0) -> "CoreEvent":
+                    cumulative_input_tokens: int = 0, cumulative_output_tokens: int = 0,
+                    system_tokens: int = 0, history_tokens: int = 0,
+                    tool_result_tokens: int = 0) -> "CoreEvent":
         data = {"inputTokens": input_tokens, "outputTokens": output_tokens, "estimatedCost": estimated_cost}
         if cache_creation_input_tokens:
             data["cacheCreationInputTokens"] = cache_creation_input_tokens
@@ -106,7 +108,23 @@ class CoreEvent:
         if cumulative_input_tokens or cumulative_output_tokens:
             data["cumulativeInputTokens"] = cumulative_input_tokens
             data["cumulativeOutputTokens"] = cumulative_output_tokens
+        if system_tokens:
+            data["systemTokens"] = system_tokens
+        if history_tokens:
+            data["historyTokens"] = history_tokens
+        if tool_result_tokens:
+            data["toolResultTokens"] = tool_result_tokens
         return CoreEvent(type="cost_update", data=data)
+
+    @staticmethod
+    def context_pressure(used_tokens: int, max_tokens: int, pressure_pct: float) -> "CoreEvent":
+        return CoreEvent(type="context_pressure", data={
+            "usedTokens": used_tokens, "maxTokens": max_tokens, "pressurePct": pressure_pct,
+        })
+
+    @staticmethod
+    def economy_turn_report(report: Dict[str, Any]) -> "CoreEvent":
+        return CoreEvent(type="economy_turn_report", data=report)
 
     @staticmethod
     def progress(phase: str, message: str, iteration: int = 0, cap: int = 25) -> "CoreEvent":

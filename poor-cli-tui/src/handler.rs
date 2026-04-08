@@ -702,6 +702,9 @@ pub(super) fn handle_server_message(
             request_id,
             input_tokens,
             output_tokens,
+            system_tokens,
+            history_tokens,
+            tool_result_tokens,
         } => {
             write_session_log(
                 session_log,
@@ -714,13 +717,27 @@ pub(super) fn handle_server_message(
             app.tokens.turn_output_tokens += output_tokens;
             app.tokens.cumulative_input_tokens += input_tokens;
             app.tokens.cumulative_output_tokens += output_tokens;
-            // live cost ticker in status bar
+            if system_tokens > 0 { app.tokens.system_tokens = system_tokens; }
+            if history_tokens > 0 { app.tokens.history_tokens = history_tokens; }
+            if tool_result_tokens > 0 { app.tokens.tool_result_tokens = tool_result_tokens; }
+            // live cost ticker in status bar with breakdown
             let total_in = app.tokens.cumulative_input_tokens;
             let total_out = app.tokens.cumulative_output_tokens;
-            app.set_status(format!(
-                "tokens: {}in / {}out | session: {}in / {}out",
-                input_tokens, output_tokens, total_in, total_out
-            ));
+            let ctx_pct = app.tokens.context_pressure_pct;
+            if ctx_pct > 0.0 {
+                app.set_status(format!(
+                    "tokens: {}in/{}out | session: {}in/{}out | sys:{} hist:{} tool:{} | ctx:{:.0}%",
+                    input_tokens, output_tokens, total_in, total_out,
+                    app.tokens.system_tokens, app.tokens.history_tokens, app.tokens.tool_result_tokens,
+                    ctx_pct,
+                ));
+            } else {
+                app.set_status(format!(
+                    "tokens: {}in/{}out | session: {}in/{}out | sys:{} hist:{} tool:{}",
+                    input_tokens, output_tokens, total_in, total_out,
+                    app.tokens.system_tokens, app.tokens.history_tokens, app.tokens.tool_result_tokens,
+                ));
+            }
             app.push_timeline_entry(poor_cli_tui::app::TimelineEntry {
                 kind: poor_cli_tui::app::TimelineEntryKind::Cost,
                 request_id,
@@ -733,6 +750,9 @@ pub(super) fn handle_server_message(
                 review_summary: None,
                 timestamp: std::time::Instant::now(),
             });
+        }
+        ServerMsg::ContextPressure { pressure_pct } => {
+            app.tokens.context_pressure_pct = pressure_pct;
         }
         ServerMsg::RoomEvent {
             room,

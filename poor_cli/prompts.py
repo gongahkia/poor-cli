@@ -172,35 +172,9 @@ CONFIDENCE OUTPUT RULES:
    - High: 61-80%
    - Very High: 81-100%"""
 
-_SECTION_CORE_TOOLS = """
-Your available tools:
-- write_file(file_path, content): Creates or overwrites a file
-- edit_file(file_path, old_text, new_text): Exact replacement fallback for existing files
-- read_file(file_path): Reads file contents
-- glob_files(pattern): Find files matching pattern
-- grep_files(pattern): Search for text in files
-- bash(command): Execute shell commands
-- run_tests(command?, path?, timeout?): Run tests with structured failures
-- git_status_diff(path?, include_untracked?): Summarize repo status + diff risk
-- apply_patch_unified(patch, path?, check_only?): Validate/apply unified patches
-- format_and_lint(path?, fix?, timeout?): Run formatter/linter tools"""
-
-_SECTION_EXTENDED_TOOLS = """
-Extended tools (available on demand):
-- dependency_inspect(path?): Inspect declared/installed dependencies
-- fetch_url(url, timeout?, max_chars?): Fetch and summarize web pages
-- json_yaml_edit(file_path, updates_json, create_missing?): Structured config edits
-- process_logs(path?, pattern?, max_lines?): Summarize logs and likely root cause
-- web_search(query): Search the web for current information"""
-
-_SECTION_GH_TOOLS = """
-GitHub tools (require `gh` CLI):
-- gh_pr_list(state, limit): List GitHub PRs
-- gh_pr_view(number): View a GitHub PR
-- gh_issue_list(state, limit): List GitHub issues
-- gh_issue_view(number): View a GitHub issue
-- gh_pr_create(title, body, base): Create a GitHub PR
-- gh_pr_comment(number, body): Comment on a GitHub PR"""
+_SECTION_TOOLS_AVAILABLE = """
+You have tools available via function calling. Use them directly — do not describe tool calls in prose.
+Extended and GitHub tools can be discovered via the discover_tools meta-tool when needed."""
 
 _SECTION_AGENT_TOOLS = """
 Agent tools (for complex multi-step tasks):
@@ -507,6 +481,18 @@ def _truncate_instruction_for_provider(instruction: str, provider: str) -> str:
     return truncated + "\n\n[System instruction truncated for model context limits]"
 
 
+# sections ordered by descending priority for budget-aware pruning
+_PRUNABLE_SECTIONS = [
+    "_SECTION_AGENTIC",
+    "_SECTION_AGENT_TOOLS",
+    "_SECTION_RISK_AWARENESS",
+    "_SECTION_EDITING_STRATEGY",
+    "_SECTION_WRITE_GUARD",
+    "_SECTION_CONFIDENCE",
+    "_SECTION_OUTPUT_EFFICIENCY",
+    "_SECTION_TOOL_PREFERENCE",
+]
+
 def build_tool_calling_system_instruction(
     current_dir: str,
     provider: str = "",
@@ -516,27 +502,27 @@ def build_tool_calling_system_instruction(
     sandbox_preset: str = "workspace-write",
     plan_mode: bool = False,
     agentic_mode: bool = True,
-    include_gh_tools: bool = True,
     include_agent_tools: bool = True,
+    max_system_tokens: int = 0,
+    # kept for backward compat but now no-ops
+    include_gh_tools: bool = True,
     include_extended_tools: bool = True,
 ) -> str:
     """Build the shared tool-calling system instruction from conditional sections.
 
     Sections are assembled based on mode, sandbox preset, and config state.
+    Tool names are NOT listed here — they are sent as function declarations.
+    When max_system_tokens > 0, low-priority sections are pruned to fit.
     """
     sections = [_SECTION_INTRO.format(current_dir=current_dir)]
-    if plan_mode: # plan mode overrides write guard / editing strategy
+    if plan_mode:
         sections.append(_SECTION_PLAN_MODE)
     elif sandbox_preset == "read-only":
         sections.append(_SECTION_READ_ONLY)
     else:
         sections.append(_SECTION_TOOL_RULES)
     sections.append(_SECTION_CONFIDENCE)
-    sections.append(_SECTION_CORE_TOOLS)
-    if include_extended_tools:
-        sections.append(_SECTION_EXTENDED_TOOLS)
-    if include_gh_tools:
-        sections.append(_SECTION_GH_TOOLS)
+    sections.append(_SECTION_TOOLS_AVAILABLE) # single terse line replaces 3 tool-listing sections
     if include_agent_tools:
         sections.append(_SECTION_AGENT_TOOLS)
     sections.append(_SECTION_TOOL_PREFERENCE)
@@ -553,6 +539,26 @@ def build_tool_calling_system_instruction(
         instruction += ECONOMY_TERSE_SUFFIX
     if batched_reads:
         instruction += ECONOMY_BATCHED_READS_SUFFIX
+    # budget-aware pruning: drop lowest-priority sections until within budget
+    if max_system_tokens > 0:
+        est_tokens = len(instruction) // 4
+        section_map = {
+            "_SECTION_AGENTIC": _SECTION_AGENTIC,
+            "_SECTION_AGENT_TOOLS": _SECTION_AGENT_TOOLS,
+            "_SECTION_RISK_AWARENESS": _SECTION_RISK_AWARENESS,
+            "_SECTION_EDITING_STRATEGY": _SECTION_EDITING_STRATEGY,
+            "_SECTION_WRITE_GUARD": _SECTION_WRITE_GUARD,
+            "_SECTION_CONFIDENCE": _SECTION_CONFIDENCE,
+            "_SECTION_OUTPUT_EFFICIENCY": _SECTION_OUTPUT_EFFICIENCY,
+            "_SECTION_TOOL_PREFERENCE": _SECTION_TOOL_PREFERENCE,
+        }
+        for name in _PRUNABLE_SECTIONS:
+            if est_tokens <= max_system_tokens:
+                break
+            section_text = section_map.get(name, "")
+            if section_text and section_text in instruction:
+                instruction = instruction.replace(section_text, "")
+                est_tokens = len(instruction) // 4
     if provider:
         instruction = _truncate_instruction_for_provider(instruction, provider)
     return instruction

@@ -9,6 +9,7 @@ from poor_cli.economy import (
     EconomyConfig,
     EconomySavings,
     EconomySavingsTracker,
+    EconomyTurnReport,
     ECONOMY_PRESETS,
     apply_economy_preset,
     classify_prompt_complexity,
@@ -396,6 +397,181 @@ class TestIdleCompactTimer(unittest.TestCase):
         core = self._make_core_stub(60)
         core._reset_idle_compact_timer() # no running loop — should not crash
         self.assertIsNone(core._idle_compact_task)
+
+
+class TestSystemPromptSize(unittest.TestCase):
+    """Verify system prompt is compact after tool-listing removal."""
+
+    def test_default_prompt_under_6000_chars(self):
+        instruction = build_tool_calling_system_instruction("/tmp")
+        self.assertLess(len(instruction), 6000,
+            f"System prompt too large: {len(instruction)} chars (target <6000)")
+
+    def test_no_duplicate_tool_listings(self):
+        instruction = build_tool_calling_system_instruction("/tmp")
+        self.assertNotIn("gh_pr_list(state, limit)", instruction) # GH tool listing section gone
+        self.assertNotIn("fetch_url(url, timeout?", instruction) # extended tool listing section gone
+        self.assertNotIn("dependency_inspect(path?)", instruction) # extended tool listing gone
+
+    def test_budget_aware_pruning(self):
+        full = build_tool_calling_system_instruction("/tmp")
+        pruned = build_tool_calling_system_instruction("/tmp", max_system_tokens=500)
+        self.assertLess(len(pruned), len(full))
+        self.assertIn("CURRENT WORKING DIRECTORY", pruned) # intro always kept
+
+    def test_ollama_truncation_still_works(self):
+        instruction = build_tool_calling_system_instruction("/tmp", provider="ollama")
+        self.assertLessEqual(len(instruction), 4000)
+
+
+class TestBalancedPresetActivation(unittest.TestCase):
+    """Verify dormant features now active in balanced preset."""
+
+    def test_balanced_enables_response_cache(self):
+        config = EconomyConfig()
+        apply_economy_preset(config, "balanced")
+        self.assertTrue(config.response_cache)
+
+    def test_balanced_enables_diff_only_reads(self):
+        config = EconomyConfig()
+        apply_economy_preset(config, "balanced")
+        self.assertTrue(config.diff_only_reads)
+
+    def test_balanced_enables_idle_compact(self):
+        config = EconomyConfig()
+        apply_economy_preset(config, "balanced")
+        self.assertEqual(config.idle_compact_seconds, 180)
+
+    def test_balanced_tool_strip_chars(self):
+        config = EconomyConfig()
+        apply_economy_preset(config, "balanced")
+        self.assertEqual(config.tool_strip_chars, 200)
+
+    def test_frugal_tool_strip_chars(self):
+        config = EconomyConfig()
+        apply_economy_preset(config, "frugal")
+        self.assertEqual(config.tool_strip_chars, 50)
+
+
+class TestDistillTraceCollapse(unittest.TestCase):
+    """Verify stack trace and code paste collapsing."""
+
+    def test_python_traceback_collapsed(self):
+        config = EconomyConfig(prompt_distill=True)
+        trace = "\n".join([
+            f'  File "/app/mod{i}.py", line {i*10}, in func{i}\n    result = call{i}()'
+            for i in range(10)
+        ])
+        result, saved = distill_prompt(trace, "", config)
+        self.assertIn("similar frames", result)
+        self.assertGreater(saved, 0)
+
+    def test_node_trace_collapsed(self):
+        config = EconomyConfig(prompt_distill=True)
+        trace = "\n".join([f"    at Function.{i} (/app/file{i}.js:{i}:1)" for i in range(8)])
+        result, saved = distill_prompt(trace, "", config)
+        self.assertIn("similar frames", result)
+
+    def test_short_trace_untouched(self):
+        config = EconomyConfig(prompt_distill=True)
+        trace = '  File "/app/a.py", line 1, in f\n    x()\n  File "/app/b.py", line 2, in g\n    y()'
+        result, _ = distill_prompt(trace, "", config)
+        self.assertNotIn("similar frames", result)
+
+
+class TestCostGuardrailPerTask(unittest.TestCase):
+    """Verify per-task cost guardrails."""
+
+    def _make_core_stub(self):
+        from poor_cli.core import PoorCLICore
+        core = object.__new__(PoorCLICore)
+        core.config = Config()
+        core.config.cost_guardrails.task_max_tokens = 1000
+        core.config.cost_guardrails.session_max_tokens = 0
+        core._session_total_input_tokens = 0
+        core._session_total_output_tokens = 0
+        core._session_total_cost_usd = 0.0
+        core._task_input_tokens = 500
+        core._task_output_tokens = 600
+        core._task_cost_usd = 0.0
+        core._cost_warning_emitted = False
+        return core
+
+    def test_task_token_limit_triggers(self):
+        core = self._make_core_stub()
+        reason = core._check_cost_guardrails()
+        self.assertIsNotNone(reason)
+        self.assertIn("Task token limit", reason)
+
+    def test_task_under_limit_passes(self):
+        core = self._make_core_stub()
+        core._task_input_tokens = 200
+        core._task_output_tokens = 200
+        reason = core._check_cost_guardrails()
+        self.assertIsNone(reason)
+
+
+class TestCostWarningThreshold(unittest.TestCase):
+    """Verify 80% budget warning."""
+
+    def _make_core_stub(self):
+        from poor_cli.core import PoorCLICore
+        core = object.__new__(PoorCLICore)
+        core.config = Config()
+        core.config.cost_guardrails.session_max_tokens = 10000
+        core._session_total_input_tokens = 4500
+        core._session_total_output_tokens = 4000 # total 8500 = 85% of 10000
+        core._session_total_cost_usd = 0.0
+        core._task_input_tokens = 0
+        core._task_output_tokens = 0
+        core._task_cost_usd = 0.0
+        core._cost_warning_emitted = False
+        return core
+
+    def test_80_percent_warning(self):
+        core = self._make_core_stub()
+        warning = core._check_cost_warning()
+        self.assertIsNotNone(warning)
+        self.assertIn("80%", warning)
+
+    def test_warning_emitted_once(self):
+        core = self._make_core_stub()
+        core._check_cost_warning()
+        second = core._check_cost_warning()
+        self.assertIsNone(second) # only fires once
+
+    def test_no_warning_under_threshold(self):
+        core = self._make_core_stub()
+        core._session_total_input_tokens = 1000
+        core._session_total_output_tokens = 1000
+        warning = core._check_cost_warning()
+        self.assertIsNone(warning)
+
+
+class TestResponseCacheSkipsMutations(unittest.TestCase):
+    """Verify response cache skips mutation-likely prompts."""
+
+    def _make_core_stub(self):
+        from poor_cli.core import PoorCLICore
+        core = object.__new__(PoorCLICore)
+        core.config = Config()
+        core.config.economy.response_cache = True
+        core.config.economy.response_cache_ttl = 300
+        core._response_cache = {}
+        core._economy_tracker = EconomySavingsTracker()
+        return core
+
+    def test_mutation_prompt_not_cached(self):
+        core = self._make_core_stub()
+        core._cache_store("create a new file called foo.py", "ok done")
+        result = core._cache_lookup("create a new file called foo.py")
+        self.assertIsNone(result) # was never stored
+
+    def test_readonly_prompt_cached(self):
+        core = self._make_core_stub()
+        core._cache_store("what does this function do?", "it does X")
+        result = core._cache_lookup("what does this function do?")
+        self.assertEqual(result, "it does X")
 
 
 if __name__ == "__main__":

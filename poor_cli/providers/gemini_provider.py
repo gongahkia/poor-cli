@@ -81,6 +81,7 @@ class GeminiProvider(BaseProvider):
         self.chat = None
         self._chat_config = None
         self._cached_content_name: Optional[str] = None
+        self._cached_content_hash: Optional[str] = None
 
     async def initialize(
         self,
@@ -106,30 +107,50 @@ class GeminiProvider(BaseProvider):
 
             # attempt server-side context caching for large system+tools payload
             # Gemini context caching minimum is ~32K tokens (~128K chars)
+            import hashlib as _hl
             cacheable_chars = len(system_instruction or "")
+            _tool_json = json.dumps(translated_tools) if tools else ""
             if tools:
-                cacheable_chars += len(json.dumps(translated_tools))
+                cacheable_chars += len(_tool_json)
+            _content_hash = _hl.sha256(((system_instruction or "") + _tool_json).encode("utf-8", errors="replace")).hexdigest()
             if cacheable_chars > 32000:
-                try:
-                    cache_config = genai_types.CreateCachedContentConfig(
-                        display_name="poor-cli-context-cache",
-                    )
-                    if system_instruction:
-                        cache_config.system_instruction = system_instruction
-                    if tools and translated_tools:
-                        cache_config.tools = [genai_types.Tool(function_declarations=translated_tools)]
-                    cached = await self.client.caches.create(
-                        model=self.model_name,
-                        config=cache_config,
-                    )
-                    if cached and getattr(cached, "name", None):
-                        self._cached_content_name = cached.name
-                        config_kwargs.pop("system_instruction", None)
-                        config_kwargs.pop("tools", None)
-                        config_kwargs["cached_content"] = cached.name
-                        logger.info("Gemini context cache created (system+tools): %s", cached.name)
-                except Exception as exc:
-                    logger.debug("Gemini context caching unavailable: %s", exc)
+                # reuse existing cache if content hasn't changed
+                if self._cached_content_name and self._cached_content_hash == _content_hash:
+                    config_kwargs.pop("system_instruction", None)
+                    config_kwargs.pop("tools", None)
+                    config_kwargs["cached_content"] = self._cached_content_name
+                    logger.info("Gemini context cache reused (hash match): %s", self._cached_content_name)
+                else:
+                    # invalidate stale cache
+                    if self._cached_content_name and self._cached_content_hash != _content_hash:
+                        try:
+                            await self.client.caches.delete(name=self._cached_content_name)
+                            logger.info("Deleted stale Gemini cache: %s", self._cached_content_name)
+                        except Exception:
+                            pass
+                        self._cached_content_name = None
+                        self._cached_content_hash = None
+                    try:
+                        cache_config = genai_types.CreateCachedContentConfig(
+                            display_name="poor-cli-context-cache",
+                        )
+                        if system_instruction:
+                            cache_config.system_instruction = system_instruction
+                        if tools and translated_tools:
+                            cache_config.tools = [genai_types.Tool(function_declarations=translated_tools)]
+                        cached = await self.client.caches.create(
+                            model=self.model_name,
+                            config=cache_config,
+                        )
+                        if cached and getattr(cached, "name", None):
+                            self._cached_content_name = cached.name
+                            self._cached_content_hash = _content_hash
+                            config_kwargs.pop("system_instruction", None)
+                            config_kwargs.pop("tools", None)
+                            config_kwargs["cached_content"] = cached.name
+                            logger.info("Gemini context cache created (system+tools): %s", cached.name)
+                    except Exception as exc:
+                        logger.debug("Gemini context caching unavailable: %s", exc)
 
             self._chat_config = genai_types.GenerateContentConfig(**config_kwargs)
             self.chat = self.client.chats.create(
@@ -364,7 +385,9 @@ class GeminiProvider(BaseProvider):
             if raw_usage:
                 in_tok = getattr(raw_usage, "prompt_token_count", 0) or 0
                 out_tok = getattr(raw_usage, "candidates_token_count", 0) or 0
-                usage_obj = UsageMetadata(input_tokens=in_tok, output_tokens=out_tok)
+                cached_tok = getattr(raw_usage, "cached_content_token_count", 0) or 0
+                usage_obj = UsageMetadata(input_tokens=in_tok, output_tokens=out_tok,
+                                          cache_read_input_tokens=cached_tok)
             return ProviderResponse(
                 content=content,
                 role="assistant",

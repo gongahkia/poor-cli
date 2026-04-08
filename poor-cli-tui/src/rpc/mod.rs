@@ -284,6 +284,15 @@ pub enum ServerNotification {
         input_tokens: u64,
         output_tokens: u64,
         estimated_cost: f64,
+        system_tokens: u64,
+        history_tokens: u64,
+        tool_result_tokens: u64,
+    },
+    ContextPressure {
+        request_id: String,
+        used_tokens: u64,
+        max_tokens: u64,
+        pressure_pct: f32,
     },
     RoomEvent {
         room: String,
@@ -595,6 +604,15 @@ fn parse_notification(method: &str, params: &Value) -> Option<ServerNotification
                 .get("estimatedCost")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0),
+            system_tokens: params.get("systemTokens").and_then(|v| v.as_u64()).unwrap_or(0),
+            history_tokens: params.get("historyTokens").and_then(|v| v.as_u64()).unwrap_or(0),
+            tool_result_tokens: params.get("toolResultTokens").and_then(|v| v.as_u64()).unwrap_or(0),
+        }),
+        "poor-cli/contextPressure" => Some(ServerNotification::ContextPressure {
+            request_id: params.get("requestId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            used_tokens: params.get("usedTokens").and_then(|v| v.as_u64()).unwrap_or(0),
+            max_tokens: params.get("maxTokens").and_then(|v| v.as_u64()).unwrap_or(0),
+            pressure_pct: params.get("pressurePct").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
         }),
         "poor-cli/roomEvent" => Some(ServerNotification::RoomEvent {
             room: params

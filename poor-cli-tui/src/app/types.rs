@@ -568,6 +568,10 @@ pub struct TokenTracking {
     pub turn_output_tokens: u64,
     pub cumulative_input_tokens: u64,
     pub cumulative_output_tokens: u64,
+    pub system_tokens: u64,
+    pub history_tokens: u64,
+    pub tool_result_tokens: u64,
+    pub context_pressure_pct: f32,
 }
 
 pub struct StreamingState {

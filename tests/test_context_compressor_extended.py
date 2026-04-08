@@ -150,5 +150,86 @@ class TestLLMCompression(unittest.TestCase):
         self.assertIn("[COMPRESSED CONTEXT]", result[0]["content"])
 
 
+class TestToolStripChars(unittest.TestCase):
+    """Verify adaptive tool-strip truncation per economy preset."""
+
+    def _make_config(self, threshold=5, preserve=3):
+        cfg = MagicMock()
+        cfg.enabled = True
+        cfg.compress_after_turns = threshold
+        cfg.preserve_recent_turns = preserve
+        return cfg
+
+    def test_frugal_tool_strip_50_chars(self):
+        c = ContextCompressor()
+        cfg = self._make_config(threshold=3, preserve=2)
+        history = [
+            {"role": "user", "content": "do something"},
+            {"role": "tool", "content": "x" * 500, "name": "read_file"},
+            {"role": "assistant", "content": "done"},
+            {"role": "user", "content": "more"},
+            {"role": "tool", "content": "y" * 500, "name": "bash"},
+            {"role": "assistant", "content": "ok"},
+            {"role": "user", "content": "recent1"},
+            {"role": "assistant", "content": "recent2"},
+        ]
+        result = c.compress_tool_strip(history, cfg, max_tool_result_chars=50)
+        for msg in result:
+            if msg.get("role") == "tool" and msg.get("name"):
+                self.assertLessEqual(len(msg["content"]), 100) # 50 + metadata prefix
+
+    def test_quality_tool_strip_500_chars(self):
+        c = ContextCompressor()
+        cfg = self._make_config(threshold=3, preserve=2)
+        history = [
+            {"role": "user", "content": "do something"},
+            {"role": "tool", "content": "x" * 1000, "name": "read_file"},
+            {"role": "assistant", "content": "done"},
+            {"role": "user", "content": "more"},
+            {"role": "tool", "content": "y" * 1000, "name": "bash"},
+            {"role": "assistant", "content": "ok"},
+            {"role": "user", "content": "recent1"},
+            {"role": "assistant", "content": "recent2"},
+        ]
+        result = c.compress_tool_strip(history, cfg, max_tool_result_chars=500)
+        for msg in result:
+            if msg.get("role") == "tool" and msg.get("name"):
+                self.assertLessEqual(len(msg["content"]), 600) # 500 + metadata
+
+
+class TestTokenAwareStrategy(unittest.TestCase):
+    """Verify token-aware strategy selection."""
+
+    def _make_config(self, threshold=10):
+        cfg = MagicMock()
+        cfg.enabled = True
+        cfg.compress_after_turns = threshold
+        cfg.preserve_recent_turns = 3
+        return cfg
+
+    def test_large_context_prefers_llm(self):
+        c = ContextCompressor()
+        cfg = self._make_config(threshold=5)
+        # 10 turns, each 10k chars = 100k total — well above 80k
+        history = [{"role": "user", "content": "x" * 10000} for _ in range(10)]
+        strategy = c.select_strategy(history, cfg)
+        self.assertEqual(strategy, "llm")
+
+    def test_medium_context_above_threshold_prefers_llm(self):
+        c = ContextCompressor()
+        cfg = self._make_config(threshold=5)
+        # 8 turns, 6k each = 48k total — above 40k and above threshold
+        history = [{"role": "user", "content": "x" * 6000} for _ in range(8)]
+        strategy = c.select_strategy(history, cfg)
+        self.assertEqual(strategy, "llm")
+
+    def test_small_context_uses_extractive(self):
+        c = ContextCompressor()
+        cfg = self._make_config(threshold=20)
+        history = [{"role": "user", "content": "short msg"} for _ in range(5)]
+        strategy = c.select_strategy(history, cfg)
+        self.assertEqual(strategy, "extractive")
+
+
 if __name__ == "__main__":
     unittest.main()
