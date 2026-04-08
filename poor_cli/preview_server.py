@@ -3,18 +3,18 @@ Live preview server for poor-cli.
 
 Serves project files over HTTP with auto-reload on file changes.
 Auto-detects and proxies existing dev servers (vite, next, etc.).
+Uses a custom asyncio HTTP handler with SSE-based live reload.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import mimetypes
 import os
-import shutil
-import signal
-import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
+from urllib.parse import unquote, urlparse
 
 from .exceptions import setup_logger
 
@@ -26,26 +26,47 @@ RELOAD_SCRIPT = """<script>
 s.onmessage=function(){location.reload()};
 s.onerror=function(){setTimeout(function(){location.reload()},2000)}})();
 </script>"""
+WATCH_EXTENSIONS: Set[str] = {".html", ".css", ".js", ".htm", ".json", ".svg", ".ts", ".jsx", ".tsx"}
+HTML_CONTENT_TYPES = {"text/html"}
+
+
+class _ReloadState:
+    """Shared reload state between file watcher and SSE clients."""
+    def __init__(self):
+        self._version: int = 0
+        self._waiters: list[asyncio.Event] = []
+    def bump(self):
+        self._version += 1
+        for w in self._waiters:
+            w.set()
+    @property
+    def version(self) -> int:
+        return self._version
+    async def wait_for_change(self, known_version: int) -> int:
+        if self._version > known_version:
+            return self._version
+        event = asyncio.Event()
+        self._waiters.append(event)
+        try:
+            await event.wait()
+        finally:
+            self._waiters.remove(event)
+        return self._version
 
 
 class PreviewServer:
-    """Lightweight HTTP preview server with live reload."""
+    """Lightweight HTTP preview server with SSE live reload."""
 
-    def __init__(
-        self,
-        root: Optional[str] = None,
-        port: int = DEFAULT_PORT,
-    ):
+    def __init__(self, root: Optional[str] = None, port: int = DEFAULT_PORT):
         self.root = Path(root or os.getcwd()).resolve()
         self.port = port
         self._server: Any = None
         self._proxy_proc: Any = None
         self._detected = self._detect_dev_server()
-        self._reload_pending = False
         self._watch_task: Any = None
+        self._reload_state = _ReloadState()
 
     def _detect_dev_server(self) -> Optional[Dict[str, Any]]:
-        """Detect if the project has a built-in dev server."""
         pkg_path = self.root / "package.json"
         if pkg_path.exists():
             try:
@@ -57,7 +78,6 @@ class PreviewServer:
                     return {"command": "npm start", "name": "npm start"}
             except Exception:
                 pass
-
         if (self.root / "Makefile").exists():
             try:
                 content = (self.root / "Makefile").read_text(encoding="utf-8")
@@ -65,49 +85,34 @@ class PreviewServer:
                     return {"command": "make serve", "name": "make serve"}
             except Exception:
                 pass
-
         return None
 
     async def start(self) -> Dict[str, Any]:
-        """Start the preview server or proxy to existing dev server."""
         if self._detected:
             return await self._start_proxy()
         return await self._start_static()
 
     async def _start_proxy(self) -> Dict[str, Any]:
-        """Start the project's own dev server."""
         if not self._detected:
             return {"error": "no dev server detected"}
-
         cmd = self._detected["command"]
         logger.info("starting dev server: %s", cmd)
         self._audit_log("preview_server:start", str(self.root), {"mode": "proxy", "command": cmd})
         self._proxy_proc = await asyncio.create_subprocess_shell(
-            cmd,
-            cwd=str(self.root),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            cmd, cwd=str(self.root),
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
-
-        # wait briefly for it to start
         await asyncio.sleep(2)
         return {
-            "mode": "proxy",
-            "command": cmd,
-            "name": self._detected["name"],
-            "pid": self._proxy_proc.pid,
+            "mode": "proxy", "command": cmd,
+            "name": self._detected["name"], "pid": self._proxy_proc.pid,
             "message": f"Started {self._detected['name']} (pid {self._proxy_proc.pid})",
         }
 
     async def _start_static(self) -> Dict[str, Any]:
-        """Start a simple static file server with live reload."""
-        # use Python's built-in http.server
         try:
-            self._server = await asyncio.create_subprocess_exec(
-                "python3", "-m", "http.server", str(self.port),
-                "--directory", str(self.root),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            self._server = await asyncio.start_server(
+                self._handle_connection, "127.0.0.1", self.port,
             )
             logger.info("static server started on port %d", self.port)
             self._audit_log("preview_server:start", str(self.root), {"mode": "static", "port": self.port})
@@ -115,16 +120,120 @@ class PreviewServer:
             return {
                 "mode": "static",
                 "url": f"http://localhost:{self.port}",
-                "pid": self._server.pid,
                 "message": f"Serving {self.root} on http://localhost:{self.port}",
             }
         except Exception as exc:
             return {"error": str(exc)}
 
+    async def _handle_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        """Handle a single HTTP connection."""
+        try:
+            request_line = await asyncio.wait_for(reader.readline(), timeout=10)
+            if not request_line:
+                writer.close()
+                return
+            request_str = request_line.decode("utf-8", errors="replace").strip()
+            parts = request_str.split()
+            if len(parts) < 2:
+                writer.close()
+                return
+            method, raw_path = parts[0], parts[1]
+            # consume headers
+            while True:
+                line = await asyncio.wait_for(reader.readline(), timeout=5)
+                if line in (b"\r\n", b"\n", b""):
+                    break
+            path = unquote(urlparse(raw_path).path)
+            if path == "/__poor_cli_reload":
+                await self._handle_sse(writer)
+                return
+            if method.upper() != "GET":
+                await self._send_response(writer, 405, "text/plain", b"Method Not Allowed")
+                return
+            await self._serve_file(writer, path)
+        except (asyncio.TimeoutError, ConnectionResetError, BrokenPipeError):
+            pass
+        except Exception as exc:
+            logger.debug("connection handler error: %s", exc)
+        finally:
+            try:
+                writer.close()
+            except Exception:
+                pass
+
+    async def _handle_sse(self, writer: asyncio.StreamWriter):
+        """Serve Server-Sent Events for live reload."""
+        header = (
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/event-stream\r\n"
+            "Cache-Control: no-cache\r\n"
+            "Connection: keep-alive\r\n"
+            "Access-Control-Allow-Origin: *\r\n"
+            "\r\n"
+        )
+        writer.write(header.encode())
+        await writer.drain()
+        known = self._reload_state.version
+        try:
+            while True:
+                new_version = await asyncio.wait_for(
+                    self._reload_state.wait_for_change(known), timeout=30,
+                )
+                known = new_version
+                writer.write(f"data: reload {known}\n\n".encode())
+                await writer.drain()
+        except (asyncio.TimeoutError, ConnectionResetError, BrokenPipeError):
+            pass # client disconnected or keepalive timeout
+
+    async def _serve_file(self, writer: asyncio.StreamWriter, path: str):
+        """Serve a static file, injecting reload script into HTML."""
+        if path == "/":
+            path = "/index.html"
+        file_path = (self.root / path.lstrip("/")).resolve()
+        if not str(file_path).startswith(str(self.root)):
+            await self._send_response(writer, 403, "text/plain", b"Forbidden")
+            return
+        if not file_path.is_file():
+            await self._send_response(writer, 404, "text/plain", b"Not Found")
+            return
+        content_type, _ = mimetypes.guess_type(str(file_path))
+        content_type = content_type or "application/octet-stream"
+        try:
+            body = file_path.read_bytes()
+        except OSError:
+            await self._send_response(writer, 500, "text/plain", b"Read Error")
+            return
+        if content_type in HTML_CONTENT_TYPES: # inject reload script before </body>
+            text = body.decode("utf-8", errors="replace")
+            if "</body>" in text.lower():
+                idx = text.lower().rfind("</body>")
+                text = text[:idx] + RELOAD_SCRIPT + text[idx:]
+            else:
+                text += RELOAD_SCRIPT
+            body = text.encode("utf-8")
+            content_type = "text/html; charset=utf-8"
+        await self._send_response(writer, 200, content_type, body)
+
+    @staticmethod
+    async def _send_response(writer: asyncio.StreamWriter, status: int, content_type: str, body: bytes):
+        status_text = {200: "OK", 403: "Forbidden", 404: "Not Found", 405: "Method Not Allowed", 500: "Internal Server Error"}.get(status, "Unknown")
+        header = (
+            f"HTTP/1.1 {status} {status_text}\r\n"
+            f"Content-Type: {content_type}\r\n"
+            f"Content-Length: {len(body)}\r\n"
+            f"Connection: close\r\n"
+            f"\r\n"
+        )
+        writer.write(header.encode() + body)
+        await writer.drain()
+        writer.close()
+
     async def stop(self) -> Dict[str, Any]:
-        """Stop the preview server."""
         stopped = []
-        for proc, label in [(self._server, "static"), (self._proxy_proc, "proxy")]:
+        if self._server:
+            self._server.close()
+            stopped.append("static")
+        for proc, label in [(self._proxy_proc, "proxy")]:
             if proc and proc.returncode is None:
                 try:
                     proc.terminate()
@@ -132,7 +241,6 @@ class PreviewServer:
                 except (asyncio.TimeoutError, ProcessLookupError):
                     proc.kill()
                 stopped.append(label)
-
         self._server = None
         self._proxy_proc = None
         if self._watch_task and not self._watch_task.done():
@@ -142,30 +250,20 @@ class PreviewServer:
 
     def status(self) -> Dict[str, Any]:
         running = False
-        pid = None
         mode = "none"
-
         if self._proxy_proc and self._proxy_proc.returncode is None:
             running = True
-            pid = self._proxy_proc.pid
             mode = "proxy"
-        elif self._server and self._server.returncode is None:
+        elif self._server and self._server.is_serving():
             running = True
-            pid = self._server.pid
             mode = "static"
-
         return {
-            "running": running,
-            "mode": mode,
-            "pid": pid,
-            "port": self.port,
-            "detectedDevServer": self._detected,
-            "root": str(self.root),
-            "reloadPending": self._reload_pending,
+            "running": running, "mode": mode, "port": self.port,
+            "detectedDevServer": self._detected, "root": str(self.root),
+            "reloadVersion": self._reload_state.version,
         }
 
     async def health(self) -> Dict[str, Any]:
-        """return health status for monitoring."""
         s = self.status()
         return {"healthy": s["running"], **s}
 
@@ -177,14 +275,12 @@ class PreviewServer:
             pass
 
     async def _watch_files(self) -> None:
-        """poll for file changes to set reload flag."""
         mtimes: Dict[str, float] = {}
-        watch_exts = {".html", ".css", ".js", ".htm", ".json"}
         while True:
             changed = False
             try:
                 for f in self.root.rglob("*"):
-                    if f.is_file() and f.suffix in watch_exts:
+                    if f.is_file() and f.suffix in WATCH_EXTENSIONS:
                         try:
                             mt = f.stat().st_mtime
                             key = str(f)
@@ -196,5 +292,5 @@ class PreviewServer:
             except Exception:
                 pass
             if changed:
-                self._reload_pending = True
+                self._reload_state.bump()
             await asyncio.sleep(1)
