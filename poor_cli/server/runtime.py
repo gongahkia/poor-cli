@@ -788,6 +788,8 @@ class PoorCLIServer:
             "poor-cli/exportCostReport": self.handle_export_cost_report,
             "poor-cli/getTokensVisualization": self.handle_get_tokens_visualization,
             "poor-cli/getCostHistory": self.handle_get_cost_history,
+            "poor-cli/applyBudgetTemplate": self.handle_apply_budget_template,
+            "poor-cli/listBudgetTemplates": self.handle_list_budget_templates,
             "poor-cli/createSession": self.handle_create_session,
             "poor-cli/destroySession": self.handle_destroy_session,
             "poor-cli/switchSession": self.handle_switch_session,
@@ -4547,6 +4549,17 @@ class PoorCLIServer:
         """Return text-based context window visualization."""
         self._ensure_initialized()
         return self.core.get_tokens_visualization()
+
+    async def handle_apply_budget_template(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply a named budget template to cost guardrails."""
+        self._ensure_initialized()
+        template = str(params.get("template", "")).strip()
+        return self.core.apply_budget_template(template)
+
+    async def handle_list_budget_templates(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List available budget templates."""
+        from ..core import PoorCLICore
+        return {"templates": PoorCLICore.list_budget_templates()}
 
     async def handle_get_cost_history(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return historical session cost data."""

@@ -1684,6 +1684,27 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             },
         }
 
+    def apply_budget_template(self, template_name: str) -> Dict[str, Any]:
+        """Apply a named budget template to cost guardrails."""
+        from .config import BUDGET_TEMPLATES
+        values = BUDGET_TEMPLATES.get(template_name)
+        if not values:
+            return {"error": f"Unknown template. Available: {', '.join(BUDGET_TEMPLATES.keys())}"}
+        if not self.config:
+            return {"error": "not initialized"}
+        for k, v in values.items():
+            if hasattr(self.config.cost_guardrails, k):
+                setattr(self.config.cost_guardrails, k, v)
+        self._cost_warning_emitted = False # reset warning for new budget
+        from dataclasses import asdict as _asdict
+        return {"template": template_name, "guardrails": _asdict(self.config.cost_guardrails)}
+
+    @staticmethod
+    def list_budget_templates() -> Dict[str, Dict[str, Any]]:
+        """Return all available budget templates."""
+        from .config import BUDGET_TEMPLATES
+        return dict(BUDGET_TEMPLATES)
+
     _COST_HISTORY_FILE = Path.home() / ".poor-cli" / "cost_history.json"
 
     def _persist_cost_history(self) -> None:

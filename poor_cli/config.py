@@ -170,6 +170,34 @@ class PlanModeConfig:
     default_context_lines: int = 3  # Lines of context in diffs
 
 
+BUDGET_TEMPLATES: Dict[str, Dict[str, Any]] = {
+    "quick_question": {
+        "session_max_tokens": 5000,
+        "session_max_cost_usd": 0.01,
+        "task_max_tokens": 5000,
+        "task_max_cost_usd": 0.01,
+    },
+    "code_review": {
+        "session_max_tokens": 30000,
+        "session_max_cost_usd": 0.10,
+        "task_max_tokens": 15000,
+        "task_max_cost_usd": 0.05,
+    },
+    "deep_refactor": {
+        "session_max_tokens": 100000,
+        "session_max_cost_usd": 0.50,
+        "task_max_tokens": 50000,
+        "task_max_cost_usd": 0.25,
+    },
+    "unlimited": {
+        "session_max_tokens": 0,
+        "session_max_cost_usd": 0.0,
+        "task_max_tokens": 0,
+        "task_max_cost_usd": 0.0,
+    },
+}
+
+
 @dataclass
 class CostGuardrailConfig:
     """Token budget and cost limits."""
