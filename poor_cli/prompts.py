@@ -205,7 +205,14 @@ GitHub tools (require `gh` CLI):
 _SECTION_AGENT_TOOLS = """
 Agent tools (for complex multi-step tasks):
 - spawn_parallel_agents(prompts, sandbox_preset?): Run independent sub-tasks in parallel
-- delegate_task(prompt, context_files?, max_iterations?): Delegate a sub-task to an in-process sub-agent"""
+- delegate_task(prompt, context_files?, max_iterations?): Delegate a sub-task to an in-process sub-agent
+
+SUB-AGENT DELEGATION HEURISTICS:
+- Use spawn_parallel_agents when you have 2+ independent sub-tasks (e.g., search multiple dirs, test multiple modules, review separate files). Each runs in its own worktree.
+- Use delegate_task for a single complex sub-task you want isolated (e.g., deep code review, focused research). Use the archetype param to scope tool access.
+- Do NOT delegate when a direct tool call suffices — grep_files for a known pattern is faster than spawning a research agent.
+- Brief the sub-agent fully: it has no memory of this conversation. Include file paths, what to look for, and what form the answer should take.
+- Avoid delegating tasks that need synthesis across sub-agent results — do the synthesis yourself after collecting their outputs."""
 
 _SECTION_FILE_PATH_RULES = """
 FILE PATH RULES:
