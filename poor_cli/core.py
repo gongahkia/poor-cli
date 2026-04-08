@@ -2891,6 +2891,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         """Stream a provider call, collecting events and building a response."""
         accumulated_text = ""
         accumulated_chars = 0
+        _chunk_count = 0
         function_calls: Optional[List[FunctionCall]] = None
         metadata: Dict[str, Any] = {}
         events: List[CoreEvent] = []
@@ -2909,15 +2910,17 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                 if chunk.content:
                     accumulated_text += chunk.content
                     accumulated_chars += len(chunk.content)
+                    _chunk_count += 1
                     events.append(CoreEvent.text_chunk(chunk.content, request_id))
-                    # emit live estimated cost per chunk (chars/4 heuristic)
-                    est_output = accumulated_chars // 4
-                    events.append(CoreEvent.cost_update(
-                        output_tokens=est_output,
-                        is_estimate=True,
-                        cumulative_input_tokens=self._session_total_input_tokens,
-                        cumulative_output_tokens=self._session_total_output_tokens + est_output,
-                    ))
+                    # throttled live estimated cost (every 10 chunks to reduce noise)
+                    if _chunk_count % 10 == 0:
+                        est_output = accumulated_chars // 4
+                        events.append(CoreEvent.cost_update(
+                            output_tokens=est_output,
+                            is_estimate=True,
+                            cumulative_input_tokens=self._session_total_input_tokens,
+                            cumulative_output_tokens=self._session_total_output_tokens + est_output,
+                        ))
         # reconcile with actual usage at stream end
         actual_in = 0
         actual_out = 0
