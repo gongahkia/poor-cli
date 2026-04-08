@@ -2975,6 +2975,9 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             raise PoorCLIError(f"Failed to send message: {e}")
         finally:
             self._clear_cancel_event(request_id)
+            # always restore per-turn output cap, even on exception
+            if _saved_max_output is not None and self.provider:
+                self.provider.economy_max_output_tokens = _saved_max_output
 
     async def _stream_and_collect(
         self,
