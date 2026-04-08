@@ -27,6 +27,8 @@ class EconomyConfig:
     diff_only_reads: bool = False # only include changed lines vs last read
     idle_compact_seconds: int = 0 # auto-compact after N seconds idle (0 = disabled)
     compress_after_turns: int = 0 # override ContextCompressionConfig.compress_after_turns (0 = use default)
+    tool_strip_chars: int = 200 # max chars per tool result in compressed history
+    auto_compress_pressure_pct: float = 70.0 # auto-compress when context pressure exceeds this %
 
 
 ECONOMY_PRESETS: Dict[str, Dict[str, Any]] = {
@@ -45,6 +47,8 @@ ECONOMY_PRESETS: Dict[str, Dict[str, Any]] = {
         "diff_only_reads": True,
         "idle_compact_seconds": 60,
         "compress_after_turns": 6,
+        "tool_strip_chars": 50,
+        "auto_compress_pressure_pct": 60.0,
     },
     "balanced": {
         "auto_downshift": True,
@@ -57,10 +61,12 @@ ECONOMY_PRESETS: Dict[str, Dict[str, Any]] = {
         "tool_call_budget": 0,
         "prefer_batched_reads": True,
         "context_dedup": True,
-        "response_cache": False,
-        "diff_only_reads": False,
-        "idle_compact_seconds": 0,
+        "response_cache": True, # safe: hash-keyed, TTL-bounded, skipped for mutation prompts
+        "diff_only_reads": True, # first read returns full; re-reads return diff or [unchanged]
+        "idle_compact_seconds": 180, # auto-compact after 3 min idle
         "compress_after_turns": 10,
+        "tool_strip_chars": 200,
+        "auto_compress_pressure_pct": 70.0,
     },
     "quality": {
         "auto_downshift": False,
@@ -77,6 +83,8 @@ ECONOMY_PRESETS: Dict[str, Dict[str, Any]] = {
         "diff_only_reads": False,
         "idle_compact_seconds": 0,
         "compress_after_turns": 0, # 0 = use default (no override)
+        "tool_strip_chars": 500,
+        "auto_compress_pressure_pct": 0, # disabled in quality mode
     },
 }
 
@@ -148,10 +156,33 @@ def classify_prompt_complexity(prompt: str) -> str:
 _MULTISPACE_RE = re.compile(r"[ \t]+")
 _BLANK_LINES_RE = re.compile(r"\n{3,}")
 _LINE_COMMENT_RE = re.compile(r"(?m)^\s*(?://|#)[^\n]*\n?")
+# duplicate stack trace frames: Python "File ...", Node "at ...", Go "goroutine"
+_PY_TRACE_RE = re.compile(r"((?:^\s+File\s+\"[^\n]+\n\s+\w[^\n]*\n){3,})", re.M)
+_NODE_TRACE_RE = re.compile(r"((?:^\s+at\s+[^\n]+\n){4,})", re.M)
+_FENCED_BLOCK_RE = re.compile(r"(```\w*\n)((?:[^\n]*\n){51,}?)(```)", re.M)
+
+
+def _collapse_trace(match: re.Match) -> str:
+    """Collapse repeated trace frames, keeping first+last."""
+    lines = match.group(0).strip().splitlines(keepends=True)
+    if len(lines) <= 4:
+        return match.group(0)
+    return "".join(lines[:2]) + f"  [... {len(lines)-4} similar frames ...]\n" + "".join(lines[-2:])
+
+
+def _collapse_fenced(match: re.Match) -> str:
+    """Collapse large fenced code blocks to first+last 10 lines."""
+    opener, body, closer = match.group(1), match.group(2), match.group(3)
+    lines = body.splitlines(keepends=True)
+    if len(lines) <= 50:
+        return match.group(0)
+    head = "".join(lines[:10])
+    tail = "".join(lines[-10:])
+    return f"{opener}{head}[... {len(lines)-20} lines omitted, use read_file ...]\n{tail}{closer}"
 
 
 def distill_prompt(prompt: str, context: str, config: EconomyConfig) -> Tuple[str, int]:
-    """Distill prompt+context by stripping redundant whitespace and optionally comments.
+    """Distill prompt+context by stripping redundant whitespace, traces, and optionally comments.
 
     Returns (distilled_text, estimated_tokens_saved).
     """
@@ -161,6 +192,14 @@ def distill_prompt(prompt: str, context: str, config: EconomyConfig) -> Tuple[st
     # collapse redundant whitespace
     text = _MULTISPACE_RE.sub(" ", text)
     text = _BLANK_LINES_RE.sub("\n\n", text)
+
+    # collapse duplicate stack trace frames
+    text = _PY_TRACE_RE.sub(_collapse_trace, text)
+    text = _NODE_TRACE_RE.sub(_collapse_trace, text)
+
+    # collapse large fenced code blocks (frugal mode only)
+    if config.strip_code_comments:
+        text = _FENCED_BLOCK_RE.sub(_collapse_fenced, text)
 
     # optionally strip line comments from code context
     if config.strip_code_comments:
@@ -173,6 +212,17 @@ def distill_prompt(prompt: str, context: str, config: EconomyConfig) -> Tuple[st
 
 
 # ── Savings tracker ───────────────────────────────────────────────────
+
+@dataclass
+class EconomyTurnReport:
+    """Per-turn economy optimization report — reset each turn."""
+    distillation_tokens_saved: int = 0
+    downshifted: bool = False
+    downshift_model: str = ""
+    cache_hit: bool = False
+    dedup_tokens_saved: int = 0
+    diff_only_applied: bool = False
+
 
 @dataclass
 class EconomySavings:

@@ -46,6 +46,7 @@ from .plan_analyzer import PlanAnalyzer
 from .policy_hooks import HookExecutionResult, PolicyHookManager
 from .economy import (
     EconomySavingsTracker,
+    EconomyTurnReport,
     classify_prompt_complexity,
     distill_prompt,
     apply_economy_preset,
@@ -159,6 +160,11 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         self._session_total_input_tokens: int = 0
         self._session_total_output_tokens: int = 0
         self._session_total_cost_usd: float = 0.0
+        self._task_input_tokens: int = 0
+        self._task_output_tokens: int = 0
+        self._task_cost_usd: float = 0.0
+        self._cost_warning_emitted: bool = False
+        self._turn_economy: EconomyTurnReport = EconomyTurnReport()
 
         # Context compressor
         self._context_compressor: ContextCompressor = ContextCompressor()
@@ -337,13 +343,17 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             batched = getattr(self.config.economy, "prefer_batched_reads", False)
             _sandbox_preset = getattr(self.config.sandbox, "default_preset", "workspace-write")
             _plan = bool(self.config.plan_mode.enabled)
+            # constrained providers get budget-aware pruning
+            _max_sys = 0
+            if self.config.model.provider == "ollama":
+                _max_sys = 1000 # ~4k chars for small-context local models
             self._system_instruction = build_tool_calling_system_instruction(
                 str(repo_root), provider=self.config.model.provider,
                 terse_mode=terse, batched_reads=batched,
                 sandbox_preset=_sandbox_preset,
                 plan_mode=_plan,
-                include_gh_tools=getattr(self.config.tools, "enable_git_tools", True),
                 include_agent_tools=not _plan,
+                max_system_tokens=_max_sys,
             )
 
             # inject persistent memory context
@@ -1593,13 +1603,17 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         return (input_tokens / 1000) * cost_per_1k_input + (output_tokens / 1000) * cost_per_1k_output
 
     def _track_cost(self, input_tokens: int, output_tokens: int) -> None:
-        """Accumulate session cost tracking."""
+        """Accumulate session and per-task cost tracking."""
+        est = self._estimate_cost(input_tokens, output_tokens)
         self._session_total_input_tokens += input_tokens
         self._session_total_output_tokens += output_tokens
-        self._session_total_cost_usd += self._estimate_cost(input_tokens, output_tokens)
+        self._session_total_cost_usd += est
+        self._task_input_tokens += input_tokens
+        self._task_output_tokens += output_tokens
+        self._task_cost_usd += est
 
     def _check_cost_guardrails(self) -> Optional[str]:
-        """Check if session cost/token limits are exceeded. Returns reason or None."""
+        """Check if session or task cost/token limits are exceeded. Returns reason or None."""
         if not self.config:
             return None
         try:
@@ -1611,8 +1625,35 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                 return f"Session token limit reached ({total_tokens}/{max_tokens})"
             if max_cost > 0 and self._session_total_cost_usd >= max_cost:
                 return f"Session cost limit reached (${self._session_total_cost_usd:.4f}/${max_cost})"
+            # per-task limits
+            task_max = getattr(cg, "task_max_tokens", 0) or 0
+            task_max_cost = getattr(cg, "task_max_cost_usd", 0.0) or 0.0
+            task_tokens = self._task_input_tokens + self._task_output_tokens
+            if task_max > 0 and task_tokens >= task_max:
+                return f"Task token limit reached ({task_tokens}/{task_max})"
+            if task_max_cost > 0 and self._task_cost_usd >= task_max_cost:
+                return f"Task cost limit reached (${self._task_cost_usd:.4f}/${task_max_cost})"
         except (AttributeError, TypeError):
-            pass  # gracefully handle mocked/incomplete config
+            pass
+        return None
+
+    def _check_cost_warning(self) -> Optional[str]:
+        """Return warning message if approaching 80% of session limits, else None."""
+        if not self.config or self._cost_warning_emitted:
+            return None
+        try:
+            cg = self.config.cost_guardrails
+            total_tokens = self._session_total_input_tokens + self._session_total_output_tokens
+            max_tokens = getattr(cg, "session_max_tokens", 0) or 0
+            max_cost = getattr(cg, "session_max_cost_usd", 0.0) or 0.0
+            if max_tokens > 0 and total_tokens >= max_tokens * 0.8:
+                self._cost_warning_emitted = True
+                return f"Approaching session token limit ({total_tokens}/{max_tokens}, 80%)"
+            if max_cost > 0 and self._session_total_cost_usd >= max_cost * 0.8:
+                self._cost_warning_emitted = True
+                return f"Approaching session cost limit (${self._session_total_cost_usd:.4f}/${max_cost}, 80%)"
+        except (AttributeError, TypeError):
+            pass
         return None
 
     def get_session_cost_summary(self) -> Dict[str, Any]:
@@ -1628,12 +1669,125 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         """Return accumulated economy savings summary."""
         return self._economy_tracker.get_summary()
 
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """Return tool cache + response cache stats."""
+        tool_stats = self.tool_registry.get_tool_cache_stats() if self.tool_registry else {}
+        return {**tool_stats,
+                "response_cache_entries": len(self._response_cache),
+                "response_cache_enabled": bool(self.config and self.config.economy.response_cache)}
+
+    def get_context_pressure(self) -> Dict[str, Any]:
+        """Return context window utilization metrics."""
+        if not self.provider:
+            return {"used_tokens": 0, "max_tokens": 0, "pressure_pct": 0, "strategy_hint": "ok"}
+        caps = self.provider.get_capabilities()
+        max_ctx = caps.max_context_tokens
+        try:
+            history = self.provider.get_history()
+            used = sum(len(str(m.get("content", ""))) for m in history) // 4
+        except Exception:
+            used = 0
+        sys_tokens = len(self._system_instruction or "") // 4
+        total = used + sys_tokens
+        pct = round(total / max(max_ctx, 1) * 100, 1)
+        hint = "compress" if pct > 70 else ("warn" if pct > 50 else "ok")
+        return {"used_tokens": total, "max_tokens": max_ctx, "pressure_pct": pct, "strategy_hint": hint}
+
+    def get_context_breakdown(self) -> Dict[str, Any]:
+        """Return token breakdown by category: system, history, tool results."""
+        sys_tokens = len(self._system_instruction or "") // 4
+        if not self.provider:
+            return {"system_tokens": sys_tokens, "history_tokens": 0, "tool_result_tokens": 0,
+                    "total_tokens": sys_tokens, "max_context_tokens": 0, "pressure_pct": 0, "turn_count": 0}
+        try:
+            history = self.provider.get_history()
+        except Exception:
+            history = []
+        hist_tokens = 0
+        tool_tokens = 0
+        user_turns = 0
+        for m in history:
+            toks = len(str(m.get("content", ""))) // 4
+            if m.get("role") in ("tool", "function"):
+                tool_tokens += toks
+            else:
+                hist_tokens += toks
+            if m.get("role") == "user":
+                user_turns += 1
+        caps = self.provider.get_capabilities()
+        max_ctx = caps.max_context_tokens
+        total = sys_tokens + hist_tokens + tool_tokens
+        return {"system_tokens": sys_tokens, "history_tokens": hist_tokens,
+                "tool_result_tokens": tool_tokens, "total_tokens": total,
+                "max_context_tokens": max_ctx,
+                "pressure_pct": round(total / max(max_ctx, 1) * 100, 1) if max_ctx else 0,
+                "turn_count": user_turns}
+
+    def estimate_cost(self, message: str) -> Dict[str, Any]:
+        """Estimate token cost of a message before sending (no API call)."""
+        sys_tokens = len(self._system_instruction or "") // 4
+        if self.provider:
+            try:
+                history = self.provider.get_history()
+                hist_tokens = sum(len(str(m.get("content", ""))) for m in history) // 4
+            except Exception:
+                hist_tokens = 0
+        else:
+            hist_tokens = 0
+        prompt_tokens = len(message) // 4
+        total_input = sys_tokens + hist_tokens + prompt_tokens
+        est_output = min(total_input, 4000)
+        cost = self._estimate_cost(total_input, est_output)
+        caps = self.provider.get_capabilities() if self.provider else None
+        max_ctx = caps.max_context_tokens if caps else 0
+        return {"estimated_input_tokens": total_input, "estimated_output_tokens": est_output,
+                "estimated_cost_usd": round(cost, 6),
+                "context_pressure_after_pct": round(total_input / max(max_ctx, 1) * 100, 1) if max_ctx else 0,
+                "breakdown": {"system": sys_tokens, "history": hist_tokens, "prompt": prompt_tokens}}
+
+    def compare_model_cost(self, target_provider: str, target_model: str) -> Dict[str, Any]:
+        """Compare cost between current model and a target model."""
+        if not self.config:
+            return {"error": "not initialized"}
+        from .provider_catalog import get_model_tier
+        current_tier = get_model_tier(self.config.model.provider, self.config.model.model_name)
+        target_tier = get_model_tier(target_provider, target_model)
+        if not current_tier or not target_tier:
+            return {"error": "model tier not found in catalog"}
+        ratio_in = target_tier.cost_1k_in / max(current_tier.cost_1k_in, 0.0001)
+        ratio_out = target_tier.cost_1k_out / max(current_tier.cost_1k_out, 0.0001)
+        proj_target = (self._session_total_input_tokens / 1000 * target_tier.cost_1k_in +
+                       self._session_total_output_tokens / 1000 * target_tier.cost_1k_out)
+        return {
+            "current": {"provider": self.config.model.provider, "model": self.config.model.model_name,
+                        "cost_1k_in": current_tier.cost_1k_in, "cost_1k_out": current_tier.cost_1k_out},
+            "target": {"provider": target_provider, "model": target_model,
+                       "cost_1k_in": target_tier.cost_1k_in, "cost_1k_out": target_tier.cost_1k_out},
+            "input_cost_ratio": round(ratio_in, 2), "output_cost_ratio": round(ratio_out, 2),
+            "session_cost_current_usd": round(self._session_total_cost_usd, 6),
+            "session_cost_if_target_usd": round(proj_target, 6),
+        }
+
     def set_economy_preset(self, preset: str) -> Dict[str, Any]:
-        """Switch economy preset. Returns the updated economy config dict."""
+        """Switch economy preset. Regenerates system instruction if terse/batched flags changed."""
         if not self.config:
             return {"error": "not initialized"}
         from dataclasses import asdict as _asdict
+        old_terse = self.config.economy.terse_system_prompt
+        old_batched = self.config.economy.prefer_batched_reads
         apply_economy_preset(self.config.economy, preset)
+        new_terse = self.config.economy.terse_system_prompt
+        new_batched = self.config.economy.prefer_batched_reads
+        if (new_terse != old_terse or new_batched != old_batched) and self.provider:
+            _sandbox_preset = getattr(self.config.sandbox, "default_preset", "workspace-write")
+            _plan = bool(self.config.plan_mode.enabled)
+            _max_sys = 1000 if self.config.model.provider == "ollama" else 0
+            self._system_instruction = build_tool_calling_system_instruction(
+                str(Path.cwd()), provider=self.config.model.provider,
+                terse_mode=new_terse, batched_reads=new_batched,
+                sandbox_preset=_sandbox_preset, plan_mode=_plan,
+                include_agent_tools=not _plan, max_system_tokens=_max_sys,
+            )
         return _asdict(self.config.economy)
 
     def _maybe_downshift_model(self, prompt: str) -> None:
@@ -1659,6 +1813,8 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         current_tier = get_model_tier(self.config.model.provider, self.config.model.model_name)
         self._original_model_name = self.config.model.model_name
         self._downshifted = True
+        self._turn_economy.downshifted = True
+        self._turn_economy.downshift_model = cheap_model_name
         self.provider.switch_model(cheap_model_name)
         if current_tier:
             self._economy_tracker.record_downshift(
@@ -1696,8 +1852,18 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
     def _cache_store(self, prompt: str, response: str) -> None:
         if not self.config or not self.config.economy.response_cache:
             return
+        if self._prompt_likely_needs_tools(prompt): # skip caching mutation-likely prompts
+            return
         key = self._cache_key(prompt)
         self._response_cache[key] = (response, time.monotonic())
+
+    @staticmethod
+    def _prompt_likely_needs_tools(prompt: str) -> bool:
+        """Heuristic: return True if prompt likely triggers tool calls (unsafe to cache)."""
+        lower = prompt.lower()
+        _TOOL_KW = {"write", "create", "edit", "delete", "run", "execute", "bash",
+                     "build", "test", "deploy", "install", "commit", "push"}
+        return any(kw in lower for kw in _TOOL_KW)
 
     # ── Economy: context dedup ────────────────────────────────────────
 
@@ -1863,6 +2029,23 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             except (asyncio.TimeoutError, Exception):
                 pass # graph not ready yet, proceed without it
 
+    def _compute_token_breakdown(self) -> Tuple[int, int, int]:
+        """Compute (system_tokens, history_tokens, tool_result_tokens) for current state."""
+        sys_tok = len(self._system_instruction or "") // 4
+        hist_tok = 0
+        tool_tok = 0
+        if self.provider:
+            try:
+                for m in self.provider.get_history():
+                    toks = len(str(m.get("content", ""))) // 4
+                    if m.get("role") in ("tool", "function"):
+                        tool_tok += toks
+                    else:
+                        hist_tok += toks
+            except Exception:
+                pass
+        return sys_tok, hist_tok, tool_tok
+
     def _check_context_pressure(self) -> Optional[str]:
         """Check if context window is under pressure. Returns reason string or None."""
         if not self.provider or not self.config:
@@ -1883,6 +2066,33 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             return "context_pressure"
         if remaining_ratio < warn_ratio:
             logger.warning("Context pressure: %.0f%% remaining (warn threshold %.0f%%)", remaining_ratio * 100, warn_ratio * 100)
+        return None
+
+    async def _auto_compress_on_pressure(self) -> Optional[str]:
+        """Auto-compress if context pressure exceeds economy threshold. Returns strategy used or None."""
+        if not self.config or not self.provider:
+            return None
+        threshold = getattr(self.config.economy, "auto_compress_pressure_pct", 0)
+        if not threshold or threshold <= 0:
+            return None
+        pressure = self.get_context_pressure()
+        if pressure["pressure_pct"] < threshold:
+            return None
+        cc_cfg = getattr(self.config, "context_compression", None)
+        if not cc_cfg or not getattr(cc_cfg, "enabled", False):
+            return None
+        history = self.provider.get_history()
+        if len(history) <= 4:
+            return None
+        _strip_chars = getattr(self.config.economy, "tool_strip_chars", 200)
+        compressed = await self._context_compressor.compress_auto(
+            history, cc_cfg, provider=self.provider, tool_strip_chars=_strip_chars,
+        )
+        if len(compressed) < len(history):
+            self.provider.set_history(compressed)
+            logger.info("Auto-compress on pressure (%.1f%%): %d -> %d messages",
+                        pressure["pressure_pct"], len(history), len(compressed))
+            return "auto_pressure"
         return None
 
     def _refresh_system_context(self) -> bool:
@@ -1954,6 +2164,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         source_id: str = "",
         artifact_dir: str = "",
         run_metadata: Optional[Dict[str, Any]] = None,
+        max_response_tokens: Optional[int] = None,
     ) -> AsyncIterator[CoreEvent]:
         """
         Send a message and yield CoreEvent objects (structured agentic events).
@@ -1965,6 +2176,15 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
 
         self._turn_tool_cache.clear() # reset per-turn read-only tool cache
+        self._task_input_tokens = 0 # reset per-task counters
+        self._task_output_tokens = 0
+        self._task_cost_usd = 0.0
+        self._turn_economy = EconomyTurnReport()
+        # per-turn output token cap
+        _saved_max_output = None
+        if max_response_tokens and max_response_tokens > 0 and self.provider:
+            _saved_max_output = getattr(self.provider, "economy_max_output_tokens", 0)
+            self.provider.economy_max_output_tokens = max_response_tokens
         self._refresh_system_context()
 
         # Check cost guardrails before processing
@@ -2030,6 +2250,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                 full_message, dedup_saved = self._dedup_context_files(full_message)
                 if dedup_saved > 0:
                     self._economy_tracker.record_dedup(dedup_saved)
+                    self._turn_economy.dedup_tokens_saved += dedup_saved
         except (AttributeError, TypeError) as e:
             logger.warning("economy context_dedup failed: %s", e)
 
@@ -2041,6 +2262,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                 full_message, tokens_saved = distill_prompt(full_message, "", eco)
                 if tokens_saved > 0:
                     self._economy_tracker.record_distillation(tokens_before, tokens_before - tokens_saved)
+                    self._turn_economy.distillation_tokens_saved += tokens_saved
         except (AttributeError, TypeError) as e:
             logger.warning("economy prompt_distill failed: %s", e)
 
@@ -2070,6 +2292,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             logger.warning("economy cache_lookup failed: %s", e)
         if cached_response is not None:
             self._economy_tracker.record_cache_hit()
+            self._turn_economy.cache_hit = True
             yield CoreEvent.text_chunk(cached_response, request_id)
             savings = self._economy_tracker.get_summary()
             if any(v for v in savings.values()):
@@ -2132,8 +2355,10 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                             self._context_compressor.compress_with_llm(history, cc_cfg, self.provider)
                         )
                     else:
+                        _strip_chars = getattr(self.config.economy, "tool_strip_chars", 200) if self.config else 200
                         compressed = await self._context_compressor.compress_auto(
                             history, cc_cfg, provider=self.provider,
+                            tool_strip_chars=_strip_chars,
                         )
                         self.provider.set_history(compressed)
                         after = len(compressed)
@@ -2237,15 +2462,16 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                     )
                     # extract usage from structured UsageMetadata or metadata dict
                     u = chunk.usage
+                    _sys, _hist, _tool = self._compute_token_breakdown()
                     if u:
                         self._track_cost(u.input_tokens, u.output_tokens)
                         yield CoreEvent.cost_update(
-                            input_tokens=u.input_tokens,
-                            output_tokens=u.output_tokens,
+                            input_tokens=u.input_tokens, output_tokens=u.output_tokens,
                             cache_creation_input_tokens=u.cache_creation_input_tokens,
                             cache_read_input_tokens=u.cache_read_input_tokens,
                             cumulative_input_tokens=self._session_total_input_tokens,
                             cumulative_output_tokens=self._session_total_output_tokens,
+                            system_tokens=_sys, history_tokens=_hist, tool_result_tokens=_tool,
                         )
                     elif chunk.metadata:
                         usage = chunk.metadata.get("usage", {})
@@ -2258,7 +2484,21 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                                 cache_read_input_tokens=usage.get("cache_read_input_tokens", 0),
                                 cumulative_input_tokens=self._session_total_input_tokens,
                                 cumulative_output_tokens=self._session_total_output_tokens,
+                                system_tokens=_sys, history_tokens=_hist, tool_result_tokens=_tool,
                             )
+                    # emit context pressure alongside cost update
+                    _total_ctx = _sys + _hist + _tool
+                    _max_ctx = self.provider.get_capabilities().max_context_tokens if self.provider else 0
+                    if _max_ctx > 0:
+                        _pct = round(_total_ctx / _max_ctx * 100, 1)
+                        yield CoreEvent.context_pressure(_total_ctx, _max_ctx, _pct)
+                        # auto-compress if pressure exceeds threshold
+                        try:
+                            _compress_result = await self._auto_compress_on_pressure()
+                            if _compress_result:
+                                yield CoreEvent.progress("auto_compress", f"Context auto-compressed ({_compress_result})")
+                        except Exception:
+                            pass
 
                     tool_results = await self._handle_function_calls_events(
                         chunk,
@@ -2390,6 +2630,10 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                             if ev.type == "text_chunk":
                                 accumulated_text += ev.data["chunk"]
 
+                        # Emit 80% budget warning if approaching limits
+                        cost_warning = self._check_cost_warning()
+                        if cost_warning:
+                            yield CoreEvent.text_chunk(f"\n[Budget warning] {cost_warning}", request_id)
                         # Check cost guardrails mid-loop
                         cost_reason = self._check_cost_guardrails()
                         if cost_reason:
@@ -2482,7 +2726,15 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             savings = self._economy_tracker.get_summary()
             if any(v for v in savings.values()):
                 yield CoreEvent.economy_savings(savings)
+            # emit per-turn economy report
+            from dataclasses import asdict as _turn_asdict
+            _report = _turn_asdict(self._turn_economy)
+            if any(v for v in _report.values()):
+                yield CoreEvent.economy_turn_report(_report)
             self._restore_model()
+            # restore per-turn output cap
+            if _saved_max_output is not None and self.provider:
+                self.provider.economy_max_output_tokens = _saved_max_output
 
             yield CoreEvent.done(reason="complete")
             logger.info(f"Message complete (events), {len(accumulated_text)} chars")
@@ -2929,7 +3181,10 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
 
         # Economy: diff-only reads — replace full read_file output with diff vs last read
         try:
+            _before = result_text
             result_text = self._apply_diff_only_read(tool_name, tool_args, result_text)
+            if result_text != _before: # diff was applied
+                self._turn_economy.diff_only_applied = True
         except Exception:
             pass
 
