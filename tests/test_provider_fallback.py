@@ -60,8 +60,15 @@ class TestFallbackManager(unittest.TestCase):
 
     def test_get_fallback_chain_excludes_primary(self):
         mgr = self._make_manager(chain=["gemini", "openai", "ollama"])
+        mgr.config.prefer_cheaper = False
         chain = mgr._get_fallback_chain("gemini")
         self.assertEqual(chain, ["openai", "ollama"])
+
+    def test_get_fallback_chain_prefers_cheaper(self):
+        mgr = self._make_manager(chain=["gemini", "openai", "ollama"])
+        mgr.config.prefer_cheaper = True
+        chain = mgr._get_fallback_chain("gemini")
+        self.assertEqual(chain[0], "ollama") # ollama is free, should be first
 
     def test_circuit_breaker_record_success(self):
         mgr = self._make_manager(cb_enabled=True)

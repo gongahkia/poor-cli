@@ -104,10 +104,25 @@ class ProviderFallbackManager:
         return False
 
     def _get_fallback_chain(self, primary: str) -> List[str]:
-        """Return ordered list of providers to try after the primary."""
+        """Return ordered list of providers to try after the primary.
+
+        When prefer_cheaper is enabled, sorts by cheapest default model first.
+        """
         if not self.config.chain:
             return []
-        return [p for p in self.config.chain if p.lower() != primary.lower()]
+        chain = [p for p in self.config.chain if p.lower() != primary.lower()]
+        if getattr(self.config, "prefer_cheaper", False) and chain:
+            try:
+                from .provider_catalog import get_cheapest_model
+                def _cost_key(provider_name: str) -> float:
+                    tier = get_cheapest_model(provider_name)
+                    if tier:
+                        return tier.cost_1k_in + tier.cost_1k_out
+                    return 999.0 # unknown providers go last
+                chain.sort(key=_cost_key)
+            except Exception:
+                pass # fallback to original order
+        return chain
 
     async def create_fallback_provider(self, provider_name: str) -> BaseProvider:
         """Create a provider instance for fallback use."""

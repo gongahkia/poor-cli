@@ -188,6 +188,7 @@ class FallbackConfig:
     retry_on_rate_limit: bool = True
     retry_on_server_error: bool = True
     max_fallback_attempts: int = 3
+    prefer_cheaper: bool = True # sort fallback chain by cost (cheapest first)
 
 
 @dataclass
