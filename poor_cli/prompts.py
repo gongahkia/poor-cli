@@ -236,6 +236,18 @@ READ-ONLY MODE: You may only read files, search, and inspect state. All mutation
 _SECTION_AGENTIC = """
 AGENTIC MODE: You may iterate autonomously using tool calls to accomplish the user's goal. Break complex tasks into steps, execute them, and verify results. Stay within the approved sandbox scope."""
 
+_SECTION_TOOL_PREFERENCE = """
+TOOL SELECTION HEURISTICS:
+Prefer dedicated tools over bash equivalents — they are safer and produce structured output.
+- File reading: use read_file, NOT bash("cat ...")
+- File search: use glob_files, NOT bash("find ...")
+- Content search: use grep_files, NOT bash("grep ...")
+- File editing: use apply_patch_unified or edit_file, NOT bash("sed ...")
+- Git status: use git_status_diff, NOT bash("git status")
+- Config edits: use json_yaml_edit, NOT manual read+write cycles
+- Web content: use fetch_url, NOT bash("curl ...")
+Reserve bash for commands with no dedicated tool equivalent (e.g., build commands, package managers, custom scripts)."""
+
 ECONOMY_TERSE_SUFFIX = "\n\nIMPORTANT: Be extremely concise. No preamble, no trailing summaries. Lead with the answer."
 
 ECONOMY_BATCHED_READS_SUFFIX = "\n\nEFFICIENCY: When you need to read multiple files, batch them into a single tool call round. Avoid reading files one at a time across separate iterations."
@@ -470,6 +482,7 @@ def build_tool_calling_system_instruction(
         sections.append(_SECTION_GH_TOOLS)
     if include_agent_tools:
         sections.append(_SECTION_AGENT_TOOLS)
+    sections.append(_SECTION_TOOL_PREFERENCE)
     sections.append(_SECTION_FILE_PATH_RULES.format(current_dir=current_dir))
     if not plan_mode and sandbox_preset != "read-only":
         sections.append(_SECTION_WRITE_GUARD)
