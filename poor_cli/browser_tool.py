@@ -112,13 +112,51 @@ async def browser_type(selector: str, text: str, submit: bool = False) -> str:
         return f"error typing into '{selector}': {e}"
 
 
+_JS_DENYLIST_PATTERNS = [ # dangerous JS APIs blocked in evaluate
+    "localStorage.clear", "sessionStorage.clear",
+    "document.cookie", "window.location", "location.href",
+    "location.replace", "location.assign",
+    "document.write", "document.writeln",
+    "window.open", "window.close",
+    "eval(", "Function(",
+    "XMLHttpRequest", "fetch(",
+    "navigator.sendBeacon",
+    "importScripts",
+    "ServiceWorker", "serviceWorker",
+    "chrome.runtime", "browser.runtime",
+    "process.env", "require(",
+    "child_process", "fs.unlink", "fs.rmdir",
+    "__proto__", "constructor.constructor",
+]
+_JS_MAX_EXPRESSION_LENGTH = 5000
+_JS_MAX_RESULT_LENGTH = 5000
+_JS_EVALUATE_TIMEOUT_MS = 10000
+
+
+def _validate_js_expression(expression: str) -> str:
+    """Validate JS expression against denylist. Returns error or empty string."""
+    if len(expression) > _JS_MAX_EXPRESSION_LENGTH:
+        return f"expression too long ({len(expression)} chars, max {_JS_MAX_EXPRESSION_LENGTH})"
+    expr_lower = expression.lower()
+    for pattern in _JS_DENYLIST_PATTERNS:
+        if pattern.lower() in expr_lower:
+            return f"blocked: expression contains denied API '{pattern}'"
+    return ""
+
+
 async def browser_evaluate(expression: str) -> str:
-    """Evaluate JavaScript in the page context."""
+    """Evaluate JavaScript in the page context with safety checks."""
     _log_browser_event("evaluate", expression[:100])
+    validation_error = _validate_js_expression(expression)
+    if validation_error:
+        return f"error: {validation_error}"
     page = await _ensure_browser()
     try:
-        result = await page.evaluate(expression)
-        return str(result)[:5000]
+        result = await page.evaluate(expression, timeout=_JS_EVALUATE_TIMEOUT_MS)
+        output = str(result)[:_JS_MAX_RESULT_LENGTH]
+        if len(str(result)) > _JS_MAX_RESULT_LENGTH:
+            output += f"\n[output truncated: {len(str(result)) - _JS_MAX_RESULT_LENGTH} chars omitted]"
+        return output
     except Exception as e:
         return f"error evaluating JS: {e}"
 
