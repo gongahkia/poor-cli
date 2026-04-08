@@ -40,6 +40,39 @@ _STOP_WORDS = {
     "review", "show", "that", "this", "those", "update", "with", "without", "would",
 }
 
+# Pre-compiled import patterns per language (avoid re.compile per session)
+_IMPORT_PATTERNS_COMPILED = {
+    "python": [
+        re.compile(r'^import\s+(\w+)'),
+        re.compile(r'^from\s+(\w+(?:\.\w+)*)\s+import'),
+    ],
+    "javascript": [
+        re.compile(r'import\s+.*\s+from\s+[\'"]([^\'"]+)[\'"]'),
+        re.compile(r'require\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)'),
+    ],
+    "typescript": [
+        re.compile(r'import\s+.*\s+from\s+[\'"]([^\'"]+)[\'"]'),
+        re.compile(r'require\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)'),
+    ],
+    "go": [
+        re.compile(r'import\s+[\'"]([^\'"]+)[\'"]'),
+        re.compile(r'import\s+\([^)]*[\'"]([^\'"]+)[\'"]'),
+    ],
+    "rust": [
+        re.compile(r'use\s+([\w:]+)'),
+        re.compile(r'mod\s+(\w+)'),
+    ],
+    "java": [
+        re.compile(r'import\s+([\w.]+)'),
+    ],
+    "c": [
+        re.compile(r'#include\s*[<"]([^>"]+)[>"]'),
+    ],
+    "cpp": [
+        re.compile(r'#include\s*[<"]([^>"]+)[>"]'),
+    ],
+}
+
 
 @dataclass
 class FileContext:
@@ -118,38 +151,8 @@ class ContextManager:
         # Repo knowledge graph (injected by core.py if available)
         self._repo_graph: Any = None
         
-        # Language-specific import patterns
-        self._import_patterns = {
-            "python": [
-                r'^import\s+(\w+)',
-                r'^from\s+(\w+(?:\.\w+)*)\s+import',
-            ],
-            "javascript": [
-                r'import\s+.*\s+from\s+[\'"]([^\'"]+)[\'"]',
-                r'require\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)',
-            ],
-            "typescript": [
-                r'import\s+.*\s+from\s+[\'"]([^\'"]+)[\'"]',
-                r'require\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)',
-            ],
-            "go": [
-                r'import\s+[\'"]([^\'"]+)[\'"]',
-                r'import\s+\([^)]*[\'"]([^\'"]+)[\'"]',
-            ],
-            "rust": [
-                r'use\s+([\w:]+)',
-                r'mod\s+(\w+)',
-            ],
-            "java": [
-                r'import\s+([\w.]+)',
-            ],
-            "c": [
-                r'#include\s*[<"]([^>"]+)[>"]',
-            ],
-            "cpp": [
-                r'#include\s*[<"]([^>"]+)[>"]',
-            ],
-        }
+        # Language-specific import patterns (pre-compiled at module level)
+        self._import_patterns = _IMPORT_PATTERNS_COMPILED
     
     def mark_file_edited(self, file_path: str) -> None:
         """
@@ -218,8 +221,12 @@ class ContextManager:
             include_full_content: bool,
             reason: str,
         ) -> None:
-            for file_path in candidates:
-                file_ctx = await self._load_file(file_path)
+            # pre-filter already-seen paths, then load in parallel
+            unseen = [p for p in candidates if p not in seen_paths]
+            if not unseen:
+                return
+            loaded = await asyncio.gather(*[self._load_file(p) for p in unseen])
+            for file_ctx in loaded:
                 if not file_ctx or file_ctx.path in seen_paths:
                     continue
                 file_ctx.source = source
