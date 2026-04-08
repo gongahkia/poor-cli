@@ -194,7 +194,7 @@ class FallbackConfig:
 class ContextCompressionConfig:
     """Context compression / summarization settings."""
     enabled: bool = True
-    compress_after_turns: int = 20  # compress history older than N turns
+    compress_after_turns: int = 12  # compress history older than N turns
     target_token_ratio: float = 0.3  # compress to ~30% of original tokens
     preserve_recent_turns: int = 8  # always keep last N turns uncompressed
     token_threshold_for_llm_compact: float = 0.8  # auto LLM compact at this fraction of model context

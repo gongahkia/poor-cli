@@ -26,6 +26,7 @@ class EconomyConfig:
     response_cache_ttl: int = 300 # seconds
     diff_only_reads: bool = False # only include changed lines vs last read
     idle_compact_seconds: int = 0 # auto-compact after N seconds idle (0 = disabled)
+    compress_after_turns: int = 0 # override ContextCompressionConfig.compress_after_turns (0 = use default)
 
 
 ECONOMY_PRESETS: Dict[str, Dict[str, Any]] = {
@@ -43,6 +44,7 @@ ECONOMY_PRESETS: Dict[str, Dict[str, Any]] = {
         "response_cache": True,
         "diff_only_reads": True,
         "idle_compact_seconds": 60,
+        "compress_after_turns": 6,
     },
     "balanced": {
         "auto_downshift": True,
@@ -58,6 +60,7 @@ ECONOMY_PRESETS: Dict[str, Dict[str, Any]] = {
         "response_cache": False,
         "diff_only_reads": False,
         "idle_compact_seconds": 0,
+        "compress_after_turns": 10,
     },
     "quality": {
         "auto_downshift": False,
@@ -95,24 +98,46 @@ _TOOL_KEYWORDS = frozenset({
     "bash", "shell", "command", "patch", "install", "build", "test",
     "deploy", "mkdir", "touch", "grep", "find", "git",
 })
-
+_COMPLEX_VERBS = frozenset({
+    "refactor", "implement", "migrate", "restructure", "optimize",
+    "redesign", "rewrite", "architect", "integrate", "convert",
+    "overhaul", "consolidate", "modularize", "parallelize",
+})
+_QUESTION_RE = re.compile(r"^(what|how|why|where|when|which|can|does|is|are|do|explain|describe)\b", re.I)
+_FILE_PATH_RE = re.compile(r"[\w\-]+\.\w{1,6}") # e.g. foo.py, bar.ts
 _CODE_BLOCK_RE = re.compile(r"```")
+_INDENTED_LINE_RE = re.compile(r"^[ \t]{4,}", re.M)
 
 
 def classify_prompt_complexity(prompt: str) -> str:
     """Classify prompt as 'simple', 'moderate', or 'complex'.
 
-    Heuristic based on length, question marks, tool keywords, code blocks.
+    Structural heuristics: complex verbs, question patterns, file paths, paste detection.
     """
     length = len(prompt)
     lower = prompt.lower()
     has_code_block = bool(_CODE_BLOCK_RE.search(prompt))
     tool_hits = sum(1 for kw in _TOOL_KEYWORDS if kw in lower)
     question_marks = prompt.count("?")
+    complex_verb_hits = sum(1 for v in _COMPLEX_VERBS if v in lower)
+    has_file_path = bool(_FILE_PATH_RE.search(prompt))
+    is_question_only = bool(_QUESTION_RE.match(prompt.strip()))
 
-    if has_code_block or tool_hits >= 3 or length > 2000:
+    # detect paste-like content: if >60% of lines are indented, actual instruction is short
+    lines = prompt.splitlines()
+    indented_count = sum(1 for line in lines if _INDENTED_LINE_RE.match(line))
+    paste_ratio = indented_count / max(len(lines), 1)
+
+    # complex verbs strongly signal multi-step work regardless of length
+    if complex_verb_hits >= 1 or has_code_block or tool_hits >= 3 or length > 2000:
         return "complex"
-    if tool_hits >= 1 or length > 800 or question_marks >= 3:
+    # pure questions with no tool keywords are simple even if long
+    if is_question_only and tool_hits == 0 and not has_file_path:
+        return "simple"
+    # paste-heavy prompts: the instruction itself is likely short
+    if paste_ratio > 0.6 and tool_hits == 0:
+        return "simple"
+    if has_file_path or tool_hits >= 1 or length > 800 or question_marks >= 3:
         return "moderate"
     return "simple"
 
