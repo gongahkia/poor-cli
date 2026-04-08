@@ -1116,6 +1116,22 @@ class PoorCLICore:
         else:
             instruction_prefix = instruction_snapshot.render_prompt_prefix()
 
+        # auto-surface relevant skills based on user prompt
+        try:
+            from .skill_surfacer import detect_relevant_skills, build_skill_hints
+            from .skills import SkillRegistry
+            _skill_reg = SkillRegistry(getattr(self, "_repo_root", Path.cwd()))
+            _all_skills = _skill_reg.list_skills()
+            _skill_names = [s.name for s in _all_skills]
+            _matched = detect_relevant_skills(message, _skill_names)
+            if _matched:
+                _descs = {s.name: s.description for s in _all_skills}
+                _hint = build_skill_hints(_matched, _descs)
+                if _hint:
+                    instruction_prefix = f"{instruction_prefix}\n\n{_hint}" if instruction_prefix else _hint
+        except Exception:
+            pass # skill surfacing is best-effort
+
         # inject agent todo list into context if non-empty
         todo_ctx = ""
         if self.tool_registry:
