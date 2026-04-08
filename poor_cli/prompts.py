@@ -257,6 +257,16 @@ Prefer dedicated tools over bash equivalents — they are safer and produce stru
 - Web content: use fetch_url, NOT bash("curl ...")
 Reserve bash for commands with no dedicated tool equivalent (e.g., build commands, package managers, custom scripts)."""
 
+_SECTION_OUTPUT_EFFICIENCY = """
+OUTPUT EFFICIENCY:
+- Lead with the answer or action, not the reasoning. Skip filler words and preamble.
+- Do not restate the user's request — just do it.
+- Try the simplest approach first without going in circles.
+- Keep explanations to what is necessary for understanding.
+- Focus text output on: decisions needing input, status updates at milestones, errors/blockers.
+- If you can say it in one sentence, do not use three.
+- When showing code changes, prefer diffs or targeted edits over full file rewrites."""
+
 ECONOMY_TERSE_SUFFIX = "\n\nIMPORTANT: Be extremely concise. No preamble, no trailing summaries. Lead with the answer."
 
 ECONOMY_BATCHED_READS_SUFFIX = "\n\nEFFICIENCY: When you need to read multiple files, batch them into a single tool call round. Avoid reading files one at a time across separate iterations."
@@ -497,6 +507,7 @@ def build_tool_calling_system_instruction(
         sections.append(_SECTION_WRITE_GUARD)
         sections.append(_SECTION_EDITING_STRATEGY)
         sections.append(_SECTION_RISK_AWARENESS)
+    sections.append(_SECTION_OUTPUT_EFFICIENCY)
     if agentic_mode and not plan_mode:
         sections.append(_SECTION_AGENTIC)
     instruction = "\n".join(sections)
