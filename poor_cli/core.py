@@ -8,6 +8,7 @@ the Neovim plugin.
 import asyncio
 import difflib
 import hashlib
+import json
 import os
 import subprocess
 import re
@@ -1087,6 +1088,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
 
         context_result = None
         if self._context_manager:
+            await self._ensure_repo_graph() # wait briefly for background indexing
             context_result = await self._select_context_files(
                 message=message,
                 context_files=context_files,
@@ -1463,8 +1465,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
 
     def _turn_cache_key(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         """Stable cache key for per-turn read-only tool result dedup."""
-        import json as _json
-        return f"{tool_name}:{_json.dumps(arguments, sort_keys=True, separators=(',', ':'))}"
+        return f"{tool_name}:{json.dumps(arguments, sort_keys=True, separators=(',', ':'))}"
 
     async def _execute_tool_internal(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         if not self.tool_registry:
@@ -2114,7 +2115,8 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             cc_cfg = getattr(self.config, "context_compression", None) if self.config else None
             eco_compress = getattr(self.config.economy, "compress_after_turns", 0) if self.config else 0
             if cc_cfg and eco_compress > 0: # economy preset overrides compression threshold
-                cc_cfg.compress_after_turns = eco_compress
+                from dataclasses import replace as _dc_replace
+                cc_cfg = _dc_replace(cc_cfg, compress_after_turns=eco_compress) # copy, don't mutate shared config
             if cc_cfg and getattr(cc_cfg, "enabled", False) and self.provider:
                 history = self.provider.get_history()
                 if self._context_compressor.should_compress(history, cc_cfg):
@@ -4268,6 +4270,22 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                 logger.debug("auto-memory on shutdown failed: %s", exc)
         if self._mcp_manager is not None:
             await self._mcp_manager.shutdown()
+        # cancel background tasks
+        for task in (self._repo_graph_task, self._pending_llm_compression):
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+        self._repo_graph_task = None
+        self._pending_llm_compression = None
+        # close pooled HTTP session in tool registry
+        if self.tool_registry and hasattr(self.tool_registry, "close"):
+            try:
+                await self.tool_registry.close()
+            except Exception:
+                pass
 
     async def clear_history(self) -> None:
         """

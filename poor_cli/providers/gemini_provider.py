@@ -7,6 +7,7 @@ legacy protobuf Content tool-result payloads.
 
 import asyncio
 import base64
+import json
 from typing import List, Dict, Any, Optional, AsyncIterator
 
 try:
@@ -107,8 +108,7 @@ class GeminiProvider(BaseProvider):
             # Gemini context caching minimum is ~32K tokens (~128K chars)
             cacheable_chars = len(system_instruction or "")
             if tools:
-                import json as _json
-                cacheable_chars += len(_json.dumps(translated_tools))
+                cacheable_chars += len(json.dumps(translated_tools))
             if cacheable_chars > 32000:
                 try:
                     cache_config = genai_types.CreateCachedContentConfig(

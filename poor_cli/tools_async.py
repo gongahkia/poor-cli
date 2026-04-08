@@ -3804,62 +3804,61 @@ class ToolRegistryAsync:
 
         try:
             session = self._get_or_create_http_session(timeout)
-            if True: # use pooled session (replaces `async with ... as session:`)
-                current_url = url
-                for _ in range(max_redirects + 1):
-                    self._validate_fetch_target(current_url)
-                    async with session.get(current_url, allow_redirects=False) as response:
-                        if response.status in {301, 302, 303, 307, 308}:
-                            location = str(response.headers.get("Location", "")).strip()
-                            if not location:
-                                raise ToolExecutionError(
-                                    "fetch_url",
-                                    f"Redirect response from {current_url} missing Location header",
-                                )
-                            current_url = urljoin(str(response.url), location)
-                            continue
-
-                        body, body_truncated = await self._read_http_body_with_limit(
-                            response,
-                            max_body_bytes,
-                        )
-                        if response.status >= 400:
-                            excerpt = body[:500].replace("\n", " ")
+            current_url = url
+            for _ in range(max_redirects + 1):
+                self._validate_fetch_target(current_url)
+                async with session.get(current_url, allow_redirects=False) as response:
+                    if response.status in {301, 302, 303, 307, 308}:
+                        location = str(response.headers.get("Location", "")).strip()
+                        if not location:
                             raise ToolExecutionError(
                                 "fetch_url",
-                                f"HTTP {response.status} fetching {current_url}: {excerpt}",
+                                f"Redirect response from {current_url} missing Location header",
                             )
+                        current_url = urljoin(str(response.url), location)
+                        continue
 
-                        content_type = response.headers.get("Content-Type", "")
-                        lowered_ct = content_type.lower()
-                        title = ""
-                        excerpt = body
+                    body, body_truncated = await self._read_http_body_with_limit(
+                        response,
+                        max_body_bytes,
+                    )
+                    if response.status >= 400:
+                        excerpt = body[:500].replace("\n", " ")
+                        raise ToolExecutionError(
+                            "fetch_url",
+                            f"HTTP {response.status} fetching {current_url}: {excerpt}",
+                        )
 
-                        if "html" in lowered_ct:
-                            title_match = re.search(r"(?is)<title[^>]*>(.*?)</title>", body)
-                            if title_match:
-                                title = re.sub(r"\s+", " ", title_match.group(1)).strip()
-                            excerpt = self._strip_html(body)
-                        elif "json" in lowered_ct:
-                            try:
-                                excerpt = json.dumps(json.loads(body), indent=2)
-                            except Exception:
-                                excerpt = body
+                    content_type = response.headers.get("Content-Type", "")
+                    lowered_ct = content_type.lower()
+                    title = ""
+                    excerpt = body
 
-                        payload = {
-                            "url": str(response.url),
-                            "status": response.status,
-                            "content_type": content_type,
-                            "title": title,
-                            "content_excerpt": excerpt[:max_chars],
-                            "content_truncated": body_truncated or len(excerpt) > max_chars,
-                        }
-                        return json.dumps(payload, indent=2)
+                    if "html" in lowered_ct:
+                        title_match = re.search(r"(?is)<title[^>]*>(.*?)</title>", body)
+                        if title_match:
+                            title = re.sub(r"\s+", " ", title_match.group(1)).strip()
+                        excerpt = self._strip_html(body)
+                    elif "json" in lowered_ct:
+                        try:
+                            excerpt = json.dumps(json.loads(body), indent=2)
+                        except Exception:
+                            excerpt = body
 
-                raise ToolExecutionError(
-                    "fetch_url",
-                    f"Too many redirects fetching URL: {url}",
-                )
+                    payload = {
+                        "url": str(response.url),
+                        "status": response.status,
+                        "content_type": content_type,
+                        "title": title,
+                        "content_excerpt": excerpt[:max_chars],
+                        "content_truncated": body_truncated or len(excerpt) > max_chars,
+                    }
+                    return json.dumps(payload, indent=2)
+
+            raise ToolExecutionError(
+                "fetch_url",
+                f"Too many redirects fetching URL: {url}",
+            )
         except asyncio.TimeoutError:
             raise ToolExecutionError("fetch_url", f"Timed out fetching URL after {timeout}s")
         except aiohttp.ClientError as e:
