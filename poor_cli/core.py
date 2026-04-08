@@ -1669,6 +1669,21 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         """Return accumulated economy savings summary."""
         return self._economy_tracker.get_summary()
 
+    def export_cost_report(self) -> Dict[str, Any]:
+        """Export full session cost report for accounting."""
+        return {
+            "session": self.get_session_cost_summary(),
+            "economy_savings": self._economy_tracker.get_summary(),
+            "context_breakdown": self.get_context_breakdown() if self.provider else {},
+            "context_pressure": self.get_context_pressure() if self.provider else {},
+            "cache_stats": self.get_cache_stats(),
+            "model": {
+                "provider": self.config.model.provider if self.config else "",
+                "model_name": self.config.model.model_name if self.config else "",
+                "economy_preset": self.config.economy.preset if self.config else "",
+            },
+        }
+
     def get_cache_stats(self) -> Dict[str, Any]:
         """Return tool cache + response cache stats."""
         tool_stats = self.tool_registry.get_tool_cache_stats() if self.tool_registry else {}

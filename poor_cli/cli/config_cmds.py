@@ -275,7 +275,8 @@ def run_cost_mode(argv: Sequence[str]) -> int:
     sub.add_parser("summary")
     p_economy = sub.add_parser("economy")
     p_economy.add_argument("preset", nargs="?", choices=("frugal", "balanced", "quality"))
-    p_savings = sub.add_parser("savings")
+    sub.add_parser("savings")
+    sub.add_parser("export")
     parser.add_argument("--config", help="config file path")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(list(argv))
@@ -288,6 +289,8 @@ def run_cost_mode(argv: Sequence[str]) -> int:
                 return core.get_session_cost_summary()
             if cmd == "savings":
                 return core.get_economy_savings()
+            if cmd == "export":
+                return core.export_cost_report()
             if cmd == "economy":
                 preset = getattr(args, "preset", None)
                 if preset:

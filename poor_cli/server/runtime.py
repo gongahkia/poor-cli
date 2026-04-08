@@ -780,6 +780,12 @@ class PoorCLIServer:
             "poor-cli/restoreSession": self.handle_restore_session,
             "poor-cli/getEconomySavings": self.handle_get_economy_savings,
             "poor-cli/setEconomyPreset": self.handle_set_economy_preset,
+            "poor-cli/getCacheStats": self.handle_get_cache_stats,
+            "poor-cli/getContextPressure": self.handle_get_context_pressure,
+            "poor-cli/getContextBreakdown": self.handle_get_context_breakdown,
+            "poor-cli/estimateCost": self.handle_estimate_cost,
+            "poor-cli/compareModelCost": self.handle_compare_model_cost,
+            "poor-cli/exportCostReport": self.handle_export_cost_report,
             "poor-cli/createSession": self.handle_create_session,
             "poor-cli/destroySession": self.handle_destroy_session,
             "poor-cli/switchSession": self.handle_switch_session,
@@ -4530,6 +4536,39 @@ class PoorCLIServer:
         preset = str(params.get("preset", "balanced")).strip()
         return self.core.set_economy_preset(preset)
 
+    async def handle_export_cost_report(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Export full session cost report for accounting/auditing."""
+        self._ensure_initialized()
+        return self.core.export_cost_report()
+
+    async def handle_get_cache_stats(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return tool cache + response cache hit/miss stats."""
+        self._ensure_initialized()
+        return self.core.get_cache_stats()
+
+    async def handle_get_context_pressure(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return context window utilization metrics."""
+        self._ensure_initialized()
+        return self.core.get_context_pressure()
+
+    async def handle_get_context_breakdown(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return token breakdown by category: system, history, tool results."""
+        self._ensure_initialized()
+        return self.core.get_context_breakdown()
+
+    async def handle_estimate_cost(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Estimate token cost of a message before sending."""
+        self._ensure_initialized()
+        message = str(params.get("message", ""))
+        return self.core.estimate_cost(message)
+
+    async def handle_compare_model_cost(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Compare cost between current model and a target model."""
+        self._ensure_initialized()
+        provider = str(params.get("provider", "")).strip()
+        model = str(params.get("model", "")).strip()
+        return self.core.compare_model_cost(provider, model)
+
     async def handle_list_ollama_models(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Discover models available on the local Ollama server."""
         self._ensure_initialized()
@@ -4808,6 +4847,7 @@ class PoorCLIServer:
         context_files = params.get("contextFiles")
         pinned_context_files = params.get("pinnedContextFiles")
         context_budget_tokens = params.get("contextBudgetTokens")
+        max_response_tokens = params.get("maxResponseTokens")
         request_id = self._chat_request_id(params)
         message_text = str(message)
         context_count = self._chat_context_count(context_files) + self._chat_context_count(
@@ -4837,6 +4877,7 @@ class PoorCLIServer:
                     pinned_context_files=pinned_context_files,
                     context_budget_tokens=context_budget_tokens,
                     request_id=request_id,
+                    max_response_tokens=int(max_response_tokens) if max_response_tokens else None,
                 ):
                     if event.type == "thinking_chunk":
                         notification = JsonRpcMessage(
@@ -4883,14 +4924,29 @@ class PoorCLIServer:
                     elif event.type == "plan_request":
                         pass  # handled by _streaming_plan_callback already
                     elif event.type == "cost_update":
+                        cost_params = {
+                            "requestId": request_id,
+                            "inputTokens": event.data.get("inputTokens", 0),
+                            "outputTokens": event.data.get("outputTokens", 0),
+                            "estimatedCost": event.data.get("estimatedCost", 0.0),
+                        }
+                        for _k in ("cumulativeInputTokens", "cumulativeOutputTokens",
+                                   "cacheCreationInputTokens", "cacheReadInputTokens",
+                                   "systemTokens", "historyTokens", "toolResultTokens"):
+                            if event.data.get(_k):
+                                cost_params[_k] = event.data[_k]
+                        notification = JsonRpcMessage(method="poor-cli/costUpdate", params=cost_params)
+                        await self.write_message_stdio(notification)
+                    elif event.type == "context_pressure":
                         notification = JsonRpcMessage(
-                            method="poor-cli/costUpdate",
-                            params={
-                                "requestId": request_id,
-                                "inputTokens": event.data.get("inputTokens", 0),
-                                "outputTokens": event.data.get("outputTokens", 0),
-                                "estimatedCost": event.data.get("estimatedCost", 0.0),
-                            },
+                            method="poor-cli/contextPressure",
+                            params={"requestId": request_id, **event.data},
+                        )
+                        await self.write_message_stdio(notification)
+                    elif event.type == "economy_turn_report":
+                        notification = JsonRpcMessage(
+                            method="poor-cli/economyTurnReport",
+                            params={"requestId": request_id, **event.data},
                         )
                         await self.write_message_stdio(notification)
                     elif event.type == "progress":
