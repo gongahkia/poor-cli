@@ -163,6 +163,15 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             Ok(RpcCommand::SetEconomyPreset { preset, reply }) => {
                 let _ = reply.send(client.set_economy_preset(&preset));
             }
+            Ok(RpcCommand::GetCostHistory { limit, reply }) => { let _ = reply.send(client.get_cost_history(limit)); }
+            Ok(RpcCommand::GetTokensVisualization { reply }) => { let _ = reply.send(client.get_tokens_visualization()); }
+            Ok(RpcCommand::GetCacheStats { reply }) => { let _ = reply.send(client.get_cache_stats()); }
+            Ok(RpcCommand::ApplyBudgetTemplate { template, reply }) => { let _ = reply.send(client.apply_budget_template(&template)); }
+            Ok(RpcCommand::ListBudgetTemplates { reply }) => { let _ = reply.send(client.list_budget_templates()); }
+            Ok(RpcCommand::GetContextPressure { reply }) => { let _ = reply.send(client.get_context_pressure()); }
+            Ok(RpcCommand::GetContextBreakdown { reply }) => { let _ = reply.send(client.get_context_breakdown()); }
+            Ok(RpcCommand::CompareModelCost { provider, model, reply }) => { let _ = reply.send(client.compare_model_cost(&provider, &model)); }
+            Ok(RpcCommand::ExportCostReport { reply }) => { let _ = reply.send(client.export_cost_report()); }
             Ok(RpcCommand::GetContextExplain {
                 message,
                 context_files,

@@ -238,6 +238,52 @@ pub(crate) fn rpc_set_economy_preset_blocking(rpc_cmd_tx: &mpsc::Sender<RpcComma
         .map_err(|_| "Timed out waiting for economy preset".to_string())?
 }
 
+pub(crate) fn rpc_get_cost_history_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>, limit: u32) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx.send(RpcCommand::GetCostHistory { limit, reply: reply_tx }).map_err(|e| format!("{e}"))?;
+    reply_rx.recv_timeout(Duration::from_secs(10)).map_err(|_| "timeout".to_string())?
+}
+pub(crate) fn rpc_get_tokens_visualization_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx.send(RpcCommand::GetTokensVisualization { reply: reply_tx }).map_err(|e| format!("{e}"))?;
+    reply_rx.recv_timeout(Duration::from_secs(10)).map_err(|_| "timeout".to_string())?
+}
+pub(crate) fn rpc_get_cache_stats_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx.send(RpcCommand::GetCacheStats { reply: reply_tx }).map_err(|e| format!("{e}"))?;
+    reply_rx.recv_timeout(Duration::from_secs(10)).map_err(|_| "timeout".to_string())?
+}
+pub(crate) fn rpc_apply_budget_template_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>, template: &str) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx.send(RpcCommand::ApplyBudgetTemplate { template: template.to_string(), reply: reply_tx }).map_err(|e| format!("{e}"))?;
+    reply_rx.recv_timeout(Duration::from_secs(10)).map_err(|_| "timeout".to_string())?
+}
+pub(crate) fn rpc_list_budget_templates_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx.send(RpcCommand::ListBudgetTemplates { reply: reply_tx }).map_err(|e| format!("{e}"))?;
+    reply_rx.recv_timeout(Duration::from_secs(10)).map_err(|_| "timeout".to_string())?
+}
+pub(crate) fn rpc_get_context_pressure_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx.send(RpcCommand::GetContextPressure { reply: reply_tx }).map_err(|e| format!("{e}"))?;
+    reply_rx.recv_timeout(Duration::from_secs(10)).map_err(|_| "timeout".to_string())?
+}
+pub(crate) fn rpc_get_context_breakdown_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx.send(RpcCommand::GetContextBreakdown { reply: reply_tx }).map_err(|e| format!("{e}"))?;
+    reply_rx.recv_timeout(Duration::from_secs(10)).map_err(|_| "timeout".to_string())?
+}
+pub(crate) fn rpc_compare_model_cost_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>, provider: &str, model: &str) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx.send(RpcCommand::CompareModelCost { provider: provider.to_string(), model: model.to_string(), reply: reply_tx }).map_err(|e| format!("{e}"))?;
+    reply_rx.recv_timeout(Duration::from_secs(10)).map_err(|_| "timeout".to_string())?
+}
+pub(crate) fn rpc_export_cost_report_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx.send(RpcCommand::ExportCostReport { reply: reply_tx }).map_err(|e| format!("{e}"))?;
+    reply_rx.recv_timeout(Duration::from_secs(10)).map_err(|_| "timeout".to_string())?
+}
+
 pub(crate) fn rpc_list_ollama_models_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     rpc_cmd_tx

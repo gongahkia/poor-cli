@@ -300,6 +300,113 @@ Submitting any slash command will cancel capture."
         return Some(false);
     }
 
+    if lowered == "/cost-history" {
+        match rpc_get_cost_history_blocking(rpc_cmd_tx, 20) {
+            Ok(payload) => {
+                let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                show_command_info_popup(app, raw, format!("**Cost History:**\n```\n{msg}\n```"));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!("Failed to get cost history: {e}"))),
+        }
+        return Some(false);
+    }
+
+    if lowered == "/tokens" {
+        match rpc_get_tokens_visualization_blocking(rpc_cmd_tx) {
+            Ok(payload) => {
+                let viz = payload.get("visualization").and_then(|v| v.as_str()).unwrap_or("n/a");
+                show_command_info_popup(app, raw, format!("**Token Usage:**\n```\n{viz}\n```"));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!("Failed to get tokens: {e}"))),
+        }
+        return Some(false);
+    }
+
+    if lowered == "/cache-stats" {
+        match rpc_get_cache_stats_blocking(rpc_cmd_tx) {
+            Ok(payload) => {
+                let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                show_command_info_popup(app, raw, format!("**Cache Stats:**\n```\n{msg}\n```"));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!("Failed to get cache stats: {e}"))),
+        }
+        return Some(false);
+    }
+
+    if lowered == "/budget" || lowered.starts_with("/budget ") {
+        let arg = lowered.strip_prefix("/budget").unwrap_or("").trim();
+        if arg.is_empty() {
+            match rpc_list_budget_templates_blocking(rpc_cmd_tx) {
+                Ok(payload) => {
+                    let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                    show_command_info_popup(app, raw, format!("**Budget Templates:**\n```\n{msg}\n```\n\nUsage: `/budget <template_name>`"));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!("Failed to list budgets: {e}"))),
+            }
+        } else {
+            match rpc_apply_budget_template_blocking(rpc_cmd_tx, arg) {
+                Ok(payload) => {
+                    let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                    show_command_info_popup(app, raw, format!("**Budget Applied:**\n```\n{msg}\n```"));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!("Failed to apply budget: {e}"))),
+            }
+        }
+        return Some(false);
+    }
+
+    if lowered == "/pressure" {
+        match rpc_get_context_pressure_blocking(rpc_cmd_tx) {
+            Ok(payload) => {
+                let pct = payload.get("pressure_pct").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let used = payload.get("used_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                let max_t = payload.get("max_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                let hint = payload.get("strategy_hint").and_then(|v| v.as_str()).unwrap_or("ok");
+                show_command_info_popup(app, raw, format!("**Context Pressure:** {pct:.1}%\n\n{used}/{max_t} tokens used\nHint: {hint}"));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!("Failed to get pressure: {e}"))),
+        }
+        return Some(false);
+    }
+
+    if lowered == "/breakdown" {
+        match rpc_get_context_breakdown_blocking(rpc_cmd_tx) {
+            Ok(payload) => {
+                let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                show_command_info_popup(app, raw, format!("**Context Breakdown:**\n```\n{msg}\n```"));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!("Failed to get breakdown: {e}"))),
+        }
+        return Some(false);
+    }
+
+    if lowered.starts_with("/compare-cost ") {
+        let parts: Vec<&str> = raw.split_whitespace().collect();
+        if parts.len() < 3 {
+            show_command_info_popup(app, raw, "Usage: `/compare-cost <provider> <model>`".to_string());
+        } else {
+            match rpc_compare_model_cost_blocking(rpc_cmd_tx, parts[1], parts[2]) {
+                Ok(payload) => {
+                    let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                    show_command_info_popup(app, raw, format!("**Cost Comparison:**\n```\n{msg}\n```"));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!("Failed to compare: {e}"))),
+            }
+        }
+        return Some(false);
+    }
+
+    if lowered == "/export-cost" {
+        match rpc_export_cost_report_blocking(rpc_cmd_tx) {
+            Ok(payload) => {
+                let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                show_command_info_popup(app, raw, format!("**Cost Report:**\n```\n{msg}\n```"));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!("Failed to export: {e}"))),
+        }
+        return Some(false);
+    }
+
     if lowered == "/save-session" {
         match rpc_save_session_blocking(rpc_cmd_tx) {
             Ok(payload) => {

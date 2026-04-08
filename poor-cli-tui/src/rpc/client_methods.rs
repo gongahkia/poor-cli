@@ -313,6 +313,40 @@ impl RpcClient {
         params.insert("preset".to_string(), Value::String(preset.to_string()));
         self.call("poor-cli/setEconomyPreset", Value::Object(params))
     }
+    pub fn get_cost_history(&self, limit: u32) -> Result<Value, String> {
+        let mut p = serde_json::Map::new();
+        p.insert("limit".into(), Value::Number(limit.into()));
+        self.call("poor-cli/getCostHistory", Value::Object(p))
+    }
+    pub fn get_tokens_visualization(&self) -> Result<Value, String> {
+        self.call("poor-cli/getTokensVisualization", Value::Object(Default::default()))
+    }
+    pub fn get_cache_stats(&self) -> Result<Value, String> {
+        self.call("poor-cli/getCacheStats", Value::Object(Default::default()))
+    }
+    pub fn apply_budget_template(&self, template: &str) -> Result<Value, String> {
+        let mut p = serde_json::Map::new();
+        p.insert("template".into(), Value::String(template.into()));
+        self.call("poor-cli/applyBudgetTemplate", Value::Object(p))
+    }
+    pub fn list_budget_templates(&self) -> Result<Value, String> {
+        self.call("poor-cli/listBudgetTemplates", Value::Object(Default::default()))
+    }
+    pub fn get_context_pressure(&self) -> Result<Value, String> {
+        self.call("poor-cli/getContextPressure", Value::Object(Default::default()))
+    }
+    pub fn get_context_breakdown(&self) -> Result<Value, String> {
+        self.call("poor-cli/getContextBreakdown", Value::Object(Default::default()))
+    }
+    pub fn compare_model_cost(&self, provider: &str, model: &str) -> Result<Value, String> {
+        let mut p = serde_json::Map::new();
+        p.insert("provider".into(), Value::String(provider.into()));
+        p.insert("model".into(), Value::String(model.into()));
+        self.call("poor-cli/compareModelCost", Value::Object(p))
+    }
+    pub fn export_cost_report(&self) -> Result<Value, String> {
+        self.call("poor-cli/exportCostReport", Value::Object(Default::default()))
+    }
 
     pub fn list_runs(
         &self,
