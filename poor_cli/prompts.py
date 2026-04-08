@@ -233,6 +233,15 @@ PLAN MODE: You are in plan-only mode. Present a concise numbered plan before any
 _SECTION_READ_ONLY = """
 READ-ONLY MODE: You may only read files, search, and inspect state. All mutations are blocked. Focus on analysis, explanation, and recommendations."""
 
+_SECTION_RISK_AWARENESS = """
+EXECUTING ACTIONS WITH CARE:
+Before running any command or tool, assess its reversibility and blast radius:
+- SAFE (freely execute): Reading files, searching, listing, git status/diff/log, running tests
+- LOW RISK (proceed, note in output): Writing new files, editing existing files (checkpointed), creating directories
+- MEDIUM RISK (confirm with user first): Deleting files, running unfamiliar shell commands, git commit/push, modifying configs
+- HIGH RISK (always confirm + explain consequences): Force operations (git reset --hard, rm -rf), modifying CI/CD, touching .env/credentials, network-facing changes
+If uncertain about reversibility, ask before acting. Prefer the least destructive approach that achieves the goal."""
+
 _SECTION_AGENTIC = """
 AGENTIC MODE: You may iterate autonomously using tool calls to accomplish the user's goal. Break complex tasks into steps, execute them, and verify results. Stay within the approved sandbox scope."""
 
@@ -487,6 +496,7 @@ def build_tool_calling_system_instruction(
     if not plan_mode and sandbox_preset != "read-only":
         sections.append(_SECTION_WRITE_GUARD)
         sections.append(_SECTION_EDITING_STRATEGY)
+        sections.append(_SECTION_RISK_AWARENESS)
     if agentic_mode and not plan_mode:
         sections.append(_SECTION_AGENTIC)
     instruction = "\n".join(sections)
