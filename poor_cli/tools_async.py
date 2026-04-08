@@ -158,6 +158,27 @@ DEFAULT_MUTATING_TOOLS = {
     "git_commit",
 }
 
+# core tools: always sent as function declarations to the provider
+CORE_TOOL_NAMES: frozenset = frozenset({
+    "read_file", "write_file", "edit_file", "glob_files", "grep_files",
+    "bash", "list_directory", "apply_patch_unified", "git_status_diff",
+    "run_tests", "format_and_lint", "run_affected_tests",
+})
+# deferred tools: registered but only sent as declarations when activated
+DEFERRED_TOOL_NAMES: frozenset = frozenset({
+    "copy_file", "move_file", "delete_file", "create_directory", "diff_files",
+    "dependency_inspect", "fetch_url", "json_yaml_edit", "process_logs",
+    "web_search", "mcp_scaffold",
+    "gh_pr_list", "gh_pr_view", "gh_issue_list", "gh_issue_view",
+    "gh_pr_create", "gh_pr_comment",
+    "spawn_parallel_agents", "delegate_task",
+    "compact_conversation", "write_todos", "update_todo",
+    "memory_save", "memory_search", "memory_delete", "memory_list",
+    "semantic_search", "index_codebase",
+    "browser_navigate", "browser_screenshot", "browser_click",
+    "browser_type", "browser_evaluate",
+})
+
 
 @dataclass
 class ToolOutcome:
@@ -1178,6 +1199,12 @@ class ToolRegistryAsync:
             }
         }
 
+        # register discover_tools meta-tool for deferred tool activation
+        self.tools["discover_tools"] = {
+            "function": self.discover_tools,
+            "declaration": self._discover_tools_declaration(),
+        }
+
         # register browser automation tools (lazy — playwright imported on first use)
         try:
             from .browser_tool import BROWSER_TOOLS, BROWSER_TOOL_DECLARATIONS
@@ -1200,6 +1227,71 @@ class ToolRegistryAsync:
     def get_tool_declarations(self) -> List[Dict[str, Any]]:
         """Get tool declarations for API"""
         return [tool["declaration"] for tool in self.tools.values()]
+
+    def get_core_tool_declarations(self) -> List[Dict[str, Any]]:
+        """Get only core tool declarations (always sent to provider)."""
+        core = []
+        for name, tool in self.tools.items():
+            if name in CORE_TOOL_NAMES or name not in DEFERRED_TOOL_NAMES:
+                core.append(tool["declaration"])
+        # always include the discover_tools meta-tool
+        core.append(self._discover_tools_declaration())
+        return core
+
+    def get_deferred_tool_names(self) -> List[str]:
+        """Get names of deferred tools that are registered but not in core set."""
+        return [n for n in self.tools if n in DEFERRED_TOOL_NAMES]
+
+    def get_deferred_tool_declarations(self, names: List[str]) -> List[Dict[str, Any]]:
+        """Get declarations for specific deferred tools by name."""
+        return [
+            self.tools[n]["declaration"]
+            for n in names
+            if n in self.tools and n in DEFERRED_TOOL_NAMES
+        ]
+
+    @staticmethod
+    def _discover_tools_declaration() -> Dict[str, Any]:
+        return {
+            "name": "discover_tools",
+            "description": (
+                "Retrieve full declarations for deferred/extended tools by name. "
+                "Use this when you need a specialized tool not in the core set. "
+                "Available deferred tools: " + ", ".join(sorted(DEFERRED_TOOL_NAMES))
+            ),
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "tool_names": {
+                        "type": "STRING",
+                        "description": "Comma-separated tool names to activate (e.g. 'gh_pr_list,web_search')",
+                    },
+                },
+                "required": ["tool_names"],
+            },
+        }
+
+    async def discover_tools(self, tool_names: str) -> str:
+        """Return full declarations for requested deferred tools."""
+        requested = [n.strip() for n in tool_names.split(",") if n.strip()]
+        found = []
+        not_found = []
+        for name in requested:
+            if name in self.tools:
+                decl = self.tools[name]["declaration"]
+                found.append(decl)
+            else:
+                not_found.append(name)
+        lines = []
+        if found:
+            lines.append(f"Activated {len(found)} tool(s). You may now call them:")
+            for d in found:
+                params = d.get("parameters", {}).get("properties", {})
+                param_sig = ", ".join(params.keys())
+                lines.append(f"- {d['name']}({param_sig}): {d.get('description', '')}")
+        if not_found:
+            lines.append(f"Not found: {', '.join(not_found)}")
+        return "\n".join(lines)
 
     def get_tool_capabilities(self, tool_name: str) -> List[str]:
         tool = self.tools.get(tool_name)

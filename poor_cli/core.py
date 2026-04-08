@@ -317,8 +317,12 @@ class PoorCLICore:
                         declaration,
                     )
             self.tool_registry._core = self  # back-ref for compact/delegate tools
-            tool_declarations = self.tool_registry.get_tool_declarations()
-            logger.info(f"Registered {len(tool_declarations)} tools")
+            tool_declarations = self.tool_registry.get_core_tool_declarations()
+            _deferred = self.tool_registry.get_deferred_tool_names()
+            logger.info(
+                "Registered %d core tools, %d deferred",
+                len(tool_declarations), len(_deferred),
+            )
             
             # Build system instruction (provider-tuned for constrained models)
             terse = getattr(self.config.economy, "terse_system_prompt", False)
