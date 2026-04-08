@@ -787,6 +787,7 @@ class PoorCLIServer:
             "poor-cli/compareModelCost": self.handle_compare_model_cost,
             "poor-cli/exportCostReport": self.handle_export_cost_report,
             "poor-cli/getTokensVisualization": self.handle_get_tokens_visualization,
+            "poor-cli/getCostHistory": self.handle_get_cost_history,
             "poor-cli/createSession": self.handle_create_session,
             "poor-cli/destroySession": self.handle_destroy_session,
             "poor-cli/switchSession": self.handle_switch_session,
@@ -4546,6 +4547,14 @@ class PoorCLIServer:
         """Return text-based context window visualization."""
         self._ensure_initialized()
         return self.core.get_tokens_visualization()
+
+    async def handle_get_cost_history(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return historical session cost data."""
+        from ..core import PoorCLICore
+        limit = int(params.get("limit", 50))
+        entries = PoorCLICore.get_cost_history(limit)
+        total_cost = sum(e.get("cost_usd", 0) for e in entries)
+        return {"entries": entries, "count": len(entries), "total_cost_usd": round(total_cost, 6)}
 
     async def handle_get_cache_stats(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return tool cache + response cache hit/miss stats."""

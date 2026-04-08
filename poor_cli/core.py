@@ -1684,6 +1684,48 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             },
         }
 
+    _COST_HISTORY_FILE = Path.home() / ".poor-cli" / "cost_history.json"
+
+    def _persist_cost_history(self) -> None:
+        """Append session cost summary to persistent cost history."""
+        total = self._session_total_input_tokens + self._session_total_output_tokens
+        if total == 0:
+            return
+        import datetime
+        entry = {
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "provider": self.config.model.provider if self.config else "",
+            "model": self.config.model.model_name if self.config else "",
+            "input_tokens": self._session_total_input_tokens,
+            "output_tokens": self._session_total_output_tokens,
+            "cost_usd": round(self._session_total_cost_usd, 6),
+            "economy_preset": self.config.economy.preset if self.config else "",
+        }
+        try:
+            self._COST_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+            history: List[Dict[str, Any]] = []
+            if self._COST_HISTORY_FILE.exists():
+                history = json.loads(self._COST_HISTORY_FILE.read_text(encoding="utf-8"))
+            history.append(entry)
+            # keep last 500 entries
+            if len(history) > 500:
+                history = history[-500:]
+            self._COST_HISTORY_FILE.write_text(json.dumps(history, indent=2), encoding="utf-8")
+        except Exception as e:
+            logger.debug("Failed to persist cost history: %s", e)
+
+    @staticmethod
+    def get_cost_history(limit: int = 50) -> List[Dict[str, Any]]:
+        """Load recent cost history entries."""
+        path = Path.home() / ".poor-cli" / "cost_history.json"
+        if not path.exists():
+            return []
+        try:
+            history = json.loads(path.read_text(encoding="utf-8"))
+            return history[-limit:]
+        except Exception:
+            return []
+
     def get_tokens_visualization(self, width: int = 50) -> Dict[str, Any]:
         """Return text-based context window bar chart."""
         bd = self.get_context_breakdown()
@@ -4563,6 +4605,8 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
 
     async def shutdown(self) -> None:
         """Release external resources owned by the core."""
+        # persist session cost to history
+        self._persist_cost_history()
         # emit session_end hook
         try:
             await self._emit_policy_hooks("session_end", {
