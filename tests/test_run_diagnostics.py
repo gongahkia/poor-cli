@@ -75,7 +75,7 @@ class RunDiagnosticsTests(unittest.TestCase):
             async def _allow_plan(user_request, function_calls, request_id):
                 return True
 
-            async def _exec_call(fc, iteration, max_iterations, request_id):
+            async def _exec_call(fc, iteration, max_iterations, request_id, expected_call_count=1):
                 result = {"id": fc.id, "name": fc.name, "result": f"ok:{fc.name}"}
                 return [], result
 
