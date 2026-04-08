@@ -191,6 +191,9 @@ class SubAgent:
         except Exception as e:
             logger.error("sub-agent error: %s", e, exc_info=True)
             accumulated += f"\n[sub-agent error: {e}]"
+        # append cost summary so parent can see sub-agent token usage
+        if self._total_input_tokens or self._total_output_tokens:
+            accumulated += f"\n[sub-agent tokens: {self._total_input_tokens}in/{self._total_output_tokens}out]"
         return accumulated.strip() or "(no response from sub-agent)"
 
     def _build_system_instruction(self, filtered_tools: List[Dict[str, Any]]) -> str:
