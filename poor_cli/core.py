@@ -1023,8 +1023,9 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
     ) -> InstructionSnapshot:
         manager = self._instruction_manager or InstructionManager(Path.cwd())
         repo_summary = ""
-        await self._ensure_repo_graph()
-        if self._repo_graph is not None:
+        if self._repo_graph is not None and self._repo_graph_task and not self._repo_graph_task.done():
+            pass # graph still building, skip repo summary for now
+        elif self._repo_graph is not None:
             try:
                 repo_summary = self._repo_graph.build_repo_summary()
             except Exception:
