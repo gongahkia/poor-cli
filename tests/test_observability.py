@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 from dataclasses import asdict
 from poor_cli.config import Config
-from poor_cli.economy import EconomyTurnReport
+from poor_cli.economy import EconomyTurnReport, EconomySavingsTracker
 from poor_cli.core_events import CoreEvent
 
 
@@ -230,6 +230,162 @@ class TestCacheStats(unittest.TestCase):
         result = core.get_cache_stats()
         self.assertEqual(result["response_cache_entries"], 0)
         self.assertFalse(result["response_cache_enabled"])
+
+
+class TestCostExport(unittest.TestCase):
+    def _make_core_stub(self):
+        from poor_cli.core import PoorCLICore
+        core = object.__new__(PoorCLICore)
+        core.config = Config()
+        core.provider = MagicMock()
+        caps = MagicMock()
+        caps.max_context_tokens = 100000
+        core.provider.get_capabilities.return_value = caps
+        core.provider.get_history.return_value = []
+        core._system_instruction = "sys"
+        core._session_total_input_tokens = 500
+        core._session_total_output_tokens = 300
+        core._session_total_cost_usd = 0.01
+        core._economy_tracker = EconomySavingsTracker()
+        core._response_cache = {}
+        core.tool_registry = MagicMock()
+        core.tool_registry.get_tool_cache_stats.return_value = {"cache_hits": 0, "cache_misses": 0, "cache_entries": 0}
+        return core
+
+    def test_export_contains_all_sections(self):
+        core = self._make_core_stub()
+        report = core.export_cost_report()
+        self.assertIn("session", report)
+        self.assertIn("economy_savings", report)
+        self.assertIn("context_breakdown", report)
+        self.assertIn("cache_stats", report)
+        self.assertIn("model", report)
+
+
+class TestBudgetTemplates(unittest.TestCase):
+    def _make_core_stub(self):
+        from poor_cli.core import PoorCLICore
+        core = object.__new__(PoorCLICore)
+        core.config = Config()
+        core._cost_warning_emitted = True
+        return core
+
+    def test_apply_quick_question(self):
+        core = self._make_core_stub()
+        result = core.apply_budget_template("quick_question")
+        self.assertEqual(result["template"], "quick_question")
+        self.assertEqual(core.config.cost_guardrails.session_max_tokens, 5000)
+        self.assertFalse(core._cost_warning_emitted) # reset on new budget
+
+    def test_apply_deep_refactor(self):
+        core = self._make_core_stub()
+        result = core.apply_budget_template("deep_refactor")
+        self.assertEqual(core.config.cost_guardrails.session_max_cost_usd, 0.50)
+
+    def test_apply_unknown_template(self):
+        core = self._make_core_stub()
+        result = core.apply_budget_template("nonexistent")
+        self.assertIn("error", result)
+
+    def test_list_templates(self):
+        from poor_cli.core import PoorCLICore
+        templates = PoorCLICore.list_budget_templates()
+        self.assertIn("quick_question", templates)
+        self.assertIn("code_review", templates)
+        self.assertIn("deep_refactor", templates)
+        self.assertIn("unlimited", templates)
+
+
+class TestAutoCompressOnPressure(unittest.TestCase):
+    def _make_core_stub(self, pressure_pct=80):
+        from poor_cli.core import PoorCLICore
+        core = object.__new__(PoorCLICore)
+        core.config = Config()
+        core.config.economy.auto_compress_pressure_pct = 70
+        core.config.context_compression.enabled = True
+        core.config.context_compression.compress_after_turns = 3
+        core.config.context_compression.preserve_recent_turns = 2
+        core.provider = MagicMock()
+        caps = MagicMock()
+        caps.max_context_tokens = 1000
+        core.provider.get_capabilities.return_value = caps
+        # simulate high pressure with enough messages (>4 required)
+        msg_content = "x" * int(1000 * 4 * pressure_pct / 100 // 6)
+        core.provider.get_history.return_value = [
+            {"role": "user", "content": msg_content},
+            {"role": "assistant", "content": msg_content},
+            {"role": "user", "content": msg_content},
+            {"role": "assistant", "content": msg_content},
+            {"role": "user", "content": msg_content},
+            {"role": "assistant", "content": msg_content},
+        ]
+        core._system_instruction = ""
+        from unittest.mock import AsyncMock
+        core._context_compressor = MagicMock()
+        core._context_compressor.compress_auto = AsyncMock(return_value=[{"role": "user", "content": "compressed"}])
+        core._turn_economy = EconomyTurnReport()
+        return core
+
+    def test_no_compress_under_threshold(self):
+        import asyncio
+        core = self._make_core_stub(pressure_pct=50)
+        result = asyncio.run(core._auto_compress_on_pressure())
+        self.assertIsNone(result)
+
+    def test_compress_over_threshold(self):
+        import asyncio
+        core = self._make_core_stub(pressure_pct=80)
+        result = asyncio.run(core._auto_compress_on_pressure())
+        self.assertEqual(result, "auto_pressure")
+
+
+class TestFallbackCostSort(unittest.TestCase):
+    def test_ollama_first_when_prefer_cheaper(self):
+        from poor_cli.provider_fallback import ProviderFallbackManager
+        from poor_cli.config import FallbackConfig, ConfigManager
+        cfg = FallbackConfig(enabled=True, chain=["openai", "gemini", "ollama"], prefer_cheaper=True)
+        cm = MagicMock(spec=ConfigManager)
+        mgr = ProviderFallbackManager(cfg, cm)
+        chain = mgr._get_fallback_chain("anthropic")
+        self.assertEqual(chain[0], "ollama")
+
+
+class TestCalibratedTokenEstimation(unittest.TestCase):
+    def test_anthropic_ratio(self):
+        from poor_cli.context import chars_per_token
+        self.assertEqual(chars_per_token("anthropic"), 3.5)
+        self.assertEqual(chars_per_token("gemini"), 4.0)
+        self.assertEqual(chars_per_token("unknown"), 4) # default
+
+    def test_model_context_window(self):
+        from poor_cli.provider_catalog import get_model_context_window
+        self.assertEqual(get_model_context_window("gemini", "gemini-2.5-flash"), 1000000)
+        self.assertEqual(get_model_context_window("anthropic", "claude-sonnet-4-20250514"), 200000)
+        self.assertEqual(get_model_context_window("fake", "fake"), 0)
+
+
+class TestResponseCacheFalsePositives(unittest.TestCase):
+    def _make_core_stub(self):
+        from poor_cli.core import PoorCLICore
+        core = object.__new__(PoorCLICore)
+        core.config = Config()
+        core.config.economy.response_cache = True
+        core.config.economy.response_cache_ttl = 300
+        core._response_cache = {}
+        core._economy_tracker = EconomySavingsTracker()
+        return core
+
+    def test_simple_question_is_cached(self):
+        core = self._make_core_stub()
+        core._cache_store("what is a closure?", "a function that captures its environment")
+        result = core._cache_lookup("what is a closure?")
+        self.assertEqual(result, "a function that captures its environment") # "simple" — should be cached
+
+    def test_imperative_create_not_cached(self):
+        core = self._make_core_stub()
+        core._cache_store("create a new React component with tests", "done")
+        result = core._cache_lookup("create a new React component with tests")
+        self.assertIsNone(result) # "complex" — should not be cached
 
 
 class TestTokenBreakdownCompute(unittest.TestCase):
