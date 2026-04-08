@@ -1982,11 +1982,13 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
 
     @staticmethod
     def _prompt_likely_needs_tools(prompt: str) -> bool:
-        """Heuristic: return True if prompt likely triggers tool calls (unsafe to cache)."""
-        lower = prompt.lower()
-        _TOOL_KW = {"write", "create", "edit", "delete", "run", "execute", "bash",
-                     "build", "test", "deploy", "install", "commit", "push"}
-        return any(kw in lower for kw in _TOOL_KW)
+        """Heuristic: return True if prompt likely triggers tool calls (unsafe to cache).
+
+        Uses classify_prompt_complexity instead of raw keyword matching to avoid
+        false positives on explanatory prompts like "what does the write function do?"
+        """
+        complexity = classify_prompt_complexity(prompt)
+        return complexity != "simple"
 
     # ── Economy: context dedup ────────────────────────────────────────
 
