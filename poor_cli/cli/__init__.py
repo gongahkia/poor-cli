@@ -14,6 +14,9 @@ from .config_cmds import (
     run_core_info_command,
     run_cost_mode,
     run_search_mode,
+    run_context_mode,
+    run_workflow_mode,
+    run_services_mode,
 )
 from .review_cmds import (
     run_review_file_mode,
@@ -34,4 +37,7 @@ __all__ = [
     "run_search_mode",
     "run_review_file_mode",
     "run_commit_mode",
+    "run_context_mode",
+    "run_workflow_mode",
+    "run_services_mode",
 ]

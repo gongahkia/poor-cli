@@ -31,6 +31,9 @@ from .cli import (
     run_search_mode,
     run_review_file_mode,
     run_commit_mode,
+    run_context_mode,
+    run_workflow_mode,
+    run_services_mode,
 )
 from ._exec_helpers import build_exec_permission_callback, _trusted_workspace_roots
 from .config import Config, ConfigManager, PermissionMode, parse_permission_mode
@@ -1832,6 +1835,12 @@ def _main() -> None:
         raise SystemExit(_run_core_info_command("get_mcp_status", argv[1:], "poor-cli mcp"))
     if argv and argv[0] == "cost":
         raise SystemExit(_run_cost_mode(argv[1:]))
+    if argv and argv[0] == "context":
+        raise SystemExit(run_context_mode(argv[1:]))
+    if argv and argv[0] == "workflow":
+        raise SystemExit(run_workflow_mode(argv[1:]))
+    if argv and argv[0] == "services":
+        raise SystemExit(run_services_mode(argv[1:]))
     if argv and argv[0] == "search":
         raise SystemExit(_run_search_mode(argv[1:]))
     if argv and argv[0] == "review":

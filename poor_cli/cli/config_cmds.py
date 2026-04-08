@@ -344,6 +344,99 @@ def run_cost_mode(argv: Sequence[str]) -> int:
     return 0
 
 
+def run_context_mode(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(prog="poor-cli context")
+    sub = parser.add_subparsers(dest="subcommand")
+    p_compact = sub.add_parser("compact")
+    p_compact.add_argument("strategy", nargs="?", default="auto", choices=("auto", "compact", "compress"))
+    sub.add_parser("preview")
+    sub.add_parser("pressure")
+    sub.add_parser("breakdown")
+    parser.add_argument("--config", help="config file path")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args(list(argv))
+    cmd = args.subcommand or "preview"
+    async def _run():
+        core = PoorCLICore(config_path=Path(args.config).expanduser() if getattr(args, "config", None) else None)
+        await core.initialize()
+        try:
+            if cmd == "compact":
+                return await core.compact_context(getattr(args, "strategy", "auto"))
+            if cmd == "preview":
+                return await core.preview_context(message="", context_files=[], pinned_context_files=[])
+            if cmd == "pressure":
+                return core.get_context_pressure()
+            if cmd == "breakdown":
+                return core.get_context_breakdown()
+        finally:
+            await core.shutdown()
+        return {}
+    result = asyncio.run(_run())
+    _print_json(result)
+    return 0
+
+
+def run_workflow_mode(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(prog="poor-cli workflow")
+    sub = parser.add_subparsers(dest="subcommand")
+    sub.add_parser("list")
+    p_get = sub.add_parser("get")
+    p_get.add_argument("name")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args(list(argv))
+    cmd = args.subcommand or "list"
+    from ..workflow_templates import get_workflow_template, list_workflow_templates
+    if cmd == "list":
+        templates = list_workflow_templates()
+        _print_json([{"name": t.name, "description": t.description} for t in templates])
+    elif cmd == "get":
+        tmpl = get_workflow_template(args.name)
+        if tmpl:
+            _print_json({"name": tmpl.name, "description": tmpl.description, "steps": tmpl.steps})
+        else:
+            _print_json({"error": f"workflow '{args.name}' not found"})
+    return 0
+
+
+def run_services_mode(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(prog="poor-cli services")
+    sub = parser.add_subparsers(dest="subcommand")
+    p_start = sub.add_parser("start")
+    p_start.add_argument("name")
+    p_start.add_argument("command")
+    p_stop = sub.add_parser("stop")
+    p_stop.add_argument("name")
+    p_status = sub.add_parser("status")
+    p_status.add_argument("name")
+    p_logs = sub.add_parser("logs")
+    p_logs.add_argument("name")
+    parser.add_argument("--config", help="config file path")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args(list(argv))
+    cmd = args.subcommand
+    if not cmd:
+        print("usage: poor-cli services [start|stop|status|logs] <name>")
+        return 1
+    async def _run():
+        core = PoorCLICore(config_path=Path(args.config).expanduser() if getattr(args, "config", None) else None)
+        await core.initialize()
+        try:
+            if cmd == "start":
+                return await core.start_service(args.name, args.command)
+            if cmd == "stop":
+                return await core.stop_service(args.name)
+            if cmd == "status":
+                return await core.get_service_status(args.name)
+            if cmd == "logs":
+                return await core.get_service_logs(args.name)
+        finally:
+            await core.shutdown()
+        return {}
+    result = asyncio.run(_run())
+    _print_json(result)
+    return 0
+
+
 def run_search_mode(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="poor-cli search")
     parser.add_argument("query", nargs="?")
