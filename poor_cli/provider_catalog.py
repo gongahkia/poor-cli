@@ -29,6 +29,7 @@ class ModelTier:
     cost_1k_in: float
     cost_1k_out: float
     speed_rank: int  # 1=fastest, 3=slowest
+    context_window: int = 0  # max context tokens (0 = unknown)
 
 
 @lru_cache(maxsize=1)
@@ -110,7 +111,14 @@ def get_model_tier(provider: str, model: str) -> Optional[ModelTier]:
         cost_1k_in=float(tier_data.get("cost_1k_in", 0)),
         cost_1k_out=float(tier_data.get("cost_1k_out", 0)),
         speed_rank=int(tier_data.get("speed_rank", 2)),
+        context_window=int(tier_data.get("context_window", 0)),
     )
+
+
+def get_model_context_window(provider: str, model: str) -> int:
+    """Return context window size for a model, or 0 if unknown."""
+    tier = get_model_tier(provider, model)
+    return tier.context_window if tier else 0
 
 
 def get_cheapest_model(provider: str) -> Optional[ModelTier]:

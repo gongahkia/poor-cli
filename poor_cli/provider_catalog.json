@@ -12,9 +12,9 @@
       "setupHelp": "Paste a Google AI Studio or Vertex-backed Gemini key here if you want Gemini models available.",
       "capabilitySummary": "Streaming, function calling, system instructions, vision, JSON mode",
       "modelTiers": {
-        "gemini-2.5-pro": { "tier": "quality", "cost_1k_in": 0.00125, "cost_1k_out": 0.005, "speed_rank": 3 },
-        "gemini-2.5-flash": { "tier": "balanced", "cost_1k_in": 0.00015, "cost_1k_out": 0.0006, "speed_rank": 1 },
-        "gemini-2.5-flash-lite": { "tier": "cheap", "cost_1k_in": 0.0000375, "cost_1k_out": 0.00015, "speed_rank": 1 }
+        "gemini-2.5-pro": { "tier": "quality", "cost_1k_in": 0.00125, "cost_1k_out": 0.005, "speed_rank": 3, "context_window": 1000000 },
+        "gemini-2.5-flash": { "tier": "balanced", "cost_1k_in": 0.00015, "cost_1k_out": 0.0006, "speed_rank": 1, "context_window": 1000000 },
+        "gemini-2.5-flash-lite": { "tier": "cheap", "cost_1k_in": 0.0000375, "cost_1k_out": 0.00015, "speed_rank": 1, "context_window": 1000000 }
       }
     },
     "openai": {
@@ -29,9 +29,9 @@
       "setupHelp": "Use an OpenAI API key if you want GPT models available in `/switch` and the TUI.",
       "capabilitySummary": "Streaming, function calling, system instructions, JSON mode, vision on GPT-5/GPT-4.1-class models",
       "modelTiers": {
-        "gpt-5.1": { "tier": "quality", "cost_1k_in": 0.001, "cost_1k_out": 0.003, "speed_rank": 3 },
-        "gpt-5": { "tier": "balanced", "cost_1k_in": 0.0005, "cost_1k_out": 0.0015, "speed_rank": 2 },
-        "gpt-5-mini": { "tier": "cheap", "cost_1k_in": 0.0001, "cost_1k_out": 0.0003, "speed_rank": 1 }
+        "gpt-5.1": { "tier": "quality", "cost_1k_in": 0.001, "cost_1k_out": 0.003, "speed_rank": 3, "context_window": 1000000 },
+        "gpt-5": { "tier": "balanced", "cost_1k_in": 0.0005, "cost_1k_out": 0.0015, "speed_rank": 2, "context_window": 1000000 },
+        "gpt-5-mini": { "tier": "cheap", "cost_1k_in": 0.0001, "cost_1k_out": 0.0003, "speed_rank": 1, "context_window": 1000000 }
       }
     },
     "anthropic": {
@@ -49,9 +49,9 @@
       "setupHelp": "Anthropic powers Claude models. Saving here keeps the key available for later provider switches.",
       "capabilitySummary": "Streaming, function calling, system instructions, vision",
       "modelTiers": {
-        "claude-sonnet-4-20250514": { "tier": "quality", "cost_1k_in": 0.003, "cost_1k_out": 0.015, "speed_rank": 3 },
-        "claude-3-7-sonnet-20250219": { "tier": "balanced", "cost_1k_in": 0.003, "cost_1k_out": 0.015, "speed_rank": 2 },
-        "claude-3-5-haiku-20241022": { "tier": "cheap", "cost_1k_in": 0.0008, "cost_1k_out": 0.004, "speed_rank": 1 }
+        "claude-sonnet-4-20250514": { "tier": "quality", "cost_1k_in": 0.003, "cost_1k_out": 0.015, "speed_rank": 3, "context_window": 200000 },
+        "claude-3-7-sonnet-20250219": { "tier": "balanced", "cost_1k_in": 0.003, "cost_1k_out": 0.015, "speed_rank": 2, "context_window": 200000 },
+        "claude-3-5-haiku-20241022": { "tier": "cheap", "cost_1k_in": 0.0008, "cost_1k_out": 0.004, "speed_rank": 1, "context_window": 200000 }
       }
     },
     "openrouter": {
@@ -68,10 +68,10 @@
       "setupHelp": "OpenRouter routes to 200+ models via a single API key. Get one at openrouter.ai/keys.",
       "capabilitySummary": "Streaming, function calling, system instructions, vision (model-dependent)",
       "modelTiers": {
-        "anthropic/claude-sonnet-4-20250514": { "tier": "quality", "cost_1k_in": 0.003, "cost_1k_out": 0.015, "speed_rank": 3 },
-        "openai/gpt-5": { "tier": "balanced", "cost_1k_in": 0.0005, "cost_1k_out": 0.0015, "speed_rank": 2 },
-        "google/gemini-2.5-flash": { "tier": "cheap", "cost_1k_in": 0.00015, "cost_1k_out": 0.0006, "speed_rank": 1 },
-        "deepseek/deepseek-r1": { "tier": "cheap", "cost_1k_in": 0.00055, "cost_1k_out": 0.0022, "speed_rank": 2 }
+        "anthropic/claude-sonnet-4-20250514": { "tier": "quality", "cost_1k_in": 0.003, "cost_1k_out": 0.015, "speed_rank": 3, "context_window": 200000 },
+        "openai/gpt-5": { "tier": "balanced", "cost_1k_in": 0.0005, "cost_1k_out": 0.0015, "speed_rank": 2, "context_window": 1000000 },
+        "google/gemini-2.5-flash": { "tier": "cheap", "cost_1k_in": 0.00015, "cost_1k_out": 0.0006, "speed_rank": 1, "context_window": 1000000 },
+        "deepseek/deepseek-r1": { "tier": "cheap", "cost_1k_in": 0.00055, "cost_1k_out": 0.0022, "speed_rank": 2, "context_window": 128000 }
       }
     },
     "ollama": {
@@ -88,10 +88,10 @@
       "setupHelp": "Optional. Ollama runs locally and does not usually require an API key.",
       "capabilitySummary": "Streaming, system instructions, JSON mode, optional function calling for capable local models",
       "modelTiers": {
-        "llama3.1": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 1 },
-        "qwen2.5-coder": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 1 },
-        "mistral": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 1 },
-        "codellama": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 1 }
+        "llama3.1": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 1, "context_window": 128000 },
+        "qwen2.5-coder": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 1, "context_window": 32000 },
+        "mistral": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 1, "context_window": 32000 },
+        "codellama": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 1, "context_window": 16000 }
       }
     }
   }

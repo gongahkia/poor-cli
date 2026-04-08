@@ -429,9 +429,12 @@ class OpenAIProvider(BaseProvider):
 
     def get_capabilities(self) -> ProviderCapabilities:
         """Get OpenAI capabilities"""
-        # Determine capabilities based on model
         supports_vision = "vision" in self.model_name.lower() or "gpt-4" in self.model_name
-        max_tokens = 128000 if "turbo" in self.model_name or "gpt-4" in self.model_name else 8192
+        # prefer catalog context window, fall back to heuristic
+        from ..provider_catalog import get_model_context_window
+        max_tokens = get_model_context_window("openai", self.model_name)
+        if not max_tokens:
+            max_tokens = 128000 if "turbo" in self.model_name or "gpt-4" in self.model_name else 8192
 
         return ProviderCapabilities(
             supports_streaming=True,

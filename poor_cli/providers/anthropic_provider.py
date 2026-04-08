@@ -447,8 +447,8 @@ class AnthropicProvider(BaseProvider):
 
     def get_capabilities(self) -> ProviderCapabilities:
         """Get Anthropic capabilities"""
-        # Claude 3.5 Sonnet has 200K context, Claude 3 Opus has 200K
-        max_tokens = 200000
+        from ..provider_catalog import get_model_context_window
+        max_tokens = get_model_context_window("anthropic", self.model_name) or 200000
 
         return ProviderCapabilities(
             supports_streaming=True,
