@@ -79,18 +79,25 @@ def scan_directory_for_instructions(
 
 
 class FileWatcher:
-    """Watches files for changes and triggers callbacks on poor-cli instructions."""
+    """Watches files for changes and triggers callbacks on poor-cli instructions.
+
+    This is the canonical file watcher for poor-cli. Supports two interfaces:
+    1. Callback-based: pass on_instruction/on_execute to start()
+    2. Async-generator: use watch_changes() for generic file-change iteration
+    """
 
     def __init__(
         self,
         root: Optional[str] = None,
         extensions: Optional[Set[str]] = None,
+        patterns: Optional[List[str]] = None,
         debounce: float = DEFAULT_DEBOUNCE_SECONDS,
         on_instruction: Optional[Callable] = None,
         on_execute: Optional[Callable] = None,
     ):
         self._root = Path(root or os.getcwd()).resolve()
         self._extensions = extensions or DEFAULT_EXTENSIONS
+        self._patterns = patterns # glob patterns (overrides extensions if set)
         self._debounce = debounce
         self._on_instruction = on_instruction
         self._on_execute = on_execute
@@ -135,25 +142,43 @@ class FileWatcher:
     def stop(self) -> None:
         self._running = False
 
+    def _matches_file(self, fname: str) -> bool:
+        """Check if a filename matches configured patterns or extensions."""
+        if self._patterns:
+            import fnmatch
+            return any(fnmatch.fnmatch(fname, p) for p in self._patterns)
+        return Path(fname).suffix.lower() in self._extensions
+
+    async def watch_changes(self) -> "AsyncIterator[List[str]]":
+        """Async generator yielding lists of changed file paths (generic interface)."""
+        from typing import AsyncIterator
+        self._snapshot_mtimes()
+        while True:
+            await asyncio.sleep(self._debounce)
+            changed = self._detect_changes()
+            if changed:
+                yield changed
+
     def _snapshot_mtimes(self) -> None:
         for dirpath, dirnames, filenames in os.walk(self._root):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
             for fname in filenames:
+                if not self._matches_file(fname):
+                    continue
                 fpath = Path(dirpath) / fname
-                if fpath.suffix.lower() in self._extensions:
-                    try:
-                        self._mtimes[str(fpath)] = fpath.stat().st_mtime
-                    except OSError:
-                        pass
+                try:
+                    self._mtimes[str(fpath)] = fpath.stat().st_mtime
+                except OSError:
+                    pass
 
     def _detect_changes(self) -> List[str]:
         changed = []
         for dirpath, dirnames, filenames in os.walk(self._root):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
             for fname in filenames:
-                fpath = Path(dirpath) / fname
-                if fpath.suffix.lower() not in self._extensions:
+                if not self._matches_file(fname):
                     continue
+                fpath = Path(dirpath) / fname
                 fp = str(fpath)
                 try:
                     mtime = fpath.stat().st_mtime
