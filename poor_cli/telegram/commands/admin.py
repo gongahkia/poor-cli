@@ -440,6 +440,94 @@ async def _handle_export_cost(bot, update: Any, context: Any) -> None:
         await update.message.reply_text(f"error: {e}")
 
 
+async def _handle_skills(bot, update: Any, context: Any) -> None:
+    uid = update.effective_user.id
+    if not bot._is_authorized(uid):
+        return
+    tid = bot._threads.get_active_thread(uid)
+    core = bot._threads.get_core(uid, tid)
+    await bot._threads.ensure_initialized(core)
+    try:
+        from poor_cli.skills import SkillRegistry
+        registry = SkillRegistry()
+        skills = registry.list_skills()
+        if not skills:
+            await update.message.reply_text("no skills found")
+            return
+        lines = ["available skills:"]
+        for s in skills:
+            lines.append(f"  /{s.name}: {s.description[:60]}")
+        await update.message.reply_text("\n".join(lines))
+    except Exception as e:
+        await update.message.reply_text(f"error: {e}")
+
+
+async def _handle_mcp_health(bot, update: Any, context: Any) -> None:
+    uid = update.effective_user.id
+    if not bot._is_authorized(uid):
+        return
+    tid = bot._threads.get_active_thread(uid)
+    core = bot._threads.get_core(uid, tid)
+    await bot._threads.ensure_initialized(core)
+    try:
+        if hasattr(core, '_mcp_manager') and core._mcp_manager:
+            health = await core._mcp_manager.health_check()
+            lines = ["MCP health:"]
+            for name, status in health.items():
+                lines.append(f"  {name}: {'✓' if status else '✗'}")
+            await update.message.reply_text("\n".join(lines))
+        else:
+            await update.message.reply_text("no MCP servers configured")
+    except Exception as e:
+        await update.message.reply_text(f"error: {e}")
+
+
+async def _handle_deploy_info(bot, update: Any, context: Any) -> None:
+    uid = update.effective_user.id
+    if not bot._is_authorized(uid):
+        return
+    args = (context.args or []) if context else []
+    tid = bot._threads.get_active_thread(uid)
+    core = bot._threads.get_core(uid, tid)
+    await bot._threads.ensure_initialized(core)
+    sub = args[0] if args else "targets"
+    try:
+        result = await _chat_cmd(core, f"/deploy --{sub}")
+        pages = fmt.paginate(result or f"deploy {sub} done")
+        for page in pages:
+            await update.effective_message.reply_text(page)
+    except Exception as e:
+        await update.message.reply_text(f"error: {e}")
+
+
+async def _handle_search(bot, update: Any, context: Any) -> None:
+    uid = update.effective_user.id
+    if not bot._is_authorized(uid):
+        return
+    args = (context.args or []) if context else []
+    if not args:
+        await update.message.reply_text("usage: /search <query>")
+        return
+    query = " ".join(args)
+    tid = bot._threads.get_active_thread(uid)
+    core = bot._threads.get_core(uid, tid)
+    await bot._threads.ensure_initialized(core)
+    try:
+        from poor_cli.indexer import CodebaseIndexer
+        from pathlib import Path
+        indexer = CodebaseIndexer(Path.cwd())
+        results = await indexer.hybrid_search(query, max_results=5)
+        if not results:
+            await update.message.reply_text("no results found")
+            return
+        lines = [f"search results for '{query}':"]
+        for r in results:
+            lines.append(f"  {r.score:.3f} {r.file_path}")
+        await update.message.reply_text("\n".join(lines))
+    except Exception as e:
+        await update.message.reply_text(f"error: {e}")
+
+
 def register(app, bot):
     for cmd, handler_fn in [
         ("config", _handle_config),
@@ -458,6 +546,10 @@ def register(app, bot):
         ("breakdown", _handle_breakdown),
         ("compare_cost", _handle_compare_cost),
         ("export_cost", _handle_export_cost),
+        ("skills", _handle_skills),
+        ("mcp_health", _handle_mcp_health),
+        ("deploy_info", _handle_deploy_info),
+        ("search", _handle_search),
     ]:
         fn = handler_fn
         async def make_handler(update, context, _fn=fn):
