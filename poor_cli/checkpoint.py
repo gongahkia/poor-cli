@@ -129,7 +129,9 @@ class CheckpointManager:
 
         # Load checkpoint index
         self.checkpoints: List[Checkpoint] = []
+        self._content_store: Dict[str, Path] = {} # content_hash -> existing snapshot path (cross-checkpoint dedup)
         self._load_index()
+        self._rebuild_content_store()
 
         # Background cleanup
         self._cleanup_thread: Optional[Thread] = None
@@ -138,6 +140,15 @@ class CheckpointManager:
             self._start_background_cleanup()
 
         logger.info(f"Initialized checkpoint manager at {self.checkpoints_dir}")
+
+    def _rebuild_content_store(self) -> None:
+        """Scan existing checkpoints to populate content-addressed store for dedup."""
+        for cp in self.checkpoints:
+            cp_dir = self._get_checkpoint_dir(cp.checkpoint_id)
+            for snap in cp.snapshots:
+                snapshot_path = cp_dir / f"{snap.content_hash}.snapshot"
+                if snapshot_path.exists() and snap.content_hash not in self._content_store:
+                    self._content_store[snap.content_hash] = snapshot_path
 
     def _ensure_checkpoints_dir(self):
         """Ensure checkpoints directory exists"""
@@ -354,14 +365,22 @@ class CheckpointManager:
                 except Exception as e:
                     logger.warning(f"Compression failed for {file_path}: {e}")
 
-            # Save snapshot to checkpoint directory
+            # Save snapshot to checkpoint directory (content-addressed cross-checkpoint dedup)
             snapshot_filename = f"{content_hash}.snapshot"
             snapshot_path = checkpoint_dir / snapshot_filename
 
-            # Only save if not already saved (deduplication)
             if not snapshot_path.exists():
-                with open(snapshot_path, 'wb') as f:
-                    f.write(snapshot_content)
+                existing = self._content_store.get(content_hash)
+                if existing and existing.exists():
+                    try:
+                        os.link(str(existing), str(snapshot_path)) # hardlink to save I/O
+                    except OSError:
+                        with open(snapshot_path, 'wb') as f:
+                            f.write(snapshot_content)
+                else:
+                    with open(snapshot_path, 'wb') as f:
+                        f.write(snapshot_content)
+                self._content_store[content_hash] = snapshot_path
 
             # Get file stats
             stat = path.stat()
