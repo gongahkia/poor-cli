@@ -226,6 +226,7 @@ class EconomyTurnReport:
     cache_hit: bool = False
     dedup_tokens_saved: int = 0
     diff_only_applied: bool = False
+    sequential_reads_detected: int = 0 # read_file calls across separate iterations (inefficient)
 
 
 @dataclass

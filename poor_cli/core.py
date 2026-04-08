@@ -3296,6 +3296,11 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                 return tool_results
             return self.provider.format_tool_results(tool_results)
 
+        # detect inefficient sequential read_file pattern
+        read_calls = [fc for fc in response.function_calls if fc.name == "read_file"]
+        if len(read_calls) == 1 and len(response.function_calls) == 1:
+            self._turn_economy.sequential_reads_detected += 1
+
         # partition into concurrency-safe (bounded parallel) and sequential calls
         concurrency_safe_calls: List[FunctionCall] = []
         sequential_calls: List[FunctionCall] = []
