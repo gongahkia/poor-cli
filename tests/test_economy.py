@@ -42,9 +42,17 @@ class TestClassifyPromptComplexity(unittest.TestCase):
         prompt = "x " * 1100 # > 2000 chars
         self.assertEqual(classify_prompt_complexity(prompt), "complex")
 
-    def test_moderate_multiple_questions(self):
+    def test_simple_pure_questions(self):
         prompt = "What is this? How does it work? Where is it defined?"
-        self.assertEqual(classify_prompt_complexity(prompt), "moderate")
+        self.assertEqual(classify_prompt_complexity(prompt), "simple") # pure questions without tool keywords
+
+    def test_moderate_question_with_file_path(self):
+        prompt = "What does utils.py do? How is it connected?"
+        self.assertEqual(classify_prompt_complexity(prompt), "moderate") # file path detected
+
+    def test_complex_with_verb(self):
+        prompt = "refactor the auth module"
+        self.assertEqual(classify_prompt_complexity(prompt), "complex") # complex verb
 
 
 class TestDistillPrompt(unittest.TestCase):

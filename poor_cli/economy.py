@@ -76,6 +76,7 @@ ECONOMY_PRESETS: Dict[str, Dict[str, Any]] = {
         "response_cache": False,
         "diff_only_reads": False,
         "idle_compact_seconds": 0,
+        "compress_after_turns": 0, # 0 = use default (no override)
     },
 }
 
