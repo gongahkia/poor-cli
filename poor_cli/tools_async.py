@@ -263,6 +263,7 @@ class ToolRegistryAsync:
         self._tool_cache_misses: int = 0
         self._todos: List[Dict[str, str]] = []  # agent todo list
         self._todos_path = Path.cwd() / ".poor-cli" / "todos.json"
+        self._http_session: Optional["aiohttp.ClientSession"] = None # pooled HTTP client
         self._load_todos()
         self._register_tools()
 
@@ -270,6 +271,20 @@ class ToolRegistryAsync:
         import hashlib
         canonical = json.dumps({"t": tool_name, "a": arguments}, sort_keys=True)
         return hashlib.sha256(canonical.encode()).hexdigest()[:32]
+
+    async def close(self) -> None:
+        """Close pooled resources."""
+        if self._http_session and not self._http_session.closed:
+            await self._http_session.close()
+            self._http_session = None
+
+    def _get_or_create_http_session(self, timeout: int = 20) -> "aiohttp.ClientSession":
+        """Return pooled aiohttp session, creating lazily on first use."""
+        if self._http_session is None or self._http_session.closed:
+            self._http_session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=timeout),
+            )
+        return self._http_session
 
     def reset_cwd(self) -> None:
         self._cwd = os.getcwd()  # reset to process working directory
@@ -3788,8 +3803,8 @@ class ToolRegistryAsync:
         max_body_bytes = min(max(max_chars * 8, 65536), self.MAX_CAPTURED_OUTPUT_BYTES)
 
         try:
-            client_timeout = aiohttp.ClientTimeout(total=timeout)
-            async with aiohttp.ClientSession(timeout=client_timeout) as session:
+            session = self._get_or_create_http_session(timeout)
+            if True: # use pooled session (replaces `async with ... as session:`)
                 current_url = url
                 for _ in range(max_redirects + 1):
                     self._validate_fetch_target(current_url)
