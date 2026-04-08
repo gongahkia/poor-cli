@@ -277,10 +277,31 @@ def run_cost_mode(argv: Sequence[str]) -> int:
     p_economy.add_argument("preset", nargs="?", choices=("frugal", "balanced", "quality"))
     sub.add_parser("savings")
     sub.add_parser("export")
+    p_history = sub.add_parser("history")
+    p_history.add_argument("--limit", type=int, default=50)
+    sub.add_parser("tokens") # token visualization
+    sub.add_parser("cache-stats")
+    p_budget = sub.add_parser("budget")
+    p_budget.add_argument("template", nargs="?", help="quick_question|code_review|deep_refactor|unlimited")
+    sub.add_parser("pressure") # context pressure
+    sub.add_parser("breakdown") # context breakdown
+    p_compare = sub.add_parser("compare")
+    p_compare.add_argument("provider", nargs="?")
+    p_compare.add_argument("model", nargs="?")
+    sub.add_parser("templates") # list budget templates
     parser.add_argument("--config", help="config file path")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(list(argv))
     cmd = args.subcommand or "summary"
+    # history and templates don't need a running core
+    if cmd == "history":
+        entries = PoorCLICore.get_cost_history(getattr(args, "limit", 50))
+        total = sum(e.get("cost_usd", 0) for e in entries)
+        _print_json({"entries": entries, "count": len(entries), "total_cost_usd": round(total, 6)})
+        return 0
+    if cmd == "templates":
+        _print_json(PoorCLICore.list_budget_templates())
+        return 0
     async def _run():
         core = PoorCLICore(config_path=Path(args.config).expanduser() if getattr(args, "config", None) else None)
         await core.initialize()
@@ -296,14 +317,30 @@ def run_cost_mode(argv: Sequence[str]) -> int:
                 if preset:
                     return core.set_economy_preset(preset)
                 return {"current_preset": getattr(core.config, "economy_preset", "balanced")}
+            if cmd == "tokens":
+                return core.get_tokens_visualization()
+            if cmd == "cache-stats":
+                return core.get_cache_stats()
+            if cmd == "budget":
+                template = getattr(args, "template", None)
+                if template:
+                    return core.apply_budget_template(template)
+                return {"templates": list(PoorCLICore.list_budget_templates().keys())}
+            if cmd == "pressure":
+                return core.get_context_pressure()
+            if cmd == "breakdown":
+                return core.get_context_breakdown()
+            if cmd == "compare":
+                provider = getattr(args, "provider", None)
+                model = getattr(args, "model", None)
+                if not provider or not model:
+                    return {"error": "usage: poor-cli cost compare <provider> <model>"}
+                return core.compare_model_cost(provider, model)
         finally:
             await core.shutdown()
         return {}
     result = asyncio.run(_run())
-    if args.json:
-        _print_json(result)
-    else:
-        _print_json(result)
+    _print_json(result)
     return 0
 
 
