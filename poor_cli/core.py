@@ -50,6 +50,7 @@ from .economy import (
 from .prompts import (
     build_fim_prompt as _build_fim_prompt,
     build_tool_calling_system_instruction,
+    detect_tone_from_user_memories,
     get_system_instruction,
 )
 from .workflow_templates import get_workflow_template, list_workflow_templates
@@ -347,6 +348,16 @@ class PoorCLICore:
                     "Use memory_save/memory_search/memory_delete/memory_list tools to manage them.\n\n"
                     f"{memory_index}\n"
                 )
+
+            # adapt tone based on user profile from memory
+            try:
+                _user_memories = self._memory_manager.list_all(type_filter="user")
+                _user_content = "\n".join(m.content for m in _user_memories)
+                _tone = detect_tone_from_user_memories(_user_content)
+                if _tone:
+                    self._system_instruction += _tone
+            except Exception:
+                pass
 
             provider_capabilities = self.provider.get_capabilities()
             init_tools = (
@@ -1860,6 +1871,15 @@ class PoorCLICore:
                 "The following memories were saved in previous sessions.\n\n"
                 f"{memory_index}\n"
             )
+        try:
+            if self._memory_manager:
+                _user_memories = self._memory_manager.list_all(type_filter="user")
+                _user_content = "\n".join(m.content for m in _user_memories)
+                _tone = detect_tone_from_user_memories(_user_content)
+                if _tone:
+                    self._system_instruction += _tone
+        except Exception:
+            pass
         self.provider.update_system_instruction(self._system_instruction)
         self._system_context_hash = new_hash
         context_contract = getattr(self, "_context_contract", None)

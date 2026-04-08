@@ -274,6 +274,37 @@ OUTPUT EFFICIENCY:
 - If you can say it in one sentence, do not use three.
 - When showing code changes, prefer diffs or targeted edits over full file rewrites."""
 
+_TONE_EXPERT = """
+TONE: The user is an experienced developer. Be terse and direct. Skip basic explanations. Use technical shorthand. Focus on what changed and why."""
+
+_TONE_INTERMEDIATE = """
+TONE: Explain decisions briefly. Mention relevant trade-offs. Include short rationale for non-obvious choices."""
+
+_TONE_BEGINNER = """
+TONE: The user is learning. Explain concepts clearly with context. Show examples. Mention gotchas. Be encouraging but not patronizing."""
+
+_EXPERIENCE_KEYWORDS_EXPERT = frozenset({
+    "senior", "staff", "principal", "lead", "architect", "10 year", "15 year",
+    "20 year", "expert", "deep expertise", "experienced",
+})
+_EXPERIENCE_KEYWORDS_BEGINNER = frozenset({
+    "beginner", "learning", "student", "new to", "first time", "junior",
+    "getting started", "novice",
+})
+
+
+def detect_tone_from_user_memories(memory_contents: str) -> str:
+    """Detect experience level from user memory content and return tone section."""
+    if not memory_contents:
+        return ""
+    lower = memory_contents.lower()
+    if any(kw in lower for kw in _EXPERIENCE_KEYWORDS_BEGINNER):
+        return _TONE_BEGINNER
+    if any(kw in lower for kw in _EXPERIENCE_KEYWORDS_EXPERT):
+        return _TONE_EXPERT
+    return _TONE_INTERMEDIATE # default for users with memories but no clear signal
+
+
 ECONOMY_TERSE_SUFFIX = "\n\nIMPORTANT: Be extremely concise. No preamble, no trailing summaries. Lead with the answer."
 
 ECONOMY_BATCHED_READS_SUFFIX = "\n\nEFFICIENCY: When you need to read multiple files, batch them into a single tool call round. Avoid reading files one at a time across separate iterations."
