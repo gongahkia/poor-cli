@@ -29,6 +29,7 @@ class EconomyConfig:
     compress_after_turns: int = 0 # override ContextCompressionConfig.compress_after_turns (0 = use default)
     tool_strip_chars: int = 200 # max chars per tool result in compressed history
     auto_compress_pressure_pct: float = 70.0 # auto-compress when context pressure exceeds this %
+    budget_downshift_pct: float = 60.0 # auto-downshift to cheapest model when session cost hits this % of budget
 
 
 ECONOMY_PRESETS: Dict[str, Dict[str, Any]] = {
@@ -49,6 +50,7 @@ ECONOMY_PRESETS: Dict[str, Dict[str, Any]] = {
         "compress_after_turns": 6,
         "tool_strip_chars": 50,
         "auto_compress_pressure_pct": 60.0,
+        "budget_downshift_pct": 50.0,
     },
     "balanced": {
         "auto_downshift": True,
@@ -67,6 +69,7 @@ ECONOMY_PRESETS: Dict[str, Dict[str, Any]] = {
         "compress_after_turns": 10,
         "tool_strip_chars": 200,
         "auto_compress_pressure_pct": 70.0,
+        "budget_downshift_pct": 60.0,
     },
     "quality": {
         "auto_downshift": False,
@@ -85,6 +88,7 @@ ECONOMY_PRESETS: Dict[str, Dict[str, Any]] = {
         "compress_after_turns": 0, # 0 = use default (no override)
         "tool_strip_chars": 500,
         "auto_compress_pressure_pct": 0, # disabled in quality mode
+        "budget_downshift_pct": 0, # disabled in quality mode
     },
 }
 

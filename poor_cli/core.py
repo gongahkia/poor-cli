@@ -1791,10 +1791,34 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         return _asdict(self.config.economy)
 
     def _maybe_downshift_model(self, prompt: str) -> None:
-        """Switch to a cheaper model for simple prompts if economy.auto_downshift enabled."""
+        """Switch to a cheaper model for simple prompts or when approaching budget limit."""
         if not self.config or not self.provider:
             return
         eco = self.config.economy
+        # budget-aware forced downshift: switch to cheapest regardless of complexity
+        budget_pct = getattr(eco, "budget_downshift_pct", 0)
+        if budget_pct > 0:
+            cg = self.config.cost_guardrails
+            max_cost = getattr(cg, "session_max_cost_usd", 0.0) or 0.0
+            if max_cost > 0 and self._session_total_cost_usd >= max_cost * (budget_pct / 100):
+                from .provider_catalog import get_downshift_model, get_model_tier
+                result = get_downshift_model(self.config.model.provider)
+                if result:
+                    cheap_model_name, cheap_tier = result
+                    if cheap_model_name != self.config.model.model_name:
+                        current_tier = get_model_tier(self.config.model.provider, self.config.model.model_name)
+                        self._original_model_name = self.config.model.model_name
+                        self._downshifted = True
+                        self._turn_economy.downshifted = True
+                        self._turn_economy.downshift_model = cheap_model_name
+                        self.provider.switch_model(cheap_model_name)
+                        if current_tier:
+                            self._economy_tracker.record_downshift(
+                                current_tier.cost_1k_in + current_tier.cost_1k_out,
+                                cheap_tier.cost_1k_in + cheap_tier.cost_1k_out,
+                            )
+                        logger.info("Budget-aware downshift to %s (%.0f%% of budget used)", cheap_model_name, budget_pct)
+                        return
         if not eco.auto_downshift:
             return
         if len(prompt) >= eco.downshift_threshold_chars:
