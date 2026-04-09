@@ -173,6 +173,77 @@ def _press_enter() -> None:
     except (EOFError, KeyboardInterrupt):
         pass
 
+def _read_key() -> str:
+    """read single keypress, decode arrow escape seqs."""
+    if os.name == "nt":
+        import msvcrt
+        ch = msvcrt.getwch()
+        if ch in ('\x00', '\xe0'):
+            ch2 = msvcrt.getwch()
+            return {'H': 'up', 'P': 'down'}.get(ch2, '')
+        return ch
+    import tty, termios
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        ch = sys.stdin.read(1)
+        if ch == '\x1b':
+            ch2 = sys.stdin.read(1)
+            if ch2 == '[':
+                ch3 = sys.stdin.read(1)
+                return {'A': 'up', 'B': 'down'}.get(ch3, '')
+            return 'esc'
+        return ch
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+def _select(items: list[tuple[str, str]], allow_quit: bool = False, label_w: int = 24) -> int:
+    """arrow-key/hjkl menu. returns selected index or -1 for quit/back."""
+    if not sys.stdin.isatty(): # fallback for non-tty
+        for i, (label, desc) in enumerate(items):
+            print(f"    {i + 1}. {label:<{label_w}}{_dim(desc)}")
+        choice = _prompt("choice", "1")
+        if choice.lower() in ("q", "quit"):
+            return -1
+        try:
+            idx = int(choice) - 1
+            return idx if 0 <= idx < len(items) else -1
+        except ValueError:
+            return -1
+    sel, n = 0, len(items)
+    hint_parts = ["↑↓/jk navigate", "enter select"]
+    if allow_quit:
+        hint_parts.append("q quit")
+    hint = " · ".join(hint_parts)
+    total = n + 2 # items + blank + hint
+    first = True
+    while True:
+        if not first:
+            sys.stdout.write(f"\033[{total}A")
+        first = False
+        for i, (label, desc) in enumerate(items):
+            marker = _cyan("›") if i == sel else " "
+            num = f"{i + 1}."
+            if i == sel:
+                line = f"  {marker} {_bold(num)} {_bold(f'{label:<{label_w}}')}{desc}"
+            else:
+                line = f"  {marker} {num} {f'{label:<{label_w}}'}{_dim(desc)}"
+            sys.stdout.write(f"\033[K{line}\n")
+        sys.stdout.write(f"\033[K\n\033[K  {_dim(hint)}\n")
+        sys.stdout.flush()
+        key = _read_key()
+        if key in ('up', 'k'):
+            sel = (sel - 1) % n
+        elif key in ('down', 'j'):
+            sel = (sel + 1) % n
+        elif key in ('\r', '\n'):
+            return sel
+        elif key in ('q', 'Q') and allow_quit:
+            return -1
+        elif key == '\x03': # ctrl-c
+            return -1
+
 # -- screens --
 
 def _render_banner() -> None:
@@ -182,40 +253,22 @@ def _render_banner() -> None:
     print(f"  {_dim(f'v{__version__}  •  https://github.com/gongahkia/poor-cli')}")
     print(f"  {_dim('─' * 52)}\n")
 
-def _render_menu(selected: int = 0) -> None:
-    for i, (label, desc) in enumerate(MENU_ITEMS):
-        marker = _cyan("›") if i == selected else " "
-        num = f"{i + 1}."
-        padded = f"{label:<24}"
-        if i == selected:
-            print(f"  {marker} {_bold(num)} {_bold(padded)}{desc}")
-        else:
-            print(f"  {marker} {num} {padded}{_dim(desc)}")
-    print(f"\n  {_dim('Enter number (1-6) or Q to quit')}")
-
 def show_landing() -> int:
     """Main installer entry point. Returns exit code."""
+    handlers = [
+        _handle_install,
+        _handle_configure_providers,
+        _handle_telegram_setup,
+        _handle_build_tui,
+        _handle_system_check,
+        _handle_uninstall,
+    ]
     while True:
         _render_banner()
-        _render_menu()
-        choice = _prompt("choice", "1")
-        if choice.lower() in ("q", "quit", "exit"):
+        idx = _select(MENU_ITEMS, allow_quit=True)
+        if idx < 0:
             print(f"\n  {_dim('bye!')}\n")
             return 0
-        try:
-            idx = int(choice) - 1
-            if idx < 0 or idx >= len(MENU_ITEMS):
-                raise ValueError
-        except ValueError:
-            continue
-        handlers = [
-            _handle_install,
-            _handle_configure_providers,
-            _handle_telegram_setup,
-            _handle_build_tui,
-            _handle_system_check,
-            _handle_uninstall,
-        ]
         handlers[idx]()
 
 # -- 1. install / update --
@@ -228,15 +281,8 @@ def _handle_install() -> None:
         ("pip with all extras", "pip install --upgrade 'poor-cli[all]'"),
         ("from source (dev)", "pip install -e '.[all]'"),
     ]
-    for i, (label, cmd) in enumerate(methods):
-        print(f"    {i + 1}. {label:<28}{_dim(cmd)}")
-    print()
-    choice = _prompt("method", "1")
-    try:
-        idx = int(choice) - 1
-        if idx < 0 or idx >= len(methods):
-            return
-    except ValueError:
+    idx = _select(methods, allow_quit=True, label_w=28)
+    if idx < 0:
         return
     _, cmd = methods[idx]
     print()
@@ -295,20 +341,13 @@ def _handle_configure_providers() -> None:
     print(f"  {_dim('poor-cli supports multiple providers. configure API keys below.')}")
     print(f"  {_dim('keys are stored encrypted in ~/.poor-cli/keys/')}\n")
     providers = list(catalog.values())
-    for i, entry in enumerate(providers):
+    provider_items = []
+    for entry in providers:
         env_val = os.environ.get(entry.env_var, "")
-        status = _green("configured") if env_val else _dim("not set")
-        print(f"    {i + 1}. {entry.display_name:<14}{_dim(entry.env_var):<36}{status}")
-    print(f"    0. {_dim('back')}")
-    print()
-    choice = _prompt("provider to configure", "0")
-    if choice == "0":
-        return
-    try:
-        idx = int(choice) - 1
-        if idx < 0 or idx >= len(providers):
-            return
-    except ValueError:
+        status = "configured" if env_val else "not set"
+        provider_items.append((entry.display_name, f"{entry.env_var:<30} {status}"))
+    idx = _select(provider_items, allow_quit=True, label_w=16)
+    if idx < 0:
         return
     entry = providers[idx]
     print()
