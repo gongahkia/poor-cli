@@ -1,4 +1,4 @@
-.PHONY: cli server tui build-tui install installer install-info dev test lint clean help hooks
+.PHONY: cli server install installer install-info dev test lint clean help hooks
 
 # ── venv guard ──────────────────────────────────────────────────────
 REQUIRE_VENV := cli server exec agent-start agent-list watch preview deploy review-pr installer install-info install dev test lint index
@@ -11,7 +11,7 @@ endif
 
 # ── launch surfaces ──────────────────────────────────────────────────
 
-cli: ## launch the Rust TUI (default surface)
+cli: ## launch poor-cli (default surface)
 	python3 -m poor_cli
 
 server: ## start the JSON-RPC server (for editor plugins)
@@ -45,28 +45,24 @@ review-pr: ## review a PR (PR=123 make review-pr)
 installer: ## run the interactive installer and setup wizard
 	python3 -m poor_cli install
 
-install-info: ## inspect which TUI launcher the current install can use
+install-info: ## inspect install details
 	python3 -m poor_cli install-info
 
 # ── build ────────────────────────────────────────────────────────────
-
-build-tui: ## build the Rust TUI binary
-	cd poor-cli-tui && cargo build --release
 
 install: ## install the Python package in dev mode
 	pip install -e ".[dev]"
 
 # ── dev ──────────────────────────────────────────────────────────────
 
-dev: ## install deps + build TUI + launch CLI
-	pip install -e . && $(MAKE) build-tui && $(MAKE) cli
+dev: ## install deps + launch CLI
+	pip install -e . && $(MAKE) cli
 
 test: ## run Python tests with coverage
 	python3 -m pytest tests/ -x -q --cov=poor_cli --cov-report=term-missing
 
 lint: ## run linters
 	ruff check poor_cli/
-	cd poor-cli-tui && cargo clippy --quiet
 
 index: ## build/refresh the semantic search index
 	python3 -c "from poor_cli.indexer import CodebaseIndexer; i=CodebaseIndexer(); s=i.index(); print(f'{s.total_files} files, {s.total_chunks} chunks')"
@@ -75,7 +71,7 @@ hooks: ## activate git hooks from .githooks/
 	git config core.hooksPath .githooks
 
 clean: ## remove build artifacts
-	rm -rf build/ dist/ *.egg-info poor-cli-tui/target/release .poor-cli/index/
+	rm -rf build/ dist/ *.egg-info .poor-cli/index/
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
 # ── help ─────────────────────────────────────────────────────────────

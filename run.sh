@@ -53,6 +53,6 @@ else
     echo "Info: .env not found. Launching poor-cli anyway; use /setup in chat to create one."
 fi
 
-# Run poor-cli Rust TUI (Python now only serves the backend JSON-RPC process)
+# Run poor-cli (Python backend + Neovim plugin surface)
 clear
-exec ./run_tui.sh "$@"
+exec python3 -m poor_cli "$@"

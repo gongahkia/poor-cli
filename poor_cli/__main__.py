@@ -1,4 +1,4 @@
-"""Launch poor-cli TUI by default or expose headless/automation subcommands."""
+"""poor-cli entry point: JSON-RPC server for Neovim plugin + headless subcommands."""
 
 from __future__ import annotations
 
@@ -46,7 +46,6 @@ from .session_store import SessionStore
 from .sandbox import PRESET_DESCRIPTION, evaluate_tool_access, normalize_preset
 from .skills import SkillRegistry
 from .task_manager import APPROVAL_REQUIRED_PRESETS, TaskManager, run_task_worker
-from .tui_launcher import launch_tui, run_install_info_mode
 from . import __version__
 
 
@@ -54,9 +53,9 @@ def _render_root_help() -> str:
     return (
         "usage: poor-cli [subcommand] [options]\n\n"
         "Interactive surface:\n"
-        "  poor-cli, poor-cli tui      Launch the Rust TUI (requires `poor-cli-tui`)\n"
+        "  poor-cli server             Run the JSON-RPC server (for Neovim plugin)\n"
         "  poor-cli install            Interactive installer and setup wizard\n"
-        "  poor-cli install-info       Inspect which TUI launcher the current install can use\n\n"
+        "  poor-cli install-info       Inspect install details\n\n"
         "Headless and automation:\n"
         "  poor-cli exec              Run one shared-core request from the terminal or CI\n"
         "  poor-cli task              Manage durable background tasks and worktrees\n"
@@ -90,9 +89,7 @@ def _render_root_help() -> str:
         "Reuse and integration:\n"
         "  poor-cli skills            List, inspect, or run repo/user skills\n"
         "  poor-cli commands          List, inspect, or run repo/user custom commands\n"
-        "  poor-cli server            Run the JSON-RPC server (alias for `poor-cli-server`)\n"
-        "  poor-cli telegram          Run the Telegram bot frontend\n"
-        "  poor-cli telegram setup    Step-by-step Telegram bot setup guide\n\n"
+        "  poor-cli server            Run the JSON-RPC server (for Neovim plugin)\n\n"
         "Examples:\n"
         "  poor-cli\n"
         "  poor-cli exec --prompt \"Summarize this repository\" --plan-only\n"
@@ -100,8 +97,7 @@ def _render_root_help() -> str:
         "  poor-cli automation create --name \"Daily QA\" --every-minutes 60 --prompt \"Run QA checklist\"\n"
         "  poor-cli server --stdio\n\n"
         "Notes:\n"
-        "  - The Python package always provides `poor-cli-server`.\n"
-        "  - The interactive TUI can be launched from a repo build, a packaged binary, PATH, or POOR_CLI_TUI_BIN.\n"
+        "  - The Python package provides `poor-cli-server` for Neovim plugin integration.\n"
         "  - Run `poor-cli help` or `poor-cli --help` to show this overview.\n"
     )
 
@@ -1589,148 +1585,6 @@ def _run_github_task_mode(argv: Sequence[str]) -> int:
     raise SystemExit(f"Unknown github-task subcommand: {args.subcommand}")
 
 
-def _validate_telegram_token(token: str) -> bool:
-    """basic format check: <bot_id>:<alphanumeric_hash>."""
-    import re
-    return bool(re.match(r"^\d+:[A-Za-z0-9_-]{30,}$", token))
-
-
-def _telegram_setup_guide() -> str:
-    return (
-        "telegram bot setup\n"
-        "──────────────────\n"
-        "1. open Telegram, search for @BotFather\n"
-        "2. send /newbot and follow the prompts\n"
-        "3. copy the token (format: 123456:ABC-DEF...)\n"
-        "4. set it:\n"
-        "     export POOR_CLI_TELEGRAM_TOKEN='<your-token>'\n"
-        "   or pass --token on the command line\n"
-        "5. (optional) restrict access with --allowed-users <id1,id2>\n"
-        "   tip: send /start to @userinfobot to find your user ID\n"
-        "6. run:\n"
-        "     poor-cli telegram\n\n"
-        "flags:\n"
-        "  --verbose          show INFO-level logs on console\n"
-        "  --debug            show DEBUG-level logs on console\n"
-        "  --log-file <path>  write all logs to a file (default: ~/.poor-cli/telegram.log)\n"
-        "  --sandbox-preset   capability sandbox (default: review-only)\n"
-        "  --max-sessions     max concurrent user sessions (default: 5)\n"
-        "  --webhook-url      use webhook mode instead of long-polling\n"
-        "  --webhook-port     webhook server port (default: 8443)\n"
-    )
-
-
-def _print_telegram_banner(args: argparse.Namespace, token: str, log_file_path: str) -> None:
-    masked = token[:8] + "..." + token[-4:] if len(token) > 16 else "***"
-    print(
-        "\n"
-        "┌─────────────────────────────────────┐\n"
-        "│  poor-cli telegram bot              │\n"
-        "└─────────────────────────────────────┘\n"
-        f"  token:          {masked}\n"
-        f"  sandbox:        {args.sandbox_preset}\n"
-        f"  max sessions:   {args.max_sessions}\n"
-        f"  allowed users:  {args.allowed_users or 'all'}\n"
-        f"  log file:       {log_file_path}\n"
-        f"  log level:      {'DEBUG' if args.debug else 'VERBOSE' if args.verbose else 'WARNING (use --verbose for more)'}\n"
-        f"  mode:           {'webhook' if args.webhook_url else 'long-polling'}\n"
-        f"  edit interval:  {args.edit_interval}s\n"
-    )
-    if not args.allowed_users:
-        print("  ⚠ no --allowed-users set — bot is open to ALL Telegram users\n")
-
-
-def _run_telegram_mode(argv: Sequence[str]) -> int:
-    if argv and argv[0] == "setup":
-        print(_telegram_setup_guide())
-        return 0
-    parser = argparse.ArgumentParser(
-        prog="poor-cli telegram",
-        description="run the Telegram bot frontend for poor-cli",
-        epilog="run 'poor-cli telegram setup' for first-time setup guide",
-    )
-    parser.add_argument("--token", help="Telegram bot token (or set POOR_CLI_TELEGRAM_TOKEN)")
-    parser.add_argument("--allowed-users", help="comma-separated Telegram user IDs", default="")
-    parser.add_argument("--sandbox-preset", default="review-only",
-                        help="capability sandbox preset (default: review-only)")
-    parser.add_argument("--max-sessions", type=int, default=5,
-                        help="max concurrent user sessions (default: 5)")
-    parser.add_argument("--edit-interval", type=float, default=1.5,
-                        help="telegram message edit interval in seconds (default: 1.5)")
-    parser.add_argument("--webhook-url", default=None, help="webhook URL (uses long-polling if unset)")
-    parser.add_argument("--webhook-port", type=int, default=8443, help="webhook port (default: 8443)")
-    parser.add_argument("--verbose", "-v", action="store_true", help="enable INFO-level console logs")
-    parser.add_argument("--debug", action="store_true", help="enable DEBUG-level console logs")
-    parser.add_argument("--log-file", default=None,
-                        help="log file path (default: ~/.poor-cli/telegram.log)")
-    args = parser.parse_args(argv)
-    token = args.token or os.environ.get("POOR_CLI_TELEGRAM_TOKEN", "")
-    if not token:
-        print(
-            "error: telegram bot token not found\n\n"
-            "set the token via one of:\n"
-            "  export POOR_CLI_TELEGRAM_TOKEN='<your-token>'\n"
-            "  poor-cli telegram --token '<your-token>'\n\n"
-            "run 'poor-cli telegram setup' for a step-by-step guide",
-            file=sys.stderr,
-        )
-        return 1
-    if not _validate_telegram_token(token):
-        print(
-            "error: token format looks invalid (expected <bot_id>:<hash>)\n"
-            "get a valid token from @BotFather on Telegram\n"
-            "run 'poor-cli telegram setup' for help",
-            file=sys.stderr,
-        )
-        return 1
-    import logging
-    log_file_path = args.log_file or str(Path.home() / ".poor-cli" / "telegram.log")
-    Path(log_file_path).parent.mkdir(parents=True, exist_ok=True)
-    if args.debug:
-        console_level = logging.DEBUG
-    elif args.verbose:
-        console_level = logging.INFO
-    else:
-        console_level = logging.WARNING
-    from .exceptions import setup_logger as _setup_tg_logger, set_console_log_level
-    _setup_tg_logger("poor_cli", log_file=log_file_path, level=logging.DEBUG, console_level=console_level)
-    _setup_tg_logger("poor_cli.telegram", log_file=log_file_path, level=logging.DEBUG, console_level=console_level)
-    set_console_log_level(console_level)
-    _print_telegram_banner(args, token, log_file_path)
-    allowed = set()
-    if args.allowed_users:
-        try:
-            allowed = {int(uid.strip()) for uid in args.allowed_users.split(",") if uid.strip()}
-        except ValueError as e:
-            print(f"error: --allowed-users must be comma-separated integers: {e}", file=sys.stderr)
-            return 1
-    from .telegram import PoorCLITelegramBot
-    bot = PoorCLITelegramBot(
-        token=token,
-        allowed_users=allowed or None,
-        sandbox_preset=args.sandbox_preset,
-        max_sessions=args.max_sessions,
-        edit_interval=args.edit_interval,
-        webhook_url=args.webhook_url,
-        webhook_port=args.webhook_port,
-    )
-    async def _run() -> None:
-        try:
-            await bot.start()
-        except Exception as e:
-            print(f"\nerror: bot failed to start: {e}", file=sys.stderr)
-            print(f"check logs at {log_file_path} for details", file=sys.stderr)
-            return
-        print("bot is running. press Ctrl+C to stop.\n")
-        try:
-            await asyncio.Event().wait()
-        except (KeyboardInterrupt, SystemExit):
-            print("\nshutting down...")
-        finally:
-            await bot.stop()
-            print("bot stopped.")
-    asyncio.run(_run())
-    return 0
 
 
 def _run_checkpoint_mode(argv: Sequence[str]) -> int:
@@ -1788,7 +1642,8 @@ def _run_commit_mode(argv: Sequence[str]) -> int:
 def _main() -> None:
     argv = sys.argv[1:]
     if not argv:
-        raise SystemExit(launch_tui(argv))
+        print(_render_root_help())
+        raise SystemExit(0)
     if argv[0] in {"help", "--help", "-h"}:
         print(_render_root_help())
         raise SystemExit(0)
@@ -1859,16 +1714,17 @@ def _main() -> None:
         raise SystemExit(_run_github_task_mode(argv[1:]))
     if argv and argv[0] == "server":
         raise SystemExit(_run_server_mode(argv[1:]))
-    if argv and argv[0] == "telegram":
-        raise SystemExit(_run_telegram_mode(argv[1:]))
     if argv and argv[0] == "install":
         from .installer import show_landing
         raise SystemExit(show_landing())
     if argv and argv[0] == "install-info":
-        raise SystemExit(run_install_info_mode(argv[1:]))
-    if argv and argv[0] == "tui":
-        raise SystemExit(launch_tui(argv[1:]))
-    raise SystemExit(launch_tui(argv))
+        print(f"poor-cli {__version__}")
+        print(f"python: {sys.executable}")
+        print("surface: neovim plugin (via JSON-RPC server)")
+        print("run: poor-cli server --stdio")
+        raise SystemExit(0)
+    print(_render_root_help())
+    raise SystemExit(0)
 
 
 def main() -> None:

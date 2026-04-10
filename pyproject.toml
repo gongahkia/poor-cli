@@ -39,7 +39,6 @@ dependencies = [
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.18.0"]
-telegram = ["python-telegram-bot>=21.0"]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=6.0",
@@ -48,7 +47,6 @@ dev = [
 all = [
     "openai>=1.0.0",
     "anthropic>=0.18.0",
-    "python-telegram-bot>=21.0",
 ]
 
 [project.scripts]
@@ -61,7 +59,7 @@ Repository = "https://github.com/gongahkia/poor-cli"
 Issues = "https://github.com/gongahkia/poor-cli/issues"
 
 [tool.setuptools]
-packages = ["poor_cli", "poor_cli.cli", "poor_cli.integrations", "poor_cli.providers", "poor_cli.readers", "poor_cli.server", "poor_cli.telegram", "poor_cli.telegram.commands"]
+packages = ["poor_cli", "poor_cli.cli", "poor_cli.integrations", "poor_cli.providers", "poor_cli.readers", "poor_cli.server"]
 
 [tool.setuptools.package-data]
 poor_cli = ["*.json"]
@@ -75,7 +73,7 @@ addopts = "-x -q --tb=short"
 
 [tool.coverage.run]
 source = ["poor_cli"]
-omit = ["poor_cli/__pycache__/*", "poor_cli/telegram/*"]
+omit = ["poor_cli/__pycache__/*"]
 
 [tool.coverage.report]
 show_missing = true

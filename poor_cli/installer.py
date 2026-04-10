@@ -622,8 +622,7 @@ def _handle_system_check() -> None:
     deps = _gather_deps_status()
     tools_list = ["git", "cargo", "node", "gh", "docker", "ollama"]
     tools_ok = {t: _has_command(t) for t in tools_list}
-    from poor_cli.tui_launcher import resolve_tui_binary
-    tui_bin, tui_src = resolve_tui_binary()
+    tui_bin, tui_src = None, None # tui archived
     # health checks
     checks = [
         py_ok,

@@ -1,7 +1,7 @@
 """poor-cli package metadata.
 
-The interactive client is now Rust (`poor-cli-tui`).
-Python modules remain as backend/server components.
+Provider-agnostic BYOK AI coding agent for Neovim.
+Python backend serves the Neovim plugin via JSON-RPC.
 """
 
 __version__ = "5.0.0"
