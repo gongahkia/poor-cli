@@ -166,4 +166,45 @@ function M.open_checkpoints_picker()
     end)
 end
 
+function M.command_palette()
+    local ok_telescope, _ = pcall(require, "telescope")
+    if not ok_telescope then
+        vim.notify("[poor-cli] telescope.nvim required for command palette", vim.log.levels.WARN)
+        return
+    end
+    local pickers = require("telescope.pickers")
+    local finders = require("telescope.finders")
+    local conf = require("telescope.config").values
+    local actions = require("telescope.actions")
+    local action_state = require("telescope.actions.state")
+    local cmds = vim.api.nvim_get_commands({})
+    local entries = {}
+    for name, info in pairs(cmds) do
+        if name:match("^PoorCli") then
+            table.insert(entries, { name = name, desc = info.definition or info.desc or "" })
+        end
+    end
+    table.sort(entries, function(a, b) return a.name < b.name end)
+    pickers.new({}, {
+        prompt_title = "poor-cli commands",
+        finder = finders.new_table({
+            results = entries,
+            entry_maker = function(entry)
+                local display = entry.name
+                if entry.desc ~= "" then display = display .. "  " .. entry.desc end
+                return { value = entry.name, ordinal = entry.name .. " " .. entry.desc, display = display }
+            end,
+        }),
+        sorter = conf.generic_sorter({}),
+        attach_mappings = function(prompt_bufnr)
+            actions.select_default:replace(function()
+                actions.close(prompt_bufnr)
+                local selection = action_state.get_selected_entry()
+                if selection then vim.cmd(selection.value) end
+            end)
+            return true
+        end,
+    }):find()
+end
+
 return M

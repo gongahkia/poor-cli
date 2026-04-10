@@ -532,35 +532,17 @@ function M._handle_permission_request(tool_name, tool_args, prompt_id)
 end
 
 function M._handle_plan_request(summary, original_request, steps, prompt_id)
-    local lines = {}
+    local plan = require("poor-cli.plan")
+    plan.open({
+        summary = summary or "",
+        original_request = original_request or "",
+        steps = steps or {},
+        prompt_id = prompt_id or "",
+    })
     if summary and summary ~= "" then
-        table.insert(lines, summary)
-    elseif original_request and original_request ~= "" then
-        table.insert(lines, original_request)
-    end
-    if type(steps) == "table" then
-        for index, step in ipairs(steps) do
-            table.insert(lines, string.format("%d. %s", index, tostring(step)))
-        end
-    end
-
-    local review_text = table.concat(lines, "\n")
-    if review_text ~= "" then
         M.open()
-        M.append_system_note("Plan review requested:\n" .. review_text)
+        M.append_system_note("Plan review requested — see floating window (a=approve, r=reject)")
     end
-
-    vim.ui.select({ "Approve", "Reject" }, { prompt = "Approve execution plan?" }, function(choice)
-        local allowed = choice == "Approve"
-        rpc.notify("poor-cli/planRes", {
-            promptId = prompt_id or "",
-            allowed = allowed,
-        })
-        vim.notify(
-            "[poor-cli] Plan " .. (allowed and "approved" or "rejected"),
-            allowed and vim.log.levels.INFO or vim.log.levels.WARN
-        )
-    end)
 end
 
 function M._handle_room_event(data)

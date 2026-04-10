@@ -849,6 +849,32 @@ function M.docker_sandbox_status(timeout_ms) return M.request_sync("poor-cli/get
 -- sessions / embeddings
 function M.list_sessions_all(params, callback) return M.request("poor-cli/listSessions", params or {}, callback) end
 function M.index_embeddings(params, callback) return M.request("poor-cli/indexEmbeddings", params or {}, callback) end
+-- providers
+function M.list_providers(timeout_ms) return M.request_sync("poor-cli/listProviders", {}, timeout_ms) end
+-- permissions
+function M.get_permissions(timeout_ms) return M.request_sync("poor-cli/getPermissions", {}, timeout_ms) end
+function M.set_permissions(params, callback) return M.request("poor-cli/setPermissions", params or {}, callback) end
+-- cost estimation
+function M.estimate_cost(params, timeout_ms) return M.request_sync("poor-cli/estimateCost", params or {}, timeout_ms) end
+-- export
+function M.export_conversation(params, callback) return M.request("poor-cli/exportConversation", params or {}, callback) end
+-- deploy execution
+function M.deploy(params, callback) return M.request("poor-cli/deploy", params or {}, callback) end
+-- mutation preview
+function M.preview_mutation(params, timeout_ms) return M.request_sync("poor-cli/previewMutation", params or {}, timeout_ms) end
+-- file watcher
+function M.watch_scan(callback) return M.request("poor-cli/watchScan", {}, callback) end
+-- profiles
+function M.list_profiles(timeout_ms) return M.request_sync("poor-cli/listProfiles", {}, timeout_ms) end
+function M.apply_profile(params, callback) return M.request("poor-cli/applyProfile", params or {}, callback) end
+-- trust management
+function M.get_trust_status(timeout_ms) return M.request_sync("poor-cli/getTrustStatus", {}, timeout_ms) end
+function M.trust_repo(params, callback) return M.request("poor-cli/trustRepo", params or {}, callback) end
+function M.untrust_repo(params, callback) return M.request("poor-cli/untrustRepo", params or {}, callback) end
+-- ollama
+function M.list_ollama_models(timeout_ms) return M.request_sync("poor-cli/listOllamaModels", {}, timeout_ms) end
+-- status view
+function M.get_status_view(timeout_ms) return M.request_sync("poor-cli/getStatusView", {}, timeout_ms) end
 
 function M.cancel_request(id, err)
     if not id then

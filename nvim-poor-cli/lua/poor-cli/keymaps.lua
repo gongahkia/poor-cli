@@ -97,6 +97,14 @@ function M.setup()
         local end_pos = vim.fn.getpos("'>")
         vim.cmd(start_pos[2] .. "," .. end_pos[2] .. "PoorCliExplain")
     end, { desc = "Explain selection with poor-cli" })
+
+    -- command palette
+    local palette_key = config.get("palette_key")
+    if palette_key and palette_key ~= "" then
+        safe_map("n", palette_key, function()
+            require("poor-cli.telescope").command_palette()
+        end, { desc = "poor-cli command palette" })
+    end
 end
 
 return M

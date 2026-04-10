@@ -25,6 +25,7 @@ M.defaults = {
     trigger_key = "<C-Space>",
     chat_key = "<leader>pc",
     checkpoints_key = nil,
+    palette_key = "<leader>pp",
     
     -- Provider configuration (nil = auto-detect from environment)
     provider = nil,

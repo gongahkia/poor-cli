@@ -69,6 +69,8 @@ function M.setup(opts)
     M.search = require("poor-cli.search")
     M.deploy_ext = require("poor-cli.deploy_ext")
     M.diagnostics_ext = require("poor-cli.diagnostics_ext")
+    M.plan = require("poor-cli.plan")
+    M.queue = require("poor-cli.queue")
 
     M.commands.setup()
     M.keymaps.setup()
