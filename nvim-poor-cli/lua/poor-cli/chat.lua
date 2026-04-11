@@ -237,6 +237,8 @@ function M.send(message)
 
     M.open()
     if M.active_stream then
+        local choice = vim.fn.confirm("[poor-cli] A response is in progress. Cancel it?", "&Yes\n&No", 2)
+        if choice ~= 1 then return end
         M.cancel_active_stream("Cancelled previous chat request.")
     end
 
