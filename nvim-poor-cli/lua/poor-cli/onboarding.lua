@@ -146,7 +146,15 @@ local function render_keybindings()
         local val = kb[d.key] or d.default
         table.insert(lines, ("  %-22s  %s"):format(d.label, val))
     end
-    vim.list_extend(lines, { "", "Press n to keep defaults and continue." })
+    vim.list_extend(lines, {
+        "", "Additional keybindings (not customizable here):", "",
+        "  accept next word        <C-Right>",
+        "  completion w/ instruct  <M-CR> (Alt+Enter)",
+        "  generate at cursor      gc (or <leader>gc if gc is taken)",
+        "  refactor selection      <leader>pr (visual mode)",
+        "  explain selection       <leader>pe (visual mode)",
+        "", "Press n to keep defaults and continue.",
+    })
     vim.list_extend(lines, footer_nav())
     return lines
 end
