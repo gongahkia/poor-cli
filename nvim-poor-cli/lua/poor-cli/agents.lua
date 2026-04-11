@@ -37,7 +37,7 @@ function M.open_picker()
     if not rpc.is_running() then vim.notify("[poor-cli] server not running", vim.log.levels.WARN); return end
     rpc.request("poor-cli/listAgents", {}, function(result, err)
         vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local agents = (result or {}).agents or {}
             if #agents == 0 then vim.notify("[poor-cli] no agents", vim.log.levels.INFO); return end
             pickers.new({}, {
@@ -102,7 +102,7 @@ function M.setup()
     local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
     create_command("PoorCliAgents", function()
         M.list({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local agents = (result or {}).agents or {}
             local lines = { "# agents", "" }
             for _, a in ipairs(agents) do table.insert(lines, format_agent(a)) end
@@ -116,7 +116,7 @@ function M.setup()
             vim.ui.input({ prompt = "Agent prompt: " }, function(prompt)
                 if not prompt or prompt == "" then return end
                 M.create({ name = name, prompt = prompt }, function(_, err) vim.schedule(function()
-                    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                    if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
                     else vim.notify("[poor-cli] agent created", vim.log.levels.INFO) end
                 end) end)
             end)
@@ -124,25 +124,25 @@ function M.setup()
     end, { desc = "Create agent" })
     create_command("PoorCliAgentStart", function(opts)
         M.start({ agentId = opts.args }, function(_, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
             else vim.notify("[poor-cli] agent started", vim.log.levels.INFO) end
         end) end)
     end, { nargs = 1, desc = "Start agent" })
     create_command("PoorCliAgentCancel", function(opts)
         M.cancel({ agentId = opts.args }, function(_, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
             else vim.notify("[poor-cli] agent cancelled", vim.log.levels.INFO) end
         end) end)
     end, { nargs = 1, desc = "Cancel agent" })
     create_command("PoorCliAgentLogs", function(opts)
         M.get_logs({ agentId = opts.args }, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             open_scratch("[poor-cli agent logs]", vim.inspect(result), "lua")
         end) end)
     end, { nargs = 1, desc = "Show agent logs" })
     create_command("PoorCliAgentResult", function(opts)
         M.get_result({ agentId = opts.args }, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             open_scratch("[poor-cli agent result]", vim.inspect(result), "lua")
         end) end)
     end, { nargs = 1, desc = "Show agent result" })

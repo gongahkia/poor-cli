@@ -33,7 +33,7 @@ function M.open_picker()
     if not rpc.is_running() then vim.notify("[poor-cli] server not running", vim.log.levels.WARN); return end
     rpc.request("poor-cli/listProviders", {}, function(result, err)
         vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local providers = (result or {}).providers or {}
             if #providers == 0 then vim.notify("[poor-cli] no providers", vim.log.levels.INFO); return end
             pickers.new({}, {
@@ -86,7 +86,7 @@ function M.setup()
     local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
     create_command("PoorCliProviders", function()
         M.list({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local providers = (result or {}).providers or {}
             local lines = { "# providers", "" }
             for _, p in ipairs(providers) do table.insert(lines, format_provider(p)) end
@@ -96,13 +96,13 @@ function M.setup()
     end, { desc = "List providers" })
     create_command("PoorCliProviderInfo", function()
         M.get_info({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             open_scratch("[poor-cli provider info]", vim.inspect(result), "lua")
         end) end)
     end, { desc = "Show active provider info" })
     create_command("PoorCliOllamaModels", function()
         M.list_ollama({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local models = (result or {}).models or {}
             local lines = { "# Ollama models", "" }
             for _, m in ipairs(models) do

@@ -35,7 +35,7 @@ function M.open_picker(query)
     local params = query and query ~= "" and { query = query } or {}
     rpc.request(method, params, function(result, err)
         vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local entries = (result or {}).entries or (result or {}).history or {}
             if #entries == 0 then vim.notify("[poor-cli] no history", vim.log.levels.INFO); return end
             pickers.new({}, {
@@ -79,7 +79,7 @@ function M.setup()
     local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
     create_command("PoorCliHistory", function()
         M.list({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local entries = (result or {}).entries or (result or {}).history or {}
             local lines = { "# history", "" }
             for _, e in ipairs(entries) do table.insert(lines, format_entry(e)) end
@@ -89,7 +89,7 @@ function M.setup()
     end, { desc = "List history" })
     create_command("PoorCliHistorySearch", function(opts)
         M.search({ query = opts.args }, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local entries = (result or {}).entries or (result or {}).results or {}
             local lines = { "# history search: " .. opts.args, "" }
             for _, e in ipairs(entries) do table.insert(lines, format_entry(e)) end
@@ -99,7 +99,7 @@ function M.setup()
     end, { nargs = 1, desc = "Search history" })
     create_command("PoorCliExportConversation", function()
         M.export({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local content = (result or {}).content or (result or {}).markdown or vim.inspect(result)
             open_scratch("[poor-cli export]", content, "markdown")
         end) end)

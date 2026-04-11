@@ -31,7 +31,7 @@ function M.setup()
     local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
     create_command("PoorCliCost", function()
         M.get_session_cost({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local r = result or {}
             local lines = {
                 "# session cost", "",
@@ -50,7 +50,7 @@ function M.setup()
     end, { desc = "Show session cost" })
     create_command("PoorCliSavings", function()
         M.get_economy_savings({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local r = result or {}
             local lines = {
                 "# economy savings", "",
@@ -64,13 +64,13 @@ function M.setup()
     end, { desc = "Show economy savings" })
     create_command("PoorCliEconomyPreset", function(opts)
         M.set_economy_preset({ preset = opts.args }, function(_, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
             else vim.notify("[poor-cli] economy preset set: " .. opts.args, vim.log.levels.INFO) end
         end) end)
     end, { nargs = 1, desc = "Set economy preset" })
     create_command("PoorCliCostHistory", function()
         M.get_cost_history({ limit = 20 }, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local r = result or {}
             local lines = { "# cost history (" .. tostring(r.count or 0) .. " sessions, $" .. tostring(r.total_cost_usd or 0) .. " total)", "" }
             for _, e in ipairs(r.entries or {}) do
@@ -81,13 +81,13 @@ function M.setup()
     end, { desc = "Show session cost history" })
     create_command("PoorCliTokens", function()
         M.get_tokens_visualization({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             open_scratch("[poor-cli tokens]", result.visualization or "n/a")
         end) end)
     end, { desc = "Show context window token visualization" })
     create_command("PoorCliCacheStats", function()
         M.get_cache_stats({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local lines = { "# cache stats", "" }
             for k, v in pairs(result or {}) do table.insert(lines, k .. ": " .. tostring(v)) end
             open_scratch("[poor-cli cache-stats]", table.concat(lines, "\n"))
@@ -96,7 +96,7 @@ function M.setup()
     create_command("PoorCliBudget", function(opts)
         if opts.args == "" then
             M.list_budget_templates({}, function(result, err) vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                 local lines = { "# budget templates", "" }
                 for name, vals in pairs(result.templates or {}) do
                     table.insert(lines, string.format("  %s: %d tok / $%.2f", name, vals.session_max_tokens or 0, vals.session_max_cost_usd or 0))
@@ -105,21 +105,21 @@ function M.setup()
             end) end)
         else
             M.apply_budget_template({ template = opts.args }, function(_, err) vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
                 else vim.notify("[poor-cli] budget template applied: " .. opts.args, vim.log.levels.INFO) end
             end) end)
         end
     end, { nargs = "?", desc = "List or apply budget template" })
     create_command("PoorCliPressure", function()
         M.get_context_pressure({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local r = result or {}
             vim.notify(string.format("[poor-cli] context pressure: %.1f%% (%d/%d tok) hint: %s", r.pressure_pct or 0, r.used_tokens or 0, r.max_tokens or 0, r.strategy_hint or "ok"), vim.log.levels.INFO)
         end) end)
     end, { desc = "Show context window pressure" })
     create_command("PoorCliBreakdown", function()
         M.get_context_breakdown({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local r = result or {}
             local lines = {
                 "# context breakdown (" .. string.format("%.1f", r.pressure_pct or 0) .. "% used)", "",
@@ -136,7 +136,7 @@ function M.setup()
         local parts = vim.split(opts.args, " ", { plain = true })
         if #parts < 2 then vim.notify("[poor-cli] usage: PoorCliCompareCost <provider> <model>", vim.log.levels.WARN); return end
         M.compare_model_cost({ provider = parts[1], model = parts[2] }, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             if result.error then vim.notify("[poor-cli] " .. result.error, vim.log.levels.WARN); return end
             local lines = {
                 "# model cost comparison", "",
@@ -152,7 +152,7 @@ function M.setup()
     end, { nargs = "+", desc = "Compare model costs" })
     create_command("PoorCliExportCost", function()
         M.export_cost_report({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             open_scratch("[poor-cli cost-export]", vim.fn.json_encode(result), "json")
         end) end)
     end, { desc = "Export full cost report" })

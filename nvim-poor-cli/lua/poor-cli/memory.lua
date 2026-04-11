@@ -36,7 +36,7 @@ function M.open_picker(query)
     local params = query and query ~= "" and { query = query } or {}
     rpc.request(method, params, function(result, err)
         vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local memories = (result or {}).memories or (result or {}).results or {}
             if #memories == 0 then vim.notify("[poor-cli] no memories found", vim.log.levels.INFO); return end
             pickers.new({}, {
@@ -90,7 +90,7 @@ function M.setup()
     local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
     create_command("PoorCliMemory", function()
         M.list({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local memories = (result or {}).memories or {}
             local lines = { "# memory", "" }
             for _, m in ipairs(memories) do table.insert(lines, format_memory(m)) end
@@ -104,7 +104,7 @@ function M.setup()
             vim.ui.input({ prompt = "Memory value: " }, function(value)
                 if not value or value == "" then return end
                 M.save({ key = key, value = value }, function(_, err) vim.schedule(function()
-                    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                    if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
                     else vim.notify("[poor-cli] memory saved", vim.log.levels.INFO) end
                 end) end)
             end)
@@ -112,7 +112,7 @@ function M.setup()
     end, { desc = "Save memory" })
     create_command("PoorCliMemorySearch", function(opts)
         M.search({ query = opts.args }, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local results = (result or {}).results or (result or {}).memories or {}
             local lines = { "# memory search: " .. opts.args, "" }
             for _, m in ipairs(results) do table.insert(lines, format_memory(m)) end
@@ -122,7 +122,7 @@ function M.setup()
     end, { nargs = 1, desc = "Search memory" })
     create_command("PoorCliMemoryDelete", function(opts)
         M.delete({ key = opts.args }, function(_, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
             else vim.notify("[poor-cli] memory deleted", vim.log.levels.INFO) end
         end) end)
     end, { nargs = 1, desc = "Delete memory" })

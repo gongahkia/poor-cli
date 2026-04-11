@@ -218,7 +218,7 @@ function M.fix_diagnostics()
     }, function(result, err)
         vim.schedule(function()
             if err then
-                chat.append_message("assistant", "Error: " .. vim.inspect(err))
+                chat.append_message("assistant", "Error: " .. require("poor-cli.rpc").format_error(err))
                 return
             end
             if not result or not result.content then return end

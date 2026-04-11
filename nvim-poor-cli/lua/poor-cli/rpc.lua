@@ -5,6 +5,11 @@ local config = require("poor-cli.config")
 
 local M = {}
 
+function M.format_error(err)
+    if type(err) == "table" then return err.message or err.data or vim.inspect(err) end
+    return tostring(err or "unknown error")
+end
+
 M.job_id = nil
 M.request_id = 0
 M.pending = {}

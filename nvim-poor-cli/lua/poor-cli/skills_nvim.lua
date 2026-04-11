@@ -32,7 +32,7 @@ function M.open_picker()
     if not rpc.is_running() then vim.notify("[poor-cli] server not running", vim.log.levels.WARN); return end
     rpc.request("poor-cli/listSkills", {}, function(result, err)
         vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local skills = (result or {}).skills or {}
             if #skills == 0 then vim.notify("[poor-cli] no skills", vim.log.levels.INFO); return end
             pickers.new({}, {
@@ -86,7 +86,7 @@ function M.setup()
     local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
     create_command("PoorCliSkills", function()
         M.list({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local skills = (result or {}).skills or {}
             local lines = { "# skills", "" }
             for _, s in ipairs(skills) do table.insert(lines, format_skill(s)) end
@@ -96,7 +96,7 @@ function M.setup()
     end, { desc = "List skills" })
     create_command("PoorCliSkillShow", function(opts)
         M.get({ name = opts.args }, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             open_scratch("[poor-cli skill " .. opts.args .. "]", vim.inspect(result), "lua")
         end) end)
     end, { nargs = 1, desc = "Show skill details" })

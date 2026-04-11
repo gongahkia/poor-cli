@@ -283,7 +283,7 @@ function M.send(message)
 
             M._finalize_streaming_block(request_id)
             if err and err.code ~= -32800 then
-                M.append_message("assistant", "Error: " .. vim.inspect(err))
+                M.append_message("assistant", "Error: " .. require("poor-cli.rpc").format_error(err))
             end
         end)
     end)
