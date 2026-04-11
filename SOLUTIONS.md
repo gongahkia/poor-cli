@@ -344,3 +344,36 @@ Solutions marked **"Gap — no standard impl"** are particularly interesting for
 3. **Selective failure amnesia** — meta-controller deciding what to remember from failures
 
 These three together would likely deliver 30–50% token savings on real coding sessions and could be built without touching model internals or requiring open-weights models.
+
+---
+
+## Addendum: Solution #24 — Caveman Output-Style Skill
+
+### 24. Caveman-Speak Output Compression Skill
+**What it solves:** Markdown formatting overhead (#18), CoT verbosity on visible output (#14, partial)
+
+**Feasibility:** 🟢 Easy (trivially so — it's a single skill file)
+
+**Reference:** [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) — MIT-licensed Claude Code skill, installable via `claude install-skill JuliusBrussee/caveman`.
+
+**What it is (and is not):** A Claude Code *skill* — a behavioral prompt that Claude loads on trigger (`/caveman`, "caveman mode", "less tokens please") and obeys until told to stop. It is **not** a proxy, middleware, meta-prompt layer, or interception shim sitting above Claude Code. It runs *inside* Claude Code the same way any other skill does. Functionally it is a single thing: a directive to output responses in a telegraphic "caveman-speak" register — no articles (a/an/the), no pleasantries ("Sure, I'd be happy to…"), no hedging ("it might be worth considering…"), no filler connectors — while preserving code blocks, technical terminology (polymorphism stays polymorphism), error messages (quoted exactly), and git commits/PR descriptions in normal prose. Example from the README: "The reason your React component is re-rendering is likely because you're creating a new object reference on each render cycle…" (69 tokens) compresses to "New object ref each render. Inline object prop = new ref = re-render. Wrap in `useMemo`." (19 tokens). Claimed ~75% output reduction with 100% technical accuracy retention.
+
+**Evaluation of usefulness as a solution:** Narrow and bounded, but real within its lane. Honest assessment:
+
+- **Scope is output-only.** Caveman compresses the tokens Claude *generates*, not the tokens Claude *reads*. In agentic coding sessions, input (context history, tool results, code reads, MCP schemas, CLAUDE.md) typically dominates total spend at roughly 85–95% of tokens; output is 5–15%. A 75% cut on the smaller slice yields maybe 4–11% total session savings in realistic workloads — non-zero but far from transformative.
+- **Targets only low-severity pain.** Maps to 🟢 Low pain point #18 (markdown/verbose output, ~10–20% output overhead) with marginal spillover into 🟡 Medium #14 (CoT verbosity, and only for *visible* output — extended thinking/hidden reasoning tokens are untouched). It does **nothing** for any 🔴 Critical pain point (#1–#5 context accumulation, tool bloat, codebase reads, CLAUDE.md bloat, retry tax) or 🟠 High pain point (#6 tool schemas, #9 ambient noise, #10 edit format tax, #11 multi-agent overhead).
+- **No compounding.** Unlike prompt caching (#1) or RTK (#23), caveman's savings don't stack into the next turn — every turn re-pays the same accumulated input context regardless of how terse the previous answer was. It reduces the *new* output added per turn but not the quadratic input growth that drives long-session cost.
+- **Fragile at the prompt level.** Any turn where Claude judges normal prose necessary (detailed explanations, onboarding a user, writing docs, writing commits/PRs — explicitly carved out by the skill itself) silently reverts to full verbosity. There is no enforcement layer.
+- **What it does get right.** Zero integration cost (one-line install), zero infra, no model changes, MIT-licensed, stackable with every other solution in this document without conflict. As a free addition on top of a real stack (prompt caching + repo maps + RTK + diff-based edits), it's a reasonable marginal win with negative engineering overhead.
+
+**Recommendation:** Worth installing as a cheap supplementary tweak for cost-sensitive long sessions, but it should not be counted as addressing any of the Critical or High pain points and should not displace engineering effort on solutions #1–#8 or #23. Rank it *below* every other 🟢 Easy solution in priority order: it's the smallest lever in the box, even though it's also the easiest to pull.
+
+---
+
+## Updated Summary Table Entry
+
+| # | Solution | Feasibility | Best For | Reference Status |
+|---|---|---|---|---|
+| 24 | Caveman output-style skill | 🟢 Easy | Markdown/prose output verbosity (#18) | Production skill (JuliusBrussee/caveman, MIT) |
+
+**Priority note:** Among 🟢 Easy solutions, Caveman is the lowest-impact entry. Typical ordering by realistic session savings: #1 Prompt caching → #5 `/compact` → #23 RTK → #4 Repo maps → #2 Diff edits → #6 Semantic caching → #3 Schema-aware tool filtering → #7 Grammar-constrained decoding → **#24 Caveman**.

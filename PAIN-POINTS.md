@@ -140,3 +140,29 @@ When the system prompt or tool list changes mid-session, cache gets invalidated 
 | 17 | Tokenizer special-char issues | 🟢 Low | Rare |
 | 18 | Markdown formatting overhead | 🟢 Low | 10–20% output |
 | 19 | Cache invalidation events | 🟢 Low | Infrequent |
+
+---
+
+## Addendum: Caveman Skill Analysis (Pain Point Mapping)
+
+**Project reviewed:** [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) — a Claude Code *skill* (not a proxy, middleware, or meta-prompt layer sitting above Claude Code) that instructs Claude to adopt a "caveman-speak" output style: strip articles (a/an/the), pleasantries ("Sure, I'd be happy to…"), hedging ("it might be worth considering…"), and filler connectors, while preserving code blocks, technical terminology, error messages, and git/PR prose verbatim. Installed via `claude install-skill JuliusBrussee/caveman`, triggered with `/caveman` or "caveman mode". Claims ~75% output token reduction with 100% technical accuracy retention.
+
+**Clarification on its nature:** Caveman is *not* a meta-prompt layer that intercepts or appears above Claude Code — it lives *inside* Claude Code as a standard skill (a `.skill` file + instructions Claude loads on trigger). It is purely an **output-style directive**; it does not touch context loading, tool output, the system prompt, MCP schemas, or input tokens at all. Functionally it is one thing: a behavioral prompt telling Claude to compress its own prose output.
+
+**Which pain points it addresses (and which it doesn't):**
+
+| Pain Point | Addressed by Caveman? | Notes |
+|---|---|---|
+| #1 Context window accumulation | ❌ No | Input/history growth untouched; caveman only shrinks new output |
+| #2 Tool/MCP output bloat | ❌ No | Tool responses arrive unchanged |
+| #3 Codebase reading inefficiency | ❌ No | File reads still full-size |
+| #4 CLAUDE.md / system prompt bloat | ❌ No | Static prompt overhead unchanged |
+| #5 Retry / failure tax | ❌ No | Failure traces still accumulate |
+| #6 Verbose tool schemas | ❌ No | Tool schemas unchanged |
+| #8 Extended thinking overhead | ❌ No | Hidden reasoning tokens unaffected |
+| #14 CoT verbosity (output) | ✅ Partial | Shrinks visible prose filler |
+| #18 Markdown formatting overhead | ✅ Direct hit | Exactly the 10–20% filler this pain point describes |
+
+**Verdict on usefulness as a solution:** Modest. Caveman is a clever, low-effort output compressor targeting the *smallest* category of pain in this taxonomy — Low-severity pain point #18 (markdown/prose verbosity), with partial spillover into Medium-severity #14 (CoT verbosity for visible output only). Output tokens are typically **5–15% of total session token spend** in agentic coding; input/context/cache dominate. Even a heroic 75% cut on output translates to a single-digit percentage saving on total session cost in a realistic Claude Code workflow. It does **nothing** for the five Critical pain points (#1–#5) that dominate real bills, and nothing for the High-severity input-side issues (#6, #9, #10). It is also strictly cosmetic at the prompt level — no caching, no filtering, no structural compression — so its savings compound poorly and can be undermined by any turn where Claude decides the task warrants normal prose. Fun, one-line install, real but bounded savings. **Not a substitute for any Critical/High solution; reasonable as a stackable output-style tweak alongside real fixes.**
+
+No new pain point is introduced by reviewing Caveman. It slots as a partial mitigation for existing #18 and (marginally) #14.
