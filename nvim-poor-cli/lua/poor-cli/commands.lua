@@ -774,24 +774,7 @@ function M.setup()
             info.url and (" at " .. info.url) or ""), vim.log.levels.INFO)
     end, { desc = "Show preview server status" })
 
-    create_command("PoorCliListSessions", function(opts)
-        local limit = tonumber(opts.args) or 20
-        rpc.request("poor-cli/listSessions", { limit = limit }, function(result, err)
-            vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
-                local sessions = (result or {}).sessions or {}
-                local lines = { "# sessions", "" }
-                for _, s in ipairs(sessions) do
-                    table.insert(lines, string.format("- `%s` [%s] %s",
-                        tostring(s.sessionId or s.id or "?"),
-                        tostring(s.status or "?"),
-                        tostring(s.title or s.label or "")))
-                end
-                if #sessions == 0 then table.insert(lines, "no sessions found") end
-                open_scratch("[poor-cli sessions]", table.concat(lines, "\n"))
-            end)
-        end)
-    end, { nargs = "?", desc = "List sessions (optional limit)" })
+    -- PoorCliListSessions removed: use PoorCliSessions from sessions.lua instead
 
     create_command("PoorCliIndexEmbeddings", function()
         vim.notify("[poor-cli] indexing embeddings...", vim.log.levels.INFO)
