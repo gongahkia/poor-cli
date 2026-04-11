@@ -37,7 +37,7 @@ function M.open_picker()
     if not rpc.is_running() then vim.notify("[poor-cli] server not running", vim.log.levels.WARN); return end
     rpc.request("poor-cli/listConfigOptions", {}, function(result, err)
         vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local options = (result or {}).options or {}
             if #options == 0 then vim.notify("[poor-cli] no config options", vim.log.levels.INFO); return end
             pickers.new({}, {
@@ -96,7 +96,7 @@ function M.setup()
     local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
     create_command("PoorCliConfig", function()
         M.list_options({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local options = (result or {}).options or {}
             local lines = { "# config", "" }
             for _, c in ipairs(options) do table.insert(lines, format_config(c)) end
@@ -108,19 +108,19 @@ function M.setup()
         local args = vim.split(opts.args, " ", { trimempty = true })
         if #args < 2 then vim.notify("[poor-cli] usage: :PoorCliConfigSet <key> <value>", vim.log.levels.WARN); return end
         M.set({ key = args[1], value = table.concat(args, " ", 2) }, function(_, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
             else vim.notify("[poor-cli] config set", vim.log.levels.INFO) end
         end) end)
     end, { nargs = "+", desc = "Set config option" })
     create_command("PoorCliConfigToggle", function(opts)
         M.toggle({ key = opts.args }, function(_, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
             else vim.notify("[poor-cli] config toggled", vim.log.levels.INFO) end
         end) end)
     end, { nargs = 1, desc = "Toggle config option" })
     create_command("PoorCliApiKeyStatus", function()
         M.get_api_key_status({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local keys = (result or {}).keys or {}
             local lines = { "# api key status", "" }
             for _, k in ipairs(keys) do

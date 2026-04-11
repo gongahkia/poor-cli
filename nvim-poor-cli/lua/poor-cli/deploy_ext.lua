@@ -19,7 +19,7 @@ function M.setup()
     local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
     create_command("PoorCliDeployTargets", function()
         rpc.request("poor-cli/deployTargets", {}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] deploy targets: " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] deploy targets: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local lines = { "# Deploy Targets", "" }
             for _, t in ipairs((result or {}).targets or {}) do
                 local status = t.available and "✓" or "✗"
@@ -33,7 +33,7 @@ function M.setup()
 
     create_command("PoorCliDeployValidate", function()
         rpc.request("poor-cli/deployValidate", {}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] deploy validate: " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] deploy validate: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local r = result or {}
             local lines = { "# Pre-Deploy Validation", "", r.valid and "Status: PASS" or "Status: FAIL", "" }
             for _, issue in ipairs(r.issues or {}) do
@@ -50,7 +50,7 @@ function M.setup()
     create_command("PoorCliDeployHistory", function(opts)
         local limit = tonumber(opts.args) or 20
         rpc.request("poor-cli/deployHistory", { limit = limit }, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] deploy history: " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] deploy history: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local lines = { "# Deploy History", "" }
             for _, e in ipairs((result or {}).history or {}) do
                 local status = e.success and "OK" or "FAIL"

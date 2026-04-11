@@ -21,7 +21,7 @@ function M.setup()
         local error_text = opts.args or ""
         if error_text == "" then error_text = vim.fn.getreg("+") or "" end
         rpc.request("poor-cli/getRecoverySuggestions", { error = error_text }, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local suggestions = (result or {}).suggestions or {}
             local lines = { "# Recovery Suggestions", "" }
             if #suggestions == 0 then table.insert(lines, "no suggestions for this error"); open_scratch("[poor-cli recovery]", table.concat(lines, "\n")); return end

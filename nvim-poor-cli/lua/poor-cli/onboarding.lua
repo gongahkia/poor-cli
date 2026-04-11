@@ -308,7 +308,7 @@ local function handle_enter()
                 rpc.request("poor-cli/testApiKey", { provider = M.state.choices.provider, apiKey = key }, function(result, err)
                     vim.schedule(function()
                         if err then
-                            vim.notify("[poor-cli] validation error: " .. vim.inspect(err), vim.log.levels.ERROR)
+                            vim.notify("[poor-cli] validation error: " .. rpc.format_error(err), vim.log.levels.ERROR)
                             return
                         end
                         if result and result.valid then
@@ -417,7 +417,7 @@ local function commit()
     local errors = {}
     local function on_done(_, err)
         vim.schedule(function()
-            if err then table.insert(errors, vim.inspect(err)) end
+            if err then table.insert(errors, rpc.format_error(err)) end
             pending = pending - 1
             if pending <= 0 then
                 if #errors > 0 then

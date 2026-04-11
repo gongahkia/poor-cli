@@ -80,7 +80,7 @@ local function build_trust_text()
     local rpc = require("poor-cli.rpc")
     local payload, err = rpc.get_trust_view(15000)
     if err or type(payload) ~= "table" then
-        return "Failed to load trust view: " .. vim.inspect(err)
+        return "Failed to load trust view: " .. rpc.format_error(err)
     end
 
     local trust = type(payload.trust) == "table" and payload.trust or {}
@@ -111,7 +111,7 @@ local function build_doctor_text()
     local rpc = require("poor-cli.rpc")
     local payload, err = rpc.get_doctor_report(15000)
     if err or type(payload) ~= "table" then
-        return "Failed to load doctor report: " .. vim.inspect(err)
+        return "Failed to load doctor report: " .. rpc.format_error(err)
     end
 
     local summary = type(payload.summary) == "table" and payload.summary or {}
@@ -140,7 +140,7 @@ local function build_runs_text()
     local rpc = require("poor-cli.rpc")
     local payload, err = rpc.list_runs({ limit = 20 }, 15000)
     if err or type(payload) ~= "table" then
-        return "Failed to load runs: " .. vim.inspect(err)
+        return "Failed to load runs: " .. rpc.format_error(err)
     end
 
     local lines = { "# poor-cli runs", "" }
@@ -163,7 +163,7 @@ local function build_workflow_text(name)
     if name and name ~= "" then
         local payload, err = rpc.get_workflow(name, 15000)
         if err or type(payload) ~= "table" then
-            return "Failed to load workflow: " .. vim.inspect(err)
+            return "Failed to load workflow: " .. rpc.format_error(err)
         end
         local workflow = type(payload.workflow) == "table" and payload.workflow or {}
         local lines = {
@@ -185,7 +185,7 @@ local function build_workflow_text(name)
 
     local payload, err = rpc.list_workflows(15000)
     if err or type(payload) ~= "table" then
-        return "Failed to load workflows: " .. vim.inspect(err)
+        return "Failed to load workflows: " .. rpc.format_error(err)
     end
     local lines = { "# workflows", "" }
     for _, workflow in ipairs(payload.workflows or {}) do
@@ -208,7 +208,7 @@ local function build_context_text()
     end
     local payload, err = rpc.get_context_explain(params, 15000)
     if err or type(payload) ~= "table" then
-        return "Failed to load context explanation: " .. vim.inspect(err)
+        return "Failed to load context explanation: " .. rpc.format_error(err)
     end
 
     local lines = {
@@ -242,7 +242,7 @@ local function build_collab_summary_text()
     local rpc = require("poor-cli.rpc")
     local payload, err = rpc.get_collab_summary(15000)
     if err or type(payload) ~= "table" then
-        return "Failed to load collaboration summary: " .. vim.inspect(err)
+        return "Failed to load collaboration summary: " .. rpc.format_error(err)
     end
     local collab = type(payload.collaboration) == "table" and payload.collaboration or {}
     return table.concat({
@@ -373,7 +373,7 @@ function M.setup()
     create_command("PoorCliRestart", function()
         rpc.restart(function(_result, err)
             if err then
-                vim.notify("[poor-cli] Restart failed: " .. vim.inspect(err), vim.log.levels.ERROR)
+                vim.notify("[poor-cli] Restart failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
             else
                 vim.notify("[poor-cli] Restarted", vim.log.levels.INFO)
             end
@@ -439,7 +439,7 @@ function M.setup()
                         provider = choice,
                     }, function(_result, err)
                         if err then
-                            vim.notify("[poor-cli] Switch failed: " .. vim.inspect(err), vim.log.levels.ERROR)
+                            vim.notify("[poor-cli] Switch failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
                         else
                             vim.notify("[poor-cli] Switched to " .. choice, vim.log.levels.INFO)
                         end
@@ -455,7 +455,7 @@ function M.setup()
         }, function(_result, err)
             vim.schedule(function()
                 if err then
-                    vim.notify("[poor-cli] Switch failed: " .. vim.inspect(err), vim.log.levels.ERROR)
+                    vim.notify("[poor-cli] Switch failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
                 else
                     vim.notify("[poor-cli] Switched to " .. provider, vim.log.levels.INFO)
                 end
@@ -506,7 +506,7 @@ function M.setup()
                 }, function(_result, err)
                     vim.schedule(function()
                         if err then
-                            vim.notify("[poor-cli] Join failed: " .. vim.inspect(err), vim.log.levels.ERROR)
+                            vim.notify("[poor-cli] Join failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
                         else
                             vim.notify("[poor-cli] Joined collaboration via invite", vim.log.levels.INFO)
                         end
@@ -523,7 +523,7 @@ function M.setup()
             rpc.leave_collab(function(_result, err)
                 vim.schedule(function()
                     if err then
-                        vim.notify("[poor-cli] Leave failed: " .. vim.inspect(err), vim.log.levels.ERROR)
+                        vim.notify("[poor-cli] Leave failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
                     else
                         vim.notify("[poor-cli] Left collaboration session", vim.log.levels.INFO)
                     end
@@ -537,7 +537,7 @@ function M.setup()
             rpc.pass_driver(target, function(_result, err)
                 vim.schedule(function()
                     if err then
-                        vim.notify("[poor-cli] Pass failed: " .. vim.inspect(err), vim.log.levels.ERROR)
+                        vim.notify("[poor-cli] Pass failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
                     else
                         vim.notify("[poor-cli] Driver role updated", vim.log.levels.INFO)
                     end
@@ -555,7 +555,7 @@ function M.setup()
             rpc.suggest_text(text, function(_result, err)
                 vim.schedule(function()
                     if err then
-                        vim.notify("[poor-cli] Suggest failed: " .. vim.inspect(err), vim.log.levels.ERROR)
+                        vim.notify("[poor-cli] Suggest failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
                     else
                         vim.notify("[poor-cli] Suggestion sent", vim.log.levels.INFO)
                     end
@@ -570,7 +570,7 @@ function M.setup()
             request(room, function(result, err)
                 vim.schedule(function()
                     if err then
-                        vim.notify("[poor-cli] Members failed: " .. vim.inspect(err), vim.log.levels.ERROR)
+                        vim.notify("[poor-cli] Members failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
                         return
                     end
                     local rendered = vim.inspect(result or {})
@@ -586,7 +586,7 @@ function M.setup()
             rpc.get_collab_status(function(result, err)
                 vim.schedule(function()
                     if err then
-                        vim.notify("[poor-cli] Share failed: " .. vim.inspect(err), vim.log.levels.ERROR)
+                        vim.notify("[poor-cli] Share failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
                         return
                     end
                     local payload = extract_share_payload(result or {}, role, room)
@@ -609,7 +609,7 @@ function M.setup()
             rpc.start_collab({}, function(result, err)
                 vim.schedule(function()
                     if err then
-                        vim.notify("[poor-cli] Start failed: " .. vim.inspect(err), vim.log.levels.ERROR)
+                        vim.notify("[poor-cli] Start failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
                         return
                     end
                     local rooms = result and result.rooms or {}
@@ -728,7 +728,7 @@ function M.setup()
         local msg = "/deploy" .. (target and (" --target " .. target) or "")
         rpc.request("poor-cli/chat", { message = msg }, function(result, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] deploy: " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if err then vim.notify("[poor-cli] deploy: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                 if result and result.content then open_scratch("[poor-cli deploy]", result.content) end
             end)
         end)
@@ -739,7 +739,7 @@ function M.setup()
         local msg = "/preview" .. (port and (" --port " .. port) or "")
         rpc.request("poor-cli/chat", { message = msg }, function(result, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] preview: " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if err then vim.notify("[poor-cli] preview: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                 if result and result.content then vim.notify("[poor-cli] " .. result.content, vim.log.levels.INFO) end
             end)
         end)
@@ -749,7 +749,7 @@ function M.setup()
         local port = tonumber(opts.args) or nil
         rpc.request("poor-cli/previewStart", { port = port }, function(result, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] preview start: " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if err then vim.notify("[poor-cli] preview start: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                 local info = result or {}
                 vim.notify("[poor-cli] preview started" .. (info.url and (": " .. info.url) or ""), vim.log.levels.INFO)
             end)
@@ -759,7 +759,7 @@ function M.setup()
     create_command("PoorCliPreviewStop", function()
         rpc.request("poor-cli/previewStop", {}, function(_, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
                 else vim.notify("[poor-cli] preview stopped", vim.log.levels.INFO) end
             end)
         end)
@@ -767,7 +767,7 @@ function M.setup()
 
     create_command("PoorCliPreviewStatus", function()
         local result, err = rpc.request_sync("poor-cli/previewStatus", {}, 5000)
-        if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+        if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
         local info = result or {}
         vim.notify(string.format("[poor-cli] preview: %s%s",
             tostring(info.running and "running" or "stopped"),
@@ -780,7 +780,7 @@ function M.setup()
         vim.notify("[poor-cli] indexing embeddings...", vim.log.levels.INFO)
         rpc.request("poor-cli/indexEmbeddings", { force = false }, function(result, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] index embeddings: " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if err then vim.notify("[poor-cli] index embeddings: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                 vim.notify("[poor-cli] embeddings indexed: " .. vim.inspect(result or {}), vim.log.levels.INFO)
             end)
         end)
@@ -790,7 +790,7 @@ function M.setup()
     create_command("PoorCliWorkspaceMap", function()
         rpc.request("poor-cli/chat", { message = "/workspace-map" }, function(result, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                 if result and result.content then open_scratch("[poor-cli workspace-map]", result.content) end
             end)
         end)
@@ -802,7 +802,7 @@ function M.setup()
         local msg = "/onboarding" .. (step and (" " .. step) or "")
         rpc.request("poor-cli/chat", { message = msg }, function(result, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                 if result and result.content then open_scratch("[poor-cli onboarding]", result.content) end
             end)
         end)
@@ -812,7 +812,7 @@ function M.setup()
     create_command("PoorCliBootstrap", function()
         rpc.restart_with_bootstrap({}, function(_, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] bootstrap: " .. vim.inspect(err), vim.log.levels.ERROR)
+                if err then vim.notify("[poor-cli] bootstrap: " .. rpc.format_error(err), vim.log.levels.ERROR)
                 else vim.notify("[poor-cli] bootstrapped", vim.log.levels.INFO) end
             end)
         end)
@@ -823,7 +823,7 @@ function M.setup()
         if opts.args == "" then vim.notify("[poor-cli] usage: PoorCliSearch <query>", vim.log.levels.WARN); return end
         rpc.hybrid_search(opts.args, 20, function(result, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] search: " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if err then vim.notify("[poor-cli] search: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                 local results = (result or {}).results or result or {}
                 local lines = { "# search: " .. opts.args, "" }
                 for i, r in ipairs(results) do
@@ -842,7 +842,7 @@ function M.setup()
         vim.notify("[poor-cli] indexing codebase...", vim.log.levels.INFO)
         rpc.index_codebase(function(result, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] index: " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if err then vim.notify("[poor-cli] index: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                 local stats = result or {}
                 vim.notify(string.format("[poor-cli] indexed: %s files, %s chunks",
                     tostring(stats.total_files or stats.totalFiles or "?"),
@@ -853,7 +853,7 @@ function M.setup()
 
     create_command("PoorCliIndexStats", function()
         local result, err = rpc.get_index_stats(10000)
-        if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+        if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
         open_scratch("[poor-cli index stats]", vim.inspect(result or {}), "lua")
     end, { desc = "Show search index statistics" })
 
@@ -865,25 +865,25 @@ function M.setup()
             local cmd_str = table.concat(args, " ", 3)
             rpc.start_service(args[2], cmd_str ~= "" and cmd_str or nil, function(_, err)
                 vim.schedule(function()
-                    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                    if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
                     else vim.notify("[poor-cli] service " .. args[2] .. " started", vim.log.levels.INFO) end
                 end)
             end)
         elseif sub == "stop" and args[2] then
             rpc.stop_service(args[2], function(_, err)
                 vim.schedule(function()
-                    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                    if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
                     else vim.notify("[poor-cli] service " .. args[2] .. " stopped", vim.log.levels.INFO) end
                 end)
             end)
         elseif sub == "status" and args[2] then
             local result, err = rpc.get_service_status(args[2], 10000)
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             open_scratch("[poor-cli service " .. args[2] .. "]", vim.inspect(result or {}), "lua")
         elseif sub == "logs" and args[2] then
             local tail = tonumber(args[3]) or 50
             local result, err = rpc.get_service_logs(args[2], tail, 10000)
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local log_lines = type(result) == "table" and (result.logs or result.lines or result) or { tostring(result) }
             if type(log_lines) == "table" then log_lines = vim.inspect(log_lines) end
             open_scratch("[poor-cli service logs " .. args[2] .. "]", tostring(log_lines))
@@ -895,14 +895,14 @@ function M.setup()
     -- policy
     create_command("PoorCliPolicy", function()
         local result, err = rpc.get_policy_status(10000)
-        if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+        if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
         open_scratch("[poor-cli policy]", vim.inspect(result or {}), "lua")
     end, { desc = "Show policy status" })
 
     -- mcp
     create_command("PoorCliMcp", function()
         local result, err = rpc.get_mcp_status(10000)
-        if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+        if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
         local lines = { "# MCP servers", "" }
         local servers = type(result) == "table" and (result.servers or result) or {}
         if type(servers) == "table" then
@@ -921,7 +921,7 @@ function M.setup()
         vim.notify("[poor-cli] running MCP health check...", vim.log.levels.INFO)
         rpc.mcp_health_check(function(result, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                 open_scratch("[poor-cli mcp health]", vim.inspect(result or {}), "lua")
             end)
         end)
@@ -933,7 +933,7 @@ function M.setup()
         vim.notify("[poor-cli] reviewing PR #" .. opts.args .. "...", vim.log.levels.INFO)
         rpc.request("poor-cli/chat", { message = "/review-pr " .. opts.args }, function(result, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                 if result and result.content then open_scratch("[poor-cli PR #" .. opts.args .. " review]", result.content) end
             end)
         end)
@@ -944,7 +944,7 @@ function M.setup()
         local msg = "/explain-diff" .. (file and (" " .. file) or "")
         rpc.request("poor-cli/chat", { message = msg }, function(result, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                 if result and result.content then open_scratch("[poor-cli explain-diff]", result.content) end
             end)
         end)
@@ -955,7 +955,7 @@ function M.setup()
         local msg = "/fix-failures" .. (cmd and (" " .. cmd) or "")
         rpc.request("poor-cli/chat", { message = msg }, function(result, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                 if result and result.content then open_scratch("[poor-cli fix-failures]", result.content) end
             end)
         end)
@@ -965,7 +965,7 @@ function M.setup()
     create_command("PoorCliLint", function()
         rpc.request("poor-cli/chat", { message = "/lint" }, function(result, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                 if result and result.content then open_scratch("[poor-cli lint]", result.content) end
             end)
         end)
@@ -976,7 +976,7 @@ function M.setup()
         local config_mgr = require("poor-cli.config_mgr")
         config_mgr.toggle({ key = "qa_mode_enabled" }, function(_, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
                 else vim.notify("[poor-cli] QA mode toggled", vim.log.levels.INFO) end
             end)
         end)
@@ -992,7 +992,7 @@ function M.setup()
         local config_mgr = require("poor-cli.config_mgr")
         config_mgr.set({ key = "execution_profile", value = profile }, function(_, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
                 else vim.notify("[poor-cli] profile: " .. profile, vim.log.levels.INFO) end
             end)
         end)
@@ -1003,7 +1003,7 @@ function M.setup()
         local args = vim.split(opts.args or "", " ", { trimempty = true })
         if #args < 2 then vim.notify("[poor-cli] usage: PoorCliDiff <file1> <file2>", vim.log.levels.WARN); return end
         local result, err = rpc.compare_files(args[1], args[2], 15000)
-        if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+        if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
         local diff_text = type(result) == "table" and (result.diff or vim.inspect(result)) or tostring(result)
         open_scratch("[poor-cli diff]", diff_text, "diff")
     end, { nargs = "+", desc = "Compare two files" })
@@ -1016,7 +1016,7 @@ function M.setup()
             local preset = args[2]
             rpc.start_host_server(preset and { preset = preset } or {}, function(result, err)
                 vim.schedule(function()
-                    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                    if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                     local info = result or {}
                     vim.notify("[poor-cli] host started" .. (info.url and (": " .. info.url) or ""), vim.log.levels.INFO)
                 end)
@@ -1024,13 +1024,13 @@ function M.setup()
         elseif sub == "stop" then
             rpc.stop_host_server(function(_, err)
                 vim.schedule(function()
-                    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                    if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
                     else vim.notify("[poor-cli] host stopped", vim.log.levels.INFO) end
                 end)
             end)
         elseif sub == "status" then
             local result, err = rpc.get_host_server_status(10000)
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             open_scratch("[poor-cli host status]", vim.inspect(result or {}), "lua")
         else
             vim.notify("[poor-cli] usage: PoorCliHostServer {start [preset]|stop|status}", vim.log.levels.WARN)
@@ -1041,7 +1041,7 @@ function M.setup()
     create_command("PoorCliBroke", function()
         rpc.request("poor-cli/setConfig", { key = "economy.terse_system_prompt", value = true }, function(_, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
                 else vim.notify("[poor-cli] Terse mode enabled", vim.log.levels.INFO) end
             end)
         end)
@@ -1050,7 +1050,7 @@ function M.setup()
     create_command("PoorCliMyTreat", function()
         rpc.request("poor-cli/setConfig", { key = "economy.terse_system_prompt", value = false }, function(_, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
                 else vim.notify("[poor-cli] Rich mode enabled", vim.log.levels.INFO) end
             end)
         end)
@@ -1064,7 +1064,7 @@ function M.setup()
                 .. "Use git_diff and git_status to inspect the staged changes. Output ONLY the commit message.",
         }, function(result, err)
             vim.schedule(function()
-                if err then chat.append_message("assistant", "Error: " .. vim.inspect(err))
+                if err then chat.append_message("assistant", "Error: " .. rpc.format_error(err))
                 elseif result and result.content then
                     chat.append_message("user", "Generate commit message")
                     chat.append_message("assistant", result.content)
@@ -1082,7 +1082,7 @@ function M.setup()
         chat.open()
         rpc.request("poor-cli/chat", { message = prompt }, function(result, err)
             vim.schedule(function()
-                if err then chat.append_message("assistant", "Error: " .. vim.inspect(err))
+                if err then chat.append_message("assistant", "Error: " .. rpc.format_error(err))
                 elseif result and result.content then
                     chat.append_message("user", target and ("Review " .. target) or "Review staged diff")
                     chat.append_message("assistant", result.content)
@@ -1095,7 +1095,7 @@ function M.setup()
     create_command("PoorCliInbox", function()
         rpc.request("poor-cli/listTasks", { inbox = true }, function(result, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                 local tasks = (result or {}).tasks or {}
                 if #tasks == 0 then vim.notify("[poor-cli] Inbox empty", vim.log.levels.INFO); return end
                 local lines = { "# inbox", "" }
@@ -1111,7 +1111,7 @@ function M.setup()
     create_command("PoorCliTools", function()
         rpc.request("poor-cli/getTools", {}, function(result, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                 local tools = (result or {}).tools or result or {}
                 local lines = { "# available tools", "" }
                 if type(tools) == "table" then
@@ -1134,7 +1134,7 @@ function M.setup()
         if current ~= "" and #files == 0 then table.insert(files, current) end
         rpc.request("poor-cli/getInstructionStack", { files = files }, function(result, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                 open_scratch("[poor-cli instructions]", vim.inspect(result or {}), "lua")
             end)
         end)
@@ -1148,7 +1148,7 @@ function M.setup()
                 if choice then
                     rpc.request("poor-cli/setConfig", { key = "security.permission_mode", value = choice }, function(_, err)
                         vim.schedule(function()
-                            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
                             else vim.notify("[poor-cli] Permission mode: " .. choice, vim.log.levels.INFO) end
                         end)
                     end)
@@ -1158,7 +1158,7 @@ function M.setup()
         end
         rpc.request("poor-cli/setConfig", { key = "security.permission_mode", value = mode }, function(_, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
                 else vim.notify("[poor-cli] Permission mode: " .. mode, vim.log.levels.INFO) end
             end)
         end)
@@ -1172,7 +1172,7 @@ function M.setup()
                 if choice then
                     rpc.request("poor-cli/setConfig", { key = "sandbox.default_preset", value = choice }, function(_, err)
                         vim.schedule(function()
-                            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
                             else vim.notify("[poor-cli] Sandbox: " .. choice, vim.log.levels.INFO) end
                         end)
                     end)
@@ -1182,7 +1182,7 @@ function M.setup()
         end
         rpc.request("poor-cli/setConfig", { key = "sandbox.default_preset", value = preset }, function(_, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
                 else vim.notify("[poor-cli] Sandbox: " .. preset, vim.log.levels.INFO) end
             end)
         end)
@@ -1193,14 +1193,14 @@ function M.setup()
         if opts.args == "" then
             rpc.request("poor-cli/getConfig", { key = "context_compression.budget_tokens" }, function(result, err)
                 vim.schedule(function()
-                    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                    if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
                     else vim.notify("[poor-cli] Context budget: " .. vim.inspect((result or {}).value or "default"), vim.log.levels.INFO) end
                 end)
             end)
         else
             rpc.request("poor-cli/setConfig", { key = "context_compression.budget_tokens", value = tonumber(opts.args) }, function(_, err)
                 vim.schedule(function()
-                    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                    if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
                     else vim.notify("[poor-cli] Context budget set: " .. opts.args, vim.log.levels.INFO) end
                 end)
             end)
@@ -1223,7 +1223,7 @@ function M.setup()
         local strategy = opts.args ~= "" and opts.args or "compact"
         rpc.request("poor-cli/compactContext", { strategy = strategy }, function(result, err)
             vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
                 else vim.notify("[poor-cli] Context compacted (" .. strategy .. "): " .. vim.inspect(result or {}), vim.log.levels.INFO) end
             end)
         end)
@@ -1251,7 +1251,7 @@ function M.explain_code(range, line1, line2)
     }, function(result, err)
         vim.schedule(function()
             if err then
-                chat.append_message("assistant", "Error: " .. vim.inspect(err))
+                chat.append_message("assistant", "Error: " .. rpc.format_error(err))
             elseif result and result.content then
                 chat.append_message("user", "Explain:\n```" .. language .. "\n" .. code .. "\n```")
                 chat.append_message("assistant", result.content)
@@ -1287,7 +1287,7 @@ function M.refactor_code(range, line1, line2)
         }, function(result, err)
             vim.schedule(function()
                 if err then
-                    vim.notify("[poor-cli] Refactor failed: " .. vim.inspect(err), vim.log.levels.ERROR)
+                    vim.notify("[poor-cli] Refactor failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
                     return
                 end
 
@@ -1355,7 +1355,7 @@ function M.generate_tests()
     }, function(result, err)
         vim.schedule(function()
             if err then
-                vim.notify("[poor-cli] Test generation failed: " .. vim.inspect(err), vim.log.levels.ERROR)
+                vim.notify("[poor-cli] Test generation failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
                 return
             end
 
@@ -1408,7 +1408,7 @@ function M.generate_docs()
     }, function(result, err)
         vim.schedule(function()
             if err then
-                vim.notify("[poor-cli] Doc generation failed: " .. vim.inspect(err), vim.log.levels.ERROR)
+                vim.notify("[poor-cli] Doc generation failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
                 return
             end
 
@@ -1456,7 +1456,7 @@ end, { desc = "Show active plan review" })
 -- batch B: newly exposed backend capabilities
 create_command("PoorCliProviders", function()
     local result, err = rpc.list_providers(10000)
-    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+    if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
     local lines = { "# providers", "" }
     if type(result) == "table" then
         for _, p in ipairs(result.providers or result) do
@@ -1473,7 +1473,7 @@ create_command("PoorCliExport", function(opts)
     local fmt = opts.args ~= "" and opts.args or "markdown"
     rpc.export_conversation({ format = fmt }, function(result, err)
         vim.schedule(function()
-            if err then vim.notify("[poor-cli] export: " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] export: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local content = type(result) == "table" and (result.content or vim.inspect(result)) or tostring(result)
             local ext = ({ json = "json", markdown = "md", text = "txt" })[fmt] or "md"
             open_scratch("[poor-cli export." .. ext .. "]", content, ext == "json" and "json" or "markdown")
@@ -1485,7 +1485,7 @@ create_command("PoorCliDeployRun", function(opts)
     local target = opts.args ~= "" and opts.args or nil
     rpc.deploy({ target = target }, function(result, err)
         vim.schedule(function()
-            if err then vim.notify("[poor-cli] deploy: " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] deploy: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local text = type(result) == "table" and vim.inspect(result) or tostring(result)
             open_scratch("[poor-cli deploy]", text, "markdown")
         end)
@@ -1494,7 +1494,7 @@ end, { nargs = "?", desc = "Execute deployment to target" })
 
 create_command("PoorCliProfiles", function()
     local result, err = rpc.list_profiles(10000)
-    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+    if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
     local lines = { "# execution profiles", "" }
     if type(result) == "table" then
         for _, p in ipairs(result.profiles or result) do
@@ -1510,7 +1510,7 @@ create_command("PoorCliApplyProfile", function(opts)
     local name = opts.args ~= "" and opts.args or nil
     if not name then
         local result, err = rpc.list_profiles(10000)
-        if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+        if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
         local profiles = result.profiles or result or {}
         local names = {}
         for _, p in ipairs(profiles) do table.insert(names, p.name or p.id or "?") end
@@ -1536,7 +1536,7 @@ end, { nargs = "?", desc = "Apply execution profile" })
 create_command("PoorCliTrustRepo", function()
     rpc.trust_repo({}, function(_, err)
         vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             vim.notify("[poor-cli] repository trusted", vim.log.levels.INFO)
         end)
     end)
@@ -1545,7 +1545,7 @@ end, { desc = "Trust current repository" })
 create_command("PoorCliUntrustRepo", function()
     rpc.untrust_repo({}, function(_, err)
         vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             vim.notify("[poor-cli] repository untrusted", vim.log.levels.INFO)
         end)
     end)
@@ -1553,7 +1553,7 @@ end, { desc = "Untrust current repository" })
 
 create_command("PoorCliOllamaModels", function()
     local result, err = rpc.list_ollama_models(10000)
-    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+    if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
     local lines = { "# ollama models", "" }
     local models = type(result) == "table" and (result.models or result) or {}
     for _, m in ipairs(models) do
@@ -1566,7 +1566,7 @@ end, { desc = "List local Ollama models" })
 create_command("PoorCliEstimateCost", function(opts)
     local msg = opts.args ~= "" and opts.args or "hello"
     local result, err = rpc.estimate_cost({ message = msg }, 10000)
-    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+    if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
     local r = result or {}
     vim.notify(("[poor-cli] estimate: ~%d in / ~%d out tokens, ~$%.4f"):format(
         r.estimatedInputTokens or 0, r.estimatedOutputTokens or 0, r.estimatedCostUSD or 0
@@ -1576,7 +1576,7 @@ end, { nargs = "?", desc = "Estimate cost for a message" })
 create_command("PoorCliWatchScan", function()
     rpc.watch_scan(function(result, err)
         vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local items = type(result) == "table" and result or {}
             if #items == 0 then vim.notify("[poor-cli] no inline instructions found", vim.log.levels.INFO); return end
             local lines = { "# inline instructions found", "" }
@@ -1590,19 +1590,19 @@ end, { desc = "Scan files for inline instructions" })
 
 create_command("PoorCliSandboxStatus", function()
     local result, err = rpc.sandbox_status(10000)
-    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+    if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
     open_scratch("[poor-cli sandbox]", vim.inspect(result or {}), "lua")
 end, { desc = "Show sandbox status" })
 
 create_command("PoorCliDockerSandbox", function()
     local result, err = rpc.docker_sandbox_status(10000)
-    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+    if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
     open_scratch("[poor-cli docker sandbox]", vim.inspect(result or {}), "lua")
 end, { desc = "Show Docker sandbox status" })
 
 create_command("PoorCliPermissions", function()
     local result, err = rpc.get_permissions(10000)
-    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+    if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
     local lines = { "# permissions", "" }
     local r = result or {}
     table.insert(lines, "**mode**: " .. (r.permissionMode or "unknown"))
@@ -1626,7 +1626,7 @@ create_command("PoorCliSetPermissions", function(opts)
                 if not choice then return end
                 rpc.set_permissions({ permissionMode = choice }, function(_, err)
                     vim.schedule(function()
-                        if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                        if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                         vim.notify("[poor-cli] permission mode: " .. choice, vim.log.levels.INFO)
                     end)
                 end)
@@ -1636,7 +1636,7 @@ create_command("PoorCliSetPermissions", function(opts)
     end
     rpc.set_permissions({ permissionMode = mode }, function(_, err)
         vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             vim.notify("[poor-cli] permission mode: " .. mode, vim.log.levels.INFO)
         end)
     end)
@@ -1650,7 +1650,7 @@ create_command("PoorCliApiKey", function()
             if not key or key == "" then return end
             rpc.request("poor-cli/setApiKey", { provider = provider, apiKey = key }, function(_, err)
                 vim.schedule(function()
-                    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                    if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                     vim.notify("[poor-cli] API key set for " .. provider, vim.log.levels.INFO)
                 end)
             end)

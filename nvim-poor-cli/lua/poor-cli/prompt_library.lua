@@ -24,7 +24,7 @@ function M.setup()
     local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
     create_command("PoorCliPromptList", function()
         M.list({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local prompts = (result or {}).prompts or {}
             local lines = { "# saved prompts", "" }
             for _, name in ipairs(prompts) do table.insert(lines, "  " .. name) end
@@ -38,7 +38,7 @@ function M.setup()
             vim.ui.input({ prompt = "Prompt content: " }, function(content)
                 if not content or content == "" then return end
                 M.save({ name = name, content = content }, function(_, err) vim.schedule(function()
-                    if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+                    if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
                     else vim.notify("[poor-cli] prompt saved: " .. name, vim.log.levels.INFO) end
                 end) end)
             end)
@@ -46,14 +46,14 @@ function M.setup()
     end, { desc = "Save a prompt" })
     create_command("PoorCliPromptLoad", function(opts)
         M.load({ name = opts.args }, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local content = (result or {}).content or ""
             open_scratch("[poor-cli prompt " .. opts.args .. "]", content, "markdown")
         end) end)
     end, { nargs = 1, desc = "Load a saved prompt" })
     create_command("PoorCliPromptDelete", function(opts)
         M.delete({ name = opts.args }, function(_, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
             else vim.notify("[poor-cli] prompt deleted: " .. opts.args, vim.log.levels.INFO) end
         end) end)
     end, { nargs = 1, desc = "Delete a saved prompt" })

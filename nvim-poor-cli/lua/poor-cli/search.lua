@@ -36,7 +36,7 @@ function M.pick(query, mode)
 
     search_fn(query, 30, function(result, err)
         vim.schedule(function()
-            if err then vim.notify("[poor-cli] search: " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] search: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local results = (result or {}).results or result or {}
             if #results == 0 then vim.notify("[poor-cli] no results for: " .. query, vim.log.levels.INFO); return end
             telescope.new({}, {
@@ -85,7 +85,7 @@ function M.fallback(query, mode)
         or rpc.hybrid_search
     search_fn(query, 20, function(result, err)
         vim.schedule(function()
-            if err then vim.notify("[poor-cli] search: " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] search: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local results = (result or {}).results or result or {}
             local lines = { "# search: " .. query .. " (" .. (mode or "hybrid") .. ")", "" }
             for i, r in ipairs(results) do

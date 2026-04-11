@@ -64,7 +64,7 @@ function M.open_checkpoints_picker()
     rpc.request("poor-cli/listCheckpoints", { limit = 200 }, function(result, err)
         vim.schedule(function()
             if err then
-                vim.notify("[poor-cli] Failed to list checkpoints: " .. vim.inspect(err), vim.log.levels.ERROR)
+                vim.notify("[poor-cli] Failed to list checkpoints: " .. rpc.format_error(err), vim.log.levels.ERROR)
                 return
             end
 

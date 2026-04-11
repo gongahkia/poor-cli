@@ -356,8 +356,8 @@ local function handle_inline_response(context, result, err)
     if err then
         clear_request_if_active(context)
         if err.code ~= -32800 then
-            set_status("error", err.message or vim.inspect(err), context.request_id)
-            vim.notify("[poor-cli] Completion error: " .. vim.inspect(err), vim.log.levels.ERROR)
+            set_status("error", err.message or rpc.format_error(err), context.request_id)
+            vim.notify("[poor-cli] Completion error: " .. rpc.format_error(err), vim.log.levels.ERROR)
         end
         return
     end
@@ -484,7 +484,7 @@ function M.complete_selection()
                 .. "Code:\n" .. selected_text,
         }, function(result, err)
             if err then
-                vim.notify("[poor-cli] Error: " .. vim.inspect(err), vim.log.levels.ERROR)
+                vim.notify("[poor-cli] Error: " .. rpc.format_error(err), vim.log.levels.ERROR)
                 return
             end
 

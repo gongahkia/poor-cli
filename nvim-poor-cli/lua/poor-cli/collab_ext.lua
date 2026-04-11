@@ -33,7 +33,7 @@ end
 
 local function simple_cb(label)
     return function(_, err) vim.schedule(function()
-        if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+        if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
         else vim.notify("[poor-cli] " .. label .. " ok", vim.log.levels.INFO) end
     end) end
 end
@@ -82,7 +82,7 @@ function M.setup()
             M.handoff({ connectionId = args[2] }, simple_cb("handoff"))
         elseif sub == "activity" then
             M.list_activity({}, function(result, err) vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                 open_scratch("[poor-cli collab activity]", vim.inspect(result), "lua")
             end) end)
         elseif sub == "hand" and args[2] then
@@ -96,7 +96,7 @@ function M.setup()
             M.add_agenda_item({ text = table.concat(args, " ", 2) }, simple_cb("agenda-add"))
         elseif sub == "agenda-list" then
             M.list_agenda({}, function(result, err) vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                 local items = (result or {}).items or {}
                 local lines = { "# agenda", "" }
                 for _, item in ipairs(items) do

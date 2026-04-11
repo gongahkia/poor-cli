@@ -39,7 +39,7 @@ function M.setup()
     local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
     create_command("PoorCliContextPreview", function()
         M.preview({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local r = result or {}
             local lines = {
                 "# context preview", "",
@@ -67,7 +67,7 @@ function M.setup()
     end, { desc = "Preview context" })
     create_command("PoorCliContextCompact", function()
         M.compact({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR)
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
             else
                 local r = result or {}
                 vim.notify("[poor-cli] compacted: " .. tostring(r.removedTokens or 0) .. " tokens freed", vim.log.levels.INFO)
@@ -76,7 +76,7 @@ function M.setup()
     end, { desc = "Compact context" })
     create_command("PoorCliMutationPreview", function()
         M.preview_mutation({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. vim.inspect(err), vim.log.levels.ERROR); return end
+            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local r = result or {}
             local lines = {
                 "# mutation preview", "",
