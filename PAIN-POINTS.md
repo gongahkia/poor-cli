@@ -59,6 +59,8 @@ Extended thinking reserves up to 31,999 output tokens per request for internal r
 ### 9. Context Pollution from Ambient Noise
 Git status, file trees, terminal banners, deprecation warnings, stderr noise from tools, npm install output, build warnings — none of which the user asked for, all of which the agent has to read and ignore. This is the dark matter of token usage: invisible but everywhere. It's high pain because users can't even see it happening.
 
+> **Partially addressed by:** [RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk) — a CLI proxy that intercepts shell command output via a PreToolUse hook and filters noise (git porcelain chatter, npm progress bars, build banners, docker table padding, kubectl verbose columns) before it reaches context. Also mitigates Pain Points #2 (tool output bloat) and #3 (codebase reading inefficiency) for the specific case of shell-tool-mediated reads. Reports 60–90% reduction on common dev commands. See Solution #23.
+
 ---
 
 ### 10. The Edit Format Tax

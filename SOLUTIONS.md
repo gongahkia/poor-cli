@@ -93,6 +93,22 @@ Use grammar constraints (GBNF, Outlines, XGrammar) so the model can only emit va
 
 ---
 
+### 23. CLI Output Proxy / Filter (RTK — Rust Token Killer)
+**What it solves:** Ambient noise pollution (#9), tool/MCP output bloat (#2, shell-mediated), codebase reading inefficiency (#3, for `cat`/`grep`/`ls` paths)
+
+A single-binary CLI proxy that intercepts shell commands before they execute and rewrites their output into a token-compact form before it reaches the agent's context. Works via a **PreToolUse hook** that transparently rewrites `git status` → `rtk git status`, `cat file.rs` → `rtk read file.rs`, `cargo test` → `rtk test cargo test`, etc. — the agent never sees the rewrite, just receives filtered output. Four strategies per command type: smart filtering (strips boilerplate/whitespace/banners), grouping (aggregates files by directory, errors by rule), truncation (keeps relevant context, cuts redundancy), and deduplication (collapses repeated log lines with counts). Reported savings: **60–90% on common dev commands** — e.g. `git push` from ~200 tokens to ~10, `cargo test` from 200+ lines to ~20 on failure, `ls -la` from ~800 tokens to ~150. A tee mode optionally persists raw output on failure so the agent can recover full detail without re-executing. Ships with 100+ supported commands covering git, gh, cargo, npm/pnpm, pytest, ruff, docker, kubectl, aws, curl, and more.
+
+**Why easy:** Production-ready drop-in middleware. Install via `brew install rtk` + `rtk init -g`, restart the agent, done. Zero model changes, zero prompt rewriting, zero infra. Works with Claude Code, Cursor, Gemini CLI, Codex, Windsurf, Cline, OpenCode out of the box via their respective hook APIs.
+
+**Rough integration idea for poor CLI:** Two plausible paths. (a) *Wrap it*: shell out to the existing `rtk` binary from poor CLI's tool-execution layer — poor CLI registers a pre-execute middleware that, for any bash tool call matching rtk's supported command set, prefixes `rtk ` before spawning the subprocess. Zero reimplementation cost, inherits all 100+ command handlers and future updates for free, just a dependency on the user having rtk installed (or we bundle it). (b) *Port it*: rewrite the filter pipeline natively inside poor CLI as a Rust module (or Python if poor CLI is Python), lifting rtk's per-command parsers (git porcelain parser, cargo test JSON parser, eslint formatter, etc.) into poor CLI's own tool-output post-processing stage. More work but removes the external binary dependency and lets poor CLI apply the same filters to non-shell tool outputs (e.g. MCP responses, file reads via the native `Read` tool which rtk's hook currently can't intercept). Recommendation: start with (a) as a one-week integration, measure real savings on poor CLI sessions, then selectively port the highest-ROI filters (git, cargo/npm test, grep, cat) into native code to cover the `Read`/`Grep`/`Glob` built-ins that bypass bash hooks.
+
+**Reference:**
+- [RTK GitHub](https://github.com/rtk-ai/rtk) — 19.5k stars, Apache-2.0, single Rust binary
+- [RTK website](https://www.rtk-ai.app)
+- [RTK architecture docs](https://github.com/rtk-ai/rtk/blob/master/docs/contributing/ARCHITECTURE.md)
+
+---
+
 ## 🟡 Moderate Solutions
 
 ### 8. Progressive Skill Loading (CLAUDE.md → Skills Architecture)
@@ -315,6 +331,7 @@ Instead of putting code in context at all, fine-tune the model with a vision-sty
 | 20 | Latent reasoning (Coconut) | 🔴 Research | CoT verbosity | Meta research |
 | 21 | Code-specific tokenizers | 🔴 Research | Tokenization waste | CodeBPE, AST-T5 research |
 | 22 | Neural code embeddings | 🔴 Research | Codebase reading | Pure speculation |
+| 23 | CLI output proxy (RTK) | 🟢 Easy | Ambient noise, shell tool bloat | **Production (rtk-ai/rtk, 19.5k ★)** |
 
 ---
 
