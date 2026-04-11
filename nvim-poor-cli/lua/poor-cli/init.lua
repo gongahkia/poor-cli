@@ -100,6 +100,9 @@ function M.setup(opts)
     M.diagnostics_ext.setup()
     M.onboarding.setup()
     M.prompt_library.setup()
+    if pcall(require, "lualine") then
+        require("poor-cli.lualine").setup()
+    end
     M._setup_complete = true
 
     if M.config.get("check_health_on_setup") then
