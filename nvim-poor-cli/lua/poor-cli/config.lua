@@ -64,9 +64,8 @@ M.defaults = {
     completion_filetype_blocklist = {},
     completion_buftype_blocklist = { "nofile", "prompt", "quickfix", "terminal" },
 
-    -- Keymaps for partial acceptance
-    accept_line_key = "<Tab>",   -- Accept current line of ghost text
-    accept_word_key = "<C-Right>", -- Accept next word of ghost text
+    -- Keymap for partial word acceptance
+    accept_word_key = "<C-Right>", -- accept next word of ghost text
 
     -- Health check on setup
     check_health_on_setup = false,

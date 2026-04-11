@@ -22,14 +22,14 @@ function M.setup()
         inline.trigger({ manual = true })
     end, { desc = "Trigger poor-cli completion" })
     
-    -- Accept completion line - only if ghost text is visible, otherwise fallback
+    -- Accept full completion - only if ghost text is visible, otherwise fallback
     safe_map("i", config.get("accept_key"), function()
         if inline.has_completion() then
-            inline.accept_line()
+            inline.accept()
         else
             return vim.api.nvim_replace_termcodes("<Tab>", true, false, true)
         end
-    end, { expr = true, desc = "Accept poor-cli completion line or Tab" })
+    end, { expr = true, desc = "Accept poor-cli completion or Tab" })
 
     -- Accept next word of ghost text
     safe_map("i", config.get("accept_word_key"), function()
