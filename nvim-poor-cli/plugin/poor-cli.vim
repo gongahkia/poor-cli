@@ -26,3 +26,11 @@ if !has('nvim-0.9')
   echo "poor-cli works best with Neovim 0.9+. Some features may not work."
   echohl None
 endif
+
+" Warn if setup() is never called
+lua vim.defer_fn(function()
+\   local ok, pc = pcall(require, "poor-cli")
+\   if ok and not pc._setup_complete then
+\     vim.notify("[poor-cli] plugin loaded but setup() not called. Add: require('poor-cli').setup({}) to your config", vim.log.levels.WARN)
+\   end
+\ end, 5000)
