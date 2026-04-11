@@ -103,7 +103,20 @@ function M.setup(opts)
         end
     end
     M.config = vim.tbl_deep_extend("force", M.defaults, opts)
-    
+
+    -- validate known enum-like config values
+    local valid_chat_pos = { right = true, left = true }
+    if M.config.chat_position and not valid_chat_pos[M.config.chat_position] then
+        vim.notify("[poor-cli] invalid chat_position '" .. tostring(M.config.chat_position) .. "', using 'right'", vim.log.levels.WARN)
+        M.config.chat_position = "right"
+    end
+    -- warn on unrecognized top-level keys
+    for k, _ in pairs(opts) do
+        if M.defaults[k] == nil then
+            vim.notify("[poor-cli] unknown config key: " .. tostring(k), vim.log.levels.WARN)
+        end
+    end
+
     if M.config.debug then
         vim.notify("[poor-cli] Config loaded: " .. vim.inspect(M.config), vim.log.levels.DEBUG)
     end
