@@ -423,12 +423,19 @@ function M.trigger(opts)
         request_id = request_context.request_id,
     })
 
+    -- show subtle "fetching..." hint while waiting
+    local hint_ns = vim.api.nvim_create_namespace("poor_cli_fetch_hint")
+    pcall(vim.api.nvim_buf_set_extmark, bufnr, hint_ns, line - 1, col, {
+        virt_text = {{ " ...", "Comment" }}, virt_text_pos = "inline",
+    })
     local request_id = rpc.request("poor-cli/inlineComplete", payload, function(result, err)
+        pcall(vim.api.nvim_buf_clear_namespace, bufnr, hint_ns, 0, -1) -- clear hint
         handle_inline_response(request_context, result, err)
     end)
 
     request_context.rpc_request_id = request_id
     if not request_id then
+        pcall(vim.api.nvim_buf_clear_namespace, bufnr, hint_ns, 0, -1)
         clear_request_if_active(request_context)
     end
 end
