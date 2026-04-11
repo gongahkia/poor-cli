@@ -1261,6 +1261,7 @@ function M.explain_code(range, line1, line2)
     local language = vim.bo.filetype
 
     chat.open()
+    vim.notify("[poor-cli] Explaining...", vim.log.levels.INFO)
     rpc.request("poor-cli/chat", {
         message = "Please explain this " .. language .. " code:\n\n```" .. language .. "\n" .. code .. "\n```",
     }, function(result, err)
