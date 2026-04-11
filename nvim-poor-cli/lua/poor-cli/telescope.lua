@@ -169,7 +169,18 @@ end
 function M.command_palette()
     local ok_telescope, _ = pcall(require, "telescope")
     if not ok_telescope then
-        vim.notify("[poor-cli] telescope.nvim required for command palette", vim.log.levels.WARN)
+        -- fallback: vim.ui.select
+        local cmds = vim.api.nvim_get_commands({})
+        local entries = {}
+        for name, info in pairs(cmds) do
+            if name:match("^PoorCli") then
+                table.insert(entries, name .. "  " .. (info.definition or info.desc or ""))
+            end
+        end
+        table.sort(entries)
+        vim.ui.select(entries, { prompt = "poor-cli commands:" }, function(choice)
+            if choice then vim.cmd(choice:match("^(%S+)")) end
+        end)
         return
     end
     local pickers = require("telescope.pickers")
