@@ -24,6 +24,15 @@ M.server_log_path = nil
 M.last_stderr_excerpt = ""
 M.recent_stderr = {}
 M.max_stderr_lines = 20
+M.startup_feedback = {
+    timer = nil,
+    frame = 1,
+    echo_id = nil,
+    started_ns = 0,
+    active = false,
+    can_replace = nil,
+    last_message = "",
+}
 M.multiplayer_state = {
     enabled = false,
     room = "",
@@ -42,6 +51,13 @@ M.multiplayer_state = {
     last_event_type = "",
     members = {},
     last_suggestion = nil,
+}
+local uv = vim.uv or vim.loop
+local spinner_frames = { "-", "\\", "|", "/" }
+local startup_states = {
+    starting = true,
+    initializing = true,
+    restarting = true,
 }
 
 local function emit_status_changed()
@@ -67,10 +83,165 @@ local function notify_with_context(message, level)
     vim.notify("[poor-cli] " .. message .. current_log_hint(), level)
 end
 
+local function latest_stderr_line()
+    for idx = #M.recent_stderr, 1, -1 do
+        local line = M.recent_stderr[idx]
+        if line and line ~= "" then
+            return line
+        end
+    end
+    return ""
+end
+
+local function truncate_line(text, max_len)
+    local content = tostring(text or "")
+    if #content <= max_len then
+        return content
+    end
+    return content:sub(1, math.max(max_len - 3, 1)) .. "..."
+end
+
+local function startup_elapsed_seconds()
+    if M.startup_feedback.started_ns <= 0 or not uv or not uv.hrtime then
+        return 0
+    end
+    return math.max(0, math.floor((uv.hrtime() - M.startup_feedback.started_ns) / 1000000000))
+end
+
+local function startup_phase_text(state)
+    if state == "starting" then
+        return "starting server"
+    end
+    if state == "initializing" then
+        return "initializing session"
+    end
+    if state == "restarting" then
+        return "restarting server"
+    end
+    return tostring(state or "starting")
+end
+
+local function echo_startup_line(message, is_error)
+    local chunks = { { message, is_error and "ErrorMsg" or "ModeMsg" } }
+
+    if M.startup_feedback.can_replace == false then
+        if M.startup_feedback.last_message == message then
+            return
+        end
+        pcall(vim.api.nvim_echo, chunks, false, { err = is_error == true })
+        M.startup_feedback.last_message = message
+        return
+    end
+
+    local opts = { err = is_error == true }
+    if M.startup_feedback.echo_id and M.startup_feedback.echo_id > 0 then
+        opts.id = M.startup_feedback.echo_id
+    end
+    local ok, id = pcall(vim.api.nvim_echo, chunks, false, opts)
+    if ok and type(id) == "number" and id > 0 then
+        M.startup_feedback.can_replace = true
+        M.startup_feedback.echo_id = id
+        M.startup_feedback.last_message = message
+        return
+    end
+
+    M.startup_feedback.can_replace = false
+    pcall(vim.api.nvim_echo, chunks, false, { err = is_error == true })
+    M.startup_feedback.last_message = message
+end
+
+local function render_startup_feedback()
+    if not M.startup_feedback.active then
+        return
+    end
+
+    local state = M.server_state or "starting"
+    local frame = "."
+    if M.startup_feedback.can_replace ~= false then
+        frame = spinner_frames[M.startup_feedback.frame]
+        M.startup_feedback.frame = (M.startup_feedback.frame % #spinner_frames) + 1
+    end
+
+    local message = string.format(
+        "[poor-cli] [%s] %s (%ds)",
+        frame,
+        startup_phase_text(state),
+        startup_elapsed_seconds()
+    )
+    if M.last_status_message and M.last_status_message ~= "" and M.last_status_message ~= "Starting server" then
+        message = message .. " | " .. truncate_line(M.last_status_message, 72)
+    end
+
+    local stderr_line = latest_stderr_line()
+    if stderr_line ~= "" and (state == "restarting" or state == "error") then
+        message = message .. " | " .. truncate_line(stderr_line, 96)
+    end
+
+    echo_startup_line(message, state == "error")
+end
+
+local function stop_startup_feedback(state)
+    if not M.startup_feedback.active and not M.startup_feedback.timer then
+        return
+    end
+
+    M.startup_feedback.active = false
+    if M.startup_feedback.timer then
+        local timer = M.startup_feedback.timer
+        M.startup_feedback.timer = nil
+        pcall(function()
+            timer:stop()
+            timer:close()
+        end)
+    end
+
+    local elapsed = startup_elapsed_seconds()
+    if state == "ready" then
+        echo_startup_line(string.format("[poor-cli] [ok] initialized in %ds", elapsed), false)
+    elseif state == "error" then
+        echo_startup_line(string.format("[poor-cli] [error] startup failed after %ds", elapsed), true)
+    end
+
+    M.startup_feedback.started_ns = 0
+    M.startup_feedback.frame = 1
+    M.startup_feedback.echo_id = nil
+    M.startup_feedback.can_replace = nil
+    M.startup_feedback.last_message = ""
+end
+
+local function ensure_startup_feedback()
+    if M.startup_feedback.active then
+        return
+    end
+
+    M.startup_feedback.active = true
+    M.startup_feedback.frame = 1
+    M.startup_feedback.started_ns = (uv and uv.hrtime and uv.hrtime()) or 0
+    M.startup_feedback.can_replace = nil
+    M.startup_feedback.last_message = ""
+
+    if uv and uv.new_timer then
+        M.startup_feedback.timer = uv.new_timer()
+        if M.startup_feedback.timer then
+            M.startup_feedback.timer:start(0, 120, vim.schedule_wrap(function()
+                render_startup_feedback()
+            end))
+        end
+    end
+
+    render_startup_feedback()
+end
+
 local function update_state(state, message)
     M.server_state = state
     if message then
         M.last_status_message = message
+    end
+    if startup_states[state] then
+        ensure_startup_feedback()
+        render_startup_feedback()
+    else
+        stop_startup_feedback(state)
     end
     emit_status_changed()
 end
@@ -1129,6 +1300,9 @@ function M.handle_stderr(data)
             end
         end
     end
+    if M.startup_feedback.active then
+        render_startup_feedback()
+    end
     emit_status_changed()
 end
 
@@ -1163,10 +1337,11 @@ function M.handle_exit(code)
     end
 
     if config.get("auto_restart") then
+        vim.notify("[poor-cli] Server restarted — chat context was reset. Use :PoorCliSessionRestore to recover.", vim.log.levels.WARN)
         schedule_restart()
     else
         update_state("error", "Server exited unexpectedly")
-        notify_with_context("Server exited with code " .. code, vim.log.levels.WARN)
+        notify_with_context("Server exited with code " .. code .. ". Run :PoorCliDoctor for diagnostics.", vim.log.levels.WARN)
     end
 end
 
