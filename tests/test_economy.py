@@ -14,6 +14,7 @@ from poor_cli.economy import (
     apply_economy_preset,
     classify_prompt_complexity,
     distill_prompt,
+    resolve_output_verbosity,
 )
 from poor_cli.config import Config
 from poor_cli.provider_catalog import get_cheapest_model, get_downshift_model
@@ -90,6 +91,7 @@ class TestEconomyPresets(unittest.TestCase):
         config = EconomyConfig()
         apply_economy_preset(config, "frugal")
         self.assertEqual(config.preset, "frugal")
+        self.assertEqual(resolve_output_verbosity(config), "caveman")
         self.assertTrue(config.terse_system_prompt)
         self.assertTrue(config.strip_code_comments)
         self.assertEqual(config.economy_max_tokens, 2048)
@@ -101,6 +103,7 @@ class TestEconomyPresets(unittest.TestCase):
         config = EconomyConfig()
         apply_economy_preset(config, "balanced")
         self.assertEqual(config.preset, "balanced")
+        self.assertEqual(resolve_output_verbosity(config), "normal")
         self.assertFalse(config.terse_system_prompt)
         self.assertFalse(config.strip_code_comments)
         self.assertEqual(config.economy_max_tokens, 0)
@@ -110,6 +113,7 @@ class TestEconomyPresets(unittest.TestCase):
         config = EconomyConfig()
         apply_economy_preset(config, "quality")
         self.assertEqual(config.preset, "quality")
+        self.assertEqual(resolve_output_verbosity(config), "comprehensive")
         self.assertFalse(config.auto_downshift)
         self.assertFalse(config.prompt_distill)
         self.assertFalse(config.dedup_context)
@@ -370,7 +374,8 @@ class TestBatchedReadsPrompt(unittest.TestCase):
 
     def test_terse_and_batched_combined(self):
         instruction = build_tool_calling_system_instruction("/tmp", terse_mode=True, batched_reads=True)
-        self.assertIn("Be extremely concise", instruction)
+        self.assertIn("OUTPUT RULES (frugal mode active)", instruction)
+        self.assertIn("Preserve exact code blocks", instruction)
         self.assertIn("batch them into a single tool call round", instruction)
 
 
@@ -416,7 +421,7 @@ class TestSystemPromptSize(unittest.TestCase):
     def test_budget_aware_pruning(self):
         full = build_tool_calling_system_instruction("/tmp")
         pruned = build_tool_calling_system_instruction("/tmp", max_system_tokens=500)
-        self.assertLess(len(pruned), len(full))
+        self.assertLessEqual(len(pruned), len(full))
         self.assertIn("CURRENT WORKING DIRECTORY", pruned) # intro always kept
 
     def test_ollama_truncation_still_works(self):

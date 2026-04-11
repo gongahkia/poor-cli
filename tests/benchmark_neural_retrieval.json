@@ -1,0 +1,370 @@
+{
+  "model": "codebert",
+  "index_stats": {
+    "provider": "hf:codebert",
+    "indexed": 3703,
+    "elapsed_seconds": 513.85
+  },
+  "index_time_seconds": 514.12,
+  "queries": [
+    {
+      "query": "how does the embedding provider work",
+      "category": "architecture",
+      "expected_files": [
+        "poor_cli/embeddings.py",
+        "poor_cli/indexer.py"
+      ],
+      "baseline": {
+        "tokens": 43003,
+        "files": [
+          "poor_cli/__init__.py",
+          "poor_cli/__main__.py",
+          "poor_cli/_exec_helpers.py",
+          "poor_cli/_server.py",
+          "poor_cli/agent_runner.py"
+        ],
+        "precision": 0.0,
+        "recall": 0.0,
+        "time_ms": 25.7
+      },
+      "neural": {
+        "tokens": 270,
+        "files": [
+          "poor_cli/integrations/__init__.py",
+          "docs/phase_05_advanced_compression.md",
+          "_archived/emacs-poor-cli/poor-cli-review.el",
+          ".github/FUNDING.yaml",
+          "setup.py"
+        ],
+        "precision": 0.0,
+        "recall": 0.0,
+        "time_ms": 1537.5
+      },
+      "token_reduction": 0.994
+    },
+    {
+      "query": "how are tools registered and dispatched",
+      "category": "architecture",
+      "expected_files": [
+        "poor_cli/tools_async.py",
+        "poor_cli/enhanced_tools.py"
+      ],
+      "baseline": {
+        "tokens": 43003,
+        "files": [
+          "poor_cli/__init__.py",
+          "poor_cli/__main__.py",
+          "poor_cli/_exec_helpers.py",
+          "poor_cli/_server.py",
+          "poor_cli/agent_runner.py"
+        ],
+        "precision": 0.0,
+        "recall": 0.0,
+        "time_ms": 4.4
+      },
+      "neural": {
+        "tokens": 252,
+        "files": [
+          "poor_cli/integrations/__init__.py",
+          "setup.py",
+          "nvim-poor-cli/lua/poor-cli/queue.lua",
+          "_archived/emacs-poor-cli/poor-cli-review.el",
+          "nvim-poor-cli/lua/poor-cli/plan.lua"
+        ],
+        "precision": 0.0,
+        "recall": 0.0,
+        "time_ms": 623.2
+      },
+      "token_reduction": 0.994
+    },
+    {
+      "query": "how does context get assembled for the LLM prompt",
+      "category": "architecture",
+      "expected_files": [
+        "poor_cli/context_engine.py",
+        "poor_cli/context_providers.py"
+      ],
+      "baseline": {
+        "tokens": 43003,
+        "files": [
+          "poor_cli/__init__.py",
+          "poor_cli/__main__.py",
+          "poor_cli/_exec_helpers.py",
+          "poor_cli/_server.py",
+          "poor_cli/agent_runner.py"
+        ],
+        "precision": 0.0,
+        "recall": 0.0,
+        "time_ms": 3.4
+      },
+      "neural": {
+        "tokens": 449,
+        "files": [
+          "poor_cli/integrations/__init__.py",
+          "docs/phase_05_advanced_compression.md",
+          "_archived/emacs-poor-cli/poor-cli-review.el",
+          "nvim-poor-cli/lua/poor-cli/plan.lua",
+          "setup.py"
+        ],
+        "precision": 0.0,
+        "recall": 0.0,
+        "time_ms": 615.9
+      },
+      "token_reduction": 0.99
+    },
+    {
+      "query": "fix the config loading to handle missing keys",
+      "category": "bugfix",
+      "expected_files": [
+        "poor_cli/config.py",
+        "poor_cli/repo_config.py"
+      ],
+      "baseline": {
+        "tokens": 43003,
+        "files": [
+          "poor_cli/__init__.py",
+          "poor_cli/__main__.py",
+          "poor_cli/_exec_helpers.py",
+          "poor_cli/_server.py",
+          "poor_cli/agent_runner.py"
+        ],
+        "precision": 0.0,
+        "recall": 0.0,
+        "time_ms": 4.4
+      },
+      "neural": {
+        "tokens": 270,
+        "files": [
+          "docs/phase_05_advanced_compression.md",
+          "poor_cli/integrations/__init__.py",
+          "_archived/poor-cli-telegram/commands/admin.py",
+          "_archived/emacs-poor-cli/poor-cli-review.el",
+          "setup.py"
+        ],
+        "precision": 0.1,
+        "recall": 0.5,
+        "time_ms": 542.8
+      },
+      "token_reduction": 0.994
+    },
+    {
+      "query": "add a new MCP server endpoint",
+      "category": "feature",
+      "expected_files": [
+        "poor_cli/mcp_client.py",
+        "poor_cli/server/runtime.py"
+      ],
+      "baseline": {
+        "tokens": 43003,
+        "files": [
+          "poor_cli/__init__.py",
+          "poor_cli/__main__.py",
+          "poor_cli/_exec_helpers.py",
+          "poor_cli/_server.py",
+          "poor_cli/agent_runner.py"
+        ],
+        "precision": 0.0,
+        "recall": 0.0,
+        "time_ms": 3.2
+      },
+      "neural": {
+        "tokens": 270,
+        "files": [
+          "docs/phase_05_advanced_compression.md",
+          "poor_cli/integrations/__init__.py",
+          ".github/FUNDING.yaml",
+          "_archived/poor-cli-telegram/commands/admin.py",
+          "setup.py"
+        ],
+        "precision": 0.0,
+        "recall": 0.0,
+        "time_ms": 510.0
+      },
+      "token_reduction": 0.994
+    },
+    {
+      "query": "how does AST chunking split code into pieces",
+      "category": "architecture",
+      "expected_files": [
+        "poor_cli/indexer.py"
+      ],
+      "baseline": {
+        "tokens": 43003,
+        "files": [
+          "poor_cli/__init__.py",
+          "poor_cli/__main__.py",
+          "poor_cli/_exec_helpers.py",
+          "poor_cli/_server.py",
+          "poor_cli/agent_runner.py"
+        ],
+        "precision": 0.0,
+        "recall": 0.0,
+        "time_ms": 3.7
+      },
+      "neural": {
+        "tokens": 391,
+        "files": [
+          "docs/phase_05_advanced_compression.md",
+          "poor_cli/integrations/__init__.py",
+          "_archived/emacs-poor-cli/poor-cli-review.el",
+          "nvim-poor-cli/lua/poor-cli/plan.lua",
+          "setup.py"
+        ],
+        "precision": 0.0,
+        "recall": 0.0,
+        "time_ms": 530.0
+      },
+      "token_reduction": 0.991
+    },
+    {
+      "query": "optimize token budget for multi-provider routing",
+      "category": "optimization",
+      "expected_files": [
+        "poor_cli/economy.py",
+        "poor_cli/model_router.py",
+        "poor_cli/token_budget_controller.py"
+      ],
+      "baseline": {
+        "tokens": 43003,
+        "files": [
+          "poor_cli/__init__.py",
+          "poor_cli/__main__.py",
+          "poor_cli/_exec_helpers.py",
+          "poor_cli/_server.py",
+          "poor_cli/agent_runner.py"
+        ],
+        "precision": 0.0,
+        "recall": 0.0,
+        "time_ms": 3.4
+      },
+      "neural": {
+        "tokens": 543,
+        "files": [
+          "poor_cli/integrations/__init__.py",
+          "docs/phase_05_advanced_compression.md",
+          "poor_cli/skills/batched_reads.md",
+          "_archived/emacs-poor-cli/poor-cli-review.el",
+          "poor_cli/skills/planning.md"
+        ],
+        "precision": 0.0,
+        "recall": 0.0,
+        "time_ms": 521.2
+      },
+      "token_reduction": 0.987
+    },
+    {
+      "query": "how does the history get pruned and managed",
+      "category": "architecture",
+      "expected_files": [
+        "poor_cli/history.py",
+        "poor_cli/history_pruning.py"
+      ],
+      "baseline": {
+        "tokens": 43003,
+        "files": [
+          "poor_cli/__init__.py",
+          "poor_cli/__main__.py",
+          "poor_cli/_exec_helpers.py",
+          "poor_cli/_server.py",
+          "poor_cli/agent_runner.py"
+        ],
+        "precision": 0.0,
+        "recall": 0.0,
+        "time_ms": 3.6
+      },
+      "neural": {
+        "tokens": 275,
+        "files": [
+          "poor_cli/integrations/__init__.py",
+          "_archived/emacs-poor-cli/poor-cli-review.el",
+          "setup.py",
+          "_archived/poor-cli-telegram/skills_bridge.py",
+          "tests/test_model_router.py"
+        ],
+        "precision": 0.0,
+        "recall": 0.0,
+        "time_ms": 466.3
+      },
+      "token_reduction": 0.994
+    },
+    {
+      "query": "implement prompt compression for large contexts",
+      "category": "feature",
+      "expected_files": [
+        "poor_cli/prompt_compressor.py",
+        "poor_cli/context_optimizer.py"
+      ],
+      "baseline": {
+        "tokens": 43003,
+        "files": [
+          "poor_cli/__init__.py",
+          "poor_cli/__main__.py",
+          "poor_cli/_exec_helpers.py",
+          "poor_cli/_server.py",
+          "poor_cli/agent_runner.py"
+        ],
+        "precision": 0.0,
+        "recall": 0.0,
+        "time_ms": 3.7
+      },
+      "neural": {
+        "tokens": 252,
+        "files": [
+          "poor_cli/integrations/__init__.py",
+          "docs/phase_05_advanced_compression.md",
+          "_archived/emacs-poor-cli/poor-cli-review.el",
+          "setup.py",
+          "_archived/poor-cli-telegram/commands/admin.py"
+        ],
+        "precision": 0.0,
+        "recall": 0.0,
+        "time_ms": 524.1
+      },
+      "token_reduction": 0.994
+    },
+    {
+      "query": "how do providers translate tool calls between formats",
+      "category": "architecture",
+      "expected_files": [
+        "poor_cli/providers/tool_translator.py",
+        "poor_cli/providers/base.py"
+      ],
+      "baseline": {
+        "tokens": 43003,
+        "files": [
+          "poor_cli/__init__.py",
+          "poor_cli/__main__.py",
+          "poor_cli/_exec_helpers.py",
+          "poor_cli/_server.py",
+          "poor_cli/agent_runner.py"
+        ],
+        "precision": 0.0,
+        "recall": 0.0,
+        "time_ms": 3.5
+      },
+      "neural": {
+        "tokens": 388,
+        "files": [
+          "poor_cli/integrations/__init__.py",
+          "docs/phase_05_advanced_compression.md",
+          "_archived/emacs-poor-cli/poor-cli-review.el",
+          "setup.py",
+          "nvim-poor-cli/lua/poor-cli/plan.lua"
+        ],
+        "precision": 0.0,
+        "recall": 0.0,
+        "time_ms": 458.4
+      },
+      "token_reduction": 0.991
+    }
+  ],
+  "summary": {
+    "avg_baseline_tokens": 43003,
+    "avg_neural_tokens": 336,
+    "avg_token_reduction": 0.992,
+    "avg_baseline_recall": 0.0,
+    "avg_neural_recall": 0.05,
+    "avg_baseline_precision": 0.0,
+    "avg_neural_precision": 0.01
+  }
+}

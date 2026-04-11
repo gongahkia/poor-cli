@@ -1,10 +1,9 @@
-"""Tests for deterministic system/user context contract blocks."""
+"""Tests for deterministic static prompt prefix blocks."""
 
 from __future__ import annotations
 
 import tempfile
 import unittest
-from datetime import datetime, timezone
 from pathlib import Path
 
 from poor_cli.context_contract import ContextContractManager
@@ -28,36 +27,33 @@ class TestContextContractManager(unittest.TestCase):
                     label="Repo Root AGENTS.md",
                     content="Use concise answers.",
                     path=str(self.repo_root / "AGENTS.md"),
-                )
+                ),
+                InstructionSource(
+                    kind="repo_graph",
+                    label="Repo Structure",
+                    content="core.py\nproviders/openai_provider.py",
+                ),
             ],
         )
 
-    def test_user_context_includes_current_date(self) -> None:
+    def test_repo_map_precedes_instruction_stack(self) -> None:
         mgr = ContextContractManager(self.repo_root)
-        snapshot = mgr.build_snapshot(
-            instruction_snapshot=self._instruction_snapshot(),
-        )
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        self.assertIn(f"Today's date is {today}.", snapshot.user_context)
-        self.assertIn("Resolved instruction stack:", snapshot.user_context)
-        self.assertIn("Use concise answers.", snapshot.user_context)
+        snapshot = mgr.build_snapshot(instruction_snapshot=self._instruction_snapshot())
+        repo_idx = snapshot.rendered_prompt_prefix.index("### Repo Structure")
+        inst_idx = snapshot.rendered_prompt_prefix.index("### Repo Root AGENTS.md")
+        self.assertLess(repo_idx, inst_idx)
 
-    def test_system_context_always_reports_cwd(self) -> None:
+    def test_prefix_excludes_dynamic_date(self) -> None:
         mgr = ContextContractManager(self.repo_root)
-        snapshot = mgr.build_snapshot(
-            instruction_snapshot=self._instruction_snapshot(),
-        )
-        self.assertIn("CWD: ", snapshot.system_context)
-        self.assertIn(str(self.repo_root.resolve()), snapshot.system_context)
+        snapshot = mgr.build_snapshot(instruction_snapshot=self._instruction_snapshot())
+        self.assertNotIn("Today's date is", snapshot.rendered_prompt_prefix)
+        self.assertNotIn("Current branch:", snapshot.rendered_prompt_prefix)
 
-    def test_memoized_blocks_reuse_cache_keys(self) -> None:
+    def test_memoized_blocks_reuse_cache_key(self) -> None:
         mgr = ContextContractManager(self.repo_root)
         first = mgr.build_snapshot(instruction_snapshot=self._instruction_snapshot())
-        first_system_key = mgr._system_cache_key
-        first_user_key = mgr._user_cache_key
+        first_key = mgr._cache_key
 
         second = mgr.build_snapshot(instruction_snapshot=self._instruction_snapshot())
-        self.assertEqual(first.system_context, second.system_context)
-        self.assertEqual(first.user_context, second.user_context)
-        self.assertEqual(first_system_key, mgr._system_cache_key)
-        self.assertEqual(first_user_key, mgr._user_cache_key)
+        self.assertEqual(first.rendered_prompt_prefix, second.rendered_prompt_prefix)
+        self.assertEqual(first_key, mgr._cache_key)

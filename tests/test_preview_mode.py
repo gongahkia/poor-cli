@@ -58,14 +58,14 @@ class PreviewModeTests(unittest.TestCase):
 
 
 class PreviewServerUnitTests(unittest.TestCase):
-    def test_status_includes_reload_pending(self):
+    def test_status_includes_reload_version(self):
         from poor_cli.preview_server import PreviewServer
         import tempfile
         with tempfile.TemporaryDirectory() as td:
             server = PreviewServer(root=td)
             s = server.status()
-            self.assertIn("reloadPending", s)
-            self.assertFalse(s["reloadPending"])
+            self.assertIn("reloadVersion", s)
+            self.assertEqual(s["reloadVersion"], 0)
 
     def test_health_returns_healthy_key(self):
         import asyncio
