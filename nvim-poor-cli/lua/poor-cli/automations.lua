@@ -20,6 +20,7 @@ local function open_scratch(title, content, filetype)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(content, "\n", { plain = true }))
     vim.cmd("botright split")
     vim.api.nvim_win_set_buf(0, buf)
+    vim.api.nvim_buf_set_keymap(buf, "n", "q", ":close<CR>", { noremap = true, silent = true })
     return buf
 end
 
