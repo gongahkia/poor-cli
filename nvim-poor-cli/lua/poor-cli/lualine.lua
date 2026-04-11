@@ -159,6 +159,8 @@ function M.component_full()
     if cp and cp > 0 then table.insert(parts, cp .. "cp") end
     local users = s.memberCount or s.connectedUsers
     if users and users > 1 then table.insert(parts, users .. " users") end
+    local session_name = s.sessionName or s.session
+    if session_name and session_name ~= "" then table.insert(parts, "[" .. session_name .. "]") end
     local compact = M.compaction_badge(s)
     if compact ~= "" then table.insert(parts, compact) end
     local icon = M.component()
