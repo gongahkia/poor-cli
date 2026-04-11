@@ -90,6 +90,18 @@ M.config = vim.deepcopy(M.defaults)
 -- Setup function to merge user options
 function M.setup(opts)
     opts = opts or {}
+    -- load keybinding prefs from onboarding wizard (if any)
+    local prefs_path = vim.fs.joinpath(M.get_state_dir(), "keybinding_prefs.json")
+    local prefs_file = io.open(prefs_path, "r")
+    if prefs_file then
+        local ok, prefs = pcall(vim.fn.json_decode, prefs_file:read("*a"))
+        prefs_file:close()
+        if ok and type(prefs) == "table" then
+            for k, v in pairs(prefs) do
+                if M.defaults[k] ~= nil then M.defaults[k] = v end
+            end
+        end
+    end
     M.config = vim.tbl_deep_extend("force", M.defaults, opts)
     
     if M.config.debug then

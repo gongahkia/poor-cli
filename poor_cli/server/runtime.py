@@ -56,7 +56,7 @@ from ..exceptions import (
     set_log_context,
     setup_logger,
 )
-from ..provider_catalog import common_models_for_provider
+from ..provider_catalog import common_models_for_provider, get_model_tier
 from .types import JsonRpcMessage, JsonRpcError, InvalidParamsError, ManagedServiceRuntime
 from .error_formatter import _sanitize_exception_message
 from .transport import StdioTransport
@@ -713,6 +713,7 @@ class PoorCLIServer:
             "poor-cli/toggleConfig": self.handle_toggle_config,
             "poor-cli/setApiKey": self.handle_set_api_key,
             "poor-cli/getApiKeyStatus": self.handle_get_api_key_status,
+            "poor-cli/testApiKey": self.handle_test_api_key,
             "poor-cli/listSessions": self.handle_list_sessions,
             "poor-cli/listHistory": self.handle_list_history,
             "poor-cli/searchHistory": self.handle_search_history,
@@ -1488,11 +1489,18 @@ class PoorCLIServer:
             if not dependency_available:
                 ready = False
                 status_label = "provider dependency unavailable"
+            models = model_suggestions.get(name, [])
+            tier_info: Dict[str, Any] = {}
+            for model_name in models:
+                mt = get_model_tier(provider_key, model_name)
+                if mt:
+                    tier_info[model_name] = {"tier": mt.tier, "cost1kIn": mt.cost_1k_in, "cost1kOut": mt.cost_1k_out, "speedRank": mt.speed_rank, "contextWindow": mt.context_window}
             result[name] = {
                 "available": dependency_available,
                 "ready": ready,
                 "statusLabel": status_label,
-                "models": model_suggestions.get(name, []),
+                "models": models,
+                "modelTiers": tier_info,
             }
         return result
 
@@ -1881,6 +1889,55 @@ class PoorCLIServer:
             }
 
         return {"providers": status}
+
+    async def handle_test_api_key(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate an API key by making a minimal API call (zero tokens)."""
+        provider = self._normalize_provider_name(str(params.get("provider", "")))
+        if not provider:
+            raise InvalidParamsError("Missing provider")
+        api_key = str(params.get("apiKey", "")).strip()
+        if provider == "ollama":
+            base_url = self._ollama_base_url()
+            reachable = self._is_ollama_reachable(base_url)
+            return {"valid": reachable, "error": None if reachable else f"Ollama not reachable at {base_url}"}
+        if not api_key:
+            raise InvalidParamsError("Missing apiKey")
+        try:
+            valid, error_msg = await self._probe_api_key(provider, api_key)
+            return {"valid": valid, "error": error_msg}
+        except Exception as e:
+            return {"valid": False, "error": str(e)}
+
+    async def _probe_api_key(self, provider: str, api_key: str) -> Tuple[bool, Optional[str]]:
+        """Hit a lightweight model-list endpoint to verify an API key."""
+        import urllib.error
+        if provider == "gemini":
+            url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+            req = Request(url, method="GET")
+        elif provider == "openai":
+            req = Request("https://api.openai.com/v1/models", method="GET")
+            req.add_header("Authorization", f"Bearer {api_key}")
+        elif provider == "anthropic":
+            req = Request("https://api.anthropic.com/v1/models", method="GET")
+            req.add_header("x-api-key", api_key)
+            req.add_header("anthropic-version", "2023-06-01")
+        elif provider == "openrouter":
+            req = Request("https://openrouter.ai/api/v1/models", method="GET")
+            req.add_header("Authorization", f"Bearer {api_key}")
+        else:
+            return False, f"No validation endpoint for provider: {provider}"
+        try:
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(None, lambda: urlopen(req, timeout=10))
+            return (True, None) if response.status == 200 else (False, f"HTTP {response.status}")
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                return False, "Invalid API key (401 Unauthorized)"
+            if e.code == 403:
+                return False, "API key forbidden (403)"
+            return False, f"HTTP error {e.code}: {e.reason}"
+        except Exception as e:
+            return False, str(e)
 
     def _get_repo_config(self):
         from ..repo_config import get_repo_config
