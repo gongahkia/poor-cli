@@ -782,6 +782,7 @@ class PoorCLIServer:
             "poor-cli/getEconomySavings": self.handle_get_economy_savings,
             "poor-cli/setEconomyPreset": self.handle_set_economy_preset,
             "poor-cli/getCacheStats": self.handle_get_cache_stats,
+            "poor-cli/clearSemanticCache": self.handle_clear_semantic_cache,
             "poor-cli/getContextPressure": self.handle_get_context_pressure,
             "poor-cli/getContextBreakdown": self.handle_get_context_breakdown,
             "poor-cli/estimateCost": self.handle_estimate_cost,
@@ -1428,7 +1429,7 @@ class PoorCLIServer:
 
     async def handle_compact_context(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Apply context management strategy.
-        Params: strategy - one of 'compact', 'compress', 'handoff'
+        Params: strategy - one of 'auto', 'compact', 'gentle', 'aggressive', 'compress', 'handoff'
         Returns: strategy, summary, messages_before, messages_after"""
         self._ensure_initialized()
         strategy = params.get("strategy", "compact")
@@ -4627,9 +4628,14 @@ class PoorCLIServer:
         return {"entries": entries, "count": len(entries), "total_cost_usd": round(total_cost, 6)}
 
     async def handle_get_cache_stats(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Return tool cache + response cache hit/miss stats."""
+        """Return tool cache + response cache + semantic cache stats."""
         self._ensure_initialized()
         return self.core.get_cache_stats()
+
+    async def handle_clear_semantic_cache(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Clear the semantic response cache."""
+        self._ensure_initialized()
+        return self.core.clear_semantic_cache()
 
     async def handle_get_context_pressure(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return context window utilization metrics."""

@@ -115,10 +115,13 @@ class ContextEngineMixin:
                 plan_mode_enabled=bool(self.config and self.config.plan_mode.enabled),
                 instruction_snapshot=instruction_snapshot,
             )
-            instruction_prefix = contract_snapshot.rendered_prompt_prefix
+            prompt_prefix = contract_snapshot.rendered_prompt_prefix
         else:
-            instruction_prefix = instruction_snapshot.render_prompt_prefix()
+            prompt_prefix = instruction_snapshot.render_prompt_prefix()
+        if self.provider:
+            self.provider.update_prompt_prefix(prompt_prefix)
         # auto-surface relevant skills
+        skill_hint = ""
         try:
             from .skill_surfacer import detect_relevant_skills, build_skill_hints
             from .skills import SkillRegistry
@@ -128,28 +131,24 @@ class ContextEngineMixin:
             _matched = detect_relevant_skills(message, _skill_names)
             if _matched:
                 _descs = {s.name: s.description for s in _all_skills}
-                _hint = build_skill_hints(_matched, _descs)
-                if _hint:
-                    instruction_prefix = f"{instruction_prefix}\n\n{_hint}" if instruction_prefix else _hint
+                skill_hint = build_skill_hints(_matched, _descs) or ""
         except Exception:
             pass
         # inject agent todo list
         todo_ctx = ""
         if self.tool_registry:
             todo_ctx = self.tool_registry.render_todos_for_context()
+        if skill_hint:
+            message = f"{skill_hint}\n\n{message}"
         if todo_ctx:
             message = f"{todo_ctx}\n\n{message}"
         if not self._context_manager or context_result is None or not context_result.files:
-            if instruction_prefix:
-                return f"{instruction_prefix}\n\nUser request: {message}"
-            return message
+            return f"User request: {message}"
         logger.info(context_result.message)
         context_message = await self._context_manager.build_context_message(
             message, context_result, max_tokens=context_budget_tokens,
         )
-        if not instruction_prefix:
-            return context_message
-        return f"{instruction_prefix}\n\n{context_message}"
+        return context_message
 
     def _dedup_context_files(self, context_text: str) -> Tuple[str, int]:
         """Remove file content blocks already seen this session."""

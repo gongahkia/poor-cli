@@ -281,6 +281,7 @@ def run_cost_mode(argv: Sequence[str]) -> int:
     p_history.add_argument("--limit", type=int, default=50)
     sub.add_parser("tokens") # token visualization
     sub.add_parser("cache-stats")
+    sub.add_parser("cache-clear")
     p_budget = sub.add_parser("budget")
     p_budget.add_argument("template", nargs="?", help="quick_question|code_review|deep_refactor|unlimited")
     sub.add_parser("pressure") # context pressure
@@ -321,6 +322,8 @@ def run_cost_mode(argv: Sequence[str]) -> int:
                 return core.get_tokens_visualization()
             if cmd == "cache-stats":
                 return core.get_cache_stats()
+            if cmd == "cache-clear":
+                return core.clear_semantic_cache()
             if cmd == "budget":
                 template = getattr(args, "template", None)
                 if template:
@@ -348,7 +351,12 @@ def run_context_mode(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="poor-cli context")
     sub = parser.add_subparsers(dest="subcommand")
     p_compact = sub.add_parser("compact")
-    p_compact.add_argument("strategy", nargs="?", default="auto", choices=("auto", "compact", "compress"))
+    p_compact.add_argument(
+        "strategy",
+        nargs="?",
+        default="auto",
+        choices=("auto", "compact", "compress", "handoff", "gentle", "aggressive"),
+    )
     sub.add_parser("preview")
     sub.add_parser("pressure")
     sub.add_parser("breakdown")

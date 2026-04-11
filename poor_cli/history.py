@@ -95,6 +95,28 @@ class Message:
     tokens: Optional[int] = None
     metadata: Optional[Dict[str, Any]] = None
 
+    def ensure_metadata(self) -> Dict[str, Any]:
+        """Return mutable metadata dict"""
+        if not isinstance(self.metadata, dict):
+            self.metadata = {}
+        return self.metadata
+
+    def set_pruning_metadata(self, **updates: Any) -> Dict[str, Any]:
+        """Attach pruning/scoring metadata to this message"""
+        metadata = self.ensure_metadata()
+        pruning = metadata.get("pruning", {})
+        if not isinstance(pruning, dict):
+            pruning = {}
+        pruning.update({key: value for key, value in updates.items() if value is not None})
+        metadata["pruning"] = pruning
+        return pruning
+
+    def get_pruning_metadata(self) -> Dict[str, Any]:
+        """Return pruning/scoring metadata"""
+        metadata = self.ensure_metadata()
+        pruning = metadata.get("pruning", {})
+        return dict(pruning) if isinstance(pruning, dict) else {}
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert message to dictionary"""
         return asdict(self)
@@ -459,6 +481,22 @@ class HistoryManager:
         if limit:
             return messages[-limit:]
         return messages
+
+    def score_messages_for_pruning(self, active_files: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """Annotate current session messages with pruning scores"""
+        if not self.current_session:
+            return []
+        from poor_cli.history_pruning import HistoryPruner
+
+        pruner = HistoryPruner()
+        payload = [message.to_dict() for message in self.current_session.messages]
+        scored = pruner.score_history(payload, active_files=active_files)
+        results: List[Dict[str, Any]] = []
+        for turn in scored:
+            metadata = turn.to_metadata()
+            self.current_session.messages[turn.index].set_pruning_metadata(**metadata)
+            results.append(metadata)
+        return results
 
     def get_session_history(self, session_id: str) -> Optional[Session]:
         """Load a session from database

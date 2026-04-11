@@ -160,17 +160,38 @@ class OllamaEmbedding(EmbeddingProvider):
             return [[] for _ in texts]
 
 
+def _get_hf_provider(model_key: Optional[str] = None) -> Optional[EmbeddingProvider]:
+    """Try to load HuggingFace code embedding provider."""
+    try:
+        from .neural_code_encoder import HuggingFaceCodeEmbedding
+        p = HuggingFaceCodeEmbedding(model_key=model_key or "unixcoder")
+        if p.available():
+            return p
+    except Exception:
+        pass
+    return None
+
+
 def get_embedding_provider(preferred: Optional[str] = None) -> Optional[EmbeddingProvider]:
-    """Get the best available embedding provider."""
+    """Get the best available embedding provider.
+
+    Priority: preferred > Gemini > OpenAI > Ollama > HuggingFace (local).
+    HuggingFace is last because it requires torch download on first use,
+    but it's the only option that works fully offline with no API key.
+    """
     providers = [GeminiEmbedding(), OpenAIEmbedding(), OllamaEmbedding()]
     if preferred:
+        if preferred.startswith("hf:") or preferred in ("codebert", "unixcoder", "graphcodebert", "codesage-small"):
+            hf = _get_hf_provider(preferred.removeprefix("hf:"))
+            if hf:
+                return hf
         for p in providers:
             if p.name == preferred and p.available():
                 return p
     for p in providers:
         if p.available():
             return p
-    return None
+    return _get_hf_provider() # fallback: local HF if nothing else available
 
 
 # ── vector math ──────────────────────────────────────────────────────────

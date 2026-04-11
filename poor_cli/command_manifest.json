@@ -50,7 +50,7 @@
     },
     {
       "command": "/compact",
-      "description": "Manage context (compact/compress/handoff)",
+      "description": "Manage context (auto/compact/gentle/aggressive/compress/handoff)",
       "recommended": true,
       "category": "Core Workflow"
     },
@@ -640,6 +640,12 @@
     {
       "command": "/savings",
       "description": "Show economy savings dashboard",
+      "recommended": false,
+      "category": "Economy & Output"
+    },
+    {
+      "command": "/cache-clear",
+      "description": "Clear semantic response cache",
       "recommended": false,
       "category": "Economy & Output"
     },

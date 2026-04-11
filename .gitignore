@@ -42,7 +42,9 @@ ENV/
 Thumbs.db
 
 # poor-cli specific
-.poor-cli/
+.poor-cli/*
+!.poor-cli/tool_projections.yaml
+.poor-cli/preferences.json
 poor-cli.log
 
 # Checkpoints (stored in .poor-cli/checkpoints/)

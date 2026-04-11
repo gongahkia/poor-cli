@@ -18,18 +18,25 @@ _FILE_MENTION_RE = re.compile(r'@"([^"]+)"|@([\w./\-]+\.\w+)')
 
 async def _resolve_codebase(query: str, core: Any) -> str:
     """@codebase <query> — semantic search over indexed repo."""
-    if not query.strip():
+    normalized = query.strip()
+    repo_graph = getattr(core, "_repo_graph", None)
+    if repo_graph is not None and (not normalized or normalized.lower() in {"map", "repo-map", "workspace-map", "overview"}):
+        try:
+            return "[workspace map]\n" + repo_graph.build_repo_summary()
+        except Exception as e:
+            return f"[codebase: repo map failed: {e}]"
+    if not normalized:
         return "[codebase: no query provided]"
     if hasattr(core, "tool_registry") and core.tool_registry:
         try:
-            result = await core.tool_registry.execute_tool("semantic_search", {"query": query})
-            return f"[codebase search: {query}]\n{result}"
+            result = await core.tool_registry.execute_tool("semantic_search", {"query": normalized})
+            return f"[codebase search: {normalized}]\n{result}"
         except Exception:
             pass
     # fallback: grep
     try:
-        result = await core.tool_registry.execute_tool("grep_files", {"pattern": query, "max_results": 10})
-        return f"[codebase grep: {query}]\n{result}"
+        result = await core.tool_registry.execute_tool("grep_files", {"pattern": normalized, "max_results": 10})
+        return f"[codebase grep: {normalized}]\n{result}"
     except Exception as e:
         return f"[codebase: search failed: {e}]"
 
@@ -174,3 +181,44 @@ async def resolve_mentions(message: str, core: Any) -> Tuple[str, List[str]]:
     # strip @mention syntax from the message
     cleaned = _MENTION_RE.sub("", message).strip()
     return cleaned, context_blocks
+
+
+# ── delta-based context construction ────────────────────────────────────
+
+
+async def build_context_with_delta(
+    message: str,
+    core: Any,
+    context_files: Optional[Dict[str, str]] = None,
+    full_history_tokens: int = 0,
+) -> Tuple[str, Dict[str, Any]]:
+    """Build context using delta mode when available, falling back to full history.
+    Returns (enriched_message, delta_info).
+    delta_info contains: mode, metrics, and whether caller should use full history.
+    """
+    from .working_memory import WorkingMemoryManager
+    wm_mgr: Optional[WorkingMemoryManager] = getattr(core, "_working_memory_mgr", None)
+    if wm_mgr is None or wm_mgr.memory is None:
+        return message, {"mode": "full", "use_full_history": True}
+    # resolve @mentions first (always needed)
+    cleaned, mention_blocks = await resolve_mentions(message, core)
+    if mention_blocks:
+        cleaned = cleaned + "\n\n" + "\n\n".join(mention_blocks)
+    # compute context pressure
+    max_ctx = getattr(core, "_max_context_tokens", 100_000)
+    pressure = full_history_tokens / max_ctx if max_ctx > 0 else 0.0
+    # get current active files
+    files = context_files or {}
+    # run working memory pre-turn
+    tool_results = getattr(core, "_last_tool_results", None)
+    delta_prompt, metrics = wm_mgr.pre_turn(
+        user_message=cleaned,
+        current_files=files,
+        context_pressure=pressure,
+        full_history_tokens=full_history_tokens,
+        tool_results=tool_results,
+    )
+    if not delta_prompt: # full history or recovery mode
+        return cleaned, {"mode": metrics.mode, "use_full_history": True, "metrics": metrics}
+    # delta mode: return the delta prompt instead of full history
+    return delta_prompt, {"mode": "delta", "use_full_history": False, "metrics": metrics}

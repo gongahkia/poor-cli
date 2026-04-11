@@ -33,12 +33,14 @@ from .providers.base import BaseProvider, ProviderResponse, FunctionCall, UsageM
 from .providers.provider_factory import ProviderFactory
 from .run_history import RunHistoryManager, classify_error
 from .tools_async import ToolRegistryAsync, ToolOutcome
+from .enhanced_tools import CORE_TOOL_GROUP, MCP_GROUP_PREFIX, EnhancedToolRegistry
 from .checkpoint import CheckpointManager
 from .core_events import CoreEvent, HistoryAdapter, RepoHistoryAdapter
 from .repo_config import RepoConfig, get_repo_config
 from .context import ContextManager, get_context_manager, chars_per_token
 from .instructions import InstructionManager, InstructionSnapshot
 from .context_contract import ContextContractManager
+from .context_optimizer import CompactionPolicy, TieredContextCompactor
 from .context_engine import ContextEngineMixin
 from .permission_engine import PermissionEngineMixin
 from .mcp_client import MCPManager
@@ -50,13 +52,31 @@ from .economy import (
     classify_prompt_complexity,
     distill_prompt,
     apply_economy_preset,
+    resolve_output_verbosity,
 )
+from .token_budget_controller import (
+    RuleBasedController,
+    TokenBudgetState,
+    TokenBudgetAction,
+    TurnOutcome as BudgetTurnOutcome,
+    build_state_from_engine,
+)
+from .budget_logger import BudgetLogger
+from .thinking_budget import ThinkingBudgetOptimizer
+from .semantic_cache import (
+    SemanticCache,
+    compute_context_hash,
+    get_semantic_cache,
+    reset_semantic_cache,
+)
+from .tool_output_filter import merge_filter_stats
 from .prompts import (
     build_fim_prompt as _build_fim_prompt,
     build_tool_calling_system_instruction,
     detect_tone_from_user_memories,
     get_system_instruction,
 )
+from .skills import InstructionSkillContext, SkillLoadPlan, SkillRegistry
 from .workflow_templates import get_workflow_template, list_workflow_templates
 from .exceptions import (
     PoorCLIError,
@@ -133,9 +153,14 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         self._approved_write_paths: set = set()
         self._instruction_manager: Optional[InstructionManager] = None
         self._context_contract: Optional[ContextContractManager] = None
+        self._last_instruction_snapshot: Optional[InstructionSnapshot] = None
+        self._last_instruction_skill_plan: Optional[SkillLoadPlan] = None
         self._hook_manager: Optional[PolicyHookManager] = None
         self._audit_logger: Optional[AuditLogger] = None
         self._mcp_manager: Optional[MCPManager] = None
+        self._active_tool_groups: Tuple[str, ...] = tuple()
+        self._active_tool_names: set[str] = set()
+        self._active_tool_declarations: List[Dict[str, Any]] = []
         self._plan_analyzer: PlanAnalyzer = PlanAnalyzer()
         self._pending_events: List[CoreEvent] = []
         self._plan_callback: Optional[Callable[..., Any]] = None
@@ -160,6 +185,11 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         self._session_total_input_tokens: int = 0
         self._session_total_output_tokens: int = 0
         self._session_total_cost_usd: float = 0.0
+        self._session_cache_creation_input_tokens: int = 0
+        self._session_cache_read_input_tokens: int = 0
+        self._session_provider_cache_hits: int = 0
+        self._session_provider_cache_misses: int = 0
+        self._session_estimated_cache_savings_usd: float = 0.0
         self._task_input_tokens: int = 0
         self._task_output_tokens: int = 0
         self._task_cost_usd: float = 0.0
@@ -168,6 +198,10 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
 
         # Context compressor
         self._context_compressor: ContextCompressor = ContextCompressor()
+        self._tiered_compactor: TieredContextCompactor = TieredContextCompactor()
+
+        # Working memory (MemGPT-style delta mode)
+        self._working_memory_mgr: Optional[Any] = None # lazy init — WorkingMemoryManager
 
         # Architect/editor dual-model mode
         self._architect_mode = None
@@ -186,23 +220,41 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         except Exception:
             pass
 
+        # Model router for intelligent complexity-based routing
+        self._model_router = None
+        self._user_explicit_model: bool = False
+        try:
+            from .model_router import ModelRouter, RouterConfig
+            self._model_router = ModelRouter(RouterConfig())
+        except Exception:
+            pass
+
+        # Token budget controller (Phase 7A)
+        self._budget_controller: RuleBasedController = RuleBasedController()
+        self._budget_logger: BudgetLogger = BudgetLogger()
+        self._thinking_optimizer: ThinkingBudgetOptimizer = ThinkingBudgetOptimizer()
+        self._budget_state: Optional[TokenBudgetState] = None
+        self._budget_action: Optional[TokenBudgetAction] = None
+        self._turn_start_mono: float = 0.0
+        self._turn_tool_call_count: int = 0
+        self._recent_turn_failures: List[bool] = [] # last N turn success/fail
+
         # Economy mode savings tracker + downshift state
         self._economy_tracker: EconomySavingsTracker = EconomySavingsTracker()
         self._original_model_name: Optional[str] = None
         self._downshifted: bool = False
         self._response_cache: Dict[str, Tuple[str, float]] = {} # prompt_hash -> (response, timestamp)
+        self._semantic_cache: Optional[SemanticCache] = None
+        self._last_context_hash: str = "" # context hash for semantic cache keying
         self._files_seen_in_session: Dict[str, str] = {} # path -> content hash for context dedup
         self._last_file_contents: Dict[str, str] = {} # path -> last read content for diff-only reads
         self._git_context_cache: Optional[Tuple[str, str]] = None # (git_state_hash, context_text)
         self._turn_tool_cache: Dict[str, str] = {} # per-turn cache for read-only tool results
         self._idle_compact_task: Optional[asyncio.TimerHandle] = None
         self._idle_loop: Optional[asyncio.AbstractEventLoop] = None
-
-        # Sub-agent delegation depth (0 = top-level)
+        self._auto_history_compact_task: Optional[asyncio.Task] = None
         self._sub_agent_depth: int = 0
         self._pending_llm_compression: Optional[asyncio.Task] = None # background LLM compression
-
-        # Provider fallback manager (initialized after config load)
         self._fallback_manager: Optional[ProviderFallbackManager] = None
         self._run_history: Optional[RunHistoryManager] = None
         self._last_context_preview: Dict[str, Any] = {}
@@ -211,8 +263,180 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         self._last_provider_error: str = ""
         self._last_run_id: Optional[str] = None
         self._resolved_routing_mode: str = "manual"
+        self._last_compaction_status: Dict[str, Any] = {"state": "idle"}
 
         logger.info("PoorCLICore instance created")
+
+    def _mcp_server_names(self) -> List[str]:
+        if self._mcp_manager is None or not hasattr(self._mcp_manager, "get_server_names"):
+            return []
+        return self._mcp_manager.get_server_names()
+
+    def _register_mcp_tool_declarations(self, declarations: List[Dict[str, Any]]) -> None:
+        if not declarations or not self.tool_registry or not self._mcp_manager:
+            return
+        for declaration in declarations:
+            tool_name = declaration.get("name")
+            if not tool_name:
+                continue
+
+            async def _call_mcp_tool(
+                _tool_name: str = str(tool_name),
+                **kwargs: Any,
+            ) -> str:
+                if not self._mcp_manager:
+                    raise PoorCLIError("MCP manager not initialized")
+                return await self._mcp_manager.execute_tool(_tool_name, kwargs)
+
+            self.tool_registry.register_external_tool(
+                str(tool_name),
+                _call_mcp_tool,
+                declaration,
+            )
+
+    async def _resolve_tool_declarations_for_groups(
+        self,
+        groups: List[str],
+    ) -> List[Dict[str, Any]]:
+        if not isinstance(self.tool_registry, EnhancedToolRegistry):
+            return self.tool_registry.get_tool_declarations() if self.tool_registry else []
+
+        builtin = self.tool_registry.get_tool_declarations_for_groups(
+            groups,
+            mcp_server_names=self._mcp_server_names(),
+        )
+        declarations: List[Dict[str, Any]] = list(builtin)
+
+        mcp_groups = [
+            group_name.split(":", 1)[1]
+            for group_name in groups
+            if group_name.startswith(MCP_GROUP_PREFIX)
+        ]
+        if self._mcp_manager and mcp_groups:
+            mcp_declarations = await self._mcp_manager.load_server_tools(mcp_groups)
+            self._register_mcp_tool_declarations(mcp_declarations)
+            declarations.extend(mcp_declarations)
+
+        return sorted(
+            declarations,
+            key=lambda declaration: str(declaration.get("name", "")),
+        )
+
+    async def _activate_tool_groups(
+        self,
+        groups: List[str],
+        *,
+        refresh_provider: bool,
+    ) -> bool:
+        normalized_groups = []
+        for group_name in groups:
+            group = str(group_name or "").strip()
+            if not group:
+                continue
+            if group not in normalized_groups:
+                normalized_groups.append(group)
+        if CORE_TOOL_GROUP not in normalized_groups:
+            normalized_groups.insert(0, CORE_TOOL_GROUP)
+
+        declarations = await self._resolve_tool_declarations_for_groups(normalized_groups)
+        active_names = {
+            str(declaration.get("name", "")).strip()
+            for declaration in declarations
+            if str(declaration.get("name", "")).strip()
+        }
+        changed = (
+            tuple(normalized_groups) != self._active_tool_groups
+            or active_names != self._active_tool_names
+        )
+        self._active_tool_groups = tuple(normalized_groups)
+        self._active_tool_names = active_names
+        self._active_tool_declarations = declarations
+        if changed and refresh_provider and self._initialized and self.provider:
+            await self.refresh_provider_tools(declarations)
+        return changed
+
+    async def _activate_tools_for_prompt(
+        self,
+        prompt: str,
+        *,
+        context_files: Optional[List[str]] = None,
+        pinned_context_files: Optional[List[str]] = None,
+    ) -> None:
+        if not isinstance(self.tool_registry, EnhancedToolRegistry):
+            return
+        groups = self.tool_registry.required_tool_groups(
+            prompt,
+            context_files=context_files,
+            pinned_context_files=pinned_context_files,
+            mcp_server_names=self._mcp_server_names(),
+        )
+        changed = await self._activate_tool_groups(
+            groups,
+            refresh_provider=self._initialized and self.provider is not None,
+        )
+        if changed:
+            audit = self.tool_registry.audit_tool_catalog(
+                extra_declarations=[
+                    declaration
+                    for declaration in self._active_tool_declarations
+                    if str(declaration.get("name", "")).find(":") != -1
+                ],
+                extra_groups={
+                    group_name: [
+                        name
+                        for name in self._active_tool_names
+                        if (
+                            group_name.startswith(MCP_GROUP_PREFIX)
+                            and name.startswith(f"{group_name.split(':', 1)[1]}:")
+                        )
+                    ]
+                    for group_name in self._active_tool_groups
+                    if group_name.startswith(MCP_GROUP_PREFIX)
+                },
+            )
+            logger.info(
+                "lazy tools: groups=%s tools=%d schema_tokens=%d",
+                ",".join(self._active_tool_groups),
+                len(self._active_tool_names),
+                audit.schema_tokens,
+            )
+
+    async def _ensure_tool_available_for_call(
+        self,
+        tool_name: str,
+        *,
+        user_request: str = "",
+    ) -> Optional[str]:
+        name = str(tool_name or "").strip()
+        if not name:
+            return None
+        if name in self._active_tool_names:
+            return None
+        if not isinstance(self.tool_registry, EnhancedToolRegistry):
+            return None
+
+        group_name = self.tool_registry.tool_group_for_name(
+            name,
+            mcp_server_names=self._mcp_server_names(),
+        )
+        if group_name is None and self._mcp_manager and ":" in name:
+            if await self._mcp_manager.ensure_tool_available(name):
+                group_name = f"{MCP_GROUP_PREFIX}{name.split(':', 1)[0]}"
+                declarations = self._mcp_manager.get_tool_declarations()
+                self._register_mcp_tool_declarations(declarations)
+        if group_name is None:
+            return None
+
+        changed = await self._activate_tool_groups(
+            [*self._active_tool_groups, group_name],
+            refresh_provider=False,
+        )
+        if not changed and name not in self._active_tool_names:
+            return None
+        return (
+            f"[tool-schema-loader] Activated '{group_name}' for '{name}'. "
+            f"Request='{user_request[:120]}'"
+        )
     
     async def initialize(
         self,
@@ -285,7 +509,9 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             
             # Initialize tool registry with output truncation config
             trunc_cfg = self.config.output_truncation
-            self.tool_registry = ToolRegistryAsync(
+            self.tool_registry = EnhancedToolRegistry(
+                config=self.config,
+                checkpoint_manager=self.checkpoint_manager,
                 output_max_chars=trunc_cfg.max_output_chars if trunc_cfg.enabled else 0,
                 output_max_lines=trunc_cfg.max_output_lines if trunc_cfg.enabled else 0,
             )
@@ -296,7 +522,10 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                     self.config.fallback, self._config_manager
                 )
             self._run_history = RunHistoryManager(repo_root)
-            self._instruction_manager = InstructionManager(repo_root)
+            self._instruction_manager = InstructionManager(
+                repo_root,
+                skill_search_paths=self._configured_skill_search_paths(),
+            )
             self._context_contract = ContextContractManager(
                 repo_root=repo_root,
                 instruction_manager=self._instruction_manager,
@@ -310,36 +539,25 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             self._audit_logger = AuditLogger(audit_dir=repo_root / ".poor-cli" / "audit")
 
             if self.config.mcp_servers:
-                self._mcp_manager = MCPManager(self.config.mcp_servers)
+                self._mcp_manager = MCPManager(self.config.mcp_servers, repo_root=repo_root)
                 await self._mcp_manager.initialize()
-                for declaration in self._mcp_manager.get_tool_declarations():
-                    tool_name = declaration.get("name")
-                    if not tool_name:
-                        continue
-
-                    async def _call_mcp_tool(
-                        _tool_name: str = tool_name,
-                        **kwargs: Any,
-                    ) -> str:
-                        if not self._mcp_manager:
-                            raise PoorCLIError("MCP manager not initialized")
-                        return await self._mcp_manager.execute_tool(_tool_name, kwargs)
-
-                    self.tool_registry.register_external_tool(
-                        tool_name,
-                        _call_mcp_tool,
-                        declaration,
-                    )
             self.tool_registry._core = self  # back-ref for compact/delegate tools
-            tool_declarations = self.tool_registry.get_core_tool_declarations()
+            tool_declarations = await self._resolve_tool_declarations_for_groups([CORE_TOOL_GROUP])
+            self._active_tool_groups = (CORE_TOOL_GROUP,)
+            self._active_tool_names = {
+                str(declaration.get("name", "")).strip()
+                for declaration in tool_declarations
+                if str(declaration.get("name", "")).strip()
+            }
+            self._active_tool_declarations = list(tool_declarations)
             _deferred = self.tool_registry.get_deferred_tool_names()
             logger.info(
-                "Registered %d core tools, %d deferred",
+                "Registered %d initial tools, %d deferred",
                 len(tool_declarations), len(_deferred),
             )
             
             # Build system instruction (provider-tuned for constrained models)
-            terse = getattr(self.config.economy, "terse_system_prompt", False)
+            terse = resolve_output_verbosity(self.config.economy) == "caveman"
             batched = getattr(self.config.economy, "prefer_batched_reads", False)
             _sandbox_preset = getattr(self.config.sandbox, "default_preset", "workspace-write")
             _plan = bool(self.config.plan_mode.enabled)
@@ -375,6 +593,9 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                     self._system_instruction += _tone
             except Exception:
                 pass
+            self._system_context_hash = hashlib.sha256(
+                (self._system_instruction or "").encode("utf-8", errors="replace")
+            ).hexdigest()
 
             provider_capabilities = self.provider.get_capabilities()
             init_tools = (
@@ -423,6 +644,8 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                     max_age_hours=self.config.checkpoint.max_age_hours,
                     max_disk_mb=self.config.checkpoint.max_disk_mb,
                 )
+                if isinstance(self.tool_registry, EnhancedToolRegistry):
+                    self.tool_registry.set_checkpoint_manager(self.checkpoint_manager)
                 logger.info("Checkpoint manager initialized")
             
             # Initialize context manager
@@ -1031,6 +1254,10 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
     def _inspect_instruction_snapshot(
         self,
         referenced_files: Optional[List[str]] = None,
+        *,
+        user_prompt: str = "",
+        skill_context: Optional[InstructionSkillContext] = None,
+        skill_plan: Optional[SkillLoadPlan] = None,
     ) -> InstructionSnapshot:
         manager = self._instruction_manager or InstructionManager(Path.cwd())
         repo_summary = ""
@@ -1045,6 +1272,38 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             referenced_files or [],
             plan_mode_enabled=bool(self.config and self.config.plan_mode.enabled),
             repo_summary=repo_summary,
+            user_prompt=user_prompt,
+            skill_context=skill_context,
+            skill_plan=skill_plan,
+        )
+
+    def _configured_skill_search_paths(self) -> List[str]:
+        config = getattr(self, "config", None)
+        if config is None or getattr(config, "skills", None) is None:
+            return []
+        raw_paths = getattr(config.skills, "search_paths", [])
+        if not isinstance(raw_paths, list):
+            return []
+        return [str(path) for path in raw_paths if str(path).strip()]
+
+    def _build_instruction_skill_context(self) -> InstructionSkillContext:
+        repo_root = str(getattr(self, "_repo_root", Path.cwd()))
+        terse = False
+        batched = False
+        plan_mode = False
+        sandbox_preset = "workspace-write"
+        if self.config:
+            terse = resolve_output_verbosity(self.config.economy) == "caveman"
+            batched = getattr(self.config.economy, "prefer_batched_reads", False)
+            plan_mode = bool(self.config.plan_mode.enabled)
+            sandbox_preset = getattr(self.config.sandbox, "default_preset", "workspace-write")
+        return InstructionSkillContext(
+            current_dir=repo_root,
+            plan_mode_enabled=plan_mode,
+            sandbox_preset=sandbox_preset,
+            terse_mode=terse,
+            batched_reads=batched,
+            multiplayer_active=bool(getattr(self, "_embedded_multiplayer_room", False)),
         )
 
     def _build_full_message(self, message: str, context_files: Optional[List[str]] = None) -> str:
@@ -1133,7 +1392,19 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                     data={"phase": "context_selection", "message": f"context: {n_sel} files selected (~{tokens} tokens){trunc} [{src_parts}] | {n_exc} excluded"},
                 ))
 
-        instruction_snapshot = self._inspect_instruction_snapshot(referenced_files)
+        skill_context = self._build_instruction_skill_context()
+        skill_plan = SkillRegistry(
+            getattr(self, "_repo_root", Path.cwd()),
+            search_paths=self._configured_skill_search_paths(),
+        ).build_instruction_plan(message, skill_context)
+        instruction_snapshot = self._inspect_instruction_snapshot(
+            referenced_files,
+            user_prompt=message,
+            skill_context=skill_context,
+            skill_plan=skill_plan,
+        )
+        self._last_instruction_snapshot = instruction_snapshot
+        self._last_instruction_skill_plan = skill_plan
         context_contract = getattr(self, "_context_contract", None)
         if context_contract:
             contract_snapshot = context_contract.build_snapshot(
@@ -1141,23 +1412,26 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                 plan_mode_enabled=bool(self.config and self.config.plan_mode.enabled),
                 instruction_snapshot=instruction_snapshot,
             )
-            instruction_prefix = contract_snapshot.rendered_prompt_prefix
+            prompt_prefix = contract_snapshot.rendered_prompt_prefix
         else:
-            instruction_prefix = instruction_snapshot.render_prompt_prefix()
+            prompt_prefix = instruction_snapshot.render_prompt_prefix()
+        if self.provider:
+            self.provider.update_prompt_prefix(prompt_prefix)
 
         # auto-surface relevant skills based on user prompt
+        skill_hint = ""
         try:
             from .skill_surfacer import detect_relevant_skills, build_skill_hints
-            from .skills import SkillRegistry
-            _skill_reg = SkillRegistry(getattr(self, "_repo_root", Path.cwd()))
+            _skill_reg = SkillRegistry(
+                getattr(self, "_repo_root", Path.cwd()),
+                search_paths=self._configured_skill_search_paths(),
+            )
             _all_skills = _skill_reg.list_skills()
             _skill_names = [s.name for s in _all_skills]
             _matched = detect_relevant_skills(message, _skill_names)
             if _matched:
                 _descs = {s.name: s.description for s in _all_skills}
-                _hint = build_skill_hints(_matched, _descs)
-                if _hint:
-                    instruction_prefix = f"{instruction_prefix}\n\n{_hint}" if instruction_prefix else _hint
+                skill_hint = build_skill_hints(_matched, _descs) or ""
         except Exception:
             pass # skill surfacing is best-effort
 
@@ -1165,13 +1439,13 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         todo_ctx = ""
         if self.tool_registry:
             todo_ctx = self.tool_registry.render_todos_for_context()
+        if skill_hint:
+            message = f"{skill_hint}\n\n{message}"
         if todo_ctx:
             message = f"{todo_ctx}\n\n{message}"
 
         if not self._context_manager or context_result is None or not context_result.files:
-            if instruction_prefix:
-                return f"{instruction_prefix}\n\nUser request: {message}"
-            return message
+            return f"User request: {message}"
 
         logger.info(context_result.message)
         context_message = await self._context_manager.build_context_message(
@@ -1179,9 +1453,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             context_result,
             max_tokens=context_budget_tokens,
         )
-        if not instruction_prefix:
-            return context_message
-        return f"{instruction_prefix}\n\n{context_message}"
+        return context_message
 
     async def preview_context(
         self,
@@ -1602,12 +1874,27 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                 return 0.0
         return (input_tokens / 1000) * cost_per_1k_input + (output_tokens / 1000) * cost_per_1k_output
 
-    def _track_cost(self, input_tokens: int, output_tokens: int) -> None:
+    def _track_cost(
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        *,
+        cache_creation_input_tokens: int = 0,
+        cache_read_input_tokens: int = 0,
+    ) -> None:
         """Accumulate session and per-task cost tracking."""
         est = self._estimate_cost(input_tokens, output_tokens)
         self._session_total_input_tokens += input_tokens
         self._session_total_output_tokens += output_tokens
         self._session_total_cost_usd += est
+        self._session_cache_creation_input_tokens += cache_creation_input_tokens
+        self._session_cache_read_input_tokens += cache_read_input_tokens
+        if cache_read_input_tokens > 0:
+            self._session_provider_cache_hits += 1
+        elif input_tokens > 0 or cache_creation_input_tokens > 0:
+            self._session_provider_cache_misses += 1
+        if cache_read_input_tokens > 0:
+            self._session_estimated_cache_savings_usd += self._estimate_cost(cache_read_input_tokens, 0)
         self._task_input_tokens += input_tokens
         self._task_output_tokens += output_tokens
         self._task_cost_usd += est
@@ -1658,22 +1945,81 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
 
     def get_session_cost_summary(self) -> Dict[str, Any]:
         """Return current session cost/token totals."""
+        input_tokens = getattr(self, "_session_total_input_tokens", 0)
+        output_tokens = getattr(self, "_session_total_output_tokens", 0)
+        cost_usd = getattr(self, "_session_total_cost_usd", 0.0)
+        cache_create = getattr(self, "_session_cache_creation_input_tokens", 0)
+        cache_read = getattr(self, "_session_cache_read_input_tokens", 0)
+        cache_hits = getattr(self, "_session_provider_cache_hits", 0)
+        cache_misses = getattr(self, "_session_provider_cache_misses", 0)
+        cache_savings = getattr(self, "_session_estimated_cache_savings_usd", 0.0)
+        total_requests = cache_hits + cache_misses
+        hit_rate = round(cache_hits / total_requests * 100, 1) if total_requests else 0.0
+        filter_stats = self.get_tool_filter_stats()
         return {
-            "input_tokens": self._session_total_input_tokens,
-            "output_tokens": self._session_total_output_tokens,
-            "total_tokens": self._session_total_input_tokens + self._session_total_output_tokens,
-            "estimated_cost_usd": round(self._session_total_cost_usd, 6),
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+            "estimated_cost_usd": round(cost_usd, 6),
+            "tool_filtering": filter_stats,
+            "tool_filtering_tokens_saved": filter_stats.get("tokens_saved", 0),
+            "cache_creation_input_tokens": cache_create,
+            "cache_read_input_tokens": cache_read,
+            "cache_hit_count": cache_hits,
+            "cache_miss_count": cache_misses,
+            "cache_hit_rate_pct": hit_rate,
+            "estimated_cache_savings_usd": round(cache_savings, 6),
+            "request_count": total_requests,
+            "inputTokens": input_tokens,
+            "outputTokens": output_tokens,
+            "totalTokens": input_tokens + output_tokens,
+            "estimatedCost": round(cost_usd, 6),
+            "toolFiltering": filter_stats,
+            "toolFilteringTokensSaved": filter_stats.get("tokens_saved", 0),
+            "cacheCreationInputTokens": cache_create,
+            "cacheReadInputTokens": cache_read,
+            "cacheHitCount": cache_hits,
+            "cacheMissCount": cache_misses,
+            "cacheHitRatePct": hit_rate,
+            "estimatedCacheSavingsUSD": round(cache_savings, 6),
+            "requestCount": total_requests,
         }
 
     def get_economy_savings(self) -> Dict[str, Any]:
         """Return accumulated economy savings summary."""
-        return self._economy_tracker.get_summary()
+        tracker = getattr(self, "_economy_tracker", None)
+        summary = tracker.get_summary() if tracker else {}
+        sc = getattr(self, "_semantic_cache", None)
+        if sc:
+            summary["semantic_cache"] = sc.get_stats()
+        return summary
+
+    def get_budget_controller_stats(self) -> Dict[str, Any]:
+        """Return token budget controller analytics."""
+        stats = self._budget_controller.get_stats()
+        stats["log_summary"] = self._budget_logger.summary()
+        return stats
+
+    def clear_semantic_cache(self) -> Dict[str, Any]:
+        """Clear the semantic response cache."""
+        if getattr(self, "_semantic_cache", None):
+            removed = self._semantic_cache.invalidate_all()
+            return {"cleared": removed}
+        return {"cleared": 0, "note": "semantic cache not initialized"}
+
+    def get_routing_stats(self) -> Dict[str, Any]:
+        """Return model routing analytics."""
+        if getattr(self, "_model_router", None):
+            return self._model_router.get_routing_stats()
+        return {"total_decisions": 0}
 
     def export_cost_report(self) -> Dict[str, Any]:
         """Export full session cost report for accounting."""
         return {
             "session": self.get_session_cost_summary(),
-            "economy_savings": self._economy_tracker.get_summary(),
+            "economy_savings": self._economy_tracker.get_summary() if getattr(self, "_economy_tracker", None) else {},
+            "routing": self.get_routing_stats(),
+            "tool_filtering": self.get_tool_filter_stats(),
             "context_breakdown": self.get_context_breakdown() if self.provider else {},
             "context_pressure": self.get_context_pressure() if self.provider else {},
             "cache_stats": self.get_cache_stats(),
@@ -1720,6 +2066,11 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             "input_tokens": self._session_total_input_tokens,
             "output_tokens": self._session_total_output_tokens,
             "cost_usd": round(self._session_total_cost_usd, 6),
+            "cache_creation_input_tokens": self._session_cache_creation_input_tokens,
+            "cache_read_input_tokens": self._session_cache_read_input_tokens,
+            "cache_hit_count": self._session_provider_cache_hits,
+            "cache_miss_count": self._session_provider_cache_misses,
+            "estimated_cache_savings_usd": round(self._session_estimated_cache_savings_usd, 6),
             "economy_preset": self.config.economy.preset if self.config else "",
         }
         try:
@@ -1766,11 +2117,37 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         return {"visualization": "\n".join(bars), "breakdown": bd}
 
     def get_cache_stats(self) -> Dict[str, Any]:
-        """Return tool cache + response cache stats."""
+        """Return tool cache + response cache + semantic cache stats."""
         tool_stats = self.tool_registry.get_tool_cache_stats() if self.tool_registry else {}
-        return {**tool_stats,
-                "response_cache_entries": len(self._response_cache),
-                "response_cache_enabled": bool(self.config and self.config.economy.response_cache)}
+        provider_hits = getattr(self, "_session_provider_cache_hits", 0)
+        provider_misses = getattr(self, "_session_provider_cache_misses", 0)
+        provider_requests = provider_hits + provider_misses
+        provider_hit_rate = round(provider_hits / provider_requests * 100, 1) if provider_requests else 0.0
+        semantic_stats = self._semantic_cache.get_stats() if getattr(self, "_semantic_cache", None) else {}
+        return {
+            **tool_stats,
+            "response_cache_entries": len(getattr(self, "_response_cache", {})),
+            "response_cache_enabled": bool(self.config and self.config.economy.response_cache),
+            "provider_cache_hits": provider_hits,
+            "provider_cache_misses": provider_misses,
+            "provider_cache_hit_rate_pct": provider_hit_rate,
+            "provider_cache_creation_input_tokens": getattr(self, "_session_cache_creation_input_tokens", 0),
+            "provider_cache_read_input_tokens": getattr(self, "_session_cache_read_input_tokens", 0),
+            "provider_estimated_cache_savings_usd": round(
+                getattr(self, "_session_estimated_cache_savings_usd", 0.0), 6
+            ),
+            "semantic_cache": semantic_stats,
+        }
+
+    def get_tool_filter_stats(self) -> Dict[str, int]:
+        registry_stats = {}
+        if self.tool_registry and hasattr(self.tool_registry, "get_output_filter_stats"):
+            registry_stats = self.tool_registry.get_output_filter_stats()
+        mcp_stats = {}
+        mcp_manager = getattr(self, "_mcp_manager", None)
+        if mcp_manager and hasattr(mcp_manager, "get_output_filter_stats"):
+            mcp_stats = mcp_manager.get_output_filter_stats()
+        return merge_filter_stats(registry_stats, mcp_stats)
 
     def get_context_pressure(self) -> Dict[str, Any]:
         """Return context window utilization metrics."""
@@ -1784,7 +2161,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             used = int(sum(len(str(m.get("content", ""))) for m in history) / cpt)
         except Exception:
             used = 0
-        sys_tokens = int(len(self._system_instruction or "") / cpt)
+        sys_tokens = self._static_prefix_tokens()
         total = used + sys_tokens
         pct = round(total / max(max_ctx, 1) * 100, 1)
         hint = "compress" if pct > 70 else ("warn" if pct > 50 else "ok")
@@ -1793,7 +2170,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
     def get_context_breakdown(self) -> Dict[str, Any]:
         """Return token breakdown by category: system, history, tool results."""
         cpt = self._cpt
-        sys_tokens = int(len(self._system_instruction or "") / cpt)
+        sys_tokens = self._static_prefix_tokens()
         if not self.provider:
             return {"system_tokens": sys_tokens, "history_tokens": 0, "tool_result_tokens": 0,
                     "total_tokens": sys_tokens, "max_context_tokens": 0, "pressure_pct": 0, "turn_count": 0}
@@ -1821,10 +2198,18 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                 "pressure_pct": round(total / max(max_ctx, 1) * 100, 1) if max_ctx else 0,
                 "turn_count": user_turns}
 
+    def get_compaction_status(self) -> Dict[str, Any]:
+        payload = dict(getattr(self, "_last_compaction_status", {}) or {})
+        if not payload:
+            payload = {"state": "idle"}
+        task = getattr(self, "_auto_history_compact_task", None)
+        payload["backgroundActive"] = bool(task and not task.done())
+        return payload
+
     def estimate_cost(self, message: str) -> Dict[str, Any]:
         """Estimate token cost of a message before sending (no API call)."""
         cpt = self._cpt
-        sys_tokens = int(len(self._system_instruction or "") / cpt)
+        sys_tokens = self._static_prefix_tokens()
         if self.provider:
             try:
                 history = self.provider.get_history()
@@ -1868,22 +2253,22 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         }
 
     def set_economy_preset(self, preset: str) -> Dict[str, Any]:
-        """Switch economy preset. Regenerates system instruction if terse/batched flags changed."""
+        """Switch economy preset. Regenerates system instruction if verbosity/batched flags changed."""
         if not self.config:
             return {"error": "not initialized"}
         from dataclasses import asdict as _asdict
-        old_terse = self.config.economy.terse_system_prompt
+        old_verbosity = resolve_output_verbosity(self.config.economy)
         old_batched = self.config.economy.prefer_batched_reads
         apply_economy_preset(self.config.economy, preset)
-        new_terse = self.config.economy.terse_system_prompt
+        new_verbosity = resolve_output_verbosity(self.config.economy)
         new_batched = self.config.economy.prefer_batched_reads
-        if (new_terse != old_terse or new_batched != old_batched) and self.provider:
+        if (new_verbosity != old_verbosity or new_batched != old_batched) and self.provider:
             _sandbox_preset = getattr(self.config.sandbox, "default_preset", "workspace-write")
             _plan = bool(self.config.plan_mode.enabled)
             _max_sys = 1000 if self.config.model.provider == "ollama" else 0
             self._system_instruction = build_tool_calling_system_instruction(
                 str(Path.cwd()), provider=self.config.model.provider,
-                terse_mode=new_terse, batched_reads=new_batched,
+                terse_mode=new_verbosity == "caveman", batched_reads=new_batched,
                 sandbox_preset=_sandbox_preset, plan_mode=_plan,
                 include_agent_tools=not _plan, max_system_tokens=_max_sys,
             )
@@ -1918,6 +2303,36 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                             )
                         logger.info("Budget-aware downshift to %s (%.0f%% of budget used)", cheap_model_name, budget_pct)
                         return
+        # use model router if available
+        if self._model_router and self._model_router.enabled:
+            decision = self._model_router.select_model(
+                prompt=prompt,
+                provider=self.config.model.provider,
+                current_model=self.config.model.model_name,
+                economy_preset=eco.preset,
+                user_explicit_model=self._user_explicit_model,
+            )
+            self._economy_tracker.record_routing_decision(escalated=decision.escalated)
+            self._turn_economy.routed = True
+            self._turn_economy.routed_model = decision.selected_model
+            self._turn_economy.routed_complexity = decision.complexity.value
+            if decision.selected_model != self.config.model.model_name:
+                from .provider_catalog import get_model_tier
+                current_tier = get_model_tier(self.config.model.provider, self.config.model.model_name)
+                self._original_model_name = self.config.model.model_name
+                self._downshifted = True
+                self._turn_economy.downshifted = True
+                self._turn_economy.downshift_model = decision.selected_model
+                self.provider.switch_model(decision.selected_model)
+                if current_tier:
+                    new_tier = get_model_tier(self.config.model.provider, decision.selected_model)
+                    if new_tier:
+                        self._economy_tracker.record_downshift(
+                            current_tier.cost_1k_in + current_tier.cost_1k_out,
+                            new_tier.cost_1k_in + new_tier.cost_1k_out,
+                        )
+            return
+        # fallback: legacy auto_downshift
         if not eco.auto_downshift:
             return
         if len(prompt) >= eco.downshift_threshold_chars:
@@ -1958,7 +2373,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         return hashlib.sha256(prompt.encode("utf-8", errors="replace")).hexdigest()
 
     def _cache_lookup(self, prompt: str) -> Optional[str]:
-        """Return cached response if valid, else None."""
+        """Return cached response if valid (exact match only), else None."""
         if not self.config or not self.config.economy.response_cache:
             return None
         key = self._cache_key(prompt)
@@ -1971,6 +2386,34 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             del self._response_cache[key]
             return None
         return cached_text
+
+    async def _semantic_cache_lookup(self, prompt: str, context_hash: str) -> Optional[str]:
+        """Try semantic similarity cache. Returns cached response or None."""
+        if self._prompt_likely_needs_tools(prompt):
+            return None
+        try:
+            if self._semantic_cache is None:
+                self._semantic_cache = get_semantic_cache()
+            result = await self._semantic_cache.get(prompt, context_hash)
+            if result:
+                self._semantic_cache.record_savings(result.response)
+                logger.info("semantic cache hit (sim=%.4f)", result.similarity)
+                return result.response
+        except Exception as e:
+            logger.warning("semantic cache lookup failed: %s", e)
+        return None
+
+    async def _semantic_cache_store(self, prompt: str, context_hash: str, response: str) -> None:
+        """Store response in semantic cache."""
+        if self._prompt_likely_needs_tools(prompt):
+            return
+        try:
+            if self._semantic_cache is None:
+                self._semantic_cache = get_semantic_cache()
+            model = self.provider.model_name if self.provider else ""
+            await self._semantic_cache.put(prompt, context_hash, response, model_name=model)
+        except Exception as e:
+            logger.warning("semantic cache store failed: %s", e)
 
     def _cache_store(self, prompt: str, response: str) -> None:
         if not self.config or not self.config.economy.response_cache:
@@ -2146,6 +2589,24 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             pass
         return "\n\n".join(parts)
 
+    def _ensure_working_memory_mgr(self) -> Any:
+        """Lazy-init WorkingMemoryManager."""
+        if self._working_memory_mgr is not None:
+            return self._working_memory_mgr
+        try:
+            from .working_memory import WorkingMemoryManager
+            caps = self.provider.get_capabilities() if self.provider else None
+            max_ctx = int(caps.max_context_tokens) if caps and caps.max_context_tokens else 100_000
+            self._working_memory_mgr = WorkingMemoryManager(
+                repo_root=getattr(self, "_repo_root", Path.cwd()),
+                max_context_tokens=max_ctx,
+            )
+            self._working_memory_mgr.init_session()
+        except Exception as e:
+            logger.warning("working memory init failed: %s", e)
+            self._working_memory_mgr = None
+        return self._working_memory_mgr
+
     async def _ensure_repo_graph(self, timeout: float = 0.1) -> None:
         """Wait briefly for background repo graph indexing to complete."""
         if self._repo_graph_task and not self._repo_graph_task.done():
@@ -2154,16 +2615,50 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             except (asyncio.TimeoutError, Exception):
                 pass # graph not ready yet, proceed without it
 
+    async def _maybe_builtin_workspace_map(self, message: str) -> Optional[str]:
+        stripped = str(message or "").strip()
+        if not stripped.startswith("/workspace-map"):
+            return None
+        token_budget = 2000
+        suffix = stripped[len("/workspace-map"):].strip()
+        if suffix:
+            try:
+                token_budget = max(128, int(suffix.split()[0]))
+            except ValueError:
+                pass
+        if self._repo_graph is None:
+            return "[workspace-map unavailable: repo graph disabled]"
+        await self._ensure_repo_graph(timeout=5.0)
+        try:
+            stats = self._repo_graph.get_stats()
+        except Exception:
+            stats = {"files": 0}
+        if not stats.get("files"):
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._repo_graph.build_index)
+        return self._repo_graph.build_repo_map(token_budget=token_budget)
+
     @property
     def _cpt(self) -> float:
         """Chars-per-token ratio for current provider."""
         provider = self.config.model.provider if self.config else ""
         return chars_per_token(provider)
 
+    def _static_prefix_tokens(self) -> int:
+        """Estimate tokens consumed by stable provider prefix content."""
+        cpt = self._cpt
+        prefix = ""
+        if self.provider and hasattr(self.provider, "get_prompt_prefix"):
+            try:
+                prefix = self.provider.get_prompt_prefix() or ""
+            except Exception:
+                prefix = ""
+        return int((len(getattr(self, "_system_instruction", None) or "") + len(prefix)) / cpt)
+
     def _compute_token_breakdown(self) -> Tuple[int, int, int]:
         """Compute (system_tokens, history_tokens, tool_result_tokens) for current state."""
         cpt = self._cpt
-        sys_tok = int(len(self._system_instruction or "") / cpt)
+        sys_tok = self._static_prefix_tokens()
         hist_tok = 0
         tool_tok = 0
         if self.provider:
@@ -2191,6 +2686,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             current_tokens = int(sum(len(str(m.get("content", ""))) for m in history) / self._cpt)
         except Exception:
             return None
+        current_tokens += self._static_prefix_tokens()
         remaining_ratio = max(0.0, 1.0 - (current_tokens / max_ctx))
         stop_ratio = getattr(self.config.agentic, "context_pressure_stop_ratio", 0.2)
         warn_ratio = getattr(self.config.agentic, "context_pressure_warn_ratio", 0.5)
@@ -2231,29 +2727,12 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         """Rebuild system instruction if git/instruction state changed. Returns True if updated."""
         if not self._initialized or not self.provider or not self.config:
             return False
-        try:
-            head = subprocess.check_output(
-                ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, text=True, timeout=3,
-            ).strip()
-        except Exception:
-            head = ""
-        try:
-            status = subprocess.check_output(
-                ["git", "status", "--porcelain"], stderr=subprocess.DEVNULL, text=True, timeout=3,
-            ).strip()[:500]
-        except Exception:
-            status = ""
-        instr_key = self._instruction_manager._cache_key if self._instruction_manager else ""
-        new_hash = hashlib.sha256(f"{head}|{status}|{instr_key}".encode()).hexdigest()
-        if new_hash == self._system_context_hash:
-            return False
-        self._git_context_cache = None # git state changed, invalidate
-        terse = getattr(self.config.economy, "terse_system_prompt", False)
+        terse = resolve_output_verbosity(self.config.economy) == "caveman"
         batched = getattr(self.config.economy, "prefer_batched_reads", False)
         repo_root = getattr(self, "_repo_root", Path.cwd())
         _sandbox_preset = getattr(self.config.sandbox, "default_preset", "workspace-write")
         _plan = bool(self.config.plan_mode.enabled)
-        self._system_instruction = build_tool_calling_system_instruction(
+        new_instruction = build_tool_calling_system_instruction(
             str(repo_root), provider=self.config.model.provider,
             terse_mode=terse, batched_reads=batched,
             sandbox_preset=_sandbox_preset,
@@ -2263,7 +2742,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         )
         memory_index = self._memory_manager.load_index() if self._memory_manager else ""
         if memory_index:
-            self._system_instruction += (
+            new_instruction += (
                 "\n\n## Persistent Memory\n"
                 "The following memories were saved in previous sessions.\n\n"
                 f"{memory_index}\n"
@@ -2274,9 +2753,14 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                 _user_content = "\n".join(m.content for m in _user_memories)
                 _tone = detect_tone_from_user_memories(_user_content)
                 if _tone:
-                    self._system_instruction += _tone
+                    new_instruction += _tone
         except Exception:
             pass
+        new_hash = hashlib.sha256(new_instruction.encode("utf-8", errors="replace")).hexdigest()
+        if new_hash == self._system_context_hash:
+            return False
+        self._git_context_cache = None # git state changed, invalidate
+        self._system_instruction = new_instruction
         self.provider.update_system_instruction(self._system_instruction)
         self._system_context_hash = new_hash
         context_contract = getattr(self, "_context_contract", None)
@@ -2358,11 +2842,42 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             context_budget_tokens=context_budget_tokens,
             request_id=request_id,
         )
+        builtin_workspace_map = await self._maybe_builtin_workspace_map(message)
+        if builtin_workspace_map is not None:
+            if self.history_adapter:
+                self.history_adapter.add_message("user", message)
+                self.history_adapter.add_message("model", builtin_workspace_map)
+            self._append_turn_transition(
+                turn_diagnostics,
+                reason_code="builtin_command",
+                iteration=0,
+                details={"command": "/workspace-map"},
+            )
+            self._finish_run_record(
+                run_state,
+                status="completed",
+                summary=builtin_workspace_map or "workspace map",
+                checkpoint_id=last_checkpoint_id,
+                artifact_dir=artifact_dir,
+                metadata_updates=self._build_run_metadata_updates(
+                    request_id=request_id,
+                    diagnostics=turn_diagnostics,
+                    completion_reason_code="builtin_command",
+                ),
+            )
+            yield CoreEvent.text_chunk(builtin_workspace_map, request_id)
+            yield CoreEvent.done(reason="builtin_command")
+            return
         full_message = await self._build_context_message(
             message,
             context_files=context_files,
             pinned_context_files=pinned_context_files,
             context_budget_tokens=context_budget_tokens,
+        )
+        await self._activate_tools_for_prompt(
+            message,
+            context_files=context_files,
+            pinned_context_files=pinned_context_files,
         )
         turn_diagnostics["promptLayers"] = {
             "userPromptChars": len(message or ""),
@@ -2410,18 +2925,109 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         except Exception as e:
             logger.warning("economy max_tokens cap failed: %s", e)
 
+        # Token budget controller: observe state and decide action
+        self._turn_start_mono = time.monotonic()
+        self._turn_tool_call_count = 0
+        try:
+            eco = self.config.economy if self.config else None
+            preset = eco.preset if eco else "balanced"
+            cp = self.get_context_pressure() if self.provider else {}
+            complexity_str = self._turn_economy.routed_complexity or "simple"
+            recent_5 = self._recent_turn_failures[-5:]
+            recent_fails = sum(1 for f in recent_5 if f)
+            self._budget_state = build_state_from_engine(
+                complexity_str=complexity_str,
+                context_pressure_pct=float(cp.get("pressure_pct", 0)),
+                turn_number=iteration,
+                economy_preset=preset,
+                provider=self.config.model.provider if self.config else "",
+                model_tier=self._turn_economy.routed_model or "balanced",
+                recent_failures=recent_fails,
+                recent_turns=max(len(recent_5), 1),
+            )
+            self._budget_action = self._budget_controller.decide(self._budget_state)
+            # apply data-driven thinking budget override
+            try:
+                self._budget_action = self._thinking_optimizer.suggest_action_override(
+                    self._budget_state, self._budget_action
+                )
+            except Exception as e:
+                logger.warning("thinking_optimizer override failed: %s", e)
+            # wire thinking budget to provider
+            if self.provider:
+                self.provider.economy_max_thinking_tokens = self._budget_action.max_thinking_tokens
+            logger.info(
+                "budget_controller: tier=%s thinking=%d output=%d compress=%.2f compact=%s",
+                self._budget_action.model_tier,
+                self._budget_action.max_thinking_tokens,
+                self._budget_action.max_output_tokens,
+                self._budget_action.compression_ratio,
+                self._budget_action.should_compact,
+            )
+        except Exception as e:
+            logger.warning("budget controller decide failed: %s", e)
+            self._budget_state = None
+            self._budget_action = None
+
         # Economy: reset idle auto-compact timer
         try:
             self._reset_idle_compact_timer()
         except Exception as e:
             logger.warning("economy idle_compact_timer failed: %s", e)
 
-        # Economy: response cache lookup
+        # Working memory: delta-mode substitution
+        try:
+            wm_mgr = self._ensure_working_memory_mgr()
+            if wm_mgr and wm_mgr.memory is not None:
+                history_tokens = len(full_message) // 4
+                active_files: Dict[str, str] = {}
+                if self._context_manager:
+                    for fc in getattr(self._context_manager, "_last_selected_files", []):
+                        p = getattr(fc, "path", None)
+                        c = getattr(fc, "content", None)
+                        if p and c:
+                            active_files[str(p)] = c
+                tool_results = getattr(self, "_last_tool_results", None)
+                caps = self.provider.get_capabilities() if self.provider else None
+                max_ctx = int(caps.max_context_tokens) if caps and caps.max_context_tokens else 100_000
+                pressure = history_tokens / max_ctx if max_ctx > 0 else 0.0
+                delta_prompt, wm_metrics = wm_mgr.pre_turn(
+                    user_message=message,
+                    current_files=active_files,
+                    context_pressure=pressure,
+                    full_history_tokens=history_tokens,
+                    tool_results=tool_results,
+                )
+                if delta_prompt: # delta mode active — substitute prompt
+                    full_message = delta_prompt
+                    self._pending_events.append(CoreEvent(
+                        type="progress",
+                        data={
+                            "phase": "working_memory",
+                            "message": f"delta mode: ~{wm_metrics.tokens_saved} tokens saved ({wm_metrics.savings_pct:.0f}%)",
+                        },
+                    ))
+        except Exception as e:
+            logger.warning("working memory pre-turn failed: %s", e)
+
+        # Economy: compute context hash for semantic cache keying
+        self._last_context_hash = compute_context_hash(
+            context_files=context_files,
+            pinned_context_files=pinned_context_files,
+            model_name=self.provider.model_name if self.provider else "",
+        )
+
+        # Economy: response cache lookup (exact match, then semantic)
         cached_response = None
         try:
             cached_response = self._cache_lookup(full_message)
         except Exception as e:
             logger.warning("economy cache_lookup failed: %s", e)
+        if cached_response is None:
+            try:
+                cached_response = await self._semantic_cache_lookup(message, self._last_context_hash)
+            except Exception as e:
+                logger.warning("semantic cache_lookup failed: %s", e)
         if cached_response is not None:
             self._economy_tracker.record_cache_hit()
             self._turn_economy.cache_hit = True
@@ -2586,6 +3192,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                     return
 
                 if chunk.function_calls:
+                    self._turn_tool_call_count += len(chunk.function_calls)
                     self._append_turn_transition(
                         turn_diagnostics,
                         reason_code="provider_requested_tools",
@@ -2596,7 +3203,12 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                     u = chunk.usage
                     _sys, _hist, _tool = self._compute_token_breakdown()
                     if u:
-                        self._track_cost(u.input_tokens, u.output_tokens)
+                        self._track_cost(
+                            u.input_tokens,
+                            u.output_tokens,
+                            cache_creation_input_tokens=u.cache_creation_input_tokens,
+                            cache_read_input_tokens=u.cache_read_input_tokens,
+                        )
                         yield CoreEvent.cost_update(
                             input_tokens=u.input_tokens, output_tokens=u.output_tokens,
                             cache_creation_input_tokens=u.cache_creation_input_tokens,
@@ -2608,7 +3220,12 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                     elif chunk.metadata:
                         usage = chunk.metadata.get("usage", {})
                         if usage:
-                            self._track_cost(usage.get("input_tokens", 0), usage.get("output_tokens", 0))
+                            self._track_cost(
+                                usage.get("input_tokens", 0),
+                                usage.get("output_tokens", 0),
+                                cache_creation_input_tokens=usage.get("cache_creation_input_tokens", 0),
+                                cache_read_input_tokens=usage.get("cache_read_input_tokens", 0),
+                            )
                             yield CoreEvent.cost_update(
                                 input_tokens=usage.get("input_tokens", 0),
                                 output_tokens=usage.get("output_tokens", 0),
@@ -2830,6 +3447,20 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             if self.history_adapter and accumulated_text:
                 self.history_adapter.add_message("model", accumulated_text)
 
+            # Working memory: post-turn update (confusion detection + memory persist)
+            try:
+                wm_mgr = self._working_memory_mgr
+                if wm_mgr and accumulated_text:
+                    history_text = ""
+                    if self.history_adapter:
+                        history_text = "\n".join(
+                            f"{m.get('role','')}: {str(m.get('content',''))[:200]}"
+                            for m in (self.get_history() if self._initialized and self.provider else [])
+                        )
+                    wm_mgr.post_turn(accumulated_text, history_text)
+            except Exception as e:
+                logger.warning("working memory post-turn failed: %s", e)
+
             self._append_turn_transition(
                 turn_diagnostics,
                 reason_code="completed",
@@ -2848,11 +3479,48 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                 ),
             )
 
-            # Economy: store response in cache
+            # Economy: store response in cache (exact + semantic)
             try:
                 self._cache_store(full_message, accumulated_text)
             except Exception:
                 pass
+            try:
+                await self._semantic_cache_store(message, self._last_context_hash, accumulated_text)
+            except Exception:
+                pass
+
+            try:
+                queued = self._schedule_auto_compaction()
+                if queued:
+                    yield CoreEvent.progress(
+                        "auto_compact",
+                        "auto compact queued"
+                        f" ({queued.get('utilization_before_pct', 0)}% -> {queued.get('target_utilization_pct', 0)}%)",
+                    )
+            except Exception as e:
+                logger.warning("auto compact scheduling failed: %s", e)
+
+            # Token budget controller: observe outcome and log
+            try:
+                if self._budget_state and self._budget_action:
+                    elapsed = time.monotonic() - self._turn_start_mono
+                    task_ok = bool(accumulated_text and len(accumulated_text) > 10)
+                    outcome = BudgetTurnOutcome(
+                        task_succeeded=task_ok,
+                        user_retried=False,
+                        total_tokens_used=self._task_input_tokens + self._task_output_tokens,
+                        input_tokens=self._task_input_tokens,
+                        output_tokens=self._task_output_tokens,
+                        response_time_seconds=round(elapsed, 2),
+                        tool_calls_made=self._turn_tool_call_count,
+                    )
+                    self._budget_controller.observe(self._budget_state, self._budget_action, outcome)
+                    self._budget_logger.log(self._budget_state, self._budget_action, outcome)
+                    self._recent_turn_failures.append(not task_ok)
+                    if len(self._recent_turn_failures) > 10:
+                        self._recent_turn_failures = self._recent_turn_failures[-10:]
+            except Exception as e:
+                logger.warning("budget controller observe failed: %s", e)
 
             # Economy: emit savings summary and restore model
             savings = self._economy_tracker.get_summary()
@@ -3035,7 +3703,12 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                 cache_create = usage.get("cache_creation_input_tokens", 0)
                 cache_read = usage.get("cache_read_input_tokens", 0)
         if actual_in or actual_out:
-            self._track_cost(actual_in, actual_out)
+            self._track_cost(
+                actual_in,
+                actual_out,
+                cache_creation_input_tokens=cache_create,
+                cache_read_input_tokens=cache_read,
+            )
             events.append(CoreEvent.cost_update(
                 input_tokens=actual_in,
                 output_tokens=actual_out,
@@ -3236,6 +3909,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         max_iterations: int,
         request_id: str,
         expected_call_count: int = 1,
+        user_request: str = "",
     ) -> Tuple[List["CoreEvent"], Dict[str, Any]]:
         """Execute a single function call with permission checks. Returns (events, result_dict)."""
         events: List[CoreEvent] = []
@@ -3243,12 +3917,18 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         tool_args = fc.arguments
         preview_payload: Optional[Dict[str, Any]] = None
         tool_paths = self._inspect_tool_targets(tool_name, tool_args)
+        schema_load_note = await self._ensure_tool_available_for_call(
+            tool_name,
+            user_request=user_request,
+        )
 
         events.append(
             CoreEvent.tool_call_start(
                 tool_name, tool_args, fc.id, iteration, max_iterations, paths=tool_paths,
             )
         )
+        if schema_load_note:
+            events.append(CoreEvent.progress("tool_schema_load", schema_load_note))
         logger.info(f"Executing tool: {tool_name}")
 
         # 1. check auto-approve/deny from config
@@ -3328,6 +4008,8 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
 
         # Per-call truncation: prevent any single tool result from dominating the budget
         per_call_cap = self._max_tool_result_chars_per_turn() // max(1, expected_call_count)
+        if schema_load_note:
+            result_text = f"{schema_load_note}\n{result_text}" if result_text else schema_load_note
         if len(result_text) > per_call_cap:
             omitted = len(result_text) - per_call_cap
             result_text = result_text[:per_call_cap] + f"\n[truncated: {omitted} chars omitted]"
@@ -3423,6 +4105,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                             max_iterations,
                             request_id,
                             expected_call_count=total_call_count,
+                            user_request=user_request,
                         )
                     )
             else:
@@ -3436,6 +4119,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                             max_iterations,
                             request_id,
                             expected_call_count=total_call_count,
+                            user_request=user_request,
                         )
 
                 parallel_results = await asyncio.gather(
@@ -3476,6 +4160,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                         return await self._execute_single_call_events(
                             fc_inner, iteration, max_iterations, request_id,
                             expected_call_count=total_call_count,
+                            user_request=user_request,
                         )
                 par_results = await asyncio.gather(*[_run_mut(fc) for fc in independent_calls])
                 for call_events, call_result in par_results:
@@ -3486,7 +4171,9 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                 truly_sequential = independent_calls + truly_sequential
             for fc in truly_sequential:
                 call_events, call_result = await self._execute_single_call_events(
-                    fc, iteration, max_iterations, request_id, expected_call_count=total_call_count,
+                    fc, iteration, max_iterations, request_id,
+                    expected_call_count=total_call_count,
+                    user_request=user_request,
                 )
                 self._pending_events.extend(call_events)
                 tool_results.append(call_result)
@@ -3497,6 +4184,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                 call_events, call_result = await self._execute_single_call_events(
                     fc, iteration, max_iterations, request_id,
                     expected_call_count=total_call_count,
+                    user_request=user_request,
                 )
                 self._pending_events.extend(call_events)
                 tool_results.append(call_result)
@@ -3586,29 +4274,19 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             await self._mcp_manager.shutdown()
             self._mcp_manager = None
 
-        self.tool_registry = ToolRegistryAsync()
+        trunc_cfg = self.config.output_truncation
+        self.tool_registry = EnhancedToolRegistry(
+            config=self.config,
+            checkpoint_manager=self.checkpoint_manager,
+            output_max_chars=trunc_cfg.max_output_chars if trunc_cfg.enabled else 0,
+            output_max_lines=trunc_cfg.max_output_lines if trunc_cfg.enabled else 0,
+        )
+        self.tool_registry._core = self
         if self.config.mcp_servers:
-            self._mcp_manager = MCPManager(self.config.mcp_servers)
+            self._mcp_manager = MCPManager(self.config.mcp_servers, repo_root=Path.cwd())
             await self._mcp_manager.initialize()
-            for declaration in self._mcp_manager.get_tool_declarations():
-                tool_name = declaration.get("name")
-                if not tool_name:
-                    continue
-
-                async def _call_mcp_tool(
-                    _tool_name: str = tool_name,
-                    **kwargs: Any,
-                ) -> str:
-                    if not self._mcp_manager:
-                        raise PoorCLIError("MCP manager not initialized")
-                    return await self._mcp_manager.execute_tool(_tool_name, kwargs)
-
-                self.tool_registry.register_external_tool(
-                    tool_name,
-                    _call_mcp_tool,
-                    declaration,
-                )
-        await self.refresh_provider_tools()
+        await self._activate_tool_groups([CORE_TOOL_GROUP], refresh_provider=False)
+        await self.refresh_provider_tools(self._active_tool_declarations)
 
         return self.get_mcp_status()
 
@@ -3630,7 +4308,11 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         tools = (
             list(tool_declarations)
             if tool_declarations is not None
-            else (self.tool_registry.get_tool_declarations() if self.tool_registry else [])
+            else (
+                list(self._active_tool_declarations)
+                if self._active_tool_declarations
+                else (self.tool_registry.get_tool_declarations() if self.tool_registry else [])
+            )
         )
         if not capabilities.supports_function_calling:
             tools = []
@@ -3682,11 +4364,29 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             pinned_context_files=pinned_context_files,
             context_budget_tokens=context_budget_tokens,
         )
+        builtin_workspace_map = await self._maybe_builtin_workspace_map(message)
+        if builtin_workspace_map is not None:
+            if self.history_adapter:
+                self.history_adapter.add_message("user", message)
+                self.history_adapter.add_message("model", builtin_workspace_map)
+            self._finish_run_record(
+                run_state,
+                status="completed",
+                summary=builtin_workspace_map or "workspace map",
+                artifact_dir=artifact_dir,
+            )
+            yield builtin_workspace_map
+            return
         full_message = await self._build_context_message(
             message,
             context_files=context_files,
             pinned_context_files=pinned_context_files,
             context_budget_tokens=context_budget_tokens,
+        )
+        await self._activate_tools_for_prompt(
+            message,
+            context_files=context_files,
+            pinned_context_files=pinned_context_files,
         )
 
         if self.history_adapter:
@@ -3765,6 +4465,10 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                 checkpoint_id=last_checkpoint_id,
                 artifact_dir=artifact_dir,
             )
+            try:
+                self._schedule_auto_compaction()
+            except Exception as e:
+                logger.warning("auto compact scheduling failed: %s", e)
 
             logger.info(f"Message complete, {len(accumulated_text)} chars")
 
@@ -3801,6 +4505,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         for fc in response.function_calls:
             tool_name = fc.name
             tool_args = fc.arguments
+            schema_load_note = await self._ensure_tool_available_for_call(tool_name)
             
             logger.info(f"Executing tool: {tool_name}")
             
@@ -3868,6 +4573,8 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                 logger.error(f"Tool execution failed: {e}")
 
             result_text = self._tool_result_text(result)
+            if schema_load_note:
+                result_text = f"{schema_load_note}\n{result_text}" if result_text else schema_load_note
             tool_results.append({
                 "id": fc.id,
                 "name": tool_name,
@@ -3934,6 +4641,28 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             pinned_context_files=pinned_context_files,
             context_budget_tokens=context_budget_tokens,
         )
+        builtin_workspace_map = await self._maybe_builtin_workspace_map(message)
+        if builtin_workspace_map is not None:
+            if self.history_adapter:
+                self.history_adapter.add_message("user", message)
+                self.history_adapter.add_message("model", builtin_workspace_map)
+            self._append_turn_transition(
+                turn_diagnostics,
+                reason_code="builtin_command",
+                iteration=0,
+                details={"command": "/workspace-map"},
+            )
+            self._finish_run_record(
+                run_state,
+                status="completed",
+                summary=builtin_workspace_map or "workspace map",
+                artifact_dir=artifact_dir,
+                metadata_updates=self._build_run_metadata_updates(
+                    diagnostics=turn_diagnostics,
+                    completion_reason_code="builtin_command",
+                ),
+            )
+            return builtin_workspace_map
         
         full_message = await self._build_context_message(
             message,
@@ -4015,6 +4744,10 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                     completion_reason_code=completion_reason,
                 ),
             )
+            try:
+                self._schedule_auto_compaction()
+            except Exception as e:
+                logger.warning("auto compact scheduling failed: %s", e)
             
             logger.info(f"Message complete (sync), {len(accumulated_text)} chars")
             return accumulated_text
@@ -4522,6 +5255,8 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             },
             "context": {
                 "lastPreview": last_context,
+                "pressure": self.get_context_pressure() if self.provider else {},
+                "compaction": self.get_compaction_status(),
             },
             "runs": {
                 "recent": recent_runs,
@@ -4609,7 +5344,15 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         referenced_files: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Return the active deterministic instruction stack."""
-        return self._inspect_instruction_snapshot(referenced_files).to_dict()
+        if not referenced_files and self._last_instruction_snapshot is not None:
+            return self._last_instruction_snapshot.to_dict()
+        snapshot = self._inspect_instruction_snapshot(
+            referenced_files,
+            skill_context=self._build_instruction_skill_context(),
+            skill_plan=self._last_instruction_skill_plan,
+        )
+        self._last_instruction_snapshot = snapshot
+        return snapshot.to_dict()
 
     def get_policy_status(self) -> Dict[str, Any]:
         """Return repo-local policy and audit status."""
@@ -4641,6 +5384,11 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
 
     async def shutdown(self) -> None:
         """Release external resources owned by the core."""
+        # flush budget controller logs
+        try:
+            self._budget_logger.close()
+        except Exception:
+            pass
         # persist session cost to history
         self._persist_cost_history()
         # emit session_end hook
@@ -4671,7 +5419,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         if self._mcp_manager is not None:
             await self._mcp_manager.shutdown()
         # cancel background tasks
-        for task in (self._repo_graph_task, self._pending_llm_compression):
+        for task in (self._repo_graph_task, self._pending_llm_compression, self._auto_history_compact_task):
             if task and not task.done():
                 task.cancel()
                 try:
@@ -4680,6 +5428,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                     pass
         self._repo_graph_task = None
         self._pending_llm_compression = None
+        self._auto_history_compact_task = None
         # close pooled HTTP session in tool registry
         if self.tool_registry and hasattr(self.tool_registry, "close"):
             try:
@@ -4705,20 +5454,252 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         if self.history_adapter:
             self.history_adapter.clear_history()
 
+    def _resolve_tiered_compaction_mode(self, strategy: str) -> str:
+        requested = str(strategy or "compact").strip().lower() or "compact"
+        if requested in {"gentle", "aggressive", "balanced"}:
+            return requested
+        preset = str(getattr(getattr(self.config, "economy", None), "preset", "balanced") or "balanced").strip().lower()
+        if requested == "auto":
+            pressure_pct = float(self.get_context_pressure().get("pressure_pct", 0) or 0)
+            if pressure_pct >= 85:
+                return "aggressive"
+        if preset == "frugal":
+            return "aggressive"
+        if preset == "quality":
+            return "gentle"
+        return "balanced"
+
+    def _resolve_auto_compaction_settings(self) -> Tuple[float, float]:
+        cc_cfg = getattr(self.config, "context_compression", None) if self.config else None
+        eco_cfg = getattr(self.config, "economy", None) if self.config else None
+        threshold = float(getattr(cc_cfg, "auto_compact_threshold", 0.7) or 0.0)
+        target = float(getattr(cc_cfg, "auto_compact_target", 0.4) or 0.0)
+        eco_threshold = float(getattr(eco_cfg, "auto_compress_pressure_pct", 0.0) or 0.0)
+        if eco_threshold > 0:
+            threshold = eco_threshold / 100.0
+        elif str(getattr(eco_cfg, "preset", "") or "").strip().lower() == "quality":
+            threshold = 0.0
+        return max(0.0, threshold), max(0.0, target)
+
+    def _record_compaction_status(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        recorded = dict(payload or {})
+        recorded["timestamp"] = time.time()
+        self._last_compaction_status = recorded
+        return recorded
+
+    async def _summarize_compaction_chunk(
+        self,
+        messages: List[Dict[str, Any]],
+        draft_summary: str,
+        policy: CompactionPolicy,
+    ) -> str:
+        del policy
+        if not self.provider:
+            return draft_summary
+        conversation_text = self._history_to_text(messages)
+        if not conversation_text.strip():
+            return draft_summary
+        prompt = (
+            "Summarize the following conversation chunk into this exact structure:\n"
+            "## Session Summary (turns 1-N)\n"
+            "- User asked: ...\n"
+            "- Files modified/referenced: ...\n"
+            "- Key decisions: ...\n"
+            "- Tool outcomes: ...\n"
+            "- Unresolved: ...\n"
+            "- Dropped noise lessons: ...\n"
+            "Be factual and terse. Keep concrete file paths.\n\n"
+            f"Draft summary:\n{draft_summary}\n\n"
+            f"Conversation:\n{conversation_text}"
+        )
+        response = await self.provider.send_message(prompt)
+        rendered = response.content.strip() if response and response.content else ""
+        return rendered or draft_summary
+
+    async def _compact_tiered_context(
+        self,
+        history: List[Dict[str, Any]],
+        messages_before: int,
+        *,
+        strategy: str,
+        trigger: str,
+        allow_model_summary: bool,
+    ) -> Dict[str, Any]:
+        self._save_transcript(history)
+        mode = self._resolve_tiered_compaction_mode(strategy)
+        if not history:
+            return self._record_compaction_status(
+                {
+                    "state": "done",
+                    "strategy": "compact",
+                    "mode": mode,
+                    "trigger": trigger,
+                    "summary": "(empty history)",
+                    "messages_before": messages_before,
+                    "messages_after": 0,
+                    "tokens_before": 0,
+                    "tokens_after": 0,
+                    "removed_tokens": 0,
+                    "tier_counts": {},
+                    "pruned_turns": 0,
+                    "pruning_summary": "",
+                    "pruning_reasons": {},
+                    "pruning_sidecar_path": None,
+                }
+            )
+        max_ctx = 0
+        if self.provider:
+            try:
+                max_ctx = int(self.provider.get_capabilities().max_context_tokens or 0)
+            except Exception:
+                max_ctx = 0
+        threshold, target = self._resolve_auto_compaction_settings()
+        callback = self._summarize_compaction_chunk if allow_model_summary else None
+        result = await self._tiered_compactor.compact(
+            history,
+            max_tokens=max_ctx,
+            mode=mode,
+            economy_preset=str(getattr(getattr(self.config, "economy", None), "preset", "balanced") or "balanced"),
+            trigger=trigger,
+            summary_callback=callback,
+            auto_compact_threshold=threshold,
+            auto_compact_target=target,
+        )
+        pruning_sidecar_path = self._save_pruning_sidecar(result.pruned_turns)
+        if self.provider:
+            self.provider.set_history(result.history)
+        if self.history_adapter:
+            self.history_adapter.clear_history()
+            for message in result.history:
+                self.history_adapter.add_message(message["role"], message["content"])
+        if result.pruning_summary:
+            if not isinstance(getattr(self, "_pending_events", None), list):
+                self._pending_events = []
+            self._pending_events.append(
+                CoreEvent(
+                    type="progress",
+                    data={"phase": "history_pruning", "message": result.pruning_summary},
+                )
+            )
+        return self._record_compaction_status(
+            {
+                "state": "done",
+                "strategy": "compact",
+                "mode": result.mode,
+                "trigger": trigger,
+                "summary": result.summary,
+                "messages_before": result.messages_before,
+                "messages_after": result.messages_after,
+                "tokens_before": result.tokens_before,
+                "tokens_after": result.tokens_after,
+                "removed_tokens": result.removed_tokens,
+                "tier_counts": result.tier_counts,
+                "utilization_before_pct": round(result.utilization_before * 100, 1),
+                "utilization_after_pct": round(result.utilization_after * 100, 1),
+                "pruned_turns": result.pruned_count,
+                "pruning_summary": result.pruning_summary,
+                "pruning_reasons": result.pruning_reasons,
+                "pruning_sidecar_path": pruning_sidecar_path,
+            }
+        )
+
+    async def _run_auto_compaction(self) -> Optional[Dict[str, Any]]:
+        if not self.provider:
+            return None
+        history = self.provider.get_history()
+        if len(history) <= 4:
+            return None
+        return await self._compact_tiered_context(
+            history,
+            len(history),
+            strategy="auto",
+            trigger="auto",
+            allow_model_summary=False,
+        )
+
+    def _schedule_auto_compaction(self) -> Optional[Dict[str, Any]]:
+        if not self.config or not self.provider:
+            return None
+        cc_cfg = getattr(self.config, "context_compression", None)
+        if not cc_cfg or not getattr(cc_cfg, "enabled", False):
+            return None
+        threshold, target = self._resolve_auto_compaction_settings()
+        if threshold <= 0 or target <= 0:
+            return None
+        pressure = self.get_context_pressure()
+        pressure_ratio = float(pressure.get("pressure_pct", 0) or 0) / 100.0
+        if pressure_ratio < threshold:
+            return None
+        task = getattr(self, "_auto_history_compact_task", None)
+        if task and not task.done():
+            return None
+        queued = self._record_compaction_status(
+            {
+                "state": "queued",
+                "strategy": "compact",
+                "mode": self._resolve_tiered_compaction_mode("auto"),
+                "trigger": "auto",
+                "utilization_before_pct": round(pressure_ratio * 100, 1),
+                "target_utilization_pct": round(target * 100, 1),
+            }
+        )
+        loop = asyncio.get_running_loop()
+        self._auto_history_compact_task = loop.create_task(self._run_auto_compaction())
+
+        def _done_callback(task_obj: asyncio.Task) -> None:
+            try:
+                completed = task_obj.result()
+            except Exception as exc:
+                logger.warning("auto compaction failed: %s", exc)
+                self._record_compaction_status(
+                    {
+                        "state": "error",
+                        "strategy": "compact",
+                        "mode": queued.get("mode", "balanced"),
+                        "trigger": "auto",
+                        "error": str(exc),
+                    }
+                )
+                return
+            if completed:
+                logger.info(
+                    "Auto compact: %d -> %d messages",
+                    int(completed.get("messages_before", 0) or 0),
+                    int(completed.get("messages_after", 0) or 0),
+                )
+
+        self._auto_history_compact_task.add_done_callback(_done_callback)
+        return queued
+
     async def compact_context(self, strategy: str) -> Dict[str, Any]:
         """Apply a context management strategy to reduce conversation size."""
         if not self._initialized or not self.provider:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
         history = self.get_history()
         messages_before = len(history)
-        if strategy == "compact":
-            return await self._compact_summarize(history, messages_before)
+        if strategy in {"auto", "compact", "gentle", "aggressive", "balanced"}:
+            result = await self._compact_tiered_context(
+                history,
+                messages_before,
+                strategy=strategy,
+                trigger="manual",
+                allow_model_summary=True,
+            )
         elif strategy == "compress":
-            return self._compact_compress(history, messages_before)
+            result = self._compact_compress(history, messages_before)
         elif strategy == "handoff":
-            return await self._compact_handoff(history, messages_before)
+            result = await self._compact_handoff(history, messages_before)
         else:
             raise PoorCLIError(f"Unknown compaction strategy: {strategy}")
+        # reset working memory after compaction — delta state is stale
+        try:
+            if self._working_memory_mgr:
+                summary = result.get("summary", "") if isinstance(result, dict) else ""
+                self._working_memory_mgr.reset(new_summary=summary)
+                logger.info("working memory reset after compact (%s)", strategy)
+        except Exception as e:
+            logger.warning("working memory reset failed: %s", e)
+        return result
 
     def _save_transcript(self, history: List[Dict[str, Any]]) -> Optional[str]:
         """Save raw history to disk before compaction. Returns transcript path or None."""
@@ -4753,6 +5734,47 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             return str(dest)
         except Exception as exc:
             logger.warning("Failed to save transcript: %s", exc)
+            return None
+
+    def _save_pruning_sidecar(self, pruned_turns: List[Dict[str, Any]]) -> Optional[str]:
+        """Save pruned turns for later recovery."""
+        if not pruned_turns:
+            return None
+        transcript_root = ".poor-cli/transcripts"
+        if self.config and getattr(self.config, "context_compression", None):
+            transcript_root = getattr(self.config.context_compression, "transcript_dir", transcript_root)
+        sidecar_dir = Path.cwd() / transcript_root / "pruned"
+        try:
+            sidecar_dir.mkdir(parents=True, exist_ok=True)
+            session_id = getattr(self, "_last_run_id", None) or hashlib.sha1(str(time.time()).encode()).hexdigest()[:12]
+            ts = time.strftime("%Y%m%dT%H%M%S")
+            filename = f"{session_id}_{ts}_pruned.json"
+            dest = sidecar_dir / filename
+            payload = {
+                "runId": getattr(self, "_last_run_id", None),
+                "createdAt": ts,
+                "turns": pruned_turns,
+            }
+            import tempfile as _tf
+            fd, tmp = _tf.mkstemp(dir=str(sidecar_dir), suffix=".tmp")
+            try:
+                data = json.dumps(payload, indent=None, default=str).encode()
+                os.write(fd, data)
+                os.fsync(fd)
+                os.close(fd)
+                os.replace(tmp, str(dest))
+            except Exception:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                if os.path.exists(tmp):
+                    os.unlink(tmp)
+                raise
+            logger.info("Saved pruning sidecar: %s (%d turns)", dest, len(pruned_turns))
+            return str(dest)
+        except Exception as exc:
+            logger.warning("Failed to save pruning sidecar: %s", exc)
             return None
 
     async def _compact_summarize(self, history: List[Dict[str, Any]], messages_before: int) -> Dict[str, Any]:
@@ -4955,7 +5977,8 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         self.provider = candidate_provider
         self.config.model.provider = provider_name
         self.config.model.model_name = model_name
-        
+        self._user_explicit_model = True
+
         logger.info(f"Switched to {provider_name}/{model_name}")
 
     def set_system_instruction(self, instruction: str) -> None:

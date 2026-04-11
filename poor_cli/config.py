@@ -227,6 +227,8 @@ class ContextCompressionConfig:
     target_token_ratio: float = 0.3  # compress to ~30% of original tokens
     preserve_recent_turns: int = 8  # always keep last N turns uncompressed
     token_threshold_for_llm_compact: float = 0.8  # auto LLM compact at this fraction of model context
+    auto_compact_threshold: float = 0.7  # auto compact when utilization exceeds this fraction
+    auto_compact_target: float = 0.4  # compact down to this fraction of model context
     preserve_transcripts: bool = True  # save raw history before compaction
     transcript_dir: str = ".poor-cli/transcripts"  # relative to repo root
 
@@ -391,6 +393,28 @@ class RepoIndexConfig:
 
 
 @dataclass
+class KVCacheConfig:
+    """Position-independent KV cache for local inference (vLLM/LMCache)."""
+    enabled: bool = False # off by default
+    backend: str = "lmcache" # "lmcache" or "vllm"
+    cache_dir: str = ".poor-cli/kv_cache/"
+    precompute_on_startup: bool = False
+    max_cache_size_mb: int = 5000 # 5GB default cap
+    ttl_seconds: int = 86400 # 24h
+    vllm_api_base: str = "http://localhost:8000" # vLLM OpenAI-compat endpoint
+
+
+@dataclass
+class SpeculativeDecodingConfig:
+    """Speculative decoding for local inference (vLLM only)."""
+    enabled: bool = False # off by default, requires vLLM backend
+    backend: str = "vllm" # only "vllm" supported; ollama lacks spec decode API
+    draft_model: str = "auto" # "auto" = lookup from DRAFT_MODEL_PAIRS
+    num_speculative_tokens: int = 5 # draft tokens per step
+    vllm_api_base: str = "http://localhost:8000" # vLLM OpenAI-compat endpoint
+
+
+@dataclass
 class WorkflowConfig:
     """Workflow template defaults and overrides."""
 
@@ -419,6 +443,8 @@ class Config:
     context_compression: ContextCompressionConfig = field(default_factory=ContextCompressionConfig)
     output_truncation: OutputTruncationConfig = field(default_factory=OutputTruncationConfig)
     repo_index: RepoIndexConfig = field(default_factory=RepoIndexConfig)
+    kv_cache: KVCacheConfig = field(default_factory=KVCacheConfig)
+    speculative_decoding: SpeculativeDecodingConfig = field(default_factory=SpeculativeDecodingConfig)
     economy: EconomyConfig = field(default_factory=EconomyConfig)
     retry: RetryConfig = field(default_factory=RetryConfig)
     circuit_breaker: CircuitBreakerConfig = field(default_factory=CircuitBreakerConfig)
@@ -451,6 +477,8 @@ class Config:
             "context_compression": asdict(self.context_compression),
             "output_truncation": asdict(self.output_truncation),
             "repo_index": asdict(self.repo_index),
+            "kv_cache": asdict(self.kv_cache),
+            "speculative_decoding": asdict(self.speculative_decoding),
             "economy": asdict(self.economy),
             "retry": {k: v for k, v in asdict(self.retry).items() if k != "retryable_exceptions"},
             "circuit_breaker": asdict(self.circuit_breaker),
@@ -480,6 +508,8 @@ class Config:
             context_compression=ContextCompressionConfig(**data.get("context_compression", {})),
             output_truncation=OutputTruncationConfig(**data.get("output_truncation", {})),
             repo_index=RepoIndexConfig(**data.get("repo_index", {})),
+            kv_cache=KVCacheConfig(**data.get("kv_cache", {})),
+            speculative_decoding=SpeculativeDecodingConfig(**data.get("speculative_decoding", {})),
             economy=EconomyConfig(**data.get("economy", {})),
             retry=RetryConfig(**{k: v for k, v in data.get("retry", {}).items() if k != "retryable_exceptions"}),
             circuit_breaker=CircuitBreakerConfig(**data.get("circuit_breaker", {})),
@@ -590,6 +620,8 @@ class ConfigManager:
             "fallback",
             "context_compression",
             "output_truncation",
+            "kv_cache",
+            "speculative_decoding",
             "economy",
             "mcp_servers",
         }

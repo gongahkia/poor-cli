@@ -20,6 +20,10 @@ from .base import BaseProvider, ProviderCapabilities, ProviderResponse, Function
 from .tool_translator import ToolTranslator, ProviderType
 from ..provider_catalog import default_model_for_provider
 from ..retry import RetryConfig, with_retry
+from ..structured_output import (
+    StructuredOutputConfig, build_openai_response_format,
+    get_metrics as get_so_metrics,
+)
 from ..exceptions import (
     APIError,
     APIRateLimitError,
@@ -34,6 +38,9 @@ logger = setup_logger(__name__)
 
 class OpenAIProvider(BaseProvider):
     """OpenAI API provider implementation"""
+
+    def preferred_edit_format(self) -> str:
+        return "unified_diff"
 
     def __init__(self, api_key: str, model_name: str = default_model_for_provider("openai"),
                  max_retries: int = 3, retry_delay: float = 1.0, timeout: float = 60.0,
@@ -87,17 +94,29 @@ class OpenAIProvider(BaseProvider):
             # Store system instruction
             if system_instruction:
                 self.system_instruction = system_instruction
-                self.messages.append({
-                    "role": "system",
-                    "content": system_instruction
-                })
 
             logger.info(f"OpenAI model {self.model_name} initialized")
 
         except Exception as e:
             raise ConfigurationError(f"Failed to initialize OpenAI: {e}")
 
-    async def send_message(self, message: Any) -> ProviderResponse:
+    def _build_request_messages(self) -> List[Dict[str, Any]]:
+        messages: List[Dict[str, Any]] = []
+        if self.system_instruction:
+            messages.append({
+                "role": "system",
+                "content": self.system_instruction,
+            })
+        if self.prompt_prefix:
+            messages.append({
+                "role": "user",
+                "content": self.prompt_prefix,
+            })
+        messages.extend(self.messages)
+        return messages
+
+    async def send_message(self, message: Any, *,
+                           structured_output: Optional[StructuredOutputConfig] = None) -> ProviderResponse:
         """Send message to OpenAI"""
         self._append_message(message)
 
@@ -105,12 +124,18 @@ class OpenAIProvider(BaseProvider):
             try:
                 request_params = {
                     "model": self.model_name,
-                    "messages": self.messages,
+                    "messages": self._build_request_messages(),
                 }
                 if self.tools:
                     request_params["tools"] = self.tools
                     request_params["tool_choice"] = "auto"
+                if structured_output:
+                    request_params["response_format"] = build_openai_response_format(structured_output)
                 response = await self.client.chat.completions.create(**request_params)
+                if structured_output:
+                    get_so_metrics().record_structured_attempt(success=True)
+                else:
+                    get_so_metrics().record_unstructured()
                 return self._parse_response(response)
             except RateLimitError as e:
                 raise APIRateLimitError("OpenAI rate limit exceeded", str(e))
@@ -123,11 +148,19 @@ class OpenAIProvider(BaseProvider):
             except Exception as e:
                 raise APIError(f"OpenAI API error: {e}", str(e))
 
-        return await with_retry(
-            _do_send,
-            config=RetryConfig(max_retries=self.max_retries, base_delay=self.retry_delay, jitter=True),
-            retryable=lambda e: isinstance(e, (APITimeoutError, APIRateLimitError, APIConnectionError)),
-        )
+        try:
+            return await with_retry(
+                _do_send,
+                config=RetryConfig(max_retries=self.max_retries, base_delay=self.retry_delay, jitter=True),
+                retryable=lambda e: isinstance(e, (APITimeoutError, APIRateLimitError, APIConnectionError)),
+            )
+        except Exception:
+            if structured_output:  # fallback: retry without structured constraint
+                get_so_metrics().record_structured_attempt(success=False)
+                logger.warning("structured output failed for OpenAI; retrying unconstrained")
+                self.messages.pop()  # remove the duplicate user message
+                return await self.send_message(message, structured_output=None)
+            raise
 
     async def send_message_stream(self, message: Any) -> AsyncIterator[ProviderResponse]:
         """Stream response from OpenAI"""
@@ -137,7 +170,7 @@ class OpenAIProvider(BaseProvider):
             # Prepare request
             request_params = {
                 "model": self.model_name,
-                "messages": self.messages,
+                "messages": self._build_request_messages(),
                 "stream": True,
                 "stream_options": {"include_usage": True},
             }
@@ -158,10 +191,13 @@ class OpenAIProvider(BaseProvider):
             async for chunk in await self.client.chat.completions.create(**request_params):
                 # capture usage from final chunk (stream_options include_usage)
                 if hasattr(chunk, 'usage') and chunk.usage:
+                    prompt_details = getattr(chunk.usage, "prompt_tokens_details", None)
+                    cached_tokens = getattr(prompt_details, "cached_tokens", 0) or 0
                     stream_usage = UsageMetadata(
                         input_tokens=chunk.usage.prompt_tokens or 0,
                         output_tokens=chunk.usage.completion_tokens or 0,
                         total_tokens=chunk.usage.total_tokens or 0,
+                        cache_read_input_tokens=cached_tokens,
                         prompt_tokens=chunk.usage.prompt_tokens or 0,
                         completion_tokens=chunk.usage.completion_tokens or 0,
                     )
@@ -236,6 +272,7 @@ class OpenAIProvider(BaseProvider):
                     usage_meta = {
                         "input_tokens": stream_usage.input_tokens,
                         "output_tokens": stream_usage.output_tokens,
+                        "cache_read_input_tokens": stream_usage.cache_read_input_tokens,
                     }
                 yield ProviderResponse(
                     content=accumulated_content,
@@ -250,7 +287,11 @@ class OpenAIProvider(BaseProvider):
                 yield ProviderResponse(
                     content="",
                     role="assistant",
-                    metadata={"usage": {"input_tokens": stream_usage.input_tokens, "output_tokens": stream_usage.output_tokens}},
+                    metadata={"usage": {
+                        "input_tokens": stream_usage.input_tokens,
+                        "output_tokens": stream_usage.output_tokens,
+                        "cache_read_input_tokens": stream_usage.cache_read_input_tokens,
+                    }},
                     usage=stream_usage,
                 )
 
@@ -361,10 +402,13 @@ class OpenAIProvider(BaseProvider):
             usage_obj = None
             usage_meta = None
             if hasattr(response, 'usage') and response.usage:
+                prompt_details = getattr(response.usage, "prompt_tokens_details", None)
+                cached_tokens = getattr(prompt_details, "cached_tokens", 0) or 0
                 usage_obj = UsageMetadata(
                     input_tokens=response.usage.prompt_tokens,
                     output_tokens=response.usage.completion_tokens,
                     total_tokens=response.usage.total_tokens,
+                    cache_read_input_tokens=cached_tokens,
                     prompt_tokens=response.usage.prompt_tokens,
                     completion_tokens=response.usage.completion_tokens,
                 )
@@ -372,6 +416,7 @@ class OpenAIProvider(BaseProvider):
                     "input_tokens": response.usage.prompt_tokens,
                     "output_tokens": response.usage.completion_tokens,
                     "total_tokens": response.usage.total_tokens,
+                    "cache_read_input_tokens": cached_tokens,
                     "prompt_tokens": response.usage.prompt_tokens,
                     "completion_tokens": response.usage.completion_tokens,
                 }
@@ -400,15 +445,7 @@ class OpenAIProvider(BaseProvider):
 
     async def clear_history(self):
         """Clear OpenAI conversation history"""
-        # Keep system message if exists
-        if self.system_instruction:
-            self.messages = [{
-                "role": "system",
-                "content": self.system_instruction
-            }]
-        else:
-            self.messages = []
-
+        self.messages = []
         logger.info("OpenAI history cleared")
 
     def get_history(self) -> List[Dict[str, Any]]:
@@ -416,16 +453,13 @@ class OpenAIProvider(BaseProvider):
         return self.messages.copy()
 
     def set_history(self, messages: List[Dict[str, Any]]) -> None:
-        if self.system_instruction:
-            self.messages = [{"role": "system", "content": self.system_instruction}]
-            self.messages.extend(messages)
-        else:
-            self.messages = list(messages)
+        self.messages = [
+            message for message in messages
+            if message.get("role") != "system"
+        ]
 
     def update_system_instruction(self, instruction: str) -> None:
         self.system_instruction = instruction
-        if self.messages and self.messages[0].get("role") == "system":
-            self.messages[0] = {"role": "system", "content": instruction}
 
     def get_capabilities(self) -> ProviderCapabilities:
         """Get OpenAI capabilities"""
@@ -443,5 +477,6 @@ class OpenAIProvider(BaseProvider):
             max_context_tokens=max_tokens,
             supports_vision=supports_vision,
             supports_json_mode=True,
-            supports_code_interpreter=False
+            supports_code_interpreter=False,
+            supports_structured_output=True,
         )

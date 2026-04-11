@@ -20,6 +20,8 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import yaml
 
+from .skills import InstructionSkillContext, SkillLoadPlan, SkillRegistry
+
 INSTRUCTION_FILE_NAMES: tuple[str, ...] = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
 MAX_INCLUDE_DEPTH = 5
 MANAGED_MEMORY_ENV = "POOR_CLI_MANAGED_MEMORY"
@@ -80,6 +82,10 @@ class InstructionSnapshot:
 
     repo_root: str
     sources: List[InstructionSource] = field(default_factory=list)
+    loaded_skills: List[str] = field(default_factory=list)
+    system_skills: List[str] = field(default_factory=list)
+    prompt_skills: List[str] = field(default_factory=list)
+    skill_plan: Dict[str, Any] = field(default_factory=dict)
 
     def render_prompt_prefix(self) -> str:
         """Render a compact instruction block for the active request."""
@@ -87,7 +93,11 @@ class InstructionSnapshot:
             return ""
 
         sections = ["## Active Instruction Stack"]
-        for source in self.sources:
+        ordered_sources = [
+            *[source for source in self.sources if source.kind == "repo_graph"],
+            *[source for source in self.sources if source.kind != "repo_graph"],
+        ]
+        for source in ordered_sources:
             title = source.label
             if source.path:
                 title = f"{title} ({source.path})"
@@ -95,11 +105,18 @@ class InstructionSnapshot:
         return "\n\n".join(sections)
 
     def to_dict(self) -> Dict[str, Any]:
+        rendered = self.render_prompt_prefix()
         return {
             "repoRoot": self.repo_root,
             "sourceCount": len(self.sources),
+            "loadedSkills": list(self.loaded_skills),
+            "systemSkills": list(self.system_skills),
+            "promptSkills": list(self.prompt_skills),
+            "skillPlan": dict(self.skill_plan),
+            "instructionChars": len(rendered),
+            "instructionTokensEstimate": len(rendered) // 4,
             "sources": [source.to_dict() for source in self.sources],
-            "renderedPromptPrefix": self.render_prompt_prefix(),
+            "renderedPromptPrefix": rendered,
         }
 
 
@@ -115,8 +132,14 @@ class InstructionManager:
         RULES_FILE_NAME,
     )
 
-    def __init__(self, repo_root: Optional[Path] = None):
+    def __init__(
+        self,
+        repo_root: Optional[Path] = None,
+        *,
+        skill_search_paths: Optional[Sequence[str]] = None,
+    ):
         self.repo_root = (repo_root or Path.cwd()).resolve()
+        self._skill_search_paths = [str(path) for path in (skill_search_paths or []) if str(path).strip()]
         self._cache_key: Optional[str] = None
         self._cached_snapshot: Optional[InstructionSnapshot] = None
 
@@ -143,6 +166,7 @@ class InstructionManager:
                 parts.append(f"{rel}:{os.stat(path).st_mtime_ns}")
             except OSError:
                 parts.append(f"{rel}:0")
+        parts.append(self._instruction_skill_signature())
         return hashlib.sha256("|".join(parts).encode()).hexdigest()
 
     def build_snapshot(
@@ -151,12 +175,21 @@ class InstructionManager:
         *,
         plan_mode_enabled: bool = False,
         repo_summary: str = "",
+        user_prompt: str = "",
+        skill_context: Optional[InstructionSkillContext] = None,
+        skill_plan: Optional[SkillLoadPlan] = None,
     ) -> InstructionSnapshot:
         referenced_files = list(referenced_files or [])
         summary_hash = hashlib.sha256(repo_summary.encode()).hexdigest()[:8] if repo_summary else ""
         hierarchy_sig = self._hierarchy_signature(referenced_files)
 
-        if not referenced_files: # only cache when no path-local files requested
+        use_cache = (
+            not referenced_files
+            and not user_prompt
+            and skill_plan is None
+            and skill_context is None
+        )
+        if use_cache: # only cache when no path-local files requested
             key = self._compute_cache_key(plan_mode_enabled, summary_hash, hierarchy_signature=hierarchy_sig)
             if key == self._cache_key and self._cached_snapshot is not None:
                 return self._cached_snapshot
@@ -175,13 +208,19 @@ class InstructionManager:
             sources.append(focus)
         if repo_summary:
             sources.append(self._load_repo_graph_summary(repo_summary))
+        resolved_plan = skill_plan or self._build_skill_plan(user_prompt, skill_context)
+        sources.extend(self._load_task_skill_sources(resolved_plan, skill_context))
 
         snapshot = InstructionSnapshot(
             repo_root=str(self.repo_root),
             sources=self._dedupe_sources(sources),
+            loaded_skills=list(resolved_plan.all_skill_names),
+            system_skills=list(resolved_plan.system_skill_names),
+            prompt_skills=list(resolved_plan.prompt_skill_names),
+            skill_plan=resolved_plan.to_dict(),
         )
 
-        if not referenced_files:
+        if use_cache:
             self._cache_key = self._compute_cache_key(
                 plan_mode_enabled,
                 summary_hash,
@@ -819,6 +858,62 @@ class InstructionManager:
             path=self._relative_or_absolute(path),
             metadata={"completed": completed},
         )
+
+    def _skill_registry(self) -> SkillRegistry:
+        return SkillRegistry(self.repo_root, search_paths=self._skill_search_paths)
+
+    def _instruction_skill_signature(self) -> str:
+        entries: List[str] = []
+        for definition in self._skill_registry().list_instruction_skills():
+            try:
+                stat = definition.skill_file.stat()
+                entries.append(f"{definition.name}:{stat.st_mtime_ns}:{stat.st_size}")
+            except OSError:
+                entries.append(f"{definition.name}:0:0")
+        return hashlib.sha256("|".join(entries).encode("utf-8", errors="replace")).hexdigest()
+
+    def _build_skill_plan(
+        self,
+        user_prompt: str,
+        skill_context: Optional[InstructionSkillContext],
+    ) -> SkillLoadPlan:
+        registry = self._skill_registry()
+        context = skill_context or InstructionSkillContext(current_dir=str(self.repo_root))
+        return registry.build_instruction_plan(user_prompt, context)
+
+    def _load_task_skill_sources(
+        self,
+        skill_plan: SkillLoadPlan,
+        skill_context: Optional[InstructionSkillContext],
+    ) -> List[InstructionSource]:
+        prompt_skills = list(skill_plan.prompt_skill_names)
+        if not prompt_skills:
+            return []
+        registry = self._skill_registry()
+        context = skill_context or InstructionSkillContext(current_dir=str(self.repo_root))
+        definitions = {skill.name: skill for skill in registry.list_instruction_skills()}
+        sources: List[InstructionSource] = []
+        for name in prompt_skills:
+            definition = definitions.get(name)
+            if definition is None:
+                continue
+            content = registry.render_instruction_skills([name], context)
+            if not content:
+                continue
+            sources.append(
+                InstructionSource(
+                    kind="task_skill",
+                    label=f"Task Skill: {name}",
+                    content=content,
+                    path=str(definition.skill_file),
+                    metadata={
+                        "skillName": name,
+                        "scope": definition.scope,
+                        "description": definition.description,
+                    },
+                )
+            )
+        return sources
 
     @staticmethod
     def _read_text(path: Path) -> str:

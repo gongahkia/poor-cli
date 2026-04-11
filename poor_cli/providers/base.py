@@ -18,6 +18,7 @@ class ProviderCapabilities(BaseModel):
     supports_json_mode: bool = False
     supports_code_interpreter: bool = False
     supports_thinking: bool = False  # extended thinking / reasoning
+    supports_structured_output: bool = False  # grammar-constrained / json_schema output
 
 
 class FunctionCall(BaseModel):
@@ -77,6 +78,8 @@ class BaseProvider(ABC):
         self.model_name = model_name
         self.config = kwargs
         self.economy_max_output_tokens: int = 0 # set by economy mode; 0 = no cap
+        self.economy_max_thinking_tokens: int = 0 # set by thinking budget optimizer; 0 = use provider default
+        self.prompt_prefix: str = ""
 
     @abstractmethod
     async def initialize(self, tools: Optional[List[Dict[str, Any]]] = None,
@@ -90,11 +93,12 @@ class BaseProvider(ABC):
         pass
 
     @abstractmethod
-    async def send_message(self, message: Any) -> ProviderResponse:
+    async def send_message(self, message: Any, **kwargs) -> ProviderResponse:
         """Send a message and get normalized response
 
         Args:
             message: Message to send (str or provider-specific content)
+            **kwargs: Provider-specific options (e.g. structured_output=StructuredOutputConfig)
 
         Returns:
             Normalized ProviderResponse object
@@ -174,6 +178,14 @@ class BaseProvider(ABC):
         Subclasses may override for provider-specific behavior."""
         self.system_instruction = instruction
 
+    def update_prompt_prefix(self, prefix: str) -> None:
+        """Update stable per-request prefix injected before conversation history."""
+        self.prompt_prefix = prefix or ""
+
+    def get_prompt_prefix(self) -> str:
+        """Return stable per-request prefix text."""
+        return self.prompt_prefix or ""
+
     def switch_model(self, model_name: str) -> None:
         """Switch to a different model (e.g. for economy downshift).
         Subclasses may override for provider-specific re-init."""
@@ -186,3 +198,12 @@ class BaseProvider(ABC):
             Provider name (lowercase)
         """
         return self.__class__.__name__.replace("Provider", "").lower()
+
+    def preferred_edit_format(self) -> str:
+        """Return provider-tuned preferred edit format."""
+        from ..edit_formats import suggest_format_for_model
+
+        return suggest_format_for_model(
+            self.model_name,
+            provider_name=self.get_provider_name(),
+        )

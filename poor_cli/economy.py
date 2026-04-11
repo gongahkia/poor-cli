@@ -92,6 +92,12 @@ ECONOMY_PRESETS: Dict[str, Dict[str, Any]] = {
     },
 }
 
+OUTPUT_VERBOSITY_BY_PRESET = {
+    "frugal": "caveman",
+    "balanced": "normal",
+    "quality": "comprehensive",
+}
+
 
 def apply_economy_preset(config: EconomyConfig, preset: str) -> None:
     """Apply a named preset to an EconomyConfig in-place."""
@@ -102,6 +108,13 @@ def apply_economy_preset(config: EconomyConfig, preset: str) -> None:
     for k, v in values.items():
         if hasattr(config, k):
             setattr(config, k, v)
+
+
+def resolve_output_verbosity(config: EconomyConfig) -> str:
+    """Map economy state to output verbosity."""
+    if getattr(config, "terse_system_prompt", False):
+        return "caveman"
+    return OUTPUT_VERBOSITY_BY_PRESET.get(getattr(config, "preset", ""), "normal")
 
 
 # ── Prompt complexity classification ──────────────────────────────────
@@ -227,6 +240,9 @@ class EconomyTurnReport:
     dedup_tokens_saved: int = 0
     diff_only_applied: bool = False
     sequential_reads_detected: int = 0 # read_file calls across separate iterations (inefficient)
+    routed: bool = False
+    routed_model: str = ""
+    routed_complexity: str = ""
 
 
 @dataclass
@@ -237,9 +253,12 @@ class EconomySavings:
     tokens_saved_by_dedup: int = 0
     tokens_saved_by_terse: int = 0
     tokens_saved_by_truncation: int = 0
+    tokens_saved_by_failure_amnesia: int = 0
     tool_calls_avoided: int = 0
     cache_hits: int = 0
     estimated_money_saved_usd: float = 0.0
+    routing_decisions: int = 0
+    routing_escalations: int = 0
 
 
 class EconomySavingsTracker:
@@ -266,11 +285,19 @@ class EconomySavingsTracker:
     def record_truncation(self, tokens_saved: int) -> None:
         self._savings.tokens_saved_by_truncation += tokens_saved
 
+    def record_failure_amnesia(self, tokens_saved: int) -> None:
+        self._savings.tokens_saved_by_failure_amnesia += tokens_saved
+
     def record_cache_hit(self) -> None:
         self._savings.cache_hits += 1
 
     def record_tool_calls_avoided(self, count: int) -> None:
         self._savings.tool_calls_avoided += count
+
+    def record_routing_decision(self, escalated: bool = False) -> None:
+        self._savings.routing_decisions += 1
+        if escalated:
+            self._savings.routing_escalations += 1
 
     def get_summary(self) -> Dict[str, Any]:
         return asdict(self._savings)
@@ -283,6 +310,7 @@ class EconomySavingsTracker:
             + self._savings.tokens_saved_by_dedup
             + self._savings.tokens_saved_by_terse
             + self._savings.tokens_saved_by_truncation
+            + self._savings.tokens_saved_by_failure_amnesia
         )
         avg_cost = (cost_per_1k_in + cost_per_1k_out) / 2
         return (total_tokens_saved / 1000) * avg_cost + self._savings.estimated_money_saved_usd

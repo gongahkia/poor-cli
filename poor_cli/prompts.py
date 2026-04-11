@@ -5,6 +5,10 @@ This module contains optimized prompt templates for different AI tasks.
 Each prompt is designed to elicit high-quality responses from LLMs.
 """
 
+from pathlib import Path
+
+from .skills import InstructionSkillContext, SkillRegistry
+
 # =============================================================================
 # Fill-in-Middle (FIM) Templates
 # =============================================================================
@@ -279,7 +283,14 @@ def detect_tone_from_user_memories(memory_contents: str) -> str:
     return _TONE_INTERMEDIATE # default for users with memories but no clear signal
 
 
-ECONOMY_TERSE_SUFFIX = "\n\nIMPORTANT: Be extremely concise. No preamble, no trailing summaries. Lead with the answer."
+ECONOMY_TERSE_SUFFIX = """
+
+OUTPUT RULES (frugal mode active):
+- Max compression. Drop filler, pleasantries, hedging, repetition.
+- No markdown headers for short replies.
+- Preserve exact code blocks, commands, paths, error text, stack traces.
+- Preserve proper grammar for git commits, PR text, user-facing docs/messages.
+- Target minimum tokens that keep meaning intact."""
 
 ECONOMY_BATCHED_READS_SUFFIX = "\n\nEFFICIENCY: When you need to read multiple files, batch them into a single tool call round. Avoid reading files one at a time across separate iterations."
 
@@ -508,57 +519,31 @@ def build_tool_calling_system_instruction(
     include_gh_tools: bool = True,
     include_extended_tools: bool = True,
 ) -> str:
-    """Build the shared tool-calling system instruction from conditional sections.
-
-    Sections are assembled based on mode, sandbox preset, and config state.
-    Tool names are NOT listed here — they are sent as function declarations.
-    When max_system_tokens > 0, low-priority sections are pruned to fit.
-    """
-    sections = [_SECTION_INTRO.format(current_dir=current_dir)]
-    if plan_mode:
-        sections.append(_SECTION_PLAN_MODE)
-    elif sandbox_preset == "read-only":
-        sections.append(_SECTION_READ_ONLY)
-    else:
-        sections.append(_SECTION_TOOL_RULES)
-    sections.append(_SECTION_CONFIDENCE)
-    sections.append(_SECTION_TOOLS_AVAILABLE) # single terse line replaces 3 tool-listing sections
-    if include_agent_tools:
-        sections.append(_SECTION_AGENT_TOOLS)
-    sections.append(_SECTION_TOOL_PREFERENCE)
-    sections.append(_SECTION_FILE_PATH_RULES.format(current_dir=current_dir))
-    if not plan_mode and sandbox_preset != "read-only":
-        sections.append(_SECTION_WRITE_GUARD)
-        sections.append(_SECTION_EDITING_STRATEGY)
-        sections.append(_SECTION_RISK_AWARENESS)
-    sections.append(_SECTION_OUTPUT_EFFICIENCY)
-    if agentic_mode and not plan_mode:
-        sections.append(_SECTION_AGENTIC)
-    instruction = "\n".join(sections)
-    if terse_mode:
-        instruction += ECONOMY_TERSE_SUFFIX
-    if batched_reads:
-        instruction += ECONOMY_BATCHED_READS_SUFFIX
-    # budget-aware pruning: drop lowest-priority sections until within budget
-    if max_system_tokens > 0:
-        est_tokens = len(instruction) // 4
-        section_map = {
-            "_SECTION_AGENTIC": _SECTION_AGENTIC,
-            "_SECTION_AGENT_TOOLS": _SECTION_AGENT_TOOLS,
-            "_SECTION_RISK_AWARENESS": _SECTION_RISK_AWARENESS,
-            "_SECTION_EDITING_STRATEGY": _SECTION_EDITING_STRATEGY,
-            "_SECTION_WRITE_GUARD": _SECTION_WRITE_GUARD,
-            "_SECTION_CONFIDENCE": _SECTION_CONFIDENCE,
-            "_SECTION_OUTPUT_EFFICIENCY": _SECTION_OUTPUT_EFFICIENCY,
-            "_SECTION_TOOL_PREFERENCE": _SECTION_TOOL_PREFERENCE,
-        }
-        for name in _PRUNABLE_SECTIONS:
-            if est_tokens <= max_system_tokens:
-                break
-            section_text = section_map.get(name, "")
-            if section_text and section_text in instruction:
-                instruction = instruction.replace(section_text, "")
-                est_tokens = len(instruction) // 4
+    """Build the shared tool-calling system instruction from skill files."""
+    del agentic_mode, include_agent_tools, include_gh_tools, include_extended_tools
+    context = InstructionSkillContext(
+        current_dir=current_dir,
+        plan_mode_enabled=plan_mode,
+        sandbox_preset=sandbox_preset,
+        terse_mode=terse_mode,
+        batched_reads=batched_reads,
+    )
+    instruction = SkillRegistry(Path(current_dir)).render_system_instruction(
+        "",
+        context,
+        max_system_tokens=max_system_tokens,
+    )
+    if not instruction:
+        instruction = (
+            "You are an AI coding assistant with tool calling.\n\n"
+            f"CURRENT WORKING DIRECTORY: {current_dir}\n\n"
+            "Core rules:\n"
+            "- Use tools directly for file and system work.\n"
+            "- Use absolute paths rooted at the working directory.\n"
+            "- Ask before destructive or production-impacting actions.\n"
+            "- Keep output terse and action-first.\n"
+            "- End final replies with `Confidence: <Category> (<0-100>%)`."
+        )
     if provider:
         instruction = _truncate_instruction_for_provider(instruction, provider)
     return instruction

@@ -116,17 +116,19 @@ class ToolTranslator:
             # Convert parameter types to lowercase
             params = tool.get("parameters", {})
             converted_params = ToolTranslator._convert_types_lowercase(params)
+            converted_params = ToolTranslator._ensure_strict_compatible(converted_params)
 
             openai_tools.append({
                 "type": "function",
                 "function": {
                     "name": tool["name"],
                     "description": tool["description"],
-                    "parameters": converted_params
+                    "parameters": converted_params,
+                    "strict": True,  # grammar-constrained tool args
                 }
             })
 
-        logger.debug(f"Translated {len(tools)} tools to OpenAI format")
+        logger.debug(f"Translated {len(tools)} tools to OpenAI format (strict=True)")
         return openai_tools
 
     @staticmethod
@@ -182,6 +184,27 @@ class ToolTranslator:
         """
         logger.debug(f"Translating {len(tools)} tools to Ollama format (OpenAI-compatible)")
         return ToolTranslator.to_openai(tools)
+
+    @staticmethod
+    def _ensure_strict_compatible(params: Dict[str, Any]) -> Dict[str, Any]:
+        """Patch an object schema for OpenAI strict mode (additionalProperties: false)."""
+        if not isinstance(params, dict):
+            return params
+        result = dict(params)
+        if result.get("type") == "object" and "properties" in result:
+            result.setdefault("additionalProperties", False)
+            # strict mode requires all properties in required
+            props = result.get("properties", {})
+            if props and "required" not in result:
+                result["required"] = list(props.keys())
+            for key, val in props.items():
+                if isinstance(val, dict):
+                    props[key] = ToolTranslator._ensure_strict_compatible(val)
+            result["properties"] = props
+        items = result.get("items")
+        if isinstance(items, dict):
+            result["items"] = ToolTranslator._ensure_strict_compatible(items)
+        return result
 
     @staticmethod
     def _convert_types_lowercase(params: Dict[str, Any]) -> Dict[str, Any]:

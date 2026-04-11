@@ -31,6 +31,10 @@ from .base import BaseProvider, ProviderCapabilities, ProviderResponse, Function
 from .tool_translator import ToolTranslator, ProviderType
 from ..provider_catalog import default_model_for_provider
 from ..retry import RetryConfig, with_retry
+from ..structured_output import (
+    StructuredOutputConfig, build_gemini_response_schema,
+    get_metrics as get_so_metrics,
+)
 from ..exceptions import (
     APIError,
     APIRateLimitError,
@@ -45,6 +49,9 @@ logger = setup_logger(__name__)
 
 class GeminiProvider(BaseProvider):
     """Gemini provider implementation backed by `google-genai`."""
+
+    def preferred_edit_format(self) -> str:
+        return "search_replace"
 
     def __init__(
         self,
@@ -162,12 +169,22 @@ class GeminiProvider(BaseProvider):
         except Exception as e:
             raise ConfigurationError(f"Failed to initialize Gemini model: {e}")
 
-    async def send_message(self, message: Any) -> ProviderResponse:
+    async def send_message(self, message: Any, *,
+                           structured_output: Optional[StructuredOutputConfig] = None) -> ProviderResponse:
         """Send message to Gemini and return normalized response."""
         if self.chat is None:
             raise ConfigurationError("Gemini provider not initialized")
 
         normalized_message = self._normalize_message(message)
+        # temporarily inject response_schema if structured output requested
+        _prev_schema = None
+        if structured_output and self._chat_config is not None:
+            _prev_schema = getattr(self._chat_config, "response_schema", None)
+            try:
+                self._chat_config.response_schema = build_gemini_response_schema(structured_output)
+                self._chat_config.response_mime_type = "application/json"
+            except Exception:
+                pass  # graceful: schema injection unsupported
 
         async def _do_send() -> ProviderResponse:
             try:
@@ -175,6 +192,10 @@ class GeminiProvider(BaseProvider):
                     self.chat.send_message(normalized_message),
                     timeout=self.timeout,
                 )
+                if structured_output:
+                    get_so_metrics().record_structured_attempt(success=True)
+                else:
+                    get_so_metrics().record_unstructured()
                 return self._parse_response(response)
             except asyncio.TimeoutError as e:
                 raise APITimeoutError("Gemini request timeout", str(e))
@@ -185,11 +206,31 @@ class GeminiProvider(BaseProvider):
             except Exception as e:
                 raise APIError(f"Failed to send message: {e}", str(e))
 
-        return await with_retry(
-            _do_send,
-            config=RetryConfig(max_retries=self.max_retries, base_delay=self.retry_delay, jitter=True),
-            retryable=lambda e: isinstance(e, (APITimeoutError, APIRateLimitError, APIConnectionError)),
-        )
+        try:
+            return await with_retry(
+                _do_send,
+                config=RetryConfig(max_retries=self.max_retries, base_delay=self.retry_delay, jitter=True),
+                retryable=lambda e: isinstance(e, (APITimeoutError, APIRateLimitError, APIConnectionError)),
+            )
+        except Exception:
+            if structured_output:
+                get_so_metrics().record_structured_attempt(success=False)
+                logger.warning("structured output failed for Gemini; retrying unconstrained")
+                if self._chat_config is not None:
+                    self._chat_config.response_schema = _prev_schema
+                    try:
+                        del self._chat_config.response_mime_type
+                    except Exception:
+                        pass
+                return await self.send_message(message, structured_output=None)
+            raise
+        finally:
+            if structured_output and self._chat_config is not None:
+                self._chat_config.response_schema = _prev_schema
+                try:
+                    del self._chat_config.response_mime_type
+                except Exception:
+                    pass
 
     async def send_message_stream(self, message: Any) -> AsyncIterator[ProviderResponse]:
         """Stream response chunks from Gemini."""
@@ -247,6 +288,8 @@ class GeminiProvider(BaseProvider):
     def _normalize_message(self, message: Any) -> Any:
         """Normalize caller payloads into `google-genai` chat message shapes."""
         if isinstance(message, str):
+            if self.prompt_prefix:
+                return f"{self.prompt_prefix}\n\n{message}"
             return message
 
         if (
@@ -255,6 +298,8 @@ class GeminiProvider(BaseProvider):
             and all(isinstance(item, dict) for item in message)
         ):
             parts: List[Any] = []
+            if self.prompt_prefix and all(item.get("type") in ("image", "text") for item in message):
+                parts.append(genai_types.Part.from_text(text=self.prompt_prefix))
             for item in message:
                 inline_data = item.get("inline_data")
                 if isinstance(inline_data, dict):
@@ -511,4 +556,5 @@ class GeminiProvider(BaseProvider):
             supports_vision=True,
             supports_json_mode=True,
             supports_code_interpreter=False,
+            supports_structured_output=True,
         )

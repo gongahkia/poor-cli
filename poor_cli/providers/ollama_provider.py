@@ -18,6 +18,10 @@ from .base import BaseProvider, ProviderCapabilities, ProviderResponse, Function
 from .tool_translator import ToolTranslator, ProviderType
 from ..provider_catalog import default_model_for_provider
 from ..retry import RetryConfig, with_retry
+from ..structured_output import (
+    StructuredOutputConfig, build_ollama_format,
+    get_metrics as get_so_metrics,
+)
 from ..exceptions import (
     APIError,
     APIRateLimitError,
@@ -26,12 +30,20 @@ from ..exceptions import (
     ConfigurationError,
     setup_logger,
 )
+from ..speculative_decoding import (
+    SpeculativeDecodingManager,
+    resolve_draft_model,
+    is_spec_decode_available,
+)
 
 logger = setup_logger(__name__)
 
 
 class OllamaProvider(BaseProvider):
     """Ollama local model provider implementation"""
+
+    def preferred_edit_format(self) -> str:
+        return "whole_file"
 
     def __init__(self, api_key: str = "", model_name: str = default_model_for_provider("ollama"),
                  max_retries: int = 3, retry_delay: float = 1.0, timeout: float = 120.0,
@@ -62,6 +74,9 @@ class OllamaProvider(BaseProvider):
         self.messages = []  # Conversation history
         self.tools = None
         self.system_instruction = None
+        self._structured_output: Optional[StructuredOutputConfig] = None  # per-request
+        self._kv_cache_store = None # set via attach_kv_cache()
+        self._spec_decode_mgr: Optional[SpeculativeDecodingManager] = None
 
         logger.info(f"Ollama provider initialized (server: {self.base_url})")
 
@@ -79,15 +94,32 @@ class OllamaProvider(BaseProvider):
         """Build a chat request payload, including tools only when enabled."""
         request_data = {
             "model": self.model_name,
-            "messages": self.messages,
+            "messages": self._build_request_messages(),
             "stream": stream,
         }
         if self.tools:
             request_data["tools"] = self.tools
+        if self._structured_output:
+            request_data["format"] = build_ollama_format(self._structured_output)
         # economy mode output cap
         if self.economy_max_output_tokens > 0:
             request_data.setdefault("options", {})["num_predict"] = self.economy_max_output_tokens
         return request_data
+
+    def _build_request_messages(self) -> List[Dict[str, Any]]:
+        messages: List[Dict[str, Any]] = []
+        if self.system_instruction:
+            messages.append({
+                "role": "system",
+                "content": self.system_instruction,
+            })
+        if self.prompt_prefix:
+            messages.append({
+                "role": "user",
+                "content": self.prompt_prefix,
+            })
+        messages.extend(self.messages)
+        return messages
 
     async def initialize(self, tools: Optional[List[Dict[str, Any]]] = None,
                         system_instruction: Optional[str] = None):
@@ -101,10 +133,6 @@ class OllamaProvider(BaseProvider):
             # Store system instruction
             if system_instruction:
                 self.system_instruction = system_instruction
-                self.messages.append({
-                    "role": "system",
-                    "content": system_instruction
-                })
 
             # Check if Ollama is running
             try:
@@ -132,9 +160,11 @@ class OllamaProvider(BaseProvider):
                 raise
             raise ConfigurationError(f"Failed to initialize Ollama: {e}")
 
-    async def send_message(self, message: Any) -> ProviderResponse:
+    async def send_message(self, message: Any, *,
+                           structured_output: Optional[StructuredOutputConfig] = None) -> ProviderResponse:
         """Send message to Ollama"""
         self._append_message(message)
+        self._structured_output = structured_output
 
         async def _do_send() -> ProviderResponse:
             try:
@@ -149,6 +179,10 @@ class OllamaProvider(BaseProvider):
                             error_text = await resp.text()
                             raise APIError(f"Ollama error {resp.status}: {error_text}", error_text)
                         response_data = await resp.json()
+                if structured_output:
+                    get_so_metrics().record_structured_attempt(success=True)
+                else:
+                    get_so_metrics().record_unstructured()
                 return self._parse_response(response_data)
             except asyncio.TimeoutError as e:
                 raise APITimeoutError("Ollama request timeout", str(e))
@@ -162,11 +196,22 @@ class OllamaProvider(BaseProvider):
             except Exception as e:
                 raise APIError(f"Ollama API error: {e}", str(e))
 
-        return await with_retry(
-            _do_send,
-            config=RetryConfig(max_retries=self.max_retries, base_delay=self.retry_delay, jitter=True),
-            retryable=lambda e: isinstance(e, (APITimeoutError, APIConnectionError)),
-        )
+        try:
+            return await with_retry(
+                _do_send,
+                config=RetryConfig(max_retries=self.max_retries, base_delay=self.retry_delay, jitter=True),
+                retryable=lambda e: isinstance(e, (APITimeoutError, APIConnectionError)),
+            )
+        except Exception:
+            if structured_output:
+                get_so_metrics().record_structured_attempt(success=False)
+                logger.warning("structured output failed for Ollama; retrying unconstrained")
+                self._structured_output = None
+                self.messages.pop()
+                return await self.send_message(message, structured_output=None)
+            raise
+        finally:
+            self._structured_output = None
 
     async def send_message_stream(self, message: Any) -> AsyncIterator[ProviderResponse]:
         """Stream response from Ollama"""
@@ -330,15 +375,7 @@ class OllamaProvider(BaseProvider):
 
     async def clear_history(self):
         """Clear Ollama conversation history"""
-        # Keep system message if exists
-        if self.system_instruction:
-            self.messages = [{
-                "role": "system",
-                "content": self.system_instruction
-            }]
-        else:
-            self.messages = []
-
+        self.messages = []
         logger.info("Ollama history cleared")
 
     def get_history(self) -> List[Dict[str, Any]]:
@@ -346,11 +383,13 @@ class OllamaProvider(BaseProvider):
         return self.messages.copy()
 
     def set_history(self, messages: List[Dict[str, Any]]) -> None:
-        if self.system_instruction:
-            self.messages = [{"role": "system", "content": self.system_instruction}]
-            self.messages.extend(messages)
-        else:
-            self.messages = list(messages)
+        self.messages = [
+            message for message in messages
+            if message.get("role") != "system"
+        ]
+
+    def update_system_instruction(self, instruction: str) -> None:
+        self.system_instruction = instruction
 
     @classmethod
     async def discover_models(cls, base_url: str = "http://localhost:11434") -> List[str]:
@@ -372,6 +411,41 @@ class OllamaProvider(BaseProvider):
         """Return models available on the configured Ollama server."""
         return await self.discover_models(self.base_url)
 
+    def attach_kv_cache(self, store: Any) -> None:
+        """Attach a KVCacheStore for cache-friendly prompt ordering.
+
+        Ollama has no KV cache API — this only enables stable-prefix
+        ordering so Ollama's internal prefix cache gets better hit rates.
+        For actual KV cache precompute/reuse, use vLLM + LMCache.
+        """
+        self._kv_cache_store = store
+        logger.info("kv cache store attached (ollama: prefix-ordering only)")
+
+    def attach_speculative_decoding(self, config: Any) -> None:
+        """Attach speculative decoding manager from app config.
+
+        NOTE: Ollama has no native speculative decoding API.
+        If spec decode is enabled, this logs a warning directing the user
+        to vLLM. The manager is stored for status reporting only.
+        """
+        mgr = SpeculativeDecodingManager.from_config(config, "ollama", self.model_name)
+        if mgr.enabled:
+            logger.warning(
+                "speculative decoding requested but Ollama lacks native support. "
+                "use vLLM instead: %s", mgr.get_launch_command()
+            )
+            mgr.enabled = False # disable since ollama can't use it
+        self._spec_decode_mgr = mgr
+        draft = resolve_draft_model(self.model_name)
+        if draft:
+            logger.info("draft model available for %s -> %s (requires vLLM)", self.model_name, draft)
+
+    def get_speculative_decoding_status(self) -> dict:
+        """Return spec decode status dict for diagnostics."""
+        if self._spec_decode_mgr:
+            return self._spec_decode_mgr.status()
+        return {"enabled": False, "reason": "ollama does not support speculative decoding; use vLLM"}
+
     def get_capabilities(self) -> ProviderCapabilities:
         """Get Ollama capabilities"""
         # Capabilities vary by model
@@ -385,5 +459,6 @@ class OllamaProvider(BaseProvider):
             max_context_tokens=32000,  # Varies by model
             supports_vision=False,  # Most models don't support vision yet
             supports_json_mode=True,
-            supports_code_interpreter=False
+            supports_code_interpreter=False,
+            supports_structured_output=True,  # format: "json" widely supported
         )

@@ -1017,7 +1017,7 @@ class ToolRegistryAsync:
                     "properties": {
                         "strategy": {
                             "type": "STRING",
-                            "description": "Compaction strategy: 'compact' (LLM summary), 'compress' (strip tool calls), or 'handoff' (new session with summary)"
+                            "description": "Compaction strategy: 'auto', 'compact', 'gentle', 'aggressive', 'compress', or 'handoff'"
                         }
                     },
                     "required": []
@@ -1241,7 +1241,8 @@ class ToolRegistryAsync:
 
     def get_tool_declarations(self) -> List[Dict[str, Any]]:
         """Get tool declarations for API"""
-        return [tool["declaration"] for tool in self.tools.values()]
+        declarations = [tool["declaration"] for tool in self.tools.values()]
+        return sorted(declarations, key=lambda tool: tool.get("name", ""))
 
     def get_core_tool_declarations(self) -> List[Dict[str, Any]]:
         """Get only core tool declarations (always sent to provider)."""
@@ -1251,7 +1252,7 @@ class ToolRegistryAsync:
                 core.append(tool["declaration"])
         # always include the discover_tools meta-tool
         core.append(self._discover_tools_declaration())
-        return core
+        return sorted(core, key=lambda tool: tool.get("name", ""))
 
     def get_deferred_tool_names(self) -> List[str]:
         """Get names of deferred tools that are registered but not in core set."""
@@ -1259,11 +1260,12 @@ class ToolRegistryAsync:
 
     def get_deferred_tool_declarations(self, names: List[str]) -> List[Dict[str, Any]]:
         """Get declarations for specific deferred tools by name."""
-        return [
+        declarations = [
             self.tools[n]["declaration"]
             for n in names
             if n in self.tools and n in DEFERRED_TOOL_NAMES
         ]
+        return sorted(declarations, key=lambda tool: tool.get("name", ""))
 
     @staticmethod
     def _discover_tools_declaration() -> Dict[str, Any]:
@@ -4056,8 +4058,8 @@ class ToolRegistryAsync:
     async def compact_conversation(self, strategy: str = "compact") -> str:
         if not self._core:
             return "error: core engine not available for compaction"
-        if strategy not in ("compact", "compress", "handoff"):
-            return f"error: unknown strategy '{strategy}', use compact|compress|handoff"
+        if strategy not in ("auto", "compact", "gentle", "aggressive", "compress", "handoff"):
+            return f"error: unknown strategy '{strategy}', use auto|compact|gentle|aggressive|compress|handoff"
         result = await self._core.compact_context(strategy)
         return json.dumps(result, indent=2)
 

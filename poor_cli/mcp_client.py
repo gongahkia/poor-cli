@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .exceptions import setup_logger
+from .tool_output_filter import ToolOutputFilter, empty_filter_stats
 
 logger = setup_logger(__name__)
 
@@ -53,6 +54,15 @@ def _json_schema_type_to_gemini(type_name: str) -> str:
         "object": "OBJECT",
     }
     return mapping.get(type_name.lower(), "STRING")
+
+
+def _render_mcp_result(result: Dict[str, Any]) -> str:
+    content = result.get("content", [])
+    if content and isinstance(content, list):
+        first = content[0]
+        if isinstance(first, dict):
+            return str(first.get("text", ""))
+    return json.dumps(result, ensure_ascii=False)
 
 
 class MCPClient:
@@ -136,7 +146,7 @@ class MCPClient:
         response = await self._read_response()
         return response.get("result", {}).get("prompts", [])
 
-    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> str:
+    async def call_tool_raw(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         request_id = self._next_request_id
         self._next_request_id += 1
         await self._send({
@@ -146,13 +156,11 @@ class MCPClient:
             "params": {"name": name, "arguments": arguments},
         })
         response = await self._read_response()
-        result = response.get("result", {})
-        content = result.get("content", [])
-        if content and isinstance(content, list):
-            first = content[0]
-            if isinstance(first, dict):
-                return str(first.get("text", ""))
-        return json.dumps(result, ensure_ascii=False)
+        return response.get("result", {})
+
+    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> str:
+        result = await self.call_tool_raw(name=name, arguments=arguments)
+        return _render_mcp_result(result)
 
     async def health_check(self) -> bool:
         """Ping the MCP server process to check if it's still alive."""
@@ -230,7 +238,7 @@ class MCPSSEClient:
         self._tools = declarations
         return declarations
 
-    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> str:
+    async def call_tool_raw(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         import aiohttp
         async with aiohttp.ClientSession() as session:
             payload = {
@@ -245,13 +253,11 @@ class MCPSSEClient:
                 f"{self.url}/message", json=payload, headers=headers,
             ) as resp:
                 data = await resp.json()
-                result = data.get("result", {})
-                content = result.get("content", [])
-                if content and isinstance(content, list):
-                    first = content[0]
-                    if isinstance(first, dict):
-                        return str(first.get("text", ""))
-                return json.dumps(result, ensure_ascii=False)
+                return data.get("result", {})
+
+    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> str:
+        result = await self.call_tool_raw(name=name, arguments=arguments)
+        return _render_mcp_result(result)
 
     async def list_resources(self) -> List[Dict[str, Any]]:
         """List available resources (MCP resources protocol)."""
@@ -322,16 +328,27 @@ def _convert_tool_declarations(tools: List[Dict[str, Any]]) -> List[Dict[str, An
 class MCPManager:
     """Manage multiple MCP server clients (stdio + SSE) and tool routing."""
 
-    def __init__(self, servers_config: Dict[str, Any], *, namespace_tools: bool = True):
+    def __init__(
+        self,
+        servers_config: Dict[str, Any],
+        *,
+        namespace_tools: bool = True,
+        repo_root: Optional[Path] = None,
+    ):
         self.servers_config = servers_config
         self.namespace_tools = namespace_tools
         self.clients: Dict[str, Any] = {} # MCPClient | MCPSSEClient
         self._declarations: List[Dict[str, Any]] = []
         self._tool_to_client: Dict[str, Any] = {} # namespaced_name -> client
         self._tool_name_map: Dict[str, str] = {} # namespaced_name -> original_name
+        self._tool_declarations: Dict[str, Dict[str, Any]] = {}
+        self._server_declarations: Dict[str, List[Dict[str, Any]]] = {}
+        self._loaded_servers: set[str] = set()
         self._server_status: Dict[str, Dict[str, Any]] = {}
         self._resources: Dict[str, List[Dict[str, Any]]] = {} # server -> resources
         self._prompts: Dict[str, List[Dict[str, Any]]] = {} # server -> prompts
+        self._output_filter = ToolOutputFilter(repo_root=repo_root or Path.cwd())
+        self._output_filter_stats = empty_filter_stats()
 
     async def initialize(self) -> None:
         for server_name, cfg in self.servers_config.items():
@@ -341,6 +358,7 @@ class MCPManager:
                 "configured": True, "enabled": enabled, "connected": False,
                 "transport": transport, "toolCount": 0, "tools": [],
                 "registeredTools": [], "resources": [], "prompts": [],
+                "schemasLoaded": False,
                 "error": None, "command": cfg.get("command", cfg.get("url", "")),
                 "args": cfg.get("args", []),
             }
@@ -350,34 +368,8 @@ class MCPManager:
             try:
                 client = self._create_client(server_name, cfg, transport)
                 await client.connect()
-                declarations = await client.list_tools()
-                # filter by allow/deny lists
-                allow_tools = {str(n) for n in cfg.get("allow_tools", []) or [] if str(n).strip()}
-                deny_tools = {str(n) for n in cfg.get("deny_tools", []) or [] if str(n).strip()}
-                filtered = []
-                for decl in declarations:
-                    tool_name = str(decl.get("name", "")).strip()
-                    if not tool_name:
-                        continue
-                    if allow_tools and tool_name not in allow_tools:
-                        continue
-                    if tool_name in deny_tools:
-                        continue
-                    filtered.append(decl)
                 self.clients[server_name] = client
                 self._server_status[server_name]["connected"] = True
-                self._server_status[server_name]["toolCount"] = len(declarations)
-                self._server_status[server_name]["tools"] = [d.get("name", "") for d in declarations if d.get("name")]
-                self._server_status[server_name]["registeredTools"] = [d.get("name", "") for d in filtered if d.get("name")]
-                for decl in filtered:
-                    original_name = decl.get("name", "")
-                    if not original_name:
-                        continue
-                    namespaced = f"{server_name}:{original_name}" if self.namespace_tools else original_name
-                    namespaced_decl = {**decl, "name": namespaced}
-                    self._tool_to_client[namespaced] = client
-                    self._tool_name_map[namespaced] = original_name
-                    self._declarations.append(namespaced_decl)
                 # discover resources and prompts (best-effort)
                 try:
                     self._resources[server_name] = await client.list_resources()
@@ -396,6 +388,106 @@ class MCPManager:
             except Exception as e:
                 logger.warning("Failed to initialize MCP server '%s': %s", server_name, e)
                 self._server_status[server_name]["error"] = str(e)
+
+    def get_server_names(self) -> List[str]:
+        return [server_name for server_name in self.servers_config]
+
+    def _server_allow_tools(self, server_name: str) -> set[str]:
+        cfg = self.servers_config.get(server_name, {})
+        return {
+            str(tool_name).strip()
+            for tool_name in cfg.get("allow_tools", []) or []
+            if str(tool_name).strip()
+        }
+
+    def _server_deny_tools(self, server_name: str) -> set[str]:
+        cfg = self.servers_config.get(server_name, {})
+        return {
+            str(tool_name).strip()
+            for tool_name in cfg.get("deny_tools", []) or []
+            if str(tool_name).strip()
+        }
+
+    def _loaded_declarations_for_server(self, server_name: str) -> List[Dict[str, Any]]:
+        return list(self._server_declarations.get(server_name, []))
+
+    async def load_server_tools(self, server_names: List[str]) -> List[Dict[str, Any]]:
+        loaded: List[Dict[str, Any]] = []
+        for server_name in server_names:
+            name = str(server_name or "").strip()
+            if not name:
+                continue
+            loaded.extend(await self._ensure_server_tools_loaded(name))
+        return loaded
+
+    async def load_all_tool_declarations(self) -> List[Dict[str, Any]]:
+        server_names = [name for name, client in self.clients.items() if client]
+        await self.load_server_tools(server_names)
+        return self.get_tool_declarations()
+
+    async def _ensure_server_tools_loaded(self, server_name: str) -> List[Dict[str, Any]]:
+        name = str(server_name or "").strip()
+        if not name:
+            return []
+        if name in self._loaded_servers:
+            return self._loaded_declarations_for_server(name)
+        client = self.clients.get(name)
+        if client is None:
+            return []
+
+        declarations = await client.list_tools()
+        allow_tools = self._server_allow_tools(name)
+        deny_tools = self._server_deny_tools(name)
+        filtered: List[Dict[str, Any]] = []
+        for declaration in declarations:
+            tool_name = str(declaration.get("name", "")).strip()
+            if not tool_name:
+                continue
+            if allow_tools and tool_name not in allow_tools:
+                continue
+            if tool_name in deny_tools:
+                continue
+            filtered.append(declaration)
+
+        namespaced_declarations: List[Dict[str, Any]] = []
+        for declaration in filtered:
+            original_name = declaration.get("name", "")
+            if not original_name:
+                continue
+            namespaced = f"{name}:{original_name}" if self.namespace_tools else original_name
+            namespaced_decl = {**declaration, "name": namespaced}
+            self._tool_to_client[namespaced] = client
+            self._tool_name_map[namespaced] = original_name
+            self._tool_declarations[namespaced] = namespaced_decl
+            self._declarations = [decl for decl in self._declarations if decl.get("name") != namespaced]
+            self._declarations.append(namespaced_decl)
+            namespaced_declarations.append(namespaced_decl)
+
+        self._server_declarations[name] = namespaced_declarations
+        self._loaded_servers.add(name)
+        self._server_status[name]["toolCount"] = len(declarations)
+        self._server_status[name]["tools"] = [decl.get("name", "") for decl in declarations if decl.get("name")]
+        self._server_status[name]["registeredTools"] = [decl.get("name", "") for decl in filtered if decl.get("name")]
+        self._server_status[name]["schemasLoaded"] = True
+        return list(namespaced_declarations)
+
+    async def ensure_tool_available(self, name: str) -> bool:
+        tool_name = str(name or "").strip()
+        if not tool_name:
+            return False
+        if tool_name in self._tool_to_client:
+            return True
+
+        if self.namespace_tools and ":" in tool_name:
+            server_name = tool_name.split(":", 1)[0].strip()
+            await self._ensure_server_tools_loaded(server_name)
+            return tool_name in self._tool_to_client
+
+        for server_name in self.clients:
+            await self._ensure_server_tools_loaded(server_name)
+            if tool_name in self._tool_to_client:
+                return True
+        return False
 
     @staticmethod
     def _create_client(server_name: str, cfg: Dict[str, Any], transport: str) -> Any:
@@ -446,6 +538,9 @@ class MCPManager:
         """Return discovered prompts grouped by server."""
         return dict(self._prompts)
 
+    def get_output_filter_stats(self) -> Dict[str, int]:
+        return dict(self._output_filter_stats)
+
     def status(self) -> Dict[str, Any]:
         return {
             "configuredServers": len(self.servers_config),
@@ -458,11 +553,33 @@ class MCPManager:
         }
 
     async def execute_tool(self, name: str, arguments: Dict[str, Any]) -> str:
+        if name not in self._tool_to_client:
+            await self.ensure_tool_available(name)
         client = self._tool_to_client.get(name)
         if not client:
             raise RuntimeError(f"MCP tool not found: {name}")
         original_name = self._tool_name_map.get(name, name) # resolve namespace
-        return await client.call_tool(name=original_name, arguments=arguments)
+        declaration = self._tool_declarations.get(name)
+        request = self._output_filter.prepare_call(name, arguments, declaration)
+        raw_result = await client.call_tool_raw(name=original_name, arguments=request.arguments)
+        rendered = _render_mcp_result(raw_result)
+        filtered = self._output_filter.filter(
+            name,
+            raw_result,
+            projection=request.projection,
+            max_tokens=request.max_tokens,
+            original_text=rendered,
+            explicit_projection=request.explicit_projection,
+        )
+        if filtered.applied:
+            self._output_filter_stats["filtered_calls"] += 1
+            if filtered.auto_filtered:
+                self._output_filter_stats["auto_filtered_calls"] += 1
+            if filtered.projection:
+                self._output_filter_stats["projection_filtered_calls"] += 1
+            self._output_filter_stats["tokens_saved"] += max(0, int(filtered.tokens_saved or 0))
+            return filtered.output
+        return rendered
 
     async def shutdown(self) -> None:
         for client in self.clients.values():
@@ -474,4 +591,7 @@ class MCPManager:
             self._server_status[server_name]["connected"] = False
         self.clients.clear()
         self._tool_to_client.clear()
+        self._tool_declarations.clear()
+        self._server_declarations.clear()
         self._declarations.clear()
+        self._loaded_servers.clear()

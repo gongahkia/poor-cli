@@ -36,6 +36,9 @@ logger = setup_logger(__name__)
 class AnthropicProvider(BaseProvider):
     """Anthropic (Claude) API provider implementation"""
 
+    def preferred_edit_format(self) -> str:
+        return "search_replace"
+
     def __init__(self, api_key: str, model_name: str = default_model_for_provider("anthropic"),
                  max_retries: int = 3, retry_delay: float = 1.0, timeout: float = 60.0,
                  prompt_caching: bool = True):
@@ -104,12 +107,13 @@ class AnthropicProvider(BaseProvider):
         """Build common request params with optional thinking support."""
         params: Dict[str, Any] = {
             "model": self.model_name,
-            "messages": self.messages,
+            "messages": self._build_request_messages(),
             "max_tokens": 16384,
         }
         if self._supports_extended_thinking():
-            params["thinking"] = {"type": "enabled", "budget_tokens": 10000}
-            params["max_tokens"] = 16384
+            thinking_budget = self.economy_max_thinking_tokens if self.economy_max_thinking_tokens > 0 else 10000
+            params["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
+            params["max_tokens"] = max(16384, thinking_budget + 4096) # ensure max_tokens > budget_tokens
         else:
             params["max_tokens"] = 4096
         # economy mode output cap
@@ -129,7 +133,26 @@ class AnthropicProvider(BaseProvider):
                 params["tools"] = self.tools
         return params
 
-    async def send_message(self, message: Any) -> ProviderResponse:
+    def _build_request_messages(self) -> List[Dict[str, Any]]:
+        messages: List[Dict[str, Any]] = []
+        if self.prompt_prefix:
+            prefix_content: Any = self.prompt_prefix
+            if self.prompt_caching:
+                prefix_content = [
+                    {
+                        "type": "text",
+                        "text": self.prompt_prefix,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ]
+            messages.append({
+                "role": "user",
+                "content": prefix_content,
+            })
+        messages.extend(self.messages)
+        return messages
+
+    async def send_message(self, message: Any, **kwargs) -> ProviderResponse:
         """Send message to Anthropic"""
         self._append_message(message)
 

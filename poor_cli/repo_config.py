@@ -50,6 +50,9 @@ class RepoPreferences:
     max_sessions: int = 100
     max_messages_per_session: int = 200
 
+    rtk_enabled: bool = True
+    rtk_tee_on_failure: bool = True
+
     # Tracking
     created_at: str = ""
     updated_at: str = ""
@@ -65,6 +68,9 @@ class RepoPreferences:
     def from_dict(cls, data: Dict[str, Any]) -> 'RepoPreferences':
         """Create from dictionary"""
         data = data.copy()
+        if "use_rtk" in data and "rtk_enabled" not in data:
+            data["rtk_enabled"] = data["use_rtk"]
+        data.pop("use_rtk", None)
         raw_mode = data.get("permission_mode", PermissionMode.DEFAULT)
         mode = parse_permission_mode(raw_mode)
 
