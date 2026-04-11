@@ -21,6 +21,29 @@ function M.component()
     return "●"
 end
 
+function M.compaction_badge(status_view)
+    local context = (status_view or {}).context or {}
+    local compact = context.compaction or {}
+    local state = compact.state or "idle"
+    if state == "idle" then
+        return ""
+    end
+    if state == "error" then
+        return "cmp!"
+    end
+    if state == "queued" then
+        local before = math.floor(tonumber(compact.utilization_before_pct or 0) or 0)
+        local target = math.floor(tonumber(compact.target_utilization_pct or 0) or 0)
+        return string.format("cmp %d>%d%%", before, target)
+    end
+    local before = tonumber(compact.messages_before or 0) or 0
+    local after = tonumber(compact.messages_after or 0) or 0
+    if before > 0 and after >= 0 then
+        return string.format("cmp %d>%d", before, after)
+    end
+    return "cmp"
+end
+
 -- Extended component with provider name
 function M.component_extended()
     local rpc = require("poor-cli.rpc")
@@ -33,6 +56,11 @@ function M.component_extended()
     local provider = M._cached_provider or "AI"
     local inline_state = inline.get_status().state
     local marker = M.component()
+    M.refresh_status()
+    local badge = M.compaction_badge(M._cached_status or {})
+    if badge ~= "" then
+        return string.format("%s %s [%s] %s", marker, provider, inline_state, badge)
+    end
     return string.format("%s %s [%s]", marker, provider, inline_state)
 end
 
@@ -131,6 +159,8 @@ function M.component_full()
     if cp and cp > 0 then table.insert(parts, cp .. "cp") end
     local users = s.memberCount or s.connectedUsers
     if users and users > 1 then table.insert(parts, users .. " users") end
+    local compact = M.compaction_badge(s)
+    if compact ~= "" then table.insert(parts, compact) end
     local icon = M.component()
     return icon .. " " .. table.concat(parts, " | ")
 end

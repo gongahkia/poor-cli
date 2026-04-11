@@ -1071,6 +1071,8 @@ function M.handle_notification(message)
                 input_tokens = params.inputTokens or 0,
                 output_tokens = params.outputTokens or 0,
                 estimated_cost = params.estimatedCost or 0,
+                cache_creation_input_tokens = params.cacheCreationInputTokens or 0,
+                cache_read_input_tokens = params.cacheReadInputTokens or 0,
             },
         })
     elseif message.method == "poor-cli/roomEvent" then

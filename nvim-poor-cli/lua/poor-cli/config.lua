@@ -33,6 +33,7 @@ M.defaults = {
     api_key_env = nil,
     completion_provider = nil,
     completion_model = nil,
+    rtk_enabled = true,
 
     -- Multiplayer remote bridge mode
     multiplayer = {

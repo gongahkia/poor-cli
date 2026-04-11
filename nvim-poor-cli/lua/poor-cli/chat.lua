@@ -475,12 +475,21 @@ function M.setup_streaming_autocmds()
                 return
             end
             vim.schedule(function()
+                local cache_bits = ""
+                if (data.cache_read_input_tokens or 0) > 0 or (data.cache_creation_input_tokens or 0) > 0 then
+                    cache_bits = string.format(
+                        " cache[r=%s c=%s]",
+                        tostring(data.cache_read_input_tokens or 0),
+                        tostring(data.cache_creation_input_tokens or 0)
+                    )
+                end
                 emit_debug_note({
                     string.format(
-                        "_tokens in=%s out=%s cost=%s_",
+                        "_tokens in=%s out=%s cost=%s%s_",
                         tostring(data.input_tokens or 0),
                         tostring(data.output_tokens or 0),
-                        tostring(data.estimated_cost or 0)
+                        tostring(data.estimated_cost or 0),
+                        cache_bits
                     ),
                     "",
                 })

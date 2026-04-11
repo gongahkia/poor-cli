@@ -1231,7 +1231,7 @@ function M.setup()
                 else vim.notify("[poor-cli] Context compacted (" .. strategy .. "): " .. vim.inspect(result or {}), vim.log.levels.INFO) end
             end)
         end)
-    end, { nargs = "?", desc = "Compact context (compact|compress|handoff)" })
+    end, { nargs = "?", desc = "Compact context (auto|compact|gentle|aggressive|compress|handoff)" })
 end
 
 function M.explain_code(range, line1, line2)

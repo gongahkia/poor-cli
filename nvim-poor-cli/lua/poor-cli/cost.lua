@@ -39,6 +39,10 @@ function M.setup()
                 "Output tokens: " .. tostring(r.outputTokens or 0),
                 "Total tokens: " .. tostring(r.totalTokens or 0),
                 "Estimated cost: $" .. tostring(r.estimatedCost or r.cost or 0),
+                "Cache read tokens: " .. tostring(r.cacheReadInputTokens or 0),
+                "Cache write tokens: " .. tostring(r.cacheCreationInputTokens or 0),
+                "Cache hit rate: " .. tostring(r.cacheHitRatePct or 0) .. "%",
+                "Estimated cache savings: $" .. tostring(r.estimatedCacheSavingsUSD or 0),
                 "Requests: " .. tostring(r.requestCount or 0),
             }
             open_scratch("[poor-cli cost]", table.concat(lines, "\n"), "markdown")
