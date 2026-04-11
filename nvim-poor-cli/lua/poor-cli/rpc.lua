@@ -691,7 +691,7 @@ function M.initialize(callback, opts)
         if err then
             set_last_error(err)
             update_state("error", "Initialization failed")
-            notify_with_context("Init failed: " .. vim.inspect(err), vim.log.levels.ERROR)
+            notify_with_context("Init failed: " .. M.format_error(err), vim.log.levels.ERROR)
         else
             M.capture_initialize_result(result)
             if config.is_debug() then
