@@ -767,14 +767,15 @@ function M.remove_loading()
 end
 
 function M.send_with_selection()
-    local mode = vim.fn.mode()
-    if mode ~= "v" and mode ~= "V" then
+    -- use marks instead of mode check (mode may have exited by keymap fire time)
+    local start_line = vim.fn.line("'<")
+    local end_line = vim.fn.line("'>")
+    if start_line == 0 or end_line == 0 or start_line > end_line then
         vim.notify("[poor-cli] Select text first", vim.log.levels.WARN)
         return
     end
-
-    vim.cmd('normal! "xy')
-    local selected_text = vim.fn.getreg("x")
+    local lines = vim.api.nvim_buf_get_lines(0, start_line - 1, end_line, false)
+    local selected_text = table.concat(lines, "\n")
     if not selected_text or selected_text == "" then
         return
     end
