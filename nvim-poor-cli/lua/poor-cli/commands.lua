@@ -344,13 +344,25 @@ function M.setup()
     local telescope = require("poor-cli.telescope")
 
     create_command("PoorCliStart", function()
-        if rpc.start() then
-            rpc.initialize(function(_result, err)
-                if not err then
-                    vim.notify("[poor-cli] Initialized", vim.log.levels.INFO)
-                end
-            end)
+        local status = rpc.get_status()
+        if status.running and status.initialized then
+            vim.notify("[poor-cli] Server already initialized", vim.log.levels.INFO)
+            return
         end
+        if status.state == "starting" or status.state == "initializing" or status.state == "restarting" then
+            vim.notify("[poor-cli] Startup already in progress", vim.log.levels.INFO)
+            return
+        end
+        if not status.running and not rpc.start() then
+            return
+        end
+
+        vim.notify("[poor-cli] Booting server (live startup status in command line)", vim.log.levels.INFO)
+        rpc.initialize(function(_result, err)
+            if not err then
+                vim.notify("[poor-cli] Initialized", vim.log.levels.INFO)
+            end
+        end)
     end, { desc = "Start poor-cli server" })
 
     create_command("PoorCliStop", function()

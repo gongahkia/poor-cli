@@ -830,6 +830,13 @@ class PoorCLIServer:
             "poor-cli/deployTargets": self.handle_deploy_targets,
             "poor-cli/deployValidate": self.handle_deploy_validate,
             "poor-cli/deployHistory": self.handle_deploy_history,
+            "poor-cli/getRecoverySuggestions": self.handle_get_recovery_suggestions,
+            "poor-cli/promptSave": self.handle_prompt_save,
+            "poor-cli/promptLoad": self.handle_prompt_load,
+            "poor-cli/promptList": self.handle_prompt_list,
+            "poor-cli/promptDelete": self.handle_prompt_delete,
+            "poor-cli/getCommandManifest": self.handle_get_command_manifest,
+            "poor-cli/latentCompatibility": self.handle_latent_compatibility,
         }
 
     # =========================================================================
@@ -1259,6 +1266,18 @@ class PoorCLIServer:
 
         provider = params.get("provider", "")
         model = params.get("model")
+
+        # validate API key availability before switch (from provider_lifecycle)
+        if provider and provider != "ollama":
+            config_manager, config = self._ensure_config_loaded()
+            api_key = config_manager.get_api_key(provider)
+            if not api_key:
+                from ..provider_lifecycle import ProviderLifecycleService
+                pls = type("_Stub", (), {"_providers_with_keys": lambda self: [p for p in config.model.providers if p == "ollama" or config_manager.get_api_key(p)]})()
+                available = pls._providers_with_keys()
+                provider_cfg = config.model.providers.get(provider)
+                env_var = provider_cfg.api_key_env_var if provider_cfg else "API key"
+                return {"success": False, "error": f"No API key for {provider} (set {env_var})", "availableProviders": available}
 
         await self.core.switch_provider(provider, model)
 
@@ -5396,6 +5415,50 @@ class PoorCLIServer:
     async def handle_deploy_history(self, params: Dict[str, Any]) -> Dict[str, Any]:
         from ..deploy import get_deploy_history
         return {"history": get_deploy_history(limit=params.get("limit", 20))}
+
+    def _get_prompt_library(self):
+        from ..prompt_library import PromptLibrary
+        return PromptLibrary(Path.home() / ".poor-cli")
+
+    async def handle_prompt_save(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        lib = self._get_prompt_library()
+        lib.save(params["name"], params["content"])
+        return {"success": True}
+
+    async def handle_prompt_load(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        lib = self._get_prompt_library()
+        return {"content": lib.load(params["name"])}
+
+    async def handle_prompt_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        lib = self._get_prompt_library()
+        return {"prompts": lib.list_all()}
+
+    async def handle_prompt_delete(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        lib = self._get_prompt_library()
+        lib.delete(params["name"])
+        return {"success": True}
+
+    async def handle_latent_compatibility(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            from ..latent_communication import is_latent_compatible
+            return is_latent_compatible()
+        except Exception as e:
+            return {"feasible": False, "reason": str(e)}
+
+    async def handle_get_command_manifest(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            from ..command_manifest import load_command_manifest, render_commands_markdown
+            manifest = load_command_manifest()
+            return {"commands": [{"name": c.name, "summary": c.summary, "usage": c.usage, "aliases": list(c.aliases)} for c in manifest.commands], "markdown": render_commands_markdown()}
+        except Exception as e:
+            return {"commands": [], "markdown": "", "error": str(e)}
+
+    async def handle_get_recovery_suggestions(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..error_recovery import ErrorRecoveryManager
+        error_text = params.get("error", "")
+        mgr = ErrorRecoveryManager()
+        suggestions = mgr.get_suggestions(Exception(error_text))
+        return {"suggestions": [{"title": s.title, "description": s.description, "commands": s.commands, "priority": s.priority} for s in suggestions]}
 
     # =========================================================================
     # Message Dispatch

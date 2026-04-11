@@ -106,11 +106,33 @@ class ArchitectMode:
         text_lower = response_text.lower()
         return any(indicator in text_lower for indicator in plan_indicators)
 
+    async def try_latent_bridge(self, task: str) -> Optional[str]:
+        """Attempt latent tensor passing between architect→editor via local models.
+        Returns editor output if latent_comm is enabled and compatible, else None."""
+        try:
+            from .latent_communication import ArchitectLatentBridge, is_latent_compatible
+            compat = is_latent_compatible()
+            if not compat.get("feasible", False):
+                return None
+            bridge = ArchitectLatentBridge()
+            result = bridge.architect_to_editor(task)
+            return result
+        except Exception as e:
+            logger.debug("latent bridge not available: %s", e)
+            return None
+
     def format_status(self) -> Dict[str, Any]:
+        latent_available = False
+        try:
+            from .latent_communication import is_latent_compatible
+            latent_available = is_latent_compatible().get("feasible", False)
+        except Exception:
+            pass
         return {
             "enabled": self.enabled,
             "phase": self._phase,
             "architect": f"{self._config.architect_provider}/{self._config.architect_model}",
             "editor": f"{self._config.editor_provider}/{self._config.editor_model}",
             "has_plan": bool(self._current_plan),
+            "latent_bridge_available": latent_available,
         }

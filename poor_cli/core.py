@@ -62,6 +62,9 @@ from .token_budget_controller import (
     build_state_from_engine,
 )
 from .budget_logger import BudgetLogger
+from .vision import detect_image_paths, build_multimodal_content_anthropic, build_multimodal_content_openai, build_multimodal_parts_gemini
+from .error_recovery import ErrorRecoveryManager
+from .kv_cache_store import maybe_init_kv_cache, build_cache_friendly_prompt, is_local_inference, KVCacheStore
 from .thinking_budget import ThinkingBudgetOptimizer
 from .semantic_cache import (
     SemanticCache,
@@ -239,6 +242,10 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
         self._turn_tool_call_count: int = 0
         self._recent_turn_failures: List[bool] = [] # last N turn success/fail
 
+        # Error recovery suggestions
+        self._error_recovery = ErrorRecoveryManager()
+        # KV cache store for local inference (lazy-init in initialize())
+        self._kv_cache_store: Optional[KVCacheStore] = None
         # Economy mode savings tracker + downshift state
         self._economy_tracker: EconomySavingsTracker = EconomySavingsTracker()
         self._original_model_name: Optional[str] = None
@@ -651,6 +658,12 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             # Initialize context manager
             self._context_manager = get_context_manager()
             logger.info("Context manager initialized")
+
+            # Initialize KV cache for local inference (config-gated, lazy)
+            try:
+                self._kv_cache_store = await maybe_init_kv_cache(self.config)
+            except Exception as e:
+                logger.debug("kv cache init skipped: %s", e)
 
             # Initialize repo knowledge graph (lazy: index builds in background)
             if self.config.repo_index.enabled:
@@ -2137,6 +2150,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                 getattr(self, "_session_estimated_cache_savings_usd", 0.0), 6
             ),
             "semantic_cache": semantic_stats,
+            "file_cache": self._context_manager._file_cache.get_cache_info() if self._context_manager and hasattr(self._context_manager, "_file_cache") else {},
         }
 
     def get_tool_filter_stats(self) -> Dict[str, int]:
@@ -2273,6 +2287,25 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                 include_agent_tools=not _plan, max_system_tokens=_max_sys,
             )
         return _asdict(self.config.economy)
+
+    def _maybe_apply_vision(self, message: str) -> Any:
+        """Detect image paths and convert to multimodal payload if provider supports vision."""
+        if not self.provider:
+            return message
+        caps = self.provider.get_capabilities()
+        if not caps or not caps.supports_vision:
+            return message
+        images = detect_image_paths(message)
+        if not images:
+            return message
+        provider_name = (self.config.model.provider if self.config else "").lower()
+        if "anthropic" in provider_name or "claude" in provider_name:
+            return build_multimodal_content_anthropic(message, images)
+        elif "gemini" in provider_name or "google" in provider_name:
+            return build_multimodal_parts_gemini(message, images)
+        elif "openai" in provider_name or "gpt" in provider_name:
+            return build_multimodal_content_openai(message, images)
+        return message # fallback: send as plain text
 
     def _maybe_downshift_model(self, prompt: str) -> None:
         """Switch to a cheaper model for simple prompts or when approaching budget limit."""
@@ -3168,7 +3201,16 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                     completed = sum(1 for t in todos if t.get("status") == "completed")
                     self._pending_events.append(CoreEvent.todo_update(todos, completed, len(todos)))
 
-            async for chunk in self.provider.send_message_stream(full_message):
+            # KV cache: reorder context for cache-friendly prefix (local inference only)
+            if self._kv_cache_store and isinstance(full_message, str) and is_local_inference(self.config.model.provider if self.config else ""):
+                try:
+                    ctx_files = [(fc.path, fc.content) for fc in getattr(self._context_manager, "_last_selected_files", []) if hasattr(fc, "path") and hasattr(fc, "content")]
+                    if ctx_files:
+                        full_message = build_cache_friendly_prompt(ctx_files, message, store=self._kv_cache_store)
+                except Exception as e:
+                    logger.debug("kv cache prompt reorder skipped: %s", e)
+            provider_message = self._maybe_apply_vision(full_message) # multimodal if images detected
+            async for chunk in self.provider.send_message_stream(provider_message):
                 if cancel_event.is_set():
                     self._append_turn_transition(
                         turn_diagnostics,
@@ -3617,6 +3659,10 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                     completion_reason_code="provider_error",
                 ),
             )
+            suggestions = self._error_recovery.get_suggestions(e)
+            if suggestions:
+                hint = self._error_recovery.format_suggestions(suggestions)
+                yield CoreEvent.text_chunk(f"\n{hint}", request_id)
             raise PoorCLIError(f"Failed to send message: {e}")
         except Exception as e:
             logger.exception("Error sending message (events)")

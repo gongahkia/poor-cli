@@ -149,9 +149,10 @@ class ContextManager:
         self.max_file_size = max_file_size
         self.cache_ttl = cache_ttl
         self._lsp_client = lsp_client
-        
-        # File content cache: path -> (content, timestamp)
-        self._cache: Dict[str, Tuple[str, float]] = {}
+
+        # File content cache: delegate to FileCache for LRU + persistence
+        from .file_cache import get_file_cache
+        self._file_cache = get_file_cache(max_size=max(128, max_files * 4))
 
         # Recently edited files (for priority)
         self._recent_edits: Dict[str, float] = {}
@@ -207,7 +208,8 @@ class ContextManager:
 
     def clear_cache(self) -> None:
         """Clear the file content cache."""
-        self._cache.clear()
+        if hasattr(self, '_file_cache') and self._file_cache:
+            self._file_cache.invalidate(None) # clear all entries
 
     async def select_context_files(
         self,
@@ -517,40 +519,15 @@ class ContextManager:
         """
         try:
             resolved_path = str(Path(file_path).resolve())
-            
-            # Check cache
-            if resolved_path in self._cache:
-                content, cached_time = self._cache[resolved_path]
-                if time.time() - cached_time < self.cache_ttl:
-                    stat = os.stat(resolved_path)
-                    return FileContext(
-                        path=resolved_path,
-                        content=content,
-                        size=len(content),
-                        modified_time=stat.st_mtime,
-                        language=self._detect_language(resolved_path)
-                    )
-            
-            # Read file
             if not os.path.exists(resolved_path):
                 return None
-            
             stat = os.stat(resolved_path)
-            
-            # Skip large files
             if stat.st_size > self.max_file_size:
                 logger.debug(f"Skipping large file: {resolved_path}")
                 return None
-            
-            # Skip binary files
             if self._is_binary(resolved_path):
                 return None
-            
-            with open(resolved_path, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
-            
-            # Cache the content
-            self._cache[resolved_path] = (content, time.time())
+            content = self._file_cache.read_file(resolved_path)
             
             return FileContext(
                 path=resolved_path,

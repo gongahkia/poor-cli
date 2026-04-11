@@ -177,6 +177,7 @@ DEFERRED_TOOL_NAMES: frozenset = frozenset({
     "semantic_search", "index_codebase",
     "browser_navigate", "browser_screenshot", "browser_click",
     "browser_type", "browser_evaluate",
+    "db_inspect_schema", "db_generate_migration",
 })
 
 
@@ -1228,6 +1229,32 @@ class ToolRegistryAsync:
                 self.tools[name] = {"function": BROWSER_TOOLS[name], "declaration": decl}
         except Exception as e:
             logger.debug("browser tools not registered: %s", e)
+
+        # database tools (deferred)
+        try:
+            from .database_tools import DatabaseInspector, MigrationGenerator
+            async def _db_inspect_schema(db_path: str = "", db_type: str = "sqlite", connection_string: str = "") -> str:
+                inspector = DatabaseInspector()
+                if db_type == "sqlite":
+                    schema = inspector.inspect_sqlite(db_path)
+                elif db_type == "postgresql":
+                    schema = inspector.inspect_postgresql(connection_string)
+                else:
+                    return f"Unsupported database type: {db_type}"
+                return json.dumps({"database": schema.database_name, "type": schema.database_type.value, "tables": [{"name": t.name, "columns": [{"name": c.name, "type": c.data_type, "nullable": c.nullable, "primary_key": c.primary_key} for c in t.columns]} for t in schema.tables]}, indent=2)
+            async def _db_generate_migration(workspace_root: str = ".", framework: str = "alembic", message: str = "auto migration") -> str:
+                import shlex
+                safe_message = shlex.quote(message) # sanitize RPC params
+                gen = MigrationGenerator()
+                if framework == "alembic":
+                    return gen.generate_alembic_migration(workspace_root, safe_message)
+                elif framework == "django":
+                    return gen.generate_django_migration(workspace_root, safe_message)
+                return f"Unsupported framework: {framework}"
+            self.tools["db_inspect_schema"] = {"function": _db_inspect_schema, "declaration": {"name": "db_inspect_schema", "description": "Inspect database schema (SQLite or PostgreSQL)", "parameters": {"type": "object", "properties": {"db_path": {"type": "string", "description": "Path to SQLite database file"}, "db_type": {"type": "string", "enum": ["sqlite", "postgresql"], "description": "Database type"}, "connection_string": {"type": "string", "description": "PostgreSQL connection string"}}, "required": []}}}
+            self.tools["db_generate_migration"] = {"function": _db_generate_migration, "declaration": {"name": "db_generate_migration", "description": "Generate database migration (Alembic or Django)", "parameters": {"type": "object", "properties": {"workspace_root": {"type": "string", "description": "Project root directory"}, "framework": {"type": "string", "enum": ["alembic", "django"], "description": "Migration framework"}, "message": {"type": "string", "description": "Migration description"}}, "required": ["workspace_root"]}}}
+        except Exception as e:
+            logger.debug("database tools not registered: %s", e)
 
         for name, tool in self.tools.items():
             capabilities = DEFAULT_TOOL_CAPABILITIES.get(name, [])

@@ -147,6 +147,13 @@ class EnhancedToolRegistry(ToolRegistryAsync):
         self.config = config
         self.checkpoint_manager = checkpoint_manager
         self.diff_preview = diff_preview
+        self._semantic_checkpoint = None
+        if checkpoint_manager:
+            try:
+                from .semantic_checkpoint import SemanticCheckpointManager
+                self._semantic_checkpoint = SemanticCheckpointManager(checkpoint_manager)
+            except Exception:
+                pass
         self.output_filter = ToolOutputFilter(repo_root=Path.cwd())
         self._output_filter_stats = empty_filter_stats()
 
@@ -379,8 +386,23 @@ class EnhancedToolRegistry(ToolRegistryAsync):
                 except Exception as e:
                     logger.warning(f"Failed to create checkpoint: {e}")
 
+            # Read old content for semantic analysis
+            _old_content = None
+            if self._semantic_checkpoint and path.exists():
+                try:
+                    _old_content = path.read_text(encoding="utf-8", errors="ignore")
+                except Exception:
+                    pass
+
             # Call parent write_file
             result = await super().write_file(file_path, content)
+
+            # Semantic checkpoint: analyze changes post-write
+            if self._semantic_checkpoint and _old_content is not None:
+                try:
+                    self._semantic_checkpoint.auto_checkpoint_if_needed(file_path, _old_content, content)
+                except Exception as e:
+                    logger.debug("semantic checkpoint analysis failed: %s", e)
 
             # Reset flags
             self.show_diff = True

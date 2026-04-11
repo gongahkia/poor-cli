@@ -34,6 +34,7 @@ M.search = nil
 M.deploy_ext = nil
 M.diagnostics_ext = nil
 M.onboarding = nil
+M.prompt_library = nil
 M._setup_complete = false
 
 -- Setup function - call this from your Neovim config
@@ -73,6 +74,7 @@ function M.setup(opts)
     M.plan = require("poor-cli.plan")
     M.queue = require("poor-cli.queue")
     M.onboarding = require("poor-cli.onboarding")
+    M.prompt_library = require("poor-cli.prompt_library")
 
     M.commands.setup()
     M.keymaps.setup()
@@ -97,6 +99,7 @@ function M.setup(opts)
     M.deploy_ext.setup()
     M.diagnostics_ext.setup()
     M.onboarding.setup()
+    M.prompt_library.setup()
     M._setup_complete = true
 
     if M.config.get("check_health_on_setup") then

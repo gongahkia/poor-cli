@@ -173,6 +173,7 @@ def classify_prompt_complexity(prompt: str) -> str:
 _MULTISPACE_RE = re.compile(r"[ \t]+")
 _BLANK_LINES_RE = re.compile(r"\n{3,}")
 _LINE_COMMENT_RE = re.compile(r"(?m)^\s*(?://|#)[^\n]*\n?")
+_FENCED_LANG_BLOCK_RE = re.compile(r"(```(\w*)\n)(.*?)(```)", re.S) # captures lang + body
 # duplicate stack trace frames: Python "File ...", Node "at ...", Go "goroutine"
 _PY_TRACE_RE = re.compile(r"((?:^\s+File\s+\"[^\n]+\n\s+\w[^\n]*\n){3,})", re.M)
 _NODE_TRACE_RE = re.compile(r"((?:^\s+at\s+[^\n]+\n){4,})", re.M)
@@ -198,6 +199,25 @@ def _collapse_fenced(match: re.Match) -> str:
     return f"{opener}{head}[... {len(lines)-20} lines omitted, use read_file ...]\n{tail}{closer}"
 
 
+_LANG_TO_EXT = {"python": ".py", "py": ".py", "lua": ".lua", "typescript": ".ts", "ts": ".ts", "javascript": ".js", "js": ".js", "tsx": ".tsx", "jsx": ".js"}
+
+def _strip_fenced_block(match: re.Match) -> str:
+    """Apply language-aware comment stripping + indentation collapse to a fenced code block."""
+    from .code_tokenizer import strip_comments_python, strip_comments_lua, strip_comments_ts, collapse_indentation, collapse_blank_lines
+    opener, lang, body, closer = match.group(1), match.group(2), match.group(3), match.group(4)
+    ext = _LANG_TO_EXT.get(lang.lower(), "") if lang else ""
+    if ext == ".py": body = strip_comments_python(body)
+    elif ext == ".lua": body = strip_comments_lua(body)
+    elif ext in (".ts", ".js", ".tsx"): body = strip_comments_ts(body)
+    else: return match.group(0) # unknown lang, leave as-is
+    body = collapse_indentation(body)
+    body = collapse_blank_lines(body)
+    return f"{opener}{body}{closer}"
+
+def _strip_code_comments_lang_aware(text: str) -> str:
+    """Strip comments from fenced code blocks using language-aware tokenizer."""
+    return _FENCED_LANG_BLOCK_RE.sub(_strip_fenced_block, text)
+
 def distill_prompt(prompt: str, context: str, config: EconomyConfig) -> Tuple[str, int]:
     """Distill prompt+context by stripping redundant whitespace, traces, and optionally comments.
 
@@ -218,9 +238,9 @@ def distill_prompt(prompt: str, context: str, config: EconomyConfig) -> Tuple[st
     if config.strip_code_comments:
         text = _FENCED_BLOCK_RE.sub(_collapse_fenced, text)
 
-    # optionally strip line comments from code context
+    # language-aware comment stripping via code_tokenizer for fenced blocks
     if config.strip_code_comments:
-        text = _LINE_COMMENT_RE.sub("", text)
+        text = _strip_code_comments_lang_aware(text)
 
     text = text.strip()
     new_len = len(text)

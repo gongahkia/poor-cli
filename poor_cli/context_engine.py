@@ -77,6 +77,29 @@ class ContextEngineMixin:
             git_ctx = self._git_context_summary_cached()
             if git_ctx:
                 message = f"{message}\n\n[Git context]\n{git_ctx}"
+        # lazy LSP symbol enrichment (config-gated)
+        try:
+            lsp_cfg = getattr(getattr(self, "config", None), "lsp", None) if hasattr(self, "config") else None
+            lsp_enabled = getattr(lsp_cfg, "enabled", False) if lsp_cfg else False
+            if lsp_enabled and self._context_manager and hasattr(self._context_manager, "_lsp_client"):
+                lsp_client = self._context_manager._lsp_client
+                if lsp_client is None:
+                    from .lsp_context import LSPClient, detect_project_language
+                    lang = detect_project_language(str(Path.cwd()))
+                    if lang:
+                        lsp_client = LSPClient(lang, str(Path.cwd()))
+                        await lsp_client.start()
+                        if lsp_client.available:
+                            self._context_manager._lsp_client = lsp_client
+                        else:
+                            lsp_client = None
+                if lsp_client and lsp_client.available:
+                    symbols = await lsp_client.get_symbols(str(Path.cwd()))
+                    if symbols:
+                        sym_lines = [f"  {s.get('name','')} ({s.get('kind','')})" for s in symbols[:20]]
+                        message = f"{message}\n\n[LSP symbols]\n" + "\n".join(sym_lines)
+        except Exception as e:
+            logger.debug("LSP context enrichment skipped: %s", e)
         context_result = None
         if self._context_manager:
             context_result = await self._select_context_files(

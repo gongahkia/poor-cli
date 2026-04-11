@@ -624,6 +624,10 @@ class ConfigManager:
             "speculative_decoding",
             "economy",
             "mcp_servers",
+            "file_cache",
+            "lsp",
+            "latent_comm",
+            "prompt_library",
         }
 
         for section_name, section_overrides in overrides.items():
