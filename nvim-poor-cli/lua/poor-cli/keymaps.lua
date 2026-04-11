@@ -75,8 +75,10 @@ function M.setup()
         inline.trigger_with_instruction()
     end, { desc = "Trigger poor-cli completion with instruction" })
     
-    -- In normal mode: gc for generate completion
-    safe_map("n", "gc", function()
+    -- In normal mode: generate completion (skip if gc already mapped, e.g. by Comment.nvim)
+    local gc_existing = vim.fn.maparg("gc", "n", false, true)
+    local gc_key = (gc_existing and gc_existing.lhs) and "<leader>gc" or "gc"
+    safe_map("n", gc_key, function()
         vim.cmd("startinsert")
         vim.defer_fn(function()
             inline.trigger({ manual = true })
@@ -104,6 +106,12 @@ function M.setup()
         safe_map("n", palette_key, function()
             require("poor-cli.telescope").command_palette()
         end, { desc = "poor-cli command palette" })
+    end
+
+    -- register which-key group label if available
+    local ok_wk, wk = pcall(require, "which-key")
+    if ok_wk then
+        pcall(wk.add, {{ "<leader>p", group = "poor-cli" }})
     end
 end
 
