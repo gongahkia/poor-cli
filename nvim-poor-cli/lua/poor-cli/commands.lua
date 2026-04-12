@@ -276,6 +276,7 @@ local function collab_usage()
         "       :PoorCliCollab leave",
         "       :PoorCliCollab pass [connection-id|display-name]",
         "       :PoorCliCollab suggest <text>",
+        "       :PoorCliCollab say <text>        (broadcast to all peers)",
         "       :PoorCliCollab members [room]",
         "       :PoorCliCollab status",
         "       :PoorCliCollab summary",
@@ -541,6 +542,25 @@ function M.setup()
                     else
                         vim.notify("[poor-cli] Driver role updated", vim.log.levels.INFO)
                     end
+                end)
+            end)
+            return
+        end
+
+        if subcommand == "say" then
+            local text = table.concat(vim.list_slice(args, 2), " ")
+            if text == "" then
+                vim.notify("[poor-cli] Usage: :PoorCliCollab say <text>", vim.log.levels.WARN)
+                return
+            end
+            rpc.peer_message(text, function(result, err)
+                vim.schedule(function()
+                    if err then
+                        vim.notify("[poor-cli] Say failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
+                        return
+                    end
+                    local delivered = (result or {}).delivered or 0
+                    vim.notify(string.format("[poor-cli] Message sent (delivered to %d peer%s)", delivered, delivered == 1 and "" or "s"), vim.log.levels.INFO)
                 end)
             end)
             return

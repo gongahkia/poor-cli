@@ -75,6 +75,8 @@ function M.setup(opts)
     M.queue = require("poor-cli.queue")
     M.onboarding = require("poor-cli.onboarding")
     M.prompt_library = require("poor-cli.prompt_library")
+    M.collab = require("poor-cli.collab")
+    M.panels = require("poor-cli.panels")
 
     M.commands.setup()
     M.keymaps.setup()
@@ -100,6 +102,8 @@ function M.setup(opts)
     M.diagnostics_ext.setup()
     M.onboarding.setup()
     M.prompt_library.setup()
+    M.collab.setup()
+    M.panels.setup()
     if pcall(require, "lualine") then
         require("poor-cli.lualine").setup()
     end

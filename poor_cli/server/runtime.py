@@ -771,6 +771,7 @@ class PoorCLIServer:
             "poor-cli/chatStreaming": self.handle_chat_streaming,
             "poor-cli/pairStart": self.handle_pair_start,
             "poor-cli/suggestText": self.handle_suggest_text,
+            "poor-cli/peerMessage": self.handle_peer_message,
             "poor-cli/passDriver": self.handle_pass_driver,
             "poor-cli/addAgendaItem": self.handle_add_agenda_item,
             "poor-cli/listAgenda": self.handle_list_agenda,
@@ -3589,7 +3590,7 @@ class PoorCLIServer:
 
             port = self._select_multiplayer_port(bind_host, requested_port)
 
-            from .multiplayer import MultiplayerHost
+            from ..multiplayer import MultiplayerHost
 
             host = MultiplayerHost(
                 bind_host=bind_host,
@@ -4194,6 +4195,24 @@ class PoorCLIServer:
                     "agendaSummary": host.list_room_members(room_name)[0].get("agendaSummary", {}),
                 }
         return {"success": True, "local": True}
+
+    async def handle_peer_message(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Broadcast a freeform chat message to all other members of the current host room."""
+        self._ensure_initialized()
+        requested_room = str(params.get("room", "")).strip()
+        text = str(params.get("text", "")).strip()
+        if not text:
+            raise InvalidParamsError("text is required")
+
+        async with self._get_host_server_lock():
+            if self._host_server is None:
+                return {"success": False, "reason": "no_host"}
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+            if not hasattr(host, "broadcast_host_message"):
+                return {"success": False, "reason": "unsupported"}
+            delivered = await host.broadcast_host_message(room_name, text, sender="host")
+            return {"success": True, "room": room_name, "delivered": delivered}
 
     async def handle_add_agenda_item(self, params: Dict[str, Any]) -> Dict[str, Any]:
         self._ensure_initialized()

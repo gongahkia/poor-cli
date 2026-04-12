@@ -65,6 +65,41 @@ local startup_states = {
     restarting = true,
 }
 
+-- methods that should NOT trigger user-visible "⏳ method..." feedback
+-- (streaming/background polls generate too much noise)
+local SILENT_METHODS = {
+    ["poor-cli/chatStreaming"] = true,
+    ["poor-cli/inlineComplete"] = true,
+    ["poor-cli/getProviderInfo"] = true, -- lualine polls this
+    ["poor-cli/getStatusView"] = true,
+    ["poor-cli/getCollabSummary"] = true,
+    ["poor-cli/listHostMembers"] = true, -- collab panel refresh
+    ["poor-cli/listTasks"] = true,
+    ["poor-cli/listAgents"] = true,
+    ["poor-cli/listHistory"] = true,
+    ["poor-cli/listCheckpoints"] = true,
+    ["poor-cli/memoryList"] = true,
+    ["poor-cli/listSessions"] = true,
+    ["poor-cli/listAutomations"] = true,
+    ["shutdown"] = true,
+}
+
+local function pretty_method(method)
+    local name = tostring(method or ""):gsub("^poor%-cli/", "")
+    return name
+end
+
+local function emit_request_feedback(method, kind)
+    if SILENT_METHODS[method] then return end
+    local symbol, hl
+    if kind == "start" then symbol, hl = "⏳", "Comment"
+    elseif kind == "ok" then symbol, hl = "✓", "MoreMsg"
+    else symbol, hl = "✗", "ErrorMsg" end
+    pcall(vim.api.nvim_echo, {{
+        string.format("[poor-cli] %s %s", symbol, pretty_method(method)), hl,
+    }}, false, {})
+end
+
 local function emit_status_changed()
     vim.api.nvim_exec_autocmds("User", {
         pattern = "PoorCliStatusChanged",
@@ -620,8 +655,18 @@ function M.resolve_server_command()
         if not invite or invite == "" then
             return nil, "multiplayer.enabled requires multiplayer.invite"
         end
+        -- derive the server binary from the user's configured server_cmd so we
+        -- honour the venv path instead of relying on "poor-cli-server" on PATH
+        local configured = config.get("server_cmd") or "poor-cli-server --stdio"
+        local parts = {}
+        if type(configured) == "string" then
+            for tok in string.gmatch(configured, "%S+") do table.insert(parts, tok) end
+        elseif type(configured) == "table" then
+            for _, tok in ipairs(configured) do table.insert(parts, tok) end
+        end
+        local binary = parts[1] or "poor-cli-server"
         return {
-            "poor-cli-server",
+            binary,
             "--bridge",
             "--invite",
             invite,
@@ -828,6 +873,7 @@ function M.request(method, params, callback)
     end
 
     M.send_message(message)
+    emit_request_feedback(method, "start")
 
     if config.is_debug() then
         vim.notify("[poor-cli] Request " .. id .. ": " .. method, vim.log.levels.DEBUG)
@@ -1014,6 +1060,13 @@ function M.suggest_text(text, callback)
     return M.request("poor-cli/suggestText", params, callback)
 end
 
+function M.peer_message(text, callback)
+    local params = { text = text }
+    local room = M.multiplayer_state.room or ""
+    if room ~= "" then params.room = room end
+    return M.request("poor-cli/peerMessage", params, callback)
+end
+
 function M.list_joined_room_members(room, callback)
     local params = {}
     if room and room ~= "" then
@@ -1181,8 +1234,10 @@ function M.handle_response(message)
     if callback then
         if message.error then
             set_last_error(message.error)
+            if meta and meta.method then emit_request_feedback(meta.method, "err") end
             callback(nil, message.error)
         else
+            if meta and meta.method then emit_request_feedback(meta.method, "ok") end
             callback(message.result, nil)
         end
     end
@@ -1293,6 +1348,16 @@ function M.handle_notification(message)
                 preset = params.preset or "",
                 members = params.members or {},
                 details = params.details or {},
+            },
+        })
+    elseif message.method == "poor-cli/peerMessage" then
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = "PoorCliPeerMessage",
+            data = {
+                room = params.room or "",
+                sender = params.sender or "?",
+                sender_connection_id = params.senderConnectionId or "",
+                text = params.text or "",
             },
         })
     elseif message.method == "poor-cli/memberRoleUpdated" then

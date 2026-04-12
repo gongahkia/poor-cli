@@ -1111,6 +1111,10 @@ class MultiplayerHost:
             await self._handle_suggest_text(conn, room, message)
             return
 
+        if method == "poor-cli/peerMessage":
+            await self._handle_peer_message(conn, room, message)
+            return
+
         if method == "poor-cli/addAgendaItem":
             await self._handle_add_agenda_item(conn, room, message)
             return
@@ -1900,6 +1904,62 @@ class MultiplayerHost:
                 self.message_cls(
                     id=message.id,
                     result={"success": True, "mode": "suggestion", "delivered": len(recipients)},
+                ),
+            )
+
+    async def broadcast_host_message(self, room_name: str, text: str, sender: str = "host") -> int:
+        """Broadcast a peer_message from the host process itself (no websocket sender).
+
+        Returns the number of recipients the notification was delivered to.
+        """
+        room = self.rooms.get(room_name) if hasattr(self, "rooms") else None
+        if room is None:
+            return 0
+        text = (text or "").strip()
+        if not text:
+            return 0
+        recipients = [
+            member
+            for member in room.members.values()
+            if member.approved and member.ws is not None and not member.ws.closed
+        ]
+        notification = self.message_cls(
+            method="poor-cli/peerMessage",
+            params={"sender": sender, "senderConnectionId": "host", "text": text, "room": room_name},
+        )
+        for member in recipients:
+            await self._send_rpc(member.ws, notification)
+        return len(recipients)
+
+    async def _handle_peer_message(self, conn: ConnectionState, room: RoomState, message: Any) -> None:
+        """Broadcast a freeform chat message to all approved members of a room (including roles that normally can't suggest)."""
+        params = message.params or {}
+        text = str(params.get("text", "")).strip()
+        if not text:
+            if message.id is not None:
+                await self._send_rpc(
+                    conn.ws,
+                    self.message_cls(id=message.id, result={"success": False, "reason": "empty text"}),
+                )
+            return
+        sender = conn.client_name or conn.connection_id
+        recipients = [
+            member
+            for member in room.members.values()
+            if member.approved and member.ws is not None and not member.ws.closed and member.connection_id != conn.connection_id
+        ]
+        notification = self.message_cls(
+            method="poor-cli/peerMessage",
+            params={"sender": sender, "senderConnectionId": conn.connection_id, "text": text, "room": room.name},
+        )
+        for member in recipients:
+            await self._send_rpc(member.ws, notification)
+        if message.id is not None:
+            await self._send_rpc(
+                conn.ws,
+                self.message_cls(
+                    id=message.id,
+                    result={"success": True, "delivered": len(recipients)},
                 ),
             )
 
