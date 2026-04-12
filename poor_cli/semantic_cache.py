@@ -211,8 +211,10 @@ class SemanticCache:
                 self._db.commit()
             except Exception:
                 pass
+            _audit_cache_event("cache_hit", context_hash, similarity=best.similarity)
             return best
         self._stats.misses += 1
+        _audit_cache_event("cache_miss", context_hash)
         return None
 
     async def put(
@@ -283,6 +285,8 @@ class SemanticCache:
             self._db.commit()
             n = cursor.rowcount
             self._stats.invalidations += n
+            if n:
+                _audit_cache_event("cache_invalidate", context_hash, removed=n)
             return n
         except Exception as e:
             logger.warning("semantic cache invalidation failed: %s", e)
@@ -297,6 +301,8 @@ class SemanticCache:
             self._db.execute("DELETE FROM semantic_cache")
             self._db.commit()
             self._stats.invalidations += count
+            if count:
+                _audit_cache_event("cache_invalidate", "*", removed=count, scope="all")
             return count
         except Exception as e:
             logger.warning("semantic cache clear failed: %s", e)
@@ -354,6 +360,34 @@ class SemanticCache:
             except Exception:
                 pass
             self._db = None
+
+
+# ── audit logging (best-effort, never raises) ───────────────────────
+
+def _audit_cache_event(kind: str, context_hash: str, **details: Any) -> None:
+    """Record a cache hit/miss/invalidation to the audit log.
+
+    Best-effort: failures must never block the fast cache path.
+    """
+    try:
+        from .audit_log import AuditEventType, get_audit_logger
+
+        event_map = {
+            "cache_hit": AuditEventType.CACHE_HIT,
+            "cache_miss": AuditEventType.CACHE_MISS,
+            "cache_invalidate": AuditEventType.CACHE_INVALIDATE,
+        }
+        event_type = event_map.get(kind)
+        if event_type is None:
+            return
+        get_audit_logger().log_event(
+            event_type=event_type,
+            operation=f"semantic_cache:{kind}",
+            target=context_hash,
+            details={k: v for k, v in details.items() if v is not None},
+        )
+    except Exception:
+        pass
 
 
 # ── context hashing ─────────────────────────────────────────────────
