@@ -378,3 +378,60 @@ def get_file_cache(max_size: int = 128) -> FileCache:
     if _file_cache is None:
         _file_cache = FileCache(max_size=max_size)
     return _file_cache
+
+
+# ── content fingerprint (for semantic cache key, PRD 004) ────────────
+
+_FINGERPRINT_MAX = 2048
+_FINGERPRINT_CACHE: "OrderedDict[str, Tuple[int, int, str]]" = OrderedDict()
+_MISSING_FINGERPRINT = "missing"
+_ERROR_FINGERPRINT = "err"
+
+
+def _hash_file_bytes(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def content_fingerprint(path) -> str:
+    """Return a stable hash of file contents.
+
+    Uses (mtime_ns, size) as a cheap cache key and computes sha256 only
+    when the underlying file has actually changed. Memoized in a bounded
+    in-process LRU so repeated calls on unchanged files do zero disk work
+    beyond the initial stat().
+
+    Returns a sentinel string for missing or unreadable files so callers
+    can still fold the path into a stable hash without crashing.
+    """
+    p = Path(path)
+    key = str(p)
+    try:
+        st = p.stat()
+    except FileNotFoundError:
+        return _MISSING_FINGERPRINT
+    except OSError:
+        return _ERROR_FINGERPRINT
+    mtime_ns = st.st_mtime_ns
+    size = st.st_size
+    cached = _FINGERPRINT_CACHE.get(key)
+    if cached is not None and cached[0] == mtime_ns and cached[1] == size:
+        _FINGERPRINT_CACHE.move_to_end(key)
+        return cached[2]
+    try:
+        digest = _hash_file_bytes(p)
+    except OSError:
+        return _ERROR_FINGERPRINT
+    _FINGERPRINT_CACHE[key] = (mtime_ns, size, digest)
+    _FINGERPRINT_CACHE.move_to_end(key)
+    while len(_FINGERPRINT_CACHE) > _FINGERPRINT_MAX:
+        _FINGERPRINT_CACHE.popitem(last=False)
+    return digest
+
+
+def reset_fingerprint_cache() -> None:
+    """Clear the fingerprint memo (for tests)."""
+    _FINGERPRINT_CACHE.clear()
