@@ -95,21 +95,33 @@ function M.setup(opts)
     end
 
     if M.onboarding.should_show() then
-        -- wait for server init before opening wizard so RPCs like testApiKey work
-        local timer = vim.loop.new_timer()
-        local elapsed = 0
-        timer:start(500, 250, vim.schedule_wrap(function()
-            elapsed = elapsed + 250
-            local status = M.rpc.get_status() or {}
-            if status.initialized then
-                timer:stop(); timer:close()
-                M.onboarding.open()
-            elseif elapsed >= 60000 then -- 60s cap
-                timer:stop(); timer:close()
-                vim.notify("[poor-cli] server init slow — opening onboarding anyway", vim.log.levels.WARN)
-                M.onboarding.open()
-            end
-        end))
+        -- prefer server push (PoorCliInitialized) over polling; fall back to
+        -- a one-shot 60s timeout in case the notification is missed.
+        local opened = false
+        local function open_once()
+            if opened then return end
+            opened = true
+            M.onboarding.open()
+        end
+
+        -- if server already initialized (fast path), open immediately
+        if (M.rpc.get_status() or {}).initialized then
+            vim.schedule(open_once)
+        else
+            local au = vim.api.nvim_create_augroup("poor-cli-onboarding-wait", { clear = true })
+            vim.api.nvim_create_autocmd("User", {
+                group = au,
+                pattern = "PoorCliInitialized",
+                once = true,
+                callback = function() vim.schedule(open_once) end,
+            })
+            vim.defer_fn(function()
+                if not opened then
+                    vim.notify("[poor-cli] server init slow — opening onboarding anyway", vim.log.levels.WARN)
+                    open_once()
+                end
+            end, 60000)
+        end
     end
 
     if config.is_debug() then

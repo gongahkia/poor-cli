@@ -956,6 +956,19 @@ class PoorCLIServer:
             self._sandbox_preset = self._current_sandbox_preset()
             set_log_context(provider=provider_info.get("name"))
 
+            # push an initialized notification so clients (nvim onboarding,
+            # lualine) don't need to poll. scheduled so the initialize
+            # response sends first.
+            async def _emit_initialized() -> None:
+                try:
+                    await self.write_message_stdio(JsonRpcMessage(
+                        method="poor-cli/initialized",
+                        params={"providerInfo": provider_info},
+                    ))
+                except Exception as exc:
+                    logger.debug("emit initialized notification failed: %s", exc)
+            asyncio.create_task(_emit_initialized())
+
             return {
                 "capabilities": {
                     "completionProvider": True,
@@ -1302,8 +1315,20 @@ class PoorCLIServer:
                 return {"success": False, "error": f"No API key for {provider} (set {env_var})", "availableProviders": available}
 
         await self.core.switch_provider(provider, model)
+        provider_info = self.core.get_provider_info()
 
-        return {"success": True, "provider": self.core.get_provider_info()}
+        # push providerChanged so lualine / status UIs update without polling
+        async def _emit_provider_changed() -> None:
+            try:
+                await self.write_message_stdio(JsonRpcMessage(
+                    method="poor-cli/providerChanged",
+                    params={"providerInfo": provider_info},
+                ))
+            except Exception as exc:
+                logger.debug("emit providerChanged notification failed: %s", exc)
+        asyncio.create_task(_emit_provider_changed())
+
+        return {"success": True, "provider": provider_info}
 
     async def handle_get_provider_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """

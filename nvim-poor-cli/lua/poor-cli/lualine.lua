@@ -64,25 +64,27 @@ function M.component_extended()
     return string.format("%s %s [%s]", marker, provider, inline_state)
 end
 
--- Cache for provider info (avoid too many requests)
+-- Cache for provider info. Primary source: PoorCliProviderChanged /
+-- PoorCliInitialized notifications (push). Fallback: a lazy reconcile
+-- every 30s in case a notification is missed.
 M._cached_provider = nil
 M._last_refresh = 0
+M._reconcile_interval_ms = 30000
 
-function M.refresh_provider()
+function M.refresh_provider(force)
     local rpc = require("poor-cli.rpc")
 
     if not rpc.is_running() then
         M._cached_provider = nil
         return
     end
-    
+
     local now = vim.loop.now()
-    if now - M._last_refresh < 5000 then
-        return  -- Only refresh every 5 seconds
+    if not force and now - M._last_refresh < M._reconcile_interval_ms then
+        return
     end
-    
     M._last_refresh = now
-    
+
     rpc.request("poor-cli/getProviderInfo", {}, function(result, err)
         if not err and result then
             M._cached_provider = result.name or "AI"
@@ -90,14 +92,35 @@ function M.refresh_provider()
     end)
 end
 
--- Setup autocommand to refresh provider info
+-- wire listeners: pick up provider info from server push, no polling
 function M.setup()
-    vim.api.nvim_create_autocmd({ "BufEnter", "FocusGained" }, {
-        group = vim.api.nvim_create_augroup("poor-cli-lualine", { clear = true }),
-        callback = function()
-            M.refresh_provider()
-        end,
+    local group = vim.api.nvim_create_augroup("poor-cli-lualine", { clear = true })
+
+    local function apply(data)
+        local info = data and data.provider_info
+        if type(info) == "table" then
+            M._cached_provider = info.name or M._cached_provider or "AI"
+            M._last_refresh = vim.loop.now()
+        end
+    end
+
+    vim.api.nvim_create_autocmd("User", {
+        group = group,
+        pattern = { "PoorCliInitialized", "PoorCliProviderChanged" },
+        callback = function(args) apply(args.data) end,
     })
+
+    -- reconcile on focus in case a notification was missed while away
+    vim.api.nvim_create_autocmd({ "BufEnter", "FocusGained" }, {
+        group = group,
+        callback = function() M.refresh_provider(false) end,
+    })
+
+    -- seed from current capabilities if server is already up
+    local status = require("poor-cli.rpc").get_status() or {}
+    if status.provider_info and status.provider_info.name then
+        M._cached_provider = status.provider_info.name
+    end
 end
 
 -- Lualine configuration helper

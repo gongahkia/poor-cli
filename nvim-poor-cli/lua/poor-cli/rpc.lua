@@ -1335,6 +1335,27 @@ function M.handle_notification(message)
                 steps = params.steps or {},
             },
         })
+    elseif message.method == "poor-cli/initialized" then
+        -- server push: no need for clients to poll for init completion
+        local provider_info = params.providerInfo
+        if type(M.capabilities) == "table" and type(provider_info) == "table" then
+            M.capabilities.providerInfo = provider_info
+        end
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = "PoorCliInitialized",
+            data = { provider_info = provider_info },
+        })
+        emit_status_changed()
+    elseif message.method == "poor-cli/providerChanged" then
+        local provider_info = params.providerInfo
+        if type(M.capabilities) == "table" and type(provider_info) == "table" then
+            M.capabilities.providerInfo = provider_info
+        end
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = "PoorCliProviderChanged",
+            data = { provider_info = provider_info },
+        })
+        emit_status_changed()
     elseif message.method == "poor-cli/progress" then
         vim.api.nvim_exec_autocmds("User", {
             pattern = "PoorCliProgress",
