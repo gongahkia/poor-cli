@@ -320,22 +320,35 @@ def compute_context_hash(
     context_files: Optional[List[str]] = None,
     pinned_context_files: Optional[List[str]] = None,
     model_name: str = "",
+    system_prompt_hash: Optional[str] = None,
+    tool_schema_hash: Optional[str] = None,
+    rules_hash: Optional[str] = None,
 ) -> str:
-    """Compute a deterministic hash over the active file set + model.
+    """Compute a deterministic hash over the active context.
 
-    File content is NOT hashed (too expensive). Instead we hash sorted
-    file paths + their mtime so the cache auto-invalidates when any
-    referenced file changes on disk.
+    Folds in a sha256 content fingerprint for every referenced file
+    (memoized by mtime+size in `file_cache`, so unchanged files cost
+    one stat call per lookup), plus optional hashes for the system
+    prompt, active tool schema, and active rules/memory so any change
+    to those invalidates the response cache.
+
+    Edits to a file invalidate the key even if the path stays the
+    same — the stale-answer class of bug from LEARNING.md §2.1.
     """
-    parts: List[str] = [model_name]
+    # Local import to avoid circular import at module load time.
+    from .file_cache import content_fingerprint
+
+    parts: List[str] = [f"m={model_name}"]
     all_files = sorted(set((context_files or []) + (pinned_context_files or [])))
     for fp in all_files:
-        p = Path(fp)
-        try:
-            mtime = str(p.stat().st_mtime) if p.exists() else "missing"
-        except OSError:
-            mtime = "err"
-        parts.append(f"{fp}:{mtime}")
+        fprint = content_fingerprint(fp)
+        parts.append(f"{fp}\x00{fprint}\x01")
+    if system_prompt_hash:
+        parts.append(f"sp={system_prompt_hash}")
+    if tool_schema_hash:
+        parts.append(f"ts={tool_schema_hash}")
+    if rules_hash:
+        parts.append(f"rules={rules_hash}")
     raw = "|".join(parts)
     return hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()[:24]
 
