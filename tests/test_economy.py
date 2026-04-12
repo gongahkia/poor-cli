@@ -68,7 +68,7 @@ class TestDistillPrompt(unittest.TestCase):
 
     def test_strips_comments_when_enabled(self):
         config = EconomyConfig(strip_code_comments=True)
-        text = "code here\n# this is a comment\nmore code"
+        text = "```python\ncode here\n# this is a comment\nmore code\n```"
         result, _ = distill_prompt(text, "", config)
         self.assertNotIn("# this is a comment", result)
         self.assertIn("code here", result)

@@ -131,6 +131,12 @@ class ConfigurationError(PoorCLIError):
     pass
 
 
+class MissingAPIKeyError(ConfigurationError):
+    """Raised when no API key is configured for the active provider — allows soft-init for first-run wizard."""
+    ERROR_CODE = "MISSING_API_KEY"
+    pass
+
+
 class PermissionDeniedError(PoorCLIError):
     """Raised when execution is blocked by permission policy."""
     ERROR_CODE = "permission_denied"

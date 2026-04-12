@@ -308,7 +308,8 @@ local function handle_enter()
                 rpc.request("poor-cli/testApiKey", { provider = M.state.choices.provider, apiKey = key }, function(result, err)
                     vim.schedule(function()
                         if err then
-                            vim.notify("[poor-cli] validation error: " .. rpc.format_error(err), vim.log.levels.ERROR)
+                            vim.notify("[poor-cli] validation error: " .. rpc.format_error(err) .. " — re-enter key or q to quit", vim.log.levels.ERROR)
+                            render(); handle_enter() -- re-enter the api_key step so user isn't stuck
                             return
                         end
                         if result and result.valid then
@@ -317,7 +318,7 @@ local function handle_enter()
                             render(); next_step()
                         else
                             vim.notify("[poor-cli] invalid key: " .. (result and result.error or "unknown error"), vim.log.levels.ERROR)
-                            render()
+                            render(); handle_enter() -- re-prompt on invalid key
                         end
                     end)
                 end)

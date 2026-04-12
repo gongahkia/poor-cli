@@ -84,6 +84,7 @@ from .workflow_templates import get_workflow_template, list_workflow_templates
 from .exceptions import (
     PoorCLIError,
     ConfigurationError,
+    MissingAPIKeyError,
     APIRateLimitError,
     APIError,
     setup_logger,
@@ -489,7 +490,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             
             # Ollama doesn't require API key
             if not resolved_api_key and self.config.model.provider != "ollama":
-                raise ConfigurationError(
+                raise MissingAPIKeyError(
                     f"No API key found for provider: {self.config.model.provider}. "
                     f"Set environment variable: "
                     f"{self.config.model.providers[self.config.model.provider].api_key_env_var}"
@@ -2150,7 +2151,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                 getattr(self, "_session_estimated_cache_savings_usd", 0.0), 6
             ),
             "semantic_cache": semantic_stats,
-            "file_cache": self._context_manager._file_cache.get_cache_info() if self._context_manager and hasattr(self._context_manager, "_file_cache") else {},
+            "file_cache": getattr(self, "_context_manager", None) and hasattr(self._context_manager, "_file_cache") and self._context_manager._file_cache.get_cache_info() or {},
         }
 
     def get_tool_filter_stats(self) -> Dict[str, int]:
@@ -5161,7 +5162,8 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             PoorCLIError: If not initialized.
         """
         if not self._initialized or not self.provider or not self.config:
-            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+            # soft-init state: return a minimal stub so lualine/status polling don't spam errors
+            return {"name": "unconfigured", "model": "", "initialized": False, "capabilities": {}}
         
         capabilities = {}
         if hasattr(self.provider, 'capabilities') and self.provider.capabilities:

@@ -783,6 +783,10 @@ function M.request(method, params, callback)
         local timeout_ms = config.get("request_timeout") or 15000
         if method == "poor-cli/chatStreaming" then
             timeout_ms = 0
+        elseif method == "poor-cli/testApiKey" then
+            timeout_ms = 45000 -- validation hits remote provider, needs headroom over backend's urlopen timeout
+        elseif method == "initialize" then
+            timeout_ms = 120000 -- server init runs repo indexing, provider probe, etc.
         end
         if timeout_ms > 0 then
             M.pending_timers[id] = vim.defer_fn(function()
@@ -1086,8 +1090,13 @@ function M.send_message(message)
 end
 
 function M.handle_stdout(data)
-    for _, chunk in ipairs(data) do
+    -- Neovim's on_stdout splits on "\n" and strips them. Re-insert \n between
+    -- chunks so the \r\n\r\n header/body separator survives reassembly.
+    for i, chunk in ipairs(data) do
         M.buffer = M.buffer .. chunk
+        if i < #data then
+            M.buffer = M.buffer .. "\n"
+        end
     end
 
     while true do

@@ -49,6 +49,7 @@ from ..session_store import SessionStore
 from ..task_manager import TaskManager
 from ..exceptions import (
     ConfigurationError,
+    MissingAPIKeyError,
     PoorCLIError,
     PermissionDeniedError,
     get_error_code,
@@ -85,6 +86,8 @@ class PoorCLIServer:
         self._session_manager.set_permission_callback(self._server_permission_callback)
         self.handlers: Dict[str, Callable] = {}
         self.initialized = False
+        self._needs_provider_init = False
+        self._pending_init_params: Dict[str, Any] = {}
         self.permission_mode: str = PermissionMode.DEFAULT.value
         self.logger = setup_logger("poor_cli.server")
         self.session_id = f"server-{uuid.uuid4().hex[:8]}"
@@ -974,6 +977,23 @@ class PoorCLIServer:
                     "repoIndex": self.core._repo_graph.get_stats() if self.core._repo_graph else None,
                 }
             }
+        except MissingAPIKeyError as e:
+            # Soft-init so the onboarding wizard can call testApiKey/setApiKey.
+            # Provider-dependent RPCs remain unavailable until setApiKey completes.
+            self.initialized = True
+            self._needs_provider_init = True
+            self._pending_init_params = {
+                "provider": params.get("provider"),
+                "model": params.get("model"),
+            }
+            logger.warning("Soft-init: %s", e)
+            return {
+                "capabilities": {
+                    "needsApiKey": True,
+                    "message": str(e),
+                    "serverLogPath": os.environ.get("POOR_CLI_SERVER_LOG_FILE", ""),
+                }
+            }
         except ConfigurationError as e:
             raise ConfigurationError(f"Initialization failed: {e}") from e
 
@@ -1829,11 +1849,23 @@ class PoorCLIServer:
             and reload_active_provider
             and config.model.provider == provider
         ):
-            await self.core.switch_provider(
-                provider,
-                config.model.model_name,
-            )
-            active_provider_reloaded = True
+            # if server came up in soft-init (no key at boot), now complete full init
+            if getattr(self, "_needs_provider_init", False):
+                pending = getattr(self, "_pending_init_params", {}) or {}
+                await self.core.initialize(
+                    provider_name=pending.get("provider") or provider,
+                    model_name=pending.get("model") or config.model.model_name,
+                    api_key=api_key,
+                )
+                self._needs_provider_init = False
+                self._pending_init_params = {}
+                active_provider_reloaded = True
+            else:
+                await self.core.switch_provider(
+                    provider,
+                    config.model.model_name,
+                )
+                active_provider_reloaded = True
 
         return {
             "success": True,
@@ -1948,7 +1980,7 @@ class PoorCLIServer:
             return False, f"No validation endpoint for provider: {provider}"
         try:
             loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(None, lambda: urlopen(req, timeout=10))
+            response = await loop.run_in_executor(None, lambda: urlopen(req, timeout=30))
             return (True, None) if response.status == 200 else (False, f"HTTP {response.status}")
         except urllib.error.HTTPError as e:
             if e.code == 401:

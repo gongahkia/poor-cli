@@ -125,7 +125,21 @@ function M.setup(opts)
     end
 
     if M.onboarding.should_show() then
-        vim.defer_fn(function() M.onboarding.open() end, 500)
+        -- wait for server init before opening wizard so RPCs like testApiKey work
+        local timer = vim.loop.new_timer()
+        local elapsed = 0
+        timer:start(500, 250, vim.schedule_wrap(function()
+            elapsed = elapsed + 250
+            local status = M.rpc.get_status() or {}
+            if status.initialized then
+                timer:stop(); timer:close()
+                M.onboarding.open()
+            elseif elapsed >= 60000 then -- 60s cap
+                timer:stop(); timer:close()
+                vim.notify("[poor-cli] server init slow — opening onboarding anyway", vim.log.levels.WARN)
+                M.onboarding.open()
+            end
+        end))
     end
 
     if M.config.is_debug() then
