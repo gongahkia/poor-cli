@@ -1,121 +1,87 @@
 -- poor-cli/init.lua
 -- Main entry point for poor-cli Neovim plugin
+--
+-- Submodules load on first access via an __index metatable.
+-- Only the handful of modules whose autocmds/commands must register
+-- eagerly are forced during setup(); everything else is lazy.
 
 local M = {}
 
--- Submodules (lazy-loaded on demand)
-M.config = nil
-M.rpc = nil
-M.inline = nil
-M.chat = nil
-M.commands = nil
-M.keymaps = nil
-M.autocmds = nil
-M.diagnostics = nil
-M.telescope = nil
-M.cmp = nil
-M.blink = nil
-M.tasks = nil
-M.automations = nil
-M.agents = nil
-M.sessions = nil
-M.memory = nil
-M.checkpoints_ext = nil
-M.config_mgr = nil
-M.history_browser = nil
-M.custom_commands = nil
-M.skills_nvim = nil
-M.trust = nil
-M.context_mgr = nil
-M.cost = nil
-M.providers = nil
-M.collab_ext = nil
-M.search = nil
-M.deploy_ext = nil
-M.diagnostics_ext = nil
-M.onboarding = nil
-M.prompt_library = nil
+-- modules eagerly loaded during setup() because they register commands,
+-- keymaps, or autocmds that the user expects immediately after :PoorCli...
+local EAGER_SETUPS = {
+    "commands", "keymaps", "autocmds", "cmp",
+    "tasks", "automations", "agents", "sessions", "memory",
+    "checkpoints_ext", "config_mgr", "history_browser",
+    "custom_commands", "skills_nvim", "trust", "context_mgr",
+    "cost", "providers", "collab_ext", "deploy_ext",
+    "diagnostics_ext", "onboarding", "prompt_library",
+    "collab", "panels",
+}
+
+-- everything else is loaded on first access. the metatable below caches
+-- the module on M under the same key so subsequent access is a table
+-- hit, not a require() call.
+local function lazy_require(name)
+    return require("poor-cli." .. name)
+end
+
+setmetatable(M, {
+    __index = function(tbl, key)
+        local ok, mod = pcall(lazy_require, key)
+        if ok then
+            rawset(tbl, key, mod)
+            return mod
+        end
+        return nil
+    end,
+})
+
 M._setup_complete = false
 
 -- Setup function - call this from your Neovim config
 function M.setup(opts)
-    M.config = require("poor-cli.config")
-    M.config.setup(opts)
+    -- config must load first: EAGER_SETUPS read its values
+    local config = require("poor-cli.config")
+    config.setup(opts)
+    rawset(M, "config", config)
 
-    M.rpc = require("poor-cli.rpc")
-    M.inline = require("poor-cli.inline")
-    M.chat = require("poor-cli.chat")
-    M.commands = require("poor-cli.commands")
-    M.keymaps = require("poor-cli.keymaps")
-    M.autocmds = require("poor-cli.autocmds")
-    M.diagnostics = require("poor-cli.diagnostics")
-    M.telescope = require("poor-cli.telescope")
-    M.cmp = require("poor-cli.cmp")
-    M.blink = require("poor-cli.blink")
+    -- rpc loaded early because eager setups touch it via rpc.request
+    rawset(M, "rpc", require("poor-cli.rpc"))
 
-    M.tasks = require("poor-cli.tasks")
-    M.automations = require("poor-cli.automations")
-    M.agents = require("poor-cli.agents")
-    M.sessions = require("poor-cli.sessions")
-    M.memory = require("poor-cli.memory")
-    M.checkpoints_ext = require("poor-cli.checkpoints_ext")
-    M.config_mgr = require("poor-cli.config_mgr")
-    M.history_browser = require("poor-cli.history_browser")
-    M.custom_commands = require("poor-cli.custom_commands")
-    M.skills_nvim = require("poor-cli.skills_nvim")
-    M.trust = require("poor-cli.trust")
-    M.context_mgr = require("poor-cli.context_mgr")
-    M.cost = require("poor-cli.cost")
-    M.providers = require("poor-cli.providers")
-    M.collab_ext = require("poor-cli.collab_ext")
-    M.search = require("poor-cli.search")
-    M.deploy_ext = require("poor-cli.deploy_ext")
-    M.diagnostics_ext = require("poor-cli.diagnostics_ext")
-    M.plan = require("poor-cli.plan")
-    M.queue = require("poor-cli.queue")
-    M.onboarding = require("poor-cli.onboarding")
-    M.prompt_library = require("poor-cli.prompt_library")
-    M.collab = require("poor-cli.collab")
-    M.panels = require("poor-cli.panels")
+    -- chat/inline register streaming autocmds below
+    rawset(M, "chat", require("poor-cli.chat"))
+    rawset(M, "inline", require("poor-cli.inline"))
 
-    M.commands.setup()
-    M.keymaps.setup()
-    M.autocmds.setup()
-    M.chat.setup_streaming_autocmds()
-    M.cmp.setup()
-    M.tasks.setup()
-    M.automations.setup()
-    M.agents.setup()
-    M.sessions.setup()
-    M.memory.setup()
-    M.checkpoints_ext.setup()
-    M.config_mgr.setup()
-    M.history_browser.setup()
-    M.custom_commands.setup()
-    M.skills_nvim.setup()
-    M.trust.setup()
-    M.context_mgr.setup()
-    M.cost.setup()
-    M.providers.setup()
-    M.collab_ext.setup()
-    M.deploy_ext.setup()
-    M.diagnostics_ext.setup()
-    M.onboarding.setup()
-    M.prompt_library.setup()
-    M.collab.setup()
-    M.panels.setup()
+    for _, name in ipairs(EAGER_SETUPS) do
+        local ok, mod = pcall(require, "poor-cli." .. name)
+        if ok then
+            rawset(M, name, mod)
+            if type(mod.setup) == "function" then
+                pcall(mod.setup)
+            end
+        end
+    end
+
+    -- chat.setup_streaming_autocmds is required for streaming UI to attach
+    if type(M.chat.setup_streaming_autocmds) == "function" then
+        M.chat.setup_streaming_autocmds()
+    end
+
+    -- lualine is an optional integration; wire it if the user has it
     if pcall(require, "lualine") then
         require("poor-cli.lualine").setup()
     end
+
     M._setup_complete = true
 
-    if M.config.get("check_health_on_setup") then
+    if config.get("check_health_on_setup") then
         vim.defer_fn(function()
             vim.cmd("checkhealth poor-cli")
         end, 1000)
     end
 
-    if M.config.get("auto_start") then
+    if config.get("auto_start") then
         vim.schedule(function()
             if not M.rpc.is_running() then
                 M.rpc.start()
@@ -146,7 +112,7 @@ function M.setup(opts)
         end))
     end
 
-    if M.config.is_debug() then
+    if config.is_debug() then
         vim.notify("[poor-cli] Setup complete", vim.log.levels.DEBUG)
     end
 end
