@@ -3059,10 +3059,23 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin, ProviderInfoMixin):
             logger.warning("working memory pre-turn failed: %s", e)
 
         # Economy: compute context hash for semantic cache keying
+        # PRD 004: fold in system-prompt and tool-schema fingerprints so edits
+        # to either invalidate previously-cached answers.
+        tool_schema_hash = None
+        try:
+            decls = getattr(self, "_active_tool_declarations", None)
+            if decls:
+                tool_schema_hash = hashlib.sha256(
+                    json.dumps(decls, sort_keys=True, default=str).encode("utf-8", errors="replace")
+                ).hexdigest()
+        except Exception:
+            tool_schema_hash = None
         self._last_context_hash = compute_context_hash(
             context_files=context_files,
             pinned_context_files=pinned_context_files,
             model_name=self.provider.model_name if self.provider else "",
+            system_prompt_hash=getattr(self, "_system_context_hash", None),
+            tool_schema_hash=tool_schema_hash,
         )
 
         # Economy: response cache lookup (exact match, then semantic)

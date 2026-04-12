@@ -25,6 +25,11 @@ DEFAULT_SIMILARITY_THRESHOLD = 0.92
 DEFAULT_TTL_SECONDS = 86400 # 24h
 DEFAULT_MAX_ENTRIES = 2048
 
+# Bumped when the context-hash algorithm changes — on first load with a
+# mismatched version row, pre-existing entries are wiped so stale keys
+# can't serve stale answers. PRD 004.
+CACHE_SCHEMA_VERSION = 2
+
 
 @dataclass
 class CacheResult:
@@ -102,10 +107,47 @@ class SemanticCache:
                 CREATE INDEX IF NOT EXISTS idx_created_at
                 ON semantic_cache(created_at)
             """)
+            self._db.execute("""
+                CREATE TABLE IF NOT EXISTS semantic_cache_meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+            """)
             self._db.commit()
+            self._migrate_schema()
         except Exception as e:
             logger.error("semantic cache db init failed: %s", e)
             self._db = None
+
+    def _migrate_schema(self) -> None:
+        """Wipe entries from earlier cache-key schemas so weak keys can't leak."""
+        if not self._db:
+            return
+        try:
+            row = self._db.execute(
+                "SELECT value FROM semantic_cache_meta WHERE key = 'schema_version'"
+            ).fetchone()
+            current = int(row[0]) if row and row[0] is not None else 1
+        except Exception:
+            current = 1
+        if current >= CACHE_SCHEMA_VERSION:
+            return
+        try:
+            wiped = self._db.execute("SELECT COUNT(*) FROM semantic_cache").fetchone()[0]
+            self._db.execute("DELETE FROM semantic_cache")
+            self._db.execute(
+                "INSERT OR REPLACE INTO semantic_cache_meta(key, value) VALUES ('schema_version', ?)",
+                (str(CACHE_SCHEMA_VERSION),),
+            )
+            self._db.commit()
+            if wiped:
+                self._stats.invalidations += wiped
+                logger.info(
+                    "semantic cache schema bumped v%d to v%d; wiped %d stale entries",
+                    current, CACHE_SCHEMA_VERSION, wiped,
+                )
+        except Exception as e:
+            logger.warning("semantic cache schema migration failed: %s", e)
 
     def _get_provider(self) -> Optional[EmbeddingProvider]:
         if self._provider is None:
@@ -169,8 +211,10 @@ class SemanticCache:
                 self._db.commit()
             except Exception:
                 pass
+            _audit_cache_event("cache_hit", context_hash, similarity=best.similarity)
             return best
         self._stats.misses += 1
+        _audit_cache_event("cache_miss", context_hash)
         return None
 
     async def put(
@@ -241,6 +285,8 @@ class SemanticCache:
             self._db.commit()
             n = cursor.rowcount
             self._stats.invalidations += n
+            if n:
+                _audit_cache_event("cache_invalidate", context_hash, removed=n)
             return n
         except Exception as e:
             logger.warning("semantic cache invalidation failed: %s", e)
@@ -255,6 +301,8 @@ class SemanticCache:
             self._db.execute("DELETE FROM semantic_cache")
             self._db.commit()
             self._stats.invalidations += count
+            if count:
+                _audit_cache_event("cache_invalidate", "*", removed=count, scope="all")
             return count
         except Exception as e:
             logger.warning("semantic cache clear failed: %s", e)
@@ -314,28 +362,69 @@ class SemanticCache:
             self._db = None
 
 
+# ── audit logging (best-effort, never raises) ───────────────────────
+
+def _audit_cache_event(kind: str, context_hash: str, **details: Any) -> None:
+    """Record a cache hit/miss/invalidation to the audit log.
+
+    Best-effort: failures must never block the fast cache path.
+    """
+    try:
+        from .audit_log import AuditEventType, get_audit_logger
+
+        event_map = {
+            "cache_hit": AuditEventType.CACHE_HIT,
+            "cache_miss": AuditEventType.CACHE_MISS,
+            "cache_invalidate": AuditEventType.CACHE_INVALIDATE,
+        }
+        event_type = event_map.get(kind)
+        if event_type is None:
+            return
+        get_audit_logger().log_event(
+            event_type=event_type,
+            operation=f"semantic_cache:{kind}",
+            target=context_hash,
+            details={k: v for k, v in details.items() if v is not None},
+        )
+    except Exception:
+        pass
+
+
 # ── context hashing ─────────────────────────────────────────────────
 
 def compute_context_hash(
     context_files: Optional[List[str]] = None,
     pinned_context_files: Optional[List[str]] = None,
     model_name: str = "",
+    system_prompt_hash: Optional[str] = None,
+    tool_schema_hash: Optional[str] = None,
+    rules_hash: Optional[str] = None,
 ) -> str:
-    """Compute a deterministic hash over the active file set + model.
+    """Compute a deterministic hash over the active context.
 
-    File content is NOT hashed (too expensive). Instead we hash sorted
-    file paths + their mtime so the cache auto-invalidates when any
-    referenced file changes on disk.
+    Folds in a sha256 content fingerprint for every referenced file
+    (memoized by mtime+size in `file_cache`, so unchanged files cost
+    one stat call per lookup), plus optional hashes for the system
+    prompt, active tool schema, and active rules/memory so any change
+    to those invalidates the response cache.
+
+    Edits to a file invalidate the key even if the path stays the
+    same — the stale-answer class of bug from LEARNING.md §2.1.
     """
-    parts: List[str] = [model_name]
+    # Local import to avoid circular import at module load time.
+    from .file_cache import content_fingerprint
+
+    parts: List[str] = [f"m={model_name}"]
     all_files = sorted(set((context_files or []) + (pinned_context_files or [])))
     for fp in all_files:
-        p = Path(fp)
-        try:
-            mtime = str(p.stat().st_mtime) if p.exists() else "missing"
-        except OSError:
-            mtime = "err"
-        parts.append(f"{fp}:{mtime}")
+        fprint = content_fingerprint(fp)
+        parts.append(f"{fp}\x00{fprint}\x01")
+    if system_prompt_hash:
+        parts.append(f"sp={system_prompt_hash}")
+    if tool_schema_hash:
+        parts.append(f"ts={tool_schema_hash}")
+    if rules_hash:
+        parts.append(f"rules={rules_hash}")
     raw = "|".join(parts)
     return hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()[:24]
 

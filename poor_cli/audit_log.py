@@ -38,6 +38,9 @@ class AuditEventType(Enum):
     TOOL_EXECUTION = "tool_execution"
     HOOK_ALLOW = "hook_allow"
     HOOK_DENY = "hook_deny"
+    CACHE_HIT = "cache_hit"
+    CACHE_MISS = "cache_miss"
+    CACHE_INVALIDATE = "cache_invalidate"
 
 
 class AuditSeverity(Enum):
