@@ -31,8 +31,12 @@ If schedule pressure demands parallelism on β, the two agents can split `tools_
 ## Agent 13A: MCP 2026 Compliance — Streamable HTTP, Multi-Server, Registry
 
 **Pain points addressed:** LEARNING.md §2.2, §4 — single-server stdio-only MCP is already behind the 2026 spec; no registry awareness; tool-name conflicts unsolvable.
-**Solution reference:** PRD 024.
 **Expected outcome:** `poor_cli/mcp/` package with two transports, multi-server aggregation with `<server>:<tool>` namespacing, and optional on-demand pulls from the official MCP registry.
+
+### Goals & non-goals
+
+- **Goal:** stdio + Streamable HTTP transports; multi-server with `<server>:<tool>` namespacing; discovery from `.poor-cli/mcp.json` (array of server specs); optional pull from `https://registry.modelcontextprotocol.io/` gated behind a config flag.
+- **Non-goals:** do not implement SSE (deprecated in MCP 2026); do not ship our own MCP server; do not bundle registry pulls at startup (on-demand only).
 
 ### What to build
 
@@ -40,13 +44,13 @@ Replace `mcp_client.py`'s ~200-line single-server stdio client with a proper `po
 
 ### Implementation details
 
-1. **Transport abstraction** — define `McpTransport(ABC)` with `connect`, `send`, `recv`, `close`. Extract the existing stdio logic from `mcp_client.py` into `mcp/transport_stdio.py` as `StdioTransport`. Implement `StreamableHttpTransport` in `mcp/transport_http.py` per the MCP 2026 spec.
-2. **Server spec dataclass** — `McpServerSpec(name, transport, command|url, env, enabled)`.
-3. **MultiMcp orchestrator** — `start_all(specs)`, `tools()` returning namespaced tool dicts, `call_tool(namespaced_name, args)` dispatch, `health()` per-server boolean map.
-4. **Config loader** — read `.poor-cli/mcp.json`. Expand `${ENV_VAR}` in the env map. Skip servers with `enabled: false`.
+1. **Transport abstraction** — define `McpTransport(ABC)` with async `connect`, `send(msg: dict)`, `recv() -> dict`, `close`. Extract existing stdio logic from `mcp_client.py` into `mcp/transport_stdio.py` as `StdioTransport`. Implement `StreamableHttpTransport` in `mcp/transport_http.py` per the MCP 2026 spec.
+2. **Server spec dataclass** — `McpServerSpec(name: str, transport: Literal["stdio","http"], command: list[str] | None, url: str | None, env: dict[str,str] | None, enabled: bool)`.
+3. **MultiMcp orchestrator** — `async start_all(specs)`, `async tools()` returning namespaced tool dicts (`<server>:<tool>`), `async call_tool(namespaced_name, args)` dispatch, `async health() -> dict[str, bool]` per-server liveness map.
+4. **Config loader** — read `.poor-cli/mcp.json` (shape: `{"servers": [...], "registry_autodiscover": false}`). Example entry: `{"name": "github", "transport": "stdio", "command": ["npx","-y","@modelcontextprotocol/server-github"], "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}"}, "enabled": true}`. Expand `${ENV_VAR}` in the env map. Skip servers with `enabled: false`.
 5. **Registry client** — `mcp/registry.py` hits `https://registry.modelcontextprotocol.io/` on demand only; never at startup. Flag defaults to `false`.
 6. **Legacy compatibility** — keep single-server path working behind a `multi: false` flag for the first release. `mcp_scaffold.py` routes to either the legacy client or `MultiMcp`.
-7. **Tool-call routing** — a tool name containing `:` routes by prefix; a bare name routes to the single-server legacy path.
+7. **Tool-call routing** — a tool name containing `:` routes by prefix; a bare name routes to the single-server legacy path. Namespacing prevents conflicts (e.g. `github:create_issue`, `fs:read_file`).
 
 ### Files to create/modify
 
@@ -62,23 +66,29 @@ Replace `mcp_client.py`'s ~200-line single-server stdio client with a proper `po
 
 ### Acceptance criteria
 
-- [ ] Stdio and Streamable HTTP transports both pass round-trip tests against mock servers.
-- [ ] Multi-server loader starts servers concurrently from `.poor-cli/mcp.json`.
-- [ ] Tools are aggregated and namespaced as `<server>:<tool>`; no name collisions possible.
-- [ ] `health()` reports per-server liveness.
+- [ ] `test_stdio_transport_roundtrip` and `test_http_transport_roundtrip_with_mocked_server` pass against mock servers.
+- [ ] `test_multi_server_aggregates_tools_with_namespace` — multi-server loader starts servers concurrently from `.poor-cli/mcp.json`; tools aggregated and namespaced as `<server>:<tool>`; no name collisions possible.
+- [ ] `test_health_reports_per_server` — `health()` reports per-server liveness.
 - [ ] SSE transport is not implemented (deprecated in MCP 2026).
 - [ ] Registry pulls happen only when `registry_autodiscover: true` and only on demand.
 - [ ] Legacy single-server behavior preserved behind `multi: false`.
+- [ ] `make lint && make test` passes.
 
-**PRD reference:** prd/024-mcp-2026-compliance.md
+### Rollback / risk
+
+Medium. Legacy single-server code preserved behind `multi: false` for the first release.
 
 ---
 
 ## Agent 13B: Streaming Tool Output with Backpressure
 
 **Pain points addressed:** LEARNING.md §2.1 — a 10K-line `cargo test` failure blocks both the server and the user until every byte is collected; no mid-tool liveness for the Lua timeline.
-**Solution reference:** PRD 025.
 **Expected outcome:** long-running tools push output chunks through the server pubsub to the Lua client in real time, with consumer-driven backpressure and clean cancellation. The model still sees a single aggregated, budget-capped final result.
+
+### Goals & non-goals
+
+- **Goal:** long-running tools (bash, run_tests, process_logs) stream output chunks to the server pubsub; server forwards to the Lua client; Lua agent timeline renders progressively. Model sees the completed output at end-of-tool (or summarized head if over size budget).
+- **Non-goals:** do not stream every tool (only those that can produce large or slow output — `file_read`, `edit`, etc. return fast); do not stream to the LLM mid-call.
 
 ### What to build
 
@@ -86,13 +96,13 @@ Introduce a `StreamingToolResult(AsyncIterator[str])` contract. Add `stream_call
 
 ### Implementation details
 
-1. **Streaming contract** — `poor_cli/tool_stream.py` defines `StreamingToolResult` with `__aiter__` for chunks and `final() -> ToolResult` for the aggregated end state.
-2. **Tool-side `stream_call`** — `tools_async.py::bash`, `run_tests`, `process_logs` expose both the existing synchronous `call()` and the new `stream_call()`. `stream_call` reads subprocess stdout line-by-line (or in fixed byte chunks) and yields.
+1. **Streaming contract** — `poor_cli/tool_stream.py` defines `StreamingToolResult(AsyncIterator[str])` with `async __aiter__() -> AsyncIterator[str]` for chunks and `async final() -> ToolResult` for the aggregated end state. Tools that can stream implement both the synchronous `call()` and the new `stream_call()`.
+2. **Tool-side `stream_call`** — `tools_async.py::bash`, `run_tests`, `process_logs` expose both `call()` and `stream_call()`. `stream_call` reads subprocess stdout line-by-line (or in fixed byte chunks) and yields.
 3. **Dispatch routing** — `tool_dispatch.py` checks for `stream_call` on the tool and routes accordingly; non-streaming tools continue through the legacy path untouched.
-4. **Server backpressure** — `server/handlers/tools.py` buffers at most 16 chunks per tool-invocation. On buffer full, `await` the consumer ack. Ack messages include `{eventId, chunksProcessed}`.
-5. **Cancellation** — tie into the `poor-cli/cancelTool` RPC added by PRD 015. Abort the async iterator, send SIGTERM to the subprocess, escalate to SIGKILL after 3 s.
-6. **Aggregation rule** — never feed partial chunks to the model; collect all chunks into the final `ToolResult.output`, then truncate to the tool's configured budget (with a clear `[...truncated N lines...]` marker).
-7. **Tool selection** — only stream tools that can produce large or slow output. `file_read`, `edit`, and similar return fast — leave them alone.
+4. **Server backpressure** — `server/handlers/tools.py` buffers ≤ N chunks (default N=16) per tool invocation. On buffer full, server `await`s the consumer ack. Ack messages: `poor-cli/toolStreamAck` with `{eventId, chunksProcessed}`.
+5. **Cancellation** — tie into the `poor-cli/cancelTool` RPC added by PRD 015. Abort the async iterator, SIGTERM the subprocess, escalate to SIGKILL after 3 s.
+6. **Aggregation rule** — never feed partial chunks to the model (avoid oscillating behavior). Collect all chunks into final `ToolResult.output`, then truncate to the tool's configured context-size budget with a clear `[...truncated N lines...]` marker.
+7. **Tool selection** — only stream tools that can produce large or slow output.
 
 ### Files to create/modify
 
@@ -111,16 +121,23 @@ Introduce a `StreamingToolResult(AsyncIterator[str])` contract. Add `stream_call
 - [ ] Integration test with `yes | head -n 10000` completes without blocking server or user.
 - [ ] Streaming partials are never sent to the LLM mid-call.
 - [ ] Non-streamable tools unaffected.
+- [ ] `make lint && make test` passes.
 
-**PRD reference:** prd/025-streaming-tool-output.md
+### Rollback / risk
+
+Medium. Streaming introduces asynchrony bugs. Mitigate via explicit backpressure tests.
 
 ---
 
 ## Agent 13C: RTK-lite — Python-Side Shell Output Filter
 
-**Pain points addressed:** PAIN-POINTS.md #9 (ambient noise pollution); LEARNING.md §2.2 ("ship one piece of RTK").
-**Solution reference:** PRD 026.
+**Pain points addressed:** PAIN-POINTS.md #9 (ambient noise pollution); LEARNING.md §2.2 ("ship one piece of RTK"), §1.5.
 **Expected outcome:** The `bash` tool recognizes a small set of high-signal commands (starting with `git status`) and post-processes their output with purpose-built filters. ≥60% token reduction on `git status` fixtures with every changed path preserved. Python-only — no Rust binary in this PRD.
+
+### Goals & non-goals
+
+- **Goal:** `bash` tool recognizes a handful of high-signal commands and post-processes their output with purpose-built filters, reducing tokens while preserving decision-relevant information. Ship `git status`, `git diff --stat`, `ls -la`. Stretch: `npm install`, `cargo build`. Python-only.
+- **Non-goals:** do not ship a Rust binary in this PRD; do not hook shell aliases; do not filter arbitrary commands; do not delete `rtk_integration.py` (PRD 007 coordinates that stub).
 
 ### What to build
 
@@ -128,13 +145,13 @@ A small filter registry under `poor_cli/rtk_lite/`. Each filter is a `Callable[[
 
 ### Implementation details
 
-1. **Registry** — `poor_cli/rtk_lite/__init__.py` exposes `register(pattern)` decorator, a `REGISTRY` dict, and an `apply(command, output) -> str` function that picks the best-matching registered filter (longest prefix match) and passes through on no match.
-2. **`git_filter.py`** — implement `filter_git_status`: preserve branch, ahead/behind, file counts per category, first-N changed paths (configurable, default all). Drop advisory prose ("use `git restore`..."), heading decoration, blank-line padding. Also implement `git diff --stat` and `ls -la` filters.
-3. **Bash integration** — `tools_async.py::bash` calls `rtk_lite.apply(cmd, raw)` post-subprocess. Attach `meta={"rtk_reduction_pct": ...}` for observability. Coordinate with Agent 13B's stream path: on streaming completion, apply the filter to the aggregated final output (not per-chunk).
+1. **Registry** — `poor_cli/rtk_lite/__init__.py` exposes a `register(command_pattern)` decorator populating `REGISTRY: dict[str, Filter]` where `Filter = Callable[[str], str]`, and an `apply(command: str, output: str) -> str` function that dispatches to the best-matching registered filter (longest prefix match) and passes through on no match.
+2. **`git_filter.py`** — implement `filter_git_status` decorated with `@register("git status")`. Preserve branch, ahead/behind, file counts per category, first-N changed paths (configurable, default all). Drop advisory prose (e.g. `use "git restore"...`), heading decoration, blank-line padding. Target ~75% fewer tokens on representative output while preserving every changed path. Also implement `git diff --stat` and `ls -la` filters.
+3. **Bash integration** — `tools_async.py::bash` calls `rtk_lite.apply(cmd, raw)` post-subprocess and returns `ToolResult(output=filtered, meta={"rtk_reduction_pct": ...})` for observability. Coordinate with Agent 13B's stream path: on streaming completion, apply the filter to the aggregated final output (not per-chunk).
 4. **Escape path** — every filter wraps its parser in try/except; on any failure, return raw output and log.
-5. **Opt-out** — honor a config flag `rtk_lite.enabled` (default `true`). When false, `apply` is a pass-through.
+5. **Opt-out** — honor config flag `rtk_lite.enabled` (default `true`). When false, `apply` is a pass-through.
 6. **Fixtures** — `tests/fixtures/rtk_lite/*.txt` with real captured outputs for representative repos.
-7. **Boundary** — do not delete `rtk_integration.py` (that stub is coordinated by PRD 007). Do not hook shell aliases. Do not filter arbitrary commands.
+7. **Boundary** — do not delete `rtk_integration.py`. Do not hook shell aliases. Do not filter arbitrary commands.
 
 ### Files to create/modify
 
@@ -148,12 +165,15 @@ A small filter registry under `poor_cli/rtk_lite/`. Each filter is a `Callable[[
 
 ### Acceptance criteria
 
-- [ ] `test_git_status_filter_reduces_tokens_by_60_percent_on_fixture` passes.
+- [ ] `test_git_status_filter_reduces_tokens_by_60_percent_on_fixture` passes (≥60% reduction on fixture).
 - [ ] `test_git_status_filter_preserves_all_changed_paths` passes.
 - [ ] `test_unknown_command_passthrough` — commands with no registered filter return raw output byte-for-byte.
 - [ ] `test_bash_tool_reports_reduction_in_meta` — `meta.rtk_reduction_pct` populated.
 - [ ] Filter failures fall back to raw output without raising.
-- [ ] `rtk_lite.enabled = false` in config disables all filters.
+- [ ] `rtk_lite.enabled = false` in config disables all filters (opt-out).
 - [ ] No Rust binary introduced; no `rtk_integration.py` deletion.
+- [ ] `make lint && make test` passes.
 
-**PRD reference:** prd/026-rtk-lite-shell-filter.md
+### Rollback / risk
+
+Low. Opt-out via `rtk_lite.enabled = false`. Each filter has an escape path that returns raw output if parsing fails.

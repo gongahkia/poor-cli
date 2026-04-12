@@ -36,9 +36,16 @@ The table below shows each agent's write scope. Read it before starting — two 
 
 ## Agent 10A: Context Assembly Orchestrator
 
-**Pain points addressed:** Scattered context-assembly logic across 6+ modules; no single owner for the end-to-end pipeline; impossible to cache coherently (blocks PRD 022 repo-state cache).
-**Solution reference:** PRD 018 — extract `ContextAssemblyOrchestrator`.
+**Pain points addressed:** Scattered context-assembly logic across 6+ modules (`context.py`, `context_engine.py`, `context_optimizer.py`, `context_compressor.py`, `history_pruning.py`, `repo_graph.py`, plus glue in `core.py`); no single owner for the end-to-end pipeline; impossible to cache coherently (blocks PRD 022 repo-state cache). LEARNING.md §2.1: "No `ContextAssemblyOrchestrator` owns the full pipeline."
+**Solution:** extract `ContextAssemblyOrchestrator`.
 **Expected outcome:** One class owns "turn input → ContextSnapshot." Downstream caching, PageRank integration, and structured invalidation become tractable.
+
+**Non-goals (hard stops):**
+- Do not rewrite the selection / compression logic.
+- Do not change what content enters context — only how it's assembled.
+- Do not remove the existing modules.
+- Do not introduce new context sources.
+- Do not integrate PageRank — PRD 022 does that.
 
 ### What to build
 
@@ -92,16 +99,23 @@ A single `ContextAssemblyOrchestrator` class with one public entry point — `as
 - [ ] Token breakdown sums to `total`.
 - [ ] All existing tests pass unchanged (behavior-preserving).
 - [ ] New tests: `test_assemble_returns_snapshot_with_all_fields`, `test_budget_respected_when_over_calls_optimizer`, `test_key_stable_when_inputs_unchanged`, `test_key_changes_when_file_content_changes`.
+- [ ] Snapshot `key` is suitable for PRD 022 cache keying (stable hash over rules + file contents + history hash + tool schemas + provider/model).
 
-**PRD reference:** prd/018-context-assembly-orchestrator.md
+**Risk:** Medium. Behavior-preserving; full existing test suite must pass unchanged.
 
 ---
 
 ## Agent 10B: Server Handler Partition
 
-**Pain points addressed:** `server/runtime.py` is ~6,300 lines hosting ~100 RPC methods plus a multiplayer state machine. Contributors cannot modify one method without reading the whole file. Adding a new RPC method requires touching a single giant dispatch table.
-**Solution reference:** PRD 019 — partition `runtime.py` into `handlers/` packages.
+**Pain points addressed:** `server/runtime.py` is ~6,300 lines hosting ~100 RPC methods plus a multiplayer state machine. Contributors cannot modify one method without reading the whole file. Adding a new RPC method requires touching a single giant dispatch table. LEARNING.md §2.1 calls this out as a structural problem equal to `core.py`.
+**Solution:** partition `runtime.py` into `handlers/` packages with a decorator-based registry.
 **Expected outcome:** `runtime.py` ≤800 lines holding only dispatch + transport. Every handler file ≤500 lines. Multiplayer state machine isolated in its own module.
+
+**Non-goals (hard stops):**
+- Do not change any method signature or behavior.
+- Do not rename RPC methods.
+- Do not introduce OpenAPI / JSON Schema docs (nice-to-have follow-up).
+- Do not introduce API versioning.
 
 ### What to build
 
@@ -194,17 +208,21 @@ A decorator-based registry + per-category handler modules. Each handler self-reg
 - [ ] Every `handlers/*.py` file ≤500 lines (enforced by test).
 - [ ] Multiplayer state machine lives in `multiplayer_state.py`; `runtime.py` has zero multiplayer references.
 - [ ] All existing tests pass unchanged.
-- [ ] New tests: `test_registry_registers_unique_methods`, `test_every_known_method_still_reachable`, `test_runtime_py_under_800_lines`.
+- [ ] New tests: `test_registry_registers_unique_methods`, `test_every_known_method_still_reachable` (enumerates all ~100 pre-existing methods and asserts dispatch works for each — smoke), `test_runtime_py_under_800_lines`.
 
-**PRD reference:** prd/019-server-handlers-partition.md
+**Risk:** Medium. Mechanical work; per-group rollback via git. Multiplayer extraction is the highest-risk step — do it last so the preceding categories form a safety net.
 
 ---
 
 ## Agent 10C: Provider Capability Enum
 
-**Pain points addressed:** Extended thinking is hardcoded to Anthropic. Prompt caching is Anthropic-only in code but not declared as such. Gemini grounding is invisible to callers. Feature gating uses `isinstance(provider, AnthropicProvider)` — fragile and not discoverable.
-**Solution reference:** PRD 020 — introduce `ProviderCapability` enum.
+**Pain points addressed:** Extended thinking is hardcoded to Anthropic (`ThinkingBudgetOptimizer`). Prompt caching is Anthropic-only in code but not declared as such. Gemini grounding is invisible to callers. Feature gating uses `isinstance(provider, AnthropicProvider)` — fragile and not discoverable. LEARNING.md §2.1: "Extended thinking is baked into core; should be provider capability."
+**Solution:** introduce `ProviderCapability` enum.
 **Expected outcome:** Every provider declares its capability set. Core gates on `ProviderCapability.X in provider.capabilities` — no `isinstance` checks remain for feature dispatch.
+
+**Non-goals (hard stops):**
+- Do not implement new capabilities (e.g., latent communication) here — just type them.
+- Do not change provider SDK usage.
 
 ### What to build
 
@@ -258,6 +276,8 @@ A `Flag` enum covering every provider-differentiated capability. Each adapter de
    # after
    if ProviderCapability.EXTENDED_THINKING in provider.capabilities:
        thinking_budget = self._thinking.allocate(...)
+   else:
+       thinking_budget = 0
    ```
 
 5. **Refuse misuse in `thinking_budget.py`** — `ThinkingBudgetOptimizer.allocate(provider, ...)` raises `CapabilityError` if `EXTENDED_THINKING not in provider.capabilities`. Same for `vision.py`: reject image inputs if `VISION` not declared.
@@ -290,15 +310,28 @@ A `Flag` enum covering every provider-differentiated capability. Each adapter de
 - [ ] New tests: `test_anthropic_has_extended_thinking`, `test_openai_has_streaming`, `test_ollama_has_no_prompt_caching`, `test_thinking_allocation_refused_without_capability`.
 - [ ] All existing tests pass unchanged.
 
-**PRD reference:** prd/020-provider-capability-enum.md
+**Risk:** Low. Behavior-preserving: every replaced `isinstance` gate maps 1:1 to a capability check.
 
 ---
 
 ## Agent 10D: Extension Model Consolidation
 
-**Pain points addressed:** Four overlapping extensibility mechanisms (skills, custom commands, workflow templates, automations) create option paralysis for users and maintenance multiplication for contributors. Skills stay separate (different concept: instruction libraries); the other three collapse into one `AutomationRule` type.
-**Solution reference:** PRD 064 — consolidate extension model (decision (a): merge).
-**Expected outcome:** Two extension concepts instead of four: (1) `AutomationRule` covering cron / event / slash triggers with multi-step bodies, (2) skills. Existing user data round-trips through a one-shot migration.
+**Pain points addressed:** Four overlapping extensibility mechanisms create option paralysis for users and maintenance multiplication for contributors. LEARNING.md §4.1.
+- **Skills** (`poor_cli/skills.py`, `poor_cli/skill_surfacer.py`, `poor_cli/skills/*.md`) — instruction-driven.
+- **Custom commands** (`poor_cli/custom_commands.py`) — slash commands.
+- **Workflow templates** (`poor_cli/workflow_templates.py`) — multi-step macros.
+- **Automation manager** (`poor_cli/automation_manager.py`) — scheduled / event-driven.
+
+**Decision (resolved, executing option (a)):** The options considered were:
+- (a) **Merge** — one `AutomationRule` type triggered by cron / event / slash, absorbing workflows and custom commands. Keep skills separate (different concept — instruction libraries). Reduces 4 → 2. **Chosen: cleanest user-model, minimal loss.**
+- (b) Keep four separate.
+- (c) Partial merge — collapse custom_commands + workflow_templates only; keep automations and skills separate. Reduces to 3.
+
+**Expected outcome:** Two extension concepts instead of four: (1) `AutomationRule` covering cron / event / slash triggers with multi-step bodies, (2) skills. Existing user data round-trips through a one-shot, idempotent migration with `.poor-cli/` backed up before any write.
+
+**Non-goals (hard stops):**
+- Do not consolidate skills (different concept — instruction libraries).
+- Do not modify `skills.py`, `skill_surfacer.py`, or `skills/*.md` in this PR.
 
 ### What to build
 
@@ -376,6 +409,6 @@ A new `poor_cli/automations/` package that absorbs `custom_commands.py`, `workfl
 - [ ] Legacy RPC method names still reachable.
 - [ ] Skills left untouched — `skills.py` has zero diff in this PR.
 - [ ] `handlers/automations.py` imports from `poor_cli.automations`, not `automation_manager`.
-- [ ] Tests: migration round-trip, trigger dispatch per type, step execution per type.
+- [ ] Tests: migration round-trip (every existing workflow / custom command / automation survives the conversion), trigger dispatch per type (cron / event / slash), step execution per type (prompt / tool_call / shell).
 
-**PRD reference:** prd/064-extension-model-consolidation.md
+**Risk:** Medium. Migration is one-way; the migration script must be idempotent and must back up `.poor-cli/` before any write. Rollback = restore from `.poor-cli/backup-pre-064/`.

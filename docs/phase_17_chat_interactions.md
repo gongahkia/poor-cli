@@ -33,12 +33,19 @@ Each sub-wave must merge and stabilise before the next begins. No concurrent bra
 
 ## Agent 17A: Regenerate + Branch Tree Navigation
 
+**Wave:** 3. **Effort:** medium (1w). **Risk:** medium (history schema change).
 **Pain points addressed:** LEARNING.md §3.5 #1 — chat is linear, no way to regenerate a turn while keeping the old answer.
 **Dependencies:** Coordinates history schema with PRD 003 / 039. Does not implement the tree *viewer* (that is PRD 039).
 
 ### What to build
 
 Add branching to chat history. `<leader>rr` on any assistant turn regenerates it with a fresh seed, producing a sibling branch rather than overwriting. `[[` / `]]` cycle siblings. The active branch drives all subsequent turns. PRD 039 will later surface this as a tree view — this agent ships only the backend plumbing plus a minimal inline branch badge.
+
+### Non-goals
+
+- Do not implement the tree *view* (that is PRD 039).
+- Do not auto-pick winners among sibling branches.
+- Do not touch inline completion.
 
 ### Implementation details
 
@@ -47,7 +54,7 @@ Add branching to chat history. `<leader>rr` on any assistant turn regenerates it
    - Add an `active_leaf` pointer at the conversation level tracking which leaf the user is "on".
    - Write a one-shot migration that backfills `parent_id` as the previous turn's id for legacy transcripts.
 
-2. **`regenerateTurn` RPC** in `poor_cli/server/handlers/chat.py` (or `runtime.py` if PRD 019 has not merged yet):
+2. **`regenerateTurn` RPC** (`poor-cli/regenerateTurn`) in `poor_cli/server/handlers/chat.py` (or `runtime.py` if PRD 019 has not merged yet):
    - Input: `turn_id`. Output: new assistant turn id.
    - Re-runs generation from the parent user turn with a new seed.
    - Attaches the result as a sibling (`branch_of = turn_id`, same `parent_id`).
@@ -78,18 +85,26 @@ Add branching to chat history. `<leader>rr` on any assistant turn regenerates it
 - [ ] `[[` / `]]` cycle through siblings and subsequent turns follow the active branch.
 - [ ] Legacy transcripts (no `parent_id`) migrate cleanly on load.
 
-**PRD reference:** prd/043-chat-regenerate-branch-tree.md
+### Done criterion
+
+- [ ] Regenerate works; siblings exist; sibling navigation works; schema migration is idempotent.
 
 ---
 
 ## Agent 17B: Codeblock Copy & Apply Actions
 
+**Wave:** 3. **Effort:** small (2–3d). **Risk:** low.
 **Pain points addressed:** LEARNING.md §3.5 #3–4 — no ergonomic way to yank or apply fenced code blocks from chat without visual selection.
 **Dependencies:** Blocked by 17A. Integrates with PRD 014's Diff Review panel if present.
 
 ### What to build
 
 Cursor-on-codeblock actions in the chat buffer. Treesitter identifies the fenced block under the cursor; three keymaps act on it: `yc` yanks the block body, `<leader>ya` applies it to a target file (via Diff Review when available, otherwise direct write with permission), `<leader>yl` opens it in a scratch buffer with the right filetype.
+
+### Non-goals
+
+- Do not change chat streaming or rendering behavior.
+- Do not introduce visual-mode-only affordances; these are cursor-based actions.
 
 ### Implementation details
 
@@ -122,18 +137,26 @@ Cursor-on-codeblock actions in the chat buffer. Treesitter identifies the fenced
 - [ ] Cursor outside any fenced block: actions no-op with a non-intrusive message.
 - [ ] Streaming/rendering behavior unchanged.
 
-**PRD reference:** prd/044-chat-codeblock-actions.md
+### Done criterion
+
+- [ ] All three actions bound, functional, and chat-buffer-scoped.
 
 ---
 
 ## Agent 17C: Slash-Command Autocomplete
 
+**Wave:** 3. **Effort:** small-to-medium (3–4d). **Risk:** low.
 **Pain points addressed:** LEARNING.md §3.5 #6 — 90+ slash commands, discoverability is painful.
 **Dependencies:** Blocked by 17B. Requires the picker adapter from PRD 055.
 
 ### What to build
 
 Typing `/` at column 1 of the chat input opens a picker listing all slash commands with one-line descriptions. Fuzzy-match filters as the user types. Selecting a command inserts it into the input with the cursor positioned at the first argument slot.
+
+### Non-goals
+
+- Do not introduce new slash commands.
+- Do not replace or override the existing command list — reflect it.
 
 ### Implementation details
 
@@ -164,18 +187,26 @@ Typing `/` at column 1 of the chat input opens a picker listing all slash comman
 - [ ] Picker reflects the live registry — does not ship its own command list.
 - [ ] No new slash commands introduced by this agent.
 
-**PRD reference:** prd/045-chat-slash-autocomplete.md
+### Done criterion
+
+- [ ] Autocomplete is usable end-to-end against the live registry.
 
 ---
 
 ## Agent 17D: `@`-Mention Picker (file, buffer, LSP, image, function)
 
+**Wave:** 3. **Effort:** medium (4–5d). **Risk:** low.
 **Pain points addressed:** LEARNING.md §3.5 #7–8 — `@file:path` is text-only, error-prone on long paths; images and diagnostics attach only via commands.
 **Dependencies:** Blocked by 17C. Requires PRD 055 picker adapter.
 
 ### What to build
 
 Typing `@` in the chat input opens a two-step picker: first pick a source, then pick an item from that source. Sources: `@file:` (repo files), `@buffer:` (open buffers), `@lsp:` (current buffer diagnostics), `@image:` (clipboard or file), `@function:` (treesitter functions in the current buffer). The final insertion uses the existing wire format `@file:path/to/thing.py:12-20` — server-side parsing is unchanged.
+
+### Non-goals
+
+- Do not change server-side mention parsing — it already handles `@file:path[:range]`.
+- Do not extend the wire format; the picker only produces text the existing parser already accepts.
 
 ### Implementation details
 
@@ -212,12 +243,15 @@ Typing `@` in the chat input opens a two-step picker: first pick a source, then 
 - [ ] Image source writes clipboard content to the attachment dir and emits `@image:<path>`.
 - [ ] Server-side mention parsing is untouched.
 
-**PRD reference:** prd/046-chat-mention-picker.md
+### Done criterion
+
+- [ ] `@` picker is usable for all five sources and produces parser-compatible insertions.
 
 ---
 
 ## Agent 17E: Chat Polish Bundle — edit/resend, cost badges, export
 
+**Wave:** 3. **Effort:** small-to-medium (4d). **Risk:** low.
 **Pain points addressed:** LEARNING.md §3.5 #5, #9, #10 — `/edit-last` not surfaced in UI, no per-message cost visible in buffer, no in-UI conversation export.
 **Dependencies:** Blocked by 17D. Reuses PRD 016 cost metadata already on the stream payload. Does not touch branching (PRD 043 / 17A) or cost logic (PRD 016).
 
@@ -228,6 +262,12 @@ Three small, adjacent UI polish items bundled into one agent:
 1. `<leader>ee` on any user turn opens it for editing and resends on save.
 2. Per-turn virtual-text badge `[$0.02 · 1.4s · 312 tok]` rendered on each assistant turn.
 3. `<leader>ex` opens an export picker (md / json / transcript) and writes the chosen format to `.poor-cli/exports/`.
+
+### Non-goals
+
+- Do not introduce branching — that belongs to PRD 043 / Agent 17A.
+- Do not change cost calculation logic — owned by PRD 016.
+- Do not make cost rendering configurable beyond a single on/off flag.
 
 ### Implementation details
 
@@ -262,4 +302,6 @@ Three small, adjacent UI polish items bundled into one agent:
 - [ ] Cost badge toggleable via a single on/off config flag.
 - [ ] No changes to cost logic or branching behaviour.
 
-**PRD reference:** prd/047-chat-polish-bundle.md
+### Done criterion
+
+- [ ] All three UX polish items work; no regressions in cost or branching paths.

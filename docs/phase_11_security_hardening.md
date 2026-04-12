@@ -51,7 +51,9 @@ A token-bucket rate limiter with per-method-group policy, wired once into the RP
    Lookup: exact method → glob fallback → `default`.
 3. **Dispatch integration** — one call site in `runtime.py`: if `not limiter.take(method)` return `JsonRpcError(-32029, "rate limited", {"method": m, "retry_after_s": t})`. Do **not** refactor runtime broadly (PRD 019 owns that).
 4. **Observability** — emit `rpc.rate_limit.exceeded` to the audit log with method + client id.
-5. **Disable path** — `rpc_rate_limits: {}` turns the limiter into a pass-through.
+5. **Disable path** — `rpc_rate_limits: {}` turns the limiter into a pass-through. This is also the rollback lever if the limiter misbehaves in production.
+6. **Error-code rationale** — `-32029` sits inside the JSON-RPC server-reserved range (`-32000` to `-32099`), so it will not collide with method-level errors.
+7. **Non-goals (hard):** no per-user quotas (single local user), no queueing of dropped requests (clients decide whether to retry), no token-count-aware limits (the economy module already does that for LLM calls). Do **not** refactor `runtime.py` broadly — PRD 019 owns partitioning.
 
 ### Files to create/modify
 
@@ -69,8 +71,7 @@ A token-bucket rate limiter with per-method-group policy, wired once into the RP
 - [ ] Rate-limit exceedance emits audit event
 - [ ] RPC integration test: limited client receives `-32029`, server does not die
 - [ ] Empty `rpc_rate_limits` config disables limiter with no overhead
-
-**PRD reference:** prd/010-rpc-rate-limiting.md
+- [ ] Config reload replaces buckets without dropping in-flight tokens unexpectedly
 
 ---
 
@@ -93,7 +94,9 @@ Add `rotate_if_needed()`, `archive()`, and `export_range()` to `audit_log.py`; w
 2. **Rotation algorithm** — scheduler runs `rotate_if_needed()` every hour. If either cap is exceeded, stream oldest rows in chunks to `.poor-cli/audit/archive/YYYY-MM.jsonl.gz` and `DELETE … WHERE id IN (…)` in one transaction per chunk. Cap total rotation runtime so the UI never stalls.
 3. **Archive format** — one gzipped JSONL file per month, schema = existing audit row schema. Each line a complete record, so downstream tools need no joins.
 4. **Export CLI** — `poor-cli audit export --from 2026-01-01 --to 2026-02-01 --out events.jsonl` streams matching rows (live DB + relevant archive files merged) to stdout or a file. Implement as an RPC method (`audit/exportRange`) + thin CLI wrapper.
-5. **Atomicity** — each chunk commit is all-or-nothing; SQLite transaction rollback on archive-write failure.
+5. **Atomicity** — each chunk commit is all-or-nothing; SQLite transaction rollback on archive-write failure. Cap per-tick rotation runtime so a backlog cannot stall the UI.
+6. **Schema stability** — audit row schema is **unchanged** by this agent (non-goal). PRD 003 owns `meta.schema_version` on this DB.
+7. **Non-goals (hard):** no remote sink / centralization; no schema change; no migration of rows already archived.
 
 ### Files to create/modify
 
@@ -111,8 +114,7 @@ Add `rotate_if_needed()`, `archive()`, and `export_range()` to `audit_log.py`; w
 - [ ] Scheduler ticks rotation every hour
 - [ ] Audit row schema **unchanged**
 - [ ] `poor-cli audit export` works end-to-end against a synthetic 200k-row DB
-
-**PRD reference:** prd/011-audit-log-rotation.md
+- [ ] Archive files validate as gzip + JSONL (one JSON object per line, full row per line)
 
 ---
 
@@ -144,7 +146,8 @@ Add optional `keyring` dependency and extend `ApiKeyManager` with keyring-aware 
    ```
 4. **Lookup order** in `get()`: keyring → `os.environ[PROVIDER_API_KEY]` → plaintext config. First hit wins.
 5. **Migration** — `migrate_to_keyring()` walks env + plaintext, writes each found key to keyring, returns the list of providers migrated. Idempotent.
-6. **Setup wizard** — after the user pastes a key, prompt to store in keyring. Default = Y when `keyring` importable, else skip the prompt.
+6. **Setup wizard** — after the user pastes a key, prompt to store in keyring. Default = Y when `keyring` importable, else skip the prompt. Entry points: `poor-cli install` / `poor-cli setup`.
+7. **Non-goals (hard):** do **not** remove the env/plaintext fallback (dev ergonomics); do **not** encrypt the plaintext config in this phase; do **not** integrate Vault or 1Password CLIs.
 
 ### Files to create/modify
 
@@ -162,8 +165,7 @@ Add optional `keyring` dependency and extend `ApiKeyManager` with keyring-aware 
 - [ ] Env + plaintext fallback paths preserved (dev ergonomics)
 - [ ] Setup wizard shows migrate prompt only when keyring is importable
 - [ ] No encryption of plaintext config (explicit non-goal)
-
-**PRD reference:** prd/012-keyring-credential-storage.md
+- [ ] Docs updated to describe the new storage option and lookup order
 
 ---
 
@@ -193,6 +195,8 @@ A wrapper around `page.evaluate(js)` that (1) regex-screens the JS for dangerous
 4. **Output bounding** — serialize only JSON-serializable values; truncate strings at `max_output` with a trailing marker (e.g., `…[truncated 3412 chars]`).
 5. **Permission escalation** — `allow_dangerous=True` funnels through the same permission callback used elsewhere; no silent bypass.
 6. **Do not** implement a full JS sandbox or replace Playwright. Rely on Playwright's page-context isolation for the rest.
+7. **Non-goals (hard):** do **not** block all `fetch` (legitimate scraping flows rely on it — denylist targets specific sinks only); do **not** add a network proxy layer; do **not** replace Playwright.
+8. **Rollback posture:** false-positive denylist hits are handled by the `allow_dangerous=True` escape hatch gated through the permission callback — no silent bypass is ever acceptable.
 
 ### Files to create/modify
 
@@ -208,8 +212,7 @@ A wrapper around `page.evaluate(js)` that (1) regex-screens the JS for dangerous
 - [ ] Timeout produces a clean, typed error (not a raw stack)
 - [ ] `allow_dangerous=True` routes through permission callback
 - [ ] Full coverage of each denylist pattern as individual unit tests
-
-**PRD reference:** prd/013-browser-tool-js-sandbox.md
+- [ ] `allow_dangerous=True` without a prior permission grant is rejected (no silent bypass)
 
 ---
 
@@ -228,7 +231,8 @@ Rewrite `trust.lua` to render sections (Provider, Sandbox preset, Permission mod
 2. **Rendering** — each section has a header and 1–3 data lines; action buttons are virtual text suffixed to specific lines (`[Toggle]`, `[View]`, `[Rotate]`, `[Export]`).
 3. **Action wiring** — `nvim_buf_set_keymap` with a line-number check inside the callback; `<CR>` dispatches based on cursor line. Each action invokes a dedicated RPC (`sandbox/toggle`, `permissions/list`, `audit/rotateNow`, `audit/exportRange`) and refreshes the buffer on completion.
 4. **Refresh loop** — after any action, re-query `trustStatus` and redraw; no full buffer recreation (preserve cursor).
-5. **Non-goal** — do **not** re-implement the general settings UI; that belongs to a future `:PoorCliSettings`.
+5. **Section inventory (must all render):** Provider, Sandbox preset, Permission mode, Permission rules count, Rollback (checkpoints retained), Audit log, Privacy (is data leaving the machine?), Memory (AGENTS.md source list).
+6. **Non-goal** — do **not** re-implement the general settings UI; that belongs to a future `:PoorCliSettings`. Do **not** modify the audit schema (shared constraint with 11B).
 
 ### Files to create/modify
 
@@ -243,8 +247,7 @@ Rewrite `trust.lua` to render sections (Provider, Sandbox preset, Permission mod
 - [ ] All section headers present; no data missing
 - [ ] Buffer preserves cursor position across refresh
 - [ ] No changes to audit schema (explicit non-goal)
-
-**PRD reference:** prd/034-trust-center-interactive.md
+- [ ] All eight sections listed above render with their data lines populated
 
 ---
 
@@ -268,7 +271,7 @@ A new `policy_panel.lua` that renders rules from `poor-cli/policy/list`, binds `
    - `r` → `policy/reload` → re-render
    - `q` → close panel
 4. **Refresh after edit** — autocmd on `BufWritePost` matching the policy file paths triggers `policy/reload` + re-render.
-5. **Non-goal** — do **not** change policy engine semantics; this is strictly a viewer/navigator.
+5. **Non-goal** — do **not** change policy engine semantics; this is strictly a viewer/navigator. Outcome labels must match the engine's existing allow/deny/prompt taxonomy exactly.
 
 ### Files to create/modify
 
@@ -284,5 +287,4 @@ A new `policy_panel.lua` that renders rules from `poor-cli/policy/list`, binds `
 - [ ] Edit path opens correct file at correct line
 - [ ] Panel closes cleanly with `q`
 - [ ] No mutation of policy engine behavior
-
-**PRD reference:** prd/036-policy-inspector-panel.md
+- [ ] `test_rules_list_renders` and `test_reload_picks_up_disk_change` both pass

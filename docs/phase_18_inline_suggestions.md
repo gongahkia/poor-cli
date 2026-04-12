@@ -1,8 +1,11 @@
 # Phase 18: Inline Suggestion Polish
 
 **Priority:** Medium — UX refinements on an already-shipping inline completion surface.
+**Wave:** 3
 **Estimated agents:** 2 (serialize — see file-scope table)
-**Dependencies:** Agent 18B is blocked by Agent 18A (per PRD 049 header).
+**Estimated effort:** 18A small (~3d), 18B medium (~4–5d)
+**Dependencies:** Agent 18B is blocked by Agent 18A (cycle/syntax filter builds on the accept-line + preview ghost-text state machinery).
+**Related references:** LEARNING.md §3.6 items #1, #2, #3, #5.
 **Philosophy:** Close the ergonomic gaps in ghost-text editing — line-granularity accept, a readable preview of multi-line suggestions, cycling through alternatives, and syntax-aware suppression so completions stop firing inside comments and strings.
 
 ---
@@ -15,7 +18,7 @@
 | `nvim-poor-cli/lua/poor-cli/keymaps.lua` | modify | — | No |
 | `poor_cli/server/handlers/chat.py` | — | modify | No |
 
-**Collision note:** Both agents mutate `inline.lua`. PRD 049 explicitly declares `Blocked by: 048` and PRD 048 declares `Conflicts with: 049 (serialize)`. **Run 18A to completion and land it first**, then start 18B on top of the merged result. Do not parallelize these two agents.
+**Collision note:** Both agents mutate `inline.lua`. 18B is blocked by 18A and 18A conflicts with 18B (serialize). **Run 18A to completion and land it first**, then start 18B on top of the merged result. Do not parallelize these two agents.
 
 ---
 
@@ -38,9 +41,9 @@ Add two inline-completion interactions:
 
 3. **Keymap registration in `keymaps.lua`** — register `<M-l>` → `accept_line()` and `<M-?>` → `open_preview_split()`. Both must no-op when no suggestion is active (do not steal the key from the user's normal mapping).
 
-4. **Do not touch suggestion generation** — PRD 048 §9 explicitly forbids modifying how suggestions are produced. This is purely a consumer-side change.
+4. **Do not touch suggestion generation (invariant)** — this is purely a consumer-side change. Suggestion production (request shape, server handler, trigger logic) must remain untouched by 18A.
 
-5. **Tests** — `test_accept_line_consumes_one_line_of_ghost_text` and `test_preview_split_opens_with_same_ft` per PRD.
+5. **Tests** — add `test_accept_line_consumes_one_line_of_ghost_text` and `test_preview_split_opens_with_same_ft`.
 
 ### Files to create/modify
 
@@ -58,7 +61,9 @@ Add two inline-completion interactions:
 - [ ] `test_preview_split_opens_with_same_ft` passes.
 - [ ] No changes to suggestion generation code paths.
 
-**PRD reference:** prd/048-inline-accept-line-preview.md
+### Rollback / risk
+
+Low. Both features are additive keymaps on a consumer-side state machine. To roll back, unregister `<M-l>` / `<M-?>` and delete the `accept_line` / `open_preview_split` helpers — no server or protocol changes are involved.
 
 ---
 
@@ -75,9 +80,9 @@ Add two inline-completion interactions:
 
 ### Implementation details
 
-1. **Server side — `chat.py` handler** (or `runtime.py` if PRD 019 has not yet merged; check at implementation time). Accept a new request field `completions_count: int` (default 1 for backward compatibility, default 3 when sent by the Neovim client). Return a list of candidates instead of a single string. Preserve the existing single-candidate response shape when `completions_count` is absent or 1.
+1. **Server side — `chat.py` handler** (or `runtime.py` if the runtime-split refactor has not yet merged; check at implementation time). Accept a new request field `completions_count: int` (default 1 for backward compatibility, default 3 when sent by the Neovim client). Return a list of candidates instead of a single string. Preserve the existing single-candidate response shape when `completions_count` is absent or 1.
 
-2. **Client cycle state in `inline.lua`** — store `{ candidates: string[], index: int }` alongside the existing suggestion state. `<M-]>` advances `index` (mod `len`); `<M-[>` retreats. On cycle, re-render the ghost text with the newly selected candidate. Invalidate the cache on cursor move (PRD 049 §9 explicitly forbids caching across cursor moves).
+2. **Client cycle state in `inline.lua`** — store `{ candidates: string[], index: int }` alongside the existing suggestion state. `<M-]>` advances `index` (mod `len`); `<M-[>` retreats. On cycle, re-render the ghost text with the newly selected candidate. **Invariant:** invalidate the candidate cache on any cursor move — candidates must not persist across cursor moves, because the prefix/context they were generated against is no longer current.
 
 3. **Treesitter region check** — before auto-triggering a request, call `vim.treesitter.get_node()` at the cursor. Maintain a small language-keyed skip table, e.g.:
    ```lua
@@ -92,7 +97,7 @@ Add two inline-completion interactions:
 
 4. **Server backward compat** — older clients that do not send `completions_count` must see identical behavior. Add a test that exercises the legacy path.
 
-5. **Tests** — `test_cycle_shows_second_candidate` and `test_treesitter_comment_skips_auto_trigger` per PRD.
+5. **Tests** — add `test_cycle_shows_second_candidate` and `test_treesitter_comment_skips_auto_trigger`. Also add a legacy-path server test exercising a request without `completions_count` to lock in backward compat.
 
 ### Files to create/modify
 
@@ -110,4 +115,13 @@ Add two inline-completion interactions:
 - [ ] `test_cycle_shows_second_candidate` passes.
 - [ ] `test_treesitter_comment_skips_auto_trigger` passes.
 
-**PRD reference:** prd/049-inline-cycle-syntax-filter.md
+### Rollback / risk
+
+Low. Server change is additive (new optional field, list return normalized to single string when absent). To roll back: drop the `completions_count` handling and return to single-candidate responses; remove cycle keymaps and treesitter gate on the client. No persistent state or schema migration is involved.
+
+### Invariants summary (18B)
+
+- Candidate cache MUST be invalidated on every cursor move.
+- Legacy requests (no `completions_count`) MUST yield byte-identical responses to pre-18B behavior.
+- Manual `<C-Space>` MUST bypass the treesitter skip gate.
+- Server must not crash on `completions_count = 0` or negative values — clamp to 1.

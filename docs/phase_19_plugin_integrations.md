@@ -7,6 +7,14 @@
 
 ---
 
+## Global invariants (apply to every agent in this phase)
+
+- **No hard dependency:** the `nvim-poor-cli` plugin spec must not list any of these plugins as required. All detection is via `pcall(require, "<plugin>")`.
+- **No log spam on absence:** a missing plugin must cause zero errors, zero `vim.notify` warnings, and zero autocmd/keymap registrations.
+- **No upstream modification:** we consume each plugin's public API. We do not monkey-patch, wrap internals, or shadow upstream behavior.
+- **Additive edits to shared files:** when two agents touch the same file (see Collision flags below), changes must be strictly additive blocks — no renaming existing namespaces, functions, or events.
+- **Each bridge self-registers** from its own `setup()` called by the existing bootstrap; no `init.lua` changes expected in this phase.
+
 ## File scope table
 
 | Agent | Plugin   | Primary new module                                              | Shared files touched                                     |
@@ -31,8 +39,13 @@
 ## Agent 19A: Trouble.nvim source for AI suggestions
 
 **Pain points addressed:** AI `file:line` suggestions only appear as virtual-text diagnostics; trouble.nvim users want them in the unified problems view.
-**PRD reference:** `prd/050-trouble-integration.md`
 **Estimated effort:** medium (3–4d)
+**Blocked by:** —
+**Upstream:** https://github.com/folke/trouble.nvim (3.x extension API)
+
+### Current state
+
+`diagnostics.lua` parses assistant text for `file:line:` patterns and calls `vim.diagnostic.set(...)` with a custom namespace. No trouble integration exists.
 
 ### What to build
 
@@ -53,6 +66,12 @@ Register a `poor_cli` source in trouble.nvim's 3.x extension API so `:Trouble po
 - `nvim-poor-cli/lua/poor-cli/diagnostics.lua` (expose the namespace handle if not already public)
 - `nvim-poor-cli/lua/poor-cli/commands.lua` (add wrapper command)
 
+### Out-of-scope / boundary
+
+- Do not depend on trouble.
+- Do not modify the existing diagnostic parsing pipeline.
+- Do not replace the existing virtual-text rendering.
+
 ### Acceptance criteria
 
 - [ ] `:Trouble poor_cli` shows all active AI suggestions when trouble is installed.
@@ -60,16 +79,22 @@ Register a `poor_cli` source in trouble.nvim's 3.x extension API so `:Trouble po
 - [ ] Source items share the existing diagnostic namespace (no duplicate store).
 - [ ] Plenary: `test_source_registers_when_trouble_present`, `test_source_noop_when_trouble_absent`, `test_source_returns_items_matching_namespace`.
 
-**PRD reference:** prd/050-trouble-integration.md
+### Rollback / risk
+
+Low. Optional integration; disabling the bridge removes the `:Trouble poor_cli` mode but leaves virtual-text diagnostics untouched.
 
 ---
 
 ## Agent 19B: Gitsigns bridge for AI-authored hunks
 
 **Pain points addressed:** After accepting a hunk via Diff Review, users can't visually distinguish AI-authored changes from manual edits in the gitsigns gutter.
-**PRD reference:** `prd/051-gitsigns-ai-hunks.md`
 **Estimated effort:** small (3d)
 **Blocked by:** PRD 014 (Diff Review)
+**Upstream:** https://github.com/lewis6991/gitsigns.nvim
+
+### Current state
+
+Gitsigns renders `+`/`~`/`-` gutter signs uniformly for all unstaged changes. Once a Diff Review hunk is accepted, it becomes a live unstaged git change indistinguishable from any other edit.
 
 ### What to build
 
@@ -89,6 +114,12 @@ Track accepted AI hunks per-file in an in-memory session map and render a distin
 - `nvim-poor-cli/tests/gitsigns_bridge_spec.lua` (new)
 - `nvim-poor-cli/lua/poor-cli/diff_review.lua` (emit `editCommitted` with `{file, line_range}`)
 
+### Out-of-scope / boundary
+
+- Do not replace gitsigns.
+- Do not add per-hunk git author metadata to the commit itself.
+- Attribution is session-local; no persistence across Neovim restarts.
+
 ### Acceptance criteria
 
 - [ ] `✱` (or configured glyph) appears in the gutter on AI-authored hunks after accept.
@@ -96,19 +127,38 @@ Track accepted AI hunks per-file in an in-memory session map and render a distin
 - [ ] Sign glyph and highlight group are configurable.
 - [ ] Plenary: `test_signs_placed_after_accept`, `test_signs_cleared_on_commit`.
 
-**PRD reference:** prd/051-gitsigns-ai-hunks.md
+### Rollback / risk
+
+Low. Signs live in a dedicated group; dropping the bridge removes the group cleanly.
 
 ---
 
 ## Agent 19C: Snacks.nvim notifications and dashboard tile
 
 **Pain points addressed:** `vim.notify` renders as plain echo messages; users want grouped, dismissable notifications and a dashboard tile surfacing session cost / active turns.
-**PRD reference:** `prd/052-snacks-integration.md`
 **Estimated effort:** small-to-medium (3–4d)
+**Blocked by:** —
+**Upstream:** https://github.com/folke/snacks.nvim
+
+### Current state
+
+All notifications flow through `vim.notify`. No dashboard surface for session cost / active turns.
 
 ### What to build
 
 Thin bridge that routes non-error notifications through `snacks.notify` (grouped by `"poor-cli"`) when snacks is present, with `vim.notify` as fallback. Also registers a `snacks.dashboard` section showing session cost and in-flight turn count.
+
+### Bridge sketch
+
+```lua
+M.notify(msg, level, opts)
+  if snacks_available and level ~= vim.log.levels.ERROR then
+    require("snacks").notify(msg, level, vim.tbl_extend("keep", opts or {}, { group = "poor-cli" }))
+  else
+    vim.notify(msg, level, opts)
+  end
+end
+```
 
 ### Implementation details
 
@@ -125,6 +175,12 @@ Thin bridge that routes non-error notifications through `snacks.notify` (grouped
 - `nvim-poor-cli/lua/poor-cli/chat.lua` (swap notify calls at chosen sites)
 - Other modules that call `vim.notify` for cost/stream events
 
+### Out-of-scope / boundary
+
+- Do not mandate snacks.
+- Do not swap every single `vim.notify` call — only strategic sites listed above.
+- Error-level notifications stay on `vim.notify` unconditionally.
+
 ### Acceptance criteria
 
 - [ ] Notifications route to snacks when available; fall back to `vim.notify` otherwise.
@@ -132,16 +188,22 @@ Thin bridge that routes non-error notifications through `snacks.notify` (grouped
 - [ ] No hard dependency on snacks at load time.
 - [ ] Plenary: `test_bridge_routes_to_snacks_when_present`, `test_bridge_fallbacks_vim_notify`, `test_dashboard_tile_registered`.
 
-**PRD reference:** prd/052-snacks-integration.md
+### Rollback / risk
+
+Low. Removing the bridge reverts notifications to `vim.notify` and removes the dashboard section.
 
 ---
 
 ## Agent 19D: Oil.nvim mention source
 
 **Pain points addressed:** `@file:` mention picker uses a flat file list; oil users want a tree-navigation experience when inserting file references into chat.
-**PRD reference:** `prd/053-oil-file-mention.md`
 **Estimated effort:** small (2d)
 **Blocked by:** PRD 046 (mention picker)
+**Upstream:** https://github.com/stevearc/oil.nvim
+
+### Current state
+
+Mention picker (PRD 046) lists tracked files via a default flat picker for the `@file:` source.
 
 ### What to build
 
@@ -160,6 +222,12 @@ New `@oil:` source for the mention picker that opens oil in a floating window; w
 - `nvim-poor-cli/lua/poor-cli/oil_bridge.lua` (new)
 - `nvim-poor-cli/lua/poor-cli/chat.lua` (register oil source in mention picker)
 
+### Out-of-scope / boundary
+
+- Do not depend on oil.
+- Do not modify oil's own behavior (keymaps, rendering, filters).
+- Do not replace the default `@file:` source; `@oil:` is additive.
+
 ### Acceptance criteria
 
 - [ ] `@oil:` opens oil float; `<CR>` inserts `@file:<path>` into chat.
@@ -167,16 +235,22 @@ New `@oil:` source for the mention picker that opens oil in a floating window; w
 - [ ] Oil's own behavior unchanged.
 - [ ] Plenary: `test_oil_path_inserted_on_select`, `test_noop_when_oil_absent`.
 
-**PRD reference:** prd/053-oil-file-mention.md
+### Rollback / risk
+
+Low. Source is additive; removing the bridge leaves the existing `@file:` source intact.
 
 ---
 
 ## Agent 19E: Overseer.nvim task mirror
 
 **Pain points addressed:** Long-running poor-cli tasks (deploys, test runs, benchmarks, embeddings) are only visible in poor-cli's own panel; overseer users want them in the unified task runner view.
-**PRD reference:** `prd/054-overseer-integration.md`
 **Estimated effort:** medium (4d)
 **Blocked by:** PRD 025 (streaming tool output)
+**Upstream:** https://github.com/stevearc/overseer.nvim
+
+### Current state
+
+`tasks.lua` surfaces the server's task list as a poor-cli-owned panel only. No mirroring into any third-party runner.
 
 ### What to build
 
@@ -196,6 +270,12 @@ For every long-running poor-cli task, register a mirror `overseer.Task` whose st
 - `nvim-poor-cli/tests/overseer_bridge_spec.lua` (new)
 - `nvim-poor-cli/lua/poor-cli/tasks.lua` (emit lifecycle events if not already)
 
+### Out-of-scope / boundary
+
+- Do not depend on overseer.
+- Do not run poor-cli tasks *through* overseer (mirror is read-only).
+- Do not modify task semantics (run location, lifecycle, cancel behavior) on the poor-cli side.
+
 ### Acceptance criteria
 
 - [ ] Each poor-cli long-running task appears as a mirror overseer task with live status.
@@ -204,15 +284,22 @@ For every long-running poor-cli task, register a mirror `overseer.Task` whose st
 - [ ] Task semantics (run location, lifecycle) unchanged on the poor-cli side.
 - [ ] Plenary: `test_task_mirrored_to_overseer`, `test_noop_when_overseer_absent`.
 
-**PRD reference:** prd/054-overseer-integration.md
+### Rollback / risk
+
+Low. Mirror is purely observational; dropping the bridge leaves the original poor-cli task panel fully functional.
 
 ---
 
 ## Agent 19F: Neogit bridge for `/commit` review
 
 **Pain points addressed:** `/commit` runs server-side and never hands control to neogit, so users can't review or tweak the staged change set + message before committing.
-**PRD reference:** `prd/056-neogit-integration.md`
 **Estimated effort:** small-to-medium (3d)
+**Blocked by:** —
+**Upstream:** https://github.com/NeogitOrg/neogit
+
+### Current state
+
+`/commit` runs server-side and produces a commit directly; there is no UI bridge into neogit.
 
 ### What to build
 
@@ -232,6 +319,12 @@ After `/commit`, if neogit is installed and `neogit.open_on_commit = true`, open
 - `nvim-poor-cli/tests/neogit_bridge_spec.lua` (new — mocked neogit)
 - `nvim-poor-cli/lua/poor-cli/commands.lua` (delegate `/commit` post-step to bridge when config is on)
 
+### Out-of-scope / boundary
+
+- Do not depend on neogit.
+- Do not modify neogit itself.
+- Default is opt-in (`open_on_commit = false`) — existing `/commit` behavior is untouched unless the user opts in.
+
 ### Acceptance criteria
 
 - [ ] With `neogit.open_on_commit = true` and neogit present, `/commit` opens neogit staged with only AI-touched files and a pre-filled message.
@@ -239,15 +332,22 @@ After `/commit`, if neogit is installed and `neogit.open_on_commit = true`, open
 - [ ] User-aborted neogit commit does not create a commit elsewhere.
 - [ ] Plenary: `test_opens_neogit_with_prefilled_message`, `test_noop_when_neogit_absent`.
 
-**PRD reference:** prd/056-neogit-integration.md
+### Rollback / risk
+
+Low. Flow is opt-in; toggling the config off restores the server-side commit path.
 
 ---
 
 ## Agent 19G: nvim-dap bridge — bug to breakpoint
 
 **Pain points addressed:** When the AI flags a bug at `file:line`, setting a DAP breakpoint there requires the user to manually navigate and toggle.
-**PRD reference:** `prd/057-nvim-dap-integration.md`
 **Estimated effort:** medium (4d)
+**Blocked by:** —
+**Upstream:** https://github.com/mfussenegger/nvim-dap
+
+### Current state
+
+`file:line` references in chat and diagnostics are parsed by `diagnostics.lua` but are not wired to any DAP action.
 
 ### What to build
 
@@ -268,6 +368,12 @@ From any diagnostic or chat `file:line` reference, `<leader>pb` sets a DAP break
 - `nvim-poor-cli/lua/poor-cli/commands.lua` (register keymaps or user commands)
 - `nvim-poor-cli/lua/poor-cli/diagnostics.lua` (expose shared `file:line` parser)
 
+### Out-of-scope / boundary
+
+- Do not ship any DAP adapter or per-language debugger configuration.
+- Do not hard-depend on nvim-dap.
+- Keymaps are scoped to poor-cli's own buffers (chat, diagnostics) — never global overrides.
+
 ### Acceptance criteria
 
 - [ ] `<leader>pb` on a chat/diagnostic reference sets a DAP breakpoint at the parsed location.
@@ -276,4 +382,6 @@ From any diagnostic or chat `file:line` reference, `<leader>pb` sets a DAP break
 - [ ] No DAP adapter configuration shipped by poor-cli.
 - [ ] Plenary: `test_breakpoint_set_at_line`, `test_noop_when_dap_absent`.
 
-**PRD reference:** prd/057-nvim-dap-integration.md
+### Rollback / risk
+
+Low. Keymaps are opt-in via detection + config flag; dropping the bridge leaves the existing diagnostic parser untouched.

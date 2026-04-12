@@ -65,7 +65,16 @@ A reproducible SWE-bench Lite run wired to `poor-cli exec --prompt $task` as the
 - [ ] Run is reproducible from the documented commit SHA + model + config.
 - [ ] No benchmark-specific tuning applied (documented in methodology section).
 
-**PRD reference:** prd/060-swe-bench-lite-publish.md
+### Out-of-scope / boundary
+
+- Do not cherry-pick tasks.
+- Do not tune prompts, configs, or code paths for the benchmark.
+- Do not compare models in a single run; a second model requires a distinct `<run-id>`.
+- Do not commit API keys or task-data caches.
+
+### Effort & risk
+
+Estimated effort: medium (~2 weeks, single agent). Risk: low — additive data only, no runtime behaviour change. If variance between runs is high, re-run twice and publish the better-documented run (not the higher score).
 
 ---
 
@@ -134,4 +143,18 @@ A headless Lua test substrate built on `plenary.busted`. Bootstrap a test-only N
 - [ ] `nvim-poor-cli/README.md` documents how to write and run specs.
 - [ ] No spec hits a real `poor-cli-server`.
 
-**PRD reference:** prd/065-lua-testing-infrastructure.md
+### Out-of-scope / boundary
+
+- Do not port existing ad-hoc test files.
+- Do not fuzz-test the UI.
+- Do not run tests against a real `poor-cli-server`.
+- Pre-commit's existing `luac5.4 -p` syntax check stays as-is; this phase does not replace it.
+
+### Effort & risk
+
+Estimated effort: small-to-medium (~3 days, single agent). Risk: low — infra-only; no plugin runtime code changes. This work blocks all Lua-touching PRDs that ship tests (014, 015, 016, 029–049, 050–057), so it must land before the first such PRD merges its specs.
+
+### References
+
+- plenary.nvim: https://github.com/nvim-lua/plenary.nvim
+- SWE-bench: https://www.swebench.com/

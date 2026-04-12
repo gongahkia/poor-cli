@@ -1017,7 +1017,6 @@ You are implementing removal of retired `_archived/` front-ends for poor-cli.
 
 FIRST: Read docs/phase_09_repo_cleanup.md, specifically the "Agent 9A" section for full
 implementation details and acceptance criteria.
-ALSO READ: prd/006-remove-archived-frontends.md for the full PRD.
 
 CONTEXT:
 - `_archived/` holds retired TUI/Emacs/other front-ends that no longer ship
@@ -1051,7 +1050,6 @@ You are implementing the decision outcome on stub modules (`docker_sandbox`,
 
 FIRST: Read docs/phase_09_repo_cleanup.md, specifically the "Agent 9B" section for the
 chosen decision and acceptance criteria.
-ALSO READ: prd/007-dead-stub-modules-decision.md for the full PRD.
 
 CONTEXT:
 - Each stub is either (a) shipped end-to-end elsewhere, or (b) removed here
@@ -1084,7 +1082,6 @@ so contributors reading the main package see only production code.
 
 FIRST: Read docs/phase_09_repo_cleanup.md, specifically the "Agent 9C" section for full
 implementation details and acceptance criteria.
-ALSO READ: prd/008-research-module-relocation.md for the full PRD.
 
 CONTEXT:
 - Several research-only modules currently live at `poor_cli/*.py` top level
@@ -1118,7 +1115,6 @@ backend, and purging stale TUI screenshots from `asset/`.
 
 FIRST: Read docs/phase_09_repo_cleanup.md, specifically the "Agent 9D" section for full
 implementation details and acceptance criteria.
-ALSO READ: prd/009-readme-rewrite-screenshot-purge.md for the full PRD.
 
 CONTEXT:
 - Current README references the retired TUI (dead since PRD 006)
@@ -1152,7 +1148,6 @@ You are pre-slicing `poor_cli/core.py` into empty section modules so follow-up P
 
 FIRST: Read docs/phase_09_repo_cleanup.md, specifically the "Agent 9E" section for full
 implementation details and acceptance criteria.
-ALSO READ: prd/017-core-pre-slice.md for the full PRD.
 
 CONTEXT:
 - `core.py` is oversized and multi-responsibility; three targets are agent-loop,
@@ -1186,7 +1181,6 @@ the refactor gains from regression.
 
 FIRST: Read docs/phase_09_repo_cleanup.md, specifically the "Agent 9F" section for full
 implementation details and acceptance criteria.
-ALSO READ: prd/021-core-line-count-ci-gate.md for the full PRD.
 
 CONTEXT:
 - Budgets: `core.py` ≤1000, `server/runtime.py` ≤800, `config.py` ≤1500, any other py ≤2000
@@ -1231,7 +1225,6 @@ You are extracting `ContextAssemblyOrchestrator` — a single entry point with
 
 FIRST: Read docs/phase_10_core_refactor.md, specifically the "Agent 10A" section for full
 implementation details and acceptance criteria.
-ALSO READ: prd/018-context-assembly-orchestrator.md for the full PRD.
 
 CONTEXT:
 - Today, context assembly is scattered across core.py, context_providers.py, history.py
@@ -1265,7 +1258,6 @@ handler self-registers via a decorator.
 
 FIRST: Read docs/phase_10_core_refactor.md, specifically the "Agent 10B" section for full
 implementation details and acceptance criteria.
-ALSO READ: prd/019-server-handlers-partition.md for the full PRD.
 
 CONTEXT:
 - `runtime.py` currently mixes dispatch, transport, and every RPC handler
@@ -1299,7 +1291,6 @@ You are introducing a `ProviderCapability` enum that every provider declares, re
 
 FIRST: Read docs/phase_10_core_refactor.md, specifically the "Agent 10C" section for full
 implementation details and acceptance criteria.
-ALSO READ: prd/020-provider-capability-enum.md for the full PRD.
 
 CONTEXT:
 - Five providers live under `poor_cli/providers/` with divergent feature sets
@@ -1332,7 +1323,6 @@ You are executing the consolidation DECISION on poor-cli's extension model
 
 FIRST: Read docs/phase_10_core_refactor.md, specifically the "Agent 10D" section for the
 chosen decision and migration plan.
-ALSO READ: prd/064-extension-model-consolidation.md for the full PRD.
 
 CONTEXT:
 - Today: four overlapping extension concepts — automations, workflows, custom commands, skills
@@ -1374,7 +1364,6 @@ poor-cli server.
 
 FIRST: Read docs/phase_11_security_policy.md, specifically the "Agent 11A" section for full
 implementation details and acceptance criteria.
-ALSO READ: prd/010-rpc-rate-limiting.md for the full PRD.
 
 CONTEXT:
 - Every inbound RPC call must traverse a limiter before handler dispatch
@@ -1406,7 +1395,6 @@ You are adding size-capped rotation, archival, and export to poor-cli's audit lo
 
 FIRST: Read docs/phase_11_security_policy.md, specifically the "Agent 11B" section for full
 implementation details and acceptance criteria.
-ALSO READ: prd/011-audit-log-rotation.md for the full PRD.
 
 CONTEXT:
 - Audit DB is SQLite at `.poor-cli/audit.db`; schema is frozen by this PRD
@@ -1440,7 +1428,6 @@ You are integrating the OS keyring as the preferred credential store for poor-cl
 
 FIRST: Read docs/phase_11_security_policy.md, specifically the "Agent 11C" section for full
 implementation details and acceptance criteria.
-ALSO READ: prd/012-keyring-credential-storage.md for the full PRD.
 
 CONTEXT:
 - Lookup order must be: keyring → env var → plaintext config
@@ -1474,7 +1461,6 @@ destructively mutate state.
 
 FIRST: Read docs/phase_11_security_policy.md, specifically the "Agent 11D" section for full
 implementation details and acceptance criteria.
-ALSO READ: prd/013-browser-tool-js-sandbox.md for the full PRD.
 
 CONTEXT:
 - Tool lives alongside the Playwright integration in `poor_cli/enhanced_tools.py`
@@ -1509,7 +1495,6 @@ actions for sandbox toggles, permission rule viewing, audit rotation, and audit 
 
 FIRST: Read docs/phase_11_security_policy.md, specifically the "Agent 11E" section for full
 implementation details and acceptance criteria.
-ALSO READ: prd/034-trust-center-interactive.md for the full PRD.
 
 CONTEXT:
 - New buffer type in `nvim-poor-cli/lua/poor-cli/trust_center.lua`
@@ -1542,7 +1527,6 @@ permission rule in effect with scope, outcome, and source.
 
 FIRST: Read docs/phase_11_security_policy.md, specifically the "Agent 11F" section for full
 implementation details and acceptance criteria.
-ALSO READ: prd/036-policy-inspector-panel.md for the full PRD.
 
 CONTEXT:
 - Rules originate from user config, repo config, and defaults; show each source
@@ -1587,7 +1571,6 @@ You are consolidating `poor_cli/watch.py` and `poor_cli/ide_watch.py` into a sin
 
 FIRST: Read docs/phase_12_context_intel_v2.md, specifically the "Agent 12A" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/005-file-watcher-consolidation.md for the full PRD.
 
 CONTEXT:
 - Pick `ide_watch.py` as the survivor (richer, newer)
@@ -1620,7 +1603,6 @@ context picks the most-linked, most-recent, import-adjacent candidates.
 
 FIRST: Read docs/phase_12_context_intel_v2.md, specifically the "Agent 12B" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/022-pagerank-file-selection.md for the full PRD.
 
 CONTEXT:
 - Selection score: `alpha*recency + beta*pagerank + gamma*import_distance`
@@ -1654,7 +1636,6 @@ so repo-level instructions can live in a standard filename.
 
 FIRST: Read docs/phase_12_context_intel_v2.md, specifically the "Agent 12C" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/023-agents-md-support.md for the full PRD.
 
 CONTEXT:
 - Precedence (high to low): AGENTS.md in cwd, ancestor AGENTS.md, CLAUDE.md legacy
@@ -1687,7 +1668,6 @@ context file (and optional rules / tool schemas) gets its own `cache_control` ma
 
 FIRST: Read docs/phase_12_context_intel_v2.md, specifically the "Agent 12D" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/027-block-level-prompt-caching.md for the full PRD.
 
 CONTEXT:
 - Builds on Phase 2C (prefix caching) and Phase 10A (orchestrator)
@@ -1721,7 +1701,6 @@ for JSON tools, regex/keep-lines for text tools — applied post-execution, pre-
 
 FIRST: Read docs/phase_12_context_intel_v2.md, specifically the "Agent 12E" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/028-tool-output-schema-filter.md for the full PRD.
 
 CONTEXT:
 - Every built-in tool declares a `output_filter` in its schema
@@ -1754,7 +1733,6 @@ You are shipping safe pre-tokenization end-to-end — gated behind
 
 FIRST: Read docs/phase_12_context_intel_v2.md, specifically the "Agent 12F" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/058-safe-pretokenization-ship.md for the full PRD.
 
 CONTEXT:
 - Module + benchmark already exist (`bench_safe_pretok.py`); not wired in yet
@@ -1796,7 +1774,6 @@ stdio, multi-server support, and optional registry pull.
 
 FIRST: Read docs/phase_13_protocol_streaming.md, specifically the "Agent 13A" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/024-mcp-2026-compliance.md for the full PRD.
 
 CONTEXT:
 - Relocate to a `poor_cli/mcp/` package; stdio and Streamable HTTP transports
@@ -1829,7 +1806,6 @@ the Lua client, and rendering progressively in the Agent Timeline.
 
 FIRST: Read docs/phase_13_protocol_streaming.md, specifically the "Agent 13B" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/025-streaming-tool-output.md for the full PRD.
 
 CONTEXT:
 - Targets: bash, run_tests, process_logs — the tools that produce large/slow output
@@ -1862,7 +1838,6 @@ commands (`git status`, `git diff --stat`, `ls -la` first; stretch: npm/cargo).
 
 FIRST: Read docs/phase_13_protocol_streaming.md, specifically the "Agent 13C" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/026-rtk-lite-shell-filter.md for the full PRD.
 
 CONTEXT:
 - This is NOT RTK the Rust binary — Python-only, no Rust dependency
@@ -1909,7 +1884,6 @@ hunk, and the user accepts/rejects/regenerates per hunk.
 
 FIRST: Read docs/phase_14_nvim_observability.md, specifically the "Agent 14A" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/014-diff-review-panel.md for the full PRD.
 
 CONTEXT:
 - Today edits auto-apply; this PRD stages them behind a review UI
@@ -1943,7 +1917,6 @@ and previous turns — with cancel, retry, and dismiss actions.
 
 FIRST: Read docs/phase_14_nvim_observability.md, specifically the "Agent 14B" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/015-agent-timeline-panel.md for the full PRD.
 
 CONTEXT:
 - Columns/fields: tool name, first-line args, status, duration, expandable result
@@ -1977,7 +1950,6 @@ You are shipping the three-layer Cost HUD: lualine segment, per-message badge, a
 
 FIRST: Read docs/phase_14_nvim_observability.md, specifically the "Agent 14C" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/016-cost-hud.md for the full PRD.
 
 CONTEXT:
 - Lualine segment: `$0.42 · Δ$0.03 · cache 62%` (session $, turn delta, cache hit rate)
@@ -2011,7 +1983,6 @@ current `ContextSnapshot` with reason, tokens, and pin/drop actions.
 
 FIRST: Read docs/phase_14_nvim_observability.md, specifically the "Agent 14D" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/029-context-explainer-panel.md for the full PRD.
 
 CONTEXT:
 - Reads `ContextSnapshot` produced by PRD 018
@@ -2044,7 +2015,6 @@ caching, semantic cache, RTK, model downshift) with deltas and 30-day sparkline.
 
 FIRST: Read docs/phase_14_nvim_observability.md, specifically the "Agent 14E" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/041-savings-dashboard.md for the full PRD.
 
 CONTEXT:
 - Complement to PRD 016 Cost HUD — Savings focuses on what you did NOT spend
@@ -2077,7 +2047,6 @@ ignore patterns), QA toggle status, and last N triggered actions + outcomes.
 
 FIRST: Read docs/phase_14_nvim_observability.md, specifically the "Agent 14F" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/042-watch-status-panel.md for the full PRD.
 
 CONTEXT:
 - Reads from the consolidated FileWatcher (PRD 005)
@@ -2123,7 +2092,6 @@ showing the current plan's steps with Tab/S-Tab advancement.
 
 FIRST: Read docs/phase_15_nvim_navigators.md, specifically the "Agent 15A" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/031-plan-board-kanban.md for the full PRD.
 
 CONTEXT:
 - Steps are produced by poor-cli's plan mode
@@ -2156,7 +2124,6 @@ saved prompts with preview; `<CR>` runs, `e` edits, `d` deletes, `<C-n>` clones.
 
 FIRST: Read docs/phase_15_nvim_navigators.md, specifically the "Agent 15B" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/032-prompt-library-picker.md for the full PRD.
 
 CONTEXT:
 - Depends on PRD 055 picker adapter being live
@@ -2189,7 +2156,6 @@ You are implementing the Workflow Starter picker — templates with preview; `<C
 
 FIRST: Read docs/phase_15_nvim_navigators.md, specifically the "Agent 15C" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/033-workflow-starter-picker.md for the full PRD.
 
 CONTEXT:
 - Depends on PRD 055 adapter and the consolidated extension model (PRD 064)
@@ -2222,7 +2188,6 @@ servers with status, tool count, last error, plus a paginated official registry 
 
 FIRST: Read docs/phase_15_nvim_navigators.md, specifically the "Agent 15D" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/035-mcp-registry-browser.md for the full PRD.
 
 CONTEXT:
 - Depends on PRD 024 (MCP 2026) registry support
@@ -2255,7 +2220,6 @@ members with roles, driver indicator + `[Pass driver]`.
 
 FIRST: Read docs/phase_15_nvim_navigators.md, specifically the "Agent 15E" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/037-multiplayer-room-fullscreen.md for the full PRD.
 
 CONTEXT:
 - GATED by PRD 063 DECISION — only build if (A) "Commit" is chosen
@@ -2288,7 +2252,6 @@ files, their import neighborhoods, and tree-sitter-derived symbols.
 
 FIRST: Read docs/phase_15_nvim_navigators.md, specifically the "Agent 15F" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/038-repo-map-visualizer.md for the full PRD.
 
 CONTEXT:
 - Reads from `poor_cli/repo_graph.py`
@@ -2321,7 +2284,6 @@ creates a sibling; right-split tree view with `[[`/`]]` navigation and `<CR>` sw
 
 FIRST: Read docs/phase_15_nvim_navigators.md, specifically the "Agent 15G" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/039-conversation-branch-tree.md for the full PRD.
 
 CONTEXT:
 - Pairs with PRD 043 (backend regenerate-as-sibling plumbing)
@@ -2366,7 +2328,6 @@ providers → models with capability icons and $$/1K indicators.
 
 FIRST: Read docs/phase_16_pickers_onboarding.md, specifically the "Agent 16A" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/030-provider-model-picker.md for the full PRD.
 
 CONTEXT:
 - Icons: streaming, thinking, caching, vision; costs from a static table + overrides
@@ -2399,7 +2360,6 @@ You are implementing onboarding re-run, milestone tips, and an interactive 2-min
 
 FIRST: Read docs/phase_16_pickers_onboarding.md, specifically the "Agent 16B" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/040-onboarding-rerun-tour.md for the full PRD.
 
 CONTEXT:
 - `:PoorCliOnboarding` must re-open any time (not once-and-done)
@@ -2432,7 +2392,6 @@ detects Snacks > Telescope > fzf-lua > vim.ui.select and routes accordingly.
 
 FIRST: Read docs/phase_16_pickers_onboarding.md, specifically the "Agent 16C" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/055-picker-adapter-layer.md for the full PRD.
 
 CONTEXT:
 - Foundational for PRDs 030, 032, 033, 035, 046
@@ -2476,7 +2435,6 @@ branch; `[[`/`]]` navigation. The tree VIEW is PRD 039.
 
 FIRST: Read docs/phase_17_chat_interactions.md, specifically the "Agent 17A" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/043-chat-regenerate-branch-tree.md for the full PRD.
 
 CONTEXT:
 - Server must persist a DAG where each regenerate creates a sibling
@@ -2509,7 +2467,6 @@ You are adding cursor-on-fenced-codeblock actions: `yc` yank, `<leader>ya` apply
 
 FIRST: Read docs/phase_17_chat_interactions.md, specifically the "Agent 17B" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/044-chat-codeblock-actions.md for the full PRD.
 
 CONTEXT:
 - Uses tree-sitter to detect fenced code blocks in `chat.lua`
@@ -2542,7 +2499,6 @@ popup with fuzzy match on name + 1-line description.
 
 FIRST: Read docs/phase_17_chat_interactions.md, specifically the "Agent 17C" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/045-chat-slash-autocomplete.md for the full PRD.
 
 CONTEXT:
 - Reflect, not replace, the existing command list (source of truth server-side)
@@ -2575,7 +2531,6 @@ You are adding `@`-mention picker in chat input with sources: `@file:`, `@buffer
 
 FIRST: Read docs/phase_17_chat_interactions.md, specifically the "Agent 17D" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/046-chat-mention-picker.md for the full PRD.
 
 CONTEXT:
 - Uses PRD 055 picker adapter
@@ -2608,7 +2563,6 @@ virtual-text badge, `<leader>ex` export (md/json/transcript).
 
 FIRST: Read docs/phase_17_chat_interactions.md, specifically the "Agent 17E" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/047-chat-polish-bundle.md for the full PRD.
 
 CONTEXT:
 - Per-turn badge overlaps with PRD 016 HUD — share the formatter, keep chat-local
@@ -2650,7 +2604,6 @@ and `<M-?>` to open a preview split with the full completion syntax-highlighted.
 
 FIRST: Read docs/phase_18_inline_polish.md, specifically the "Agent 18A" section for full
 implementation details and acceptance criteria.
-ALSO READ: prd/048-inline-accept-line-preview.md for the full PRD.
 
 CONTEXT:
 - Inline suggestions live in `nvim-poor-cli/lua/poor-cli/inline.lua`
@@ -2683,7 +2636,6 @@ filter that skips auto-trigger inside comments / strings.
 
 FIRST: Read docs/phase_18_inline_polish.md, specifically the "Agent 18B" section for full
 implementation details and acceptance criteria.
-ALSO READ: prd/049-inline-cycle-syntax-filter.md for the full PRD.
 
 CONTEXT:
 - Server must support `n=3` candidate completions per request
@@ -2729,7 +2681,6 @@ current AI suggestions using the same namespace as `diagnostics.lua`.
 
 FIRST: Read docs/phase_19_plugin_integrations.md, specifically the "Agent 19A" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/050-trouble-integration.md for the full PRD.
 
 CONTEXT:
 - Detect trouble.nvim at runtime; no hard dependency
@@ -2760,7 +2711,6 @@ You are adding a dim gutter icon on AI-authored hunks; attribution map clears on
 
 FIRST: Read docs/phase_19_plugin_integrations.md, specifically the "Agent 19B" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/051-gitsigns-ai-hunks.md for the full PRD.
 
 CONTEXT:
 - Track AI-authorship per-file per-session in memory
@@ -2793,7 +2743,6 @@ adding a snacks dashboard tile showing session cost + active turns.
 
 FIRST: Read docs/phase_19_plugin_integrations.md, specifically the "Agent 19C" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/052-snacks-integration.md for the full PRD.
 
 CONTEXT:
 - Detect snacks at runtime; fall back to `vim.notify`
@@ -2826,7 +2775,6 @@ file inserts its path into the chat input.
 
 FIRST: Read docs/phase_19_plugin_integrations.md, specifically the "Agent 19D" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/053-oil-file-mention.md for the full PRD.
 
 CONTEXT:
 - Depends on PRD 046 mention picker's `register_source` API
@@ -2858,7 +2806,6 @@ mirrors into overseer and output streams via PRD 025 into overseer's output buff
 
 FIRST: Read docs/phase_19_plugin_integrations.md, specifically the "Agent 19E" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/054-overseer-integration.md for the full PRD.
 
 CONTEXT:
 - Detect overseer at runtime; no hard dep
@@ -2892,7 +2839,6 @@ pre-fill the commit message from the agent's proposal.
 
 FIRST: Read docs/phase_19_plugin_integrations.md, specifically the "Agent 19F" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/056-neogit-integration.md for the full PRD.
 
 CONTEXT:
 - Detect neogit at runtime; no hard dep
@@ -2924,7 +2870,6 @@ You are integrating nvim-dap — on a diagnostic or chat `file:line` reference,
 
 FIRST: Read docs/phase_19_plugin_integrations.md, specifically the "Agent 19G" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/057-nvim-dap-integration.md for the full PRD.
 
 CONTEXT:
 - Detect dap at runtime; no hard dep
@@ -2965,7 +2910,6 @@ Ollama/vLLM gated by `ProviderCapability.LATENT_COMMUNICATION`, archive, or free
 
 FIRST: Read docs/phase_20_strategic_decisions.md, specifically the "Agent 20A" section for
 the chosen decision and the implementation plan.
-ALSO READ: prd/059-latent-communication-decision.md for the full PRD.
 
 CONTEXT:
 - GATED by PRD 062 (20C): audience decision informs the right option
@@ -2997,7 +2941,6 @@ You are implementing the DECISION outcome on renaming the project (`poor-cli`).
 
 FIRST: Read docs/phase_20_strategic_decisions.md, specifically the "Agent 20B" section for
 the chosen decision and migration plan.
-ALSO READ: prd/061-rename-decision.md for the full PRD.
 
 CONTEXT:
 - (a) Rename — migrate pip package, GitHub repo, Neovim plugin, ~10K LoC references
@@ -3030,7 +2973,6 @@ teams) and the single north-star metric.
 
 FIRST: Read docs/phase_20_strategic_decisions.md, specifically the "Agent 20C" section for
 the chosen audience, metric, and the downstream implications.
-ALSO READ: prd/062-audience-north-star.md for the full PRD.
 
 CONTEXT:
 - (A) Cost-conscious hobbyists, (B) Research-minded engineers, (C) Small engineering teams
@@ -3062,7 +3004,6 @@ You are implementing the DECISION on multiplayer: (A) Commit, (B) Cut, (C) Freez
 
 FIRST: Read docs/phase_20_strategic_decisions.md, specifically the "Agent 20D" section for
 the chosen decision and the execution plan.
-ALSO READ: prd/063-multiplayer-commit-or-cut.md for the full PRD.
 
 CONTEXT:
 - GATED by PRD 062 (20C): audience likely decides this
@@ -3105,7 +3046,6 @@ methodology + results + cost as a citable number.
 
 FIRST: Read docs/phase_21_testing_benchmarks.md, specifically the "Agent 21A" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/060-swe-bench-lite-publish.md for the full PRD.
 
 CONTEXT:
 - Reproducible means: pinned versions, pinned model, known seeds, documented costs
@@ -3138,7 +3078,6 @@ PRD can ship with tests.
 
 FIRST: Read docs/phase_21_testing_benchmarks.md, specifically the "Agent 21B" section for
 full implementation details and acceptance criteria.
-ALSO READ: prd/065-lua-testing-infrastructure.md for the full PRD.
 
 CONTEXT:
 - plenary.nvim installed as a dev dep into a test-only Neovim runtime

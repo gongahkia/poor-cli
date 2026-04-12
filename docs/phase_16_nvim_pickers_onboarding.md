@@ -36,12 +36,35 @@
 
 ## Agent 16A: Provider / Model Picker modal
 
-**Blocked by:** 16C (adapter), and upstream PRD 020 (capability discovery — assumed already landed per the source PRD).
+**Blocked by:** 16C (adapter), and upstream PRD 020 (capability discovery — assumed already landed).
 **Estimated effort:** medium (4–5d).
+
+### Problem
+
+`:PoorCliSwitchProvider` takes a text arg. Discoverability is poor. Users don't know which models are available, their capabilities (cache? thinking?), or estimated cost per 1K tokens. Reference: LEARNING.md §3.4.
 
 ### What to build
 
-A modal picker invoked via `:PoorCliSwitchProvider` (no-arg form) that lists providers × models with capability icons and pricing indicators, and switches the active provider+model on selection. Replaces the discoverability-hostile text-arg form without removing it.
+A modal picker invoked via `:PoorCliSwitchProvider` (no-arg form) that lists providers × models with capability icons (streaming, thinking, caching, vision) and $$/1K-token pricing indicators, and switches the active provider+model on selection. Replaces the discoverability-hostile text-arg form without removing it.
+
+### Non-goals / boundary
+
+- Do not implement capability discovery (PRD 020 responsibility; assumed landed).
+- Do not change economy logic.
+- Do not implement per-model pricing discovery.
+- Do not fetch from a remote catalog.
+
+### Item rendering (reference layout)
+
+```
+anthropic / claude-sonnet-4        [stream] [think] [cache] [vision]   $3.00/$15.00  (current)
+anthropic / claude-3-5-haiku       [stream]                             $0.80/$4.00
+openai / gpt-5.1                   [stream] [think]        [vision]    $2.50/$10.00
+gemini / gemini-2.5-flash          [stream]                [vision]    $0.075/$0.30
+ollama / llama3.1                  [stream]                             local (free)
+```
+
+Preview pane (right side): expanded capability list, model description, last-used timestamp.
 
 ### Implementation details
 
@@ -68,12 +91,16 @@ A modal picker invoked via `:PoorCliSwitchProvider` (no-arg form) that lists pro
 - [ ] Current model is marked.
 - [ ] Selecting an item fires the `switchProvider` RPC with the correct payload.
 - [ ] Last-used model appears at the top on subsequent opens.
+- [ ] Modal opens, picks, and switches end-to-end.
+- [ ] Capabilities are visible in the rendered list.
 - [ ] `test_items_include_capability_icons` passes.
 - [ ] `test_selecting_item_calls_switch_rpc` passes.
 - [ ] `test_current_model_marked` passes.
 - [ ] CLI-arg form of `:PoorCliSwitchProvider` still works unchanged.
 
-**PRD reference:** prd/030-provider-model-picker.md
+### Rollback / risk
+
+Low. Command-line variant still works, so failure of the modal path is non-blocking.
 
 ---
 
@@ -82,18 +109,30 @@ A modal picker invoked via `:PoorCliSwitchProvider` (no-arg form) that lists pro
 **Blocked by:** none. Parallel-safe with 16C.
 **Estimated effort:** small-to-medium (4d).
 
+### Problem
+
+Onboarding is one-shot. Users forget keybinds; cannot replay; no milestone progression. Reference: LEARNING.md §3.10.
+
 ### What to build
 
-Make onboarding re-runnable, add event-driven milestone prompts for feature discovery, ship an interactive 7-step guided tour, and add a settings-cheatsheet export keybind.
+1. `:PoorCliOnboarding` always re-opens the onboarding UI.
+2. Milestone tour: at N completions / M turns, suggest the next feature (e.g. "Try Plan Mode with `:PoorCliPlan`").
+3. Interactive ~2-minute guided tour, 7 steps: provider select → prompt entry → diff review → checkpoint → rollback → (two more feature steps). Each step is a fake guided action the user triggers; no real LLM calls.
+4. Settings-cheatsheet export: `<leader>po?` dumps the current resolved config as a paste-ready snippet.
+
+### Non-goals / boundary
+
+- Do not record real LLM interactions in the tour.
+- Do not persist tour completion state per-project (global is fine).
+- Do not gate any feature behind tour completion — it is purely informational.
 
 ### Implementation details
 
 1. **Rerunnable onboarding** — `:PoorCliOnboarding` always opens the onboarding UI regardless of dismissal state. The dismissed flag in `.poor-cli/onboarding.json` only suppresses auto-open at startup, not manual invocation.
 2. **Milestone counters** — extend `.poor-cli/onboarding.json` with event counters (`completions`, `turns`, `diffs_reviewed`, etc.). Bump them from existing event hooks in the plugin.
 3. **Milestone triggers** — new module `onboarding_milestones.lua` defines `{event, threshold, suggestion}` tuples (e.g. "after 10 completions → suggest Plan Mode via `:PoorCliPlan`"). Fire once per milestone; persist fired-set in the same JSON.
-4. **Guided tour (7 steps)** — provider select → prompt entry → diff review → checkpoint → rollback → (two more per PRD). Each step is a fake guided action triggered by the user; no real LLM calls. Stepwise controls: `n` next, `p` previous, `q` quit. Tour completion is global, not per-project.
+4. **Guided tour (7 steps)** — provider select → prompt entry → diff review → checkpoint → rollback → (two more). Each step is a fake guided action triggered by the user; no real LLM calls. Stepwise controls: `n` next, `p` previous, `q` quit. Tour completion is global, not per-project.
 5. **Cheatsheet export** — `<leader>po?` dumps the current resolved plugin config as a paste-ready snippet (Lua table literal) into a scratch buffer. Keep it deterministic so users can diff against defaults.
-6. **No feature gating** — tour completion must not gate any feature; it is purely informational.
 
 ### Files to create/modify
 
@@ -105,14 +144,17 @@ Make onboarding re-runnable, add event-driven milestone prompts for feature disc
 
 - [ ] `:PoorCliOnboarding` opens the UI even after prior dismissal.
 - [ ] Milestone suggestion fires once after its threshold is crossed.
-- [ ] Guided tour progresses with `n`/`p`/`q` through all steps.
+- [ ] Guided tour progresses with `n`/`p`/`q` through all 7 steps.
 - [ ] Tour makes no real LLM calls.
 - [ ] `<leader>po?` writes current config to a scratch buffer as a paste-ready snippet.
+- [ ] Cheatsheet content matches the resolved config.
 - [ ] `test_onboarding_rerun_always_opens` passes.
 - [ ] `test_milestone_fires_after_N_completions` passes.
 - [ ] `test_cheatsheet_export_matches_config` passes.
 
-**PRD reference:** prd/040-onboarding-rerun-tour.md
+### Rollback / risk
+
+Low. State file format is additive; old entries remain readable.
 
 ---
 
@@ -121,14 +163,43 @@ Make onboarding re-runnable, add event-driven milestone prompts for feature disc
 **Blocked by:** none. Prerequisite for 16A.
 **Estimated effort:** medium (1w).
 
+### Problem
+
+Plugin currently integrates only with Telescope (with `vim.ui.select` fallback). fzf-lua and Snacks picker users are left out. Reference: LEARNING.md §3.7.
+
 ### What to build
 
 A single `pickers.pick(items, opts)` API that auto-detects the available picker backend (Snacks → Telescope → fzf-lua → `vim.ui.select`) and routes accordingly. All picker call sites in the plugin migrate to this adapter; no backend is a hard dependency.
 
+### Non-goals / boundary
+
+- Do not implement a picker UI ourselves.
+- Do not hard-depend on any backend.
+- Do not fork any picker.
+
+### Adapter sketch
+
+```lua
+-- pickers.lua
+local M = {}
+local function detect()
+  if pcall(require, "snacks.picker") then return "snacks" end
+  if pcall(require, "telescope") then return "telescope" end
+  if pcall(require, "fzf-lua") then return "fzf-lua" end
+  return "native"
+end
+
+function M.pick(items, opts)
+  -- items: { {id, label, preview, data}... }
+  -- opts:  { title, on_pick }
+end
+return M
+```
+
 ### Implementation details
 
 1. **Adapter module** — `pickers.lua` exposes `M.pick(items, opts)` where `items` is a list of `{id, label, preview, data}` and `opts` is `{title, on_pick}`. Detection uses `pcall(require, ...)` with the precedence: `snacks.picker` > `telescope` > `fzf-lua` > native `vim.ui.select`.
-2. **Per-backend shims** — one implementation per backend. Keep them colocated in `pickers.lua` or split into `pickers_<backend>.lua` files; the PRD permits either. Each shim translates the common item shape into backend-specific calls and wires `on_pick` to the selected item's `data`.
+2. **Per-backend shims** — one implementation per backend. Keep them colocated in `pickers.lua` or split into `pickers_<backend>.lua` files; either is permitted. Each shim translates the common item shape into backend-specific calls and wires `on_pick` to the selected item's `data`.
 3. **Preview forwarding** — Snacks and Telescope get a real preview pane populated from `item.preview`; fzf-lua uses its preview callback; native fallback ignores preview (label-only).
 4. **Call-site migration** — `telescope.lua` shrinks to a thin shim (or its direct callers move to the adapter). Grep existing call sites inside the plugin and route them through `pickers.pick`.
 5. **No forks, no self-hosting** — never implement a picker UI ourselves; never hard-require any backend.
@@ -152,4 +223,6 @@ A single `pickers.pick(items, opts)` API that auto-detects the available picker 
 - [ ] `test_native_fallback_works` passes.
 - [ ] `test_items_preview_forwarded_correctly` passes.
 
-**PRD reference:** prd/055-picker-adapter-layer.md
+### Rollback / risk
+
+Low. Adapter is additive; Telescope path remains the default when present.

@@ -55,9 +55,11 @@ Stage agent edits in a server-side queue instead of writing immediately. Surface
 3. **Checkpoint helper in `checkpoint.py`:** `create_for_batch(edit_id, path, label)` writes a single checkpoint per finalized batch, label = truncated user prompt + edit count.
 4. **RPC (in `server/runtime.py`):** `listPendingEdits`, `previewEdit`, `acceptHunk`, `rejectHunk`, `acceptAll`, `rejectAll`, `regenerateHunk`, plus push notifications `stageEvent` and `editCommitted`.
 5. **Lua parser (`panels/diff_parser.lua`):** `parse(diff_text) -> {hunks: [{hunk_id, header, before, after, line_start}]}`.
-6. **Lua panel (`panels/diff_review.lua`):** Right split; header line per edit (`[N/M] path (K hunks)`); `[pending]` / `[accepted]` / `[rejected]` extmarks per hunk; buffer-local keymaps; subscribes to `stageEvent` for auto-open; `gl` cycles layout.
-7. **Config (`config.lua`):** `diff_review = { mode = "review", layout = "unified", panel_position = "right", panel_width = 90, auto_open = true, risky_paths = {...}, risky_line_threshold = 50 }`.
-8. **Escape hatch:** `POOR_CLI_DIFF_REVIEW=auto` env var overrides config.
+6. **Lua panel (`panels/diff_review.lua`):** Right split; header line per edit (`[N/M] path (K hunks)`), followed by `Prompt: "<truncated>"` and `Status: pending|partial|accepted|rejected`; `[pending]` / `[accepted]` / `[rejected]` extmarks per hunk; buffer-local keymaps (`ga` / `gr` accept/reject hunk under cursor; `gA` / `gR` batch; `gn` / `gp` next/prev hunk; `gc` regenerate with optional instruction; `gl` cycle layout; `gf` jump to file at that line in the original buffer; `]e` / `[e` next/prev pending edit; `q` close — pending edits remain staged); subscribes to `stageEvent` for auto-open and `editCommitted` for refresh.
+7. **Config (`config.lua`):** `diff_review = { mode = "review", layout = "unified", panel_position = "right", panel_width = 90, auto_open = true, risky_paths = {"package.json", "pyproject.toml", "Cargo.toml", "/main\\.", "/__init__\\."}, risky_line_threshold = 50 }`.
+8. **Escape hatch:** `POOR_CLI_DIFF_REVIEW=auto` env var overrides config and forces immediate apply.
+9. **Non-interactive bypass:** detected via the server session flag (cron/scheduled callers). Staging is skipped, edit auto-applies, and an audit-log event records the bypass plus any `mode` switch.
+10. **Side-by-side layout:** `gl` creates two scratch buffers (original vs proposed) and calls `:diffthis` on each — no plugin dep beyond built-in Neovim diff.
 
 ### Files to create/modify
 
@@ -92,10 +94,14 @@ Stage agent edits in a server-side queue instead of writing immediately. Surface
 - [ ] Reject-all discards with no file change and no checkpoint.
 - [ ] Non-interactive sessions auto-apply with an audit-log note.
 - [ ] `env POOR_CLI_DIFF_REVIEW=auto` bypasses the panel.
-- [ ] Server tests: stage → accept → finalize → file written + checkpoint exists; reject-all → unchanged.
-- [ ] Lua tests: parses unified diff, auto-opens on stage, `ga` marks accepted.
+- [ ] Server tests (`tests/test_edit_staging.py`): `test_stage_computes_hunks_from_bytes`, `test_accept_hunk_marks_accepted_without_writing_file`, `test_reject_hunk_leaves_file_unchanged_after_finalize`, `test_accept_all_writes_file_and_creates_checkpoint`, `test_reject_all_never_writes_file`, `test_regenerate_hunk_swaps_in_new_content`, `test_non_interactive_bypass_applies_immediately`, `test_audit_log_records_stage_and_finalize`.
+- [ ] Lua tests (`diff_review_spec.lua`): parses a simple unified diff into one hunk; opens panel on stage event; `ga` on a hunk marks it accepted and refreshes; `gR` on an edit discards it; `gl` toggles layout between unified and side_by_side.
 
-**PRD reference:** prd/014-diff-review-panel.md
+**DECISION REQUIRED (owner):** confirm `diff_review.mode = "review"` as the first-ship default (alternative: ship `auto` first, flip default after a soak). Recommendation: `review` — users explicitly opt into auto-apply.
+
+**Rollback / risk (Medium):** this changes the edit flow. Mitigations: (a) env-var escape hatch above; (b) all edits still pass through the existing pre-stage checkpoint, so no data loss on panel bugs; (c) non-interactive callers bypass staging entirely; (d) pending edits are in-memory only — a crash drops them but the pre-stage checkpoint survives.
+
+**Out of scope:** rewriting `tools_async.py` beyond the mode branch; changing `checkpoint.py` semantics (only add the batch-label helper); three-way merge; persisting pending edits across server restarts; rich syntax-highlighted diff rendering beyond `:diffthis` / treesitter.
 
 ---
 
@@ -110,12 +116,13 @@ A right-split **Agent Timeline** panel that streams every tool call in the curre
 
 ### Implementation details
 
-1. **Event model (`poor_cli/tool_events.py`):** `ToolEvent{event_id, turn_id, tool_call_id, tool_name, status, args_preview, args_full, started_at, ended_at, duration_ms, result_preview, result_full_size, error, cost_tokens}` plus an in-process pubsub.
+1. **Event model (`poor_cli/tool_events.py`):** `ToolStatus = Literal["queued","running","done","failed","denied","cancelled"]`. `ToolEvent{event_id: uuid, turn_id, tool_call_id, tool_name, status, args_preview: str (first line, truncated to 120 chars), args_full: dict (secrets stripped), started_at: float|None, ended_at: float|None, duration_ms: int|None, result_preview: str (first 200 chars stringified), result_full_size: int (bytes), error: str|None, cost_tokens: int|None}`. Plus an in-process pubsub that the server transport drains onto the RPC event channel.
 2. **Emit points in `core.py`:** Single helper (`emit_tool_event`) called at every tool invocation boundary — queue, run, done, fail. Grep `execute_tool|invoke_tool|_call_tool` to find sites; do not refactor the agent loop.
-3. **RPC surface (in `runtime.py`):** `listToolEvents{turnId?, limit?}`, `subscribeToolEvents` (stream), `cancelTool{eventId}`, `retryTool{eventId}`, `dismissToolResult{eventId}`.
-4. **Panel (`panels/agent_timeline.lua`):** Per-turn grouped rows with status glyphs (`✓` / `⟳` / `✗`), expandable on `<CR>`, buffer-local keymaps `gc` / `gr` / `gd` / `gj` / `gk` / `gf` / `r` / `q`. Snapshot render via `listToolEvents` on open; switch to `subscribeToolEvents` push once PRD 025 lands.
-5. **Lualine segment (`lualine.lua`):** `🔧 <running>/<total>` for current turn.
+3. **RPC surface (in `runtime.py`):** `listToolEvents{turnId?, limit?} -> {events}`, `subscribeToolEvents{} -> stream`, `cancelTool{eventId} -> {cancelled: bool}`, `retryTool{eventId} -> {newEventId}`, `dismissToolResult{eventId} -> {}`.
+4. **Panel (`panels/agent_timeline.lua`):** Per-turn grouped rows with status glyphs (`✓` done, `⟳` running, `✗` failed/denied). Each row shows `<glyph> <duration> <tool_name> <args_preview>`; expand on `<CR>` to reveal full args and full result. Earlier turns collapsible via `[[` collapse / `]]` expand. Buffer-local keymaps: `<CR>` expand/collapse; `gc` cancel running tool; `gr` retry failed; `gd` dismiss result (exclude from future context); `gj` / `gk` next/prev event; `gf` if tool was a file op, jump to file; `r` manual refresh; `q` close. Snapshot render via `listToolEvents` on open; switch to `subscribeToolEvents` push once streaming lands — each push updates or inserts a single row in place (no full re-render).
+5. **Lualine segment (`lualine.lua`):** `🔧 <running>/<total>` for current turn, refreshed on incoming event pushes.
 6. **Dismiss semantics:** `dismissToolResult` excludes that result from the next context assembly without retroactively editing audit_log.
+7. **Reliability:** pubsub failure must be non-fatal to the agent loop — catch and log, never raise.
 
 ### Files to create/modify
 
@@ -147,8 +154,10 @@ A right-split **Agent Timeline** panel that streams every tool call in the curre
 - [ ] `gc` sends cancel RPC; `gr` retries; `gd` dismisses.
 - [ ] Lualine shows live running-tool count.
 - [ ] Pubsub failure is non-fatal to the agent loop.
+- [ ] Server tests (`tests/test_tool_events.py`): `test_tool_event_emitted_on_queue_and_run_and_done`, `test_tool_event_contains_duration_on_done`, `test_tool_event_contains_error_on_failure`, `test_cancel_tool_interrupts_running`, `test_dismiss_excludes_result_from_future_context`.
+- [ ] Lua tests (`agent_timeline_spec.lua`): renders pending tool as spinner; swaps spinner for checkmark on done event; `gc` sends cancel RPC.
 
-**PRD reference:** prd/015-agent-timeline-panel.md
+**Out of scope:** broad refactor of `core.py`; modifying tool schemas; persisting the timeline across sessions (audit_log already handles history).
 
 ---
 
@@ -168,7 +177,9 @@ Three always-on cost layers: (1) lualine segment `$0.42 · Δ$0.03 · cache 62%`
 3. **Lualine segment (`cost.lua::component_cost()`):** Returns short string; refreshed on `PoorCliTurnEnded` autocmd.
 4. **Per-turn badges (`chat.lua`):** On `PoorCliTurnEnded`, set extmark at end of user turn with dim highlight; gated by `cost.show_turn_badges`.
 5. **Dashboard (`panels/cost_dashboard.lua`):** Sections — Session totals table, per-turn sparkline (Unicode block chars, no plugin dep), top-10 tools ranked by cost, cache hit rate, $/month projection at current rate and last-week average. Keys: `r` refresh, `e` export JSON, `q` close.
-6. **Alarms:** Config `cost.alarm_session = 5.0`, `cost.alarm_daily = 20.0`. Track last-fired threshold per scope to avoid re-firing.
+6. **Alarms:** Config `cost.alarm_session = 5.0`, `cost.alarm_daily = 20.0`. Emit `vim.notify("poor-cli: session cost has crossed $X", vim.log.levels.WARN)` on crossing. Track last-fired threshold per scope so the same threshold does not re-fire every turn.
+7. **Master switch & toggles:** `cost.enabled = true|false` disables all three layers. `cost.show_turn_badges = true|false` disables only the per-turn extmark badges.
+8. **Non-goals for v1:** no hard cost caps (stretch); no external billing API integration; no pre-request cost estimator; no changes to economy policy or provider cost tables.
 
 ### Files to create/modify
 
@@ -197,8 +208,8 @@ Three always-on cost layers: (1) lualine segment `$0.42 · Δ$0.03 · cache 62%`
 - [ ] Alarm fires once per threshold crossing, not per turn.
 - [ ] `costSummary` includes per-turn entries and projected monthly math.
 - [ ] `cost.enabled = false` disables all layers.
-
-**PRD reference:** prd/016-cost-hud.md
+- [ ] Server tests (`tests/test_cost_summary.py`): `test_cost_summary_includes_per_turn`, `test_cost_summary_projected_monthly_math`, `test_cache_hit_rate_computed`.
+- [ ] Lua tests (`cost_hud_spec.lua`): `component_cost` returns formatted string; turn-badge extmark set on turn-end event; dashboard opens and refreshes.
 
 ---
 
@@ -239,8 +250,9 @@ Replace the static `:PoorCliContext` scratch buffer with a right-split panel lis
 - [ ] `/` filters visible rows client-side.
 - [ ] `o` jumps to file in its own window.
 - [ ] `explainContext` serializes `ContextSnapshot` without mutating selection.
+- [ ] Tests: `test_explain_context_serializes_snapshot`; pin/unpin persists across turn; filter narrows visible rows.
 
-**PRD reference:** prd/029-context-explainer-panel.md
+**Out of scope:** editing `ContextSnapshot` schema; mutating context selection heuristics or assembly logic; showing token-count history (covered by Savings Dashboard).
 
 ---
 
@@ -278,9 +290,7 @@ A **Savings Dashboard** panel showing estimated token/USD savings broken down by
 - [ ] 30-day history sparkline rendered from audit-log aggregation.
 - [ ] Session-level before/after delta visible.
 - [ ] No audit-log schema changes.
-- [ ] Test: `test_savings_breakdown_by_source`, `test_30_day_history_rendered`.
-
-**PRD reference:** prd/041-savings-dashboard.md
+- [ ] Tests: `test_savings_breakdown_by_source`, `test_30_day_history_rendered`.
 
 ---
 
@@ -315,5 +325,3 @@ A compact **Watch Status** panel listing: active watches (path, last change, mat
 - [ ] Recent triggered actions shown with outcome and duration.
 - [ ] No watch behavior change (read-only).
 - [ ] Tests: `test_panel_lists_active_watches`, `test_recent_triggered_actions`.
-
-**PRD reference:** prd/042-watch-status-panel.md

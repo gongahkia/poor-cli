@@ -66,7 +66,8 @@ Replace `poor_cli/watch.py` (~31 lines, async-generator) and `poor_cli/ide_watch
 - [ ] `make lint && make test` clean, no `ImportError`.
 - [ ] `poor-cli watch` CLI and `/watch` Neovim slash command still work manually.
 
-**PRD reference:** prd/005-file-watcher-consolidation.md
+### Rollback / risk
+Low. If a caller still uses the old generator pattern and we missed it, we get an `ImportError` at runtime. Mitigate by grep-sweep before commit.
 
 ---
 
@@ -110,7 +111,13 @@ Expose a narrow `pagerank_score(path) -> float` API on `repo_graph.py`, consume 
 - [ ] Cold-start path is never blocked on graph build.
 - [ ] `pagerank=0` fully disables the influence.
 
-**PRD reference:** prd/022-pagerank-file-selection.md
+### Rollback / risk
+Low. Weights configurable; setting `pagerank=0` disables the influence entirely without removing the code path.
+
+### Out-of-scope
+- Do not re-implement PageRank or add a new graph source.
+- Do not change the schema of `repo_graph.db` or touch indexer internals.
+- Do not add visual output (covered by a separate graph-visualization effort).
 
 ---
 
@@ -166,7 +173,11 @@ A new `poor_cli/agent_rules.py` module that discovers rule sources in precedence
 - [ ] `test_memory_write_prefers_agents_md` passes.
 - [ ] Hierarchical search works in monorepos (verified by the hierarchy test).
 
-**PRD reference:** prd/023-agents-md-support.md
+### Rollback / risk
+Low. Purely additive — existing CLAUDE.md and `.poor-cli/memory/` paths remain functional as fallbacks.
+
+### Reference
+- AGENTS.md open standard: https://agents.md/
 
 ---
 
@@ -200,7 +211,11 @@ A `block_cache.py` utility that annotates the outgoing provider message array wi
 - [ ] Measurable hit-rate rise on the 5-turn rework fixture.
 - [ ] Anthropic rejects no requests (malformed `cache_control` is the main risk — covered by a negative test).
 
-**PRD reference:** prd/027-block-level-prompt-caching.md
+### Current state reference
+Anthropic `cache_control` is currently used only on the system prompt. OpenAI's automatic prefix caching is taken for what it gives. This agent extends caching to per-file blocks.
+
+### Rollback / risk
+Medium. Anthropic rejects malformed `cache_control` markers — negative test required. If block caching misbehaves, the capability flag (`PROMPT_CACHING_BLOCK`) can be forced off to revert to prefix-only behavior.
 
 ---
 
@@ -252,7 +267,11 @@ Extend the `@tool` decorator in `tools_async.py` to accept an `output_filter` ar
 - [ ] `test_full_output_retrievable_via_rpc` passes.
 - [ ] Measurable token reduction on a fixture of 10 real tool outputs.
 
-**PRD reference:** prd/028-tool-output-schema-filter.md
+### Current state reference
+`tool_output_filter.py` already exists with JSONPath capability but is opt-in per call. No per-tool defaults exist. This agent makes filters declarative and applied by default.
+
+### Rollback / risk
+Low. Per-tool opt-out via `output_filter=None`. Full output remains retrievable via RPC so nothing is permanently lost.
 
 ---
 
@@ -284,7 +303,11 @@ Expose `safe_pretokenize(text, language_hint) -> str` from `code_tokenizer.py`, 
 - [ ] Failure path (e.g. malformed input) returns original content — never crashes context assembly.
 - [ ] `/costSummary` reports per-session saved tokens when flag is on.
 
-**PRD reference:** prd/058-safe-pretokenization-ship.md
+### Evidence & current state
+The `code_tokenizer` module exists; `bench_safe_pretok.py` and `docs/CODE_TOKENIZER_RESEARCH.md` document ~6.4% token savings at 99% parseability. Not yet integrated into context assembly — this agent wires it through behind a feature flag.
+
+### Rollback / risk
+Low. Opt-in flag defaults off in v1. Failure path returns original content so context assembly never crashes on malformed input.
 
 ---
 
