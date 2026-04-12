@@ -8,6 +8,7 @@ the Neovim plugin.
 import asyncio
 import difflib
 import hashlib
+import inspect
 import json
 import os
 import subprocess
@@ -1674,10 +1675,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin, ProviderInfoMixin):
             )
             return decision
 
-        try:
-            decision = await self._permission_callback(tool_name, tool_args, preview)
-        except TypeError:
-            decision = await self._permission_callback(tool_name, tool_args)
+        decision = await self._permission_callback(tool_name, tool_args, preview)
         normalized = self._normalize_permission_decision(decision)
         if normalized["allowed"] and self.config and getattr(self.config.agentic, "path_scoped_approval", True):
             target_paths = self._inspect_tool_targets(tool_name, tool_args)
@@ -4995,17 +4993,17 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin, ProviderInfoMixin):
     def permission_callback(self, callback: Optional[Callable[..., Any]]) -> None:
         """
         Set the permission callback for file operations.
-        
-        The callback should be an async function that takes:
-            - tool_name: str - Name of the tool being executed
-            - tool_args: dict - Arguments to the tool
-        
-        And returns:
-            - bool - True to allow, False to deny
-        
-        Args:
-            callback: The permission callback function.
+
+        The callback MUST be a coroutine function with signature
+        ``async (tool_name: str, tool_args: dict, preview: dict | None) -> dict``.
+        Legacy sync callables should be wrapped via
+        ``poor_cli.permission_engine._as_async`` at the registration site.
         """
+        if callback is not None and not inspect.iscoroutinefunction(callback):
+            raise TypeError(
+                "permission_callback must be a coroutine function; "
+                "wrap legacy sync callbacks via permission_engine._as_async"
+            )
         self._permission_callback = callback
         logger.info("Permission callback updated")
 
