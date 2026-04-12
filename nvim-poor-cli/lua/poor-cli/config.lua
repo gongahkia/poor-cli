@@ -94,7 +94,8 @@ function M.setup(opts)
     local prefs_path = vim.fs.joinpath(M.get_state_dir(), "keybinding_prefs.json")
     local prefs_file = io.open(prefs_path, "r")
     if prefs_file then
-        local ok, prefs = pcall(vim.fn.json_decode, prefs_file:read("*a"))
+        local decode = vim.json and vim.json.decode or vim.fn.json_decode
+        local ok, prefs = pcall(decode, prefs_file:read("*a"))
         prefs_file:close()
         if ok and type(prefs) == "table" then
             for k, v in pairs(prefs) do

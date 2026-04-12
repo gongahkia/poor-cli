@@ -154,7 +154,7 @@ function M.setup()
     create_command("PoorCliExportCost", function()
         M.export_cost_report({}, function(result, err) vim.schedule(function()
             if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
-            open_scratch("[poor-cli cost-export]", vim.fn.json_encode(result), "json")
+            open_scratch("[poor-cli cost-export]", (vim.json and vim.json.encode or vim.fn.json_encode)(result), "json")
         end) end)
     end, { desc = "Export full cost report" })
 end

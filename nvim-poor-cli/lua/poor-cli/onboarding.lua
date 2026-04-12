@@ -464,7 +464,7 @@ local function commit()
     if next(kb) then
         local prefs_path = vim.fs.joinpath(config.get_state_dir(), "keybinding_prefs.json")
         local f = io.open(prefs_path, "w")
-        if f then f:write(vim.fn.json_encode(kb)); f:close() end
+        if f then f:write((vim.json and vim.json.encode or vim.fn.json_encode)(kb)); f:close() end
     end
 
     if pending == 0 then -- nothing to save server-side

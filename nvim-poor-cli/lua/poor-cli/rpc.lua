@@ -1150,7 +1150,7 @@ function M.cancel_request(id, err)
 end
 
 function M.send_message(message)
-    local json = vim.fn.json_encode(message)
+    local json = (vim.json and vim.json.encode or vim.fn.json_encode)(message)
     local content = "Content-Length: " .. #json .. "\r\n\r\n" .. json
     local sent = vim.fn.chansend(M.job_id, content)
     if sent == 0 then
@@ -1201,7 +1201,8 @@ function M.parse_message()
     local body = M.buffer:sub(body_start, body_end)
     M.buffer = M.buffer:sub(body_end + 1)
 
-    local ok, message = pcall(vim.fn.json_decode, body)
+    local decode = vim.json and vim.json.decode or vim.fn.json_decode
+    local ok, message = pcall(decode, body)
     if not ok then
         local err = build_request_error("Failed to parse JSON response", {
             body = body,
