@@ -15,7 +15,9 @@ M.request_id = 0
 M.pending = {}
 M.pending_timers = {}
 M.pending_meta = {}
-M.buffer = ""
+M.buffer = ""          -- full unparsed tail
+M._buf_parts = {}      -- accumulator for streaming stdout chunks
+M._buf_cursor = 1      -- parse cursor into M.buffer (1-indexed)
 M.manual_stop = false
 M.restart_attempt = 0
 M.restart_timer = nil
@@ -798,6 +800,8 @@ function M.stop()
         vim.fn.jobstop(M.job_id)
         M.job_id = nil
         M.buffer = ""
+        M._buf_parts = {}
+        M._buf_cursor = 1
         M.restart_attempt = 0
         M.reset_session_state()
         update_state("stopped", "Stopped")
@@ -1159,35 +1163,53 @@ function M.send_message(message)
     end
 end
 
+local function flatten_buffer()
+    -- merge streaming accumulator into M.buffer exactly once per drain pass
+    if #M._buf_parts == 0 then return end
+    if M._buf_cursor > 1 then
+        M.buffer = M.buffer:sub(M._buf_cursor)
+        M._buf_cursor = 1
+    end
+    table.insert(M._buf_parts, 1, M.buffer)
+    M.buffer = table.concat(M._buf_parts)
+    M._buf_parts = {}
+end
+
 function M.handle_stdout(data)
     -- Neovim's on_stdout splits on "\n" and strips them. Re-insert \n between
     -- chunks so the \r\n\r\n header/body separator survives reassembly.
+    -- Accumulate chunks in a list; table.concat once per drain avoids O(n^2).
     for i, chunk in ipairs(data) do
-        M.buffer = M.buffer .. chunk
-        if i < #data then
-            M.buffer = M.buffer .. "\n"
-        end
+        if chunk ~= "" then table.insert(M._buf_parts, chunk) end
+        if i < #data then table.insert(M._buf_parts, "\n") end
     end
+    flatten_buffer()
 
     while true do
         local message = M.parse_message()
-        if not message then
-            break
-        end
+        if not message then break end
         M.handle_response(message)
+    end
+
+    -- compact only when the parsed prefix grows noticeable, to bound growth
+    if M._buf_cursor > 4096 then
+        M.buffer = M.buffer:sub(M._buf_cursor)
+        M._buf_cursor = 1
     end
 end
 
 function M.parse_message()
-    local header_end = M.buffer:find("\r\n\r\n")
+    local cursor = M._buf_cursor
+    local header_end = M.buffer:find("\r\n\r\n", cursor, true)
     if not header_end then
         return nil
     end
 
-    local header = M.buffer:sub(1, header_end - 1)
+    local header = M.buffer:sub(cursor, header_end - 1)
     local content_length = tonumber(header:match("Content%-Length:%s*(%d+)"))
-
     if not content_length then
+        -- malformed header: drop it to avoid infinite loop
+        M._buf_cursor = header_end + 4
         return nil
     end
 
@@ -1199,7 +1221,7 @@ function M.parse_message()
     end
 
     local body = M.buffer:sub(body_start, body_end)
-    M.buffer = M.buffer:sub(body_end + 1)
+    M._buf_cursor = body_end + 1
 
     local decode = vim.json and vim.json.decode or vim.fn.json_decode
     local ok, message = pcall(decode, body)
@@ -1412,6 +1434,8 @@ function M.handle_exit(code)
     M.job_id = nil
     fail_pending_requests(exit_error)
     M.buffer = ""
+    M._buf_parts = {}
+    M._buf_cursor = 1
     M.reset_session_state()
 
     if was_manual_stop then
