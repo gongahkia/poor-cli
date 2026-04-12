@@ -93,6 +93,9 @@ end
 
 local function emit_request_feedback(method, kind)
     if SILENT_METHODS[method] then return end
+    -- errors always surface; success/start echoes gated behind verbose_rpc
+    -- to keep :messages uncluttered during normal use.
+    if kind ~= "err" and not config.get("verbose_rpc") then return end
     local symbol, hl
     if kind == "start" then symbol, hl = "⏳", "Comment"
     elseif kind == "ok" then symbol, hl = "✓", "MoreMsg"

@@ -82,6 +82,10 @@ M.defaults = {
 
     -- Debug mode
     debug = false,
+
+    -- Verbose RPC echo: show per-request "⏳ method" feedback in :messages.
+    -- Disabled by default to reduce terminal noise; enable for debugging.
+    verbose_rpc = false,
 }
 
 -- Current configuration (merged with user options)
