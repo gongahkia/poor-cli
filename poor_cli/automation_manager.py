@@ -295,7 +295,7 @@ class AutomationRecord:
             "summary": str(metadata.get("lastRunSummary", "") or ""),
             "error": str(metadata.get("lastRunError", "") or ""),
         }
-        return {
+        payload = {
             "automationId": self.automation_id,
             "name": self.name,
             "prompt": self.prompt,
@@ -320,6 +320,15 @@ class AutomationRecord:
             "replayOfRunId": str(metadata.get("replayOfRunId", "") or ""),
             "metadata": metadata,
         }
+        from .automations.rules import rule_from_automation_payload
+
+        rule = rule_from_automation_payload(payload)
+        payload["id"] = rule.id
+        payload["triggers"] = [trigger.to_dict() for trigger in rule.triggers]
+        payload["steps"] = [step.to_dict() for step in rule.steps]
+        payload["scope"] = rule.scope
+        payload["rule"] = rule.to_dict()
+        return payload
 
 
 class AutomationManager:

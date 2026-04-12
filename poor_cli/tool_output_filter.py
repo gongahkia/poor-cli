@@ -7,7 +7,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 try:
     import yaml
@@ -29,6 +29,8 @@ FILTER_STATS_KEYS = (
     "projection_filtered_calls",
     "auto_filtered_calls",
     "tokens_saved",
+    "original_bytes",
+    "filtered_bytes",
 )
 DEFAULT_PROJECTIONS: Dict[str, List[str]] = {
     "gh_pr_list": ["number", "title", "state", "author.login", "url"],
@@ -67,6 +69,247 @@ class FilterResult:
     tokens_after: int = 0
     tokens_saved: int = 0
     note: str = ""
+
+
+@dataclass(frozen=True)
+class OutputFilterSpec:
+    type: str
+    paths: Tuple[str, ...] = ()
+    pattern: str = ""
+    patterns: Tuple[str, ...] = ()
+
+    @staticmethod
+    def from_schema(raw: Any) -> Optional["OutputFilterSpec"]:
+        if raw is None:
+            return None
+        if isinstance(raw, OutputFilterSpec):
+            return raw
+        if not isinstance(raw, dict):
+            return None
+        kind = str(raw.get("type") or raw.get("kind") or "").strip().lower()
+        if kind == "json_path":
+            kind = "jsonpath"
+        if kind not in {"jsonpath", "regex", "keeplines"}:
+            return None
+        paths = _coerce_str_tuple(raw.get("paths") or raw.get("jsonpath") or raw.get("fields"))
+        patterns = _coerce_str_tuple(raw.get("patterns") or raw.get("keep") or raw.get("keep_lines"))
+        pattern = str(raw.get("pattern") or "").strip()
+        return OutputFilterSpec(type=kind, paths=paths, pattern=pattern, patterns=patterns)
+
+    def to_schema(self) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {"type": self.type}
+        if self.paths:
+            payload["paths"] = list(self.paths)
+        if self.pattern:
+            payload["pattern"] = self.pattern
+        if self.patterns:
+            payload["patterns"] = list(self.patterns)
+        return payload
+
+
+@dataclass
+class SchemaFilterResult:
+    output: str
+    original_output: str
+    original_size: int
+    filtered_size: int
+    applied: bool = False
+    flavor: str = ""
+    dropped_paths: List[str] = field(default_factory=list)
+    note: str = ""
+
+    @property
+    def tokens_saved(self) -> int:
+        return max(0, (self.original_size - self.filtered_size) // 4)
+
+
+def _coerce_str_tuple(value: Any) -> Tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return (value,) if value.strip() else ()
+    if isinstance(value, Iterable):
+        return tuple(str(item).strip() for item in value if str(item).strip())
+    return ()
+
+
+def render_output(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, ensure_ascii=False, indent=2)
+    except Exception:
+        return str(value)
+
+
+def apply_schema_output_filter(raw: Any, spec: Optional[Any]) -> SchemaFilterResult:
+    output_filter = OutputFilterSpec.from_schema(spec)
+    original = render_output(raw)
+    original_size = len(original.encode("utf-8"))
+    if output_filter is None:
+        return SchemaFilterResult(
+            output=original,
+            original_output=original,
+            original_size=original_size,
+            filtered_size=original_size,
+        )
+
+    if output_filter.type == "jsonpath":
+        filtered, dropped = _apply_jsonpath_filter(original, output_filter.paths)
+    elif output_filter.type == "regex":
+        filtered, dropped = _apply_regex_filter(original, output_filter.pattern)
+    else:
+        filtered, dropped = _apply_keeplines_filter(original, output_filter.patterns)
+
+    if filtered is None or filtered == original:
+        return SchemaFilterResult(
+            output=original,
+            original_output=original,
+            original_size=original_size,
+            filtered_size=original_size,
+            flavor=output_filter.type,
+        )
+
+    filtered_size = len(filtered.encode("utf-8"))
+    return SchemaFilterResult(
+        output=filtered,
+        original_output=original,
+        original_size=original_size,
+        filtered_size=filtered_size,
+        applied=filtered_size < original_size,
+        flavor=output_filter.type,
+        dropped_paths=dropped,
+        note=f"{_format_kb(original_size)} -> {_format_kb(filtered_size)}",
+    )
+
+
+def _format_kb(size: int) -> str:
+    return f"{size / 1024:.1f} KB"
+
+
+def _apply_keeplines_filter(original: str, patterns: Sequence[str]) -> Tuple[Optional[str], List[str]]:
+    if not patterns:
+        return None, []
+    regexes = [re.compile(pattern) for pattern in patterns]
+    kept = [line for line in original.splitlines() if any(regex.search(line) for regex in regexes)]
+    if not kept:
+        return None, []
+    return "\n".join(kept), ["non_matching_lines"]
+
+
+def _apply_regex_filter(original: str, pattern: str) -> Tuple[Optional[str], List[str]]:
+    if not pattern:
+        return None, []
+    regex = re.compile(pattern, re.MULTILINE)
+    matches = [match.group(0).rstrip() for match in regex.finditer(original) if match.group(0).strip()]
+    if not matches:
+        return None, []
+    return "\n".join(matches), ["regex_non_matches"]
+
+
+def _apply_jsonpath_filter(original: str, paths: Sequence[str]) -> Tuple[Optional[str], List[str]]:
+    if not paths:
+        return None, []
+    try:
+        data = json.loads(original)
+    except Exception:
+        return None, []
+    projected = _jsonpath_project(data, paths)
+    if projected is None:
+        return None, []
+    dropped = _top_level_dropped_paths(data, projected)
+    return json.dumps(projected, ensure_ascii=False, indent=2), dropped
+
+
+def _jsonpath_project(data: Any, paths: Sequence[str]) -> Any:
+    normalized = [_normalize_jsonpath(path) for path in paths]
+    normalized = [path for path in normalized if path]
+    if not normalized:
+        return None
+
+    if isinstance(data, list):
+        item_paths = []
+        for path in normalized:
+            if path.startswith("[*]."):
+                item_paths.append(path[4:])
+            elif not path.startswith("["):
+                item_paths.append(path)
+        if item_paths:
+            rows = []
+            for item in data:
+                if isinstance(item, dict):
+                    rows.append(_project_dict_jsonpath(item, item_paths))
+            return [row for row in rows if row]
+
+    if isinstance(data, dict):
+        return _project_dict_jsonpath(data, normalized)
+    return None
+
+
+def _normalize_jsonpath(path: str) -> str:
+    item = str(path or "").strip()
+    if item.startswith("$."):
+        return item[2:]
+    if item.startswith("$"):
+        return item[1:]
+    return item
+
+
+def _project_dict_jsonpath(data: Dict[str, Any], paths: Sequence[str]) -> Dict[str, Any]:
+    result: Dict[str, Any] = {}
+    for path in paths:
+        value = _jsonpath_read(data, path.split("."))
+        if value is None:
+            continue
+        _assign_jsonpath(result, path.split("."), value)
+    return result
+
+
+def _jsonpath_read(current: Any, parts: Sequence[str]) -> Any:
+    if current is None:
+        return None
+    if not parts:
+        return current
+    head = parts[0]
+    if head.endswith("[*]"):
+        key = head[:-3]
+        target = current.get(key) if key and isinstance(current, dict) else current
+        if not isinstance(target, list):
+            return None
+        values = []
+        for item in target:
+            value = _jsonpath_read(item, parts[1:])
+            if value is not None:
+                values.append(value)
+        return values
+    if not isinstance(current, dict):
+        return None
+    return _jsonpath_read(current.get(head), parts[1:])
+
+
+def _assign_jsonpath(target: Dict[str, Any], parts: Sequence[str], value: Any) -> None:
+    cursor = target
+    for raw in parts[:-1]:
+        part = raw[:-3] if raw.endswith("[*]") else raw
+        next_value = cursor.get(part)
+        if not isinstance(next_value, dict):
+            next_value = {}
+            cursor[part] = next_value
+        cursor = next_value
+    last = parts[-1]
+    cursor[last[:-3] if last.endswith("[*]") else last] = value
+
+
+def _top_level_dropped_paths(data: Any, projected: Any) -> List[str]:
+    if isinstance(data, dict) and isinstance(projected, dict):
+        return sorted(str(key) for key in data.keys() - projected.keys())
+    if isinstance(data, list):
+        dropped = set()
+        for original_item, projected_item in zip(data, projected if isinstance(projected, list) else []):
+            if isinstance(original_item, dict) and isinstance(projected_item, dict):
+                dropped.update(str(key) for key in original_item.keys() - projected_item.keys())
+        return sorted(dropped)
+    return []
 
 
 def empty_filter_stats() -> Dict[str, int]:

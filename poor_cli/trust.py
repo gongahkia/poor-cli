@@ -8,7 +8,6 @@ Trusted repos are stored in ~/.poor-cli/trusted_repos.json.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 

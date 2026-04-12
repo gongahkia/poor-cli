@@ -26,7 +26,7 @@ class ConfigHandlersMixin:
     """Handlers for get/set config, permissions, and option listing."""
 
     async def handle_get_config(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Return the current configuration for the Rust TUI."""
+        """Return the current configuration for clients."""
         self._ensure_initialized()
         config = self.core.config
         if config is None:

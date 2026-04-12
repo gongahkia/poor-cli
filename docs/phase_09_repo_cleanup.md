@@ -11,27 +11,26 @@
 
 | Agent | Primary scope | Creates | Deletes / Modifies |
 |---|---|---|---|
-| 9A | `_archived/` tree | — | Deletes all `_archived/<client>/` subtrees |
+| 9A | retired front-end tree | — | Deletes retired client subtrees |
 | 9B | Stub modules (decision + cleanup) | — | `poor_cli/docker_sandbox.py`, `poor_cli/speculative_decoding.py`, `poor_cli/rtk_integration.py`, `poor_cli/kv_cache_store.py`; docs/README references |
-| 9C | Research relocation | `poor_cli/research/__init__.py`, `poor_cli/research/README.md` | Moves `latent_communication.py`, `neural_code_encoder.py`, `speculative_decoding.py`*, `kv_cache_store.py`*, `embeddings.py`†, `code_tokenizer.py`† into `poor_cli/research/`; `poor_cli/__init__.py`, `pyproject.toml` |
+| 9C | Research relocation | `poor_cli/research/__init__.py`, `poor_cli/research/README.md` | Moves `latent_communication.py`, `neural_code_encoder.py`, `embeddings.py`†, `code_tokenizer.py`† into `poor_cli/research/`; `poor_cli/__init__.py`, `pyproject.toml` |
 | 9D | Top-level docs + screenshots | `asset/reference/v6/*.png` | `README.md`, `nvim-poor-cli/README.md`; deletes `asset/reference/v5/*.png` |
 | 9E | `core.py` pre-slice | `poor_cli/agent_loop.py`, `poor_cli/tool_dispatch.py`, `poor_cli/turn_lifecycle.py`, `tests/test_core_pre_slice.py` | `poor_cli/core.py`, importers' import paths |
-| 9F | CI size gate | `scripts/check_monolith_sizes.py` | `.github/workflows/tests.yml`, `Makefile` |
+| 9F | CI size gate | `scripts/check_line_budgets.py` | `.github/workflows/tests.yml`, `Makefile` |
 
-\* Only moved by 9C if 9B's decision was "relocate" rather than "delete".
 † Only moved if not actively used in production call sites (9C audits first).
 
 ---
 
 ## File-scope collisions (explicit)
 
-1. **9B ↔ 9C** both list `poor_cli/speculative_decoding.py` and `poor_cli/kv_cache_store.py`. 9B decides fate (delete/ship/relocate). 9C only relocates the subset 9B marks "relocate". **Serialization: 9B must land before 9C.**
+1. **9B ↔ 9C** both list `poor_cli/speculative_decoding.py` and `poor_cli/kv_cache_store.py`. 9B decided `speculative_decoding.py` is deleted and `kv_cache_store.py` ships in place; 9C must not relocate either file. **Serialization: 9B must land before 9C.**
 
-2. **9B ↔ 9D** both touch `README.md`. 9B strikes references to archived stubs ("Docker sandbox" claim); 9D performs a full rewrite. **Serialization: 9D after 9B**, or 9D explicitly re-verifies 9B's removals are not reintroduced. Preferred: 9D runs last and treats 9B's edits as a merge conflict to resolve in favor of 9D's new structure.
+2. **9B ↔ 9D** both touch `README.md`. 9B keeps the shipped Docker sandbox path and only strikes archived-stub claims; 9D performs a full rewrite. **Serialization: 9D after 9B**, or 9D explicitly re-verifies 9B's removals are not reintroduced. Preferred: 9D runs last and treats 9B's edits as a merge conflict to resolve in favor of 9D's new structure.
 
 3. **9E ↔ 9F** both concern `poor_cli/core.py` size. 9E shrinks it (target ≤3,000 lines); 9F pins the ceiling (≤1,000 lines, with budget slack). **Serialization: 9E must land before 9F.**
 
-4. **9A ↔ 9D** do not collide (9A deletes `_archived/`; 9D touches `asset/reference/`). Run in parallel.
+4. **9A ↔ 9D** do not collide (9A deletes retired front-end sources; 9D touches `asset/reference/`). Run in parallel.
 
 5. **9C ↔ 9E** do not collide (disjoint module trees) but both edit `poor_cli/__init__.py`. Light-touch edits; run sequentially or resolve via small merge. Preferred order: 9E first (structural), then 9C (adds research package export).
 
@@ -42,57 +41,38 @@
 
 ---
 
-## Agent 9A: Remove `_archived/` retired front-ends
+## Agent 9A: Remove retired front-ends
 
 **Pain points addressed:** contributor confusion, repo bloat, misleading top-level tree.
 
-### What to build
+### Outcome
 
-Delete the five retired front-end subtrees from `_archived/`. The project consolidated to Neovim-only; these (Emacs, Desktop, Telegram, TUI, VS Code) are unmaintained. Git history preserves them; resurrect via `git checkout <hash> -- _archived/<subdir>` if ever needed.
-
-Exact subtrees to delete (recursive):
-- `_archived/emacs-poor-cli/`
-- `_archived/poor-cli-desktop/`
-- `_archived/poor-cli-telegram/`
-- `_archived/poor-cli-tui/`
-- `_archived/vscode-poor-cli/`
-
-### DECISION REQUIRED (9A)
-
-Should the project add a one-paragraph `_archived/README.md` pointing readers to the last commit hash that contained each archived front-end, for people who want to resurrect one?
-
-- **(a)** keep `_archived/` with only a README pointing at `git log` per client.
-- **(b)** delete `_archived/` entirely. **Default if unanswered.**
-- **(c)** move the pointer to `docs/ARCHIVED_CLIENTS.md` and delete `_archived/`.
-
-Owner must answer before execution.
+Decision (b) landed: the retired Emacs, desktop, Telegram, TUI, and VS Code client sources were deleted entirely. Git history remains the recovery path; no pointer file was created.
 
 ### Implementation details
 
-1. Grep for live references first: `grep -rn "_archived" poor_cli/ nvim-poor-cli/ tests/ Makefile pyproject.toml .github/`. Expect zero non-doc hits. If anything in source/tests hits, stop and escalate.
-2. Use `git rm -r _archived/<subdir>` (not `rm -rf`) so git records deletions cleanly.
-3. If decision (a) or (c): write the one-paragraph pointer listing last-known-good commit hashes per client.
-4. Scrub stale doc links: `grep -rn "_archived\|archived/" docs/ *.md README.md` and remove or redirect.
-5. `.gitignore`: remove any `_archived/` patterns if present.
-6. Run `make lint && make test` — should be unchanged.
+1. Grep for live references before deletion.
+2. Use `git rm -r` so git records deletions cleanly.
+3. Scrub stale doc links.
+4. `.gitignore`: remove any retired-client patterns if present.
+5. Run `make lint && make test` — should be unchanged.
 
 ### Files to create/modify
 
-- **Delete:** `_archived/emacs-poor-cli/`, `_archived/poor-cli-desktop/`, `_archived/poor-cli-telegram/`, `_archived/poor-cli-tui/`, `_archived/vscode-poor-cli/` (recursive). If decision (b): `_archived/` itself.
-- **Create (only if decision (a)/(c)):** `_archived/README.md` or `docs/ARCHIVED_CLIENTS.md`.
-- **Modify:** any doc with dead links to `_archived/`.
+- **Delete:** retired Emacs, desktop, Telegram, TUI, and VS Code client sources.
+- **Create:** none.
+- **Modify:** any doc with dead links to retired front-end sources.
 
 ### Acceptance criteria
 
 - [ ] `make lint && make test` green.
-- [ ] `grep -rn "_archived" poor_cli/ nvim-poor-cli/ tests/ Makefile pyproject.toml` returns nothing.
-- [ ] `_archived/` is either gone or contains only the pointer file.
-- [ ] No source/test reference to `_archived/` remains.
+- [ ] No source/test reference to the retired client tree remains.
+- [ ] The retired client tree is gone.
 - [ ] Boundary respected: `asset/` untouched (9D owns screenshots). `docs/` untouched beyond link fixes (9D owns README rewrite).
 
 ### Rollback
 
-Low risk. Git history preserves everything. `git checkout <hash> -- _archived/<subdir>` restores any client.
+Low risk. Git history preserves everything.
 
 ---
 
@@ -100,22 +80,33 @@ Low risk. Git history preserves everything. `git checkout <hash> -- _archived/<s
 
 **Pain points addressed:** "concept car" stubs shipping with no user value; misleading README; contributor cognitive tax.
 
+## Outcome
+
+| File | Decision | Evidence / owner | Action |
+|---|---|---|---|
+| `poor_cli/docker_sandbox.py` | ship | Runtime import in `tools_async.py`, RPC status handler, Neovim status command, tests in `tests/test_docker_sandbox.py` | Leave file intact; README/LONGTERM sandbox docs may stay. |
+| `poor_cli/speculative_decoding.py` | archive/delete | No end-to-end vLLM provider path; Ollama had diagnostics only; default archive-unless-shown-shipped applied. | Delete module, remove imports/config/tests, prune Phase 7 prompt docs, add CI import guard. |
+| `poor_cli/rtk_integration.py` | ship via PRD 026 | PRD 026 / Agent 13C exists in `docs/phase_13_protocol_streaming.md`; current module is imported and tested. | Leave file intact; PRD 026 owns RTK-lite follow-up. |
+| `poor_cli/kv_cache_store.py` | ship | Runtime-gated by `maybe_init_kv_cache()` and active-provider check; imported by `core.py`; tests in `tests/test_kv_cache.py`. | Leave file intact; no 9C relocation. |
+
+No additional locally listed concept-car stubs were provided for 9B.
+
 ### What to build
 
-Resolve the fate of four stub/dead-integration modules. Each is either (a) shipped end-to-end with user-visible value, (b) archived/deleted with docs updated, or (c) relocated to `poor_cli/research/` (handoff to 9C).
+Resolve the fate of four stub/dead-integration modules. Each is either (a) shipped end-to-end with user-visible value, (b) archive/delete with docs updated, or (c) relocated to `poor_cli/research/` (handoff to 9C).
 
 | File | LOC | Wired? | User-visible surface | Recommended |
 |---|---|---|---|---|
-| `poor_cli/docker_sandbox.py` | ~3 (`pass`) | No | README mentions Docker sandbox | (b) archive |
-| `poor_cli/speculative_decoding.py` | ~214 | No | — | relocate to research/ (9C executes) |
-| `poor_cli/rtk_integration.py` | ~2 stub | No | SOLUTIONS.md extensively (Phase 23, 60–90% savings claim) | ship via PRD 026 |
-| `poor_cli/kv_cache_store.py` | — | Eager-loaded for local providers | — | ship with runtime gate on local-provider presence |
+| `poor_cli/docker_sandbox.py` | ~95 | Yes | Bash tool Docker sandbox path + RPC/Neovim status | ship |
+| `poor_cli/speculative_decoding.py` | ~214 | Diagnostics only | — | archive/delete |
+| `poor_cli/rtk_integration.py` | ~70 | Yes | Enhanced bash tool RTK wrapping | ship via PRD 026 |
+| `poor_cli/kv_cache_store.py` | ~370 | Runtime-gated for local providers | Config + core prompt ordering | ship with runtime gate on local-provider presence |
 
 ### DECISION REQUIRED (9B) — four separate decisions
 
-**4.1 `docker_sandbox.py`** — (a) ship: implement OS-level isolation via Podman/Docker (spawns ~2-week follow-up PRD); (b) archive: delete file, strike "Docker sandbox" from README/docs/LONGTERM-TODO; (c) defer with tombstone note. **Recommended: (b).**
+**4.1 `docker_sandbox.py`** — Decision: (a) ship. The module is wired into bash execution and RPC status and has tests. Leave file and docs intact.
 
-**4.2 `speculative_decoding.py`** — (a) ship: only meaningful for Ollama/vLLM, integrate as capability flag (see PRD 020); (b) archive: relocate to `poor_cli/research/speculative_decoding.py` behind feature flag (9C executes); (c) delete outright. **Recommended: (b).**
+**4.2 `speculative_decoding.py`** — Decision: (c) delete outright. It had helper/test coverage but no end-to-end vLLM provider path; remove module, imports, config, tests, and Phase 7 promises.
 
 **4.3 `rtk_integration.py`** — (a) ship as Python-only first cut via PRD 026 (`git status --porcelain` filter, no Rust binary needed initially); (b) delete and retract the Phase 23 promise in SOLUTIONS.md. **Recommended: (a) via PRD 026** — savings are real on one command even without a Rust binary.
 
@@ -128,7 +119,7 @@ Resolve the fate of four stub/dead-integration modules. Each is either (a) shipp
    - Remove the file.
    - Scrub references in `SOLUTIONS.md`, `LONGTERM-TODO.md`, any `docs/phase_0*.md` that promised the feature, and `README.md`.
 3. **Relocate path.** For each "research relocation" decision: do **not** move the file here. Mark it for 9C and let the relocation PRD handle it.
-4. **Ship path.** For each "ship" decision: transfer scope to the dedicated PRD (PRD 026 for RTK-lite; dedicated PRD for `kv_cache_store` guard).
+4. **Ship path.** For each "ship" decision: transfer scope to the dedicated PRD where needed (PRD 026 for RTK-lite). `docker_sandbox.py` and `kv_cache_store.py` already have runtime paths and tests here.
 5. Final grep guard: `grep -rn "docker_sandbox\|speculative_decoding\|rtk_integration\|kv_cache_store" poor_cli/ docs/ README.md` — results must be consistent with the outcome table.
 
 ### Files to create/modify
@@ -136,7 +127,7 @@ Resolve the fate of four stub/dead-integration modules. Each is either (a) shipp
 - **Delete (per decision):** whichever of `poor_cli/docker_sandbox.py`, `poor_cli/speculative_decoding.py`, `poor_cli/rtk_integration.py`, `poor_cli/kv_cache_store.py` are marked archive/delete.
 - **Modify:** `README.md` (strike Docker sandbox), `SOLUTIONS.md`, `LONGTERM-TODO.md`, `docs/phase_0*.md` — scrub promises for archived modules.
 - **Create:** none.
-- **Collision note:** touches `README.md` — 9D rewrites it subsequently; `speculative_decoding.py` / `kv_cache_store.py` overlap with 9C (must land first).
+- **Collision note:** touches `README.md` — 9D rewrites it subsequently; `speculative_decoding.py` is deleted and `kv_cache_store.py` stays in place, so 9C must not move either file.
 
 ### Acceptance criteria
 
@@ -172,8 +163,6 @@ Move research-only modules from `poor_cli/` into a new `poor_cli/research/` subp
      README.md            # "Research code. Not part of production agent loop."
      latent_communication.py
      neural_code_encoder.py
-     speculative_decoding.py  # if 9B chose relocate
-     kv_cache_store.py        # if 9B chose relocate
    ```
 3. **`poor_cli/research/__init__.py` contents** (docstring-only, explicit about flag usage):
    ```python
@@ -200,20 +189,20 @@ Move research-only modules from `poor_cli/` into a new `poor_cli/research/` subp
 7. **Config defaults** (coordinate with preferences-schema PRD 003) — add a `[research]` section to `preferences.json`:
    ```json
    {"research": {"latent_communication": false, "neural_code_encoder": false,
-                 "speculative_decoding": false, "kv_cache_store": false}}
+      "kv_cache_store": false}}
    ```
 8. **Audit `embeddings.py` and `code_tokenizer.py`** before moving. If `semantic_cache` or another production module imports them, leave them in `poor_cli/`. PRD 058 may ship `code_tokenizer.py` — defer if so.
 9. **Update `pyproject.toml::[tool.setuptools].packages`** to include `"poor_cli.research"`.
-10. **Grep for stale imports:** `grep -rn "from poor_cli.latent_communication\|from poor_cli.neural_code_encoder\|from poor_cli.speculative_decoding\|from poor_cli.kv_cache_store"` and fix each (switch to lazy-guard pattern in production code).
+10. **Grep for stale imports:** `grep -rn "from poor_cli.latent_communication\|from poor_cli.neural_code_encoder"` and fix each (switch to lazy-guard pattern in production code).
 11. If a caller was silently relying on a top-level export, restore a re-export with a `DeprecationWarning` rather than breaking.
 
 ### Files to create/modify
 
 - **Create:** `poor_cli/research/__init__.py`, `poor_cli/research/README.md`.
-- **Move (git mv):** `poor_cli/latent_communication.py`, `poor_cli/neural_code_encoder.py`, `poor_cli/speculative_decoding.py`*, `poor_cli/kv_cache_store.py`*, `poor_cli/embeddings.py`†, `poor_cli/code_tokenizer.py`† → `poor_cli/research/`.
+- **Move (git mv):** `poor_cli/latent_communication.py`, `poor_cli/neural_code_encoder.py`, `poor_cli/embeddings.py`†, `poor_cli/code_tokenizer.py`† → `poor_cli/research/`.
 - **Modify:** `poor_cli/__init__.py` (drop top-level re-exports), `pyproject.toml` (package list), all production call sites switching to lazy-guard imports.
 - **Delete:** none (9B owns deletions).
-- **Collision note:** overlaps with 9B on `speculative_decoding.py`/`kv_cache_store.py` — 9B must land first.
+- **Collision note:** 9B deleted `speculative_decoding.py` and kept `kv_cache_store.py` in place — 9C must not move either file.
 
 ### Acceptance criteria
 
@@ -382,15 +371,20 @@ Add a CI step (and `make lint-sizes` target) that fails the build when tracked m
 
 ### Implementation details
 
-1. **Hard limits** (`scripts/check_monolith_sizes.py`):
+1. **Hard limits** (`scripts/check_line_budgets.py`):
    ```python
-   HARD_LIMITS = {
+   LINE_LIMITS = {
        "poor_cli/core.py":           1_000,
-       "poor_cli/server/runtime.py":   800,
+       "poor_cli/server/runtime.py": 5_600,  # Phase 10B owns the split
        "poor_cli/config.py":         1_500,
+       "poor_cli/tools_async.py":    4_300,  # pre-existing monolith
+       "poor_cli/multiplayer.py":    2_150,  # PRD 063 owns fate
+       "poor_cli/core_turn_lifecycle.py": 2_700,
+       "__default__":                2_000,
    }
-   GLOBAL_FILE_LIMIT = 2_000  # every .py under poor_cli/
    ```
+
+   CI and pre-commit report overages as `path current/limit (+delta)`, for example `poor_cli/core.py 1124/1000 (+124)`.
 
 2. **Full script** (reference implementation):
    ```python
@@ -400,8 +394,11 @@ Add a CI step (and `make lint-sizes` target) that fails the build when tracked m
 
    HARD_LIMITS = {
        "poor_cli/core.py":           1_000,
-       "poor_cli/server/runtime.py":   800,
+       "poor_cli/server/runtime.py": 5_600,
        "poor_cli/config.py":         1_500,
+       "poor_cli/tools_async.py":    4_300,
+       "poor_cli/multiplayer.py":    2_150,
+       "poor_cli/core_turn_lifecycle.py": 2_700,
    }
    GLOBAL_FILE_LIMIT = 2_000
 
@@ -445,14 +442,14 @@ Add a CI step (and `make lint-sizes` target) that fails the build when tracked m
 
 ### Files to create/modify
 
-- **Create:** `scripts/check_monolith_sizes.py`.
+- **Create:** `scripts/check_line_budgets.py`.
 - **Modify:** `.github/workflows/tests.yml` (add pre-test step), `Makefile` (add `lint-sizes` target).
 - **Delete:** none.
 - **Collision note:** enforces a size ceiling on `poor_cli/core.py` that 9E just delivered — 9E must land first.
 
 ### Acceptance criteria
 
-- [ ] `scripts/check_monolith_sizes.py` runs locally, passes after 9E lands, fails on pretend-bloat.
+- [ ] `scripts/check_line_budgets.py` runs locally, passes after 9E lands, fails on pretend-bloat.
 - [ ] CI step visible in PR checks and blocking on overage.
 - [ ] `make lint-sizes` exists and runs the same check.
 - [ ] Overage error message includes path, current lines, limit, and delta.

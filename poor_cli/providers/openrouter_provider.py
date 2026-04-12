@@ -9,6 +9,7 @@ except ImportError:
     AsyncOpenAI = None
 
 from .openai_provider import OpenAIProvider
+from .capability import PROVIDER_CAPABILITIES
 from ..edit_formats import suggest_format_for_model
 from ..provider_catalog import default_model_for_provider
 from ..exceptions import ConfigurationError, setup_logger
@@ -19,6 +20,8 @@ _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 class OpenRouterProvider(OpenAIProvider):
     """OpenRouter gateway — routes to any model via OpenAI-compatible API."""
+
+    capabilities = PROVIDER_CAPABILITIES["openrouter"]
 
     def preferred_edit_format(self) -> str:
         return suggest_format_for_model(self.model_name, provider_name="openrouter")

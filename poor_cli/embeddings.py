@@ -12,13 +12,12 @@ Cosine similarity is computed in Python for portability.
 
 from __future__ import annotations
 
-import json
 import math
-import os
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from .exceptions import setup_logger
+from .credentials import get_credential_store
 
 logger = setup_logger(__name__)
 
@@ -63,12 +62,13 @@ class GeminiEmbedding(EmbeddingProvider):
         return 768
 
     def available(self) -> bool:
-        return bool(os.environ.get("GEMINI_API_KEY"))
+        return bool(get_credential_store().get("gemini", env_var="GEMINI_API_KEY"))
 
     async def embed(self, texts: List[str]) -> List[List[float]]:
         try:
             from google import genai
-            client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+            api_key = get_credential_store().get("gemini", env_var="GEMINI_API_KEY")
+            client = genai.Client(api_key=api_key)
             results = []
             # batch in groups of 100
             for i in range(0, len(texts), 100):
@@ -97,12 +97,13 @@ class OpenAIEmbedding(EmbeddingProvider):
         return 1536
 
     def available(self) -> bool:
-        return bool(os.environ.get("OPENAI_API_KEY"))
+        return bool(get_credential_store().get("openai", env_var="OPENAI_API_KEY"))
 
     async def embed(self, texts: List[str]) -> List[List[float]]:
         try:
             import openai
-            client = openai.AsyncOpenAI()
+            api_key = get_credential_store().get("openai", env_var="OPENAI_API_KEY")
+            client = openai.AsyncOpenAI(api_key=api_key)
             results = []
             for i in range(0, len(texts), 2048):
                 batch = texts[i:i + 2048]
@@ -163,8 +164,11 @@ class OllamaEmbedding(EmbeddingProvider):
 def _get_hf_provider(model_key: Optional[str] = None) -> Optional[EmbeddingProvider]:
     """Try to load HuggingFace code embedding provider."""
     try:
-        from .neural_code_encoder import HuggingFaceCodeEmbedding
-        p = HuggingFaceCodeEmbedding(model_key=model_key or "unixcoder")
+        from .research_loader import load_research_module
+        neural_code_encoder = load_research_module("neural_code_encoder")
+        if neural_code_encoder is None:
+            return None
+        p = neural_code_encoder.HuggingFaceCodeEmbedding(model_key=model_key or "unixcoder")
         if p.available():
             return p
     except Exception:

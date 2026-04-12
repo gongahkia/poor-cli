@@ -1,10 +1,10 @@
 """per-provider circuit breaker for resilient API execution."""
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
-from .exceptions import CircuitOpenError, setup_logger
+from .exceptions import CircuitOpenError, setup_logger  # noqa: F401
 
 logger = setup_logger(__name__)
 

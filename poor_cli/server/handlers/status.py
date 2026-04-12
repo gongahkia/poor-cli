@@ -1,0 +1,476 @@
+# ruff: noqa: F403,F405
+from __future__ import annotations
+
+from poor_cli.server.handler_deps import *
+from poor_cli.server.registry import register
+
+
+class StatusHandlersMixin:
+    def _collaboration_status_payload(self) -> Dict[str, Any]:
+        payload = {
+            "running": False,
+            "role": "solo",
+            "room": "",
+            "memberCount": 0,
+            "queueState": {"depth": 0, "handsRaised": 0},
+            "connectionHealth": "offline",
+            "recentRecoveryEvents": [],
+            "summary": "No active collaboration session.",
+        }
+        if self._host_server is None:
+            return payload
+
+        host_payload = self._compose_host_server_payload(created=False, stopped=False)
+        rooms = host_payload.get("rooms") if isinstance(host_payload, dict) else None
+        first_room = rooms[0] if isinstance(rooms, list) and rooms else {}
+        if not isinstance(first_room, dict):
+            first_room = {}
+        room_name = str(first_room.get("name", "")).strip()
+        member_count = int(first_room.get("memberCount", 0) or 0)
+        hands_raised = int(first_room.get("handsRaised", 0) or 0)
+        lobby_enabled = bool(first_room.get("lobbyEnabled", False))
+        payload.update(
+            {
+                "running": True,
+                "role": "host",
+                "room": room_name,
+                "memberCount": member_count,
+                "queueState": {"depth": member_count, "handsRaised": hands_raised},
+                "connectionHealth": "healthy",
+                "recentRecoveryEvents": [],
+                "summary": (
+                    f"Hosting `{room_name}` with {member_count} member(s)"
+                    if room_name
+                    else f"Hosting {member_count} member(s)"
+                ),
+                "lobbyEnabled": lobby_enabled,
+                "preset": str(first_room.get("preset", "") or ""),
+                "mode": str(first_room.get("mode", "") or ""),
+                "signalingUrl": str(host_payload.get("signalingUrl", "") or ""),
+            }
+        )
+        return payload
+
+    async def _emit_collaboration_event(self, action: str, payload: Dict[str, Any]) -> None:
+        await self.core._emit_policy_hooks(
+            "collaboration_event",
+            {
+                "action": action,
+                **payload,
+            },
+        )
+
+    def _status_view_payload(self) -> Dict[str, Any]:
+        payload = self.core.build_status_view()
+        payload["collaboration"] = self._collaboration_status_payload()
+        trust = payload.get("trust")
+        if isinstance(trust, dict):
+            trust["mcp"] = self.core.get_mcp_status()
+            trust["audit"] = self.core.get_policy_status().get("audit", {})
+        return payload
+
+    def _doctor_report_payload(self) -> Dict[str, Any]:
+        payload = self.core.build_doctor_report()
+        payload["statusView"] = self._status_view_payload()
+        checks = payload.get("checks")
+        if isinstance(checks, list):
+            collab = payload["statusView"].get("collaboration", {})
+            checks.append(
+                {
+                    "id": "collaboration",
+                    "title": "Collaboration session",
+                    "status": "ok" if collab.get("running") else "warning",
+                    "message": collab.get("summary", "No active collaboration session."),
+                    "action": "Use `/collab start`, `/collab join`, or inspect `/collab summary`.",
+                }
+            )
+        return payload
+
+    async def handle_get_instruction_stack(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the active instruction stack for the given referenced files."""
+        self._ensure_initialized()
+        referenced_files = params.get("referencedFiles") or params.get("files")
+        if not isinstance(referenced_files, list):
+            referenced_files = []
+        return self.core.inspect_instruction_stack([str(path) for path in referenced_files])
+
+    async def handle_get_policy_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return repo-local policy hook and audit status."""
+        del params
+        self._ensure_initialized()
+        return self.core.get_policy_status()
+
+    def _permission_rule_summary(self) -> Dict[str, Any]:
+        rules = self._permission_rules.list_rules()
+        counts = {"allow": 0, "deny": 0, "prompt": 0, "total": 0}
+        for scoped in rules.values():
+            if not isinstance(scoped, list):
+                continue
+            for rule in scoped:
+                if not isinstance(rule, dict):
+                    continue
+                behavior = str(rule.get("behavior", "ask")).strip().lower()
+                if behavior == "ask":
+                    behavior = "prompt"
+                if behavior not in counts:
+                    behavior = "prompt"
+                counts[behavior] += 1
+                counts["total"] += 1
+        return {"rules": rules, "counts": counts}
+
+    def _policy_rule_rows(self) -> List[Dict[str, Any]]:
+        summary = self._permission_rule_summary()
+        rows: List[Dict[str, Any]] = []
+        for scope, scoped in summary["rules"].items():
+            if not isinstance(scoped, list):
+                continue
+            for rule in scoped:
+                if not isinstance(rule, dict):
+                    continue
+                outcome = str(rule.get("behavior", "ask")).strip().lower()
+                if outcome == "ask":
+                    outcome = "prompt"
+                if outcome not in {"allow", "deny", "prompt"}:
+                    outcome = "prompt"
+                rows.append({
+                    "index": len(rows) + 1,
+                    "name": str(rule.get("toolName") or rule.get("name") or "*"),
+                    "scope": str(scope),
+                    "outcome": outcome,
+                    "source": str(rule.get("source") or scope),
+                    "file": str(rule.get("file") or ""),
+                    "line": int(rule.get("line") or 0),
+                    "ruleContent": str(rule.get("ruleContent") or ""),
+                })
+        return rows
+
+    async def handle_policy_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return effective permission rules for read-only policy UIs."""
+        del params
+        self._ensure_initialized()
+        return {"rules": self._policy_rule_rows()}
+
+    async def handle_policy_reload(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Re-read file-backed permission rules and return the effective list."""
+        return await self.handle_policy_list(params)
+
+    async def handle_policy_edit(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Resolve a policy row to its source location without mutating it."""
+        self._ensure_initialized()
+        try:
+            index = int(params.get("index") or 0)
+        except (TypeError, ValueError):
+            index = 0
+        if index > 0:
+            rows = self._policy_rule_rows()
+            if index <= len(rows):
+                row = rows[index - 1]
+                return {"file": row.get("file", ""), "line": row.get("line", 0)}
+        rule = params.get("rule") if isinstance(params.get("rule"), dict) else params
+        return {"file": str(rule.get("file") or ""), "line": int(rule.get("line") or 0)}
+
+    def _audit_row_count(self) -> int:
+        logger = getattr(self.core, "_audit_logger", None)
+        if logger is None:
+            return 0
+        import sqlite3
+        try:
+            with sqlite3.connect(logger.db_path) as conn:
+                row = conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()
+            return int(row[0] if row else 0)
+        except Exception:
+            return 0
+
+    def _recent_audit_events(self, limit: int) -> List[Dict[str, Any]]:
+        logger = getattr(self.core, "_audit_logger", None)
+        if logger is None:
+            return []
+        try:
+            return logger.query_events(limit=limit)
+        except Exception:
+            return []
+
+    def _trust_status_payload(self, audit_limit: int = 8) -> Dict[str, Any]:
+        payload = self._status_view_payload()
+        session = payload.get("session") if isinstance(payload.get("session"), dict) else {}
+        trust = payload.get("trust") if isinstance(payload.get("trust"), dict) else {}
+        provider = payload.get("provider") if isinstance(payload.get("provider"), dict) else {}
+        active = provider.get("active") if isinstance(provider.get("active"), dict) else {}
+        recovery = payload.get("recovery") if isinstance(payload.get("recovery"), dict) else {}
+        last_mutation = recovery.get("lastMutation") if isinstance(recovery.get("lastMutation"), dict) else {}
+        security = trust.get("security") if isinstance(trust.get("security"), dict) else {}
+        policy = self._permission_rule_summary()
+        checkpoint_cfg = getattr(getattr(self.core, "config", None), "checkpoint", None)
+        audit = trust.get("audit") if isinstance(trust.get("audit"), dict) else {}
+        return {
+            "providerName": active.get("name", ""),
+            "providerModel": active.get("model", ""),
+            "routingMode": session.get("routingMode", "manual"),
+            "sandboxPreset": trust.get("sandboxPreset", ""),
+            "permissionMode": session.get("permissionMode", self.permission_mode),
+            "permissionRules": policy["rules"],
+            "permissionRulesCount": policy["counts"]["total"],
+            "policySummary": policy["counts"],
+            "checkpointing": bool(trust.get("checkpointing", False)),
+            "rollbackRetained": getattr(checkpoint_cfg, "max_checkpoints", ""),
+            "lastCheckpointId": last_mutation.get("checkpointId", ""),
+            "auditEnabled": bool(audit.get("enabled", False)),
+            "auditPath": str(audit.get("path", "")),
+            "auditRowCount": self._audit_row_count(),
+            "auditEvents": self._recent_audit_events(max(1, min(int(audit_limit or 8), 50))),
+            "privacyPosture": provider.get("privacyPosture", "unknown"),
+            "dataLeavesMachine": provider.get("privacyPosture", "") != "local",
+            "memorySources": security.get("trustedRoots", []),
+        }
+
+    async def handle_trust_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a flat trust-center payload."""
+        self._ensure_initialized()
+        return self._trust_status_payload(int(params.get("auditLimit", 8) or 8))
+
+    async def handle_get_status_view(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the canonical session status payload shared across clients."""
+        del params
+        self._ensure_initialized()
+        return self._status_view_payload()
+
+    async def handle_get_trust_view(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the trust-center payload shared across clients."""
+        del params
+        self._ensure_initialized()
+        payload = self._status_view_payload()
+        payload["view"] = "trust"
+        return payload
+
+    async def handle_audit_rotate_now(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Run audit rotation if the installed audit logger supports it."""
+        del params
+        self._ensure_initialized()
+        logger = getattr(self.core, "_audit_logger", None)
+        before = self._audit_row_count()
+        result: Any = None
+        if logger is not None:
+            rotate = getattr(logger, "rotate_if_needed", None) or getattr(logger, "rotate", None)
+            if callable(rotate):
+                try:
+                    result = rotate(force=True)
+                except TypeError:
+                    result = rotate()
+        return {
+            "rotated": result is not None,
+            "beforeRows": before,
+            "afterRows": self._audit_row_count(),
+            "result": result,
+        }
+
+    async def handle_audit_export_range(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Export audit events without changing the audit schema."""
+        self._ensure_initialized()
+        logger = getattr(self.core, "_audit_logger", None)
+        if logger is None:
+            raise RuntimeError("Audit logger unavailable")
+        start = params.get("from") or params.get("since") or params.get("start") or params.get("startTime")
+        end = params.get("to") or params.get("until") or params.get("end") or params.get("endTime")
+        out = params.get("out") or params.get("outputPath") or params.get("path")
+        if not out:
+            from datetime import datetime, timezone
+            out = logger.audit_dir / ("export-" + datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S") + ".json")
+        else:
+            out = Path(str(out)).expanduser()
+        export_range = getattr(logger, "export_range", None)
+        if callable(export_range):
+            try:
+                result = export_range(start_time=start, end_time=end, output_path=out)
+            except TypeError:
+                result = export_range(start, end, out)
+        else:
+            logger.export_to_json(out, start_time=start, end_time=end)
+            result = {"path": str(out)}
+        return {"path": str(out), "result": result}
+
+    async def handle_get_doctor_report(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return structured diagnostics with actionable remediation."""
+        del params
+        self._ensure_initialized()
+        return self._doctor_report_payload()
+
+    async def handle_get_sandbox_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return sandbox preset and capability summary."""
+        del params
+        self._ensure_initialized()
+        preset = self._current_sandbox_preset()
+        return {
+            "sandboxPreset": preset,
+            "permissionMode": self.permission_mode,
+            "description": PRESET_DESCRIPTION.get(preset, ""),
+            "trustedRoots": [str(root) for root in self._trusted_workspace_roots()],
+        }
+
+    async def handle_get_mcp_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return MCP connectivity and registered tool status."""
+        del params
+        self._ensure_initialized()
+        return self.core.get_mcp_status()
+
+    async def handle_get_startup_state(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return configured provider/model before full backend initialization."""
+        del params
+        _, config = self._ensure_config_loaded()
+        return {
+            "provider": str(config.model.provider),
+            "model": str(config.model.model_name),
+        }
+
+    async def handle_mcp_health_check(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Check health of all registered MCP servers."""
+        self._ensure_initialized()
+        mcp = getattr(self.core, "_mcp_manager", None)
+        if mcp is None:
+            return {"servers": {}, "error": "No MCP servers configured"}
+        try:
+            results = await mcp.health_check_all()
+            return {"servers": results}
+        except Exception as e:
+            return {"servers": {}, "error": str(e)}
+
+    async def handle_get_docker_sandbox_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..docker_sandbox import docker_sandbox_status
+        return docker_sandbox_status()
+
+    async def handle_watch_scan(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from poor_cli.file_watcher import scan_directory_for_instructions
+        root = params.get("root")
+        instructions = scan_directory_for_instructions(root=root)
+        return {"instructions": instructions, "count": len(instructions)}
+
+    async def handle_preview_start(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..preview_server import PreviewServer
+        port = params.get("port", 3456)
+        if not hasattr(self, "_preview_server"):
+            self._preview_server = PreviewServer(port=port)
+        return await self._preview_server.start()
+
+    async def handle_preview_stop(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        if hasattr(self, "_preview_server"):
+            return await self._preview_server.stop()
+        return {"stopped": []}
+
+    async def handle_preview_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        if hasattr(self, "_preview_server"):
+            return self._preview_server.status()
+        return {"running": False, "mode": "none"}
+
+    async def handle_get_command_manifest(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            from ..command_manifest import load_command_manifest, render_commands_markdown
+            manifest = load_command_manifest()
+            return {"commands": [{"name": c.name, "summary": c.summary, "usage": c.usage, "aliases": list(c.aliases)} for c in manifest.commands], "markdown": render_commands_markdown()}
+        except Exception as e:
+            return {"commands": [], "markdown": "", "error": str(e)}
+
+    async def handle_get_recovery_suggestions(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..error_recovery import ErrorRecoveryManager
+        error_text = params.get("error", "")
+        mgr = ErrorRecoveryManager()
+        suggestions = mgr.get_suggestions(Exception(error_text))
+        return {"suggestions": [{"title": s.title, "description": s.description, "commands": s.commands, "priority": s.priority} for s in suggestions]}
+
+@register('getStartupState')
+async def _rpc_4(ctx, params):
+    return await ctx.handle_get_startup_state(params)
+
+@register('poor-cli/getInstructionStack')
+async def _rpc_24(ctx, params):
+    return await ctx.handle_get_instruction_stack(params)
+
+@register('poor-cli/getStatusView')
+async def _rpc_25(ctx, params):
+    return await ctx.handle_get_status_view(params)
+
+@register('poor-cli/getTrustView')
+async def _rpc_26(ctx, params):
+    return await ctx.handle_get_trust_view(params)
+
+@register('poor-cli/trustStatus')
+async def _rpc_trust_status(ctx, params):
+    return await ctx.handle_trust_status(params)
+
+@register('policy.list')
+async def _rpc_policy_list_dot(ctx, params):
+    return await ctx.handle_policy_list(params)
+
+@register('policy.reload')
+async def _rpc_policy_reload_dot(ctx, params):
+    return await ctx.handle_policy_reload(params)
+
+@register('policy.edit')
+async def _rpc_policy_edit_dot(ctx, params):
+    return await ctx.handle_policy_edit(params)
+
+@register('policy/list')
+async def _rpc_policy_list_slash(ctx, params):
+    return await ctx.handle_policy_list(params)
+
+@register('policy/reload')
+async def _rpc_policy_reload_slash(ctx, params):
+    return await ctx.handle_policy_reload(params)
+
+@register('policy/edit')
+async def _rpc_policy_edit_slash(ctx, params):
+    return await ctx.handle_policy_edit(params)
+
+@register('poor-cli/getDoctorReport')
+async def _rpc_27(ctx, params):
+    return await ctx.handle_get_doctor_report(params)
+
+@register('poor-cli/getPolicyStatus')
+async def _rpc_28(ctx, params):
+    return await ctx.handle_get_policy_status(params)
+
+@register('poor-cli/getSandboxStatus')
+async def _rpc_29(ctx, params):
+    return await ctx.handle_get_sandbox_status(params)
+
+@register('poor-cli/getMcpStatus')
+async def _rpc_30(ctx, params):
+    return await ctx.handle_get_mcp_status(params)
+
+@register('poor-cli/mcpHealthCheck')
+async def _rpc_113(ctx, params):
+    return await ctx.handle_mcp_health_check(params)
+
+@register('poor-cli/getDockerSandboxStatus')
+async def _rpc_157(ctx, params):
+    return await ctx.handle_get_docker_sandbox_status(params)
+
+@register('poor-cli/watchScan')
+async def _rpc_158(ctx, params):
+    return await ctx.handle_watch_scan(params)
+
+@register('poor-cli/previewStart')
+async def _rpc_159(ctx, params):
+    return await ctx.handle_preview_start(params)
+
+@register('poor-cli/previewStop')
+async def _rpc_160(ctx, params):
+    return await ctx.handle_preview_stop(params)
+
+@register('poor-cli/previewStatus')
+async def _rpc_161(ctx, params):
+    return await ctx.handle_preview_status(params)
+
+@register('audit/rotateNow')
+async def _rpc_audit_rotate_now(ctx, params):
+    return await ctx.handle_audit_rotate_now(params)
+
+@register('audit/exportRange')
+async def _rpc_audit_export_range(ctx, params):
+    return await ctx.handle_audit_export_range(params)
+
+@register('poor-cli/getRecoverySuggestions')
+async def _rpc_166(ctx, params):
+    return await ctx.handle_get_recovery_suggestions(params)
+
+@register('poor-cli/getCommandManifest')
+async def _rpc_171(ctx, params):
+    return await ctx.handle_get_command_manifest(params)

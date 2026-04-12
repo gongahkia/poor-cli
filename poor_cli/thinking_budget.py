@@ -16,14 +16,14 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from .exceptions import CapabilityError
+from .providers.capability import ProviderCapability
 from .token_budget_controller import (
     TokenBudgetState,
     TokenBudgetAction,
-    TurnOutcome,
     MIN_THINKING_TOKENS,
     THINKING_CEIL,
     _clamp_action,
-    complexity_str_to_float,
 )
 from .exceptions import setup_logger
 
@@ -77,9 +77,12 @@ class ThinkingBudgetProfile:
 # ── complexity float -> task type mapper ───────────────────────────────
 
 def _complexity_to_type(c: float) -> str:
-    if c <= 0.2: return "trivial"
-    if c <= 0.4: return "simple"
-    if c <= 0.7: return "moderate"
+    if c <= 0.2:
+        return "trivial"
+    if c <= 0.4:
+        return "simple"
+    if c <= 0.7:
+        return "moderate"
     return "complex"
 
 def _type_to_complexity(t: str) -> float:
@@ -88,7 +91,8 @@ def _type_to_complexity(t: str) -> float:
 # ── percentile helper ──────────────────────────────────────────────────
 
 def _percentile(sorted_vals: List[int], pct: float) -> int:
-    if not sorted_vals: return 0
+    if not sorted_vals:
+        return 0
     idx = int(math.ceil(pct / 100.0 * len(sorted_vals))) - 1
     return sorted_vals[max(0, min(idx, len(sorted_vals) - 1))]
 
@@ -165,6 +169,12 @@ class ThinkingBudgetOptimizer:
     def get_budget_for_prompt(self, prompt: str, economy_mode: str = "balanced") -> int:
         """Estimate thinking budget from prompt text (lightweight classifier)."""
         complexity = self._estimate_complexity(prompt)
+        return self.get_budget(complexity, economy_mode)
+
+    def allocate(self, provider: Any, complexity: float, economy_mode: str = "balanced") -> int:
+        """Allocate a thinking budget only for providers declaring support."""
+        if ProviderCapability.EXTENDED_THINKING not in getattr(provider, "capabilities", frozenset()):
+            raise CapabilityError("Provider does not declare extended thinking capability")
         return self.get_budget(complexity, economy_mode)
 
     def suggest_action_override(
@@ -269,9 +279,12 @@ class ThinkingBudgetOptimizer:
         if any(k in prompt_lower for k in complex_kw):
             return 0.85
         # moderate by default, scaled by length
-        if n < 15: return 0.3
-        if n < 50: return 0.5
-        if n < 150: return 0.65
+        if n < 15:
+            return 0.3
+        if n < 50:
+            return 0.5
+        if n < 150:
+            return 0.65
         return 0.75
 
     def to_dict(self) -> Dict[str, Any]:

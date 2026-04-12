@@ -30,6 +30,37 @@ except ImportError:  # pragma: no cover - non-Unix fallback
     fcntl = None
 
 
+def _default_research_preferences() -> Dict[str, Dict[str, bool]]:
+    return {
+        "latent_communication": {"enabled": False},
+        "neural_code_encoder": {"enabled": False},
+    }
+
+
+def _default_context_preferences() -> Dict[str, Dict[str, float]]:
+    return {
+        "selection_weights": {
+            "alpha": 0.4,
+            "beta": 0.4,
+            "gamma": 0.2,
+        },
+    }
+
+
+def _coerce_selection_weights(raw_weights: Any) -> Dict[str, float]:
+    weights = _default_context_preferences()["selection_weights"]
+    if not isinstance(raw_weights, dict):
+        return weights
+    aliases = {"alpha": "recency", "beta": "pagerank", "gamma": "import_distance"}
+    for key, alias in aliases.items():
+        raw_value = raw_weights.get(key, raw_weights.get(alias, weights[key]))
+        try:
+            weights[key] = max(0.0, float(raw_value))
+        except (TypeError, ValueError):
+            pass
+    return weights
+
+
 @dataclass
 class RepoPreferences:
     """Repository-level preferences"""
@@ -53,6 +84,8 @@ class RepoPreferences:
 
     rtk_enabled: bool = True
     rtk_tee_on_failure: bool = True
+    research: Dict[str, Dict[str, bool]] = field(default_factory=_default_research_preferences)
+    context: Dict[str, Dict[str, float]] = field(default_factory=_default_context_preferences)
 
     # Tracking
     created_at: str = ""
@@ -72,6 +105,21 @@ class RepoPreferences:
         if "use_rtk" in data and "rtk_enabled" not in data:
             data["rtk_enabled"] = data["use_rtk"]
         data.pop("use_rtk", None)
+        research = _default_research_preferences()
+        for name, raw_value in data.get("research", {}).items():
+            if isinstance(raw_value, bool):
+                research[name] = {"enabled": raw_value}
+            elif isinstance(raw_value, dict):
+                research[name] = {"enabled": bool(raw_value.get("enabled", False))}
+        data["research"] = research
+        context = _default_context_preferences()
+        raw_context = data.get("context", {})
+        raw_weights = raw_context.get("selection_weights", {}) if isinstance(raw_context, dict) else {}
+        if not raw_weights and isinstance(data.get("selection_weights"), dict):
+            raw_weights = data.get("selection_weights", {})
+        context["selection_weights"] = _coerce_selection_weights(raw_weights)
+        data["context"] = context
+        data.pop("selection_weights", None)
         raw_mode = data.get("permission_mode", PermissionMode.DEFAULT)
         mode = parse_permission_mode(raw_mode)
 
@@ -659,7 +707,7 @@ class RepoConfig:
                 json.dump(data, f, indent=2)
             logger.info(f"Exported history to {output_file}")
         except Exception as e:
-            raise FileOperationError(f"Failed to export history", str(e))
+            raise FileOperationError("Failed to export history", str(e))
 
     def clear_history(self) -> None:
         """Clear all chat history"""

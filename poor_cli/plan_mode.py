@@ -5,10 +5,10 @@ Allows users to preview AI actions before execution for enhanced safety.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from enum import Enum
 from datetime import datetime
-from poor_cli.exceptions import ValidationError, setup_logger
+from poor_cli.exceptions import setup_logger
 
 logger = setup_logger(__name__)
 

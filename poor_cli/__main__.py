@@ -9,12 +9,14 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Optional, Sequence
 
-from .automation_manager import (
+from .automations import (
     AutomationManager,
+    migrate_extensions,
     parse_daily_schedule,
     parse_weekly_schedule,
+    restore_migration,
     schedule_interval,
 )
 from .cli import (
@@ -34,16 +36,17 @@ from .cli import (
     run_context_mode,
     run_workflow_mode,
     run_services_mode,
+    run_audit_mode,
 )
-from ._exec_helpers import build_exec_permission_callback, _trusted_workspace_roots
+from ._exec_helpers import build_exec_permission_callback
 from .config import Config, ConfigManager, PermissionMode, parse_permission_mode
 from .core import PoorCLICore
 from .cli_errors import run_with_cli_error_handling
-from .custom_commands import CustomCommandRegistry
+from .automations import CustomCommandRegistry
 from .github_task import create_task_from_context, default_mode_for_context, load_github_context
 from .repo_config import get_repo_config
 from .session_store import SessionStore
-from .sandbox import PRESET_DESCRIPTION, evaluate_tool_access, normalize_preset
+from .sandbox import PRESET_DESCRIPTION, normalize_preset
 from .skills import SkillRegistry
 from .task_manager import APPROVAL_REQUIRED_PRESETS, TaskManager, run_task_worker
 from . import __version__
@@ -60,7 +63,7 @@ def _render_root_help() -> str:
         "  poor-cli exec              Run one shared-core request from the terminal or CI\n"
         "  poor-cli task              Manage durable background tasks and worktrees\n"
         "  poor-cli agent             Manage background agents\n"
-        "  poor-cli automation        Manage scheduled local automations\n"
+        "  poor-cli automation        Manage AutomationRule triggers and scheduled runs\n"
         "  poor-cli github-task       Create a task from a GitHub event payload\n\n"
         "State and session:\n"
         "  poor-cli session           List, create, fork, or destroy sessions\n"
@@ -75,6 +78,7 @@ def _render_root_help() -> str:
         "  poor-cli doctor            Run structured diagnostics\n"
         "  poor-cli status            Show session status summary\n"
         "  poor-cli cost              Show session cost and economy settings\n"
+        "  poor-cli audit             Export or rotate audit logs\n"
         "  poor-cli policy            Show policy and audit hook status\n"
         "  poor-cli tools             List available tools\n"
         "  poor-cli mcp               Show MCP server status\n"
@@ -88,7 +92,7 @@ def _render_root_help() -> str:
         "  poor-cli watch             Monitor files for inline instructions\n\n"
         "Reuse and integration:\n"
         "  poor-cli skills            List, inspect, or run repo/user skills\n"
-        "  poor-cli commands          List, inspect, or run repo/user custom commands\n"
+        "  poor-cli commands          Legacy alias for slash-trigger AutomationRules\n"
         "  poor-cli server            Run the JSON-RPC server (for Neovim plugin)\n\n"
         "Examples:\n"
         "  poor-cli\n"
@@ -681,7 +685,7 @@ def _run_watch_mode(argv: Sequence[str]) -> int:
     parser.add_argument("--scan", action="store_true", help="Scan once and exit (don't watch)")
     parser.add_argument("--execute", action="store_true", help="Execute found instructions via core engine")
     args = parser.parse_args(list(argv))
-    from .ide_watch import scan_directory_for_instructions, FileWatcher
+    from .file_watcher import scan_directory_for_instructions, FileWatcher
     if args.scan:
         instructions = scan_directory_for_instructions()
         if not instructions:
@@ -1248,6 +1252,12 @@ def _build_automation_parser() -> argparse.ArgumentParser:
     replay.add_argument("--wait", action="store_true")
     replay.add_argument("--wait-timeout-seconds", type=int, default=900)
     replay.add_argument("--json", action="store_true")
+
+    migrate = subparsers.add_parser("migrate")
+    migrate.add_argument("--dry-run", action="store_true")
+    migrate.add_argument("--force", action="store_true")
+    migrate.add_argument("--restore", action="store_true")
+    migrate.add_argument("--json", action="store_true")
     return parser
 
 
@@ -1364,6 +1374,25 @@ def _wait_for_tasks_completion(
 def _run_automation_mode(argv: Sequence[str]) -> int:
     parser = _build_automation_parser()
     args = parser.parse_args(list(argv))
+
+    if args.subcommand == "migrate":
+        result = restore_migration(Path.cwd(), dry_run=bool(args.dry_run)) if args.restore else migrate_extensions(
+            Path.cwd(),
+            dry_run=bool(args.dry_run),
+            force=bool(args.force),
+        )
+        payload = result.to_dict()
+        if args.json:
+            _print_json(payload)
+        else:
+            print(
+                f"Migration: {'done' if payload['migrated'] else 'skipped'} "
+                f"rules={payload['ruleCount']} backup={payload['backupDir']}"
+            )
+            if payload.get("skippedReason"):
+                print(f"Reason: {payload['skippedReason']}")
+        return 0
+
     manager = AutomationManager(Path.cwd())
 
     if args.subcommand == "create":
@@ -1639,6 +1668,10 @@ def _run_commit_mode(argv: Sequence[str]) -> int:
     return run_commit_mode(argv)
 
 
+def _run_audit_mode(argv: Sequence[str]) -> int:
+    return run_audit_mode(argv)
+
+
 def _main() -> None:
     argv = sys.argv[1:]
     if not argv:
@@ -1690,6 +1723,8 @@ def _main() -> None:
         raise SystemExit(_run_core_info_command("get_mcp_status", argv[1:], "poor-cli mcp"))
     if argv and argv[0] == "cost":
         raise SystemExit(_run_cost_mode(argv[1:]))
+    if argv and argv[0] == "audit":
+        raise SystemExit(_run_audit_mode(argv[1:]))
     if argv and argv[0] == "context":
         raise SystemExit(run_context_mode(argv[1:]))
     if argv and argv[0] == "workflow":

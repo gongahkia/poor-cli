@@ -58,9 +58,8 @@ methodologies, continuous integration, and automated testing frameworks."""
 def collect_files():
     py_files = sorted(ROOT.glob("poor_cli/**/*.py"))
     lua_files = sorted(ROOT.glob("nvim-poor-cli/**/*.lua"))
-    ts_files = sorted(ROOT.glob("_archived/**/*.ts"))
     test_files = sorted(ROOT.glob("tests/test_*.py"))[:10] # sample tests
-    return py_files + lua_files + ts_files + test_files
+    return py_files + lua_files + test_files
 
 def main():
     files = collect_files()

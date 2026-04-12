@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import socket
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, List, Optional
 from urllib.error import URLError
 from urllib.parse import urlparse
 from urllib.request import urlopen
@@ -108,10 +108,11 @@ def probe_providers(
                 else common_models_for_provider(provider_name)
             )
         else:
-            api_key = config_manager.get_api_key(provider_name)
+            key_info = config_manager.get_api_key_info(provider_name)
+            api_key = key_info.get("key")
             configured = bool(api_key)
             ready = dependency_available and configured
-            source = "environment" if api_key else "none"
+            source = str(key_info.get("source") or "none")
             status_label = "API key configured" if ready else f"missing {env_var}"
             models = common_models_for_provider(provider_name)
 

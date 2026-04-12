@@ -107,6 +107,28 @@ local function build_trust_text()
     return table.concat(lines, "\n")
 end
 
+local function parse_audit_export_args(raw)
+    local args = vim.split(raw or "", "%s+", { trimempty = true })
+    local params = {}
+    local idx = 1
+    while idx <= #args do
+        local item = args[idx]
+        if item == "--since" or item == "--from" then
+            params.since = args[idx + 1]
+            idx = idx + 2
+        elseif item == "--until" then
+            params["until"] = args[idx + 1]
+            idx = idx + 2
+        elseif item == "--to" or item == "--out" or item == "--output" then
+            params.outputPath = args[idx + 1]
+            idx = idx + 2
+        else
+            idx = idx + 1
+        end
+    end
+    return params
+end
+
 local function build_doctor_text()
     local rpc = require("poor-cli.rpc")
     local payload, err = rpc.get_doctor_report(15000)
@@ -163,11 +185,11 @@ local function build_workflow_text(name)
     if name and name ~= "" then
         local payload, err = rpc.get_workflow(name, 15000)
         if err or type(payload) ~= "table" then
-            return "Failed to load workflow: " .. rpc.format_error(err)
+            return "Failed to load AutomationRule: " .. rpc.format_error(err)
         end
         local workflow = type(payload.workflow) == "table" and payload.workflow or {}
         local lines = {
-            "# workflow " .. tostring(workflow.name or name),
+            "# AutomationRule " .. tostring(workflow.name or name),
             "",
             tostring(workflow.description or ""),
             "",
@@ -185,9 +207,9 @@ local function build_workflow_text(name)
 
     local payload, err = rpc.list_workflows(15000)
     if err or type(payload) ~= "table" then
-        return "Failed to load workflows: " .. rpc.format_error(err)
+        return "Failed to load AutomationRules: " .. rpc.format_error(err)
     end
-    local lines = { "# workflows", "" }
+    local lines = { "# AutomationRule workflow aliases", "" }
     for _, workflow in ipairs(payload.workflows or {}) do
         if type(workflow) == "table" then
             local marker = workflow.name == payload.recommended and " (recommended)" or ""
@@ -476,14 +498,34 @@ function M.setup()
         open_scratch("[poor-cli trust]", build_trust_text(), "markdown")
     end, { desc = "Open poor-cli trust center" })
 
+    create_command("PoorCliTrustCenter", function()
+        require("poor-cli.trust_center").open()
+    end, { desc = "Open interactive poor-cli trust center" })
+
     create_command("PoorCliRuns", function()
         open_scratch("[poor-cli runs]", build_runs_text(), "markdown")
     end, { desc = "Open poor-cli run history" })
 
+    create_command("PoorCliAuditExport", function(opts)
+        rpc.request("audit/exportRange", parse_audit_export_args(opts.args), function(result, err)
+            vim.schedule(function()
+                if err then
+                    vim.notify("[poor-cli] Audit export failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
+                    return
+                end
+                if type(result) == "table" and result.path then
+                    vim.notify("[poor-cli] Exported " .. tostring(result.count or 0) .. " audit events to " .. tostring(result.path), vim.log.levels.INFO)
+                elseif type(result) == "table" and result.jsonl then
+                    open_scratch("[poor-cli audit export]", tostring(result.jsonl), "json")
+                end
+            end)
+        end)
+    end, { nargs = "*", desc = "Export audit log JSONL" })
+
     create_command("PoorCliWorkflow", function(opts)
         local name = (opts.args or ""):gsub("^%s+", ""):gsub("%s+$", "")
         open_scratch("[poor-cli workflow]", build_workflow_text(name ~= "" and name or nil), "markdown")
-    end, { nargs = "?", desc = "Inspect poor-cli workflow templates" })
+    end, { nargs = "?", desc = "Inspect poor-cli AutomationRule workflow aliases" })
 
     create_command("PoorCliContext", function()
         open_scratch("[poor-cli context]", build_context_text(), "markdown")
@@ -943,9 +985,7 @@ function M.setup()
 
     -- policy
     create_command("PoorCliPolicy", function()
-        local result, err = rpc.get_policy_status(10000)
-        if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
-        open_scratch("[poor-cli policy]", vim.inspect(result or {}), "lua")
+        require("poor-cli.policy_panel").open()
     end, { desc = "Show policy status" })
 
     -- mcp
@@ -1188,6 +1228,29 @@ function M.setup()
             end)
         end)
     end, { nargs = "*", desc = "Inspect active instruction stack" })
+
+    create_command("PoorCliRules", function(opts)
+        local files = {}
+        if opts.args ~= "" then files = vim.split(opts.args, " ", { trimempty = true }) end
+        local current = vim.api.nvim_buf_get_name(0)
+        if current ~= "" and #files == 0 then table.insert(files, current) end
+        rpc.request("poor-cli/getInstructionStack", { referencedFiles = files }, function(result, err)
+            vim.schedule(function()
+                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+                local lines = { "# rules", "" }
+                local idx = 0
+                for _, source in ipairs((result or {}).sources or {}) do
+                    local kind = source.kind or ""
+                    if kind == "agents_md" or kind == "claude_md" or kind == "user_global" then
+                        idx = idx + 1
+                        table.insert(lines, tostring(idx) .. ". `" .. tostring(source.path or "") .. "` (" .. kind .. ")")
+                    end
+                end
+                if idx == 0 then table.insert(lines, "no active rule files") end
+                open_scratch("[poor-cli rules]", table.concat(lines, "\n"), "markdown")
+            end)
+        end)
+    end, { nargs = "*", desc = "List active AGENTS.md/CLAUDE.md rule files" })
 
     -- permission mode
     create_command("PoorCliPermissionMode", function(opts)

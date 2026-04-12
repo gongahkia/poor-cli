@@ -28,7 +28,6 @@ _MAX_REPO_MAP_FILE_SIZE = max(MAX_FILE_SIZE, 500_000)
 logger = logging.getLogger(__name__)
 
 _SKIP_DIRS = set(INDEXER_SKIP_DIRS) | {
-    "_archived",
     ".eggs",
     "*.egg-info",
 }
@@ -1638,6 +1637,33 @@ class RepoGraph:
 
     def build_repo_summary(self, token_budget: int = _DEFAULT_MAP_TOKEN_BUDGET) -> str:
         return self.build_repo_map(token_budget=token_budget)
+
+    def _score_map_data(self) -> Dict[str, Any]:
+        fingerprint = self._repo_state_fingerprint()
+        data = self._load_cached_map_data(fingerprint)
+        if data is None:
+            data = self._compute_map_data(fingerprint)
+            self._store_cached_map_data(data)
+        return data
+
+    def pagerank_score(self, path: str | Path) -> float:
+        candidate = Path(path)
+        resolved = str(candidate.resolve()) if candidate.is_absolute() else str((self.repo_root / candidate).resolve())
+        data = self._score_map_data()
+        for entry in data.get("entries", []):
+            if entry.get("path") == resolved or entry.get("relative_path") == str(path):
+                return max(0.0, min(1.0, float(entry.get("pagerank", 0.0) or 0.0)))
+        return 0.0
+
+    def top_k(self, k: int = 50) -> List[Tuple[str, float]]:
+        data = self._score_map_data()
+        entries = [
+            (str(entry.get("path", "")), max(0.0, min(1.0, float(entry.get("pagerank", 0.0) or 0.0))))
+            for entry in data.get("entries", [])
+            if entry.get("path")
+        ]
+        entries.sort(key=lambda item: (-item[1], item[0]))
+        return entries[: max(0, int(k or 0))]
 
     def rank_files_for_query(self, keywords: List[str], limit: int = 24) -> List[Tuple[str, float]]:
         self._ensure_index_current()

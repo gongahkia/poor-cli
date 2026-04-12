@@ -7,15 +7,13 @@ cascading to more expensive models on low-confidence responses.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
 from .exceptions import setup_logger
 from .provider_catalog import (
-    ModelTier,
     canonical_provider_name,
-    get_model_tier,
     _catalog_payload,
 )
 

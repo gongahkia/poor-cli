@@ -12,10 +12,10 @@ complete -c poor-cli -f -n "__fish_use_subcommand" -a "install" -d "Run installe
 complete -c poor-cli -f -n "__fish_use_subcommand" -a "install-info" -d "Inspect launcher selection"
 complete -c poor-cli -f -n "__fish_use_subcommand" -a "exec" -d "Run one shared-core request"
 complete -c poor-cli -f -n "__fish_use_subcommand" -a "task" -d "Manage durable tasks"
-complete -c poor-cli -f -n "__fish_use_subcommand" -a "automation" -d "Manage scheduled automations"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "automation" -d "Manage AutomationRule triggers"
 complete -c poor-cli -f -n "__fish_use_subcommand" -a "github-task" -d "Create task from GitHub event"
 complete -c poor-cli -f -n "__fish_use_subcommand" -a "skills" -d "List and run skills"
-complete -c poor-cli -f -n "__fish_use_subcommand" -a "commands" -d "List and run command wrappers"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "commands" -d "Legacy alias for slash-trigger AutomationRules"
 complete -c poor-cli -f -n "__fish_use_subcommand" -a "server" -d "Run JSON-RPC server"
 complete -c poor-cli -f -n "__fish_use_subcommand" -a "telegram" -d "Run Telegram bot frontend"
 complete -c poor-cli -f -n "__fish_use_subcommand" -a "watch" -d "Watch files for inline instructions"
@@ -37,13 +37,14 @@ complete -c poor-cli -f -n "__fish_use_subcommand" -a "policy" -d "Show policy s
 complete -c poor-cli -f -n "__fish_use_subcommand" -a "tools" -d "List available tools"
 complete -c poor-cli -f -n "__fish_use_subcommand" -a "mcp" -d "Show MCP status"
 complete -c poor-cli -f -n "__fish_use_subcommand" -a "cost" -d "Show cost and economy"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "audit" -d "Export or rotate audit logs"
 complete -c poor-cli -f -n "__fish_use_subcommand" -a "search" -d "Search the codebase"
 complete -c poor-cli -f -n "__fish_use_subcommand" -a "review" -d "Review file or staged diff"
 complete -c poor-cli -f -n "__fish_use_subcommand" -a "commit" -d "Generate commit message"
 
 # Nested subcommands
 complete -c poor-cli -f -n "__fish_seen_subcommand_from task" -a "create list show start wait approve cancel retry replay run"
-complete -c poor-cli -f -n "__fish_seen_subcommand_from automation" -a "create list show enable disable run-now run-due serve history replay"
+complete -c poor-cli -f -n "__fish_seen_subcommand_from automation" -a "create list show enable disable run-now run-due serve history replay migrate"
 complete -c poor-cli -f -n "__fish_seen_subcommand_from agent" -a "start list logs result cancel run"
 complete -c poor-cli -f -n "__fish_seen_subcommand_from skills" -a "list show run"
 complete -c poor-cli -f -n "__fish_seen_subcommand_from commands" -a "list show run"
@@ -58,6 +59,7 @@ complete -c poor-cli -f -n "__fish_seen_subcommand_from profile" -a "list apply"
 complete -c poor-cli -f -n "__fish_seen_subcommand_from trust" -a "status trust untrust"
 complete -c poor-cli -f -n "__fish_seen_subcommand_from provider" -a "list info switch"
 complete -c poor-cli -f -n "__fish_seen_subcommand_from cost" -a "summary economy savings"
+complete -c poor-cli -f -n "__fish_seen_subcommand_from audit" -a "export rotate"
 complete -c poor-cli -f -n "__fish_seen_subcommand_from search" -a "index stats"
 
 # exec
@@ -128,6 +130,10 @@ complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l run-n
 complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l wait
 complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l wait-timeout-seconds -r
 complete -c poor-cli -n "__fish_seen_subcommand_from automation create" -l json
+complete -c poor-cli -n "__fish_seen_subcommand_from automation migrate" -l dry-run
+complete -c poor-cli -n "__fish_seen_subcommand_from automation migrate" -l force
+complete -c poor-cli -n "__fish_seen_subcommand_from automation migrate" -l restore
+complete -c poor-cli -n "__fish_seen_subcommand_from automation migrate" -l json
 
 # server
 complete -c poor-cli -n "__fish_seen_subcommand_from server" -l stdio
@@ -201,6 +207,13 @@ complete -c poor-cli -n "__fish_seen_subcommand_from mcp" -l config -r -a "(__fi
 complete -c poor-cli -n "__fish_seen_subcommand_from mcp" -l json
 complete -c poor-cli -n "__fish_seen_subcommand_from cost" -l config -r -a "(__fish_complete_path)"
 complete -c poor-cli -n "__fish_seen_subcommand_from cost" -l json
+complete -c poor-cli -n "__fish_seen_subcommand_from audit" -l from -r
+complete -c poor-cli -n "__fish_seen_subcommand_from audit" -l since -r
+complete -c poor-cli -n "__fish_seen_subcommand_from audit" -l to -r
+complete -c poor-cli -n "__fish_seen_subcommand_from audit" -l until -r
+complete -c poor-cli -n "__fish_seen_subcommand_from audit" -l out -r -a "(__fish_complete_path)"
+complete -c poor-cli -n "__fish_seen_subcommand_from audit" -l output -r -a "(__fish_complete_path)"
+complete -c poor-cli -n "__fish_seen_subcommand_from audit" -l json
 complete -c poor-cli -n "__fish_seen_subcommand_from search" -l mode -r -a "semantic hybrid"
 complete -c poor-cli -n "__fish_seen_subcommand_from search" -l limit -r
 complete -c poor-cli -n "__fish_seen_subcommand_from search" -l json

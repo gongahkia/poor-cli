@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
-from typing import Any, Callable, Awaitable, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any, Callable, Awaitable, Dict, List, Optional
 
 from poor_cli.exceptions import setup_logger
 

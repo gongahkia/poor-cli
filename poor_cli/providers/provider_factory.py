@@ -6,6 +6,7 @@ Supports dynamic provider creation and registration of custom providers.
 
 from typing import Optional, Dict, Any, Type
 from .base import BaseProvider
+from .capability import ProviderCapability, capability_names
 from ..exceptions import ConfigurationError, setup_logger
 
 logger = setup_logger(__name__)
@@ -153,6 +154,10 @@ class ProviderFactory:
             raise ValueError(
                 f"{provider_class.__name__} must inherit from BaseProvider"
             )
+        if not getattr(provider_class, "capabilities", frozenset()):
+            raise ValueError(
+                f"{provider_class.__name__} must declare provider capabilities"
+            )
 
         cls._providers[name.lower()] = provider_class
         logger.info(f"Registered custom provider: {name}")
@@ -205,5 +210,8 @@ class ProviderFactory:
             "name": provider_name,
             "class": provider_class.__name__,
             "module": provider_class.__module__,
-            "available": True
+            "available": True,
+            "capabilities": capability_names(
+                getattr(provider_class, "capabilities", frozenset({ProviderCapability.NONE}))
+            ),
         }

@@ -96,35 +96,6 @@ Host/admin RPC names kept stable:
 
 Their payloads are now invite-first and signaling-first.
 
-## TUI Workflows
-
-CLI bootstrap:
-
-- `poor-cli-tui --remote-invite <invite>`
-
-Interactive flows:
-
-- `/pair` starts a hosted session
-- `/pair <invite>` joins a session
-- `/join-server` opens the invite prompt
-- `/join-server <invite>` joins directly
-- `/collab join`
-- `/collab join <invite>`
-- `/pass`
-- `/suggest`
-- `/leave`
-
-The join prompt is invite-only. Manual `url/room/token` entry is removed.
-
-Host status and share flows now expose:
-
-- signaling endpoints
-- viewer invite codes
-- prompter invite codes
-- invite-based join commands
-
-They no longer expose raw viewer or prompter join tokens.
-
 ## Neovim Workflows
 
 Plugin bootstrap:
@@ -189,8 +160,8 @@ Still stable:
 - owner-authoritative room semantics
 - one active driver at a time
 - queue-serialized shared requests
-- slash command names in the TUI
-- notification method names for the TUI and Neovim plugin
+- legacy slash command names
+- notification method names for the Neovim plugin
 - host/admin RPC method names
 
 Removed:
@@ -199,7 +170,7 @@ Removed:
 - `GET /rpc`
 - legacy `url|room|token` invite parsing
 - `--url --room --token` bridge bootstrap
-- `--remote-url --remote-room --remote-token` TUI bootstrap
+- `--remote-url --remote-room --remote-token` bootstrap
 - Neovim `multiplayer.url`, `multiplayer.room`, and `multiplayer.token`
 - `:PoorCliCollab join <url> <room> <token>`
 - manual URL and token join wizard flow
@@ -209,9 +180,6 @@ Removed:
 Verified during this migration:
 
 - `python3 -m compileall poor_cli`
-- `cargo test --manifest-path poor-cli-tui/Cargo.toml backend_server_args_`
-- `cargo test --manifest-path poor-cli-tui/Cargo.toml join_server_parser_`
-- `cargo test --manifest-path poor-cli-tui/Cargo.toml remote_reconnect_classifier_`
 - `luac -p nvim-poor-cli/lua/poor-cli/config.lua`
 - `luac -p nvim-poor-cli/lua/poor-cli/rpc.lua`
 - `luac -p nvim-poor-cli/lua/poor-cli/commands.lua`

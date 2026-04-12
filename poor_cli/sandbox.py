@@ -5,6 +5,9 @@ Capability-based sandbox presets for tool execution.
 from __future__ import annotations
 
 import shlex
+import platform
+import shutil
+import tempfile
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -371,11 +374,6 @@ def _is_safe_process_command(
 
 
 # ── OS-level sandboxing (macOS sandbox-exec) ──────────────────────────────
-
-import platform
-import shutil
-import subprocess
-import tempfile
 
 _SEATBELT_READ_ONLY = """(version 1)
 (deny default)

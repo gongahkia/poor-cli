@@ -138,7 +138,7 @@ class NeuralRetrievalBenchmark:
 
     async def setup(self) -> Dict:
         """Index the codebase. Returns index stats."""
-        from poor_cli.neural_code_encoder import NeuralCodeRetriever
+        from poor_cli.research.neural_code_encoder import NeuralCodeRetriever
         self._retriever = NeuralCodeRetriever(
             repo_root=self.repo_root,
             model_key=self._model_key,
@@ -298,14 +298,14 @@ class TestHuggingFaceEmbedding:
     """Unit tests for HuggingFaceCodeEmbedding."""
 
     def test_available_check(self):
-        from poor_cli.neural_code_encoder import HuggingFaceCodeEmbedding
+        from poor_cli.research.neural_code_encoder import HuggingFaceCodeEmbedding
         emb = HuggingFaceCodeEmbedding()
         # should return True/False without crashing
         result = emb.available()
         assert isinstance(result, bool)
 
     def test_model_registry(self):
-        from poor_cli.neural_code_encoder import HF_CODE_MODELS
+        from poor_cli.research.neural_code_encoder import HF_CODE_MODELS
         assert "codebert" in HF_CODE_MODELS
         assert "unixcoder" in HF_CODE_MODELS
         assert "graphcodebert" in HF_CODE_MODELS
@@ -315,7 +315,7 @@ class TestHuggingFaceEmbedding:
         reason="torch/transformers not installed",
     )
     def test_embed_produces_vectors(self):
-        from poor_cli.neural_code_encoder import HuggingFaceCodeEmbedding
+        from poor_cli.research.neural_code_encoder import HuggingFaceCodeEmbedding
         emb = HuggingFaceCodeEmbedding(model_key="codebert")
         texts = ["def hello(): pass", "class Foo: pass"]
         vecs = asyncio.run(emb.embed(texts))
@@ -331,7 +331,7 @@ class TestHuggingFaceEmbedding:
     )
     def test_code_similarity_sanity(self):
         """Similar code should have higher similarity than dissimilar code."""
-        from poor_cli.neural_code_encoder import HuggingFaceCodeEmbedding
+        from poor_cli.research.neural_code_encoder import HuggingFaceCodeEmbedding
         from poor_cli.embeddings import cosine_similarity
         emb = HuggingFaceCodeEmbedding(model_key="codebert")
         texts = [
@@ -348,14 +348,23 @@ class TestHuggingFaceEmbedding:
 class TestNeuralRetriever:
     """Integration tests for NeuralCodeRetriever."""
 
-    @pytest.mark.skipif(
-        not (lambda: __import__("torch") and __import__("transformers") and True)(),
-        reason="torch/transformers not installed",
-    )
-    def test_retrieve_returns_results(self):
-        from poor_cli.neural_code_encoder import NeuralCodeRetriever
+    def test_retrieve_returns_results(self, monkeypatch, tmp_path):
+        from poor_cli.research.neural_code_encoder import HuggingFaceCodeEmbedding, NeuralCodeRetriever
+
+        code_dir = tmp_path / "poor_cli"
+        code_dir.mkdir()
+        (code_dir / "embeddings.py").write_text(
+            "def embedding_provider():\n    return 'ok'\n",
+            encoding="utf-8",
+        )
+
+        async def fake_embed(self, texts):
+            return [[1.0, 0.0] for _ in texts]
+
+        monkeypatch.setattr(HuggingFaceCodeEmbedding, "embed", fake_embed)
+
         async def _run():
-            retriever = NeuralCodeRetriever(repo_root=REPO_ROOT, model_key="codebert")
+            retriever = NeuralCodeRetriever(repo_root=tmp_path, model_key="codebert")
             stats = await retriever.index_codebase()
             assert stats.get("indexed", 0) > 0
             results = await retriever.retrieve("embedding provider")
@@ -373,7 +382,7 @@ class TestCodebaseProjection:
         reason="torch not installed",
     )
     def test_projection_builds(self):
-        from poor_cli.neural_code_encoder import CodebaseProjection
+        from poor_cli.research.neural_code_encoder import CodebaseProjection
         proj = CodebaseProjection(code_dim=768, llm_dim=4096, num_tokens=32)
         proj.build()
         assert proj.parameter_count() > 0
@@ -384,7 +393,7 @@ class TestCodebaseProjection:
     )
     def test_projection_forward(self):
         import torch
-        from poor_cli.neural_code_encoder import CodebaseProjection
+        from poor_cli.research.neural_code_encoder import CodebaseProjection
         proj = CodebaseProjection(code_dim=768, llm_dim=4096, num_tokens=32)
         proj.build()
         # simulate 50 chunk embeddings
@@ -393,7 +402,7 @@ class TestCodebaseProjection:
         assert output.shape == (1, 32, 4096)
 
     def test_training_estimate(self):
-        from poor_cli.neural_code_encoder import CodebaseProjection
+        from poor_cli.research.neural_code_encoder import CodebaseProjection
         proj = CodebaseProjection()
         est = proj.training_estimate()
         assert "trainable_parameters" in est
@@ -404,12 +413,16 @@ class TestCodebaseProjection:
 class TestEmbeddingProviderIntegration:
     """Test that HF provider integrates with get_embedding_provider()."""
 
-    def test_hf_preferred_selection(self):
+    def test_hf_preferred_selection(self, monkeypatch, tmp_path):
         from poor_cli.embeddings import get_embedding_provider
+        from poor_cli.config import ConfigManager
         # if torch is available, requesting hf: prefix should return HF provider
         try:
             import torch
             import transformers
+            cfg_path = tmp_path / "config.yaml"
+            cfg_path.write_text("research:\n  neural_code_encoder:\n    enabled: true\n", encoding="utf-8")
+            monkeypatch.setattr(ConfigManager, "DEFAULT_CONFIG_FILE", cfg_path)
             p = get_embedding_provider("hf:codebert")
             assert p is not None
             assert p.name == "hf:codebert"

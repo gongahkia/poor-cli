@@ -32,6 +32,7 @@ dependencies = [
     "PyYAML>=6.0",
     "aiofiles>=23.0.0",
     "aiohttp>=3.9.0",
+    "aiortc>=1.14,<1.15",
     "cryptography>=41.0.0",
     "pydantic>=2.0,<3",
 ]
@@ -42,6 +43,7 @@ openrouter = ["openai>=1.0.0"]
 anthropic = ["anthropic>=0.18.0"]
 multiplayer = ["aiortc>=1.14,<1.15"]
 compression = ["llmlingua>=0.2.0"]
+keyring = ["keyring>=24.0.0"]
 repo-map = [
     "tree-sitter",
     "tree-sitter-python",
@@ -60,6 +62,7 @@ all = [
     "anthropic>=0.18.0",
     "aiortc>=1.14,<1.15",
     "llmlingua>=0.2.0",
+    "keyring>=24.0.0",
     "tree-sitter",
     "tree-sitter-python",
     "tree-sitter-lua",
@@ -78,7 +81,7 @@ Repository = "https://github.com/gongahkia/poor-cli"
 Issues = "https://github.com/gongahkia/poor-cli/issues"
 
 [tool.setuptools]
-packages = ["poor_cli", "poor_cli.cli", "poor_cli.integrations", "poor_cli.providers", "poor_cli.readers", "poor_cli.server"]
+packages = ["poor_cli", "poor_cli.automations", "poor_cli.cli", "poor_cli.context", "poor_cli.integrations", "poor_cli.providers", "poor_cli.readers", "poor_cli.research", "poor_cli.server", "poor_cli.server.handlers"]
 
 [tool.setuptools.package-data]
 poor_cli = ["*.json", "skills/*.md"]

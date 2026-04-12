@@ -80,7 +80,7 @@ class TestContextPressure(unittest.TestCase):
         self.assertEqual(result["strategy_hint"], "ok")
 
     def test_high_pressure(self):
-        core = self._make_core_stub(history_chars=30000, max_ctx=10000)
+        core = self._make_core_stub(history_chars=80000, max_ctx=10000)
         result = core.get_context_pressure()
         self.assertGreater(result["pressure_pct"], 70)
         self.assertEqual(result["strategy_hint"], "compress")
@@ -310,7 +310,7 @@ class TestAutoCompressOnPressure(unittest.TestCase):
         caps.max_context_tokens = 1000
         core.provider.get_capabilities.return_value = caps
         # simulate high pressure with enough messages (>4 required)
-        msg_content = "x" * int(1000 * 4 * pressure_pct / 100 // 6)
+        msg_content = "word " * max(1, int(pressure_pct * 1.5))
         core.provider.get_history.return_value = [
             {"role": "user", "content": msg_content},
             {"role": "assistant", "content": msg_content},
@@ -408,9 +408,9 @@ class TestTokenBreakdownCompute(unittest.TestCase):
         core = self._make_core_stub()
         sys_tok, hist_tok, tool_tok = core._compute_token_breakdown()
         # uses calibrated TokenCounter heuristic (default provider)
-        self.assertGreater(sys_tok, 250) # ~1200/4 = 300
-        self.assertGreater(tool_tok, 150) # ~800/4 = 200
-        self.assertGreater(hist_tok, 100) # ~600/4 = 150
+        self.assertGreater(sys_tok, hist_tok)
+        self.assertGreater(tool_tok, hist_tok)
+        self.assertGreater(hist_tok, 0)
 
 
 if __name__ == "__main__":

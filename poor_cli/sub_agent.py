@@ -3,7 +3,7 @@
 from __future__ import annotations
 import asyncio
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 from .exceptions import setup_logger
 
 logger = setup_logger(__name__)

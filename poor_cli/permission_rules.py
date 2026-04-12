@@ -22,13 +22,17 @@ class PermissionRule:
     behavior: str  # allow | deny | ask
     rule_content: str = ""
     source: str = ""
+    source_file: str = ""
+    source_line: int = 0
 
-    def to_dict(self) -> Dict[str, str]:
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "toolName": self.tool_name,
             "behavior": self.behavior,
             "ruleContent": self.rule_content,
             "source": self.source,
+            "file": self.source_file,
+            "line": self.source_line,
         }
 
 
@@ -102,7 +106,7 @@ class PermissionRuleEngine:
         self._write_settings_payload(path, payload)
         return rule
 
-    def list_rules(self) -> Dict[str, List[Dict[str, str]]]:
+    def list_rules(self) -> Dict[str, List[Dict[str, Any]]]:
         return {
             "session": [rule.to_dict() for rule in self._session_rules],
             "local": [rule.to_dict() for rule in self._load_local_rules()],
@@ -305,8 +309,14 @@ class PermissionRuleEngine:
 
         raw_rules = permissions.get("rules")
         if isinstance(raw_rules, list):
-            for entry in raw_rules:
-                parsed = self._parse_rule_entry(entry, default_behavior="ask", source=source)
+            for index, entry in enumerate(raw_rules):
+                parsed = self._parse_rule_entry(
+                    entry,
+                    default_behavior="ask",
+                    source=source,
+                    source_file=str(path),
+                    source_line=self._entry_line(path, "rules", index, entry),
+                )
                 if parsed is not None:
                     rules.append(parsed)
 
@@ -314,8 +324,14 @@ class PermissionRuleEngine:
             bucket = permissions.get(behavior)
             if not isinstance(bucket, list):
                 continue
-            for entry in bucket:
-                parsed = self._parse_rule_entry(entry, default_behavior=behavior, source=source)
+            for index, entry in enumerate(bucket):
+                parsed = self._parse_rule_entry(
+                    entry,
+                    default_behavior=behavior,
+                    source=source,
+                    source_file=str(path),
+                    source_line=self._entry_line(path, behavior, index, entry),
+                )
                 if parsed is not None:
                     rules.append(parsed)
 
@@ -327,6 +343,8 @@ class PermissionRuleEngine:
         *,
         default_behavior: str,
         source: str,
+        source_file: str = "",
+        source_line: int = 0,
     ) -> Optional[PermissionRule]:
         behavior = self._normalize_behavior(default_behavior)
 
@@ -343,6 +361,8 @@ class PermissionRuleEngine:
                 behavior=behavior,
                 rule_content=rule_content.strip(),
                 source=source,
+                source_file=source_file,
+                source_line=source_line,
             )
 
         if not isinstance(entry, dict):
@@ -359,7 +379,45 @@ class PermissionRuleEngine:
             behavior=behavior,
             rule_content=rule_content,
             source=source,
+            source_file=source_file,
+            source_line=source_line,
         )
+
+    @staticmethod
+    def _entry_line(path: Path, bucket: str, occurrence: int, entry: Any) -> int:
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except Exception:
+            return 0
+        bucket_seen = False
+        seen = 0
+        if isinstance(entry, dict):
+            tool = str(entry.get("toolName") or entry.get("tool_name") or "").strip()
+            if not tool:
+                return 0
+            needles = ('"toolName"', '"tool_name"')
+            for line_no, line in enumerate(lines, 1):
+                if not bucket_seen and f'"{bucket}"' in line:
+                    bucket_seen = True
+                if not bucket_seen:
+                    continue
+                if any(needle in line for needle in needles) and tool in line:
+                    if seen == occurrence:
+                        return line_no
+                    seen += 1
+            return 0
+        if isinstance(entry, str):
+            needle = json.dumps(entry)
+            for line_no, line in enumerate(lines, 1):
+                if not bucket_seen and f'"{bucket}"' in line:
+                    bucket_seen = True
+                if not bucket_seen:
+                    continue
+                if needle in line:
+                    if seen == occurrence:
+                        return line_no
+                    seen += 1
+        return 0
 
     @staticmethod
     def _normalize_behavior(raw: str) -> str:

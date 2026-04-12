@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .memory import MemoryManager, MemoryEntry, MEMORY_TYPES
@@ -164,7 +165,7 @@ async def auto_save_session_memories(
 
     Returns list of saved memory names.
     """
-    mgr = MemoryManager(base_dir)
+    mgr = MemoryManager(base_dir, repo_root=Path.cwd() if base_dir is None else None, prefer_agent_rules=base_dir is None)
     mgr.load()
     existing_names = {e.name.lower() for e in mgr.list_all()}
 

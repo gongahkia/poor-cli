@@ -82,14 +82,8 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
       - name: Install build tools
         run: python -m pip install --upgrade pip build twine
-
-      - name: Build Rust TUI
-        run: cargo build --manifest-path poor-cli-tui/Cargo.toml --release --locked
 
       - name: Build wheel
         run: python -m build --wheel
@@ -102,96 +96,6 @@ jobs:
         with:
           name: python-wheel-${{ matrix.asset_suffix }}
           path: dist/*.whl
-          if-no-files-found: error
-
-  tui-binaries:
-    name: Build TUI (${{ matrix.asset_suffix }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            asset_suffix: linux-x86_64
-            archive_format: tar.gz
-            binary_name: poor-cli-tui
-          - os: macos-14
-            asset_suffix: macos-arm64
-            archive_format: tar.gz
-            binary_name: poor-cli-tui
-          - os: windows-latest
-            asset_suffix: windows-x86_64
-            archive_format: zip
-            binary_name: poor-cli-tui.exe
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build Rust TUI
-        run: cargo build --manifest-path poor-cli-tui/Cargo.toml --release --locked
-
-      - name: Package release archive
-        shell: bash
-        env:
-          ARCHIVE_FORMAT: ${{ matrix.archive_format }}
-          ASSET_SUFFIX: ${{ matrix.asset_suffix }}
-          BINARY_NAME: ${{ matrix.binary_name }}
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-          GITHUB_REF: ${{ github.ref }}
-          GITHUB_RUN_NUMBER: ${{ github.run_number }}
-        run: |
-          python - <<'PY'
-          import hashlib
-          import os
-          import tarfile
-          import zipfile
-          from pathlib import Path
-
-          archive_format = os.environ["ARCHIVE_FORMAT"]
-          asset_suffix = os.environ["ASSET_SUFFIX"]
-          binary_name = os.environ["BINARY_NAME"]
-          ref_name = os.environ.get("GITHUB_REF_NAME", "")
-          ref_value = os.environ.get("GITHUB_REF", "")
-          run_number = os.environ.get("GITHUB_RUN_NUMBER", "local")
-
-          release_label = ref_name if ref_value.startswith("refs/tags/") else f"snapshot-{run_number}"
-          binary_path = Path("poor-cli-tui") / "target" / "release" / binary_name
-          if not binary_path.is_file():
-              raise SystemExit(f"Missing built binary: {binary_path}")
-
-          output_dir = Path("release-artifacts")
-          output_dir.mkdir(parents=True, exist_ok=True)
-
-          if archive_format == "zip":
-              archive_name = f"poor-cli-tui-{release_label}-{asset_suffix}.zip"
-              archive_path = output_dir / archive_name
-              with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
-                  bundle.write(binary_path, arcname=binary_name)
-          else:
-              archive_name = f"poor-cli-tui-{release_label}-{asset_suffix}.tar.gz"
-              archive_path = output_dir / archive_name
-              with tarfile.open(archive_path, "w:gz") as bundle:
-                  bundle.add(binary_path, arcname=binary_name)
-
-          digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
-          checksum_path = output_dir / f"{archive_name}.sha256"
-          checksum_path.write_text(f"{digest}  {archive_name}\n", encoding="utf-8")
-          PY
-
-      - name: Upload TUI artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: tui-${{ matrix.asset_suffix }}
-          path: release-artifacts/*
           if-no-files-found: error
 
   docker:
@@ -241,7 +145,6 @@ jobs:
       - integration
       - build
       - wheels
-      - tui-binaries
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -252,10 +155,6 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
-
-      - name: Build consolidated checksums
-        run: |
-          cat release-assets/*.sha256 > release-assets/SHA256SUMS
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2

@@ -1,1 +1,0 @@
-{"default":{"identifier":"default","description":"Default capabilities for poor-cli desktop","local":true,"windows":["main"],"permissions":["core:default","shell:allow-spawn","shell:allow-execute","notification:default","notification:allow-notify","notification:allow-is-permission-granted","notification:allow-request-permission","dialog:default","dialog:allow-open"]}}

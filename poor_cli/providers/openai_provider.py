@@ -4,13 +4,12 @@ OpenAI Provider Implementation
 Supports current OpenAI GPT families and other compatible OpenAI models.
 """
 
-import asyncio
 import json
 from typing import List, Dict, Any, Optional, AsyncIterator
 
 try:
     from openai import AsyncOpenAI
-    from openai import APIError as OpenAIAPIError, RateLimitError, APITimeoutError as OpenAITimeoutError, APIConnectionError as OpenAIConnectionError
+    from openai import RateLimitError, APITimeoutError as OpenAITimeoutError, APIConnectionError as OpenAIConnectionError
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
@@ -18,6 +17,7 @@ except ImportError:
     OPENAI_MISSING_HINT = "Install with: pip install 'poor-cli[openai]'"
 
 from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall, UsageMetadata
+from .capability import PROVIDER_CAPABILITIES
 from .tool_translator import ToolTranslator, ProviderType
 from ..provider_catalog import default_model_for_provider
 from ..retry import RetryConfig, with_retry
@@ -39,6 +39,8 @@ logger = setup_logger(__name__)
 
 class OpenAIProvider(BaseProvider):
     """OpenAI API provider implementation"""
+
+    capabilities = PROVIDER_CAPABILITIES["openai"]
 
     def preferred_edit_format(self) -> str:
         return "unified_diff"
@@ -500,7 +502,8 @@ class OpenAIProvider(BaseProvider):
 
     def get_capabilities(self) -> ProviderCapabilities:
         """Get OpenAI capabilities"""
-        supports_vision = "vision" in self.model_name.lower() or "gpt-4" in self.model_name
+        model = self.model_name.lower()
+        supports_vision = any(tag in model for tag in ("vision", "gpt-4", "gpt-5", "claude", "gemini"))
         # prefer catalog context window, fall back to heuristic
         from ..provider_catalog import get_model_context_window
         max_tokens = get_model_context_window("openai", self.model_name)

@@ -8,12 +8,11 @@ repos:
         args: [--check, poor_cli/]
   - repo: local
     hooks:
-      - id: cargo-clippy
-        name: cargo clippy
-        entry: cargo clippy --manifest-path poor-cli-tui/Cargo.toml --quiet -- -D warnings
+      - id: line-budgets
+        name: python line budgets
+        entry: python3 scripts/check_line_budgets.py
         language: system
         pass_filenames: false
-        files: \.rs$
       - id: lua-syntax
         name: lua syntax check
         entry: bash -c 'for f in "$@"; do luac5.4 -p "$f" || exit 1; done' --

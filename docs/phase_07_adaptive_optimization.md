@@ -2,7 +2,7 @@
 
 **Priority:** Low-Medium — 🟠 Hard solutions requiring ML training or inference-layer access.
 **Estimated agents:** 2 (parallel)
-**Dependencies:** Phase 4B (model routing) is a prerequisite — RL budget allocation extends the routing concept. Phase 5A (LLMLingua) shares infrastructure with speculative decoding.
+**Dependencies:** Phase 4B (model routing) is a prerequisite — RL budget allocation extends the routing concept. Phase 5A (LLMLingua) was the only shared-infra dependency after Phase 9B archived speculative decoding.
 **Philosophy:** Move from static heuristics to learned policies. Instead of hand-tuning thresholds for compaction, routing, and compression, learn them from actual usage patterns. These are the final "squeeze" optimizations before research-grade territory.
 
 ---
@@ -115,100 +115,4 @@ A meta-controller that observes session state and learns to allocate token budge
 
 ## Agent 7B: Speculative Decoding Integration
 
-**Pain points addressed:** Per-token cost reduction, especially for predictable code generation
-**Solution reference:** Solution #13 from SOLUTIONS.md
-**Expected savings:** Up to 3× faster inference with identical output quality
-
-### What to build
-
-Integrate speculative decoding for local inference (Ollama/vLLM), pairing a small draft model with the main model to accelerate generation.
-
-### Important caveat
-
-Like Phase 6B, this **only works with self-hosted inference**. Closed APIs handle this server-side (if at all). This feature targets Ollama and vLLM users specifically.
-
-### Implementation details
-
-1. **How speculative decoding works**:
-   ```
-   Small model (0.5B) generates K draft tokens → 
-   Large model verifies all K in one forward pass →
-   Accept matching tokens (often 70-90% for code) →
-   Reject and regenerate from first mismatch
-   ```
-   Net effect: K tokens for the cost of ~1 large-model forward pass.
-
-2. **Draft model selection** — pair draft models with main models:
-   ```python
-   DRAFT_MODEL_PAIRS = {
-       # main model → draft model
-       "llama3.1:70b": "llama3.1:8b",
-       "qwen2.5-coder:32b": "qwen2.5-coder:1.5b",
-       "codellama:34b": "codellama:7b",
-       "deepseek-coder-v2:33b": "deepseek-coder-v2:7b",
-   }
-   ```
-
-3. **vLLM integration** — vLLM has native speculative decoding support:
-   ```python
-   # vLLM server launch with speculative decoding
-   # vllm serve main_model --speculative-model draft_model --num-speculative-tokens 5
-   ```
-   If the user is running vLLM, detect and enable speculative decoding automatically.
-
-4. **Ollama integration** — check if Ollama supports speculative decoding:
-   - As of knowledge cutoff, Ollama may not have native speculative decoding
-   - Investigate current Ollama API for any speculative decoding flags
-   - If not supported, document the vLLM alternative
-
-5. **EAGLE-3 approach** — if draft model pairing is complex, investigate EAGLE-3:
-   - Uses prediction heads attached to the target model's internals
-   - No separate draft model needed
-   - Requires model modification — may only be feasible with custom models
-
-6. **Configuration**:
-   ```yaml
-   speculative_decoding:
-     enabled: true
-     backend: "vllm"  # or "ollama" if supported
-     draft_model: "auto"  # auto-detect from DRAFT_MODEL_PAIRS
-     num_speculative_tokens: 5
-   ```
-
-7. **Metrics** — track acceptance rate and speedup:
-   ```python
-   class SpeculativeMetrics:
-       total_draft_tokens: int = 0
-       accepted_tokens: int = 0
-       
-       @property
-       def acceptance_rate(self) -> float:
-           return self.accepted_tokens / max(self.total_draft_tokens, 1)
-       
-       @property 
-       def speedup_factor(self) -> float:
-           # theoretical speedup based on acceptance rate
-           k = 5  # num speculative tokens
-           return k * self.acceptance_rate + 1
-   ```
-
-### Files to create/modify
-- `poor_cli/speculative_decoding.py` (new, ~200 lines)
-- `poor_cli/providers/ollama_provider.py` (add speculative decoding config)
-- `.poor-cli/config.yaml` (add speculative_decoding section)
-- `poor_cli/cost.py` (track speculative decoding metrics)
-
-### Acceptance criteria
-- [ ] Draft model auto-detected from DRAFT_MODEL_PAIRS
-- [ ] vLLM speculative decoding works when vLLM is the backend
-- [ ] Ollama support if API allows, otherwise documented as vLLM-only
-- [ ] Acceptance rate and speedup tracked and displayed
-- [ ] Feature gated behind local inference detection
-- [ ] No effect when using closed API providers
-- [ ] Test: generate 100 code completions, measure acceptance rate > 70%
-
-### References
-- [vLLM speculative decoding](https://docs.vllm.ai/en/latest/features/spec_decode/)
-- [EAGLE-3 GitHub](https://github.com/SafeAILab/EAGLE)
-- [Medusa](https://github.com/FasterDecoding/Medusa)
-- [Speculative Sampling (DeepMind)](https://arxiv.org/abs/2302.01318)
+**Outcome:** Archived by Phase 9B. The repo had helper/test coverage but no end-to-end vLLM provider path, so `poor_cli/speculative_decoding.py`, its config surface, and its direct tests were removed.

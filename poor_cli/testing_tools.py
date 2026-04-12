@@ -572,7 +572,7 @@ class CoverageAnalyzer:
             cmd.append(test_path)
 
         try:
-            result = subprocess.run(
+            subprocess.run(
                 cmd,
                 cwd=self.workspace_root,
                 capture_output=True,

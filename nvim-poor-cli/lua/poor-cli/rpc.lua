@@ -1006,6 +1006,15 @@ end
 function M.get_policy_status(timeout_ms)
     return M.request_sync("poor-cli/getPolicyStatus", {}, timeout_ms)
 end
+function M.policy_list(callback)
+    return M.request("policy.list", {}, callback)
+end
+function M.policy_reload(callback)
+    return M.request("policy.reload", {}, callback)
+end
+function M.policy_edit(rule, callback)
+    return M.request("policy.edit", rule or {}, callback)
+end
 -- workspace file search
 function M.search_workspace_files(query, limit, callback)
     return M.request("poor-cli/searchWorkspaceFiles", { query = query, limit = limit or 20 }, callback)
@@ -1320,7 +1329,11 @@ function M.handle_notification(message)
                 tool_name = params.toolName or "",
                 tool_args = params.toolArgs or {},
                 tool_result = params.toolResult or "",
+                call_id = params.callId or "",
                 diff = params.diff or "",
+                output_filter = params.outputFilter or {},
+                original_size = params.originalSize or 0,
+                filtered_size = params.filteredSize or 0,
                 iteration_index = params.iterationIndex or 0,
                 iteration_cap = params.iterationCap or 25,
             },

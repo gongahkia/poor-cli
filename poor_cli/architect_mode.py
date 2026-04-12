@@ -110,11 +110,14 @@ class ArchitectMode:
         """Attempt latent tensor passing between architect→editor via local models.
         Returns editor output if latent_comm is enabled and compatible, else None."""
         try:
-            from .latent_communication import ArchitectLatentBridge, is_latent_compatible
-            compat = is_latent_compatible()
+            from .research_loader import load_research_module
+            latent_communication = load_research_module("latent_communication")
+            if latent_communication is None:
+                return None
+            compat = latent_communication.is_latent_compatible()
             if not compat.get("feasible", False):
                 return None
-            bridge = ArchitectLatentBridge()
+            bridge = latent_communication.ArchitectLatentBridge()
             result = bridge.architect_to_editor(task)
             return result
         except Exception as e:
@@ -124,8 +127,10 @@ class ArchitectMode:
     def format_status(self) -> Dict[str, Any]:
         latent_available = False
         try:
-            from .latent_communication import is_latent_compatible
-            latent_available = is_latent_compatible().get("feasible", False)
+            from .research_loader import load_research_module
+            latent_communication = load_research_module("latent_communication")
+            if latent_communication is not None:
+                latent_available = latent_communication.is_latent_compatible().get("feasible", False)
         except Exception:
             pass
         return {

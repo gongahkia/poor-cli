@@ -5,7 +5,6 @@ Async tool implementations for poor-cli
 import os
 import asyncio
 import signal
-import subprocess
 import shlex
 import glob as glob_module
 import json
@@ -59,6 +58,13 @@ from .exceptions import (
 )
 from .command_validator import get_command_validator
 from .sandbox import ToolCapability, declaration_capabilities, tool_capability_metadata
+from .tool_output_filter import (
+    OutputFilterSpec,
+    SchemaFilterResult,
+    apply_schema_output_filter,
+    empty_filter_stats,
+    render_output,
+)
 
 # Setup logger
 logger = setup_logger(__name__)
@@ -144,6 +150,67 @@ _UNSAFE_CONCURRENCY_CAPABILITIES = frozenset(
     }
 )
 
+DEFAULT_SCHEMA_OUTPUT_FILTERS: Dict[str, OutputFilterSpec] = {
+    "list_directory": OutputFilterSpec(
+        type="keeplines",
+        patterns=(r"^(Contents of|total\s+|[bcdlps-]|(DIR|FILE|LINK)\s+)",),
+    ),
+    "git_status": OutputFilterSpec(
+        type="keeplines",
+        patterns=(r"^(##|On branch|\s*(Changes|Untracked|nothing to commit|modified:|new file:|deleted:|renamed:|[ MADRCU?]{2}\s+))",),
+    ),
+    "git_log": OutputFilterSpec(type="regex", pattern=r"^[0-9a-f]{7,40}\s+.*$"),
+    "gh_pr_list": OutputFilterSpec(
+        type="jsonpath",
+        paths=("$[*].number", "$[*].title", "$[*].state", "$[*].author.login", "$[*].labels[*].name", "$[*].url"),
+    ),
+    "gh_pr_view": OutputFilterSpec(
+        type="jsonpath",
+        paths=("$.number", "$.title", "$.state", "$.labels[*].name", "$.assignees[*].login", "$.body", "$.latestReviewDecision", "$.url"),
+    ),
+    "gh_issue_list": OutputFilterSpec(
+        type="jsonpath",
+        paths=("$[*].number", "$[*].title", "$[*].state", "$[*].author.login", "$[*].labels[*].name", "$[*].url"),
+    ),
+    "gh_issue_view": OutputFilterSpec(
+        type="jsonpath",
+        paths=("$.number", "$.title", "$.state", "$.labels[*].name", "$.author.login", "$.body", "$.url"),
+    ),
+    "dependency_inspect": OutputFilterSpec(
+        type="jsonpath",
+        paths=(
+            "$.working_directory",
+            "$.dependency_count",
+            "$.outdated_count",
+            "$.dependencies[*].name",
+            "$.dependencies[*].installed",
+            "$.dependencies[*].installed_version",
+            "$.dependencies[*].outdated",
+            "$.dependencies[*].latest_version",
+        ),
+    ),
+    "run_tests": OutputFilterSpec(
+        type="jsonpath",
+        paths=(
+            "$.ok",
+            "$.command",
+            "$.duration_seconds",
+            "$.timed_out",
+            "$.exit_code",
+            "$.failing_locations",
+            "$.output_truncated",
+        ),
+    ),
+    "process_logs": OutputFilterSpec(
+        type="jsonpath",
+        paths=("$.files_analyzed", "$.lines_analyzed", "$.level_counts", "$.top_errors", "$.likely_root_cause"),
+    ),
+    "fetch_url": OutputFilterSpec(
+        type="jsonpath",
+        paths=("$.url", "$.status", "$.content_type", "$.title", "$.content_truncated"),
+    ),
+}
+
 DEFAULT_MUTATING_TOOLS = {
     "write_file",
     "edit_file",
@@ -211,6 +278,36 @@ class ToolOutcome:
         return json.dumps(self.to_dict(), indent=2)
 
 
+@dataclass(frozen=True)
+class ToolSchema:
+    name: str
+    description: str
+    parameters: Dict[str, Any]
+    output_filter: Optional[OutputFilterSpec] = None
+
+    def to_declaration(self) -> Dict[str, Any]:
+        declaration = {
+            "name": self.name,
+            "description": self.description,
+            "parameters": self.parameters,
+        }
+        declaration["output_filter"] = self.output_filter.to_schema() if self.output_filter else None
+        return declaration
+
+
+@dataclass
+class FilteredToolResult:
+    output: str
+    raw_output: str
+    filter_result: SchemaFilterResult
+
+    def __str__(self) -> str:
+        return self.output
+
+    def __contains__(self, item: str) -> bool:
+        return item in self.output
+
+
 @dataclass
 class PatchHunk:
     """Single hunk inside a unified patch section."""
@@ -265,6 +362,7 @@ class ToolRegistryAsync:
         self._todos: List[Dict[str, str]] = []  # agent todo list
         self._todos_path = Path.cwd() / ".poor-cli" / "todos.json"
         self._http_session: Optional["aiohttp.ClientSession"] = None # pooled HTTP client
+        self._output_filter_stats = empty_filter_stats()
         self._load_todos()
         self._register_tools()
 
@@ -1259,6 +1357,9 @@ class ToolRegistryAsync:
         for name, tool in self.tools.items():
             capabilities = DEFAULT_TOOL_CAPABILITIES.get(name, [])
             tool["capabilities"] = list(capabilities)
+            output_filter = DEFAULT_SCHEMA_OUTPUT_FILTERS.get(name)
+            tool["output_filter"] = output_filter
+            tool["declaration"]["output_filter"] = output_filter.to_schema() if output_filter else None
             tool["declaration"].update(
                 tool_capability_metadata(
                     capabilities,
@@ -1313,6 +1414,7 @@ class ToolRegistryAsync:
                 },
                 "required": ["tool_names"],
             },
+            "output_filter": None,
         }
 
     async def discover_tools(self, tool_names: str) -> str:
@@ -1359,10 +1461,12 @@ class ToolRegistryAsync:
         capabilities = declaration_capabilities(declaration)
         if not capabilities:
             capabilities = [ToolCapability.PROCESS_EXECUTE.value]
+        output_filter = None if ":" in name else OutputFilterSpec.from_schema(declaration.get("output_filter"))
         self.tools[name] = {
             "function": function,
             "declaration": declaration,
             "capabilities": capabilities,
+            "output_filter": output_filter,
         }
 
     def is_mutating_tool(
@@ -1421,7 +1525,7 @@ class ToolRegistryAsync:
 
             result = await tool_function(**arguments)
             logger.debug(f"Tool {tool_name} executed successfully")
-            return result
+            return self._filter_tool_result(tool_name, result)
 
         except (ToolExecutionError, ValidationError, FileOperationError) as e:
             logger.error(f"Tool execution failed: {e}")
@@ -1429,6 +1533,28 @@ class ToolRegistryAsync:
         except Exception as e:
             logger.error(f"Unexpected error in tool execution: {e}", exc_info=True)
             raise ToolExecutionError(tool_name, f"Tool execution failed: {str(e)}")
+
+    def _filter_tool_result(self, tool_name: str, result: Any) -> Any:
+        if isinstance(result, (ToolOutcome, FilteredToolResult)):
+            return result
+        tool = self.tools.get(tool_name, {})
+        spec = tool.get("output_filter")
+        filtered = apply_schema_output_filter(result, spec)
+        if not filtered.applied:
+            return result
+        self._record_schema_filter_result(filtered)
+        return FilteredToolResult(
+            output=filtered.output,
+            raw_output=filtered.original_output,
+            filter_result=filtered,
+        )
+
+    def _record_schema_filter_result(self, filtered: SchemaFilterResult) -> None:
+        self._output_filter_stats["filtered_calls"] += 1
+        self._output_filter_stats["projection_filtered_calls"] += 1
+        self._output_filter_stats["tokens_saved"] += filtered.tokens_saved
+        self._output_filter_stats["original_bytes"] += filtered.original_size
+        self._output_filter_stats["filtered_bytes"] += filtered.filtered_size
 
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         """Execute a tool with given arguments
@@ -1455,6 +1581,8 @@ class ToolRegistryAsync:
         result = await self.execute_tool_raw(tool_name, arguments)
         if isinstance(result, ToolOutcome):
             text = result.to_json()
+        elif isinstance(result, FilteredToolResult):
+            text = result.output
         else:
             text = str(result)
         if self._output_max_chars > 0 or self._output_max_lines > 0:
@@ -1464,6 +1592,9 @@ class ToolRegistryAsync:
             self._tool_cache[self._tool_cache_key(tool_name, arguments)] = text
 
         return text
+
+    def get_output_filter_stats(self) -> Dict[str, int]:
+        return dict(self._output_filter_stats)
 
     def get_tool_cache_stats(self) -> Dict[str, int]:
         """Return cache hit/miss stats for /cost display."""
@@ -2975,7 +3106,7 @@ class ToolRegistryAsync:
                 )
 
             result = (stdout_text or "(No output)") + truncation_suffix
-            logger.info(f"Bash command completed successfully")
+            logger.info("Bash command completed successfully")
             return result
 
         except CommandExecutionError:
@@ -4198,7 +4329,7 @@ class ToolRegistryAsync:
     async def memory_save(self, name: str, type: str, description: str, content: str) -> str:
         try:
             from .memory import MemoryManager, MemoryEntry
-            mgr = MemoryManager()
+            mgr = MemoryManager(repo_root=Path.cwd(), prefer_agent_rules=True)
             mgr.load()
             existing = mgr.get(name)
             if existing:

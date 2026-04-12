@@ -5,7 +5,7 @@ AST-based validation to prevent dangerous command execution.
 """
 
 import re
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 from enum import Enum
 from dataclasses import dataclass
 

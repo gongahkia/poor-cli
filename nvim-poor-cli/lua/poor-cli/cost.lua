@@ -34,6 +34,8 @@ function M.setup()
         M.get_session_cost({}, function(result, err) vim.schedule(function()
             if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local r = result or {}
+            local block = r.blockCache or r.block_cache or {}
+            local pretok = r.safePretokenization or r.safe_pretokenization or {}
             local lines = {
                 "# session cost", "",
                 "Input tokens: " .. tostring(r.inputTokens or 0),
@@ -43,7 +45,9 @@ function M.setup()
                 "Cache read tokens: " .. tostring(r.cacheReadInputTokens or 0),
                 "Cache write tokens: " .. tostring(r.cacheCreationInputTokens or 0),
                 "Cache hit rate: " .. tostring(r.cacheHitRatePct or 0) .. "%",
+                "Block cache: " .. tostring(block.hits or 0) .. " hits / " .. tostring(block.misses or 0) .. " misses (" .. tostring(block.rolling_hit_rate_pct or block.rollingHitRatePct or 0) .. "% rolling)",
                 "Estimated cache savings: $" .. tostring(r.estimatedCacheSavingsUSD or 0),
+                "Safe pre-tokenization: " .. tostring(pretok.tokens_saved or r.safePretokenizationTokensSaved or r.safe_pretokenization_tokens_saved or 0) .. " tokens across " .. tostring(pretok.files or 0) .. " files",
                 "Requests: " .. tostring(r.requestCount or 0),
             }
             open_scratch("[poor-cli cost]", table.concat(lines, "\n"), "markdown")
@@ -59,6 +63,7 @@ function M.setup()
                 "Tokens saved: " .. tostring(r.tokensSaved or 0),
                 "Cost saved: $" .. tostring(r.costSaved or 0),
                 "Cache hits: " .. tostring(r.cacheHits or 0),
+                "Safe pre-tokenization: " .. tostring(r.tokens_saved_by_safe_pretokenization or 0) .. " tokens",
             }
             open_scratch("[poor-cli savings]", table.concat(lines, "\n"), "markdown")
         end) end)

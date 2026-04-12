@@ -11,7 +11,7 @@ import ast
 import re
 import difflib
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Set, Tuple
+from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from collections import defaultdict
@@ -465,7 +465,6 @@ class SemanticCheckpointManager:
             group.sort(key=lambda cp: cp.created_at, reverse=True)
 
             # Keep the newest, delete others
-            to_keep = group[0]
             to_delete = group[1:]
 
             for checkpoint in to_delete:

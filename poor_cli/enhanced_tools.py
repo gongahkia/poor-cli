@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Iterable, Sequence
 
-from poor_cli.tools_async import ToolRegistryAsync, ToolOutcome
+from poor_cli.tools_async import FilteredToolResult, ToolRegistryAsync, ToolOutcome
 from poor_cli.checkpoint import CheckpointManager
 from poor_cli.diff_preview import DiffPreview
 from poor_cli.config import Config
@@ -18,7 +18,7 @@ from poor_cli.exceptions import setup_logger, CommandExecutionError
 from poor_cli.history import TokenCounter
 from poor_cli.repo_config import get_repo_config
 from poor_cli.rtk_integration import RTKState, detect_rtk, wrap_shell_command
-from poor_cli.tool_output_filter import ToolOutputFilter, empty_filter_stats
+from poor_cli.tool_output_filter import SchemaFilterResult, ToolOutputFilter, empty_filter_stats, render_output
 
 logger = setup_logger(__name__)
 
@@ -356,12 +356,6 @@ class EnhancedToolRegistry(ToolRegistryAsync):
         Returns:
             Result message
         """
-        # Determine if we should show diff/checkpoint
-        should_show_diff = (
-            show_diff if show_diff is not None
-            else (self.config.plan_mode.show_diff_in_plan and self.show_diff)
-        )
-
         should_checkpoint = (
             create_checkpoint if create_checkpoint is not None
             else (
@@ -410,7 +404,7 @@ class EnhancedToolRegistry(ToolRegistryAsync):
 
             return result
 
-        except Exception as e:
+        except Exception:
             # Reset flags even on error
             self.show_diff = True
             self.create_checkpoint = True
@@ -476,7 +470,7 @@ class EnhancedToolRegistry(ToolRegistryAsync):
 
             return result
 
-        except Exception as e:
+        except Exception:
             # Reset flags even on error
             self.show_diff = True
             self.create_checkpoint = True
@@ -529,7 +523,7 @@ class EnhancedToolRegistry(ToolRegistryAsync):
 
             return result
 
-        except Exception as e:
+        except Exception:
             # Reset flags even on error
             self.create_checkpoint = True
             raise
@@ -541,6 +535,13 @@ class EnhancedToolRegistry(ToolRegistryAsync):
         if projected:
             self._output_filter_stats["projection_filtered_calls"] += 1
         self._output_filter_stats["tokens_saved"] += max(0, int(tokens_saved or 0))
+
+    def _record_schema_filter_result(self, filtered) -> None:
+        self._output_filter_stats["filtered_calls"] += 1
+        self._output_filter_stats["projection_filtered_calls"] += 1
+        self._output_filter_stats["tokens_saved"] += filtered.tokens_saved
+        self._output_filter_stats["original_bytes"] += filtered.original_size
+        self._output_filter_stats["filtered_bytes"] += filtered.filtered_size
 
     async def execute_tool_raw(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         declaration = self.tools.get(tool_name, {}).get("declaration", {})
@@ -558,12 +559,19 @@ class EnhancedToolRegistry(ToolRegistryAsync):
 
         if isinstance(result, ToolOutcome):
             return result
+        if isinstance(result, FilteredToolResult) and not (
+            request.projection or request.max_tokens or request.explicit_projection
+        ):
+            return result
 
+        target_response = result.raw_output if isinstance(result, FilteredToolResult) else result
+        original_text = render_output(target_response) if not isinstance(target_response, str) else target_response
         filtered = self.output_filter.filter(
             tool_name,
-            result,
+            target_response,
             projection=request.projection,
             max_tokens=request.max_tokens,
+            original_text=original_text,
             explicit_projection=request.explicit_projection,
         )
         if filtered.applied:
@@ -572,7 +580,30 @@ class EnhancedToolRegistry(ToolRegistryAsync):
                 auto_filtered=filtered.auto_filtered,
                 projected=bool(filtered.projection),
             )
-            return filtered.output
+            schema_result = result.filter_result if isinstance(result, FilteredToolResult) else None
+            if schema_result is not None:
+                schema_result.output = filtered.output
+                schema_result.filtered_size = len(filtered.output.encode("utf-8"))
+                return FilteredToolResult(
+                    output=filtered.output,
+                    raw_output=result.raw_output,
+                    filter_result=schema_result,
+                )
+            raw_output = render_output(target_response)
+            return FilteredToolResult(
+                output=filtered.output,
+                raw_output=raw_output,
+                filter_result=SchemaFilterResult(
+                    output=filtered.output,
+                    original_output=raw_output,
+                    original_size=len(raw_output.encode("utf-8")),
+                    filtered_size=len(filtered.output.encode("utf-8")),
+                    applied=True,
+                    flavor="projection",
+                    dropped_paths=list(filtered.projection),
+                    note="projection",
+                ),
+            )
         return result
 
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:

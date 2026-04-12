@@ -8,7 +8,7 @@ collects and merges results. Integrates with AgentManager for lifecycle.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 

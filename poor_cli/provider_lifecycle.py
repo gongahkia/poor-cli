@@ -6,7 +6,6 @@ and provider listing, with typed interfaces for dependencies.
 """
 
 import asyncio
-import os
 from typing import Any, Dict, Optional, Protocol, Type
 
 from rich.panel import Panel
@@ -192,7 +191,7 @@ class ProviderLifecycleService:
 
             for provider_name, provider_config in self.config.model.providers.items():
                 api_key_var = provider_config.api_key_env_var
-                api_key_value = os.getenv(api_key_var, "")
+                api_key_value = self.config_manager.get_api_key(provider_name) or ""
 
                 if provider_name == self.config.model.provider:
                     status = "[green]● Active[/green]"

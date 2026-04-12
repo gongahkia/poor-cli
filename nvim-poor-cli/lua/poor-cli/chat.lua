@@ -677,7 +677,7 @@ function M.setup_streaming_autocmds()
                     if diff ~= "" then
                         M._append_diff_view(data.tool_name, diff)
                     else
-                        M._append_tool_result(data.tool_name, data.tool_result)
+                        M._append_tool_result(data.tool_name, data.tool_result, data.original_size, data.filtered_size)
                     end
                 end
             end)
@@ -1039,7 +1039,7 @@ function M._append_tool_call(name, args)
     })
 end
 
-function M._append_tool_result(name, result)
+function M._append_tool_result(name, result, original_size, filtered_size)
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
     end
@@ -1048,8 +1048,12 @@ function M._append_tool_result(name, result)
     if #result_str > 500 then
         result_str = result_str:sub(1, 500) .. "…"
     end
+    local size_note = ""
+    if tonumber(original_size or 0) > 0 and tonumber(filtered_size or 0) > 0 and original_size ~= filtered_size then
+        size_note = string.format(" (%.1f KB → %.1f KB)", original_size / 1024, filtered_size / 1024)
+    end
     vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, {
-        "**✓ " .. (name or "tool") .. " result**",
+        "**✓ " .. (name or "tool") .. " result" .. size_note .. "**",
         "```",
         result_str,
         "```",
@@ -1162,10 +1166,36 @@ local SLASH_COMMANDS = {
     { name = "/doc",         desc = "Generate documentation" },
     { name = "/fix",         desc = "Fix diagnostics" },
     { name = "/context",     desc = "Show context info" },
+    { name = "/rules",       desc = "Show active rule files" },
     { name = "/cost",        desc = "Show token usage and cost" },
+    { name = "/audit-export", desc = "Export audit log JSONL" },
     { name = "/doctor",      desc = "Run diagnostics" },
     { name = "/help",        desc = "List all commands" },
 }
+
+local function parse_audit_export_args(raw)
+    local args = vim.split(raw or "", "%s+", { trimempty = true })
+    local params = {}
+    local idx = 1
+    while idx <= #args do
+        local item = args[idx]
+        if item == "/audit-export" then
+            idx = idx + 1
+        elseif item == "--since" or item == "--from" then
+            params.since = args[idx + 1]
+            idx = idx + 2
+        elseif item == "--until" then
+            params["until"] = args[idx + 1]
+            idx = idx + 2
+        elseif item == "--to" or item == "--out" or item == "--output" then
+            params.outputPath = args[idx + 1]
+            idx = idx + 2
+        else
+            idx = idx + 1
+        end
+    end
+    return params
+end
 
 -- map slash commands to their PoorCli handlers
 local SLASH_HANDLERS = {
@@ -1183,7 +1213,23 @@ local SLASH_HANDLERS = {
     ["/doc"]      = function() vim.cmd("PoorCliDoc") end,
     ["/fix"]      = function() vim.cmd("PoorCliFixDiagnostics") end,
     ["/context"]  = function() vim.cmd("PoorCliContext") end,
+    ["/rules"]    = function() vim.cmd("PoorCliRules") end,
     ["/cost"]     = function() vim.cmd("PoorCliCost") end,
+    ["/audit-export"] = function(line)
+        rpc.request("audit/exportRange", parse_audit_export_args(line), function(result, err)
+            vim.schedule(function()
+                if err then
+                    vim.notify("[poor-cli] Audit export failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
+                    return
+                end
+                if type(result) == "table" and result.path then
+                    vim.notify("[poor-cli] Exported " .. tostring(result.count or 0) .. " audit events to " .. tostring(result.path), vim.log.levels.INFO)
+                else
+                    vim.notify("[poor-cli] Audit export returned " .. tostring(type(result) == "table" and result.count or 0) .. " events", vim.log.levels.INFO)
+                end
+            end)
+        end)
+    end,
     ["/doctor"]   = function() vim.cmd("PoorCliDoctor") end,
     ["/help"]     = function() vim.cmd("PoorCliHelp") end,
 }
@@ -1305,7 +1351,7 @@ local function update_completions()
     local before = line:sub(1, col)
 
     -- check for / (must be at start of line)
-    local slash_match = before:match("^(/[%w]*)$")
+    local slash_match = before:match("^(/[%w%-]*)$")
     if slash_match then
         show_completion_menu(get_slash_completions(slash_match))
         return
@@ -1341,7 +1387,7 @@ local function accept_completion()
     local new_before
     if before:match("@[%w%._/%-~]*$") then
         new_before = before:gsub("@[%w%._/%-~]*$", item.text)
-    elseif before:match("^/[%w]*$") then
+    elseif before:match("^/[%w%-]*$") then
         new_before = item.text
     else
         return false
@@ -1423,9 +1469,9 @@ function M.prompt_and_send()
         if line == "" then return end
 
         -- check for slash command
-        local cmd = line:match("^(/[%w]+)")
+        local cmd = line:match("^(/[%w%-]+)")
         if cmd and SLASH_HANDLERS[cmd] then
-            SLASH_HANDLERS[cmd]()
+            SLASH_HANDLERS[cmd](line)
             return
         end
 

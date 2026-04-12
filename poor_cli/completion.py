@@ -7,15 +7,13 @@ Designed for low-latency editor integration via JSON-RPC.
 
 from __future__ import annotations
 
-import asyncio
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from .exceptions import setup_logger
 from .prompts import (
-    FIM_TEMPLATE,
     FIM_TEMPLATE_MINIMAL,
     FIM_CODESTRAL,
     FIM_STARCODER,
@@ -141,8 +139,6 @@ class CompletionEngine:
         """Build FIM prompt based on provider type."""
         prefix = request.prefix[-MAX_CONTEXT_CHARS:]
         suffix = request.suffix[:MAX_CONTEXT_CHARS]
-        lang = request.language or _detect_language(request.file_path)
-        fname = Path(request.file_path).name
 
         provider_name = getattr(provider, "provider_name", "")
 

@@ -3,22 +3,64 @@
 from __future__ import annotations
 
 import base64
-from typing import Any, Dict, Optional
+import asyncio
+import hashlib
+import json
+import re
+from typing import Any, Awaitable, Callable, Dict, Optional
+from urllib.parse import urlparse
 
 from .exceptions import setup_logger
 
 logger = setup_logger(__name__)
 
 _browser_context: Dict[str, Any] = {"browser": None, "page": None, "playwright": None}
+_browser_permission_callback: Optional[Callable[..., Awaitable[Any]]] = None
+
+DEFAULT_OUTPUT_LIMIT = 64_000
+DEFAULT_TIMEOUT_MS = 5_000
+_JS_MAX_EXPRESSION_LENGTH = 128_000
 
 
-def _log_browser_event(operation: str, target: str = "", details: dict = None) -> None:
+class BrowserEvalBlocked(RuntimeError):
+    """blocked browser_evaluate policy violation."""
+
+
+class BrowserEvalTimeout(TimeoutError):
+    """browser_evaluate timeout."""
+
+
+class BrowserEvalSerializationError(RuntimeError):
+    """browser_evaluate returned non-JSON-serializable data."""
+
+
+def _log_browser_event(
+    operation: str,
+    target: str = "",
+    details: dict = None,
+    *,
+    success: bool = True,
+    error_message: Optional[str] = None,
+) -> None:
     """log browser operation to audit trail."""
     try:
-        from .audit_log import get_audit_logger, AuditEventType
-        get_audit_logger().log_event(AuditEventType.TOOL_EXECUTION, operation=f"browser:{operation}", target=target, details=details)
+        from .audit_log import get_audit_logger, AuditEventType, AuditSeverity
+        get_audit_logger().log_event(
+            AuditEventType.TOOL_EXECUTION,
+            operation=f"browser:{operation}",
+            target=target,
+            details=details,
+            severity=AuditSeverity.INFO if success else AuditSeverity.WARNING,
+            success=success,
+            error_message=error_message,
+        )
     except Exception:
         pass
+
+
+def set_browser_permission_callback(callback: Optional[Callable[..., Awaitable[Any]]]) -> None:
+    global _browser_permission_callback
+    _browser_permission_callback = callback
 
 
 async def _ensure_browser() -> Any:
@@ -112,53 +154,227 @@ async def browser_type(selector: str, text: str, submit: bool = False) -> str:
         return f"error typing into '{selector}': {e}"
 
 
-_JS_DENYLIST_PATTERNS = [ # dangerous JS APIs blocked in evaluate
-    "localStorage.clear", "sessionStorage.clear",
-    "document.cookie", "window.location", "location.href",
-    "location.replace", "location.assign",
-    "document.write", "document.writeln",
-    "window.open", "window.close",
-    "eval(", "Function(",
-    "XMLHttpRequest", "fetch(",
-    "navigator.sendBeacon",
-    "importScripts",
-    "ServiceWorker", "serviceWorker",
-    "chrome.runtime", "browser.runtime",
-    "process.env", "require(",
-    "child_process", "fs.unlink", "fs.rmdir",
-    "__proto__", "constructor.constructor",
-]
-_JS_MAX_EXPRESSION_LENGTH = 5000
-_JS_MAX_RESULT_LENGTH = 5000
-_JS_EVALUATE_TIMEOUT_MS = 10000
+_JS_DENYLIST_PATTERNS = (
+    r"localStorage\s*\.\s*clear",
+    r"sessionStorage\s*\.\s*clear",
+    r"document\s*\.\s*cookie\s*=",
+    r"navigator\s*\.\s*sendBeacon",
+    r"window\s*\.\s*location\s*=",
+    r"indexedDB\s*\.\s*deleteDatabase",
+)
+_JS_DENYLIST_RE = tuple((p, re.compile(p, re.IGNORECASE)) for p in _JS_DENYLIST_PATTERNS)
+_FETCH_LITERAL_RE = re.compile(r"\bfetch\s*\(\s*(?P<q>['\"`])(?P<url>.*?)(?P=q)", re.IGNORECASE | re.DOTALL)
 
 
-def _validate_js_expression(expression: str) -> str:
-    """Validate JS expression against denylist. Returns error or empty string."""
+def _command_hash(expression: str) -> str:
+    return hashlib.sha256(expression.encode("utf-8", errors="replace")).hexdigest()
+
+
+def _origin_for_url(url: str) -> str:
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.netloc:
+        return ""
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def _normalize_fetch_origins(origins: Optional[list[str]]) -> list[str]:
+    normalized: list[str] = []
+    for origin in origins or []:
+        value = str(origin or "").rstrip("/")
+        parsed_origin = _origin_for_url(value)
+        if parsed_origin and parsed_origin not in normalized:
+            normalized.append(parsed_origin)
+    return normalized
+
+
+def _scan_dangerous_js(expression: str) -> list[str]:
     if len(expression) > _JS_MAX_EXPRESSION_LENGTH:
-        return f"expression too long ({len(expression)} chars, max {_JS_MAX_EXPRESSION_LENGTH})"
-    expr_lower = expression.lower()
-    for pattern in _JS_DENYLIST_PATTERNS:
-        if pattern.lower() in expr_lower:
-            return f"blocked: expression contains denied API '{pattern}'"
-    return ""
+        return [f"expression length > {_JS_MAX_EXPRESSION_LENGTH}"]
+    return [pattern for pattern, compiled in _JS_DENYLIST_RE if compiled.search(expression)]
 
 
-async def browser_evaluate(expression: str) -> str:
-    """Evaluate JavaScript in the page context with safety checks."""
-    _log_browser_event("evaluate", expression[:100])
-    validation_error = _validate_js_expression(expression)
-    if validation_error:
-        return f"error: {validation_error}"
-    page = await _ensure_browser()
+def _scan_fetch_policy(expression: str, page_url: str, allowed_origins: list[str]) -> tuple[list[str], list[str], list[str]]:
+    page_origin = _origin_for_url(page_url)
+    blocked: list[str] = []
+    warnings: list[str] = []
+    external_origins: list[str] = []
+    for match in _FETCH_LITERAL_RE.finditer(expression):
+        raw_url = match.group("url")
+        if "${" in raw_url:
+            warnings.append("dynamic fetch URL could not be statically verified")
+            continue
+        target_origin = _origin_for_url(raw_url)
+        if not target_origin:
+            continue
+        if target_origin == page_origin:
+            continue
+        if target_origin not in allowed_origins:
+            blocked.append(f"third-party fetch:{target_origin}")
+            continue
+        if target_origin not in external_origins:
+            external_origins.append(target_origin)
+    if "fetch" in expression.lower() and not _FETCH_LITERAL_RE.search(expression):
+        warnings.append("dynamic fetch call could not be statically verified")
+    return blocked, warnings, external_origins
+
+
+async def _authorize_browser_evaluate(
+    expression: str,
+    *,
+    allow_dangerous: bool,
+    matched_patterns: list[str],
+    external_fetch_origins: list[str],
+) -> None:
+    if not allow_dangerous and not external_fetch_origins:
+        return
+    if _browser_permission_callback is None:
+        raise BrowserEvalBlocked("permission callback required for browser_evaluate policy opt-in")
+    decision = await _browser_permission_callback(
+        "browser_evaluate",
+        {
+            "expression_hash": _command_hash(expression),
+            "allow_dangerous": allow_dangerous,
+            "matched_patterns": matched_patterns,
+            "external_fetch_origins": external_fetch_origins,
+        },
+        {"kind": "browser_evaluate_policy_opt_in"},
+    )
+    allowed = bool(decision.get("allowed", False)) if isinstance(decision, dict) else bool(decision)
+    if not allowed:
+        raise BrowserEvalBlocked("permission denied for browser_evaluate policy opt-in")
+
+
+def _wrap_browser_expression(expression: str) -> str:
+    return f"""async (policy) => {{
+  const allowedOrigins = new Set(policy.allowedFetchOrigins || []);
+  const originalFetch = window.fetch;
+  window.fetch = function(input, init) {{
+    const rawUrl = typeof input === "string" ? input : input && input.url;
+    const target = new URL(String(rawUrl || ""), window.location.href);
+    if (target.origin !== window.location.origin && !allowedOrigins.has(target.origin)) {{
+      throw new Error("BrowserEvalBlocked: third-party fetch " + target.origin);
+    }}
+    return originalFetch.apply(this, arguments);
+  }};
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("BrowserEvalTimeout")), policy.timeoutMs));
+  const run = async () => {{
+    const value = ({expression});
+    const resolved = typeof value === "function" ? await value() : await value;
+    let serialized;
+    try {{
+      serialized = JSON.stringify(resolved);
+    }} catch (error) {{
+      throw new Error("BrowserEvalSerializationError: " + error.message);
+    }}
+    if (typeof serialized !== "string") {{
+      throw new Error("BrowserEvalSerializationError");
+    }}
+    return serialized;
+  }};
+  try {{
+    return await Promise.race([run(), timeout]);
+  }} finally {{
+    window.fetch = originalFetch;
+  }}
+}}"""
+
+
+def _format_serialized_result(serialized: str, max_output: int) -> str:
     try:
-        result = await page.evaluate(expression, timeout=_JS_EVALUATE_TIMEOUT_MS)
-        output = str(result)[:_JS_MAX_RESULT_LENGTH]
-        if len(str(result)) > _JS_MAX_RESULT_LENGTH:
-            output += f"\n[output truncated: {len(str(result)) - _JS_MAX_RESULT_LENGTH} chars omitted]"
+        value = json.loads(serialized)
+    except json.JSONDecodeError as error:
+        raise BrowserEvalSerializationError(str(error)) from error
+    output = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    if len(output) <= max_output:
         return output
-    except Exception as e:
-        return f"error evaluating JS: {e}"
+    omitted = len(output) - max_output
+    return output[:max_output] + f"...[truncated {omitted} chars]"
+
+
+async def browser_evaluate(
+    expression: str,
+    max_output: int = DEFAULT_OUTPUT_LIMIT,
+    timeout_ms: int = DEFAULT_TIMEOUT_MS,
+    allow_dangerous: bool = False,
+    allowed_fetch_origins: Optional[list[str]] = None,
+) -> str:
+    """Evaluate JavaScript in the page context with policy checks."""
+    command_hash = _command_hash(expression)
+    outcome = "error"
+    details: Dict[str, Any] = {
+        "commandHash": command_hash,
+        "maxOutput": max_output,
+        "timeoutMs": timeout_ms,
+        "allowDangerous": allow_dangerous,
+    }
+    try:
+        max_output = max(1, int(max_output or DEFAULT_OUTPUT_LIMIT))
+        timeout_ms = max(1, int(timeout_ms or DEFAULT_TIMEOUT_MS))
+        matched_patterns = _scan_dangerous_js(expression)
+        details["matchedPatterns"] = matched_patterns
+        if matched_patterns and not allow_dangerous:
+            raise BrowserEvalBlocked(", ".join(matched_patterns))
+        if allow_dangerous:
+            await _authorize_browser_evaluate(
+                expression,
+                allow_dangerous=True,
+                matched_patterns=matched_patterns,
+                external_fetch_origins=[],
+            )
+        page = await _ensure_browser()
+        allowed_origins = _normalize_fetch_origins(allowed_fetch_origins)
+        fetch_blocks, warnings, external_fetch_origins = _scan_fetch_policy(expression, page.url, allowed_origins)
+        details.update({
+            "warnings": warnings,
+            "externalFetchOrigins": external_fetch_origins,
+            "allowedFetchOrigins": allowed_origins,
+        })
+        if fetch_blocks:
+            raise BrowserEvalBlocked(", ".join(fetch_blocks))
+        if allowed_origins:
+            await _authorize_browser_evaluate(
+                expression,
+                allow_dangerous=False,
+                matched_patterns=matched_patterns,
+                external_fetch_origins=external_fetch_origins or allowed_origins,
+            )
+        wrapper = _wrap_browser_expression(expression)
+        try:
+            serialized = await asyncio.wait_for(
+                page.evaluate(wrapper, {"timeoutMs": timeout_ms, "allowedFetchOrigins": allowed_origins}),
+                timeout=(timeout_ms / 1000) + 1,
+            )
+        except asyncio.TimeoutError as error:
+            raise BrowserEvalTimeout(f"timed out after {timeout_ms}ms") from error
+        except Exception as error:
+            message = str(error)
+            if "BrowserEvalTimeout" in message:
+                raise BrowserEvalTimeout(f"timed out after {timeout_ms}ms") from error
+            if "BrowserEvalBlocked" in message:
+                raise BrowserEvalBlocked(message) from error
+            if "BrowserEvalSerializationError" in message or "Do not know how to serialize" in message:
+                raise BrowserEvalSerializationError(message) from error
+            raise
+        output = _format_serialized_result(serialized, max_output)
+        outcome = "success"
+        details["outputChars"] = len(output)
+        return output
+    except (BrowserEvalBlocked, BrowserEvalTimeout, BrowserEvalSerializationError) as error:
+        outcome = error.__class__.__name__
+        details["error"] = str(error)
+        raise
+    except Exception as error:
+        details["error"] = str(error)
+        raise
+    finally:
+        details["outcome"] = outcome
+        _log_browser_event(
+            "evaluate",
+            command_hash,
+            details,
+            success=outcome == "success",
+            error_message=None if outcome == "success" else details.get("error", outcome),
+        )
 
 
 # tool declarations for registration
@@ -218,6 +434,14 @@ BROWSER_TOOL_DECLARATIONS = [
             "type": "OBJECT",
             "properties": {
                 "expression": {"type": "STRING", "description": "JavaScript expression to evaluate"},
+                "max_output": {"type": "INTEGER", "description": "Maximum returned characters (default 64000)"},
+                "timeout_ms": {"type": "INTEGER", "description": "Execution timeout in milliseconds (default 5000)"},
+                "allow_dangerous": {"type": "BOOLEAN", "description": "Request permission-gated bypass for denylisted APIs"},
+                "allowed_fetch_origins": {
+                    "type": "ARRAY",
+                    "items": {"type": "STRING"},
+                    "description": "Permission-gated third-party fetch origin allowlist",
+                },
             },
             "required": ["expression"],
         },

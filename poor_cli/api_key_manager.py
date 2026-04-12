@@ -7,11 +7,10 @@ Encrypted storage and rotation management for API keys.
 import os
 import json
 import base64
-import hashlib
 import getpass
 from pathlib import Path
-from typing import Optional, Dict, Any
-from datetime import datetime, timedelta
+from typing import Literal, Optional, Dict, Any
+from datetime import datetime
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
@@ -40,6 +39,44 @@ class APIKeyManager:
         self.cipher = Fernet(self.encryption_key)
 
         logger.info(f"Initialized API key manager at {self.config_dir}")
+
+    def get(self, provider: str) -> Optional[str]:
+        from poor_cli.credentials import get_credential_store, provider_env_var_map
+        from poor_cli.provider_catalog import canonical_provider_name
+
+        provider = canonical_provider_name(provider)
+        return get_credential_store().get(
+            provider,
+            env_var=provider_env_var_map().get(provider, ""),
+        )
+
+    def set(
+        self,
+        provider: str,
+        key: str,
+        *,
+        store: Literal["keyring", "env", "config"] = "keyring",
+    ) -> None:
+        from poor_cli.credentials import get_credential_store, provider_env_var_map
+        from poor_cli.provider_catalog import canonical_provider_name
+
+        provider = canonical_provider_name(provider)
+        env_var = provider_env_var_map().get(provider, "")
+        if store == "config":
+            from poor_cli.config import ConfigManager
+
+            config_manager = ConfigManager()
+            config = config_manager.load()
+            get_credential_store().set(provider, key, store="config", config_keys=config.api_keys)
+            return
+        get_credential_store().set(provider, key, store=store, env_var=env_var)
+
+    def migrate_to_keyring(self) -> list[str]:
+        from poor_cli.config import ConfigManager
+        from poor_cli.credentials import get_credential_store
+
+        config = ConfigManager().load()
+        return get_credential_store().migrate_to_keyring(config_keys=config.api_keys)
 
     def _get_or_create_encryption_key(self) -> bytes:
         """Get existing or derive encryption key using PBKDF2
@@ -170,7 +207,7 @@ class APIKeyManager:
             encrypted_key = base64.b64decode(encoded_key)
             decrypted_key = self.cipher.decrypt(encrypted_key).decode()
             return decrypted_key
-        except Exception as e:
+        except Exception:
             logger.info(
                 "Stored API key for %s could not be decrypted; falling back to env/config lookup",
                 provider,

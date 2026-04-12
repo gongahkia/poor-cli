@@ -3,21 +3,16 @@ Enhanced error recovery with AI-powered suggestions
 """
 
 import re
-from typing import List, Tuple, Optional
+from typing import List, Optional
 from dataclasses import dataclass
 
 from .exceptions import (
-    APIError,
     APIRateLimitError,
     APITimeoutError,
     APIConnectionError,
-    FileOperationError,
-    FileNotFoundError,
     FilePermissionError,
     PathTraversalError,
     CommandExecutionError,
-    ToolExecutionError,
-    ValidationError,
     ConfigurationError,
     setup_logger,
 )

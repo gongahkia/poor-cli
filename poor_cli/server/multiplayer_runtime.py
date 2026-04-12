@@ -327,7 +327,6 @@ async def _run_multiplayer_host(
     turn_urls: Optional[List[str]] = None,
 ) -> None:
     """Run multiplayer signaling host mode."""
-    import os
     from ..multiplayer import MultiplayerHost
 
     config = ConfigManager().load()

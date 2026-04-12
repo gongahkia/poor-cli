@@ -772,38 +772,7 @@ Read the phase doc first, then implement.
 ### Agent 7B: Speculative Decoding Integration
 
 ```
-[AGENT PROMPT — copy/paste to your coding agent]
-
-You are integrating speculative decoding for poor-cli's local inference path, pairing 
-small draft models with main models to accelerate generation.
-
-FIRST: Read docs/phase_07_adaptive_optimization.md, specifically the "Agent 7B" section 
-for full implementation details and acceptance criteria.
-
-IMPORTANT: This feature ONLY works with self-hosted inference (vLLM primarily).
-
-CONTEXT:
-- Ollama provider: poor_cli/providers/ollama_provider.py
-- vLLM has native speculative decoding support
-- Cost tracking: poor_cli/cost.py
-
-YOUR DELIVERABLES:
-1. Research: current Ollama speculative decoding support
-2. Research: vLLM speculative decoding configuration
-3. Create poor_cli/speculative_decoding.py — draft model pairing + metrics
-4. Define DRAFT_MODEL_PAIRS mapping
-5. Integrate with Ollama provider or document vLLM-only path
-6. Track acceptance rate and speedup metrics
-7. Gate behind feature flag + local inference detection
-8. Write tests in tests/test_speculative_decoding.py
-
-CONSTRAINTS:
-- Off by default, gated behind local inference detection
-- Draft model must be auto-detectable from DRAFT_MODEL_PAIRS
-- No effect on closed API providers
-- [CUSTOMIZE: list your local models for draft model pairing]
-
-Read the phase doc first, then implement.
+Archived by Phase 9B. Do not create `poor_cli/speculative_decoding.py` unless a new end-to-end vLLM provider PRD is accepted first.
 ```
 
 ---
@@ -1008,36 +977,14 @@ Every pain point from PAIN-POINTS.md is addressed by at least one phase:
 **Sub-wave 9.i (parallel):** 9A, 9B, 9E.
 **Sub-wave 9.ii (parallel, after 9.i):** 9C, 9F, 9D.
 
-### Agent 9A: Remove Archived Front-Ends (PRD 006)
+### Agent 9A: Remove Retired Front-Ends (PRD 006)
 
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are implementing removal of retired `_archived/` front-ends for poor-cli.
+PRD 006 is complete. Retired front-end sources were removed from the repository; git history remains the recovery path.
 
-FIRST: Read docs/phase_09_repo_cleanup.md, specifically the "Agent 9A" section for full
-implementation details and acceptance criteria.
-
-CONTEXT:
-- `_archived/` holds retired TUI/Emacs/other front-ends that no longer ship
-- Only git history should retain these paths going forward
-- `asset/` is OUT of scope (handled by PRD 009)
-- No active module may import or reference anything in `_archived/`
-
-YOUR DELIVERABLES:
-1. Grep for any live references to `_archived/`; fail-fast if found
-2. Delete the entire `_archived/` directory in one commit
-3. Update `pyproject.toml`, Makefile, CI config to drop archived paths
-4. Remove stale docs / table-of-contents entries pointing at archived front-ends
-5. Confirm `make lint && make test` still pass
-
-CONSTRAINTS:
-- Do NOT re-home any archived code — forks can recover from git history
-- Do NOT touch `asset/` (separate PRD)
-- Follow existing code style; keep the commit surgical
-- [CUSTOMIZE: note any local tooling that still references `_archived/`]
-
-Read the phase doc and PRD first, then implement.
+Do not re-home retired client code. Do not restore the old tree outside an explicit rollback.
 ```
 
 ### Agent 9B: Stub Module Decision + Execution (PRD 007)
@@ -1090,7 +1037,7 @@ CONTEXT:
 - Do NOT delete — this PRD is purely a move + gate
 
 YOUR DELIVERABLES:
-1. Inventory research modules (latent_communication, speculative_decoding survivors, etc.)
+1. Inventory research modules (latent_communication, neural_code_encoder, etc.; `speculative_decoding.py` was archived by 9B)
 2. Move each into `poor_cli/research/<name>.py`; add `poor_cli/research/__init__.py`
 3. Add `research.<name>.enabled = false` config defaults
 4. Update every importer to go through the gated loader
@@ -1183,7 +1130,7 @@ FIRST: Read docs/phase_09_repo_cleanup.md, specifically the "Agent 9F" section f
 implementation details and acceptance criteria.
 
 CONTEXT:
-- Budgets: `core.py` ≤1000, `server/runtime.py` ≤800, `config.py` ≤1500, any other py ≤2000
+- Budgets: `core.py` ≤1000, `config.py` ≤1500, any other py ≤2000, with explicit temporary caps for pre-existing monoliths (`server/runtime.py`, `tools_async.py`, `multiplayer.py`, `core_turn_lifecycle.py`)
 - CI lives in `.github/workflows/` (or the repo's CI surface)
 - Must produce a clear error message with the delta (e.g. "core.py 1124/1000 (+124)")
 - Must not gate test files
@@ -1319,13 +1266,13 @@ Read the phase doc and PRD first, then implement.
 [AGENT PROMPT — copy/paste to your coding agent]
 
 You are executing the consolidation DECISION on poor-cli's extension model
-(automations / workflow_templates / custom_commands / skills).
+(AutomationRule + skills).
 
 FIRST: Read docs/phase_10_core_refactor.md, specifically the "Agent 10D" section for the
 chosen decision and migration plan.
 
 CONTEXT:
-- Today: four overlapping extension concepts — automations, workflows, custom commands, skills
+- Today: PRD 064 resolves the legacy extension overlap into AutomationRule + skills
 - Decision options: (a) merge to AutomationRule+Skills (2 concepts), (b) keep 4, (c) partial merge
 - Phase doc records the final decision; implement that option
 - Skills are likely preserved (distinct "instruction library" concept)
@@ -2165,7 +2112,7 @@ CONTEXT:
 
 YOUR DELIVERABLES:
 1. Add `:PoorCliWorkflows` command using `pickers.pick()` from PRD 055
-2. Load workflow templates from `.poor-cli/workflows/*.yaml`
+2. Load slash-trigger AutomationRules from `.poor-cli/automations.json`
 3. Implement run + scaffold actions
 4. Group picker results by category; allow tag filters
 5. Write tests for loader + dispatch

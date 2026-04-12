@@ -2,10 +2,40 @@
 Approach A: pre-tokenization (whitespace/identifier normalization)
 Approach B: hybrid AST-token representation
 """
-import ast, re, textwrap
-from pathlib import Path
+import ast
+import re
 
 # --- approach A: code pre-tokenization ---
+
+_LANG_ALIASES = {
+    "python": ".py",
+    "py": ".py",
+    ".py": ".py",
+    "lua": ".lua",
+    ".lua": ".lua",
+    "typescript": ".ts",
+    "ts": ".ts",
+    ".ts": ".ts",
+    "javascript": ".js",
+    "js": ".js",
+    ".js": ".js",
+    "tsx": ".tsx",
+    ".tsx": ".tsx",
+    "jsx": ".jsx",
+    ".jsx": ".jsx",
+}
+_SAFE_PRETOKENIZE_EXTS = {".py", ".lua", ".ts", ".js", ".tsx", ".jsx"}
+
+
+def _safe_language_ext(language_hint: str) -> str:
+    hint = str(language_hint or "").strip().lower()
+    if not hint:
+        return ""
+    return _LANG_ALIASES.get(hint, hint if hint.startswith(".") else f".{hint}")
+
+
+def is_safe_pretokenize_language(language_hint: str) -> bool:
+    return _safe_language_ext(language_hint) in _SAFE_PRETOKENIZE_EXTS
 
 def collapse_indentation(code: str, marker: str = "\t") -> str:
     """Replace leading spaces with tab markers. 4 spaces → 1 tab."""
@@ -23,7 +53,8 @@ def normalize_identifiers(code: str) -> str:
     Only transforms identifiers, not string contents."""
     def camel_to_snake(match):
         name = match.group(0)
-        if name.isupper() or "_" in name: return name # already CONST or snake
+        if name.isupper() or "_" in name:
+            return name # already CONST or snake
         result = re.sub(r'([A-Z]+)', lambda m: '_' + m.group(0).lower(), name)
         return result.lstrip('_')
     # match likely identifiers (not inside strings)
@@ -42,14 +73,17 @@ def strip_comments_python(code: str) -> str:
             continue
         if stripped.startswith('"""') or stripped.startswith("'''"):
             docstring_char = stripped[:3]
-            if stripped.count(docstring_char) >= 2: continue # single-line docstring
+            if stripped.count(docstring_char) >= 2:
+                continue # single-line docstring
             in_docstring = True
             continue
         if "#" in line:
             code_part = line.split("#")[0].rstrip()
-            if code_part: lines.append(code_part)
+            if code_part:
+                lines.append(code_part)
             continue
-        if stripped: lines.append(line)
+        if stripped:
+            lines.append(line)
     return "\n".join(lines)
 
 def strip_comments_lua(code: str) -> str:
@@ -57,12 +91,15 @@ def strip_comments_lua(code: str) -> str:
     lines = []
     for line in code.splitlines():
         stripped = line.strip()
-        if stripped.startswith("--"): continue
+        if stripped.startswith("--"):
+            continue
         if "--" in line:
             code_part = line.split("--")[0].rstrip()
-            if code_part: lines.append(code_part)
+            if code_part:
+                lines.append(code_part)
             continue
-        if stripped: lines.append(line)
+        if stripped:
+            lines.append(line)
     return "\n".join(lines)
 
 def strip_comments_ts(code: str) -> str:
@@ -70,25 +107,93 @@ def strip_comments_ts(code: str) -> str:
     lines = []
     for line in code.splitlines():
         stripped = line.strip()
-        if stripped.startswith("//"): continue
+        if stripped.startswith("//"):
+            continue
         if "//" in line:
             code_part = line.split("//")[0].rstrip()
-            if code_part: lines.append(code_part)
+            if code_part:
+                lines.append(code_part)
             continue
-        if stripped: lines.append(line)
+        if stripped:
+            lines.append(line)
     return "\n".join(lines)
 
 def collapse_blank_lines(code: str) -> str:
     """Collapse multiple blank lines to single."""
     return re.sub(r'\n{3,}', '\n\n', code)
 
+
+def _strip_docstrings_only(code: str) -> str:
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return code
+    docstring_lines = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Module)):
+            if (
+                node.body
+                and isinstance(node.body[0], ast.Expr)
+                and isinstance(node.body[0].value, ast.Constant)
+                and isinstance(node.body[0].value.value, str)
+            ):
+                docstring = node.body[0]
+                end_lineno = getattr(docstring, "end_lineno", docstring.lineno)
+                for lineno in range(docstring.lineno, end_lineno + 1):
+                    docstring_lines.add(lineno)
+    return "\n".join(
+        line for lineno, line in enumerate(code.splitlines(), 1)
+        if lineno not in docstring_lines
+    )
+
+
+def _strip_comment_lines_only(code: str, lang: str) -> str:
+    lines = []
+    for line in code.splitlines():
+        stripped = line.strip()
+        if lang == ".py" and stripped.startswith("#"):
+            continue
+        if lang == ".lua" and stripped.startswith("--"):
+            continue
+        if lang in (".ts", ".js", ".tsx", ".jsx") and stripped.startswith("//"):
+            continue
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def safe_pretokenize(text: str, language_hint: str) -> str:
+    """Safe pre-tokenization for context-only code files; returns original on failure."""
+    original = text
+    try:
+        if not isinstance(text, str):
+            return original
+        lang = _safe_language_ext(language_hint)
+        if lang not in _SAFE_PRETOKENIZE_EXTS:
+            return original
+        if lang == ".py":
+            ast.parse(original)
+        code = _strip_comment_lines_only(original, lang)
+        if lang == ".py":
+            code = _strip_docstrings_only(code)
+        code = collapse_indentation(code)
+        code = collapse_blank_lines(code).strip()
+        if lang == ".py":
+            ast.parse(code)
+        return code
+    except Exception:
+        return original
+
+
 def pretokenize(code: str, lang: str = ".py") -> str:
     """Full pre-tokenization pipeline."""
     code = collapse_indentation(code)
     code = normalize_identifiers(code)
-    if lang == ".py": code = strip_comments_python(code)
-    elif lang == ".lua": code = strip_comments_lua(code)
-    elif lang in (".ts", ".js", ".tsx"): code = strip_comments_ts(code)
+    if lang == ".py":
+        code = strip_comments_python(code)
+    elif lang == ".lua":
+        code = strip_comments_lua(code)
+    elif lang in (".ts", ".js", ".tsx"):
+        code = strip_comments_ts(code)
     code = collapse_blank_lines(code)
     return code.strip()
 
@@ -171,19 +276,23 @@ def _compact_args(args) -> str:
     defaults_offset = len(args.args) - len(args.defaults)
     for i, arg in enumerate(args.args):
         s = arg.arg
-        if arg.annotation: s += f": {ast.unparse(arg.annotation)}"
+        if arg.annotation:
+            s += f": {ast.unparse(arg.annotation)}"
         di = i - defaults_offset
         if di >= 0 and di < len(args.defaults):
             s += f"={ast.unparse(args.defaults[di])}"
         parts.append(s)
-    if args.vararg: parts.append(f"*{args.vararg.arg}")
+    if args.vararg:
+        parts.append(f"*{args.vararg.arg}")
     for i, arg in enumerate(args.kwonlyargs):
         s = arg.arg
-        if arg.annotation: s += f": {ast.unparse(arg.annotation)}"
+        if arg.annotation:
+            s += f": {ast.unparse(arg.annotation)}"
         if i < len(args.kw_defaults) and args.kw_defaults[i]:
             s += f"={ast.unparse(args.kw_defaults[i])}"
         parts.append(s)
-    if args.kwarg: parts.append(f"**{args.kwarg.arg}")
+    if args.kwarg:
+        parts.append(f"**{args.kwarg.arg}")
     return ", ".join(parts)
 
 # --- approach A+B combined: pretokenize then AST-compact ---
@@ -192,5 +301,6 @@ def pretokenize_ast(code: str, lang: str = ".py") -> str:
     """Apply pre-tokenization, then AST-compact for Python files."""
     if lang == ".py":
         compact = ast_compact_python(code)
-        if compact: return compact
+        if compact:
+            return compact
     return pretokenize(code, lang) # fallback

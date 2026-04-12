@@ -87,6 +87,7 @@ Add `rotate_if_needed()`, `archive()`, and `export_range()` to `audit_log.py`; w
 ### Implementation details
 
 1. **Policy (configurable, defaults in parens):**
+   - `audit.max_size_mb` (100)
    - `audit.max_rows_live` (100,000)
    - `audit.max_age_days_live` (90)
    - `audit.archive_chunk_size` (10,000)

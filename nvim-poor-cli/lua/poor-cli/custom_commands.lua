@@ -36,9 +36,9 @@ function M.open_picker()
         vim.schedule(function()
             if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local cmds = (result or {}).commands or {}
-            if #cmds == 0 then vim.notify("[poor-cli] no custom commands", vim.log.levels.INFO); return end
+            if #cmds == 0 then vim.notify("[poor-cli] no slash-trigger AutomationRules", vim.log.levels.INFO); return end
             pickers.new({}, {
-                prompt_title = "poor-cli custom commands",
+                prompt_title = "poor-cli command aliases",
                 finder = finders.new_table({
                     results = cmds,
                     entry_maker = function(c)
@@ -88,12 +88,12 @@ function M.setup()
         M.list({}, function(result, err) vim.schedule(function()
             if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local cmds = (result or {}).commands or {}
-            local lines = { "# custom commands", "" }
+            local lines = { "# command aliases", "" }
             for _, c in ipairs(cmds) do table.insert(lines, format_cmd(c)) end
-            if #cmds == 0 then table.insert(lines, "no custom commands") end
-            open_scratch("[poor-cli custom commands]", table.concat(lines, "\n"), "markdown")
+            if #cmds == 0 then table.insert(lines, "no slash-trigger AutomationRules") end
+            open_scratch("[poor-cli command aliases]", table.concat(lines, "\n"), "markdown")
         end) end)
-    end, { desc = "List custom commands" })
+    end, { desc = "List command aliases" })
     create_command("PoorCliCommandRun", function(opts)
         local args = vim.split(opts.args, " ", { trimempty = true })
         if #args < 1 then vim.notify("[poor-cli] usage: :PoorCliCommandRun <name> [args]", vim.log.levels.WARN); return end
@@ -105,8 +105,8 @@ function M.setup()
             if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
             else vim.notify("[poor-cli] command " .. name .. " executed", vim.log.levels.INFO) end
         end) end)
-    end, { nargs = "+", desc = "Run custom command" })
-    create_command("PoorCliCommandsPicker", function() M.open_picker() end, { desc = "Browse custom commands with Telescope" })
+    end, { nargs = "+", desc = "Run command alias" })
+    create_command("PoorCliCommandsPicker", function() M.open_picker() end, { desc = "Browse command aliases with Telescope" })
 end
 
 return M

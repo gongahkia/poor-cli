@@ -28,6 +28,7 @@ except ImportError:  # pragma: no cover - protobuf is an indirect dependency.
     MessageToDict = None
 
 from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall, UsageMetadata
+from .capability import PROVIDER_CAPABILITIES
 from .tool_translator import ToolTranslator, ProviderType
 from ..provider_catalog import default_model_for_provider
 from ..retry import RetryConfig, with_retry
@@ -49,6 +50,8 @@ logger = setup_logger(__name__)
 
 class GeminiProvider(BaseProvider):
     """Gemini provider implementation backed by `google-genai`."""
+
+    capabilities = PROVIDER_CAPABILITIES["gemini"]
 
     def preferred_edit_format(self) -> str:
         return "search_replace"

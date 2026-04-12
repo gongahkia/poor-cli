@@ -763,12 +763,6 @@
       "string_preserved": 0.6617647058823529
     },
     {
-      "path": "poor_cli/speculative_decoding.py",
-      "parseable": true,
-      "func_name_preserved": 1.0,
-      "string_preserved": 0.7903225806451613
-    },
-    {
       "path": "poor_cli/structured_output.py",
       "parseable": true,
       "func_name_preserved": 1.0,
@@ -2416,18 +2410,6 @@
       "n_compact_funcs": 27,
       "n_orig_classes": 5,
       "n_compact_classes": 5
-    },
-    {
-      "path": "poor_cli/speculative_decoding.py",
-      "parseable": false,
-      "funcs_preserved": 1.0,
-      "classes_preserved": 1.0,
-      "funcs_missing": [],
-      "classes_missing": [],
-      "n_orig_funcs": 16,
-      "n_compact_funcs": 16,
-      "n_orig_classes": 2,
-      "n_compact_classes": 2
     },
     {
       "path": "poor_cli/structured_output.py",

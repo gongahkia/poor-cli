@@ -4,15 +4,12 @@ File caching system for poor-cli
 Provides LRU cache for file reads with persistence and smart pre-caching.
 """
 
-from functools import lru_cache
-from typing import Optional, Tuple, List, Dict, Any
+from typing import Optional, Tuple, Dict
 from pathlib import Path
 from collections import defaultdict, deque, OrderedDict
 import sqlite3
 import hashlib
-import json
 import time
-from datetime import datetime
 from poor_cli.exceptions import FileNotFoundError as PoorFileNotFoundError, setup_logger
 
 logger = setup_logger(__name__)
@@ -347,6 +344,7 @@ class FileCache:
             "maxsize": self.max_size,
             "currsize": len(self._cache),
             "total_accesses": total_accesses,
+            "misses": misses,
             "unique_files_accessed": len(self._access_count),
             "hit_rate": hits / total_accesses if total_accesses > 0 else 0.0,
             "top_accessed_files": [

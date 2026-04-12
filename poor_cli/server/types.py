@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -64,6 +64,7 @@ class JsonRpcError:
     METHOD_NOT_FOUND = -32601
     INVALID_PARAMS = -32602
     INTERNAL_ERROR = -32603
+    RATE_LIMITED = -32029
 
     @classmethod
     def make_error(cls, code: int, message: str, data: Any = None) -> Dict[str, Any]:

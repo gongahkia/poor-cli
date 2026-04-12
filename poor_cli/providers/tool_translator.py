@@ -9,7 +9,7 @@ Converts canonical tool format to provider-specific schemas for:
 """
 
 import json
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Tuple
 from enum import Enum
 from ..exceptions import setup_logger
 
@@ -49,6 +49,8 @@ class ToolTranslator:
             sanitized: Dict[str, Any] = {}
             for key, value in payload.items():
                 if isinstance(key, str) and key.startswith("x-"):
+                    continue
+                if key == "output_filter":
                     continue
                 sanitized[key] = ToolTranslator._strip_vendor_extensions(value)
             return sanitized

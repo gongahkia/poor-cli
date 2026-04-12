@@ -8,6 +8,15 @@ on:
   workflow_call:
 
 jobs:
+  line-budgets:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Python line budgets
+        run: python3 scripts/check_line_budgets.py
+
   python-backend-validation:
     runs-on: ubuntu-latest
     strategy:
@@ -73,16 +82,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
       - name: Install build tools
         run: |
           python -m pip install --upgrade pip
           pip install build twine
-
-      - name: Build Rust TUI
-        run: cargo build --manifest-path poor-cli-tui/Cargo.toml --release --locked
 
       - name: Build Python wheel
         run: python -m build --wheel
@@ -126,7 +129,6 @@ jobs:
               selected = payload.get("selectedLauncher") or {}
               if selected.get("source") != "package":
                   raise SystemExit(f"expected packaged launcher, got {selected!r}")
-              subprocess.check_call([str(poor_cli), "tui", "--help"], cwd=tmpdir)
               subprocess.check_call([str(poor_cli_server), "--help"], cwd=tmpdir)
           PY
 
@@ -154,18 +156,6 @@ jobs:
 
       - name: Validate source distribution
         run: twine check dist/*.tar.gz
-
-  rust-tui-tests:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Test Rust TUI
-        run: cargo test --manifest-path poor-cli-tui/Cargo.toml --locked
 
   lua-syntax:
     runs-on: ubuntu-latest

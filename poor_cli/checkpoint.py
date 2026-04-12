@@ -9,14 +9,12 @@ import os
 import shutil
 import hashlib
 import zlib
-import asyncio
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Thread, Event
-import time
 
 from poor_cli.exceptions import FileOperationError, setup_logger
 from poor_cli.persisted import load_json, save_json
@@ -543,7 +541,7 @@ class CheckpointManager:
         # Verify hash (of decompressed content)
         actual_hash = self._compute_file_hash(content)
         if actual_hash != snapshot.content_hash:
-            raise FileOperationError(f"Snapshot corrupted: hash mismatch")
+            raise FileOperationError("Snapshot corrupted: hash mismatch")
 
         # Create parent directories if needed
         file_path = Path(snapshot.file_path)

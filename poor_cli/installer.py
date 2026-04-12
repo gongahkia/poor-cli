@@ -1,4 +1,4 @@
-"""Interactive CLI installer for poor-cli, inspired by mo's onboarding TUI."""
+"""Interactive CLI installer for poor-cli."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 from poor_cli import __version__
 
@@ -27,7 +26,6 @@ MENU_ITEMS = [
     ("Install / Update", "install or upgrade poor-cli and dependencies"),
     ("Configure Providers", "set up API keys for Gemini, OpenAI, Claude, Ollama"),
     ("Setup Telegram Bot", "guided Telegram bot token and launch configuration"),
-    ("Build TUI", "compile the Rust terminal UI from source"),
     ("System Check", "verify installation, providers, and environment"),
     ("Uninstall", "remove poor-cli and its data"),
 ]
@@ -121,16 +119,16 @@ def _get_term_width() -> int:
 def _side_by_side(left_lines: list[str], right_lines: list[str], col_width: int = 38, gutter: int = 4) -> list[str]:
     """merge two columns into side-by-side output."""
     max_rows = max(len(left_lines), len(right_lines))
-    pad_l = [l if i < len(left_lines) else "" for i, l in enumerate(left_lines + [""] * max_rows)]
-    pad_r = [r if i < len(right_lines) else "" for i, r in enumerate(right_lines + [""] * max_rows)]
+    pad_l = [left_line if i < len(left_lines) else "" for i, left_line in enumerate(left_lines + [""] * max_rows)]
+    pad_r = [right_line if i < len(right_lines) else "" for i, right_line in enumerate(right_lines + [""] * max_rows)]
     out = []
-    for l, r in zip(pad_l[:max_rows], pad_r[:max_rows]):
+    for left_line, right_line in zip(pad_l[:max_rows], pad_r[:max_rows]):
         # strip ansi for width calc
-        raw_l = _strip_ansi(l)
+        raw_l = _strip_ansi(left_line)
         padding = col_width - len(raw_l)
         if padding < 0:
             padding = 0
-        out.append(l + " " * padding + " " * gutter + r)
+        out.append(left_line + " " * padding + " " * gutter + right_line)
     return out
 
 def _strip_ansi(s: str) -> str:
@@ -182,7 +180,8 @@ def _read_key() -> str:
             ch2 = msvcrt.getwch()
             return {'H': 'up', 'P': 'down'}.get(ch2, '')
         return ch
-    import tty, termios
+    import tty
+    import termios
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
     try:
@@ -259,7 +258,6 @@ def show_landing() -> int:
         _handle_install,
         _handle_configure_providers,
         _handle_telegram_setup,
-        _handle_build_tui,
         _handle_system_check,
         _handle_uninstall,
     ]
@@ -339,12 +337,18 @@ def _handle_configure_providers() -> None:
     _render_banner()
     print(f"  {_bold('configure AI providers')}\n")
     print(f"  {_dim('poor-cli supports multiple providers. configure API keys below.')}")
-    print(f"  {_dim('keys are stored encrypted in ~/.poor-cli/keys/')}\n")
+    print(f"  {_dim('lookup order: OS keyring, env var, plaintext config')}")
+    _print_keyring_status()
+    _offer_keyring_migration(catalog)
+    print()
     providers = list(catalog.values())
     provider_items = []
+    from poor_cli.credentials import get_credential_store
+    store = get_credential_store()
+    config_keys = _load_config_api_keys()
     for entry in providers:
-        env_val = os.environ.get(entry.env_var, "")
-        status = "configured" if env_val else "not set"
+        key = store.get_with_source(entry.name, env_var=entry.env_var, config_keys=config_keys)
+        status = key.source if key.key else "not set"
         provider_items.append((entry.display_name, f"{entry.env_var:<30} {status}"))
     idx = _select(provider_items, allow_quit=True, label_w=16)
     if idx < 0:
@@ -355,7 +359,8 @@ def _handle_configure_providers() -> None:
     print(f"  {entry.setup_help}")
     print(f"  {_dim(f'capabilities: {entry.capability_summary}')}")
     print(f"  {_dim(f'default model: {entry.default_model}')}")
-    print(f"  {_dim(f'models: {", ".join(entry.common_models)}')}")
+    models = ", ".join(entry.common_models)
+    print(f"  {_dim(f'models: {models}')}")
     print()
     if entry.name == "ollama":
         _configure_ollama()
@@ -364,24 +369,25 @@ def _handle_configure_providers() -> None:
     _press_enter()
 
 def _configure_cloud_provider(entry) -> None:
-    current = os.environ.get(entry.env_var, "")
-    if current:
-        masked = current[:8] + "..." + current[-4:] if len(current) > 16 else "***"
-        print(f"  current: {masked}")
+    from poor_cli.credentials import get_credential_store
+
+    store = get_credential_store()
+    config_keys = _load_config_api_keys()
+    current = store.get_with_source(entry.name, env_var=entry.env_var, config_keys=config_keys)
+    if current.key:
+        masked = current.key[:8] + "..." + current.key[-4:] if len(current.key) > 16 else "***"
+        print(f"  current: {masked} ({current.source})")
         if not _confirm("replace existing key?", default=False):
             return
     key = _prompt(f"paste {entry.display_name} API key (or empty to skip)")
     if not key:
         return
-    # save to encrypted store
-    try:
-        from poor_cli.api_key_manager import get_api_key_manager
-        mgr = get_api_key_manager()
-        mgr.store_key(entry.name, key)
-        print(f"  {_green('✓')} key saved to encrypted store")
-    except Exception as e:
-        print(f"  {_yellow('!')} encrypted store failed ({e}), falling back to env var")
-    # offer to add to shell profile
+    status = store.status()
+    if status.get("available") and _confirm("store in OS keyring?", default=True):
+        if store.set(entry.name, key, store="keyring") == "keyring":
+            print(f"  {_green('✓')} key saved to OS keyring")
+        else:
+            print(f"  {_yellow('!')} OS keyring unavailable, using env fallback")
     shell = os.environ.get("SHELL", "")
     profile = None
     if "zsh" in shell:
@@ -394,8 +400,53 @@ def _configure_cloud_provider(entry) -> None:
             f.write(line)
         print(f"  {_green('✓')} added to {profile}")
         print(f"  {_dim('run: source ' + str(profile))}")
-    # also set in current process so system check works
-    os.environ[entry.env_var] = key
+    store.set(entry.name, key, store="env", env_var=entry.env_var)
+
+def _load_config_api_keys() -> dict[str, str]:
+    try:
+        from poor_cli.config import ConfigManager
+
+        return dict(ConfigManager().load().api_keys)
+    except Exception:
+        return {}
+
+def _print_keyring_status() -> None:
+    try:
+        from poor_cli.credentials import get_credential_store
+
+        status = get_credential_store().status()
+        if status.get("available"):
+            backend = status.get("backend") or "available"
+            print(f"  {_dim(f'OS keyring: {backend}')}")
+        else:
+            print(f"  {_dim('OS keyring: unavailable; env/config fallback active')}")
+    except Exception:
+        print(f"  {_dim('OS keyring: unavailable; env/config fallback active')}")
+
+def _offer_keyring_migration(catalog) -> None:
+    try:
+        from poor_cli.credentials import get_credential_store
+
+        store = get_credential_store()
+        if not store.status().get("available"):
+            return
+        provider_env_vars = {name: entry.env_var for name, entry in catalog.items()}
+        config_keys = _load_config_api_keys()
+        candidates = store.migration_candidates(
+            config_keys=config_keys,
+            provider_env_vars=provider_env_vars,
+        )
+        if not candidates:
+            return
+        names = ", ".join(candidates)
+        if _confirm(f"move existing env/config API keys into OS keyring? ({names})", default=True):
+            migrated = store.migrate_to_keyring(
+                config_keys=config_keys,
+                provider_env_vars=provider_env_vars,
+            )
+            print(f"  {_green('✓')} migrated {len(migrated)} key(s) to OS keyring")
+    except Exception:
+        return
 
 def _configure_ollama() -> None:
     if _has_command("ollama"):
@@ -484,55 +535,15 @@ def _handle_telegram_setup() -> None:
                                     "--verbose"])
     _press_enter()
 
-# -- 4. build TUI --
-
-def _handle_build_tui() -> None:
-    _render_banner()
-    print(f"  {_bold('build Rust TUI')}\n")
-    if not _has_command("cargo"):
-        print(f"  {_red('✗')} cargo not found")
-        print(f"  {_dim('install Rust: https://rustup.rs')}")
-        if sys.platform == "darwin" and _has_command("brew"):
-            if _confirm("install via homebrew?"):
-                _run(["brew", "install", "rust"], check=False)
-            else:
-                _press_enter()
-                return
-        else:
-            _press_enter()
-            return
-    tui_dir = Path(__file__).resolve().parent.parent / "poor-cli-tui"
-    if not tui_dir.is_dir():
-        print(f"  {_red('✗')} poor-cli-tui/ directory not found")
-        print(f"  {_dim('this is only available in a git clone, not a pip install')}")
-        _press_enter()
-        return
-    print(f"  {_green('✓')} cargo found")
-    print(f"  {_green('✓')} TUI source found at {tui_dir}")
-    print()
-    if _confirm("build release binary?"):
-        result = _run(["cargo", "build", "--release", "--manifest-path", str(tui_dir / "Cargo.toml")], check=False)
-        if result.returncode == 0:
-            binary = tui_dir / "target" / "release" / ("poor-cli-tui.exe" if os.name == "nt" else "poor-cli-tui")
-            print(f"\n  {_green('✓')} built: {binary}")
-            if _confirm("add to PATH via symlink?"):
-                link = Path.home() / ".local" / "bin" / "poor-cli-tui"
-                link.parent.mkdir(parents=True, exist_ok=True)
-                if link.exists() or link.is_symlink():
-                    link.unlink()
-                link.symlink_to(binary)
-                print(f"  {_green('✓')} symlinked: {link} -> {binary}")
-                print(f"  {_dim('ensure ~/.local/bin is in your PATH')}")
-        else:
-            print(f"\n  {_red('✗')} build failed (exit {result.returncode})")
-    _press_enter()
-
-# -- 5. system check (mo-style dashboard) --
+# -- 4. system check (mo-style dashboard) --
 
 def _gather_provider_status() -> list[dict]:
     """probe all providers and return status dicts."""
     from poor_cli.provider_catalog import provider_catalog
+    from poor_cli.credentials import get_credential_store
     catalog = provider_catalog()
+    store = get_credential_store()
+    config_keys = _load_config_api_keys()
     results = []
     for name, entry in catalog.items():
         ok = False
@@ -554,17 +565,9 @@ def _gather_provider_status() -> list[dict]:
             else:
                 detail = "not installed"
         else:
-            env_val = os.environ.get(entry.env_var, "")
-            ok = bool(env_val)
-            if not ok:
-                try:
-                    from poor_cli.api_key_manager import get_api_key_manager
-                    mgr = get_api_key_manager()
-                    stored = mgr.get_key(name)
-                    ok = bool(stored)
-                except Exception:
-                    pass
-            detail = "configured" if ok else "no key"
+            key = store.get_with_source(name, env_var=entry.env_var, config_keys=config_keys)
+            ok = bool(key.key)
+            detail = key.source if ok else "no key"
         results.append({"name": entry.display_name, "ok": ok, "detail": detail,
                         "default_model": entry.default_model})
     return results
@@ -602,6 +605,7 @@ def _gather_deps_status() -> list[dict]:
         ("yaml", "PyYAML", True),
         ("pydantic", "pydantic", True),
         ("cryptography", "cryptography", True),
+        ("keyring", "keyring", False),
         ("anthropic", "anthropic", False),
         ("telegram", "telegram-bot", False),
     ]:
@@ -619,10 +623,15 @@ def _handle_system_check() -> None:
     py_ok = sys.version_info >= (3, 11)
     providers = _gather_provider_status()
     storage = _gather_storage_info()
+    try:
+        from poor_cli.credentials import get_credential_store
+
+        keyring_status = get_credential_store().status()
+    except Exception:
+        keyring_status = {"available": False, "backend": ""}
     deps = _gather_deps_status()
-    tools_list = ["git", "cargo", "node", "gh", "docker", "ollama"]
+    tools_list = ["git", "node", "gh", "docker", "ollama"]
     tools_ok = {t: _has_command(t) for t in tools_list}
-    tui_bin, tui_src = None, None # tui archived
     # health checks
     checks = [
         py_ok,
@@ -630,7 +639,6 @@ def _handle_system_check() -> None:
         storage["exists"],
         *[d["ok"] for d in deps if d["required"]],
         tools_ok["git"],
-        tui_bin is not None,
     ]
     score = _health_score(checks)
     prov_ready = sum(1 for p in providers if p["ok"])
@@ -654,6 +662,8 @@ def _handle_system_check() -> None:
     left.append(_section_header(_cyan("◧"), "Storage"))
     config_dir = Path.home() / ".poor-cli"
     left.append(f"  {'Path':<14}{_dim(str(config_dir))}")
+    keyring_label = keyring_status.get("backend") or "fallback"
+    left.append(_row("Keyring", _bar_ok(bool(keyring_status.get("available")), width=10), str(keyring_label)))
     if storage["exists"]:
         total_kb = storage["total_kb"]
         total_str = f"{total_kb:.0f} KB" if total_kb < 1024 else f"{total_kb / 1024:.1f} MB"
@@ -684,16 +694,6 @@ def _handle_system_check() -> None:
     for t in tools_list:
         ok = tools_ok[t]
         right.append(_row(t, _bar_ok(ok, width=10), _green("found") if ok else _dim("missing")))
-    right.append("")
-    right.append(_section_header(_green("▣"), "TUI"))
-    if tui_bin:
-        right.append(f"  {'Binary':<14}{_bar_ok(True, width=10)}  {_green(tui_src or 'found')}")
-        path_str = str(tui_bin)
-        if len(path_str) > 36:
-            path_str = "..." + path_str[-33:]
-        right.append(f"  {'Path':<14}{_dim(path_str)}")
-    else:
-        right.append(f"  {'Binary':<14}{_bar_ok(False, width=10)}  {_dim('not found')}")
     # -- render side by side --
     tw = _get_term_width()
     if tw >= 84:
@@ -714,8 +714,6 @@ def _handle_system_check() -> None:
     for d in deps:
         if d["required"] and not d["ok"]:
             issues.append(f"missing core package: {d['name']}")
-    if not tui_bin:
-        issues.append("TUI binary not found (optional)")
     if issues:
         print(f"  {_yellow('!')} {len(issues)} issue{'s' if len(issues) != 1 else ''}:")
         for issue in issues[:5]:
@@ -730,8 +728,8 @@ def _handle_uninstall() -> None:
     _render_banner()
     print(f"  {_bold('uninstall poor-cli')}\n")
     print(f"  {_yellow('!')} this will:")
-    print(f"    • pip uninstall poor-cli")
-    print(f"    • optionally remove ~/.poor-cli/ (config, keys, sessions)")
+    print("    • pip uninstall poor-cli")
+    print("    • optionally remove ~/.poor-cli/ (config, keys, sessions)")
     print()
     if not _confirm("proceed?", default=False):
         return

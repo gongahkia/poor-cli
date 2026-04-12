@@ -13,7 +13,6 @@ Optionally creates a git worktree for isolation.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import signal
@@ -22,7 +21,7 @@ import subprocess
 import sys
 import uuid
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence
@@ -497,7 +496,7 @@ async def run_agent_worker(agent_id: str, repo_root: str) -> None:
 
     # auto-approve all tools based on sandbox preset
     from .permission_engine import _as_async
-    core._permission_callback = _as_async(_auto_approve_callback(agent.sandbox_preset))
+    core.permission_callback = _as_async(_auto_approve_callback(agent.sandbox_preset))
 
     accumulated_text = ""
     done_reason = ""

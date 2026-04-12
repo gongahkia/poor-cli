@@ -12,7 +12,6 @@ import difflib
 import hashlib
 import json
 import re
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -461,9 +460,9 @@ class WorkingMemoryManager:
             return
         # basic extractive summary as fallback (LLM summary set via callback externally)
         lines = history_text.splitlines()
-        user_lines = [l for l in lines if l.strip().startswith("User:") or l.strip().startswith("user:")]
+        user_lines = [line for line in lines if line.strip().startswith("User:") or line.strip().startswith("user:")]
         if user_lines:
-            topics = "; ".join(l.strip()[:80] for l in user_lines[-5:])
+            topics = "; ".join(line.strip()[:80] for line in user_lines[-5:])
             self._memory.session_summary = f"Recent topics: {topics}"
         logger.info("re-summarized working memory at turn %d", self._memory.turn_count)
 

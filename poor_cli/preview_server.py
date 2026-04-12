@@ -13,7 +13,7 @@ import json
 import mimetypes
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, Optional, Set
 from urllib.parse import unquote, urlparse
 
 from .exceptions import setup_logger

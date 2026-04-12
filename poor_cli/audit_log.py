@@ -5,19 +5,44 @@ Comprehensive logging of all file operations, bash commands, and API calls
 for security and compliance purposes.
 """
 
+import gzip
+import contextlib
+import os
 import re
 import json
 import sqlite3
-from datetime import datetime
+import sys
+import tempfile
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, Dict, Any, List
-from dataclasses import dataclass, asdict
+from typing import Optional, Dict, Any, List, Iterable
+from dataclasses import dataclass
 from enum import Enum
 
 from poor_cli.exceptions import setup_logger
 from poor_cli.persisted import run_sqlite_migrations
 
 logger = setup_logger(__name__)
+
+AUDIT_COLUMNS = (
+    "event_id",
+    "event_type",
+    "severity",
+    "timestamp",
+    "user",
+    "operation",
+    "target",
+    "details",
+    "success",
+    "error_message",
+)
+
+DEFAULT_MAX_SIZE_MB = 100
+DEFAULT_MAX_ROWS_LIVE = 100_000
+DEFAULT_MAX_AGE_DAYS_LIVE = 90
+DEFAULT_ARCHIVE_CHUNK_SIZE = 10_000
+DEFAULT_ROTATION_RUNTIME_SECONDS = 5.0
 
 
 class AuditEventType(Enum):
@@ -41,6 +66,7 @@ class AuditEventType(Enum):
     CACHE_HIT = "cache_hit"
     CACHE_MISS = "cache_miss"
     CACHE_INVALIDATE = "cache_invalidate"
+    RPC_RATE_LIMIT_EXCEEDED = "rpc.rate_limit.exceeded"
 
 
 class AuditSeverity(Enum):
@@ -87,7 +113,14 @@ class AuditLogger:
         self,
         audit_dir: Optional[Path] = None,
         enable_export: bool = True,
-        retention_days: int = 90
+        retention_days: int = 90,
+        max_size_mb: float = DEFAULT_MAX_SIZE_MB,
+        max_rows_live: int = DEFAULT_MAX_ROWS_LIVE,
+        max_age_days_live: int = DEFAULT_MAX_AGE_DAYS_LIVE,
+        archive_chunk_size: int = DEFAULT_ARCHIVE_CHUNK_SIZE,
+        archive_dir: Optional[Path] = None,
+        db_path: Optional[Path] = None,
+        rotation_runtime_seconds: float = DEFAULT_ROTATION_RUNTIME_SECONDS,
     ):
         """Initialize audit logger
 
@@ -96,11 +129,18 @@ class AuditLogger:
             enable_export: Enable JSON export functionality
             retention_days: Number of days to retain audit logs
         """
-        self.audit_dir = audit_dir or (Path.home() / ".poor-cli" / "audit")
+        self.audit_dir = audit_dir or (Path.home() / ".poor-cli")
         self.audit_dir.mkdir(parents=True, exist_ok=True)
-        self.db_path = self.audit_dir / "audit.db"
+        self.db_path = db_path or (self.audit_dir / "audit.db")
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.archive_dir = archive_dir or (self.audit_dir / "audit" / "archive")
         self.enable_export = enable_export
         self.retention_days = retention_days
+        self.max_size_mb = max_size_mb
+        self.max_rows_live = max_rows_live
+        self.max_age_days_live = max_age_days_live
+        self.archive_chunk_size = archive_chunk_size
+        self.rotation_runtime_seconds = rotation_runtime_seconds
 
         self._init_database()
         logger.info(f"Initialized audit logger at {self.audit_dir}")
@@ -387,6 +427,294 @@ class AuditLogger:
             logger.error(f"Failed to query audit events: {e}")
             return []
 
+    def rotate_if_needed(
+        self,
+        *,
+        now: Optional[datetime] = None,
+        max_runtime_seconds: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Archive old/excess audit rows without changing the audit table schema."""
+        runtime_limit = self.rotation_runtime_seconds if max_runtime_seconds is None else max_runtime_seconds
+        deadline = time.monotonic() + max(float(runtime_limit), 0.0)
+        archived = 0
+        chunks = 0
+        vacuum_needed = False
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            while True:
+                if runtime_limit is not None and time.monotonic() >= deadline and chunks > 0:
+                    break
+                rows = self._rotation_chunk(conn, now=now)
+                if not rows:
+                    break
+                self._archive_rows_and_delete(conn, rows)
+                archived += len(rows)
+                chunks += 1
+                vacuum_needed = True
+
+        if vacuum_needed:
+            self._vacuum_best_effort()
+
+        return {"archived": archived, "chunks": chunks, "db_path": str(self.db_path)}
+
+    rotate = rotate_if_needed
+
+    def archive(
+        self,
+        *,
+        before: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> int:
+        """Archive rows older than `before`; mainly used by scheduled rotation/tests."""
+        archived = 0
+        chunk_limit = max(1, int(limit or self.archive_chunk_size))
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            while True:
+                where = ""
+                params: list[Any] = []
+                if before:
+                    where = "WHERE timestamp < ?"
+                    params.append(before)
+                rows = self._fetch_rows(
+                    conn,
+                    where=where,
+                    params=params,
+                    limit=chunk_limit,
+                )
+                if not rows:
+                    break
+                self._archive_rows_and_delete(conn, rows)
+                archived += len(rows)
+                if len(rows) < chunk_limit:
+                    break
+        if archived:
+            self._vacuum_best_effort()
+        return archived
+
+    def export_range(
+        self,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        output_path: Optional[Path] = None,
+    ) -> int:
+        """Export live DB + archives as JSONL, sorted by timestamp."""
+        if not self.enable_export:
+            logger.warning("Export is disabled")
+            return 0
+
+        rows = list(self.iter_export_rows(start_time=start_time, end_time=end_time))
+        if output_path is None:
+            for row in rows:
+                print(json.dumps(row, sort_keys=True), file=sys.stdout)
+            return len(rows)
+
+        output_path = output_path.expanduser()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, "w", encoding="utf-8") as handle:
+            for row in rows:
+                handle.write(json.dumps(row, sort_keys=True))
+                handle.write("\n")
+        return len(rows)
+
+    def export_range_to_string(
+        self,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+    ) -> str:
+        return "".join(
+            json.dumps(row, sort_keys=True) + "\n"
+            for row in self.iter_export_rows(start_time=start_time, end_time=end_time)
+        )
+
+    def iter_export_rows(
+        self,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+    ) -> Iterable[Dict[str, Any]]:
+        by_id: dict[str, Dict[str, Any]] = {}
+        for row in self._iter_archive_rows(start_time=start_time, end_time=end_time):
+            event_id = str(row.get("event_id", ""))
+            if event_id:
+                by_id[event_id] = row
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            where_parts = []
+            params: list[Any] = []
+            if start_time:
+                where_parts.append("timestamp >= ?")
+                params.append(start_time)
+            if end_time:
+                where_parts.append("timestamp <= ?")
+                params.append(end_time)
+            where = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+            for row in self._fetch_rows(conn, where=where, params=params, limit=None):
+                by_id[str(row["event_id"])] = row
+
+        yield from sorted(by_id.values(), key=lambda row: (str(row.get("timestamp", "")), str(row.get("event_id", ""))))
+
+    def _rotation_chunk(self, conn: sqlite3.Connection, *, now: Optional[datetime]) -> List[Dict[str, Any]]:
+        row_count = int(conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0])
+        if row_count <= 0:
+            return []
+
+        age_cutoff = None
+        age_count = 0
+        if self.max_age_days_live and self.max_age_days_live > 0:
+            current = now or datetime.now()
+            age_cutoff = (current - timedelta(days=self.max_age_days_live)).isoformat()
+            age_count = int(conn.execute(
+                "SELECT COUNT(*) FROM audit_events WHERE timestamp < ?",
+                (age_cutoff,),
+            ).fetchone()[0])
+
+        excess_rows = max(0, row_count - max(int(self.max_rows_live or 0), 0)) if self.max_rows_live else 0
+        size_exceeded = self._size_cap_exceeded()
+        if age_count <= 0 and excess_rows <= 0 and not size_exceeded:
+            return []
+
+        if age_count > 0 and age_cutoff is not None:
+            oldest = conn.execute(
+                "SELECT timestamp FROM audit_events WHERE timestamp < ? ORDER BY timestamp ASC LIMIT 1",
+                (age_cutoff,),
+            ).fetchone()
+            if oldest is None:
+                return []
+            month_start, month_end = self._month_bounds(str(oldest["timestamp"]))
+            return self._fetch_rows(
+                conn,
+                where="WHERE timestamp < ? AND timestamp >= ? AND timestamp < ?",
+                params=[age_cutoff, month_start, month_end],
+                limit=min(self.archive_chunk_size, age_count),
+            )
+
+        oldest = conn.execute("SELECT timestamp FROM audit_events ORDER BY timestamp ASC LIMIT 1").fetchone()
+        if oldest is None:
+            return []
+        month_start, month_end = self._month_bounds(str(oldest["timestamp"]))
+        limit = min(self.archive_chunk_size, excess_rows) if excess_rows > 0 else self.archive_chunk_size
+        return self._fetch_rows(
+            conn,
+            where="WHERE timestamp >= ? AND timestamp < ?",
+            params=[month_start, month_end],
+            limit=limit,
+        )
+
+    def _fetch_rows(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        where: str,
+        params: list[Any],
+        limit: Optional[int],
+    ) -> List[Dict[str, Any]]:
+        select_cols = ", ".join(AUDIT_COLUMNS)
+        query = f"SELECT rowid AS _rowid, {select_cols} FROM audit_events {where} ORDER BY timestamp ASC, event_id ASC"
+        query_params = list(params)
+        if limit is not None:
+            query += " LIMIT ?"
+            query_params.append(max(1, int(limit)))
+        rows = conn.execute(query, query_params).fetchall()
+        return [dict(row) for row in rows]
+
+    def _archive_rows_and_delete(self, conn: sqlite3.Connection, rows: List[Dict[str, Any]]) -> None:
+        if not rows:
+            return
+        archive_rows = [{key: row.get(key) for key in AUDIT_COLUMNS} for row in rows]
+        rowids = [int(row["_rowid"]) for row in rows]
+        conn.execute("BEGIN")
+        try:
+            self._append_archive_atomic(archive_rows)
+            conn.executemany("DELETE FROM audit_events WHERE rowid = ?", [(rowid,) for rowid in rowids])
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+    def _append_archive_atomic(self, rows: List[Dict[str, Any]]) -> None:
+        if not rows:
+            return
+        month = self._archive_month(str(rows[0].get("timestamp", "")))
+        if any(self._archive_month(str(row.get("timestamp", ""))) != month for row in rows):
+            raise ValueError("Archive chunks must not span months")
+        self.archive_dir.mkdir(parents=True, exist_ok=True)
+        path = self.archive_dir / f"{month}.jsonl.gz"
+        fd, tmp_name = tempfile.mkstemp(prefix=f".{month}.", suffix=".jsonl.gz.tmp", dir=self.archive_dir)
+        os.close(fd)
+        tmp_path = Path(tmp_name)
+        try:
+            with gzip.open(tmp_path, "wt", encoding="utf-8") as out:
+                if path.exists():
+                    with gzip.open(path, "rt", encoding="utf-8") as existing:
+                        for line in existing:
+                            out.write(line)
+                for row in rows:
+                    out.write(json.dumps(row, sort_keys=True))
+                    out.write("\n")
+            os.replace(tmp_path, path)
+        except Exception:
+            with contextlib.suppress(Exception):
+                tmp_path.unlink()
+            raise
+
+    def _iter_archive_rows(
+        self,
+        *,
+        start_time: Optional[str],
+        end_time: Optional[str],
+    ) -> Iterable[Dict[str, Any]]:
+        if not self.archive_dir.exists():
+            return
+        for path in sorted(self.archive_dir.glob("*.jsonl.gz")):
+            try:
+                with gzip.open(path, "rt", encoding="utf-8") as handle:
+                    for line in handle:
+                        if not line.strip():
+                            continue
+                        row = json.loads(line)
+                        timestamp = str(row.get("timestamp", ""))
+                        if start_time and timestamp < start_time:
+                            continue
+                        if end_time and timestamp > end_time:
+                            continue
+                        yield row
+            except Exception as e:
+                logger.warning(f"Failed to read audit archive {path}: {e}")
+
+    def _size_cap_exceeded(self) -> bool:
+        if not self.max_size_mb or self.max_size_mb <= 0:
+            return False
+        try:
+            return self.db_path.stat().st_size > int(float(self.max_size_mb) * 1024 * 1024)
+        except FileNotFoundError:
+            return False
+
+    def _vacuum_best_effort(self) -> None:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                conn.execute("VACUUM")
+        except Exception as e:
+            logger.debug(f"Audit DB vacuum skipped: {e}")
+
+    @staticmethod
+    def _archive_month(timestamp: str) -> str:
+        if len(timestamp) >= 7:
+            return timestamp[:7]
+        return datetime.now().strftime("%Y-%m")
+
+    @classmethod
+    def _month_bounds(cls, timestamp: str) -> tuple[str, str]:
+        month = cls._archive_month(timestamp)
+        year, raw_month = month.split("-", 1)
+        year_int = int(year)
+        month_int = int(raw_month)
+        if month_int == 12:
+            return month, f"{year_int + 1:04d}-01"
+        return month, f"{year_int:04d}-{month_int + 1:02d}"
+
     def export_to_json(
         self,
         output_path: Path,
@@ -458,3 +786,17 @@ def get_audit_logger() -> AuditLogger:
     if _audit_logger is None:
         _audit_logger = AuditLogger()
     return _audit_logger
+
+
+def audit_export(
+    since: Optional[str] = None,
+    to: Optional[Path | str] = None,
+    *,
+    until: Optional[str] = None,
+    audit_dir: Optional[Path] = None,
+) -> str:
+    logger_instance = AuditLogger(audit_dir=audit_dir) if audit_dir else get_audit_logger()
+    if to is not None:
+        logger_instance.export_range(start_time=since, end_time=until, output_path=Path(to))
+        return str(to)
+    return logger_instance.export_range_to_string(start_time=since, end_time=until)

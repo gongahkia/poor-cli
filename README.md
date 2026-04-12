@@ -5,8 +5,6 @@
 
 # `poor-cli`
 
-Provider-[agnostic](https://www.merriam-webster.com/dictionary/agnostic) & [BYOK](#model-support), [multiplayer](#multiplayer) coding agent for the [CLI](https://en.wikipedia.org/wiki/Command-line_interface) and [Neovim](https://neovim.io/).
-
 ```txt
                ____   ___   ___  ____        ____ _     ___
   {o,o}       |  _ \ / _ \ / _ \|  _ \      / ___| |   |_ _|
@@ -15,60 +13,18 @@ Provider-[agnostic](https://www.merriam-webster.com/dictionary/agnostic) & [BYOK
               |_|    \___/ \___/|_| \_\     \____|_____|___|
 ```
 
-## Stack
+Provider-agnostic BYOK AI coding agent - Neovim-native, multiplayer-ready.
 
-* *Script*: [Rust](https://rust-lang.org/), [Python](https://www.python.org/), [Lua](https://www.lua.org/), [Vim Script](https://vimhelp.org/usr_41.txt.html), [Bash](https://www.gnu.org/software/bash/)
-* *Dependencies*: [ratatui](https://crates.io/crates/ratatui), [crossterm](https://crates.io/crates/crossterm), [tokio](https://crates.io/crates/tokio), [clap](https://crates.io/crates/clap), [serde](https://crates.io/crates/serde), [google-genai](https://pypi.org/project/google-genai/), [rich](https://pypi.org/project/rich/), [PyYAML](https://pypi.org/project/PyYAML/), [aiofiles](https://pypi.org/project/aiofiles/), [aiohttp](https://pypi.org/project/aiohttp/), [cryptography](https://pypi.org/project/cryptography/)
+`nvim-poor-cli` gives Neovim inline ghost text, chat, plan review, checkpoints, context panels, and provider switching. The Python backend (`poor-cli-server --stdio`) owns model routing, tools, session state, policy checks, and multiplayer transport.
 
-* *Optional SDKs*: [openai](https://pypi.org/project/openai/), [anthropic](https://pypi.org/project/anthropic/)
-* *Distribution*: [Docker](https://www.docker.com/), [GitHub Actions](https://github.com/features/actions)
+<!-- TODO: real screenshot. v6 placeholders are labeled in-image until owner-provided captures land. -->
+![Neovim chat panel mid-response](./asset/reference/v6/1.png)
 
-## Screenshots
-
-![](./asset/reference/v5/1.png)
-![](./asset/reference/v5/2.png)
-![](./asset/reference/v5/3.png)
-![](./asset/reference/v5/4.png)
-![](./asset/reference/v5/5.png)
-![](./asset/reference/v5/6.png)
-
-## Usage
-
-The below instructions are for locally installing and running `poor-cli`.
-
-1. Ideally, install the published `poor-cli` package from [pip]() when you want the normal end-user path.
+## Install
 
 ```console
-$ python3 -m pip install --upgrade 'poor-cli[all]'     # everything
-$ python3 -m pip install --upgrade 'poor-cli[openai,anthropic]'  # pick providers
-$ python3 -m pip install --upgrade 'poor-cli[multiplayer]'  # WebRTC
-$ poor-cli install-info
-$ poor-cli
+$ python3 -m pip install --upgrade 'poor-cli[all]'
 ```
-
-2. Alternatively, clone `poor-cli` to modify and build it from source.
-
-```console
-$ git clone https://github.com/gongahkia/poor-cli.git && cd poor-cli
-$ python3 -m venv .venv && source .venv/bin/activate
-$ pip install uv
-$ uv pip install ".[all]"
-```
-
-3. Then run any of the below commands to start `poor-cli`'s TUI.
-
-```console
-$ poor-cli                 
-$ ./run.sh                   
-$ ./run_tui.sh               
-
-$ python3 -m poor_cli        
-
-$ docker build -t poor-cli .
-$ docker run -it --env-file .env poor-cli
-```
-
-4. To use `poor-cli`'s [Neovim plugin](https://neovim.io/), the easiest way to install this is with the [lazy.nvim](https://github.com/folke/lazy.nvim) package manager.
 
 ```lua
 {
@@ -76,22 +32,61 @@ $ docker run -it --env-file .env poor-cli
     submodules = false,
     config = function()
         require("poor-cli").setup({
-            trigger_key = "<C-Space>",  -- Trigger completion
-            accept_key = "<Tab>",       -- Accept completion
-            chat_key = "<leader>pc",    -- Toggle chat panel
-            provider = nil,             -- Auto-detect from env
+            -- your options here
         })
     end,
 }
 ```
 
-## Architecture
+## Quickstart
 
-![](./asset/reference/architecture.png)
+1. Install the Python package and Neovim plugin.
+2. Export one provider key, for example `export GEMINI_API_KEY=...`.
+3. Open Neovim and run `:PoorCliChat`.
 
-## Model support
+Run `:checkhealth poor-cli` if the server does not start.
 
-`poor-cli` supports provider/model selection via `/switch` (inside TUI) or `--provider/--model` flags. You can pass any model ID accepted by the provider SDK/API.
+Credential lookup order is OS keyring, then env var, then plaintext config. Install `poor-cli[keyring]` or `poor-cli[all]` to enable macOS Keychain, Linux Secret Service, or Windows Credential Manager storage; env/plaintext fallback remains supported for CI and dev shells.
+
+## Features
+
+- Inline ghost text completion with manual trigger, accept, dismiss, and streaming partials.
+- Chat panel with markdown rendering and request-scoped cancellation.
+- Provider switching across Gemini, OpenAI, Anthropic, OpenRouter, and Ollama.
+- Guarded plan review, diagnostics, trust status, checkpoints, run history, and context panels.
+- `nvim-cmp` and `blink.cmp` completion integration.
+- Invite-only multiplayer bridge from Neovim through the Python server.
+
+## Screenshots
+
+![Diff review panel placeholder](./asset/reference/v6/2.png)
+![Cost HUD and lualine placeholder](./asset/reference/v6/3.png)
+![Onboarding wizard placeholder](./asset/reference/v6/4.png)
+![Navigator panels placeholder](./asset/reference/v6/5.png)
+
+## How It Works
+
+```txt
+Neovim buffers, chat, panels
+            |
+            v
+Lua plugin: nvim-poor-cli
+            |
+            v
+JSON-RPC over stdio
+            |
+            v
+Python server: poor-cli-server
+            |
+            +--> provider adapters
+            +--> tool execution + policy
+            +--> sessions + checkpoints
+            +--> multiplayer bridge
+```
+
+## Model Support
+
+`poor-cli` uses provider/model selection through the Python backend. Pass any model ID accepted by the selected provider.
 
 | Provider | Key | Default Model | Common Models | Capabilities in `poor-cli` |
 |---|---|---|---|---|
@@ -103,28 +98,7 @@ $ docker run -it --env-file .env poor-cli
 
 ## Multiplayer
 
-`poor-cli-server` runs multiplayer as an invite-only, owner-authoritative [P2P](https://en.wikipedia.org/wiki/Peer-to-peer) session over [WebRTC DataChannels](https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API/Using_data_channels). The host prints signed viewer and prompter
-invite codes for each room it serves.
-
-### Start host
-
-```console
-$ poor-cli-server --host --bind 0.0.0.0 --port 8765 --room dev --room docs
-```
-
-### Optional ngrok helper
-
-```console
-$ poor-cli-server --host --bind 127.0.0.1 --port 8765 --room dev --ngrok
-```
-
-### Join from TUI
-
-```console
-$ poor-cli --remote-invite <signed-viewer-or-prompter-invite>
-```
-
-### Join from Neovim
+`poor-cli-server` runs invite-only, owner-authoritative P2P sessions over WebRTC DataChannels. Neovim joins through the plugin bridge:
 
 ```lua
 require("poor-cli").setup({
@@ -135,166 +109,39 @@ require("poor-cli").setup({
 })
 ```
 
-Full protocol details, failure behavior, and compatibility notes are also available [here](./docs/MULTIPLAYER.md).
+See [docs/MULTIPLAYER.md](./docs/MULTIPLAYER.md) for protocol details, invite format, host setup, and failure behavior.
 
-## Available Commands
+## Commands
 
-Type `@path/to/file` in any message to attach file context.  
-Use quoted refs for spaces: `@"docs/My File.md"` or `@'docs/My File.md'`.  
-Run `!<command> [| optional question]` to execute local shell output and optionally ask the model about it.  
+Neovim commands, keymaps, health checks, blink.cmp setup, and troubleshooting live in [nvim-poor-cli/README.md#commands](./nvim-poor-cli/README.md#commands).
 
-**Core Workflow:**
-- `/help` - Show all available commands
-- `/onboarding` - Start guided CLI onboarding
-- `/plan` - Generate a plan before executing
-- `/history` - Show recent messages
-- `/sessions` - List recent sessions
-- `/new-session` - Start a fresh session
-- `/queue` - Manage prompt queue (add/list/clear/drop)
-- `/compact` - Manage context (compact/compress/handoff)
-- `/search` - Search transcript, tools, and diffs
-- `/status` - Show canonical session status summary
-- `/runs` - Inspect recent shared run history
-- `/workflow` - Inspect guided workflow templates and starter scaffolds
-- `/export` - Export conversation history
-- `/retry` - Retry last request
-- `/edit-last` - Edit and resend last prompt
-- `/copy` - Copy last assistant response
-- `/quit` - Exit the TUI
-- `/exit` - Exit the TUI (alias)
-- `/clear` - Clear conversation history
-- `/clear-output` - Clear screen output only
-- `/cost` - Show session token usage and estimated cost
-- `/ollama-models` - List locally available Ollama models
-- `/mcp-health` - Check health of MCP servers
+Core entry points:
 
-**Review & Safety:**
-- `/review` - Review code or staged diff
-- `/test` - Generate tests for a file
-- `/permission-mode` - Show permission mode
-- `/sandbox` - Show or set sandbox preset
-- `/instructions` - Inspect the active instruction stack
-- `/memory` - Show or update repo-local memory
-- `/policy` - Inspect repo-local hooks and audit status
-- `/context` - Open backend context inspector or `/context explain`
-- `/trust` - Open the trust center for provider, sandbox, rollback, and policy state
-- `/timeline` - Open agent timeline and diffs
-- `/explain-diff` - Explain behavior and risk in current diff
-- `/fix-failures` - Analyze latest test/lint failure output
-- `/checkpoints` - Browse and manage checkpoints
-- `/checkpoint` - Create named checkpoint (optional label)
-- `/save` - Quick checkpoint alias
-- `/rewind` - Restore checkpoint (alias for /undo)
-- `/restore` - Restore latest checkpoint (alias for /undo)
-- `/diff` - Compare two files
-- `/undo` - Undo file changes (restore last or specific checkpoint)
-- `/plan-mode` - Toggle plan-first execution guidance
-- `/gc` - Clean up stale checkpoints
+- `:PoorCliChat`
+- `:PoorCliComplete`
+- `:PoorCliStatus`
+- `:PoorCliTrust`
+- `:PoorCliDoctor`
+- `:PoorCliCheckpoints`
 
-**Providers & Config:**
-- `/provider` - Show provider info, models, or switch (F2)
-- `/switch` - Switch provider/model (alias for /provider switch)
-- `/providers` - List providers (alias for /provider switch)
-- `/config` - Show active configuration
-- `/model-info` - Show model capabilities (alias for /provider)
-- `/profile` - Set execution profile (speed|safe|deep-review)
-- `/settings` - List editable config settings
-- `/setup` - Open the guided setup summary and recommended first workflow
-- `/env` - API key editor (alias for /setup)
-- `/api-key` - Open the API key editor or use `/api-key status`
-- `/verbose` - Toggle verbose logging
-- `/toggle` - Toggle boolean config value
-- `/set` - Set config key to a value
-- `/theme` - Show or set UI theme (dark/light)
-- `/tools` - List backend tools
-- `/mcp` - Inspect or control MCP servers and tools
-
-**Economy & Output:**
-- `/broke` - Set poor mode (terse responses)
-- `/my-treat` - Set rich mode (comprehensive responses)
-- `/economy` - Show or switch economy preset (frugal|balanced|quality)
-- `/savings` - Show economy savings dashboard
-
-**Context & Reuse:**
-- `/files` - List pinned context files
-- `/add` - Pin file/directory for context
-- `/drop` - Unpin context file
-- `/clear-files` - Clear all pinned context files
-- `/focus` - Manage persistent coding focus state
-- `/resume` - Resume with branch/checkpoint/session summary
-- `/workspace-map` - Summarize repository layout and hotspots
-- `/bootstrap` - Detect project type and suggest quickstart commands
-- `/context-budget` - Rank context files against a token budget
-- `/image` - Queue image for next message
-- `/save-prompt` - Save reusable prompt
-- `/use` - Load and run saved prompt
-- `/prompts` - List saved prompts
-- `/save-session` - Save current session for later restore
-- `/restore-session` - Restore most recent saved session
-
-**Automation & Tasks:**
-- `/autopilot` - Toggle bounded autonomous execution mode
-- `/qa` - Run background QA watch for lint/tests
-- `/task` - Manage durable background tasks, including retry and replay
-- `/automation` - Inspect automation run history and replay automations
-- `/inbox` - Show pending and actionable tasks
-- `/skills` - Inspect or run repo and user skills
-- `/commands` - Inspect or run repo and user commands
-- `/watch` - Watch directory for changes
-- `/unwatch` - Stop watch mode
-
-**Services & Shell:**
-- `/doctor` - Open structured diagnostics with remediation guidance
-- `/service` - Manage local background services
-- `/ollama` - Manage Ollama service and models
-- `/run` - Run shell command via backend
-- `/read` - Read file through backend
-- `/pwd` - Show current working directory
-- `/ls` - List files in directory
-
-**Git & Workspace:**
-- `/commit` - Create commit message from staged diff
-
-**Collaboration:**
-- `/collab` - Start, join, summarize, and manage collaboration sessions
-- `/pass` - Hand driver role to the next collaborator
-- `/suggest` - Send suggestion to the active driver
-- `/leave` - Disconnect from collaboration session
-
-**Workflows:**
-- `/standup` - Summarize yesterday's git activity for standup
-- `/weekly-update` - Synthesize this week's PRs into a weekly update
-- `/pr-summary` - Summarize recent PRs by teammate and theme
-- `/release-notes` - Draft release notes from merged PRs
-- `/release-check` - Pre-release verification: changelog, migrations, tests
-- `/changelog` - Update changelog with this week's highlights
-- `/ci-failures` - Summarize CI failures and flaky tests; suggest fixes
-- `/ci-debug` - Debug latest CI failure; find root cause
-- `/triage` - Triage new issues; suggest owner, priority, labels
-- `/scan-bugs` - Scan recent commits for likely bugs
-- `/test-coverage` - Find untested paths and add focused tests
-- `/perf-audit` - Audit recent changes for performance regressions
-- `/dep-drift` - Detect dependency drift and propose alignment
-- `/dep-upgrade` - Scan outdated deps; propose safe upgrades
-- `/update-docs` - Update project docs with recent changes
-- `/skill-suggest` - Suggest next skills to deepen from recent work
-- `/perf-opportunity` - Find top performance improvement opportunities
-## Available Tools
-
-`poor-cli` can currently use these tools.
-
-* *File & Workspace Tools*: `read_file`, `write_file`, `edit_file`, `list_directory`, `glob_files`, `grep_files`, `copy_file`, `move_file`, `delete_file`, `create_directory`, `diff_files`
-* *Execution & Quality Tools*: `bash`, `run_tests`, `format_and_lint`, `dependency_inspect`, `process_logs`
-* *Git Tools*: `git_status`, `git_diff`, `git_status_diff`, `apply_patch_unified`
-* *Network/Data Tools*: `fetch_url`, `web_search`, `json_yaml_edit`
-* *Optional GitHub Tools* *(available when `gh` CLI is installed)*: `gh_pr_list`, `gh_pr_view`, `gh_pr_create`, `gh_pr_comment`, `gh_issue_list`, `gh_issue_view`
-
-## Other notes
+## Development
 
 Supported Python versions are `3.11`, `3.12`, `3.13`, and `3.14`.
 
-For safety, `workspace-write` and `review-only` block shell commands that imply network access, including `curl`, `wget`, `gh`, and `git push`. Use `full-access` only when that network reach is intentional.
+```console
+$ git clone https://github.com/gongahkia/poor-cli.git
+$ cd poor-cli
+$ python3 -m venv .venv
+$ source .venv/bin/activate
+$ python3 -m pip install -e '.[all,dev]'
+$ make lint
+$ make test
+```
 
-<div align="center">
-    <img src="./asset/logo/1.png" width="30%">
-</div>
+## License
+
+MIT.
+
+## Acknowledgements
+
+Inspired by Neovim-native AI workflows and BYOK provider control.

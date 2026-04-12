@@ -22,6 +22,7 @@ from .review_cmds import (
     run_review_file_mode,
     run_commit_mode,
 )
+from .audit import run_audit_mode
 
 __all__ = [
     "run_checkpoint_mode",
@@ -40,4 +41,5 @@ __all__ = [
     "run_context_mode",
     "run_workflow_mode",
     "run_services_mode",
+    "run_audit_mode",
 ]

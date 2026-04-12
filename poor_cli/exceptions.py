@@ -131,6 +131,12 @@ class ConfigurationError(PoorCLIError):
     pass
 
 
+class CapabilityError(PoorCLIError):
+    """Raised when a provider lacks a required declared capability"""
+    ERROR_CODE = "CAPABILITY_ERROR"
+    pass
+
+
 class MissingAPIKeyError(ConfigurationError):
     """Raised when no API key is configured for the active provider — allows soft-init for first-run wizard."""
     ERROR_CODE = "MISSING_API_KEY"

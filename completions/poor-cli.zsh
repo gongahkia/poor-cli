@@ -15,10 +15,10 @@ _poor_cli() {
         'install-info:Inspect launcher selection'
         'exec:Run one shared-core request'
         'task:Manage durable tasks'
-        'automation:Manage scheduled automations'
+        'automation:Manage AutomationRule triggers'
         'github-task:Create task from GitHub event'
         'skills:List and run skills'
-        'commands:List and run command wrappers'
+        'commands:Legacy alias for slash-trigger AutomationRules'
         'server:Run JSON-RPC server'
         'telegram:Run Telegram bot frontend'
         'watch:Watch files for inline instructions'
@@ -40,6 +40,7 @@ _poor_cli() {
         'tools:List available tools'
         'mcp:Show MCP status'
         'cost:Show cost and economy'
+        'audit:Export or rotate audit logs'
         'search:Search the codebase'
         'review:Review file or staged diff'
         'commit:Generate commit message'
@@ -67,6 +68,7 @@ _poor_cli() {
         'serve:Run automation scheduler loop'
         'history:Show automation history'
         'replay:Replay last automation run'
+        'migrate:Migrate legacy extension configs'
     )
     agent_subcommands=(
         'start:Start background agent'
@@ -215,6 +217,9 @@ _poor_cli() {
                     ;;
                 history)
                     _arguments '1:automation id:' '--limit=[History entry limit]' '--json[Emit JSON payload]'
+                    ;;
+                migrate)
+                    _arguments '--dry-run[Preview migration]' '--force[Overwrite existing PRD 064 backup]' '--restore[Restore from PRD 064 backup]' '--json[Emit JSON payload]'
                     ;;
             esac
             ;;
@@ -435,6 +440,14 @@ _poor_cli() {
                 return
             fi
             _arguments '--config=[Config file]:file:_files' '--json[Emit JSON]'
+            ;;
+
+        audit)
+            if (( CURRENT == 3 )); then
+                _describe -t audit_subcommands 'audit commands' '(export rotate)'
+                return
+            fi
+            _arguments '--from=[Start timestamp]' '--since=[Start timestamp]' '--to=[End timestamp]' '--until=[End timestamp]' '--out=[Output file]:file:_files' '--output=[Output file]:file:_files' '--json[Emit JSON]'
             ;;
 
         search)

@@ -174,21 +174,6 @@ Score each turn for importance using a small model and prune the bottom N% rathe
 
 ---
 
-### 13. Speculative Decoding with Draft Models
-**What it solves:** Cost per token (especially for predictable code)
-
-Pair a small draft model (0.5B) with the main model. The draft proposes K tokens, the main verifies them in one forward pass. **Up to 3× faster LLM inference**. For coding agents specifically, acceptance rates are very high because so many tokens are syntactically determined (closing braces, type annotations, imports). **EAGLE-3** uses prediction heads attached to the target model's internals, eliminating the need for a separate draft model.
-
-**Why moderate:** Requires inference-layer access (vLLM, SGLang). Not usable with closed APIs.
-
-**Reference:**
-- [vLLM speculative decoding docs](https://docs.vllm.ai/en/latest/features/spec_decode/)
-- [EAGLE-3 GitHub](https://github.com/SafeAILab/EAGLE)
-- [Medusa](https://github.com/FasterDecoding/Medusa)
-- [Speculative Sampling (DeepMind)](https://arxiv.org/abs/2302.01318)
-
----
-
 ### 14. Lazy Tool Schema Loading
 **What it solves:** Verbose tool schemas in system prompt
 

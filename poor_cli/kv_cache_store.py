@@ -13,9 +13,8 @@ Backend support:
 import asyncio
 import hashlib
 import json
-import shutil
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 

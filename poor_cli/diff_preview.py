@@ -10,7 +10,6 @@ from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 from rich.syntax import Syntax
-from rich.text import Text
 from rich import box
 
 from poor_cli.exceptions import FileOperationError, setup_logger
@@ -361,7 +360,7 @@ class DiffPreview:
 
             except Exception as e:
                 logger.error(f"Failed to preview file write: {e}")
-                self.console.print(f"[yellow]Warning: Could not read existing file for preview[/yellow]")
+                self.console.print("[yellow]Warning: Could not read existing file for preview[/yellow]")
                 return True
 
         else:
@@ -407,7 +406,7 @@ class DiffPreview:
             if old_text is not None:
                 # Text replacement mode
                 if old_text not in original_content:
-                    self.console.print(f"[yellow]Warning: Text to replace not found in file[/yellow]")
+                    self.console.print("[yellow]Warning: Text to replace not found in file[/yellow]")
                     return
                 new_content = original_content.replace(old_text, new_text)
 
@@ -418,7 +417,7 @@ class DiffPreview:
                 end = end_line if end_line else start + 1
 
                 if start < 0 or start >= len(lines):
-                    self.console.print(f"[red]Invalid line range[/red]")
+                    self.console.print("[red]Invalid line range[/red]")
                     return
 
                 lines[start:end] = [new_text]

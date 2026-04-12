@@ -73,8 +73,14 @@
       "category": "Core Workflow"
     },
     {
+      "command": "/audit-export",
+      "description": "Export audit log JSONL",
+      "recommended": false,
+      "category": "Core Workflow"
+    },
+    {
       "command": "/workflow",
-      "description": "Inspect guided workflow templates and starter scaffolds",
+      "description": "Legacy alias: inspect slash-trigger AutomationRule scaffolds",
       "recommended": false,
       "category": "Core Workflow"
     },
@@ -475,7 +481,7 @@
     },
     {
       "command": "/automation",
-      "description": "Inspect automation run history and replay automations",
+      "description": "Inspect AutomationRule run history and replay runs",
       "recommended": false,
       "category": "Automation & Tasks"
     },
@@ -493,7 +499,7 @@
     },
     {
       "command": "/commands",
-      "description": "Inspect or run repo and user commands",
+      "description": "Legacy alias: inspect or run slash-trigger AutomationRules",
       "recommended": false,
       "category": "Automation & Tasks"
     },

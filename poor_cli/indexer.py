@@ -14,7 +14,6 @@ Index stored at .poor-cli/index/code.db.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import importlib
 import json
@@ -22,16 +21,15 @@ import os
 import re
 import sqlite3
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .exceptions import setup_logger
 from .embeddings import (
     EmbeddingProvider,
     cosine_similarity,
     get_embedding_provider,
-    rank_by_similarity,
 )
 
 logger = setup_logger(__name__)
@@ -787,7 +785,6 @@ def _split_large_chunk(
     if not methods:
         return [parent_chunk] # can't split further
     chunks: List[CodeChunk] = []
-    src = parent_chunk.content.encode("utf-8") if isinstance(parent_chunk.content, str) else parent_chunk.content
     parent_start = node.start_point[0]
     # header: everything from parent start to first method
     first_method_line = methods[0].start_point[0]

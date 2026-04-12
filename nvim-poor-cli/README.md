@@ -27,8 +27,8 @@
 ### Requirements
 
 - Neovim 0.9+
-- Python 3.9+
-- `poor-cli` Python package installed: `pip install poor-cli` (provides `poor-cli-server`)
+- Python 3.11+
+- `poor-cli` Python package installed: `python3 -m pip install --upgrade 'poor-cli[all]'` (provides `poor-cli-server`)
 - At least one API key: `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
 - Optional: `telescope.nvim` for `:PoorCliCheckpoints`
 
@@ -181,7 +181,7 @@ This reuses the same enablement rules and completion request shaping as the inli
 | `:PoorCliStatus` | Show the shared session status summary with routing, context, and collaboration state |
 | `:PoorCliTrust` | Open the trust center for provider, sandbox, rollback, policy, and privacy posture |
 | `:PoorCliRuns` | Open recent shared run history |
-| `:PoorCliWorkflow [name]` | List workflow templates or inspect one starter scaffold |
+| `:PoorCliWorkflow [name]` | Legacy alias: list slash-trigger AutomationRule scaffolds |
 | `:PoorCliContext` | Open the backend context explanation for the current editing session |
 | `:PoorCliChat` | Toggle chat panel |
 | `:PoorCliSend [message]` | Send message to chat |
@@ -239,10 +239,10 @@ What Neovim currently supports:
 - trust-center visibility in `:PoorCliTrust`
 - plan review prompts, room events, and suggestions in the chat panel
 
-What remains TUI-first:
+Host-room controls currently handled by the Python server:
 - creating/stopping host sessions
-- advanced room admin commands (`/host-server ...`)
-- direct `/pass` and `/pair` command UX inside Neovim
+- advanced room admin commands (`:PoorCliHostServer ...`)
+- direct driver handoff and pair-session orchestration
 
 ## 🔧 API
 
@@ -271,8 +271,8 @@ poor_cli.send("Hello!")  -- Send message to chat
 ### Server won't start
 
 1. Check that `poor-cli-server` is in your PATH: `which poor-cli-server`
-2. Install if missing: `pip install poor-cli`
-3. Check Python version: `python3 --version` (needs 3.9+)
+2. Install if missing: `python3 -m pip install --upgrade 'poor-cli[all]'`
+3. Check Python version: `python3 --version` (needs 3.11+)
 4. Open the managed log with `:PoorCliOpenLog`
 5. Capture a full report with `:PoorCliDoctor`, `:PoorCliTrust`, or `:PoorCliCopyDebugInfo`
 
@@ -320,7 +320,7 @@ When reporting a Neovim-side issue, include:
 
 ## 📄 License
 
-MIT License - see [LICENSE](../LICENSE)
+MIT License
 
 ## 🙏 Acknowledgements
 

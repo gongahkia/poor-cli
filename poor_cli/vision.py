@@ -6,7 +6,10 @@ import base64
 import os
 import re
 from pathlib import Path
-from typing import List, Tuple
+from typing import Any, List, Tuple
+
+from .exceptions import CapabilityError
+from .providers.capability import ProviderCapability, provider_has_capability
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 
@@ -33,6 +36,14 @@ def detect_image_paths(text: str) -> List[str]:
     pattern = r'(?:^|\s)(/[\w./~-]+\.(?:png|jpg|jpeg|gif|webp|bmp))\b'
     matches = re.findall(pattern, text, flags=re.IGNORECASE)
     return [path for path in matches if os.path.isfile(path)]
+
+
+def detect_image_paths_for_provider(text: str, provider: Any) -> List[str]:
+    """Detect image paths and reject unsupported providers."""
+    images = detect_image_paths(text)
+    if images and not provider_has_capability(provider, ProviderCapability.VISION):
+        raise CapabilityError("Provider does not declare vision capability")
+    return images
 
 
 def build_multimodal_parts_gemini(text: str, images: List[str]) -> List[dict]:

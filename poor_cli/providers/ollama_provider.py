@@ -15,6 +15,7 @@ except ImportError:
     AIOHTTP_AVAILABLE = False
 
 from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall, UsageMetadata
+from .capability import PROVIDER_CAPABILITIES
 from .tool_translator import ToolTranslator, ProviderType
 from ..provider_catalog import default_model_for_provider
 from ..retry import RetryConfig, with_retry
@@ -24,23 +25,18 @@ from ..structured_output import (
 )
 from ..exceptions import (
     APIError,
-    APIRateLimitError,
     APITimeoutError,
     APIConnectionError,
     ConfigurationError,
     setup_logger,
 )
-from ..speculative_decoding import (
-    SpeculativeDecodingManager,
-    resolve_draft_model,
-    is_spec_decode_available,
-)
-
 logger = setup_logger(__name__)
 
 
 class OllamaProvider(BaseProvider):
     """Ollama local model provider implementation"""
+
+    capabilities = PROVIDER_CAPABILITIES["ollama"]
 
     def preferred_edit_format(self) -> str:
         return "whole_file"
@@ -76,7 +72,6 @@ class OllamaProvider(BaseProvider):
         self.system_instruction = None
         self._structured_output: Optional[StructuredOutputConfig] = None  # per-request
         self._kv_cache_store = None # set via attach_kv_cache()
-        self._spec_decode_mgr: Optional[SpeculativeDecodingManager] = None
 
         logger.info(f"Ollama provider initialized (server: {self.base_url})")
 
@@ -420,31 +415,6 @@ class OllamaProvider(BaseProvider):
         """
         self._kv_cache_store = store
         logger.info("kv cache store attached (ollama: prefix-ordering only)")
-
-    def attach_speculative_decoding(self, config: Any) -> None:
-        """Attach speculative decoding manager from app config.
-
-        NOTE: Ollama has no native speculative decoding API.
-        If spec decode is enabled, this logs a warning directing the user
-        to vLLM. The manager is stored for status reporting only.
-        """
-        mgr = SpeculativeDecodingManager.from_config(config, "ollama", self.model_name)
-        if mgr.enabled:
-            logger.warning(
-                "speculative decoding requested but Ollama lacks native support. "
-                "use vLLM instead: %s", mgr.get_launch_command()
-            )
-            mgr.enabled = False # disable since ollama can't use it
-        self._spec_decode_mgr = mgr
-        draft = resolve_draft_model(self.model_name)
-        if draft:
-            logger.info("draft model available for %s -> %s (requires vLLM)", self.model_name, draft)
-
-    def get_speculative_decoding_status(self) -> dict:
-        """Return spec decode status dict for diagnostics."""
-        if self._spec_decode_mgr:
-            return self._spec_decode_mgr.status()
-        return {"enabled": False, "reason": "ollama does not support speculative decoding; use vLLM"}
 
     def get_capabilities(self) -> ProviderCapabilities:
         """Get Ollama capabilities"""

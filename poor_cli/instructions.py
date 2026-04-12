@@ -20,6 +20,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import yaml
 
+from .agent_rules import discover_rule_paths, load_rules
 from .skills import InstructionSkillContext, SkillLoadPlan, SkillRegistry
 
 INSTRUCTION_FILE_NAMES: tuple[str, ...] = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
@@ -148,6 +149,14 @@ class InstructionManager:
         self._cache_key = None
         self._cached_snapshot = None
 
+    def attach_rule_watcher(self, watcher: Any) -> None:
+        def _invalidate_on_rule_change(event: Any) -> None:
+            paths = getattr(event, "paths", ()) or ()
+            if any(Path(str(path)).name in {"AGENTS.md", "CLAUDE.md"} for path in paths):
+                self.invalidate_cache()
+
+        watcher.on_change(_invalidate_on_rule_change)
+
     def _compute_cache_key(
         self,
         plan_mode_enabled: bool,
@@ -197,8 +206,6 @@ class InstructionManager:
         sources: List[InstructionSource] = []
         sources.extend(self._load_runtime_policy(plan_mode_enabled))
         sources.extend(self._load_hierarchical_memory(referenced_files))
-        sources.extend(self._load_repo_root_instructions())
-        sources.extend(self._load_path_local_instructions(referenced_files))
 
         memory = self._load_memory()
         if memory is not None:
@@ -281,12 +288,11 @@ class InstructionManager:
             if source is not None:
                 sources.append(source)
 
+        sources.extend(self._load_agent_rule_sources(referenced_files, normalized_refs))
+
         # 3 + 4) project + local memory from root -> cwd
         for directory in self._dirs_root_to_cwd(self.repo_root):
-            project_candidates = [
-                directory / PROJECT_MEMORY_FILE_NAME,
-                directory / RULES_FILE_NAME,
-            ]
+            project_candidates = [directory / RULES_FILE_NAME]
             for path in project_candidates:
                 source = self._build_memory_source(
                     path,
@@ -319,6 +325,66 @@ class InstructionManager:
                 sources.append(local_source)
 
         return sources
+
+    def _load_agent_rule_sources(
+        self,
+        referenced_files: Sequence[str],
+        normalized_refs: Sequence[str],
+    ) -> List[InstructionSource]:
+        targets = self._rule_target_directories(referenced_files)
+        seen: set[Path] = set()
+        sources: List[InstructionSource] = []
+        for target in targets:
+            for rule in load_rules(target, repo_root=self.repo_root, referenced_files=normalized_refs):
+                if rule.path in seen:
+                    continue
+                seen.add(rule.path)
+                sources.append(
+                    InstructionSource(
+                        kind=rule.kind,
+                        label=self._rule_label(rule.kind, rule.precedence),
+                        content=rule.content,
+                        path=self._relative_or_absolute(rule.path),
+                        metadata={
+                            "precedence": rule.precedence,
+                            "applyTo": list(rule.apply_to),
+                            "priority": rule.priority,
+                        },
+                    )
+                )
+        return sources
+
+    def _rule_target_directories(self, referenced_files: Sequence[str]) -> List[Path]:
+        if not referenced_files:
+            return [self.repo_root]
+        targets: List[Path] = []
+        seen: set[Path] = set()
+        for raw_path in referenced_files:
+            candidate = Path(str(raw_path)).expanduser()
+            if not candidate.is_absolute():
+                candidate = (self.repo_root / candidate).resolve()
+            else:
+                candidate = candidate.resolve()
+            directory = candidate if candidate.is_dir() else candidate.parent
+            try:
+                directory.relative_to(self.repo_root)
+            except ValueError:
+                directory = self.repo_root
+            if directory in seen:
+                continue
+            seen.add(directory)
+            targets.append(directory)
+        return targets or [self.repo_root]
+
+    @staticmethod
+    def _rule_label(kind: str, precedence: int) -> str:
+        if kind == "agents_md":
+            return f"Rule Source {precedence + 1}: AGENTS.md"
+        if kind == "claude_md":
+            return f"Rule Source {precedence + 1}: CLAUDE.md"
+        if kind == "user_global":
+            return f"Rule Source {precedence + 1}: User AGENTS.md"
+        return f"Rule Source {precedence + 1}"
 
     def _managed_memory_paths(self) -> List[Path]:
         raw = str(os.getenv(MANAGED_MEMORY_ENV, DEFAULT_MANAGED_MEMORY)).strip()
@@ -807,6 +873,13 @@ class InstructionManager:
                 entries.append(f"{path}:{stat.st_mtime_ns}:{stat.st_size}")
             except OSError:
                 entries.append(f"{path}:0:0")
+        for directory in self._rule_target_directories(referenced_files):
+            for path in discover_rule_paths(directory, repo_root=self.repo_root):
+                try:
+                    stat = path.stat()
+                    entries.append(f"{path}:{stat.st_mtime_ns}:{stat.st_size}")
+                except OSError:
+                    entries.append(f"{path}:0:0")
         return hashlib.sha256("|".join(entries).encode("utf-8", errors="replace")).hexdigest()
 
     def _load_memory(self) -> Optional[InstructionSource]:

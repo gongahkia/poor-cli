@@ -40,6 +40,7 @@ def test_heuristic_fallback_uses_calibration_table(fresh_counter):
 
 def test_heuristic_fallback_for_model_specific_override(fresh_counter):
     # gpt-5.1 has a model-specific override (3.7)
+    fresh_counter._tiktoken_disabled = True
     text = "x" * 370
     result = fresh_counter.count(text, provider="openai", model="gpt-5.1")
     assert result.count == int(370 / 3.7)

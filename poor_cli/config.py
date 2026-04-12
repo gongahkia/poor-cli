@@ -4,7 +4,6 @@ Configuration management for poor-cli
 Handles loading, saving, and validating user configuration from YAML files.
 """
 
-import os
 import yaml
 from pathlib import Path
 from typing import Dict, Any, Optional, List
@@ -12,9 +11,10 @@ from dataclasses import dataclass, asdict, field
 from enum import Enum
 from poor_cli.exceptions import ConfigurationError, setup_logger
 from poor_cli.provider_catalog import all_provider_entries, default_model_for_provider
-from poor_cli.economy import EconomyConfig, ECONOMY_PRESETS, apply_economy_preset
+from poor_cli.economy import EconomyConfig
 from poor_cli.retry import RetryConfig
 from poor_cli.circuit_breaker import CircuitBreakerConfig
+from poor_cli.server.rate_limit import DEFAULT_RPC_RATE_LIMITS
 
 logger = setup_logger(__name__)
 
@@ -240,6 +240,12 @@ class ContextCompressionConfig:
 
 
 @dataclass
+class ContextConfig:
+    """Context assembly feature flags."""
+    safe_pretokenization: bool = False  # v1 default off; v2 flip requires real-world parse/edit telemetry
+
+
+@dataclass
 class OutputTruncationConfig:
     """Tool output truncation for context efficiency."""
     enabled: bool = True
@@ -295,6 +301,16 @@ class CheckpointConfig:
     checkpoint_on_session_end: bool = False  # Create checkpoint at end
     max_age_hours: int = 0  # prune checkpoints older than N hours (0 = disabled)
     max_disk_mb: int = 0  # prune when total disk exceeds N MB (0 = disabled)
+
+
+@dataclass
+class AuditConfig:
+    """Audit log rotation and archive settings."""
+    max_size_mb: int = 100
+    max_rows_live: int = 100000
+    max_age_days_live: int = 90
+    archive_chunk_size: int = 10000
+    archive_dir: str = ".poor-cli/audit/archive/"
 
 
 @dataclass
@@ -411,13 +427,30 @@ class KVCacheConfig:
 
 
 @dataclass
-class SpeculativeDecodingConfig:
-    """Speculative decoding for local inference (vLLM only)."""
-    enabled: bool = False # off by default, requires vLLM backend
-    backend: str = "vllm" # only "vllm" supported; ollama lacks spec decode API
-    draft_model: str = "auto" # "auto" = lookup from DRAFT_MODEL_PAIRS
-    num_speculative_tokens: int = 5 # draft tokens per step
-    vllm_api_base: str = "http://localhost:8000" # vLLM OpenAI-compat endpoint
+class ResearchModuleConfig:
+    """Feature flag for one research module."""
+    enabled: bool = False
+
+
+@dataclass
+class ResearchConfig:
+    """Research module flags. All default off."""
+    latent_communication: ResearchModuleConfig = field(default_factory=ResearchModuleConfig)
+    neural_code_encoder: ResearchModuleConfig = field(default_factory=ResearchModuleConfig)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'ResearchConfig':
+        def module_cfg(name: str) -> ResearchModuleConfig:
+            raw = data.get(name, {})
+            if isinstance(raw, bool):
+                return ResearchModuleConfig(enabled=raw)
+            if isinstance(raw, dict):
+                return ResearchModuleConfig(**raw)
+            return ResearchModuleConfig()
+        return cls(
+            latent_communication=module_cfg("latent_communication"),
+            neural_code_encoder=module_cfg("neural_code_encoder"),
+        )
 
 
 @dataclass
@@ -443,17 +476,22 @@ class Config:
     workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
     plan_mode: PlanModeConfig = field(default_factory=PlanModeConfig)
     checkpoint: CheckpointConfig = field(default_factory=CheckpointConfig)
+    audit: AuditConfig = field(default_factory=AuditConfig)
     agentic: AgenticConfig = field(default_factory=AgenticConfig)
     cost_guardrails: CostGuardrailConfig = field(default_factory=CostGuardrailConfig)
     fallback: FallbackConfig = field(default_factory=FallbackConfig)
     context_compression: ContextCompressionConfig = field(default_factory=ContextCompressionConfig)
+    context: ContextConfig = field(default_factory=ContextConfig)
     output_truncation: OutputTruncationConfig = field(default_factory=OutputTruncationConfig)
     repo_index: RepoIndexConfig = field(default_factory=RepoIndexConfig)
     kv_cache: KVCacheConfig = field(default_factory=KVCacheConfig)
-    speculative_decoding: SpeculativeDecodingConfig = field(default_factory=SpeculativeDecodingConfig)
+    research: ResearchConfig = field(default_factory=ResearchConfig)
     economy: EconomyConfig = field(default_factory=EconomyConfig)
     retry: RetryConfig = field(default_factory=RetryConfig)
     circuit_breaker: CircuitBreakerConfig = field(default_factory=CircuitBreakerConfig)
+    rpc_rate_limits: Dict[str, Dict[str, float]] = field(default_factory=lambda: {
+        key: dict(value) for key, value in DEFAULT_RPC_RATE_LIMITS.items()
+    })
 
     # auto-feedback: run lint/test after file mutations
     _auto_feedback_enabled: bool = False
@@ -477,17 +515,20 @@ class Config:
             "workflow": asdict(self.workflow),
             "plan_mode": asdict(self.plan_mode),
             "checkpoint": asdict(self.checkpoint),
+            "audit": asdict(self.audit),
             "agentic": asdict(self.agentic),
             "cost_guardrails": asdict(self.cost_guardrails),
             "fallback": asdict(self.fallback),
             "context_compression": asdict(self.context_compression),
+            "context": asdict(self.context),
             "output_truncation": asdict(self.output_truncation),
             "repo_index": asdict(self.repo_index),
             "kv_cache": asdict(self.kv_cache),
-            "speculative_decoding": asdict(self.speculative_decoding),
+            "research": asdict(self.research),
             "economy": asdict(self.economy),
             "retry": {k: v for k, v in asdict(self.retry).items() if k != "retryable_exceptions"},
             "circuit_breaker": asdict(self.circuit_breaker),
+            "rpc_rate_limits": self.rpc_rate_limits,
             "mcp_servers": self.mcp_servers,
         }
         return config_dict
@@ -508,17 +549,24 @@ class Config:
             workflow=WorkflowConfig(**data.get("workflow", {})),
             plan_mode=PlanModeConfig(**data.get("plan_mode", {})),
             checkpoint=CheckpointConfig(**data.get("checkpoint", {})),
+            audit=AuditConfig(**data.get("audit", {})),
             agentic=AgenticConfig(**data.get("agentic", {})),
             cost_guardrails=CostGuardrailConfig(**data.get("cost_guardrails", {})),
             fallback=FallbackConfig(**data.get("fallback", {})),
             context_compression=ContextCompressionConfig(**data.get("context_compression", {})),
+            context=ContextConfig(**data.get("context", {})),
             output_truncation=OutputTruncationConfig(**data.get("output_truncation", {})),
             repo_index=RepoIndexConfig(**data.get("repo_index", {})),
             kv_cache=KVCacheConfig(**data.get("kv_cache", {})),
-            speculative_decoding=SpeculativeDecodingConfig(**data.get("speculative_decoding", {})),
+            research=ResearchConfig.from_dict(data.get("research", {})),
             economy=EconomyConfig(**data.get("economy", {})),
             retry=RetryConfig(**{k: v for k, v in data.get("retry", {}).items() if k != "retryable_exceptions"}),
             circuit_breaker=CircuitBreakerConfig(**data.get("circuit_breaker", {})),
+            rpc_rate_limits=data.get(
+                "rpc_rate_limits",
+                {key: dict(value) for key, value in DEFAULT_RPC_RATE_LIMITS.items()},
+            ),
+            api_keys=data.get("api_keys", {}) if isinstance(data.get("api_keys", {}), dict) else {},
             mcp_servers=data.get("mcp_servers", {}),
         )
 
@@ -621,19 +669,22 @@ class ConfigManager:
             "workflow",
             "plan_mode",
             "checkpoint",
+            "audit",
             "agentic",
             "cost_guardrails",
             "fallback",
             "context_compression",
+            "context",
             "output_truncation",
             "kv_cache",
-            "speculative_decoding",
+            "research",
             "economy",
             "mcp_servers",
             "file_cache",
             "lsp",
             "latent_comm",
             "prompt_library",
+            "rpc_rate_limits",
         }
 
         for section_name, section_overrides in overrides.items():
@@ -648,6 +699,13 @@ class ConfigManager:
                 merged = dict(config.mcp_servers)
                 merged.update(section_overrides)
                 config.mcp_servers = merged
+                continue
+
+            if section_name == "rpc_rate_limits":
+                if not isinstance(section_overrides, dict):
+                    logger.warning("rpc_rate_limits override must be a mapping, skipping")
+                    continue
+                config.rpc_rate_limits = section_overrides
                 continue
 
             if not isinstance(section_overrides, dict):
@@ -815,6 +873,16 @@ class ConfigManager:
         if self.config.security.max_bash_timeout_seconds < 1:
             raise ConfigurationError("max_bash_timeout_seconds must be at least 1")
 
+        # Validate audit config
+        if self.config.audit.max_size_mb < 0:
+            raise ConfigurationError("audit.max_size_mb must be non-negative")
+        if self.config.audit.max_rows_live < 1:
+            raise ConfigurationError("audit.max_rows_live must be at least 1")
+        if self.config.audit.max_age_days_live < 0:
+            raise ConfigurationError("audit.max_age_days_live must be non-negative")
+        if self.config.audit.archive_chunk_size < 1:
+            raise ConfigurationError("audit.archive_chunk_size must be at least 1")
+
         # Validate multiplayer config
         if self.config.multiplayer.signaling_port < 1:
             raise ConfigurationError("multiplayer.signaling_port must be at least 1")
@@ -829,7 +897,7 @@ class ConfigManager:
         return True
 
     def get_api_key(self, provider: str) -> Optional[str]:
-        """Get API key for provider from environment or config
+        """Get API key for provider from keyring, environment, or config
 
         Args:
             provider: Provider name (gemini, openai, anthropic, claude, ollama)
@@ -837,43 +905,45 @@ class ConfigManager:
         Returns:
             API key or None
         """
+        return self.get_api_key_info(provider)["key"]
+
+    def get_api_key_info(self, provider: str) -> Dict[str, Optional[str]]:
+        """Get API key plus non-secret source metadata."""
         provider = provider.lower()
 
-        # Handle claude as alias for anthropic
         if provider == "claude":
             provider = "anthropic"
 
-        # Get provider config
         provider_config = self.config.model.providers.get(provider)
         if not provider_config:
             logger.warning(f"Unknown provider: {provider}")
-            return None
+            return {"key": None, "source": "none", "env_var": None}
 
-        # Check environment variable first
         env_var = provider_config.api_key_env_var
-        api_key = os.getenv(env_var)
-        if api_key:
-            return api_key
+        from poor_cli.credentials import get_credential_store
 
-        # Check config api_keys dict (backward compatibility)
-        if hasattr(self.config, 'api_keys'):
-            key = self.config.api_keys.get(provider)
-            if key:
-                return key
+        lookup = get_credential_store().get_with_source(
+            provider,
+            env_var=env_var,
+            config_keys=getattr(self.config, "api_keys", {}),
+        )
+        if lookup.key:
+            return {"key": lookup.key, "source": lookup.source, "env_var": env_var}
 
-        # Check encrypted secure key store as final fallback.
         try:
             secure_store_file = Path.home() / ".poor-cli" / "keys" / "encrypted_keys.json"
             if not secure_store_file.exists():
-                return None
+                return {"key": None, "source": "none", "env_var": env_var}
 
             from poor_cli.api_key_manager import get_api_key_manager
 
-            return get_api_key_manager().get_key(provider)
+            key = get_api_key_manager().get_key(provider)
+            if key:
+                return {"key": key, "source": "legacy-encrypted", "env_var": env_var}
         except Exception as e:
             logger.debug(f"Secure key store lookup failed for {provider}: {e}")
 
-        return None
+        return {"key": None, "source": "none", "env_var": env_var}
 
     def get_provider_config(self, provider: str) -> Optional['ProviderConfig']:
         """Get configuration for a specific provider

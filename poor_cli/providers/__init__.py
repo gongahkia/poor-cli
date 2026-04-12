@@ -9,6 +9,7 @@ Multi-provider support for AI models including:
 """
 
 from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall, UsageMetadata
+from .capability import ProviderCapability
 from .tool_translator import ToolTranslator, ProviderType
 from .provider_factory import ProviderFactory
 
@@ -19,6 +20,7 @@ __all__ = [
     # Base classes
     "BaseProvider",
     "ProviderCapabilities",
+    "ProviderCapability",
     "ProviderResponse",
     "FunctionCall",
     "UsageMetadata",

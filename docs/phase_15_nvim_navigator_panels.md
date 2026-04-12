@@ -114,13 +114,13 @@ Picker (via PRD 055 adapter) over saved prompts stored in `.poor-cli/prompts/`, 
 
 ## Agent 15C: Workflow Starter Picker
 
-**Pain points addressed:** `/workflow` surfaces templates as plain text; no category grouping or preview.
+**Pain points addressed:** `/workflow` is now a one-cycle alias for slash-trigger `AutomationRule` scaffolds; no category grouping or preview.
 **Sub-wave:** 15.2 (requires PRD 055)
 **Effort:** small (~2d). **Risk:** low.
 
 ### What to build
 
-Picker over workflow templates defined in `workflow_templates.py` (standup, weekly-update, pr-summary, release-notes, release-check, changelog, ci-failures, ci-debug, triage, scan-bugs, test-coverage, perf-audit, dep-drift, dep-upgrade, update-docs, skill-suggest, perf-opportunity), grouped by category tag.
+Picker over slash-trigger `AutomationRule` workflow scaffolds (standup, weekly-update, pr-summary, release-notes, release-check, changelog, ci-failures, ci-debug, triage, scan-bugs, test-coverage, perf-audit, dep-drift, dep-upgrade, update-docs, skill-suggest, perf-opportunity), grouped by category tag.
 
 ### Implementation details
 
@@ -137,7 +137,7 @@ Picker over workflow templates defined in `workflow_templates.py` (standup, week
 
 ### Out-of-scope / boundary
 
-- Do not add new workflow templates in this PRD.
+- Do not add new AutomationRule scaffolds in this PRD.
 
 ### Acceptance criteria
 

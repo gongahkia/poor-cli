@@ -12,9 +12,9 @@ import hashlib
 import json
 import sqlite3
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from .embeddings import EmbeddingProvider, cosine_similarity, get_embedding_provider
 from .exceptions import setup_logger

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List
 
 # bidi override/embedding/isolate chars (trojan source attacks)
 _BIDI_CHARS = set(range(0x202A, 0x202F)) | set(range(0x2066, 0x206A))

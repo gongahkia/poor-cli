@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 try:
     import torch
-    from poor_cli.latent_communication import (
+    from poor_cli.research.latent_communication import (
         load_model, LatentAgentOrchestrator, is_latent_compatible, LatentBenchmark,
     )
     HAS_DEPS = True

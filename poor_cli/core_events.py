@@ -49,7 +49,9 @@ class CoreEvent:
         checkpoint_id: Optional[str] = None,
         changed: Optional[bool] = None,
         message: str = "",
+        filter_metadata: Optional[Dict[str, Any]] = None,
     ) -> "CoreEvent":
+        filter_metadata = filter_metadata or {}
         return CoreEvent(type="tool_result", data={
             "toolName": tool_name, "toolResult": result, "callId": call_id,
             "iterationIndex": iteration, "iterationCap": cap,
@@ -58,6 +60,9 @@ class CoreEvent:
             "checkpointId": checkpoint_id,
             "changed": changed,
             "message": message,
+            "outputFilter": filter_metadata,
+            "originalSize": filter_metadata.get("originalSize", 0),
+            "filteredSize": filter_metadata.get("filteredSize", 0),
         })
 
     @staticmethod

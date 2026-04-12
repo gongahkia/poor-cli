@@ -393,7 +393,7 @@ def run_workflow_mode(argv: Sequence[str]) -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(list(argv))
     cmd = args.subcommand or "list"
-    from ..workflow_templates import get_workflow_template, list_workflow_templates
+    from ..automations import get_workflow_template, list_workflow_templates
     if cmd == "list":
         templates = list_workflow_templates()
         _print_json([{"name": t.name, "description": t.description} for t in templates])

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, Optional, Tuple
+from dataclasses import dataclass, asdict, field
+from typing import Any, Dict, Tuple
 
 
 @dataclass
@@ -206,10 +206,14 @@ def _strip_fenced_block(match: re.Match) -> str:
     from .code_tokenizer import strip_comments_python, strip_comments_lua, strip_comments_ts, collapse_indentation, collapse_blank_lines
     opener, lang, body, closer = match.group(1), match.group(2), match.group(3), match.group(4)
     ext = _LANG_TO_EXT.get(lang.lower(), "") if lang else ""
-    if ext == ".py": body = strip_comments_python(body)
-    elif ext == ".lua": body = strip_comments_lua(body)
-    elif ext in (".ts", ".js", ".tsx"): body = strip_comments_ts(body)
-    else: return match.group(0) # unknown lang, leave as-is
+    if ext == ".py":
+        body = strip_comments_python(body)
+    elif ext == ".lua":
+        body = strip_comments_lua(body)
+    elif ext in (".ts", ".js", ".tsx"):
+        body = strip_comments_ts(body)
+    else:
+        return match.group(0) # unknown lang, leave as-is
     body = collapse_indentation(body)
     body = collapse_blank_lines(body)
     return f"{opener}{body}{closer}"
@@ -274,6 +278,11 @@ class EconomySavings:
     tokens_saved_by_terse: int = 0
     tokens_saved_by_truncation: int = 0
     tokens_saved_by_failure_amnesia: int = 0
+    tokens_saved_by_safe_pretokenization: int = 0
+    safe_pretokenization_files: int = 0
+    safe_pretokenization_original_tokens: int = 0
+    safe_pretokenization_compressed_tokens: int = 0
+    safe_pretokenization_by_file: Dict[str, int] = field(default_factory=dict)
     tool_calls_avoided: int = 0
     cache_hits: int = 0
     estimated_money_saved_usd: float = 0.0
@@ -308,6 +317,18 @@ class EconomySavingsTracker:
     def record_failure_amnesia(self, tokens_saved: int) -> None:
         self._savings.tokens_saved_by_failure_amnesia += tokens_saved
 
+    def record_safe_pretokenization(self, path: str, original_tokens: int, compressed_tokens: int) -> None:
+        saved = max(0, int(original_tokens) - int(compressed_tokens))
+        if saved <= 0:
+            return
+        self._savings.tokens_saved_by_safe_pretokenization += saved
+        self._savings.safe_pretokenization_files += 1
+        self._savings.safe_pretokenization_original_tokens += max(0, int(original_tokens))
+        self._savings.safe_pretokenization_compressed_tokens += max(0, int(compressed_tokens))
+        key = str(path or "<unknown>")
+        current = self._savings.safe_pretokenization_by_file.get(key, 0)
+        self._savings.safe_pretokenization_by_file[key] = current + saved
+
     def record_cache_hit(self) -> None:
         self._savings.cache_hits += 1
 
@@ -331,6 +352,7 @@ class EconomySavingsTracker:
             + self._savings.tokens_saved_by_terse
             + self._savings.tokens_saved_by_truncation
             + self._savings.tokens_saved_by_failure_amnesia
+            + self._savings.tokens_saved_by_safe_pretokenization
         )
         avg_cost = (cost_per_1k_in + cost_per_1k_out) / 2
         return (total_tokens_saved / 1000) * avg_cost + self._savings.estimated_money_saved_usd

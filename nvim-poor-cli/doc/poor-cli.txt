@@ -198,7 +198,7 @@ COMMANDS                                                *poor-cli-commands*
     Open recent shared run history.
 
 :PoorCliWorkflow [name]                                 *:PoorCliWorkflow*
-    List workflow templates or inspect one starter scaffold.
+    Legacy alias: list slash-trigger AutomationRule scaffolds.
 
 :PoorCliContext                                         *:PoorCliContext*
     Open the backend context explanation for the current editing session.

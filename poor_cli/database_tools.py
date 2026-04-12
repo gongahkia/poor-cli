@@ -9,9 +9,8 @@ Database inspection and management:
 """
 
 import subprocess
-import json
 from pathlib import Path
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 from enum import Enum
 

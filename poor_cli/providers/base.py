@@ -6,6 +6,8 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, AsyncIterator
 from pydantic import BaseModel, Field, field_validator
 
+from .capability import ProviderCapability
+
 
 class ProviderCapabilities(BaseModel):
     """Capabilities supported by a provider"""
@@ -65,6 +67,8 @@ class ProviderResponse(BaseModel):
 
 class BaseProvider(ABC):
     """Base class for all AI model providers"""
+
+    capabilities: frozenset[ProviderCapability] = frozenset()
 
     def __init__(self, api_key: str, model_name: str, **kwargs):
         """Initialize provider

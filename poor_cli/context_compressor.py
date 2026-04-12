@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Set
 
-from .config import ContextCompressionConfig
 from .exceptions import setup_logger
 
 logger = setup_logger(__name__)

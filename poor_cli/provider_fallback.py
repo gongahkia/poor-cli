@@ -6,7 +6,7 @@ active provider returns a rate-limit or 5xx server error.  Integrates
 with per-provider circuit breakers to skip providers known to be down.
 """
 
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from .exceptions import (
     setup_logger,
     APIRateLimitError,

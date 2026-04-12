@@ -193,7 +193,7 @@ def run_memory_mode(argv: Sequence[str]) -> int:
     p_delete.add_argument("--json", action="store_true")
     args = parser.parse_args(list(argv))
     from ..memory import MemoryManager, MemoryEntry
-    mgr = MemoryManager()
+    mgr = MemoryManager(repo_root=Path.cwd(), prefer_agent_rules=True)
     mgr.load()
     if args.subcommand == "list":
         entries = mgr.list_all(type_filter=args.type)

@@ -226,7 +226,6 @@ CodebaseProjection architecture:
 | `poor_cli/neural_code_encoder.py` | HuggingFace embedding provider, neural retriever, projection prototype |
 | `poor_cli/embeddings.py` | Updated `get_embedding_provider()` with HF fallback |
 | `tests/test_neural_encoder.py` | Unit tests + benchmark script |
-| `tests/benchmark_neural_retrieval.json` | Benchmark results on poor-cli codebase |
 | `docs/NEURAL_CODE_EMBEDDINGS.md` | This document |
 
 ## 9. References

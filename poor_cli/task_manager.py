@@ -4,7 +4,6 @@ Durable local task storage, isolated worktrees, and background execution.
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import json
 import os

@@ -164,7 +164,6 @@ The camelCase→snake_case transformation saves ~4% additional tokens but breaks
 - `tests/bench_tokenizer_full.py` — full benchmark (all approaches)
 - `tests/bench_safe_pretok.py` — safe-only variant benchmark
 - `tests/bench_edit_accuracy.py` — edit accuracy validation
-- `tests/tokenizer_bench_results.json` — raw benchmark data
 - `tests/edit_accuracy_results.json` — raw accuracy data
 
 ## References

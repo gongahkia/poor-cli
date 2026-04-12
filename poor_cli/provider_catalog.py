@@ -18,6 +18,7 @@ class ProviderCatalogEntry:
     common_models: tuple[str, ...]
     setup_help: str
     capability_summary: str
+    capabilities: tuple[str, ...]
     base_url: str | None = None
     aliases: tuple[str, ...] = ()
 
@@ -30,6 +31,23 @@ class ModelTier:
     cost_1k_out: float
     speed_rank: int  # 1=fastest, 3=slowest
     context_window: int = 0  # max context tokens (0 = unknown)
+
+
+_CATALOG_CAPABILITIES: dict[str, tuple[str, ...]] = {
+    "gemini": ("streaming", "tool_calling", "system_instructions", "json_mode", "vision"),
+    "openai": ("streaming", "tool_calling", "system_instructions", "json_mode", "vision"),
+    "anthropic": (
+        "streaming",
+        "tool_calling",
+        "system_instructions",
+        "vision",
+        "prompt_caching_prefix",
+        "prompt_caching_block",
+        "extended_thinking",
+    ),
+    "openrouter": ("streaming", "tool_calling", "system_instructions", "json_mode", "vision"),
+    "ollama": ("streaming", "tool_calling", "system_instructions", "json_mode"),
+}
 
 
 @lru_cache(maxsize=1)
@@ -56,6 +74,7 @@ def provider_catalog() -> Dict[str, ProviderCatalogEntry]:
             ),
             setup_help=str(payload.get("setupHelp", "")),
             capability_summary=str(payload.get("capabilitySummary", "")),
+            capabilities=_CATALOG_CAPABILITIES.get(name, ()),
             base_url=str(payload["baseUrl"]) if payload.get("baseUrl") else None,
             aliases=tuple(
                 str(alias) for alias in payload.get("aliases", []) if str(alias).strip()

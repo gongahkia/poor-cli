@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from poor_cli import __version__
-from poor_cli.automation_manager import AutomationManager, parse_daily_schedule, schedule_interval
+from poor_cli.automations import AutomationManager, parse_daily_schedule, schedule_interval
 from poor_cli.config import Config
 from poor_cli.context import ContextManager
 from poor_cli.core import PoorCLICore

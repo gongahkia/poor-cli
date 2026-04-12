@@ -9,11 +9,10 @@ MEMORY.md acts as a searchable index loaded into every session.
 from __future__ import annotations
 
 import re
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional
 
 from .exceptions import setup_logger, ValidationError
 
@@ -102,8 +101,16 @@ def _parse_frontmatter(text: str) -> tuple[Dict[str, str], str]:
 class MemoryManager:
     """Manages persistent memory files in ~/.poor-cli/memory/."""
 
-    def __init__(self, base_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        base_dir: Optional[Path] = None,
+        *,
+        repo_root: Optional[Path] = None,
+        prefer_agent_rules: bool = False,
+    ):
         self._base = (base_dir or Path.home() / ".poor-cli").resolve()
+        self._repo_root = Path(repo_root).resolve() if repo_root is not None else None
+        self._prefer_agent_rules = prefer_agent_rules
         self._memory_dir = self._base / MEMORY_DIR_NAME
         self._index_path = self._memory_dir / INDEX_FILE
         self._entries: Dict[str, MemoryEntry] = {} # keyed by filename
@@ -153,6 +160,11 @@ class MemoryManager:
     def save(self, entry: MemoryEntry) -> MemoryEntry:
         """Save a memory entry to disk and update index."""
         entry.updated_at = datetime.now(timezone.utc).isoformat()
+        if self._prefer_agent_rules and self._repo_root is not None:
+            from .agent_rules import append_memory_entry
+            if append_memory_entry(self._repo_root, entry.name, entry.content, entry.description) is not None:
+                logger.info("saved memory to AGENTS.md: %s", entry.name)
+                return entry
         path = self._memory_dir / entry.filename
         path.write_text(entry.render_file(), encoding="utf-8")
         self._entries[entry.filename] = entry

@@ -1,6 +1,5 @@
 """Tests for config dataclass defaults and validation."""
 import unittest
-from dataclasses import asdict
 
 from poor_cli.config import (
     AgenticConfig,
@@ -9,6 +8,7 @@ from poor_cli.config import (
     HistoryConfig,
     SecurityConfig,
     CheckpointConfig,
+    ContextConfig,
 )
 from poor_cli.economy import EconomyConfig
 
@@ -80,6 +80,12 @@ class TestEconomyConfigDefaults(unittest.TestCase):
         self.assertFalse(cfg.response_cache)
 
 
+class TestContextConfigDefaults(unittest.TestCase):
+    def test_safe_pretokenization_default_false(self):
+        cfg = ContextConfig()
+        self.assertFalse(cfg.safe_pretokenization)
+
+
 class TestModelConfigDefaults(unittest.TestCase):
     def test_default_provider(self):
         cfg = ModelConfig()
@@ -107,6 +113,11 @@ class TestConfigToDict(unittest.TestCase):
         cfg = Config()
         d = cfg.to_dict()
         self.assertIn("security", d)
+
+    def test_to_dict_includes_context_safe_pretokenization(self):
+        cfg = Config()
+        d = cfg.to_dict()
+        self.assertFalse(d["context"]["safe_pretokenization"])
 
 
 class TestSecurityConfigDefaults(unittest.TestCase):

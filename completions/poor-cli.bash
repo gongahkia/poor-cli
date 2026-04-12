@@ -10,7 +10,7 @@ _poor_cli_complete() {
     cmd="${COMP_WORDS[1]}"
     subcmd="${COMP_WORDS[2]}"
 
-    local root_commands="help version tui install install-info exec task automation github-task skills commands server telegram watch deploy preview review-pr agent checkpoint history session memory config profile trust provider doctor status policy tools mcp cost search review commit"
+    local root_commands="help version tui install install-info exec task automation github-task skills commands server telegram watch deploy preview review-pr agent checkpoint history session memory config profile trust provider doctor status policy tools mcp cost audit search review commit"
     local sandbox_presets="read-only review-only workspace-write full-access"
     local routing_modes="manual quality speed cheap private"
     local permission_modes="prompt auto-safe danger-full-access"
@@ -153,7 +153,7 @@ _poor_cli_complete() {
             ;;
 
         automation)
-            local automation_subcommands="create list show enable disable run-now run-due serve history replay"
+            local automation_subcommands="create list show enable disable run-now run-due serve history replay migrate"
             if [[ ${COMP_CWORD} -eq 2 ]]; then
                 COMPREPLY=( $(compgen -W "${automation_subcommands}" -- "${cur}") )
                 return 0
@@ -221,6 +221,12 @@ _poor_cli_complete() {
                 history)
                     if [[ ${cur} == -* ]]; then
                         COMPREPLY=( $(compgen -W "--limit --json" -- "${cur}") )
+                    fi
+                    return 0
+                    ;;
+                migrate)
+                    if [[ ${cur} == -* ]]; then
+                        COMPREPLY=( $(compgen -W "--dry-run --force --restore --json" -- "${cur}") )
                     fi
                     return 0
                     ;;
@@ -473,6 +479,19 @@ _poor_cli_complete() {
                     ;;
             esac
             [[ ${cur} == -* ]] && COMPREPLY=( $(compgen -W "--config --json" -- "${cur}") )
+            return 0
+            ;;
+
+        audit)
+            if [[ ${COMP_CWORD} -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "export rotate" -- "${cur}") )
+                return 0
+            fi
+            if [[ "${subcmd}" == "export" && ${cur} == -* ]]; then
+                COMPREPLY=( $(compgen -W "--from --since --to --until --out --output" -- "${cur}") )
+            elif [[ "${subcmd}" == "rotate" && ${cur} == -* ]]; then
+                COMPREPLY=( $(compgen -W "--json" -- "${cur}") )
+            fi
             return 0
             ;;
 

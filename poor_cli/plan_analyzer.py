@@ -4,13 +4,12 @@ Plan Analyzer for poor-cli
 Analyzes AI responses and generates execution plans.
 """
 
-import re
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from poor_cli.plan_mode import (
     ExecutionPlan, PlanStep, PlanStepType, RiskLevel
 )
-from poor_cli.exceptions import ValidationError, setup_logger
+from poor_cli.exceptions import setup_logger
 
 logger = setup_logger(__name__)
 

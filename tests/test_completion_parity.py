@@ -25,7 +25,7 @@ ROOT_COMMANDS = {
 }
 
 TASK_SUBCOMMANDS = {"create", "list", "show", "start", "wait", "approve", "cancel", "retry", "replay", "run"}
-AUTOMATION_SUBCOMMANDS = {"create", "list", "show", "enable", "disable", "run-now", "run-due", "serve", "history", "replay"}
+AUTOMATION_SUBCOMMANDS = {"create", "list", "show", "enable", "disable", "run-now", "run-due", "serve", "history", "replay", "migrate"}
 AGENT_SUBCOMMANDS = {"start", "list", "logs", "result", "cancel", "run"}
 
 

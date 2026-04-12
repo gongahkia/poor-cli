@@ -4,13 +4,11 @@ Anthropic (Claude) Provider Implementation
 Supports current Claude and Anthropic model families.
 """
 
-import asyncio
-import json
 from typing import List, Dict, Any, Optional, AsyncIterator
 
 try:
     from anthropic import AsyncAnthropic
-    from anthropic import APIError as AnthropicAPIError, RateLimitError as AnthropicRateLimitError
+    from anthropic import RateLimitError as AnthropicRateLimitError
     from anthropic import APIConnectionError as AnthropicConnectionError, APITimeoutError as AnthropicTimeoutError
     ANTHROPIC_AVAILABLE = True
 except ImportError:
@@ -18,7 +16,9 @@ except ImportError:
     AsyncAnthropic = None
 
 from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall, UsageMetadata
+from .capability import PROVIDER_CAPABILITIES
 from .tool_translator import ToolTranslator, ProviderType
+from ..block_cache import enforce_anthropic_cache_control_limit
 from ..provider_catalog import default_model_for_provider
 from ..retry import RetryConfig, with_retry
 from ..exceptions import (
@@ -35,6 +35,8 @@ logger = setup_logger(__name__)
 
 class AnthropicProvider(BaseProvider):
     """Anthropic (Claude) API provider implementation"""
+
+    capabilities = PROVIDER_CAPABILITIES["anthropic"]
 
     def preferred_edit_format(self) -> str:
         return "search_replace"
@@ -131,6 +133,8 @@ class AnthropicProvider(BaseProvider):
                 params["tools"] = tools_copy
             else:
                 params["tools"] = self.tools
+        if self.prompt_caching:
+            enforce_anthropic_cache_control_limit(params)
         return params
 
     def _build_request_messages(self) -> List[Dict[str, Any]]:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from .providers.capability import ProviderCapability, capability_names
 from .provider_probe import (
     normalize_routing_mode,
     probe_providers,
@@ -26,13 +27,21 @@ class ProviderInfoMixin:
             return {"name": "unconfigured", "model": "", "initialized": False, "capabilities": {}}
 
         capabilities: Dict[str, Any] = {}
-        if hasattr(self.provider, "capabilities") and self.provider.capabilities:
-            caps = self.provider.capabilities
+        declared = getattr(self.provider, "capabilities", frozenset())
+        if declared:
+            runtime_caps = self.provider.get_capabilities()
             capabilities = {
-                "streaming": caps.supports_streaming,
-                "function_calling": caps.supports_function_calling,
-                "vision": caps.supports_vision,
-                "max_context_tokens": caps.max_context_tokens,
+                "flags": capability_names(declared),
+                "streaming": ProviderCapability.STREAMING in declared,
+                "function_calling": ProviderCapability.TOOL_CALLING in declared,
+                "vision": ProviderCapability.VISION in declared,
+                "json_mode": ProviderCapability.JSON_MODE in declared,
+                "extended_thinking": ProviderCapability.EXTENDED_THINKING in declared,
+                "prompt_caching_prefix": ProviderCapability.PROMPT_CACHING_PREFIX in declared,
+                "prompt_caching_block": ProviderCapability.PROMPT_CACHING_BLOCK in declared,
+                "grounding": ProviderCapability.GROUNDING in declared,
+                "latent_communication": ProviderCapability.LATENT_COMMUNICATION in declared,
+                "max_context_tokens": runtime_caps.max_context_tokens,
             }
 
         return {
