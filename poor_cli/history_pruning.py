@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from .token_counter import get_token_counter
+
 _FILE_RE = re.compile(r"(?:^|[\s`'\"])((?:[\w.\-]+/)*[\w.\-]+\.[A-Za-z0-9_]+)")
 _DECISION_RE = re.compile(
     r"\b(decided|chosen|approved|rejected|confirmed|implemented|refactored|fixed|switched|kept|dropped)\b",
@@ -117,8 +119,8 @@ class PruningResult:
 class HistoryPruner:
     """score conversation turns and selectively prune low-value turns."""
 
-    def __init__(self, chars_per_token: int = 4):
-        self.chars_per_token = max(1, int(chars_per_token))
+    def __init__(self):
+        pass
 
     def policy_for(self, *, mode: str = "balanced", economy_preset: str = "balanced") -> PruningPolicy:
         normalized_mode = str(mode or "balanced").strip().lower() or "balanced"
@@ -261,7 +263,7 @@ class HistoryPruner:
                         },
                     ),
                     score=score,
-                    token_count=max(1, len(text) // self.chars_per_token) if text else 0,
+                    token_count=(get_token_counter().count(text).count if text else 0),
                     protected=protected,
                     superseded=index in superseded,
                     primary_reason=primary_reason,
@@ -454,7 +456,8 @@ class HistoryPruner:
         return annotated
 
     def _history_tokens(self, history: List[Dict[str, Any]]) -> int:
-        return sum(max(1, len(self._extract_text(message)) // self.chars_per_token) if self._extract_text(message) else 0 for message in history)
+        counter = get_token_counter()
+        return sum(counter.count(text).count for text in (self._extract_text(m) for m in history) if text)
 
     def _build_notification(
         self,

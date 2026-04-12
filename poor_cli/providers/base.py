@@ -207,3 +207,18 @@ class BaseProvider(ABC):
             self.model_name,
             provider_name=self.get_provider_name(),
         )
+
+    def count_tokens(self, text: str, *, model: Optional[str] = None) -> int:
+        """Count tokens for this provider via the shared TokenCounter.
+
+        Subclasses with a native SDK counter should register a CountBackend
+        with the global TokenCounter at construction time rather than
+        overriding this method.
+        """
+        from ..token_counter import get_token_counter
+
+        return get_token_counter().count(
+            text,
+            provider=self.get_provider_name(),
+            model=model or self.model_name,
+        ).count
