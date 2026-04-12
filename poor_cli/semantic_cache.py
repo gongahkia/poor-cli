@@ -25,6 +25,11 @@ DEFAULT_SIMILARITY_THRESHOLD = 0.92
 DEFAULT_TTL_SECONDS = 86400 # 24h
 DEFAULT_MAX_ENTRIES = 2048
 
+# Bumped when the context-hash algorithm changes — on first load with a
+# mismatched version row, pre-existing entries are wiped so stale keys
+# can't serve stale answers. PRD 004.
+CACHE_SCHEMA_VERSION = 2
+
 
 @dataclass
 class CacheResult:
@@ -102,10 +107,47 @@ class SemanticCache:
                 CREATE INDEX IF NOT EXISTS idx_created_at
                 ON semantic_cache(created_at)
             """)
+            self._db.execute("""
+                CREATE TABLE IF NOT EXISTS semantic_cache_meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+            """)
             self._db.commit()
+            self._migrate_schema()
         except Exception as e:
             logger.error("semantic cache db init failed: %s", e)
             self._db = None
+
+    def _migrate_schema(self) -> None:
+        """Wipe entries from earlier cache-key schemas so weak keys can't leak."""
+        if not self._db:
+            return
+        try:
+            row = self._db.execute(
+                "SELECT value FROM semantic_cache_meta WHERE key = 'schema_version'"
+            ).fetchone()
+            current = int(row[0]) if row and row[0] is not None else 1
+        except Exception:
+            current = 1
+        if current >= CACHE_SCHEMA_VERSION:
+            return
+        try:
+            wiped = self._db.execute("SELECT COUNT(*) FROM semantic_cache").fetchone()[0]
+            self._db.execute("DELETE FROM semantic_cache")
+            self._db.execute(
+                "INSERT OR REPLACE INTO semantic_cache_meta(key, value) VALUES ('schema_version', ?)",
+                (str(CACHE_SCHEMA_VERSION),),
+            )
+            self._db.commit()
+            if wiped:
+                self._stats.invalidations += wiped
+                logger.info(
+                    "semantic cache schema bumped v%d to v%d; wiped %d stale entries",
+                    current, CACHE_SCHEMA_VERSION, wiped,
+                )
+        except Exception as e:
+            logger.warning("semantic cache schema migration failed: %s", e)
 
     def _get_provider(self) -> Optional[EmbeddingProvider]:
         if self._provider is None:

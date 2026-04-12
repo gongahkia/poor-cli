@@ -136,5 +136,63 @@ class TestContextHashContentAware(unittest.TestCase):
         self.assertNotEqual(h_before, h_after)
 
 
+class TestSchemaMigration(unittest.TestCase):
+    """PRD 004: old cache entries must be wiped when the key algorithm bumps."""
+
+    def test_legacy_db_is_wiped_on_load(self):
+        import sqlite3
+
+        from poor_cli.semantic_cache import CACHE_SCHEMA_VERSION, SemanticCache
+
+        tmpdir = tempfile.mkdtemp()
+        db_path = Path(tmpdir) / "legacy.db"
+        try:
+            conn = sqlite3.connect(str(db_path))
+            conn.execute(
+                """
+                CREATE TABLE semantic_cache (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    query TEXT NOT NULL,
+                    query_hash TEXT NOT NULL,
+                    context_hash TEXT NOT NULL,
+                    response TEXT NOT NULL,
+                    embedding TEXT NOT NULL,
+                    model_name TEXT DEFAULT '',
+                    created_at REAL NOT NULL,
+                    last_hit_at REAL,
+                    hit_count INTEGER DEFAULT 0,
+                    response_tokens_est INTEGER DEFAULT 0
+                )
+                """
+            )
+            conn.execute(
+                "INSERT INTO semantic_cache "
+                "(query, query_hash, context_hash, response, embedding, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                ("old q", "qh", "path-only-hash", "stale", "[]", time.time()),
+            )
+            conn.commit()
+            conn.close()
+
+            cache = SemanticCache(db_path=db_path)
+            try:
+                conn = sqlite3.connect(str(db_path))
+                count = conn.execute(
+                    "SELECT COUNT(*) FROM semantic_cache"
+                ).fetchone()[0]
+                version_row = conn.execute(
+                    "SELECT value FROM semantic_cache_meta WHERE key='schema_version'"
+                ).fetchone()
+                conn.close()
+            finally:
+                cache.close()
+            self.assertEqual(count, 0)
+            self.assertIsNotNone(version_row)
+            self.assertEqual(int(version_row[0]), CACHE_SCHEMA_VERSION)
+        finally:
+            if db_path.exists():
+                db_path.unlink()
+
+
 if __name__ == "__main__":
     unittest.main()
