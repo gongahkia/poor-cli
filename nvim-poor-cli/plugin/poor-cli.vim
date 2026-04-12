@@ -27,10 +27,19 @@ if !has('nvim-0.9')
   echohl None
 endif
 
-" Warn if setup() is never called
-lua vim.defer_fn(function()
-\   local ok, pc = pcall(require, "poor-cli")
-\   if ok and not pc._setup_complete then
-\     vim.notify("[poor-cli] plugin loaded but setup() not called. Add: require('poor-cli').setup({}) to your config", vim.log.levels.WARN)
-\   end
-\ end, 5000)
+" Warn if setup() is never called — check once on VimEnter rather than a
+" blind 5-second defer_fn, which fires even when the user is still loading
+" their config and creates a race on first open. VimEnter runs after the
+" init flow settles.
+augroup PoorCliSetupCheck
+  autocmd!
+  autocmd VimEnter * ++once lua << EOF
+    local ok, pc = pcall(require, "poor-cli")
+    if ok and not pc._setup_complete then
+      vim.notify(
+        "[poor-cli] plugin loaded but setup() not called. Add: require('poor-cli').setup({}) to your config",
+        vim.log.levels.WARN
+      )
+    end
+EOF
+augroup END
