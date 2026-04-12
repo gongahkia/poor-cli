@@ -115,7 +115,10 @@ _MAX_RUN_TURN_SUMMARIES = 80
 
 # ── CoreEvent: structured events yielded by the agentic loop ─────────
 
-class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
+from .core_provider_info import ProviderInfoMixin
+
+
+class PoorCLICore(PermissionEngineMixin, ContextEngineMixin, ProviderInfoMixin):
     """
     Headless AI coding assistant engine.
     
@@ -5166,59 +5169,8 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             )
         return self.tool_registry.get_tool_declarations()
 
-    def get_provider_info(self) -> Dict[str, Any]:
-        """
-        Get information about the current provider.
-        
-        Returns:
-            Dict with keys: name, model, capabilities, supported_clients.
-        
-        Raises:
-            PoorCLIError: If not initialized.
-        """
-        if not self._initialized or not self.provider or not self.config:
-            # soft-init state: return a minimal stub so lualine/status polling don't spam errors
-            return {"name": "unconfigured", "model": "", "initialized": False, "capabilities": {}}
-        
-        capabilities = {}
-        if hasattr(self.provider, 'capabilities') and self.provider.capabilities:
-            caps = self.provider.capabilities
-            capabilities = {
-                "streaming": caps.supports_streaming,
-                "function_calling": caps.supports_function_calling,
-                "vision": caps.supports_vision,
-                "max_context_tokens": caps.max_context_tokens,
-            }
-        
-        return {
-            "name": self.config.model.provider,
-            "model": self.config.model.model_name,
-            "routingMode": self.get_routing_mode(),
-            "capabilities": capabilities,
-            "supported_clients": list(self.SUPPORTED_CLIENTS),
-        }
-
-    def get_provider_readiness(self) -> Dict[str, Dict[str, Any]]:
-        if not self._config_manager or not self.config:
-            return {}
-        return probe_providers(self._config_manager, self.config)
-
-    def get_routing_mode(self) -> str:
-        if not self.config:
-            return normalize_routing_mode(self._resolved_routing_mode)
-        provider_status = self.get_provider_readiness()
-        self._resolved_routing_mode = resolve_routing_mode(
-            getattr(self.config.model, "routing_mode", "manual"),
-            provider_status,
-        )
-        return self._resolved_routing_mode
-
-    def set_routing_mode(self, routing_mode: str) -> str:
-        normalized = normalize_routing_mode(routing_mode)
-        if self.config is not None:
-            self.config.model.routing_mode = normalized
-        self._resolved_routing_mode = normalized
-        return normalized
+    # get_provider_info, get_provider_readiness, get_routing_mode,
+    # set_routing_mode now live in core_provider_info:ProviderInfoMixin.
 
     def list_workflow_templates(self) -> List[Dict[str, Any]]:
         if not self.config:
