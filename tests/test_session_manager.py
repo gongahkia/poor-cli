@@ -1,7 +1,7 @@
 """tests for poor_cli.session_manager module."""
 
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from poor_cli.session_manager import SessionManager, SessionState
 from poor_cli.exceptions import ValidationError
 
@@ -113,7 +113,7 @@ class TestSessionManager(unittest.TestCase):
 
     def test_permission_callback_propagated(self):
         mgr = self._make_mgr()
-        cb = MagicMock()
+        cb = AsyncMock()
         mgr.set_permission_callback(cb)
         s = mgr.create_session(label="new")
         self.assertEqual(s.core.permission_callback, cb)

@@ -7,6 +7,9 @@ and tool execution with policy hooks.
 from __future__ import annotations
 
 import asyncio
+import functools
+import inspect
+from collections.abc import Awaitable
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -20,6 +23,47 @@ _MUTATING_TOOLS = {
     "write_file", "edit_file", "delete_file",
     "apply_patch_unified", "json_yaml_edit",
 }
+
+PermissionDecision = Dict[str, Any]
+PermissionCallback = Callable[[str, Dict[str, Any], Optional[Dict[str, Any]]], Awaitable[PermissionDecision]]
+
+
+def _as_async(cb: Callable[..., Any]) -> PermissionCallback:
+    """Wrap a permission callback into a 3-arg async coroutine.
+
+    Accepts either an async or sync callable. If the callable's signature does
+    not accept a ``preview`` argument, the wrapper drops it before forwarding.
+    Use this at every registration site that still passes a legacy shape.
+
+    This callable MUST be a coroutine function once stored on the core; pass
+    legacy sync functions through this helper first.
+    """
+    try:
+        sig = inspect.signature(cb)
+        accepts_preview = len(sig.parameters) >= 3 or any(
+            p.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+            for p in sig.parameters.values()
+        )
+    except (TypeError, ValueError):
+        accepts_preview = True
+
+    if inspect.iscoroutinefunction(cb):
+        if accepts_preview:
+            return cb
+
+        @functools.wraps(cb)
+        async def async_wrapped(tool: str, args: Dict[str, Any], preview: Optional[Dict[str, Any]] = None) -> PermissionDecision:
+            return await cb(tool, args)
+
+        return async_wrapped
+
+    @functools.wraps(cb)
+    async def sync_wrapped(tool: str, args: Dict[str, Any], preview: Optional[Dict[str, Any]] = None) -> PermissionDecision:
+        if accepts_preview:
+            return cb(tool, args, preview)
+        return cb(tool, args)
+
+    return sync_wrapped
 
 
 class PermissionEngineMixin:
@@ -92,10 +136,7 @@ class PermissionEngineMixin:
                 "approvedChunks": [], "source": "default-allow",
             })
             return decision
-        try:
-            decision = await self._permission_callback(tool_name, tool_args, preview)
-        except TypeError:
-            decision = await self._permission_callback(tool_name, tool_args)
+        decision = await self._permission_callback(tool_name, tool_args, preview)
         normalized = self._normalize_permission_decision(decision)
         if normalized["allowed"] and self.config and getattr(self.config.agentic, "path_scoped_approval", True):
             target_paths = self._inspect_tool_targets(tool_name, tool_args)
