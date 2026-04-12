@@ -496,7 +496,8 @@ async def run_agent_worker(agent_id: str, repo_root: str) -> None:
         return
 
     # auto-approve all tools based on sandbox preset
-    core._permission_callback = _auto_approve_callback(agent.sandbox_preset)
+    from .permission_engine import _as_async
+    core._permission_callback = _as_async(_auto_approve_callback(agent.sandbox_preset))
 
     accumulated_text = ""
     done_reason = ""
