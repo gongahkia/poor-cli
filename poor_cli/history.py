@@ -21,6 +21,7 @@ from dataclasses import dataclass, asdict
 from contextlib import contextmanager
 from threading import Lock
 from poor_cli.exceptions import FileOperationError, setup_logger
+from poor_cli.persisted import run_sqlite_migrations
 from poor_cli.provider_catalog import default_model_for_provider
 
 logger = setup_logger(__name__)
@@ -313,6 +314,8 @@ class HistoryManager:
                 """)
 
                 self._backfill_fts(conn)
+
+                run_sqlite_migrations(conn, "history")
 
                 # Archived sessions table for old data
                 cursor.execute("""
