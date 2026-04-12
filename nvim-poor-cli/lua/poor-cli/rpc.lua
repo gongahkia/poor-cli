@@ -282,7 +282,7 @@ local function ensure_startup_feedback()
     if uv and uv.new_timer then
         M.startup_feedback.timer = uv.new_timer()
         if M.startup_feedback.timer then
-            M.startup_feedback.timer:start(0, 120, vim.schedule_wrap(function()
+            M.startup_feedback.timer:start(0, 250, vim.schedule_wrap(function()
                 render_startup_feedback()
             end))
         end
