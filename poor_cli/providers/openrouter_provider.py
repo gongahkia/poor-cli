@@ -28,8 +28,8 @@ class OpenRouterProvider(OpenAIProvider):
                  base_url: Optional[str] = None):
         if not OPENAI_AVAILABLE:
             raise ConfigurationError(
-                "OpenRouter provider requires 'openai' package. "
-                "Install with: pip install openai"
+                "OpenRouter provider requires the 'openai' package. "
+                "Install with: pip install 'poor-cli[openrouter]'"
             )
         if not model_name:
             try:

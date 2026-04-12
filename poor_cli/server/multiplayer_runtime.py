@@ -154,7 +154,7 @@ async def _run_stdio_bridge(invite_code: str = "") -> None:
         from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription
     except ImportError as e:
         raise RuntimeError(
-            "Bridge mode requires aiortc. Install the current package dependencies in this environment and retry."
+            "Bridge mode requires aiortc. Install with: pip install 'poor-cli[multiplayer]'"
         ) from e
 
     bootstrap = _decode_bridge_invite(invite_code)

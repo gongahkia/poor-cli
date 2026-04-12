@@ -39,7 +39,9 @@ The below instructions are for locally installing and running `poor-cli`.
 1. Ideally, install the published `poor-cli` package from [pip]() when you want the normal end-user path.
 
 ```console
-$ python3 -m pip install --upgrade poor-cli
+$ python3 -m pip install --upgrade 'poor-cli[all]'     # everything
+$ python3 -m pip install --upgrade 'poor-cli[openai,anthropic]'  # pick providers
+$ python3 -m pip install --upgrade 'poor-cli[multiplayer]'  # WebRTC
 $ poor-cli install-info
 $ poor-cli
 ```

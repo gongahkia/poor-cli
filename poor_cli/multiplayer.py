@@ -306,7 +306,7 @@ class MultiplayerHost:
             from aiortc import RTCConfiguration, RTCIceServer
         except ImportError as error:
             raise RuntimeError(
-                "P2P multiplayer requires aiortc. Install the current package dependencies in this environment and retry."
+                "P2P multiplayer requires aiortc. Install with: pip install 'poor-cli[multiplayer]'"
             ) from error
 
         ice_servers = []

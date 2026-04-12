@@ -15,6 +15,7 @@ try:
 except ImportError:
     OPENAI_AVAILABLE = False
     AsyncOpenAI = None
+    OPENAI_MISSING_HINT = "Install with: pip install 'poor-cli[openai]'"
 
 from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall, UsageMetadata
 from .tool_translator import ToolTranslator, ProviderType
@@ -57,8 +58,8 @@ class OpenAIProvider(BaseProvider):
         """
         if not OPENAI_AVAILABLE:
             raise ConfigurationError(
-                "OpenAI provider requires 'openai' package. "
-                "Install with: pip install openai"
+                "OpenAI provider requires the 'openai' package. "
+                "Install with: pip install 'poor-cli[openai]'"
             )
 
         super().__init__(api_key, model_name)
