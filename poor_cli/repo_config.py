@@ -20,6 +20,7 @@ from dataclasses import dataclass, asdict, field
 
 from .config import PermissionMode, parse_permission_mode
 from .exceptions import ConfigurationError, FileOperationError, setup_logger
+from .persisted import load_json, save_json
 
 logger = setup_logger(__name__)
 
@@ -205,16 +206,14 @@ class RepoConfig:
             raise FileOperationError(f"Failed to create {self.REPO_DIR_NAME} directory", str(e))
 
     def _load_preferences(self) -> None:
-        """Load preferences from file"""
+        """Load preferences from file via the versioned persisted envelope."""
         try:
             with self._preferences_file_lock(exclusive=True):
-                if self.preferences_file.exists():
-                    with open(self.preferences_file, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
+                data = load_json(self.preferences_file, artifact="preferences")
+                if data is not None:
                     self.preferences = RepoPreferences.from_dict(data)
                     logger.info(f"Loaded preferences from {self.preferences_file}")
                 else:
-                    # Create default preferences
                     now = datetime.now().isoformat()
                     self.preferences = RepoPreferences(
                         created_at=now,
@@ -241,26 +240,8 @@ class RepoConfig:
             raise FileOperationError("Failed to save preferences", str(e))
 
     def _write_preferences_locked(self) -> None:
-        """Write preferences atomically while holding preferences lock."""
-        temp_path: Optional[str] = None
-        try:
-            fd, temp_path = tempfile.mkstemp(
-                prefix=f"{self.PREFERENCES_FILE}.",
-                suffix=".tmp",
-                dir=self.config_dir,
-            )
-            with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                json.dump(self.preferences.to_dict(), f, indent=2)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(temp_path, self.preferences_file)
-        except Exception:
-            if temp_path:
-                try:
-                    os.unlink(temp_path)
-                except OSError:
-                    pass
-            raise
+        """Write preferences atomically via the versioned envelope."""
+        save_json(self.preferences_file, artifact="preferences", data=self.preferences.to_dict())
 
     def _load_history(self) -> None:
         """Load chat history from file"""
