@@ -37,7 +37,8 @@ from .enhanced_tools import CORE_TOOL_GROUP, MCP_GROUP_PREFIX, EnhancedToolRegis
 from .checkpoint import CheckpointManager
 from .core_events import CoreEvent, HistoryAdapter, RepoHistoryAdapter
 from .repo_config import RepoConfig, get_repo_config
-from .context import ContextManager, get_context_manager, chars_per_token
+from .context import ContextManager, get_context_manager
+from .token_counter import get_token_counter
 from .instructions import InstructionManager, InstructionSnapshot
 from .context_contract import ContextContractManager
 from .context_optimizer import CompactionPolicy, TieredContextCompactor
@@ -2171,12 +2172,13 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin, ProviderInfoMixin):
         """Return context window utilization metrics."""
         if not self.provider:
             return {"used_tokens": 0, "max_tokens": 0, "pressure_pct": 0, "strategy_hint": "ok"}
-        cpt = self._cpt
+        provider, model = self._token_provider_model()
+        counter = get_token_counter()
         caps = self.provider.get_capabilities()
         max_ctx = caps.max_context_tokens
         try:
             history = self.provider.get_history()
-            used = int(sum(len(str(m.get("content", ""))) for m in history) / cpt)
+            used = sum(counter.count(str(m.get("content", "")), provider=provider, model=model).count for m in history)
         except Exception:
             used = 0
         sys_tokens = self._static_prefix_tokens()
@@ -2187,7 +2189,8 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin, ProviderInfoMixin):
 
     def get_context_breakdown(self) -> Dict[str, Any]:
         """Return token breakdown by category: system, history, tool results."""
-        cpt = self._cpt
+        provider, model = self._token_provider_model()
+        counter = get_token_counter()
         sys_tokens = self._static_prefix_tokens()
         if not self.provider:
             return {"system_tokens": sys_tokens, "history_tokens": 0, "tool_result_tokens": 0,
@@ -2200,7 +2203,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin, ProviderInfoMixin):
         tool_tokens = 0
         user_turns = 0
         for m in history:
-            toks = int(len(str(m.get("content", ""))) / cpt)
+            toks = counter.count(str(m.get("content", "")), provider=provider, model=model).count
             if m.get("role") in ("tool", "function"):
                 tool_tokens += toks
             else:
@@ -2226,17 +2229,18 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin, ProviderInfoMixin):
 
     def estimate_cost(self, message: str) -> Dict[str, Any]:
         """Estimate token cost of a message before sending (no API call)."""
-        cpt = self._cpt
+        provider, model = self._token_provider_model()
+        counter = get_token_counter()
         sys_tokens = self._static_prefix_tokens()
         if self.provider:
             try:
                 history = self.provider.get_history()
-                hist_tokens = int(sum(len(str(m.get("content", ""))) for m in history) / cpt)
+                hist_tokens = sum(counter.count(str(m.get("content", "")), provider=provider, model=model).count for m in history)
             except Exception:
                 hist_tokens = 0
         else:
             hist_tokens = 0
-        prompt_tokens = int(len(message) / cpt)
+        prompt_tokens = counter.count(message, provider=provider, model=model).count
         total_input = sys_tokens + hist_tokens + prompt_tokens
         est_output = min(total_input, 4000)
         cost = self._estimate_cost(total_input, est_output)
@@ -2494,7 +2498,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin, ProviderInfoMixin):
                     self._files_seen_in_session[path] = content_hash
                     skipping = False
             if skipping:
-                tokens_saved += len(line) // 4
+                tokens_saved += get_token_counter().count(line).count
                 continue
             output_lines.append(line)
         return "\n".join(output_lines), tokens_saved
@@ -2674,33 +2678,35 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin, ProviderInfoMixin):
             await loop.run_in_executor(None, self._repo_graph.build_index)
         return self._repo_graph.build_repo_map(token_budget=token_budget)
 
-    @property
-    def _cpt(self) -> float:
-        """Chars-per-token ratio for current provider."""
+    def _token_provider_model(self) -> Tuple[str, str]:
+        """Return (provider, model) for token counting of current session."""
         provider = self.config.model.provider if self.config else ""
-        return chars_per_token(provider)
+        model = self.config.model.model_name if self.config and self.config.model else ""
+        return provider, model
 
     def _static_prefix_tokens(self) -> int:
         """Estimate tokens consumed by stable provider prefix content."""
-        cpt = self._cpt
+        provider, model = self._token_provider_model()
         prefix = ""
         if self.provider and hasattr(self.provider, "get_prompt_prefix"):
             try:
                 prefix = self.provider.get_prompt_prefix() or ""
             except Exception:
                 prefix = ""
-        return int((len(getattr(self, "_system_instruction", None) or "") + len(prefix)) / cpt)
+        text = (getattr(self, "_system_instruction", None) or "") + prefix
+        return get_token_counter().count(text, provider=provider, model=model).count
 
     def _compute_token_breakdown(self) -> Tuple[int, int, int]:
         """Compute (system_tokens, history_tokens, tool_result_tokens) for current state."""
-        cpt = self._cpt
+        provider, model = self._token_provider_model()
+        counter = get_token_counter()
         sys_tok = self._static_prefix_tokens()
         hist_tok = 0
         tool_tok = 0
         if self.provider:
             try:
                 for m in self.provider.get_history():
-                    toks = int(len(str(m.get("content", ""))) / cpt)
+                    toks = counter.count(str(m.get("content", "")), provider=provider, model=model).count
                     if m.get("role") in ("tool", "function"):
                         tool_tok += toks
                     else:
@@ -2718,8 +2724,10 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin, ProviderInfoMixin):
         if max_ctx <= 0:
             return None
         try:
+            provider, model = self._token_provider_model()
+            counter = get_token_counter()
             history = self.provider.get_history()
-            current_tokens = int(sum(len(str(m.get("content", ""))) for m in history) / self._cpt)
+            current_tokens = sum(counter.count(str(m.get("content", "")), provider=provider, model=model).count for m in history)
         except Exception:
             return None
         current_tokens += self._static_prefix_tokens()
@@ -2941,7 +2949,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin, ProviderInfoMixin):
         try:
             eco = self.config.economy if self.config else None
             if eco and eco.prompt_distill:
-                tokens_before = len(full_message) // 4
+                tokens_before = get_token_counter().count(full_message).count
                 full_message, tokens_saved = distill_prompt(full_message, "", eco)
                 if tokens_saved > 0:
                     self._economy_tracker.record_distillation(tokens_before, tokens_before - tokens_saved)
@@ -3015,7 +3023,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin, ProviderInfoMixin):
         try:
             wm_mgr = self._ensure_working_memory_mgr()
             if wm_mgr and wm_mgr.memory is not None:
-                history_tokens = len(full_message) // 4
+                history_tokens = get_token_counter().count(full_message).count
                 active_files: Dict[str, str] = {}
                 if self._context_manager:
                     for fc in getattr(self._context_manager, "_last_selected_files", []):
@@ -3464,7 +3472,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin, ProviderInfoMixin):
                         accumulated_text += chunk.content
                         yield CoreEvent.text_chunk(chunk.content, request_id)
                         # live estimated token count per chunk
-                        est_out = len(accumulated_text) // 4
+                        est_out = get_token_counter().count(accumulated_text).count
                         yield CoreEvent.cost_update(
                             output_tokens=est_out,
                             is_estimate=True,
@@ -3734,7 +3742,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin, ProviderInfoMixin):
                     events.append(CoreEvent.text_chunk(chunk.content, request_id))
                     # throttled live estimated cost (every 10 chunks to reduce noise)
                     if _chunk_count % 10 == 0:
-                        est_output = accumulated_chars // 4
+                        est_output = get_token_counter().count(accumulated_text).count
                         events.append(CoreEvent.cost_update(
                             output_tokens=est_output,
                             is_estimate=True,
@@ -3775,7 +3783,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin, ProviderInfoMixin):
             ))
         elif accumulated_chars > 0:
             # no actual usage available, finalize with estimate
-            est_output = accumulated_chars // 4
+            est_output = get_token_counter().count(accumulated_text).count
             self._track_cost(0, est_output)
             events.append(CoreEvent.cost_update(
                 output_tokens=est_output,

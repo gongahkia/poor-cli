@@ -129,6 +129,23 @@ class TokenCounter:
 
         return self._heuristic(text, provider=prov, model=model)
 
+    def approx_chars_for_tokens(
+        self,
+        tokens: int,
+        *,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> int:
+        """Approximate number of characters that fit in `tokens` tokens.
+
+        Inverse of the heuristic count — used by truncation call sites that
+        previously multiplied by a chars-per-token constant.
+        """
+        if tokens <= 0:
+            return 0
+        ratio = _lookup_ratio((provider or "").lower() or None, model)
+        return max(1, int(tokens * ratio))
+
     async def acount(
         self,
         text: str,

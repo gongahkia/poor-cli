@@ -22,21 +22,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
-# Approximate tokens per character (conservative estimate)
-CHARS_PER_TOKEN = 4
-
-# calibrated ratios per provider (chars per token, lower = more tokens per char)
-_PROVIDER_CHARS_PER_TOKEN = {
-    "anthropic": 3.5, # claude tokenizer is denser on code
-    "openai": 3.5,    # tiktoken cl100k is similar
-    "gemini": 4.0,    # gemini tokenizer is slightly coarser
-    "ollama": 3.8,    # varies by model, conservative estimate
-    "openrouter": 3.5, # depends on downstream model, use dense default
-}
-
-def chars_per_token(provider: str = "") -> float:
-    """Return calibrated chars-per-token ratio for a provider."""
-    return _PROVIDER_CHARS_PER_TOKEN.get(provider.lower(), CHARS_PER_TOKEN)
+from .token_counter import get_token_counter
 
 # Default context limits
 DEFAULT_MAX_TOKENS = 8000
@@ -102,7 +88,7 @@ class FileContext:
     selection_reason: str = ""
     
     def __post_init__(self):
-        self.tokens_estimate = len(self.content) // CHARS_PER_TOKEN
+        self.tokens_estimate = get_token_counter().count(self.content).count
 
 
 @dataclass
@@ -354,14 +340,16 @@ class ContextManager:
             if not rendered:
                 continue
 
-            estimated_tokens = max(1, len(rendered) // CHARS_PER_TOKEN)
+            counter = get_token_counter()
+            estimated_tokens = max(1, counter.count(rendered).count)
             if total_tokens + estimated_tokens > token_budget:
                 remaining_tokens = token_budget - total_tokens
                 if remaining_tokens <= 0:
                     truncated = True
                     break
-                rendered = rendered[: remaining_tokens * CHARS_PER_TOKEN] + "\n... (truncated)"
-                estimated_tokens = max(1, len(rendered) // CHARS_PER_TOKEN)
+                max_chars = counter.approx_chars_for_tokens(remaining_tokens)
+                rendered = rendered[:max_chars] + "\n... (truncated)"
+                estimated_tokens = max(1, counter.count(rendered).count)
                 truncated = True
 
             sections.append(rendered)
@@ -844,7 +832,7 @@ class ContextManager:
         rendered = self._render_context_file(file_ctx, self._extract_keywords(message))
         if not rendered:
             return 0
-        return max(1, len(rendered) // CHARS_PER_TOKEN)
+        return max(1, get_token_counter().count(rendered).count)
 
     @staticmethod
     def _line_window(content: str, start: int, end: int) -> str:
@@ -949,7 +937,8 @@ class ContextManager:
                 # Try to include partial file
                 remaining_tokens = self.max_tokens - total_tokens
                 if remaining_tokens > 500:  # Worth including partial
-                    truncated_content = file_ctx.content[:remaining_tokens * CHARS_PER_TOKEN]
+                    max_chars = get_token_counter().approx_chars_for_tokens(remaining_tokens)
+                    truncated_content = file_ctx.content[:max_chars]
                     file_ctx.content = truncated_content + "\n\n... (truncated)"
                     file_ctx.tokens_estimate = remaining_tokens
                     included_files.append(file_ctx)
