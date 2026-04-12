@@ -20,9 +20,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-logger = logging.getLogger(__name__)
-
 from .token_counter import get_token_counter
+
+logger = logging.getLogger(__name__)
 
 # Default context limits
 DEFAULT_MAX_TOKENS = 8000
