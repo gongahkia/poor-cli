@@ -6,7 +6,6 @@ Stores snapshots in .poor-cli/checkpoints/
 """
 
 import os
-import json
 import shutil
 import hashlib
 import zlib
