@@ -15,6 +15,7 @@ from dataclasses import dataclass, asdict
 from enum import Enum
 
 from poor_cli.exceptions import setup_logger
+from poor_cli.persisted import run_sqlite_migrations
 
 logger = setup_logger(__name__)
 
@@ -135,6 +136,7 @@ class AuditLogger:
                 CREATE INDEX IF NOT EXISTS idx_user ON audit_events(user)
             """)
 
+            run_sqlite_migrations(conn, "audit")
             conn.commit()
             conn.close()
             logger.debug("Audit database initialized")
