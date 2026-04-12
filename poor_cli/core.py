@@ -3590,7 +3590,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
                 fallback_provider = await self._fallback_manager.try_fallback(
                     previous_provider,
                     e,
-                    tools=self.tool_registry.get_tool_declarations() if self.tool_registry else [],
+                    tools=self._tool_declarations_for_shipping(),
                     system_instruction=self._system_instruction,
                 )
                 if fallback_provider:
@@ -4358,7 +4358,7 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
             else (
                 list(self._active_tool_declarations)
                 if self._active_tool_declarations
-                else (self.tool_registry.get_tool_declarations() if self.tool_registry else [])
+                else self._tool_declarations_for_shipping()
             )
         )
         if not capabilities.supports_function_calling:
@@ -5139,16 +5139,31 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin):
     def get_available_tools(self) -> List[Dict[str, Any]]:
         """
         Get list of available tools.
-        
+
         Returns:
             List of tool declarations.
-        
+
         Raises:
             PoorCLIError: If not initialized.
         """
         if not self._initialized or not self.tool_registry:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
-        
+
+        return self.tool_registry.get_tool_declarations()
+
+    def _tool_declarations_for_shipping(self) -> List[Dict[str, Any]]:
+        # honors config.model.tool_schema_mode — "core" ships only the core
+        # group (lean menu, fewer tokens per turn); "all" preserves old behavior.
+        if not self.tool_registry:
+            return []
+        mode = "all"
+        if self.config is not None:
+            mode = str(getattr(self.config.model, "tool_schema_mode", "all") or "all")
+        if mode == "core" and isinstance(self.tool_registry, EnhancedToolRegistry):
+            return self.tool_registry.get_tool_declarations_for_groups(
+                (CORE_TOOL_GROUP,),
+                mcp_server_names=self._mcp_server_names(),
+            )
         return self.tool_registry.get_tool_declarations()
 
     def get_provider_info(self) -> Dict[str, Any]:

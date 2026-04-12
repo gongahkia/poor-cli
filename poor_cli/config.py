@@ -96,6 +96,12 @@ class ModelConfig:
     top_p: float = 0.95
     top_k: int = 40
     prompt_caching: bool = True  # inject cache_control on Anthropic system/tools
+    # tool-schema shipping strategy for LLM requests:
+    #   "all"  — send every registered tool declaration (old behavior)
+    #   "core" — send only the core group; extra groups must be activated
+    #            explicitly via _activate_tool_groups before use. saves tokens
+    #            per turn by trimming the tool menu.
+    tool_schema_mode: str = "all"
 
     # Provider registry
     providers: Dict[str, ProviderConfig] = field(
