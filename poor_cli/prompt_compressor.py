@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from .exceptions import setup_logger
+from .token_counter import get_token_counter
 
 logger = setup_logger(__name__)
 
@@ -152,7 +153,6 @@ class PromptCompressor:
         self._llmlingua = None # lazy loaded
         self._llmlingua_available: Optional[bool] = None
         self._stats = CompressionStats()
-        self._chars_per_token = 4
 
     @property
     def stats(self) -> CompressionStats:
@@ -209,8 +209,9 @@ class PromptCompressor:
             logger.warning("compression took %.1fms (budget %dms), returning original", elapsed, LATENCY_BUDGET_MS)
             self._stats.skipped_count += 1
             return self._skip_result(text, f"latency {elapsed:.0f}ms")
-        orig_tokens = len(text) // self._chars_per_token
-        comp_tokens = len(result_text) // self._chars_per_token
+        counter = get_token_counter()
+        orig_tokens = counter.count(text).count
+        comp_tokens = counter.count(result_text).count
         actual_ratio = comp_tokens / max(orig_tokens, 1)
         self._stats.total_compressions += 1
         self._stats.total_tokens_before += orig_tokens
@@ -415,7 +416,7 @@ class PromptCompressor:
         )
 
     def _skip_result(self, text: str, reason: str = "") -> CompressionResult:
-        tokens = len(text) // self._chars_per_token
+        tokens = get_token_counter().count(text).count
         return CompressionResult(
             original_text=text, compressed_text=text,
             original_tokens=tokens, compressed_tokens=tokens,

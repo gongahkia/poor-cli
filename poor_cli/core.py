@@ -2690,11 +2690,17 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin, ProviderInfoMixin):
         prefix = ""
         if self.provider and hasattr(self.provider, "get_prompt_prefix"):
             try:
-                prefix = self.provider.get_prompt_prefix() or ""
+                raw_prefix = self.provider.get_prompt_prefix()
+                prefix = raw_prefix if isinstance(raw_prefix, str) else ""
             except Exception:
                 prefix = ""
-        text = (getattr(self, "_system_instruction", None) or "") + prefix
-        return get_token_counter().count(text, provider=provider, model=model).count
+        sys_text = getattr(self, "_system_instruction", None) or ""
+        sys_text = sys_text if isinstance(sys_text, str) else ""
+        counter = get_token_counter()
+        return (
+            counter.count(sys_text, provider=provider, model=model).count
+            + counter.count(prefix, provider=provider, model=model).count
+        )
 
     def _compute_token_breakdown(self) -> Tuple[int, int, int]:
         """Compute (system_tokens, history_tokens, tool_result_tokens) for current state."""

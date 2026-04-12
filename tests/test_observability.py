@@ -352,10 +352,10 @@ class TestFallbackCostSort(unittest.TestCase):
 
 class TestCalibratedTokenEstimation(unittest.TestCase):
     def test_anthropic_ratio(self):
-        from poor_cli.context import chars_per_token
-        self.assertEqual(chars_per_token("anthropic"), 3.5)
-        self.assertEqual(chars_per_token("gemini"), 4.0)
-        self.assertEqual(chars_per_token("unknown"), 4) # default
+        from poor_cli.token_counter import HEURISTIC_CHARS_PER_TOKEN, _lookup_ratio
+        self.assertEqual(_lookup_ratio("anthropic", None), HEURISTIC_CHARS_PER_TOKEN[("anthropic", "*")])
+        self.assertEqual(_lookup_ratio("gemini", None), HEURISTIC_CHARS_PER_TOKEN[("gemini", "*")])
+        self.assertEqual(_lookup_ratio("unknown", None), HEURISTIC_CHARS_PER_TOKEN[(None, "*")])
 
     def test_model_context_window(self):
         from poor_cli.provider_catalog import get_model_context_window
@@ -407,7 +407,7 @@ class TestTokenBreakdownCompute(unittest.TestCase):
     def test_breakdown_values(self):
         core = self._make_core_stub()
         sys_tok, hist_tok, tool_tok = core._compute_token_breakdown()
-        # uses calibrated chars_per_token (default provider → 4.0)
+        # uses calibrated TokenCounter heuristic (default provider)
         self.assertGreater(sys_tok, 250) # ~1200/4 = 300
         self.assertGreater(tool_tok, 150) # ~800/4 = 200
         self.assertGreater(hist_tok, 100) # ~600/4 = 150

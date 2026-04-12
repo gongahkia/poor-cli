@@ -18,6 +18,7 @@ from enum import Enum
 from poor_cli.exceptions import setup_logger
 from poor_cli.failure_amnesia import FailureAmnesia, ExtractionCallback
 from poor_cli.history_pruning import HistoryPruner
+from poor_cli.token_counter import get_token_counter
 
 logger = setup_logger(__name__)
 
@@ -63,11 +64,9 @@ class Message:
     pinned: bool = False
     metadata: Dict[str, Any] = field(default_factory=dict)
 
-    chars_per_token: int = 4
-
     def estimate_tokens(self) -> int:
         """Estimate token count for message"""
-        self.token_count = len(self.content) // self.chars_per_token
+        self.token_count = get_token_counter().count(self.content).count
         return self.token_count
 
 
@@ -591,9 +590,8 @@ SummaryCallback = Callable[[List[Dict[str, Any]], str, CompactionPolicy], Awaita
 class TieredContextCompactor:
     """Tiered history compactor for provider chat transcripts."""
 
-    def __init__(self, chars_per_token: int = 4):
-        self.chars_per_token = max(1, int(chars_per_token))
-        self._history_pruner = HistoryPruner(chars_per_token=self.chars_per_token)
+    def __init__(self):
+        self._history_pruner = HistoryPruner()
         self._failure_amnesia = FailureAmnesia()
 
     @property
@@ -951,7 +949,8 @@ class TieredContextCompactor:
         return str(message.get("role", "unknown") or "unknown").strip().lower()
 
     def _history_tokens(self, history: List[Dict[str, Any]]) -> int:
-        return sum(len(self._extract_text(message)) // self.chars_per_token for message in history)
+        counter = get_token_counter()
+        return sum(counter.count(self._extract_text(message)).count for message in history)
 
     def _last_index(self, history: List[Dict[str, Any]], roles: set) -> int:
         for index in range(len(history) - 1, -1, -1):
