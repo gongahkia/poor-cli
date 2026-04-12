@@ -641,6 +641,31 @@ function M.setup()
         open_scratch("[poor-cli doctor]", build_doctor_text(), "markdown")
     end, { desc = "Open poor-cli diagnostic report" })
 
+    create_command("PoorCliHelp", function()
+        local cmds = vim.api.nvim_get_commands({})
+        local rows = {}
+        for name, info in pairs(cmds) do
+            if name:sub(1, 7) == "PoorCli" then
+                table.insert(rows, { name = name, desc = info.definition or "" })
+            end
+        end
+        table.sort(rows, function(a, b) return a.name < b.name end)
+        local lines = {
+            "# poor-cli commands",
+            "",
+            "Press `q` to close. Run any command with `:CommandName`.",
+            "",
+        }
+        local width = 0
+        for _, r in ipairs(rows) do if #r.name > width then width = #r.name end end
+        for _, r in ipairs(rows) do
+            table.insert(lines, string.format("  :%-" .. width .. "s  %s", r.name, r.desc))
+        end
+        table.insert(lines, "")
+        table.insert(lines, string.format("Total: %d commands", #rows))
+        open_scratch("[poor-cli help]", table.concat(lines, "\n"), "markdown")
+    end, { desc = "List all poor-cli commands" })
+
     create_command("PoorCliCopyDebugInfo", function()
         local report = rpc.build_debug_report({
             {

@@ -193,9 +193,9 @@ class ToolTranslator:
         result = dict(params)
         if result.get("type") == "object" and "properties" in result:
             result.setdefault("additionalProperties", False)
-            # strict mode requires all properties in required
+            # OpenAI strict mode requires EVERY property to appear in required
             props = result.get("properties", {})
-            if props and "required" not in result:
+            if props:
                 result["required"] = list(props.keys())
             for key, val in props.items():
                 if isinstance(val, dict):

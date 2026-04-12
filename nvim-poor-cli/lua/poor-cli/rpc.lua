@@ -203,6 +203,23 @@ local function stop_startup_feedback(state)
     local elapsed = startup_elapsed_seconds()
     if state == "ready" then
         echo_startup_line(string.format("[poor-cli] [ok] initialized in %ds", elapsed), false)
+        -- follow-up: probe provider info to confirm config is fully loaded and responsive
+        local config_probe_start = (uv and uv.hrtime and uv.hrtime()) or 0
+        M.request("poor-cli/getProviderInfo", {}, function(result, err)
+            vim.schedule(function()
+                if err then return end -- soft-init or transient failure; stay silent
+                local probe_elapsed = 0
+                if config_probe_start > 0 and uv and uv.hrtime then
+                    probe_elapsed = math.max(0, math.floor((uv.hrtime() - config_probe_start) / 1000000000))
+                end
+                local provider_name = (result and result.name) or "unknown"
+                if provider_name == "unconfigured" then return end -- soft-init stub, skip
+                pcall(vim.api.nvim_echo, {{
+                    string.format("[poor-cli] [ok] configuration loaded in %ds ✓ (%s)", probe_elapsed, provider_name),
+                    "MoreMsg",
+                }}, false, {})
+            end)
+        end)
     elseif state == "error" then
         echo_startup_line(string.format("[poor-cli] [error] startup failed after %ds", elapsed), true)
     end

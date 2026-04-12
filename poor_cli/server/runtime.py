@@ -717,6 +717,7 @@ class PoorCLIServer:
             "poor-cli/setApiKey": self.handle_set_api_key,
             "poor-cli/getApiKeyStatus": self.handle_get_api_key_status,
             "poor-cli/testApiKey": self.handle_test_api_key,
+            "poor-cli/listProviders": self.handle_list_providers,
             "poor-cli/listSessions": self.handle_list_sessions,
             "poor-cli/listHistory": self.handle_list_history,
             "poor-cli/searchHistory": self.handle_search_history,

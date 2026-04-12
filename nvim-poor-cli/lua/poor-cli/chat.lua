@@ -27,6 +27,11 @@ local function emit_debug_note(lines)
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
     end
+    -- only surface per-chunk cost/progress noise when debug mode is on
+    local ok, cfg = pcall(require, "poor-cli.config")
+    if not ok or not cfg.is_debug or not cfg.is_debug() then
+        return
+    end
     local line_count = vim.api.nvim_buf_line_count(M.buf)
     vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, lines)
 end
@@ -293,15 +298,59 @@ function M.send(message)
     M.active_stream.rpc_request_id = rpc_request_id
 end
 
+local function format_thinking_duration(seconds)
+    if seconds < 60 then
+        return string.format("%d sec", seconds)
+    elseif seconds < 3600 then
+        return string.format("%d min", math.floor(seconds / 60))
+    else
+        return string.format("%d hr", math.floor(seconds / 3600))
+    end
+end
+
+function M._stop_thinking_timer()
+    if M._thinking_timer then
+        pcall(function()
+            M._thinking_timer:stop()
+            M._thinking_timer:close()
+        end)
+        M._thinking_timer = nil
+    end
+end
+
 function M._start_streaming_block()
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
     end
     local line_count = vim.api.nvim_buf_line_count(M.buf)
-    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, { "## 🤖 Assistant", "" })
+    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, { "## 🤖 Assistant", "", "💭 Thinking (0 sec)...", "" })
     M.streaming_buf_line = line_count + 2
+    M._streaming_placeholder_active = true
+    M._streaming_placeholder_line = line_count + 3 -- 1-indexed position of the "Thinking" line
     M.streaming_response_text = ""
     M._thinking_buffer = ""
+
+    -- live-update the placeholder until first chunk arrives or finalize fires
+    M._thinking_started_ns = (vim.loop.hrtime and vim.loop.hrtime()) or 0
+    M._stop_thinking_timer()
+    if vim.loop.new_timer then
+        M._thinking_timer = vim.loop.new_timer()
+        M._thinking_timer:start(1000, 1000, vim.schedule_wrap(function()
+            if not M._streaming_placeholder_active or not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
+                M._stop_thinking_timer()
+                return
+            end
+            local elapsed = 0
+            if M._thinking_started_ns > 0 and vim.loop.hrtime then
+                elapsed = math.max(0, math.floor((vim.loop.hrtime() - M._thinking_started_ns) / 1000000000))
+            end
+            local ln = M._streaming_placeholder_line
+            if ln then
+                local new_text = string.format("💭 Thinking (%s)...", format_thinking_duration(elapsed))
+                pcall(vim.api.nvim_buf_set_lines, M.buf, ln - 1, ln, false, { new_text })
+            end
+        end))
+    end
 end
 
 function M._append_streaming_chunk(chunk)
@@ -310,6 +359,14 @@ function M._append_streaming_chunk(chunk)
     end
     if not M.streaming_buf_line or not chunk or chunk == "" then
         return
+    end
+
+    if M._streaming_placeholder_active then
+        -- first real chunk: stop timer, remove Thinking placeholder lines
+        M._stop_thinking_timer()
+        local ln = M.streaming_buf_line
+        vim.api.nvim_buf_set_lines(M.buf, ln - 1, ln + 1, false, { "" })
+        M._streaming_placeholder_active = false
     end
 
     M.streaming_response_text = (M.streaming_response_text or "") .. chunk
@@ -342,6 +399,8 @@ function M._finalize_streaming_block(request_id)
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
     end
+    M._stop_thinking_timer()
+    M._streaming_placeholder_active = false
     if M.streaming_buf_line then
         local line_count = vim.api.nvim_buf_line_count(M.buf)
         vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, { "", "---", "" })
@@ -709,11 +768,21 @@ function M.setup_buffer_keymaps()
 
     vim.keymap.set("n", "q", function()
         M.close()
-    end, { buffer = M.buf, desc = "Close chat" })
+    end, { buffer = M.buf, desc = "Close chat", nowait = true })
 
     vim.keymap.set("n", "<CR>", function()
         M.prompt_and_send()
-    end, { buffer = M.buf, desc = "Send message" })
+    end, { buffer = M.buf, desc = "Send message", nowait = true, silent = true })
+
+    -- re-apply on BufEnter in case a filetype plugin (e.g. vim-markdown) clobbers <CR>
+    vim.api.nvim_create_autocmd("BufEnter", {
+        buffer = M.buf,
+        callback = function()
+            vim.keymap.set("n", "<CR>", function()
+                M.prompt_and_send()
+            end, { buffer = M.buf, desc = "Send message", nowait = true, silent = true })
+        end,
+    })
 end
 
 function M.prompt_and_send()
