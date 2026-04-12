@@ -1,0 +1,27 @@
+{
+  "permission_mode": "default",
+  "auto_approve_read": false,
+  "auto_approve_write": false,
+  "auto_approve_edit": false,
+  "auto_approve_bash": false,
+  "safe_bash_commands": [
+    "pwd",
+    "ls",
+    "echo",
+    "cat",
+    "head",
+    "tail",
+    "grep",
+    "find",
+    "which",
+    "whoami",
+    "date"
+  ],
+  "max_sessions": 100,
+  "max_messages_per_session": 200,
+  "rtk_enabled": true,
+  "rtk_tee_on_failure": true,
+  "created_at": "2026-04-12T17:37:41.528724",
+  "updated_at": "2026-04-12T17:37:41.528724",
+  "total_sessions": 0
+}

@@ -406,6 +406,10 @@ function M.setup()
         chat.clear()
     end, { desc = "Clear chat history" })
 
+    create_command("PoorCliQueue", function()
+        chat.open_queue_manager()
+    end, { desc = "Open message queue manager" })
+
     create_command("PoorCliDiagnostics", function()
         diagnostics.toggle()
     end, { desc = "Toggle poor-cli inline diagnostics" })

@@ -414,52 +414,8 @@ end
 -- batch save all choices
 local function commit()
     local c = M.state.choices
-    local pending = 0
-    local errors = {}
-    local function on_done(_, err)
-        vim.schedule(function()
-            if err then table.insert(errors, rpc.format_error(err)) end
-            pending = pending - 1
-            if pending <= 0 then
-                if #errors > 0 then
-                    vim.notify("[poor-cli] onboarding errors: " .. table.concat(errors, "; "), vim.log.levels.ERROR)
-                else
-                    M.mark_complete()
-                    vim.notify("[poor-cli] onboarding complete!", vim.log.levels.INFO)
-                    close()
-                end
-            end
-        end)
-    end
 
-    -- save api key
-    if c.api_key and c.provider and c.provider ~= "ollama" then
-        pending = pending + 1
-        rpc.request("poor-cli/setApiKey", { provider = c.provider, apiKey = c.api_key, persist = true, reloadActiveProvider = true }, on_done)
-    end
-    -- save provider
-    if c.provider then
-        pending = pending + 1
-        rpc.request("poor-cli/setConfig", { keyPath = "model.provider", value = c.provider }, on_done)
-    end
-    -- save model
-    if c.model then
-        pending = pending + 1
-        rpc.request("poor-cli/setConfig", { keyPath = "model.model_name", value = c.model }, on_done)
-    end
-    -- save permission mode
-    pending = pending + 1
-    rpc.request("poor-cli/setConfig", { keyPath = "security.permission_mode", value = c.permission_mode or "default" }, on_done)
-    -- save economy preset
-    pending = pending + 1
-    rpc.request("poor-cli/setEconomyPreset", { preset = c.economy_preset or "balanced" }, on_done)
-    -- save budget
-    if c.budget and c.budget ~= "unlimited" then
-        pending = pending + 1
-        rpc.request("poor-cli/applyBudgetTemplate", { template = c.budget }, on_done)
-    end
-
-    -- save keybinding prefs to local json
+    -- save keybinding prefs to local json (no server needed)
     local kb = c.keybindings
     if next(kb) then
         local prefs_path = vim.fs.joinpath(config.get_state_dir(), "keybinding_prefs.json")
@@ -467,11 +423,77 @@ local function commit()
         if f then f:write((vim.json and vim.json.encode or vim.fn.json_encode)(kb)); f:close() end
     end
 
-    if pending == 0 then -- nothing to save server-side
-        M.mark_complete()
-        vim.notify("[poor-cli] onboarding complete!", vim.log.levels.INFO)
-        close()
+    -- Re-initialize the server with the chosen provider/model so that
+    -- subsequent config calls don't fail with "Server not initialized".
+    -- This handles the case where the initial auto-detect picked an
+    -- unavailable provider (e.g. Ollama not running).
+    local function save_config()
+        local pending = 0
+        local errors = {}
+        local function on_done(_, err)
+            vim.schedule(function()
+                if err then table.insert(errors, rpc.format_error(err)) end
+                pending = pending - 1
+                if pending <= 0 then
+                    if #errors > 0 then
+                        vim.notify("[poor-cli] onboarding errors: " .. table.concat(errors, "; "), vim.log.levels.ERROR)
+                    else
+                        M.mark_complete()
+                        vim.notify("[poor-cli] onboarding complete!", vim.log.levels.INFO)
+                        close()
+                    end
+                end
+            end)
+        end
+
+        -- save api key
+        if c.api_key and c.provider and c.provider ~= "ollama" then
+            pending = pending + 1
+            rpc.request("poor-cli/setApiKey", { provider = c.provider, apiKey = c.api_key, persist = true, reloadActiveProvider = true }, on_done)
+        end
+        -- save provider
+        if c.provider then
+            pending = pending + 1
+            rpc.request("poor-cli/setConfig", { keyPath = "model.provider", value = c.provider }, on_done)
+        end
+        -- save model
+        if c.model then
+            pending = pending + 1
+            rpc.request("poor-cli/setConfig", { keyPath = "model.model_name", value = c.model }, on_done)
+        end
+        -- save permission mode
+        pending = pending + 1
+        rpc.request("poor-cli/setConfig", { keyPath = "security.permission_mode", value = c.permission_mode or "default" }, on_done)
+        -- save economy preset
+        pending = pending + 1
+        rpc.request("poor-cli/setEconomyPreset", { preset = c.economy_preset or "balanced" }, on_done)
+        -- save budget
+        if c.budget and c.budget ~= "unlimited" then
+            pending = pending + 1
+            rpc.request("poor-cli/applyBudgetTemplate", { template = c.budget }, on_done)
+        end
+
+        if pending == 0 then
+            M.mark_complete()
+            vim.notify("[poor-cli] onboarding complete!", vim.log.levels.INFO)
+            close()
+        end
     end
+
+    -- Ensure server is initialized with the user's chosen provider before
+    -- sending config RPCs. Pass provider/model so the server doesn't fall
+    -- back to auto-detect (which may have failed on first boot).
+    rpc.initialize(function(_, err)
+        vim.schedule(function()
+            if err then
+                vim.notify("[poor-cli] server re-init failed: " .. rpc.format_error(err) .. " — saving local prefs only", vim.log.levels.WARN)
+                M.mark_complete()
+                close()
+                return
+            end
+            save_config()
+        end)
+    end, { provider = c.provider, model = c.model })
 end
 
 -- ensure server is running for rpc steps

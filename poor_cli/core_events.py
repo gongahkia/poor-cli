@@ -97,7 +97,9 @@ class CoreEvent:
                     is_estimate: bool = False,
                     cumulative_input_tokens: int = 0, cumulative_output_tokens: int = 0,
                     system_tokens: int = 0, history_tokens: int = 0,
-                    tool_result_tokens: int = 0) -> "CoreEvent":
+                    tool_result_tokens: int = 0,
+                    confidence_percent: Optional[int] = None,
+                    confidence_category: Optional[str] = None) -> "CoreEvent":
         data = {"inputTokens": input_tokens, "outputTokens": output_tokens, "estimatedCost": estimated_cost}
         if cache_creation_input_tokens:
             data["cacheCreationInputTokens"] = cache_creation_input_tokens
@@ -114,6 +116,10 @@ class CoreEvent:
             data["historyTokens"] = history_tokens
         if tool_result_tokens:
             data["toolResultTokens"] = tool_result_tokens
+        if confidence_percent is not None:
+            data["confidencePercent"] = confidence_percent
+        if confidence_category is not None:
+            data["confidenceCategory"] = confidence_category
         return CoreEvent(type="cost_update", data=data)
 
     @staticmethod

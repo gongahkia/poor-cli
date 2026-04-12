@@ -2582,7 +2582,6 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin, ProviderInfoMixin):
         else:
             self.provider.economy_max_output_tokens = 0
 
-    @staticmethod
     def _git_context_summary_cached(self) -> str:
         """Return git context, reusing cache when git state unchanged."""
         try:
@@ -3476,6 +3475,13 @@ class PoorCLICore(PermissionEngineMixin, ContextEngineMixin, ProviderInfoMixin):
             accumulated_text, confidence_suffix = self._ensure_confidence_line(accumulated_text)
             if confidence_suffix:
                 yield CoreEvent.text_chunk(confidence_suffix, request_id)
+
+            # emit final confidence score so the client can display it
+            _conf_pct = self._extract_confidence_percent(accumulated_text) or _DEFAULT_CONFIDENCE_PERCENT
+            yield CoreEvent.cost_update(
+                confidence_percent=_conf_pct,
+                confidence_category=self._confidence_bucket(_conf_pct),
+            )
 
             # architect mode: if architect responded with a plan, switch to editor for next turn
             if self._architect_mode and self._architect_mode.enabled and accumulated_text:

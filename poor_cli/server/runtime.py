@@ -477,7 +477,8 @@ class PoorCLIServer(ConfigHandlersMixin):
             return list(DEFAULT_TOOL_CAPABILITIES.get(tool_name, []))
         try:
             return registry.get_tool_capabilities(tool_name)
-        except Exception:
+        except Exception as e:
+            logger.debug("Tool registry lookup failed for %s, using defaults: %s", tool_name, e)
             from .tools_async import DEFAULT_TOOL_CAPABILITIES
 
             return list(DEFAULT_TOOL_CAPABILITIES.get(tool_name, []))
@@ -921,11 +922,11 @@ class PoorCLIServer(ConfigHandlersMixin):
                     try:
                         sub_entries = sorted(_os.listdir(_os.path.join(cwd, d)))
                         sub = [s for s in sub_entries if not s.startswith(".") and s not in skip][:6]
-                    except OSError:
-                        pass
+                    except OSError as e:
+                        logger.debug("Repo index: failed to list directory %s: %s", d, e)
                     graph_nodes.append({"name": d, "children": sub})
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Repo index: graph node collection failed: %s", e)
             # inject nodes into the last progress notification
             if graph_nodes:
                 _init_progress_queue.append(JsonRpcMessage(
@@ -1011,7 +1012,19 @@ class PoorCLIServer(ConfigHandlersMixin):
                 }
             }
         except ConfigurationError as e:
+            # Surface configuration errors (wrong provider, unavailable
+            # service, bad env, etc.) as structured JSON-RPC errors with
+            # an actionable error_code so the Neovim client can show a
+            # meaningful message instead of a raw "exit code 143" crash.
             raise ConfigurationError(f"Initialization failed: {e}") from e
+        except Exception as e:
+            # Catch-all: unexpected errors during init should never crash
+            # the server silently.  Return a JSON-RPC error so the client
+            # surfaces the message.
+            logger.exception("Unexpected error during initialization")
+            raise ConfigurationError(
+                f"Initialization failed unexpectedly: {e}"
+            ) from e
 
     async def handle_shutdown(self, params: Dict[str, Any]) -> None:
         """Shutdown the server."""
@@ -4903,7 +4916,8 @@ class PoorCLIServer(ConfigHandlersMixin):
                         }
                         for _k in ("cumulativeInputTokens", "cumulativeOutputTokens",
                                    "cacheCreationInputTokens", "cacheReadInputTokens",
-                                   "systemTokens", "historyTokens", "toolResultTokens"):
+                                   "systemTokens", "historyTokens", "toolResultTokens",
+                                   "confidencePercent", "confidenceCategory"):
                             if event.data.get(_k):
                                 cost_params[_k] = event.data[_k]
                         notification = JsonRpcMessage(method="poor-cli/costUpdate", params=cost_params)

@@ -247,7 +247,18 @@ local function stop_startup_feedback(state)
         local config_probe_start = (uv and uv.hrtime and uv.hrtime()) or 0
         M.request("poor-cli/getProviderInfo", {}, function(result, err)
             vim.schedule(function()
-                if err then return end -- soft-init or transient failure; stay silent
+                if err then
+                    -- Surface config probe failures so users know the server
+                    -- is running but not fully configured (missing key, bad
+                    -- provider, etc.) instead of silently appearing "ready".
+                    local msg = M.format_error(err)
+                    if msg:find("not initialized", 1, true) then
+                        -- Server hasn't finished init yet; don't alarm the user.
+                        return
+                    end
+                    vim.notify("[poor-cli] Config probe failed: " .. msg .. ". Run :PoorCliDoctor", vim.log.levels.WARN)
+                    return
+                end
                 local probe_elapsed = 0
                 if config_probe_start > 0 and uv and uv.hrtime then
                     probe_elapsed = math.max(0, math.floor((uv.hrtime() - config_probe_start) / 1000000000))
@@ -1322,6 +1333,14 @@ function M.handle_notification(message)
                 tool_name = params.toolName or "",
                 tool_args = params.toolArgs or {},
                 prompt_id = params.promptId or "",
+                operation = params.operation or "",
+                paths = params.paths or {},
+                diff = params.diff or "",
+                checkpoint_id = params.checkpointId,
+                changed = params.changed,
+                message = params.message or "",
+                capabilities = params.capabilities or {},
+                sandbox_preset = params.sandboxPreset or "",
             },
         })
     elseif message.method == "poor-cli/planReq" then
@@ -1377,6 +1396,8 @@ function M.handle_notification(message)
                 estimated_cost = params.estimatedCost or 0,
                 cache_creation_input_tokens = params.cacheCreationInputTokens or 0,
                 cache_read_input_tokens = params.cacheReadInputTokens or 0,
+                confidence_percent = params.confidencePercent,
+                confidence_category = params.confidenceCategory,
             },
         })
     elseif message.method == "poor-cli/roomEvent" then
@@ -1481,12 +1502,28 @@ function M.handle_exit(code)
         return
     end
 
+    -- Surface the last stderr line so the user knows *why* the server crashed
+    -- instead of just seeing an opaque exit code.
+    local hint = ""
+    if M.last_stderr_excerpt ~= "" then
+        -- pick last meaningful line from stderr
+        for i = #M.recent_stderr, 1, -1 do
+            local line = M.recent_stderr[i]
+            if line and line ~= "" then
+                -- strip log prefix (timestamp - module - level - )
+                local msg = line:match("^%d[^-]*%-%s*%w+%s*%-%s*%w+%s*%-%s*(.+)$") or line
+                hint = " (" .. msg .. ")"
+                break
+            end
+        end
+    end
+
     if config.get("auto_restart") then
-        vim.notify("[poor-cli] Server restarted — chat context was reset. Use :PoorCliSessionRestore to recover.", vim.log.levels.WARN)
+        vim.notify("[poor-cli] Server crashed" .. hint .. " — restarting. Chat context was reset.", vim.log.levels.WARN)
         schedule_restart()
     else
         update_state("error", "Server exited unexpectedly")
-        notify_with_context("Server exited with code " .. code .. ". Run :PoorCliDoctor for diagnostics.", vim.log.levels.WARN)
+        notify_with_context("Server exited with code " .. code .. hint .. ". Run :PoorCliDoctor for diagnostics.", vim.log.levels.ERROR)
     end
 end
 

@@ -905,6 +905,10 @@ class TieredContextCompactor:
         if role == "system":
             return None
         if role in {"tool", "function"}:
+            # Tool result messages are dropped — their content is captured in
+            # the compaction summary.  The matching assistant ``tool_calls``
+            # field is also stripped below so the provider never receives an
+            # orphaned tool-result or tool-call reference.
             return None
         text = self._extract_text(message)
         sanitized = {
@@ -912,6 +916,11 @@ class TieredContextCompactor:
             "content": text,
             "parts": [{"text": text}],
         }
+        # Intentionally omit "tool_calls" / "function_call" — the
+        # corresponding tool/function result messages are dropped above, so
+        # keeping tool_calls would create an orphan that the OpenAI API
+        # rejects with "messages with role 'tool' must be a response to a
+        # preceding message with 'tool_calls'".
         metadata = message.get("metadata", {}) if isinstance(message.get("metadata"), dict) else {}
         if metadata:
             sanitized["metadata"] = dict(metadata)

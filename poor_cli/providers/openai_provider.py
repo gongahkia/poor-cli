@@ -454,10 +454,46 @@ class OpenAIProvider(BaseProvider):
         return self.messages.copy()
 
     def set_history(self, messages: List[Dict[str, Any]]) -> None:
-        self.messages = [
-            message for message in messages
-            if message.get("role") != "system"
-        ]
+        filtered = [m for m in messages if m.get("role") != "system"]
+        # Sanitize tool_calls / tool message pairs after context compaction.
+        # OpenAI rejects orphaned tool results (role=tool without a preceding
+        # assistant message that has a matching tool_calls entry).
+        # First pass: collect tool_call IDs that have matching results.
+        provided_tool_call_ids: set = set()
+        result_tool_call_ids: set = set()
+        for msg in filtered:
+            if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                for tc in msg["tool_calls"]:
+                    tc_id = tc.get("id", "")
+                    if tc_id:
+                        provided_tool_call_ids.add(tc_id)
+            elif msg.get("role") == "tool":
+                tc_id = msg.get("tool_call_id", "")
+                if tc_id:
+                    result_tool_call_ids.add(tc_id)
+        # IDs that have both a call and a result are valid pairs.
+        valid_ids = provided_tool_call_ids & result_tool_call_ids
+        orphan_calls = provided_tool_call_ids - valid_ids
+        orphan_results = result_tool_call_ids - valid_ids
+        # Second pass: strip orphans.
+        cleaned: list = []
+        for msg in filtered:
+            if msg.get("role") == "tool" and msg.get("tool_call_id", "") in orphan_results:
+                continue  # drop orphaned tool result
+            if msg.get("role") == "assistant" and msg.get("tool_calls") and orphan_calls:
+                # Remove orphaned tool_calls entries; keep valid ones.
+                kept = [tc for tc in msg["tool_calls"] if tc.get("id", "") not in orphan_calls]
+                sanitized = dict(msg)
+                if kept:
+                    sanitized["tool_calls"] = kept
+                else:
+                    del sanitized["tool_calls"]
+                    if not sanitized.get("content"):
+                        sanitized["content"] = ""
+                cleaned.append(sanitized)
+            else:
+                cleaned.append(msg)
+        self.messages = cleaned
 
     def update_system_instruction(self, instruction: str) -> None:
         self.system_instruction = instruction
