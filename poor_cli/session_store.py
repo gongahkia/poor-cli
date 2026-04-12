@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from .persisted import load_json, save_json
 
 
 class SessionStore:
@@ -26,7 +27,7 @@ class SessionStore:
         snapshot = dict(payload)
         snapshot["session_id"] = safe_session_id
         snapshot["saved_at"] = snapshot.get("saved_at") or datetime.now(timezone.utc).isoformat()
-        target.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
+        save_json(target, "session", snapshot)
 
         index_entry = {
             "sessionId": safe_session_id,
@@ -62,8 +63,10 @@ class SessionStore:
         if not latest_path.is_file():
             return None
         try:
-            payload = json.loads(latest_path.read_text(encoding="utf-8"))
+            payload = load_json(latest_path, "session")
         except Exception:
+            return None
+        if not isinstance(payload, dict):
             return None
         payload.setdefault("session_id", sessions[0].get("sessionId", ""))
         payload.setdefault("saved_at", sessions[0].get("savedAt", ""))
@@ -83,8 +86,10 @@ class SessionStore:
             if not path.is_file():
                 continue
             try:
-                payload = json.loads(path.read_text(encoding="utf-8"))
+                payload = load_json(path, "session")
             except Exception:
+                continue
+            if not isinstance(payload, dict):
                 continue
             payload.setdefault("session_id", target_session)
             payload.setdefault("saved_at", entry.get("savedAt", ""))
@@ -93,10 +98,8 @@ class SessionStore:
         return None
 
     def _read_index(self) -> List[Dict[str, Any]]:
-        if not self.index_path.is_file():
-            return []
         try:
-            payload = json.loads(self.index_path.read_text(encoding="utf-8"))
+            payload = load_json(self.index_path, "session_index")
         except Exception:
             return []
         if not isinstance(payload, dict):
@@ -116,4 +119,4 @@ class SessionStore:
             "updatedAt": datetime.now(timezone.utc).isoformat(),
             "sessions": entries,
         }
-        self.index_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        save_json(self.index_path, "session_index", payload)

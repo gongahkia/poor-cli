@@ -6,7 +6,6 @@ Stores snapshots in .poor-cli/checkpoints/
 """
 
 import os
-import json
 import shutil
 import hashlib
 import zlib
@@ -20,6 +19,7 @@ from threading import Thread, Event
 import time
 
 from poor_cli.exceptions import FileOperationError, setup_logger
+from poor_cli.persisted import load_json, save_json
 
 logger = setup_logger(__name__)
 
@@ -173,8 +173,7 @@ class CheckpointManager:
         """Load checkpoint index from disk"""
         try:
             if self.index_file.exists():
-                with open(self.index_file, 'r') as f:
-                    data = json.load(f)
+                data = load_json(self.index_file, "checkpoint") or {}
 
                 # Load checkpoint metadata (not file content)
                 for cp_data in data.get("checkpoints", []):
@@ -219,8 +218,7 @@ class CheckpointManager:
                 "checkpoints": [cp.to_dict() for cp in self.checkpoints]
             }
 
-            with open(self.index_file, 'w') as f:
-                json.dump(data, f, indent=2)
+            save_json(self.index_file, "checkpoint", data)
 
             logger.debug("Saved checkpoint index")
 

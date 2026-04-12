@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Sequence
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from .persisted import run_sqlite_migrations
 from .run_history import RunHistoryManager
 from .sandbox import normalize_preset
 from .task_manager import APPROVAL_REQUIRED_PRESETS, TaskManager, TaskRecord
@@ -365,6 +366,7 @@ class AutomationManager:
                 )
                 """
             )
+            run_sqlite_migrations(conn, "automation")
 
     def create_automation(
         self,
