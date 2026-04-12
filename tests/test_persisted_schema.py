@@ -114,3 +114,36 @@ def test_sqlite_newer_version_rejected(tmp_path: Path) -> None:
             run_sqlite_migrations(conn, "audit")
     finally:
         conn.close()
+
+
+def test_audit_log_seeds_meta_row(tmp_path: Path) -> None:
+    from poor_cli.audit_log import AuditLogger
+
+    AuditLogger(audit_dir=tmp_path / "audit")
+    conn = sqlite3.connect(tmp_path / "audit" / "audit.db")
+    try:
+        assert read_sqlite_version(conn) == CURRENT_VERSIONS["audit"]
+        row = conn.execute("SELECT value FROM meta WHERE key='artifact'").fetchone()
+        assert row[0] == "audit"
+    finally:
+        conn.close()
+
+
+def test_session_store_writes_envelope(tmp_path: Path) -> None:
+    from poor_cli.session_store import SessionStore
+
+    store = SessionStore(repo_root=tmp_path)
+    store.save("abc", {"history": [{"role": "user", "content": "hi"}]})
+
+    index_raw = json.loads((tmp_path / ".poor-cli" / "sessions" / "index.json").read_text())
+    assert index_raw["schema_version"] == CURRENT_VERSIONS["session_index"]
+    assert index_raw["artifact"] == "session_index"
+
+    session_files = list((tmp_path / ".poor-cli" / "sessions").glob("session-abc-*.json"))
+    assert len(session_files) == 1
+    envelope = json.loads(session_files[0].read_text())
+    assert envelope["schema_version"] == CURRENT_VERSIONS["session"]
+    assert envelope["artifact"] == "session"
+
+    loaded = store.load_latest()
+    assert loaded is not None and loaded["session_id"] == "abc"
