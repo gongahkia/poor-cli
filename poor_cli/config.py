@@ -264,6 +264,12 @@ class ContextCompressionConfig:
 class ContextConfig:
     """Context assembly feature flags."""
     safe_pretokenization: bool = False  # v1 default off; v2 flip requires real-world parse/edit telemetry
+    # CB1: send a diff against last-sent text instead of the full file when the
+    # same (file_path, pinned_context_hash) re-appears within TTL. Default off
+    # because diff-mode changes what the model sees; flip on after telemetry.
+    diff_of_diff_cache: bool = False
+    diff_of_diff_min_chars: int = 800   # only cache files larger than this
+    diff_of_diff_ttl_seconds: float = 21600.0  # 6h — matches DiffCache default
 
 
 @dataclass

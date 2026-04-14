@@ -219,6 +219,7 @@ class ContextAssemblyOrchestrator:
         context_result = await self._select_files(message, request)
         if context_result is not None:
             self._apply_safe_pretokenization(context_result, request)
+            self._apply_diff_of_diff_cache(context_result, request)
             referenced_files.extend(file_ctx.path for file_ctx in context_result.files)
             self._record_context_result(context_result, request)
         rules = self._assemble_rules(message, referenced_files)
@@ -408,6 +409,62 @@ class ContextAssemblyOrchestrator:
                     compressed_tokens,
                 )
         context_result.total_tokens = total_tokens
+
+    def _apply_diff_of_diff_cache(self, context_result: Any, request: TurnInput) -> None:
+        """CB1: replace re-read file content with a collapsed diff vs last send.
+
+        Skips edit targets (model needs full content), small files (no win),
+        and any errors (graceful fall-back to full content).
+        """
+        cfg = getattr(getattr(self._core, "config", None), "context", None)
+        if not bool(getattr(cfg, "diff_of_diff_cache", False)):
+            return
+        min_chars = int(getattr(cfg, "diff_of_diff_min_chars", 800) or 800)
+        ttl = float(getattr(cfg, "diff_of_diff_ttl_seconds", 21600.0) or 21600.0)
+        try:
+            from .context.diff_cache import DiffCache
+        except Exception:
+            return
+        cache = getattr(self._core, "_diff_of_diff_cache", None)
+        if cache is None:
+            cache = DiffCache(ttl_seconds=ttl)
+            self._core._diff_of_diff_cache = cache
+        # build a per-turn pinned-context hash so the cache key reflects the
+        # surrounding context (pinned files + active turn). Two turns with the
+        # same pinned set hit the same cache; different sets get different keys.
+        import hashlib as _hashlib
+        pinned_hash = _hashlib.sha256(
+            "|".join(sorted(request.pinned_context_files or ())).encode("utf-8", errors="replace")
+        ).hexdigest()[:16]
+        for file_ctx in getattr(context_result, "files", []) or []:
+            content = str(getattr(file_ctx, "content", "") or "")
+            if not content or len(content) < min_chars:
+                continue
+            if self._is_edit_target(file_ctx, request):
+                continue
+            try:
+                key = DiffCache.make_key(str(getattr(file_ctx, "path", "") or ""), pinned_hash)
+                emission, _entry = cache.ensure_entry(key, content)
+                if emission.mode == "diff":
+                    file_ctx.content = emission.content
+                    file_ctx.size = len(emission.content)
+                    setattr(file_ctx, "diff_of_diff_mode", "diff")
+                    setattr(file_ctx, "diff_of_diff_tokens_saved", emission.tokens_saved_estimate)
+                    tracker = getattr(self._core, "_economy_tracker", None)
+                    if tracker is not None and hasattr(tracker, "record_safe_pretokenization"):
+                        # reuse the savings counter; CB1 surfaces under the same dashboard row
+                        tracker.record_safe_pretokenization(
+                            str(getattr(file_ctx, "path", "") or ""),
+                            len(content),
+                            len(emission.content),
+                        )
+            except Exception as exc:
+                logger.debug("CB1 diff-of-diff skipped for %s: %s", getattr(file_ctx, "path", "?"), exc)
+        # persist after the pass so cache survives restarts
+        try:
+            cache.persist()
+        except Exception:
+            pass
 
     @staticmethod
     def _language_hint(file_ctx: FileContext) -> str:
