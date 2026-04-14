@@ -210,6 +210,9 @@ class InstructionManager:
         memory = self._load_memory()
         if memory is not None:
             sources.append(memory)
+        critical_memories = self._load_critical_memories()
+        if critical_memories is not None:
+            sources.append(critical_memories)
         focus = self._load_focus()
         if focus is not None:
             sources.append(focus)
@@ -893,6 +896,35 @@ class InstructionManager:
             content=content,
             path=self._relative_or_absolute(path),
         )
+
+    def _load_critical_memories(self) -> Optional[InstructionSource]:
+        """MH5: inject short feedback/user memories into the prompt prefix.
+
+        Pulls all memories via MemoryManager, partitions via MH5
+        retrieval-mode rules (short feedback/user, derivation_depth<=1),
+        and renders the always-injected subset. Tool-driven (longer)
+        memories stay out of the prefix and reach the agent only when it
+        explicitly recalls them.
+
+        No-op when MemoryManager raises or returns nothing — keeps the
+        instruction stack resilient to a corrupt memory dir.
+        """
+        try:
+            from .memory import MemoryManager
+            from .memory_retrieval_mode import render_always_injected
+            mgr = MemoryManager()
+            mgr.load()
+            entries = mgr.list_all()
+            content = render_always_injected(entries)
+            if not content:
+                return None
+            return InstructionSource(
+                kind="critical_memories",
+                label="Critical Memories",
+                content=content,
+            )
+        except Exception:
+            return None
 
     def _load_focus(self) -> Optional[InstructionSource]:
         path = self.repo_root / ".poor-cli" / "focus.json"
