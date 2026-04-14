@@ -177,8 +177,8 @@ These are the remaining PARTIAL items surfaced by a full audit of every phase in
 ### SBP1. Phase 2C — Prompt caching parity across providers — DONE 2026-04-14
 Documented the caching matrix across all 11 providers in `poor_cli/providers/base.py` module docstring. Anthropic stays the only provider with explicit `cache_control` markers; others rely on their native server-side caches (OpenAI implicit prefix, Gemini `cachedContent` opt-in, vLLM/SGLang/TGI automatic). Follow-up work is gated on telemetry signals showing non-Anthropic cache hit rate materially affects `median_usd_per_completion`.
 
-### SBP2. Phase 4C — Structured output parity (Ollama / OpenRouter)
-`poor_cli/structured_output.py` supports `response_format` on Anthropic + OpenAI. Ollama's `/api/chat` supports a `format: "json"` field; OpenRouter routes transparently to the underlying provider. Audit `tool_translator.py` for coverage, add structured output passthrough for both, extend `tests/test_structured_output.py` with 1 case per provider. Estimated ~1 day.
+### SBP2. Phase 4C — Structured output parity (Ollama / OpenRouter) — DONE 2026-04-14
+Audit findings: Ollama was already wiring `format: "json"` via `_build_chat_request` when `structured_output` was set (confirmed in `ollama_provider.py:97-98`); OpenRouter inherits the full `response_format` path from `OpenAIProvider` via subclassing and declares `supports_structured_output=True`. Gap was test coverage only. `tests/test_structured_output_parity.py` adds 7 parity cases covering the Ollama format sentinel, the `should_use_structured_output` gate, Ollama's capability declaration, the Ollama request body shape, and OpenRouter's inheritance + capability.
 
 ### SBP3. Phase 14A — Diff Review regenerate action — DONE (verified present 2026-04-14)
 False positive from the earlier audit. `diff_review.lua:162` binds `gc` to `regen_hunk`, `diff_review.lua:234-238` posts to `diff.regen`; server handler at `poor_cli/server/handlers/diff_review.py:120-121` registers both `diff.regen` and `poor-cli/regenerateHunk`; implementation in `edit_staging.py::regenerate_hunk`. No further action required.
