@@ -34,6 +34,10 @@ class PruningPolicy:
     # soft-pinned turns are pruned only when current_tokens > target * factor.
     # Default 1.05: start evicting soft-pins once we exceed budget by >5%.
     soft_pin_evict_factor: float = 1.05
+    # CB3 adaptive tool weighting — when True, the pruner multiplies a tool
+    # turn's contribution by ToolSuccessTracker.tool_weight_multiplier(name).
+    # Default off so legacy behavior is preserved.
+    adaptive_tool_scoring: bool = False
 
 
 # sentinel strings accepted by MessagePolicy.pinned / metadata.pinned
@@ -129,8 +133,14 @@ class PruningResult:
 class HistoryPruner:
     """score conversation turns and selectively prune low-value turns."""
 
-    def __init__(self):
-        pass
+    def __init__(self, tool_success_tracker=None):
+        """Optional tool_success_tracker enables CB3 adaptive scoring.
+
+        When provided AND ``policy.adaptive_tool_scoring`` is True, each tool
+        turn's score is multiplied by ``tracker.tool_weight_multiplier(name)``,
+        which maps a rolling per-tool success rate into [0.5, 1.5].
+        """
+        self._tool_tracker = tool_success_tracker
 
     def policy_for(self, *, mode: str = "balanced", economy_preset: str = "balanced") -> PruningPolicy:
         normalized_mode = str(mode or "balanced").strip().lower() or "balanced"
@@ -233,7 +243,7 @@ class HistoryPruner:
             role = self._normalized_role(message)
             file_refs = file_refs_by_index[index]
             recency = 0.42 / (1.0 + max(0, len(history) - index - 1) / 3.0)
-            tool_weight = self._tool_score(message, text)
+            tool_weight = self._tool_score(message, text, policy=policy)
             file_weight = 0.35 if resolved_active_files.intersection(file_refs) else 0.0
             role_weight = {
                 "user": 0.32,
@@ -399,11 +409,21 @@ class HistoryPruner:
 
         return {index: tuple(sorted(reasons)) for index, reasons in superseded.items()}
 
-    def _tool_score(self, message: Dict[str, Any], text: str) -> float:
+    def _tool_score(self, message: Dict[str, Any], text: str, *, policy: Optional["PruningPolicy"] = None) -> float:
         role = self._normalized_role(message)
         if role not in {"tool", "function"}:
             return 0.0
-        return 0.18 if self._tool_succeeded(message, text) else -0.3
+        succeeded = self._tool_succeeded(message, text)
+        base = 0.18 if succeeded else -0.3
+        # CB3: adjust by per-tool success rate when enabled and tracker provided
+        if policy and policy.adaptive_tool_scoring and self._tool_tracker is not None:
+            name = self._tool_name(message)
+            if name:
+                multiplier = self._tool_tracker.tool_weight_multiplier(name)
+                # only amplify the positive base — failures already penalize
+                if base > 0:
+                    base = base * multiplier
+        return base
 
     def _tool_succeeded(self, message: Dict[str, Any], text: str) -> bool:
         metadata = message.get("metadata", {}) if isinstance(message.get("metadata"), dict) else {}
