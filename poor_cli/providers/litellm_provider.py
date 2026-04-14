@@ -24,7 +24,6 @@ that would bind a session to the backend.
 
 from __future__ import annotations
 
-import asyncio
 import json
 from typing import Any, AsyncIterator, Dict, List, Optional
 

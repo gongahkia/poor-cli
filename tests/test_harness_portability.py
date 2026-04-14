@@ -44,11 +44,38 @@ def _provider_files() -> list[Path]:
     )
 
 
+def _strip_comments_and_docstrings(src: str) -> str:
+    """Return src with docstrings and inline comments replaced by blanks.
+
+    Preserves line numbers so violation messages stay accurate.
+    Only code — not documentation text mentioning the forbidden pattern —
+    should trip the portability gate.
+    """
+    import re as _re
+    # strip triple-quoted strings (both flavors) — greedy across lines
+    def _blank_match(m):
+        return "\n" * m.group(0).count("\n")
+    without_triple = _re.sub(r'"""[\s\S]*?"""', _blank_match, src)
+    without_triple = _re.sub(r"'''[\s\S]*?'''", _blank_match, without_triple)
+    # strip line comments (# ...)
+    lines = without_triple.splitlines(keepends=True)
+    stripped = []
+    for line in lines:
+        idx = line.find("#")
+        if idx >= 0:
+            # keep prefix before # + newline
+            stripped.append(line[:idx] + ("\n" if line.endswith("\n") else ""))
+        else:
+            stripped.append(line)
+    return "".join(stripped)
+
+
 class HarnessPortabilityTests(unittest.TestCase):
     def test_no_stateful_pattern_without_enforce_guard(self):
         violations: list[str] = []
         for path in _provider_files():
-            src = path.read_text(encoding="utf-8")
+            src_full = path.read_text(encoding="utf-8")
+            src = _strip_comments_and_docstrings(src_full)
             has_enforce = "enforce_portability(" in src
             for pattern, code in STATEFUL_PATTERNS:
                 for match in pattern.finditer(src):
