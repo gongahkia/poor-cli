@@ -31,8 +31,22 @@ Implementation upgraded: `_maybe_auto_commit` in `tools_async.py` now stages fir
 ### H3. Publish benchmark data
 No prospective user will switch from Aider/Claude Code without evidence. Run SWE-bench Lite or Aider's benchmark suite against poor-cli with Gemini, OpenAI, and Anthropic providers. Publish pass@1 with cost per completion and methodology. This is a trust benchmark, not the north-star.
 
-### H4. Comprehensive user documentation — partial DONE 2026-04-14
-Provider setup doc lands: `docs/PROVIDERS.md` covers all 11 providers (cloud + 7 local) with setup commands, env vars, default models, tier tables, capability matrix, and troubleshooting. Also shipped in prior waves: `docs/MCP.md` (MCP custom servers), `docs/HARNESS_PORTABILITY.md`, `docs/MULTIPLAYER.md`, `ARCHITECTURE.md`, `POOR.md`, `NORTH_STAR.md`. Still queued: economy-mode tuning deep-dive, sandbox preset guide, automation/cron guide, full command reference — all can ship as individual docs/ pages without code changes.
+### H4. Comprehensive user documentation — DONE 2026-04-14
+Full set now lives under `docs/`:
+- `PROVIDERS.md` — all 11 providers, setup, tiers, troubleshooting.
+- `MCP.md` — custom MCP servers, transport, allow/deny.
+- `HARNESS_PORTABILITY.md` — anti-lock-in stance + enforcement.
+- `MULTIPLAYER.md` — protocol, invites, host setup.
+- `AUTO_COMMIT.md` — git-native auto-commit workflow.
+- `ECONOMY.md` — frugal/balanced/quality preset deep-dive + savings dashboard tour.
+- `SANDBOX.md` — preset matrix, capability declarations, OS-level layers, permission rules, audit log.
+- `AUTOMATIONS.md` — AutomationRule shape, cron/event/slash triggers, examples.
+- `COMMANDS.md` — generated full reference for all 122 slash commands.
+- `M5_LATENT_BRIDGE.md` — research bridge spec (open upstream work).
+- `BENCHMARKS.md` — pending pass@1 tracking.
+- `kv_cache_setup.md` — self-hosted KV cache setup.
+- `ARCHITECTURE.md`, `POOR.md`, `NORTH_STAR.md` at repo root.
+`scripts/generate_command_docs.py` regenerates COMMANDS.md from the manifest so it never drifts.
 
 ### H5. Neovim plugin as primary marketing surface — DONE 2026-04-14 (verified)
 All listed surfaces shipped. Plan mode floating window, Telescope command palette, enhanced lualine (cost/savings/provider/sandbox/users badges), prompt queue, inline completion, diff review, timeline, context panel, Savings dashboard, Watch status panel, Trust Center, Policy inspector, multiplayer room — all present in `nvim-poor-cli/lua/poor-cli/`. Command end-to-end verification is a manual QA pass, queued as part of C1 pip-install validation.
