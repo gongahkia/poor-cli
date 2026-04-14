@@ -85,7 +85,7 @@ def render_commands_markdown(*, heading: str = "## Available Commands") -> str:
     manifest = load_command_manifest()
     lines = [heading, ""]
     for note in manifest.notes:
-        lines.append(f"{note}  ")
+        lines.append(note)
     lines.append("")
     for category, commands in _group_by_category(manifest.commands).items():
         lines.append(f"**{category}:**")
