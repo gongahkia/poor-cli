@@ -870,7 +870,18 @@ class ToolRegistryAsync:
         )
 
     def _maybe_auto_commit(self, file_path: str, operation: str) -> None:
-        """Auto-commit a file mutation if agentic.auto_commit is enabled."""
+        """Auto-commit a file mutation if agentic.auto_commit is enabled.
+
+        Commit message format:
+            AI: <verb> <N> line(s) in <rel_path>
+
+        Verbs: "create" for new files (write_file where the file didn't exist),
+        "update" for existing file edits. Line count comes from git diff against
+        HEAD; falls back to "changes" when diff unavailable.
+
+        Skips when: not a git repo, file is gitignored, or nothing changed per
+        ``git status`` (avoids empty commits).
+        """
         try:
             agentic = getattr(getattr(self, "config", None), "agentic", None)
             if not agentic or not getattr(agentic, "auto_commit", False):
@@ -883,8 +894,24 @@ class ToolRegistryAsync:
             if ignored.returncode == 0: # file is gitignored
                 return
             rel = os.path.relpath(file_path)
+            # stage first so we can diff the staged content accurately
             _sp.run(["git", "add", "--", file_path], capture_output=True, timeout=10)
-            _sp.run(["git", "commit", "-m", f"Auto: {operation} {rel}"], capture_output=True, timeout=15)
+            # bail if nothing to commit (e.g. write wrote identical content)
+            diff_cached = _sp.run(["git", "diff", "--cached", "--shortstat", "--", file_path], capture_output=True, text=True, timeout=5)
+            if not diff_cached.stdout.strip():
+                return
+            # craft a descriptive message
+            is_new_file = _sp.run(["git", "log", "-1", "--", file_path], capture_output=True, text=True, timeout=5)
+            verb = "create" if not is_new_file.stdout.strip() else "update"
+            # parse shortstat like "1 file changed, 12 insertions(+), 3 deletions(-)"
+            import re as _re
+            m = _re.search(r"(\d+) insertion|(\d+) deletion", diff_cached.stdout)
+            line_count = 0
+            for plus, minus in _re.findall(r"(\d+) insertion|(\d+) deletion", diff_cached.stdout):
+                line_count += int(plus or 0) + int(minus or 0)
+            suffix = f"{line_count} line{'s' if line_count != 1 else ''}" if line_count else "changes"
+            msg = f"AI: {verb} {suffix} in {rel}"
+            _sp.run(["git", "commit", "-m", msg], capture_output=True, timeout=15)
         except Exception as e:
             logger.debug("auto-commit skipped: %s", e)
 

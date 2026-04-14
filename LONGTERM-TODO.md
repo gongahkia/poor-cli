@@ -25,8 +25,8 @@ No visual demo exists. Record a screencast showing the Neovim plugin: provider s
 ### H1. Neovim inline tab completion (FIM) — DONE
 Wired through JSON-RPC server. `inline.lua` has ghost-text, `blink.lua`/`cmp.lua` provide completion sources. Verify edge cases: multi-line completions, partial accept, language-specific prompt tuning.
 
-### H2. Git-native auto-commit mode
-Config field `auto_commit: bool` exists on `AgenticConfig` but the implementation is thin. Aider's approach — auto-commit after every AI file mutation with a descriptive message — is simpler than the checkpoint system and gives free undo via `git revert`. Make this the recommended default, ensure it works cleanly with worktree-isolated tasks, and document the workflow.
+### H2. Git-native auto-commit mode — DONE 2026-04-14
+Implementation upgraded: `_maybe_auto_commit` in `tools_async.py` now stages first, checks `git diff --cached --shortstat` to skip no-op writes, detects new-file vs update via `git log`, and produces descriptive commit messages in the form `AI: <verb> <N> lines in <rel_path>`. Gitignored files still skip. Tests in `tests/test_auto_commit.py` cover the flow. Workflow doc added at `docs/AUTO_COMMIT.md` covering enable, message format, worktree interaction, revert patterns, and when-NOT-to-enable. Default stays `false` since auto-committing to a user's dirty tree is destructive — enabling is a conscious opt-in.
 
 ### H3. Publish benchmark data
 No prospective user will switch from Aider/Claude Code without evidence. Run SWE-bench Lite or Aider's benchmark suite against poor-cli with Gemini, OpenAI, and Anthropic providers. Publish pass@1 with cost per completion and methodology. This is a trust benchmark, not the north-star.
