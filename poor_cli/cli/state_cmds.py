@@ -195,6 +195,10 @@ def run_memory_mode(argv: Sequence[str]) -> int:
     p_review.add_argument("--accept-all", action="store_true", help="bulk accept every pending memory")
     p_review.add_argument("--reject-all", action="store_true", help="bulk reject every pending memory")
     p_review.add_argument("--json", action="store_true")
+    p_expire = sub.add_parser("expire", help="list or archive expired memories (MH3)")
+    p_expire.add_argument("--archive", action="store_true", help="actually archive (default lists only)")
+    p_expire.add_argument("--dry-run", action="store_true", help="show what archive would do without writing")
+    p_expire.add_argument("--json", action="store_true")
     args = parser.parse_args(list(argv))
     from ..memory import MemoryManager, MemoryEntry
     mgr = MemoryManager(repo_root=Path.cwd(), prefer_agent_rules=True)
@@ -273,5 +277,36 @@ def run_memory_mode(argv: Sequence[str]) -> int:
             if payload:
                 print("Use --accept-all or --reject-all to act on the entire pile.")
                 print("Per-entry edits run through Neovim :PoorCLIMemoryReview today.")
+        return 0
+    if args.subcommand == "expire":
+        from ..memory_forgetting import MemoryForgetter
+        forgetter = MemoryForgetter(mgr)
+        if args.archive:
+            summary = forgetter.run_expiry_pass(dry_run=args.dry_run)
+            payload = summary.to_dict()
+            if args.json:
+                _print_json(payload)
+            else:
+                action = "would archive" if args.dry_run else "archived"
+                print(f"{action} {len(payload['archived'])} memories.")
+                for name in payload["archived"]:
+                    print(f"  - {name}")
+            return 0
+        # default: just list candidates (no mutation)
+        stale = forgetter.due_for_expiry()
+        payload = [e.to_dict() for e in stale]
+        if args.json:
+            _print_json(payload)
+        else:
+            if not stale:
+                print("No memories due for expiry.")
+                print("(feedback never expires; user 365d; project 180d; reference 90d.)")
+            for e in payload:
+                last = e.get("lastAccessedAt") or e.get("updatedAt") or "?"
+                print(f"  [{e.get('type', '?')}] {e.get('name', '?')} — last accessed {last}, hits {e.get('hitCount', 0)}")
+            if stale:
+                print()
+                print("Run with --archive to move expired entries to <memory_dir>/archive/.")
+                print("Add --dry-run to preview the archive call without writing.")
         return 0
     raise SystemExit(f"Unknown memory subcommand: {args.subcommand}")

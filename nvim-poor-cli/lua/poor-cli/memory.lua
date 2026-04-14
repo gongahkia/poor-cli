@@ -195,6 +195,52 @@ function M.setup()
             end)
         end)
     end, { nargs = 1, desc = "Bulk accept|reject pending memories" })
+    create_command("PoorCLIMemoryExpiring", function()
+        if not rpc.is_running() then
+            require("poor-cli.notify").notify("[poor-cli] server not running", vim.log.levels.WARN)
+            return
+        end
+        rpc.request("poor-cli/memoryExpiring", {}, function(result, err)
+            vim.schedule(function()
+                if err then
+                    require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
+                    return
+                end
+                local entries = (result or {}).expiring or {}
+                local lines = { "# expiring memories", "" }
+                if #entries == 0 then
+                    table.insert(lines, "no memories due for expiry")
+                    table.insert(lines, "")
+                    table.insert(lines, "(MH3 forgetting policy: feedback never expires; user 365d; project 180d; reference 90d)")
+                else
+                    for _, m in ipairs(entries) do
+                        table.insert(lines, string.format("- [%s] %s — last accessed %s, hits %d",
+                            m.type or "?", m.name or "?",
+                            m.lastAccessedAt or m.updatedAt or "?",
+                            m.hitCount or 0))
+                    end
+                    table.insert(lines, "")
+                    table.insert(lines, "Run :PoorCLIMemoryExpireRun to archive these (or :PoorCLIMemoryExpireRun dry).")
+                end
+                open_scratch("[poor-cli memory expiring]", table.concat(lines, "\n"), "markdown")
+            end)
+        end)
+    end, { desc = "List memories due for expiry" })
+    create_command("PoorCLIMemoryExpireRun", function(opts)
+        local dry = (opts.args or ""):lower() == "dry"
+        rpc.request("poor-cli/memoryExpireRun", { dryRun = dry }, function(result, err)
+            vim.schedule(function()
+                if err then
+                    require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
+                    return
+                end
+                local archived = (result or {}).archived or {}
+                local prefix = dry and "[poor-cli] dry-run" or "[poor-cli] archived"
+                local msg = string.format("%s %d memories", prefix, #archived)
+                require("poor-cli.notify").notify(msg, vim.log.levels.INFO)
+            end)
+        end)
+    end, { nargs = "?", desc = "Archive expired memories (pass 'dry' for preview)" })
 end
 
 return M

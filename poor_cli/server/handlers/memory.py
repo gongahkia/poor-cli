@@ -112,6 +112,26 @@ class MemoryHandlersMixin:
             return {"error": "action must be 'accept' or 'reject'"}
         return summary.to_dict()
 
+    async def handle_memory_expiring(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """MH3: list memories due for expiry without mutating anything."""
+        from poor_cli.memory import MemoryManager
+        from poor_cli.memory_forgetting import MemoryForgetter
+        mgr = MemoryManager()
+        mgr.load()
+        stale = MemoryForgetter(mgr).due_for_expiry()
+        return {"expiring": [e.to_dict() for e in stale]}
+
+    async def handle_memory_expire_run(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """MH3: archive expired memories. dryRun=True returns candidate set only."""
+        from poor_cli.memory import MemoryManager
+        from poor_cli.memory_forgetting import MemoryForgetter
+        mgr = MemoryManager()
+        mgr.load()
+        dry = bool(params.get("dryRun", False))
+        summary = MemoryForgetter(mgr).run_expiry_pass(dry_run=dry)
+        return summary.to_dict()
+
+
 @register('poor-cli/memoryList')
 async def _rpc_153(ctx, params):
     return await ctx.handle_memory_list(params)
@@ -143,3 +163,11 @@ async def _rpc_review_reject(ctx, params):
 @register('poor-cli/memoryReviewBulk')
 async def _rpc_review_bulk(ctx, params):
     return await ctx.handle_memory_review_bulk(params)
+
+@register('poor-cli/memoryExpiring')
+async def _rpc_expiring(ctx, params):
+    return await ctx.handle_memory_expiring(params)
+
+@register('poor-cli/memoryExpireRun')
+async def _rpc_expire_run(ctx, params):
+    return await ctx.handle_memory_expire_run(params)
