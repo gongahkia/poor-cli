@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -41,11 +43,12 @@ class DiffOfDiffOrchestratorTests(unittest.TestCase):
         config = Config()
         config.context.diff_of_diff_cache = enabled
         config.context.diff_of_diff_min_chars = min_chars
-        # Avoid persisting the diff cache to disk during tests
         config.context.diff_of_diff_ttl_seconds = 60
+        # isolate this test's cache from any sibling-test or cwd state
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        config.context.diff_of_diff_cache_path = str(Path(self._tmp.name) / "diff_cache.json")
         core = _FakeCore(config)
-        # ContextAssemblyOrchestrator constructor pulls existing helpers; avoid
-        # mounting them by creating the bare object via __new__ + __init__-lite.
         orch = ContextAssemblyOrchestrator.__new__(ContextAssemblyOrchestrator)
         orch._core = core
         orch._last_invalidation_reason = ""

@@ -427,7 +427,11 @@ class ContextAssemblyOrchestrator:
             return
         cache = getattr(self._core, "_diff_of_diff_cache", None)
         if cache is None:
-            cache = DiffCache(ttl_seconds=ttl)
+            override_path = getattr(cfg, "diff_of_diff_cache_path", "") or ""
+            if override_path:
+                cache = DiffCache(Path(override_path), ttl_seconds=ttl)
+            else:
+                cache = DiffCache(ttl_seconds=ttl)
             self._core._diff_of_diff_cache = cache
         # build a per-turn pinned-context hash so the cache key reflects the
         # surrounding context (pinned files + active turn). Two turns with the

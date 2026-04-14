@@ -270,6 +270,7 @@ class ContextConfig:
     diff_of_diff_cache: bool = False
     diff_of_diff_min_chars: int = 800   # only cache files larger than this
     diff_of_diff_ttl_seconds: float = 21600.0  # 6h — matches DiffCache default
+    diff_of_diff_cache_path: str = ""   # override store path (tests + sandbox)
 
 
 @dataclass

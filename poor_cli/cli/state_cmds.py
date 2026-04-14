@@ -191,6 +191,10 @@ def run_memory_mode(argv: Sequence[str]) -> int:
     p_delete = sub.add_parser("delete")
     p_delete.add_argument("name")
     p_delete.add_argument("--json", action="store_true")
+    p_review = sub.add_parser("review")
+    p_review.add_argument("--accept-all", action="store_true", help="bulk accept every pending memory")
+    p_review.add_argument("--reject-all", action="store_true", help="bulk reject every pending memory")
+    p_review.add_argument("--json", action="store_true")
     args = parser.parse_args(list(argv))
     from ..memory import MemoryManager, MemoryEntry
     mgr = MemoryManager(repo_root=Path.cwd(), prefer_agent_rules=True)
@@ -233,5 +237,41 @@ def run_memory_mode(argv: Sequence[str]) -> int:
             _print_json({"deleted": args.name})
         else:
             print(f"Deleted memory entry: {args.name}")
+        return 0
+    if args.subcommand == "review":
+        from ..memory_review import bulk_accept, bulk_reject, list_pending
+        pending = list_pending(mgr)
+        if args.accept_all:
+            summary = bulk_accept(mgr)
+            payload = summary.to_dict()
+            if args.json:
+                _print_json(payload)
+            else:
+                print(f"Accepted {len(payload['accepted'])} memories.")
+            return 0
+        if args.reject_all:
+            summary = bulk_reject(mgr)
+            payload = summary.to_dict()
+            if args.json:
+                _print_json(payload)
+            else:
+                print(f"Rejected {len(payload['rejected'])} memories.")
+            return 0
+        payload = [e.to_dict() for e in pending]
+        if args.json:
+            _print_json(payload)
+        else:
+            if not payload:
+                print("No pending memories to review.")
+            for e in payload:
+                print(f"  [{e.get('type', '?')}] {e.get('name', '?')}: {e.get('description', '')}")
+                print(f"     filename: {e.get('filename', '')}")
+                src = e.get("sourceSessionId", "")
+                if src:
+                    print(f"     source:   {src} ({e.get('extractor', '?')})")
+                print()
+            if payload:
+                print("Use --accept-all or --reject-all to act on the entire pile.")
+                print("Per-entry edits run through Neovim :PoorCLIMemoryReview today.")
         return 0
     raise SystemExit(f"Unknown memory subcommand: {args.subcommand}")
