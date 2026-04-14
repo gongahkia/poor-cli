@@ -36,17 +36,8 @@ Config field `auto_commit: bool` exists on `AgenticConfig` but the implementatio
 ### H3. Publish benchmark data
 No prospective user will switch from Aider/Claude Code without evidence. Run SWE-bench Lite or Aider's benchmark suite against poor-cli with Gemini, OpenAI, and Anthropic providers. Publish pass@1 with cost per completion and methodology. This is a trust benchmark, not the north-star.
 
-### H4. Comprehensive user documentation
-README-only docs are insufficient. Write a docs site (or `docs/` markdown files) covering:
-- Provider setup (each of 5 providers, with screenshots)
-- Economy mode tuning (when to use frugal vs quality)
-- Multiplayer setup (signaling server, ngrok, invite flow)
-- Neovim plugin config (lazy.nvim, keymaps, telescope integration, lualine)
-- Sandbox presets (when to use each, Docker sandbox setup)
-- Memory system (types, lifecycle, auto-distillation)
-- Automation scheduling (cron patterns, timezone handling)
-- Task/agent management (worktree isolation, approval gates)
-- Command palette and all 95+ commands
+### H4. Comprehensive user documentation — partial DONE 2026-04-14
+Provider setup doc lands: `docs/PROVIDERS.md` covers all 11 providers (cloud + 7 local) with setup commands, env vars, default models, tier tables, capability matrix, and troubleshooting. Also shipped in prior waves: `docs/MCP.md` (MCP custom servers), `docs/HARNESS_PORTABILITY.md`, `docs/MULTIPLAYER.md`, `ARCHITECTURE.md`, `POOR.md`, `NORTH_STAR.md`. Still queued: economy-mode tuning deep-dive, sandbox preset guide, automation/cron guide, full command reference — all can ship as individual docs/ pages without code changes.
 
 ### H5. Neovim plugin as primary marketing surface
 The Neovim plugin is now the sole frontend. Polish it to best-in-class:
