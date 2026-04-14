@@ -133,11 +133,8 @@ These items operationalize the analysis of the memory-system axes (what's stored
 - A CLI equivalent (`poor-cli memory review`) for non-Neovim surfaces.
 - Gate the UX behind `memory.review.mode = "auto" | "prompt"`; default to `"auto"` for hobbyists to keep zero-friction flow.
 
-### MH5. Retrieval mode switch (always-injected vs tool-driven)
-Today every turn loads the full `MEMORY.md` index into the system prompt via `instructions.py`. That is fine when the index is short, but as memories grow this exhibits "stale context dominance" — old memories crowd out relevant recent work because they appear on every turn. Split the retrieval mode:
-- **Always-injected** (default for small memories): entries with `content` <= 10 lines and `type in {feedback, user}` are pinned into system prompt, as today.
-- **Tool-driven** (for longer memories): entries above the size threshold are NOT injected; instead the agent gets a `recall_memory(query: str)` tool that calls `MemoryManager.semantic_search` on demand.
-- This mirrors how humans work — ambient context for beliefs and preferences, explicit recall for episodic facts.
+### MH5. Retrieval mode switch (always-injected vs tool-driven) — DONE 2026-04-14
+`poor_cli/memory_retrieval_mode.py` ships `is_critical(entry)`, `partition(entries)`, `render_always_injected(entries)`, and `recall_memory(query)`. Default policy: always-inject when `type in {feedback, user}` AND `content <= 10 lines` AND `derivation_depth <= 1`; everything else is tool-driven. Overridable via `RetrievalModeConfig`. `recall_memory(query, hybrid=True)` composes MH2 + MH1+MH8 partitioning: returns only tool-driven candidates (always-injected ones are already in the system prompt prefix). Tested in `tests/test_memory_retrieval_mode.py` (10 tests). Wiring into `instructions.py` system-prompt composition is the remaining integration step (queued — backend is ready).
 
 ### MH6. Harness-portability audit test — DONE 2026-04-14
 `tests/test_harness_portability.py` scans every provider adapter for stateful-API patterns (`store=True`, `previous_response_id=`, `managed_agent`, `assistant_id=`, `thread_id=`) + persistent server-session attributes (`self._remote_session`, `self._server_session`, `self._stateful`). Any unguarded pattern fails CI. `docs/HARNESS_PORTABILITY.md` documents the stance, the enforcement catalog, and the opt-in flow for users who want stateful APIs. The audit for Anthropic `cache_control` — confirmed as prefix cache hint (safe), not session-state lookup — is captured in the doc. No provider adapter currently uses stateful APIs, so this lands as pure regression protection.
