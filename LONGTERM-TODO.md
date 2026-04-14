@@ -102,8 +102,8 @@ Two different `FileWatcher` classes coexist: `watch.py` (older, async generator 
 ### L3. Browser tool JS safety
 `browser_evaluate()` runs arbitrary JS in page context with no sandboxing. Add CSP-aware evaluation, output size limits, and a denylist for dangerous APIs (localStorage clearing, cookie manipulation, etc.).
 
-### L4. ARCHITECTURE.md + contribution guide
-Bus factor = 1. An architecture doc explaining: core engine → JSON-RPC → Neovim plugin, provider abstraction, tool registry, sandbox model, and the checkpoint/session lifecycle would signal openness to contributors.
+### L4. ARCHITECTURE.md + contribution guide — DONE 2026-04-14
+`ARCHITECTURE.md` at repo root documents topology, both sides (Lua plugin + Python server), key module map, request lifecycle, provider abstraction, tool registry, sandbox/policy, memory + rules split, sessions/checkpoints, cost telemetry, multiplayer, contributing patterns, and non-obvious conventions (shims, research gating, archival notes). Bus factor improved.
 
 ### L5. Naming consideration
 Resolved by PRD 061: the project was renamed from `poor-cli` to `poor-cli`, with legacy aliases retained for one release cycle minimum.
