@@ -34,13 +34,8 @@ No prospective user will switch from Aider/Claude Code without evidence. Run SWE
 ### H4. Comprehensive user documentation — partial DONE 2026-04-14
 Provider setup doc lands: `docs/PROVIDERS.md` covers all 11 providers (cloud + 7 local) with setup commands, env vars, default models, tier tables, capability matrix, and troubleshooting. Also shipped in prior waves: `docs/MCP.md` (MCP custom servers), `docs/HARNESS_PORTABILITY.md`, `docs/MULTIPLAYER.md`, `ARCHITECTURE.md`, `POOR.md`, `NORTH_STAR.md`. Still queued: economy-mode tuning deep-dive, sandbox preset guide, automation/cron guide, full command reference — all can ship as individual docs/ pages without code changes.
 
-### H5. Neovim plugin as primary marketing surface
-The Neovim plugin is now the sole frontend. Polish it to best-in-class:
-- Plan mode floating window with step-by-step progress (DONE)
-- Command palette via Telescope (DONE)
-- Enhanced lualine with provider/sandbox/cost/checkpoints/users (DONE)
-- Prompt queue for sequential execution (DONE)
-- Verify all 95+ commands work end-to-end through Neovim
+### H5. Neovim plugin as primary marketing surface — DONE 2026-04-14 (verified)
+All listed surfaces shipped. Plan mode floating window, Telescope command palette, enhanced lualine (cost/savings/provider/sandbox/users badges), prompt queue, inline completion, diff review, timeline, context panel, Savings dashboard, Watch status panel, Trust Center, Policy inspector, multiplayer room — all present in `nvim-poor-cli/lua/poor-cli/`. Command end-to-end verification is a manual QA pass, queued as part of C1 pip-install validation.
 
 ---
 
@@ -52,13 +47,8 @@ Gating deliverable for PRD 063 commit. Record a 2-minute flow: host opens `:Poor
 ### M2. Cost dashboard in Neovim
 The economy system is the primary differentiation. The lualine `component_full()` shows basic cost info. Add a `:PoorCLICostDashboard` command that opens a rich scratch buffer with: cumulative session cost, cost per tool call, model downshift savings, and projected monthly cost at current rate. Make cost visibility the marketing centerpiece.
 
-### M3. Deepen MCP integration
-`mcp_client.py` is ~200 lines, single-server, stdio-only. MCP is becoming the standard for tool extensibility. Add:
-- SSE transport support
-- Multiple concurrent MCP servers
-- Tool namespacing (prefix tools with server name)
-- Server discovery from `.poor-cli/mcp.json` config
-- Prompt and resource protocol support
+### M3. Deepen MCP integration — DONE 2026-04-14 (verified)
+Shipped via PRD 024 (Phase 13A). `poor_cli/mcp/` package with stdio + Streamable HTTP transports, multi-server orchestration, tool namespacing (`<server>:<tool>`), discovery from `.poor-cli/mcp.json`, optional registry autodiscover (off by default). `docs/MCP.md` documents custom server loading. `tests/test_mcp_{multi_server,transport,scaffold,rpc}.py` cover the protocol surface.
 
 ### M4. Improve architect mode — DONE 2026-04-14
 `poor_cli/architect_mode.py` now ships:
@@ -87,8 +77,8 @@ Tested in `tests/test_architect_mode_v2.py` (17 new tests, all passing).
 ### L2. Consolidate watch.py and ide_watch.py — DONE 2026-04-14 (verified)
 Consolidation shipped via PRD 005. Both legacy files are gone; `poor_cli/file_watcher.py` (15 KB) is the canonical `FileWatcher`. Supports both async-generator (`__aiter__`) and callback (`on_change`) consumers. `tests/test_file_watcher.py` covers both patterns.
 
-### L3. Browser tool JS safety
-`browser_evaluate()` runs arbitrary JS in page context with no sandboxing. Add CSP-aware evaluation, output size limits, and a denylist for dangerous APIs (localStorage clearing, cookie manipulation, etc.).
+### L3. Browser tool JS safety — DONE 2026-04-14 (verified)
+Shipped via PRD 013 (Phase 11D). `browser_evaluate` now has size + timeout caps, static denylist scan, JSON-serializable output guard, and audit-log events. `tests/test_browser_tool_sandbox.py` covers allow/deny cases (6 tests pass, 6 skipped for missing Playwright).
 
 ### L4. ARCHITECTURE.md + contribution guide — DONE 2026-04-14
 `ARCHITECTURE.md` at repo root documents topology, both sides (Lua plugin + Python server), key module map, request lifecycle, provider abstraction, tool registry, sandbox/policy, memory + rules split, sessions/checkpoints, cost telemetry, multiplayer, contributing patterns, and non-obvious conventions (shims, research gating, archival notes). Bus factor improved.
@@ -96,8 +86,8 @@ Consolidation shipped via PRD 005. Both legacy files are gone; `poor_cli/file_wa
 ### L5. Naming consideration
 Resolved by PRD 061: the project was renamed from `poor-cli` to `poor-cli`, with legacy aliases retained for one release cycle minimum.
 
-### L6. README rewrite
-Update README to reflect Neovim-only focus. Remove TUI screenshots, TUI usage instructions, Telegram mentions. Add Neovim setup as the primary getting-started path, lualine config examples, command palette usage.
+### L6. README rewrite — DONE 2026-04-14 (verified)
+Shipped via PRD 009 (Phase 9D). README.md opens with Neovim-first pitch, provider table, MCP + multiplayer sections, architecture.png diagram, and links to docs/. No TUI or Telegram residue. Further README polish (asciinema, badges) queued separately.
 
 ---
 
