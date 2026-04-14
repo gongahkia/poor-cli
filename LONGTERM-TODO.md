@@ -150,8 +150,8 @@ These items operationalize the analysis of the memory-system axes (what's stored
 
 These items came out of the alternative-defaults audit for `prompt_compressor.py`, `history_pruning.py`, `token_budget_controller.py`. The CHEAP items that did not block on other work have already shipped (aggressive filler strip in frugal mode). The rest are queued here.
 
-### CB1. Diff-of-diff file context caching
-When the agent re-reads the same file across turns, poor-cli currently re-sends the full compressed text each time. Instead, hash the last compressed version per `(file_path, hash(pinned_context))` and on re-read send only the diff since last send, with a `[... N lines unchanged ...]` placeholder for static spans. Estimated token savings: 10–15% on repeated file context (common in long refactor sessions). Implementation: `poor_cli/context/diff_cache.py`, integrate in `ContextAssemblyOrchestrator`.
+### CB1. Diff-of-diff file context caching — DONE 2026-04-14
+`poor_cli/context/diff_cache.py` ships `DiffCache` with JSON-backed persistence at `.poor-cli/context/diff_cache.json`. Key = `hash(file_path + pinned_context_hash)`. `ensure_entry(key, current_text)` returns either full text (first time or hash match) or a diff-mode `DiffEmission` with unchanged runs of >= 5 lines collapsed to `[... N lines unchanged ...]` placeholders. Rough tokens-saved estimate included for economy dashboard. TTL default 6 hours, configurable. Tested in `tests/test_diff_cache.py` (12 tests). Integration into `ContextAssemblyOrchestrator.assemble` is the remaining wiring step — the emission API is ready to drop in.
 
 ### CB2. History pruning soft-pin protection — DONE 2026-04-14
 `PruningPolicy.soft_pin_evict_factor` (default 1.05) gates soft-pin eviction: turns with `pinned: "soft"` enter the eviction pool only when `current_tokens > target * 1.05`. Legacy `pinned: true` keeps hard-pin semantics. `ScoredTurn.soft_protected` is surfaced on both the dataclass and the annotated metadata. Tested in `tests/test_history_soft_pin.py`. Chat keymap to toggle soft-pin interactively is the remaining Neovim surface and a small follow-up — backend is ready.
