@@ -28,32 +28,12 @@ Action: land the patch upstream (or on a fork), then un-stub `VLLMLatentBackend.
 
 ## Pure code/doc work (ship-ready)
 
-These have no external dependencies — they can be picked up any time.
+All five tracks from the previous TODO sweep landed 2026-04-14. See `LONGTERM-TODO.md` for per-item details. Summary:
 
-### 5. M2 — `:PoorCLICostDashboard` rich buffer (verification pending)
-Lualine segment + per-message badges are shipped. The rich scratch buffer with sparkline + top-10 expensive tools + $/month projection may still be partial. Action: spot-check current state of `nvim-poor-cli/lua/poor-cli/panels/cost_dashboard.lua` (or equivalent) against PRD 016 (phase_14_nvim_observability_panels.md Agent 14C). Fill gaps.
-
-### 6. H4 — remaining user docs
-Already shipped: `ARCHITECTURE.md`, `MCP.md`, `PROVIDERS.md`, `HARNESS_PORTABILITY.md`, `AUTO_COMMIT.md`. Still queued:
-- **Economy mode tuning** deep-dive (`docs/ECONOMY.md`) — when to use frugal vs balanced vs quality, how to read the savings dashboard.
-- **Sandbox preset guide** (`docs/SANDBOX.md`) — when to pick each preset, Docker sandbox setup, Linux namespaces requirements.
-- **Automation / cron guide** (`docs/AUTOMATIONS.md`) — AutomationRule schema, cron patterns, timezone handling, trigger types (cron / event / slash).
-- **Full command reference** (`docs/COMMANDS.md`) — generated from `command_manifest.json` + hand-written one-liners.
-
-### 7. Latent communication follow-ups (from `docs/LATENT_COMMUNICATION.md` §6.1)
-Three items remain unscoped:
-- **Latent step auto-tuning** — pick `latent_steps` per task rather than a fixed value.
-- **`LatentProvider` abstraction** — formalize the in-process vs bridge split so providers/adapters can declare latent capability uniformly.
-- **Hierarchical latent pipelines** — multi-level architect→editor→critic chains.
-All three are research-flavored; none block anything shipped.
-
-### 8. MH / CB last-mile wiring
-Most of the memory + compression system landed this week; a few small hook-in points remain:
-- **MH3 forgetting UX surface**: end-of-session "these N memories expire soon, keep/archive?" prompt. Backend is ready (`memory_forgetting.py`); needs Neovim scratch buffer + CLI equivalent.
-- **MH4 review command**: `:PoorCLIMemoryReview` Neovim command + `poor-cli memory review` CLI. Backend ready (`memory_review.py`).
-- **MH5 instruction-stack integration**: wire `partition(entries)` + `render_always_injected` into `instructions.py` so the critical subset renders into the system prompt prefix by default.
-- **CB1 diff-of-diff orchestrator integration**: call `DiffCache.ensure_entry` inside `ContextAssemblyOrchestrator.assemble` when the same file is re-read within the TTL window.
-- **CB3 tool-success recording**: call `ToolSuccessTracker.record(tool_name, succeeded)` from the turn lifecycle after every tool result. Then flip `PruningPolicy.adaptive_tool_scoring` to default-on after two release cycles.
+- **Track 1 — MH/CB last-mile wiring** ✅ — CB3 tool-success recording, CB1 diff-of-diff in orchestrator, MH5 instruction-stack injection, MH4 review command (Neovim + CLI), MH3 expiring-memories surface (Neovim + CLI).
+- **Track 2 — H4 remaining docs** ✅ — `ECONOMY.md`, `SANDBOX.md`, `AUTOMATIONS.md`, `COMMANDS.md` (generated from `command_manifest.json`).
+- **Track 3 — M2 cost dashboard verification** ✅ — `:PoorCLICostDashboard` confirmed matches PRD 016 spec (sparkline, top-10 tools, cache stats, projection, export).
+- **Track 4 — Latent follow-ups** ✅ — `LatentProvider` abstraction (`research/latent_provider.py`), step auto-tuning (`research/latent_autotune.py`), hierarchical pipelines (`research/latent_pipeline.py`).
 
 ## Explicit non-goals
 
