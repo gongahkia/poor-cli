@@ -905,7 +905,6 @@ class ToolRegistryAsync:
             verb = "create" if not is_new_file.stdout.strip() else "update"
             # parse shortstat like "1 file changed, 12 insertions(+), 3 deletions(-)"
             import re as _re
-            m = _re.search(r"(\d+) insertion|(\d+) deletion", diff_cached.stdout)
             line_count = 0
             for plus, minus in _re.findall(r"(\d+) insertion|(\d+) deletion", diff_cached.stdout):
                 line_count += int(plus or 0) + int(minus or 0)
