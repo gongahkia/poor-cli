@@ -1,0 +1,5 @@
+ poor-cli/config.py                 |  10 +++++-----
+ poor-cli/tools_async.py            |  42 +++++++++++++++++++++---------------
+ poor-cli/shell_filters/__init__.py | 100 +++++++++++++++++++++++++++++++++++++
+ tests/test_shell_filters.py        |  88 ++++++++++++++++++++++++++++++++
+ 4 files changed, 196 insertions(+), 44 deletions(-)

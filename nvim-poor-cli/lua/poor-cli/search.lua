@@ -1,5 +1,5 @@
 -- poor-cli/search.lua
--- Telescope picker for codebase search results.
+-- Picker for codebase search results.
 
 local M = {}
 
@@ -18,16 +18,7 @@ local function open_scratch(title, content, filetype)
 end
 
 function M.pick(query, mode)
-    local ok, telescope = pcall(require, "telescope.pickers")
-    if not ok then
-        M.fallback(query, mode)
-        return
-    end
-    local finders = require("telescope.finders")
-    local conf = require("telescope.config").values
-    local actions = require("telescope.actions")
-    local action_state = require("telescope.actions.state")
-    local previewers = require("telescope.previewers")
+    local pickers = require("poor-cli.pickers")
     local rpc = require("poor-cli.rpc")
 
     local search_fn = mode == "semantic" and rpc.semantic_search
@@ -36,44 +27,22 @@ function M.pick(query, mode)
 
     search_fn(query, 30, function(result, err)
         vim.schedule(function()
-            if err then vim.notify("[poor-cli] search: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+            if err then require("poor-cli.notify").notify("[poor-cli] search: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local results = (result or {}).results or result or {}
-            if #results == 0 then vim.notify("[poor-cli] no results for: " .. query, vim.log.levels.INFO); return end
-            telescope.new({}, {
-                prompt_title = "Search: " .. query,
-                finder = finders.new_table({
-                    results = results,
-                    entry_maker = function(entry)
-                        local path = entry.path or entry.file or "?"
-                        local score = entry.score and string.format(" (%.2f)", entry.score) or ""
-                        return {
-                            value = entry,
-                            display = path .. score,
-                            ordinal = path,
-                            filename = path,
-                            lnum = entry.line or 1,
-                        }
-                    end,
-                }),
-                sorter = conf.generic_sorter({}),
-                previewer = previewers.new_buffer_previewer({
-                    define_preview = function(self, entry)
-                        local snippet = entry.value.snippet or entry.value.content or ""
-                        vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, vim.split(snippet, "\n", { plain = true }))
-                    end,
-                }),
-                attach_mappings = function(prompt_bufnr)
-                    actions.select_default:replace(function()
-                        local entry = action_state.get_selected_entry()
-                        actions.close(prompt_bufnr)
-                        if entry and entry.filename then
-                            vim.cmd("edit " .. vim.fn.fnameescape(entry.filename))
-                            if entry.lnum then pcall(vim.api.nvim_win_set_cursor, 0, { entry.lnum, 0 }) end
-                        end
-                    end)
-                    return true
-                end,
-            }):find()
+            if #results == 0 then require("poor-cli.notify").notify("[poor-cli] no results for: " .. query, vim.log.levels.INFO); return end
+            local items = {}
+            for _, entry in ipairs(results) do
+                local path = entry.path or entry.file or "?"
+                local score = entry.score and string.format(" (%.2f)", entry.score) or ""
+                items[#items + 1] = { id = path, label = path .. score, preview = entry.snippet or entry.content or "", data = entry }
+            end
+            pickers.pick(items, { title = "Search: " .. query, on_pick = function(entry)
+                local path = entry.path or entry.file
+                if path then
+                    vim.cmd("edit " .. vim.fn.fnameescape(path))
+                    if entry.line then pcall(vim.api.nvim_win_set_cursor, 0, { entry.line, 0 }) end
+                end
+            end })
         end)
     end)
 end
@@ -85,7 +54,7 @@ function M.fallback(query, mode)
         or rpc.hybrid_search
     search_fn(query, 20, function(result, err)
         vim.schedule(function()
-            if err then vim.notify("[poor-cli] search: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+            if err then require("poor-cli.notify").notify("[poor-cli] search: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local results = (result or {}).results or result or {}
             local lines = { "# search: " .. query .. " (" .. (mode or "hybrid") .. ")", "" }
             for i, r in ipairs(results) do

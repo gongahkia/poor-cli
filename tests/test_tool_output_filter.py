@@ -42,9 +42,9 @@ class TestToolOutputFilter(unittest.TestCase):
     def test_repo_yaml_overrides_projection_rule(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             repo_root = Path(td)
-            poor_dir = repo_root / ".poor-cli"
-            poor_dir.mkdir(parents=True, exist_ok=True)
-            (poor_dir / "tool_projections.yaml").write_text(
+            state_dir = repo_root / ".poor-cli"
+            state_dir.mkdir(parents=True, exist_ok=True)
+            (state_dir / "tool_projections.yaml").write_text(
                 """
 tool_projections:
   fetch_url:

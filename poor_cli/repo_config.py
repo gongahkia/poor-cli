@@ -142,6 +142,9 @@ class ChatMessage:
     content: str
     timestamp: str
     tool_calls: Optional[List[Dict[str, Any]]] = None
+    id: Optional[str] = None
+    parent_id: Optional[str] = None
+    branch_of: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""
@@ -162,6 +165,7 @@ class ChatSession:
     model: str = "gemini-2.5-flash"
     messages: List[ChatMessage] = field(default_factory=list)
     total_tokens_estimate: int = 0
+    active_leaf: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""
@@ -171,20 +175,30 @@ class ChatSession:
             "ended_at": self.ended_at,
             "model": self.model,
             "messages": [msg.to_dict() for msg in self.messages],
-            "total_tokens_estimate": self.total_tokens_estimate
+            "total_tokens_estimate": self.total_tokens_estimate,
+            "active_leaf": self.active_leaf,
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ChatSession':
         """Create from dictionary"""
-        messages = [ChatMessage.from_dict(msg) for msg in data.get("messages", [])]
+        messages = []
+        parent_id: Optional[str] = None
+        for idx, msg in enumerate(data.get("messages", []), start=1):
+            item = dict(msg)
+            item.setdefault("id", f"turn-{idx}")
+            item.setdefault("parent_id", parent_id)
+            item.setdefault("branch_of", None)
+            messages.append(ChatMessage.from_dict(item))
+            parent_id = item["id"]
         return cls(
             session_id=data["session_id"],
             started_at=data["started_at"],
             ended_at=data.get("ended_at"),
             model=data.get("model", "gemini-2.5-flash"),
             messages=messages,
-            total_tokens_estimate=data.get("total_tokens_estimate", 0)
+            total_tokens_estimate=data.get("total_tokens_estimate", 0),
+            active_leaf=data.get("active_leaf") or parent_id,
         )
 
 
@@ -484,16 +498,22 @@ class RepoConfig:
 
                 messages: List[ChatMessage] = []
                 total_tokens_estimate = 0
+                parent_id: Optional[str] = None
                 for role, content, timestamp in message_rows:
                     text = content if isinstance(content, str) else str(content)
                     normalized_role = "assistant" if role in {"model", "assistant"} else str(role)
+                    turn_id = f"turn-{len(messages) + 1}"
                     messages.append(
                         ChatMessage(
                             role=normalized_role,
                             content=text,
                             timestamp=timestamp or datetime.now().isoformat(),
+                            id=turn_id,
+                            parent_id=parent_id,
+                            branch_of=None,
                         )
                     )
+                    parent_id = turn_id
                     total_tokens_estimate += len(text) // 4
 
                 self.sessions.append(
@@ -504,6 +524,7 @@ class RepoConfig:
                         model=model or "gemini-2.5-flash",
                         messages=messages,
                         total_tokens_estimate=total_tokens_estimate,
+                        active_leaf=parent_id,
                     )
                 )
                 existing_session_ids.add(str(session_id))
@@ -588,13 +609,22 @@ class RepoConfig:
             logger.warning("No active session, creating new one")
             self.start_session()
 
+        parent_id = self.current_session.active_leaf
+        turn_id = f"turn-{len(self.current_session.messages) + 1}"
+        existing_ids = {msg.id for msg in self.current_session.messages if msg.id}
+        while turn_id in existing_ids:
+            turn_id = f"turn-{len(existing_ids) + 1}_{len(existing_ids)}"
         message = ChatMessage(
             role=role,
             content=content,
             timestamp=datetime.now().isoformat(),
-            tool_calls=tool_calls
+            tool_calls=tool_calls,
+            id=turn_id,
+            parent_id=parent_id,
+            branch_of=None,
         )
         self.current_session.messages.append(message)
+        self.current_session.active_leaf = turn_id
 
         # Estimate tokens (rough: ~4 chars per token)
         self.current_session.total_tokens_estimate += len(content) // 4
@@ -603,6 +633,45 @@ class RepoConfig:
         # Auto-save after each message
         self._save_history()
         logger.debug(f"Added {role} message to session")
+
+    def add_branch_message(
+        self,
+        role: str,
+        content: str,
+        parent_id: str,
+        branch_of: str,
+        turn_id: str,
+    ) -> None:
+        """Add a regenerated sibling message to current session."""
+        if not self.current_session:
+            logger.warning("No active session, creating new one")
+            self.start_session()
+        message = ChatMessage(
+            role=role,
+            content=content,
+            timestamp=datetime.now().isoformat(),
+            id=turn_id,
+            parent_id=parent_id,
+            branch_of=branch_of,
+        )
+        self.current_session.messages.append(message)
+        self.current_session.active_leaf = turn_id
+        self.current_session.total_tokens_estimate += len(content) // 4
+        self._apply_retention_limits()
+        self._save_history()
+
+    def set_active_leaf(self, turn_id: Optional[str]) -> None:
+        """Persist the active branch leaf for the current session."""
+        if not self.current_session:
+            return
+        if not turn_id:
+            self.current_session.active_leaf = None
+            self._save_history()
+            return
+        if not any(message.id == turn_id for message in self.current_session.messages):
+            return
+        self.current_session.active_leaf = turn_id
+        self._save_history()
 
     def _apply_retention_limits(self) -> None:
         """Prune sessions/messages to configured retention limits."""
@@ -714,6 +783,7 @@ class RepoConfig:
         self.sessions = []
         if self.current_session:
             self.current_session.messages = []
+            self.current_session.active_leaf = None
         self._save_history()
         logger.info("Cleared chat history")
 
@@ -723,6 +793,7 @@ class RepoConfig:
             return
         self.current_session.messages = []
         self.current_session.total_tokens_estimate = 0
+        self.current_session.active_leaf = None
         self._save_history()
         logger.info("Cleared current repo session messages")
 

@@ -19,13 +19,13 @@ Integrate [RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk) as a pre-exec
 
 ### Implementation details
 
-1. **Add RTK detection** in `poor_cli/utils.py` or a new `poor_cli/rtk_integration.py`:
+1. **Add RTK detection** in `poor-cli/utils.py` or a new `poor-cli/rtk_integration.py`:
    - Check if `rtk` binary is on PATH via `shutil.which("rtk")`
    - Expose a config flag `use_rtk: bool = True` in the config system
    - If rtk not found and `use_rtk` is True, log a warning suggesting `brew install rtk`
 
 2. **Wrap tool execution** — the primary integration point is wherever poor-cli spawns shell subprocesses for tool calls. Key files:
-   - `poor_cli/enhanced_tools.py` — the `bash` tool implementation
+   - `poor-cli/enhanced_tools.py` — the `bash` tool implementation
    - Any subprocess call that runs user-facing shell commands (git, npm, cargo, etc.)
    
    For each supported command, prefix with `rtk` before spawning:
@@ -47,7 +47,7 @@ Integrate [RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk) as a pre-exec
 
 4. **Tee mode for failures** — when a tool call fails (non-zero exit), re-run without RTK to get full output for debugging. RTK has a native tee mode (`rtk --tee`) that persists raw output; prefer that.
 
-5. **Config integration** — add to `poor_cli/repo_config.py` or equivalent:
+5. **Config integration** — add to `poor-cli/repo_config.py` or equivalent:
    ```yaml
    token_optimization:
      rtk_enabled: true
@@ -57,9 +57,9 @@ Integrate [RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk) as a pre-exec
 6. **Neovim plugin awareness** — in `nvim-poor-cli/lua/poor-cli/config.lua`, add an `rtk_enabled` field so users can toggle from Neovim config.
 
 ### Files to create/modify
-- `poor_cli/rtk_integration.py` (new, ~80 lines)
-- `poor_cli/enhanced_tools.py` (modify bash tool to use RTK wrapper)
-- `poor_cli/repo_config.py` (add rtk config fields)
+- `poor-cli/rtk_integration.py` (new, ~80 lines)
+- `poor-cli/enhanced_tools.py` (modify bash tool to use RTK wrapper)
+- `poor-cli/repo_config.py` (add rtk config fields)
 - `nvim-poor-cli/lua/poor-cli/config.lua` (add rtk_enabled default)
 
 ### Acceptance criteria
@@ -88,7 +88,7 @@ Audit and enhance poor-cli's existing `edit_formats.py` to ensure the most token
 
 ### Implementation details
 
-1. **Audit current implementation** — read `poor_cli/edit_formats.py` thoroughly. Determine:
+1. **Audit current implementation** — read `poor-cli/edit_formats.py` thoroughly. Determine:
    - What edit format is currently used (full rewrite? search/replace? unified diff?)
    - Whether the format is provider-agnostic or provider-specific
    - Whether fallback to full-file rewrite happens silently
@@ -128,8 +128,8 @@ Audit and enhance poor-cli's existing `edit_formats.py` to ensure the most token
 6. **Validation** — after applying an edit, verify the resulting file is syntactically valid (use tree-sitter if available, or at minimum check for balanced braces/brackets).
 
 ### Files to create/modify
-- `poor_cli/edit_formats.py` (primary — enhance/rewrite)
-- `poor_cli/providers/base.py` (add `preferred_edit_format` to provider interface)
+- `poor-cli/edit_formats.py` (primary — enhance/rewrite)
+- `poor-cli/providers/base.py` (add `preferred_edit_format` to provider interface)
 - Provider implementations as needed for format preferences
 
 ### Acceptance criteria
@@ -159,7 +159,7 @@ Enhance poor-cli's existing `/compact` command and `context_optimizer.py` to be 
 
 ### Implementation details
 
-1. **Audit current implementation** — read `poor_cli/context_optimizer.py` and `poor_cli/context_contract.py`. Understand:
+1. **Audit current implementation** — read `poor-cli/context_optimizer.py` and `poor-cli/context_contract.py`. Understand:
    - Current compaction strategy (blanket summary? selective?)
    - Token counting mechanism
    - Trigger threshold (manual only? auto?)
@@ -190,9 +190,9 @@ Enhance poor-cli's existing `/compact` command and `context_optimizer.py` to be 
 6. **Neovim feedback** — show compaction events in lualine or as notifications so the user knows context was compacted.
 
 ### Files to create/modify
-- `poor_cli/context_optimizer.py` (primary — enhance compaction logic)
-- `poor_cli/context_contract.py` (add tier classification)
-- `poor_cli/context_providers.py` (integrate auto-compaction check)
+- `poor-cli/context_optimizer.py` (primary — enhance compaction logic)
+- `poor-cli/context_contract.py` (add tier classification)
+- `poor-cli/context_providers.py` (integrate auto-compaction check)
 - `nvim-poor-cli/lua/poor-cli/lualine.lua` (show compaction status)
 
 ### Acceptance criteria
@@ -244,7 +244,7 @@ Add a built-in terse output mode to poor-cli that instructs the model to strip p
 5. **Preserve critical prose** — git commit messages, PR descriptions, user-facing docs should always use proper grammar regardless of mode.
 
 ### Files to create/modify
-- `poor_cli/profiles.py` or wherever economy/output mode directives live
+- `poor-cli/profiles.py` or wherever economy/output mode directives live
 - System prompt construction logic (in core engine)
 - No Neovim changes needed — economy mode already exposed via commands
 

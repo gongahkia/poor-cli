@@ -184,8 +184,10 @@ class SessionsHandlersMixin:
         export_format = str(params.get("format", "json")).strip().lower() or "json"
         if export_format == "markdown":
             export_format = "md"
-        if export_format not in {"json", "md", "txt"}:
-            raise InvalidParamsError("Invalid format. Supported: json, md, txt")
+        if export_format == "text":
+            export_format = "txt"
+        if export_format not in {"json", "md", "txt", "transcript"}:
+            raise InvalidParamsError("Invalid format. Supported: json, md, txt, transcript")
 
         repo_config = self._get_repo_config()
         if not repo_config.current_session:
@@ -197,8 +199,11 @@ class SessionsHandlersMixin:
 
         session = repo_config.current_session
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_dir_raw = params.get("outputDir") or params.get("output_dir")
+        output_dir = SessionsHandlersMixin._resolve_path(str(out_dir_raw)) if out_dir_raw else Path.cwd() / ".poor-cli" / "exports"
+        output_dir.mkdir(parents=True, exist_ok=True)
         filename = f"conversation_{session.session_id[:8]}_{timestamp}.{export_format}"
-        output_path = Path.cwd() / filename
+        output_path = output_dir / filename
 
         if export_format == "json":
             payload = {

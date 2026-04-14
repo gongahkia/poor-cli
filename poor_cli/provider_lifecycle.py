@@ -14,7 +14,7 @@ from rich.table import Table
 
 from .config import Config, ProviderConfig
 from .exceptions import ConfigurationError, setup_logger
-from .provider_catalog import all_provider_entries
+from .provider_catalog import KEYLESS_LOCAL_PROVIDER_NAMES, all_provider_entries
 from .providers.base import BaseProvider
 from .providers.provider_factory import ProviderFactory
 
@@ -80,7 +80,7 @@ class ProviderLifecycleService:
         try:
             api_key = self.config_manager.get_api_key(self.config.model.provider)
 
-            if not api_key and self.config.model.provider != "ollama":
+            if not api_key and self.config.model.provider not in KEYLESS_LOCAL_PROVIDER_NAMES:
                 available_providers = self._providers_with_keys()
                 if not available_providers:
                     provider_name = self.config.model.provider
@@ -147,7 +147,7 @@ class ProviderLifecycleService:
             current = " [green](current)[/green]" if provider_name == self.config.model.provider else ""
             provider_config = self.config.model.providers.get(provider_name)
             default_model = provider_config.default_model if provider_config else "N/A"
-            has_key = provider_name == "ollama" or self.config_manager.get_api_key(provider_name) is not None
+            has_key = provider_name in KEYLESS_LOCAL_PROVIDER_NAMES or self.config_manager.get_api_key(provider_name) is not None
             key_status = "[green]✓[/green]" if has_key else "[red]✗ (no key)[/red]"
             self.console.print(f"  {index}. {provider_name} - {default_model}{current} {key_status}")
 
@@ -195,12 +195,12 @@ class ProviderLifecycleService:
 
                 if provider_name == self.config.model.provider:
                     status = "[green]● Active[/green]"
-                elif api_key_value or provider_name == "ollama":
+                elif api_key_value or provider_name in KEYLESS_LOCAL_PROVIDER_NAMES:
                     status = "[yellow]○ Ready[/yellow]"
                 else:
                     status = "[red]○ No Key[/red]"
 
-                if provider_name == "ollama":
+                if provider_name in KEYLESS_LOCAL_PROVIDER_NAMES:
                     key_status = "[dim]Not needed[/dim]"
                 elif api_key_value:
                     masked_key = f"{api_key_value[:8]}...{api_key_value[-4:]}" if len(api_key_value) > 12 else "***"
@@ -222,7 +222,7 @@ class ProviderLifecycleService:
 
             lines = ["\n[bold]Available Models by Provider:[/bold]\n"]
             for entry in all_provider_entries():
-                posture = "Local" if entry.name == "ollama" else "BYOK"
+                posture = "Local" if entry.name in KEYLESS_LOCAL_PROVIDER_NAMES else "BYOK"
                 lines.append(
                     f"[cyan]{entry.display_name} ({posture}):[/cyan] {', '.join(entry.common_models)}"
                 )
@@ -238,7 +238,7 @@ class ProviderLifecycleService:
         """Return provider names that can be initialized with current credentials."""
         providers: list[str] = []
         for provider_name in self.config.model.providers.keys():
-            if provider_name == "ollama" or self.config_manager.get_api_key(provider_name):
+            if provider_name in KEYLESS_LOCAL_PROVIDER_NAMES or self.config_manager.get_api_key(provider_name):
                 providers.append(provider_name)
         return providers
 

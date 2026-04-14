@@ -49,15 +49,15 @@
 
 ### What to build
 
-Register a `poor_cli` source in trouble.nvim's 3.x extension API so `:Trouble poor_cli` lists every current AI suggestion alongside LSP diagnostics. Source reads from the existing `diagnostics.lua` namespace — no double-storage.
+Register a `poor-cli` source in trouble.nvim's 3.x extension API so `:Trouble poor-cli` lists every current AI suggestion alongside LSP diagnostics. Source reads from the existing `diagnostics.lua` namespace — no double-storage.
 
 ### Implementation details
 
 1. **Detect trouble** — `pcall(require, "trouble")` on plugin setup. If missing, return early; no error, no warning spam.
-2. **Author the source module** — implement trouble's expected interface (items/filter/format callbacks). Items come from `vim.diagnostic.get(nil, { namespace = poor_cli_ns })`.
-3. **Register lazily** — on `poor-cli`'s `setup()`, call `require("trouble").setup({ modes = { poor_cli = {...} } })` merging with existing user config rather than clobbering it.
+2. **Author the source module** — implement trouble's expected interface (items/filter/format callbacks). Items come from `vim.diagnostic.get(nil, { namespace = poor-cli_ns })`.
+3. **Register lazily** — on `poor-cli`'s `setup()`, call `require("trouble").setup({ modes = { poor-cli = {...} } })` merging with existing user config rather than clobbering it.
 4. **Keep virtual text** — this adds a second surface; it does not replace `diagnostics.lua`'s existing rendering.
-5. **User command** — register `:PoorCliTrouble` in `commands.lua` as a thin wrapper for `:Trouble poor_cli`.
+5. **User command** — register `:PoorCLITrouble` in `commands.lua` as a thin wrapper for `:Trouble poor-cli`.
 
 ### Files to create/modify
 
@@ -74,14 +74,14 @@ Register a `poor_cli` source in trouble.nvim's 3.x extension API so `:Trouble po
 
 ### Acceptance criteria
 
-- [ ] `:Trouble poor_cli` shows all active AI suggestions when trouble is installed.
+- [ ] `:Trouble poor-cli` shows all active AI suggestions when trouble is installed.
 - [ ] No error and no log noise when trouble is absent.
 - [ ] Source items share the existing diagnostic namespace (no duplicate store).
 - [ ] Plenary: `test_source_registers_when_trouble_present`, `test_source_noop_when_trouble_absent`, `test_source_returns_items_matching_namespace`.
 
 ### Rollback / risk
 
-Low. Optional integration; disabling the bridge removes the `:Trouble poor_cli` mode but leaves virtual-text diagnostics untouched.
+Low. Optional integration; disabling the bridge removes the `:Trouble poor-cli` mode but leaves virtual-text diagnostics untouched.
 
 ---
 

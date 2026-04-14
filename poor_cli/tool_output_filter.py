@@ -183,6 +183,12 @@ def apply_schema_output_filter(raw: Any, spec: Optional[Any]) -> SchemaFilterRes
     )
 
 
+def apply_shell_output_filter(command: str, raw: str, config: object = None) -> Any:
+    from .shell_filters import apply
+
+    return apply(command, raw, config=config)
+
+
 def _format_kb(size: int) -> str:
     return f"{size / 1024:.1f} KB"
 

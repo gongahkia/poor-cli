@@ -16,7 +16,7 @@
 |---|---|---|---|
 | `nvim-poor-cli/lua/poor-cli/inline.lua` | modify | modify | **Yes — serialize** |
 | `nvim-poor-cli/lua/poor-cli/keymaps.lua` | modify | — | No |
-| `poor_cli/server/handlers/chat.py` | — | modify | No |
+| `poor-cli/server/handlers/chat.py` | — | modify | No |
 
 **Collision note:** Both agents mutate `inline.lua`. 18B is blocked by 18A and 18A conflicts with 18B (serialize). **Run 18A to completion and land it first**, then start 18B on top of the merged result. Do not parallelize these two agents.
 
@@ -102,7 +102,7 @@ Low. Both features are additive keymaps on a consumer-side state machine. To rol
 ### Files to create/modify
 
 - `nvim-poor-cli/lua/poor-cli/inline.lua` (modify — cycle state, treesitter gate, new keymaps)
-- `poor_cli/server/handlers/chat.py` (modify — accept `completions_count`, return candidate list; or `runtime.py` if PRD 019 not yet merged)
+- `poor-cli/server/handlers/chat.py` (modify — accept `completions_count`, return candidate list; or `runtime.py` if PRD 019 not yet merged)
 
 ### Acceptance criteria
 

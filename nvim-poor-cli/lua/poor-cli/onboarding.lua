@@ -3,15 +3,24 @@
 
 local config = require("poor-cli.config")
 local rpc = require("poor-cli.rpc")
+local milestones = require("poor-cli.onboarding_milestones")
 local M = {}
 
 local ONBOARDING_VERSION = 1
 local TOTAL_STEPS = 9
+local TOUR_TOTAL_STEPS = 5
 
 M.state = {
     step = 1,
     choices = { provider = nil, api_key = nil, model = nil, keybindings = {}, permission_mode = "default", economy_preset = "balanced", budget = nil },
     provider_data = nil, -- cached listProviders response
+    buf = nil,
+    win = nil,
+}
+
+M.tour = {
+    step = 1,
+    actions = {},
     buf = nil,
     win = nil,
 }
@@ -22,6 +31,8 @@ local function marker_path()
 end
 
 function M.should_show()
+    local state = milestones.load_state()
+    if state.dismissed == true or state.completed == true then return false end
     local f = io.open(marker_path(), "r")
     if not f then return true end
     local ver = tonumber(f:read("*a"))
@@ -30,6 +41,11 @@ function M.should_show()
 end
 
 function M.mark_complete()
+    local state = milestones.load_state()
+    state.completed = true
+    state.dismissed = true
+    state.onboarding_version = ONBOARDING_VERSION
+    milestones.save_state(state)
     local f = io.open(marker_path(), "w")
     if f then f:write(tostring(ONBOARDING_VERSION)); f:close() end
 end
@@ -40,6 +56,20 @@ local function close()
     M.state.win = nil
     if M.state.buf and vim.api.nvim_buf_is_valid(M.state.buf) then vim.api.nvim_buf_delete(M.state.buf, { force = true }) end
     M.state.buf = nil
+end
+
+local function open_scratch(title, lines, filetype)
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[buf].buftype = "nofile"
+    vim.bo[buf].bufhidden = "wipe"
+    vim.bo[buf].swapfile = false
+    vim.bo[buf].filetype = filetype or "markdown"
+    vim.api.nvim_buf_set_name(buf, title)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.cmd("botright split")
+    vim.api.nvim_win_set_buf(0, buf)
+    vim.keymap.set("n", "q", function() pcall(vim.api.nvim_win_close, 0, true) end, { buffer = buf, nowait = true })
+    return buf
 end
 
 local function set_buf_lines(lines)
@@ -71,7 +101,7 @@ local function render_welcome()
         "and gives you inline completions, chat, and agentic coding tools.",
         "",
         "This wizard will configure your essential preferences once.",
-        "You can re-run it anytime with :PoorCliOnboarding",
+        "You can re-run it anytime with :PoorCLIOnboarding",
     })
     vim.list_extend(lines, footer_nav())
     return lines
@@ -304,20 +334,20 @@ local function handle_enter()
     if step.id == "api_key" then
         vim.ui.input({ prompt = "API key for " .. (M.state.choices.provider or "?") .. ": " }, function(key)
             if key and key ~= "" then
-                vim.notify("[poor-cli] validating key...", vim.log.levels.INFO)
+                require("poor-cli.notify").notify("[poor-cli] validating key...", vim.log.levels.INFO)
                 rpc.request("poor-cli/testApiKey", { provider = M.state.choices.provider, apiKey = key }, function(result, err)
                     vim.schedule(function()
                         if err then
-                            vim.notify("[poor-cli] validation error: " .. rpc.format_error(err) .. " — re-enter key or q to quit", vim.log.levels.ERROR)
+                            require("poor-cli.notify").notify("[poor-cli] validation error: " .. rpc.format_error(err) .. " — re-enter key or q to quit", vim.log.levels.ERROR)
                             render(); handle_enter() -- re-enter the api_key step so user isn't stuck
                             return
                         end
                         if result and result.valid then
                             M.state.choices.api_key = key
-                            vim.notify("[poor-cli] key valid", vim.log.levels.INFO)
+                            require("poor-cli.notify").notify("[poor-cli] key valid", vim.log.levels.INFO)
                             render(); next_step()
                         else
-                            vim.notify("[poor-cli] invalid key: " .. (result and result.error or "unknown error"), vim.log.levels.ERROR)
+                            require("poor-cli.notify").notify("[poor-cli] invalid key: " .. (result and result.error or "unknown error"), vim.log.levels.ERROR)
                             render(); handle_enter() -- re-prompt on invalid key
                         end
                     end)
@@ -332,7 +362,7 @@ local function handle_enter()
         local prov = M.state.choices.provider or ""
         local info = pd[prov] or {}
         local models = info.models or {}
-        if #models == 0 then vim.notify("[poor-cli] no models available for " .. prov, vim.log.levels.WARN); return end
+        if #models == 0 then require("poor-cli.notify").notify("[poor-cli] no models available for " .. prov, vim.log.levels.WARN); return end
         local tiers = info.modelTiers or {}
         local display = {}
         for _, m in ipairs(models) do
@@ -436,10 +466,10 @@ local function commit()
                 pending = pending - 1
                 if pending <= 0 then
                     if #errors > 0 then
-                        vim.notify("[poor-cli] onboarding errors: " .. table.concat(errors, "; "), vim.log.levels.ERROR)
+                        require("poor-cli.notify").notify("[poor-cli] onboarding errors: " .. table.concat(errors, "; "), vim.log.levels.ERROR)
                     else
                         M.mark_complete()
-                        vim.notify("[poor-cli] onboarding complete!", vim.log.levels.INFO)
+                        require("poor-cli.notify").notify("[poor-cli] onboarding complete!", vim.log.levels.INFO)
                         close()
                     end
                 end
@@ -475,7 +505,7 @@ local function commit()
 
         if pending == 0 then
             M.mark_complete()
-            vim.notify("[poor-cli] onboarding complete!", vim.log.levels.INFO)
+            require("poor-cli.notify").notify("[poor-cli] onboarding complete!", vim.log.levels.INFO)
             close()
         end
     end
@@ -486,7 +516,7 @@ local function commit()
     rpc.initialize(function(_, err)
         vim.schedule(function()
             if err then
-                vim.notify("[poor-cli] server re-init failed: " .. rpc.format_error(err) .. " — saving local prefs only", vim.log.levels.WARN)
+                require("poor-cli.notify").notify("[poor-cli] server re-init failed: " .. rpc.format_error(err) .. " — saving local prefs only", vim.log.levels.WARN)
                 M.mark_complete()
                 close()
                 return
@@ -505,7 +535,7 @@ local function ensure_server(callback)
             rpc.initialize()
             vim.defer_fn(callback, 300)
         else
-            vim.notify("[poor-cli] server failed to start. set API key manually via :PoorCliConfigSet", vim.log.levels.ERROR)
+            require("poor-cli.notify").notify("[poor-cli] server failed to start. set API key manually via :PoorCLIConfigSet", vim.log.levels.ERROR)
             callback()
         end
     end, 500)
@@ -522,7 +552,11 @@ local function fetch_providers(callback)
     end)
 end
 
-function M.open()
+function M.open(mode)
+    if mode == "tour" and M.open_tour then
+        M.open_tour()
+        return
+    end
     M.state.step = 1
     M.state.choices = { provider = nil, api_key = nil, model = nil, keybindings = {}, permission_mode = "default", economy_preset = "balanced", budget = nil }
     M.state.provider_data = nil
@@ -561,8 +595,208 @@ end
 
 function M.close() close() end
 
+local TOUR_STEPS = {
+    {
+        id = "provider",
+        title = "provider",
+        target = "tour-provider/local",
+        action = function()
+            M.tour.actions.provider = "tour-provider/local"
+            require("poor-cli.notify").notify("[poor-cli] tour provider selected: tour-provider/local", vim.log.levels.INFO)
+        end,
+    },
+    {
+        id = "prompt",
+        title = "prompt",
+        target = "poor-cli-tour-demo.lua",
+        action = function()
+            M.tour.actions.prompt = "Refactor poor-cli-tour-demo.lua without touching disk."
+            vim.fn.setreg('"', M.tour.actions.prompt)
+            require("poor-cli.notify").notify("[poor-cli] tour prompt staged in unnamed register", vim.log.levels.INFO)
+        end,
+    },
+    {
+        id = "diff_review",
+        title = "diff review",
+        target = "poor-cli-tour-demo.lua",
+        action = function()
+            M.tour.actions.diff_review = true
+            open_scratch("[poor-cli tour diff review]", {
+                "# fake diff review",
+                "",
+                "ga accept hunk | gr reject hunk | gA accept edit | gR reject edit",
+                "",
+                "--- a/poor-cli-tour-demo.lua",
+                "+++ b/poor-cli-tour-demo.lua",
+                "@@ -1,1 +1,1 @@",
+                "-print('before')",
+                "+print('after')",
+            }, "diff")
+            if M.state.win and vim.api.nvim_win_is_valid(M.state.win) then vim.api.nvim_set_current_win(M.state.win) end
+        end,
+    },
+    {
+        id = "checkpoint",
+        title = "checkpoint",
+        target = "tour-checkpoint-0001",
+        action = function()
+            M.tour.actions.checkpoint = "tour-checkpoint-0001"
+            open_scratch("[poor-cli tour checkpoint]", {
+                "# fake checkpoint",
+                "",
+                "id: tour-checkpoint-0001",
+                "target: poor-cli-tour-demo.lua",
+                "status: preview only",
+            }, "markdown")
+            if M.state.win and vim.api.nvim_win_is_valid(M.state.win) then vim.api.nvim_set_current_win(M.state.win) end
+        end,
+    },
+    {
+        id = "rollback",
+        title = "rollback",
+        target = "tour-checkpoint-0001",
+        action = function()
+            M.tour.actions.rollback = true
+            open_scratch("[poor-cli tour rollback]", {
+                "# fake rollback",
+                "",
+                "Would restore checkpoint: tour-checkpoint-0001",
+                "No files changed.",
+            }, "markdown")
+            if M.state.win and vim.api.nvim_win_is_valid(M.state.win) then vim.api.nvim_set_current_win(M.state.win) end
+        end,
+    },
+}
+
+local function tour_done(step)
+    return M.tour.actions[step.id] ~= nil
+end
+
+local function render_tour()
+    local step = TOUR_STEPS[M.tour.step]
+    if not step or not M.state.buf or not vim.api.nvim_buf_is_valid(M.state.buf) then return end
+    local lines = {
+        "# poor-cli tour (" .. M.tour.step .. "/" .. TOUR_TOTAL_STEPS .. ")",
+        "",
+        "## " .. step.title,
+        "",
+        "Target: " .. step.target,
+        "",
+        "Press a to run the fake safe action.",
+        tour_done(step) and "Status: done" or "Status: waiting",
+        "",
+        "n = next | p = prev | a = action | q = quit",
+    }
+    set_buf_lines(lines)
+end
+
+function M.tour_action()
+    local step = TOUR_STEPS[M.tour.step]
+    if not step then return false end
+    step.action()
+    render_tour()
+    return true
+end
+
+function M.tour_next()
+    local step = TOUR_STEPS[M.tour.step]
+    if step and not tour_done(step) then
+        require("poor-cli.notify").notify("[poor-cli] run tour action first", vim.log.levels.WARN)
+        return false
+    end
+    if M.tour.step >= TOUR_TOTAL_STEPS then
+        local state = milestones.load_state()
+        state.tour_completed = true
+        milestones.save_state(state)
+        require("poor-cli.notify").notify("[poor-cli] tour complete", vim.log.levels.INFO)
+        close()
+        return true
+    end
+    M.tour.step = M.tour.step + 1
+    render_tour()
+    return true
+end
+
+function M.tour_prev()
+    M.tour.step = math.max(1, M.tour.step - 1)
+    render_tour()
+    return true
+end
+
+function M.open_tour()
+    close()
+    M.tour.step = 1
+    M.tour.actions = {}
+    M.state.buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[M.state.buf].buftype = "nofile"
+    vim.bo[M.state.buf].bufhidden = "wipe"
+    vim.bo[M.state.buf].swapfile = false
+    vim.bo[M.state.buf].filetype = "markdown"
+    vim.api.nvim_buf_set_name(M.state.buf, "[poor-cli tour]")
+    local width = math.min(78, math.floor(vim.o.columns * 0.7))
+    local height = math.min(18, math.floor(vim.o.lines * 0.5))
+    M.state.win = vim.api.nvim_open_win(M.state.buf, true, {
+        relative = "editor",
+        width = width, height = height,
+        col = math.floor((vim.o.columns - width) / 2),
+        row = math.floor((vim.o.lines - height) / 2),
+        style = "minimal", border = "rounded",
+        title = " poor-cli tour ", title_pos = "center",
+    })
+    local buf = M.state.buf
+    vim.keymap.set("n", "n", M.tour_next, { buffer = buf, nowait = true })
+    vim.keymap.set("n", "<CR>", M.tour_next, { buffer = buf, nowait = true })
+    vim.keymap.set("n", "p", M.tour_prev, { buffer = buf, nowait = true })
+    vim.keymap.set("n", "<BS>", M.tour_prev, { buffer = buf, nowait = true })
+    vim.keymap.set("n", "a", M.tour_action, { buffer = buf, nowait = true })
+    vim.keymap.set("n", "q", close, { buffer = buf, nowait = true })
+    vim.keymap.set("n", "<Esc>", close, { buffer = buf, nowait = true })
+    render_tour()
+end
+
+local function encode_lua(value, indent)
+    indent = indent or 0
+    local pad = string.rep(" ", indent)
+    local next_pad = string.rep(" ", indent + 2)
+    if type(value) == "table" then
+        local keys = {}
+        for k, _ in pairs(value) do table.insert(keys, k) end
+        table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+        local lines = { "{" }
+        for _, key in ipairs(keys) do
+            local label = type(key) == "string" and key:match("^[%a_][%w_]*$") and key or "[" .. string.format("%q", tostring(key)) .. "]"
+            table.insert(lines, next_pad .. label .. " = " .. encode_lua(value[key], indent + 2) .. ",")
+        end
+        table.insert(lines, pad .. "}")
+        return table.concat(lines, "\n")
+    end
+    if type(value) == "string" then return string.format("%q", value) end
+    if type(value) == "boolean" or type(value) == "number" then return tostring(value) end
+    return "nil"
+end
+
+function M.cheatsheet_lines()
+    return vim.split("require('poor-cli').setup(" .. encode_lua(config.config or {}, 0) .. ")", "\n", { plain = true })
+end
+
+function M.export_cheatsheet()
+    open_scratch("[poor-cli config cheatsheet]", M.cheatsheet_lines(), "lua")
+end
+
+local function open_arg(arg)
+    if arg == "tour" then M.open_tour(); return end
+    M.open()
+end
+
 function M.setup()
-    vim.api.nvim_create_user_command("PoorCliOnboarding", function() M.open() end, { desc = "Run poor-cli onboarding wizard" })
+    milestones.setup()
+    pcall(vim.api.nvim_del_user_command, "PoorCLIOnboarding")
+    vim.api.nvim_create_user_command("PoorCLIOnboarding", function(opts) open_arg(opts.args) end, {
+        nargs = "?",
+        complete = function() return { "tour" } end,
+        desc = "Run poor-cli onboarding wizard",
+    })
+    vim.keymap.set("n", "<leader>po?", M.export_cheatsheet, { desc = "Export poor-cli config cheatsheet" })
 end
 
 return M

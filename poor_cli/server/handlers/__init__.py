@@ -24,6 +24,13 @@ from .memory import MemoryHandlersMixin
 from .deployment import DeploymentHandlersMixin
 from .prompts import PromptsHandlersMixin
 from .misc import MiscHandlersMixin
+from .diff_review import DiffReviewHandlersMixin
+from .timeline import TimelineHandlersMixin
+from .watch import WatchHandlersMixin
+from .plan import PlanHandlersMixin
+from .branches import BranchesHandlersMixin
+from .repo_map import RepoMapHandlersMixin
+from .mcp import McpHandlersMixin
 
 
 class HandlerMixin(
@@ -50,6 +57,13 @@ class HandlerMixin(
     DeploymentHandlersMixin,
     PromptsHandlersMixin,
     MiscHandlersMixin,
+    DiffReviewHandlersMixin,
+    TimelineHandlersMixin,
+    WatchHandlersMixin,
+    PlanHandlersMixin,
+    BranchesHandlersMixin,
+    RepoMapHandlersMixin,
+    McpHandlersMixin,
 ):
     pass
 

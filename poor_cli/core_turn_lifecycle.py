@@ -6,6 +6,7 @@ the Neovim plugin.
 """
 
 import asyncio
+import datetime
 import difflib
 import hashlib
 import json
@@ -21,6 +22,7 @@ from .audit_log import AuditEventType, AuditSeverity
 from .provider_probe import (
     suggested_privacy_posture,
 )
+from .provider_catalog import KEYLESS_LOCAL_PROVIDER_NAMES
 from .providers.base import FunctionCall
 from .providers.capability import ProviderCapability, provider_has_capability
 from .providers.provider_factory import ProviderFactory
@@ -33,6 +35,8 @@ from .economy import (
     classify_prompt_complexity,
     apply_economy_preset,
     resolve_output_verbosity,
+    build_savings_summary,
+    SavingsHistoryStore,
 )
 from .vision import detect_image_paths_for_provider, build_multimodal_content_anthropic, build_multimodal_content_openai, build_multimodal_parts_gemini
 from .semantic_cache import (
@@ -489,7 +493,7 @@ class TurnLifecycle:
             if tier:
                 cost_per_1k_input = tier.cost_1k_in
                 cost_per_1k_output = tier.cost_1k_out
-            elif provider == "ollama":
+            elif provider in KEYLESS_LOCAL_PROVIDER_NAMES:
                 return 0.0
         return (input_tokens / 1000) * cost_per_1k_input + (output_tokens / 1000) * cost_per_1k_output
 
@@ -500,7 +504,7 @@ class TurnLifecycle:
         *,
         cache_creation_input_tokens: int = 0,
         cache_read_input_tokens: int = 0,
-    ) -> None:
+    ) -> float:
         """Accumulate session and per-task cost tracking."""
         est = self._estimate_cost(input_tokens, output_tokens)
         self._session_total_input_tokens += input_tokens
@@ -517,6 +521,58 @@ class TurnLifecycle:
         self._task_input_tokens += input_tokens
         self._task_output_tokens += output_tokens
         self._task_cost_usd += est
+        self._task_cache_creation_input_tokens = getattr(self, "_task_cache_creation_input_tokens", 0) + cache_creation_input_tokens
+        self._task_cache_read_input_tokens = getattr(self, "_task_cache_read_input_tokens", 0) + cache_read_input_tokens
+        return est
+
+    def _record_tool_cost_surface(self, tool_name: str, result_text: str) -> None:
+        """Track tool-result token surface cost for dashboards only."""
+        tool_name = str(tool_name or "tool")
+        try:
+            tokens = get_token_counter().count(str(result_text or "")).count
+        except Exception:
+            tokens = max(0, len(str(result_text or "")) // 4)
+        usd = self._estimate_cost(tokens, 0)
+        totals = getattr(self, "_cost_tool_totals", None)
+        if totals is None:
+            totals = {}
+            self._cost_tool_totals = totals
+        item = totals.setdefault(tool_name, {"tool": tool_name, "tokens": 0, "cost_usd": 0.0, "calls": 0})
+        item["tokens"] = int(item.get("tokens", 0) or 0) + tokens
+        item["cost_usd"] = round(float(item.get("cost_usd", 0.0) or 0.0) + usd, 6)
+        item["calls"] = int(item.get("calls", 0) or 0) + 1
+
+    def _record_cost_turn(self, request_id: str = "", reason: str = "complete") -> None:
+        if getattr(self, "_turn_cost_recorded", False):
+            return
+        self._turn_cost_recorded = True
+        turns = getattr(self, "_cost_turn_history", None)
+        if turns is None:
+            turns = []
+            self._cost_turn_history = turns
+        duration_ms = 0
+        start = getattr(self, "_turn_start_mono", 0.0) or 0.0
+        if start > 0:
+            duration_ms = int(max(0.0, time.monotonic() - start) * 1000)
+        cache_read = getattr(self, "_task_cache_read_input_tokens", 0)
+        cache_create = getattr(self, "_task_cache_creation_input_tokens", 0)
+        entry = {
+            "turn_id": str(request_id or f"turn-{len(turns) + 1}"),
+            "request_id": str(request_id or ""),
+            "cost_usd": round(float(getattr(self, "_task_cost_usd", 0.0) or 0.0), 6),
+            "input_tokens": int(getattr(self, "_task_input_tokens", 0) or 0),
+            "output_tokens": int(getattr(self, "_task_output_tokens", 0) or 0),
+            "cache_read_input_tokens": int(cache_read or 0),
+            "cache_creation_input_tokens": int(cache_create or 0),
+            "cache_hit": bool(cache_read and cache_read > 0) or bool(getattr(self, "_turn_economy", None) and self._turn_economy.cache_hit),
+            "duration_ms": duration_ms,
+            "tool_calls": int(getattr(self, "_turn_tool_call_count", 0) or 0),
+            "reason": str(reason or "complete"),
+        }
+        entry["total_tokens"] = entry["input_tokens"] + entry["output_tokens"]
+        turns.append(entry)
+        if len(turns) > 500:
+            del turns[:-500]
 
     def _check_cost_guardrails(self) -> Optional[str]:
         """Check if session or task cost/token limits are exceeded. Returns reason or None."""
@@ -561,6 +617,63 @@ class TurnLifecycle:
         except (AttributeError, TypeError):
             pass
         return None
+
+    def get_session_summary(self) -> Dict[str, Any]:
+        summary = self.get_session_cost_summary()
+        per_turn = list(getattr(self, "_cost_turn_history", []) or [])
+        top_tools = sorted(
+            (dict(v) for v in (getattr(self, "_cost_tool_totals", {}) or {}).values()),
+            key=lambda item: float(item.get("cost_usd", 0.0) or 0.0),
+            reverse=True,
+        )[:10]
+        daily = {}
+        for entry in self.get_cost_history(500):
+            day = str(entry.get("timestamp", ""))[:10]
+            if len(day) == 10:
+                daily[day] = round(float(daily.get(day, 0.0) or 0.0) + float(entry.get("cost_usd", 0.0) or 0.0), 6)
+        import datetime
+        today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+        daily[today] = round(float(daily.get(today, 0.0) or 0.0) + float(summary.get("estimated_cost_usd", 0.0) or 0.0), 6)
+        recent_days = sorted(daily.keys())[-30:]
+        daily_30 = {day: daily[day] for day in recent_days}
+        last_week = [daily[day] for day in sorted(daily.keys())[-7:]]
+        last_week_avg = (sum(last_week) / len(last_week)) if last_week else 0.0
+        projected_monthly = round(float(daily.get(today, 0.0) or 0.0) * 30, 6)
+        projected_last_week = round(last_week_avg * 30, 6)
+        session = {
+            "total_usd": summary.get("estimated_cost_usd", 0.0),
+            "total_tokens": {
+                "in": summary.get("input_tokens", 0),
+                "out": summary.get("output_tokens", 0),
+                "thinking": 0,
+                "cached_read": summary.get("cache_read_input_tokens", 0),
+                "cached_write": summary.get("cache_creation_input_tokens", 0),
+            },
+            "turns": len(per_turn),
+            "cache_hit_rate": summary.get("cache_hit_rate_pct", 0.0),
+        }
+        return {
+            "session": session,
+            "summary": summary,
+            "per_turn": per_turn,
+            "perTurn": per_turn,
+            "last_turn": per_turn[-1] if per_turn else {},
+            "lastTurn": per_turn[-1] if per_turn else {},
+            "top_tools": top_tools,
+            "topTools": top_tools,
+            "projected_monthly_usd": projected_monthly,
+            "projectedMonthlyUSD": projected_monthly,
+            "projected_monthly_last_week_usd": projected_last_week,
+            "projectedMonthlyLastWeekUSD": projected_last_week,
+            "daily": daily_30,
+            "cache": {
+                "hit_rate_pct": summary.get("cache_hit_rate_pct", 0.0),
+                "hits": summary.get("cache_hit_count", 0),
+                "misses": summary.get("cache_miss_count", 0),
+                "read_tokens": summary.get("cache_read_input_tokens", 0),
+                "write_tokens": summary.get("cache_creation_input_tokens", 0),
+            },
+        }
 
     def get_session_cost_summary(self) -> Dict[str, Any]:
         """Return current session cost/token totals."""
@@ -640,6 +753,7 @@ class TurnLifecycle:
                 "truncation": int(summary.get("tokens_saved_by_truncation", 0) or 0),
                 "failure_amnesia": int(summary.get("tokens_saved_by_failure_amnesia", 0) or 0),
                 "safe_pretokenization": int(summary.get("tokens_saved_by_safe_pretokenization", 0) or 0),
+                "shell_filter": int(summary.get("tokens_saved_by_shell_filter", 0) or 0),
             }
             by_source = [
                 {
@@ -662,6 +776,74 @@ class TurnLifecycle:
         if getattr(self, "_block_cache", None) is not None:
             summary["block_cache"] = self._block_cache.get_stats()
         return summary
+
+    def _savings_history(self) -> SavingsHistoryStore:
+        store = getattr(self, "_savings_history_store", None)
+        if store is None:
+            store = SavingsHistoryStore()
+            self._savings_history_store = store
+        return store
+
+    def get_savings_summary(self, days: int = 30, *, include_history: bool = True) -> Dict[str, Any]:
+        """Return estimated savings dashboard data."""
+        tracker = getattr(self, "_economy_tracker", None)
+        economy_summary = tracker.get_summary() if tracker else {}
+        session_summary = self.get_session_cost_summary()
+        semantic_stats = self._semantic_cache.get_stats() if getattr(self, "_semantic_cache", None) else {}
+        block_stats = self._block_cache.get_stats() if getattr(self, "_block_cache", None) is not None else {}
+        summary = build_savings_summary(
+            economy_summary,
+            session_summary,
+            semantic_cache_stats=semantic_stats,
+            block_cache_stats=block_stats,
+            token_usd_estimator=lambda tokens: self._estimate_cost(tokens, 0),
+        )
+        if include_history:
+            history = self.get_savings_history(days)
+            today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+            current_usd = float(summary.get("usd_saved", 0.0) or 0.0)
+            if current_usd > 0:
+                daily = dict(history.get("daily", {}) or {})
+                daily[today] = round(float(daily.get(today, 0.0) or 0.0) + current_usd, 6)
+                history["daily"] = {day: daily[day] for day in sorted(daily.keys())[-max(1, int(days or 30)):]}
+                week = datetime.date.fromisoformat(today).isocalendar()
+                week_key = f"{week.year}-W{week.week:02d}"
+                weekly = list(history.get("top_contributors_by_week", []) or [])
+                current = {str(item.get("source") or ""): float(item.get("usd_saved", 0.0) or 0.0) for item in summary.get("all_sources", [])}
+                found = False
+                for item in weekly:
+                    if item.get("week") == week_key:
+                        totals = {str(row.get("source") or ""): float(row.get("usd_saved", 0.0) or 0.0) for row in item.get("top", [])}
+                        for source, usd in current.items():
+                            totals[source] = round(totals.get(source, 0.0) + usd, 6)
+                        item["top"] = [
+                            {"source": source, "usd_saved": usd}
+                            for source, usd in sorted(totals.items(), key=lambda row: row[1], reverse=True)[:3]
+                            if usd > 0
+                        ]
+                        found = True
+                        break
+                if not found:
+                    weekly.append({
+                        "week": week_key,
+                        "top": [
+                            {"source": source, "usd_saved": usd}
+                            for source, usd in sorted(current.items(), key=lambda row: row[1], reverse=True)[:3]
+                            if usd > 0
+                        ],
+                    })
+                history["top_contributors_by_week"] = weekly[-6:]
+            summary["history"] = history
+            summary["top_contributors_by_week"] = history.get("top_contributors_by_week", [])
+        return summary
+
+    def get_savings_history(self, days: int = 30) -> Dict[str, Any]:
+        """Return persisted savings history."""
+        try:
+            return self._savings_history().history(days=days)
+        except Exception as e:
+            logger.debug("Failed to load savings history: %s", e)
+            return {"daily": {}, "by_day_source": {}, "top_contributors_by_week": []}
 
     def get_budget_controller_stats(self) -> Dict[str, Any]:
         """Return token budget controller analytics."""
@@ -726,6 +908,7 @@ class TurnLifecycle:
         if total == 0:
             return
         import datetime
+        savings_snapshot = self.get_savings_summary(include_history=False)
         entry = {
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "provider": self.config.model.provider if self.config else "",
@@ -739,6 +922,9 @@ class TurnLifecycle:
             "cache_miss_count": self._session_provider_cache_misses,
             "estimated_cache_savings_usd": round(self._session_estimated_cache_savings_usd, 6),
             "economy_preset": self.config.economy.preset if self.config else "",
+            "savings_usd": round(float(savings_snapshot.get("usd_saved", 0.0) or 0.0), 6),
+            "savings_tokens": int(savings_snapshot.get("tokens_saved", 0) or 0),
+            "savings_by_source": savings_snapshot.get("all_sources", []),
         }
         try:
             self._COST_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -750,6 +936,10 @@ class TurnLifecycle:
             if len(history) > 500:
                 history = history[-500:]
             self._COST_HISTORY_FILE.write_text(json.dumps(history, indent=2), encoding="utf-8")
+            self._savings_history().record_snapshot(
+                savings_snapshot,
+                timestamp=entry["timestamp"],
+            )
         except Exception as e:
             logger.debug("Failed to persist cost history: %s", e)
 
@@ -942,7 +1132,7 @@ class TurnLifecycle:
         if (new_verbosity != old_verbosity or new_batched != old_batched) and self.provider:
             _sandbox_preset = getattr(self.config.sandbox, "default_preset", "workspace-write")
             _plan = bool(self.config.plan_mode.enabled)
-            _max_sys = 1000 if self.config.model.provider == "ollama" else 0
+            _max_sys = 1000 if self.config.model.provider in KEYLESS_LOCAL_PROVIDER_NAMES else 0
             self._system_instruction = build_tool_calling_system_instruction(
                 str(Path.cwd()), provider=self.config.model.provider,
                 terse_mode=new_verbosity == "caveman", batched_reads=new_batched,
@@ -2232,6 +2422,7 @@ class TurnLifecycle:
             context_budget_tokens=context_budget_tokens,
             activate_tools=False,
         )
+        self._last_context_snapshot = snapshot
         return snapshot.message
 
     async def preview_context(
@@ -2361,7 +2552,7 @@ class TurnLifecycle:
         # Get API key for new provider
         api_key = self._config_manager.get_api_key(provider_name)
         
-        if not api_key and provider_name != "ollama":
+        if not api_key and provider_name not in KEYLESS_LOCAL_PROVIDER_NAMES:
             raise ConfigurationError(f"No API key found for provider: {provider_name}")
         
         # Determine model name

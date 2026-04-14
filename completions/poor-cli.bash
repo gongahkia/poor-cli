@@ -2,7 +2,7 @@
 # Source this file or add to ~/.bashrc:
 #   source /path/to/poor-cli.bash
 
-_poor_cli_complete() {
+_poor-cli_complete() {
     local cur prev cmd subcmd
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
@@ -519,5 +519,7 @@ _poor_cli_complete() {
     esac
 }
 
-complete -F _poor_cli_complete poor-cli
-complete -F _poor_cli_complete poor-cli-sync
+complete -F _poor-cli_complete poor-cli
+complete -F _poor-cli_complete poor-cli-sync
+complete -F _poor-cli_complete poor-cli
+complete -F _poor-cli_complete poor-cli-sync

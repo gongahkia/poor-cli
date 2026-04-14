@@ -13,9 +13,9 @@ from poor_cli.context.file_selector import FileSelector, SelectionWeights
 
 
 PROMPTS = (
-    ("Thread file selection through ContextAssemblyOrchestrator", "poor_cli/context_assembly.py"),
-    ("Expose repo preferences for selection alpha beta gamma", "poor_cli/repo_config.py"),
-    ("Use repo graph PageRank for context file candidates", "poor_cli/repo_graph.py"),
+    ("Thread file selection through ContextAssemblyOrchestrator", "poor-cli/context_assembly.py"),
+    ("Expose repo preferences for selection alpha beta gamma", "poor-cli/repo_config.py"),
+    ("Use repo graph PageRank for context file candidates", "poor-cli/repo_graph.py"),
 )
 
 
@@ -51,8 +51,8 @@ def run() -> dict[str, float]:
         baseline_hits = 0
         weighted_hits = 0
         for idx, (prompt, expected) in enumerate(PROMPTS):
-            distractor = f"poor_cli/recent_leaf_{idx}.py"
-            old_leaf = f"poor_cli/old_leaf_{idx}.py"
+            distractor = f"poor-cli/recent_leaf_{idx}.py"
+            old_leaf = f"poor-cli/old_leaf_{idx}.py"
             candidates = [
                 _candidate(root, old_leaf, 0.0),
                 _candidate(root, expected, 5.0),

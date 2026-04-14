@@ -1,4 +1,4 @@
-"""Unit tests for poor_cli.token_counter — PRD 001."""
+"""Unit tests for poor-cli.token_counter — PRD 001."""
 
 from __future__ import annotations
 

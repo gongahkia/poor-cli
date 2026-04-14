@@ -30,9 +30,9 @@ local function outcome(raw)
 end
 
 local function outcome_hl(value)
-    if value == "allow" then return "PoorCliPolicyAllow" end
-    if value == "deny" then return "PoorCliPolicyDeny" end
-    return "PoorCliPolicyPrompt"
+    if value == "allow" then return "PoorCLIPolicyAllow" end
+    if value == "deny" then return "PoorCLIPolicyDeny" end
+    return "PoorCLIPolicyPrompt"
 end
 
 local function row_line(rule)
@@ -66,9 +66,9 @@ local function normalize_payload(payload)
 end
 
 local function define_highlights()
-    pcall(vim.api.nvim_set_hl, 0, "PoorCliPolicyAllow", { link = "DiagnosticOk", default = true })
-    pcall(vim.api.nvim_set_hl, 0, "PoorCliPolicyDeny", { link = "DiagnosticError", default = true })
-    pcall(vim.api.nvim_set_hl, 0, "PoorCliPolicyPrompt", { link = "DiagnosticWarn", default = true })
+    pcall(vim.api.nvim_set_hl, 0, "PoorCLIPolicyAllow", { link = "DiagnosticOk", default = true })
+    pcall(vim.api.nvim_set_hl, 0, "PoorCLIPolicyDeny", { link = "DiagnosticError", default = true })
+    pcall(vim.api.nvim_set_hl, 0, "PoorCLIPolicyPrompt", { link = "DiagnosticWarn", default = true })
 end
 
 local function scratch_buf()
@@ -77,7 +77,7 @@ local function scratch_buf()
     vim.bo[buf].bufhidden = "hide"
     vim.bo[buf].swapfile = false
     vim.bo[buf].modifiable = true
-    vim.bo[buf].filetype = "poorclipolicy"
+    vim.bo[buf].filetype = "poor-clipolicy"
     vim.api.nvim_buf_set_name(buf, "[poor-cli policy]")
     return buf
 end
@@ -143,7 +143,7 @@ function M.reload(buf, method)
     if not state or not vim.api.nvim_buf_is_valid(buf) then return end
     request_rules(method or "policy.reload", function(result, err)
         if err then
-            vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
+            require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
             return
         end
         state.rules = normalize_payload(result)
@@ -162,13 +162,13 @@ function M.jump(buf)
     end
     request_edit({ index = row.index, rule = row }, function(result, err)
         if err then
-            vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
+            require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
             return
         end
         local target = type(result) == "table" and result or row
         local file = s(target.file or row.file, "")
         if file == "" then
-            vim.notify("[poor-cli] rule has no source file", vim.log.levels.WARN)
+            require("poor-cli.notify").notify("[poor-cli] rule has no source file", vim.log.levels.WARN)
             return
         end
         local line = tonumber(target.line or row.line) or 1

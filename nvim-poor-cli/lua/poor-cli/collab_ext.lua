@@ -33,14 +33,14 @@ end
 
 local function simple_cb(label)
     return function(_, err) vim.schedule(function()
-        if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
-        else vim.notify("[poor-cli] " .. label .. " ok", vim.log.levels.INFO) end
+        if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
+        else require("poor-cli.notify").notify("[poor-cli] " .. label .. " ok", vim.log.levels.INFO) end
     end) end
 end
 
 local function collab_ext_usage()
     return table.concat({
-        "Usage: :PoorCliCollabExt <subcommand> [args]",
+        "Usage: :PoorCLICollabExt <subcommand> [args]",
         "  remove <connection-id>",
         "  role <connection-id> <role>",
         "  lobby <on|off>",
@@ -61,7 +61,7 @@ end
 
 function M.setup()
     local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
-    create_command("PoorCliCollabExt", function(opts)
+    create_command("PoorCLICollabExt", function(opts)
         local args = vim.split(opts.args or "", " ", { trimempty = true })
         local sub = args[1] or ""
         if sub == "remove" and args[2] then
@@ -82,7 +82,7 @@ function M.setup()
             M.handoff({ connectionId = args[2] }, simple_cb("handoff"))
         elseif sub == "activity" then
             M.list_activity({}, function(result, err) vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+                if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                 open_scratch("[poor-cli collab activity]", vim.inspect(result), "lua")
             end) end)
         elseif sub == "hand" and args[2] then
@@ -96,7 +96,7 @@ function M.setup()
             M.add_agenda_item({ text = table.concat(args, " ", 2) }, simple_cb("agenda-add"))
         elseif sub == "agenda-list" then
             M.list_agenda({}, function(result, err) vim.schedule(function()
-                if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+                if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
                 local items = (result or {}).items or {}
                 local lines = { "# agenda", "" }
                 for _, item in ipairs(items) do
@@ -109,7 +109,7 @@ function M.setup()
         elseif sub == "agenda-resolve" and args[2] then
             M.resolve_agenda_item({ itemId = args[2] }, simple_cb("agenda-resolve"))
         else
-            vim.notify("[poor-cli]\n" .. collab_ext_usage(), vim.log.levels.INFO)
+            require("poor-cli.notify").notify("[poor-cli]\n" .. collab_ext_usage(), vim.log.levels.INFO)
         end
     end, { nargs = "*", desc = "Extended collaboration commands" })
 end

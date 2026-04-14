@@ -11,10 +11,27 @@ class CostHandlersMixin:
         self._ensure_initialized()
         return self.core.get_session_cost_summary()
 
+    async def handle_cost_summary(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return session, per-turn, tool, cache, and projection cost summary."""
+        self._ensure_initialized()
+        return self.core.get_session_summary()
+
     async def handle_get_economy_savings(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return accumulated economy savings metrics."""
         self._ensure_initialized()
         return self.core.get_economy_savings()
+
+    async def handle_savings_summary(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return savings dashboard snapshot."""
+        self._ensure_initialized()
+        days = int(params.get("days", 30) or 30)
+        return self.core.get_savings_summary(days)
+
+    async def handle_savings_history(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return savings dashboard history."""
+        self._ensure_initialized()
+        days = int(params.get("days", 30) or 30)
+        return self.core.get_savings_history(days)
 
     async def handle_set_economy_preset(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Switch economy preset (frugal | balanced | quality)."""
@@ -88,9 +105,33 @@ class CostHandlersMixin:
 async def _rpc_109(ctx, params):
     return await ctx.handle_get_session_cost(params)
 
+@register('poor-cli/costSummary')
+async def _rpc_cost_summary(ctx, params):
+    return await ctx.handle_cost_summary(params)
+
+@register('cost.snapshot')
+async def _rpc_cost_snapshot(ctx, params):
+    return await ctx.handle_cost_summary(params)
+
+@register('cost.history')
+async def _rpc_cost_history(ctx, params):
+    return await ctx.handle_get_cost_history(params)
+
 @register('poor-cli/getEconomySavings')
 async def _rpc_115(ctx, params):
     return await ctx.handle_get_economy_savings(params)
+
+@register('poor-cli/savingsSummary')
+async def _rpc_savings_summary(ctx, params):
+    return await ctx.handle_savings_summary(params)
+
+@register('savings.snapshot')
+async def _rpc_savings_snapshot(ctx, params):
+    return await ctx.handle_savings_summary(params)
+
+@register('savings.history')
+async def _rpc_savings_history(ctx, params):
+    return await ctx.handle_savings_history(params)
 
 @register('poor-cli/setEconomyPreset')
 async def _rpc_116(ctx, params):

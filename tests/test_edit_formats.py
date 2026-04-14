@@ -1,4 +1,4 @@
-"""tests for poor_cli.edit_formats module."""
+"""tests for poor-cli.edit_formats module."""
 
 import unittest
 

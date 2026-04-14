@@ -317,8 +317,9 @@ class KVCacheStore:
 # ---------------------------------------------------------------------------
 
 def is_local_inference(provider_name: str) -> bool:
-    """Check whether the active provider supports KV cache manipulation."""
-    return provider_name.lower() in ("ollama", "vllm", "sglang")
+    """Check whether the active provider is local inference."""
+    from .provider_catalog import KEYLESS_LOCAL_PROVIDER_NAMES
+    return provider_name.lower() in KEYLESS_LOCAL_PROVIDER_NAMES
 
 
 def build_cache_friendly_prompt(files: List[Tuple[str, str]], query: str, *,

@@ -12,9 +12,9 @@ class TestInstructionCache(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         self.repo = Path(self.tmpdir)
-        poor_dir = self.repo / ".poor-cli"
-        poor_dir.mkdir()
-        (poor_dir / "memory.md").write_text("test memory content", encoding="utf-8")
+        state_dir = self.repo / ".poor-cli"
+        state_dir.mkdir()
+        (state_dir / "memory.md").write_text("test memory content", encoding="utf-8")
 
     def test_consecutive_calls_return_cached(self):
         mgr = InstructionManager(self.repo)

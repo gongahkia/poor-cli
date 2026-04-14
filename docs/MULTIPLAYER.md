@@ -6,6 +6,7 @@ document remains canonical for protocol, operational, and compatibility detail.
 
 ## Status
 
+- Phase 20 chose commit: multiplayer is a first-class feature.
 - Multiplayer is owner-authoritative P2P over WebRTC DataChannels.
 - The owner exposes an HTTP signaling endpoint at `POST /rpc`.
 - Direct WebSocket room transport is removed.
@@ -20,7 +21,7 @@ One owner process hosts the shared `PoorCLIServer` state for each room.
 - After signaling completes, all room JSON-RPC traffic runs over one reliable ordered DataChannel.
 - Passing driver changes which approved participant may act. It does not migrate owner authority or the shared backend process.
 
-The transport-agnostic session layer lives in `poor_cli/multiplayer_session.py` and owns:
+The transport-agnostic session layer lives in `poor-cli/multiplayer_session.py` and owns:
 
 - role balancing
 - lobby approval state
@@ -65,10 +66,10 @@ Notes:
 
 Files:
 
-- `poor_cli/multiplayer.py`
-- `poor_cli/multiplayer_session.py`
-- `poor_cli/multiplayer_invites.py`
-- `poor_cli/_server.py`
+- `poor-cli/multiplayer.py`
+- `poor-cli/multiplayer_session.py`
+- `poor-cli/multiplayer_invites.py`
+- `poor-cli/_server.py`
 
 Current backend behavior:
 
@@ -110,14 +111,15 @@ multiplayer = {
 Supported command surface:
 
 ```vim
-:PoorCliCollab start [pairing|mob|review]
-:PoorCliCollab join <invite>
-:PoorCliCollab share [viewer|prompter] [room]
-:PoorCliCollab leave
-:PoorCliCollab pass [connection-id|display-name]
-:PoorCliCollab suggest <text>
-:PoorCliCollab members [room]
-:PoorCliCollab status
+:PoorCLICollabQuick [viewer|prompter]
+:PoorCLICollab start [pairing|mob|review]
+:PoorCLICollab join <invite>
+:PoorCLICollab share [viewer|prompter] [room]
+:PoorCLICollab leave
+:PoorCLICollab pass [connection-id|display-name]
+:PoorCLICollab suggest <text>
+:PoorCLICollab members [room]
+:PoorCLICollab status
 ```
 
 The plugin restarts the local server with `poor-cli-server --bridge --invite ...` when joining a remote session.
@@ -172,14 +174,14 @@ Removed:
 - `--url --room --token` bridge bootstrap
 - `--remote-url --remote-room --remote-token` bootstrap
 - Neovim `multiplayer.url`, `multiplayer.room`, and `multiplayer.token`
-- `:PoorCliCollab join <url> <room> <token>`
+- `:PoorCLICollab join <url> <room> <token>`
 - manual URL and token join wizard flow
 
 ## Verification
 
 Verified during this migration:
 
-- `python3 -m compileall poor_cli`
+- `python3 -m compileall poor-cli`
 - `luac -p nvim-poor-cli/lua/poor-cli/config.lua`
 - `luac -p nvim-poor-cli/lua/poor-cli/rpc.lua`
 - `luac -p nvim-poor-cli/lua/poor-cli/commands.lua`
@@ -191,4 +193,4 @@ Verified during this migration:
 - If bridge startup fails with `missing_aiortc` or `ModuleNotFoundError: aiortc`, install the current package dependencies in the active environment and retry.
 - If invite preflight fails, verify the HTTP signaling endpoint in the invite is reachable.
 - If internet peers cannot connect reliably, configure TURN and verify the referenced TURN credential env vars are present.
-- If Neovim join or leave appears stuck, inspect `:PoorCliStatus` and the reported server log path.
+- If Neovim join or leave appears stuck, inspect `:PoorCLIStatus` and the reported server log path.

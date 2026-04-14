@@ -11,16 +11,16 @@
 
 | Agent | Theme | Creates | Modifies | Deletes |
 |-------|-------|---------|----------|---------|
-| 12A | File watcher consolidation | `poor_cli/file_watcher.py`, `tests/test_file_watcher.py` | every importer of `watch`/`ide_watch` | `poor_cli/watch.py`, `poor_cli/ide_watch.py` |
-| 12B | PageRank file selection | `tests/test_pagerank_selection.py` | `poor_cli/repo_graph.py`, `poor_cli/context_assembly.py`, `poor_cli/context_engine.py` | — |
-| 12C | AGENTS.md support | `poor_cli/agent_rules.py`, `tests/test_agent_rules_loader.py` | `poor_cli/instructions.py`, `poor_cli/memory.py`, `poor_cli/auto_memory.py` | — |
-| 12D | Block-level prompt caching | `poor_cli/block_cache.py`, `tests/test_block_cache.py` | `poor_cli/providers/anthropic_provider.py`, `poor_cli/providers/openai_provider.py`, `poor_cli/context_assembly.py`, `poor_cli/semantic_cache.py` | — |
-| 12E | Tool-output schema filters | `tests/test_tool_output_schema_filter.py` | `poor_cli/tool_output_filter.py`, `poor_cli/tools_async.py` | — |
-| 12F | Safe pre-tokenization ship | `tests/test_safe_pretokenization.py` | `poor_cli/code_tokenizer.py`, `poor_cli/context_assembly.py`, `poor_cli/economy.py` | — |
+| 12A | File watcher consolidation | `poor-cli/file_watcher.py`, `tests/test_file_watcher.py` | every importer of `watch`/`ide_watch` | `poor-cli/watch.py`, `poor-cli/ide_watch.py` |
+| 12B | PageRank file selection | `tests/test_pagerank_selection.py` | `poor-cli/repo_graph.py`, `poor-cli/context_assembly.py`, `poor-cli/context_engine.py` | — |
+| 12C | AGENTS.md support | `poor-cli/agent_rules.py`, `tests/test_agent_rules_loader.py` | `poor-cli/instructions.py`, `poor-cli/memory.py`, `poor-cli/auto_memory.py` | — |
+| 12D | Block-level prompt caching | `poor-cli/block_cache.py`, `tests/test_block_cache.py` | `poor-cli/providers/anthropic_provider.py`, `poor-cli/providers/openai_provider.py`, `poor-cli/context_assembly.py`, `poor-cli/semantic_cache.py` | — |
+| 12E | Tool-output schema filters | `tests/test_tool_output_schema_filter.py` | `poor-cli/tool_output_filter.py`, `poor-cli/tools_async.py` | — |
+| 12F | Safe pre-tokenization ship | `tests/test_safe_pretokenization.py` | `poor-cli/code_tokenizer.py`, `poor-cli/context_assembly.py`, `poor-cli/economy.py` | — |
 
 ### File-scope collision notes
 
-**`poor_cli/context_assembly.py` is touched by 12B, 12D, and 12F.** This is the central context-assembly module and cannot be split cleanly. Recommended sub-wave ordering:
+**`poor-cli/context_assembly.py` is touched by 12B, 12D, and 12F.** This is the central context-assembly module and cannot be split cleanly. Recommended sub-wave ordering:
 
 - **Sub-wave 12.1 (parallel):** 12A, 12C, 12E — fully disjoint.
 - **Sub-wave 12.2 (serialized, in order):** 12B → 12D → 12F — each touches `context_assembly.py` for a different concern (scoring hook, block-cache emission, pretokenization hook). Landing them sequentially avoids merge conflicts and lets each rebase cleanly on the previous. Alternative: one human integrator rebases 12D and 12F onto 12B's branch.
@@ -36,11 +36,11 @@ No other files collide. 12D's narrow edit to `semantic_cache.py` does not confli
 
 ### What to build
 
-Replace `poor_cli/watch.py` (~31 lines, async-generator) and `poor_cli/ide_watch.py` (~150 lines, callback) with a single `poor_cli/file_watcher.py`. Take `ide_watch.py` as the surviving base (richer, newer). Port the async-generator consumption pattern from `watch.py` as an `__aiter__` method so legacy call sites keep working.
+Replace `poor-cli/watch.py` (~31 lines, async-generator) and `poor-cli/ide_watch.py` (~150 lines, callback) with a single `poor-cli/file_watcher.py`. Take `ide_watch.py` as the surviving base (richer, newer). Port the async-generator consumption pattern from `watch.py` as an `__aiter__` method so legacy call sites keep working.
 
 ### Implementation details
 
-1. **Survivor selection.** Copy `ide_watch.py` contents to `poor_cli/file_watcher.py`; rename the class to `FileWatcher`.
+1. **Survivor selection.** Copy `ide_watch.py` contents to `poor-cli/file_watcher.py`; rename the class to `FileWatcher`.
 2. **Dual consumption API.** Keep the callback pattern (`.on_change(cb)`, `.start()`, `.stop()`) and add `async def __aiter__(self) -> AsyncIterator[FileEvent]` for the legacy `async for evt in watcher` pattern. Both share one event queue.
 3. **Signature shape.**
    ```python
@@ -51,18 +51,18 @@ Replace `poor_cli/watch.py` (~31 lines, async-generator) and `poor_cli/ide_watch
        def stop(self) -> None: ...  # idempotent
        async def __aiter__(self) -> AsyncIterator[FileEvent]: ...
    ```
-4. **Call-site migration.** Grep sweep: `from poor_cli.watch|from poor_cli.ide_watch|import watch\b|import ide_watch\b` across `poor_cli/`, `nvim-poor-cli/`, `tests/`. Every hit switches to `from poor_cli.file_watcher import FileWatcher`.
-5. **Delete originals.** Remove `poor_cli/watch.py` and `poor_cli/ide_watch.py` only after every importer is migrated and `make test` passes.
+4. **Call-site migration.** Grep sweep: `from poor_cli.watch|from poor_cli.ide_watch|import watch\b|import ide_watch\b` across `poor-cli/`, `nvim-poor-cli/`, `tests/`. Every hit switches to `from poor_cli.file_watcher import FileWatcher`.
+5. **Delete originals.** Remove `poor-cli/watch.py` and `poor-cli/ide_watch.py` only after every importer is migrated and `make test` passes.
 6. **Parity only.** Do not add new event types (create/rename/etc.) or new cross-platform logic — unify, don't expand.
 
 ### Files to create/modify
-- **Create:** `poor_cli/file_watcher.py`, `tests/test_file_watcher.py`
+- **Create:** `poor-cli/file_watcher.py`, `tests/test_file_watcher.py`
 - **Modify:** every importer of the two deleted modules (grep sweep).
-- **Delete:** `poor_cli/watch.py`, `poor_cli/ide_watch.py`
+- **Delete:** `poor-cli/watch.py`, `poor-cli/ide_watch.py`
 
 ### Acceptance criteria
-- [ ] `poor_cli/watch.py` and `poor_cli/ide_watch.py` are gone.
-- [ ] `poor_cli/file_watcher.py` exists with tests: `test_callback_pattern_receives_events`, `test_async_generator_pattern_receives_events`, `test_gitignore_respected`, `test_stop_is_idempotent`, `test_debounce_coalesces_rapid_changes`.
+- [ ] `poor-cli/watch.py` and `poor-cli/ide_watch.py` are gone.
+- [ ] `poor-cli/file_watcher.py` exists with tests: `test_callback_pattern_receives_events`, `test_async_generator_pattern_receives_events`, `test_gitignore_respected`, `test_stop_is_idempotent`, `test_debounce_coalesces_rapid_changes`.
 - [ ] `make lint && make test` clean, no `ImportError`.
 - [ ] `poor-cli watch` CLI and `/watch` Neovim slash command still work manually.
 
@@ -102,7 +102,7 @@ Expose a narrow `pagerank_score(path) -> float` API on `repo_graph.py`, consume 
 
 ### Files to create/modify
 - **Create:** `tests/test_pagerank_selection.py`
-- **Modify:** `poor_cli/repo_graph.py` (narrow export only), `poor_cli/context_assembly.py` (scoring hook), `poor_cli/context_engine.py` (integrate scoring)
+- **Modify:** `poor-cli/repo_graph.py` (narrow export only), `poor-cli/context_assembly.py` (scoring hook), `poor-cli/context_engine.py` (integrate scoring)
 
 ### Acceptance criteria
 - [ ] `pagerank_score` and `top_k` exported with unit tests.
@@ -128,7 +128,7 @@ Low. Weights configurable; setting `pagerank=0` disables the influence entirely 
 
 ### What to build
 
-A new `poor_cli/agent_rules.py` module that discovers rule sources in precedence order, honors YAML frontmatter, and merges them into one string for the context layer.
+A new `poor-cli/agent_rules.py` module that discovers rule sources in precedence order, honors YAML frontmatter, and merges them into one string for the context layer.
 
 ### Implementation details
 
@@ -163,8 +163,8 @@ A new `poor_cli/agent_rules.py` module that discovers rule sources in precedence
 6. **Non-goals.** Do not migrate existing CLAUDE.md content. Do not implement the speculative full AGENTS.md spec — target v1 (markdown + optional frontmatter).
 
 ### Files to create/modify
-- **Create:** `poor_cli/agent_rules.py`, `tests/test_agent_rules_loader.py`
-- **Modify:** `poor_cli/instructions.py` (delegate loading), `poor_cli/memory.py` (route writes through `agent_rules.append`), `poor_cli/auto_memory.py` (same)
+- **Create:** `poor-cli/agent_rules.py`, `tests/test_agent_rules_loader.py`
+- **Modify:** `poor-cli/instructions.py` (delegate loading), `poor-cli/memory.py` (route writes through `agent_rules.append`), `poor-cli/auto_memory.py` (same)
 
 ### Acceptance criteria
 - [ ] `test_agents_md_hierarchy_closest_wins` passes.
@@ -201,8 +201,8 @@ A `block_cache.py` utility that annotates the outgoing provider message array wi
 7. **Non-goals.** Do not implement cross-session caching beyond what providers already offer. Do not cache agent outputs (PRD 004 handles semantic response cache). Do not extend KV cache (research module).
 
 ### Files to create/modify
-- **Create:** `poor_cli/block_cache.py`, `tests/test_block_cache.py`
-- **Modify:** `poor_cli/providers/anthropic_provider.py`, `poor_cli/providers/openai_provider.py`, `poor_cli/context_assembly.py` (emit block markers), `poor_cli/semantic_cache.py` (narrow — stay compatible with block markers)
+- **Create:** `poor-cli/block_cache.py`, `tests/test_block_cache.py`
+- **Modify:** `poor-cli/providers/anthropic_provider.py`, `poor-cli/providers/openai_provider.py`, `poor-cli/context_assembly.py` (emit block markers), `poor-cli/semantic_cache.py` (narrow — stay compatible with block markers)
 
 ### Acceptance criteria
 - [ ] `test_anthropic_block_cache_marker_emitted` passes.
@@ -258,7 +258,7 @@ Extend the `@tool` decorator in `tools_async.py` to accept an `output_filter` ar
 
 ### Files to create/modify
 - **Create:** `tests/test_tool_output_schema_filter.py`
-- **Modify:** `poor_cli/tool_output_filter.py`, `poor_cli/tools_async.py` (decorator + per-tool declarations)
+- **Modify:** `poor-cli/tool_output_filter.py`, `poor-cli/tools_async.py` (decorator + per-tool declarations)
 
 ### Acceptance criteria
 - [ ] Every built-in mutating/read tool has a declared filter (or explicit `output_filter=None` opt-out).
@@ -290,11 +290,11 @@ Expose `safe_pretokenize(text, language_hint) -> str` from `code_tokenizer.py`, 
 2. **Feature flag.** `context.safe_pretokenization = false` default v1. Document plan to flip default to `true` in v2 after observing real-world parseability in the wild.
 3. **Assembly integration.** In `context_assembly`, if the flag is on and the file has a recognized language hint, run content through `safe_pretokenize` before adding to the snapshot. Record `original_tokens` and `compressed_tokens` on the resulting `ContextFile`.
 4. **Economy tracking.** `economy.py` aggregates per-session `saved_tokens` from the delta and surfaces it in `/costSummary`.
-5. **Non-goals.** Do not ship the aggressive mode. Do not re-benchmark — the existing `bench_safe_pretok.py` is the evidence. Do not relocate the module out of `poor_cli/` to `research/`.
+5. **Non-goals.** Do not ship the aggressive mode. Do not re-benchmark — the existing `bench_safe_pretok.py` is the evidence. Do not relocate the module out of `poor-cli/` to `research/`.
 
 ### Files to create/modify
 - **Create:** `tests/test_safe_pretokenization.py`
-- **Modify:** `poor_cli/code_tokenizer.py` (expose `safe_pretokenize`), `poor_cli/context_assembly.py` (opt-in hook), `poor_cli/economy.py` (track savings)
+- **Modify:** `poor-cli/code_tokenizer.py` (expose `safe_pretokenize`), `poor-cli/context_assembly.py` (opt-in hook), `poor-cli/economy.py` (track savings)
 
 ### Acceptance criteria
 - [ ] `test_pretokenize_preserves_parseability` passes on fixture.

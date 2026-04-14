@@ -15,6 +15,12 @@ from .provider_factory import ProviderFactory
 
 # Provider implementations (imported lazily by factory to avoid missing dependencies)
 from .gemini_provider import GeminiProvider
+from .hf_local_provider import HFLocalProvider
+from .hf_tgi_provider import HFTGIProvider
+from .llama_server_provider import LlamaServerProvider
+from .lmstudio_provider import LMStudioProvider
+from .sglang_provider import SGLangProvider
+from .vllm_provider import VLLMProvider
 
 __all__ = [
     # Base classes
@@ -32,4 +38,10 @@ __all__ = [
 
     # Providers (available for direct import)
     "GeminiProvider",
+    "HFLocalProvider",
+    "HFTGIProvider",
+    "LlamaServerProvider",
+    "LMStudioProvider",
+    "SGLangProvider",
+    "VLLMProvider",
 ]

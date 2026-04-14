@@ -362,9 +362,17 @@ class StatusHandlersMixin:
 
     async def handle_get_command_manifest(self, params: Dict[str, Any]) -> Dict[str, Any]:
         try:
-            from ..command_manifest import load_command_manifest, render_commands_markdown
+            from ...command_manifest import load_command_manifest, render_commands_markdown
             manifest = load_command_manifest()
-            return {"commands": [{"name": c.name, "summary": c.summary, "usage": c.usage, "aliases": list(c.aliases)} for c in manifest.commands], "markdown": render_commands_markdown()}
+            commands = []
+            for c in manifest.commands:
+                commands.append({
+                    "name": c.command, "command": c.command,
+                    "description": c.description, "summary": c.description,
+                    "usage": c.command, "aliases": [], "category": c.category,
+                    "recommended": c.recommended,
+                })
+            return {"commands": commands, "markdown": render_commands_markdown()}
         except Exception as e:
             return {"commands": [], "markdown": "", "error": str(e)}
 
@@ -473,4 +481,8 @@ async def _rpc_166(ctx, params):
 
 @register('poor-cli/getCommandManifest')
 async def _rpc_171(ctx, params):
+    return await ctx.handle_get_command_manifest(params)
+
+@register('commands.list')
+async def _rpc_commands_list(ctx, params):
     return await ctx.handle_get_command_manifest(params)

@@ -4,6 +4,9 @@
 local config = require("poor-cli.config")
 local rpc = require("poor-cli.rpc")
 local diagnostics = require("poor-cli.diagnostics")
+local timeline = require("poor-cli.timeline")
+local pickers = require("poor-cli.pickers")
+local mentions = require("poor-cli.mentions")
 
 local M = {}
 
@@ -13,6 +16,10 @@ M.history = {}
 M.input_buf = nil
 M.input_win = nil
 M.loading_ns = vim.api.nvim_create_namespace("poor-cli-chat-loading")
+M.cost_ns = vim.api.nvim_create_namespace("poor-cli-chat-cost")
+M.branch_ns = vim.api.nvim_create_namespace("poor-cli-chat-branches")
+M.edit_ns = vim.api.nvim_create_namespace("poor-cli-chat-edit")
+M.turns = {}
 M.loading_marker = nil
 M.streaming_buf_line = nil
 M.streaming_request_id = nil
@@ -20,6 +27,336 @@ M.streaming_response_text = nil
 M.active_stream = nil -- { request_id, rpc_request_id }
 M.message_queue = {} -- FIFO queue of { message = string, resolved_msg = string, mention_files = {}, context_files = {} }
 M.stream_meta = nil -- { started_at_ns, input_tokens, output_tokens, estimated_cost, cache_read, cache_creation }
+M.last_non_chat_win = nil
+M.edit_state = nil
+
+M.register_source = mentions.register_source
+
+local function chat_header_lines()
+    return {
+        "# poor-cli Chat",
+        "",
+        "Use `:PoorCLISend` or press `<CR>` at the bottom to send a message.",
+        "Share: press `S` or run `:PoorCLICollabQuick` to copy a prompter invite.",
+        "",
+        "---",
+        "",
+    }
+end
+
+local function notify_no_codeblock()
+    require("poor-cli.notify").notify("[poor-cli] no fenced code block under cursor", vim.log.levels.INFO)
+end
+
+local function is_chat_buf(buf)
+    return M.buf and buf == M.buf
+end
+
+local function is_target_buf(buf)
+    if not buf or not vim.api.nvim_buf_is_valid(buf) or is_chat_buf(buf) then
+        return false
+    end
+    if vim.bo[buf].buftype ~= "" then
+        return false
+    end
+    return vim.api.nvim_buf_get_name(buf) ~= ""
+end
+
+local function remember_current_target_win()
+    local win = vim.api.nvim_get_current_win()
+    local buf = vim.api.nvim_win_get_buf(win)
+    if is_target_buf(buf) then
+        M.last_non_chat_win = win
+    end
+end
+
+local function setup_target_window_tracking()
+    local group = vim.api.nvim_create_augroup("poor-cli-chat-target-window", { clear = true })
+    vim.api.nvim_create_autocmd("WinEnter", {
+        group = group,
+        callback = remember_current_target_win,
+    })
+end
+
+setup_target_window_tracking()
+
+local function trim(value)
+    return tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function parse_fence_lang(line)
+    local info = line:match("^%s*`+%s*(.*)$") or line:match("^%s*~+%s*(.*)$") or ""
+    return (trim(info):match("^([^%s]+)") or ""):gsub("[^%w_+%-%.#]", "")
+end
+
+local function ensure_markdown_parser(buf)
+    if not vim.treesitter or not vim.treesitter.get_parser or not vim.treesitter.get_node then
+        return false
+    end
+    local ok, parser = pcall(vim.treesitter.get_parser, buf, "markdown")
+    if not ok or not parser then
+        return false
+    end
+    pcall(function() parser:parse() end)
+    return true
+end
+
+function M.codeblock_under_cursor()
+    local buf = vim.api.nvim_get_current_buf()
+    if not ensure_markdown_parser(buf) then
+        return nil
+    end
+    local cursor = vim.api.nvim_win_get_cursor(0)
+    local row = math.max(cursor[1] - 1, 0)
+    local col = math.max(cursor[2], 0)
+    local ok, node = pcall(vim.treesitter.get_node, {
+        bufnr = buf,
+        pos = { row, col },
+        lang = "markdown",
+        ignore_injections = true,
+    })
+    if (not ok or not node) and col > 0 then
+        ok, node = pcall(vim.treesitter.get_node, {
+            bufnr = buf,
+            pos = { row, col - 1 },
+            lang = "markdown",
+            ignore_injections = true,
+        })
+    end
+    if not ok or not node then
+        return nil
+    end
+    while node and node:type() ~= "fenced_code_block" do
+        node = node:parent()
+    end
+    if not node then
+        return nil
+    end
+    local start_row, _, end_row = node:range()
+    local lines = vim.api.nvim_buf_get_lines(buf, start_row, end_row, false)
+    if #lines < 2 then
+        return nil
+    end
+    local body_lines = {}
+    local last = #lines
+    if not lines[last]:match("^%s*`+") and not lines[last]:match("^%s*~+") then
+        last = last + 1
+    end
+    for index = 2, last - 1 do
+        table.insert(body_lines, lines[index] or "")
+    end
+    local lang = parse_fence_lang(lines[1])
+    return {
+        body = table.concat(body_lines, "\n"),
+        lang = lang ~= "" and lang or "text",
+        start_row = start_row,
+        end_row = end_row,
+    }
+end
+
+function M.yank_codeblock()
+    local block = M.codeblock_under_cursor()
+    if not block then
+        notify_no_codeblock()
+        return false
+    end
+    vim.fn.setreg('"', block.body)
+    if vim.o.clipboard:find("unnamedplus", 1, true) then
+        pcall(vim.fn.setreg, "+", block.body)
+    elseif vim.o.clipboard:find("unnamed", 1, true) then
+        pcall(vim.fn.setreg, "*", block.body)
+    end
+    require("poor-cli.notify").notify("[poor-cli] yanked code block", vim.log.levels.INFO)
+    return true
+end
+
+function M.open_codeblock_scratch()
+    local block = M.codeblock_under_cursor()
+    if not block then
+        notify_no_codeblock()
+        return false
+    end
+    vim.cmd("rightbelow split")
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[buf].buftype = "nofile"
+    vim.bo[buf].bufhidden = "wipe"
+    vim.bo[buf].swapfile = false
+    vim.bo[buf].filetype = block.lang
+    vim.api.nvim_buf_set_name(buf, "[poor-cli codeblock]")
+    vim.api.nvim_win_set_buf(0, buf)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(block.body, "\n", { plain = true }))
+    return true
+end
+
+local function buffer_text(buf)
+    local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
+    if vim.bo[buf].endofline then
+        text = text .. "\n"
+    end
+    return text
+end
+
+local function replace_buffer_text(buf, text)
+    local lines = vim.split(text, "\n", { plain = true })
+    if text:sub(-1) == "\n" then
+        table.remove(lines)
+    end
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+end
+
+local function target_cursor(buf, win)
+    if win and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then
+        return vim.api.nvim_win_get_cursor(win)
+    end
+    for _, candidate in ipairs(vim.fn.win_findbuf(buf)) do
+        if vim.api.nvim_win_is_valid(candidate) then
+            return vim.api.nvim_win_get_cursor(candidate)
+        end
+    end
+    return { vim.api.nvim_buf_line_count(buf), 0 }
+end
+
+local function insert_at_cursor_text(buf, win, text)
+    local original = buffer_text(buf)
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local cursor = target_cursor(buf, win)
+    local row = math.max(cursor[1], 1)
+    local col = math.max(cursor[2], 0)
+    while #lines < row do
+        table.insert(lines, "")
+    end
+    local current = lines[row] or ""
+    local before = current:sub(1, col)
+    local after = current:sub(col + 1)
+    local block_lines = vim.split(text, "\n", { plain = true })
+    if text:sub(-1) == "\n" then
+        table.remove(block_lines)
+    end
+    if #block_lines == 0 then
+        block_lines = { "" }
+    end
+    block_lines[1] = before .. block_lines[1]
+    block_lines[#block_lines] = block_lines[#block_lines] .. after
+    lines[row] = block_lines[1]
+    for index = 2, #block_lines do
+        table.insert(lines, row + index - 1, block_lines[index])
+    end
+    local proposed = table.concat(lines, "\n")
+    if vim.bo[buf].endofline then
+        proposed = proposed .. "\n"
+    end
+    return original, proposed
+end
+
+local function diff_review_should_handle(path, original, proposed)
+    if original == proposed then
+        return false
+    end
+    if trim(vim.env.POOR_CLI_DIFF_REVIEW):lower() == "auto" then
+        return false
+    end
+    local dr = config.get("diff_review") or {}
+    local mode = trim(dr.mode or "review"):lower()
+    if mode == "auto" then
+        return false
+    end
+    if mode == "review" or mode == "" then
+        return true
+    end
+    if mode ~= "review_risky" then
+        return true
+    end
+    local basename = vim.fn.fnamemodify(path, ":t")
+    for _, pattern in ipairs(dr.risky_paths or {}) do
+        local ok, matched = pcall(string.match, tostring(path), tostring(pattern))
+        if pattern == path or pattern == basename or (ok and matched) then
+            return true
+        end
+    end
+    local changed = 0
+    local diff = vim.diff(original, proposed, { result_type = "unified" }) or ""
+    for line in diff:gmatch("[^\n]+") do
+        if line:match("^[+-]") and not line:match("^%+%+%+") and not line:match("^%-%-%-") then
+            changed = changed + 1
+        end
+    end
+    return changed >= tonumber(dr.risky_line_threshold or 50)
+end
+
+local function choose_target(callback)
+    local win = M.last_non_chat_win
+    if win and vim.api.nvim_win_is_valid(win) and is_target_buf(vim.api.nvim_win_get_buf(win)) then
+        callback({ win = win, buf = vim.api.nvim_win_get_buf(win), path = vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win)) })
+        return
+    end
+    local choices = {}
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+        if vim.api.nvim_buf_is_loaded(buf) and is_target_buf(buf) then
+            table.insert(choices, { buf = buf, path = vim.api.nvim_buf_get_name(buf) })
+        end
+    end
+    if #choices == 0 then
+        require("poor-cli.notify").notify("[poor-cli] no target file buffer", vim.log.levels.INFO)
+        callback(nil)
+        return
+    end
+    vim.ui.select(choices, {
+        prompt = "Apply code block to buffer:",
+        format_item = function(item) return item.path end,
+    }, function(choice)
+        if choice then
+            callback({ buf = choice.buf, path = choice.path })
+        else
+            callback(nil)
+        end
+    end)
+end
+
+local function direct_confirm_write(target, proposed)
+    vim.ui.input({ prompt = "Write code block to " .. target.path .. "? type yes: " }, function(answer)
+        if trim(answer):lower() ~= "yes" then
+            require("poor-cli.notify").notify("[poor-cli] write cancelled", vim.log.levels.INFO)
+            return
+        end
+        local was_modifiable = vim.bo[target.buf].modifiable
+        vim.bo[target.buf].modifiable = true
+        replace_buffer_text(target.buf, proposed)
+        vim.bo[target.buf].modifiable = was_modifiable
+        vim.api.nvim_buf_call(target.buf, function()
+            vim.cmd("write!")
+        end)
+        require("poor-cli.notify").notify("[poor-cli] wrote code block", vim.log.levels.INFO)
+    end)
+end
+
+function M.apply_codeblock()
+    local block = M.codeblock_under_cursor()
+    if not block then
+        notify_no_codeblock()
+        return false
+    end
+    choose_target(function(target)
+        if not target then
+            return
+        end
+        local original, proposed = insert_at_cursor_text(target.buf, target.win or vim.api.nvim_get_current_win(), block.body)
+        if diff_review_should_handle(target.path, original, proposed) then
+            local ok, diff_review = pcall(require, "poor-cli.diff_review")
+            if ok and type(diff_review.stage_codeblock) == "function" then
+                diff_review.stage_codeblock({
+                    path = target.path,
+                    original = original,
+                    proposed = proposed,
+                    prompt = "chat fenced code block",
+                    filetype = block.lang,
+                })
+                return
+            end
+        end
+        direct_confirm_write(target, proposed)
+    end)
+    return true
+end
 
 local function is_active_request(request_id)
     return M.active_stream and M.active_stream.request_id ~= "" and M.active_stream.request_id == request_id
@@ -82,14 +419,7 @@ function M.open()
         vim.bo[M.buf].swapfile = false
         vim.bo[M.buf].filetype = "markdown"
         vim.api.nvim_buf_set_name(M.buf, "[poor-cli chat]")
-        vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, {
-            "# poor-cli Chat",
-            "",
-            "Use `:PoorCliSend` or press `<CR>` at the bottom to send a message.",
-            "",
-            "---",
-            "",
-        })
+        vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, chat_header_lines())
     end
 
     local width = config.get("chat_width")
@@ -126,7 +456,42 @@ function M.toggle()
     end
 end
 
-function M.append_message(role, content)
+local function branch_badge(turn)
+    local count = tonumber(turn and (turn.siblingCount or turn.sibling_count)) or 0
+    local index = tonumber(turn and (turn.siblingIndex or turn.sibling_index)) or 0
+    if count <= 1 or index <= 0 then return "" end
+    return string.format("[branch %d/%d]", index, count)
+end
+
+local function record_turn_extmark(role, start_line, end_line, turn, content)
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then return end
+    turn = turn or {}
+    local turn_id = turn.id or turn.turnId or turn.turn_id
+    local index = #M.history + 1
+    local meta = {
+        id = turn_id,
+        role = role,
+        content = content or "",
+        index = index,
+        start_line = start_line,
+        end_line = end_line,
+        parentId = turn.parentId or turn.parent_id,
+        branchOf = turn.branchOf or turn.branch_of,
+        siblingIndex = turn.siblingIndex or turn.sibling_index,
+        siblingCount = turn.siblingCount or turn.sibling_count,
+    }
+    table.insert(M.turns, meta)
+    local opts = { end_row = end_line, end_col = 0, invalidate = true, right_gravity = false }
+    local badge = branch_badge(meta)
+    if badge ~= "" then
+        opts.virt_text = { { " " .. badge, "Comment" } }
+        opts.virt_text_pos = "eol"
+        opts.hl_mode = "combine"
+    end
+    pcall(vim.api.nvim_buf_set_extmark, M.buf, M.branch_ns, start_line, 0, opts)
+end
+
+function M.append_message(role, content, turn)
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
     end
@@ -148,17 +513,267 @@ function M.append_message(role, content)
 
     local line_count = vim.api.nvim_buf_line_count(M.buf)
     vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, lines)
+    record_turn_extmark(role, line_count, line_count + #lines, turn, content)
 
     if M.win and vim.api.nvim_win_is_valid(M.win) then
         local new_count = vim.api.nvim_buf_line_count(M.buf)
         vim.api.nvim_win_set_cursor(M.win, { new_count, 0 })
     end
 
-    table.insert(M.history, { role = role, content = content })
+    table.insert(M.history, {
+        role = role,
+        content = content,
+        id = turn and (turn.id or turn.turnId or turn.turn_id) or nil,
+        parentId = turn and (turn.parentId or turn.parent_id) or nil,
+        branchOf = turn and (turn.branchOf or turn.branch_of) or nil,
+    })
     if role == "assistant" then
         diagnostics.apply_from_text(content)
     end
 end
+
+local function history_content(message)
+    if type(message.content) == "string" then
+        return message.content
+    end
+    if type(message.parts) == "table" then
+        local parts = {}
+        for _, part in ipairs(message.parts) do
+            if type(part) == "string" then
+                table.insert(parts, part)
+            elseif type(part) == "table" and type(part.text) == "string" then
+                table.insert(parts, part.text)
+            end
+        end
+        return table.concat(parts, "\n")
+    end
+    return ""
+end
+
+local function history_role(message)
+    local role = tostring(message.role or "assistant")
+    if role == "model" then return "assistant" end
+    return role
+end
+
+function M.render_history(messages, branch_payload)
+    M.open()
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then return end
+    vim.api.nvim_buf_clear_namespace(M.buf, M.branch_ns, 0, -1)
+    vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, chat_header_lines())
+    M.history = {}
+    M.turns = {}
+    local active_path = type(branch_payload) == "table" and branch_payload.activePath or {}
+    for idx, message in ipairs(messages or {}) do
+        M.append_message(history_role(message), history_content(message), active_path[idx] or message)
+    end
+end
+
+local function turn_under_cursor()
+    if not M.win or not vim.api.nvim_win_is_valid(M.win) then return nil end
+    local row = vim.api.nvim_win_get_cursor(M.win)[1] - 1
+    for _, turn in ipairs(M.turns or {}) do
+        if row >= turn.start_line and row < turn.end_line then
+            return turn
+        end
+    end
+    return nil
+end
+
+local function clear_edit_state()
+    if M.buf and vim.api.nvim_buf_is_valid(M.buf) then
+        vim.api.nvim_buf_clear_namespace(M.buf, M.edit_ns, 0, -1)
+    end
+    M.edit_state = nil
+end
+
+local function trim_for_edit(state)
+    local index = tonumber(state and state.index) or 0
+    local start_line = tonumber(state and state.start_line) or -1
+    if index <= 0 or start_line < 0 then return end
+    if M.buf and vim.api.nvim_buf_is_valid(M.buf) then
+        vim.api.nvim_buf_set_lines(M.buf, start_line, -1, false, {})
+        vim.api.nvim_buf_clear_namespace(M.buf, M.branch_ns, start_line, -1)
+        vim.api.nvim_buf_clear_namespace(M.buf, M.cost_ns, start_line, -1)
+        vim.api.nvim_buf_clear_namespace(M.buf, M.edit_ns, start_line, -1)
+    end
+    while #M.history >= index do table.remove(M.history) end
+    while #M.turns >= index do table.remove(M.turns) end
+end
+
+function M.refresh_branch_metadata()
+    if not rpc.is_running() then return end
+    rpc.chat_siblings({}, function(result, err)
+        vim.schedule(function()
+            if err or type(result) ~= "table" then return end
+            M.apply_branch_metadata(result)
+        end)
+    end)
+end
+
+function M.apply_branch_metadata(branch_payload)
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then return end
+    local active_path = type(branch_payload) == "table" and branch_payload.activePath or {}
+    if type(active_path) ~= "table" or #active_path == 0 then return end
+    vim.api.nvim_buf_clear_namespace(M.buf, M.branch_ns, 0, -1)
+    for idx, turn in ipairs(M.turns or {}) do
+        local meta = active_path[idx]
+        if meta then
+            turn.id = meta.id or turn.id
+            turn.parentId = meta.parentId or meta.parent_id or turn.parentId
+            turn.branchOf = meta.branchOf or meta.branch_of or turn.branchOf
+            turn.siblingIndex = meta.siblingIndex or meta.sibling_index
+            turn.siblingCount = meta.siblingCount or meta.sibling_count
+            if M.history[idx] then
+                M.history[idx].id = turn.id
+                M.history[idx].parentId = turn.parentId
+                M.history[idx].branchOf = turn.branchOf
+            end
+            local opts = { end_row = turn.end_line, end_col = 0, invalidate = true, right_gravity = false }
+            local badge = branch_badge(turn)
+            if badge ~= "" then
+                opts.virt_text = { { " " .. badge, "Comment" } }
+                opts.virt_text_pos = "eol"
+                opts.hl_mode = "combine"
+            end
+            pcall(vim.api.nvim_buf_set_extmark, M.buf, M.branch_ns, turn.start_line, 0, opts)
+        end
+    end
+end
+
+local function apply_branch_result(result)
+    if type(result) ~= "table" or type(result.snapshot) ~= "table" then return end
+    M.render_history(result.snapshot, result)
+end
+
+function M.regenerate_turn()
+    local turn = turn_under_cursor()
+    if not turn or turn.role ~= "assistant" or not turn.id then
+        require("poor-cli.notify").notify("[poor-cli] Put cursor on an assistant turn with branch metadata", vim.log.levels.WARN)
+        return
+    end
+    rpc.chat_regenerate({ turnId = turn.id }, function(result, err)
+        vim.schedule(function()
+            if err then
+                require("poor-cli.notify").notify("[poor-cli] regenerate: " .. rpc.format_error(err), vim.log.levels.ERROR)
+                return
+            end
+            apply_branch_result(result)
+        end)
+    end)
+end
+
+function M.switch_sibling(direction)
+    local turn = turn_under_cursor()
+    local params = { direction = direction }
+    if turn and turn.id then params.branchId = turn.id end
+    rpc.chat_switch(params, function(result, err)
+        vim.schedule(function()
+            if err then
+                require("poor-cli.notify").notify("[poor-cli] branch switch: " .. rpc.format_error(err), vim.log.levels.ERROR)
+                return
+            end
+            apply_branch_result(result)
+        end)
+    end)
+end
+
+function M.edit_resend_turn()
+    if M.active_stream then
+        require("poor-cli.notify").notify("[poor-cli] finish or cancel the active response first", vim.log.levels.WARN)
+        return
+    end
+    local turn = turn_under_cursor()
+    if not turn or turn.role ~= "user" then
+        require("poor-cli.notify").notify("[poor-cli] Put cursor on a user turn", vim.log.levels.WARN)
+        return
+    end
+    if not turn.id then
+        require("poor-cli.notify").notify("[poor-cli] user turn has no branch metadata", vim.log.levels.WARN)
+        return
+    end
+    clear_edit_state()
+    local state = {
+        turn_id = turn.id,
+        index = turn.index,
+        start_line = turn.start_line,
+        content = turn.content or (M.history[turn.index] and M.history[turn.index].content) or "",
+    }
+    M.edit_state = state
+    if M.buf and vim.api.nvim_buf_is_valid(M.buf) then
+        pcall(vim.api.nvim_buf_set_extmark, M.buf, M.edit_ns, turn.start_line, 0, {
+            virt_text = { { " [editing]", "Comment" } },
+            virt_text_pos = "eol",
+            hl_mode = "combine",
+        })
+    end
+    M.prompt_and_send({ initial_text = state.content, edit_state = state })
+end
+
+local export_formats = {
+    { id = "markdown", label = "markdown", rpc_format = "markdown", preview = "Markdown conversation export." },
+    { id = "json", label = "json", rpc_format = "json", preview = "Structured JSON conversation export." },
+    { id = "transcript", label = "transcript", rpc_format = "transcript", preview = "Plain transcript conversation export." },
+}
+
+local function chat_export_config()
+    local cfg = config.get("chat_export") or {}
+    return {
+        dir = cfg.dir or cfg.directory or config.get("export_dir") or vim.fs.joinpath(vim.fn.getcwd(), ".poor-cli", "exports"),
+        default_format = cfg.default_format or cfg.default or "markdown",
+    }
+end
+
+local function export_item(format)
+    if format == "md" then format = "markdown" end
+    if format == "txt" or format == "text" then format = "transcript" end
+    for _, item in ipairs(export_formats) do
+        if item.id == format or item.rpc_format == format then return item end
+    end
+    return export_formats[1]
+end
+
+local function export_picker_items()
+    local cfg = chat_export_config()
+    local default = export_item(cfg.default_format).id
+    local items = {}
+    for _, item in ipairs(export_formats) do
+        if item.id == default then table.insert(items, vim.deepcopy(item)) end
+    end
+    for _, item in ipairs(export_formats) do
+        if item.id ~= default then table.insert(items, vim.deepcopy(item)) end
+    end
+    return items
+end
+
+function M.export_conversation(format)
+    local item = export_item(format or chat_export_config().default_format)
+    local dir = chat_export_config().dir
+    vim.fn.mkdir(dir, "p")
+    rpc.export_conversation({ format = item.rpc_format, outputDir = dir }, function(result, err)
+        vim.schedule(function()
+            if err then
+                require("poor-cli.notify").notify("[poor-cli] export: " .. rpc.format_error(err), vim.log.levels.ERROR)
+                return
+            end
+            local path = type(result) == "table" and (result.filePath or result.file_path or result.path) or nil
+            require("poor-cli.notify").notify("[poor-cli] exported " .. tostring(path or dir), vim.log.levels.INFO)
+        end)
+    end)
+end
+
+function M.pick_export_format()
+    pickers.pick(export_picker_items(), {
+        title = "Export Conversation",
+        preview = true,
+        on_pick = function(data)
+            M.export_conversation((data or {}).id)
+        end,
+    })
+end
+
+M._test_export_picker_items = export_picker_items
+M._test_chat_export_config = chat_export_config
 
 -- System status bar: a small floating window anchored at the bottom of the
 -- chat split.  Notes auto-dismiss after a few seconds so they don't clutter
@@ -187,8 +802,8 @@ function M.append_system_note(content, opts)
     local timeout_ms = opts.timeout or 5000
 
     if not M.win or not vim.api.nvim_win_is_valid(M.win) then
-        -- fallback: no chat window open, use vim.notify
-        vim.notify("[poor-cli] " .. content, vim.log.levels.INFO)
+        -- fallback: no chat window open
+        require("poor-cli.notify").notify("[poor-cli] " .. content, vim.log.levels.INFO)
         return
     end
 
@@ -247,18 +862,7 @@ function M.append_system_note(content, opts)
 end
 
 function M._resolve_mentions(message)
-    local extra_files = {}
-    local resolved = message:gsub("@file:([%w%._/%-~]+)", function(path)
-        local abs = vim.fn.fnamemodify(path, ":p")
-        if vim.fn.filereadable(abs) == 1 then
-            table.insert(extra_files, abs)
-            local lines = vim.fn.readfile(abs)
-            local content = table.concat(lines, "\n")
-            local lang = vim.filetype.match({ filename = abs }) or ""
-            return "```" .. lang .. "\n-- " .. path .. "\n" .. content .. "\n```"
-        end
-        return "@file:" .. path
-    end)
+    local resolved = tostring(message or "")
 
     resolved = resolved:gsub("@workspace", function()
         local cwd = vim.fn.getcwd()
@@ -269,7 +873,7 @@ function M._resolve_mentions(message)
         return "```\n-- Project files:\n" .. table.concat(files, "\n") .. "\n```"
     end)
 
-    return resolved, extra_files
+    return resolved, {}
 end
 
 function M.cancel_active_stream(reason)
@@ -341,7 +945,8 @@ end
 
 -- Dispatch a prepared message to the server (no queue check — caller ensures
 -- there is no active stream).
-local function dispatch_message(prepared)
+local function dispatch_message(prepared, opts)
+    opts = opts or {}
     diagnostics.clear()
 
     local request_id = string.format("chat-%d-%d", os.time(), math.random(1000, 9999))
@@ -356,17 +961,21 @@ local function dispatch_message(prepared)
         estimated_cost = 0,
         cache_read = 0,
         cache_creation = 0,
+        estimated_output_tokens = 0,
         confidence_percent = nil,
         confidence_category = nil,
     }
     M.streaming_request_id = request_id
     M._start_streaming_block()
 
-    local rpc_request_id = rpc.request("poor-cli/chatStreaming", {
+    local params = {
         message = prepared.resolved_msg,
         contextFiles = prepared.context_files,
         requestId = request_id,
-    }, function(_result, err)
+    }
+    if opts.edit_turn_id then params.editTurnId = opts.edit_turn_id end
+
+    local rpc_request_id = rpc.request("poor-cli/chatStreaming", params, function(_result, err)
         vim.schedule(function()
             if not is_active_request(request_id) then
                 return
@@ -402,13 +1011,14 @@ function M._process_queue()
     dispatch_message(next_msg)
 end
 
-function M.send(message)
+function M.send(message, opts)
+    opts = opts or {}
     if not message or message == "" then
         return
     end
 
     if not rpc.is_running() then
-        vim.notify("[poor-cli] Server not running", vim.log.levels.WARN)
+        require("poor-cli.notify").notify("[poor-cli] Server not running", vim.log.levels.WARN)
         return
     end
 
@@ -426,7 +1036,7 @@ function M.send(message)
     end
 
     M.append_message("user", message)
-    dispatch_message(prepared)
+    dispatch_message(prepared, opts)
 end
 
 local function format_thinking_duration(seconds)
@@ -455,6 +1065,9 @@ function M._start_streaming_block()
     end
     local line_count = vim.api.nvim_buf_line_count(M.buf)
     vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, { "## 🤖 Assistant", "", "💭 Thinking (0 sec)...", "" })
+    if M.stream_meta then
+        M.stream_meta.assistant_header_line = line_count
+    end
     M.streaming_buf_line = line_count + 2
     M._streaming_placeholder_active = true
     M._streaming_placeholder_line = line_count + 3 -- 1-indexed position of the "Thinking" line
@@ -546,6 +1159,9 @@ local function format_stream_meta()
 
     -- tokens
     local total_tokens = meta.input_tokens + meta.output_tokens
+    if total_tokens <= 0 then
+        total_tokens = meta.estimated_output_tokens or 0
+    end
     local tokens_str = string.format("%d tokens (%d in / %d out)", total_tokens, meta.input_tokens, meta.output_tokens)
 
     -- cost
@@ -564,8 +1180,10 @@ local function format_stream_meta()
 
     -- cache info (only if non-zero)
     local cache_str = ""
-    if meta.cache_read > 0 or meta.cache_creation > 0 then
-        cache_str = string.format(" | cache: %d read, %d created", meta.cache_read, meta.cache_creation)
+    local cache_read = meta.cache_read or 0
+    local cache_creation = meta.cache_creation or 0
+    if cache_read > 0 or cache_creation > 0 then
+        cache_str = string.format(" | cache: %d read, %d created", cache_read, cache_creation)
     end
 
     return string.format("⏱ %s | %s | %s%s%s", time_str, tokens_str, cost_str, conf_str, cache_str)
@@ -596,12 +1214,41 @@ function M._finalize_streaming_block(request_id)
 
         vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, footer_lines)
     end
+    local ended_meta = M.stream_meta and vim.deepcopy(M.stream_meta) or nil
+    if ended_meta then
+        ended_meta.cost_usd = ended_meta.estimated_cost or 0
+        ended_meta.total_tokens = (ended_meta.input_tokens or 0) + (ended_meta.output_tokens or 0)
+        if ended_meta.total_tokens <= 0 then
+            ended_meta.total_tokens = ended_meta.estimated_output_tokens or 0
+        end
+        if ended_meta.started_at_ns and vim.loop.hrtime then
+            ended_meta.duration_s = math.max(0, (vim.loop.hrtime() - ended_meta.started_at_ns) / 1e9)
+            ended_meta.duration_ms = math.floor(ended_meta.duration_s * 1000)
+        end
+        local ok, cost = pcall(require, "poor-cli.cost")
+        local cfg = config.get("cost") or {}
+        if ok and cost.enabled() and cfg.show_turn_badges ~= false and ended_meta.assistant_header_line then
+            local badge = cost.format_turn_badge(ended_meta)
+            if badge ~= "" then
+                pcall(vim.api.nvim_buf_set_extmark, M.buf, M.cost_ns, ended_meta.assistant_header_line, 0, {
+                    virt_text = { { " " .. badge, "Comment" } },
+                    virt_text_pos = "eol",
+                    hl_mode = "combine",
+                })
+            end
+        end
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = "PoorCLITurnEnded",
+            data = ended_meta,
+        })
+    end
     diagnostics.apply_from_text(M.streaming_response_text or "")
     M.streaming_buf_line = nil
     M.streaming_response_text = nil
     M.streaming_request_id = nil
     M.active_stream = nil
     M.stream_meta = nil
+    M.refresh_branch_metadata()
 
     -- drain the next queued message
     vim.schedule(function()
@@ -612,10 +1259,10 @@ end
 M._thinking_buffer = ""
 
 function M.setup_streaming_autocmds()
-    local group = vim.api.nvim_create_augroup("PoorCliChatStreaming", { clear = true })
+    local group = vim.api.nvim_create_augroup("PoorCLIChatStreaming", { clear = true })
     vim.api.nvim_create_autocmd("User", {
         group = group,
-        pattern = "PoorCliThinkingChunk",
+        pattern = "PoorCLIThinkingChunk",
         callback = function(ev)
             local data = ev.data or {}
             if not is_active_request(data.request_id or "") then
@@ -644,7 +1291,7 @@ function M.setup_streaming_autocmds()
     })
     vim.api.nvim_create_autocmd("User", {
         group = group,
-        pattern = "PoorCliStreamChunk",
+        pattern = "PoorCLIStreamChunk",
         callback = function(ev)
             local data = ev.data or {}
             if not is_active_request(data.request_id or "") then
@@ -663,7 +1310,7 @@ function M.setup_streaming_autocmds()
     })
     vim.api.nvim_create_autocmd("User", {
         group = group,
-        pattern = "PoorCliToolEvent",
+        pattern = "PoorCLIToolEvent",
         callback = function(ev)
             local data = ev.data or {}
             if not is_active_request(data.request_id or "") then
@@ -685,7 +1332,22 @@ function M.setup_streaming_autocmds()
     })
     vim.api.nvim_create_autocmd("User", {
         group = group,
-        pattern = "PoorCliPermissionReq",
+        pattern = "PoorCLIToolChunk",
+        callback = function(ev)
+            local data = ev.data or {}
+            if not is_active_request(data.request_id or "") then
+                return
+            end
+            vim.schedule(function()
+                timeline.handle_chunk(data, function(chunk, chunk_data)
+                    M._append_tool_stream_chunk(chunk_data.tool_name, chunk)
+                end)
+            end)
+        end,
+    })
+    vim.api.nvim_create_autocmd("User", {
+        group = group,
+        pattern = "PoorCLIPermissionReq",
         callback = function(ev)
             local data = ev.data or {}
             if not is_active_request(data.request_id or "") then
@@ -698,7 +1360,7 @@ function M.setup_streaming_autocmds()
     })
     vim.api.nvim_create_autocmd("User", {
         group = group,
-        pattern = "PoorCliPlanReq",
+        pattern = "PoorCLIPlanReq",
         callback = function(ev)
             local data = ev.data or {}
             if not is_active_request(data.request_id or "") then
@@ -711,7 +1373,7 @@ function M.setup_streaming_autocmds()
     })
     vim.api.nvim_create_autocmd("User", {
         group = group,
-        pattern = "PoorCliProgress",
+        pattern = "PoorCLIProgress",
         callback = function(ev)
             local data = ev.data or {}
             if not is_active_request(data.request_id or "") then
@@ -726,7 +1388,7 @@ function M.setup_streaming_autocmds()
     })
     vim.api.nvim_create_autocmd("User", {
         group = group,
-        pattern = "PoorCliCostUpdate",
+        pattern = "PoorCLICostUpdate",
         callback = function(ev)
             local data = ev.data or {}
             if not is_active_request(data.request_id or "") then
@@ -735,11 +1397,19 @@ function M.setup_streaming_autocmds()
             vim.schedule(function()
                 -- accumulate into stream_meta (server may send multiple updates)
                 if M.stream_meta then
-                    M.stream_meta.input_tokens = M.stream_meta.input_tokens + (data.input_tokens or 0)
-                    M.stream_meta.output_tokens = M.stream_meta.output_tokens + (data.output_tokens or 0)
-                    M.stream_meta.estimated_cost = M.stream_meta.estimated_cost + (data.estimated_cost or 0)
-                    M.stream_meta.cache_read = M.stream_meta.cache_read + (data.cache_read_input_tokens or 0)
-                    M.stream_meta.cache_creation = M.stream_meta.cache_creation + (data.cache_creation_input_tokens or 0)
+                    if data.is_estimate then
+                        M.stream_meta.estimated_output_tokens = math.max(M.stream_meta.estimated_output_tokens or 0, data.output_tokens or 0)
+                        if (data.estimated_cost or 0) > 0 then
+                            M.stream_meta.output_tokens = math.max(M.stream_meta.output_tokens or 0, data.output_tokens or 0)
+                            M.stream_meta.estimated_cost = M.stream_meta.estimated_cost + (data.estimated_cost or 0)
+                        end
+                    else
+                        M.stream_meta.input_tokens = M.stream_meta.input_tokens + (data.input_tokens or 0)
+                        M.stream_meta.output_tokens = M.stream_meta.output_tokens + (data.output_tokens or 0)
+                        M.stream_meta.estimated_cost = M.stream_meta.estimated_cost + (data.estimated_cost or 0)
+                        M.stream_meta.cache_read = M.stream_meta.cache_read + (data.cache_read_input_tokens or 0)
+                        M.stream_meta.cache_creation = M.stream_meta.cache_creation + (data.cache_creation_input_tokens or 0)
+                    end
                     if data.confidence_percent then
                         M.stream_meta.confidence_percent = data.confidence_percent
                         M.stream_meta.confidence_category = data.confidence_category
@@ -769,7 +1439,7 @@ function M.setup_streaming_autocmds()
     })
     vim.api.nvim_create_autocmd("User", {
         group = group,
-        pattern = "PoorCliRoomEvent",
+        pattern = "PoorCLIRoomEvent",
         callback = function(ev)
             local data = ev.data or {}
             vim.schedule(function()
@@ -779,7 +1449,7 @@ function M.setup_streaming_autocmds()
     })
     vim.api.nvim_create_autocmd("User", {
         group = group,
-        pattern = "PoorCliMemberRoleUpdated",
+        pattern = "PoorCLIMemberRoleUpdated",
         callback = function(ev)
             local data = ev.data or {}
             vim.schedule(function()
@@ -789,7 +1459,7 @@ function M.setup_streaming_autocmds()
     })
     vim.api.nvim_create_autocmd("User", {
         group = group,
-        pattern = "PoorCliSuggestion",
+        pattern = "PoorCLISuggestion",
         callback = function(ev)
             local data = ev.data or {}
             vim.schedule(function()
@@ -991,7 +1661,7 @@ function M._handle_room_event(data)
         tonumber(data.member_count) or 0,
         tonumber(data.queue_depth) or 0
     )
-    vim.notify("[poor-cli] " .. summary, vim.log.levels.INFO)
+    require("poor-cli.notify").notify("[poor-cli] " .. summary, vim.log.levels.INFO)
     if M.buf and vim.api.nvim_buf_is_valid(M.buf) then
         M.append_system_note(summary)
     end
@@ -1005,7 +1675,7 @@ function M._handle_member_role_update(data)
     end
 
     local summary = string.format("Role update: %s -> %s", connection_id, role)
-    vim.notify("[poor-cli] " .. summary, vim.log.levels.INFO)
+    require("poor-cli.notify").notify("[poor-cli] " .. summary, vim.log.levels.INFO)
     if M.buf and vim.api.nvim_buf_is_valid(M.buf) then
         M.append_system_note(summary)
     end
@@ -1019,7 +1689,7 @@ function M._handle_suggestion(data)
     end
 
     local summary = string.format("Suggestion from %s: %s", sender, text)
-    vim.notify("[poor-cli] " .. summary, vim.log.levels.INFO)
+    require("poor-cli.notify").notify("[poor-cli] " .. summary, vim.log.levels.INFO)
     M.open()
     M.append_system_note(summary)
 end
@@ -1059,6 +1729,27 @@ function M._append_tool_result(name, result, original_size, filtered_size)
         "```",
         "",
     })
+end
+
+function M._append_tool_stream_chunk(name, chunk)
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
+        return
+    end
+    local line_count = vim.api.nvim_buf_line_count(M.buf)
+    local lines = vim.split(tostring(chunk or ""), "\n", { plain = true })
+    if lines[#lines] == "" then
+        table.remove(lines, #lines)
+    end
+    if #lines == 0 then
+        return
+    end
+    local display = { "**" .. (name or "tool") .. " output**", "```" }
+    for _, line in ipairs(lines) do
+        table.insert(display, line)
+    end
+    table.insert(display, "```")
+    table.insert(display, "")
+    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, display)
 end
 
 function M._append_diff_view(name, diff_text)
@@ -1133,9 +1824,41 @@ function M.setup_buffer_keymaps()
         M.open_queue_manager()
     end, { buffer = M.buf, desc = "Open queue manager", nowait = true })
 
+    vim.keymap.set("n", "S", function()
+        vim.cmd("PoorCLICollabQuick")
+    end, { buffer = M.buf, desc = "Share collaboration invite", nowait = true, silent = true })
+
     vim.keymap.set("n", "<CR>", function()
         M.prompt_and_send()
     end, { buffer = M.buf, desc = "Send message", nowait = true, silent = true })
+    vim.keymap.set("n", "<leader>rr", function()
+        M.regenerate_turn()
+    end, { buffer = M.buf, desc = "Regenerate assistant turn", nowait = true, silent = true })
+    vim.keymap.set("n", "<leader>ee", function()
+        M.edit_resend_turn()
+    end, { buffer = M.buf, desc = "Edit and resend user turn", nowait = true, silent = true })
+    vim.keymap.set("n", "<leader>ex", function()
+        M.pick_export_format()
+    end, { buffer = M.buf, desc = "Export conversation", nowait = true, silent = true })
+    vim.keymap.set("n", "[[", function()
+        M.switch_sibling("prev")
+    end, { buffer = M.buf, desc = "Previous branch sibling", nowait = true, silent = true })
+    vim.keymap.set("n", "]]", function()
+        M.switch_sibling("next")
+    end, { buffer = M.buf, desc = "Next branch sibling", nowait = true, silent = true })
+    vim.keymap.set("n", "yc", function()
+        M.yank_codeblock()
+    end, { buffer = M.buf, desc = "Yank code block", nowait = true, silent = true })
+    vim.keymap.set("n", "<leader>ya", function()
+        M.apply_codeblock()
+    end, { buffer = M.buf, desc = "Apply code block", nowait = true, silent = true })
+    vim.keymap.set("n", "<leader>yl", function()
+        M.open_codeblock_scratch()
+    end, { buffer = M.buf, desc = "Open code block scratch", nowait = true, silent = true })
+    local ok_dap, dap_bridge = pcall(require, "poor-cli.integrations.dap")
+    if ok_dap and type(dap_bridge.attach) == "function" then
+        dap_bridge.attach(M.buf)
+    end
 
     -- re-apply on BufEnter in case a filetype plugin (e.g. vim-markdown) clobbers <CR>
     vim.api.nvim_create_autocmd("BufEnter", {
@@ -1144,34 +1867,42 @@ function M.setup_buffer_keymaps()
             vim.keymap.set("n", "<CR>", function()
                 M.prompt_and_send()
             end, { buffer = M.buf, desc = "Send message", nowait = true, silent = true })
+            vim.keymap.set("n", "S", function()
+                vim.cmd("PoorCLICollabQuick")
+            end, { buffer = M.buf, desc = "Share collaboration invite", nowait = true, silent = true })
+            vim.keymap.set("n", "<leader>rr", function()
+                M.regenerate_turn()
+            end, { buffer = M.buf, desc = "Regenerate assistant turn", nowait = true, silent = true })
+            vim.keymap.set("n", "<leader>ee", function()
+                M.edit_resend_turn()
+            end, { buffer = M.buf, desc = "Edit and resend user turn", nowait = true, silent = true })
+            vim.keymap.set("n", "<leader>ex", function()
+                M.pick_export_format()
+            end, { buffer = M.buf, desc = "Export conversation", nowait = true, silent = true })
+            vim.keymap.set("n", "[[", function()
+                M.switch_sibling("prev")
+            end, { buffer = M.buf, desc = "Previous branch sibling", nowait = true, silent = true })
+            vim.keymap.set("n", "]]", function()
+                M.switch_sibling("next")
+            end, { buffer = M.buf, desc = "Next branch sibling", nowait = true, silent = true })
+            vim.keymap.set("n", "yc", function()
+                M.yank_codeblock()
+            end, { buffer = M.buf, desc = "Yank code block", nowait = true, silent = true })
+            vim.keymap.set("n", "<leader>ya", function()
+                M.apply_codeblock()
+            end, { buffer = M.buf, desc = "Apply code block", nowait = true, silent = true })
+            vim.keymap.set("n", "<leader>yl", function()
+                M.open_codeblock_scratch()
+            end, { buffer = M.buf, desc = "Open code block scratch", nowait = true, silent = true })
+            local ok_buf_dap, buf_dap_bridge = pcall(require, "poor-cli.integrations.dap")
+            if ok_buf_dap and type(buf_dap_bridge.attach) == "function" then
+                buf_dap_bridge.attach(M.buf)
+            end
         end,
     })
 end
 
 -- ─────────────────── Chat Input with @/slash completion ───────────────────
-
--- slash commands available in chat input
-local SLASH_COMMANDS = {
-    { name = "/clear",       desc = "Clear chat history" },
-    { name = "/cancel",      desc = "Cancel active request" },
-    { name = "/queue",       desc = "Open queue manager" },
-    { name = "/resume",      desc = "Restore last saved session" },
-    { name = "/sessions",    desc = "List saved sessions" },
-    { name = "/save",        desc = "Save current session" },
-    { name = "/status",      desc = "Show session status" },
-    { name = "/switch",      desc = "Switch provider/model" },
-    { name = "/explain",     desc = "Explain selected code" },
-    { name = "/refactor",    desc = "Refactor selected code" },
-    { name = "/test",        desc = "Generate tests" },
-    { name = "/doc",         desc = "Generate documentation" },
-    { name = "/fix",         desc = "Fix diagnostics" },
-    { name = "/context",     desc = "Show context info" },
-    { name = "/rules",       desc = "Show active rule files" },
-    { name = "/cost",        desc = "Show token usage and cost" },
-    { name = "/audit-export", desc = "Export audit log JSONL" },
-    { name = "/doctor",      desc = "Run diagnostics" },
-    { name = "/help",        desc = "List all commands" },
-}
 
 local function parse_audit_export_args(raw)
     local args = vim.split(raw or "", "%s+", { trimempty = true })
@@ -1197,41 +1928,42 @@ local function parse_audit_export_args(raw)
     return params
 end
 
--- map slash commands to their PoorCli handlers
+-- map slash commands to their PoorCLI handlers
 local SLASH_HANDLERS = {
     ["/clear"]    = function() M.clear() end,
     ["/cancel"]   = function() M.cancel_active_stream("Cancelled by user.") end,
     ["/queue"]    = function() M.open_queue_manager() end,
-    ["/resume"]   = function() vim.cmd("PoorCliSessionRestore") end,
-    ["/sessions"] = function() vim.cmd("PoorCliSessions") end,
-    ["/save"]     = function() vim.cmd("PoorCliSessionSave") end,
-    ["/status"]   = function() vim.cmd("PoorCliStatus") end,
-    ["/switch"]   = function() vim.cmd("PoorCliSwitchProvider") end,
-    ["/explain"]  = function() vim.cmd("PoorCliExplain") end,
-    ["/refactor"] = function() vim.cmd("PoorCliRefactor") end,
-    ["/test"]     = function() vim.cmd("PoorCliTest") end,
-    ["/doc"]      = function() vim.cmd("PoorCliDoc") end,
-    ["/fix"]      = function() vim.cmd("PoorCliFixDiagnostics") end,
-    ["/context"]  = function() vim.cmd("PoorCliContext") end,
-    ["/rules"]    = function() vim.cmd("PoorCliRules") end,
-    ["/cost"]     = function() vim.cmd("PoorCliCost") end,
+    ["/resume"]   = function() vim.cmd("PoorCLISessionRestore") end,
+    ["/sessions"] = function() vim.cmd("PoorCLISessions") end,
+    ["/save"]     = function() vim.cmd("PoorCLISessionSave") end,
+    ["/status"]   = function() vim.cmd("PoorCLIStatus") end,
+    ["/switch"]   = function() vim.cmd("PoorCLISwitchProvider") end,
+    ["/explain"]  = function() vim.cmd("PoorCLIExplain") end,
+    ["/refactor"] = function() vim.cmd("PoorCLIRefactor") end,
+    ["/test"]     = function() vim.cmd("PoorCLITest") end,
+    ["/doc"]      = function() vim.cmd("PoorCLIDoc") end,
+    ["/commit"]   = function() vim.cmd("PoorCLICommit") end,
+    ["/fix"]      = function() vim.cmd("PoorCLIFixDiagnostics") end,
+    ["/context"]  = function() vim.cmd("PoorCLIContext") end,
+    ["/rules"]    = function() vim.cmd("PoorCLIRules") end,
+    ["/cost"]     = function() vim.cmd("PoorCLICost") end,
     ["/audit-export"] = function(line)
         rpc.request("audit/exportRange", parse_audit_export_args(line), function(result, err)
             vim.schedule(function()
                 if err then
-                    vim.notify("[poor-cli] Audit export failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
+                    require("poor-cli.notify").notify("[poor-cli] Audit export failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
                     return
                 end
                 if type(result) == "table" and result.path then
-                    vim.notify("[poor-cli] Exported " .. tostring(result.count or 0) .. " audit events to " .. tostring(result.path), vim.log.levels.INFO)
+                    require("poor-cli.notify").notify("[poor-cli] Exported " .. tostring(result.count or 0) .. " audit events to " .. tostring(result.path), vim.log.levels.INFO)
                 else
-                    vim.notify("[poor-cli] Audit export returned " .. tostring(type(result) == "table" and result.count or 0) .. " events", vim.log.levels.INFO)
+                    require("poor-cli.notify").notify("[poor-cli] Audit export returned " .. tostring(type(result) == "table" and result.count or 0) .. " events", vim.log.levels.INFO)
                 end
             end)
         end)
     end,
-    ["/doctor"]   = function() vim.cmd("PoorCliDoctor") end,
-    ["/help"]     = function() vim.cmd("PoorCliHelp") end,
+    ["/doctor"]   = function() vim.cmd("PoorCLIDoctor") end,
+    ["/help"]     = function() vim.cmd("PoorCLIHelp") end,
 }
 
 M._input_popup = { buf = nil, win = nil, menu_buf = nil, menu_win = nil }
@@ -1295,16 +2027,6 @@ local function get_file_completions(prefix)
     return items
 end
 
-local function get_slash_completions(prefix)
-    local items = {}
-    for _, cmd in ipairs(SLASH_COMMANDS) do
-        if prefix == "" or cmd.name:find(prefix, 1, true) then
-            table.insert(items, { text = cmd.name, desc = cmd.desc })
-        end
-    end
-    return items
-end
-
 local function show_completion_menu(items)
     input_close_menu()
     if #items == 0 then return end
@@ -1346,25 +2068,6 @@ local function update_completions()
     local ip = M._input_popup
     if not ip.buf or not vim.api.nvim_buf_is_valid(ip.buf) then return end
 
-    local line = vim.api.nvim_buf_get_lines(ip.buf, 0, 1, false)[1] or ""
-    local col = vim.api.nvim_win_get_cursor(ip.win)[2]
-    local before = line:sub(1, col)
-
-    -- check for / (must be at start of line)
-    local slash_match = before:match("^(/[%w%-]*)$")
-    if slash_match then
-        show_completion_menu(get_slash_completions(slash_match))
-        return
-    end
-
-    -- check for @ (requires literal @ character)
-    local at_pos = before:find("@[%w%._/%-~]*$")
-    if at_pos then
-        local at_match = before:sub(at_pos + 1) -- text after the @
-        show_completion_menu(get_file_completions(at_match))
-        return
-    end
-
     input_close_menu()
 end
 
@@ -1400,6 +2103,257 @@ local function accept_completion()
     return true
 end
 
+local function slash_command_name(raw)
+    if type(raw) ~= "table" then return "" end
+    return tostring(raw.name or raw.command or raw.id or ""):match("^%s*(.-)%s*$")
+end
+
+local function slash_command_description(raw)
+    if type(raw) ~= "table" then return "" end
+    return (tostring(raw.description or raw.summary or raw.desc or ""):gsub("\n.*$", ""))
+end
+
+local function slash_command_takes_args(raw)
+    if type(raw) ~= "table" then return false end
+    if raw.takesArgs ~= nil then return raw.takesArgs == true end
+    if raw.takes_args ~= nil then return raw.takes_args == true end
+    if type(raw.args) == "table" and #raw.args > 0 then return true end
+    local name = slash_command_name(raw)
+    local usage = tostring(raw.usage or "")
+    return usage:sub(1, #name) == name and usage:sub(#name + 1):match("%S") ~= nil
+end
+
+local function slash_command_preview(raw)
+    local lines = { slash_command_name(raw) }
+    local description = slash_command_description(raw)
+    if description ~= "" then vim.list_extend(lines, { "", description }) end
+    if type(raw) == "table" and raw.usage and raw.usage ~= "" then vim.list_extend(lines, { "", "Usage: " .. tostring(raw.usage) }) end
+    if type(raw) == "table" and type(raw.examples) == "table" and #raw.examples > 0 then
+        vim.list_extend(lines, { "", "Examples:" })
+        for _, example in ipairs(raw.examples) do table.insert(lines, tostring(example)) end
+    end
+    return table.concat(lines, "\n")
+end
+
+local function slash_picker_items(result)
+    local commands = type(result) == "table" and (result.commands or result.items or result) or {}
+    local items = {}
+    for _, raw in ipairs(commands) do
+        local name = slash_command_name(raw)
+        if name:sub(1, 1) == "/" then
+            local desc = slash_command_description(raw)
+            table.insert(items, {
+                id = name,
+                label = desc ~= "" and (name .. "  " .. desc) or name,
+                preview = slash_command_preview(raw),
+                data = raw,
+            })
+        end
+    end
+    return items
+end
+
+local function slash_at_fresh_input(buf, win)
+    if not buf or not vim.api.nvim_buf_is_valid(buf) or not win or not vim.api.nvim_win_is_valid(win) then return false end
+    local cursor = vim.api.nvim_win_get_cursor(win)
+    return cursor[2] == 0 and (vim.api.nvim_buf_get_lines(buf, cursor[1] - 1, cursor[1], false)[1] or "") == ""
+end
+
+local function input_has_bare_slash(buf, win)
+    if not buf or not vim.api.nvim_buf_is_valid(buf) or not win or not vim.api.nvim_win_is_valid(win) then return false end
+    local cursor = vim.api.nvim_win_get_cursor(win)
+    return (vim.api.nvim_buf_get_lines(buf, cursor[1] - 1, cursor[1], false)[1] or "") == "/"
+end
+
+local function insert_slash_command(raw, buf, win)
+    local name = slash_command_name(raw)
+    if name == "" or not buf or not vim.api.nvim_buf_is_valid(buf) or not win or not vim.api.nvim_win_is_valid(win) then return false end
+    local row = vim.api.nvim_win_get_cursor(win)[1]
+    local line = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1] or ""
+    local _, finish = line:find("^/[%w%-]*")
+    if not finish then return false end
+    local suffix = line:sub(finish + 1)
+    local wants_space = slash_command_takes_args(raw)
+    local spacer = wants_space and not suffix:match("^%s") and " " or ""
+    vim.api.nvim_buf_set_lines(buf, row - 1, row, false, { name .. spacer .. suffix })
+    pcall(vim.api.nvim_win_set_cursor, win, { row, #name + (wants_space and 1 or 0) })
+    if suffix == "" then
+        pcall(vim.api.nvim_set_current_win, win)
+        pcall(vim.cmd, "startinsert!")
+    end
+    return true
+end
+
+local function open_slash_picker(buf, win)
+    rpc.request("commands.list", {}, function(result, err)
+        vim.schedule(function()
+            if err then
+                require("poor-cli.notify").notify("[poor-cli] slash commands failed: " .. rpc.format_error(err), vim.log.levels.WARN)
+                return
+            end
+            if not input_has_bare_slash(buf, win) then return end
+            local items = slash_picker_items(result)
+            if #items == 0 then return end
+            pickers.pick(items, {
+                title = "Slash Commands",
+                on_pick = function(command)
+                    insert_slash_command(command, buf, win)
+                end,
+            })
+        end)
+    end)
+end
+
+local function trigger_slash_picker(buf, win, char)
+    if char ~= "/" or not slash_at_fresh_input(buf, win) then return false end
+    vim.schedule(function()
+        if input_has_bare_slash(buf, win) then open_slash_picker(buf, win) end
+    end)
+    return true
+end
+
+local function mention_target_buf()
+    local win = M.last_non_chat_win
+    if win and vim.api.nvim_win_is_valid(win) then
+        local buf = vim.api.nvim_win_get_buf(win)
+        if is_target_buf(buf) then return buf end
+    end
+    local current = vim.api.nvim_get_current_buf()
+    if is_target_buf(current) then return current end
+    return nil
+end
+
+local function mention_at_word_start(buf, win)
+    if not buf or not vim.api.nvim_buf_is_valid(buf) or not win or not vim.api.nvim_win_is_valid(win) then return false end
+    local cursor = vim.api.nvim_win_get_cursor(win)
+    local line = vim.api.nvim_buf_get_lines(buf, cursor[1] - 1, cursor[1], false)[1] or ""
+    local before = line:sub(1, cursor[2])
+    return before == "" or before:sub(-1):match("%s") ~= nil
+end
+
+local function source_trigger_at_cursor(buf, win)
+    if not buf or not vim.api.nvim_buf_is_valid(buf) or not win or not vim.api.nvim_win_is_valid(win) then return nil end
+    local cursor = vim.api.nvim_win_get_cursor(win)
+    local line = vim.api.nvim_buf_get_lines(buf, cursor[1] - 1, cursor[1], false)[1] or ""
+    for _, before in ipairs({ line:sub(1, cursor[2] + 1), line:sub(1, cursor[2]) }) do
+        local at_pos, _, source = before:find("@([%w_%-]+):$")
+        if at_pos and (at_pos == 1 or before:sub(at_pos - 1, at_pos - 1):match("%s") ~= nil) then
+            return source:lower()
+        end
+    end
+    return nil
+end
+
+local function source_prefix_at_cursor(buf, win)
+    if not buf or not vim.api.nvim_buf_is_valid(buf) or not win or not vim.api.nvim_win_is_valid(win) then return nil end
+    local cursor = vim.api.nvim_win_get_cursor(win)
+    local line = vim.api.nvim_buf_get_lines(buf, cursor[1] - 1, cursor[1], false)[1] or ""
+    for _, before in ipairs({ line:sub(1, cursor[2] + 1), line:sub(1, cursor[2]) }) do
+        local at_pos, _, source = before:find("@([%w_%-]+)$")
+        if at_pos and (at_pos == 1 or before:sub(at_pos - 1, at_pos - 1):match("%s") ~= nil) then
+            return source:lower()
+        end
+    end
+    return nil
+end
+
+local function insert_mention_token(token, buf, win, source)
+    if not token or token == "" or not buf or not vim.api.nvim_buf_is_valid(buf) or not win or not vim.api.nvim_win_is_valid(win) then return false end
+    local cursor = vim.api.nvim_win_get_cursor(win)
+    local row, col = cursor[1], cursor[2]
+    local line = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1] or ""
+    local before, after, prefix_start
+    for _, end_col in ipairs({ col, col + 1 }) do
+        local candidate_before = line:sub(1, end_col)
+        local candidate_start
+        if source and source ~= "" then
+            local escaped = source:gsub("([^%w])", "%%%1")
+            candidate_start = candidate_before:find("@" .. escaped .. ":$")
+        end
+        if not candidate_start then
+            candidate_start = candidate_before:find("@$")
+        end
+        if candidate_start then
+            before = candidate_before
+            after = line:sub(end_col + 1)
+            prefix_start = candidate_start
+            break
+        end
+    end
+    if not prefix_start then return false end
+    local new_before = before:sub(1, prefix_start - 1) .. token
+    local spacer = after:match("^%s") and "" or " "
+    vim.api.nvim_buf_set_lines(buf, row - 1, row, false, { new_before .. spacer .. after })
+    pcall(vim.api.nvim_win_set_cursor, win, { row, #new_before + #spacer })
+    pcall(vim.api.nvim_set_current_win, win)
+    pcall(vim.cmd, "startinsert!")
+    return true
+end
+
+local function open_mention_item_picker(source, buf, win, replace_source)
+    local opts = {
+        target_buf = mention_target_buf(),
+        input_buf = buf,
+        input_win = win,
+        insert_token = function(token)
+            return insert_mention_token(token, buf, win, replace_source and source or nil)
+        end,
+    }
+    if mentions.open_source(source, opts) then return true end
+    local items = mentions.source_items(source, opts)
+    if #items == 0 then
+        require("poor-cli.notify").notify("[poor-cli] no @" .. source .. ": mentions", vim.log.levels.INFO)
+        return false
+    end
+    pickers.pick(items, {
+        title = "Mention @" .. source .. ":",
+        on_pick = function(data)
+            local token = type(data) == "table" and data.token or nil
+            insert_mention_token(token, buf, win, replace_source and source or nil)
+        end,
+    })
+    return true
+end
+
+local function open_mention_source_picker(buf, win)
+    local items = mentions.source_picker_items()
+    if #items == 0 then return false end
+    pickers.pick(items, {
+        title = "Mention Sources",
+        on_pick = function(data)
+            if type(data) == "table" and data.name then
+                open_mention_item_picker(data.name, buf, win, false)
+            end
+        end,
+    })
+    return true
+end
+
+local function trigger_mention_picker(buf, win, char)
+    if char == "@" then
+        if not mention_at_word_start(buf, win) then return false end
+        vim.schedule(function()
+            open_mention_source_picker(buf, win)
+        end)
+        return true
+    end
+    if char ~= ":" then return false end
+    local pending_source = source_prefix_at_cursor(buf, win)
+    vim.schedule(function()
+        local source = pending_source or source_trigger_at_cursor(buf, win)
+        if source then open_mention_item_picker(source, buf, win, true) end
+    end)
+    return pending_source ~= nil
+end
+
+M._test_slash_picker_items = slash_picker_items
+M._test_insert_slash_command = insert_slash_command
+M._test_trigger_slash_picker = trigger_slash_picker
+M._test_trigger_mention_picker = trigger_mention_picker
+M._test_insert_mention_token = insert_mention_token
+M._test_mention_source_items = mentions.source_items
+M._test_mention_source_picker_items = mentions.source_picker_items
+
 local function menu_select_next()
     local ip = M._input_popup
     if not ip._menu_items or #ip._menu_items == 0 then return end
@@ -1418,7 +2372,9 @@ local function menu_select_prev()
     end
 end
 
-function M.prompt_and_send()
+function M.prompt_and_send(opts)
+    if type(opts) == "string" then opts = { initial_text = opts } end
+    opts = opts or {}
     M.open()
 
     input_close() -- close any existing
@@ -1460,13 +2416,29 @@ function M.prompt_and_send()
     vim.cmd("startinsert")
 
     local buf = ip.buf
+    if opts.initial_text and opts.initial_text ~= "" then
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(opts.initial_text, "\n", { plain = true }))
+        local first_line = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] or ""
+        pcall(vim.api.nvim_win_set_cursor, ip.win, { 1, #first_line })
+    end
 
     -- submit
     vim.keymap.set("i", "<CR>", function()
-        local line = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] or ""
+        local line = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
+        local edit_state = opts.edit_state
         input_close()
         vim.cmd("stopinsert")
-        if line == "" then return end
+        if line == "" then
+            if edit_state then clear_edit_state() end
+            return
+        end
+
+        if edit_state then
+            trim_for_edit(edit_state)
+            clear_edit_state()
+            M.send(line, { edit_turn_id = edit_state.turn_id })
+            return
+        end
 
         -- check for slash command
         local cmd = line:match("^(/[%w%-]+)")
@@ -1481,15 +2453,18 @@ function M.prompt_and_send()
     -- cancel
     vim.keymap.set("i", "<Esc>", function()
         input_close()
+        if opts.edit_state then clear_edit_state() end
         vim.cmd("stopinsert")
     end, { buffer = buf, nowait = true })
 
     vim.keymap.set("n", "<Esc>", function()
         input_close()
+        if opts.edit_state then clear_edit_state() end
     end, { buffer = buf, nowait = true })
 
     vim.keymap.set("n", "q", function()
         input_close()
+        if opts.edit_state then clear_edit_state() end
     end, { buffer = buf, nowait = true })
 
     -- Tab to accept completion, Shift-Tab or Ctrl-p to navigate
@@ -1501,6 +2476,14 @@ function M.prompt_and_send()
 
     vim.keymap.set("i", "<C-n>", function() menu_select_next() end, { buffer = buf, nowait = true })
     vim.keymap.set("i", "<C-p>", function() menu_select_prev() end, { buffer = buf, nowait = true })
+
+    vim.api.nvim_create_autocmd("InsertCharPre", {
+        buffer = buf,
+        callback = function()
+            trigger_slash_picker(buf, ip.win, vim.v.char)
+            trigger_mention_picker(buf, ip.win, vim.v.char)
+        end,
+    })
 
     -- live update completions on text change
     vim.api.nvim_create_autocmd({ "TextChangedI", "TextChanged" }, {
@@ -1559,7 +2542,7 @@ function M.send_with_selection()
     local start_line = vim.fn.line("'<")
     local end_line = vim.fn.line("'>")
     if start_line == 0 or end_line == 0 or start_line > end_line then
-        vim.notify("[poor-cli] Select text first", vim.log.levels.WARN)
+        require("poor-cli.notify").notify("[poor-cli] Select text first", vim.log.levels.WARN)
         return
     end
     local lines = vim.api.nvim_buf_get_lines(0, start_line - 1, end_line, false)
@@ -1584,7 +2567,7 @@ function M.clear()
         vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, {
             "# poor-cli Chat",
             "",
-            "Use `:PoorCliSend` or press `<CR>` at the bottom to send a message.",
+            "Use `:PoorCLISend` or press `<CR>` at the bottom to send a message.",
             "",
             "---",
             "",
@@ -1673,7 +2656,7 @@ end
 
 function M.open_queue_manager()
     if #M.message_queue == 0 then
-        vim.notify("[poor-cli] Queue is empty", vim.log.levels.INFO)
+        require("poor-cli.notify").notify("[poor-cli] Queue is empty", vim.log.levels.INFO)
         return
     end
 
@@ -1723,7 +2706,7 @@ function M.open_queue_manager()
         queue_mgr_render()
         if #M.message_queue == 0 then
             queue_mgr_close()
-            vim.notify("[poor-cli] Queue cleared", vim.log.levels.INFO)
+            require("poor-cli.notify").notify("[poor-cli] Queue cleared", vim.log.levels.INFO)
         end
     end, { buffer = buf, nowait = true })
 
@@ -1734,7 +2717,7 @@ function M.open_queue_manager()
         queue_mgr_render()
         if #M.message_queue == 0 then
             queue_mgr_close()
-            vim.notify("[poor-cli] Queue cleared", vim.log.levels.INFO)
+            require("poor-cli.notify").notify("[poor-cli] Queue cleared", vim.log.levels.INFO)
         end
     end, { buffer = buf, nowait = true })
 
@@ -1795,7 +2778,7 @@ function M.open_queue_manager()
     vim.keymap.set("n", "D", function()
         M.message_queue = {}
         queue_mgr_close()
-        vim.notify("[poor-cli] Queue cleared", vim.log.levels.INFO)
+        require("poor-cli.notify").notify("[poor-cli] Queue cleared", vim.log.levels.INFO)
     end, { buffer = buf, nowait = true })
 end
 

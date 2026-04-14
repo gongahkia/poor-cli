@@ -27,7 +27,7 @@ def test_archived_modules_are_not_imported_by_runtime_code() -> None:
         module_path = ROOT / Path(*module.split(".")).with_suffix(".py")
         assert not module_path.exists()
     offenders = []
-    for path in (ROOT / "poor_cli").rglob("*.py"):
+    for path in (ROOT / "poor-cli").rglob("*.py"):
         found = archived_aliases & _imported_modules(path)
         if found:
             offenders.append((path.relative_to(ROOT), sorted(found)))

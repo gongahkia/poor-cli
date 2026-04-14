@@ -470,7 +470,7 @@ def sandboxed_command(
     system = platform.system()
     if system == "Darwin":
         profile = build_seatbelt_profile(preset, workspace)
-        fd, profile_path = tempfile.mkstemp(suffix=".sb", prefix="poor_cli_")
+        fd, profile_path = tempfile.mkstemp(suffix=".sb", prefix="poor-cli_")
         import os
         os.write(fd, profile.encode("utf-8"))
         os.close(fd)

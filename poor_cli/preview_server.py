@@ -22,7 +22,7 @@ logger = setup_logger(__name__)
 
 DEFAULT_PORT = 3456
 RELOAD_SCRIPT = """<script>
-(function(){var s=new EventSource('/__poor_cli_reload');
+(function(){var s=new EventSource('/__poor-cli_reload');
 s.onmessage=function(){location.reload()};
 s.onerror=function(){setTimeout(function(){location.reload()},2000)}})();
 </script>"""
@@ -144,7 +144,7 @@ class PreviewServer:
                 if line in (b"\r\n", b"\n", b""):
                     break
             path = unquote(urlparse(raw_path).path)
-            if path == "/__poor_cli_reload":
+            if path == "/__poor-cli_reload":
                 await self._handle_sse(writer)
                 return
             if method.upper() != "GET":

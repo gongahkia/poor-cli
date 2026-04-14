@@ -1,4 +1,4 @@
-"""tests for poor_cli.mcp_scaffold module."""
+"""tests for poor-cli.mcp_scaffold module."""
 
 import tempfile
 import unittest
@@ -32,7 +32,8 @@ class TestScaffoldMcpServer(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             scaffold_mcp_server("cfg_srv", language="python", output_dir=td)
             readme = (Path(td) / "mcp_servers" / "cfg_srv" / "README.md").read_text()
-            self.assertIn("mcp_servers:", readme)
+            self.assertIn(".poor-cli/mcp.json", readme)
+            self.assertIn('"registry_autodiscover": false', readme)
             self.assertIn("cfg_srv", readme)
 
     def test_invalid_language_returns_error(self):
@@ -44,7 +45,7 @@ class TestScaffoldMcpServer(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             scaffold_mcp_server("proto_srv", language="python", output_dir=td)
             content = (Path(td) / "mcp_servers" / "proto_srv" / "server.py").read_text()
-            self.assertIn("2024-11-05", content)
+            self.assertIn("2025-06-18", content)
 
 
 if __name__ == "__main__":

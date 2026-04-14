@@ -319,6 +319,10 @@ class StreamingJsonRpcServer(PoorCLIServer):
         message = params.get("message", "")
         context_files = params.get("contextFiles")
         pinned_context_files = params.get("pinnedContextFiles")
+        context_files, pinned_context_files = self._context_apply_pins_and_drops(
+            context_files or (),
+            pinned_context_files or (),
+        )
         context_budget_tokens = params.get("contextBudgetTokens")
 
         async for chunk in self.core.send_message(

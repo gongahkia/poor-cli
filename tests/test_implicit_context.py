@@ -1,4 +1,4 @@
-"""tests for poor_cli.context.ContextManager implicit tracking."""
+"""tests for poor-cli.context.ContextManager implicit tracking."""
 
 import unittest
 from poor_cli.context import ContextManager

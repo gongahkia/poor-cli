@@ -84,13 +84,15 @@ class AgentLoop:
         if assembler is None:
             assembler = ContextAssemblyOrchestrator(self)
             self._context_assembly = assembler
-        return await assembler.assemble(
+        snapshot = await assembler.assemble(
             prompt=message,
             context_files=context_files,
             pinned_context_files=pinned_context_files,
             context_budget_tokens=context_budget_tokens,
             activate_tools=activate_tools,
         )
+        self._last_context_snapshot = snapshot
+        return snapshot
 
     def _block_cache_provider_message(self, message: Any, snapshot: ContextSnapshot) -> Any:
         if not isinstance(message, str) or not self.provider:
@@ -143,6 +145,9 @@ class AgentLoop:
         self._task_input_tokens = 0 # reset per-task counters
         self._task_output_tokens = 0
         self._task_cost_usd = 0.0
+        self._task_cache_creation_input_tokens = 0
+        self._task_cache_read_input_tokens = 0
+        self._turn_cost_recorded = False
         self._turn_economy = EconomyTurnReport()
         # per-turn output token cap
         _saved_max_output = None
@@ -415,6 +420,7 @@ class AgentLoop:
                 ),
             )
             self._restore_model()
+            self._record_cost_turn(request_id, "cache_hit")
             yield CoreEvent.done(reason="cache_hit")
             return
 
@@ -524,6 +530,7 @@ class AgentLoop:
                     tool_name=str(event.data.get("toolName", "")),
                     result=event.data,
                 )
+                self._record_tool_cost_surface(str(event.data.get("toolName", "")), str(event.data.get("toolResult", "")))
                 tool_name = event.data.get("toolName", "")
                 if tool_name in ("write_todos", "update_todo") and self.tool_registry:
                     todos = self.tool_registry._todos
@@ -575,7 +582,7 @@ class AgentLoop:
                     u = chunk.usage
                     _sys, _hist, _tool = self._compute_token_breakdown()
                     if u:
-                        self._track_cost(
+                        estimated_cost = self._track_cost(
                             u.input_tokens,
                             u.output_tokens,
                             cache_creation_input_tokens=u.cache_creation_input_tokens,
@@ -583,6 +590,7 @@ class AgentLoop:
                         )
                         yield CoreEvent.cost_update(
                             input_tokens=u.input_tokens, output_tokens=u.output_tokens,
+                            estimated_cost=estimated_cost,
                             cache_creation_input_tokens=u.cache_creation_input_tokens,
                             cache_read_input_tokens=u.cache_read_input_tokens,
                             cumulative_input_tokens=self._session_total_input_tokens,
@@ -592,7 +600,7 @@ class AgentLoop:
                     elif chunk.metadata:
                         usage = chunk.metadata.get("usage", {})
                         if usage:
-                            self._track_cost(
+                            estimated_cost = self._track_cost(
                                 usage.get("input_tokens", 0),
                                 usage.get("output_tokens", 0),
                                 cache_creation_input_tokens=usage.get("cache_creation_input_tokens", 0),
@@ -601,6 +609,7 @@ class AgentLoop:
                             yield CoreEvent.cost_update(
                                 input_tokens=usage.get("input_tokens", 0),
                                 output_tokens=usage.get("output_tokens", 0),
+                                estimated_cost=estimated_cost,
                                 cache_creation_input_tokens=usage.get("cache_creation_input_tokens", 0),
                                 cache_read_input_tokens=usage.get("cache_read_input_tokens", 0),
                                 cumulative_input_tokens=self._session_total_input_tokens,
@@ -628,6 +637,7 @@ class AgentLoop:
                         request_id,
                         message,
                         turn_diagnostics=turn_diagnostics,
+                        diff_review_interactive=(source_kind == "session"),
                     )
                     for ev in self._pending_events:
                         _observe_event(ev)
@@ -738,6 +748,7 @@ class AgentLoop:
                             request_id,
                             message,
                             turn_diagnostics=turn_diagnostics,
+                            diff_review_interactive=(source_kind == "session"),
                         )
                         for ev in self._pending_events:
                             _observe_event(ev)
@@ -915,6 +926,7 @@ class AgentLoop:
             if _saved_max_output is not None and self.provider:
                 self.provider.economy_max_output_tokens = _saved_max_output
 
+            self._record_cost_turn(request_id, "complete")
             yield CoreEvent.done(reason="complete")
             logger.info(f"Message complete (events), {len(accumulated_text)} chars")
 
@@ -1086,7 +1098,7 @@ class AgentLoop:
                 cache_create = usage.get("cache_creation_input_tokens", 0)
                 cache_read = usage.get("cache_read_input_tokens", 0)
         if actual_in or actual_out:
-            self._track_cost(
+            estimated_cost = self._track_cost(
                 actual_in,
                 actual_out,
                 cache_creation_input_tokens=cache_create,
@@ -1095,6 +1107,7 @@ class AgentLoop:
             events.append(CoreEvent.cost_update(
                 input_tokens=actual_in,
                 output_tokens=actual_out,
+                estimated_cost=estimated_cost,
                 cache_creation_input_tokens=cache_create,
                 cache_read_input_tokens=cache_read,
                 cumulative_input_tokens=self._session_total_input_tokens,
@@ -1103,9 +1116,10 @@ class AgentLoop:
         elif accumulated_chars > 0:
             # no actual usage available, finalize with estimate
             est_output = get_token_counter().count(accumulated_text).count
-            self._track_cost(0, est_output)
+            estimated_cost = self._track_cost(0, est_output)
             events.append(CoreEvent.cost_update(
                 output_tokens=est_output,
+                estimated_cost=estimated_cost,
                 is_estimate=True,
                 cumulative_input_tokens=self._session_total_input_tokens,
                 cumulative_output_tokens=self._session_total_output_tokens,
@@ -1189,6 +1203,7 @@ class AgentLoop:
                         max_iterations,
                         request_id="",
                         user_request=message,
+                        diff_review_interactive=(source_kind == "session"),
                     )
                     for ev in self._pending_events:
                         if ev.type == "tool_result":
@@ -1214,6 +1229,7 @@ class AgentLoop:
                             max_iterations,
                             request_id="",
                             user_request=message,
+                            diff_review_interactive=(source_kind == "session"),
                         )
                         for ev in self._pending_events:
                             if ev.type == "tool_result":
@@ -1387,6 +1403,7 @@ class AgentLoop:
                     request_id="",
                     user_request=message,
                     turn_diagnostics=turn_diagnostics,
+                    diff_review_interactive=(source_kind == "session"),
                 )
                 for ev in self._pending_events:
                     if ev.type == "tool_result":

@@ -21,6 +21,7 @@ class ProviderCapabilities(BaseModel):
     supports_code_interpreter: bool = False
     supports_thinking: bool = False  # extended thinking / reasoning
     supports_structured_output: bool = False  # grammar-constrained / json_schema output
+    supports_latent_communication: bool = False  # local hidden-state hand-off
 
 
 class FunctionCall(BaseModel):

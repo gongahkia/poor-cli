@@ -6,14 +6,153 @@ from poor_cli.server.registry import register
 
 
 class ContextHandlersMixin:
+    def _context_path(self, path: Any) -> str:
+        text = str(path or "").strip()
+        if not text:
+            raise InvalidParamsError("path required")
+        return str(Path(text).expanduser().resolve())
+
+    def _context_pins(self) -> List[str]:
+        pins = getattr(self.core, "_context_pinned_files", None)
+        if not isinstance(pins, list):
+            pins = []
+            self.core._context_pinned_files = pins
+        return pins
+
+    def _context_drops(self) -> Set[str]:
+        drops = getattr(self.core, "_context_dropped_files", None)
+        if not isinstance(drops, set):
+            drops = set(drops or [])
+            self.core._context_dropped_files = drops
+        return drops
+
+    @staticmethod
+    def _context_iter_paths(paths: Any) -> List[Any]:
+        if paths is None:
+            return []
+        if isinstance(paths, str):
+            return [paths]
+        if isinstance(paths, list):
+            return paths
+        return []
+
+    def _context_apply_pins_and_drops(
+        self,
+        context_files: Any,
+        pinned_context_files: Any,
+    ) -> Tuple[List[str], List[str]]:
+        drops = self._context_drops()
+        files = []
+        for path in self._context_iter_paths(context_files):
+            if not str(path or "").strip():
+                continue
+            normalized = self._context_path(path)
+            if normalized not in drops:
+                files.append(normalized)
+        pins = []
+        seen = set()
+        for path in self._context_iter_paths(pinned_context_files) + list(self._context_pins()):
+            if not str(path or "").strip():
+                continue
+            normalized = self._context_path(path)
+            if normalized in drops or normalized in seen:
+                continue
+            pins.append(normalized)
+            seen.add(normalized)
+        return files, pins
+
+    def _serialize_context_snapshot(self, snapshot: Any) -> Dict[str, Any]:
+        pins = set(self._context_pins())
+        files = []
+        for item in getattr(snapshot, "files", ()) or ():
+            path = str(getattr(item, "path", "") or "")
+            normalized = str(Path(path).expanduser().resolve()) if path else ""
+            reason = str(getattr(item, "reason", "") or "selected")
+            pinned = normalized in pins or reason == "pinned"
+            files.append({
+                "path": path,
+                "tokens": int(getattr(item, "tokens", 0) or 0),
+                "reason": "pinned" if pinned else reason,
+                "compressed": bool(getattr(item, "compressed", False) or getattr(item, "pretokenized", False)),
+                "pinned": pinned,
+            })
+        tokens = getattr(snapshot, "tokens", {}) or {}
+        return {
+            "turnId": str(getattr(snapshot, "turn_id", "") or ""),
+            "budget": int(getattr(snapshot, "budget", 0) or 0),
+            "used": int(tokens.get("total", 0) or 0),
+            "files": files,
+        }
+
+    async def handle_context_snapshot(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        self._ensure_initialized()
+        snapshot = getattr(self.core, "_last_context_snapshot", None)
+        if snapshot is None:
+            return await self.handle_context_refresh(params)
+        return self._serialize_context_snapshot(snapshot)
+
+    async def handle_context_refresh(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        self._ensure_initialized()
+        from poor_cli.context_assembly import ContextAssemblyOrchestrator
+        snapshot = getattr(self.core, "_last_context_snapshot", None)
+        message = str(params.get("message", "") or getattr(snapshot, "user_prompt", "") or "")
+        context_files, pinned_context_files = self._context_apply_pins_and_drops(
+            params.get("contextFiles") or (),
+            params.get("pinnedContextFiles") or (),
+        )
+        assembler = getattr(self.core, "_context_assembly", None)
+        if assembler is None:
+            assembler = ContextAssemblyOrchestrator(self.core)
+            self.core._context_assembly = assembler
+        snapshot = await assembler.assemble(
+            prompt=message,
+            context_files=context_files,
+            pinned_context_files=pinned_context_files,
+            context_budget_tokens=params.get("contextBudgetTokens"),
+            activate_tools=False,
+        )
+        self.core._last_context_snapshot = snapshot
+        return self._serialize_context_snapshot(snapshot)
+
+    async def handle_context_pin(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        self._ensure_initialized()
+        path = self._context_path(params.get("path"))
+        pins = self._context_pins()
+        drops = self._context_drops()
+        if path in pins:
+            pins.remove(path)
+            pinned = False
+        else:
+            pins.append(path)
+            drops.discard(path)
+            pinned = True
+        result = await self.handle_context_refresh(params)
+        result.update({"path": path, "pinned": pinned})
+        return result
+
+    async def handle_context_drop(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        self._ensure_initialized()
+        path = self._context_path(params.get("path"))
+        pins = self._context_pins()
+        if path in pins:
+            pins.remove(path)
+        self._context_drops().add(path)
+        result = await self.handle_context_refresh(params)
+        result.update({"path": path, "dropped": True})
+        return result
+
     async def handle_preview_context(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Preview backend-owned context selection for a chat turn."""
         self._ensure_initialized()
 
+        context_files, pinned_context_files = self._context_apply_pins_and_drops(
+            params.get("contextFiles") or (),
+            params.get("pinnedContextFiles") or (),
+        )
         return await self.core.preview_context(
             message=str(params.get("message", "")),
-            context_files=params.get("contextFiles"),
-            pinned_context_files=params.get("pinnedContextFiles"),
+            context_files=context_files,
+            pinned_context_files=pinned_context_files,
             context_budget_tokens=params.get("contextBudgetTokens"),
         )
 
@@ -108,6 +247,22 @@ async def _rpc_33(ctx, params):
 @register('poor-cli/getContextExplain')
 async def _rpc_34(ctx, params):
     return await ctx.handle_get_context_explain(params)
+
+@register('context.snapshot')
+async def _rpc_context_snapshot(ctx, params):
+    return await ctx.handle_context_snapshot(params)
+
+@register('context.refresh')
+async def _rpc_context_refresh(ctx, params):
+    return await ctx.handle_context_refresh(params)
+
+@register('context.pin')
+async def _rpc_context_pin(ctx, params):
+    return await ctx.handle_context_pin(params)
+
+@register('context.drop')
+async def _rpc_context_drop(ctx, params):
+    return await ctx.handle_context_drop(params)
 
 @register('poor-cli/previewMutation')
 async def _rpc_35(ctx, params):

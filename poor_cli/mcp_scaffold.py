@@ -18,7 +18,7 @@ def handle_request(request):
     method = request.get("method", "")
     req_id = request.get("id")
     if method == "initialize":
-        return {{"jsonrpc": "2.0", "id": req_id, "result": {{"protocolVersion": "2024-11-05", "capabilities": {{"tools": {{}}}}, "serverInfo": {{"name": "{name}", "version": "0.1.0"}}}}}}
+        return {{"jsonrpc": "2.0", "id": req_id, "result": {{"protocolVersion": "2025-06-18", "capabilities": {{"tools": {{}}}}, "serverInfo": {{"name": "{name}", "version": "0.1.0"}}}}}}
     if method == "tools/list":
         return {{"jsonrpc": "2.0", "id": req_id, "result": {{"tools": [
             {{"name": "hello", "description": "Say hello", "inputSchema": {{"type": "object", "properties": {{"name": {{"type": "string", "description": "Name to greet"}}}}, "required": ["name"]}}}}
@@ -56,7 +56,7 @@ const tools = [
 function handleRequest(request) {{
   const {{ method, id, params }} = request;
   if (method === "initialize") {{
-    return {{ jsonrpc: "2.0", id, result: {{ protocolVersion: "2024-11-05", capabilities: {{ tools: {{}} }}, serverInfo: {{ name: "{name}", version: "0.1.0" }} }} }};
+    return {{ jsonrpc: "2.0", id, result: {{ protocolVersion: "2025-06-18", capabilities: {{ tools: {{}} }}, serverInfo: {{ name: "{name}", version: "0.1.0" }} }} }};
   }}
   if (method === "tools/list") {{
     return {{ jsonrpc: "2.0", id, result: {{ tools }} }};
@@ -86,14 +86,16 @@ MCP server scaffolded by poor-cli.
 
 ## Usage
 
-Add to your `~/.poor-cli/config.yaml`:
+Add to `.poor-cli/mcp.json`:
 
-```yaml
-mcp_servers:
-  {name}:
-    command: {command}
-    args: {args}
-    enabled: true
+```json
+{{
+  "multi": true,
+  "registry_autodiscover": false,
+  "servers": [
+    {{"name": "{name}", "transport": "stdio", "command": {command_json}, "enabled": true}}
+  ]
+}}
 ```
 
 ## Tools
@@ -102,7 +104,7 @@ mcp_servers:
 
 ## Protocol
 
-Communicates via JSON-RPC 2.0 over stdin/stdout (MCP protocol version 2024-11-05).
+Communicates via JSON-RPC 2.0 over stdin/stdout (MCP protocol version 2025-06-18).
 '''
 
 
@@ -122,13 +124,13 @@ def scaffold_mcp_server(
         server_file = base_dir / "server.py"
         server_file.write_text(_PYTHON_TEMPLATE.format(name=name), encoding="utf-8")
         command = f"python {server_file}"
-        args = "[]"
+        command_json = f'["python", "{server_file}"]'
     else:
         server_file = base_dir / "server.js"
         server_file.write_text(_NODE_TEMPLATE.format(name=name), encoding="utf-8")
         command = f"node {server_file}"
-        args = "[]"
+        command_json = f'["node", "{server_file}"]'
     readme = base_dir / "README.md"
-    readme.write_text(_README_TEMPLATE.format(name=name, command=command, args=args), encoding="utf-8")
+    readme.write_text(_README_TEMPLATE.format(name=name, command=command, command_json=command_json), encoding="utf-8")
     logger.info("scaffolded MCP server: %s (%s)", name, lang)
-    return f"MCP server '{name}' created at {base_dir}\n\nFiles:\n  {server_file}\n  {readme}\n\nAdd to config.yaml:\n  mcp_servers:\n    {name}:\n      command: {command}\n      enabled: true"
+    return f"MCP server '{name}' created at {base_dir}\n\nFiles:\n  {server_file}\n  {readme}\n\nAdd to .poor-cli/mcp.json:\n  {{\"name\": \"{name}\", \"transport\": \"stdio\", \"command\": [\"{command.split()[0]}\", \"{server_file}\"], \"enabled\": true}}"

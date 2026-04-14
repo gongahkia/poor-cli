@@ -24,6 +24,13 @@ class ChatHandlersMixin:
             return len(context_files)
         return 0
 
+    def _inline_completions_count(self, params: Dict[str, Any]) -> int:
+        raw = params.get("completions_count", params.get("completionsCount", params.get("n", 1)))
+        try:
+            return max(1, int(raw))
+        except (TypeError, ValueError):
+            return 1
+
     async def handle_initialize(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Initialize the server with provider configuration.
@@ -81,6 +88,15 @@ class ChatHandlersMixin:
                 api_key=params.get("apiKey"),
             )
             self.core._init_progress_callback = None
+            loop = asyncio.get_running_loop()
+            def _stage_event(payload: Dict[str, Any]) -> None:
+                async def _emit() -> None:
+                    await self.write_message_stdio(JsonRpcMessage(
+                        method="poor-cli/stageEvent",
+                        params=payload,
+                    ))
+                loop.call_soon_threadsafe(lambda: asyncio.create_task(_emit()))
+            self.core._diff_stage_event_callback = _stage_event
             # collect directory tree nodes for the graph overlay
             graph_nodes: list = []
             try:
@@ -235,6 +251,10 @@ class ChatHandlersMixin:
         message = params.get("message", "")
         context_files = params.get("contextFiles")
         pinned_context_files = params.get("pinnedContextFiles")
+        context_files, pinned_context_files = self._context_apply_pins_and_drops(
+            context_files or (),
+            pinned_context_files or (),
+        )
         context_budget_tokens = params.get("contextBudgetTokens")
         request_id = self._chat_request_id(params)
         message_text = str(message)
@@ -303,33 +323,37 @@ class ChatHandlersMixin:
         provider_name = params.get("provider")
         model_name = params.get("model")
         stream_partial = bool(params.get("streamPartial", False))
+        completions_count = self._inline_completions_count(params)
 
-        # Collect all chunks
-        chunks = []
-        async for chunk in self.core.inline_complete(
-            code_before=code_before,
-            code_after=code_after,
-            instruction=instruction,
-            file_path=file_path,
-            language=language,
-            request_id=request_id,
-            provider_name=provider_name,
-            model_name=model_name,
-        ):
-            chunks.append(chunk)
-            if stream_partial and request_id:
-                await self.write_message_stdio(
-                    JsonRpcMessage(
-                        method="poor-cli/inlineChunk",
-                        params={
-                            "requestId": request_id,
-                            "chunk": chunk,
-                            "done": False,
-                        },
+        completions: List[str] = []
+        for index in range(completions_count):
+            chunks = []
+            candidate_request_id = request_id if not request_id or index == 0 else f"{request_id}:{index + 1}"
+            async for chunk in self.core.inline_complete(
+                code_before=code_before,
+                code_after=code_after,
+                instruction=instruction,
+                file_path=file_path,
+                language=language,
+                request_id=candidate_request_id,
+                provider_name=provider_name,
+                model_name=model_name,
+            ):
+                chunks.append(chunk)
+                if stream_partial and completions_count == 1 and request_id:
+                    await self.write_message_stdio(
+                        JsonRpcMessage(
+                            method="poor-cli/inlineChunk",
+                            params={
+                                "requestId": request_id,
+                                "chunk": chunk,
+                                "done": False,
+                            },
+                        )
                     )
-                )
+            completions.append("".join(chunks))
 
-        if stream_partial and request_id:
+        if stream_partial and completions_count == 1 and request_id:
             await self.write_message_stdio(
                 JsonRpcMessage(
                     method="poor-cli/inlineChunk",
@@ -341,7 +365,10 @@ class ChatHandlersMixin:
                 )
             )
 
-        return {"completion": "".join(chunks), "isPartial": False}
+        completion = completions[0] if completions else ""
+        if completions_count == 1:
+            return {"completion": completion, "isPartial": False}
+        return {"completion": completion, "completions": completions, "isPartial": False}
 
     async def handle_clear_history(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """

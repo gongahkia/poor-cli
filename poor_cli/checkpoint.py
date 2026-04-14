@@ -306,6 +306,15 @@ class CheckpointManager:
                 shutil.rmtree(checkpoint_dir, ignore_errors=True)
             raise FileOperationError("Failed to create checkpoint", str(e))
 
+    def create_for_batch(self, edit_id: str, path: str, label: str) -> Checkpoint:
+        description = (label or f"Diff review accept {edit_id}").strip()
+        return self.create_checkpoint(
+            [path],
+            description,
+            "diff_review_accept",
+            ["diff_review", f"edit:{edit_id}"],
+        )
+
     def _create_file_snapshot(
         self,
         file_path: str,

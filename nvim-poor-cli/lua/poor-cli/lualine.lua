@@ -58,18 +58,38 @@ function M.component_extended()
     local marker = M.component()
     M.refresh_status()
     local badge = M.compaction_badge(M._cached_status or {})
+    local timeline = M.timeline_badge()
     if badge ~= "" then
+        if timeline ~= "" then
+            badge = badge .. " " .. timeline
+        end
         return string.format("%s %s [%s] %s", marker, provider, inline_state, badge)
+    end
+    if timeline ~= "" then
+        return string.format("%s %s [%s] %s", marker, provider, inline_state, timeline)
     end
     return string.format("%s %s [%s]", marker, provider, inline_state)
 end
 
--- Cache for provider info. Primary source: PoorCliProviderChanged /
--- PoorCliInitialized notifications (push). Fallback: a lazy reconcile
+-- Cache for provider info. Primary source: PoorCLIProviderChanged /
+-- PoorCLIInitialized notifications (push). Fallback: a lazy reconcile
 -- every 30s in case a notification is missed.
 M._cached_provider = nil
 M._last_refresh = 0
 M._reconcile_interval_ms = 30000
+M._timeline_running = 0
+M._timeline_total = 0
+
+function M.timeline_badge()
+    if (M._timeline_running or 0) <= 0 and (M._timeline_total or 0) <= 0 then
+        return ""
+    end
+    return string.format("tools %d/%d", M._timeline_running or 0, M._timeline_total or 0)
+end
+
+function M.component_cost()
+    return require("poor-cli.cost").component_cost()
+end
 
 function M.refresh_provider(force)
     local rpc = require("poor-cli.rpc")
@@ -106,8 +126,35 @@ function M.setup()
 
     vim.api.nvim_create_autocmd("User", {
         group = group,
-        pattern = { "PoorCliInitialized", "PoorCliProviderChanged" },
+        pattern = { "PoorCLIInitialized", "PoorCLIProviderChanged" },
         callback = function(args) apply(args.data) end,
+    })
+
+    vim.api.nvim_create_autocmd("User", {
+        group = group,
+        pattern = "PoorCLITimelineEvent",
+        callback = function()
+            require("poor-cli.rpc").request("timeline.list", { limit = 200 }, function(result)
+                if type(result) ~= "table" then return end
+                local running = 0
+                local total = 0
+                for _, event in ipairs(result.events or {}) do
+                    total = total + 1
+                    if event.status == "running" then running = running + 1 end
+                end
+                M._timeline_running = running
+                M._timeline_total = total
+            end)
+        end,
+    })
+
+    vim.api.nvim_create_autocmd("User", {
+        group = group,
+        pattern = "PoorCLITurnEnded",
+        callback = function()
+            local ok, lualine = pcall(require, "lualine")
+            if ok and lualine.refresh then pcall(lualine.refresh) end
+        end,
     })
 
     -- reconcile on focus in case a notification was missed while away
@@ -142,6 +189,20 @@ function M.config()
             return rpc.is_running()
         end,
         color = { fg = "#7aa2f7" },
+    }
+end
+
+function M.config_cost()
+    return {
+        function()
+            return M.component_cost()
+        end,
+        cond = function()
+            local rpc = require("poor-cli.rpc")
+            local ok, cost = pcall(require, "poor-cli.cost")
+            return rpc.is_running() and ok and cost.enabled()
+        end,
+        color = { fg = "#9ece6a" },
     }
 end
 
@@ -186,6 +247,8 @@ function M.component_full()
     if session_name and session_name ~= "" then table.insert(parts, "[" .. session_name .. "]") end
     local compact = M.compaction_badge(s)
     if compact ~= "" then table.insert(parts, compact) end
+    local timeline = M.timeline_badge()
+    if timeline ~= "" then table.insert(parts, timeline) end
     local icon = M.component()
     return icon .. " " .. table.concat(parts, " | ")
 end

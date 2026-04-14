@@ -14,6 +14,101 @@ logger = setup_logger(__name__)
 
 _MENTION_RE = re.compile(r'@(codebase|diff|terminal|docs|web|symbol)\b(?:\s+(.+?))?(?=\s*@|\s*$)', re.IGNORECASE)
 _FILE_MENTION_RE = re.compile(r'@"([^"]+)"|@([\w./\-]+\.\w+)')
+_TOKEN_MENTION_RE = re.compile(r"@(file|buffer|lsp):([^\s`]+)", re.IGNORECASE)
+_MAX_TOKEN_FILE_CHARS = 20000
+
+
+def _repo_root(core: Any) -> Path:
+    root = getattr(core, "_repo_root", None)
+    return Path(root).expanduser().resolve() if root else Path.cwd().resolve()
+
+
+def _safe_resolve_path(raw_path: str, core: Any) -> Optional[Path]:
+    root = _repo_root(core)
+    candidate = Path(raw_path).expanduser()
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    try:
+        resolved = candidate.resolve()
+        resolved.relative_to(root)
+    except Exception:
+        return None
+    return resolved
+
+
+def _path_lang(path: Path) -> str:
+    suffix = path.suffix.lower().lstrip(".")
+    return {
+        "py": "python",
+        "js": "javascript",
+        "ts": "typescript",
+        "lua": "lua",
+        "md": "markdown",
+        "rs": "rust",
+        "go": "go",
+    }.get(suffix, suffix)
+
+
+def _split_path_range(raw_target: str) -> Tuple[str, Optional[Tuple[int, int]]]:
+    match = re.match(r"^(.+?):(\d+)(?:-(\d+))?$", raw_target)
+    if not match:
+        return raw_target, None
+    start = int(match.group(2))
+    end = int(match.group(3) or match.group(2))
+    return match.group(1), (min(start, end), max(start, end))
+
+
+def _read_file_block(kind: str, raw_target: str, core: Any) -> str:
+    raw_path, line_range = _split_path_range(raw_target)
+    path = _safe_resolve_path(raw_path, core)
+    if path is None:
+        return f"[{kind}: path outside workspace: {raw_path}]"
+    if not path.is_file():
+        return f"[{kind}: not found: {raw_path}]"
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except OSError as e:
+        return f"[{kind}: read failed: {raw_path}: {e}]"
+    lines = text.splitlines()
+    range_label = ""
+    if line_range is not None:
+        start, end = line_range
+        lines = lines[max(start - 1, 0):end]
+        range_label = f":{start}" if start == end else f":{start}-{end}"
+    content = "\n".join(lines)
+    if len(content) > _MAX_TOKEN_FILE_CHARS:
+        content = content[:_MAX_TOKEN_FILE_CHARS] + "\n... [truncated]"
+    try:
+        display = str(path.relative_to(_repo_root(core)))
+    except ValueError:
+        display = str(path)
+    lang = _path_lang(path)
+    fence = f"```{lang}" if lang else "```"
+    return f"[{kind}: {display}{range_label}]\n{fence}\n{content}\n```"
+
+
+def _read_lsp_block(raw_target: str, core: Any) -> str:
+    raw_path, line_range = _split_path_range(raw_target)
+    if line_range is None:
+        return f"[lsp: missing line: {raw_target}]"
+    start, _ = line_range
+    return _read_file_block("lsp", f"{raw_path}:{start}", core)
+
+
+async def _resolve_token_mentions(message: str, core: Any) -> Tuple[str, List[str]]:
+    blocks: List[str] = []
+
+    def replace(match: re.Match[str]) -> str:
+        kind = match.group(1).lower()
+        target = match.group(2)
+        if kind == "lsp":
+            blocks.append(_read_lsp_block(target, core))
+        else:
+            blocks.append(_read_file_block(kind, target, core))
+        return ""
+
+    cleaned = _TOKEN_MENTION_RE.sub(replace, message).strip()
+    return cleaned, blocks
 
 
 async def _resolve_codebase(query: str, core: Any) -> str:
@@ -159,12 +254,13 @@ _PROVIDERS: Dict[str, Callable] = {
 async def resolve_mentions(message: str, core: Any) -> Tuple[str, List[str]]:
     """
     Parse @mentions from user message, resolve each, return (cleaned_message, context_blocks).
-    File mentions (@path/to/file) are not handled here — they're handled by existing context logic.
     """
+    context_blocks: List[str] = []
+    message, token_blocks = await _resolve_token_mentions(message, core)
+    context_blocks.extend(token_blocks)
     mentions = _MENTION_RE.findall(message)
     if not mentions:
-        return message, []
-    context_blocks: List[str] = []
+        return message, context_blocks
     tasks = []
     for provider_name, query in mentions:
         provider_name = provider_name.lower()

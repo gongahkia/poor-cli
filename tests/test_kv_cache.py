@@ -1,4 +1,4 @@
-"""Tests for poor_cli.kv_cache_store — position-independent KV cache."""
+"""Tests for poor-cli.kv_cache_store — position-independent KV cache."""
 
 import asyncio
 import json
@@ -213,7 +213,8 @@ class TestPromptBuilder:
 
 class TestLocalDetection:
     @pytest.mark.parametrize("provider,expected", [
-        ("ollama", True), ("vllm", True), ("sglang", True),
+        ("ollama", True), ("vllm", True), ("sglang", True), ("llama_server", True),
+        ("hf_tgi", True), ("lmstudio", True), ("hf_local", True),
         ("openai", False), ("anthropic", False), ("gemini", False),
     ])
     def test_detection(self, provider, expected):

@@ -48,3 +48,9 @@ class TestSubAgentRestriction(unittest.TestCase):
         tools_str = "read_file, grep_files, glob_files"
         allowed = {t.strip() for t in tools_str.split(",") if t.strip()}
         self.assertEqual(allowed, {"read_file", "grep_files", "glob_files"})
+
+    def test_communication_mode_validation(self):
+        from poor_cli.sub_agent import SubAgent
+        SubAgent(self._make_parent(), communication_mode="latent")
+        with self.assertRaises(ValueError):
+            SubAgent(self._make_parent(), communication_mode="invalid")

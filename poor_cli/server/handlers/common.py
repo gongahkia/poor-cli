@@ -14,6 +14,10 @@ class CommonHandlersMixin:
         self._client_capabilities: Dict[str, Any] = {}
         self._pending_permissions: Dict[str, asyncio.Future] = {}
         self._pending_plans: Dict[str, asyncio.Future] = {}
+        self._tool_stream_session: Optional[Any] = None
+        from poor_cli.tool_events import TimelineStore
+        self._tool_events = TimelineStore()
+        self._conversation_branches = None
         self._embedded_multiplayer_room = False
         self._host_server_lock: Optional[asyncio.Lock] = None
         self._host_server: Optional[Any] = None

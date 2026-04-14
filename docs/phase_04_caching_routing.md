@@ -19,7 +19,7 @@ A local semantic cache that intercepts agent queries, computes embedding similar
 
 ### Implementation details
 
-1. **Audit existing caching** — read `poor_cli/file_cache.py` and `poor_cli/embeddings.py`:
+1. **Audit existing caching** — read `poor-cli/file_cache.py` and `poor-cli/embeddings.py`:
    - Does any response-level caching exist?
    - What embedding model/infra is available?
 
@@ -30,7 +30,7 @@ A local semantic cache that intercepts agent queries, computes embedding similar
 
 3. **Embedding model** — use a small, fast, local embedding model:
    - Option A: `sentence-transformers/all-MiniLM-L6-v2` (~80MB, runs locally)
-   - Option B: Use the existing embeddings infrastructure in `poor_cli/embeddings.py`
+   - Option B: Use the existing embeddings infrastructure in `poor-cli/embeddings.py`
    - Option C: If Ollama is available, use `nomic-embed-text` or `mxbai-embed-large`
    - Requirement: must work offline, no API calls for caching itself
 
@@ -78,11 +78,11 @@ A local semantic cache that intercepts agent queries, computes embedding similar
 8. **Cache dashboard** — show cache hit rates and savings in `/cost` and `/savings`.
 
 ### Files to create/modify
-- `poor_cli/semantic_cache.py` (new, ~300 lines)
-- `poor_cli/embeddings.py` (enhance if needed for local embeddings)
-- `poor_cli/providers/base.py` (add cache check before API call)
+- `poor-cli/semantic_cache.py` (new, ~300 lines)
+- `poor-cli/embeddings.py` (enhance if needed for local embeddings)
+- `poor-cli/providers/base.py` (add cache check before API call)
 - Provider implementations (integrate cache)
-- `poor_cli/cost.py` (track cache savings)
+- `poor-cli/cost.py` (track cache savings)
 
 ### Acceptance criteria
 - [ ] Semantic similarity search works with configurable threshold
@@ -113,7 +113,7 @@ A routing engine that sends each query to the cheapest model capable of answerin
 
 ### Implementation details
 
-1. **Audit existing architect mode** — read `poor_cli/architect_mode.py`:
+1. **Audit existing architect mode** — read `poor-cli/architect_mode.py`:
    - Does it already route between models?
    - How does it decide which model to use?
 
@@ -169,11 +169,11 @@ A routing engine that sends each query to the cheapest model capable of answerin
 7. **Routing analytics** — track which model answered each query and whether escalation occurred. Surface in `/cost`.
 
 ### Files to create/modify
-- `poor_cli/model_router.py` (new, ~250 lines)
-- `poor_cli/architect_mode.py` (integrate routing if overlap)
-- `poor_cli/profiles.py` (tie routing to economy presets)
-- `poor_cli/providers/provider_factory.py` (routing-aware model selection)
-- `poor_cli/cost.py` (track routing savings)
+- `poor-cli/model_router.py` (new, ~250 lines)
+- `poor-cli/architect_mode.py` (integrate routing if overlap)
+- `poor-cli/profiles.py` (tie routing to economy presets)
+- `poor-cli/providers/provider_factory.py` (routing-aware model selection)
+- `poor-cli/cost.py` (track routing savings)
 
 ### Acceptance criteria
 - [ ] Task complexity classifier works on heuristic features
@@ -241,10 +241,10 @@ For structured outputs (tool call arguments, JSON responses, edit specifications
 5. **Fallback** — if constrained decoding fails or the provider doesn't support it, fall back to normal generation + post-hoc validation.
 
 ### Files to create/modify
-- `poor_cli/structured_output.py` (new, ~150 lines — schema definitions + provider adapters)
-- `poor_cli/providers/base.py` (add structured output support to provider interface)
+- `poor-cli/structured_output.py` (new, ~150 lines — schema definitions + provider adapters)
+- `poor-cli/providers/base.py` (add structured output support to provider interface)
 - Provider implementations (add response_format support)
-- `poor_cli/edit_formats.py` (use structured output for edit responses)
+- `poor-cli/edit_formats.py` (use structured output for edit responses)
 
 ### Acceptance criteria
 - [ ] JSON schema defined for tool call responses and edit blocks

@@ -91,10 +91,10 @@ A meta-controller that observes session state and learns to allocate token budge
    - Fallback: if controller fails, use static heuristics from previous phases
 
 ### Files to create/modify
-- `poor_cli/token_budget_controller.py` (new, ~400 lines)
-- `poor_cli/budget_logger.py` (new, ~100 lines — data collection)
+- `poor-cli/token_budget_controller.py` (new, ~400 lines)
+- `poor-cli/budget_logger.py` (new, ~100 lines — data collection)
 - Core engine (integrate controller into per-turn decision loop)
-- `poor_cli/profiles.py` (controller respects economy mode constraints)
+- `poor-cli/profiles.py` (controller respects economy mode constraints)
 
 ### Acceptance criteria
 - [ ] State representation captures session dynamics
@@ -115,4 +115,4 @@ A meta-controller that observes session state and learns to allocate token budge
 
 ## Agent 7B: Speculative Decoding Integration
 
-**Outcome:** Archived by Phase 9B. The repo had helper/test coverage but no end-to-end vLLM provider path, so `poor_cli/speculative_decoding.py`, its config surface, and its direct tests were removed.
+**Outcome:** Archived by Phase 9B. The repo had helper/test coverage but no end-to-end vLLM provider path, so `poor-cli/speculative_decoding.py`, its config surface, and its direct tests were removed.

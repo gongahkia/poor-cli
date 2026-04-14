@@ -133,7 +133,7 @@ Apply whitespace/comment stripping to files loaded into the context window for u
 - Complementary to existing context selection (phases 1-7)
 - Easy to implement: only transform files where `is_edit_target = False`
 
-**Integration point:** `poor_cli/context_engine.py` — when building context for a turn, apply `safe_pretokenize()` to non-target files before token counting.
+**Integration point:** `poor-cli/context_engine.py` — when building context for a turn, apply `safe_pretokenize()` to non-target files before token counting.
 
 ### Consider: AST-compact as context index format
 
@@ -159,7 +159,7 @@ The camelCase→snake_case transformation saves ~4% additional tokens but breaks
 
 ## 8. Files Produced
 
-- `poor_cli/code_tokenizer.py` — research prototypes (Approach A, B, A+B)
+- `poor-cli/code_tokenizer.py` — research prototypes (Approach A, B, A+B)
 - `tests/bench_tokenizer.py` — baseline measurement script
 - `tests/bench_tokenizer_full.py` — full benchmark (all approaches)
 - `tests/bench_safe_pretok.py` — safe-only variant benchmark

@@ -18,6 +18,7 @@ from poor_cli.exceptions import setup_logger, CommandExecutionError
 from poor_cli.history import TokenCounter
 from poor_cli.repo_config import get_repo_config
 from poor_cli.rtk_integration import RTKState, detect_rtk, wrap_shell_command
+from poor_cli.shell_filters import match_command
 from poor_cli.tool_output_filter import SchemaFilterResult, ToolOutputFilter, empty_filter_stats, render_output
 
 logger = setup_logger(__name__)
@@ -326,6 +327,9 @@ class EnhancedToolRegistry(ToolRegistryAsync):
         return detect_rtk(enabled=enabled, tee_on_failure=tee_on_failure)
 
     async def bash(self, command: str, timeout: int = 60) -> str:
+        rtk_lite_cfg = getattr(self.config, "rtk_lite", None)
+        if getattr(rtk_lite_cfg, "enabled", False) is True and match_command(command):
+            return await super().bash(command, timeout=timeout)
         state = self._get_rtk_state()
         wrapped_command = wrap_shell_command(command, state)
         if wrapped_command == command:
@@ -343,7 +347,10 @@ class EnhancedToolRegistry(ToolRegistryAsync):
         file_path: str,
         content: str,
         show_diff: Optional[bool] = None,
-        create_checkpoint: Optional[bool] = None
+        create_checkpoint: Optional[bool] = None,
+        _tool_call_id: str = "",
+        _prompt: str = "",
+        _interactive: bool = True,
     ) -> str:
         """Enhanced write_file with checkpoint and diff preview
 
@@ -366,6 +373,9 @@ class EnhancedToolRegistry(ToolRegistryAsync):
         )
 
         path = Path(file_path)
+        before = path.read_text(encoding="utf-8", errors="ignore") if path.exists() else ""
+        if self._diff_review_should_stage(path, before, content, bool(_interactive)):
+            return await super().write_file(file_path, content, _tool_call_id, _prompt, _interactive)
 
         try:
             # Create checkpoint if file exists and checkpointing enabled
@@ -389,7 +399,7 @@ class EnhancedToolRegistry(ToolRegistryAsync):
                     pass
 
             # Call parent write_file
-            result = await super().write_file(file_path, content)
+            result = await super().write_file(file_path, content, _tool_call_id, _prompt, _interactive)
 
             # Semantic checkpoint: analyze changes post-write
             if self._semantic_checkpoint and _old_content is not None:
@@ -418,7 +428,10 @@ class EnhancedToolRegistry(ToolRegistryAsync):
         start_line: Optional[int] = None,
         end_line: Optional[int] = None,
         show_diff: Optional[bool] = None,
-        create_checkpoint: Optional[bool] = None
+        create_checkpoint: Optional[bool] = None,
+        _tool_call_id: str = "",
+        _prompt: str = "",
+        _interactive: bool = True,
     ) -> str:
         """Enhanced edit_file with checkpoint and diff preview
 
@@ -445,10 +458,26 @@ class EnhancedToolRegistry(ToolRegistryAsync):
         )
 
         try:
+            path = Path(file_path)
+            if path.exists():
+                content = path.read_text(encoding="utf-8", errors="ignore")
+                new_content, _ = self._render_edit_content(
+                    content=content,
+                    new_text=new_text,
+                    old_text=old_text,
+                    start_line=start_line,
+                    end_line=end_line,
+                    replace_all=False,
+                )
+                if self._diff_review_should_stage(path, content, new_content, bool(_interactive)):
+                    return await super().edit_file(
+                        file_path, new_text, old_text, start_line, end_line,
+                        False, None, None, _tool_call_id, _prompt, _interactive,
+                    )
+
             # Create checkpoint before edit
             if should_checkpoint and self.checkpoint_manager:
                 try:
-                    path = Path(file_path)
                     if path.exists():
                         checkpoint = self.checkpoint_manager.create_checkpoint(
                             file_paths=[file_path],
@@ -461,7 +490,8 @@ class EnhancedToolRegistry(ToolRegistryAsync):
 
             # Call parent edit_file
             result = await super().edit_file(
-                file_path, new_text, old_text, start_line, end_line
+                file_path, new_text, old_text, start_line, end_line,
+                False, None, None, _tool_call_id, _prompt, _interactive,
             )
 
             # Reset flags
@@ -547,6 +577,10 @@ class EnhancedToolRegistry(ToolRegistryAsync):
         declaration = self.tools.get(tool_name, {}).get("declaration", {})
         request = self.output_filter.prepare_call(tool_name, arguments, declaration)
         clean_args = request.arguments
+
+        for key in ("_tool_call_id", "_prompt", "_interactive"):
+            if key in arguments and key not in clean_args:
+                clean_args[key] = arguments[key]
 
         if tool_name == "write_file" and self.checkpoint_manager:
             result = await self.write_file_enhanced(**clean_args)

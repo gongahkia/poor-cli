@@ -1,4 +1,4 @@
-"""tests for poor_cli.retry module."""
+"""tests for poor-cli.retry module."""
 
 import asyncio
 import unittest

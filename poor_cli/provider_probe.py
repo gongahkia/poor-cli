@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -11,10 +12,11 @@ from urllib.parse import urlparse
 from urllib.request import urlopen
 
 from .config import Config, ConfigManager
-from .provider_catalog import common_models_for_provider
+from .provider_catalog import KEYLESS_LOCAL_PROVIDER_NAMES, common_models_for_provider
 from .providers.provider_factory import ProviderFactory
 
 ROUTING_MODES = ("manual", "quality", "speed", "cheap", "private")
+KEYLESS_LOCAL_PROVIDERS = KEYLESS_LOCAL_PROVIDER_NAMES
 
 
 @dataclass(frozen=True)
@@ -60,7 +62,7 @@ def select_default_routing_mode(provider_status: Dict[str, Dict[str, Any]]) -> s
         for name, payload in provider_status.items()
         if bool(payload.get("ready"))
     ]
-    if ready == ["ollama"]:
+    if ready and set(ready).issubset(KEYLESS_LOCAL_PROVIDERS):
         return "private"
     if len(ready) > 1:
         return "quality"
@@ -85,13 +87,21 @@ def probe_providers(
     ollama_models = _discover_ollama_models(config)
     ollama_ready = bool(ollama_models.get("ready"))
     ollama_known_models = list(ollama_models.get("models", []))
+    local_openai_models = {
+        name: _discover_openai_compatible_models(config, name)
+        for name in ("vllm", "llama_server", "sglang", "hf_tgi", "lmstudio")
+    }
 
     for provider_name in sorted(config.model.providers.keys()):
         provider_cfg = config.model.providers[provider_name]
         provider_info = ProviderFactory.get_provider_info(provider_name) or {}
         dependency_available = bool(provider_info.get("available", True))
         env_var = provider_cfg.api_key_env_var
-        capabilities = dict(provider_info.get("capabilities") or {})
+        raw_capabilities = provider_info.get("capabilities") or {}
+        if isinstance(raw_capabilities, dict):
+            capabilities = dict(raw_capabilities)
+        else:
+            capabilities = {str(capability): True for capability in raw_capabilities}
 
         if provider_name == "ollama":
             ready = dependency_available and ollama_ready
@@ -107,6 +117,24 @@ def probe_providers(
                 if ollama_known_models
                 else common_models_for_provider(provider_name)
             )
+        elif provider_name == "hf_local":
+            configured = True
+            ready = dependency_available
+            source = "local"
+            status_label = "local dependencies available" if ready else "provider dependency unavailable"
+            models = common_models_for_provider(provider_name)
+        elif provider_name in local_openai_models:
+            probe = local_openai_models[provider_name]
+            ready = dependency_available and bool(probe.get("ready"))
+            configured = True
+            source = "local"
+            status_label = (
+                "service up"
+                if ready
+                else f"service unavailable at {provider_cfg.base_url or ''}".strip()
+            )
+            known_models = list(probe.get("models", []))
+            models = known_models if known_models else common_models_for_provider(provider_name)
         else:
             key_info = config_manager.get_api_key_info(provider_name)
             api_key = key_info.get("key")
@@ -161,6 +189,38 @@ def _discover_ollama_models(config: Config) -> Dict[str, Any]:
         return {"ready": False, "models": [], "baseUrl": base_url}
 
 
+def _discover_openai_compatible_models(config: Config, provider_name: str) -> Dict[str, Any]:
+    provider_cfg = config.model.providers.get(provider_name)
+    base_url = provider_cfg.base_url if provider_cfg else ""
+    if not base_url:
+        return {"ready": False, "models": [], "baseUrl": base_url}
+    parsed = urlparse(base_url)
+    host = parsed.hostname or "localhost"
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    models_url = f"{base_url.rstrip('/')}/models"
+    if not _is_tcp_reachable(host, port):
+        return {"ready": False, "models": [], "baseUrl": base_url}
+
+    request = models_url
+    env_var = provider_cfg.api_key_env_var if provider_cfg else ""
+    api_key = str(os.environ.get(env_var, "") or getattr(config, "api_keys", {}).get(provider_name, "") or "").strip()
+    if api_key:
+        from urllib.request import Request
+        request = Request(models_url, headers={"Authorization": f"Bearer {api_key}"})
+    try:
+        with urlopen(request, timeout=2.5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        models = payload.get("data") or []
+        names = [
+            str(model.get("id", "")).strip()
+            for model in models
+            if isinstance(model, dict) and str(model.get("id", "")).strip()
+        ]
+        return {"ready": True, "models": names, "baseUrl": base_url}
+    except (OSError, URLError, ValueError):
+        return {"ready": False, "models": [], "baseUrl": base_url}
+
+
 def _is_tcp_reachable(host: str, port: int) -> bool:
     try:
         with socket.create_connection((host, int(port)), timeout=1.5):
@@ -179,9 +239,9 @@ def summarize_ready_providers(provider_status: Dict[str, Dict[str, Any]]) -> Lis
 
 def suggested_privacy_posture(provider_status: Dict[str, Dict[str, Any]]) -> str:
     ready = summarize_ready_providers(provider_status)
-    if ready == ["ollama"]:
+    if ready and set(ready).issubset(KEYLESS_LOCAL_PROVIDERS):
         return "local-only"
-    if "ollama" in ready:
+    if any(provider in KEYLESS_LOCAL_PROVIDERS for provider in ready):
         return "mixed"
     if any(ready):
         return "cloud"

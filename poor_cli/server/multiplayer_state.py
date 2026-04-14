@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from poor_cli.server.handler_deps import *
+from poor_cli.audit_log import AuditEventType, AuditSeverity, get_audit_logger
 
 
 class MultiplayerStateMixin:
@@ -454,6 +455,73 @@ class MultiplayerStateMixin:
                 return resolved
         return normalized
 
+    def _audit_multiplayer_role_change(
+        self,
+        *,
+        operation: str,
+        room: str,
+        connection_id: str,
+        role: str = "",
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        try:
+            maybe_core = getattr(self, "_maybe_core", None)
+            core = maybe_core() if callable(maybe_core) else None
+            audit_logger = getattr(core, "_audit_logger", None) if core is not None else None
+            if audit_logger is None:
+                audit_logger = get_audit_logger()
+            audit_logger.log_event(
+                event_type=AuditEventType.CONFIG_CHANGE,
+                operation=operation,
+                target=f"multiplayer:{room}:{connection_id}",
+                details={
+                    "room": room,
+                    "connection_id": connection_id,
+                    "role": role,
+                    **(details or {}),
+                },
+                severity=AuditSeverity.INFO,
+                success=True,
+            )
+        except Exception as e:
+            logger.debug("Audit logging failed for multiplayer role change: %s", e)
+
+    def _collab_room_payload_locked(self, requested_room: str = "") -> Dict[str, Any]:
+        payload = self._compose_host_server_payload(created=False, stopped=False)
+        if self._host_server is None:
+            return payload
+
+        member_rooms: Dict[str, Dict[str, Any]] = {}
+        if hasattr(self._host_server, "list_room_members"):
+            for room_entry in self._host_server.list_room_members(requested_room or None):
+                if isinstance(room_entry, dict):
+                    member_rooms[str(room_entry.get("name", ""))] = room_entry
+
+        rooms: List[Dict[str, Any]] = []
+        for room in payload.get("rooms", []):
+            if not isinstance(room, dict):
+                continue
+            room_name = str(room.get("name", ""))
+            if requested_room and room_name != requested_room:
+                continue
+            merged = dict(room)
+            merged.update(member_rooms.get(room_name, {}))
+            merged["viewerInviteLink"] = merged.get("viewerJoinCommand") or merged.get("viewerInviteCode") or ""
+            merged["prompterInviteLink"] = merged.get("prompterJoinCommand") or merged.get("prompterInviteCode") or ""
+            merged["inviteLink"] = merged["prompterInviteLink"] or merged["viewerInviteLink"]
+            rooms.append(merged)
+
+        if requested_room and not rooms:
+            room_names = self._host_room_names_locked()
+            raise InvalidParamsError(
+                f"Unknown room `{requested_room}`. Available rooms: {', '.join(room_names)}"
+            )
+
+        payload["rooms"] = rooms
+        if len(rooms) == 1:
+            payload["room"] = rooms[0]
+        return payload
+
     async def handle_list_host_members(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         List connected members per room for the active in-process multiplayer host.
@@ -559,6 +627,12 @@ class MultiplayerStateMixin:
                 raise InvalidParamsError(
                     f"Connection `{connection_id}` was not found in room `{room_name}`"
                 )
+            self._audit_multiplayer_role_change(
+                operation="multiplayer.role.set",
+                room=room_name,
+                connection_id=connection_id,
+                role=role_name,
+            )
 
             return {
                 "success": True,
@@ -846,6 +920,12 @@ class MultiplayerStateMixin:
                 raise InvalidParamsError(
                     f"Connection `{connection_id}` was not found in room `{room_name}`"
                 )
+            self._audit_multiplayer_role_change(
+                operation="multiplayer.driver.handoff",
+                room=room_name,
+                connection_id=connection_id,
+                role="prompter",
+            )
 
             return {
                 "success": True,
@@ -1079,6 +1159,12 @@ class MultiplayerStateMixin:
             connection_id = await host.handoff_next_driver(room_name)
             if connection_id is None:
                 raise InvalidParamsError("No eligible member found to receive driver role")
+            self._audit_multiplayer_role_change(
+                operation="multiplayer.driver.next",
+                room=room_name,
+                connection_id=connection_id,
+                role="prompter",
+            )
             return {
                 "success": True,
                 "room": room_name,
@@ -1101,6 +1187,42 @@ class MultiplayerStateMixin:
             "connectionId": connection_id,
             "room": requested_room,
         })
+
+    async def handle_collab_room(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+        requested_room = str(params.get("room", "")).strip()
+        async with self._get_host_server_lock():
+            return self._collab_room_payload_locked(requested_room)
+
+    async def handle_collab_room_members(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        return await self.handle_list_host_members(params)
+
+    async def handle_collab_room_pass_driver(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        return await self.handle_pass_driver(params)
+
+    async def handle_collab_room_events(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        return await self.handle_list_host_activity(params)
+
+    async def handle_collab_room_get_invite_link(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+        requested_room = str(params.get("room", "")).strip()
+        role = str(params.get("role", "prompter")).strip().lower()
+        async with self._get_host_server_lock():
+            payload = self._collab_room_payload_locked(requested_room)
+            rooms = payload.get("rooms") if isinstance(payload.get("rooms"), list) else []
+            if not rooms:
+                raise InvalidParamsError("No multiplayer host room is currently running")
+            room = rooms[0]
+            key = "viewerInviteLink" if role == "viewer" else "prompterInviteLink"
+            invite_link = str(room.get(key) or room.get("inviteLink") or "")
+            return {
+                "success": bool(invite_link),
+                "room": room.get("name", ""),
+                "role": "viewer" if role == "viewer" else "prompter",
+                "inviteLink": invite_link,
+            }
 
     async def handle_set_host_preset(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """

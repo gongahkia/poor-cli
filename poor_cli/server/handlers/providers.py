@@ -24,11 +24,11 @@ class ProvidersHandlersMixin:
         model = params.get("model")
 
         # validate API key availability before switch (from provider_lifecycle)
-        if provider and provider != "ollama":
+        if provider and provider not in KEYLESS_LOCAL_PROVIDER_NAMES:
             config_manager, config = self._ensure_config_loaded()
             api_key = config_manager.get_api_key(provider)
             if not api_key:
-                pls = type("_Stub", (), {"_providers_with_keys": lambda self: [p for p in config.model.providers if p == "ollama" or config_manager.get_api_key(p)]})()
+                pls = type("_Stub", (), {"_providers_with_keys": lambda self: [p for p in config.model.providers if p in KEYLESS_LOCAL_PROVIDER_NAMES or config_manager.get_api_key(p)]})()
                 available = pls._providers_with_keys()
                 provider_cfg = config.model.providers.get(provider)
                 env_var = provider_cfg.api_key_env_var if provider_cfg else "API key"
@@ -67,7 +67,7 @@ class ProvidersHandlersMixin:
         Returns:
             Dictionary of provider name -> {available, models, ...}
         """
-        from ..providers.provider_factory import ProviderFactory
+        from ...providers.provider_factory import ProviderFactory
 
         config_manager, config = self._ensure_config_loaded()
         result: Dict[str, Any] = {}
@@ -77,6 +77,11 @@ class ProvidersHandlersMixin:
         ollama_ready = self._is_ollama_reachable(ollama_base_url)
         if ollama_ready:
             ollama_models = self._list_ollama_models(ollama_base_url)
+        local_openai_ready: Dict[str, bool] = {}
+        for local_name in ("vllm", "llama_server", "sglang", "hf_tgi", "lmstudio"):
+            provider_cfg = config.model.providers.get(local_name)
+            if provider_cfg and provider_cfg.base_url:
+                local_openai_ready[local_name] = self._is_openai_compatible_local_reachable(provider_cfg.base_url)
 
         for name, cls in ProviderFactory.list_providers().items():
             info = ProviderFactory.get_provider_info(name) or {}
@@ -93,6 +98,12 @@ class ProvidersHandlersMixin:
                 "anthropic": common_models_for_provider("anthropic"),
                 "claude": common_models_for_provider("anthropic"),
                 "ollama": ollama_models if ollama_models else common_models_for_provider("ollama"),
+                "hf_local": common_models_for_provider("hf_local"),
+                "vllm": common_models_for_provider("vllm"),
+                "llama_server": common_models_for_provider("llama_server"),
+                "sglang": common_models_for_provider("sglang"),
+                "hf_tgi": common_models_for_provider("hf_tgi"),
+                "lmstudio": common_models_for_provider("lmstudio"),
             }
             if provider_key == "ollama":
                 ready = ollama_ready
@@ -101,6 +112,13 @@ class ProvidersHandlersMixin:
                     if ready
                     else f"service unavailable at {ollama_base_url}"
                 )
+            elif provider_key == "hf_local":
+                ready = dependency_available
+                status_label = "local dependencies available" if ready else "provider dependency unavailable"
+            elif provider_key in local_openai_ready:
+                ready = bool(local_openai_ready.get(provider_key))
+                base_url = provider_cfg.base_url if provider_cfg else ""
+                status_label = "service up" if ready else f"service unavailable at {base_url}"
             else:
                 api_key = config_manager.get_api_key(provider_key) if provider_cfg else None
                 ready = bool(api_key)
@@ -170,6 +188,8 @@ class ProvidersHandlersMixin:
 
         if provider == "ollama":
             raise InvalidParamsError("Ollama does not require an API key")
+        if provider in KEYLESS_LOCAL_PROVIDER_NAMES:
+            raise InvalidParamsError(f"{provider} does not require an API key")
 
         provider_config = config.model.providers.get(provider)
         if provider_config is None:
@@ -256,9 +276,13 @@ class ProvidersHandlersMixin:
             key_value = info.get("key")
             source = str(info.get("source") or "none")
             keyring_key = credential_store.get(provider, env_var="", config_keys={})
+            configured = key_value is not None
+            if provider in KEYLESS_LOCAL_PROVIDER_NAMES:
+                configured = True
+                source = "local"
 
             status[provider] = {
-                "configured": key_value is not None,
+                "configured": configured,
                 "source": source,
                 "envVar": env_var,
                 "active": provider == active_provider,
@@ -278,6 +302,18 @@ class ProvidersHandlersMixin:
             base_url = self._ollama_base_url()
             reachable = self._is_ollama_reachable(base_url)
             return {"valid": reachable, "error": None if reachable else f"Ollama not reachable at {base_url}"}
+        if provider == "hf_local":
+            from ...providers.provider_factory import ProviderFactory
+            return {
+                "valid": ProviderFactory.is_provider_available("hf_local"),
+                "error": None,
+            }
+        if provider in {"vllm", "llama_server", "sglang", "hf_tgi", "lmstudio"}:
+            _, config = self._ensure_config_loaded()
+            provider_cfg = config.model.providers.get(provider)
+            base_url = provider_cfg.base_url if provider_cfg else ""
+            reachable = self._is_openai_compatible_local_reachable(base_url)
+            return {"valid": reachable, "error": None if reachable else f"{provider} not reachable at {base_url}"}
         if not api_key:
             raise InvalidParamsError("Missing apiKey")
         try:
@@ -321,12 +357,18 @@ class ProvidersHandlersMixin:
         """Discover models available on the local Ollama server."""
         self._ensure_initialized()
         try:
-            from ..providers.ollama_provider import OllamaProvider
+            from ...providers.ollama_provider import OllamaProvider
             base_url = str(params.get("baseUrl", "http://localhost:11434")).strip()
             models = await OllamaProvider.discover_models(base_url)
             return {"models": models, "count": len(models)}
         except Exception as e:
             return {"models": [], "count": 0, "error": str(e)}
+
+    def _is_openai_compatible_local_reachable(self, base_url: str) -> bool:
+        parsed = urlparse(str(base_url or "").strip())
+        host = parsed.hostname or "localhost"
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        return self._is_tcp_endpoint_reachable(host, port)
 
 @register('listProviders')
 async def _rpc_3(ctx, params):

@@ -43,23 +43,23 @@ Each phase contains copy-paste-ready prompts per agent. Prompts reference the co
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are implementing RTK (Rust Token Killer) integration for poor-cli, a Neovim-focused 
-coding agent. Your task is to add a thin middleware that wraps shell tool calls with the 
+You are implementing RTK (Rust Token Killer) integration for poor-cli, a Neovim-focused
+coding agent. Your task is to add a thin middleware that wraps shell tool calls with the
 `rtk` binary for token-compact output.
 
-FIRST: Read docs/phase_01_quick_wins.md, specifically the "Agent 1A" section. It contains 
+FIRST: Read docs/phase_01_quick_wins.md, specifically the "Agent 1A" section. It contains
 exact implementation details, files to modify, and acceptance criteria.
 
 CONTEXT:
 - poor-cli is a Python backend + Lua Neovim plugin communicating via JSON-RPC
-- Shell tool execution lives in poor_cli/enhanced_tools.py
-- Config system is in poor_cli/repo_config.py and nvim-poor-cli/lua/poor-cli/config.lua
+- Shell tool execution lives in poor-cli/enhanced_tools.py
+- Config system is in poor-cli/repo_config.py and nvim-poor-cli/lua/poor-cli/config.lua
 - RTK is an external Rust binary (brew install rtk) that filters shell output
 
 YOUR DELIVERABLES:
-1. Create poor_cli/rtk_integration.py — RTK detection, command wrapping, tee-mode fallback
-2. Modify poor_cli/enhanced_tools.py — integrate RTK wrapper in bash tool execution
-3. Add rtk config fields to poor_cli/repo_config.py
+1. Create poor-cli/rtk_integration.py — RTK detection, command wrapping, tee-mode fallback
+2. Modify poor-cli/enhanced_tools.py — integrate RTK wrapper in bash tool execution
+3. Add rtk config fields to poor-cli/repo_config.py
 4. Add rtk_enabled default to nvim-poor-cli/lua/poor-cli/config.lua
 5. Write unit tests in tests/test_rtk_integration.py
 
@@ -80,17 +80,17 @@ Read the phase doc first, then implement.
 You are enhancing poor-cli's edit format system to minimize token usage on file edits.
 The current implementation may use full-file rewrites where a compact diff would suffice.
 
-FIRST: Read docs/phase_01_quick_wins.md, specifically the "Agent 1B" section for full 
+FIRST: Read docs/phase_01_quick_wins.md, specifically the "Agent 1B" section for full
 implementation details and acceptance criteria.
 
 CONTEXT:
-- poor-cli's edit format logic lives in poor_cli/edit_formats.py
-- Provider base class is poor_cli/providers/base.py
-- The tool that applies edits is in poor_cli/enhanced_tools.py (edit_file tool)
+- poor-cli's edit format logic lives in poor-cli/edit_formats.py
+- Provider base class is poor-cli/providers/base.py
+- The tool that applies edits is in poor-cli/enhanced_tools.py (edit_file tool)
 - Multiple providers (Gemini, OpenAI, Anthropic, OpenRouter, Ollama) need format support
 
 YOUR DELIVERABLES:
-1. Audit poor_cli/edit_formats.py — document current format and identify waste
+1. Audit poor-cli/edit_formats.py — document current format and identify waste
 2. Implement search/replace block format (Aider-style)
 3. Implement unified diff format as alternative
 4. Add format selection heuristic based on edit size
@@ -111,17 +111,17 @@ Read the phase doc first, then implement.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are enhancing poor-cli's /compact command and auto-compaction system to be smarter 
+You are enhancing poor-cli's /compact command and auto-compaction system to be smarter
 about what gets preserved vs summarized vs dropped when context grows too large.
 
-FIRST: Read docs/phase_01_quick_wins.md, specifically the "Agent 1C" section for full 
+FIRST: Read docs/phase_01_quick_wins.md, specifically the "Agent 1C" section for full
 implementation details and acceptance criteria.
 
 CONTEXT:
-- Context optimization lives in poor_cli/context_optimizer.py
-- Context contracts in poor_cli/context_contract.py
-- Context providers in poor_cli/context_providers.py
-- Economy modes (/broke, /my-treat) defined in poor_cli/profiles.py
+- Context optimization lives in poor-cli/context_optimizer.py
+- Context contracts in poor-cli/context_contract.py
+- Context providers in poor-cli/context_providers.py
+- Economy modes (/broke, /my-treat) defined in poor-cli/profiles.py
 - Neovim lualine integration in nvim-poor-cli/lua/poor-cli/lualine.lua
 
 YOUR DELIVERABLES:
@@ -146,14 +146,14 @@ Read the phase doc first, then implement.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are adding a terse output directive to poor-cli's /broke (frugal) economy mode 
+You are adding a terse output directive to poor-cli's /broke (frugal) economy mode
 so the model produces maximally compressed responses when cost savings are prioritized.
 
-FIRST: Read docs/phase_01_quick_wins.md, specifically the "Agent 1D" section for full 
+FIRST: Read docs/phase_01_quick_wins.md, specifically the "Agent 1D" section for full
 implementation details and acceptance criteria.
 
 CONTEXT:
-- Economy modes defined in poor_cli/profiles.py
+- Economy modes defined in poor-cli/profiles.py
 - System prompt construction happens in the core engine (likely core.py or similar)
 - /broke and /my-treat commands already exist and toggle economy modes
 
@@ -187,22 +187,22 @@ Read the phase doc first, then implement.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are building an Aider-style repository map for poor-cli using tree-sitter for AST 
-parsing and PageRank for importance scoring. This gives the model a concise, ranked 
+You are building an Aider-style repository map for poor-cli using tree-sitter for AST
+parsing and PageRank for importance scoring. This gives the model a concise, ranked
 overview of the entire codebase without reading full files.
 
-FIRST: Read docs/phase_02_context_intelligence.md, specifically the "Agent 2A" section 
+FIRST: Read docs/phase_02_context_intelligence.md, specifically the "Agent 2A" section
 for full implementation details and acceptance criteria.
 
 CONTEXT:
-- poor-cli already has poor_cli/repo_graph.py — audit it first
+- poor-cli already has poor-cli/repo_graph.py — audit it first
 - The /workspace-map command should use this enhanced map
-- poor_cli/indexer.py handles code indexing — coordinate with this module
-- poor_cli/context_providers.py injects context into prompts
+- poor-cli/indexer.py handles code indexing — coordinate with this module
+- poor-cli/context_providers.py injects context into prompts
 - tree-sitter Python bindings: pip install tree-sitter tree-sitter-python tree-sitter-lua etc.
 
 YOUR DELIVERABLES:
-1. Audit poor_cli/repo_graph.py — document current capabilities
+1. Audit poor-cli/repo_graph.py — document current capabilities
 2. Add tree-sitter parsing for Python, Lua, JS/TS, Rust
 3. Build dependency graph from imports/calls
 4. Implement PageRank scoring with recency boost
@@ -225,21 +225,21 @@ Read the phase doc first, then implement.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are building a tool output filtering middleware for poor-cli that reduces bloated 
-tool/MCP responses to only the fields the agent needs. This is a greenfield implementation 
+You are building a tool output filtering middleware for poor-cli that reduces bloated
+tool/MCP responses to only the fields the agent needs. This is a greenfield implementation
 — no standard exists in the ecosystem.
 
-FIRST: Read docs/phase_02_context_intelligence.md, specifically the "Agent 2B" section 
+FIRST: Read docs/phase_02_context_intelligence.md, specifically the "Agent 2B" section
 for full implementation details and acceptance criteria.
 
 CONTEXT:
-- Tool execution lives in poor_cli/enhanced_tools.py
-- MCP client in poor_cli/mcp_scaffold.py
-- GitHub tools in poor_cli/github_tools.py
-- Cost tracking in poor_cli/cost.py
+- Tool execution lives in poor-cli/enhanced_tools.py
+- MCP client in poor-cli/mcp_scaffold.py
+- GitHub tools in poor-cli/github_tools.py
+- Cost tracking in poor-cli/cost.py
 
 YOUR DELIVERABLES:
-1. Create poor_cli/tool_output_filter.py — projection-based filtering + size-based auto-filter
+1. Create poor-cli/tool_output_filter.py — projection-based filtering + size-based auto-filter
 2. Define default projections for built-in tools (gh, git, list_directory)
 3. Integrate filter middleware into tool execution pipeline (enhanced_tools.py)
 4. Add MCP response filtering in mcp_scaffold.py
@@ -262,18 +262,18 @@ Read the phase doc first, then implement.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are optimizing poor-cli's prompt construction to maximize provider-level cache hit 
-rates. This means ensuring the static prefix (system prompt, tool schemas, repo map) is 
+You are optimizing poor-cli's prompt construction to maximize provider-level cache hit
+rates. This means ensuring the static prefix (system prompt, tool schemas, repo map) is
 deterministic and stable across turns.
 
-FIRST: Read docs/phase_02_context_intelligence.md, specifically the "Agent 2C" section 
+FIRST: Read docs/phase_02_context_intelligence.md, specifically the "Agent 2C" section
 for full implementation details and acceptance criteria.
 
 CONTEXT:
-- Provider implementations in poor_cli/providers/
-- Provider base class: poor_cli/providers/base.py
-- Context assembly in poor_cli/context_providers.py
-- Cost tracking in poor_cli/cost.py / nvim-poor-cli/lua/poor-cli/cost.lua
+- Provider implementations in poor-cli/providers/
+- Provider base class: poor-cli/providers/base.py
+- Context assembly in poor-cli/context_providers.py
+- Cost tracking in poor-cli/cost.py / nvim-poor-cli/lua/poor-cli/cost.lua
 - Anthropic supports explicit cache_control; OpenAI caches on prefix match automatically
 
 YOUR DELIVERABLES:
@@ -308,22 +308,22 @@ Read the phase doc first, then implement.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are refactoring poor-cli's instruction system from a monolithic system prompt into 
-a progressive skill-loading architecture where only task-relevant instructions are loaded 
+You are refactoring poor-cli's instruction system from a monolithic system prompt into
+a progressive skill-loading architecture where only task-relevant instructions are loaded
 per request.
 
-FIRST: Read docs/phase_03_smart_loading.md, specifically the "Agent 3A" section for full 
+FIRST: Read docs/phase_03_smart_loading.md, specifically the "Agent 3A" section for full
 implementation details and acceptance criteria.
 
 CONTEXT:
-- Instructions currently in poor_cli/instructions.py
-- Skills system in poor_cli/skills.py
+- Instructions currently in poor-cli/instructions.py
+- Skills system in poor-cli/skills.py
 - System prompt assembled in the core engine
 - /instructions command shows active instructions
 
 YOUR DELIVERABLES:
-1. Audit poor_cli/instructions.py — measure total instruction payload size
-2. Break instructions into ≥8 discrete skill files in poor_cli/skills/ directory
+1. Audit poor-cli/instructions.py — measure total instruction payload size
+2. Break instructions into ≥8 discrete skill files in poor-cli/skills/ directory
 3. Build task classifier (keyword-based + context-based)
 4. Implement SkillRegistry for on-demand loading
 5. Replace monolithic prompt injection with dynamic skill loading
@@ -345,15 +345,15 @@ Read the phase doc first, then implement.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are implementing lazy/on-demand tool schema loading for poor-cli so that only 
+You are implementing lazy/on-demand tool schema loading for poor-cli so that only
 relevant tool schemas are injected into each request, instead of the full tool catalog.
 
-FIRST: Read docs/phase_03_smart_loading.md, specifically the "Agent 3B" section for full 
+FIRST: Read docs/phase_03_smart_loading.md, specifically the "Agent 3B" section for full
 implementation details and acceptance criteria.
 
 CONTEXT:
-- Tool definitions in poor_cli/command_manifest.py and poor_cli/enhanced_tools.py
-- MCP tool schemas loaded in poor_cli/mcp_scaffold.py
+- Tool definitions in poor-cli/command_manifest.py and poor-cli/enhanced_tools.py
+- MCP tool schemas loaded in poor-cli/mcp_scaffold.py
 - Tools injected into provider requests in the prompt assembly pipeline
 - poor-cli has ~30+ built-in tools plus MCP tools
 
@@ -380,16 +380,16 @@ Read the phase doc first, then implement.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are building a smart history pruning system that scores each conversation turn for 
+You are building a smart history pruning system that scores each conversation turn for
 importance and selectively removes low-value turns, instead of blanket summarization.
 
-FIRST: Read docs/phase_03_smart_loading.md, specifically the "Agent 3C" section for full 
+FIRST: Read docs/phase_03_smart_loading.md, specifically the "Agent 3C" section for full
 implementation details and acceptance criteria.
 
 CONTEXT:
-- Conversation history in poor_cli/history.py
-- Context optimization in poor_cli/context_optimizer.py
-- Session management in poor_cli/session_manager.py
+- Conversation history in poor-cli/history.py
+- Context optimization in poor-cli/context_optimizer.py
+- Session management in poor-cli/session_manager.py
 
 YOUR DELIVERABLES:
 1. Implement turn scoring: recency, tool success, file relevance, role, decision content
@@ -422,21 +422,21 @@ Read the phase doc first, then implement.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are building a local semantic cache for poor-cli that avoids redundant API calls by 
+You are building a local semantic cache for poor-cli that avoids redundant API calls by
 detecting semantically similar queries and returning cached responses.
 
-FIRST: Read docs/phase_04_caching_routing.md, specifically the "Agent 4A" section for 
+FIRST: Read docs/phase_04_caching_routing.md, specifically the "Agent 4A" section for
 full implementation details and acceptance criteria.
 
 CONTEXT:
-- Existing file cache: poor_cli/file_cache.py
-- Embeddings: poor_cli/embeddings.py
-- Provider base: poor_cli/providers/base.py
-- Cost tracking: poor_cli/cost.py
+- Existing file cache: poor-cli/file_cache.py
+- Embeddings: poor-cli/embeddings.py
+- Provider base: poor-cli/providers/base.py
+- Cost tracking: poor-cli/cost.py
 
 YOUR DELIVERABLES:
-1. Audit poor_cli/embeddings.py — determine available embedding infrastructure
-2. Create poor_cli/semantic_cache.py — SQLite-backed cache with cosine similarity search
+1. Audit poor-cli/embeddings.py — determine available embedding infrastructure
+2. Create poor-cli/semantic_cache.py — SQLite-backed cache with cosine similarity search
 3. Implement context-aware cache keys (file set + pinned context hash)
 4. Add cache check before API call in provider base class
 5. Cache invalidation: file changes, TTL, manual command
@@ -457,23 +457,23 @@ Read the phase doc first, then implement.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are building an intelligent model routing engine for poor-cli that sends each query 
-to the cheapest model capable of answering it, cascading to more expensive models only 
+You are building an intelligent model routing engine for poor-cli that sends each query
+to the cheapest model capable of answering it, cascading to more expensive models only
 when needed.
 
-FIRST: Read docs/phase_04_caching_routing.md, specifically the "Agent 4B" section for 
+FIRST: Read docs/phase_04_caching_routing.md, specifically the "Agent 4B" section for
 full implementation details and acceptance criteria.
 
 CONTEXT:
 - poor-cli supports 5 providers (Gemini, OpenAI, Anthropic, OpenRouter, Ollama)
-- Architect mode: poor_cli/architect_mode.py
-- Profiles/economy: poor_cli/profiles.py
-- Provider factory: poor_cli/providers/provider_factory.py
-- Cost tracking: poor_cli/cost.py
+- Architect mode: poor-cli/architect_mode.py
+- Profiles/economy: poor-cli/profiles.py
+- Provider factory: poor-cli/providers/provider_factory.py
+- Cost tracking: poor-cli/cost.py
 
 YOUR DELIVERABLES:
-1. Audit poor_cli/architect_mode.py — check for existing routing logic
-2. Create poor_cli/model_router.py — complexity classifier + routing table
+1. Audit poor-cli/architect_mode.py — check for existing routing logic
+2. Create poor-cli/model_router.py — complexity classifier + routing table
 3. Implement task complexity classification (trivial/simple/moderate/complex)
 4. Define routing tables per provider (map complexity → model)
 5. Add cascade logic: retry with more expensive model on low confidence
@@ -495,21 +495,21 @@ Read the phase doc first, then implement.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are integrating structured/grammar-constrained output into poor-cli's provider layer 
+You are integrating structured/grammar-constrained output into poor-cli's provider layer
 to eliminate malformed output retries and produce more compact structured responses.
 
-FIRST: Read docs/phase_04_caching_routing.md, specifically the "Agent 4C" section for 
+FIRST: Read docs/phase_04_caching_routing.md, specifically the "Agent 4C" section for
 full implementation details and acceptance criteria.
 
 CONTEXT:
-- Provider base: poor_cli/providers/base.py
-- Edit formats: poor_cli/edit_formats.py
-- Tool definitions: poor_cli/enhanced_tools.py
+- Provider base: poor-cli/providers/base.py
+- Edit formats: poor-cli/edit_formats.py
+- Tool definitions: poor-cli/enhanced_tools.py
 - Each provider has its own structured output API
 
 YOUR DELIVERABLES:
 1. Identify all structured output points (tool calls, edits, plan mode, JSON ops)
-2. Create poor_cli/structured_output.py — JSON schemas for structured responses
+2. Create poor-cli/structured_output.py — JSON schemas for structured responses
 3. Add response_format support to each provider adapter
 4. Use structured output for tool call arguments and edit blocks
 5. Implement fallback: if structured output fails, retry with unconstrained generation
@@ -539,20 +539,20 @@ Read the phase doc first, then implement.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are integrating prompt compression into poor-cli using LLMLingua-2 (or a custom 
-heuristic alternative) to remove redundant tokens from prompts before sending to the 
+You are integrating prompt compression into poor-cli using LLMLingua-2 (or a custom
+heuristic alternative) to remove redundant tokens from prompts before sending to the
 main model.
 
-FIRST: Read docs/phase_05_advanced_compression.md, specifically the "Agent 5A" section 
+FIRST: Read docs/phase_05_advanced_compression.md, specifically the "Agent 5A" section
 for full implementation details and acceptance criteria.
 
 CONTEXT:
-- Context optimization: poor_cli/context_optimizer.py
-- Profiles/economy: poor_cli/profiles.py
+- Context optimization: poor-cli/context_optimizer.py
+- Profiles/economy: poor-cli/profiles.py
 - pyproject.toml for dependencies
 
 YOUR DELIVERABLES:
-1. Create poor_cli/prompt_compressor.py — compression middleware
+1. Create poor-cli/prompt_compressor.py — compression middleware
 2. Implement LLMLingua-2 integration OR custom heuristic compression
 3. Define content-type-specific compression ratios
 4. Add preserve-patterns for code blocks, errors, file paths
@@ -575,19 +575,19 @@ Read the phase doc first, then implement.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are replacing poor-cli's code chunking in the indexer with AST-aware chunking that 
+You are replacing poor-cli's code chunking in the indexer with AST-aware chunking that
 preserves syntactic boundaries, producing chunks that are always complete functions/classes.
 
-FIRST: Read docs/phase_05_advanced_compression.md, specifically the "Agent 5B" section 
+FIRST: Read docs/phase_05_advanced_compression.md, specifically the "Agent 5B" section
 for full implementation details and acceptance criteria.
 
 CONTEXT:
-- Current indexer: poor_cli/indexer.py
-- Embeddings: poor_cli/embeddings.py
+- Current indexer: poor-cli/indexer.py
+- Embeddings: poor-cli/embeddings.py
 - tree-sitter infrastructure from Phase 2A (may or may not be done yet)
 
 YOUR DELIVERABLES:
-1. Audit poor_cli/indexer.py — document current chunking strategy
+1. Audit poor-cli/indexer.py — document current chunking strategy
 2. Implement AST-aware chunking for Python, Lua, JS/TS, Rust
 3. Define chunk types per language (functions, classes, methods, etc.)
 4. Add natural language descriptions per chunk
@@ -609,20 +609,20 @@ Read the phase doc first, then implement.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are building a failure amnesia system for poor-cli that extracts lessons from failed 
-tool calls and prunes the full failure traces from conversation history. This is a 
+You are building a failure amnesia system for poor-cli that extracts lessons from failed
+tool calls and prunes the full failure traces from conversation history. This is a
 greenfield implementation — no standard exists.
 
-FIRST: Read docs/phase_05_advanced_compression.md, specifically the "Agent 5C" section 
+FIRST: Read docs/phase_05_advanced_compression.md, specifically the "Agent 5C" section
 for full implementation details and acceptance criteria.
 
 CONTEXT:
-- Error recovery: poor_cli/error_recovery.py
-- Context optimization: poor_cli/context_optimizer.py
-- History management: poor_cli/history.py
+- Error recovery: poor-cli/error_recovery.py
+- Context optimization: poor-cli/context_optimizer.py
+- History management: poor-cli/history.py
 
 YOUR DELIVERABLES:
-1. Create poor_cli/failure_amnesia.py — failure detection + lesson extraction + trace pruning
+1. Create poor-cli/failure_amnesia.py — failure detection + lesson extraction + trace pruning
 2. Implement failure detection for tool calls (exit codes, error responses)
 3. Build lesson extraction: use current model to summarize failure into 1-2 sentences
 4. Replace full traces with lessons in conversation history
@@ -654,21 +654,21 @@ Read the phase doc first, then implement.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are implementing a MemGPT-style working memory system for poor-cli where the agent 
-receives diffs between turns instead of full conversation history re-sends. This is the 
+You are implementing a MemGPT-style working memory system for poor-cli where the agent
+receives diffs between turns instead of full conversation history re-sends. This is the
 most architecturally significant change in the optimization roadmap.
 
-FIRST: Read docs/phase_06_memory_architecture.md, specifically the "Agent 6A" section 
+FIRST: Read docs/phase_06_memory_architecture.md, specifically the "Agent 6A" section
 for full implementation details and acceptance criteria.
 
 CONTEXT:
-- Context providers: poor_cli/context_providers.py
-- Session store: poor_cli/session_store.py
-- Context optimizer: poor_cli/context_optimizer.py
-- Memory: poor_cli/memory.py
+- Context providers: poor-cli/context_providers.py
+- Session store: poor-cli/session_store.py
+- Context optimizer: poor-cli/context_optimizer.py
+- Memory: poor-cli/memory.py
 
 YOUR DELIVERABLES:
-1. Create poor_cli/working_memory.py — WorkingMemory model + delta computation
+1. Create poor-cli/working_memory.py — WorkingMemory model + delta computation
 2. Implement delta-based prompt construction (working memory + changes since last turn)
 3. Build hybrid mode: full history for first N turns, then switch to deltas
 4. Add confusion recovery: detect lost context → fall back to full history for 1 turn
@@ -691,24 +691,24 @@ Read the phase doc first, then implement.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are implementing position-independent KV cache reuse for poor-cli's local inference 
-path (Ollama/vLLM). This pre-computes KV caches for repo files and reuses them regardless 
+You are implementing position-independent KV cache reuse for poor-cli's local inference
+path (Ollama/vLLM). This pre-computes KV caches for repo files and reuses them regardless
 of prompt position.
 
-FIRST: Read docs/phase_06_memory_architecture.md, specifically the "Agent 6B" section 
+FIRST: Read docs/phase_06_memory_architecture.md, specifically the "Agent 6B" section
 for full implementation details and acceptance criteria.
 
-IMPORTANT: This feature ONLY works with self-hosted inference (Ollama, vLLM, SGLang). 
+IMPORTANT: This feature ONLY works with self-hosted inference (Ollama, vLLM, SGLang).
 It cannot work with closed API providers.
 
 CONTEXT:
-- Ollama provider: poor_cli/providers/ollama_provider.py
+- Ollama provider: poor-cli/providers/ollama_provider.py
 - LMCache (https://github.com/LMCache/LMCache) is the reference implementation
 
 YOUR DELIVERABLES:
 1. Research: confirm LMCache works with vLLM for position-independent caching
 2. Research: check if Ollama exposes KV cache APIs
-3. Create poor_cli/kv_cache_store.py — pre-compute, store, invalidate, assemble KV caches
+3. Create poor-cli/kv_cache_store.py — pre-compute, store, invalidate, assemble KV caches
 4. Integrate with Ollama provider (if API supports it) or document vLLM requirement
 5. Gate behind feature flag + local inference detection
 6. Measure TTFT with/without cache
@@ -738,21 +738,21 @@ Read the phase doc first, then implement.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are building a meta-controller for poor-cli that learns to allocate token budgets 
-(thinking tokens, model choice, compression level) optimally based on task characteristics 
+You are building a meta-controller for poor-cli that learns to allocate token budgets
+(thinking tokens, model choice, compression level) optimally based on task characteristics
 and session state. Start with a rule-based decision tree, not neural RL.
 
-FIRST: Read docs/phase_07_adaptive_optimization.md, specifically the "Agent 7A" section 
+FIRST: Read docs/phase_07_adaptive_optimization.md, specifically the "Agent 7A" section
 for full implementation details and acceptance criteria.
 
 CONTEXT:
-- Economy/profiles: poor_cli/profiles.py
-- Cost tracking: poor_cli/cost.py
+- Economy/profiles: poor-cli/profiles.py
+- Cost tracking: poor-cli/cost.py
 - Phase 4B's model router (if built) provides the task complexity classifier
 
 YOUR DELIVERABLES:
-1. Create poor_cli/token_budget_controller.py — state observation + action selection
-2. Create poor_cli/budget_logger.py — log (state, action, outcome) tuples
+1. Create poor-cli/token_budget_controller.py — state observation + action selection
+2. Create poor-cli/budget_logger.py — log (state, action, outcome) tuples
 3. Implement rule-based decision tree as baseline controller
 4. Integrate into per-turn decision loop (before each API call)
 5. Log session data to .poor-cli/budget_logs.jsonl for offline analysis
@@ -772,7 +772,7 @@ Read the phase doc first, then implement.
 ### Agent 7B: Speculative Decoding Integration
 
 ```
-Archived by Phase 9B. Do not create `poor_cli/speculative_decoding.py` unless a new end-to-end vLLM provider PRD is accepted first.
+Archived by Phase 9B. Do not create `poor-cli/speculative_decoding.py` unless a new end-to-end vLLM provider PRD is accepted first.
 ```
 
 ---
@@ -789,13 +789,13 @@ Archived by Phase 9B. Do not create `poor_cli/speculative_decoding.py` unless a 
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are researching and prototyping latent-space communication between poor-cli's agents, 
+You are researching and prototyping latent-space communication between poor-cli's agents,
 replacing text-based multi-agent communication with direct hidden-state passing.
 
-FIRST: Read docs/phase_08_research_frontier.md, specifically the "Agent 8A" section for 
+FIRST: Read docs/phase_08_research_frontier.md, specifically the "Agent 8A" section for
 full research plan and acceptance criteria.
 
-This is a RESEARCH task. Your primary deliverable is a feasibility report with a working 
+This is a RESEARCH task. Your primary deliverable is a feasibility report with a working
 prototype if feasible, or a documented assessment of why not.
 
 YOUR DELIVERABLES:
@@ -820,11 +820,11 @@ Read the phase doc first, then research.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are researching latent reasoning techniques (Coconut, Quiet-STaR, CODI) to reduce 
-chain-of-thought token overhead. Your primary deliverable is a feasibility report plus 
+You are researching latent reasoning techniques (Coconut, Quiet-STaR, CODI) to reduce
+chain-of-thought token overhead. Your primary deliverable is a feasibility report plus
 a practical thinking-token-budget optimizer.
 
-FIRST: Read docs/phase_08_research_frontier.md, specifically the "Agent 8B" section for 
+FIRST: Read docs/phase_08_research_frontier.md, specifically the "Agent 8B" section for
 full research plan and acceptance criteria.
 
 This is a RESEARCH task with a practical fallback deliverable.
@@ -832,7 +832,7 @@ This is a RESEARCH task with a practical fallback deliverable.
 YOUR DELIVERABLES:
 1. Literature review: Coconut, Quiet-STaR, CODI — feasibility ranking
 2. Prototype (if any approach is feasible with available models)
-3. PRACTICAL FALLBACK (implement regardless): thinking_budget.py — per-task-type 
+3. PRACTICAL FALLBACK (implement regardless): thinking_budget.py — per-task-type
    thinking token limits based on historical data analysis
 4. Write docs/LATENT_REASONING.md — findings
 5. Benchmark thinking budget optimizer: tokens saved vs task success rate
@@ -850,13 +850,13 @@ Read the phase doc first, then research.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are researching code-specific tokenization to reduce the 1.5-2× token overhead that 
+You are researching code-specific tokenization to reduce the 1.5-2× token overhead that
 standard BPE tokenizers impose on source code.
 
-FIRST: Read docs/phase_08_research_frontier.md, specifically the "Agent 8C" section for 
+FIRST: Read docs/phase_08_research_frontier.md, specifically the "Agent 8C" section for
 full research plan and acceptance criteria.
 
-This is a RESEARCH task. Your primary deliverable is a benchmark report with 
+This is a RESEARCH task. Your primary deliverable is a benchmark report with
 recommendations.
 
 YOUR DELIVERABLES:
@@ -881,20 +881,20 @@ Read the phase doc first, then research.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are researching whether a codebase can be represented as a fixed-size neural embedding 
-(analogous to images in multimodal models) instead of raw text tokens, and prototyping 
+You are researching whether a codebase can be represented as a fixed-size neural embedding
+(analogous to images in multimodal models) instead of raw text tokens, and prototyping
 the most feasible approach.
 
-FIRST: Read docs/phase_08_research_frontier.md, specifically the "Agent 8D" section for 
+FIRST: Read docs/phase_08_research_frontier.md, specifically the "Agent 8D" section for
 full research plan and acceptance criteria.
 
-This is a RESEARCH task — the most speculative in the entire roadmap. Your primary 
+This is a RESEARCH task — the most speculative in the entire roadmap. Your primary
 deliverable is an architectural study with a practical neural-retrieval fallback.
 
 YOUR DELIVERABLES:
 1. Architecture study: LLaVA/CLIP → code analogy assessment
 2. CodeBERT baseline: codebase → embedding → retrieval pipeline
-3. PRACTICAL FALLBACK: neural retrieval — embed files, retrieve top-K by similarity, 
+3. PRACTICAL FALLBACK: neural retrieval — embed files, retrieve top-K by similarity,
    include only relevant files in context (enhancement of Phase 5B)
 4. Benchmark: text-in-context vs neural retrieval on code Q&A tasks
 5. Write docs/NEURAL_CODE_EMBEDDINGS.md — findings
@@ -1024,21 +1024,21 @@ Read the phase doc and PRD first, then implement.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are relocating research-grade modules into `poor_cli/research/` gated by feature flags
+You are relocating research-grade modules into `poor-cli/research/` gated by feature flags
 so contributors reading the main package see only production code.
 
 FIRST: Read docs/phase_09_repo_cleanup.md, specifically the "Agent 9C" section for full
 implementation details and acceptance criteria.
 
 CONTEXT:
-- Several research-only modules currently live at `poor_cli/*.py` top level
+- Several research-only modules currently live at `poor-cli/*.py` top level
 - Cold-start imports pull them in unnecessarily
-- Feature flags live in `poor_cli/repo_config.py` and per-user config
+- Feature flags live in `poor-cli/repo_config.py` and per-user config
 - Do NOT delete — this PRD is purely a move + gate
 
 YOUR DELIVERABLES:
 1. Inventory research modules (latent_communication, neural_code_encoder, etc.; `speculative_decoding.py` was archived by 9B)
-2. Move each into `poor_cli/research/<name>.py`; add `poor_cli/research/__init__.py`
+2. Move each into `poor-cli/research/<name>.py`; add `poor-cli/research/__init__.py`
 3. Add `research.<name>.enabled = false` config defaults
 4. Update every importer to go through the gated loader
 5. Measure cold-start import time before/after; document the delta
@@ -1090,7 +1090,7 @@ Read the phase doc and PRD first, then implement.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are pre-slicing `poor_cli/core.py` into empty section modules so follow-up PRDs
+You are pre-slicing `poor-cli/core.py` into empty section modules so follow-up PRDs
 (018, 021) can migrate code in small, reviewable chunks without behavior change.
 
 FIRST: Read docs/phase_09_repo_cleanup.md, specifically the "Agent 9E" section for full
@@ -1103,7 +1103,7 @@ CONTEXT:
 - PRD 018 will later fill `ContextAssemblyOrchestrator`; PRD 021 pins the ceiling at 1000
 
 YOUR DELIVERABLES:
-1. Create `poor_cli/core_agent_loop.py`, `core_tool_dispatch.py`, `core_turn_lifecycle.py`
+1. Create `poor-cli/core_agent_loop.py`, `core_tool_dispatch.py`, `core_turn_lifecycle.py`
 2. Each file exports a stub class with the expected public surface only
 3. Add re-exports from `core.py` so nothing breaks at import time
 4. Write a "placement map" doc listing which core.py regions will migrate where
@@ -1181,7 +1181,7 @@ CONTEXT:
 
 YOUR DELIVERABLES:
 1. Define `ContextSnapshot` dataclass (files, messages, rules, tool schemas)
-2. Create `poor_cli/context_assembly.py` housing `ContextAssemblyOrchestrator`
+2. Create `poor-cli/context_assembly.py` housing `ContextAssemblyOrchestrator`
 3. Migrate existing assembly code paths into `.assemble()` without logic changes
 4. Update `core.py` to call the orchestrator and drop direct calls to sub-modules
 5. Write `tests/test_context_assembly.py` covering the snapshot shape and parity
@@ -1200,7 +1200,7 @@ Read the phase doc and PRD first, then implement.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are partitioning `poor_cli/server/runtime.py` into a `handlers/` package where each
+You are partitioning `poor-cli/server/runtime.py` into a `handlers/` package where each
 handler self-registers via a decorator.
 
 FIRST: Read docs/phase_10_core_refactor.md, specifically the "Agent 10B" section for full
@@ -1213,7 +1213,7 @@ CONTEXT:
 - A decorator like `@register("method.name")` populates the dispatch table
 
 YOUR DELIVERABLES:
-1. Create `poor_cli/server/handlers/` with `__init__.py` and a `register` decorator
+1. Create `poor-cli/server/handlers/` with `__init__.py` and a `register` decorator
 2. Move each handler family (chat, context, cost, multiplayer, etc.) to its own file
 3. Slim `runtime.py` down to dispatch + transport + handler import bootstrapping
 4. Confirm no method signatures changed (RPC wire shape identical)
@@ -1240,7 +1240,7 @@ FIRST: Read docs/phase_10_core_refactor.md, specifically the "Agent 10C" section
 implementation details and acceptance criteria.
 
 CONTEXT:
-- Five providers live under `poor_cli/providers/` with divergent feature sets
+- Five providers live under `poor-cli/providers/` with divergent feature sets
 - Capability examples: streaming, vision, thinking, block caching, latent communication
 - PRD 030 (model picker) will render capability icons from this enum
 - This PRD only types capabilities — it does not implement any new ones
@@ -1319,7 +1319,7 @@ CONTEXT:
 - Single local user — global limits are enough; skip per-user buckets
 
 YOUR DELIVERABLES:
-1. Add `poor_cli/server/rate_limit.py` with a token-bucket implementation
+1. Add `poor-cli/server/rate_limit.py` with a token-bucket implementation
 2. Hook into dispatch (handlers package from PRD 019 if landed)
 3. Define per-method defaults in config; allow user overrides in `.poor-cli/config.yaml`
 4. Emit an audit-log event on 429 (ties into PRD 011)
@@ -1383,7 +1383,7 @@ CONTEXT:
 - Dev ergonomics: env + plaintext fallback stays permanently
 
 YOUR DELIVERABLES:
-1. Add `poor_cli/credentials.py` wrapping `keyring` with graceful fallback
+1. Add `poor-cli/credentials.py` wrapping `keyring` with graceful fallback
 2. Update every provider credential read path to use the new helper
 3. Add a migration wizard step: detect existing creds, offer to move into keyring
 4. Surface keyring status in `/status` and setup wizard
@@ -1410,7 +1410,7 @@ FIRST: Read docs/phase_11_security_policy.md, specifically the "Agent 11D" secti
 implementation details and acceptance criteria.
 
 CONTEXT:
-- Tool lives alongside the Playwright integration in `poor_cli/enhanced_tools.py`
+- Tool lives alongside the Playwright integration in `poor-cli/enhanced_tools.py`
 - Use Playwright's built-in isolation; do NOT roll a full JS sandbox
 - Denylist: `localStorage.clear`, `document.cookie` writes, `navigator.sendBeacon`,
   third-party origin `fetch`
@@ -1450,7 +1450,7 @@ CONTEXT:
 - Must pair with PRD 011 (rotation) and PRD 036 (policy inspector); 11E ships first
 
 YOUR DELIVERABLES:
-1. Implement `:PoorCliTrustCenter` opening a section-ful scratch buffer
+1. Implement `:PoorCLITrustCenter` opening a section-ful scratch buffer
 2. Render virtual-text actions with keymaps; dispatch to the correct RPC method
 3. Surface policy summary (allow/deny/prompt counts) at the top
 4. Show last N audit-log events with a jump action to the event detail
@@ -1482,7 +1482,7 @@ CONTEXT:
 - Reload-on-save keymap refreshes the panel
 
 YOUR DELIVERABLES:
-1. Add `:PoorCliPolicy` panel with columns: name / scope / outcome / source
+1. Add `:PoorCLIPolicy` panel with columns: name / scope / outcome / source
 2. Fetch rules via an RPC (`policy.list`); reuse server-side aggregator from 11E
 3. Implement `gf`-style jump from rule row to rule source file
 4. Reload keymap (`R`) re-fetches without closing the buffer
@@ -1513,22 +1513,22 @@ Read the phase doc and PRD first, then implement.
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are consolidating `poor_cli/watch.py` and `poor_cli/ide_watch.py` into a single
-`poor_cli/file_watcher.py` serving both async-generator and callback consumers.
+You are consolidating `poor-cli/watch.py` and `poor-cli/ide_watch.py` into a single
+`poor-cli/file_watcher.py` serving both async-generator and callback consumers.
 
 FIRST: Read docs/phase_12_context_intel_v2.md, specifically the "Agent 12A" section for
 full implementation details and acceptance criteria.
 
 CONTEXT:
 - Pick `ide_watch.py` as the survivor (richer, newer)
-- Rename to `FileWatcher` in `poor_cli/file_watcher.py`
+- Rename to `FileWatcher` in `poor-cli/file_watcher.py`
 - Add `async def __aiter__` for old-style consumers; keep `on_change(cb)` for new style
 - Both call patterns must share one event queue underneath
 
 YOUR DELIVERABLES:
-1. Create `poor_cli/file_watcher.py` consolidating both implementations
+1. Create `poor-cli/file_watcher.py` consolidating both implementations
 2. Migrate every importer; both consumption patterns must still work
-3. Delete `poor_cli/watch.py` and `poor_cli/ide_watch.py`
+3. Delete `poor-cli/watch.py` and `poor-cli/ide_watch.py`
 4. Write `tests/test_file_watcher.py` covering both patterns
 5. Run `make lint && make test`; zero behavior change expected
 
@@ -1558,7 +1558,7 @@ CONTEXT:
 - Defaults must be tuned so the change is a net quality improvement on a small benchmark
 
 YOUR DELIVERABLES:
-1. Add `poor_cli/context/file_selector.py` that emits ranked candidates
+1. Add `poor-cli/context/file_selector.py` that emits ranked candidates
 2. Thread the selector through `ContextAssemblyOrchestrator.assemble`
 3. Expose `alpha/beta/gamma` in repo_config with sensible defaults
 4. Add a tiny benchmark: N canned prompts → file-selection accuracy vs baseline
@@ -1586,7 +1586,7 @@ full implementation details and acceptance criteria.
 
 CONTEXT:
 - Precedence (high to low): AGENTS.md in cwd, ancestor AGENTS.md, CLAUDE.md legacy
-- Rules layer lives in `poor_cli/rules.py` (or similar)
+- Rules layer lives in `poor-cli/rules.py` (or similar)
 - Found files should stack (append) rather than overwrite
 - `/rules` slash command should list active files with paths
 
@@ -1723,13 +1723,13 @@ FIRST: Read docs/phase_13_protocol_streaming.md, specifically the "Agent 13A" se
 full implementation details and acceptance criteria.
 
 CONTEXT:
-- Relocate to a `poor_cli/mcp/` package; stdio and Streamable HTTP transports
+- Relocate to a `poor-cli/mcp/` package; stdio and Streamable HTTP transports
 - Multi-server with tool namespacing: `<server>:<tool>`
 - Discovery from `.poor-cli/mcp.json` (array of server specs)
 - Optional pull from `https://registry.modelcontextprotocol.io/`, behind a config flag
 
 YOUR DELIVERABLES:
-1. Create `poor_cli/mcp/{stdio,http,registry}.py` replacing `mcp_scaffold.py`
+1. Create `poor-cli/mcp/{stdio,http,registry}.py` replacing `mcp_scaffold.py`
 2. Implement multi-server orchestration with `<server>:<tool>` namespacing
 3. Wire discovery from `.poor-cli/mcp.json`
 4. Add registry pull behind `mcp.registry.enabled = false` default
@@ -1761,7 +1761,7 @@ CONTEXT:
 - Backpressure: client acknowledges chunks; server pauses producers on pressure
 
 YOUR DELIVERABLES:
-1. Add `poor_cli/server/tool_stream.py` with chunked pub/sub + backpressure
+1. Add `poor-cli/server/tool_stream.py` with chunked pub/sub + backpressure
 2. Hook supported tools to emit streaming chunks
 3. Extend the RPC protocol with `tool.chunk` notifications
 4. Update `nvim-poor-cli/lua/poor-cli/timeline.lua` to render chunks in order
@@ -1793,7 +1793,7 @@ CONTEXT:
 - Savings must flow into the economy + Savings dashboard
 
 YOUR DELIVERABLES:
-1. Add `poor_cli/shell_filters/` with one module per supported command
+1. Add `poor-cli/shell_filters/` with one module per supported command
 2. Plug the filter into the bash tool post-execution
 3. Preserve a "full" view path in the timeline for auditing
 4. Ship `git status`, `git diff --stat`, `ls -la` filters with tests
@@ -1841,7 +1841,7 @@ CONTEXT:
 YOUR DELIVERABLES:
 1. Add `nvim-poor-cli/lua/poor-cli/diff_review.lua` with hunk-level keymaps
 2. Server-side: stage edits in a proposal store; expose `diff.list/accept/reject/regen`
-3. Register `:PoorCliDiffReview` and dispatch from commands.lua (serial edit)
+3. Register `:PoorCLIDiffReview` and dispatch from commands.lua (serial edit)
 4. Wire checkpoint creation on accept-batch
 5. Write Lua tests for keymaps; Python tests for the proposal store
 
@@ -1874,7 +1874,7 @@ CONTEXT:
 YOUR DELIVERABLES:
 1. Add `nvim-poor-cli/lua/poor-cli/timeline.lua` with scrolling + expand/collapse
 2. Server: `timeline.list/cancel/retry/dismiss` RPC methods
-3. Register `:PoorCliTimeline` via commands.lua (serial edit, after 14A)
+3. Register `:PoorCLITimeline` via commands.lua (serial edit, after 14A)
 4. Wire streaming chunks (PRD 025) to append under the active event
 5. Write tests for state transitions + dismiss-from-context propagation
 
@@ -1893,7 +1893,7 @@ Read the phase doc and PRD first, then implement.
 [AGENT PROMPT — copy/paste to your coding agent]
 
 You are shipping the three-layer Cost HUD: lualine segment, per-message badge, and
-`:PoorCliCostDashboard` rich buffer.
+`:PoorCLICostDashboard` rich buffer.
 
 FIRST: Read docs/phase_14_nvim_observability.md, specifically the "Agent 14C" section for
 full implementation details and acceptance criteria.
@@ -1902,12 +1902,12 @@ CONTEXT:
 - Lualine segment: `$0.42 · Δ$0.03 · cache 62%` (session $, turn delta, cache hit rate)
 - Per-message virtual-text badges: `[$0.02 · 1.4s · 312 tok]`
 - Dashboard: sparkline $/turn, top-10 expensive tools, cache stats, $/month projection
-- Reads from `poor_cli/cost.py` via RPC
+- Reads from `poor-cli/cost.py` via RPC
 
 YOUR DELIVERABLES:
 1. Extend `nvim-poor-cli/lua/poor-cli/lualine.lua` with the HUD segment
 2. Add chat virtual-text badges (coordinate with PRD 047)
-3. Build `:PoorCliCostDashboard` rich buffer
+3. Build `:PoorCLICostDashboard` rich buffer
 4. Add `cost.snapshot/history` RPC methods
 5. Write Lua tests for rendering + cost deltas
 
@@ -1938,7 +1938,7 @@ CONTEXT:
 - Actions: `p` pin/unpin, `d` drop, `r` refresh, `/` filter, `o` open
 
 YOUR DELIVERABLES:
-1. Add `:PoorCliContext` panel in `nvim-poor-cli/lua/poor-cli/context_panel.lua`
+1. Add `:PoorCLIContext` panel in `nvim-poor-cli/lua/poor-cli/context_panel.lua`
 2. Server: `context.snapshot/pin/drop/refresh` RPC methods
 3. Register the command via commands.lua (serial after 14C)
 4. Render compressed/pinned badges per row
@@ -1970,7 +1970,7 @@ CONTEXT:
 - Do NOT compete with cost dashboard — link cross-navigation
 
 YOUR DELIVERABLES:
-1. Add `:PoorCliSavings` rich buffer with per-source breakdown
+1. Add `:PoorCLISavings` rich buffer with per-source breakdown
 2. Server: `savings.snapshot/history` RPC methods
 3. Sparkline of 30-day savings total; list of top contributors per week
 4. Register command via commands.lua (serial after 14D)
@@ -2002,7 +2002,7 @@ CONTEXT:
 - Small panel — a few dozen lines of Lua + one RPC method
 
 YOUR DELIVERABLES:
-1. Add `:PoorCliWatch` panel in `nvim-poor-cli/lua/poor-cli/watch_panel.lua`
+1. Add `:PoorCLIWatch` panel in `nvim-poor-cli/lua/poor-cli/watch_panel.lua`
 2. Server: `watch.status` RPC method returning active watches + recent triggers
 3. Register command via commands.lua (serial after 14E)
 4. Show matched-but-ignored events in a muted color
@@ -2047,7 +2047,7 @@ CONTEXT:
 - Do NOT auto-infer dependencies (user-authored ordering only)
 
 YOUR DELIVERABLES:
-1. Add `:PoorCliPlan` buffer in `nvim-poor-cli/lua/poor-cli/plan_board.lua`
+1. Add `:PoorCLIPlan` buffer in `nvim-poor-cli/lua/poor-cli/plan_board.lua`
 2. Server: `plan.list/advance/regress/add/delete` RPC methods
 3. Render columns as extmarks; support expand/collapse
 4. Persist plan state across sessions
@@ -2079,7 +2079,7 @@ CONTEXT:
 - Small, surgical addition — reuse adapter for all list/preview UI
 
 YOUR DELIVERABLES:
-1. Add `:PoorCliPrompts` command using `pickers.pick()` from PRD 055
+1. Add `:PoorCLIPrompts` command using `pickers.pick()` from PRD 055
 2. Build prompt loader + front-matter parser
 3. Implement run / edit / delete / clone actions
 4. Support live fuzzy search against title + tags
@@ -2111,7 +2111,7 @@ CONTEXT:
 - Coordinate with PRD 064 if the unified shape changes field names
 
 YOUR DELIVERABLES:
-1. Add `:PoorCliWorkflows` command using `pickers.pick()` from PRD 055
+1. Add `:PoorCLIWorkflows` command using `pickers.pick()` from PRD 055
 2. Load slash-trigger AutomationRules from `.poor-cli/automations.json`
 3. Implement run + scaffold actions
 4. Group picker results by category; allow tag filters
@@ -2143,7 +2143,7 @@ CONTEXT:
 - Do NOT ship a thin wrapper around `mcphub.nvim` — keep ours native
 
 YOUR DELIVERABLES:
-1. Add `:PoorCliMcp` buffer + browser flow
+1. Add `:PoorCLIMcp` buffer + browser flow
 2. Reuse PRD 055 picker for registry pagination
 3. Server: `mcp.list/toggle/edit/remove/health/test` RPC methods
 4. Render per-server status column with colored badges
@@ -2175,7 +2175,7 @@ CONTEXT:
 - Pass-driver flow requires server-side state machine (see PRD 019 handlers)
 
 YOUR DELIVERABLES:
-1. Add `:PoorCliCollab` buffer gated behind `multiplayer.enabled`
+1. Add `:PoorCLICollab` buffer gated behind `multiplayer.enabled`
 2. Server: `collab.room/members/pass_driver` RPC methods
 3. Clipboard integration for invite link
 4. Live updates via pub/sub as members join/leave
@@ -2201,13 +2201,13 @@ FIRST: Read docs/phase_15_nvim_navigators.md, specifically the "Agent 15F" secti
 full implementation details and acceptance criteria.
 
 CONTEXT:
-- Reads from `poor_cli/repo_graph.py`
+- Reads from `poor-cli/repo_graph.py`
 - Keymaps: `<CR>` open file, `gl` expand imports, `gs` list symbols
 - Terminal-native ASCII — no canvas / graph visualization
 - Plays well with PRD 029 context explainer (share file-reason helpers)
 
 YOUR DELIVERABLES:
-1. Add `:PoorCliRepoMap` buffer in `nvim-poor-cli/lua/poor-cli/repo_map.lua`
+1. Add `:PoorCLIRepoMap` buffer in `nvim-poor-cli/lua/poor-cli/repo_map.lua`
 2. Server: `repo_map.top/expand/symbols` RPC methods
 3. Render tree with Unicode box-drawing chars; collapse deep branches
 4. Wire the three keymaps to their actions
@@ -2239,7 +2239,7 @@ CONTEXT:
 - No branch merging in scope
 
 YOUR DELIVERABLES:
-1. Add `:PoorCliBranches` panel in `nvim-poor-cli/lua/poor-cli/branches.lua`
+1. Add `:PoorCLIBranches` panel in `nvim-poor-cli/lua/poor-cli/branches.lua`
 2. Server: `branches.tree/switch` RPC methods (PRD 043 adds regenerate)
 3. Render tree as indented list; highlight active branch
 4. Sibling-nav keymaps `[[`/`]]` and switch keymap `<CR>`
@@ -2283,7 +2283,7 @@ CONTEXT:
 - Depends on PRD 055 (picker adapter) having shipped
 
 YOUR DELIVERABLES:
-1. Add `:PoorCliSwitch` command using `pickers.pick()` from PRD 055
+1. Add `:PoorCLISwitch` command using `pickers.pick()` from PRD 055
 2. Render capability icons + $$/1K columns
 3. Wire selection into existing provider/model switch RPC
 4. Persist last-used per project for fast re-open
@@ -2309,13 +2309,13 @@ FIRST: Read docs/phase_16_pickers_onboarding.md, specifically the "Agent 16B" se
 full implementation details and acceptance criteria.
 
 CONTEXT:
-- `:PoorCliOnboarding` must re-open any time (not once-and-done)
+- `:PoorCLIOnboarding` must re-open any time (not once-and-done)
 - Milestone tips fire at N completions / M turns, one tip at a time
 - Tour guides through five real actions with fake-but-safe targets
 - Coordinate with PRD 014 (diff review) for the review step
 
 YOUR DELIVERABLES:
-1. Add `:PoorCliOnboarding` rerunnable command in `nvim-poor-cli/lua/poor-cli/onboarding.lua`
+1. Add `:PoorCLIOnboarding` rerunnable command in `nvim-poor-cli/lua/poor-cli/onboarding.lua`
 2. Implement milestone tip scheduler with rate-limiting
 3. Build the 5-step interactive tour with guided actions
 4. Persist "seen" flags per tip in the user state file
@@ -2350,7 +2350,7 @@ YOUR DELIVERABLES:
 1. Add `nvim-poor-cli/lua/poor-cli/pickers.lua` with `pick(items, opts)`
 2. Implement Snacks, Telescope, fzf-lua, and vim.ui.select adapters
 3. Document the opts contract in the module header
-4. Surface which backend is active via `:PoorCliPickerBackend`
+4. Surface which backend is active via `:PoorCLIPickerBackend`
 5. Write Lua tests with fake adapters for each backend
 
 CONSTRAINTS:
@@ -2623,7 +2623,7 @@ orchestrator but the edits are insert-only, so rebase conflicts are usually mech
 ```
 [AGENT PROMPT — copy/paste to your coding agent]
 
-You are registering a `poor_cli` source in trouble.nvim so `:Trouble poor_cli` lists all
+You are registering a `poor-cli` source in trouble.nvim so `:Trouble poor-cli` lists all
 current AI suggestions using the same namespace as `diagnostics.lua`.
 
 FIRST: Read docs/phase_19_plugin_integrations.md, specifically the "Agent 19A" section for
@@ -2638,7 +2638,7 @@ YOUR DELIVERABLES:
 1. Add `integrations/trouble.lua` registering the source
 2. Bridge suggestion events into trouble's refresh hook
 3. Guard init: no-op when trouble absent
-4. Document the `:Trouble poor_cli` flow in README
+4. Document the `:Trouble poor-cli` flow in README
 5. Write Lua tests with a fake trouble API
 
 CONSTRAINTS:
@@ -2954,7 +2954,7 @@ the chosen decision and the execution plan.
 
 CONTEXT:
 - GATED by PRD 062 (20C): audience likely decides this
-- (A) Commit: chat Share button, `:PoorCliCollabQuick`, demo video, landing section
+- (A) Commit: chat Share button, `:PoorCLICollabQuick`, demo video, landing section
 - (B) Cut: move code to `_experimental/multiplayer/`, archive PRD 037
 - (C) Freeze: keep, but no new investment
 - PRD 037 (15E) depends on this decision

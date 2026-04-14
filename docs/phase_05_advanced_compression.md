@@ -69,9 +69,9 @@ Integrate a prompt compression layer that uses a small model to identify and rem
 7. **Lazy model loading** — don't load the compression model until first use. It's ~110MB and shouldn't slow down startup.
 
 ### Files to create/modify
-- `poor_cli/prompt_compressor.py` (new, ~200 lines)
-- `poor_cli/context_optimizer.py` (integrate compression into context pipeline)
-- `poor_cli/profiles.py` (tie compression ratios to economy modes)
+- `poor-cli/prompt_compressor.py` (new, ~200 lines)
+- `poor-cli/context_optimizer.py` (integrate compression into context pipeline)
+- `poor-cli/profiles.py` (tie compression ratios to economy modes)
 - `pyproject.toml` (add optional dependency: `llmlingua` or `transformers`)
 
 ### Acceptance criteria
@@ -103,7 +103,7 @@ Replace naive line/character-based code chunking in the indexer with AST-aware c
 
 ### Implementation details
 
-1. **Audit current indexer** — read `poor_cli/indexer.py`:
+1. **Audit current indexer** — read `poor-cli/indexer.py`:
    - How does it currently chunk code?
    - What embedding model does it use?
    - What's the chunk size?
@@ -168,8 +168,8 @@ Replace naive line/character-based code chunking in the indexer with AST-aware c
 7. **Incremental updates** — re-index only changed files (watch for git changes).
 
 ### Files to create/modify
-- `poor_cli/indexer.py` (primary — replace chunking logic with AST-aware)
-- `poor_cli/embeddings.py` (ensure dual embedding support)
+- `poor-cli/indexer.py` (primary — replace chunking logic with AST-aware)
+- `poor-cli/embeddings.py` (ensure dual embedding support)
 - Phase 2A's tree-sitter infrastructure (shared dependency)
 
 ### Acceptance criteria
@@ -249,10 +249,10 @@ A meta-controller that, after a failed tool call or reasoning attempt, extracts 
 7. **Metrics** — track tokens saved by failure amnesia in the cost dashboard.
 
 ### Files to create/modify
-- `poor_cli/failure_amnesia.py` (new, ~200 lines)
-- `poor_cli/error_recovery.py` (integrate lesson extraction)
-- `poor_cli/context_optimizer.py` (integrate failure pruning into compaction pipeline)
-- `poor_cli/history.py` (mark turns as failed/resolved)
+- `poor-cli/failure_amnesia.py` (new, ~200 lines)
+- `poor-cli/error_recovery.py` (integrate lesson extraction)
+- `poor-cli/context_optimizer.py` (integrate failure pruning into compaction pipeline)
+- `poor-cli/history.py` (mark turns as failed/resolved)
 
 ### Acceptance criteria
 - [ ] Failed tool calls detected automatically

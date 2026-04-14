@@ -22,7 +22,7 @@ from poor_cli.token_counter import (
 SESSION_PARTS = {
     "system": "You are a careful engineer. Follow the AGENTS.md and PRD.",
     "tool_schema": '{"name": "read_file", "parameters": {"path": "string"}}',
-    "user_turn_1": "Please summarize poor_cli/context.py in <= 5 bullets.",
+    "user_turn_1": "Please summarize poor-cli/context.py in <= 5 bullets.",
     "assistant_turn_1": (
         "- Context gathering with priority scoring\n"
         "- Token-aware truncation\n"

@@ -28,7 +28,16 @@ try:
     import torch
     HAS_TORCH = True
 except ImportError:
+    torch = None
     HAS_TORCH = False
+
+
+def _no_grad(func=None):
+    if HAS_TORCH:
+        return torch.no_grad()(func) if func is not None else torch.no_grad()
+    if func is not None:
+        return func
+    return lambda wrapped: wrapped
 
 try:
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -116,7 +125,7 @@ class LatentAgent:
     def _tokenize(self, text: str) -> "torch.Tensor":
         return self.tokenizer(text, return_tensors="pt").input_ids.to(self.device)
 
-    @torch.no_grad()
+    @_no_grad
     def forward_latent(
         self,
         prompt: str,
@@ -131,7 +140,7 @@ class LatentAgent:
         input_ids = self._tokenize(prompt)
         # if we have prior hidden state from another agent, prepend as inputs_embeds
         if prior_hidden is not None:
-            realigned = self.realign.apply(prior_hidden).unsqueeze(0).unsqueeze(0)  # [1, 1, D]
+            realigned = self.realign.apply(prior_hidden).unsqueeze(1)  # [1, 1, D]
             prompt_embeds = self.model.get_input_embeddings()(input_ids)  # [1, seq, D]
             inputs_embeds = torch.cat([realigned, prompt_embeds], dim=1)  # [1, 1+seq, D]
             out = self.model(
@@ -170,7 +179,7 @@ class LatentAgent:
             latent_steps=self.latent_steps,
         )
 
-    @torch.no_grad()
+    @_no_grad
     def generate_from_latent(
         self,
         prompt: str,
@@ -185,7 +194,7 @@ class LatentAgent:
         input_ids = self._tokenize(prompt)
         kv = latent_msg.kv_cache if latent_msg else None
         if latent_msg and latent_msg.hidden_states is not None:
-            realigned = self.realign.apply(latent_msg.hidden_states).unsqueeze(0).unsqueeze(0)
+            realigned = self.realign.apply(latent_msg.hidden_states).unsqueeze(1)
             prompt_embeds = self.model.get_input_embeddings()(input_ids)
             inputs_embeds = torch.cat([realigned, prompt_embeds], dim=1)
             out = self.model.generate(

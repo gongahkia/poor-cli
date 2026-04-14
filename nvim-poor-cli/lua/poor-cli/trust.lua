@@ -23,9 +23,9 @@ end
 
 function M.setup()
     local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
-    create_command("PoorCliTrustStatus", function()
+    create_command("PoorCLITrustStatus", function()
         M.get_status({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local t = result or {}
             local lines = {
                 "# trust status", "",
@@ -37,21 +37,21 @@ function M.setup()
             open_scratch("[poor-cli trust status]", table.concat(lines, "\n"), "markdown")
         end) end)
     end, { desc = "Show trust status" })
-    create_command("PoorCliTrustRepo", function()
+    create_command("PoorCLITrustRepo", function()
         M.trust_repo({}, function(_, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
-            else vim.notify("[poor-cli] repo trusted", vim.log.levels.INFO) end
+            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
+            else require("poor-cli.notify").notify("[poor-cli] repo trusted", vim.log.levels.INFO) end
         end) end)
     end, { desc = "Trust current repo" })
-    create_command("PoorCliUntrustRepo", function()
+    create_command("PoorCLIUntrustRepo", function()
         M.untrust_repo({}, function(_, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
-            else vim.notify("[poor-cli] repo untrusted", vim.log.levels.INFO) end
+            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
+            else require("poor-cli.notify").notify("[poor-cli] repo untrusted", vim.log.levels.INFO) end
         end) end)
     end, { desc = "Untrust current repo" })
-    create_command("PoorCliProfiles", function()
+    create_command("PoorCLIProfiles", function()
         M.list_profiles({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local profiles = (result or {}).profiles or {}
             local lines = { "# profiles", "" }
             for _, p in ipairs(profiles) do
@@ -61,10 +61,10 @@ function M.setup()
             open_scratch("[poor-cli profiles]", table.concat(lines, "\n"), "markdown")
         end) end)
     end, { desc = "List trust profiles" })
-    create_command("PoorCliProfileApply", function(opts)
+    create_command("PoorCLIProfileApply", function(opts)
         M.apply_profile({ name = opts.args }, function(_, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
-            else vim.notify("[poor-cli] profile applied: " .. opts.args, vim.log.levels.INFO) end
+            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
+            else require("poor-cli.notify").notify("[poor-cli] profile applied: " .. opts.args, vim.log.levels.INFO) end
         end) end)
     end, { nargs = 1, desc = "Apply trust profile" })
 end

@@ -13,7 +13,7 @@ def _clear_research_modules() -> None:
 
 def test_research_modules_not_imported_by_default() -> None:
     _clear_research_modules()
-    importlib.import_module("poor_cli")
+    importlib.import_module("poor-cli")
     assert [name for name in sys.modules if name.startswith("poor_cli.research.")] == []
 
 

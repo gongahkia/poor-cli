@@ -307,7 +307,7 @@
     },
     {
       "command": "/broke",
-      "description": "Set poor mode (terse responses)",
+      "description": "Set frugal mode (terse responses)",
       "recommended": false,
       "category": "Economy & Output",
       "hidden": true

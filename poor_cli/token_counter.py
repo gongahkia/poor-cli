@@ -1,4 +1,4 @@
-"""Single source of truth for token counts across poor_cli.
+"""Single source of truth for token counts across poor-cli.
 
 Every token count anywhere in the codebase must route through this module.
 See PRD 001 for rationale and the invariant tests rely on.
@@ -10,7 +10,7 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Literal, Optional, Protocol, Tuple
 
-ProviderId = Literal["anthropic", "openai", "gemini", "ollama", "openrouter"]
+ProviderId = Literal["anthropic", "openai", "gemini", "ollama", "openrouter", "hf_local", "vllm", "llama_server", "sglang", "hf_tgi", "lmstudio"]
 
 CountSource = Literal["native", "tiktoken", "heuristic"]
 
@@ -27,6 +27,12 @@ HEURISTIC_CHARS_PER_TOKEN: Dict[Tuple[Optional[str], str], float] = {
     ("gemini",    "*"):            3.6,
     ("openrouter","*"):            3.7,
     ("ollama",    "*"):            3.9,
+    ("hf_local",  "*"):            3.9,
+    ("vllm",      "*"):            3.9,
+    ("llama_server", "*"):         3.9,
+    ("sglang",    "*"):            3.9,
+    ("hf_tgi",    "*"):            3.9,
+    ("lmstudio",  "*"):            3.9,
     (None,        "*"):            3.8,  # last-resort fallback
 }
 
@@ -121,7 +127,7 @@ class TokenCounter:
                     # fall through to other strategies
                     pass
 
-        if prov in ("openai", "openrouter") and text:
+        if prov in ("openai", "openrouter", "vllm", "llama_server", "sglang", "hf_tgi", "lmstudio") and text:
             tik = self._tiktoken_count(text, model=model)
             if tik is not None:
                 return TokenCount(count=tik, source="tiktoken",

@@ -180,3 +180,15 @@ class RepoHistoryAdapter:
 
     def clear_history(self) -> None:
         self._repo_config.clear_history()
+
+    def set_active_leaf(self, turn_id: Optional[str]) -> None:
+        self._repo_config.set_active_leaf(turn_id)
+
+    def add_branch_message(self, role: str, content: str, parent_id: str, branch_of: str, turn_id: str) -> None:
+        self._repo_config.add_branch_message(
+            role=role,
+            content=content,
+            parent_id=parent_id,
+            branch_of=branch_of,
+            turn_id=turn_id,
+        )

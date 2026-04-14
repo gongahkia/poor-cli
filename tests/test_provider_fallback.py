@@ -1,4 +1,4 @@
-"""tests for poor_cli.provider_fallback module."""
+"""tests for poor-cli.provider_fallback module."""
 
 import asyncio
 import unittest

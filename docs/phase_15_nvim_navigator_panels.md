@@ -13,13 +13,13 @@ All 7 agents write under `nvim-poor-cli/lua/poor-cli/`. Two files are touched by
 
 | File | Agents touching | Resolution |
 |---|---|---|
-| `nvim-poor-cli/lua/poor-cli/commands.lua` | 15A, 15B, 15C, 15D, 15E, 15F, 15G | **HIGH collision** — serialize; each agent adds one `:PoorCli*` command entry only |
+| `nvim-poor-cli/lua/poor-cli/commands.lua` | 15A, 15B, 15C, 15D, 15E, 15F, 15G | **HIGH collision** — serialize; each agent adds one `:PoorCLI*` command entry only |
 | `nvim-poor-cli/lua/poor-cli/init.lua` | (only if lazy-loading modules is registered there) | **Low-med** — coordinate `require()` registration |
 | `nvim-poor-cli/lua/poor-cli/plan.lua` | 15A | sole owner |
 | `nvim-poor-cli/lua/poor-cli/prompt_library.lua` | 15B | sole owner |
 | `nvim-poor-cli/lua/poor-cli/collab.lua` / `collab_ext.lua` | 15E | sole owner |
-| `poor_cli/plan_mode.py` | 15A | sole owner (narrow RPC surface) |
-| `poor_cli/history.py` | 15G | sole owner (schema migration) |
+| `poor-cli/plan_mode.py` | 15A | sole owner (narrow RPC surface) |
+| `poor-cli/history.py` | 15G | sole owner (schema migration) |
 
 **Proposed sub-waves** (to avoid `commands.lua` merge hell):
 
@@ -45,11 +45,11 @@ Kanban buffer (four columns: todo / in-progress / done / blocked) rendered as AS
 
 ### Implementation details
 
-1. Expose structured plan via RPC in `poor_cli/plan_mode.py`: `poor-cli/getPlan`, `poor-cli/updatePlanStep` (extend existing plan-mode RPCs).
+1. Expose structured plan via RPC in `poor-cli/plan_mode.py`: `poor-cli/getPlan`, `poor-cli/updatePlanStep` (extend existing plan-mode RPCs).
 2. Lua scratch buffer, vertical layout, four columns as extmarks; each column uses ASCII box-drawing + extmark highlighting.
 3. No auto-inferred dependencies — dependencies are user-declared only.
 4. Keymaps: `<Tab>` advance status, `<S-Tab>` regress, `<CR>` expand step, `x` mark blocked, `a` add step, `d` delete step.
-5. Keep old floating popup as fallback (`g:poor_cli_plan_board_enabled`).
+5. Keep old floating popup as fallback (`g:poor-cli_plan_board_enabled`).
 6. Do not persist board state across sessions.
 
 ### Files to create/modify
@@ -57,8 +57,8 @@ Kanban buffer (four columns: todo / in-progress / done / blocked) rendered as AS
 - `nvim-poor-cli/lua/poor-cli/plan_board.lua` (new)
 - `nvim-poor-cli/tests/plan_board_spec.lua` (new)
 - `nvim-poor-cli/lua/poor-cli/plan.lua` (modify — delegate to board when multi-step)
-- `nvim-poor-cli/lua/poor-cli/commands.lua` (add `:PoorCliPlanBoard`)
-- `poor_cli/plan_mode.py` (narrow — expose structured plan via RPC)
+- `nvim-poor-cli/lua/poor-cli/commands.lua` (add `:PoorCLIPlanBoard`)
+- `poor-cli/plan_mode.py` (narrow — expose structured plan via RPC)
 
 ### Out-of-scope / boundary
 
@@ -96,7 +96,7 @@ Picker (via PRD 055 adapter) over saved prompts stored in `.poor-cli/prompts/`, 
 ### Files to create/modify
 
 - `nvim-poor-cli/lua/poor-cli/prompt_library.lua` (modify — replace list view with picker launcher)
-- `nvim-poor-cli/lua/poor-cli/commands.lua` (add `:PoorCliPrompts`)
+- `nvim-poor-cli/lua/poor-cli/commands.lua` (add `:PoorCLIPrompts`)
 - `nvim-poor-cli/tests/prompt_library_spec.lua` (new)
 
 ### Out-of-scope / boundary
@@ -108,7 +108,7 @@ Picker (via PRD 055 adapter) over saved prompts stored in `.poor-cli/prompts/`, 
 - [ ] `test_picker_lists_saved_prompts` passes
 - [ ] `test_enter_runs_selected` passes
 - [ ] `test_delete_removes` passes
-- [ ] `:PoorCliPrompts` launches picker
+- [ ] `:PoorCLIPrompts` launches picker
 
 ---
 
@@ -133,7 +133,7 @@ Picker over slash-trigger `AutomationRule` workflow scaffolds (standup, weekly-u
 
 - `nvim-poor-cli/lua/poor-cli/workflow_picker.lua` (new)
 - `nvim-poor-cli/tests/workflow_picker_spec.lua` (new)
-- `nvim-poor-cli/lua/poor-cli/commands.lua` (add `:PoorCliWorkflow`)
+- `nvim-poor-cli/lua/poor-cli/commands.lua` (add `:PoorCLIWorkflow`)
 
 ### Out-of-scope / boundary
 
@@ -143,7 +143,7 @@ Picker over slash-trigger `AutomationRule` workflow scaffolds (standup, weekly-u
 
 - [ ] `test_picker_shows_category_groups` passes
 - [ ] `test_enter_runs_workflow` passes
-- [ ] `:PoorCliWorkflow` accessible
+- [ ] `:PoorCLIWorkflow` accessible
 
 ---
 
@@ -185,7 +185,7 @@ Full-screen buffer with two sections: CONFIGURED (installed servers with status,
 
 - `nvim-poor-cli/lua/poor-cli/mcp_registry.lua` (new)
 - `nvim-poor-cli/tests/mcp_registry_spec.lua` (new)
-- `nvim-poor-cli/lua/poor-cli/commands.lua` (add `:PoorCliMcp`)
+- `nvim-poor-cli/lua/poor-cli/commands.lua` (add `:PoorCLIMcp`)
 
 ### Out-of-scope / boundary
 
@@ -214,7 +214,7 @@ Full-screen buffer with two sections: CONFIGURED (installed servers with status,
 
 ### DECISION gate
 
-PRD 063 resolves "commit or cut" for multiplayer. If PRD 063 = commit, ship this PRD's room UI. If PRD 063 = cut, shelve this agent entirely. Do not begin 15E work until PRD 063 has resolved.
+PRD 063 resolved as commit on 2026-04-14. Ship this PRD's room UI; the cut/freeze branches are closed for this phase.
 
 ### What to build
 
@@ -239,7 +239,7 @@ Tab-scoped fullscreen buffer containing:
 - `nvim-poor-cli/tests/multiplayer_room_spec.lua` (new)
 - `nvim-poor-cli/lua/poor-cli/collab.lua` (modify — delegate to room when fullscreen invoked)
 - `nvim-poor-cli/lua/poor-cli/collab_ext.lua` (modify)
-- `nvim-poor-cli/lua/poor-cli/commands.lua` (add `:PoorCliRoom`)
+- `nvim-poor-cli/lua/poor-cli/commands.lua` (add `:PoorCLIRoom`)
 
 ### Out-of-scope / boundary
 
@@ -270,10 +270,10 @@ ASCII tree-like buffer visualizing the top-N PageRank files with import neighbor
 
 ```
 ┌──── repo map (top 50 by pagerank) ─────────────────────────┐
-│  0.041 poor_cli/core.py                                     │
+│  0.041 poor-cli/core.py                                     │
 │         ↓ imports: context, tools_async, provider_factory   │
 │         ↑ imported-by: server/runtime, cli/main             │
-│  0.027 poor_cli/context.py                                  │
+│  0.027 poor-cli/context.py                                  │
 │  ...                                                        │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -289,7 +289,7 @@ ASCII tree-like buffer visualizing the top-N PageRank files with import neighbor
 
 - `nvim-poor-cli/lua/poor-cli/repo_map.lua` (new)
 - `nvim-poor-cli/tests/repo_map_spec.lua` (new)
-- `nvim-poor-cli/lua/poor-cli/commands.lua` (add `:PoorCliRepoMap`)
+- `nvim-poor-cli/lua/poor-cli/commands.lua` (add `:PoorCLIRepoMap`)
 
 ### Out-of-scope / boundary
 
@@ -334,7 +334,7 @@ Schema migration via PRD 003. Migration must be idempotent for existing flat his
 
 ### Implementation details
 
-1. Migrate history schema in `poor_cli/history.py` per above.
+1. Migrate history schema in `poor-cli/history.py` per above.
 2. Update `regenerate` (from PRD 043) to produce a sibling of the current assistant turn.
 3. Lua right-split buffer renders the tree; keymaps `[[` / `]]` navigate siblings, `<CR>` switches active leaf.
 4. Active leaf drives context reconstruction for the next turn.
@@ -344,8 +344,8 @@ Schema migration via PRD 003. Migration must be idempotent for existing flat his
 
 - `nvim-poor-cli/lua/poor-cli/branch_tree.lua` (new)
 - `nvim-poor-cli/tests/branch_tree_spec.lua` (new)
-- `nvim-poor-cli/lua/poor-cli/commands.lua` (add `:PoorCliBranches`)
-- `poor_cli/history.py` (modify — DAG schema + migration)
+- `nvim-poor-cli/lua/poor-cli/commands.lua` (add `:PoorCLIBranches`)
+- `poor-cli/history.py` (modify — DAG schema + migration)
 
 ### Out-of-scope / boundary
 

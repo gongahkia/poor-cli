@@ -11,6 +11,17 @@ local function safe_map(mode, lhs, rhs, opts)
     vim.keymap.set(mode, lhs, rhs, opts or {})
 end
 
+local function map_if_unclaimed(mode, lhs, rhs, opts)
+    if lhs == nil or lhs == "" then
+        return
+    end
+    local existing = vim.fn.maparg(lhs, mode, false, true)
+    if existing and existing.lhs and existing.lhs ~= "" then
+        return
+    end
+    vim.keymap.set(mode, lhs, rhs, opts or {})
+end
+
 function M.setup()
     local config = require("poor-cli.config")
     local inline = require("poor-cli.inline")
@@ -40,6 +51,44 @@ function M.setup()
             return vim.api.nvim_replace_termcodes("<C-Right>", true, false, true)
         end
     end, { expr = true, desc = "Accept poor-cli completion word or Ctrl+Right" })
+
+    local accept_line_key = config.get("accept_line_key")
+    if accept_line_key == nil then accept_line_key = "<M-l>" end
+    map_if_unclaimed("i", accept_line_key, function()
+        if inline.has_completion() then
+            inline.accept_line()
+            return ""
+        else
+            return ""
+        end
+    end, { expr = true, desc = "Accept poor-cli completion line" })
+
+    local preview_key = config.get("preview_key")
+    if preview_key == nil then preview_key = "<M-?>" end
+    map_if_unclaimed("i", preview_key, function()
+        if inline.has_completion() then
+            inline.open_preview_split()
+            return ""
+        else
+            return ""
+        end
+    end, { expr = true, desc = "Preview poor-cli completion" })
+
+    local cycle_next_key = config.get("cycle_next_key") or "<M-]>"
+    map_if_unclaimed("i", cycle_next_key, function()
+        if inline.has_completion() then
+            inline.cycle_next()
+        end
+        return ""
+    end, { expr = true, desc = "Cycle poor-cli completion forward" })
+
+    local cycle_prev_key = config.get("cycle_prev_key") or "<M-[>"
+    map_if_unclaimed("i", cycle_prev_key, function()
+        if inline.has_completion() then
+            inline.cycle_prev()
+        end
+        return ""
+    end, { expr = true, desc = "Cycle poor-cli completion backward" })
 
     -- Dismiss completion
     safe_map("i", config.get("dismiss_key"), function()
@@ -90,14 +139,14 @@ function M.setup()
         -- Get visual selection bounds
         local start_pos = vim.fn.getpos("'<")
         local end_pos = vim.fn.getpos("'>")
-        vim.cmd(start_pos[2] .. "," .. end_pos[2] .. "PoorCliRefactor")
+        vim.cmd(start_pos[2] .. "," .. end_pos[2] .. "PoorCLIRefactor")
     end, { desc = "Refactor selection with poor-cli" })
     
     -- Quick explain
     safe_map("v", "<leader>pe", function()
         local start_pos = vim.fn.getpos("'<")
         local end_pos = vim.fn.getpos("'>")
-        vim.cmd(start_pos[2] .. "," .. end_pos[2] .. "PoorCliExplain")
+        vim.cmd(start_pos[2] .. "," .. end_pos[2] .. "PoorCLIExplain")
     end, { desc = "Explain selection with poor-cli" })
 
     -- command palette
@@ -107,6 +156,14 @@ function M.setup()
             require("poor-cli.telescope").command_palette()
         end, { desc = "poor-cli command palette" })
     end
+
+    safe_map("n", "<leader>pv", function()
+        require("poor-cli.diff_review").toggle()
+    end, { desc = "Toggle poor-cli diff review" })
+
+    safe_map("n", "<leader>pt", function()
+        require("poor-cli.timeline").toggle()
+    end, { desc = "Toggle poor-cli timeline" })
 
     -- register which-key group label if available
     local ok_wk, wk = pcall(require, "which-key")

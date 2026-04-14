@@ -107,8 +107,8 @@ A headless Lua test substrate built on `plenary.busted`. Bootstrap a test-only N
 4. **Makefile target**:
    ```makefile
    test-lua: ## run Lua plenary specs
-   	nvim --headless --noplugin -u nvim-poor-cli/tests/minimal_init.lua \
-   	  -c "PlenaryBustedDirectory nvim-poor-cli/tests/ {minimal_init = 'nvim-poor-cli/tests/minimal_init.lua'}"
+    nvim --headless --noplugin -u nvim-poor-cli/tests/minimal_init.lua \
+      -c "PlenaryBustedDirectory nvim-poor-cli/tests/ {minimal_init = 'nvim-poor-cli/tests/minimal_init.lua'}"
    ```
 
 5. **CI job** — add a `lua-tests` job to `.github/workflows/tests.yml`:

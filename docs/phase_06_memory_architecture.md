@@ -76,7 +76,7 @@ Instead of re-sending the full conversation history + full file contents every t
 
 4. **Memory persistence** — working memory survives across turns but gets compacted periodically:
    - After every N turns (configurable, default 10), re-summarize the session
-   - Working memory stored in `poor_cli/session_store.py`
+   - Working memory stored in `poor-cli/session_store.py`
 
 5. **Hybrid mode** — for the first few turns (before enough context accumulates), use traditional full-history mode. Switch to delta mode once conversation exceeds a threshold (e.g., 5 turns or 50% of context window used).
 
@@ -87,10 +87,10 @@ Instead of re-sending the full conversation history + full file contents every t
    - Delta computation restarts from the compacted state
 
 ### Files to create/modify
-- `poor_cli/working_memory.py` (new, ~300 lines — memory model + delta computation)
-- `poor_cli/context_providers.py` (major refactor — delta-based prompt construction)
-- `poor_cli/session_store.py` (persist working memory)
-- `poor_cli/context_optimizer.py` (integrate delta mode with compaction)
+- `poor-cli/working_memory.py` (new, ~300 lines — memory model + delta computation)
+- `poor-cli/context_providers.py` (major refactor — delta-based prompt construction)
+- `poor-cli/session_store.py` (persist working memory)
+- `poor-cli/context_optimizer.py` (integrate delta mode with compaction)
 
 ### Acceptance criteria
 - [ ] Working memory model tracks files, decisions, and session state
@@ -184,8 +184,8 @@ This solution **only works with local/self-hosted inference**. It cannot be used
      ```
 
 ### Files to create/modify
-- `poor_cli/kv_cache_store.py` (new, ~250 lines)
-- `poor_cli/providers/ollama_provider.py` (integrate KV cache for local inference)
+- `poor-cli/kv_cache_store.py` (new, ~250 lines)
+- `poor-cli/providers/ollama_provider.py` (integrate KV cache for local inference)
 - `.poor-cli/config.yaml` (add kv_cache config section)
 
 ### Acceptance criteria

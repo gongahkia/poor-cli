@@ -11,8 +11,8 @@
 
 | Agent | New Lua (panels)                                             | New server files                                  | Shared Lua files touched                                   | Shared server files touched                                          |
 |-------|--------------------------------------------------------------|---------------------------------------------------|------------------------------------------------------------|----------------------------------------------------------------------|
-| 14A   | `panels/diff_review.lua`, `panels/diff_parser.lua`           | `poor_cli/edit_staging.py`                        | `init.lua`, `keymaps.lua`, `commands.lua`, `config.lua`    | `server/runtime.py`, `tools_async.py`, `checkpoint.py`               |
-| 14B   | `panels/agent_timeline.lua`                                  | `poor_cli/tool_events.py`                         | `init.lua`, `keymaps.lua`, `commands.lua`, `lualine.lua`   | `server/runtime.py`, `core.py`                                       |
+| 14A   | `panels/diff_review.lua`, `panels/diff_parser.lua`           | `poor-cli/edit_staging.py`                        | `init.lua`, `keymaps.lua`, `commands.lua`, `config.lua`    | `server/runtime.py`, `tools_async.py`, `checkpoint.py`               |
+| 14B   | `panels/agent_timeline.lua`                                  | `poor-cli/tool_events.py`                         | `init.lua`, `keymaps.lua`, `commands.lua`, `lualine.lua`   | `server/runtime.py`, `core.py`                                       |
 | 14C   | `panels/cost_dashboard.lua`                                  | —                                                 | `lualine.lua`, `chat.lua`, `cost.lua`, `commands.lua`      | `server/runtime.py`, `economy.py`                                    |
 | 14D   | `panels/context_panel.lua`                                   | —                                                 | `commands.lua`, `context_mgr.lua`                          | `server/handlers/context.py`                                         |
 | 14E   | `panels/savings_dashboard.lua`                               | —                                                 | `commands.lua`                                             | `economy.py`                                                         |
@@ -29,8 +29,8 @@
 - `nvim-poor-cli/lua/poor-cli/init.lua` — 14A, 14B register modules in `EAGER_SETUPS`.
 - `nvim-poor-cli/lua/poor-cli/keymaps.lua` — 14A (`<leader>pv`), 14B (`<leader>pt`).
 - `nvim-poor-cli/lua/poor-cli/lualine.lua` — 14B (running-tool count), 14C (cost segment).
-- `poor_cli/server/runtime.py` — 14A (7 methods), 14B (5 methods + push), 14C (1 method).
-- `poor_cli/economy.py` — 14C (`get_session_summary`), 14E (savings aggregation).
+- `poor-cli/server/runtime.py` — 14A (7 methods), 14B (5 methods + push), 14C (1 method).
+- `poor-cli/economy.py` — 14C (`get_session_summary`), 14E (savings aggregation).
 
 **Sub-wave plan:**
 - **Wave 14-α (parallel, panel bodies & server primitives):** Each agent lands its panel Lua module under `panels/` and its server-side primitive (`edit_staging.py`, `tool_events.py`, new RPC handlers) in isolation. No writes to shared dispatch files yet.
@@ -50,7 +50,7 @@ Stage agent edits in a server-side queue instead of writing immediately. Surface
 
 ### Implementation details
 
-1. **Server staging (`poor_cli/edit_staging.py`):** `PendingEdit{edit_id, path, original, proposed, hunks, tool_call_id, prompt}` and `Hunk{hunk_id, path, header, before, after, line_start}`. `EditStage` class: `stage / list_pending / accept_hunk / reject_hunk / accept_all / reject_all / regenerate_hunk / finalize`. Hunks computed via `difflib.unified_diff` on original vs proposed bytes. In-memory only; no disk persistence in v1.
+1. **Server staging (`poor-cli/edit_staging.py`):** `PendingEdit{edit_id, path, original, proposed, hunks, tool_call_id, prompt}` and `Hunk{hunk_id, path, header, before, after, line_start}`. `EditStage` class: `stage / list_pending / accept_hunk / reject_hunk / accept_all / reject_all / regenerate_hunk / finalize`. Hunks computed via `difflib.unified_diff` on original vs proposed bytes. In-memory only; no disk persistence in v1.
 2. **Mode branch in `tools_async.py`:** At `write_file` / `edit_file` / `apply_patch_unified`, branch on `diff_review.mode` (`auto` | `review` | `review_risky`). Default `review`. Non-interactive sessions bypass staging. `review_risky` triggers panel only when mutation exceeds `risky_line_threshold` or hits `risky_paths`.
 3. **Checkpoint helper in `checkpoint.py`:** `create_for_batch(edit_id, path, label)` writes a single checkpoint per finalized batch, label = truncated user prompt + edit count.
 4. **RPC (in `server/runtime.py`):** `listPendingEdits`, `previewEdit`, `acceptHunk`, `rejectHunk`, `acceptAll`, `rejectAll`, `regenerateHunk`, plus push notifications `stageEvent` and `editCommitted`.
@@ -64,7 +64,7 @@ Stage agent edits in a server-side queue instead of writing immediately. Surface
 ### Files to create/modify
 
 **Create (server):**
-- `poor_cli/edit_staging.py` (new)
+- `poor-cli/edit_staging.py` (new)
 - `tests/test_edit_staging.py` (new)
 
 **Create (Neovim):**
@@ -73,14 +73,14 @@ Stage agent edits in a server-side queue instead of writing immediately. Surface
 - `nvim-poor-cli/tests/diff_review_spec.lua` (new)
 
 **Modify (server, narrow):**
-- `poor_cli/tools_async.py` (mode branch at edit tools)
-- `poor_cli/checkpoint.py` (`create_for_batch` helper)
-- `poor_cli/server/runtime.py` (register 7 RPC methods + 2 events)
+- `poor-cli/tools_async.py` (mode branch at edit tools)
+- `poor-cli/checkpoint.py` (`create_for_batch` helper)
+- `poor-cli/server/runtime.py` (register 7 RPC methods + 2 events)
 
 **Modify (Neovim, narrow):**
 - `nvim-poor-cli/lua/poor-cli/init.lua` (add `diff_review` to `EAGER_SETUPS`)
 - `nvim-poor-cli/lua/poor-cli/keymaps.lua` (`<leader>pv` toggle)
-- `nvim-poor-cli/lua/poor-cli/commands.lua` (`:PoorCliReview`, `:PoorCliReviewClose`, `:PoorCliDiffLayout`)
+- `nvim-poor-cli/lua/poor-cli/commands.lua` (`:PoorCLIReview`, `:PoorCLIReviewClose`, `:PoorCLIDiffLayout`)
 - `nvim-poor-cli/lua/poor-cli/config.lua` (new `diff_review` table)
 
 ### Acceptance criteria
@@ -116,7 +116,7 @@ A right-split **Agent Timeline** panel that streams every tool call in the curre
 
 ### Implementation details
 
-1. **Event model (`poor_cli/tool_events.py`):** `ToolStatus = Literal["queued","running","done","failed","denied","cancelled"]`. `ToolEvent{event_id: uuid, turn_id, tool_call_id, tool_name, status, args_preview: str (first line, truncated to 120 chars), args_full: dict (secrets stripped), started_at: float|None, ended_at: float|None, duration_ms: int|None, result_preview: str (first 200 chars stringified), result_full_size: int (bytes), error: str|None, cost_tokens: int|None}`. Plus an in-process pubsub that the server transport drains onto the RPC event channel.
+1. **Event model (`poor-cli/tool_events.py`):** `ToolStatus = Literal["queued","running","done","failed","denied","cancelled"]`. `ToolEvent{event_id: uuid, turn_id, tool_call_id, tool_name, status, args_preview: str (first line, truncated to 120 chars), args_full: dict (secrets stripped), started_at: float|None, ended_at: float|None, duration_ms: int|None, result_preview: str (first 200 chars stringified), result_full_size: int (bytes), error: str|None, cost_tokens: int|None}`. Plus an in-process pubsub that the server transport drains onto the RPC event channel.
 2. **Emit points in `core.py`:** Single helper (`emit_tool_event`) called at every tool invocation boundary — queue, run, done, fail. Grep `execute_tool|invoke_tool|_call_tool` to find sites; do not refactor the agent loop.
 3. **RPC surface (in `runtime.py`):** `listToolEvents{turnId?, limit?} -> {events}`, `subscribeToolEvents{} -> stream`, `cancelTool{eventId} -> {cancelled: bool}`, `retryTool{eventId} -> {newEventId}`, `dismissToolResult{eventId} -> {}`.
 4. **Panel (`panels/agent_timeline.lua`):** Per-turn grouped rows with status glyphs (`✓` done, `⟳` running, `✗` failed/denied). Each row shows `<glyph> <duration> <tool_name> <args_preview>`; expand on `<CR>` to reveal full args and full result. Earlier turns collapsible via `[[` collapse / `]]` expand. Buffer-local keymaps: `<CR>` expand/collapse; `gc` cancel running tool; `gr` retry failed; `gd` dismiss result (exclude from future context); `gj` / `gk` next/prev event; `gf` if tool was a file op, jump to file; `r` manual refresh; `q` close. Snapshot render via `listToolEvents` on open; switch to `subscribeToolEvents` push once streaming lands — each push updates or inserts a single row in place (no full re-render).
@@ -127,7 +127,7 @@ A right-split **Agent Timeline** panel that streams every tool call in the curre
 ### Files to create/modify
 
 **Create (server):**
-- `poor_cli/tool_events.py` (new)
+- `poor-cli/tool_events.py` (new)
 - `tests/test_tool_events.py` (new)
 
 **Create (Neovim):**
@@ -135,12 +135,12 @@ A right-split **Agent Timeline** panel that streams every tool call in the curre
 - `nvim-poor-cli/tests/agent_timeline_spec.lua` (new)
 
 **Modify (server, narrow):**
-- `poor_cli/core.py` (emit at tool boundaries via helper)
-- `poor_cli/server/runtime.py` (register 5 RPC methods + subscription channel)
+- `poor-cli/core.py` (emit at tool boundaries via helper)
+- `poor-cli/server/runtime.py` (register 5 RPC methods + subscription channel)
 
 **Modify (Neovim):**
 - `nvim-poor-cli/lua/poor-cli/init.lua` (add `agent_timeline` to `EAGER_SETUPS`)
-- `nvim-poor-cli/lua/poor-cli/commands.lua` (`:PoorCliTimeline`, `:PoorCliTimelineCancel`)
+- `nvim-poor-cli/lua/poor-cli/commands.lua` (`:PoorCLITimeline`, `:PoorCLITimelineCancel`)
 - `nvim-poor-cli/lua/poor-cli/keymaps.lua` (`<leader>pt` toggle)
 - `nvim-poor-cli/lua/poor-cli/lualine.lua` (running-tool count segment)
 
@@ -172,10 +172,10 @@ Three always-on cost layers: (1) lualine segment `$0.42 · Δ$0.03 · cache 62%`
 
 ### Implementation details
 
-1. **Economy (`poor_cli/economy.py`):** Confirm per-turn USD/tokens/tools-used tracking; add `get_session_summary()` returning `{session: {total_usd, total_tokens{in,out,thinking,cached_read,cached_write}, turns, cache_hit_rate}, per_turn: [...], projected_monthly_usd, daily: {date -> usd}[30]}`.
+1. **Economy (`poor-cli/economy.py`):** Confirm per-turn USD/tokens/tools-used tracking; add `get_session_summary()` returning `{session: {total_usd, total_tokens{in,out,thinking,cached_read,cached_write}, turns, cache_hit_rate}, per_turn: [...], projected_monthly_usd, daily: {date -> usd}[30]}`.
 2. **RPC (`runtime.py`):** Add `poor-cli/costSummary` handler returning the summary.
-3. **Lualine segment (`cost.lua::component_cost()`):** Returns short string; refreshed on `PoorCliTurnEnded` autocmd.
-4. **Per-turn badges (`chat.lua`):** On `PoorCliTurnEnded`, set extmark at end of user turn with dim highlight; gated by `cost.show_turn_badges`.
+3. **Lualine segment (`cost.lua::component_cost()`):** Returns short string; refreshed on `PoorCLITurnEnded` autocmd.
+4. **Per-turn badges (`chat.lua`):** On `PoorCLITurnEnded`, set extmark at end of user turn with dim highlight; gated by `cost.show_turn_badges`.
 5. **Dashboard (`panels/cost_dashboard.lua`):** Sections — Session totals table, per-turn sparkline (Unicode block chars, no plugin dep), top-10 tools ranked by cost, cache hit rate, $/month projection at current rate and last-week average. Keys: `r` refresh, `e` export JSON, `q` close.
 6. **Alarms:** Config `cost.alarm_session = 5.0`, `cost.alarm_daily = 20.0`. Emit `vim.notify("poor-cli: session cost has crossed $X", vim.log.levels.WARN)` on crossing. Track last-fired threshold per scope so the same threshold does not re-fire every turn.
 7. **Master switch & toggles:** `cost.enabled = true|false` disables all three layers. `cost.show_turn_badges = true|false` disables only the per-turn extmark badges.
@@ -194,17 +194,17 @@ Three always-on cost layers: (1) lualine segment `$0.42 · Δ$0.03 · cache 62%`
 - `nvim-poor-cli/lua/poor-cli/cost.lua` (expose `component_cost()`, turn-end badge renderer)
 - `nvim-poor-cli/lua/poor-cli/lualine.lua` (include `component_cost` segment)
 - `nvim-poor-cli/lua/poor-cli/chat.lua` (narrow — extmark on turn-end; do not touch streaming)
-- `nvim-poor-cli/lua/poor-cli/commands.lua` (`:PoorCliCostDashboard`)
+- `nvim-poor-cli/lua/poor-cli/commands.lua` (`:PoorCLICostDashboard`)
 
 **Modify (server):**
-- `poor_cli/economy.py` (`get_session_summary()`)
-- `poor_cli/server/runtime.py` (`costSummary` handler)
+- `poor-cli/economy.py` (`get_session_summary()`)
+- `poor-cli/server/runtime.py` (`costSummary` handler)
 
 ### Acceptance criteria
 
 - [ ] Lualine segment shows session total, last-turn delta, cache hit rate.
 - [ ] Per-turn extmark badges appear on turn end; disable via config.
-- [ ] `:PoorCliCostDashboard` opens buffer with session totals, sparkline, top tools, cache rate, monthly projection.
+- [ ] `:PoorCLICostDashboard` opens buffer with session totals, sparkline, top tools, cache rate, monthly projection.
 - [ ] Alarm fires once per threshold crossing, not per turn.
 - [ ] `costSummary` includes per-turn entries and projected monthly math.
 - [ ] `cost.enabled = false` disables all layers.
@@ -220,11 +220,11 @@ Three always-on cost layers: (1) lualine segment `$0.42 · Δ$0.03 · cache 62%`
 
 ### What to build
 
-Replace the static `:PoorCliContext` scratch buffer with a right-split panel listing every file in the current `ContextSnapshot` with columns `path | tokens | reason | compressed? | pinned?`. Reasons: `pagerank-hub`, `recent-open`, `imported-by-target`, `pinned`, `rules`. Actions inside panel: `p` pin/unpin, `d` drop, `r` refresh, `/` filter, `o` open file.
+Replace the static `:PoorCLIContext` scratch buffer with a right-split panel listing every file in the current `ContextSnapshot` with columns `path | tokens | reason | compressed? | pinned?`. Reasons: `pagerank-hub`, `recent-open`, `imported-by-target`, `pinned`, `rules`. Actions inside panel: `p` pin/unpin, `d` drop, `r` refresh, `/` filter, `o` open file.
 
 ### Implementation details
 
-1. **RPC (`poor_cli/server/handlers/context.py`):** `poor-cli/explainContext` serializes the full `ContextSnapshot` — `{budget, used, files: [{path, tokens, reason, compressed, pinned}]}`. Reads snapshot only; does not mutate assembly.
+1. **RPC (`poor-cli/server/handlers/context.py`):** `poor-cli/explainContext` serializes the full `ContextSnapshot` — `{budget, used, files: [{path, tokens, reason, compressed, pinned}]}`. Reads snapshot only; does not mutate assembly.
 2. **Panel (`panels/context_panel.lua`):** Right split, aligned columns, extmark icons — `📌` for pinned, `✂` for compressed. Header line shows turn id, budget, used tokens.
 3. **Pin/drop wiring (`context_mgr.lua`):** `p` and `d` route through existing `/add` and `/drop` command internals rather than duplicating assembly logic. Re-render on RPC ack.
 4. **Filter (`/`):** Client-side substring filter on path; does not re-fetch.
@@ -236,11 +236,11 @@ Replace the static `:PoorCliContext` scratch buffer with a right-split panel lis
 - `nvim-poor-cli/tests/context_panel_spec.lua` (new)
 
 **Modify (Neovim):**
-- `nvim-poor-cli/lua/poor-cli/commands.lua` (`:PoorCliContext` rewrites to open panel)
+- `nvim-poor-cli/lua/poor-cli/commands.lua` (`:PoorCLIContext` rewrites to open panel)
 - `nvim-poor-cli/lua/poor-cli/context_mgr.lua` (wire `p`/`d` to existing add/drop)
 
 **Modify (server):**
-- `poor_cli/server/handlers/context.py` (add `explainContext` method; PRD 019 relocation target)
+- `poor-cli/server/handlers/context.py` (add `explainContext` method; PRD 019 relocation target)
 
 ### Acceptance criteria
 
@@ -267,7 +267,7 @@ A **Savings Dashboard** panel showing estimated token/USD savings broken down by
 
 ### Implementation details
 
-1. **Aggregation (`poor_cli/economy.py`):** Add `get_savings_summary()` that reads economy and audit_log stats per event-type (`compaction_event`, `cache_hit`, `rtk_filter`, `model_downshift`). Compute estimated savings per source: for cache hits, saved tokens × provider rate; for compaction, bytes pre-minus-post × tokens-per-byte × rate; for RTK, intercepted-output token delta.
+1. **Aggregation (`poor-cli/economy.py`):** Add `get_savings_summary()` that reads economy and audit_log stats per event-type (`compaction_event`, `cache_hit`, `rtk_filter`, `model_downshift`). Compute estimated savings per source: for cache hits, saved tokens × provider rate; for compaction, bytes pre-minus-post × tokens-per-byte × rate; for RTK, intercepted-output token delta.
 2. **RPC:** `poor-cli/savingsSummary` returns `{by_source: [{source, tokens_saved, usd_saved}], session_delta, history: {date -> usd}[30]}`.
 3. **Panel (`panels/savings_dashboard.lua`):** Sections — breakdown table (source / tokens / USD), session before/after delta, 30-day sparkline (Unicode block chars). Keys: `r` refresh, `q` close.
 4. **Audit-log contract:** Do not alter audit_log schema; read-only consumer.
@@ -279,10 +279,10 @@ A **Savings Dashboard** panel showing estimated token/USD savings broken down by
 - `nvim-poor-cli/tests/savings_dashboard_spec.lua` (new)
 
 **Modify (Neovim):**
-- `nvim-poor-cli/lua/poor-cli/commands.lua` (`:PoorCliSavingsDashboard`)
+- `nvim-poor-cli/lua/poor-cli/commands.lua` (`:PoorCLISavingsDashboard`)
 
 **Modify (server):**
-- `poor_cli/economy.py` (`get_savings_summary()` + RPC wiring)
+- `poor-cli/economy.py` (`get_savings_summary()` + RPC wiring)
 
 ### Acceptance criteria
 
@@ -316,7 +316,7 @@ A compact **Watch Status** panel listing: active watches (path, last change, mat
 - `nvim-poor-cli/tests/watch_panel_spec.lua` (new)
 
 **Modify (Neovim):**
-- `nvim-poor-cli/lua/poor-cli/commands.lua` (`:PoorCliWatchStatus`)
+- `nvim-poor-cli/lua/poor-cli/commands.lua` (`:PoorCLIWatchStatus`)
 
 ### Acceptance criteria
 

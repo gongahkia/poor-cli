@@ -224,3 +224,5 @@ complete -c poor-cli -n "__fish_seen_subcommand_from commit" -l config -r -a "(_
 
 # Mirror to legacy alias if present
 complete -c poor-cli-sync -w poor-cli
+complete -c poor-cli -w poor-cli
+complete -c poor-cli-sync -w poor-cli

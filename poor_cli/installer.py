@@ -309,7 +309,7 @@ def _install_completions() -> None:
         else:
             print(f"  {_yellow('!')} zsh completion file not found at {src}")
     elif "bash" in shell:
-        src = completions_dir / "poor-cli.bash"
+        src = completions_dir / "poor_cli.bash"
         if src.is_file():
             dest = Path.home() / ".local" / "share" / "bash-completion" / "completions" / "poor-cli"
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -318,9 +318,9 @@ def _install_completions() -> None:
         else:
             print(f"  {_yellow('!')} bash completion file not found at {src}")
     elif "fish" in shell:
-        src = completions_dir / "poor-cli.fish"
+        src = completions_dir / "poor_cli.fish"
         if src.is_file():
-            dest = Path.home() / ".config" / "fish" / "completions" / "poor-cli.fish"
+            dest = Path.home() / ".config" / "fish" / "completions" / "poor_cli.fish"
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dest)
             print(f"  {_green('✓')} fish completion -> {dest}")

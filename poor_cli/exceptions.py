@@ -11,7 +11,7 @@ from typing import Any, Dict, Iterator, Optional
 
 class PoorCLIError(Exception):
     """Base exception for all poor-cli errors"""
-    ERROR_CODE = "POORCLI_ERROR"
+    ERROR_CODE = "POOR_CLI_ERROR"
 
     def __init__(
         self,
@@ -188,7 +188,7 @@ def get_error_code(error: BaseException) -> str:
 
 STRUCTURED_LOG_FIELDS = ("session_id", "provider", "tool_name", "request_id")
 _DEFAULT_LOG_FIELD_VALUE = "-"
-_log_context: ContextVar[Dict[str, str]] = ContextVar("poor_cli_log_context", default={})
+_log_context: ContextVar[Dict[str, str]] = ContextVar("poor-cli_log_context", default={})
 
 
 class StructuredLogContextFilter(logging.Filter):
@@ -248,7 +248,7 @@ def log_context(**fields: Any) -> Iterator[None]:
         _log_context.reset(token)
 
 
-def setup_logger(name: str = "poor_cli", log_file: Optional[str] = None,
+def setup_logger(name: str = "poor-cli", log_file: Optional[str] = None,
                  level: int = logging.INFO, console_level: Optional[int] = None) -> logging.Logger:
     """
     Setup a logger with consistent formatting
@@ -303,7 +303,7 @@ def setup_logger(name: str = "poor_cli", log_file: Optional[str] = None,
     return logger
 
 
-def set_console_log_level(level: int, logger_prefix: str = "poor_cli") -> None:
+def set_console_log_level(level: int, logger_prefix: str = "poor-cli") -> None:
     """
     Update console log level for all loggers with the given prefix
 

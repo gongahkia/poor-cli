@@ -1,5 +1,5 @@
 -- poor-cli/telescope.lua
--- Telescope integration for checkpoint browsing/restoration.
+-- Picker integration for checkpoint browsing/restoration.
 
 local M = {}
 
@@ -43,179 +43,85 @@ local function build_preview_lines(checkpoint)
 end
 
 function M.open_checkpoints_picker()
-    local has_telescope, pickers = pcall(require, "telescope.pickers")
-    if not has_telescope then
-        vim.notify("[poor-cli] telescope.nvim is not installed", vim.log.levels.ERROR)
-        return
-    end
-
-    local finders = require("telescope.finders")
-    local conf = require("telescope.config").values
-    local actions = require("telescope.actions")
-    local action_state = require("telescope.actions.state")
-    local previewers = require("telescope.previewers")
+    local pickers = require("poor-cli.pickers")
     local rpc = require("poor-cli.rpc")
 
     if not rpc.is_running() then
-        vim.notify("[poor-cli] Server not running", vim.log.levels.WARN)
+        require("poor-cli.notify").notify("[poor-cli] Server not running", vim.log.levels.WARN)
         return
     end
 
     rpc.request("poor-cli/listCheckpoints", { limit = 200 }, function(result, err)
         vim.schedule(function()
             if err then
-                vim.notify("[poor-cli] Failed to list checkpoints: " .. rpc.format_error(err), vim.log.levels.ERROR)
+                require("poor-cli.notify").notify("[poor-cli] Failed to list checkpoints: " .. rpc.format_error(err), vim.log.levels.ERROR)
                 return
             end
 
             if type(result) ~= "table" or result.available == false then
-                vim.notify("[poor-cli] Checkpoint system is not available", vim.log.levels.WARN)
+                require("poor-cli.notify").notify("[poor-cli] Checkpoint system is not available", vim.log.levels.WARN)
                 return
             end
 
             local checkpoints = result.checkpoints or {}
             if type(checkpoints) ~= "table" or #checkpoints == 0 then
-                vim.notify("[poor-cli] No checkpoints available", vim.log.levels.INFO)
+                require("poor-cli.notify").notify("[poor-cli] No checkpoints available", vim.log.levels.INFO)
                 return
             end
 
-            pickers
-                .new({}, {
-                    prompt_title = "poor-cli checkpoints",
-                    finder = finders.new_table({
-                        results = checkpoints,
-                        entry_maker = function(checkpoint)
-                            local id = checkpoint.checkpointId or "unknown"
-                            local created_at = checkpoint.createdAt or "-"
-                            local file_count = checkpoint.fileCount or 0
-                            local description = checkpoint.description or ""
-                            local display = string.format(
-                                "%s  %s  %s files  %s",
-                                id,
-                                created_at,
-                                tostring(file_count),
-                                description
-                            )
-                            return {
-                                value = checkpoint,
-                                ordinal = id .. " " .. created_at .. " " .. description,
-                                display = display,
-                            }
-                        end,
-                    }),
-                    sorter = conf.generic_sorter({}),
-                    previewer = previewers.new_buffer_previewer({
-                        title = "Checkpoint Preview",
-                        define_preview = function(self, entry)
-                            local lines = build_preview_lines(entry.value)
-                            vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, lines)
-                        end,
-                    }),
-                    attach_mappings = function(prompt_bufnr)
-                        actions.select_default:replace(function()
-                            actions.close(prompt_bufnr)
-                            local selected = action_state.get_selected_entry()
-                            if not selected then
-                                return
-                            end
-
-                            local checkpoint = selected.value or {}
-                            local checkpoint_id = checkpoint.checkpointId
-                            if not checkpoint_id or checkpoint_id == "" then
-                                vim.notify("[poor-cli] Invalid checkpoint selection", vim.log.levels.ERROR)
-                                return
-                            end
-
-                            local choice = vim.fn.confirm(
-                                "Restore checkpoint " .. checkpoint_id .. "?",
-                                "&Yes\n&No",
-                                2
-                            )
-                            if choice ~= 1 then
-                                return
-                            end
-
-                            rpc.request("poor-cli/restoreCheckpoint", {
-                                checkpointId = checkpoint_id,
-                            }, function(restore_result, restore_err)
-                                vim.schedule(function()
-                                    if restore_err then
-                                        vim.notify(
-                                            "[poor-cli] Restore failed: " .. vim.inspect(restore_err),
-                                            vim.log.levels.ERROR
-                                        )
-                                    else
-                                        local restored = restore_result and restore_result.restoredCount or "?"
-                                        vim.notify(
-                                            "[poor-cli] Restored checkpoint "
-                                                .. checkpoint_id
-                                                .. " ("
-                                                .. tostring(restored)
-                                                .. " files)",
-                                            vim.log.levels.INFO
-                                        )
-                                    end
-                                end)
-                            end)
-                        end)
-                        return true
-                    end,
-                })
-                :find()
+            local items = {}
+            for _, checkpoint in ipairs(checkpoints) do
+                local id = checkpoint.checkpointId or "unknown"
+                local created_at = checkpoint.createdAt or "-"
+                local file_count = checkpoint.fileCount or 0
+                local description = checkpoint.description or ""
+                items[#items + 1] = {
+                    id = id,
+                    label = string.format("%s  %s  %s files  %s", id, created_at, tostring(file_count), description),
+                    preview = build_preview_lines(checkpoint),
+                    data = checkpoint,
+                }
+            end
+            pickers.pick(items, { title = "poor-cli checkpoints", on_pick = function(checkpoint)
+                local checkpoint_id = checkpoint.checkpointId
+                if not checkpoint_id or checkpoint_id == "" then
+                    require("poor-cli.notify").notify("[poor-cli] Invalid checkpoint selection", vim.log.levels.ERROR)
+                    return
+                end
+                local choice = vim.fn.confirm("Restore checkpoint " .. checkpoint_id .. "?", "&Yes\n&No", 2)
+                if choice ~= 1 then return end
+                rpc.request("poor-cli/restoreCheckpoint", { checkpointId = checkpoint_id }, function(restore_result, restore_err)
+                    vim.schedule(function()
+                        if restore_err then
+                            require("poor-cli.notify").notify("[poor-cli] Restore failed: " .. vim.inspect(restore_err), vim.log.levels.ERROR)
+                        else
+                            local restored = restore_result and restore_result.restoredCount or "?"
+                            require("poor-cli.notify").notify("[poor-cli] Restored checkpoint " .. checkpoint_id .. " (" .. tostring(restored) .. " files)", vim.log.levels.INFO)
+                        end
+                    end)
+                end)
+            end })
         end)
     end)
 end
 
 function M.command_palette()
-    local ok_telescope, _ = pcall(require, "telescope")
-    if not ok_telescope then
-        -- fallback: vim.ui.select
-        local cmds = vim.api.nvim_get_commands({})
-        local entries = {}
-        for name, info in pairs(cmds) do
-            if name:match("^PoorCli") then
-                table.insert(entries, name .. "  " .. (info.definition or info.desc or ""))
-            end
-        end
-        table.sort(entries)
-        vim.ui.select(entries, { prompt = "poor-cli commands:" }, function(choice)
-            if choice then vim.cmd(choice:match("^(%S+)")) end
-        end)
-        return
-    end
-    local pickers = require("telescope.pickers")
-    local finders = require("telescope.finders")
-    local conf = require("telescope.config").values
-    local actions = require("telescope.actions")
-    local action_state = require("telescope.actions.state")
+    local pickers = require("poor-cli.pickers")
     local cmds = vim.api.nvim_get_commands({})
     local entries = {}
     for name, info in pairs(cmds) do
-        if name:match("^PoorCli") then
+        if name:match("^PoorCLI") then
             table.insert(entries, { name = name, desc = info.definition or info.desc or "" })
         end
     end
     table.sort(entries, function(a, b) return a.name < b.name end)
-    pickers.new({}, {
-        prompt_title = "poor-cli commands",
-        finder = finders.new_table({
-            results = entries,
-            entry_maker = function(entry)
-                local display = entry.name
-                if entry.desc ~= "" then display = display .. "  " .. entry.desc end
-                return { value = entry.name, ordinal = entry.name .. " " .. entry.desc, display = display }
-            end,
-        }),
-        sorter = conf.generic_sorter({}),
-        attach_mappings = function(prompt_bufnr)
-            actions.select_default:replace(function()
-                actions.close(prompt_bufnr)
-                local selection = action_state.get_selected_entry()
-                if selection then vim.cmd(selection.value) end
-            end)
-            return true
-        end,
-    }):find()
+    local items = {}
+    for _, entry in ipairs(entries) do
+        local display = entry.name
+        if entry.desc ~= "" then display = display .. "  " .. entry.desc end
+        items[#items + 1] = { id = entry.name, label = display, data = entry.name }
+    end
+    pickers.pick(items, { title = "poor-cli commands", preview = false, on_pick = function(name) vim.cmd(name) end })
 end
 
 return M

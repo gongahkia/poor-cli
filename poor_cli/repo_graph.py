@@ -1450,7 +1450,7 @@ class RepoGraph:
 
     def _language_priority_boost(self, relative_path: str, language_name: str) -> float:
         boost = _LANGUAGE_PRIORITY_BOOST.get(language_name, 0.0)
-        if relative_path.startswith("poor_cli/"):
+        if relative_path.startswith("poor-cli/"):
             boost += 0.02
         elif relative_path.startswith("nvim-poor-cli/"):
             boost += 0.008
@@ -1664,6 +1664,83 @@ class RepoGraph:
         ]
         entries.sort(key=lambda item: (-item[1], item[0]))
         return entries[: max(0, int(k or 0))]
+
+    def repo_map_top(self, k: int = 50) -> List[Dict[str, Any]]:
+        self._ensure_index_current()
+        data = self._score_map_data()
+        entries = []
+        for entry in data.get("entries", []):
+            if not entry.get("path"):
+                continue
+            entries.append(
+                {
+                    "path": str(entry.get("path", "")),
+                    "relative_path": str(entry.get("relative_path", "")),
+                    "language": str(entry.get("language", "")),
+                    "score": max(0.0, min(1.0, float(entry.get("pagerank", 0.0) or 0.0))),
+                    "reason": "pagerank-hub",
+                }
+            )
+        entries.sort(key=lambda item: (-item["score"], item["relative_path"] or item["path"]))
+        return entries[: max(0, int(k or 0))]
+
+    def repo_map_expand(self, path: str | Path) -> Dict[str, Any]:
+        self._ensure_index_current()
+        candidate = Path(path)
+        resolved = str(candidate.resolve()) if candidate.is_absolute() else str((self.repo_root / candidate).resolve())
+        imports = []
+        imported_by = []
+        with self._connect() as conn:
+            file_row = conn.execute(
+                "SELECT path, relative_path, language FROM files WHERE path = ? OR relative_path = ? LIMIT 1",
+                (resolved, str(path)),
+            ).fetchone()
+            if file_row is not None:
+                resolved = str(file_row["path"])
+            for row in conn.execute(
+                """
+                SELECT f.path, f.relative_path, f.language, e.edge_type, e.weight
+                FROM edges e JOIN files f ON f.path = e.target_path
+                WHERE e.source_path = ?
+                ORDER BY e.weight DESC, f.relative_path
+                """,
+                (resolved,),
+            ).fetchall():
+                imports.append(dict(row))
+            for row in conn.execute(
+                """
+                SELECT f.path, f.relative_path, f.language, e.edge_type, e.weight
+                FROM edges e JOIN files f ON f.path = e.source_path
+                WHERE e.target_path = ?
+                ORDER BY e.weight DESC, f.relative_path
+                """,
+                (resolved,),
+            ).fetchall():
+                imported_by.append(dict(row))
+        return {"path": resolved, "imports": imports, "imported_by": imported_by}
+
+    def repo_map_symbols(self, path: str | Path, limit: int = 80) -> Dict[str, Any]:
+        self._ensure_index_current()
+        candidate = Path(path)
+        resolved = str(candidate.resolve()) if candidate.is_absolute() else str((self.repo_root / candidate).resolve())
+        with self._connect() as conn:
+            file_row = conn.execute(
+                "SELECT path, relative_path, language FROM files WHERE path = ? OR relative_path = ? LIMIT 1",
+                (resolved, str(path)),
+            ).fetchone()
+            if file_row is not None:
+                resolved = str(file_row["path"])
+            rows = conn.execute(
+                """
+                SELECT name, kind, line_start, line_end, scope, signature
+                FROM symbols
+                WHERE file_path = ?
+                ORDER BY line_start, name
+                LIMIT ?
+                """,
+                (resolved, max(0, int(limit or 0))),
+            ).fetchall()
+        return {"path": resolved, "symbols": [dict(row) for row in rows]}
 
     def rank_files_for_query(self, keywords: List[str], limit: int = 24) -> List[Tuple[str, float]]:
         self._ensure_index_current()

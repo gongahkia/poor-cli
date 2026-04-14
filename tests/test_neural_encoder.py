@@ -31,52 +31,52 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 BENCHMARK_QUERIES: List[Dict] = [
     {
         "query": "how does the embedding provider work",
-        "expected_files": ["poor_cli/embeddings.py", "poor_cli/indexer.py"],
+        "expected_files": ["poor-cli/embeddings.py", "poor-cli/indexer.py"],
         "category": "architecture",
     },
     {
         "query": "how are tools registered and dispatched",
-        "expected_files": ["poor_cli/tools_async.py", "poor_cli/enhanced_tools.py"],
+        "expected_files": ["poor-cli/tools_async.py", "poor-cli/enhanced_tools.py"],
         "category": "architecture",
     },
     {
         "query": "how does context get assembled for the LLM prompt",
-        "expected_files": ["poor_cli/context_engine.py", "poor_cli/context_providers.py"],
+        "expected_files": ["poor-cli/context_engine.py", "poor-cli/context_providers.py"],
         "category": "architecture",
     },
     {
         "query": "fix the config loading to handle missing keys",
-        "expected_files": ["poor_cli/config.py", "poor_cli/repo_config.py"],
+        "expected_files": ["poor-cli/config.py", "poor-cli/repo_config.py"],
         "category": "bugfix",
     },
     {
         "query": "add a new MCP server endpoint",
-        "expected_files": ["poor_cli/mcp_client.py", "poor_cli/server/runtime.py"],
+        "expected_files": ["poor-cli/mcp_client.py", "poor-cli/server/runtime.py"],
         "category": "feature",
     },
     {
         "query": "how does AST chunking split code into pieces",
-        "expected_files": ["poor_cli/indexer.py"],
+        "expected_files": ["poor-cli/indexer.py"],
         "category": "architecture",
     },
     {
         "query": "optimize token budget for multi-provider routing",
-        "expected_files": ["poor_cli/economy.py", "poor_cli/model_router.py", "poor_cli/token_budget_controller.py"],
+        "expected_files": ["poor-cli/economy.py", "poor-cli/model_router.py", "poor-cli/token_budget_controller.py"],
         "category": "optimization",
     },
     {
         "query": "how does the history get pruned and managed",
-        "expected_files": ["poor_cli/history.py", "poor_cli/history_pruning.py"],
+        "expected_files": ["poor-cli/history.py", "poor-cli/history_pruning.py"],
         "category": "architecture",
     },
     {
         "query": "implement prompt compression for large contexts",
-        "expected_files": ["poor_cli/prompt_compressor.py", "poor_cli/context_optimizer.py"],
+        "expected_files": ["poor-cli/prompt_compressor.py", "poor-cli/context_optimizer.py"],
         "category": "feature",
     },
     {
         "query": "how do providers translate tool calls between formats",
-        "expected_files": ["poor_cli/providers/tool_translator.py", "poor_cli/providers/base.py"],
+        "expected_files": ["poor-cli/providers/tool_translator.py", "poor-cli/providers/base.py"],
         "category": "architecture",
     },
 ]
@@ -112,7 +112,7 @@ class TextInContextBaseline:
 
     def get_context(self, query: str, max_files: int = 12) -> Tuple[str, List[str]]:
         """Return (context_text, file_list) using naive file inclusion."""
-        py_files = sorted(self.repo_root.glob("poor_cli/**/*.py"))
+        py_files = sorted(self.repo_root.glob("poor-cli/**/*.py"))
         context_parts = []
         included = []
         for f in py_files[:max_files]:
@@ -351,7 +351,7 @@ class TestNeuralRetriever:
     def test_retrieve_returns_results(self, monkeypatch, tmp_path):
         from poor_cli.research.neural_code_encoder import HuggingFaceCodeEmbedding, NeuralCodeRetriever
 
-        code_dir = tmp_path / "poor_cli"
+        code_dir = tmp_path / "poor-cli"
         code_dir.mkdir()
         (code_dir / "embeddings.py").write_text(
             "def embedding_provider():\n    return 'ok'\n",

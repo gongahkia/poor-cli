@@ -1,4 +1,4 @@
-"""tests for poor_cli.sandbox Linux sandbox functions."""
+"""tests for poor-cli.sandbox Linux sandbox functions."""
 
 import unittest
 from pathlib import Path

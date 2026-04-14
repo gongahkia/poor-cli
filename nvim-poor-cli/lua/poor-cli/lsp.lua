@@ -195,12 +195,12 @@ function M.fix_diagnostics()
     local rpc = require("poor-cli.rpc")
     local chat = require("poor-cli.chat")
     if not rpc.is_running() then
-        vim.notify("[poor-cli] Server not running", vim.log.levels.WARN)
+        require("poor-cli.notify").notify("[poor-cli] Server not running", vim.log.levels.WARN)
         return
     end
     local diagnostics = M.get_buffer_diagnostics()
     if not diagnostics or #diagnostics == 0 then
-        vim.notify("[poor-cli] No diagnostics in current buffer", vim.log.levels.INFO)
+        require("poor-cli.notify").notify("[poor-cli] No diagnostics in current buffer", vim.log.levels.INFO)
         return
     end
     local bufnr = vim.api.nvim_get_current_buf()
@@ -210,7 +210,7 @@ function M.fix_diagnostics()
     local diagnostics_text = M.format_diagnostics_for_prompt(diagnostics)
     local file_path = vim.fn.expand("%:p")
     chat.open()
-    vim.notify("[poor-cli] Analyzing diagnostics...", vim.log.levels.INFO)
+    require("poor-cli.notify").notify("[poor-cli] Analyzing diagnostics...", vim.log.levels.INFO)
     rpc.request("poor-cli/chat", {
         message = "Fix the following issues in this " .. language .. " code.\n" ..
                   "Return ONLY the complete corrected file, no explanations.\n\n" ..
@@ -229,7 +229,7 @@ function M.fix_diagnostics()
             M.apply_with_undo(bufnr, new_lines)
             chat.append_message("user", "Fix diagnostics:\n" .. diagnostics_text)
             chat.append_message("assistant", "Applied fixes to " .. file_path)
-            vim.notify("[poor-cli] Diagnostics fixed (undo with u)", vim.log.levels.INFO)
+            require("poor-cli.notify").notify("[poor-cli] Diagnostics fixed (undo with u)", vim.log.levels.INFO)
         end)
     end)
 end

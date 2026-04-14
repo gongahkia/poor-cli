@@ -10,7 +10,7 @@ from collections import defaultdict, deque, OrderedDict
 import sqlite3
 import hashlib
 import time
-from poor_cli.exceptions import FileNotFoundError as PoorFileNotFoundError, setup_logger
+from poor_cli.exceptions import FileNotFoundError as PoorCLIFileNotFoundError, setup_logger
 
 logger = setup_logger(__name__)
 
@@ -143,7 +143,7 @@ class FileCache:
             logger.debug(f"Read file from disk: {file_path}")
             return content
         except FileNotFoundError:
-            raise PoorFileNotFoundError(f"File not found: {file_path}")
+            raise PoorCLIFileNotFoundError(f"File not found: {file_path}")
         except Exception as e:
             logger.error(f"Error reading file {file_path}: {e}")
             raise
@@ -170,7 +170,7 @@ class FileCache:
         path = Path(file_path)
 
         if not path.exists():
-            raise PoorFileNotFoundError(f"File not found: {file_path}")
+            raise PoorCLIFileNotFoundError(f"File not found: {file_path}")
 
         file_path_abs = str(path.absolute())
         mtime = path.stat().st_mtime

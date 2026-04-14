@@ -16,12 +16,26 @@ M.status = {
     request_id = "",
 }
 M._auto_trigger_timer = nil
+M.preview_buf = nil
+M.preview_win = nil
+M.cycle_state = nil
+M.last_cycled_index = 1
 
 local cancel_pending_inline_request
+local SKIP_NODES = {
+    default = { "comment", "line_comment", "block_comment", "string", "string_content" },
+    javascript = { "comment", "string", "string_fragment", "template_string" },
+    javascriptreact = { "comment", "string", "string_fragment", "template_string" },
+    lua = { "comment", "string", "string_content" },
+    python = { "comment", "string", "string_content" },
+    rust = { "line_comment", "block_comment", "string_literal", "raw_string_literal" },
+    typescript = { "comment", "string", "string_fragment", "template_string" },
+    typescriptreact = { "comment", "string", "string_fragment", "template_string" },
+}
 
 local function emit_status_changed()
     vim.api.nvim_exec_autocmds("User", {
-        pattern = "PoorCliInlineStatusChanged",
+        pattern = "PoorCLIInlineStatusChanged",
         data = M.get_status(),
     })
 end
@@ -82,6 +96,138 @@ end
 
 local function make_request_id()
     return string.format("inline-%d-%d", os.time(), M.inline_request_token + 1)
+end
+
+local function emit_completion_accepted(kind)
+    vim.api.nvim_exec_autocmds("User", {
+        pattern = "PoorCLICompletionAccepted",
+        data = { kind = kind },
+    })
+end
+
+local function completion_lines(text)
+    return vim.split(text or "", "\n", { plain = true })
+end
+
+local function candidate_count()
+    local count = tonumber(config.get("completion_candidates")) or 3
+    return math.max(1, math.floor(count))
+end
+
+local function normalize_candidates(candidates)
+    local normalized = {}
+    if type(candidates) ~= "table" then
+        return normalized
+    end
+    for _, candidate in ipairs(candidates) do
+        if type(candidate) == "string" and candidate ~= "" then
+            table.insert(normalized, candidate)
+        end
+    end
+    return normalized
+end
+
+local function cursor_matches_cycle_state()
+    local state = M.cycle_state
+    if not state or not vim.api.nvim_buf_is_valid(state.bufnr) then
+        return false
+    end
+    if vim.api.nvim_get_current_buf() ~= state.bufnr then
+        return false
+    end
+    local cursor = vim.api.nvim_win_get_cursor(0)
+    if cursor[1] ~= state.line or cursor[2] ~= state.col then
+        return false
+    end
+    return vim.api.nvim_buf_get_changedtick(state.bufnr) == state.changedtick
+end
+
+local function invalidate_cycle_state()
+    M.cycle_state = nil
+    M.last_cycled_index = 1
+end
+
+local function set_cycle_state(candidates, index, bufnr, line, col)
+    candidates = normalize_candidates(candidates)
+    if #candidates < 2 then
+        invalidate_cycle_state()
+        return
+    end
+    index = math.max(1, math.min(tonumber(index) or 1, #candidates))
+    M.cycle_state = {
+        candidates = candidates,
+        index = index,
+        bufnr = bufnr,
+        line = line,
+        col = col,
+        changedtick = vim.api.nvim_buf_get_changedtick(bufnr),
+    }
+    M.last_cycled_index = index
+end
+
+local function node_type(node)
+    if not node then
+        return nil
+    end
+    local kind = node.type
+    if type(kind) == "function" then
+        local ok, value = pcall(kind, node)
+        if ok then return value end
+    elseif type(kind) == "string" then
+        return kind
+    end
+    return nil
+end
+
+local function parent_node(node)
+    if not node then
+        return nil
+    end
+    local parent = node.parent
+    if type(parent) == "function" then
+        local ok, value = pcall(parent, node)
+        if ok then return value end
+    end
+    return nil
+end
+
+function M.is_syntax_region_blocked(bufnr)
+    bufnr = bufnr or vim.api.nvim_get_current_buf()
+    if not vim.treesitter or not vim.treesitter.get_node then
+        return false
+    end
+    local ok, node = pcall(vim.treesitter.get_node, { bufnr = bufnr })
+    if not ok then
+        ok, node = pcall(vim.treesitter.get_node)
+    end
+    if not ok or not node then
+        return false
+    end
+    local ft = vim.bo[bufnr].filetype or ""
+    local skipped = SKIP_NODES[ft] or SKIP_NODES.default
+    for _ = 1, 8 do
+        local kind = node_type(node)
+        if contains(skipped, kind) or contains(SKIP_NODES.default, kind) then
+            return true
+        end
+        node = parent_node(node)
+        if not node then
+            return false
+        end
+    end
+    return false
+end
+
+local function set_preview_content()
+    if not M.current_completion or not M.preview_buf or not vim.api.nvim_buf_is_valid(M.preview_buf) then
+        return
+    end
+
+    local comp = M.current_completion
+    local source_buf = comp.bufnr
+    local ft = vim.api.nvim_buf_is_valid(source_buf) and vim.bo[source_buf].filetype or ""
+    vim.bo[M.preview_buf].filetype = ft
+    vim.api.nvim_buf_set_lines(M.preview_buf, 0, -1, false, completion_lines(comp.text))
 end
 
 local function create_inline_request_context(bufnr, line, col)
@@ -191,6 +337,10 @@ function M.is_enabled_for_buffer(bufnr, opts)
         return false, "manual only"
     end
 
+    if not opts.manual and M.is_syntax_region_blocked(bufnr) then
+        return false, "blocked syntax region"
+    end
+
     local min_prefix = tonumber(config.get("completion_min_prefix")) or 0
     if not opts.manual and min_prefix > 0 then
         local cursor = vim.api.nvim_win_get_cursor(0)
@@ -202,7 +352,8 @@ function M.is_enabled_for_buffer(bufnr, opts)
     return true, ""
 end
 
-function M.show_ghost_text(text)
+function M.show_ghost_text(text, opts)
+    opts = opts or {}
     if not text or text == "" then
         return
     end
@@ -212,7 +363,7 @@ function M.show_ghost_text(text)
     local line = cursor[1] - 1
     local col = cursor[2]
 
-    M.clear_ghost_text()
+    M.clear_ghost_text({ keep_preview = true, keep_cycle = opts.keep_cycle })
 
     local lines = vim.split(text, "\n", { plain = true })
     M.current_completion = {
@@ -221,6 +372,9 @@ function M.show_ghost_text(text)
         col = col,
         text = text,
     }
+    if opts.candidates then
+        set_cycle_state(opts.candidates, opts.index or 1, bufnr, cursor[1], col)
+    end
 
     if #lines == 1 then
         vim.api.nvim_buf_set_extmark(bufnr, M.ns_id, line, col, {
@@ -239,12 +393,34 @@ function M.show_ghost_text(text)
 
     local request_id = M.pending_inline_request and M.pending_inline_request.request_id or ""
     set_status("suggesting", "", request_id)
+    set_preview_content()
 end
 
-function M.clear_ghost_text()
-    local bufnr = vim.api.nvim_get_current_buf()
-    vim.api.nvim_buf_clear_namespace(bufnr, M.ns_id, 0, -1)
+function M.close_preview_split()
+    if M.preview_win and vim.api.nvim_win_is_valid(M.preview_win) then
+        pcall(vim.api.nvim_win_close, M.preview_win, true)
+    end
+    if M.preview_buf and vim.api.nvim_buf_is_valid(M.preview_buf) then
+        pcall(vim.api.nvim_buf_delete, M.preview_buf, { force = true })
+    end
+    M.preview_win = nil
+    M.preview_buf = nil
+end
+
+function M.clear_ghost_text(opts)
+    opts = opts or {}
+    local comp = M.current_completion
+    local bufnr = comp and comp.bufnr or vim.api.nvim_get_current_buf()
+    if vim.api.nvim_buf_is_valid(bufnr) then
+        vim.api.nvim_buf_clear_namespace(bufnr, M.ns_id, 0, -1)
+    end
     M.current_completion = nil
+    if not opts.keep_cycle then
+        invalidate_cycle_state()
+    end
+    if not opts.keep_preview then
+        M.close_preview_split()
+    end
 end
 
 function M.accept()
@@ -278,6 +454,7 @@ function M.accept()
     end
 
     set_status("accepted", "", "")
+    emit_completion_accepted("full")
     return true
 end
 
@@ -343,6 +520,8 @@ function M.build_completion_request(opts)
         lspContext = lsp_context,
         requestId = request_id,
         streamPartial = config.get("completion_stream_partial") == true,
+        completions_count = opts.completions_count,
+        n = opts.completions_count,
         provider = config.get("completion_provider"),
         model = config.get("completion_model"),
     }
@@ -357,7 +536,7 @@ local function handle_inline_response(context, result, err)
         clear_request_if_active(context)
         if err.code ~= -32800 then
             set_status("error", err.message or rpc.format_error(err), context.request_id)
-            vim.notify("[poor-cli] Completion error: " .. rpc.format_error(err), vim.log.levels.ERROR)
+            require("poor-cli.notify").notify("[poor-cli] Completion error: " .. rpc.format_error(err), vim.log.levels.ERROR)
         end
         return
     end
@@ -377,9 +556,34 @@ local function handle_inline_response(context, result, err)
             return
         end
 
+        local candidates = normalize_candidates(result.completions or { result.completion })
         clear_request_if_active(context)
-        M.show_ghost_text(result.completion)
+        M.show_ghost_text(result.completion, { candidates = candidates, index = 1 })
     end)
+end
+
+function M.cycle(delta)
+    local state = M.cycle_state
+    if not state or #state.candidates < 2 then
+        return false
+    end
+    if not cursor_matches_cycle_state() then
+        invalidate_cycle_state()
+        return false
+    end
+    local next_index = ((state.index - 1 + delta) % #state.candidates) + 1
+    state.index = next_index
+    M.last_cycled_index = next_index
+    M.show_ghost_text(state.candidates[next_index], { keep_cycle = true })
+    return true
+end
+
+function M.cycle_next()
+    return M.cycle(1)
+end
+
+function M.cycle_prev()
+    return M.cycle(-1)
 end
 
 function M.cancel_active_request()
@@ -395,7 +599,7 @@ function M.trigger(opts)
 
     if not rpc.is_running() then
         set_status("error", "server not running", "")
-        vim.notify("[poor-cli] Server not running", vim.log.levels.WARN)
+        require("poor-cli.notify").notify("[poor-cli] Server not running", vim.log.levels.WARN)
         return
     end
 
@@ -404,7 +608,7 @@ function M.trigger(opts)
     if not enabled then
         set_status("disabled", reason, "")
         if manual then
-            vim.notify("[poor-cli] Completion unavailable: " .. reason, vim.log.levels.WARN)
+            require("poor-cli.notify").notify("[poor-cli] Completion unavailable: " .. reason, vim.log.levels.WARN)
         end
         return
     end
@@ -421,10 +625,14 @@ function M.trigger(opts)
         col = col,
         instruction = opts.instruction or "",
         request_id = request_context.request_id,
+        completions_count = opts.completions_count or candidate_count(),
     })
+    if payload.completions_count > 1 then
+        payload.streamPartial = false
+    end
 
     -- show subtle "fetching..." hint while waiting
-    local hint_ns = vim.api.nvim_create_namespace("poor_cli_fetch_hint")
+    local hint_ns = vim.api.nvim_create_namespace("poor-cli_fetch_hint")
     pcall(vim.api.nvim_buf_set_extmark, bufnr, hint_ns, line - 1, col, {
         virt_text = {{ " ...", "Comment" }}, virt_text_pos = "inline",
     })
@@ -459,7 +667,7 @@ end
 function M.complete_selection()
     local mode = vim.fn.mode()
     if mode ~= "v" and mode ~= "V" then
-        vim.notify("[poor-cli] Select text first", vim.log.levels.WARN)
+        require("poor-cli.notify").notify("[poor-cli] Select text first", vim.log.levels.WARN)
         return
     end
 
@@ -484,7 +692,7 @@ function M.complete_selection()
                 .. "Code:\n" .. selected_text,
         }, function(result, err)
             if err then
-                vim.notify("[poor-cli] Error: " .. rpc.format_error(err), vim.log.levels.ERROR)
+                require("poor-cli.notify").notify("[poor-cli] Error: " .. rpc.format_error(err), vim.log.levels.ERROR)
                 return
             end
 
@@ -510,7 +718,7 @@ function M.accept_line()
     end
     local line_text = text:sub(1, first_nl - 1)
     local remaining = text:sub(first_nl + 1)
-    M.clear_ghost_text()
+    M.clear_ghost_text({ keep_preview = true })
     local bufnr = comp.bufnr
     local line = comp.line
     local col = comp.col
@@ -521,8 +729,10 @@ function M.accept_line()
     if remaining ~= "" then
         M.show_ghost_text(remaining)
     else
+        M.close_preview_split()
         set_status("accepted", "", "")
     end
+    emit_completion_accepted("line")
     return true
 end
 
@@ -537,7 +747,7 @@ function M.accept_word()
         return M.accept()
     end
     local remaining = text:sub(#word_end + 1)
-    M.clear_ghost_text()
+    M.clear_ghost_text({ keep_preview = true })
     local bufnr = comp.bufnr
     local line = comp.line
     local col = comp.col
@@ -555,8 +765,34 @@ function M.accept_word()
         M.current_completion = { bufnr = bufnr, line = line, col = new_col, text = remaining }
         M.show_ghost_text(remaining)
     else
+        M.close_preview_split()
         set_status("accepted", "", "")
     end
+    emit_completion_accepted("word")
+    return true
+end
+
+function M.open_preview_split()
+    if not M.current_completion then
+        return false
+    end
+
+    if M.preview_win and vim.api.nvim_win_is_valid(M.preview_win) then
+        vim.api.nvim_set_current_win(M.preview_win)
+        set_preview_content()
+        return true
+    end
+
+    vim.cmd("botright new")
+    local buf = vim.api.nvim_get_current_buf()
+    M.preview_buf = buf
+    M.preview_win = vim.api.nvim_get_current_win()
+    vim.bo[buf].buftype = "nofile"
+    vim.bo[buf].bufhidden = "wipe"
+    vim.bo[buf].swapfile = false
+    pcall(vim.api.nvim_buf_set_name, buf, "[poor-cli completion preview " .. buf .. "]")
+    set_preview_content()
+    vim.keymap.set("n", "q", M.close_preview_split, { buffer = buf, nowait = true, desc = "Close poor-cli completion preview" })
     return true
 end
 
@@ -596,13 +832,16 @@ vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "TextChanged", "Tex
     group = request_cancel_group,
     callback = function()
         cancel_if_request_stale()
+        if M.cycle_state and not cursor_matches_cycle_state() then
+            invalidate_cycle_state()
+        end
     end,
 })
 
 local inline_stream_group = vim.api.nvim_create_augroup("poor-cli-inline-stream", { clear = true })
 vim.api.nvim_create_autocmd("User", {
     group = inline_stream_group,
-    pattern = "PoorCliInlineChunk",
+    pattern = "PoorCLIInlineChunk",
     callback = function(ev)
         local data = ev.data or {}
         local context = M.pending_inline_request

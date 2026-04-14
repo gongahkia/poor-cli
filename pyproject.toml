@@ -41,6 +41,7 @@ dependencies = [
 openai = ["openai>=1.0.0"]
 openrouter = ["openai>=1.0.0"]
 anthropic = ["anthropic>=0.18.0"]
+hf-local = ["torch", "transformers", "accelerate"]
 multiplayer = ["aiortc>=1.14,<1.15"]
 compression = ["llmlingua>=0.2.0"]
 keyring = ["keyring>=24.0.0"]
@@ -80,8 +81,8 @@ Homepage = "https://github.com/gongahkia/poor-cli"
 Repository = "https://github.com/gongahkia/poor-cli"
 Issues = "https://github.com/gongahkia/poor-cli/issues"
 
-[tool.setuptools]
-packages = ["poor_cli", "poor_cli.automations", "poor_cli.cli", "poor_cli.context", "poor_cli.integrations", "poor_cli.providers", "poor_cli.readers", "poor_cli.research", "poor_cli.server", "poor_cli.server.handlers"]
+[tool.setuptools.packages.find]
+include = ["poor_cli*"]
 
 [tool.setuptools.package-data]
 poor_cli = ["*.json", "skills/*.md"]

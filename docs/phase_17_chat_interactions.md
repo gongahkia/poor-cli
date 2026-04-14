@@ -11,7 +11,7 @@
 
 | Agent | PRD | Primary file(s) | Secondary files |
 |-------|-----|-----------------|-----------------|
-| 17A | 043 | `nvim-poor-cli/lua/poor-cli/chat.lua` | `keymaps.lua`, `poor_cli/history.py`, `poor_cli/server/handlers/chat.py` |
+| 17A | 043 | `nvim-poor-cli/lua/poor-cli/chat.lua` | `keymaps.lua`, `poor-cli/history.py`, `poor-cli/server/handlers/chat.py` |
 | 17B | 044 | `nvim-poor-cli/lua/poor-cli/chat.lua` | `keymaps.lua` |
 | 17C | 045 | `nvim-poor-cli/lua/poor-cli/chat.lua` | — |
 | 17D | 046 | `nvim-poor-cli/lua/poor-cli/chat.lua` | — |
@@ -49,12 +49,12 @@ Add branching to chat history. `<leader>rr` on any assistant turn regenerates it
 
 ### Implementation details
 
-1. **History schema migration** in `poor_cli/history.py`:
+1. **History schema migration** in `poor-cli/history.py`:
    - Add `parent_id: str | None` and `branch_of: str | None` fields to each turn record.
    - Add an `active_leaf` pointer at the conversation level tracking which leaf the user is "on".
    - Write a one-shot migration that backfills `parent_id` as the previous turn's id for legacy transcripts.
 
-2. **`regenerateTurn` RPC** (`poor-cli/regenerateTurn`) in `poor_cli/server/handlers/chat.py` (or `runtime.py` if PRD 019 has not merged yet):
+2. **`regenerateTurn` RPC** (`poor-cli/regenerateTurn`) in `poor-cli/server/handlers/chat.py` (or `runtime.py` if PRD 019 has not merged yet):
    - Input: `turn_id`. Output: new assistant turn id.
    - Re-runs generation from the parent user turn with a new seed.
    - Attaches the result as a sibling (`branch_of = turn_id`, same `parent_id`).
@@ -73,8 +73,8 @@ Add branching to chat history. `<leader>rr` on any assistant turn regenerates it
 
 - `nvim-poor-cli/lua/poor-cli/chat.lua` (regenerate action, badge rendering, sibling navigation)
 - `nvim-poor-cli/lua/poor-cli/keymaps.lua` (new chat-local bindings)
-- `poor_cli/history.py` (schema fields + migration)
-- `poor_cli/server/handlers/chat.py` — or `runtime.py` if PRD 019 not merged (new `regenerateTurn` RPC)
+- `poor-cli/history.py` (schema fields + migration)
+- `poor-cli/server/handlers/chat.py` — or `runtime.py` if PRD 019 not merged (new `regenerateTurn` RPC)
 
 ### Acceptance criteria
 

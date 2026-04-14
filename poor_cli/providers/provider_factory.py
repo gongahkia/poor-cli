@@ -61,6 +61,48 @@ class ProviderFactory:
             logger.warning(f"Ollama provider not available: {e}")
 
         try:
+            from .hf_local_provider import HFLocalProvider
+            cls._providers["hf_local"] = HFLocalProvider
+            logger.debug("Registered HF local provider")
+        except ImportError as e:
+            logger.warning(f"HF local provider not available: {e}")
+
+        try:
+            from .vllm_provider import VLLMProvider
+            cls._providers["vllm"] = VLLMProvider
+            logger.debug("Registered vLLM provider")
+        except ImportError as e:
+            logger.warning(f"vLLM provider not available: {e}")
+
+        try:
+            from .llama_server_provider import LlamaServerProvider
+            cls._providers["llama_server"] = LlamaServerProvider
+            logger.debug("Registered llama-server provider")
+        except ImportError as e:
+            logger.warning(f"llama-server provider not available: {e}")
+
+        try:
+            from .sglang_provider import SGLangProvider
+            cls._providers["sglang"] = SGLangProvider
+            logger.debug("Registered SGLang provider")
+        except ImportError as e:
+            logger.warning(f"SGLang provider not available: {e}")
+
+        try:
+            from .hf_tgi_provider import HFTGIProvider
+            cls._providers["hf_tgi"] = HFTGIProvider
+            logger.debug("Registered HF TGI provider")
+        except ImportError as e:
+            logger.warning(f"HF TGI provider not available: {e}")
+
+        try:
+            from .lmstudio_provider import LMStudioProvider
+            cls._providers["lmstudio"] = LMStudioProvider
+            logger.debug("Registered LM Studio provider")
+        except ImportError as e:
+            logger.warning(f"LM Studio provider not available: {e}")
+
+        try:
             from .openrouter_provider import OpenRouterProvider
             cls._providers["openrouter"] = OpenRouterProvider
             logger.debug("Registered OpenRouter provider")
@@ -210,7 +252,7 @@ class ProviderFactory:
             "name": provider_name,
             "class": provider_class.__name__,
             "module": provider_class.__module__,
-            "available": True,
+            "available": bool(getattr(provider_class, "available", True)),
             "capabilities": capability_names(
                 getattr(provider_class, "capabilities", frozenset({ProviderCapability.NONE}))
             ),

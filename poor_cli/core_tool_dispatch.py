@@ -22,7 +22,7 @@ from .tools_async import FilteredToolResult, ToolOutcome
 from .enhanced_tools import CORE_TOOL_GROUP, MCP_GROUP_PREFIX, EnhancedToolRegistry
 from .core_events import CoreEvent
 from .instructions import InstructionManager, InstructionSnapshot
-from .mcp_client import MCPManager
+from .mcp_client import MCPManager, discover_mcp_config
 from .economy import (
     resolve_output_verbosity,
 )
@@ -53,6 +53,17 @@ _MUTATING_TOOLS = {
 }
 _MAX_RUN_TRANSITIONS = 160
 _MAX_RUN_TURN_SUMMARIES = 80
+_RTK_REDUCTION_RE = re.compile(r"\brtk_reduction_pct=([0-9.]+)")
+
+
+def _parse_rtk_reduction_pct(note: str) -> Optional[float]:
+    match = _RTK_REDUCTION_RE.search(str(note or ""))
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
 
 
 # ── CoreEvent: structured events yielded by the agentic loop ─────────
@@ -343,6 +354,8 @@ class ToolDispatcher:
             "filteredSize": filtered.filtered_size,
             "droppedPaths": list(filtered.dropped_paths),
             "summary": filtered.note,
+            "rtk_reduction_pct": _parse_rtk_reduction_pct(filtered.note),
+            "rtkReductionPct": _parse_rtk_reduction_pct(filtered.note),
         }
 
     def get_tool_full_output(self, call_id: str) -> Dict[str, Any]:
@@ -486,6 +499,10 @@ class ToolDispatcher:
             return False
         if tool_name == "apply_patch_unified" and bool(tool_args.get("check_only")):
             return False
+        if tool_name in {"write_file", "edit_file", "apply_patch_unified"}:
+            mode = str(getattr(getattr(self.config, "diff_review", None), "mode", "review") or "review").lower()
+            if os.environ.get("POOR_CLI_DIFF_REVIEW", "").strip().lower() != "auto" and mode == "review":
+                return False
         return True
 
     async def _create_mutation_checkpoint(
@@ -812,6 +829,7 @@ class ToolDispatcher:
         request_id: str,
         expected_call_count: int = 1,
         user_request: str = "",
+        diff_review_interactive: bool = True,
     ) -> Tuple[List["CoreEvent"], Dict[str, Any]]:
         """Execute a single function call with permission checks. Returns (events, result_dict)."""
         events: List[CoreEvent] = []
@@ -892,7 +910,16 @@ class ToolDispatcher:
 
         # 3. execute the tool
         try:
-            result = await self._execute_tool_internal(tool_name, tool_args)
+            execution_args = dict(tool_args)
+            if tool_name in {"write_file", "edit_file", "apply_patch_unified"}:
+                execution_args["_prompt"] = user_request
+                execution_args["_interactive"] = diff_review_interactive
+                execution_args["_tool_call_id"] = fc.id or f"{tool_name}:{time.time_ns()}"
+            if tool_name in {"bash", "run_tests", "process_logs"}:
+                execution_args["_tool_stream_request_id"] = request_id
+                execution_args["_tool_stream_event_id"] = fc.id or f"{tool_name}:{time.time_ns()}"
+                execution_args["_tool_call_id"] = fc.id or execution_args["_tool_stream_event_id"]
+            result = await self._execute_tool_internal(tool_name, execution_args)
         except Exception as e:
             result = f"Error: {e}"
             logger.error(f"Tool execution failed: {e}")
@@ -946,6 +973,7 @@ class ToolDispatcher:
         request_id: str,
         user_request: str = "",
         turn_diagnostics: Optional[Dict[str, Any]] = None,
+        diff_review_interactive: bool = True,
     ) -> Any:
         """Handle function calls with auto-approve/deny guardrails and diff capture."""
         if not response.function_calls:
@@ -1020,6 +1048,7 @@ class ToolDispatcher:
                             request_id,
                             expected_call_count=total_call_count,
                             user_request=user_request,
+                            diff_review_interactive=diff_review_interactive,
                         )
                     )
             else:
@@ -1034,6 +1063,7 @@ class ToolDispatcher:
                             request_id,
                             expected_call_count=total_call_count,
                             user_request=user_request,
+                            diff_review_interactive=diff_review_interactive,
                         )
 
                 parallel_results = await asyncio.gather(
@@ -1075,6 +1105,7 @@ class ToolDispatcher:
                             fc_inner, iteration, max_iterations, request_id,
                             expected_call_count=total_call_count,
                             user_request=user_request,
+                            diff_review_interactive=diff_review_interactive,
                         )
                 par_results = await asyncio.gather(*[_run_mut(fc) for fc in independent_calls])
                 for call_events, call_result in par_results:
@@ -1088,6 +1119,7 @@ class ToolDispatcher:
                     fc, iteration, max_iterations, request_id,
                     expected_call_count=total_call_count,
                     user_request=user_request,
+                    diff_review_interactive=diff_review_interactive,
                 )
                 self._pending_events.extend(call_events)
                 tool_results.append(call_result)
@@ -1099,6 +1131,7 @@ class ToolDispatcher:
                     fc, iteration, max_iterations, request_id,
                     expected_call_count=total_call_count,
                     user_request=user_request,
+                    diff_review_interactive=diff_review_interactive,
                 )
                 self._pending_events.extend(call_events)
                 tool_results.append(call_result)
@@ -1196,8 +1229,14 @@ class ToolDispatcher:
             output_max_lines=trunc_cfg.max_output_lines if trunc_cfg.enabled else 0,
         )
         self.tool_registry._core = self
-        if self.config.mcp_servers:
-            self._mcp_manager = MCPManager(self.config.mcp_servers, repo_root=Path.cwd())
+        mcp_servers = self.config.mcp_servers or discover_mcp_config(Path.cwd())
+        if mcp_servers:
+            registry_cfg = getattr(getattr(self.config, "mcp", None), "registry", None)
+            self._mcp_manager = MCPManager(
+                mcp_servers,
+                repo_root=Path.cwd(),
+                registry_autodiscover=bool(getattr(registry_cfg, "enabled", False)),
+            )
             await self._mcp_manager.initialize()
         await self._activate_tool_groups([CORE_TOOL_GROUP], refresh_provider=False)
         await self.refresh_provider_tools(self._active_tool_declarations)

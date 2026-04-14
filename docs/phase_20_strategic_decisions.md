@@ -14,12 +14,12 @@
 |-------|----------|----------------------|-----------------------------|
 | 20A | Latent communication | `docs/LATENT_COMMUNICATION.md`, `docs/phase_20/059_outcome.md` | none (evidence gather only) |
 | 20B | Rename | `docs/RENAME_DECISION.md`, `docs/phase_20/061_outcome.md` | none; rename is a full migration if (a) |
-| 20C | Audience + metric | `README.md` (hook only, post-decision), `docs/METRICS.md` (new), `docs/phase_20/062_outcome.md` | none |
+| 20C | Audience + metric | `README.md` (hook only, post-decision), `NORTH_STAR.md` (new), `docs/phase_20/062_outcome.md` | none |
 | 20D | Multiplayer | `docs/MULTIPLAYER_DECISION.md`, `docs/phase_20/063_outcome.md` | none pre-decision; if (B), move code to `_experimental/` |
 
 ---
 
-## Agent 20A: Latent Communication — Ship for Ollama or Archive
+## Agent 20A: Latent Communication — Ship for Local HF or Archive
 
 **Decision type:** 3-way (ship / archive / freeze)
 **Blocked by:** 20C (audience choice clarifies whether local-model users are in scope); upstream PRD 008
@@ -31,19 +31,19 @@ LatentMAS prototype documents 70–84% token reduction on multi-agent hops for l
 
 ### Current state
 
-Code complete in `poor_cli/research/latent_communication.py`; not wired to the agent loop; requires open-weight model + local GPU; API-closed providers (Anthropic, OpenAI) cannot benefit.
+Code complete in `poor-cli/research/latent_communication.py`; not wired to the agent loop; requires open-weight model + local GPU; API-closed providers (Anthropic, OpenAI) cannot benefit.
 
 ### DECISION REQUIRED
 
 > - **(a) Ship for Ollama / vLLM users only.** Gate behind `ProviderCapability.LATENT_COMMUNICATION` (PRD 020). Integrate with `sub_agent.py` + `parallel_agents.py` via a `LatentChannel` for sub-agent-to-sub-agent hidden-state hand-off with text fallback if channel unavailable. Add benchmark harness on Qwen3 or Llama-4. Write user guide. 3+ weeks of work. Payoff: unique differentiator for local-model users.
-> - **(b) Archive.** Delete `poor_cli/research/latent_communication.py`. Update `docs/LATENT_COMMUNICATION.md` to state "ceased." Restore-from-git escape hatch. 1 day.
+> - **(b) Archive.** Delete `poor-cli/research/latent_communication.py`. Update `docs/LATENT_COMMUNICATION.md` to state "ceased." Restore-from-git escape hatch. 1 day.
 > - **(c) Freeze.** Keep as research artifact; make imports raise `NotImplementedError`; update docs. 1 day.
 
 **Recommended:** (a) if local users are a target audience (PRD 062 / Agent 20C will clarify); (b) otherwise.
 
 ### Implementation details
 
-1. **Gather evidence.** Read `poor_cli/research/latent_communication.py` in full. Quantify the prototype's line count, test coverage, and how far it sits from `sub_agent.py` / `parallel_agents.py` integration. Cross-reference LEARNING.md §1.5 and §4.3.
+1. **Gather evidence.** Read `poor-cli/research/latent_communication.py` in full. Quantify the prototype's line count, test coverage, and how far it sits from `sub_agent.py` / `parallel_agents.py` integration. Cross-reference LEARNING.md §1.5 and §4.3.
 2. **Map the three options** above with concrete cost/benefit.
 3. **Tie recommendation to Agent 20C outcome.** If audience = (A) hobbyists or (B) researchers, prefer (a). Otherwise prefer (b). Do not recommend in absence of 20C's outcome — present both conditional branches.
 4. **If (a) is chosen, list follow-ups:** provider-capability plumbing PRD, `LatentChannel` integration PRD, benchmark harness PRD, documentation PRD.
@@ -53,8 +53,8 @@ Code complete in `poor_cli/research/latent_communication.py`; not wired to the a
 
 - `docs/phase_20/059_outcome.md` (new — decision memo with options, recommendation, follow-ups)
 - `docs/LATENT_COMMUNICATION.md` (update to reflect final state — "shipping for local providers," "ceased," or "frozen research artifact")
-- `poor_cli/research/latent_communication.py` (no changes pre-decision; post-decision either deleted, gated, or stubbed)
-- `poor_cli/sub_agent.py`, `poor_cli/parallel_agents.py` (noted as integration points only if (a))
+- `poor-cli/research/latent_communication.py` (no changes pre-decision; post-decision either deleted, gated, or stubbed)
+- `poor-cli/sub_agent.py`, `poor-cli/parallel_agents.py` (noted as integration points only if (a))
 
 ### Testing & acceptance criteria
 
@@ -76,6 +76,14 @@ If (a): reverting means reverting integration. If (b): restore from git SHA capt
 ### Out-of-scope & boundary
 
 - Do not ship latent communication for closed-API providers (Anthropic, OpenAI) — the capability is fundamentally incompatible.
+
+### Outcome (2026-04-14)
+
+**Decision:** (a) Ship, rescoped to `hf_local`.
+
+**Rationale:** PRD 062 chose audience (A), cost-conscious hobbyists, and says PRD 059 should ship latent communication only as local-provider cost reduction. Ollama remains unsupported because `OllamaProvider.attach_kv_cache()` documents no Ollama KV cache API, and closed providers remain unsupported. Owner follow-up accepted a local HF provider as the viable ship path because HF Transformers exposes hidden states, KV cache, and `inputs_embeds`. No access: `LEARNING.md` is absent in this checkout.
+
+**Execution:** add `hf_local`, declare `ProviderCapability.LATENT_COMMUNICATION` only there, wire an opt-in `LatentChannel` through `sub_agent.py`, add `communication_mode` metadata/fallback in `parallel_agents.py`, prompt Neovim users who switch to `hf_local`, and keep Ollama, vLLM, llama-server, SGLang, HF TGI, LM Studio, and cloud providers on text.
 
 ---
 
@@ -105,7 +113,7 @@ If (a): reverting means reverting integration. If (b): restore from git SHA capt
 > - (b) **Keep** — zero migration cost; brand risk stays.
 >
 > **DECISION 2 (if yes) — new name shortlist:**
-> - `thriftcode` — cost-virtue named.
+> - `poor-cli` — cost-virtue named.
 > - `byokit` — BYOK + toolkit.
 > - `frugal` — short, unambiguous, cost-virtue.
 > - `parsimony` — principle-virtue.
@@ -118,6 +126,16 @@ If (a): reverting means reverting integration. If (b): restore from git SHA capt
 > - `.poor-cli/` → `.<newname>/` auto-migration on first run, reusing the PRD 003 state-migration framework.
 
 **Recommended:** (a) + `frugal` (short, memorable, positive-framed). With backward-compat for one release.
+
+### Outcome (2026-04-14)
+
+**Decision:** (b) Keep `poor-cli`.
+
+**Rationale:** owner rejected the rename on 2026-04-14 and explicitly chose to keep the original funny name. This closes the rename question unless the owner reopens it.
+
+**Migration plan:** no pip, GitHub, Neovim plugin, server binary, or state directory migration. Remove the temporary rename/alias work and keep `poor-cli`, `poor-cli-server`, `poor_cli`, `nvim-poor-cli`, and `.poor-cli/` as the canonical surfaces.
+
+**Execution note:** the attempted rename has been reverted to `poor-cli`.
 
 ### Implementation details
 
@@ -183,19 +201,42 @@ The project is simultaneously pitched at cost-conscious hobbyists, research-mind
 
 **Recommended:** (A) + (ii). (A) matches the name and existing code bias; (ii) is tractable and differentiates poor-cli from Claude Code / Aider / Cursor.
 
+### Outcome (2026-04-14)
+
+**Chosen audience:** (A) Cost-conscious hobbyists.
+
+**Chosen north-star metric:** `median_usd_per_completion` - median estimated USD spend per completed AI coding request.
+
+**Rationale:** the strongest shipped fit is cost control for individual BYOK/local users: multi-provider BYOK, Ollama support, economy presets, cost guardrails, cost history, savings history, and Neovim cost/savings dashboards. No access: `LEARNING.md` was referenced by this PRD but is absent in this checkout, so this outcome uses the repository evidence available here.
+
+**Not chosen:**
+- (B) Research-minded engineers: latent communication is a research prototype, not the main user loop.
+- (C) Small engineering teams: multiplayer exists, but it pulls marketing and roadmap toward shared sessions instead of individual cost reduction.
+- (D) Enterprise: sandbox, permissions, and audit logs exist, but procurement/policy enforcement is not the lead product.
+- (i) SWE-bench Lite pass@1: keep as a trust benchmark, not the north-star.
+- (iii) Turn latency p95: track as a guardrail, not the north-star.
+- (iv) Contributors / month: track as project health, not the north-star.
+- (v) Active sessions / week: track adoption, not the north-star.
+
+**Feature audit:** matches are economy mode, budget templates, cost guardrails, savings dashboard, provider switching, BYOK setup, and Ollama/local-provider support. Mismatches are multiplayer-first positioning, enterprise-first trust/audit positioning, and research-first latent communication positioning.
+
+**Downstream implications:** PRD 059 should ship latent communication only if scoped to local-provider cost reduction. PRD 063 initially pointed to cut/freeze from the audience decision; owner later overrode that on 2026-04-14 and chose (A) Commit for multiplayer.
+
+**Follow-up issues:** #16 multiplayer commit/demo follow-up, #17 latent cost-reduction scope, #18 enterprise-first demotion.
+
 ### Implementation details
 
 1. For each audience option, include concrete evidence from the existing codebase for fit.
 2. For each metric, note measurability, reproducibility, and how well it differentiates poor-cli from competitors.
 3. **Draft the README hook.** Prepare a one-sentence top-line hook conditional on each audience choice, so that on sign-off the README edit is trivial.
-4. **Draft `docs/METRICS.md` skeleton.** Include the metric, how it's measured, data source, and a placeholder for the current baseline (pull from PRD 060 once it lands).
+4. **Draft `NORTH_STAR.md` skeleton.** Include the metric, how it's measured, data source, and a placeholder for the current baseline (pull from PRD 060 once it lands).
 5. **Tag PRDs with audience relevance.** In the memo, list which existing PRDs serve which audience so cuts are visible.
 6. Once decided, update LONGTERM-TODO priorities (re-order around audience) and the LEARNING.md §6 answer.
 
 ### Files to create / modify
 
 - `docs/phase_20/062_outcome.md` (new — decision memo)
-- `docs/METRICS.md` (new — skeleton; populated once decision lands)
+- `NORTH_STAR.md` (new — skeleton; populated once decision lands)
 - `README.md` (no change pre-decision; one-sentence hook update post-decision)
 
 ### Testing & acceptance criteria
@@ -204,7 +245,7 @@ The project is simultaneously pitched at cost-conscious hobbyists, research-mind
 - [ ] All five metrics presented with measurability/reproducibility/differentiation notes
 - [ ] Explicit cut-list per audience choice
 - [ ] README hook draft prepared for each audience option
-- [ ] `docs/METRICS.md` skeleton created with measurement method
+- [ ] `NORTH_STAR.md` skeleton created with measurement method
 - [ ] Owner sign-off slot with audience + metric + cut-list
 - [ ] No silent feature cuts — any cut spawned from this decision gets its own PRD
 - Post-decision: README reflects single audience; metric tracked in a reproducible way.
@@ -234,9 +275,17 @@ Multiplayer (WebRTC P2P with role-based RBAC and signed invites) is genuinely un
 
 Working in the server; minimal UI in Neovim; no demo; no landing-page showcase.
 
+### Outcome
+
+**Decision:** (A) Commit.
+
+**Owner sign-off:** 2026-04-14. Keep multiplayer and make it first-class despite PRD 062's hobbyist audience decision.
+
+**Execution note:** PRD 037 is unblocked. The demo video remains a gating deliverable before multiplayer is treated as launch-ready marketing proof.
+
 ### DECISION REQUIRED
 
-> - **(A) Commit.** Make multiplayer a first-class surface: chat-header "Share" button, `:PoorCliCollabQuick` invite modal wizard, Multiplayer Room panel (PRD 037), 2-minute demo video (LONGTERM-TODO M1), landing-page section. Unblocks PRD 037 and marketing spend. Size this in weeks.
+> - **(A) Commit.** Make multiplayer a first-class surface: chat-header "Share" button, `:PoorCLICollabQuick` invite modal wizard, Multiplayer Room panel (PRD 037), 2-minute demo video (LONGTERM-TODO M1), landing-page section. Unblocks PRD 037 and marketing spend. Size this in weeks.
 > - **(B) Cut.** Move multiplayer code to `_experimental/multiplayer/` with a deprecation notice. `runtime.py` drops 500+ lines. Archive PRD 037. Size this in days.
 > - **(C) Freeze.** Keep as-is; no new investment; no deprecation either. Status quo — worst option but cheapest today.
 

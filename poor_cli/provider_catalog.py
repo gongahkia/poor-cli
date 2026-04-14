@@ -47,7 +47,23 @@ _CATALOG_CAPABILITIES: dict[str, tuple[str, ...]] = {
     ),
     "openrouter": ("streaming", "tool_calling", "system_instructions", "json_mode", "vision"),
     "ollama": ("streaming", "tool_calling", "system_instructions", "json_mode"),
+    "hf_local": ("system_instructions", "latent_communication"),
+    "vllm": ("streaming", "system_instructions"),
+    "llama_server": ("streaming", "system_instructions"),
+    "sglang": ("streaming", "system_instructions"),
+    "hf_tgi": ("streaming", "system_instructions"),
+    "lmstudio": ("streaming", "system_instructions"),
 }
+
+KEYLESS_LOCAL_PROVIDER_NAMES = frozenset({
+    "ollama",
+    "hf_local",
+    "vllm",
+    "llama_server",
+    "sglang",
+    "hf_tgi",
+    "lmstudio",
+})
 
 
 @lru_cache(maxsize=1)
@@ -261,12 +277,16 @@ def _readme_common_models(entry: ProviderCatalogEntry) -> str:
             "Auto-discovered from local `ollama` (`/api/tags`), with fallbacks "
             f"{rendered_models}"
         )
+    if entry.name == "hf_local":
+        return f"Local HuggingFace model IDs such as {rendered_models}"
+    if entry.name in {"vllm", "llama_server", "sglang", "hf_tgi", "lmstudio"}:
+        return f"Served local model IDs such as {rendered_models}"
     return rendered_models
 
 
 def _readme_capability_summary(entry: ProviderCatalogEntry) -> str:
     summary = entry.capability_summary
-    if entry.name == "ollama" and entry.base_url:
+    if entry.name in {"ollama", "vllm", "llama_server", "sglang", "hf_tgi", "lmstudio"} and entry.base_url:
         return f"{summary}, local-only execution via `{entry.base_url}`"
     return summary
 

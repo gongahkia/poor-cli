@@ -15,11 +15,11 @@
 
 ### What to build
 
-Break the monolithic system prompt into a skills directory loaded on-demand based on task relevance. poor-cli already has `poor_cli/instructions.py` and `poor_cli/skills.py` — enhance these to implement progressive disclosure.
+Break the monolithic system prompt into a skills directory loaded on-demand based on task relevance. poor-cli already has `poor-cli/instructions.py` and `poor-cli/skills.py` — enhance these to implement progressive disclosure.
 
 ### Implementation details
 
-1. **Audit current instruction loading** — read `poor_cli/instructions.py` thoroughly:
+1. **Audit current instruction loading** — read `poor-cli/instructions.py` thoroughly:
    - What instructions are loaded on every request?
    - How large is the total instruction payload?
    - Is there any conditional loading?
@@ -78,9 +78,9 @@ Break the monolithic system prompt into a skills directory loaded on-demand base
 7. **Skill loading visibility** — show which skills are loaded via `/instructions` command or in the lualine status.
 
 ### Files to create/modify
-- `poor_cli/instructions.py` (primary — refactor to use skill registry)
-- `poor_cli/skills.py` (enhance with registry pattern)
-- `poor_cli/skills/` directory (new — break out instruction content into files)
+- `poor-cli/instructions.py` (primary — refactor to use skill registry)
+- `poor-cli/skills.py` (enhance with registry pattern)
+- `poor-cli/skills/` directory (new — break out instruction content into files)
 - Prompt assembly logic in core engine
 
 ### Acceptance criteria
@@ -161,9 +161,9 @@ Instead of injecting all tool schemas into every request, dynamically load only 
 6. **Fallback** — if the model asks for a tool not in the loaded set, add it dynamically and inform the model. Never silently fail.
 
 ### Files to create/modify
-- `poor_cli/command_manifest.py` (add tool group classification)
-- `poor_cli/enhanced_tools.py` (lazy schema loading logic)
-- `poor_cli/mcp_scaffold.py` (lazy MCP schema loading)
+- `poor-cli/command_manifest.py` (add tool group classification)
+- `poor-cli/enhanced_tools.py` (lazy schema loading logic)
+- `poor-cli/mcp_scaffold.py` (lazy MCP schema loading)
 - Prompt assembly logic (only inject selected tool schemas)
 
 ### Acceptance criteria
@@ -239,9 +239,9 @@ Instead of blanket summarization (what `/compact` does), score each conversation
    ```
 
 ### Files to create/modify
-- `poor_cli/history_pruning.py` (new, ~250 lines — scoring + pruning logic)
-- `poor_cli/context_optimizer.py` (integrate pruning into compaction pipeline)
-- `poor_cli/history.py` (add scoring metadata to conversation turns)
+- `poor-cli/history_pruning.py` (new, ~250 lines — scoring + pruning logic)
+- `poor-cli/context_optimizer.py` (integrate pruning into compaction pipeline)
+- `poor-cli/history.py` (add scoring metadata to conversation turns)
 
 ### Acceptance criteria
 - [ ] Turn importance scoring implemented with recency, relevance, success axes

@@ -125,7 +125,7 @@ local function build_history_panel()
             fetch("poor-cli/listHistory", { count = 30 }, "history", panel)
         end,
         render = function()
-            local lines = { "# poor-cli History", "", "Press q to close, r to refresh. `:PoorCliHistorySearch <q>` to search.", "" }
+            local lines = { "# poor-cli History", "", "Press q to close, r to refresh. `:PoorCLIHistorySearch <q>` to search.", "" }
             local data = (panel._cache or {}).history
             if data and data.sessionId then
                 table.insert(lines, "Session: `" .. tostring(data.sessionId) .. "`")
@@ -164,7 +164,7 @@ local function build_checkpoints_panel()
             fetch("poor-cli/listCheckpoints", {}, "checkpoints", panel)
         end,
         render = function()
-            local lines = { "# poor-cli Checkpoints", "", "Press q to close, r to refresh. `:PoorCliCheckpointPreview <id>` and `Restore` for actions.", "" }
+            local lines = { "# poor-cli Checkpoints", "", "Press q to close, r to refresh. `:PoorCLICheckpointPreview <id>` and `Restore` for actions.", "" }
             local data = (panel._cache or {}).checkpoints
             section(lines, "Recent")
             if not data then empty(lines, "loading…")
@@ -233,7 +233,7 @@ local function build_memory_panel()
             fetch("poor-cli/memoryList", {}, "memory", panel)
         end,
         render = function()
-            local lines = { "# poor-cli Memory", "", "Press q to close, r to refresh. `:PoorCliMemorySave <text>` to add.", "" }
+            local lines = { "# poor-cli Memory", "", "Press q to close, r to refresh. `:PoorCLIMemorySave <text>` to add.", "" }
             local data = (panel._cache or {}).memory
             section(lines, "Persistent entries")
             if not data then empty(lines, "loading…")
@@ -270,7 +270,7 @@ local function build_sessions_panel()
             fetch("poor-cli/listSessions", {}, "sessions", panel)
         end,
         render = function()
-            local lines = { "# poor-cli Sessions", "", "Press q to close, r to refresh. `:PoorCliSessionSwitch <id>` to switch.", "" }
+            local lines = { "# poor-cli Sessions", "", "Press q to close, r to refresh. `:PoorCLISessionSwitch <id>` to switch.", "" }
             local data = (panel._cache or {}).sessions
             section(lines, "Sessions")
             if not data then empty(lines, "loading…")
@@ -311,7 +311,7 @@ local function build_automations_panel()
             fetch("poor-cli/listAutomations", {}, "automations", panel)
         end,
         render = function()
-            local lines = { "# poor-cli Automations", "", "Press q to close, r to refresh. `:PoorCliAutomationEnable/Disable/Run <id>` for actions.", "" }
+            local lines = { "# poor-cli Automations", "", "Press q to close, r to refresh. `:PoorCLIAutomationEnable/Disable/Run <id>` for actions.", "" }
             local data = (panel._cache or {}).automations
             section(lines, "Scheduled")
             if not data then empty(lines, "loading…")
@@ -357,17 +357,17 @@ function M.setup()
         vim.api.nvim_create_user_command(name, fn, opts or {})
     end
 
-    create_command("PoorCliTasksPanel",       function() M.panels.tasks.toggle() end,       { desc = "Toggle poor-cli tasks panel" })
-    create_command("PoorCliAgentsPanel",      function() M.panels.agents.toggle() end,      { desc = "Toggle poor-cli agents panel" })
-    create_command("PoorCliHistoryPanel",     function() M.panels.history.toggle() end,     { desc = "Toggle poor-cli history panel" })
-    create_command("PoorCliCheckpointsPanel", function() M.panels.checkpoints.toggle() end, { desc = "Toggle poor-cli checkpoints panel" })
-    create_command("PoorCliQueuePanel",       function() M.panels.queue.toggle() end,       { desc = "Toggle poor-cli queue panel" })
-    create_command("PoorCliMemoryPanel",      function() M.panels.memory.toggle() end,      { desc = "Toggle poor-cli memory panel" })
-    create_command("PoorCliSessionsPanel",    function() M.panels.sessions.toggle() end,    { desc = "Toggle poor-cli sessions panel" })
-    create_command("PoorCliAutomationsPanel", function() M.panels.automations.toggle() end, { desc = "Toggle poor-cli automations panel" })
+    create_command("PoorCLITasksPanel",       function() M.panels.tasks.toggle() end,       { desc = "Toggle poor-cli tasks panel" })
+    create_command("PoorCLIAgentsPanel",      function() M.panels.agents.toggle() end,      { desc = "Toggle poor-cli agents panel" })
+    create_command("PoorCLIHistoryPanel",     function() M.panels.history.toggle() end,     { desc = "Toggle poor-cli history panel" })
+    create_command("PoorCLICheckpointsPanel", function() M.panels.checkpoints.toggle() end, { desc = "Toggle poor-cli checkpoints panel" })
+    create_command("PoorCLIQueuePanel",       function() M.panels.queue.toggle() end,       { desc = "Toggle poor-cli queue panel" })
+    create_command("PoorCLIMemoryPanel",      function() M.panels.memory.toggle() end,      { desc = "Toggle poor-cli memory panel" })
+    create_command("PoorCLISessionsPanel",    function() M.panels.sessions.toggle() end,    { desc = "Toggle poor-cli sessions panel" })
+    create_command("PoorCLIAutomationsPanel", function() M.panels.automations.toggle() end, { desc = "Toggle poor-cli automations panel" })
 
     -- live refresh on status changes
-    base.subscribe("PoorCliPanelsRefresh", { "PoorCliStatusChanged" }, function()
+    base.subscribe("PoorCLIPanelsRefresh", { "PoorCLIStatusChanged" }, function()
         for _, p in pairs(M.panels) do
             if p.win and vim.api.nvim_win_is_valid(p.win) then
                 p.refresh()

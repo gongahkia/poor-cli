@@ -25,7 +25,7 @@ local function scratch_buf()
     vim.bo[buf].bufhidden = "wipe"
     vim.bo[buf].swapfile = false
     vim.bo[buf].modifiable = true
-    vim.bo[buf].filetype = "poorclitrust"
+    vim.bo[buf].filetype = "poor-clitrust"
     vim.api.nvim_buf_set_name(buf, "[poor-cli trust center]")
     return buf
 end
@@ -185,7 +185,7 @@ function M.redraw(buf, status)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     for line, action in pairs(state.actions) do
         vim.api.nvim_buf_set_extmark(buf, M.ns, line - 1, 0, {
-            virt_text = { { " " .. action.label, "PoorCliTrustCenterAction" } },
+            virt_text = { { " " .. action.label, "PoorCLITrustCenterAction" } },
             virt_text_pos = "eol",
         })
     end
@@ -242,7 +242,7 @@ end
 function M.refresh(buf)
     M.fetch_status(function(status, err)
         if err then
-            vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
+            require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
             return
         end
         M.redraw(buf, status)
@@ -264,7 +264,7 @@ function M.dispatch(buf, action)
     if not method then return end
     rpc.request(method, action.params or {}, function(result, err)
         if err then
-            vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
+            require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
             return
         end
         if action.id == "view_permissions" then
@@ -274,7 +274,7 @@ function M.dispatch(buf, action)
             return
         end
         if action.id == "export_audit" and t(result).path then
-            vim.notify("[poor-cli] audit exported: " .. tostring(result.path), vim.log.levels.INFO)
+            require("poor-cli.notify").notify("[poor-cli] audit exported: " .. tostring(result.path), vim.log.levels.INFO)
         end
         M.refresh(buf)
     end)

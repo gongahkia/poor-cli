@@ -95,6 +95,9 @@ class Message:
     timestamp: str
     tokens: Optional[int] = None
     metadata: Optional[Dict[str, Any]] = None
+    id: Optional[str] = None
+    parent_id: Optional[str] = None
+    branch_of: Optional[str] = None
 
     def ensure_metadata(self) -> Dict[str, Any]:
         """Return mutable metadata dict"""
@@ -137,6 +140,7 @@ class Session:
     messages: List[Message] = None
     total_tokens: int = 0
     model: str = DEFAULT_HISTORY_MODEL
+    active_leaf: Optional[str] = None
 
     def __post_init__(self):
         if self.messages is None:
@@ -150,6 +154,7 @@ class Session:
             "ended_at": self.ended_at,
             "total_tokens": self.total_tokens,
             "model": self.model,
+            "active_leaf": self.active_leaf,
             "messages": [msg.to_dict() for msg in self.messages],
         }
 
@@ -157,6 +162,8 @@ class Session:
     def from_dict(cls, data: Dict[str, Any]) -> 'Session':
         """Create session from dictionary"""
         messages = [Message.from_dict(msg) for msg in data.pop("messages", [])]
+        if not data.get("active_leaf") and messages:
+            data["active_leaf"] = messages[-1].id
         return cls(messages=messages, **data)
 
 
@@ -255,6 +262,12 @@ class HistoryManager:
                     logger.info("Migrating database: adding archived column to sessions table")
                     cursor.execute("ALTER TABLE sessions ADD COLUMN archived INTEGER DEFAULT 0")
                     conn.commit()
+                try:
+                    cursor.execute("SELECT active_leaf FROM sessions LIMIT 1")
+                except sqlite3.OperationalError:
+                    logger.info("Migrating database: adding active_leaf column to sessions table")
+                    cursor.execute("ALTER TABLE sessions ADD COLUMN active_leaf TEXT")
+                    conn.commit()
 
                 # Messages table with compression support
                 cursor.execute("""
@@ -270,6 +283,18 @@ class HistoryManager:
                         FOREIGN KEY (session_id) REFERENCES sessions(session_id)
                     )
                 """)
+                for column, ddl in (
+                    ("turn_id", "ALTER TABLE messages ADD COLUMN turn_id TEXT"),
+                    ("parent_id", "ALTER TABLE messages ADD COLUMN parent_id TEXT"),
+                    ("branch_of", "ALTER TABLE messages ADD COLUMN branch_of TEXT"),
+                ):
+                    try:
+                        cursor.execute(f"SELECT {column} FROM messages LIMIT 1")
+                    except sqlite3.OperationalError:
+                        logger.info("Migrating database: adding %s column to messages table", column)
+                        cursor.execute(ddl)
+                        conn.commit()
+                self._migrate_linear_history_dag(conn)
 
                 # Indexes for faster queries
                 cursor.execute("""
@@ -355,6 +380,49 @@ class HistoryManager:
         except Exception as e:
             logger.warning(f"FTS backfill skipped: {e}")
 
+    def _migrate_linear_history_dag(self, conn: sqlite3.Connection) -> None:
+        """Idempotently backfill legacy linear histories into a single-chain DAG."""
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT session_id
+                FROM messages
+                GROUP BY session_id
+                HAVING SUM(CASE WHEN turn_id IS NULL OR turn_id = '' THEN 1 ELSE 0 END) > 0
+            """)
+            session_ids = [row[0] for row in cursor.fetchall()]
+            for session_id in session_ids:
+                cursor.execute("""
+                    SELECT id, turn_id
+                    FROM messages
+                    WHERE session_id = ?
+                    ORDER BY id ASC
+                """, (session_id,))
+                parent_id: Optional[str] = None
+                active_leaf: Optional[str] = None
+                for idx, (row_id, existing_turn_id) in enumerate(cursor.fetchall(), start=1):
+                    turn_id = existing_turn_id or f"{session_id}:turn-{idx}"
+                    cursor.execute("""
+                        UPDATE messages
+                        SET turn_id = COALESCE(NULLIF(turn_id, ''), ?),
+                            parent_id = COALESCE(parent_id, ?),
+                            branch_of = branch_of
+                        WHERE id = ?
+                    """, (turn_id, parent_id, row_id))
+                    parent_id = turn_id
+                    active_leaf = turn_id
+                if active_leaf:
+                    cursor.execute("""
+                        UPDATE sessions
+                        SET active_leaf = COALESCE(NULLIF(active_leaf, ''), ?)
+                        WHERE session_id = ?
+                    """, (active_leaf, session_id))
+            if session_ids:
+                conn.commit()
+                logger.info("Migrated %d history sessions to DAG metadata", len(session_ids))
+        except Exception as e:
+            logger.warning("DAG history migration skipped: %s", e)
+
     def start_session(self, model: str = DEFAULT_HISTORY_MODEL) -> Session:
         """Start a new conversation session
 
@@ -435,32 +503,51 @@ class HistoryManager:
         timestamp = datetime.now().isoformat()
         tokens = TokenCounter.estimate_tokens(content)
 
+        parent_id = self.current_session.active_leaf
+        turn_id = f"{self.current_session.session_id}:turn-{len(self.current_session.messages) + 1}"
+        if isinstance(metadata, dict):
+            turn_id = str(metadata.get("turn_id") or metadata.get("id") or turn_id)
+            parent_id = metadata.get("parent_id", parent_id)
+            branch_of = metadata.get("branch_of")
+        else:
+            branch_of = None
         message = Message(
             role=role,
             content=content,
             timestamp=timestamp,
             tokens=tokens,
-            metadata=metadata
+            metadata=metadata,
+            id=turn_id,
+            parent_id=parent_id,
+            branch_of=branch_of,
         )
 
         self.current_session.messages.append(message)
         self.current_session.total_tokens += tokens
+        self.current_session.active_leaf = turn_id
 
         # Save to database
         try:
             with self._pool.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO messages (session_id, role, content, timestamp, tokens, metadata)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO messages
+                    (session_id, role, content, timestamp, tokens, metadata, turn_id, parent_id, branch_of)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     self.current_session.session_id,
                     role,
                     content,
                     timestamp,
                     tokens,
-                    json.dumps(metadata) if metadata else None
+                    json.dumps(metadata) if metadata else None,
+                    turn_id,
+                    parent_id,
+                    branch_of,
                 ))
+                cursor.execute("""
+                    UPDATE sessions SET active_leaf = ? WHERE session_id = ?
+                """, (turn_id, self.current_session.session_id))
                 conn.commit()
 
         except Exception as e:
@@ -516,7 +603,7 @@ class HistoryManager:
 
                 # Get session info
                 cursor.execute("""
-                    SELECT session_id, started_at, ended_at, total_tokens, model
+                    SELECT session_id, started_at, ended_at, total_tokens, model, active_leaf
                     FROM sessions
                     WHERE session_id = ?
                 """, (session_id,))
@@ -530,12 +617,14 @@ class HistoryManager:
                     started_at=row[1],
                     ended_at=row[2],
                     total_tokens=row[3],
-                    model=row[4]
+                    model=row[4],
+                    active_leaf=row[5],
                 )
 
                 # Get messages
                 cursor.execute("""
-                    SELECT role, content, timestamp, tokens, metadata, compressed
+                    SELECT role, content, timestamp, tokens, metadata, compressed,
+                           turn_id, parent_id, branch_of
                     FROM messages
                     WHERE session_id = ?
                     ORDER BY id ASC
@@ -556,7 +645,10 @@ class HistoryManager:
                         content=content,
                         timestamp=row[2],
                         tokens=row[3],
-                        metadata=metadata
+                        metadata=metadata,
+                        id=row[6],
+                        parent_id=row[7],
+                        branch_of=row[8],
                     )
                     session.messages.append(message)
 
@@ -627,6 +719,7 @@ class HistoryManager:
         if self.current_session:
             self.current_session.messages.clear()
             self.current_session.total_tokens = 0
+            self.current_session.active_leaf = None
             logger.info("Cleared current session messages")
 
     def export_session(self, session_id: str, output_path: Path) -> None:

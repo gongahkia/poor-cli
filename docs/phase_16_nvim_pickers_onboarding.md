@@ -24,7 +24,7 @@
 
 ### Intra-phase collisions
 
-- `commands.lua` is touched by both **16A** (registers `:PoorCliSwitchProvider` modal entry) and **16B** (registers `:PoorCliOnboarding` rerun). Edits are additive to disjoint command blocks; land 16B first (Wave 16.1) so 16A (Wave 16.2) rebases cleanly against it.
+- `commands.lua` is touched by both **16A** (registers `:PoorCLISwitchProvider` modal entry) and **16B** (registers `:PoorCLIOnboarding` rerun). Edits are additive to disjoint command blocks; land 16B first (Wave 16.1) so 16A (Wave 16.2) rebases cleanly against it.
 - **16A** consumes `pickers.pick(items, opts)` from **16C**. 16A cannot merge until 16C is on `main`.
 
 ### Proposed sub-waves
@@ -41,11 +41,11 @@
 
 ### Problem
 
-`:PoorCliSwitchProvider` takes a text arg. Discoverability is poor. Users don't know which models are available, their capabilities (cache? thinking?), or estimated cost per 1K tokens. Reference: LEARNING.md §3.4.
+`:PoorCLISwitchProvider` takes a text arg. Discoverability is poor. Users don't know which models are available, their capabilities (cache? thinking?), or estimated cost per 1K tokens. Reference: LEARNING.md §3.4.
 
 ### What to build
 
-A modal picker invoked via `:PoorCliSwitchProvider` (no-arg form) that lists providers × models with capability icons (streaming, thinking, caching, vision) and $$/1K-token pricing indicators, and switches the active provider+model on selection. Replaces the discoverability-hostile text-arg form without removing it.
+A modal picker invoked via `:PoorCLISwitchProvider` (no-arg form) that lists providers × models with capability icons (streaming, thinking, caching, vision) and $$/1K-token pricing indicators, and switches the active provider+model on selection. Replaces the discoverability-hostile text-arg form without removing it.
 
 ### Non-goals / boundary
 
@@ -74,7 +74,7 @@ Preview pane (right side): expanded capability list, model description, last-use
 4. **Picker invocation** — call `require("poor-cli.pickers").pick(items, { title = "Switch provider/model", on_pick = ... })`. Do not branch on backend; the adapter handles that.
 5. **Switch RPC** — on pick, fire `poor-cli/switchProvider` with `{provider, model}`. Handle RPC failure with a `vim.notify` error; do not silently no-op.
 6. **Last-used cache** — persist to an existing plugin state file (e.g. reuse the onboarding state dir) keyed by `{provider, model}` with a timestamp. Surface top-1 most-recent at list head.
-7. **Keymap + command** — register `:PoorCliSwitchProvider` (no-arg → modal; with-arg → existing direct switch) and bind a leader key (e.g. `<leader>pp`) in `keymaps.lua`.
+7. **Keymap + command** — register `:PoorCLISwitchProvider` (no-arg → modal; with-arg → existing direct switch) and bind a leader key (e.g. `<leader>pp`) in `keymaps.lua`.
 
 ### Files to create/modify
 
@@ -86,7 +86,7 @@ Preview pane (right side): expanded capability list, model description, last-use
 
 ### Acceptance criteria
 
-- [ ] `:PoorCliSwitchProvider` with no args opens the modal via the adapter.
+- [ ] `:PoorCLISwitchProvider` with no args opens the modal via the adapter.
 - [ ] Each item shows provider/model, capability icons, and pricing.
 - [ ] Current model is marked.
 - [ ] Selecting an item fires the `switchProvider` RPC with the correct payload.
@@ -96,7 +96,7 @@ Preview pane (right side): expanded capability list, model description, last-use
 - [ ] `test_items_include_capability_icons` passes.
 - [ ] `test_selecting_item_calls_switch_rpc` passes.
 - [ ] `test_current_model_marked` passes.
-- [ ] CLI-arg form of `:PoorCliSwitchProvider` still works unchanged.
+- [ ] CLI-arg form of `:PoorCLISwitchProvider` still works unchanged.
 
 ### Rollback / risk
 
@@ -115,8 +115,8 @@ Onboarding is one-shot. Users forget keybinds; cannot replay; no milestone progr
 
 ### What to build
 
-1. `:PoorCliOnboarding` always re-opens the onboarding UI.
-2. Milestone tour: at N completions / M turns, suggest the next feature (e.g. "Try Plan Mode with `:PoorCliPlan`").
+1. `:PoorCLIOnboarding` always re-opens the onboarding UI.
+2. Milestone tour: at N completions / M turns, suggest the next feature (e.g. "Try Plan Mode with `:PoorCLIPlan`").
 3. Interactive ~2-minute guided tour, 7 steps: provider select → prompt entry → diff review → checkpoint → rollback → (two more feature steps). Each step is a fake guided action the user triggers; no real LLM calls.
 4. Settings-cheatsheet export: `<leader>po?` dumps the current resolved config as a paste-ready snippet.
 
@@ -128,9 +128,9 @@ Onboarding is one-shot. Users forget keybinds; cannot replay; no milestone progr
 
 ### Implementation details
 
-1. **Rerunnable onboarding** — `:PoorCliOnboarding` always opens the onboarding UI regardless of dismissal state. The dismissed flag in `.poor-cli/onboarding.json` only suppresses auto-open at startup, not manual invocation.
+1. **Rerunnable onboarding** — `:PoorCLIOnboarding` always opens the onboarding UI regardless of dismissal state. The dismissed flag in `.poor-cli/onboarding.json` only suppresses auto-open at startup, not manual invocation.
 2. **Milestone counters** — extend `.poor-cli/onboarding.json` with event counters (`completions`, `turns`, `diffs_reviewed`, etc.). Bump them from existing event hooks in the plugin.
-3. **Milestone triggers** — new module `onboarding_milestones.lua` defines `{event, threshold, suggestion}` tuples (e.g. "after 10 completions → suggest Plan Mode via `:PoorCliPlan`"). Fire once per milestone; persist fired-set in the same JSON.
+3. **Milestone triggers** — new module `onboarding_milestones.lua` defines `{event, threshold, suggestion}` tuples (e.g. "after 10 completions → suggest Plan Mode via `:PoorCLIPlan`"). Fire once per milestone; persist fired-set in the same JSON.
 4. **Guided tour (7 steps)** — provider select → prompt entry → diff review → checkpoint → rollback → (two more). Each step is a fake guided action triggered by the user; no real LLM calls. Stepwise controls: `n` next, `p` previous, `q` quit. Tour completion is global, not per-project.
 5. **Cheatsheet export** — `<leader>po?` dumps the current resolved plugin config as a paste-ready snippet (Lua table literal) into a scratch buffer. Keep it deterministic so users can diff against defaults.
 
@@ -138,11 +138,11 @@ Onboarding is one-shot. Users forget keybinds; cannot replay; no milestone progr
 
 - `nvim-poor-cli/lua/poor-cli/onboarding.lua` (modify — rerun, tour flow, cheatsheet)
 - `nvim-poor-cli/lua/poor-cli/onboarding_milestones.lua` (new)
-- `nvim-poor-cli/lua/poor-cli/commands.lua` (modify — `:PoorCliOnboarding` always-open)
+- `nvim-poor-cli/lua/poor-cli/commands.lua` (modify — `:PoorCLIOnboarding` always-open)
 
 ### Acceptance criteria
 
-- [ ] `:PoorCliOnboarding` opens the UI even after prior dismissal.
+- [ ] `:PoorCLIOnboarding` opens the UI even after prior dismissal.
 - [ ] Milestone suggestion fires once after its threshold is crossed.
 - [ ] Guided tour progresses with `n`/`p`/`q` through all 7 steps.
 - [ ] Tour makes no real LLM calls.

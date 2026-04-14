@@ -9,7 +9,7 @@
 
 ## File-scope map
 
-The table below shows each agent's write scope. Read it before starting — two agents share `poor_cli/core.py` and must be serialized (see "Collisions & sub-waves" below).
+The table below shows each agent's write scope. Read it before starting — two agents share `poor-cli/core.py` and must be serialized (see "Collisions & sub-waves" below).
 
 | Agent | Modifies (existing) | Creates (new) |
 |-------|---------------------|---------------|
@@ -20,7 +20,7 @@ The table below shows each agent's write scope. Read it before starting — two 
 
 ### Collisions & sub-waves
 
-**Collision 1 — `poor_cli/core.py` (10A + 10C).** Both agents touch `core.py` but in narrow, orthogonal slices: 10A replaces the inline context-assembly block in `run_turn` with an orchestrator call; 10C replaces `isinstance(provider, AnthropicProvider)` feature-gates with capability-flag checks. Still, merge conflicts are near-certain if they land in parallel.
+**Collision 1 — `poor-cli/core.py` (10A + 10C).** Both agents touch `core.py` but in narrow, orthogonal slices: 10A replaces the inline context-assembly block in `run_turn` with an orchestrator call; 10C replaces `isinstance(provider, AnthropicProvider)` feature-gates with capability-flag checks. Still, merge conflicts are near-certain if they land in parallel.
 
 **Resolution:** **10A lands first.** Once 10A is merged, 10C rebases onto it. Rationale: 10A's edit is larger (a block excision) and 10C's edit is mechanical (find-and-replace on `isinstance` sites). Rebasing 10C is trivial; rebasing 10A onto 10C would require re-locating the assembly block after capability plumbing was inserted around it.
 
@@ -53,7 +53,7 @@ A single `ContextAssemblyOrchestrator` class with one public entry point — `as
 
 ### Implementation details
 
-1. **Define the data types** in `poor_cli/context_assembly.py`:
+1. **Define the data types** in `poor-cli/context_assembly.py`:
    - `ContextFile(path, content, tokens, reason, compressed)` — frozen dataclass; `reason` is a short string like `"imported-by-target"`, `"pagerank-top-10"`, `"recent-open"`.
    - `ContextSnapshot(system_prompt, rules, files, history, tool_schemas, tokens, budget, provider, model, key)` — frozen dataclass. `tokens` is a breakdown dict (`system`, `rules`, `files`, `history`, `tools`, `total`). `key` is the cache hash for PRD 022.
 
@@ -82,13 +82,13 @@ A single `ContextAssemblyOrchestrator` class with one public entry point — `as
 ### Files to create/modify
 
 **Create:**
-- `poor_cli/context_assembly.py` (types + orchestrator, ~250 lines)
+- `poor-cli/context_assembly.py` (types + orchestrator, ~250 lines)
 - `tests/test_context_assembly.py`
 
 **Modify:**
-- `poor_cli/core.py` — narrow: excise context-assembly block in `run_turn`, replace with orchestrator call.
-- `poor_cli/context.py` — expose any helpers the orchestrator needs; no behavior change.
-- `poor_cli/context_engine.py`, `context_optimizer.py`, `context_compressor.py`, `history_pruning.py` — keep; may need minor signature adjustments for orchestrator to call them uniformly.
+- `poor-cli/core.py` — narrow: excise context-assembly block in `run_turn`, replace with orchestrator call.
+- `poor-cli/context.py` — expose any helpers the orchestrator needs; no behavior change.
+- `poor-cli/context_engine.py`, `context_optimizer.py`, `context_compressor.py`, `history_pruning.py` — keep; may need minor signature adjustments for orchestrator to call them uniformly.
 
 ### Acceptance criteria
 
@@ -123,7 +123,7 @@ A decorator-based registry + per-category handler modules. Each handler self-reg
 
 ### Implementation details
 
-1. **Registry module** — `poor_cli/server/registry.py`:
+1. **Registry module** — `poor-cli/server/registry.py`:
    ```python
    Handler = Callable[["RpcContext", dict], Awaitable[Any]]
    REGISTRY: dict[str, Handler] = {}
@@ -137,7 +137,7 @@ A decorator-based registry + per-category handler modules. Each handler self-reg
        return deco
    ```
 
-2. **Handler packages** — create one file per category under `poor_cli/server/handlers/`:
+2. **Handler packages** — create one file per category under `poor-cli/server/handlers/`:
    - `chat.py` — `poor-cli/chat`, `chat` (legacy alias), `poor-cli/chatStreaming`
    - `tools.py` — tool execution RPCs
    - `config.py` — config get/set/reload
@@ -164,7 +164,7 @@ A decorator-based registry + per-category handler modules. Each handler self-reg
    ```
    `handlers/__init__.py` imports every submodule at import time so registration happens before dispatch.
 
-4. **Multiplayer extraction** — move the multiplayer state machine (not just the handlers) out of `runtime.py` into `poor_cli/server/multiplayer_state.py`. `handlers/multiplayer.py` imports state from that module. This is the highest-risk move; do it last.
+4. **Multiplayer extraction** — move the multiplayer state machine (not just the handlers) out of `runtime.py` into `poor-cli/server/multiplayer_state.py`. `handlers/multiplayer.py` imports state from that module. This is the highest-risk move; do it last.
 
 5. **Dispatch wiring** — `runtime.py::dispatch(method, params, ctx)`:
    1. Run rate limiter (PRD 010).
@@ -178,26 +178,26 @@ A decorator-based registry + per-category handler modules. Each handler self-reg
 ### Files to create/modify
 
 **Create:**
-- `poor_cli/server/registry.py`
-- `poor_cli/server/handlers/__init__.py`
-- `poor_cli/server/handlers/chat.py`
-- `poor_cli/server/handlers/tools.py`
-- `poor_cli/server/handlers/config.py`
-- `poor_cli/server/handlers/sessions.py`
-- `poor_cli/server/handlers/checkpoints.py`
-- `poor_cli/server/handlers/providers.py`
-- `poor_cli/server/handlers/tasks.py`
-- `poor_cli/server/handlers/automations.py`
-- `poor_cli/server/handlers/memory.py`
-- `poor_cli/server/handlers/multiplayer.py`
-- `poor_cli/server/handlers/status.py`
-- `poor_cli/server/handlers/context.py`
-- `poor_cli/server/handlers/trust.py`
-- `poor_cli/server/multiplayer_state.py`
+- `poor-cli/server/registry.py`
+- `poor-cli/server/handlers/__init__.py`
+- `poor-cli/server/handlers/chat.py`
+- `poor-cli/server/handlers/tools.py`
+- `poor-cli/server/handlers/config.py`
+- `poor-cli/server/handlers/sessions.py`
+- `poor-cli/server/handlers/checkpoints.py`
+- `poor-cli/server/handlers/providers.py`
+- `poor-cli/server/handlers/tasks.py`
+- `poor-cli/server/handlers/automations.py`
+- `poor-cli/server/handlers/memory.py`
+- `poor-cli/server/handlers/multiplayer.py`
+- `poor-cli/server/handlers/status.py`
+- `poor-cli/server/handlers/context.py`
+- `poor-cli/server/handlers/trust.py`
+- `poor-cli/server/multiplayer_state.py`
 - `tests/test_server_handlers.py`
 
 **Modify:**
-- `poor_cli/server/runtime.py` — excise handler bodies; keep dispatch + transport only.
+- `poor-cli/server/runtime.py` — excise handler bodies; keep dispatch + transport only.
 
 ### Acceptance criteria
 
@@ -230,7 +230,7 @@ A `Flag` enum covering every provider-differentiated capability. Each adapter de
 
 ### Implementation details
 
-1. **Enum definition** in `poor_cli/providers/capability.py`:
+1. **Enum definition** in `poor-cli/providers/capability.py`:
    ```python
    from enum import Flag, auto
 
@@ -248,7 +248,7 @@ A `Flag` enum covering every provider-differentiated capability. Each adapter de
        LATENT_COMMUNICATION  = auto()   # research mode
    ```
 
-2. **Base class wiring** — `poor_cli/providers/base.py`:
+2. **Base class wiring** — `poor-cli/providers/base.py`:
    ```python
    class BaseProvider(ABC):
        capabilities: ProviderCapability = ProviderCapability.NONE
@@ -289,21 +289,21 @@ A `Flag` enum covering every provider-differentiated capability. Each adapter de
 ### Files to create/modify
 
 **Create:**
-- `poor_cli/providers/capability.py`
+- `poor-cli/providers/capability.py`
 - `tests/test_provider_capability.py`
 
 **Modify:**
-- `poor_cli/providers/base.py` — add `capabilities` class attribute.
-- `poor_cli/providers/*_provider.py` — each adapter declares its set.
-- `poor_cli/provider_catalog.py` — expose capabilities in catalog entries.
-- `poor_cli/core.py` — narrow: replace `isinstance` feature-gates with capability checks.
-- `poor_cli/thinking_budget.py` — refuse allocation without `EXTENDED_THINKING`.
-- `poor_cli/vision.py` — refuse image inputs without `VISION`.
+- `poor-cli/providers/base.py` — add `capabilities` class attribute.
+- `poor-cli/providers/*_provider.py` — each adapter declares its set.
+- `poor-cli/provider_catalog.py` — expose capabilities in catalog entries.
+- `poor-cli/core.py` — narrow: replace `isinstance` feature-gates with capability checks.
+- `poor-cli/thinking_budget.py` — refuse allocation without `EXTENDED_THINKING`.
+- `poor-cli/vision.py` — refuse image inputs without `VISION`.
 
 ### Acceptance criteria
 
 - [ ] Every provider adapter declares a non-`NONE` capability set.
-- [ ] `grep -r "isinstance.*Provider" poor_cli/core.py` returns no feature-gating hits (non-gate uses like logging are fine — document them).
+- [ ] `grep -r "isinstance.*Provider" poor-cli/core.py` returns no feature-gating hits (non-gate uses like logging are fine — document them).
 - [ ] `thinking_budget.allocate()` raises `CapabilityError` for providers without `EXTENDED_THINKING`.
 - [ ] `vision.py` rejects image input for providers without `VISION`.
 - [ ] `provider_catalog` entries include capabilities.
@@ -317,10 +317,10 @@ A `Flag` enum covering every provider-differentiated capability. Each adapter de
 ## Agent 10D: Extension Model Consolidation
 
 **Pain points addressed:** Four overlapping extensibility mechanisms create option paralysis for users and maintenance multiplication for contributors. LEARNING.md §4.1.
-- **Skills** (`poor_cli/skills.py`, `poor_cli/skill_surfacer.py`, `poor_cli/skills/*.md`) — instruction-driven.
-- **Custom commands** (`poor_cli/custom_commands.py`) — slash commands.
-- **Workflow templates** (`poor_cli/workflow_templates.py`) — multi-step macros.
-- **Automation manager** (`poor_cli/automation_manager.py`) — scheduled / event-driven.
+- **Skills** (`poor-cli/skills.py`, `poor-cli/skill_surfacer.py`, `poor-cli/skills/*.md`) — instruction-driven.
+- **Custom commands** (`poor-cli/custom_commands.py`) — slash commands.
+- **Workflow templates** (`poor-cli/workflow_templates.py`) — multi-step macros.
+- **Automation manager** (`poor-cli/automation_manager.py`) — scheduled / event-driven.
 
 **Decision (resolved, executing option (a)):** The options considered were:
 - (a) **Merge** — one `AutomationRule` type triggered by cron / event / slash, absorbing workflows and custom commands. Keep skills separate (different concept — instruction libraries). Reduces 4 → 2. **Chosen: cleanest user-model, minimal loss.**
@@ -335,11 +335,11 @@ A `Flag` enum covering every provider-differentiated capability. Each adapter de
 
 ### What to build
 
-A new `poor_cli/automations/` package that absorbs `custom_commands.py`, `workflow_templates.py`, and `automation_manager.py` into a single `AutomationRule` type. Skills remain untouched in `skills.py` / `skill_surfacer.py`. A migration script converts each existing workflow, custom command, and automation into an `AutomationRule` and backs up the originals in `.poor-cli/backup-pre-064/`.
+A new `poor-cli/automations/` package that absorbs `custom_commands.py`, `workflow_templates.py`, and `automation_manager.py` into a single `AutomationRule` type. Skills remain untouched in `skills.py` / `skill_surfacer.py`. A migration script converts each existing workflow, custom command, and automation into an `AutomationRule` and backs up the originals in `.poor-cli/backup-pre-064/`.
 
 ### Implementation details
 
-1. **Core type** in `poor_cli/automations/rules.py`:
+1. **Core type** in `poor-cli/automations/rules.py`:
    ```python
    @dataclass
    class AutomationRule:
@@ -351,17 +351,17 @@ A new `poor_cli/automations/` package that absorbs `custom_commands.py`, `workfl
        scope: Literal["repo", "user"]
    ```
 
-2. **Triggers** in `poor_cli/automations/triggers.py` — tagged union:
+2. **Triggers** in `poor-cli/automations/triggers.py` — tagged union:
    - `CronTrigger(expression: str)`
    - `EventTrigger(event: str, filter: dict | None)`
    - `SlashTrigger(command: str, description: str)`
 
-3. **Steps** in `poor_cli/automations/steps.py` — tagged union:
+3. **Steps** in `poor-cli/automations/steps.py` — tagged union:
    - `PromptStep(prompt: str)`
    - `ToolCallStep(tool: str, params: dict)`
    - `ShellStep(command: str, cwd: str | None)`
 
-4. **Migration** in `poor_cli/automations/migration.py`:
+4. **Migration** in `poor-cli/automations/migration.py`:
    - Backs up `.poor-cli/custom_commands.json`, `workflow_templates.json`, `automations.json` to `.poor-cli/backup-pre-064/`.
    - Converts each:
      - Custom command → `AutomationRule` with a single `SlashTrigger`.
@@ -374,31 +374,31 @@ A new `poor_cli/automations/` package that absorbs `custom_commands.py`, `workfl
 
 6. **Delete legacy modules** once migration is verified: remove `custom_commands.py`, `workflow_templates.py`, `automation_manager.py`. Keep `skills.py` and `skill_surfacer.py` untouched.
 
-7. **Update 10B's `handlers/automations.py`** — this is the rebase footprint. 10B's handler file imports from `automation_manager`; update those imports to `poor_cli.automations`. Part of 10D's scope.
+7. **Update 10B's `handlers/automations.py`** — this is the rebase footprint. 10B's handler file imports from `automation_manager`; update those imports to `poor-cli.automations`. Part of 10D's scope.
 
 8. **Server RPC compatibility** — any RPC method name containing `workflow_*` or `custom_command_*` keeps working via aliases. Do not break existing clients.
 
 ### Files to create/modify
 
 **Create:**
-- `poor_cli/automations/__init__.py`
-- `poor_cli/automations/rules.py`
-- `poor_cli/automations/triggers.py`
-- `poor_cli/automations/steps.py`
-- `poor_cli/automations/migration.py`
+- `poor-cli/automations/__init__.py`
+- `poor-cli/automations/rules.py`
+- `poor-cli/automations/triggers.py`
+- `poor-cli/automations/steps.py`
+- `poor-cli/automations/migration.py`
 - `tests/test_automations.py`
 
 **Modify / delete:**
-- `poor_cli/custom_commands.py` — logic absorbed; delete after migration verified.
-- `poor_cli/workflow_templates.py` — logic absorbed; delete after migration verified.
-- `poor_cli/automation_manager.py` — logic absorbed; delete after migration verified.
-- `poor_cli/server/handlers/automations.py` (created by 10B) — update imports to `poor_cli.automations`.
+- `poor-cli/custom_commands.py` — logic absorbed; delete after migration verified.
+- `poor-cli/workflow_templates.py` — logic absorbed; delete after migration verified.
+- `poor-cli/automation_manager.py` — logic absorbed; delete after migration verified.
+- `poor-cli/server/handlers/automations.py` (created by 10B) — update imports to `poor-cli.automations`.
 - Any call sites of the three deleted modules — update imports.
 
 **Untouched (explicit non-goal):**
-- `poor_cli/skills.py`
-- `poor_cli/skill_surfacer.py`
-- `poor_cli/skills/*.md`
+- `poor-cli/skills.py`
+- `poor-cli/skill_surfacer.py`
+- `poor-cli/skills/*.md`
 
 ### Acceptance criteria
 
@@ -408,7 +408,7 @@ A new `poor_cli/automations/` package that absorbs `custom_commands.py`, `workfl
 - [ ] `/workflow`, `/automation`, `/commands` still function (via aliases).
 - [ ] Legacy RPC method names still reachable.
 - [ ] Skills left untouched — `skills.py` has zero diff in this PR.
-- [ ] `handlers/automations.py` imports from `poor_cli.automations`, not `automation_manager`.
+- [ ] `handlers/automations.py` imports from `poor-cli.automations`, not `automation_manager`.
 - [ ] Tests: migration round-trip (every existing workflow / custom command / automation survives the conversion), trigger dispatch per type (cron / event / slash), step execution per type (prompt / tool_call / shell).
 
 **Risk:** Medium. Migration is one-way; the migration script must be idempotent and must back up `.poor-cli/` before any write. Rollback = restore from `.poor-cli/backup-pre-064/`.

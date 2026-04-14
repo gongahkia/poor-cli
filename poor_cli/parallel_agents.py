@@ -28,6 +28,11 @@ class SubTask:
     sandbox_preset: str = "workspace-write"
     max_runtime: int = 1800
     max_cost_usd: float = 2.0
+    communication_mode: str = "text"
+
+    def __post_init__(self) -> None:
+        if self.communication_mode not in ("text", "latent"):
+            raise ValidationError("communication_mode must be 'text' or 'latent'")
 
 
 @dataclass
@@ -85,6 +90,7 @@ class ParallelAgentPool:
                     use_worktree=True,
                     max_runtime=task.max_runtime,
                     max_cost_usd=task.max_cost_usd,
+                    metadata={"communication_mode": task.communication_mode},
                     auto_start=True,
                 )
                 agents.append(agent)
@@ -104,6 +110,8 @@ class ParallelAgentPool:
         all_completed = all(a.status == "completed" for a in final_agents)
         completed_count = sum(1 for a in final_agents if a.status == "completed")
         summary = f"{completed_count}/{len(final_agents)} agents completed"
+        if any(task.communication_mode == "latent" for task in tasks):
+            summary += "; latent requested, isolated worktree agents used text fallback"
 
         return ParallelRunResult(
             agents=final_agents,

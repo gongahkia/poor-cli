@@ -93,6 +93,113 @@
         "mistral": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 1, "context_window": 32000 },
         "codellama": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 1, "context_window": 16000 }
       }
+    },
+    "hf_local": {
+      "displayName": "HF Local",
+      "envVar": "",
+      "defaultModel": "Qwen/Qwen2.5-3B",
+      "commonModels": [
+        "Qwen/Qwen2.5-3B",
+        "Qwen/Qwen2.5-7B",
+        "meta-llama/Llama-3.2-3B"
+      ],
+      "setupHelp": "Install poor-cli[hf-local] and use local GPU/Apple Silicon/CPU execution. No API key is required.",
+      "capabilitySummary": "System instructions, latent communication via local hidden-state access",
+      "modelTiers": {
+        "Qwen/Qwen2.5-3B": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 2, "context_window": 32768 },
+        "Qwen/Qwen2.5-7B": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 3, "context_window": 32768 },
+        "meta-llama/Llama-3.2-3B": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 2, "context_window": 131072 }
+      }
+    },
+    "vllm": {
+      "displayName": "vLLM",
+      "envVar": "VLLM_API_KEY",
+      "defaultModel": "Qwen/Qwen2.5-3B",
+      "commonModels": [
+        "Qwen/Qwen2.5-3B",
+        "Qwen/Qwen2.5-7B",
+        "meta-llama/Llama-3.2-3B"
+      ],
+      "baseUrl": "http://localhost:8000/v1",
+      "setupHelp": "Run `vllm serve <model>` locally. API key is optional unless the vLLM server was launched with `--api-key`.",
+      "capabilitySummary": "Streaming, system instructions over vLLM's OpenAI-compatible local server; no latent hidden-state hand-off",
+      "modelTiers": {
+        "Qwen/Qwen2.5-3B": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 1, "context_window": 32768 },
+        "Qwen/Qwen2.5-7B": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 2, "context_window": 32768 },
+        "meta-llama/Llama-3.2-3B": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 2, "context_window": 131072 }
+      }
+    },
+    "llama_server": {
+      "displayName": "llama-server",
+      "envVar": "LLAMA_SERVER_API_KEY",
+      "defaultModel": "local-model",
+      "commonModels": [
+        "local-model",
+        "qwen2.5-coder",
+        "llama-3.2"
+      ],
+      "baseUrl": "http://localhost:8080/v1",
+      "setupHelp": "Run llama-server locally with its OpenAI-compatible endpoint. API key is optional unless your server enforces one.",
+      "capabilitySummary": "Streaming, system instructions over llama-server's OpenAI-compatible local server; no latent hidden-state hand-off",
+      "modelTiers": {
+        "local-model": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 1, "context_window": 32768 },
+        "qwen2.5-coder": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 1, "context_window": 32768 },
+        "llama-3.2": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 1, "context_window": 131072 }
+      }
+    },
+    "sglang": {
+      "displayName": "SGLang",
+      "envVar": "SGLANG_API_KEY",
+      "defaultModel": "Qwen/Qwen2.5-3B",
+      "commonModels": [
+        "Qwen/Qwen2.5-3B",
+        "Qwen/Qwen2.5-7B",
+        "meta-llama/Llama-3.2-3B"
+      ],
+      "baseUrl": "http://localhost:30000/v1",
+      "setupHelp": "Run an SGLang OpenAI-compatible local server. API key is optional unless your server enforces one.",
+      "capabilitySummary": "Streaming, system instructions over SGLang's OpenAI-compatible local server; no latent hidden-state hand-off",
+      "modelTiers": {
+        "Qwen/Qwen2.5-3B": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 1, "context_window": 32768 },
+        "Qwen/Qwen2.5-7B": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 2, "context_window": 32768 },
+        "meta-llama/Llama-3.2-3B": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 2, "context_window": 131072 }
+      }
+    },
+    "hf_tgi": {
+      "displayName": "HF TGI",
+      "envVar": "HF_TGI_API_KEY",
+      "defaultModel": "tgi",
+      "commonModels": [
+        "tgi",
+        "Qwen/Qwen2.5-3B",
+        "Qwen/Qwen2.5-7B"
+      ],
+      "baseUrl": "http://localhost:3000/v1",
+      "setupHelp": "Run Hugging Face Text Generation Inference locally with the Messages API. API key is optional unless your server enforces one.",
+      "capabilitySummary": "Streaming, system instructions over TGI's OpenAI-compatible local server; no latent hidden-state hand-off",
+      "modelTiers": {
+        "tgi": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 1, "context_window": 32768 },
+        "Qwen/Qwen2.5-3B": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 1, "context_window": 32768 },
+        "Qwen/Qwen2.5-7B": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 2, "context_window": 32768 }
+      }
+    },
+    "lmstudio": {
+      "displayName": "LM Studio",
+      "envVar": "LMSTUDIO_API_KEY",
+      "defaultModel": "local-model",
+      "commonModels": [
+        "local-model",
+        "qwen2.5-coder",
+        "llama-3.2"
+      ],
+      "baseUrl": "http://localhost:1234/v1",
+      "setupHelp": "Start LM Studio's local server. API key is optional unless your server enforces one.",
+      "capabilitySummary": "Streaming, system instructions over LM Studio's OpenAI-compatible local server; no latent hidden-state hand-off",
+      "modelTiers": {
+        "local-model": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 1, "context_window": 32768 },
+        "qwen2.5-coder": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 1, "context_window": 32768 },
+        "llama-3.2": { "tier": "private", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 1, "context_window": 131072 }
+      }
     }
   }
 }

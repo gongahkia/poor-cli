@@ -103,3 +103,23 @@ async def _rpc_107(ctx, params):
 @register('poor-cli/nextDriver')
 async def _rpc_108(ctx, params):
     return await ctx.handle_next_driver(params)
+
+@register('collab.room')
+async def _rpc_collab_room(ctx, params):
+    return await ctx.handle_collab_room(params)
+
+@register('collab.room/members')
+async def _rpc_collab_room_members(ctx, params):
+    return await ctx.handle_collab_room_members(params)
+
+@register('collab.room/pass_driver')
+async def _rpc_collab_room_pass_driver(ctx, params):
+    return await ctx.handle_collab_room_pass_driver(params)
+
+@register('collab.room/events')
+async def _rpc_collab_room_events(ctx, params):
+    return await ctx.handle_collab_room_events(params)
+
+@register('collab.room/get_invite_link')
+async def _rpc_collab_room_get_invite_link(ctx, params):
+    return await ctx.handle_collab_room_get_invite_link(params)

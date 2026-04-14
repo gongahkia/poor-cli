@@ -24,69 +24,42 @@ local function format_cmd(c)
 end
 
 function M.open_picker()
-    local has_telescope, pickers = pcall(require, "telescope.pickers")
-    if not has_telescope then vim.notify("[poor-cli] telescope.nvim required", vim.log.levels.ERROR); return end
-    local finders = require("telescope.finders")
-    local conf = require("telescope.config").values
-    local actions = require("telescope.actions")
-    local action_state = require("telescope.actions.state")
-    local previewers = require("telescope.previewers")
-    if not rpc.is_running() then vim.notify("[poor-cli] server not running", vim.log.levels.WARN); return end
+    local pickers = require("poor-cli.pickers")
+    if not rpc.is_running() then require("poor-cli.notify").notify("[poor-cli] server not running", vim.log.levels.WARN); return end
     rpc.request("poor-cli/listCustomCommands", {}, function(result, err)
         vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local cmds = (result or {}).commands or {}
-            if #cmds == 0 then vim.notify("[poor-cli] no slash-trigger AutomationRules", vim.log.levels.INFO); return end
-            pickers.new({}, {
-                prompt_title = "poor-cli command aliases",
-                finder = finders.new_table({
-                    results = cmds,
-                    entry_maker = function(c)
-                        return { value = c, ordinal = tostring(c.name or ""), display = format_cmd(c) }
-                    end,
-                }),
-                sorter = conf.generic_sorter({}),
-                previewer = previewers.new_buffer_previewer({
-                    title = "Command Preview",
-                    define_preview = function(self, entry)
-                        local c = entry.value
-                        vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, {
-                            "Name: " .. tostring(c.name or "?"),
-                            "Description: " .. tostring(c.description or ""),
-                            "Args: " .. tostring(c.args or c.argsDescription or ""),
-                            "Prompt: " .. tostring(c.prompt or ""),
-                        })
-                    end,
-                }),
-                attach_mappings = function(prompt_bufnr)
-                    actions.select_default:replace(function()
-                        actions.close(prompt_bufnr)
-                        local sel = action_state.get_selected_entry()
-                        if sel then
-                            local c = sel.value
-                            local name = tostring(c.name or "")
-                            vim.ui.input({ prompt = "Args for " .. name .. " (optional): " }, function(args)
-                                local params = { name = name }
-                                if args and args ~= "" then params.args = args end
-                                M.run(params, function(r, e) vim.schedule(function()
-                                    if e then vim.notify("[poor-cli] " .. vim.inspect(e), vim.log.levels.ERROR)
-                                    else vim.notify("[poor-cli] command " .. name .. " executed", vim.log.levels.INFO) end
-                                end) end)
-                            end)
-                        end
-                    end)
-                    return true
-                end,
-            }):find()
+            if #cmds == 0 then require("poor-cli.notify").notify("[poor-cli] no slash-trigger AutomationRules", vim.log.levels.INFO); return end
+            local items = {}
+            for _, c in ipairs(cmds) do
+                items[#items + 1] = { id = tostring(c.name or ""), label = format_cmd(c), preview = table.concat({
+                    "Name: " .. tostring(c.name or "?"),
+                    "Description: " .. tostring(c.description or ""),
+                    "Args: " .. tostring(c.args or c.argsDescription or ""),
+                    "Prompt: " .. tostring(c.prompt or ""),
+                }, "\n"), data = c }
+            end
+            pickers.pick(items, { title = "poor-cli command aliases", on_pick = function(c)
+                local name = tostring(c.name or "")
+                vim.ui.input({ prompt = "Args for " .. name .. " (optional): " }, function(args)
+                    local params = { name = name }
+                    if args and args ~= "" then params.args = args end
+                    M.run(params, function(_, e) vim.schedule(function()
+                        if e then require("poor-cli.notify").notify("[poor-cli] " .. vim.inspect(e), vim.log.levels.ERROR)
+                        else require("poor-cli.notify").notify("[poor-cli] command " .. name .. " executed", vim.log.levels.INFO) end
+                    end) end)
+                end)
+            end })
         end)
     end)
 end
 
 function M.setup()
     local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
-    create_command("PoorCliCommands", function()
+    create_command("PoorCLICommands", function()
         M.list({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local cmds = (result or {}).commands or {}
             local lines = { "# command aliases", "" }
             for _, c in ipairs(cmds) do table.insert(lines, format_cmd(c)) end
@@ -94,19 +67,19 @@ function M.setup()
             open_scratch("[poor-cli command aliases]", table.concat(lines, "\n"), "markdown")
         end) end)
     end, { desc = "List command aliases" })
-    create_command("PoorCliCommandRun", function(opts)
+    create_command("PoorCLICommandRun", function(opts)
         local args = vim.split(opts.args, " ", { trimempty = true })
-        if #args < 1 then vim.notify("[poor-cli] usage: :PoorCliCommandRun <name> [args]", vim.log.levels.WARN); return end
+        if #args < 1 then require("poor-cli.notify").notify("[poor-cli] usage: :PoorCLICommandRun <name> [args]", vim.log.levels.WARN); return end
         local name = args[1]
         local cmd_args = #args > 1 and table.concat(args, " ", 2) or nil
         local params = { name = name }
         if cmd_args then params.args = cmd_args end
         M.run(params, function(_, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
-            else vim.notify("[poor-cli] command " .. name .. " executed", vim.log.levels.INFO) end
+            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
+            else require("poor-cli.notify").notify("[poor-cli] command " .. name .. " executed", vim.log.levels.INFO) end
         end) end)
     end, { nargs = "+", desc = "Run command alias" })
-    create_command("PoorCliCommandsPicker", function() M.open_picker() end, { desc = "Browse command aliases with Telescope" })
+    create_command("PoorCLICommandsPicker", function() M.open_picker() end, { desc = "Browse command aliases" })
 end
 
 return M

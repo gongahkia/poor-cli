@@ -11,13 +11,13 @@
 
 | Agent | Creates (new files)                                                                                                                                                       | Modifies (existing files)                                                                                 |
 |-------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------|
-| 13A   | `poor_cli/mcp/__init__.py`, `poor_cli/mcp/transport_stdio.py`, `poor_cli/mcp/transport_http.py`, `poor_cli/mcp/registry.py`, `poor_cli/mcp/multi_server.py`, `tests/test_mcp_transport.py`, `tests/test_mcp_multi_server.py` | `poor_cli/mcp_client.py`, `poor_cli/mcp_scaffold.py`                                                      |
-| 13B   | `poor_cli/tool_stream.py`, `tests/test_tool_stream.py`                                                                                                                    | `poor_cli/tools_async.py`, `poor_cli/tool_dispatch.py`, `poor_cli/server/handlers/tools.py`               |
-| 13C   | `poor_cli/rtk_lite/__init__.py`, `poor_cli/rtk_lite/git_filter.py`, `poor_cli/rtk_lite/npm_filter.py` (stretch), `poor_cli/rtk_lite/cargo_filter.py` (stretch), `tests/test_rtk_lite_git.py` | `poor_cli/tools_async.py`, `poor_cli/tool_output_filter.py`                                               |
+| 13A   | `poor-cli/mcp/__init__.py`, `poor-cli/mcp/transport_stdio.py`, `poor-cli/mcp/transport_http.py`, `poor-cli/mcp/registry.py`, `poor-cli/mcp/multi_server.py`, `tests/test_mcp_transport.py`, `tests/test_mcp_multi_server.py` | `poor-cli/mcp_client.py`, `poor-cli/mcp_scaffold.py`                                                      |
+| 13B   | `poor-cli/tool_stream.py`, `tests/test_tool_stream.py`                                                                                                                    | `poor-cli/tools_async.py`, `poor-cli/tool_dispatch.py`, `poor-cli/server/handlers/tools.py`               |
+| 13C   | `poor-cli/rtk_lite/__init__.py`, `poor-cli/rtk_lite/git_filter.py`, `poor-cli/rtk_lite/npm_filter.py` (stretch), `poor-cli/rtk_lite/cargo_filter.py` (stretch), `tests/test_rtk_lite_git.py` | `poor-cli/tools_async.py`, `poor-cli/tool_output_filter.py`                                               |
 
 ### Intra-phase collisions
 
-- **`poor_cli/tools_async.py`** — shared by **13B** (adds `stream_call` on bash/run_tests/process_logs) and **13C** (wraps `bash` return with `rtk_lite.apply`). Both edits land on the `bash` tool but at different layers (stream path vs. post-process filter).
+- **`poor-cli/tools_async.py`** — shared by **13B** (adds `stream_call` on bash/run_tests/process_logs) and **13C** (wraps `bash` return with `rtk_lite.apply`). Both edits land on the `bash` tool but at different layers (stream path vs. post-process filter).
 
 ### Proposed sub-waves
 
@@ -31,7 +31,7 @@ If schedule pressure demands parallelism on β, the two agents can split `tools_
 ## Agent 13A: MCP 2026 Compliance — Streamable HTTP, Multi-Server, Registry
 
 **Pain points addressed:** LEARNING.md §2.2, §4 — single-server stdio-only MCP is already behind the 2026 spec; no registry awareness; tool-name conflicts unsolvable.
-**Expected outcome:** `poor_cli/mcp/` package with two transports, multi-server aggregation with `<server>:<tool>` namespacing, and optional on-demand pulls from the official MCP registry.
+**Expected outcome:** `poor-cli/mcp/` package with two transports, multi-server aggregation with `<server>:<tool>` namespacing, and optional on-demand pulls from the official MCP registry.
 
 ### Goals & non-goals
 
@@ -40,7 +40,7 @@ If schedule pressure demands parallelism on β, the two agents can split `tools_
 
 ### What to build
 
-Replace `mcp_client.py`'s ~200-line single-server stdio client with a proper `poor_cli/mcp/` package. Support both stdio and MCP 2026 Streamable HTTP (SSE is deprecated — do not implement it). Load a list of servers from `.poor-cli/mcp.json`, start them in parallel, aggregate their tools under `<server>:<tool>` names, and route `call_tool` to the right server. Add a lazy registry client gated behind a `registry_autodiscover` flag.
+Replace `mcp_client.py`'s ~200-line single-server stdio client with a proper `poor-cli/mcp/` package. Support both stdio and MCP 2026 Streamable HTTP (SSE is deprecated — do not implement it). Load a list of servers from `.poor-cli/mcp.json`, start them in parallel, aggregate their tools under `<server>:<tool>` names, and route `call_tool` to the right server. Add a lazy registry client gated behind a `registry_autodiscover` flag.
 
 ### Implementation details
 
@@ -54,13 +54,13 @@ Replace `mcp_client.py`'s ~200-line single-server stdio client with a proper `po
 
 ### Files to create/modify
 
-- `poor_cli/mcp/__init__.py` (new)
-- `poor_cli/mcp/transport_stdio.py` (new — extracted from `mcp_client.py`)
-- `poor_cli/mcp/transport_http.py` (new — Streamable HTTP)
-- `poor_cli/mcp/registry.py` (new — lazy)
-- `poor_cli/mcp/multi_server.py` (new)
-- `poor_cli/mcp_client.py` (modify — thin compatibility shim)
-- `poor_cli/mcp_scaffold.py` (modify — route legacy vs multi)
+- `poor-cli/mcp/__init__.py` (new)
+- `poor-cli/mcp/transport_stdio.py` (new — extracted from `mcp_client.py`)
+- `poor-cli/mcp/transport_http.py` (new — Streamable HTTP)
+- `poor-cli/mcp/registry.py` (new — lazy)
+- `poor-cli/mcp/multi_server.py` (new)
+- `poor-cli/mcp_client.py` (modify — thin compatibility shim)
+- `poor-cli/mcp_scaffold.py` (modify — route legacy vs multi)
 - `tests/test_mcp_transport.py` (new)
 - `tests/test_mcp_multi_server.py` (new)
 
@@ -96,7 +96,7 @@ Introduce a `StreamingToolResult(AsyncIterator[str])` contract. Add `stream_call
 
 ### Implementation details
 
-1. **Streaming contract** — `poor_cli/tool_stream.py` defines `StreamingToolResult(AsyncIterator[str])` with `async __aiter__() -> AsyncIterator[str]` for chunks and `async final() -> ToolResult` for the aggregated end state. Tools that can stream implement both the synchronous `call()` and the new `stream_call()`.
+1. **Streaming contract** — `poor-cli/tool_stream.py` defines `StreamingToolResult(AsyncIterator[str])` with `async __aiter__() -> AsyncIterator[str]` for chunks and `async final() -> ToolResult` for the aggregated end state. Tools that can stream implement both the synchronous `call()` and the new `stream_call()`.
 2. **Tool-side `stream_call`** — `tools_async.py::bash`, `run_tests`, `process_logs` expose both `call()` and `stream_call()`. `stream_call` reads subprocess stdout line-by-line (or in fixed byte chunks) and yields.
 3. **Dispatch routing** — `tool_dispatch.py` checks for `stream_call` on the tool and routes accordingly; non-streaming tools continue through the legacy path untouched.
 4. **Server backpressure** — `server/handlers/tools.py` buffers ≤ N chunks (default N=16) per tool invocation. On buffer full, server `await`s the consumer ack. Ack messages: `poor-cli/toolStreamAck` with `{eventId, chunksProcessed}`.
@@ -106,11 +106,11 @@ Introduce a `StreamingToolResult(AsyncIterator[str])` contract. Add `stream_call
 
 ### Files to create/modify
 
-- `poor_cli/tool_stream.py` (new)
+- `poor-cli/tool_stream.py` (new)
 - `tests/test_tool_stream.py` (new)
-- `poor_cli/tools_async.py` (modify — add `stream_call` on bash, run_tests, process_logs)
-- `poor_cli/tool_dispatch.py` (modify — route streaming tools through the stream path)
-- `poor_cli/server/handlers/tools.py` (modify — push chunks; handle ack)
+- `poor-cli/tools_async.py` (modify — add `stream_call` on bash, run_tests, process_logs)
+- `poor-cli/tool_dispatch.py` (modify — route streaming tools through the stream path)
+- `poor-cli/server/handlers/tools.py` (modify — push chunks; handle ack)
 
 ### Acceptance criteria
 
@@ -141,11 +141,11 @@ Medium. Streaming introduces asynchrony bugs. Mitigate via explicit backpressure
 
 ### What to build
 
-A small filter registry under `poor_cli/rtk_lite/`. Each filter is a `Callable[[str], str]` registered against a command pattern. The `bash` tool calls `rtk_lite.apply(cmd, raw)` on the subprocess output before returning. Ship `git status`, `git diff --stat`, and `ls -la` filters in this PRD; `npm install` and `cargo build` are stretch. If a filter raises or parsing fails, return the raw output unchanged.
+A small filter registry under `poor-cli/rtk_lite/`. Each filter is a `Callable[[str], str]` registered against a command pattern. The `bash` tool calls `rtk_lite.apply(cmd, raw)` on the subprocess output before returning. Ship `git status`, `git diff --stat`, and `ls -la` filters in this PRD; `npm install` and `cargo build` are stretch. If a filter raises or parsing fails, return the raw output unchanged.
 
 ### Implementation details
 
-1. **Registry** — `poor_cli/rtk_lite/__init__.py` exposes a `register(command_pattern)` decorator populating `REGISTRY: dict[str, Filter]` where `Filter = Callable[[str], str]`, and an `apply(command: str, output: str) -> str` function that dispatches to the best-matching registered filter (longest prefix match) and passes through on no match.
+1. **Registry** — `poor-cli/rtk_lite/__init__.py` exposes a `register(command_pattern)` decorator populating `REGISTRY: dict[str, Filter]` where `Filter = Callable[[str], str]`, and an `apply(command: str, output: str) -> str` function that dispatches to the best-matching registered filter (longest prefix match) and passes through on no match.
 2. **`git_filter.py`** — implement `filter_git_status` decorated with `@register("git status")`. Preserve branch, ahead/behind, file counts per category, first-N changed paths (configurable, default all). Drop advisory prose (e.g. `use "git restore"...`), heading decoration, blank-line padding. Target ~75% fewer tokens on representative output while preserving every changed path. Also implement `git diff --stat` and `ls -la` filters.
 3. **Bash integration** — `tools_async.py::bash` calls `rtk_lite.apply(cmd, raw)` post-subprocess and returns `ToolResult(output=filtered, meta={"rtk_reduction_pct": ...})` for observability. Coordinate with Agent 13B's stream path: on streaming completion, apply the filter to the aggregated final output (not per-chunk).
 4. **Escape path** — every filter wraps its parser in try/except; on any failure, return raw output and log.
@@ -155,13 +155,13 @@ A small filter registry under `poor_cli/rtk_lite/`. Each filter is a `Callable[[
 
 ### Files to create/modify
 
-- `poor_cli/rtk_lite/__init__.py` (new — registry)
-- `poor_cli/rtk_lite/git_filter.py` (new — git status, git diff --stat, ls -la)
-- `poor_cli/rtk_lite/npm_filter.py` (new — stretch)
-- `poor_cli/rtk_lite/cargo_filter.py` (new — stretch)
+- `poor-cli/rtk_lite/__init__.py` (new — registry)
+- `poor-cli/rtk_lite/git_filter.py` (new — git status, git diff --stat, ls -la)
+- `poor-cli/rtk_lite/npm_filter.py` (new — stretch)
+- `poor-cli/rtk_lite/cargo_filter.py` (new — stretch)
 - `tests/test_rtk_lite_git.py` (new)
-- `poor_cli/tools_async.py` (modify — wrap `bash` return with `rtk_lite.apply`)
-- `poor_cli/tool_output_filter.py` (modify — surface `rtk_lite` alongside the existing JSON/YAML filter path)
+- `poor-cli/tools_async.py` (modify — wrap `bash` return with `rtk_lite.apply`)
+- `poor-cli/tool_output_filter.py` (modify — surface `rtk_lite` alongside the existing JSON/YAML filter path)
 
 ### Acceptance criteria
 

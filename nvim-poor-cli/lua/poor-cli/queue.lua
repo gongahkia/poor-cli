@@ -5,7 +5,7 @@ M.processing = false
 
 function M.enqueue(message)
     table.insert(M.items, message)
-    vim.notify(("[poor-cli] queued (%d pending)"):format(#M.items), vim.log.levels.INFO)
+    require("poor-cli.notify").notify(("[poor-cli] queued (%d pending)"):format(#M.items), vim.log.levels.INFO)
     if not M.processing then M.process_next() end
 end
 
@@ -27,7 +27,7 @@ function M.clear()
     local count = #M.items
     M.items = {}
     M.processing = false
-    vim.notify(("[poor-cli] queue cleared (%d removed)"):format(count), vim.log.levels.INFO)
+    require("poor-cli.notify").notify(("[poor-cli] queue cleared (%d removed)"):format(count), vim.log.levels.INFO)
 end
 
 function M.status()

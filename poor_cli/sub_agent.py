@@ -82,9 +82,13 @@ class SubAgent:
         allowed_tools: Optional[set] = None,
         denied_tools: Optional[set] = None,
         archetype: str = "generic",
+        communication_mode: str = "text",
     ):
         self._parent = parent_core
         self._archetype = archetype
+        if communication_mode not in ("text", "latent"):
+            raise ValueError("communication_mode must be 'text' or 'latent'")
+        self._communication_mode = communication_mode
         arch_cfg = _ARCHETYPE_CONFIGS.get(archetype, {})
         if archetype != "generic" and arch_cfg.get("allowed_tools") is not None:
             self._allowed_tools = arch_cfg["allowed_tools"]
@@ -130,7 +134,6 @@ class SubAgent:
         else:
             filtered_tools = [t for t in tool_declarations if t.get("name") not in denied]
         system_instruction = self._build_system_instruction(filtered_tools)
-        await provider.initialize(tools=filtered_tools, system_instruction=system_instruction)
         # build context prefix
         ctx_parts = []
         if context_files:
@@ -144,6 +147,23 @@ class SubAgent:
         full_prompt = prompt
         if ctx_parts:
             full_prompt = "\n\n".join(ctx_parts) + f"\n\n{prompt}"
+        if self._communication_mode == "latent" and not filtered_tools:
+            from .latent_channel import LatentChannel
+            channel = LatentChannel(provider, config)
+            if channel.available():
+                try:
+                    await provider.initialize(tools=None, system_instruction=system_instruction)
+                    text, bench = await channel.run(full_prompt)
+                    self._total_input_tokens += getattr(bench, "input_tokens", 0) or 0
+                    self._total_output_tokens += getattr(bench, "output_tokens", 0) or 0
+                    return text.strip() or "(no response from latent sub-agent)"
+                except Exception as e:
+                    logger.warning("latent sub-agent failed; falling back to text: %s", e)
+            else:
+                logger.info("latent channel unavailable; falling back to text")
+        elif self._communication_mode == "latent" and filtered_tools:
+            logger.info("latent sub-agent requested with tools; falling back to text")
+        await provider.initialize(tools=filtered_tools, system_instruction=system_instruction)
         accumulated = ""
         iteration = 0
         try:

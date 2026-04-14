@@ -475,7 +475,7 @@ class TaskManager:
         argv = [
             sys.executable,
             "-m",
-            "poor_cli",
+            "poor-cli",
             "task",
             "run",
             "--task-id",

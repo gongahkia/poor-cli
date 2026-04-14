@@ -44,7 +44,50 @@ M.defaults = {
     -- UI options
     chat_width = 60,
     chat_position = "right",  -- "right" or "left"
+    notifications = {
+        group = "poor-cli",
+        snacks = true,
+    },
     max_context_files = 20, -- Maximum open buffers sent as chat context
+    diff_review = {
+        mode = "review",
+        layout = "unified",
+        panel_position = "right",
+        panel_width = 90,
+        auto_open = true,
+        risky_paths = { "package.json", "pyproject.toml", "Cargo.toml", "/main\\.", "/__init__\\." },
+        risky_line_threshold = 50,
+    },
+    gitsigns = {
+        ai_hunks = {
+            enabled = true,
+            glyph = "✱",
+            hl = "PoorCLIAiHunk",
+            priority = 5,
+            toggle_key = "<leader>pg",
+        },
+    },
+    neogit = {
+        open_on_commit = false,
+    },
+    branches = {
+        panel_width = 60,
+        max_siblings = 20,
+    },
+    prompt_dir = nil,
+    cost = {
+        enabled = true,
+        show_turn_badges = true,
+        alarm_session = 5.0,
+        alarm_daily = 20.0,
+    },
+    chat_export = {
+        dir = nil,
+        default_format = "markdown",
+    },
+    provider_picker = {
+        cost_overrides = {},
+    },
     
     -- Auto-completion settings
     auto_trigger = false,  -- Auto-trigger on TextChangedI (debounced)
@@ -52,6 +95,11 @@ M.defaults = {
     request_timeout = 15000, -- RPC request timeout in ms
     auto_fix_diagnostics = false, -- Auto-suggest fix for error diagnostics
     diagnostics_enabled = false, -- Show assistant file:line suggestions as diagnostics
+    dap = {
+        keymaps_enabled = true,
+        breakpoint_key = "<leader>pb",
+        run_key = "<leader>pB",
+    },
     completion_enabled = true,
     completion_manual_only = false,
     completion_min_prefix = 0,
@@ -60,12 +108,17 @@ M.defaults = {
     completion_max_lines_after = 80,
     completion_max_chars = 16000,
     completion_lsp_context_max_chars = 4000,
+    completion_candidates = 3,
     completion_filetype_allowlist = {},
     completion_filetype_blocklist = {},
     completion_buftype_blocklist = { "nofile", "prompt", "quickfix", "terminal" },
 
     -- Keymap for partial word acceptance
     accept_word_key = "<C-Right>", -- accept next word of ghost text
+    accept_line_key = "<M-l>", -- accept next line of ghost text
+    preview_key = "<M-?>", -- preview full ghost text in a split
+    cycle_next_key = "<M-]>",
+    cycle_prev_key = "<M-[>",
 
     -- Health check on setup
     check_health_on_setup = false,
@@ -112,18 +165,18 @@ function M.setup(opts)
     -- validate known enum-like config values
     local valid_chat_pos = { right = true, left = true }
     if M.config.chat_position and not valid_chat_pos[M.config.chat_position] then
-        vim.notify("[poor-cli] invalid chat_position '" .. tostring(M.config.chat_position) .. "', using 'right'", vim.log.levels.WARN)
+        require("poor-cli.notify").notify("[poor-cli] invalid chat_position '" .. tostring(M.config.chat_position) .. "', using 'right'", vim.log.levels.WARN)
         M.config.chat_position = "right"
     end
     -- warn on unrecognized top-level keys
     for k, _ in pairs(opts) do
         if M.defaults[k] == nil then
-            vim.notify("[poor-cli] unknown config key: " .. tostring(k), vim.log.levels.WARN)
+            require("poor-cli.notify").notify("[poor-cli] unknown config key: " .. tostring(k), vim.log.levels.WARN)
         end
     end
 
     if M.config.debug then
-        vim.notify("[poor-cli] Config loaded: " .. vim.inspect(M.config), vim.log.levels.DEBUG)
+        require("poor-cli.notify").notify("[poor-cli] Config loaded: " .. vim.inspect(M.config), vim.log.levels.DEBUG)
     end
     
     return M.config

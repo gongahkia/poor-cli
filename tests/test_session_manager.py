@@ -1,4 +1,4 @@
-"""tests for poor_cli.session_manager module."""
+"""tests for poor-cli.session_manager module."""
 
 import unittest
 from unittest.mock import patch, MagicMock, AsyncMock

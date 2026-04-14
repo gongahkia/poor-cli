@@ -1,4 +1,4 @@
-"""tests for poor_cli.structured_output module."""
+"""tests for poor-cli.structured_output module."""
 
 import unittest
 

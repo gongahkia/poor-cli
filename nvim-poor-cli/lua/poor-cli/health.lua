@@ -95,7 +95,7 @@ function M.check()
             warn("Server is running but provider info is unavailable")
         end
     else
-        info("Server is not running. Use :PoorCliStart to start")
+        info("Server is not running. Use :PoorCLIStart to start")
     end
 
     if status.last_error_message and status.last_error_message ~= "" then
@@ -110,7 +110,7 @@ function M.check()
     if has_treesitter then
         ok("nvim-treesitter available")
     else
-        info("nvim-treesitter not found. Some features like :PoorCliDoc may be limited")
+        info("nvim-treesitter not found. Some features like :PoorCLIDoc may be limited")
     end
 
     local has_cmp, cmp = pcall(require, "cmp")

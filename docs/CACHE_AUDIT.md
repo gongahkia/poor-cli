@@ -1,6 +1,6 @@
 # Cache Fragmentation Audit
 
-Investigation of cache-related modules in `poor_cli/` to identify
+Investigation of cache-related modules in `poor-cli/` to identify
 redundancy, lifetime overlap, and consolidation opportunities.
 
 Source: original pain-point analysis (optimization #5 of 13).
@@ -64,7 +64,7 @@ or per-instance args. No single `config.cache.*` section.
    file sizes across the caches and enforces a total budget with LRU-by-mtime
    eviction.
 
-4. **Surface stats in `:PoorCliStats`** — currently each cache reports its
+4. **Surface stats in `:PoorCLIStats`** — currently each cache reports its
    own stats via ad-hoc paths. Publish one unified view.
 
 ## Non-findings (things we checked that are fine)

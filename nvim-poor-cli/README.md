@@ -30,7 +30,10 @@
 - Python 3.11+
 - `poor-cli` Python package installed: `python3 -m pip install --upgrade 'poor-cli[all]'` (provides `poor-cli-server`)
 - At least one API key: `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
-- Optional: `telescope.nvim` for `:PoorCliCheckpoints`
+- Optional: `telescope.nvim` for `:PoorCLICheckpoints`
+- Optional: `trouble.nvim` for `:Trouble poor-cli`
+- Optional: `snacks.nvim` for grouped non-error notifications and a dashboard section
+- Optional: `oil.nvim` for `@oil:` chat mentions
 
 ### Lazy.nvim
 
@@ -97,6 +100,10 @@ require("poor-cli").setup({
     ghost_text_hl = "Comment",
     chat_width = 60,
     chat_position = "right",
+    notifications = {
+        group = "poor-cli",
+        snacks = true,
+    },
     
     -- Default chat provider (nil = auto-detect from environment)
     provider = nil,
@@ -106,7 +113,7 @@ require("poor-cli").setup({
     completion_provider = nil,
     completion_model = nil,
 
-    -- Optional invite-only remote multiplayer bridge
+    -- Invite-only remote multiplayer bridge
     multiplayer = {
         enabled = false,
         invite = nil,
@@ -131,13 +138,28 @@ require("poor-cli").setup({
 
     -- Diagnostics
     diagnostics_enabled = false,
+    dap = {
+        keymaps_enabled = true,
+        breakpoint_key = "<leader>pb",
+        run_key = "<leader>pB",
+    },
     
     -- Debug
     debug = false,
 })
 ```
 
+With `snacks.nvim` installed, non-error poor-cli notifications route through `snacks.notify` using the configured `notifications.group`. Error-level notifications stay on `vim.notify`. The optional `snacks.dashboard` section is registered as `poor-cli`; add it to your Snacks dashboard sections to show session cost and active turns.
+
 ## 🎮 Usage
+
+### Chat Mentions
+
+Type `@` in the chat input to pick a mention source. With `oil.nvim` installed, `@oil:` opens a temporary oil floating window; pressing `<CR>` on a file inserts `@file:<path>` into the chat input and closes the float.
+
+### nvim-dap
+
+When `nvim-dap` is installed, poor-cli adds buffer-local DAP maps only in the chat buffer and buffers with poor-cli assistant diagnostics. Put the cursor on a `file:line` reference and press `<leader>pb` to toggle a breakpoint there, or `<leader>pB` to toggle and call `dap.continue()`. poor-cli does not configure adapters or launch configs; your own DAP setup decides the debugger.
 
 ### blink.cmp
 
@@ -146,9 +168,9 @@ PoorCLI exposes a blink.cmp provider at `require("poor-cli.blink").provider()`:
 ```lua
 require("blink.cmp").setup({
     sources = {
-        default = { "lsp", "path", "snippets", "buffer", "poor_cli" },
+        default = { "lsp", "path", "snippets", "buffer", "poor-cli" },
         providers = {
-            poor_cli = require("poor-cli.blink").provider(),
+            poor-cli = require("poor-cli.blink").provider(),
         },
     },
 })
@@ -169,40 +191,43 @@ This reuses the same enablement rules and completion request shaping as the inli
 | `gc` | Normal | Start insert and trigger completion |
 | `<leader>pr` | Visual | Refactor selection |
 | `<leader>pe` | Visual | Explain selection |
+| `<leader>pb` | Normal | Toggle nvim-dap breakpoint at a poor-cli `file:line` reference |
+| `<leader>pB` | Normal | Toggle breakpoint and run nvim-dap at a poor-cli `file:line` reference |
 
 ### Commands
 
 | Command | Description |
 |---------|-------------|
-| `:PoorCliStart` | Start the AI server |
-| `:PoorCliStop` | Stop the AI server |
-| `:PoorCliRestart` | Restart the AI server and re-initialize the session |
-| `:PoorCliCancel` | Cancel the active inline/chat request |
-| `:PoorCliStatus` | Show the shared session status summary with routing, context, and collaboration state |
-| `:PoorCliTrust` | Open the trust center for provider, sandbox, rollback, policy, and privacy posture |
-| `:PoorCliRuns` | Open recent shared run history |
-| `:PoorCliWorkflow [name]` | Legacy alias: list slash-trigger AutomationRule scaffolds |
-| `:PoorCliContext` | Open the backend context explanation for the current editing session |
-| `:PoorCliChat` | Toggle chat panel |
-| `:PoorCliSend [message]` | Send message to chat |
-| `:PoorCliClear` | Clear chat history |
-| `:PoorCliDoctor` | Open a structured diagnostic report with actionable remediation |
-| `:PoorCliCopyDebugInfo` | Copy a bug-report bundle to the clipboard |
-| `:PoorCliOpenLog` | Open the managed poor-cli server log |
-| `:PoorCliOpenStateDir` | Open the plugin state directory |
-| `:PoorCliWriteMinInit [path]` | Generate a minimal Neovim config for reproduction |
-| `:PoorCliDiagnostics` | Toggle assistant diagnostics integration |
-| `:PoorCliCheckpoints` | Browse and restore checkpoints (Telescope) |
-| `:PoorCliComplete` | Trigger inline completion |
-| `:PoorCliAccept` | Accept current completion |
-| `:PoorCliDismiss` | Dismiss current completion |
-| `:PoorCliAcceptLine` | Accept the current completion line |
-| `:PoorCliAcceptWord` | Accept the next completion word |
-| `:PoorCliSwitchProvider [provider]` | Switch AI provider |
-| `:'<,'>PoorCliExplain` | Explain selected code |
-| `:'<,'>PoorCliRefactor` | Refactor selected code |
-| `:PoorCliTest` | Generate tests for current function |
-| `:PoorCliDoc` | Generate docs for current function |
+| `:PoorCLIStart` | Start the AI server |
+| `:PoorCLIStop` | Stop the AI server |
+| `:PoorCLIRestart` | Restart the AI server and re-initialize the session |
+| `:PoorCLICancel` | Cancel the active inline/chat request |
+| `:PoorCLIStatus` | Show the shared session status summary with routing, context, and collaboration state |
+| `:PoorCLITrust` | Open the trust center for provider, sandbox, rollback, policy, and privacy posture |
+| `:PoorCLIRuns` | Open recent shared run history |
+| `:PoorCLIWorkflow [name]` | Legacy alias: list slash-trigger AutomationRule scaffolds |
+| `:PoorCLIContext` | Open the backend context explanation for the current editing session |
+| `:PoorCLIChat` | Toggle chat panel |
+| `:PoorCLISend [message]` | Send message to chat |
+| `:PoorCLIClear` | Clear chat history |
+| `:PoorCLIDoctor` | Open a structured diagnostic report with actionable remediation |
+| `:PoorCLICopyDebugInfo` | Copy a bug-report bundle to the clipboard |
+| `:PoorCLIOpenLog` | Open the managed poor-cli server log |
+| `:PoorCLIOpenStateDir` | Open the plugin state directory |
+| `:PoorCLIWriteMinInit [path]` | Generate a minimal Neovim config for reproduction |
+| `:PoorCLIDiagnostics` | Toggle assistant diagnostics integration |
+| `:PoorCLITrouble` | Open assistant diagnostics in trouble.nvim (`:Trouble poor-cli`) |
+| `:PoorCLICheckpoints` | Browse and restore checkpoints (Telescope) |
+| `:PoorCLIComplete` | Trigger inline completion |
+| `:PoorCLIAccept` | Accept current completion |
+| `:PoorCLIDismiss` | Dismiss current completion |
+| `:PoorCLIAcceptLine` | Accept the current completion line |
+| `:PoorCLIAcceptWord` | Accept the next completion word |
+| `:PoorCLISwitchProvider [provider]` | Switch AI provider |
+| `:'<,'>PoorCLIExplain` | Explain selected code |
+| `:'<,'>PoorCLIRefactor` | Refactor selected code |
+| `:PoorCLITest` | Generate tests for current function |
+| `:PoorCLIDoc` | Generate docs for current function |
 
 ### Health Check
 
@@ -220,7 +245,9 @@ Run `:checkhealth poor-cli` to verify:
 
 When the backend requests plan review, the plugin opens the chat panel, shows the plan summary, and prompts through `vim.ui.select()` for `Approve` or `Reject`. Permission reviews use the same backend RPC path and are surfaced through notifications.
 
-## Remote Multiplayer Bridge
+## Multiplayer
+
+Press `S` in `:PoorCLIChat` or run `:PoorCLICollabQuick` to start or share a prompter invite. Open the room panel with `:PoorCLIRoom`.
 
 Configure the plugin to attach to an existing host room:
 
@@ -233,37 +260,35 @@ require("poor-cli").setup({
 })
 ```
 
-What Neovim currently supports:
+Neovim supports:
+- chat-panel Share via `S`
+- quick invite creation with `:PoorCLICollabQuick [viewer|prompter]`
 - joining an existing room through the stdio bridge
-- room/member state updates in `:PoorCliStatus`
-- trust-center visibility in `:PoorCliTrust`
-- plan review prompts, room events, and suggestions in the chat panel
-
-Host-room controls currently handled by the Python server:
-- creating/stopping host sessions
-- advanced room admin commands (`:PoorCliHostServer ...`)
-- direct driver handoff and pair-session orchestration
+- room/member state updates in `:PoorCLIStatus`
+- room panel via `:PoorCLIRoom`
+- trust-center visibility in `:PoorCLITrust`
+- plan review prompts, room events, suggestions, and driver handoff
 
 ## 🔧 API
 
 For custom integrations, you can use the Lua API:
 
 ```lua
-local poor_cli = require("poor-cli")
+local poor-cli = require("poor-cli")
 
 -- Server control
-poor_cli.start()
-poor_cli.stop()
-poor_cli.is_running()
+poor-cli.start()
+poor-cli.stop()
+poor-cli.is_running()
 
 -- Completion
-poor_cli.complete()      -- Trigger completion
-poor_cli.accept()        -- Accept completion
-poor_cli.dismiss()       -- Dismiss completion
+poor-cli.complete()      -- Trigger completion
+poor-cli.accept()        -- Accept completion
+poor-cli.dismiss()       -- Dismiss completion
 
 -- Chat
-poor_cli.toggle_chat()
-poor_cli.send("Hello!")  -- Send message to chat
+poor-cli.toggle_chat()
+poor-cli.send("Hello!")  -- Send message to chat
 ```
 
 ## 🩺 Troubleshooting
@@ -273,50 +298,51 @@ poor_cli.send("Hello!")  -- Send message to chat
 1. Check that `poor-cli-server` is in your PATH: `which poor-cli-server`
 2. Install if missing: `python3 -m pip install --upgrade 'poor-cli[all]'`
 3. Check Python version: `python3 --version` (needs 3.11+)
-4. Open the managed log with `:PoorCliOpenLog`
-5. Capture a full report with `:PoorCliDoctor`, `:PoorCliTrust`, or `:PoorCliCopyDebugInfo`
+4. Open the managed log with `:PoorCLIOpenLog`
+5. Capture a full report with `:PoorCLIDoctor`, `:PoorCLITrust`, or `:PoorCLICopyDebugInfo`
 
 ### No completions appearing
 
 1. Verify API key is set: `echo $GEMINI_API_KEY`
-2. Check server status: `:PoorCliStatus`
-3. Check whether completion is disabled for the current buffer/filetype in `:PoorCliStatus`
-4. Inspect provider, sandbox, and rollback posture in `:PoorCliTrust`
+2. Check server status: `:PoorCLIStatus`
+3. Check whether completion is disabled for the current buffer/filetype in `:PoorCLIStatus`
+4. Inspect provider, sandbox, and rollback posture in `:PoorCLITrust`
 5. If you use `nvim-cmp`, run `:checkhealth poor-cli` to confirm the `poor-cli` source is registered
-6. Open the server log with `:PoorCliOpenLog`
+6. Open the server log with `:PoorCLIOpenLog`
 
 ### blink.cmp source not appearing
 
 1. Confirm `blink.cmp` is installed and loaded
-2. Add `poor_cli = require("poor-cli.blink").provider()` to your blink `sources.providers`
-3. Include `"poor_cli"` in blink `sources.default`
+2. Add `poor-cli = require("poor-cli.blink").provider()` to your blink `sources.providers`
+3. Include `"poor-cli"` in blink `sources.default`
 4. Run `:checkhealth poor-cli`
 
 ### Plan review prompt not appearing
 
-1. Check that the server initialized successfully with `:PoorCliStatus`
+1. Check that the server initialized successfully with `:PoorCLIStatus`
 2. Ensure your `vim.ui.select()` provider is working
-3. Open the chat panel and inspect `:PoorCliDoctor` for RPC errors and remediation guidance
+3. Open the chat panel and inspect `:PoorCLIDoctor` for RPC errors and remediation guidance
 
 ### Multiplayer room state missing
 
-1. Confirm `multiplayer.enabled = true` and that `invite` is set
-2. Check `:PoorCliStatus` or `:PoorCliCollab summary` for room, role, and member count
-3. Verify the remote host `/rpc` endpoint is reachable from Neovim
+1. Run `:PoorCLICollabQuick` to start or share a host invite
+2. Confirm joiners have `multiplayer.enabled = true` and an `invite`
+3. Check `:PoorCLIStatus` or `:PoorCLICollab summary` for room, role, and member count
+4. Verify the remote host `/rpc` endpoint is reachable from Neovim
 
 ### Ghost text not visible
 
 1. Try a different highlight group: `ghost_text_hl = "NonText"`
 2. Ensure your colorscheme has the highlight defined
-3. If suggestions flash and disappear, use `:PoorCliCancel` and inspect the log for request cancellations or provider errors
+3. If suggestions flash and disappear, use `:PoorCLICancel` and inspect the log for request cancellations or provider errors
 
 ### Reporting bugs
 
 When reporting a Neovim-side issue, include:
 
-1. `:PoorCliCopyDebugInfo`
-2. the contents of `:PoorCliOpenLog`
-3. a minimal repro generated by `:PoorCliWriteMinInit`
+1. `:PoorCLICopyDebugInfo`
+2. the contents of `:PoorCLIOpenLog`
+3. a minimal repro generated by `:PoorCLIWriteMinInit`
 
 ## 📄 License
 

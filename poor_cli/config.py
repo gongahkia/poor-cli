@@ -88,7 +88,7 @@ class ProviderConfig:
 @dataclass
 class ModelConfig:
     """Configuration for AI model settings"""
-    provider: str = "openai"  # Active provider: gemini, openai, anthropic, ollama
+    provider: str = "openai"  # Active provider: gemini, openai, anthropic, local OpenAI-compatible, etc.
     model_name: str = field(default_factory=lambda: default_model_for_provider("openai"))
     routing_mode: str = "manual"
     temperature: float = 0.7
@@ -130,10 +130,12 @@ class ModelConfig:
 
         # Convert providers dict to ProviderConfig objects if provided
         if providers_data:
-            config.providers = {
+            merged = dict(config.providers)
+            merged.update({
                 name: ProviderConfig(**provider_dict) if isinstance(provider_dict, dict) else provider_dict
                 for name, provider_dict in providers_data.items()
-            }
+            })
+            config.providers = merged
 
         return config
 
@@ -146,6 +148,7 @@ class HistoryConfig:
     save_directory: str = "~/.poor-cli/history"
     max_token_limit: int = 100000  # Context window limit
     auto_migrate_legacy_history: bool = True
+    regenerate_temperature_bump: float = 0.2
 
     # History restoration settings
     restore_on_startup: bool = True  # Load previous session on startup
@@ -255,6 +258,12 @@ class OutputTruncationConfig:
 
 
 @dataclass
+class RtkLiteConfig:
+    enabled: bool = True
+    tiny_output_bytes: int = 300
+
+
+@dataclass
 class AgenticConfig:
     """Configuration for agentic loop behavior"""
     max_iterations: int = 25 # max tool-call round-trips per request
@@ -301,6 +310,23 @@ class CheckpointConfig:
     checkpoint_on_session_end: bool = False  # Create checkpoint at end
     max_age_hours: int = 0  # prune checkpoints older than N hours (0 = disabled)
     max_disk_mb: int = 0  # prune when total disk exceeds N MB (0 = disabled)
+
+
+@dataclass
+class DiffReviewConfig:
+    mode: str = "review"
+    layout: str = "unified"
+    panel_position: str = "right"
+    panel_width: int = 90
+    auto_open: bool = True
+    risky_paths: list = field(default_factory=lambda: [
+        "package.json",
+        "pyproject.toml",
+        "Cargo.toml",
+        "/main\\.",
+        "/__init__\\.",
+    ])
+    risky_line_threshold: int = 50
 
 
 @dataclass
@@ -462,6 +488,24 @@ class WorkflowConfig:
 
 
 @dataclass
+class McpRegistryConfig:
+    enabled: bool = False
+
+
+@dataclass
+class McpConfig:
+    registry: McpRegistryConfig = field(default_factory=McpRegistryConfig)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'McpConfig':
+        if not isinstance(data, dict):
+            return cls()
+        registry_data = data.get("registry", {})
+        registry = McpRegistryConfig(**registry_data) if isinstance(registry_data, dict) else McpRegistryConfig()
+        return cls(registry=registry)
+
+
+@dataclass
 class Config:
     """Main configuration class"""
     model: ModelConfig = field(default_factory=ModelConfig)
@@ -476,6 +520,7 @@ class Config:
     workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
     plan_mode: PlanModeConfig = field(default_factory=PlanModeConfig)
     checkpoint: CheckpointConfig = field(default_factory=CheckpointConfig)
+    diff_review: DiffReviewConfig = field(default_factory=DiffReviewConfig)
     audit: AuditConfig = field(default_factory=AuditConfig)
     agentic: AgenticConfig = field(default_factory=AgenticConfig)
     cost_guardrails: CostGuardrailConfig = field(default_factory=CostGuardrailConfig)
@@ -483,9 +528,11 @@ class Config:
     context_compression: ContextCompressionConfig = field(default_factory=ContextCompressionConfig)
     context: ContextConfig = field(default_factory=ContextConfig)
     output_truncation: OutputTruncationConfig = field(default_factory=OutputTruncationConfig)
+    rtk_lite: RtkLiteConfig = field(default_factory=RtkLiteConfig)
     repo_index: RepoIndexConfig = field(default_factory=RepoIndexConfig)
     kv_cache: KVCacheConfig = field(default_factory=KVCacheConfig)
     research: ResearchConfig = field(default_factory=ResearchConfig)
+    mcp: McpConfig = field(default_factory=McpConfig)
     economy: EconomyConfig = field(default_factory=EconomyConfig)
     retry: RetryConfig = field(default_factory=RetryConfig)
     circuit_breaker: CircuitBreakerConfig = field(default_factory=CircuitBreakerConfig)
@@ -515,6 +562,7 @@ class Config:
             "workflow": asdict(self.workflow),
             "plan_mode": asdict(self.plan_mode),
             "checkpoint": asdict(self.checkpoint),
+            "diff_review": asdict(self.diff_review),
             "audit": asdict(self.audit),
             "agentic": asdict(self.agentic),
             "cost_guardrails": asdict(self.cost_guardrails),
@@ -522,9 +570,11 @@ class Config:
             "context_compression": asdict(self.context_compression),
             "context": asdict(self.context),
             "output_truncation": asdict(self.output_truncation),
+            "rtk_lite": asdict(self.rtk_lite),
             "repo_index": asdict(self.repo_index),
             "kv_cache": asdict(self.kv_cache),
             "research": asdict(self.research),
+            "mcp": asdict(self.mcp),
             "economy": asdict(self.economy),
             "retry": {k: v for k, v in asdict(self.retry).items() if k != "retryable_exceptions"},
             "circuit_breaker": asdict(self.circuit_breaker),
@@ -549,6 +599,7 @@ class Config:
             workflow=WorkflowConfig(**data.get("workflow", {})),
             plan_mode=PlanModeConfig(**data.get("plan_mode", {})),
             checkpoint=CheckpointConfig(**data.get("checkpoint", {})),
+            diff_review=DiffReviewConfig(**data.get("diff_review", {})),
             audit=AuditConfig(**data.get("audit", {})),
             agentic=AgenticConfig(**data.get("agentic", {})),
             cost_guardrails=CostGuardrailConfig(**data.get("cost_guardrails", {})),
@@ -556,9 +607,11 @@ class Config:
             context_compression=ContextCompressionConfig(**data.get("context_compression", {})),
             context=ContextConfig(**data.get("context", {})),
             output_truncation=OutputTruncationConfig(**data.get("output_truncation", {})),
+            rtk_lite=RtkLiteConfig(**data.get("rtk_lite", {})),
             repo_index=RepoIndexConfig(**data.get("repo_index", {})),
             kv_cache=KVCacheConfig(**data.get("kv_cache", {})),
             research=ResearchConfig.from_dict(data.get("research", {})),
+            mcp=McpConfig.from_dict(data.get("mcp", {})),
             economy=EconomyConfig(**data.get("economy", {})),
             retry=RetryConfig(**{k: v for k, v in data.get("retry", {}).items() if k != "retryable_exceptions"}),
             circuit_breaker=CircuitBreakerConfig(**data.get("circuit_breaker", {})),
@@ -669,6 +722,7 @@ class ConfigManager:
             "workflow",
             "plan_mode",
             "checkpoint",
+            "diff_review",
             "audit",
             "agentic",
             "cost_guardrails",
@@ -678,6 +732,7 @@ class ConfigManager:
             "output_truncation",
             "kv_cache",
             "research",
+            "mcp",
             "economy",
             "mcp_servers",
             "file_cache",

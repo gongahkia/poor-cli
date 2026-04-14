@@ -11,7 +11,7 @@ import inspect
 import re
 import threading
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from .audit_log import AuditEventType, AuditLogger
 from .config import ConfigManager, Config
@@ -19,6 +19,7 @@ from .provider_probe import (
     normalize_routing_mode,
     resolve_routing_mode,
 )
+from .provider_catalog import KEYLESS_LOCAL_PROVIDER_NAMES
 from .provider_fallback import ProviderFallbackManager
 from .providers.base import BaseProvider
 from .providers.capability import ProviderCapability, provider_has_capability
@@ -35,7 +36,7 @@ from .block_cache import BlockCacheSession
 from .instructions import InstructionManager, InstructionSnapshot
 from .context_contract import ContextContractManager
 from .permission_engine import PermissionEngineMixin
-from .mcp_client import MCPManager
+from .mcp_client import MCPManager, discover_mcp_config
 from .plan_analyzer import PlanAnalyzer
 from .policy_hooks import PolicyHookManager
 from .economy import (
@@ -176,8 +177,13 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
         self._task_input_tokens: int = 0
         self._task_output_tokens: int = 0
         self._task_cost_usd: float = 0.0
+        self._task_cache_creation_input_tokens: int = 0
+        self._task_cache_read_input_tokens: int = 0
         self._cost_warning_emitted: bool = False
         self._turn_economy: EconomyTurnReport = EconomyTurnReport()
+        self._turn_cost_recorded: bool = False
+        self._cost_turn_history: List[Dict[str, Any]] = []
+        self._cost_tool_totals: Dict[str, Dict[str, Any]] = {}
         self._block_cache: BlockCacheSession = BlockCacheSession()
 
         self._context_assembly: ContextAssemblyOrchestrator = ContextAssemblyOrchestrator(self)
@@ -246,6 +252,9 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
         self._fallback_manager: Optional[ProviderFallbackManager] = None
         self._run_history: Optional[RunHistoryManager] = None
         self._last_context_preview: Dict[str, Any] = {}
+        self._last_context_snapshot: Optional[Any] = None
+        self._context_pinned_files: List[str] = []
+        self._context_dropped_files: Set[str] = set()
         self._last_mutation_summary: Dict[str, Any] = {}
         self._last_fallback_summary: Dict[str, Any] = {}
         self._last_provider_error: str = ""
@@ -303,8 +312,7 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
                     self.config.model.provider
                 )
             
-            # Ollama doesn't require API key
-            if not resolved_api_key and self.config.model.provider != "ollama":
+            if not resolved_api_key and self.config.model.provider not in KEYLESS_LOCAL_PROVIDER_NAMES:
                 raise MissingAPIKeyError(
                     f"No API key found for provider: {self.config.model.provider}. "
                     f"Set environment variable: "
@@ -372,8 +380,14 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
                 archive_dir=archive_dir,
             )
 
-            if self.config.mcp_servers:
-                self._mcp_manager = MCPManager(self.config.mcp_servers, repo_root=repo_root)
+            mcp_servers = self.config.mcp_servers or discover_mcp_config(repo_root)
+            if mcp_servers:
+                registry_cfg = getattr(getattr(self.config, "mcp", None), "registry", None)
+                self._mcp_manager = MCPManager(
+                    mcp_servers,
+                    repo_root=repo_root,
+                    registry_autodiscover=bool(getattr(registry_cfg, "enabled", False)),
+                )
                 await self._mcp_manager.initialize()
             self.tool_registry._core = self  # back-ref for compact/delegate tools
             tool_declarations = await self._resolve_tool_declarations_for_groups([CORE_TOOL_GROUP])
@@ -397,7 +411,7 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
             _plan = bool(self.config.plan_mode.enabled)
             # constrained providers get budget-aware pruning
             _max_sys = 0
-            if self.config.model.provider == "ollama":
+            if self.config.model.provider in KEYLESS_LOCAL_PROVIDER_NAMES:
                 _max_sys = 1000 # ~4k chars for small-context local models
             self._system_instruction = build_tool_calling_system_instruction(
                 str(repo_root), provider=self.config.model.provider,
@@ -622,7 +636,7 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
         if not resolved_api_key:
             resolved_api_key = self._config_manager.get_api_key(resolved_provider)
 
-        if not resolved_api_key and resolved_provider != "ollama":
+        if not resolved_api_key and resolved_provider not in KEYLESS_LOCAL_PROVIDER_NAMES:
             raise ConfigurationError(
                 f"No API key found for provider: {resolved_provider}. "
                 f"Set environment variable: "

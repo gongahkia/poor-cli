@@ -44,7 +44,7 @@ end
 
 local function send_decision(allowed)
     rpc.notify("poor-cli/planRes", { promptId = M.state.prompt_id, allowed = allowed })
-    vim.notify("[poor-cli] plan " .. (allowed and "approved" or "rejected"),
+    require("poor-cli.notify").notify("[poor-cli] plan " .. (allowed and "approved" or "rejected"),
         allowed and vim.log.levels.INFO or vim.log.levels.WARN)
     M.state.active = false
     close_plan()

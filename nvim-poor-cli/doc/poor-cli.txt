@@ -72,6 +72,16 @@ accept_key ~
     Default: "<Tab>"
     Key to accept completion. Falls back to normal Tab if no completion.
 
+                                                        *poor-cli-config.accept_line_key*
+accept_line_key ~
+    Default: "<M-l>"
+    Key to accept the next line of ghost text.
+
+                                                        *poor-cli-config.preview_key*
+preview_key ~
+    Default: "<M-?>"
+    Key to open a syntax-highlighted completion preview split.
+
                                                         *poor-cli-config.dismiss_key*
 dismiss_key ~
     Default: "<Esc>"
@@ -174,93 +184,93 @@ diagnostics_enabled ~
 
 COMMANDS                                                *poor-cli-commands*
 
-:PoorCliStart                                           *:PoorCliStart*
+:PoorCLIStart                                           *:PoorCLIStart*
     Start the AI server.
 
-:PoorCliStop                                            *:PoorCliStop*
+:PoorCLIStop                                            *:PoorCLIStop*
     Stop the AI server.
 
-:PoorCliRestart                                         *:PoorCliRestart*
+:PoorCLIRestart                                         *:PoorCLIRestart*
     Restart the AI server and re-initialize the session.
 
-:PoorCliCancel                                          *:PoorCliCancel*
+:PoorCLICancel                                          *:PoorCLICancel*
     Cancel the active inline or chat request.
 
-:PoorCliStatus                                          *:PoorCliStatus*
+:PoorCLIStatus                                          *:PoorCLIStatus*
     Show the shared session status summary with routing, context, and
     collaboration state.
 
-:PoorCliTrust                                           *:PoorCliTrust*
+:PoorCLITrust                                           *:PoorCLITrust*
     Open the trust center for provider, sandbox, rollback, policy, and
     privacy posture.
 
-:PoorCliRuns                                            *:PoorCliRuns*
+:PoorCLIRuns                                            *:PoorCLIRuns*
     Open recent shared run history.
 
-:PoorCliWorkflow [name]                                 *:PoorCliWorkflow*
+:PoorCLIWorkflow [name]                                 *:PoorCLIWorkflow*
     Legacy alias: list slash-trigger AutomationRule scaffolds.
 
-:PoorCliContext                                         *:PoorCliContext*
+:PoorCLIContext                                         *:PoorCLIContext*
     Open the backend context explanation for the current editing session.
 
-:PoorCliDoctor                                          *:PoorCliDoctor*
+:PoorCLIDoctor                                          *:PoorCLIDoctor*
     Open a structured diagnostic report buffer with actionable remediation.
 
-:PoorCliCopyDebugInfo                                   *:PoorCliCopyDebugInfo*
+:PoorCLICopyDebugInfo                                   *:PoorCLICopyDebugInfo*
     Copy the diagnostic report to the clipboard/register.
 
-:PoorCliOpenLog                                         *:PoorCliOpenLog*
+:PoorCLIOpenLog                                         *:PoorCLIOpenLog*
     Open the poor-cli server log file.
 
-:PoorCliOpenStateDir                                    *:PoorCliOpenStateDir*
+:PoorCLIOpenStateDir                                    *:PoorCLIOpenStateDir*
     Open the poor-cli state directory.
 
-:PoorCliWriteMinInit [path]                             *:PoorCliWriteMinInit*
+:PoorCLIWriteMinInit [path]                             *:PoorCLIWriteMinInit*
     Generate a minimal init.lua for reproducible bug reports.
 
-:PoorCliChat                                            *:PoorCliChat*
+:PoorCLIChat                                            *:PoorCLIChat*
     Toggle the chat panel.
 
-:PoorCliSend [message]                                  *:PoorCliSend*
+:PoorCLISend [message]                                  *:PoorCLISend*
     Send a message to chat. If no message provided, prompts for input.
 
-:PoorCliClear                                           *:PoorCliClear*
+:PoorCLIClear                                           *:PoorCLIClear*
     Clear chat history.
 
-:PoorCliDiagnostics                                     *:PoorCliDiagnostics*
+:PoorCLIDiagnostics                                     *:PoorCLIDiagnostics*
     Toggle assistant diagnostics integration.
 
-:PoorCliCheckpoints                                     *:PoorCliCheckpoints*
+:PoorCLICheckpoints                                     *:PoorCLICheckpoints*
     Browse and restore checkpoints via telescope.nvim.
 
-:PoorCliComplete                                        *:PoorCliComplete*
+:PoorCLIComplete                                        *:PoorCLIComplete*
     Trigger inline completion at cursor.
 
-:PoorCliAccept                                          *:PoorCliAccept*
+:PoorCLIAccept                                          *:PoorCLIAccept*
     Accept the current inline completion.
 
-:PoorCliDismiss                                         *:PoorCliDismiss*
+:PoorCLIDismiss                                         *:PoorCLIDismiss*
     Dismiss the current inline completion.
 
-:PoorCliAcceptLine                                      *:PoorCliAcceptLine*
+:PoorCLIAcceptLine                                      *:PoorCLIAcceptLine*
     Accept the current completion line.
 
-:PoorCliAcceptWord                                      *:PoorCliAcceptWord*
+:PoorCLIAcceptWord                                      *:PoorCLIAcceptWord*
     Accept the next completion word.
 
-:PoorCliSwitchProvider [provider] [model]               *:PoorCliSwitchProvider*
+:PoorCLISwitchProvider [provider] [model]               *:PoorCLISwitchProvider*
     Switch to a different AI provider. If no provider given, shows picker.
 
-:PoorCliExplain                                         *:PoorCliExplain*
+:PoorCLIExplain                                         *:PoorCLIExplain*
     Explain the current line or visual selection.
 
-:PoorCliRefactor                                        *:PoorCliRefactor*
+:PoorCLIRefactor                                        *:PoorCLIRefactor*
     Refactor the visual selection. Prompts for instruction.
 
-:PoorCliTest                                            *:PoorCliTest*
+:PoorCLITest                                            *:PoorCLITest*
     Generate unit tests for the current function.
 
-:PoorCliDoc                                             *:PoorCliDoc*
+:PoorCLIDoc                                             *:PoorCLIDoc*
     Generate documentation for the current function.
 
 KEYMAPS                                                 *poor-cli-keymaps*
@@ -268,6 +278,9 @@ KEYMAPS                                                 *poor-cli-keymaps*
 Insert mode:
     <C-Space>       Trigger inline completion
     <Tab>           Accept completion (or normal Tab)
+    <C-Right>       Accept next word of completion
+    <M-l>           Accept next line of completion
+    <M-?>           Preview full completion in split
     <Esc>           Dismiss completion (or normal Esc)
     <M-CR>          Trigger completion with instruction
 
@@ -284,16 +297,16 @@ API                                                     *poor-cli-api*
 
 Lua API for custom integrations:
 >lua
-    local poor_cli = require("poor-cli")
+    local poor-cli = require("poor-cli")
     
-    poor_cli.start()           -- Start server
-    poor_cli.stop()            -- Stop server
-    poor_cli.is_running()      -- Check if server running
-    poor_cli.complete()        -- Trigger completion
-    poor_cli.accept()          -- Accept completion
-    poor_cli.dismiss()         -- Dismiss completion
-    poor_cli.toggle_chat()     -- Toggle chat panel
-    poor_cli.send("message")   -- Send message to chat
+    poor-cli.start()           -- Start server
+    poor-cli.stop()            -- Stop server
+    poor-cli.is_running()      -- Check if server running
+    poor-cli.complete()        -- Trigger completion
+    poor-cli.accept()          -- Accept completion
+    poor-cli.dismiss()         -- Dismiss completion
+    poor-cli.toggle_chat()     -- Toggle chat panel
+    poor-cli.send("message")   -- Send message to chat
 <
 
 BLINK.CMP                                               *poor-cli-blink*
@@ -302,9 +315,9 @@ PoorCLI exposes a blink.cmp provider helper:
 >lua
     require("blink.cmp").setup({
         sources = {
-            default = { "lsp", "path", "snippets", "buffer", "poor_cli" },
+            default = { "lsp", "path", "snippets", "buffer", "poor-cli" },
             providers = {
-                poor_cli = require("poor-cli.blink").provider(),
+                poor-cli = require("poor-cli.blink").provider(),
             },
         },
     })
@@ -325,27 +338,27 @@ Server won't start:
 1. Check `poor-cli-server` is in PATH: `which poor-cli-server`
 2. Install if missing: `pip install poor-cli`
 3. Check Python version: `python3 --version` (needs 3.9+)
-4. Open the log with `:PoorCliOpenLog`
-5. Capture a report with `:PoorCliDoctor` or `:PoorCliTrust`
+4. Open the log with `:PoorCLIOpenLog`
+5. Capture a report with `:PoorCLIDoctor` or `:PoorCLITrust`
 
 No completions:
 1. Verify API key: `echo $GEMINI_API_KEY`
-2. Check status: `:PoorCliStatus`
+2. Check status: `:PoorCLIStatus`
 3. Confirm the current buffer is not blocked by filetype/buftype/manual-only
    completion settings
-4. Inspect provider, sandbox, and rollback posture in `:PoorCliTrust`
+4. Inspect provider, sandbox, and rollback posture in `:PoorCLITrust`
 5. If you use nvim-cmp, run `:checkhealth poor-cli`
-6. Open the server log with `:PoorCliOpenLog`
+6. Open the server log with `:PoorCLIOpenLog`
 
 blink.cmp source missing:
 1. Confirm blink.cmp is installed
-2. Add `poor_cli = require("poor-cli.blink").provider()` to blink providers
-3. Include `poor_cli` in blink default sources
+2. Add `poor-cli = require("poor-cli.blink").provider()` to blink providers
+3. Include `poor-cli` in blink default sources
 4. Run `:checkhealth poor-cli`
 
 Bug reports:
-1. Run `:PoorCliCopyDebugInfo`
-2. Include the log from `:PoorCliOpenLog`
-3. Generate a minimal repro config with `:PoorCliWriteMinInit`
+1. Run `:PoorCLICopyDebugInfo`
+2. Include the log from `:PoorCLIOpenLog`
+3. Generate a minimal repro config with `:PoorCLIWriteMinInit`
 
 vim:tw=78:ts=8:ft=help:norl:

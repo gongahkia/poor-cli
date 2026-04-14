@@ -1,4 +1,4 @@
-"""tests for poor_cli.docker_sandbox module."""
+"""tests for poor-cli.docker_sandbox module."""
 
 import os
 import unittest

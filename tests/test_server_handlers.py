@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -46,6 +47,10 @@ poor-cli/clearHistory
 poor-cli/compactContext
 poor-cli/previewContext
 poor-cli/getContextExplain
+context.snapshot
+context.refresh
+context.pin
+context.drop
 poor-cli/previewMutation
 poor-cli/exec
 poor-cli/listRuns
@@ -111,6 +116,18 @@ poor-cli/getServiceStatus
 poor-cli/getServiceLogs
 poor-cli/cancelRequest
 poor-cli/chatStreaming
+poor-cli/toolStreamAck
+poor-cli/cancelTool
+timeline.list
+timeline.cancel
+timeline.retry
+timeline.dismiss
+plan.list
+plan.advance
+plan.regress
+plan.block
+plan.add
+plan.delete
 poor-cli/pairStart
 poor-cli/suggestText
 poor-cli/peerMessage
@@ -120,6 +137,11 @@ poor-cli/listAgenda
 poor-cli/resolveAgendaItem
 poor-cli/setHandRaised
 poor-cli/nextDriver
+collab.room
+collab.room/members
+collab.room/pass_driver
+collab.room/events
+collab.room/get_invite_link
 poor-cli/getSessionCost
 poor-cli/listOllamaModels
 poor-cli/gcCheckpoints
@@ -170,6 +192,7 @@ poor-cli/memorySearch
 poor-cli/memoryDelete
 poor-cli/getDockerSandboxStatus
 poor-cli/watchScan
+watch.status
 poor-cli/previewStart
 poor-cli/previewStop
 poor-cli/previewStatus
@@ -183,7 +206,16 @@ poor-cli/promptLoad
 poor-cli/promptList
 poor-cli/promptDelete
 poor-cli/getCommandManifest
+commands.list
 poor-cli/latentCompatibility
+branches.tree
+branches.switch
+poor-cli/branchesTree
+poor-cli/branchesSwitch
+chat.regenerate
+poor-cli/regenerateTurn
+chat.switch
+chat.siblings
 """.split()
 
 
@@ -243,6 +275,77 @@ def test_dispatch_uses_registry_across_handler_families(monkeypatch):
     assert [result.result["family"] for result in results] == ["chat", "providers", "tasks"]
     assert all(result.result["sameCtx"] is True for result in results)
     assert [result.result["params"]["idx"] for result in results] == [0, 1, 2]
+
+
+def _inline_server(core):
+    server = PoorCLIServer.__new__(PoorCLIServer)
+    server._ensure_initialized = lambda: None
+    session = SimpleNamespace(core=core)
+    server._session_manager = SimpleNamespace(get_session=lambda *args, **kwargs: session)
+    return server
+
+
+def test_inline_complete_legacy_shape_without_count():
+    class Core:
+        calls = 0
+
+        async def inline_complete(self, **kwargs):
+            self.calls += 1
+            yield "abc"
+
+    server = _inline_server(Core())
+
+    result = asyncio.run(server.handle_inline_complete({}))
+    assert result == {"completion": "abc", "isPartial": False}
+    assert server.core.calls == 1
+
+
+def test_inline_complete_returns_ordered_candidates():
+    class Core:
+        calls = 0
+
+        async def inline_complete(self, **kwargs):
+            self.calls += 1
+            yield f"candidate-{self.calls}"
+
+    server = _inline_server(Core())
+
+    result = asyncio.run(server.handle_inline_complete({"completions_count": 3}))
+    assert result == {
+        "completion": "candidate-1",
+        "completions": ["candidate-1", "candidate-2", "candidate-3"],
+        "isPartial": False,
+    }
+
+
+def test_inline_complete_preserves_empty_candidate_slots():
+    class Core:
+        calls = 0
+
+        async def inline_complete(self, **kwargs):
+            self.calls += 1
+            if self.calls == 2:
+                yield "middle"
+
+    server = _inline_server(Core())
+
+    result = asyncio.run(server.handle_inline_complete({"completions_count": 3}))
+    assert result["completions"] == ["", "middle", ""]
+
+
+def test_inline_complete_clamps_invalid_count_to_legacy_shape():
+    class Core:
+        calls = 0
+
+        async def inline_complete(self, **kwargs):
+            self.calls += 1
+            yield "only"
+
+    server = _inline_server(Core())
+
+    result = asyncio.run(server.handle_inline_complete({"completions_count": 0}))
+    assert result == {"completion": "only", "isPartial": False}
+    assert server.core.calls == 1
 
 
 def test_runtime_py_under_800_lines():

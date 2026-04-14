@@ -17,11 +17,11 @@ end
 
 function M.setup()
     local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
-    create_command("PoorCliRecoverySuggestions", function(opts)
+    create_command("PoorCLIRecoverySuggestions", function(opts)
         local error_text = opts.args or ""
         if error_text == "" then error_text = vim.fn.getreg("+") or "" end
         rpc.request("poor-cli/getRecoverySuggestions", { error = error_text }, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local suggestions = (result or {}).suggestions or {}
             local lines = { "# Recovery Suggestions", "" }
             if #suggestions == 0 then table.insert(lines, "no suggestions for this error"); open_scratch("[poor-cli recovery]", table.concat(lines, "\n")); return end
@@ -37,7 +37,7 @@ function M.setup()
             open_scratch("[poor-cli recovery]", table.concat(lines, "\n"))
         end) end)
     end, { nargs = "?", desc = "Get error recovery suggestions" })
-    create_command("PoorCliSandboxStatus", function()
+    create_command("PoorCLISandboxStatus", function()
         local sandbox = rpc.request_sync("poor-cli/getSandboxStatus", {}, 5000) or {}
         local docker = rpc.request_sync("poor-cli/getDockerSandboxStatus", {}, 5000) or {}
         local lines = { "# Sandbox Status", "" }

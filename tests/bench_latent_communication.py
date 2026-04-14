@@ -119,8 +119,8 @@ def main():
     parser.add_argument("--max-tasks", type=int, default=20, help="max tasks to run")
     args = parser.parse_args()
     if not HAS_DEPS:
-        print(f"Missing dependencies: {IMPORT_ERR}")
-        print("Install: pip install torch transformers accelerate")
+        print(f"Latent benchmark unavailable: {IMPORT_ERR}")
+        print("Install: pip install 'poor-cli[hf-local]'")
         sys.exit(1)
     compat = is_latent_compatible()
     if not compat["feasible"]:

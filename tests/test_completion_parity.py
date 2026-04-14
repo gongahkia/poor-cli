@@ -32,9 +32,9 @@ AGENT_SUBCOMMANDS = {"start", "list", "logs", "result", "cancel", "run"}
 class CompletionParityTests(unittest.TestCase):
     def setUp(self) -> None:
         self.repo_root = Path(__file__).resolve().parent.parent
-        self.bash = (self.repo_root / "completions" / "poor-cli.bash").read_text(encoding="utf-8")
-        self.fish = (self.repo_root / "completions" / "poor-cli.fish").read_text(encoding="utf-8")
-        self.zsh = (self.repo_root / "completions" / "poor-cli.zsh").read_text(encoding="utf-8")
+        self.bash = (self.repo_root / "completions" / "poor_cli.bash").read_text(encoding="utf-8")
+        self.fish = (self.repo_root / "completions" / "poor_cli.fish").read_text(encoding="utf-8")
+        self.zsh = (self.repo_root / "completions" / "poor_cli.zsh").read_text(encoding="utf-8")
 
     def test_bash_completion_matches_root_surface(self) -> None:
         match = re.search(r'local root_commands="([^"]+)"', self.bash)

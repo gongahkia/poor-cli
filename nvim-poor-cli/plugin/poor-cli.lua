@@ -14,7 +14,7 @@ vim.g.loaded_poor_cli = 1
 
 -- Check for Neovim 0.9+
 if vim.fn.has("nvim-0.9") ~= 1 then
-  vim.notify("poor-cli works best with Neovim 0.9+. Some features may not work.", vim.log.levels.WARN)
+  require("poor-cli.notify").notify("poor-cli works best with Neovim 0.9+. Some features may not work.", vim.log.levels.WARN)
 end
 
 -- Warn if setup() is never called — check once on VimEnter
@@ -23,7 +23,7 @@ vim.api.nvim_create_autocmd("VimEnter", {
   callback = function()
     local ok, pc = pcall(require, "poor-cli")
     if ok and not pc._setup_complete then
-      vim.notify(
+      require("poor-cli.notify").notify(
         "[poor-cli] plugin loaded but setup() not called. Add: require('poor-cli').setup({}) to your config",
         vim.log.levels.WARN
       )

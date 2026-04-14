@@ -1,4 +1,4 @@
-"""tests for poor_cli.circuit_breaker module."""
+"""tests for poor-cli.circuit_breaker module."""
 
 import time
 import unittest

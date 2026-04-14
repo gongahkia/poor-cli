@@ -19,7 +19,7 @@ Build an Aider-style repository map using tree-sitter for AST parsing and PageRa
 
 ### Implementation details
 
-1. **Audit existing repo_graph.py** — poor-cli already has `poor_cli/repo_graph.py`. Read it thoroughly. Determine:
+1. **Audit existing repo_graph.py** — poor-cli already has `poor-cli/repo_graph.py`. Read it thoroughly. Determine:
    - Does it already use tree-sitter?
    - Does it produce a ranked map of symbols?
    - What's the current output format?
@@ -45,13 +45,13 @@ Build an Aider-style repository map using tree-sitter for AST parsing and PageRa
 
 5. **Map format** — output a concise text map:
    ```
-   poor_cli/core.py (rank: 0.12)
+   poor-cli/core.py (rank: 0.12)
      class AgenticCore:
        async def run_agent_loop(self, prompt: str) -> str
        async def handle_tool_call(self, call: ToolCall) -> ToolResult
        def compact_context(self, target_ratio: float) -> None
      
-   poor_cli/providers/base.py (rank: 0.09)
+   poor-cli/providers/base.py (rank: 0.09)
      class BaseProvider(ABC):
        async def complete(self, messages, tools) -> Response
        async def stream(self, messages, tools) -> AsyncIterator
@@ -66,9 +66,9 @@ Build an Aider-style repository map using tree-sitter for AST parsing and PageRa
 9. **Neovim command** — the existing `/workspace-map` command should use this enhanced map.
 
 ### Files to create/modify
-- `poor_cli/repo_graph.py` (primary — enhance with tree-sitter + PageRank)
-- `poor_cli/indexer.py` (may overlap — coordinate with chunking)
-- `poor_cli/context_providers.py` (inject repo map into context)
+- `poor-cli/repo_graph.py` (primary — enhance with tree-sitter + PageRank)
+- `poor-cli/indexer.py` (may overlap — coordinate with chunking)
+- `poor-cli/context_providers.py` (inject repo map into context)
 - `requirements.txt` / `pyproject.toml` (add `tree-sitter` dependency if not present)
 
 ### Acceptance criteria
@@ -126,7 +126,7 @@ A middleware layer that sits between tool/MCP responses and the agent's context,
    ```
 
 4. **MCP response filtering** — for MCP tool calls, apply filtering at the MCP client layer:
-   - Read `poor_cli/mcp_scaffold.py` to find where MCP responses are received
+   - Read `poor-cli/mcp_scaffold.py` to find where MCP responses are received
    - Apply projection filter before returning to the agent loop
 
 5. **Size-based auto-filtering** — if a tool response exceeds a threshold (e.g., 5000 tokens), auto-summarize:
@@ -145,9 +145,9 @@ A middleware layer that sits between tool/MCP responses and the agent's context,
    ```
 
 ### Files to create/modify
-- `poor_cli/tool_output_filter.py` (new, ~200 lines)
-- `poor_cli/enhanced_tools.py` (integrate filter middleware in tool execution pipeline)
-- `poor_cli/mcp_scaffold.py` (apply filtering to MCP responses)
+- `poor-cli/tool_output_filter.py` (new, ~200 lines)
+- `poor-cli/enhanced_tools.py` (integrate filter middleware in tool execution pipeline)
+- `poor-cli/mcp_scaffold.py` (apply filtering to MCP responses)
 - `.poor-cli/tool_projections.yaml` (example config)
 
 ### Acceptance criteria
@@ -220,9 +220,9 @@ Optimize poor-cli's provider adapters to maximize prompt cache hit rates. This m
    - Dynamic content injected before static content
 
 ### Files to create/modify
-- Provider adapter files (in `poor_cli/providers/`) — each provider's prompt construction
-- `poor_cli/context_providers.py` — ensure stable ordering
-- `poor_cli/cost.py` or cost tracking module — add cache hit/miss metrics
+- Provider adapter files (in `poor-cli/providers/`) — each provider's prompt construction
+- `poor-cli/context_providers.py` — ensure stable ordering
+- `poor-cli/cost.py` or cost tracking module — add cache hit/miss metrics
 - `nvim-poor-cli/lua/poor-cli/cost.lua` — display cache savings
 
 ### Acceptance criteria

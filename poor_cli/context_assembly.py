@@ -259,6 +259,7 @@ class ContextAssemblyOrchestrator:
                 max_files=12,
             )
             if result is not None and getattr(result, "files", None):
+                self._apply_dropped_files(result)
                 result.files = list(self.block_cache.stabilize_files(result.files))
                 if getattr(result, "selected", None):
                     order = {file_ctx.path: idx for idx, file_ctx in enumerate(result.files)}
@@ -269,6 +270,41 @@ class ContextAssemblyOrchestrator:
             return result
         finally:
             context_manager._file_selector = previous_selector
+
+    def _apply_dropped_files(self, result: Any) -> None:
+        dropped = {
+            str(Path(path).expanduser().resolve())
+            for path in getattr(self._core, "_context_dropped_files", set()) or set()
+            if str(path or "").strip()
+        }
+        if not dropped:
+            return
+        kept = []
+        removed = set()
+        for file_ctx in list(getattr(result, "files", []) or []):
+            path = str(Path(str(getattr(file_ctx, "path", "") or "")).expanduser().resolve())
+            if path in dropped:
+                removed.add(str(getattr(file_ctx, "path", "") or path))
+                continue
+            kept.append(file_ctx)
+        if not removed:
+            return
+        result.files = kept
+        if not isinstance(getattr(result, "excluded", None), list):
+            result.excluded = []
+        if getattr(result, "selected", None):
+            selected = []
+            for item in result.selected:
+                path = str(item.get("path", "")) if isinstance(item, dict) else ""
+                if path in removed or str(Path(path).expanduser().resolve()) in dropped:
+                    if isinstance(item, dict):
+                        excluded = dict(item)
+                        excluded["excludedReason"] = "user-dropped"
+                        result.excluded.append(excluded)
+                    continue
+                selected.append(item)
+            result.selected = selected
+        result.total_tokens = sum(int(getattr(file_ctx, "tokens_estimate", 0) or 0) for file_ctx in kept)
 
     def _file_selector(self) -> Any:
         from .context.file_selector import FileSelector, SelectionWeights

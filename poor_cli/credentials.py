@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Mapping, MutableMapping, Optional
 
 from .exceptions import setup_logger
-from .provider_catalog import canonical_provider_name, provider_catalog
+from .provider_catalog import KEYLESS_LOCAL_PROVIDER_NAMES, canonical_provider_name, provider_catalog
 
 logger = setup_logger(__name__)
 
@@ -115,7 +115,7 @@ class CredentialStore:
             return []
         migrated: list[str] = []
         for provider, env_var in (provider_env_vars or provider_env_var_map()).items():
-            if provider == "ollama":
+            if provider in KEYLESS_LOCAL_PROVIDER_NAMES:
                 continue
             lookup = self.get_with_source(provider, env_var=env_var, config_keys=config_keys)
             if lookup.source not in {"environment", "config"} or not lookup.key:
@@ -134,7 +134,7 @@ class CredentialStore:
             return []
         candidates: list[str] = []
         for provider, env_var in (provider_env_vars or provider_env_var_map()).items():
-            if provider == "ollama":
+            if provider in KEYLESS_LOCAL_PROVIDER_NAMES:
                 continue
             if self._get_keyring(provider):
                 continue

@@ -105,10 +105,10 @@ prompt → complexity classifier → task type → historical analysis → calib
 
 ### Files
 
-- `poor_cli/thinking_budget.py` — core optimizer
-- `poor_cli/providers/base.py` — added `economy_max_thinking_tokens` field
-- `poor_cli/providers/anthropic_provider.py` — uses dynamic thinking budget
-- `poor_cli/core.py` — wires optimizer into budget decision pipeline
+- `poor-cli/thinking_budget.py` — core optimizer
+- `poor-cli/providers/base.py` — added `economy_max_thinking_tokens` field
+- `poor-cli/providers/anthropic_provider.py` — uses dynamic thinking budget
+- `poor-cli/core.py` — wires optimizer into budget decision pipeline
 
 ### How It Works
 

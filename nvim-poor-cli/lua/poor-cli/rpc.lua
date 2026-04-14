@@ -76,6 +76,9 @@ local SILENT_METHODS = {
     ["poor-cli/getStatusView"] = true,
     ["poor-cli/getCollabSummary"] = true,
     ["poor-cli/listHostMembers"] = true, -- collab panel refresh
+    ["collab.room"] = true,
+    ["collab.room/members"] = true,
+    ["collab.room/events"] = true,
     ["poor-cli/listTasks"] = true,
     ["poor-cli/listAgents"] = true,
     ["poor-cli/listHistory"] = true,
@@ -83,11 +86,16 @@ local SILENT_METHODS = {
     ["poor-cli/memoryList"] = true,
     ["poor-cli/listSessions"] = true,
     ["poor-cli/listAutomations"] = true,
+    ["diff.list"] = true,
+    ["timeline.list"] = true,
+    ["branches.tree"] = true,
+    ["mcp.list"] = true,
+    ["plan.list"] = true,
     ["shutdown"] = true,
 }
 
 local function pretty_method(method)
-    local name = tostring(method or ""):gsub("^poor%-cli/", "")
+    local name = tostring(method or ""):gsub("^poor-cli/", ""):gsub("^poor%-cli/", "")
     return name
 end
 
@@ -107,7 +115,7 @@ end
 
 local function emit_status_changed()
     vim.api.nvim_exec_autocmds("User", {
-        pattern = "PoorCliStatusChanged",
+        pattern = "PoorCLIStatusChanged",
         data = M.get_status(),
     })
 end
@@ -125,7 +133,7 @@ local function current_log_hint()
 end
 
 local function notify_with_context(message, level)
-    vim.notify("[poor-cli] " .. message .. current_log_hint(), level)
+    require("poor-cli.notify").notify("[poor-cli] " .. message .. current_log_hint(), level)
 end
 
 local function latest_stderr_line()
@@ -256,7 +264,7 @@ local function stop_startup_feedback(state)
                         -- Server hasn't finished init yet; don't alarm the user.
                         return
                     end
-                    vim.notify("[poor-cli] Config probe failed: " .. msg .. ". Run :PoorCliDoctor", vim.log.levels.WARN)
+                    require("poor-cli.notify").notify("[poor-cli] Config probe failed: " .. msg .. ". Run :PoorCLIDoctor", vim.log.levels.WARN)
                     return
                 end
                 local probe_elapsed = 0
@@ -710,7 +718,7 @@ function M.start(is_restart)
         return nil
     end
     if config.is_debug() then
-        vim.notify("[poor-cli] Starting server: " .. vim.inspect(cmd), vim.log.levels.DEBUG)
+        require("poor-cli.notify").notify("[poor-cli] Starting server: " .. vim.inspect(cmd), vim.log.levels.DEBUG)
     end
 
     update_state(is_restart and "restarting" or "starting", "Starting server")
@@ -773,7 +781,7 @@ function M.initialize(callback, opts)
         else
             M.capture_initialize_result(result)
             if config.is_debug() then
-                vim.notify("[poor-cli] Initialized: " .. vim.inspect(result), vim.log.levels.DEBUG)
+                require("poor-cli.notify").notify("[poor-cli] Initialized: " .. vim.inspect(result), vim.log.levels.DEBUG)
             end
         end
         if callback then
@@ -894,7 +902,7 @@ function M.request(method, params, callback)
     emit_request_feedback(method, "start")
 
     if config.is_debug() then
-        vim.notify("[poor-cli] Request " .. id .. ": " .. method, vim.log.levels.DEBUG)
+        require("poor-cli.notify").notify("[poor-cli] Request " .. id .. ": " .. method, vim.log.levels.DEBUG)
     end
 
     return id
@@ -1001,6 +1009,27 @@ function M.get_mcp_status(timeout_ms)
 end
 function M.mcp_health_check(callback)
     return M.request("poor-cli/mcpHealthCheck", {}, callback)
+end
+function M.mcp_list(params, callback)
+    return M.request("mcp.list", params or {}, callback)
+end
+function M.mcp_toggle(params, callback)
+    return M.request("mcp.toggle", params or {}, callback)
+end
+function M.mcp_edit(params, callback)
+    return M.request("mcp.edit", params or {}, callback)
+end
+function M.mcp_remove(params, callback)
+    return M.request("mcp.remove", params or {}, callback)
+end
+function M.mcp_health(params, callback)
+    return M.request("mcp.health", params or {}, callback)
+end
+function M.mcp_test(params, callback)
+    return M.request("mcp.test", params or {}, callback)
+end
+function M.mcp_registry_search(params, callback)
+    return M.request("mcp.registry.search", params or {}, callback)
 end
 -- policy
 function M.get_policy_status(timeout_ms)
@@ -1141,6 +1170,38 @@ function M.deploy(params, callback) return M.request("poor-cli/deploy", params o
 function M.preview_mutation(params, timeout_ms) return M.request_sync("poor-cli/previewMutation", params or {}, timeout_ms) end
 -- file watcher
 function M.watch_scan(callback) return M.request("poor-cli/watchScan", {}, callback) end
+function M.watch_status(params, callback) return M.request("watch.status", params or {}, callback) end
+-- diff review
+function M.diff_list(callback) return M.request("diff.list", {}, callback) end
+function M.diff_stage(params, callback) return M.request("diff.stage", params or {}, callback) end
+function M.diff_accept(params, callback) return M.request("diff.accept", params or {}, callback) end
+function M.diff_reject(params, callback) return M.request("diff.reject", params or {}, callback) end
+function M.diff_regen(params, callback) return M.request("diff.regen", params or {}, callback) end
+function M.branches_tree(params, callback) return M.request("branches.tree", params or {}, callback) end
+function M.branches_switch(params, callback) return M.request("branches.switch", params or {}, callback) end
+function M.chat_regenerate(params, callback) return M.request("chat.regenerate", params or {}, callback) end
+function M.chat_switch(params, callback) return M.request("chat.switch", params or {}, callback) end
+function M.chat_siblings(params, callback) return M.request("chat.siblings", params or {}, callback) end
+-- timeline
+function M.timeline_list(params, callback) return M.request("timeline.list", params or {}, callback) end
+function M.timeline_cancel(params, callback) return M.request("timeline.cancel", params or {}, callback) end
+function M.timeline_retry(params, callback) return M.request("timeline.retry", params or {}, callback) end
+function M.timeline_dismiss(params, callback) return M.request("timeline.dismiss", params or {}, callback) end
+function M.plan_list(callback) return M.request("plan.list", {}, callback) end
+function M.plan_advance(params, callback) return M.request("plan.advance", params or {}, callback) end
+function M.plan_regress(params, callback) return M.request("plan.regress", params or {}, callback) end
+function M.plan_block(params, callback) return M.request("plan.block", params or {}, callback) end
+function M.plan_add(params, callback) return M.request("plan.add", params or {}, callback) end
+function M.plan_delete(params, callback) return M.request("plan.delete", params or {}, callback) end
+-- context panel
+function M.context_snapshot(params, callback) return M.request("context.snapshot", params or {}, callback) end
+function M.context_refresh(params, callback) return M.request("context.refresh", params or {}, callback) end
+function M.context_pin(params, callback) return M.request("context.pin", params or {}, callback) end
+function M.context_drop(params, callback) return M.request("context.drop", params or {}, callback) end
+-- repo map
+function M.repo_map_top(params, callback) return M.request("repo_map.top", params or {}, callback) end
+function M.repo_map_expand(params, callback) return M.request("repo_map.expand", params or {}, callback) end
+function M.repo_map_symbols(params, callback) return M.request("repo_map.symbols", params or {}, callback) end
 -- profiles
 function M.list_profiles(timeout_ms) return M.request_sync("poor-cli/listProfiles", {}, timeout_ms) end
 function M.apply_profile(params, callback) return M.request("poor-cli/applyProfile", params or {}, callback) end
@@ -1261,7 +1322,7 @@ end
 
 function M.handle_response(message)
     if config.is_debug() then
-        vim.notify("[poor-cli] Response: " .. vim.inspect(message), vim.log.levels.DEBUG)
+        require("poor-cli.notify").notify("[poor-cli] Response: " .. vim.inspect(message), vim.log.levels.DEBUG)
     end
 
     if not message.id then
@@ -1295,7 +1356,7 @@ function M.handle_notification(message)
     local params = message.params or {}
     if message.method == "poor-cli/thinkingChunk" then
         vim.api.nvim_exec_autocmds("User", {
-            pattern = "PoorCliThinkingChunk",
+            pattern = "PoorCLIThinkingChunk",
             data = {
                 request_id = params.requestId or "",
                 chunk = params.chunk or "",
@@ -1303,7 +1364,7 @@ function M.handle_notification(message)
         })
     elseif message.method == "poor-cli/streamChunk" or message.method == "poor-cli/streamingChunk" then
         vim.api.nvim_exec_autocmds("User", {
-            pattern = "PoorCliStreamChunk",
+            pattern = "PoorCLIStreamChunk",
             data = {
                 request_id = params.requestId or "",
                 chunk = params.chunk or params.content or "",
@@ -1313,16 +1374,44 @@ function M.handle_notification(message)
         })
     elseif message.method == "poor-cli/inlineChunk" then
         vim.api.nvim_exec_autocmds("User", {
-            pattern = "PoorCliInlineChunk",
+            pattern = "PoorCLIInlineChunk",
             data = {
                 request_id = params.requestId or "",
                 chunk = params.chunk or "",
                 done = params.done or false,
             },
         })
+    elseif message.method == "tool.chunk" or message.method == "poor-cli/toolChunk" then
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = "PoorCLIToolChunk",
+            data = {
+                request_id = params.requestId or "",
+                event_id = params.eventId or "",
+                tool_call_id = params.toolCallId or "",
+                tool_name = params.toolName or "",
+                chunk_index = params.chunkIndex or 0,
+                chunk = params.chunk or "",
+                task_id = params.taskId or params.sourceId or "",
+            },
+        })
+    elseif message.method == "poor-cli/taskStarted" or message.method == "poor-cli/taskProgress" or message.method == "poor-cli/taskFinished" then
+        local pattern = message.method == "poor-cli/taskStarted" and "PoorCLITaskStarted"
+            or message.method == "poor-cli/taskFinished" and "PoorCLITaskFinished"
+            or "PoorCLITaskProgress"
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = pattern,
+            data = {
+                task = params.task or params,
+                task_id = params.taskId or params.task_id or params.id
+                    or (type(params.task) == "table" and (params.task.taskId or params.task.task_id or params.task.id))
+                    or "",
+                status = params.status or (type(params.task) == "table" and params.task.status) or "",
+                source = "rpc",
+            },
+        })
     elseif message.method == "poor-cli/toolEvent" then
         vim.api.nvim_exec_autocmds("User", {
-            pattern = "PoorCliToolEvent",
+            pattern = "PoorCLIToolEvent",
             data = {
                 request_id = params.requestId or "",
                 event_type = params.eventType or "",
@@ -1338,9 +1427,14 @@ function M.handle_notification(message)
                 iteration_cap = params.iterationCap or 25,
             },
         })
+    elseif message.method == "poor-cli/timelineEvent" then
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = "PoorCLITimelineEvent",
+            data = params,
+        })
     elseif message.method == "poor-cli/permissionReq" then
         vim.api.nvim_exec_autocmds("User", {
-            pattern = "PoorCliPermissionReq",
+            pattern = "PoorCLIPermissionReq",
             data = {
                 request_id = params.requestId or "",
                 tool_name = params.toolName or "",
@@ -1358,10 +1452,11 @@ function M.handle_notification(message)
         })
     elseif message.method == "poor-cli/planReq" then
         vim.api.nvim_exec_autocmds("User", {
-            pattern = "PoorCliPlanReq",
+            pattern = "PoorCLIPlanReq",
             data = {
                 request_id = params.requestId or "",
                 prompt_id = params.promptId or "",
+                plan_id = params.planId or "",
                 summary = params.summary or "",
                 original_request = params.originalRequest or "",
                 steps = params.steps or {},
@@ -1374,7 +1469,7 @@ function M.handle_notification(message)
             M.capabilities.providerInfo = provider_info
         end
         vim.api.nvim_exec_autocmds("User", {
-            pattern = "PoorCliInitialized",
+            pattern = "PoorCLIInitialized",
             data = { provider_info = provider_info },
         })
         emit_status_changed()
@@ -1384,13 +1479,23 @@ function M.handle_notification(message)
             M.capabilities.providerInfo = provider_info
         end
         vim.api.nvim_exec_autocmds("User", {
-            pattern = "PoorCliProviderChanged",
+            pattern = "PoorCLIProviderChanged",
             data = { provider_info = provider_info },
         })
         emit_status_changed()
+    elseif message.method == "poor-cli/stageEvent" then
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = "PoorCLIStageEvent",
+            data = params,
+        })
+    elseif message.method == "poor-cli/editCommitted" then
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = "PoorCLIEditCommitted",
+            data = params,
+        })
     elseif message.method == "poor-cli/progress" then
         vim.api.nvim_exec_autocmds("User", {
-            pattern = "PoorCliProgress",
+            pattern = "PoorCLIProgress",
             data = {
                 request_id = params.requestId or "",
                 phase = params.phase or "",
@@ -1401,7 +1506,7 @@ function M.handle_notification(message)
         })
     elseif message.method == "poor-cli/costUpdate" then
         vim.api.nvim_exec_autocmds("User", {
-            pattern = "PoorCliCostUpdate",
+            pattern = "PoorCLICostUpdate",
             data = {
                 request_id = params.requestId or "",
                 input_tokens = params.inputTokens or 0,
@@ -1409,6 +1514,7 @@ function M.handle_notification(message)
                 estimated_cost = params.estimatedCost or 0,
                 cache_creation_input_tokens = params.cacheCreationInputTokens or 0,
                 cache_read_input_tokens = params.cacheReadInputTokens or 0,
+                is_estimate = params.isEstimate or false,
                 confidence_percent = params.confidencePercent,
                 confidence_category = params.confidenceCategory,
             },
@@ -1416,7 +1522,7 @@ function M.handle_notification(message)
     elseif message.method == "poor-cli/roomEvent" then
         M.apply_room_event(params)
         vim.api.nvim_exec_autocmds("User", {
-            pattern = "PoorCliRoomEvent",
+            pattern = "PoorCLIRoomEvent",
             data = {
                 room = params.room or "",
                 event_type = params.eventType or "",
@@ -1433,7 +1539,7 @@ function M.handle_notification(message)
         })
     elseif message.method == "poor-cli/peerMessage" then
         vim.api.nvim_exec_autocmds("User", {
-            pattern = "PoorCliPeerMessage",
+            pattern = "PoorCLIPeerMessage",
             data = {
                 room = params.room or "",
                 sender = params.sender or "?",
@@ -1444,7 +1550,7 @@ function M.handle_notification(message)
     elseif message.method == "poor-cli/memberRoleUpdated" then
         M.apply_member_role_update(params)
         vim.api.nvim_exec_autocmds("User", {
-            pattern = "PoorCliMemberRoleUpdated",
+            pattern = "PoorCLIMemberRoleUpdated",
             data = {
                 room = params.room or "",
                 connection_id = params.connectionId or "",
@@ -1458,7 +1564,7 @@ function M.handle_notification(message)
             room = params.room or "",
         }
         vim.api.nvim_exec_autocmds("User", {
-            pattern = "PoorCliSuggestion",
+            pattern = "PoorCLISuggestion",
             data = {
                 sender = params.sender or "",
                 text = params.text or "",
@@ -1473,7 +1579,7 @@ function M.handle_stderr(data)
         if line ~= "" then
             append_stderr_line(line)
             if config.is_debug() then
-                vim.notify("[poor-cli server] " .. line, vim.log.levels.DEBUG)
+                require("poor-cli.notify").notify("[poor-cli server] " .. line, vim.log.levels.DEBUG)
             end
         end
     end
@@ -1501,7 +1607,7 @@ function M.handle_exit(code)
         M.restart_attempt = 0
         update_state("stopped", "Stopped")
         if config.is_debug() then
-            vim.notify("[poor-cli] Server stopped by user", vim.log.levels.DEBUG)
+            require("poor-cli.notify").notify("[poor-cli] Server stopped by user", vim.log.levels.DEBUG)
         end
         return
     end
@@ -1510,7 +1616,7 @@ function M.handle_exit(code)
         M.restart_attempt = 0
         update_state("stopped", "Stopped")
         if config.is_debug() then
-            vim.notify("[poor-cli] Server exited normally", vim.log.levels.DEBUG)
+            require("poor-cli.notify").notify("[poor-cli] Server exited normally", vim.log.levels.DEBUG)
         end
         return
     end
@@ -1532,11 +1638,11 @@ function M.handle_exit(code)
     end
 
     if config.get("auto_restart") then
-        vim.notify("[poor-cli] Server crashed" .. hint .. " — restarting. Chat context was reset.", vim.log.levels.WARN)
+        require("poor-cli.notify").notify("[poor-cli] Server crashed" .. hint .. " — restarting. Chat context was reset.", vim.log.levels.WARN)
         schedule_restart()
     else
         update_state("error", "Server exited unexpectedly")
-        notify_with_context("Server exited with code " .. code .. hint .. ". Run :PoorCliDoctor for diagnostics.", vim.log.levels.ERROR)
+        notify_with_context("Server exited with code " .. code .. hint .. ". Run :PoorCLIDoctor for diagnostics.", vim.log.levels.ERROR)
     end
 end
 

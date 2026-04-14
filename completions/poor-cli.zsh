@@ -1,11 +1,11 @@
-#compdef poor-cli poor-cli-sync
+#compdef poor-cli poor-cli-sync poor-cli poor-cli-sync
 
 # Zsh completion for poor-cli
 # Add to ~/.zshrc:
 #   fpath=(/path/to/completions $fpath)
 #   autoload -Uz compinit && compinit
 
-_poor_cli() {
+_poor-cli() {
     local -a root_commands task_subcommands automation_subcommands agent_subcommands mini_subcommands
     root_commands=(
         'help:Show root help'
@@ -468,4 +468,4 @@ _poor_cli() {
     esac
 }
 
-_poor_cli "$@"
+_poor-cli "$@"

@@ -1,7 +1,7 @@
 # Latent-Space Inter-Agent Communication
 
-**Status:** Research prototype (Phase 8A)  
-**Feasibility:** Conditionally feasible — requires open-weights models + GPU  
+**Status:** Shipping for `hf_local` only (PRD 059, 2026-04-14)
+**Feasibility:** Local HuggingFace Transformers models only
 **Primary reference:** [LatentMAS](https://arxiv.org/abs/2511.20639) (training-free)
 
 ---
@@ -12,7 +12,7 @@ Latent communication replaces text round-trips between agents with direct hidden
 
 **Result:** 70–84% output token reduction, 4× speedup, up to 14.6% accuracy gains (LatentMAS benchmarks). Only the final agent in a pipeline decodes text — all intermediate agents "reason" entirely in latent space.
 
-**Verdict:** Feasible for poor-cli users running local open-weights models via HuggingFace Transformers or vLLM. **Not feasible** with closed API providers (Anthropic, OpenAI, Gemini) or Ollama (no hidden-state API).
+**Verdict:** Use only with `hf_local` and `research.latent_communication.enabled = true`. Ollama has no hidden-state or KV cache API, and closed API providers do not expose model internals.
 
 ---
 
@@ -20,7 +20,7 @@ Latent communication replaces text round-trips between agents with direct hidden
 
 ### 1.1 LatentMAS (Princeton/UIUC/Stanford, 2025)
 
-**Paper:** https://arxiv.org/abs/2511.20639  
+**Paper:** https://arxiv.org/abs/2511.20639
 **Code:** https://github.com/Gen-Verse/LatentMAS
 
 **Mechanism:**
@@ -92,7 +92,7 @@ Where `W_in` = input embedding weights, `W_out` = lm_head weights. Computed once
 | HF Transformers | Required | `output_hidden_states`, `past_key_values`, `inputs_embeds` |
 | GPU (CUDA) | Required | 8GB+ VRAM for 3B model, 16GB+ for 7B, 28GB+ for 14B |
 | Training | Not needed | LatentMAS is fully training-free |
-| vLLM | Optional | Faster text generation for Judger, but HF-only works |
+| vLLM | Text-only local provider | Does not expose the required hidden-state hand-off |
 
 ### 2.2 What Doesn't Work
 
@@ -103,6 +103,7 @@ Where `W_in` = input embedding weights, `W_out` = lm_head weights. Computed once
 | Google (Gemini) | No | Closed API |
 | OpenRouter | No | Proxy to closed APIs |
 | **Ollama** | **No** | No hidden-state or KV cache API exposed. Only supports prompt ordering optimization |
+| **vLLM / llama-server / SGLang / HF TGI / LM Studio** | **No** | OpenAI-compatible local text APIs only in poor-cli |
 
 ### 2.3 Minimum Viable Setup
 
@@ -117,70 +118,43 @@ For meaningful multi-agent tasks, recommend 7B+ model (16GB+ VRAM).
 
 ### 2.4 Integration with poor-cli
 
-The prototype (`poor_cli/latent_communication.py`) provides:
+The shipped HF-local path contains:
 
 1. **`LatentAgent`** — agent that reasons in latent space (no text output)
 2. **`LatentAgentOrchestrator`** — full Planner→Critic→Refiner→Judger pipeline
 3. **`ArchitectLatentBridge`** — drop-in for poor-cli's architect→editor flow
 4. **`is_latent_compatible()`** — runtime environment check
+5. **`HFLocalProvider`** — local HF provider that declares `ProviderCapability.LATENT_COMMUNICATION`
+6. **`LatentChannel`** — provider-capability gate for latent sub-agent execution
 
-**Integration points:**
-- `parallel_agents.py` — add `communication_mode: "latent" | "text"` to `SubTask`
-- `architect_mode.py` — use `ArchitectLatentBridge` when both models are same local model
-- Gate behind: `is_latent_compatible()` + provider is local HF/vLLM
+`parallel_agents.py` accepts `communication_mode: "latent" | "text"` but isolated worktree agents use text fallback. In-process `delegate_task(..., communication_mode="latent", tools="none")` can use the latent channel when the active provider is `hf_local`.
 
 ---
 
-## 3. Prototype Guide
+## 3. Usage
 
-### 3.1 Installation
+Install local HF dependencies:
 
 ```bash
-pip install torch transformers accelerate
+pip install 'poor-cli[hf-local]'
 ```
 
-### 3.2 Basic Usage
+Configure:
 
-```python
-from poor_cli.latent_communication import (
-    load_model, LatentAgentOrchestrator, is_latent_compatible
-)
-
-# check environment
-compat = is_latent_compatible()
-if not compat["feasible"]:
-    print(f"Not feasible: {compat['reason']}")
-    exit(1)
-
-# load model
-model, tokenizer = load_model("Qwen/Qwen2.5-3B", device="cuda")
-
-# run latent pipeline
-orch = LatentAgentOrchestrator(model, tokenizer, latent_steps=20)
-
-# latent mode — only Judger decodes text
-result, bench = await orch.run_pipeline("What is 25 * 37?")
-print(f"Answer: {result}")
-print(f"Output tokens: {bench.output_tokens}, Time: {bench.wall_time_s:.2f}s")
-
-# text baseline — all 4 agents decode text
-result_text, bench_text = await orch.run_text_baseline("What is 25 * 37?")
-print(f"Text baseline tokens: {bench_text.output_tokens}, Time: {bench_text.wall_time_s:.2f}s")
+```yaml
+model:
+  provider: hf_local
+  model_name: Qwen/Qwen2.5-3B
+research:
+  latent_communication:
+    enabled: true
 ```
 
-### 3.3 Architect-Editor Bridge
+Optional runtime overrides:
 
-```python
-from poor_cli.latent_communication import load_model, ArchitectLatentBridge
-
-model, tokenizer = load_model("Qwen/Qwen2.5-7B")
-bridge = ArchitectLatentBridge(model, tokenizer)
-
-result, bench = await bridge.architect_to_editor(
-    "Add error handling to the database connection pool"
-)
-# architect reasoned in latent space (0 decoded tokens)
-# editor produced the implementation text
+```bash
+export POOR_CLI_HF_DEVICE=mps
+export POOR_CLI_HF_DTYPE=float32
 ```
 
 ---
@@ -243,8 +217,8 @@ Token reduction = (2000 - 400) / 2000 = **80%** for a 4-agent pipeline.
 |----------|---------------|
 | Cloud API (Anthropic/OpenAI) | Use text communication (no alternative) |
 | Ollama local | Use text communication (API limitation) |
-| HF Transformers + GPU | **Use latent communication** |
-| vLLM local | **Use latent communication** (hybrid mode) |
+| HF Transformers + GPU | Use `hf_local` |
+| vLLM / llama-server / SGLang / HF TGI / LM Studio local | Use text communication |
 | Single-agent tasks | Not applicable (no inter-agent communication) |
 | Cross-model pipelines | Use text communication (different embedding spaces) |
 
@@ -252,9 +226,9 @@ Token reduction = (2000 - 400) / 2000 = **80%** for a 4-agent pipeline.
 
 ## 6. Future Work
 
-### 6.1 If Pursuing Production
+### 6.1 Future Work
 
-1. **vLLM integration** — use vLLM for Judger text generation (faster than HF generate) while HF handles latent rollout
+1. **Custom local latent bridge** — add hidden-state return / input-embedding hand-off for local servers if a backend exposes it
 2. **Latent step auto-tuning** — learn optimal `latent_steps` per task type from historical data
 3. **Provider abstraction** — add `LatentProvider` alongside existing `BaseProvider` for models that support hidden-state access
 4. **Hierarchical pipelines** — LatentMAS also supports hierarchical (specialist agents → summarizer) architectures

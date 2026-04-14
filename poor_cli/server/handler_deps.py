@@ -38,7 +38,7 @@ from ..exceptions import (
     setup_logger,
 )
 from ..permission_rules import PermissionRuleEngine
-from ..provider_catalog import common_models_for_provider, get_model_tier
+from ..provider_catalog import KEYLESS_LOCAL_PROVIDER_NAMES, common_models_for_provider, get_model_tier
 from ..sandbox import (
     PRESET_DESCRIPTION,
     SandboxDecision,

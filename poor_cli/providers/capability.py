@@ -71,6 +71,42 @@ PROVIDER_CAPABILITIES: dict[str, frozenset[ProviderCapability]] = {
             ProviderCapability.JSON_MODE,
         }
     ),
+    "hf_local": frozenset(
+        {
+            ProviderCapability.SYSTEM_INSTRUCTIONS,
+            ProviderCapability.LATENT_COMMUNICATION,
+        }
+    ),
+    "vllm": frozenset(
+        {
+            ProviderCapability.STREAMING,
+            ProviderCapability.SYSTEM_INSTRUCTIONS,
+        }
+    ),
+    "llama_server": frozenset(
+        {
+            ProviderCapability.STREAMING,
+            ProviderCapability.SYSTEM_INSTRUCTIONS,
+        }
+    ),
+    "sglang": frozenset(
+        {
+            ProviderCapability.STREAMING,
+            ProviderCapability.SYSTEM_INSTRUCTIONS,
+        }
+    ),
+    "hf_tgi": frozenset(
+        {
+            ProviderCapability.STREAMING,
+            ProviderCapability.SYSTEM_INSTRUCTIONS,
+        }
+    ),
+    "lmstudio": frozenset(
+        {
+            ProviderCapability.STREAMING,
+            ProviderCapability.SYSTEM_INSTRUCTIONS,
+        }
+    ),
 }
 
 
@@ -103,4 +139,6 @@ def provider_has_capability(provider: Any, capability: ProviderCapability) -> bo
         return bool(getattr(runtime, "supports_vision", False))
     if capability is ProviderCapability.EXTENDED_THINKING:
         return bool(getattr(runtime, "supports_thinking", False))
+    if capability is ProviderCapability.LATENT_COMMUNICATION:
+        return bool(getattr(runtime, "supports_latent_communication", False))
     return False

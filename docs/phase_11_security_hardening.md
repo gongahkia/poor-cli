@@ -11,17 +11,17 @@
 
 | Agent | Primary files | New files |
 |-------|---------------|-----------|
-| 11A RPC rate limiting | `poor_cli/server/runtime.py`, `poor_cli/server/transport.py` | `poor_cli/server/rate_limit.py`, `tests/test_server_rate_limit.py` |
-| 11B Audit log rotation | `poor_cli/audit_log.py`, `poor_cli/cli/` (audit subcommand), scheduler hook | `tests/test_audit_log_rotation.py` |
-| 11C Keyring credentials | `poor_cli/api_key_manager.py`, `pyproject.toml`, `poor_cli/cli/` (setup wizard) | `tests/test_keyring_credentials.py` |
-| 11D Browser JS sandbox | `poor_cli/browser_tool.py` | `tests/test_browser_tool_sandbox.py` |
+| 11A RPC rate limiting | `poor-cli/server/runtime.py`, `poor-cli/server/transport.py` | `poor-cli/server/rate_limit.py`, `tests/test_server_rate_limit.py` |
+| 11B Audit log rotation | `poor-cli/audit_log.py`, `poor-cli/cli/` (audit subcommand), scheduler hook | `tests/test_audit_log_rotation.py` |
+| 11C Keyring credentials | `poor-cli/api_key_manager.py`, `pyproject.toml`, `poor-cli/cli/` (setup wizard) | `tests/test_keyring_credentials.py` |
+| 11D Browser JS sandbox | `poor-cli/browser_tool.py` | `tests/test_browser_tool_sandbox.py` |
 | 11E Trust Center | `nvim-poor-cli/lua/poor-cli/trust.lua`, `nvim-poor-cli/lua/poor-cli/commands.lua` | `nvim-poor-cli/tests/trust_spec.lua` |
 | 11F Policy Inspector | `nvim-poor-cli/lua/poor-cli/commands.lua` | `nvim-poor-cli/lua/poor-cli/policy_panel.lua`, `nvim-poor-cli/tests/policy_panel_spec.lua` |
 
 ### Collisions flagged
 
-- **11E and 11F both mutate `nvim-poor-cli/lua/poor-cli/commands.lua`** (both register a user command — `:PoorCliTrust` and `:PoorCliPolicy` respectively). **Resolution: serialize into sub-waves.** 11E lands first (sub-wave A), 11F rebases on top (sub-wave B). The mutations are purely additive (new command registrations, no shared function bodies), so the rebase is trivial — but running them truly in parallel risks a merge conflict on the same `M.setup()` block. Splitting into A/B is lower friction than trying to pre-carve a shared stub.
-- **11B and 11C both touch `poor_cli/cli/`** but each owns a distinct subcommand module (`audit.py` vs. `setup.py` / installer). Confirm on implementation that entries land in different files; if a single `cli/__init__.py` dispatcher needs editing, treat as additive (new subparser) and land sequentially. Not a true collision — noted for vigilance.
+- **11E and 11F both mutate `nvim-poor-cli/lua/poor-cli/commands.lua`** (both register a user command — `:PoorCLITrust` and `:PoorCLIPolicy` respectively). **Resolution: serialize into sub-waves.** 11E lands first (sub-wave A), 11F rebases on top (sub-wave B). The mutations are purely additive (new command registrations, no shared function bodies), so the rebase is trivial — but running them truly in parallel risks a merge conflict on the same `M.setup()` block. Splitting into A/B is lower friction than trying to pre-carve a shared stub.
+- **11B and 11C both touch `poor-cli/cli/`** but each owns a distinct subcommand module (`audit.py` vs. `setup.py` / installer). Confirm on implementation that entries land in different files; if a single `cli/__init__.py` dispatcher needs editing, treat as additive (new subparser) and land sequentially. Not a true collision — noted for vigilance.
 - All other file scopes are fully disjoint.
 
 ---
@@ -57,9 +57,9 @@ A token-bucket rate limiter with per-method-group policy, wired once into the RP
 
 ### Files to create/modify
 
-- `poor_cli/server/rate_limit.py` (new — `Bucket`, `RateLimiter`, `RateLimitExceeded`)
-- `poor_cli/server/runtime.py` (modify — one-line limiter check at dispatch)
-- `poor_cli/server/transport.py` (modify — surface the structured error on the wire)
+- `poor-cli/server/rate_limit.py` (new — `Bucket`, `RateLimiter`, `RateLimitExceeded`)
+- `poor-cli/server/runtime.py` (modify — one-line limiter check at dispatch)
+- `poor-cli/server/transport.py` (modify — surface the structured error on the wire)
 - `tests/test_server_rate_limit.py` (new)
 
 ### Acceptance criteria
@@ -101,8 +101,8 @@ Add `rotate_if_needed()`, `archive()`, and `export_range()` to `audit_log.py`; w
 
 ### Files to create/modify
 
-- `poor_cli/audit_log.py` (modify — add `rotate()`, `archive()`, `export_range()`)
-- `poor_cli/cli/` (modify — new `audit` subcommand; land in a new module to avoid collision with 11C)
+- `poor-cli/audit_log.py` (modify — add `rotate()`, `archive()`, `export_range()`)
+- `poor-cli/cli/` (modify — new `audit` subcommand; land in a new module to avoid collision with 11C)
 - Scheduler hook (modify — register 1-hour `rotate_if_needed` tick in whichever module owns background tasks)
 - `tests/test_audit_log_rotation.py` (new)
 
@@ -152,9 +152,9 @@ Add optional `keyring` dependency and extend `ApiKeyManager` with keyring-aware 
 
 ### Files to create/modify
 
-- `poor_cli/api_key_manager.py` (modify — keyring read/write, lookup order, migration)
+- `poor-cli/api_key_manager.py` (modify — keyring read/write, lookup order, migration)
 - `pyproject.toml` (modify — `keyring` optional dep + `all` bundle)
-- `poor_cli/cli/` setup wizard / installer (modify — offer migration; land in the wizard module, not the `audit` module owned by 11B)
+- `poor-cli/cli/` setup wizard / installer (modify — offer migration; land in the wizard module, not the `audit` module owned by 11B)
 - `tests/test_keyring_credentials.py` (new — use `keyring.backends.fail.Keyring` and a fake `CryptFileKeyring`)
 
 ### Acceptance criteria
@@ -201,7 +201,7 @@ A wrapper around `page.evaluate(js)` that (1) regex-screens the JS for dangerous
 
 ### Files to create/modify
 
-- `poor_cli/browser_tool.py` (modify — wrap `browser_evaluate`, add policy, timeout, truncation)
+- `poor-cli/browser_tool.py` (modify — wrap `browser_evaluate`, add policy, timeout, truncation)
 - `tests/test_browser_tool_sandbox.py` (new)
 
 ### Acceptance criteria
@@ -219,7 +219,7 @@ A wrapper around `page.evaluate(js)` that (1) regex-screens the JS for dangerous
 
 ## Agent 11E: Trust Center Interactive Upgrade
 
-**Pain point addressed:** `:PoorCliTrust` is a read-only text dump; users want to toggle sandbox presets, inspect permissions, rotate the audit log, and confirm privacy posture without leaving the buffer.
+**Pain point addressed:** `:PoorCLITrust` is a read-only text dump; users want to toggle sandbox presets, inspect permissions, rotate the audit log, and confirm privacy posture without leaving the buffer.
 **Expected impact:** Single-screen interactive scratch buffer with inline `[Toggle sandbox]`, `[View permission rules]`, `[Rotate audit log]`, `[Export audit]` actions bound to `<CR>` on their line.
 
 ### What to build
@@ -233,12 +233,12 @@ Rewrite `trust.lua` to render sections (Provider, Sandbox preset, Permission mod
 3. **Action wiring** — `nvim_buf_set_keymap` with a line-number check inside the callback; `<CR>` dispatches based on cursor line. Each action invokes a dedicated RPC (`sandbox/toggle`, `permissions/list`, `audit/rotateNow`, `audit/exportRange`) and refreshes the buffer on completion.
 4. **Refresh loop** — after any action, re-query `trustStatus` and redraw; no full buffer recreation (preserve cursor).
 5. **Section inventory (must all render):** Provider, Sandbox preset, Permission mode, Permission rules count, Rollback (checkpoints retained), Audit log, Privacy (is data leaving the machine?), Memory (AGENTS.md source list).
-6. **Non-goal** — do **not** re-implement the general settings UI; that belongs to a future `:PoorCliSettings`. Do **not** modify the audit schema (shared constraint with 11B).
+6. **Non-goal** — do **not** re-implement the general settings UI; that belongs to a future `:PoorCLISettings`. Do **not** modify the audit schema (shared constraint with 11B).
 
 ### Files to create/modify
 
 - `nvim-poor-cli/lua/poor-cli/trust.lua` (modify — interactive rewrite)
-- `nvim-poor-cli/lua/poor-cli/commands.lua` (modify — wire `:PoorCliTrust` to the new renderer; **coordinate with 11F** — this agent lands first)
+- `nvim-poor-cli/lua/poor-cli/commands.lua` (modify — wire `:PoorCLITrust` to the new renderer; **coordinate with 11F** — this agent lands first)
 - `nvim-poor-cli/tests/trust_spec.lua` (new)
 
 ### Acceptance criteria
@@ -277,7 +277,7 @@ A new `policy_panel.lua` that renders rules from `poor-cli/policy/list`, binds `
 ### Files to create/modify
 
 - `nvim-poor-cli/lua/poor-cli/policy_panel.lua` (new)
-- `nvim-poor-cli/lua/poor-cli/commands.lua` (modify — register `:PoorCliPolicy`; **additive on top of 11E's edits**)
+- `nvim-poor-cli/lua/poor-cli/commands.lua` (modify — register `:PoorCLIPolicy`; **additive on top of 11E's edits**)
 - `nvim-poor-cli/tests/policy_panel_spec.lua` (new)
 
 ### Acceptance criteria

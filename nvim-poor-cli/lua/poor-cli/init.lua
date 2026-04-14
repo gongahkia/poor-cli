@@ -8,15 +8,15 @@
 local M = {}
 
 -- modules eagerly loaded during setup() because they register commands,
--- keymaps, or autocmds that the user expects immediately after :PoorCli...
+-- keymaps, or autocmds that the user expects immediately after :PoorCLI...
 local EAGER_SETUPS = {
     "commands", "keymaps", "autocmds", "cmp",
     "tasks", "automations", "agents", "sessions", "memory",
     "checkpoints_ext", "config_mgr", "history_browser",
     "custom_commands", "skills_nvim", "trust", "context_mgr",
     "cost", "providers", "collab_ext", "deploy_ext",
-    "diagnostics_ext", "onboarding", "prompt_library",
-    "collab", "panels",
+    "diagnostics_ext", "onboarding", "prompt_library", "workflow_picker", "pickers",
+    "collab", "multiplayer_room", "panels", "diff_review", "timeline", "branches",
 }
 
 -- everything else is loaded on first access. the metatable below caches
@@ -46,6 +46,10 @@ function M.setup(opts)
     config.setup(opts)
     rawset(M, "config", config)
 
+    local notify = require("poor-cli.notify")
+    notify.setup()
+    rawset(M, "notify", notify)
+
     -- rpc loaded early because eager setups touch it via rpc.request
     rawset(M, "rpc", require("poor-cli.rpc"))
 
@@ -73,6 +77,41 @@ function M.setup(opts)
         require("poor-cli.lualine").setup()
     end
 
+    local ok_trouble, trouble = pcall(require, "poor-cli.integrations.trouble")
+    if ok_trouble and type(trouble.setup) == "function" then
+        trouble.setup()
+    end
+
+    local ok_gitsigns, gitsigns_bridge = pcall(require, "poor-cli.integrations.gitsigns")
+    if ok_gitsigns and type(gitsigns_bridge.setup) == "function" then
+        gitsigns_bridge.setup()
+    end
+
+    local ok_oil, oil_bridge = pcall(require, "poor-cli.integrations.oil")
+    if ok_oil and type(oil_bridge.setup) == "function" then
+        oil_bridge.setup()
+    end
+
+    local ok_overseer, overseer_bridge = pcall(require, "poor-cli.integrations.overseer")
+    if ok_overseer and type(overseer_bridge.setup) == "function" then
+        overseer_bridge.setup()
+    end
+
+    local ok_neogit, neogit_bridge = pcall(require, "poor-cli.integrations.neogit")
+    if ok_neogit and type(neogit_bridge.setup) == "function" then
+        neogit_bridge.setup()
+    end
+
+    local ok_dap, dap_bridge = pcall(require, "poor-cli.integrations.dap")
+    if ok_dap and type(dap_bridge.setup) == "function" then
+        dap_bridge.setup()
+    end
+
+    local ok_snacks_dashboard, snacks_dashboard = pcall(require, "poor-cli.snacks_dashboard")
+    if ok_snacks_dashboard and type(snacks_dashboard.setup) == "function" then
+        snacks_dashboard.setup()
+    end
+
     M._setup_complete = true
 
     if config.get("check_health_on_setup") then
@@ -94,38 +133,8 @@ function M.setup(opts)
         M.rpc.initialize()
     end
 
-    if M.onboarding.should_show() then
-        -- prefer server push (PoorCliInitialized) over polling; fall back to
-        -- a one-shot 60s timeout in case the notification is missed.
-        local opened = false
-        local function open_once()
-            if opened then return end
-            opened = true
-            M.onboarding.open()
-        end
-
-        -- if server already initialized (fast path), open immediately
-        if (M.rpc.get_status() or {}).initialized then
-            vim.schedule(open_once)
-        else
-            local au = vim.api.nvim_create_augroup("poor-cli-onboarding-wait", { clear = true })
-            vim.api.nvim_create_autocmd("User", {
-                group = au,
-                pattern = "PoorCliInitialized",
-                once = true,
-                callback = function() vim.schedule(open_once) end,
-            })
-            vim.defer_fn(function()
-                if not opened then
-                    vim.notify("[poor-cli] server init slow — opening onboarding anyway", vim.log.levels.WARN)
-                    open_once()
-                end
-            end, 60000)
-        end
-    end
-
     if config.is_debug() then
-        vim.notify("[poor-cli] Setup complete", vim.log.levels.DEBUG)
+        require("poor-cli.notify").notify("[poor-cli] Setup complete", vim.log.levels.DEBUG)
     end
 end
 

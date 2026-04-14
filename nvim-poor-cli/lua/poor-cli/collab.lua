@@ -26,7 +26,7 @@ local function render_state(lines)
     local state = rpc.get_multiplayer_state() or {}
     table.insert(lines, "# poor-cli Collab")
     table.insert(lines, "")
-    table.insert(lines, "Press q to close. `:PoorCliCollab ...` for actions.")
+    table.insert(lines, "Press q to close. `:PoorCLICollab ...` for actions.")
     table.insert(lines, "")
     table.insert(lines, "## 🟢 Session")
     table.insert(lines, "")
@@ -74,7 +74,7 @@ local function render_state(lines)
         else
             local count = state.member_count or 0
             if count > 0 then
-                table.insert(lines, string.format("- (%d member(s); run `:PoorCliCollab members` for details)", count))
+                table.insert(lines, string.format("- (%d member(s); run `:PoorCLICollab members` for details)", count))
             else
                 table.insert(lines, "(no members)")
             end
@@ -170,10 +170,10 @@ function M.toggle()
 end
 
 function M.setup()
-    local group = vim.api.nvim_create_augroup("PoorCliCollabPanel", { clear = true })
+    local group = vim.api.nvim_create_augroup("PoorCLICollabPanel", { clear = true })
     vim.api.nvim_create_autocmd("User", {
         group = group,
-        pattern = "PoorCliRoomEvent",
+        pattern = "PoorCLIRoomEvent",
         callback = function(ev)
             local data = ev.data or {}
             local t = data.event_type or "event"
@@ -185,7 +185,7 @@ function M.setup()
     })
     vim.api.nvim_create_autocmd("User", {
         group = group,
-        pattern = "PoorCliPeerMessage",
+        pattern = "PoorCLIPeerMessage",
         callback = function(ev)
             local data = ev.data or {}
             push_event(string.format("💬 %s: %s", data.sender or "?", data.text or ""))
@@ -194,14 +194,14 @@ function M.setup()
     })
     vim.api.nvim_create_autocmd("User", {
         group = group,
-        pattern = "PoorCliStatusChanged",
+        pattern = "PoorCLIStatusChanged",
         callback = function()
             M.refresh()
         end,
     })
 
-    pcall(vim.api.nvim_del_user_command, "PoorCliCollabPanel")
-    vim.api.nvim_create_user_command("PoorCliCollabPanel", function()
+    pcall(vim.api.nvim_del_user_command, "PoorCLICollabPanel")
+    vim.api.nvim_create_user_command("PoorCLICollabPanel", function()
         M.toggle()
     end, { desc = "Toggle poor-cli collab panel" })
 end

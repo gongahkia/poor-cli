@@ -1,4 +1,4 @@
-"""tests for poor_cli.tools_async.ToolRegistryAsync._maybe_auto_commit."""
+"""tests for poor-cli.tools_async.ToolRegistryAsync._maybe_auto_commit."""
 
 import unittest
 from types import SimpleNamespace

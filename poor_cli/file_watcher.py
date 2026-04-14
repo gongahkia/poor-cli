@@ -8,13 +8,17 @@ and exposes callback and async-generator consumption over one event queue.
 from __future__ import annotations
 
 import asyncio
+from collections import deque
+from datetime import datetime, timezone
 import fnmatch
 import inspect
 import os
 import re
+import time
+import weakref
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Set
+from typing import Any, AsyncIterator, Callable, Deque, Dict, List, Optional, Set
 
 from .exceptions import setup_logger
 
@@ -31,6 +35,8 @@ DEFAULT_DEBOUNCE_SECONDS = 2.0
 DEFAULT_EXTENSIONS = {".py", ".js", ".ts", ".tsx", ".jsx", ".rs", ".go", ".java", ".c", ".cpp", ".rb", ".php"}
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".poor-cli", ".venv", "target", "build", "dist"}
 RULE_FILE_NAMES = {"AGENTS.md", "CLAUDE.md"}
+_WATCHER_REGISTRY: weakref.WeakSet[Any] = weakref.WeakSet()
+_RECENT_ACTIONS: Deque[Dict[str, Any]] = deque(maxlen=100)
 
 
 @dataclass(frozen=True)
@@ -81,6 +87,36 @@ def scan_directory_for_instructions(
     return all_instructions
 
 
+def _iso_from_timestamp(timestamp: float) -> str:
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat()
+
+
+def _now_iso() -> str:
+    return datetime.now(tz=timezone.utc).isoformat()
+
+
+def collect_watch_status(root: Optional[str | Path] = None, action_limit: int = 20) -> Dict[str, Any]:
+    requested_root = Path(root).resolve() if root is not None else None
+    watchers = [
+        watcher for watcher in list(_WATCHER_REGISTRY)
+        if (watcher._running or watcher._mtimes) and (requested_root is None or watcher._root == requested_root)
+    ]
+    if not watchers:
+        watchers = [FileWatcher(root=root or os.getcwd(), register=False)]
+    rows: List[Dict[str, Any]] = []
+    seen: Set[str] = set()
+    for watcher in watchers:
+        for row in watcher.status_rows():
+            key = f"{row.get('path')}:{row.get('ignored')}"
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append(row)
+    limit = max(0, int(action_limit or 20))
+    actions = list(_RECENT_ACTIONS)[-limit:] if limit else []
+    return {"watches": rows, "recent_actions": actions}
+
+
 class FileWatcher:
     """Watches files for changes and triggers callbacks on poor-cli instructions."""
 
@@ -95,6 +131,7 @@ class FileWatcher:
         on_change: Optional[Callable[[FileEvent], Any]] = None,
         on_instruction: Optional[Callable[[dict], Any]] = None,
         on_execute: Optional[Callable[[dict], Any]] = None,
+        register: bool = True,
     ):
         self._root = Path(root or os.getcwd()).resolve()
         self._extensions = extensions or DEFAULT_EXTENSIONS
@@ -108,10 +145,13 @@ class FileWatcher:
             self._change_callbacks.append(on_change)
         self._running = False
         self._mtimes: Dict[str, float] = {}
+        self._last_change_at: Dict[str, str] = {}
         self._processed: Set[str] = set()
         self._events: asyncio.Queue[FileEvent] = asyncio.Queue()
         self._subscribers: Set[asyncio.Queue[FileEvent | None]] = set()
         self._run_task: Optional[asyncio.Task[None]] = None
+        if register:
+            _WATCHER_REGISTRY.add(self)
 
     def on_change(self, callback: Callable[[FileEvent], Any]) -> None:
         self._change_callbacks.append(callback)
@@ -198,17 +238,31 @@ class FileWatcher:
                 except Exception:
                     pass
                 if self._on_instruction:
-                    await self._call_maybe_async(self._on_instruction, instr)
+                    outcome, duration_ms = await self._call_maybe_async(self._on_instruction, instr)
+                    self._record_action(instr, "instruction", outcome, duration_ms)
                 if self._on_execute:
-                    await self._call_maybe_async(self._on_execute, instr)
+                    outcome, duration_ms = await self._call_maybe_async(self._on_execute, instr)
+                    self._record_action(instr, "execute", outcome, duration_ms)
 
-    async def _call_maybe_async(self, callback: Callable[[Any], Any], arg: Any) -> None:
+    async def _call_maybe_async(self, callback: Callable[[Any], Any], arg: Any) -> tuple[str, int]:
+        started = time.perf_counter()
         try:
             result = callback(arg)
             if inspect.isawaitable(result):
                 await result
+            return "ok", int((time.perf_counter() - started) * 1000)
         except Exception as exc:
             logger.error("watch handler failed: %s", exc)
+            return f"error: {exc}", int((time.perf_counter() - started) * 1000)
+
+    def _record_action(self, instr: dict, action: str, outcome: str, duration_ms: int) -> None:
+        _RECENT_ACTIONS.append({
+            "at": _now_iso(),
+            "trigger_path": str(instr.get("file") or ""),
+            "action": action,
+            "outcome": outcome,
+            "duration_ms": duration_ms,
+        })
 
     def _matches_file(self, fname: str) -> bool:
         """Check if a filename matches configured patterns or extensions."""
@@ -235,16 +289,20 @@ class FileWatcher:
                 continue
             if fp not in self._mtimes or self._mtimes[fp] < mtime:
                 self._mtimes[fp] = mtime
+                self._last_change_at[fp] = _iso_from_timestamp(mtime)
                 changed.append(fp)
         return changed
 
-    def _iter_matching_files(self) -> list[Path]:
+    def _iter_matching_files(self, include_ignored: bool = False) -> list[Path]:
         files: list[Path] = []
         for dirpath, dirnames, filenames in os.walk(self._root):
-            dirnames[:] = [d for d in dirnames if not self._skip_dir(Path(dirpath) / d)]
+            if include_ignored:
+                dirnames[:] = [d for d in dirnames if (Path(dirpath) / d).name not in SKIP_DIRS]
+            else:
+                dirnames[:] = [d for d in dirnames if not self._skip_dir(Path(dirpath) / d)]
             for fname in filenames:
                 fpath = Path(dirpath) / fname
-                if self._matches_file(fname) and not self._is_ignored(fpath):
+                if self._matches_file(fname) and (include_ignored or not self._is_ignored(fpath)):
                     files.append(fpath)
         return files
 
@@ -265,14 +323,17 @@ class FileWatcher:
         return patterns
 
     def _is_ignored(self, path: Path) -> bool:
+        return self._ignore_match(path) != ""
+
+    def _ignore_match(self, path: Path) -> str:
         try:
             rel = path.resolve().relative_to(self._root).as_posix()
         except ValueError:
-            return False
+            return ""
         for pattern in self._ignore:
             if self._matches_ignore_pattern(rel, path.name, pattern):
-                return True
-        return False
+                return pattern
+        return ""
 
     def _matches_ignore_pattern(self, rel: str, name: str, pattern: str) -> bool:
         pattern = pattern.rstrip()
@@ -284,6 +345,25 @@ class FileWatcher:
         if "/" in pattern:
             return fnmatch.fnmatch(rel, pattern)
         return fnmatch.fnmatch(name, pattern) or fnmatch.fnmatch(rel, f"*/{pattern}")
+
+    def status_rows(self) -> List[Dict[str, Any]]:
+        glob = ",".join(self._patterns or sorted(self._extensions))
+        rows: List[Dict[str, Any]] = []
+        for fpath in self._iter_matching_files(include_ignored=True):
+            fp = str(fpath.resolve())
+            ignored_by = self._ignore_match(fpath)
+            try:
+                last_change_at = self._last_change_at.get(fp) or _iso_from_timestamp(fpath.stat().st_mtime)
+            except OSError:
+                last_change_at = self._last_change_at.get(fp, "")
+            rows.append({
+                "path": fp,
+                "glob": glob,
+                "last_change_at": last_change_at,
+                "last_match": ignored_by,
+                "ignored": bool(ignored_by),
+            })
+        return rows
 
 
 async def run_watch_mode(

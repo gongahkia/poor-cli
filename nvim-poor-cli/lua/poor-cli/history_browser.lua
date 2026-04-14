@@ -24,63 +24,36 @@ local function format_entry(e)
 end
 
 function M.open_picker(query)
-    local has_telescope, pickers = pcall(require, "telescope.pickers")
-    if not has_telescope then vim.notify("[poor-cli] telescope.nvim required", vim.log.levels.ERROR); return end
-    local finders = require("telescope.finders")
-    local conf = require("telescope.config").values
-    local actions = require("telescope.actions")
-    local action_state = require("telescope.actions.state")
-    local previewers = require("telescope.previewers")
-    if not rpc.is_running() then vim.notify("[poor-cli] server not running", vim.log.levels.WARN); return end
+    local pickers = require("poor-cli.pickers")
+    if not rpc.is_running() then require("poor-cli.notify").notify("[poor-cli] server not running", vim.log.levels.WARN); return end
     local method = query and query ~= "" and "poor-cli/searchHistory" or "poor-cli/listHistory"
     local params = query and query ~= "" and { query = query } or {}
     rpc.request(method, params, function(result, err)
         vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local entries = (result or {}).entries or (result or {}).history or {}
-            if #entries == 0 then vim.notify("[poor-cli] no history", vim.log.levels.INFO); return end
-            pickers.new({}, {
-                prompt_title = "poor-cli history",
-                finder = finders.new_table({
-                    results = entries,
-                    entry_maker = function(e)
-                        return { value = e, ordinal = tostring(e.summary or e.content or ""), display = format_entry(e) }
-                    end,
-                }),
-                sorter = conf.generic_sorter({}),
-                previewer = previewers.new_buffer_previewer({
-                    title = "History Preview",
-                    define_preview = function(self, entry)
-                        local e = entry.value
-                        local lines = {
-                            "Role: " .. tostring(e.role or "?"),
-                            "Time: " .. tostring(e.timestamp or e.createdAt or "-"),
-                            "",
-                            tostring(e.content or e.summary or ""),
-                        }
-                        vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, lines)
-                    end,
-                }),
-                attach_mappings = function(prompt_bufnr)
-                    actions.select_default:replace(function()
-                        actions.close(prompt_bufnr)
-                        local sel = action_state.get_selected_entry()
-                        if sel then
-                            open_scratch("[poor-cli history entry]", tostring(sel.value.content or vim.inspect(sel.value)), "markdown")
-                        end
-                    end)
-                    return true
-                end,
-            }):find()
+            if #entries == 0 then require("poor-cli.notify").notify("[poor-cli] no history", vim.log.levels.INFO); return end
+            local items = {}
+            for _, e in ipairs(entries) do
+                items[#items + 1] = { label = format_entry(e), preview = table.concat({
+                    "Role: " .. tostring(e.role or "?"),
+                    "Time: " .. tostring(e.timestamp or e.createdAt or "-"),
+                    "",
+                    tostring(e.content or e.summary or ""),
+                }, "\n"), data = e }
+            end
+            pickers.pick(items, { title = "poor-cli history", on_pick = function(e)
+                open_scratch("[poor-cli history entry]", tostring(e.content or vim.inspect(e)), "markdown")
+            end })
         end)
     end)
 end
 
 function M.setup()
     local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
-    create_command("PoorCliHistory", function()
+    create_command("PoorCLIHistory", function()
         M.list({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local entries = (result or {}).entries or (result or {}).history or {}
             local lines = { "# history", "" }
             for _, e in ipairs(entries) do table.insert(lines, format_entry(e)) end
@@ -88,9 +61,9 @@ function M.setup()
             open_scratch("[poor-cli history]", table.concat(lines, "\n"), "markdown")
         end) end)
     end, { desc = "List history" })
-    create_command("PoorCliHistorySearch", function(opts)
+    create_command("PoorCLIHistorySearch", function(opts)
         M.search({ query = opts.args }, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local entries = (result or {}).entries or (result or {}).results or {}
             local lines = { "# history search: " .. opts.args, "" }
             for _, e in ipairs(entries) do table.insert(lines, format_entry(e)) end
@@ -98,16 +71,16 @@ function M.setup()
             open_scratch("[poor-cli history search]", table.concat(lines, "\n"), "markdown")
         end) end)
     end, { nargs = 1, desc = "Search history" })
-    create_command("PoorCliExportConversation", function()
+    create_command("PoorCLIExportConversation", function()
         M.export({}, function(result, err) vim.schedule(function()
-            if err then vim.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             local content = (result or {}).content or (result or {}).markdown or vim.inspect(result)
             open_scratch("[poor-cli export]", content, "markdown")
         end) end)
     end, { desc = "Export conversation" })
-    create_command("PoorCliHistoryPicker", function(opts)
+    create_command("PoorCLIHistoryPicker", function(opts)
         M.open_picker(opts.args ~= "" and opts.args or nil)
-    end, { nargs = "?", desc = "Browse history with Telescope" })
+    end, { nargs = "?", desc = "Browse history" })
 end
 
 return M

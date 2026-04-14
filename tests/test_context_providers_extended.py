@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import tempfile
 from pathlib import Path
 
-from poor_cli.context_providers import resolve_mentions, _MENTION_RE, _PROVIDERS
+from poor_cli.context_providers import resolve_mentions, _MENTION_RE, _PROVIDERS, _TOKEN_MENTION_RE
 
 
 class TestMentionRegex(unittest.TestCase):
@@ -112,6 +112,58 @@ class TestResolveMentions(unittest.TestCase):
         core.tool_registry = None
         cleaned, blocks = asyncio.run(resolve_mentions("@web python tutorial", core))
         self.assertTrue(len(blocks) > 0)
+
+    def test_file_token_resolved(self):
+        core = MagicMock()
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d).resolve()
+            core._repo_root = root
+            (root / "src").mkdir()
+            (root / "src" / "main.py").write_text("print('a')\nprint('b')\n", encoding="utf-8")
+            cleaned, blocks = asyncio.run(resolve_mentions("read @file:src/main.py:2", core))
+        self.assertEqual(cleaned, "read")
+        self.assertEqual(len(blocks), 1)
+        self.assertIn("[file: src/main.py:2]", blocks[0])
+        self.assertIn("print('b')", blocks[0])
+        self.assertNotIn("print('a')", blocks[0])
+
+    def test_buffer_token_resolved(self):
+        core = MagicMock()
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d).resolve()
+            core._repo_root = root
+            (root / "README.md").write_text("# hi\n", encoding="utf-8")
+            cleaned, blocks = asyncio.run(resolve_mentions("inspect @buffer:README.md", core))
+        self.assertEqual(cleaned, "inspect")
+        self.assertIn("[buffer: README.md]", blocks[0])
+        self.assertIn("# hi", blocks[0])
+
+    def test_lsp_token_resolved(self):
+        core = MagicMock()
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d).resolve()
+            core._repo_root = root
+            (root / "bad.lua").write_text("local a\nlocal b\n", encoding="utf-8")
+            cleaned, blocks = asyncio.run(resolve_mentions("fix @lsp:bad.lua:2", core))
+        self.assertEqual(cleaned, "fix")
+        self.assertIn("[lsp: bad.lua:2]", blocks[0])
+        self.assertIn("local b", blocks[0])
+        self.assertNotIn("local a", blocks[0])
+
+    def test_token_rejects_outside_workspace(self):
+        core = MagicMock()
+        with tempfile.TemporaryDirectory() as d:
+            core._repo_root = Path(d).resolve()
+            cleaned, blocks = asyncio.run(resolve_mentions("read @file:../secret.txt", core))
+        self.assertEqual(cleaned, "read")
+        self.assertIn("path outside workspace", blocks[0])
+
+    def test_token_regex_accepts_sources(self):
+        self.assertEqual(_TOKEN_MENTION_RE.findall("@file:a.py @buffer:b.lua @lsp:c.ts:3"), [
+            ("file", "a.py"),
+            ("buffer", "b.lua"),
+            ("lsp", "c.ts:3"),
+        ])
 
 
 if __name__ == "__main__":

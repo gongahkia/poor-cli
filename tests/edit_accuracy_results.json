@@ -1,883 +1,883 @@
 {
   "pretok": [
     {
-      "path": "poor_cli/__init__.py",
+      "path": "poor-cli/__init__.py",
       "parseable": true,
       "func_name_preserved": 0.0,
       "string_preserved": 0.5
     },
     {
-      "path": "poor_cli/__main__.py",
+      "path": "poor-cli/__main__.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.574468085106383
     },
     {
-      "path": "poor_cli/_exec_helpers.py",
+      "path": "poor-cli/_exec_helpers.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.6
     },
     {
-      "path": "poor_cli/_server.py",
+      "path": "poor-cli/_server.py",
       "parseable": true,
       "func_name_preserved": 0.0,
       "string_preserved": 0.8181818181818182
     },
     {
-      "path": "poor_cli/agent_runner.py",
+      "path": "poor-cli/agent_runner.py",
       "parseable": false,
       "func_name_preserved": 0.8846153846153846,
       "string_preserved": 0.6394557823129252
     },
     {
-      "path": "poor_cli/api_key_manager.py",
+      "path": "poor-cli/api_key_manager.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.5952380952380952
     },
     {
-      "path": "poor_cli/architect_mode.py",
+      "path": "poor-cli/architect_mode.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.2222222222222222
     },
     {
-      "path": "poor_cli/async_checkpoint.py",
+      "path": "poor-cli/async_checkpoint.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.6
     },
     {
-      "path": "poor_cli/audit_log.py",
+      "path": "poor-cli/audit_log.py",
       "parseable": false,
       "func_name_preserved": 0.6666666666666666,
       "string_preserved": 0.37777777777777777
     },
     {
-      "path": "poor_cli/auto_memory.py",
+      "path": "poor-cli/auto_memory.py",
       "parseable": false,
       "func_name_preserved": 0.5,
       "string_preserved": 0.35135135135135137
     },
     {
-      "path": "poor_cli/automation_manager.py",
+      "path": "poor-cli/automation_manager.py",
       "parseable": false,
       "func_name_preserved": 0.6470588235294118,
       "string_preserved": 0.6260869565217392
     },
     {
-      "path": "poor_cli/browser_tool.py",
+      "path": "poor-cli/browser_tool.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8543689320388349
     },
     {
-      "path": "poor_cli/budget_logger.py",
+      "path": "poor-cli/budget_logger.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.75
     },
     {
-      "path": "poor_cli/checkpoint.py",
+      "path": "poor-cli/checkpoint.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.6992481203007519
     },
     {
-      "path": "poor_cli/checkpoint_display.py",
+      "path": "poor-cli/checkpoint_display.py",
       "parseable": false,
       "func_name_preserved": 0.375,
       "string_preserved": 0.08771929824561403
     },
     {
-      "path": "poor_cli/checkpoint_integrations.py",
+      "path": "poor-cli/checkpoint_integrations.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8275862068965517
     },
     {
-      "path": "poor_cli/checkpoint_strategies.py",
+      "path": "poor-cli/checkpoint_strategies.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8782051282051282
     },
     {
-      "path": "poor_cli/checkpoint_timeline.py",
+      "path": "poor-cli/checkpoint_timeline.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7857142857142857
     },
     {
-      "path": "poor_cli/checkpoint_validation.py",
+      "path": "poor-cli/checkpoint_validation.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7894736842105263
     },
     {
-      "path": "poor_cli/circuit_breaker.py",
+      "path": "poor-cli/circuit_breaker.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.5
     },
     {
-      "path": "poor_cli/cli/__init__.py",
+      "path": "poor-cli/cli/__init__.py",
       "parseable": true,
       "func_name_preserved": 0.0,
       "string_preserved": 0.8888888888888888
     },
     {
-      "path": "poor_cli/cli/config_cmds.py",
+      "path": "poor-cli/cli/config_cmds.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.959349593495935
     },
     {
-      "path": "poor_cli/cli/review_cmds.py",
+      "path": "poor-cli/cli/review_cmds.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.875
     },
     {
-      "path": "poor_cli/cli/state_cmds.py",
+      "path": "poor-cli/cli/state_cmds.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.971830985915493
     },
     {
-      "path": "poor_cli/cli_errors.py",
+      "path": "poor-cli/cli_errors.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.75
     },
     {
-      "path": "poor_cli/code_tokenizer.py",
+      "path": "poor-cli/code_tokenizer.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.20634920634920634
     },
     {
-      "path": "poor_cli/command_capabilities.py",
+      "path": "poor-cli/command_capabilities.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.9607843137254902
     },
     {
-      "path": "poor_cli/command_manifest.py",
+      "path": "poor-cli/command_manifest.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.725
     },
     {
-      "path": "poor_cli/command_validator.py",
+      "path": "poor-cli/command_validator.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.75
     },
     {
-      "path": "poor_cli/completion.py",
+      "path": "poor-cli/completion.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7962962962962963
     },
     {
-      "path": "poor_cli/config.py",
+      "path": "poor-cli/config.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7345971563981043
     },
     {
-      "path": "poor_cli/context.py",
+      "path": "poor-cli/context.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.3076923076923077
     },
     {
-      "path": "poor_cli/context_compressor.py",
+      "path": "poor-cli/context_compressor.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.803921568627451
     },
     {
-      "path": "poor_cli/context_contract.py",
+      "path": "poor-cli/context_contract.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.5294117647058824
     },
     {
-      "path": "poor_cli/context_engine.py",
+      "path": "poor-cli/context_engine.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8545454545454545
     },
     {
-      "path": "poor_cli/context_optimizer.py",
+      "path": "poor-cli/context_optimizer.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.07368421052631578
     },
     {
-      "path": "poor_cli/context_providers.py",
+      "path": "poor-cli/context_providers.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.1282051282051282
     },
     {
-      "path": "poor_cli/core.py",
+      "path": "poor-cli/core.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.4050056882821388
     },
     {
-      "path": "poor_cli/core_events.py",
+      "path": "poor-cli/core_events.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.5087719298245614
     },
     {
-      "path": "poor_cli/custom_commands.py",
+      "path": "poor-cli/custom_commands.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8333333333333334
     },
     {
-      "path": "poor_cli/database_tools.py",
+      "path": "poor-cli/database_tools.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.26666666666666666
     },
     {
-      "path": "poor_cli/deploy.py",
+      "path": "poor-cli/deploy.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8518518518518519
     },
     {
-      "path": "poor_cli/diff_preview.py",
+      "path": "poor-cli/diff_preview.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7777777777777778
     },
     {
-      "path": "poor_cli/docker_sandbox.py",
+      "path": "poor-cli/docker_sandbox.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7959183673469388
     },
     {
-      "path": "poor_cli/economy.py",
+      "path": "poor-cli/economy.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.6764705882352942
     },
     {
-      "path": "poor_cli/edit_formats.py",
+      "path": "poor-cli/edit_formats.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.5324675324675324
     },
     {
-      "path": "poor_cli/embeddings.py",
+      "path": "poor-cli/embeddings.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.6470588235294118
     },
     {
-      "path": "poor_cli/enhanced_tools.py",
+      "path": "poor-cli/enhanced_tools.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.9307359307359307
     },
     {
-      "path": "poor_cli/error_recovery.py",
+      "path": "poor-cli/error_recovery.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.4891304347826087
     },
     {
-      "path": "poor_cli/exceptions.py",
+      "path": "poor-cli/exceptions.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.6046511627906976
     },
     {
-      "path": "poor_cli/failure_amnesia.py",
+      "path": "poor-cli/failure_amnesia.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7454545454545455
     },
     {
-      "path": "poor_cli/feedback_loop.py",
+      "path": "poor-cli/feedback_loop.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.6595744680851063
     },
     {
-      "path": "poor_cli/file_cache.py",
+      "path": "poor-cli/file_cache.py",
       "parseable": false,
       "func_name_preserved": 0.7857142857142857,
       "string_preserved": 0.49019607843137253
     },
     {
-      "path": "poor_cli/github_task.py",
+      "path": "poor-cli/github_task.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.6981132075471698
     },
     {
-      "path": "poor_cli/github_tools.py",
+      "path": "poor-cli/github_tools.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.9166666666666666
     },
     {
-      "path": "poor_cli/history.py",
+      "path": "poor-cli/history.py",
       "parseable": false,
       "func_name_preserved": 0.5806451612903226,
       "string_preserved": 0.15833333333333333
     },
     {
-      "path": "poor_cli/history_pruning.py",
+      "path": "poor-cli/history_pruning.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.14393939393939395
     },
     {
-      "path": "poor_cli/ide_watch.py",
+      "path": "poor-cli/ide_watch.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7906976744186046
     },
     {
-      "path": "poor_cli/indexer.py",
+      "path": "poor-cli/indexer.py",
       "parseable": false,
       "func_name_preserved": 0.7666666666666667,
       "string_preserved": 0.45
     },
     {
-      "path": "poor_cli/installer.py",
+      "path": "poor-cli/installer.py",
       "parseable": false,
       "func_name_preserved": 0.7142857142857143,
       "string_preserved": 0.003355704697986577
     },
     {
-      "path": "poor_cli/instructions.py",
+      "path": "poor-cli/instructions.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8260869565217391
     },
     {
-      "path": "poor_cli/integrations/__init__.py",
+      "path": "poor-cli/integrations/__init__.py",
       "parseable": true,
       "func_name_preserved": 0.0,
       "string_preserved": 0.0
     },
     {
-      "path": "poor_cli/interactive_elements.py",
+      "path": "poor-cli/interactive_elements.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.4666666666666667
     },
     {
-      "path": "poor_cli/kv_cache_store.py",
+      "path": "poor-cli/kv_cache_store.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.6
     },
     {
-      "path": "poor_cli/latent_communication.py",
+      "path": "poor-cli/latent_communication.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7115384615384616
     },
     {
-      "path": "poor_cli/lifecycle_events.py",
+      "path": "poor-cli/lifecycle_events.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7142857142857143
     },
     {
-      "path": "poor_cli/lsp_context.py",
+      "path": "poor-cli/lsp_context.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7966101694915254
     },
     {
-      "path": "poor_cli/mcp_client.py",
+      "path": "poor-cli/mcp_client.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7657657657657657
     },
     {
-      "path": "poor_cli/mcp_scaffold.py",
+      "path": "poor-cli/mcp_scaffold.py",
       "parseable": false,
       "func_name_preserved": 0.5,
       "string_preserved": 0.6721311475409836
     },
     {
-      "path": "poor_cli/memory.py",
+      "path": "poor-cli/memory.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.639344262295082
     },
     {
-      "path": "poor_cli/model_router.py",
+      "path": "poor-cli/model_router.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8333333333333334
     },
     {
-      "path": "poor_cli/multiplayer.py",
+      "path": "poor-cli/multiplayer.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.624113475177305
     },
     {
-      "path": "poor_cli/multiplayer_invites.py",
+      "path": "poor-cli/multiplayer_invites.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7368421052631579
     },
     {
-      "path": "poor_cli/multiplayer_session.py",
+      "path": "poor-cli/multiplayer_session.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.5070422535211268
     },
     {
-      "path": "poor_cli/neural_code_encoder.py",
+      "path": "poor-cli/neural_code_encoder.py",
       "parseable": false,
       "func_name_preserved": 0.9411764705882353,
       "string_preserved": 0.3157894736842105
     },
     {
-      "path": "poor_cli/parallel_agents.py",
+      "path": "poor-cli/parallel_agents.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.5652173913043478
     },
     {
-      "path": "poor_cli/permission_engine.py",
+      "path": "poor-cli/permission_engine.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.775
     },
     {
-      "path": "poor_cli/permission_rules.py",
+      "path": "poor-cli/permission_rules.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8837209302325582
     },
     {
-      "path": "poor_cli/plan_analysis.py",
+      "path": "poor-cli/plan_analysis.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7934782608695652
     },
     {
-      "path": "poor_cli/plan_analyzer.py",
+      "path": "poor-cli/plan_analyzer.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8705882352941177
     },
     {
-      "path": "poor_cli/plan_display.py",
+      "path": "poor-cli/plan_display.py",
       "parseable": false,
       "func_name_preserved": 0.7,
       "string_preserved": 0.5466666666666666
     },
     {
-      "path": "poor_cli/plan_executor.py",
+      "path": "poor-cli/plan_executor.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8627450980392157
     },
     {
-      "path": "poor_cli/plan_history.py",
+      "path": "poor-cli/plan_history.py",
       "parseable": false,
       "func_name_preserved": 0.375,
       "string_preserved": 0.34782608695652173
     },
     {
-      "path": "poor_cli/plan_mode.py",
+      "path": "poor-cli/plan_mode.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7674418604651163
     },
     {
-      "path": "poor_cli/policy_hooks.py",
+      "path": "poor-cli/policy_hooks.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7272727272727273
     },
     {
-      "path": "poor_cli/preview_server.py",
+      "path": "poor-cli/preview_server.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8941176470588236
     },
     {
-      "path": "poor_cli/profiles.py",
+      "path": "poor-cli/profiles.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8333333333333334
     },
     {
-      "path": "poor_cli/prompt_compressor.py",
+      "path": "poor-cli/prompt_compressor.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.16666666666666666
     },
     {
-      "path": "poor_cli/prompt_library.py",
+      "path": "poor-cli/prompt_library.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.625
     },
     {
-      "path": "poor_cli/prompts.py",
+      "path": "poor-cli/prompts.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7456140350877193
     },
     {
-      "path": "poor_cli/provider_catalog.py",
+      "path": "poor-cli/provider_catalog.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.6956521739130435
     },
     {
-      "path": "poor_cli/provider_fallback.py",
+      "path": "poor-cli/provider_fallback.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.6521739130434783
     },
     {
-      "path": "poor_cli/provider_lifecycle.py",
+      "path": "poor-cli/provider_lifecycle.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8349514563106796
     },
     {
-      "path": "poor_cli/provider_probe.py",
+      "path": "poor-cli/provider_probe.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8571428571428571
     },
     {
-      "path": "poor_cli/providers/__init__.py",
+      "path": "poor-cli/providers/__init__.py",
       "parseable": true,
       "func_name_preserved": 0.0,
       "string_preserved": 0.8181818181818182
     },
     {
-      "path": "poor_cli/providers/anthropic_provider.py",
+      "path": "poor-cli/providers/anthropic_provider.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8108108108108109
     },
     {
-      "path": "poor_cli/providers/base.py",
+      "path": "poor-cli/providers/base.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.37142857142857144
     },
     {
-      "path": "poor_cli/providers/gemini_provider.py",
+      "path": "poor-cli/providers/gemini_provider.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7848101265822784
     },
     {
-      "path": "poor_cli/providers/ollama_provider.py",
+      "path": "poor-cli/providers/ollama_provider.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.735632183908046
     },
     {
-      "path": "poor_cli/providers/openai_provider.py",
+      "path": "poor-cli/providers/openai_provider.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8235294117647058
     },
     {
-      "path": "poor_cli/providers/openrouter_provider.py",
+      "path": "poor-cli/providers/openrouter_provider.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8571428571428571
     },
     {
-      "path": "poor_cli/providers/provider_factory.py",
+      "path": "poor-cli/providers/provider_factory.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7619047619047619
     },
     {
-      "path": "poor_cli/providers/tool_translator.py",
+      "path": "poor-cli/providers/tool_translator.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.5
     },
     {
-      "path": "poor_cli/readers/__init__.py",
+      "path": "poor-cli/readers/__init__.py",
       "parseable": true,
       "func_name_preserved": 0.0,
       "string_preserved": 0.5
     },
     {
-      "path": "poor_cli/readers/notebook_reader.py",
+      "path": "poor-cli/readers/notebook_reader.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.4489795918367347
     },
     {
-      "path": "poor_cli/readers/pdf_reader.py",
+      "path": "poor-cli/readers/pdf_reader.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7222222222222222
     },
     {
-      "path": "poor_cli/repo_config.py",
+      "path": "poor-cli/repo_config.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7077922077922078
     },
     {
-      "path": "poor_cli/repo_graph.py",
+      "path": "poor-cli/repo_graph.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.36505190311418684
     },
     {
-      "path": "poor_cli/retry.py",
+      "path": "poor-cli/retry.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.16666666666666666
     },
     {
-      "path": "poor_cli/review_agent.py",
+      "path": "poor-cli/review_agent.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.4411764705882353
     },
     {
-      "path": "poor_cli/rtk_integration.py",
+      "path": "poor-cli/rtk_integration.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 1.0
     },
     {
-      "path": "poor_cli/run_history.py",
+      "path": "poor-cli/run_history.py",
       "parseable": false,
       "func_name_preserved": 0.7058823529411765,
       "string_preserved": 0.7162162162162162
     },
     {
-      "path": "poor_cli/sandbox.py",
+      "path": "poor-cli/sandbox.py",
       "parseable": false,
       "func_name_preserved": 0.9565217391304348,
       "string_preserved": 0.5308641975308642
     },
     {
-      "path": "poor_cli/semantic_cache.py",
+      "path": "poor-cli/semantic_cache.py",
       "parseable": false,
       "func_name_preserved": 0.875,
       "string_preserved": 0.09523809523809523
     },
     {
-      "path": "poor_cli/semantic_checkpoint.py",
+      "path": "poor-cli/semantic_checkpoint.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.43243243243243246
     },
     {
-      "path": "poor_cli/server/__init__.py",
+      "path": "poor-cli/server/__init__.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8666666666666667
     },
     {
-      "path": "poor_cli/server/__main__.py",
+      "path": "poor-cli/server/__main__.py",
       "parseable": true,
       "func_name_preserved": 0.0,
       "string_preserved": 0.3333333333333333
     },
     {
-      "path": "poor_cli/server/cli.py",
+      "path": "poor-cli/server/cli.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.9444444444444444
     },
     {
-      "path": "poor_cli/server/error_formatter.py",
+      "path": "poor-cli/server/error_formatter.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.625
     },
     {
-      "path": "poor_cli/server/multiplayer_runtime.py",
+      "path": "poor-cli/server/multiplayer_runtime.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8255813953488372
     },
     {
-      "path": "poor_cli/server/runtime.py",
+      "path": "poor-cli/server/runtime.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.5365217391304348
     },
     {
-      "path": "poor_cli/server/transport.py",
+      "path": "poor-cli/server/transport.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8095238095238095
     },
     {
-      "path": "poor_cli/server/types.py",
+      "path": "poor-cli/server/types.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.5
     },
     {
-      "path": "poor_cli/session_manager.py",
+      "path": "poor-cli/session_manager.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.6097560975609756
     },
     {
-      "path": "poor_cli/session_store.py",
+      "path": "poor-cli/session_store.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.75
     },
     {
-      "path": "poor_cli/skill_surfacer.py",
+      "path": "poor-cli/skill_surfacer.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.95
     },
     {
-      "path": "poor_cli/skills.py",
+      "path": "poor-cli/skills.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.6617647058823529
     },
     {
-      "path": "poor_cli/structured_output.py",
+      "path": "poor-cli/structured_output.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8269230769230769
     },
     {
-      "path": "poor_cli/sub_agent.py",
+      "path": "poor-cli/sub_agent.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8777777777777778
     },
     {
-      "path": "poor_cli/task_manager.py",
+      "path": "poor-cli/task_manager.py",
       "parseable": false,
       "func_name_preserved": 0.3055555555555556,
       "string_preserved": 0.3170731707317073
     },
     {
-      "path": "poor_cli/telegram_bot.py",
+      "path": "poor-cli/telegram_bot.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.9423076923076923
     },
     {
-      "path": "poor_cli/telegram_formatter.py",
+      "path": "poor-cli/telegram_formatter.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.0
     },
     {
-      "path": "poor_cli/testing_tools.py",
+      "path": "poor-cli/testing_tools.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.6703296703296703
     },
     {
-      "path": "poor_cli/thinking_budget.py",
+      "path": "poor-cli/thinking_budget.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7924528301886793
     },
     {
-      "path": "poor_cli/token_budget_controller.py",
+      "path": "poor-cli/token_budget_controller.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.5
     },
     {
-      "path": "poor_cli/tool_output_filter.py",
+      "path": "poor-cli/tool_output_filter.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.9042553191489362
     },
     {
-      "path": "poor_cli/tools_async.py",
+      "path": "poor-cli/tools_async.py",
       "parseable": false,
       "func_name_preserved": 1.0,
       "string_preserved": 0.6013986013986014
     },
     {
-      "path": "poor_cli/transactional_plan.py",
+      "path": "poor-cli/transactional_plan.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8245614035087719
     },
     {
-      "path": "poor_cli/trust.py",
+      "path": "poor-cli/trust.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.4375
     },
     {
-      "path": "poor_cli/unicode_security.py",
+      "path": "poor-cli/unicode_security.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.8571428571428571
     },
     {
-      "path": "poor_cli/utils.py",
+      "path": "poor-cli/utils.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.5714285714285714
     },
     {
-      "path": "poor_cli/vision.py",
+      "path": "poor-cli/vision.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.78125
     },
     {
-      "path": "poor_cli/voice_input.py",
+      "path": "poor-cli/voice_input.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7619047619047619
     },
     {
-      "path": "poor_cli/watch.py",
+      "path": "poor-cli/watch.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7
     },
     {
-      "path": "poor_cli/web_search.py",
+      "path": "poor-cli/web_search.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.7560975609756098
     },
     {
-      "path": "poor_cli/workflow_templates.py",
+      "path": "poor-cli/workflow_templates.py",
       "parseable": true,
       "func_name_preserved": 1.0,
       "string_preserved": 0.9675324675324676
     },
     {
-      "path": "poor_cli/working_memory.py",
+      "path": "poor-cli/working_memory.py",
       "parseable": true,
       "func_name_preserved": 0.9642857142857143,
       "string_preserved": 0.76
@@ -885,7 +885,7 @@
   ],
   "ast_compact": [
     {
-      "path": "poor_cli/__init__.py",
+      "path": "poor-cli/__init__.py",
       "parseable": true,
       "funcs_preserved": 0.0,
       "classes_preserved": 0.0,
@@ -897,7 +897,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/__main__.py",
+      "path": "poor-cli/__main__.py",
       "parseable": false,
       "funcs_preserved": 0.9824561403508771,
       "classes_preserved": 0.0,
@@ -911,7 +911,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/_exec_helpers.py",
+      "path": "poor-cli/_exec_helpers.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -923,7 +923,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/_server.py",
+      "path": "poor-cli/_server.py",
       "parseable": false,
       "funcs_preserved": 0.0,
       "classes_preserved": 0.0,
@@ -935,7 +935,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/agent_runner.py",
+      "path": "poor-cli/agent_runner.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -947,7 +947,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/api_key_manager.py",
+      "path": "poor-cli/api_key_manager.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -959,7 +959,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/architect_mode.py",
+      "path": "poor-cli/architect_mode.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -971,7 +971,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/async_checkpoint.py",
+      "path": "poor-cli/async_checkpoint.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -983,7 +983,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/audit_log.py",
+      "path": "poor-cli/audit_log.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -995,7 +995,7 @@
       "n_compact_classes": 4
     },
     {
-      "path": "poor_cli/auto_memory.py",
+      "path": "poor-cli/auto_memory.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -1007,7 +1007,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/automation_manager.py",
+      "path": "poor-cli/automation_manager.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1019,7 +1019,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/browser_tool.py",
+      "path": "poor-cli/browser_tool.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -1031,7 +1031,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/budget_logger.py",
+      "path": "poor-cli/budget_logger.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1043,7 +1043,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/checkpoint.py",
+      "path": "poor-cli/checkpoint.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1055,7 +1055,7 @@
       "n_compact_classes": 3
     },
     {
-      "path": "poor_cli/checkpoint_display.py",
+      "path": "poor-cli/checkpoint_display.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1067,7 +1067,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/checkpoint_integrations.py",
+      "path": "poor-cli/checkpoint_integrations.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1079,7 +1079,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/checkpoint_strategies.py",
+      "path": "poor-cli/checkpoint_strategies.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1091,7 +1091,7 @@
       "n_compact_classes": 7
     },
     {
-      "path": "poor_cli/checkpoint_timeline.py",
+      "path": "poor-cli/checkpoint_timeline.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1103,7 +1103,7 @@
       "n_compact_classes": 3
     },
     {
-      "path": "poor_cli/checkpoint_validation.py",
+      "path": "poor-cli/checkpoint_validation.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1115,7 +1115,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/circuit_breaker.py",
+      "path": "poor-cli/circuit_breaker.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1127,7 +1127,7 @@
       "n_compact_classes": 3
     },
     {
-      "path": "poor_cli/cli/__init__.py",
+      "path": "poor-cli/cli/__init__.py",
       "parseable": true,
       "funcs_preserved": 0.0,
       "classes_preserved": 0.0,
@@ -1139,7 +1139,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/cli/config_cmds.py",
+      "path": "poor-cli/cli/config_cmds.py",
       "parseable": false,
       "funcs_preserved": 0.875,
       "classes_preserved": 0.0,
@@ -1154,7 +1154,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/cli/review_cmds.py",
+      "path": "poor-cli/cli/review_cmds.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -1166,7 +1166,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/cli/state_cmds.py",
+      "path": "poor-cli/cli/state_cmds.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -1178,7 +1178,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/cli_errors.py",
+      "path": "poor-cli/cli_errors.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -1190,7 +1190,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/code_tokenizer.py",
+      "path": "poor-cli/code_tokenizer.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -1202,7 +1202,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/command_capabilities.py",
+      "path": "poor-cli/command_capabilities.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1214,7 +1214,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/command_manifest.py",
+      "path": "poor-cli/command_manifest.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1226,7 +1226,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/command_validator.py",
+      "path": "poor-cli/command_validator.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1238,7 +1238,7 @@
       "n_compact_classes": 3
     },
     {
-      "path": "poor_cli/completion.py",
+      "path": "poor-cli/completion.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1250,7 +1250,7 @@
       "n_compact_classes": 3
     },
     {
-      "path": "poor_cli/config.py",
+      "path": "poor-cli/config.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1262,7 +1262,7 @@
       "n_compact_classes": 24
     },
     {
-      "path": "poor_cli/context.py",
+      "path": "poor-cli/context.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1274,7 +1274,7 @@
       "n_compact_classes": 3
     },
     {
-      "path": "poor_cli/context_compressor.py",
+      "path": "poor-cli/context_compressor.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1286,7 +1286,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/context_contract.py",
+      "path": "poor-cli/context_contract.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1298,7 +1298,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/context_engine.py",
+      "path": "poor-cli/context_engine.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1310,7 +1310,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/context_optimizer.py",
+      "path": "poor-cli/context_optimizer.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1322,7 +1322,7 @@
       "n_compact_classes": 11
     },
     {
-      "path": "poor_cli/context_providers.py",
+      "path": "poor-cli/context_providers.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -1334,7 +1334,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/core.py",
+      "path": "poor-cli/core.py",
       "parseable": false,
       "funcs_preserved": 0.9675675675675676,
       "classes_preserved": 1.0,
@@ -1352,7 +1352,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/core_events.py",
+      "path": "poor-cli/core_events.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1364,7 +1364,7 @@
       "n_compact_classes": 3
     },
     {
-      "path": "poor_cli/custom_commands.py",
+      "path": "poor-cli/custom_commands.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1376,7 +1376,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/database_tools.py",
+      "path": "poor-cli/database_tools.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1388,7 +1388,7 @@
       "n_compact_classes": 5
     },
     {
-      "path": "poor_cli/deploy.py",
+      "path": "poor-cli/deploy.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1400,7 +1400,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/diff_preview.py",
+      "path": "poor-cli/diff_preview.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1412,7 +1412,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/docker_sandbox.py",
+      "path": "poor-cli/docker_sandbox.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -1424,7 +1424,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/economy.py",
+      "path": "poor-cli/economy.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1436,7 +1436,7 @@
       "n_compact_classes": 4
     },
     {
-      "path": "poor_cli/edit_formats.py",
+      "path": "poor-cli/edit_formats.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1448,7 +1448,7 @@
       "n_compact_classes": 6
     },
     {
-      "path": "poor_cli/embeddings.py",
+      "path": "poor-cli/embeddings.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1460,7 +1460,7 @@
       "n_compact_classes": 4
     },
     {
-      "path": "poor_cli/enhanced_tools.py",
+      "path": "poor-cli/enhanced_tools.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1472,7 +1472,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/error_recovery.py",
+      "path": "poor-cli/error_recovery.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1484,7 +1484,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/exceptions.py",
+      "path": "poor-cli/exceptions.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1496,7 +1496,7 @@
       "n_compact_classes": 17
     },
     {
-      "path": "poor_cli/failure_amnesia.py",
+      "path": "poor-cli/failure_amnesia.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1508,7 +1508,7 @@
       "n_compact_classes": 6
     },
     {
-      "path": "poor_cli/feedback_loop.py",
+      "path": "poor-cli/feedback_loop.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1520,7 +1520,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/file_cache.py",
+      "path": "poor-cli/file_cache.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1532,7 +1532,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/github_task.py",
+      "path": "poor-cli/github_task.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1544,7 +1544,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/github_tools.py",
+      "path": "poor-cli/github_tools.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -1556,7 +1556,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/history.py",
+      "path": "poor-cli/history.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1568,7 +1568,7 @@
       "n_compact_classes": 5
     },
     {
-      "path": "poor_cli/history_pruning.py",
+      "path": "poor-cli/history_pruning.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1580,7 +1580,7 @@
       "n_compact_classes": 5
     },
     {
-      "path": "poor_cli/ide_watch.py",
+      "path": "poor-cli/ide_watch.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1592,7 +1592,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/indexer.py",
+      "path": "poor-cli/indexer.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1604,7 +1604,7 @@
       "n_compact_classes": 4
     },
     {
-      "path": "poor_cli/installer.py",
+      "path": "poor-cli/installer.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -1616,7 +1616,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/instructions.py",
+      "path": "poor-cli/instructions.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1628,7 +1628,7 @@
       "n_compact_classes": 3
     },
     {
-      "path": "poor_cli/interactive_elements.py",
+      "path": "poor-cli/interactive_elements.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1640,7 +1640,7 @@
       "n_compact_classes": 5
     },
     {
-      "path": "poor_cli/kv_cache_store.py",
+      "path": "poor-cli/kv_cache_store.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1652,7 +1652,7 @@
       "n_compact_classes": 4
     },
     {
-      "path": "poor_cli/latent_communication.py",
+      "path": "poor-cli/latent_communication.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1664,7 +1664,7 @@
       "n_compact_classes": 6
     },
     {
-      "path": "poor_cli/lifecycle_events.py",
+      "path": "poor-cli/lifecycle_events.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -1676,7 +1676,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/lsp_context.py",
+      "path": "poor-cli/lsp_context.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1688,7 +1688,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/mcp_client.py",
+      "path": "poor-cli/mcp_client.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1700,7 +1700,7 @@
       "n_compact_classes": 3
     },
     {
-      "path": "poor_cli/mcp_scaffold.py",
+      "path": "poor-cli/mcp_scaffold.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -1712,7 +1712,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/memory.py",
+      "path": "poor-cli/memory.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1724,7 +1724,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/model_router.py",
+      "path": "poor-cli/model_router.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1736,7 +1736,7 @@
       "n_compact_classes": 5
     },
     {
-      "path": "poor_cli/multiplayer.py",
+      "path": "poor-cli/multiplayer.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1748,7 +1748,7 @@
       "n_compact_classes": 6
     },
     {
-      "path": "poor_cli/multiplayer_invites.py",
+      "path": "poor-cli/multiplayer_invites.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -1760,7 +1760,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/multiplayer_session.py",
+      "path": "poor-cli/multiplayer_session.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1772,7 +1772,7 @@
       "n_compact_classes": 3
     },
     {
-      "path": "poor_cli/neural_code_encoder.py",
+      "path": "poor-cli/neural_code_encoder.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1784,7 +1784,7 @@
       "n_compact_classes": 4
     },
     {
-      "path": "poor_cli/parallel_agents.py",
+      "path": "poor-cli/parallel_agents.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1796,7 +1796,7 @@
       "n_compact_classes": 3
     },
     {
-      "path": "poor_cli/permission_engine.py",
+      "path": "poor-cli/permission_engine.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1808,7 +1808,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/permission_rules.py",
+      "path": "poor-cli/permission_rules.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1820,7 +1820,7 @@
       "n_compact_classes": 3
     },
     {
-      "path": "poor_cli/plan_analysis.py",
+      "path": "poor-cli/plan_analysis.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1832,7 +1832,7 @@
       "n_compact_classes": 5
     },
     {
-      "path": "poor_cli/plan_analyzer.py",
+      "path": "poor-cli/plan_analyzer.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1844,7 +1844,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/plan_display.py",
+      "path": "poor-cli/plan_display.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1856,7 +1856,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/plan_executor.py",
+      "path": "poor-cli/plan_executor.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1868,7 +1868,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/plan_history.py",
+      "path": "poor-cli/plan_history.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1880,7 +1880,7 @@
       "n_compact_classes": 6
     },
     {
-      "path": "poor_cli/plan_mode.py",
+      "path": "poor-cli/plan_mode.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1892,7 +1892,7 @@
       "n_compact_classes": 4
     },
     {
-      "path": "poor_cli/policy_hooks.py",
+      "path": "poor-cli/policy_hooks.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1904,7 +1904,7 @@
       "n_compact_classes": 3
     },
     {
-      "path": "poor_cli/preview_server.py",
+      "path": "poor-cli/preview_server.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1916,7 +1916,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/profiles.py",
+      "path": "poor-cli/profiles.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1928,7 +1928,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/prompt_compressor.py",
+      "path": "poor-cli/prompt_compressor.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1940,7 +1940,7 @@
       "n_compact_classes": 3
     },
     {
-      "path": "poor_cli/prompt_library.py",
+      "path": "poor-cli/prompt_library.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1952,7 +1952,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/prompts.py",
+      "path": "poor-cli/prompts.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -1964,7 +1964,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/provider_catalog.py",
+      "path": "poor-cli/provider_catalog.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -1976,7 +1976,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/provider_fallback.py",
+      "path": "poor-cli/provider_fallback.py",
       "parseable": false,
       "funcs_preserved": 0.9,
       "classes_preserved": 1.0,
@@ -1990,7 +1990,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/provider_lifecycle.py",
+      "path": "poor-cli/provider_lifecycle.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2002,7 +2002,7 @@
       "n_compact_classes": 4
     },
     {
-      "path": "poor_cli/provider_probe.py",
+      "path": "poor-cli/provider_probe.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2014,7 +2014,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/providers/__init__.py",
+      "path": "poor-cli/providers/__init__.py",
       "parseable": true,
       "funcs_preserved": 0.0,
       "classes_preserved": 0.0,
@@ -2026,7 +2026,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/providers/anthropic_provider.py",
+      "path": "poor-cli/providers/anthropic_provider.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2038,7 +2038,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/providers/base.py",
+      "path": "poor-cli/providers/base.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2050,7 +2050,7 @@
       "n_compact_classes": 5
     },
     {
-      "path": "poor_cli/providers/gemini_provider.py",
+      "path": "poor-cli/providers/gemini_provider.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2062,7 +2062,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/providers/ollama_provider.py",
+      "path": "poor-cli/providers/ollama_provider.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2074,7 +2074,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/providers/openai_provider.py",
+      "path": "poor-cli/providers/openai_provider.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2086,7 +2086,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/providers/openrouter_provider.py",
+      "path": "poor-cli/providers/openrouter_provider.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2098,7 +2098,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/providers/provider_factory.py",
+      "path": "poor-cli/providers/provider_factory.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2110,7 +2110,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/providers/tool_translator.py",
+      "path": "poor-cli/providers/tool_translator.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2122,7 +2122,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/readers/__init__.py",
+      "path": "poor-cli/readers/__init__.py",
       "parseable": true,
       "funcs_preserved": 0.0,
       "classes_preserved": 0.0,
@@ -2134,7 +2134,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/readers/notebook_reader.py",
+      "path": "poor-cli/readers/notebook_reader.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -2146,7 +2146,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/readers/pdf_reader.py",
+      "path": "poor-cli/readers/pdf_reader.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -2158,7 +2158,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/repo_config.py",
+      "path": "poor-cli/repo_config.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2170,7 +2170,7 @@
       "n_compact_classes": 4
     },
     {
-      "path": "poor_cli/repo_graph.py",
+      "path": "poor-cli/repo_graph.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2182,7 +2182,7 @@
       "n_compact_classes": 3
     },
     {
-      "path": "poor_cli/retry.py",
+      "path": "poor-cli/retry.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2194,7 +2194,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/review_agent.py",
+      "path": "poor-cli/review_agent.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2206,7 +2206,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/rtk_integration.py",
+      "path": "poor-cli/rtk_integration.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2218,7 +2218,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/run_history.py",
+      "path": "poor-cli/run_history.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2230,7 +2230,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/sandbox.py",
+      "path": "poor-cli/sandbox.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2242,7 +2242,7 @@
       "n_compact_classes": 3
     },
     {
-      "path": "poor_cli/semantic_cache.py",
+      "path": "poor-cli/semantic_cache.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2254,7 +2254,7 @@
       "n_compact_classes": 3
     },
     {
-      "path": "poor_cli/semantic_checkpoint.py",
+      "path": "poor-cli/semantic_checkpoint.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2266,7 +2266,7 @@
       "n_compact_classes": 3
     },
     {
-      "path": "poor_cli/server/__init__.py",
+      "path": "poor-cli/server/__init__.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -2278,7 +2278,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/server/__main__.py",
+      "path": "poor-cli/server/__main__.py",
       "parseable": false,
       "funcs_preserved": 0.0,
       "classes_preserved": 0.0,
@@ -2290,7 +2290,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/server/cli.py",
+      "path": "poor-cli/server/cli.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -2302,7 +2302,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/server/error_formatter.py",
+      "path": "poor-cli/server/error_formatter.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -2314,7 +2314,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/server/multiplayer_runtime.py",
+      "path": "poor-cli/server/multiplayer_runtime.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2326,7 +2326,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/server/runtime.py",
+      "path": "poor-cli/server/runtime.py",
       "parseable": false,
       "funcs_preserved": 0.996,
       "classes_preserved": 1.0,
@@ -2340,7 +2340,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/server/transport.py",
+      "path": "poor-cli/server/transport.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2352,7 +2352,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/server/types.py",
+      "path": "poor-cli/server/types.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2364,7 +2364,7 @@
       "n_compact_classes": 4
     },
     {
-      "path": "poor_cli/session_manager.py",
+      "path": "poor-cli/session_manager.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2376,7 +2376,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/session_store.py",
+      "path": "poor-cli/session_store.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2388,7 +2388,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/skill_surfacer.py",
+      "path": "poor-cli/skill_surfacer.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -2400,7 +2400,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/skills.py",
+      "path": "poor-cli/skills.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2412,7 +2412,7 @@
       "n_compact_classes": 5
     },
     {
-      "path": "poor_cli/structured_output.py",
+      "path": "poor-cli/structured_output.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2424,7 +2424,7 @@
       "n_compact_classes": 3
     },
     {
-      "path": "poor_cli/sub_agent.py",
+      "path": "poor-cli/sub_agent.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2436,7 +2436,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/task_manager.py",
+      "path": "poor-cli/task_manager.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2448,7 +2448,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/telegram_bot.py",
+      "path": "poor-cli/telegram_bot.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2460,7 +2460,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/telegram_formatter.py",
+      "path": "poor-cli/telegram_formatter.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -2472,7 +2472,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/testing_tools.py",
+      "path": "poor-cli/testing_tools.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2484,7 +2484,7 @@
       "n_compact_classes": 8
     },
     {
-      "path": "poor_cli/thinking_budget.py",
+      "path": "poor-cli/thinking_budget.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2496,7 +2496,7 @@
       "n_compact_classes": 3
     },
     {
-      "path": "poor_cli/token_budget_controller.py",
+      "path": "poor-cli/token_budget_controller.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2508,7 +2508,7 @@
       "n_compact_classes": 4
     },
     {
-      "path": "poor_cli/tool_output_filter.py",
+      "path": "poor-cli/tool_output_filter.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2520,7 +2520,7 @@
       "n_compact_classes": 4
     },
     {
-      "path": "poor_cli/tools_async.py",
+      "path": "poor-cli/tools_async.py",
       "parseable": false,
       "funcs_preserved": 0.991304347826087,
       "classes_preserved": 1.0,
@@ -2534,7 +2534,7 @@
       "n_compact_classes": 4
     },
     {
-      "path": "poor_cli/transactional_plan.py",
+      "path": "poor-cli/transactional_plan.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2546,7 +2546,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/trust.py",
+      "path": "poor-cli/trust.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2558,7 +2558,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/unicode_security.py",
+      "path": "poor-cli/unicode_security.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2570,7 +2570,7 @@
       "n_compact_classes": 2
     },
     {
-      "path": "poor_cli/utils.py",
+      "path": "poor-cli/utils.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -2582,7 +2582,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/vision.py",
+      "path": "poor-cli/vision.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -2594,7 +2594,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/voice_input.py",
+      "path": "poor-cli/voice_input.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2606,7 +2606,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/watch.py",
+      "path": "poor-cli/watch.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -2618,7 +2618,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/web_search.py",
+      "path": "poor-cli/web_search.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 0.0,
@@ -2630,7 +2630,7 @@
       "n_compact_classes": 0
     },
     {
-      "path": "poor_cli/workflow_templates.py",
+      "path": "poor-cli/workflow_templates.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,
@@ -2642,7 +2642,7 @@
       "n_compact_classes": 1
     },
     {
-      "path": "poor_cli/working_memory.py",
+      "path": "poor-cli/working_memory.py",
       "parseable": false,
       "funcs_preserved": 1.0,
       "classes_preserved": 1.0,

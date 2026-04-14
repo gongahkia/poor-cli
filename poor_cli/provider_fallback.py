@@ -19,6 +19,7 @@ from .config import FallbackConfig, ConfigManager
 from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig
 from .providers.base import BaseProvider
 from .providers.provider_factory import ProviderFactory
+from .provider_catalog import KEYLESS_LOCAL_PROVIDER_NAMES
 
 logger = setup_logger(__name__)
 
@@ -127,7 +128,7 @@ class ProviderFallbackManager:
     async def create_fallback_provider(self, provider_name: str) -> BaseProvider:
         """Create a provider instance for fallback use."""
         api_key = self.config_manager.get_api_key(provider_name)
-        if not api_key and provider_name.lower() != "ollama":
+        if not api_key and provider_name.lower() not in KEYLESS_LOCAL_PROVIDER_NAMES:
             raise ConfigurationError(f"no API key available for fallback provider: {provider_name}")
         provider_config = self.config_manager.get_provider_config(provider_name)
         if not provider_config:

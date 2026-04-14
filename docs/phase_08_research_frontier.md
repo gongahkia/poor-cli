@@ -19,7 +19,7 @@ Replace text-based communication between agents with direct hidden-state passing
 
 ### Why this matters for poor-cli
 
-poor-cli already has multi-agent infrastructure (`poor_cli/parallel_agents.py`, `poor_cli/agent_runner.py`). When agents coordinate (e.g., architect agent → editor agent), they currently round-trip through text — the most expensive part of multi-agent workflows. Latent communication could make poor-cli's multi-agent mode dramatically cheaper than any closed-API competitor.
+poor-cli already has multi-agent infrastructure (`poor-cli/parallel_agents.py`, `poor-cli/agent_runner.py`). When agents coordinate (e.g., architect agent → editor agent), they currently round-trip through text — the most expensive part of multi-agent workflows. Latent communication could make poor-cli's multi-agent mode dramatically cheaper than any closed-API competitor.
 
 ### Research & implementation plan
 
@@ -73,8 +73,8 @@ poor-cli already has multi-agent infrastructure (`poor_cli/parallel_agents.py`, 
    ```
 
 4. **Integration with existing agent system**:
-   - `poor_cli/parallel_agents.py` — add latent communication mode
-   - `poor_cli/architect_mode.py` — architect → editor via latent states
+   - `poor-cli/parallel_agents.py` — add latent communication mode
+   - `poor-cli/architect_mode.py` — architect → editor via latent states
    - Gate behind feature flag + local inference detection
 
 5. **Benchmarking**:
@@ -83,9 +83,9 @@ poor-cli already has multi-agent infrastructure (`poor_cli/parallel_agents.py`, 
    - Document infrastructure requirements and performance trade-offs
 
 ### Files to create/modify
-- `poor_cli/latent_communication.py` (new, research prototype)
-- `poor_cli/parallel_agents.py` (add latent mode)
-- `poor_cli/architect_mode.py` (latent architect-editor pipeline)
+- `poor-cli/latent_communication.py` (new, research prototype)
+- `poor-cli/parallel_agents.py` (add latent mode)
+- `poor-cli/architect_mode.py` (latent architect-editor pipeline)
 - `docs/LATENT_COMMUNICATION.md` (research findings and setup guide)
 
 ### Acceptance criteria
@@ -159,8 +159,8 @@ Train or fine-tune a model to perform chain-of-thought reasoning in latent space
    - Fall back to standard generation for incompatible models
 
 ### Files to create/modify
-- `poor_cli/latent_reasoning.py` (new, research prototype)
-- `poor_cli/thinking_budget.py` (new, practical alternative — thinking token optimization)
+- `poor-cli/latent_reasoning.py` (new, research prototype)
+- `poor-cli/thinking_budget.py` (new, practical alternative — thinking token optimization)
 - `docs/LATENT_REASONING.md` (research findings)
 
 ### Acceptance criteria
@@ -251,7 +251,7 @@ Research and prototype tokenizers optimized for code rather than natural languag
    - Identify the approach with best savings-to-accuracy ratio
 
 ### Files to create/modify
-- `poor_cli/code_tokenizer.py` (new, research prototype)
+- `poor-cli/code_tokenizer.py` (new, research prototype)
 - `docs/CODE_TOKENIZER_RESEARCH.md` (findings, benchmarks, recommendations)
 - Scripts for benchmarking (in `tests/` or separate benchmark directory)
 
@@ -341,7 +341,7 @@ This is **pure speculation** with no existing implementation. The architectural 
    - On SWE-bench Lite subset (if benchmark data available)
 
 ### Files to create/modify
-- `poor_cli/neural_code_encoder.py` (new, research prototype)
+- `poor-cli/neural_code_encoder.py` (new, research prototype)
 - `docs/NEURAL_CODE_EMBEDDINGS.md` (research findings)
 - Training scripts (separate research directory)
 

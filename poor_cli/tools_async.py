@@ -51,20 +51,21 @@ from .exceptions import (
     ValidationError,
     validate_file_path,
     setup_logger,
-    FileNotFoundError as PoorFileNotFoundError,
+    FileNotFoundError as PoorCLIFileNotFoundError,
     FilePermissionError,
     FileOperationError,
     PathTraversalError,
 )
 from .command_validator import get_command_validator
+from .edit_staging import EditStage, should_stage_edit
 from .sandbox import ToolCapability, declaration_capabilities, tool_capability_metadata
 from .tool_output_filter import (
     OutputFilterSpec,
     SchemaFilterResult,
     apply_schema_output_filter,
     empty_filter_stats,
-    render_output,
 )
+from .shell_filters import apply as apply_shell_filter
 
 # Setup logger
 logger = setup_logger(__name__)
@@ -246,6 +247,7 @@ DEFERRED_TOOL_NAMES: frozenset = frozenset({
     "browser_type", "browser_evaluate",
     "db_inspect_schema", "db_generate_migration",
 })
+STREAMING_TOOL_NAMES: frozenset = frozenset({"bash", "run_tests", "process_logs"})
 
 
 @dataclass
@@ -363,6 +365,7 @@ class ToolRegistryAsync:
         self._todos_path = Path.cwd() / ".poor-cli" / "todos.json"
         self._http_session: Optional["aiohttp.ClientSession"] = None # pooled HTTP client
         self._output_filter_stats = empty_filter_stats()
+        self.edit_stage = EditStage(writer=self._atomic_write_text)
         self._load_todos()
         self._register_tools()
 
@@ -1206,6 +1209,7 @@ class ToolRegistryAsync:
                             "description": "List of task prompts, one per parallel agent (max 4)"
                         },
                         "sandbox_preset": {"type": "STRING", "description": "Sandbox preset for all agents (default: workspace-write)"},
+                        "communication_mode": {"type": "STRING", "description": "Agent communication mode: text or latent. Latent falls back to text for isolated background agents."},
                     },
                     "required": ["prompts"]
                 }
@@ -1305,8 +1309,9 @@ class ToolRegistryAsync:
                             "description": "File paths to include as context"
                         },
                         "max_iterations": {"type": "INTEGER", "description": "Max tool iterations for sub-agent (default 10)"},
-                        "tools": {"type": "STRING", "description": "Comma-separated allowed tools (e.g. 'read_file,grep_files'). If omitted, write/exec tools are denied by default."},
-                        "archetype": {"type": "STRING", "description": "Sub-agent archetype: 'generic', 'research' (read-only), 'code' (full edit), 'test' (run tests), 'review' (code review). Overrides tool restrictions with archetype-specific defaults."}
+                        "tools": {"type": "STRING", "description": "Comma-separated allowed tools (e.g. 'read_file,grep_files'); use 'none' for toolless latent sub-agents. If omitted, write/exec tools are denied by default."},
+                        "archetype": {"type": "STRING", "description": "Sub-agent archetype: 'generic', 'research' (read-only), 'code' (full edit), 'test' (run tests), 'review' (code review). Overrides tool restrictions with archetype-specific defaults."},
+                        "communication_mode": {"type": "STRING", "description": "Sub-agent communication mode: text or latent. Latent requires hf_local and research.latent_communication.enabled."}
                     },
                     "required": ["prompt"]
                 }
@@ -1366,6 +1371,11 @@ class ToolRegistryAsync:
                     mutating=name in DEFAULT_MUTATING_TOOLS,
                 )
             )
+            if name in STREAMING_TOOL_NAMES:
+                from .tool_streaming_tools import bind_stream_function
+
+                tool["stream_function"] = bind_stream_function(self, name)
+                tool["declaration"].setdefault("x-poor-cli", {})["streamsOutput"] = True
 
     def get_tool_declarations(self) -> List[Dict[str, Any]]:
         """Get tool declarations for API"""
@@ -1520,10 +1530,20 @@ class ToolRegistryAsync:
             if tool_name not in self.tools:
                 raise ToolExecutionError(tool_name, f"Unknown tool: {tool_name}")
 
-            tool_function = self.tools[tool_name]["function"]
+            tool = self.tools[tool_name]
+            if self._should_stream_tool(tool_name):
+                result = await self._execute_streaming_tool_raw(tool_name, arguments)
+                return self._filter_tool_result(tool_name, result)
+
+            tool_function = tool["function"]
+            call_arguments = {
+                key: value
+                for key, value in arguments.items()
+                if not str(key).startswith("_tool_stream") and key != "_tool_call_id"
+            }
             logger.info(f"Executing tool: {tool_name} with args: {arguments}")
 
-            result = await tool_function(**arguments)
+            result = await tool_function(**call_arguments)
             logger.debug(f"Tool {tool_name} executed successfully")
             return self._filter_tool_result(tool_name, result)
 
@@ -1533,6 +1553,55 @@ class ToolRegistryAsync:
         except Exception as e:
             logger.error(f"Unexpected error in tool execution: {e}", exc_info=True)
             raise ToolExecutionError(tool_name, f"Tool execution failed: {str(e)}")
+
+    def _should_stream_tool(self, tool_name: str) -> bool:
+        try:
+            from .tool_stream import current_tool_stream_session
+        except Exception:
+            return False
+        tool = self.tools.get(tool_name, {})
+        declaration = tool.get("declaration", {})
+        metadata = declaration.get("x-poor-cli", {}) if isinstance(declaration, dict) else {}
+        return (
+            bool(metadata.get("streamsOutput"))
+            and callable(tool.get("stream_function"))
+            and current_tool_stream_session() is not None
+        )
+
+    async def _execute_streaming_tool_raw(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+        from .tool_stream import ToolStreamCancelled, current_tool_stream_session
+
+        session = current_tool_stream_session()
+        if session is None:
+            return await self.tools[tool_name]["function"](**arguments)
+
+        stream_function = self.tools[tool_name]["stream_function"]
+        call_arguments = {
+            key: value
+            for key, value in arguments.items()
+            if not str(key).startswith("_tool_stream") and key != "_tool_call_id"
+        }
+        stream_result = await stream_function(**call_arguments)
+        event_id = str(arguments.get("_tool_stream_event_id") or arguments.get("_tool_call_id") or f"{tool_name}:{time.time_ns()}")
+        request_id = str(arguments.get("_tool_stream_request_id") or "")
+        tool_call_id = str(arguments.get("_tool_call_id") or event_id)
+        await session.register(event_id, stream_result)
+        try:
+            async for chunk in stream_result:
+                await session.publish(
+                    request_id=request_id,
+                    event_id=event_id,
+                    tool_call_id=tool_call_id,
+                    tool_name=tool_name,
+                    chunk=chunk,
+                )
+        except ToolStreamCancelled as e:
+            await stream_result.cancel()
+            raise ToolExecutionError(tool_name, f"Tool cancelled: {e}") from e
+        final_result = await stream_result.final()
+        if tool_name == "bash":
+            return self._filter_bash_output(str(call_arguments.get("command", "")), final_result)
+        return final_result
 
     def _filter_tool_result(self, tool_name: str, result: Any) -> Any:
         if isinstance(result, (ToolOutcome, FilteredToolResult)):
@@ -1548,6 +1617,37 @@ class ToolRegistryAsync:
             raw_output=filtered.original_output,
             filter_result=filtered,
         )
+
+    def _filter_bash_output(self, command: str, output: str) -> Any:
+        config = getattr(self, "config", None) or getattr(getattr(self, "_core", None), "config", None)
+        filtered = apply_shell_filter(command, output, config=config)
+        if not filtered.applied:
+            return output
+        self._record_shell_filter_result(filtered)
+        return FilteredToolResult(
+            output=filtered.output,
+            raw_output=filtered.raw_output,
+            filter_result=SchemaFilterResult(
+                output=filtered.output,
+                original_output=filtered.raw_output,
+                original_size=filtered.original_size,
+                filtered_size=filtered.filtered_size,
+                applied=True,
+                flavor=f"shell_filter:{filtered.filter_name}",
+                dropped_paths=[],
+                note=f"rtk_reduction_pct={filtered.reduction_pct}",
+            ),
+        )
+
+    def _record_shell_filter_result(self, filtered: Any) -> None:
+        self._output_filter_stats["filtered_calls"] += 1
+        self._output_filter_stats["auto_filtered_calls"] += 1
+        self._output_filter_stats["tokens_saved"] += int(getattr(filtered, "tokens_saved", 0) or 0)
+        self._output_filter_stats["original_bytes"] += int(getattr(filtered, "original_size", 0) or 0)
+        self._output_filter_stats["filtered_bytes"] += int(getattr(filtered, "filtered_size", 0) or 0)
+        tracker = getattr(getattr(self, "_core", None), "_economy_tracker", None)
+        if tracker and hasattr(tracker, "record_shell_filter"):
+            tracker.record_shell_filter(int(getattr(filtered, "tokens_saved", 0) or 0))
 
     def _record_schema_filter_result(self, filtered: SchemaFilterResult) -> None:
         self._output_filter_stats["filtered_calls"] += 1
@@ -1645,6 +1745,72 @@ class ToolRegistryAsync:
             except OSError:
                 pass
             raise
+
+    def _diff_review_should_stage(
+        self,
+        path: Path,
+        before: str,
+        after: str,
+        interactive: bool,
+    ) -> bool:
+        should_stage = should_stage_edit(
+            getattr(self, "config", None),
+            str(path),
+            before,
+            after,
+            interactive=interactive,
+        )
+        if before != after and not should_stage:
+            mode = str(getattr(getattr(getattr(self, "config", None), "diff_review", None), "mode", "review") or "review")
+            reason = "non_interactive" if not interactive else "auto"
+            self.edit_stage.audit_events.append({
+                "operation": "diff.bypass",
+                "path": str(path),
+                "details": {"reason": reason, "mode": mode},
+            })
+        return should_stage
+
+    def _stage_edit_outcome(
+        self,
+        *,
+        operation: str,
+        path: Path,
+        before: str,
+        after: str,
+        tool_call_id: str = "",
+        prompt: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ToolOutcome:
+        edit = self.edit_stage.stage(
+            path=str(path),
+            original=before,
+            proposed=after,
+            tool_call_id=tool_call_id,
+            prompt=prompt,
+        )
+        callback = getattr(getattr(self, "_core", None), "_diff_stage_event_callback", None)
+        if callable(callback):
+            try:
+                callback(edit.to_dict())
+            except Exception as e:
+                logger.debug("diff review stage notification skipped: %s", e)
+        payload = dict(metadata or {})
+        payload.update({
+            "staged": True,
+            "edit_id": edit.edit_id,
+            "editId": edit.edit_id,
+            "hunk_count": len(edit.hunks),
+            "hunkCount": len(edit.hunks),
+        })
+        return ToolOutcome(
+            ok=True,
+            operation=operation,
+            path=str(path),
+            changed=False,
+            diff=edit.diff_text,
+            message=f"Staged {path} for diff review",
+            metadata=payload,
+        )
 
     def _tool_outcome(
         self,
@@ -2264,7 +2430,7 @@ class ToolRegistryAsync:
                 mode="w",
                 encoding="utf-8",
                 suffix=".patch",
-                prefix="poor_cli_preview_",
+                prefix="poor-cli_preview_",
                 delete=False,
                 dir=str(work_dir),
             ) as handle:
@@ -2383,12 +2549,19 @@ class ToolRegistryAsync:
                 content = f"{unicode_warn}\n\n{content}"
             return content
 
-        except (PoorFileNotFoundError, FilePermissionError, PathTraversalError):
+        except (PoorCLIFileNotFoundError, FilePermissionError, PathTraversalError):
             raise
         except Exception as e:
             raise FileOperationError(f"Failed to read file {file_path}: {str(e)}")
 
-    async def write_file(self, file_path: str, content: str) -> ToolOutcome:
+    async def write_file(
+        self,
+        file_path: str,
+        content: str,
+        _tool_call_id: str = "",
+        _prompt: str = "",
+        _interactive: bool = True,
+    ) -> ToolOutcome:
         """Write content to file asynchronously
 
         Args:
@@ -2411,6 +2584,16 @@ class ToolRegistryAsync:
             unicode_warn = self._scan_unicode(content)
             changed = before != content
             if changed:
+                if self._diff_review_should_stage(path_obj, before or "", content, bool(_interactive)):
+                    return self._stage_edit_outcome(
+                        operation="write_file",
+                        path=path_obj,
+                        before=before or "",
+                        after=content,
+                        tool_call_id=_tool_call_id,
+                        prompt=_prompt,
+                        metadata={"created": not existed_before, "bytes": len(content)},
+                    )
                 self._atomic_write_text(path_obj, content)
 
             logger.info(f"Wrote file: {file_path}")
@@ -2437,7 +2620,8 @@ class ToolRegistryAsync:
     async def edit_file(self, file_path: str, new_text: str, old_text: Optional[str] = None,
                        start_line: Optional[int] = None, end_line: Optional[int] = None,
                        replace_all: bool = False, format: Optional[str] = None,
-                       diff_text: Optional[str] = None) -> ToolOutcome:
+                       diff_text: Optional[str] = None, _tool_call_id: str = "",
+                       _prompt: str = "", _interactive: bool = True) -> ToolOutcome:
         """Edit file by replacing text, lines, whole file, or applying a unified diff."""
         try:
             file_path = validate_file_path(file_path, must_exist=True, must_be_file=True)
@@ -2460,6 +2644,16 @@ class ToolRegistryAsync:
 
             changed = new_content != content
             if changed:
+                if self._diff_review_should_stage(path_obj, content, new_content, bool(_interactive)):
+                    return self._stage_edit_outcome(
+                        operation="edit_file",
+                        path=path_obj,
+                        before=content,
+                        after=new_content,
+                        tool_call_id=_tool_call_id,
+                        prompt=_prompt,
+                        metadata=metadata,
+                    )
                 self._atomic_write_text(path_obj, new_content)
 
             logger.info(f"Edited file: {file_path}")
@@ -2477,7 +2671,7 @@ class ToolRegistryAsync:
                 metadata=metadata,
             )
 
-        except (PoorFileNotFoundError, FilePermissionError, ValidationError):
+        except (PoorCLIFileNotFoundError, FilePermissionError, ValidationError):
             raise
         except Exception as e:
             raise FileOperationError(f"Failed to edit file {file_path}: {str(e)}")
@@ -3107,7 +3301,7 @@ class ToolRegistryAsync:
 
             result = (stdout_text or "(No output)") + truncation_suffix
             logger.info("Bash command completed successfully")
-            return result
+            return self._filter_bash_output(command, result)
 
         except CommandExecutionError:
             raise
@@ -3694,11 +3888,54 @@ class ToolRegistryAsync:
         except Exception as e:
             raise ToolExecutionError("git_status_diff", f"Failed to summarize git status/diff: {str(e)}")
 
+    async def _preview_patch_target_texts(
+        self,
+        patch: str,
+        work_dir: Path,
+        target_paths: List[str],
+    ) -> Dict[str, Optional[str]]:
+        with tempfile.TemporaryDirectory(prefix="poor-cli_patch_preview_") as temp_dir:
+            temp_root = Path(temp_dir)
+            for target_path in target_paths:
+                source = Path(target_path)
+                try:
+                    rel = source.resolve().relative_to(work_dir.resolve())
+                except ValueError:
+                    rel = Path(source.name)
+                dest = temp_root / rel
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                if source.exists():
+                    shutil.copy2(source, dest)
+            patch_path = temp_root / "proposal.patch"
+            patch_path.write_text(patch, encoding="utf-8")
+            result = await self._run_command_capture(
+                ["git", "apply", "--verbose", str(patch_path)],
+                timeout=120,
+                cwd=str(temp_root),
+            )
+            if result["timed_out"]:
+                raise ToolExecutionError("apply_patch_unified", "Patch preview timed out")
+            if result["exit_code"] != 0:
+                details = (result["stderr"] or result["stdout"]).strip()
+                raise ToolExecutionError("apply_patch_unified", f"Patch preview failed: {details}")
+            proposed: Dict[str, Optional[str]] = {}
+            for target_path in target_paths:
+                source = Path(target_path)
+                try:
+                    rel = source.resolve().relative_to(work_dir.resolve())
+                except ValueError:
+                    rel = Path(source.name)
+                proposed[target_path] = self._read_text_for_diff(temp_root / rel)
+            return proposed
+
     async def apply_patch_unified(
         self,
         patch: str,
         path: Optional[str] = None,
         check_only: bool = False,
+        _tool_call_id: str = "",
+        _prompt: str = "",
+        _interactive: bool = True,
     ) -> ToolOutcome:
         """Validate and apply a unified patch using git apply."""
         if not patch or not patch.strip():
@@ -3718,7 +3955,7 @@ class ToolRegistryAsync:
                 mode="w",
                 encoding="utf-8",
                 suffix=".patch",
-                prefix="poor_cli_",
+                prefix="poor-cli_",
                 delete=False,
                 dir=str(work_dir),
             ) as handle:
@@ -3748,6 +3985,46 @@ class ToolRegistryAsync:
                         "paths": target_paths,
                     },
                 )
+
+            staged_edits = []
+            if target_paths:
+                proposed_map = await self._preview_patch_target_texts(patch, work_dir, target_paths)
+                for target_path in target_paths:
+                    before = before_map.get(target_path) or ""
+                    after = proposed_map.get(target_path)
+                    if after is None or before == after:
+                        continue
+                    if self._diff_review_should_stage(Path(target_path), before, after, bool(_interactive)):
+                        staged_edits.append(self.edit_stage.stage(
+                            path=target_path,
+                            original=before,
+                            proposed=after,
+                            tool_call_id=_tool_call_id,
+                            prompt=_prompt,
+                        ))
+                if staged_edits:
+                    callback = getattr(getattr(self, "_core", None), "_diff_stage_event_callback", None)
+                    if callable(callback):
+                        for edit in staged_edits:
+                            try:
+                                callback(edit.to_dict())
+                            except Exception as e:
+                                logger.debug("diff review stage notification skipped: %s", e)
+                    return ToolOutcome(
+                        ok=True,
+                        operation="apply_patch_unified",
+                        path=str(work_dir),
+                        changed=False,
+                        diff="".join(edit.diff_text for edit in staged_edits),
+                        message=f"Staged {len(staged_edits)} patch file(s) for diff review",
+                        metadata={
+                            "check_only": False,
+                            "staged": True,
+                            "edit_ids": [edit.edit_id for edit in staged_edits],
+                            "editIds": [edit.edit_id for edit in staged_edits],
+                            "paths": target_paths,
+                        },
+                    )
 
             apply_result = await self._run_command_capture(
                 ["git", "apply", "--verbose", patch_file],
@@ -3818,7 +4095,7 @@ class ToolRegistryAsync:
                 commands.append(("ruff", ruff_cmd))
 
             if shutil.which("mypy"):
-                mypy_target = "poor_cli" if (work_dir / "poor_cli").exists() else target
+                mypy_target = "poor-cli" if (work_dir / "poor-cli").exists() else target
                 commands.append(("mypy", ["mypy", mypy_target, "--no-error-summary"]))
 
             if not commands:
@@ -4302,9 +4579,10 @@ class ToolRegistryAsync:
 
     # ── parallel agent implementation ──────────────────────────────────
 
-    async def spawn_parallel_agents(self, prompts: List[str], sandbox_preset: str = "workspace-write") -> str:
+    async def spawn_parallel_agents(self, prompts: List[str], sandbox_preset: str = "workspace-write", communication_mode: str = "text") -> str:
         try:
             from .agent_runner import AgentManager
+            communication_mode = communication_mode if communication_mode in ("text", "latent") else "text"
             mgr = AgentManager()
             agents = []
             for prompt in prompts[:4]: # cap at 4
@@ -4313,12 +4591,15 @@ class ToolRegistryAsync:
                     sandbox_preset=sandbox_preset,
                     source="parallel-tool",
                     use_worktree=True,
+                    metadata={"communication_mode": communication_mode},
                     auto_start=True,
                 )
                 agents.append(agent)
             lines = [f"spawned {len(agents)} parallel agents:"]
             for a in agents:
                 lines.append(f"  - {a.agent_id}: {a.prompt[:60]}... (branch: {a.branch_name})")
+            if communication_mode == "latent":
+                lines.append("latent requested; isolated background agents use text fallback")
             lines.append("\nUse `poor-cli agent list` or `poor-cli agent result <id>` to check progress.")
             return "\n".join(lines)
         except Exception as exc:
@@ -4389,7 +4670,7 @@ class ToolRegistryAsync:
         except Exception as e:
             return f"error scaffolding MCP server: {e}"
 
-    async def delegate_task(self, prompt: str, context_files: Optional[List[str]] = None, max_iterations: int = 10, tools: Optional[str] = None, archetype: Optional[str] = None) -> str:
+    async def delegate_task(self, prompt: str, context_files: Optional[List[str]] = None, max_iterations: int = 10, tools: Optional[str] = None, archetype: Optional[str] = None, communication_mode: str = "text") -> str:
         if not self._core:
             return "error: core engine not available for delegation"
         try:
@@ -4397,12 +4678,14 @@ class ToolRegistryAsync:
             archetype = archetype or "generic"
             allowed_tools = None
             denied_tools = None
-            if tools and tools.strip():
+            if tools and tools.strip().lower() == "none":
+                allowed_tools = set()
+            elif tools and tools.strip():
                 allowed_tools = {t.strip() for t in tools.split(",") if t.strip()}
             elif archetype == "generic":
                 agentic_cfg = getattr(self._core.config, "agentic", None) if self._core.config else None
                 denied_tools = set(getattr(agentic_cfg, "sub_agent_default_denied_tools", []) if agentic_cfg else [])
-            agent = SubAgent(self._core, max_iterations=max_iterations, allowed_tools=allowed_tools, denied_tools=denied_tools, archetype=archetype)
+            agent = SubAgent(self._core, max_iterations=max_iterations, allowed_tools=allowed_tools, denied_tools=denied_tools, archetype=archetype, communication_mode=communication_mode)
             result = await agent.run(prompt, context_files=context_files)
             usage = agent.get_usage()
             if usage.get("input_tokens") or usage.get("output_tokens"):

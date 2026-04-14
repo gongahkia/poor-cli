@@ -89,7 +89,7 @@ No published work demonstrates end-to-end "codebase as embedding" for LLM augmen
 
 ### 4.1 Implementation
 
-Delivered in `poor_cli/neural_code_encoder.py`:
+Delivered in `poor-cli/neural_code_encoder.py`:
 
 - **`HuggingFaceCodeEmbedding`**: `EmbeddingProvider` implementation using local HuggingFace models (CodeBERT, UniXcoder, GraphCodeBERT, CodeSage). Runs entirely offline, no API keys.
 - **`NeuralCodeRetriever`**: Indexes codebase chunks via AST-aware chunking (reuses `CodebaseIndexer`), computes HF embeddings, retrieves top-K by cosine similarity.
@@ -223,8 +223,8 @@ CodebaseProjection architecture:
 
 | File | Description |
 |------|-------------|
-| `poor_cli/neural_code_encoder.py` | HuggingFace embedding provider, neural retriever, projection prototype |
-| `poor_cli/embeddings.py` | Updated `get_embedding_provider()` with HF fallback |
+| `poor-cli/neural_code_encoder.py` | HuggingFace embedding provider, neural retriever, projection prototype |
+| `poor-cli/embeddings.py` | Updated `get_embedding_provider()` with HF fallback |
 | `tests/test_neural_encoder.py` | Unit tests + benchmark script |
 | `docs/NEURAL_CODE_EMBEDDINGS.md` | This document |
 
