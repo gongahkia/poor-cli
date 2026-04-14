@@ -13,8 +13,8 @@ LINE_LIMITS = {
     "poor_cli/server/runtime.py": 800,
     "poor_cli/server/handlers/*.py": 500,
     "poor_cli/config.py": 1_500,
-    # Existing monoliths outside Phase 9; reviewers can lower these after their split PRDs.
-    "poor_cli/tools_async.py": 4_300,
+    # Existing monoliths outside Phase 9; caps ratcheted down as PRDs slim each file.
+    "poor_cli/tools_async.py": 3_800,
     "poor_cli/multiplayer.py": 2_150,
     "poor_cli/core_turn_lifecycle.py": 2_700,
     DEFAULT_LIMIT_KEY: 2_000,

@@ -1,10 +1,12 @@
-.PHONY: cli server install installer install-info dev test lint lint-sizes clean help hooks
+.PHONY: cli server install installer install-info dev test test-lua lint lint-sizes bench-swe clean help hooks
 
 PYTHON := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/python,python3)
 PIP := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/pip,pip)
+NVIM_TEST_RUNTIME := $(CURDIR)/nvim-poor-cli/.test-runtime
+PLENARY_DIR ?= $(NVIM_TEST_RUNTIME)/site/pack/test/start/plenary.nvim
 
 # ── venv guard ──────────────────────────────────────────────────────
-REQUIRE_VENV := cli server exec agent-start agent-list watch preview deploy review-pr installer install-info install dev test lint index
+REQUIRE_VENV := cli server exec agent-start agent-list watch preview deploy review-pr installer install-info install dev test lint index bench-swe
 $(foreach t,$(REQUIRE_VENV),$(eval $(t): _check-venv))
 
 _check-venv:
@@ -64,6 +66,10 @@ dev: ## install deps + launch CLI
 test: ## run Python tests with coverage
 	$(PYTHON) -m pytest tests/ -x -q --cov=poor_cli --cov-report=term-missing
 
+test-lua: ## run Lua plenary specs
+	@mkdir -p "$(NVIM_TEST_RUNTIME)/data" "$(NVIM_TEST_RUNTIME)/state" "$(NVIM_TEST_RUNTIME)/cache" "$(NVIM_TEST_RUNTIME)/config" "$(NVIM_TEST_RUNTIME)/site/pack/test/start"
+	XDG_DATA_HOME="$(NVIM_TEST_RUNTIME)/data" XDG_STATE_HOME="$(NVIM_TEST_RUNTIME)/state" XDG_CACHE_HOME="$(NVIM_TEST_RUNTIME)/cache" XDG_CONFIG_HOME="$(NVIM_TEST_RUNTIME)/config" PLENARY_DIR="$(PLENARY_DIR)" nvim --headless --noplugin -u nvim-poor-cli/tests/minimal_init.lua -c "PlenaryBustedDirectory nvim-poor-cli/tests/ {minimal_init = 'nvim-poor-cli/tests/minimal_init.lua'}"
+
 lint: lint-sizes ## run linters
 	ruff check poor_cli/
 
@@ -72,6 +78,10 @@ lint-sizes: ## check Python file line budgets
 
 index: ## build/refresh the semantic search index
 	$(PYTHON) -c "from poor_cli.indexer import CodebaseIndexer; i=CodebaseIndexer(); s=i.index(); print(f'{s.total_files} files, {s.total_chunks} chunks')"
+
+bench-swe: ## run SWE-bench Lite with explicit cost warning
+	@echo "COST WARNING: SWE-bench Lite runs poor-cli over model-backed tasks and can incur API charges plus Docker evaluation cost."
+	@printf "Type RUN SWE BENCH to continue: "; read confirm; if [ "$$confirm" != "RUN SWE BENCH" ]; then echo "aborted"; exit 1; fi; $(PYTHON) bench/swe_bench_lite/run.py --confirm-cost $(ARGS)
 
 hooks: ## activate git hooks from .githooks/
 	git config core.hooksPath .githooks

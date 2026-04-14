@@ -176,6 +176,31 @@ jobs:
           luac5.4 -p nvim-poor-cli/lua/poor-cli/commands.lua
           luac5.4 -p nvim-poor-cli/lua/poor-cli/chat.lua
 
+  lua-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        neovim-version: ["v0.10.0"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Neovim ${{ matrix.neovim-version }}
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: ${{ matrix.neovim-version }}
+
+      - name: Check out plenary.nvim
+        uses: actions/checkout@v4
+        with:
+          repository: nvim-lua/plenary.nvim
+          path: nvim-poor-cli/.test-runtime/site/pack/test/start/plenary.nvim
+
+      - name: Run Lua specs
+        run: PLENARY_DIR="$PWD/nvim-poor-cli/.test-runtime/site/pack/test/start/plenary.nvim" make test-lua
+
   docker-smoke:
     runs-on: ubuntu-latest
 

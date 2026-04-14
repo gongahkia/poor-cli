@@ -18,3 +18,4 @@ repos:
         entry: bash -c 'for f in "$@"; do luac5.4 -p "$f" || exit 1; done' --
         language: system
         files: nvim-poor-cli/.*\.lua$
+        exclude: ^nvim-poor-cli/\.test-runtime/

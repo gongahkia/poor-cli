@@ -291,6 +291,29 @@ poor-cli.toggle_chat()
 poor-cli.send("Hello!")  -- Send message to chat
 ```
 
+## 🧪 Testing
+
+Lua specs run headlessly with plenary.busted:
+
+```bash
+make test-lua
+```
+
+The target uses `nvim-poor-cli/tests/minimal_init.lua`, keeps Neovim state under `nvim-poor-cli/.test-runtime/`, and loads plenary from `PLENARY_DIR` or `nvim-poor-cli/.test-runtime/site/pack/test/start/plenary.nvim`.
+
+Spec files live in `nvim-poor-cli/tests/*_spec.lua`. Shared setup belongs in `nvim-poor-cli/tests/init.lua`; helpers belong in `nvim-poor-cli/tests/helpers/`.
+
+Use the mock RPC helper when a spec touches backend calls:
+
+```lua
+local mock_rpc = require("helpers.mock_rpc")
+mock_rpc.install()
+require("poor-cli.rpc").request("poor-cli/ping", { ok = true })
+mock_rpc.assert_called("poor-cli/ping", { ok = true })
+```
+
+Specs must not start or require a live `poor-cli-server`.
+
 ## 🩺 Troubleshooting
 
 ### Server won't start

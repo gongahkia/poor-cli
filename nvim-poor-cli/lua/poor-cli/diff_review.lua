@@ -115,8 +115,18 @@ function M.refresh()
     end)
 end
 
+local function wipe_named_buffer(name)
+    local existing = vim.fn.bufnr(name)
+    if existing == -1 then return end
+    for _, win in ipairs(vim.fn.win_findbuf(existing)) do
+        pcall(vim.api.nvim_win_set_buf, win, vim.api.nvim_create_buf(false, true))
+    end
+    pcall(vim.api.nvim_buf_delete, existing, { force = true })
+end
+
 local function ensure_buf()
     if M.buf and vim.api.nvim_buf_is_valid(M.buf) then return M.buf end
+    wipe_named_buffer("[poor-cli diff review]")
     M.buf = vim.api.nvim_create_buf(false, true)
     vim.bo[M.buf].buftype = "nofile"
     vim.bo[M.buf].bufhidden = "hide"

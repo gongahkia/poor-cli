@@ -19,7 +19,17 @@ local function t(v) return type(v) == "table" and v or {} end
 local function s(v, fallback) if v == nil or v == "" then return fallback or "" end return tostring(v) end
 local function b(v) return v and "yes" or "no" end
 
+local function wipe_named_buffer(name)
+    local existing = vim.fn.bufnr(name)
+    if existing == -1 then return end
+    for _, win in ipairs(vim.fn.win_findbuf(existing)) do
+        pcall(vim.api.nvim_win_set_buf, win, vim.api.nvim_create_buf(false, true))
+    end
+    pcall(vim.api.nvim_buf_delete, existing, { force = true })
+end
+
 local function scratch_buf()
+    wipe_named_buffer("[poor-cli trust center]")
     local buf = vim.api.nvim_create_buf(false, true)
     vim.bo[buf].buftype = "nofile"
     vim.bo[buf].bufhidden = "wipe"

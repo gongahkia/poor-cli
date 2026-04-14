@@ -71,7 +71,17 @@ local function define_highlights()
     pcall(vim.api.nvim_set_hl, 0, "PoorCLIPolicyPrompt", { link = "DiagnosticWarn", default = true })
 end
 
+local function wipe_named_buffer(name)
+    local existing = vim.fn.bufnr(name)
+    if existing == -1 then return end
+    for _, win in ipairs(vim.fn.win_findbuf(existing)) do
+        pcall(vim.api.nvim_win_set_buf, win, vim.api.nvim_create_buf(false, true))
+    end
+    pcall(vim.api.nvim_buf_delete, existing, { force = true })
+end
+
 local function scratch_buf()
+    wipe_named_buffer("[poor-cli policy]")
     local buf = vim.api.nvim_create_buf(false, true)
     vim.bo[buf].buftype = "nofile"
     vim.bo[buf].bufhidden = "hide"

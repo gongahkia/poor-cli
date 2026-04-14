@@ -143,9 +143,9 @@ describe("snacks notifications", function()
         assert.is_true(dashboard.setup())
         assert.are.equal(false, calls.snapshot_force)
         assert.is_true(calls.dashboard_update)
-        assert.truthy(fake_modules.snacks.dashboard.sections.poor-cli)
+        assert.truthy(fake_modules.snacks.dashboard.sections["poor-cli"])
 
-        local item = fake_modules.snacks.dashboard.sections.poor-cli()
+        local item = fake_modules.snacks.dashboard.sections["poor-cli"]()
         local line = item.text[2][1]
         assert.truthy(line:find("$2.00", 1, true))
         assert.truthy(line:find("1 active", 1, true))

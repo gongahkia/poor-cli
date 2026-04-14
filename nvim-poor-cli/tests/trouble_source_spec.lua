@@ -104,7 +104,7 @@ describe("trouble source", function()
         assert.is_true(trouble.setup())
         assert.are.equal("poor-cli", calls.register.name)
         assert.truthy(calls.register.source.get)
-        assert.truthy(calls.setup.modes.poor-cli)
+        assert.truthy(calls.setup.modes["poor-cli"])
 
         vim.api.nvim_exec_autocmds("User", { pattern = "PoorCLISuggestionsChanged" })
         assert.are.equal("poor-cli", calls.refresh)
