@@ -147,12 +147,8 @@ Today every turn loads the full `MEMORY.md` index into the system prompt via `in
 ### MH6. Harness-portability audit test — DONE 2026-04-14
 `tests/test_harness_portability.py` scans every provider adapter for stateful-API patterns (`store=True`, `previous_response_id=`, `managed_agent`, `assistant_id=`, `thread_id=`) + persistent server-session attributes (`self._remote_session`, `self._server_session`, `self._stateful`). Any unguarded pattern fails CI. `docs/HARNESS_PORTABILITY.md` documents the stance, the enforcement catalog, and the opt-in flow for users who want stateful APIs. The audit for Anthropic `cache_control` — confirmed as prefix cache hint (safe), not session-state lookup — is captured in the doc. No provider adapter currently uses stateful APIs, so this lands as pure regression protection.
 
-### MH7. Post-retrieval reranker
-The "retrieval misfire" failure mode happens when candidates are close semantically but wrong contextually. A cheap local reranker (e.g. a ~30M-param cross-encoder running on CPU via `sentence-transformers`, or a simple MMR rerank using existing embeddings) boosts perceived quality a lot. Ship:
-- `poor_cli/memory_reranker.py` with `rerank(query, candidates, strategy="mmr" | "cross_encoder")`.
-- Default to MMR (no new dependency) — it trades off similarity vs. diversity using existing vectors.
-- Optional `cross_encoder` strategy behind `memory.reranker.enabled` for users who've opted into HF local stack.
-- Hook into MH2's retrieval path: `semantic_search` returns top-K, reranker picks top-N from those.
+### MH7. Post-retrieval reranker — DONE 2026-04-14
+`poor_cli/memory_reranker.py` ships `mmr(query_vec, candidates, lambda_=0.7, k=5)` and `rerank_semantic_hits(query_vec, hits, embeddings, strategy, ...)`. MMR trades relevance (`lambda_=1.0`) against diversity (`lambda_=0.0`) using cosine sim across existing vectors — no new dependencies. Default 0.7 slightly favors relevance while injecting diversity to dodge the near-duplicate trap. Cross-encoder strategy is stubbed via the `strategy` param (currently falls back to score-order); wiring the HF cross-encoder stays a config-gated follow-up. Tested in `tests/test_memory_reranker.py` (8 tests).
 
 ### MH8. Memory access-recency telemetry — DONE 2026-04-14
 `MemoryEntry.hit_count` and `last_accessed_at` now live in frontmatter (backward-compatible: missing fields default to `0` / `created_at`). `MemoryManager.search()` and `MemoryManager.get()` take a `record_hit`/`record_hits` flag (default true) that calls `entry.touch()` and persists the updated frontmatter to disk. `list_all()` stays read-only so enumeration doesn't inflate counts. Tested in `tests/test_memory_provenance.py`. Feeds into MH3's decay policy and the eventual `:PoorCLIMemory` picker sort-by-hits UX.
