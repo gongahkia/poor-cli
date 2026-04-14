@@ -188,11 +188,8 @@ These items came out of the alternative-defaults audit for `prompt_compressor.py
 ### CB1. Diff-of-diff file context caching
 When the agent re-reads the same file across turns, poor-cli currently re-sends the full compressed text each time. Instead, hash the last compressed version per `(file_path, hash(pinned_context))` and on re-read send only the diff since last send, with a `[... N lines unchanged ...]` placeholder for static spans. Estimated token savings: 10–15% on repeated file context (common in long refactor sessions). Implementation: `poor_cli/context/diff_cache.py`, integrate in `ContextAssemblyOrchestrator`.
 
-### CB2. History pruning soft-pin protection
-`history_pruning.py` already respects a `pinned` metadata flag. Extend to a two-tier system:
-- `pinned: hard` — never prune under any budget (existing behavior).
-- `pinned: soft` — prune only under extreme budget pressure (>95% context used).
-Surface via chat keymap `<leader>mp` to toggle soft-pin on the current turn. Safety net for user-important context.
+### CB2. History pruning soft-pin protection — DONE 2026-04-14
+`PruningPolicy.soft_pin_evict_factor` (default 1.05) gates soft-pin eviction: turns with `pinned: "soft"` enter the eviction pool only when `current_tokens > target * 1.05`. Legacy `pinned: true` keeps hard-pin semantics. `ScoredTurn.soft_protected` is surfaced on both the dataclass and the annotated metadata. Tested in `tests/test_history_soft_pin.py`. Chat keymap to toggle soft-pin interactively is the remaining Neovim surface and a small follow-up — backend is ready.
 
 ### CB3. Per-tool-success adaptive history pruning
 Augment the pruner's tool-success weight with historical data: track per-tool success rate in `.poor-cli/tool_success_cache.json`. Tools with >90% success rate get lower pruning-priority (preserve them — they worked); tools with <50% get higher pruning-priority (their results likely aren't load-bearing for the next turn). Self-tuning, no user config. Ship behind `history_pruning.adaptive_tool_scoring = true` opt-in first, flip to default-on after two release cycles of telemetry.

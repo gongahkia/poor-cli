@@ -31,6 +31,14 @@ class PruningPolicy:
     mode: str = "balanced"
     economy_preset: str = "balanced"
     score_threshold: float = 0.45
+    # soft-pinned turns are pruned only when current_tokens > target * factor.
+    # Default 1.05: start evicting soft-pins once we exceed budget by >5%.
+    soft_pin_evict_factor: float = 1.05
+
+
+# sentinel strings accepted by MessagePolicy.pinned / metadata.pinned
+PIN_HARD = "hard"
+PIN_SOFT = "soft"
 
 
 @dataclass(frozen=True)
@@ -45,11 +53,13 @@ class ScoredTurn:
     reason_codes: Tuple[str, ...] = field(default_factory=tuple)
     file_refs: Tuple[str, ...] = field(default_factory=tuple)
     components: Dict[str, float] = field(default_factory=dict)
+    soft_protected: bool = False  # pruned only under severe budget pressure
 
     def to_metadata(self) -> Dict[str, Any]:
         return {
             "score": round(self.score, 4),
             "protected": self.protected,
+            "softProtected": self.soft_protected,
             "superseded": self.superseded,
             "primaryReason": self.primary_reason,
             "reasonCodes": list(self.reason_codes),
@@ -153,8 +163,17 @@ class HistoryPruner:
         current_tokens = self._history_tokens(history)
         keep = [True] * len(history)
         pruned_turns: List[PrunedTurnRecord] = []
+        # soft-pinned turns enter the candidate pool only when we exceed budget
+        # by the configured factor (default 5%). Hard-pinned turns stay fully out.
+        severe_pressure = (
+            target_tokens > 0
+            and current_tokens > target_tokens * policy.soft_pin_evict_factor
+        )
         ordered = sorted(
-            (turn for turn in scored_turns if not turn.protected),
+            (
+                turn for turn in scored_turns
+                if not turn.protected and (severe_pressure or not turn.soft_protected)
+            ),
             key=lambda turn: (turn.score, turn.index),
         )
         for turn in ordered:
@@ -201,7 +220,7 @@ class HistoryPruner:
         active_files: Optional[Sequence[str]] = None,
     ) -> List[ScoredTurn]:
         policy = policy or self.policy_for()
-        protected_indexes = self._protected_indexes(history)
+        protected_indexes, soft_protected_indexes = self._protected_indexes(history)
         resolved_active_files = self._active_files(history, active_files)
         file_refs_by_index = {
             index: tuple(self._extract_files(message, self._extract_text(message)))
@@ -229,6 +248,7 @@ class HistoryPruner:
             superseded_penalty = -0.7 if index in superseded else 0.0
             score = recency + tool_weight + file_weight + role_weight + decision_weight + plan_weight + superseded_penalty
             protected = index in protected_indexes
+            soft_protected = index in soft_protected_indexes and not protected
             primary_reason = self._primary_reason(
                 message=message,
                 score=score,
@@ -247,6 +267,7 @@ class HistoryPruner:
                         metadata={
                             "score": round(score, 4),
                             "protected": protected,
+                            "softProtected": soft_protected,
                             "superseded": bool(index in superseded),
                             "primaryReason": primary_reason,
                             "reasonCodes": list(superseded.get(index, ())),
@@ -278,26 +299,40 @@ class HistoryPruner:
                         "plan": plan_weight,
                         "supersededPenalty": superseded_penalty,
                     },
+                    soft_protected=soft_protected,
                 )
             )
         return scored
 
-    def _protected_indexes(self, history: List[Dict[str, Any]]) -> set[int]:
-        protected: set[int] = set()
+    def _protected_indexes(self, history: List[Dict[str, Any]]) -> Tuple[set[int], set[int]]:
+        """Return (hard_protected, soft_protected) index sets.
+
+        Hard-pinned turns (``pinned: true`` or ``"hard"``) are never pruned.
+        Soft-pinned turns (``pinned: "soft"``) are pruned only when
+        ``current_tokens > target_tokens * soft_pin_evict_factor``. The current
+        turn tail, last user message, and active/pinned-context sources are
+        always hard-protected regardless of ``pinned`` metadata.
+        """
+        hard: set[int] = set()
+        soft: set[int] = set()
         if history:
-            protected.add(len(history) - 1)  # current turn tail
+            hard.add(len(history) - 1)  # current turn tail
         for index in range(len(history) - 1, -1, -1):
             if self._normalized_role(history[index]) == "user":
-                protected.add(index)  # last user
+                hard.add(index)  # last user
                 break
         for index, message in enumerate(history):
             metadata = message.get("metadata", {}) if isinstance(message.get("metadata"), dict) else {}
-            if message.get("pinned") or metadata.get("pinned"):
-                protected.add(index)
+            pin_raw = message.get("pinned", metadata.get("pinned"))
+            if isinstance(pin_raw, str) and pin_raw.strip().lower() == PIN_SOFT:
+                soft.add(index)
+                continue
+            if pin_raw:  # truthy, non-"soft" value = hard pin (legacy pinned=true)
+                hard.add(index)
                 continue
             if metadata.get("contextSource") in {"active_file", "pinned_context"}:
-                protected.add(index)
-        return protected
+                hard.add(index)
+        return hard, soft
 
     def _active_files(self, history: List[Dict[str, Any]], active_files: Optional[Sequence[str]]) -> set[str]:
         files = {str(path).strip() for path in (active_files or []) if str(path).strip()}
