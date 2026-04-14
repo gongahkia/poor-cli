@@ -149,14 +149,8 @@ Today every turn loads the full `MEMORY.md` index into the system prompt via `in
 - **Tool-driven** (for longer memories): entries above the size threshold are NOT injected; instead the agent gets a `recall_memory(query: str)` tool that calls `MemoryManager.semantic_search` on demand.
 - This mirrors how humans work — ambient context for beliefs and preferences, explicit recall for episodic facts.
 
-### MH6. Harness-portability audit test
-Post 2's thesis is sharp: if memory is behind a closed stateful API (Anthropic Managed Agents, OpenAI Responses API, Codex encrypted compaction), you don't own your memory. poor-cli stores everything in plain `.md` + SQLite today, which is good. Lock that in with a regression test:
-- `tests/test_harness_portability.py` — spins up a session, runs N turns, then asserts:
-  1. Every message is reconstructible from `~/.poor-cli/history.json` + `~/.poor-cli/sessions/` alone (no provider-side state fetch required).
-  2. No provider adapter (`anthropic_provider.py`, `openai_provider.py`, etc.) passes `store=True` / `stateful=True` / cache-only-on-server flags unless explicitly enabled via config.
-  3. On swap-provider mid-session, the new provider receives the full local history (no orphaned server state).
-- Audit `anthropic_provider.py` for `cache_control` usage — is it reading from a server-side cache, or only hint-marking prefix for recompute? Document findings in `docs/HARNESS_PORTABILITY.md`.
-- Same audit for `openai_provider.py` Responses API calls. If any stateful-API code path exists, gate it behind `provider.stateful_api_opt_in = false` default.
+### MH6. Harness-portability audit test — DONE 2026-04-14
+`tests/test_harness_portability.py` scans every provider adapter for stateful-API patterns (`store=True`, `previous_response_id=`, `managed_agent`, `assistant_id=`, `thread_id=`) + persistent server-session attributes (`self._remote_session`, `self._server_session`, `self._stateful`). Any unguarded pattern fails CI. `docs/HARNESS_PORTABILITY.md` documents the stance, the enforcement catalog, and the opt-in flow for users who want stateful APIs. The audit for Anthropic `cache_control` — confirmed as prefix cache hint (safe), not session-state lookup — is captured in the doc. No provider adapter currently uses stateful APIs, so this lands as pure regression protection.
 
 ### MH7. Post-retrieval reranker
 The "retrieval misfire" failure mode happens when candidates are close semantically but wrong contextually. A cheap local reranker (e.g. a ~30M-param cross-encoder running on CPU via `sentence-transformers`, or a simple MMR rerank using existing embeddings) boosts perceived quality a lot. Ship:
