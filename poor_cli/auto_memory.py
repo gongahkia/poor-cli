@@ -183,10 +183,17 @@ async def auto_save_session_memories(
     provider: Any = None,
     *,
     source_session_id: str = "",
+    review_mode: str = "auto",
 ) -> List[str]:
     """
     Analyze a session's messages and auto-save any detected memories.
     Uses LLM distillation if provider is available, else falls back to heuristics.
+
+    review_mode controls MH4 in-loop review:
+    - "auto" (default): save candidates directly (legacy behavior).
+    - "prompt": write candidates to ``<memory_dir>/_pending/`` instead of
+      the live store so a user-facing review surface can accept/edit/reject
+      before persistence.
 
     Returns list of saved memory names. Memories carry provenance
     (source_session_id, extractor, derivation_depth) for MH3 cascading deletes.
@@ -203,6 +210,11 @@ async def auto_save_session_memories(
             candidates = extract_memories_from_history(messages, existing_names, source_session_id=source_session_id)
     else:
         candidates = extract_memories_from_history(messages, existing_names, source_session_id=source_session_id)
+
+    if review_mode == "prompt":
+        from .memory_review import stage_pending_memories
+        stage_pending_memories(mgr, candidates)
+        return [entry.name for entry in candidates]
 
     saved: List[str] = []
     for entry in candidates:
