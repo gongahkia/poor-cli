@@ -66,8 +66,8 @@ Most of the memory + compression system landed this week; a few small hook-in po
 These docs describe still-open work but the work itself is captured above, not in the doc.
 
 - `docs/BENCHMARKS.md` — "pass@1 pending" line; becomes live reference after item 3 ships.
-- `docs/phase_21_testing_benchmarks.md` — Agent 21A acceptance criteria; same dependency as item 3.
-- `docs/phase_20_strategic_decisions.md` + `docs/phase_20/063_outcome.md` — demo-video gating deliverable; same dependency as item 2.
+- `docs/archive/phase_21_testing_benchmarks.md` — Agent 21A acceptance criteria; same dependency as item 3.
+- `docs/archive/phase_20_strategic_decisions.md` + `docs/phase_20/063_outcome.md` — demo-video gating deliverable; same dependency as item 2.
 
 ## Completed items moved from LONGTERM-TODO
 

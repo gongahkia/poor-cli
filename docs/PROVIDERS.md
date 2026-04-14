@@ -41,7 +41,7 @@ export GEMINI_API_KEY="$(pbpaste)"  # paste from https://aistudio.google.com/api
 
 Models: `gemini-2.5-flash` (default, balanced), `gemini-2.5-pro` (quality), `gemini-2.5-flash-lite` (cheap).
 
-Features: streaming, function calling, system instructions, vision, JSON mode. Prompt caching via `cachedContent` is available but not yet wired into poor-cli (see `docs/phase_02_context_intelligence.md`).
+Features: streaming, function calling, system instructions, vision, JSON mode. Prompt caching via `cachedContent` is available but not yet wired into poor-cli (see `docs/archive/phase_02_context_intelligence.md`).
 
 ### OpenAI
 
@@ -199,7 +199,7 @@ Legend: ✅ supported, ⚪ not supported in poor-cli today, `opt` requires a fun
 
 - **Missing provider in `/switch`** — check `~/.poor-cli/api_keys.json` and env vars; run `/api-key status` for the lookup chain.
 - **Ollama not detected** — confirm `ollama serve` is running (`curl http://localhost:11434/api/tags`). poor-cli polls on each switch.
-- **Anthropic cache hit rate stays 0%** — the static prefix must be stable across turns. Look for dynamic content (timestamps, random ordering) polluting the system prompt. `docs/phase_02_context_intelligence.md` Agent 2C has the full checklist.
+- **Anthropic cache hit rate stays 0%** — the static prefix must be stable across turns. Look for dynamic content (timestamps, random ordering) polluting the system prompt. `docs/archive/phase_02_context_intelligence.md` Agent 2C has the full checklist.
 - **Keyring prompt on every request** — macOS gatekeeper can prevent background keyring access. `/api-key migrate` re-prompts with a sticky approval.
 
 ## See Also

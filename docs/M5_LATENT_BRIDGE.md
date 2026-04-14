@@ -189,5 +189,5 @@ Benchmark harness stubbed in `latent_bridge.LatentBenchmarkRun` — fill in once
 
 - `poor_cli/research/latent_communication.py` — in-process HF Transformers implementation (PRD 059).
 - `docs/LATENT_COMMUNICATION.md` — original feasibility study.
-- `docs/phase_06_memory_architecture.md` Agent 6B — KV cache reuse, adjacent work.
-- `docs/phase_08_research_frontier.md` Agent 8A — original latent-space research mandate.
+- `docs/archive/phase_06_memory_architecture.md` Agent 6B — KV cache reuse, adjacent work.
+- `docs/archive/phase_08_research_frontier.md` Agent 8A — original latent-space research mandate.
