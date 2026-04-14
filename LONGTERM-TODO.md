@@ -59,13 +59,16 @@ Shipped via PRD 024 (Phase 13A). `poor_cli/mcp/` package with stdio + Streamable
 
 Tested in `tests/test_architect_mode_v2.py` (17 new tests, all passing).
 
-### M5. Custom latent bridge for local inference servers
-`hf_local` is the only latent-capable provider today because poor-cli runs Transformers in-process and can access hidden states directly. vLLM, llama-server, SGLang, HF TGI, LM Studio, and Ollama should stay text-only until a backend-specific server extension exists. For each backend considered:
-- Add custom endpoints for latent encode/generate handoff, not just OpenAI-compatible text.
-- Define tensor serialization for hidden states, `inputs_embeds`, and KV-cache handles, with dtype/device metadata.
-- Enforce same model/tokenizer/embedding-space checks before any latent transfer.
-- Prove quality and token/cost reduction against text handoff benchmarks before declaring `ProviderCapability.LATENT_COMMUNICATION`.
-- Start with one backend, likely vLLM or SGLang; do not attempt all runtimes in one pass.
+### M5. Custom latent bridge for local inference servers — research DONE 2026-04-14
+Research + client-side protocol shipped in `poor_cli/research/latent_bridge.py`:
+- `LatentTensorSpec` — wire format with sha256 checksum verification.
+- `LatentBridgeConfig` — architect/editor agreement struct with `identity_hash()`.
+- `compatibility_check(architect, editor)` — enforces same-model/tokenizer/embedding-space before any transfer; returns mismatch reasons.
+- `LatentBackend` abstract interface with `encode` / `generate_from_latent` / `health_check`.
+- `VLLMLatentBackend` concrete stub — health check works; encode/generate raise `NotImplementedError` pointing to the server-side patch spec.
+- `build_backend(name, config)` factory; `benchmark_note_for_backend` gives per-backend feasibility TL;DR.
+
+Full server-side patch spec + protocol flow + compatibility rules + safety posture documented in `docs/M5_LATENT_BRIDGE.md`. Feasibility ranking: vLLM (v1 target, 1-2 weeks of server patch), SGLang (close second), HF TGI (uncertain), llama-server/Ollama/LM Studio (not recommended), hf_local (already shipped in-process). 17 tests in `tests/test_latent_bridge.py` cover the protocol + compatibility checks + factory. Server-side vLLM patch is explicitly out of scope for poor-cli; a contributor would land that upstream before latent mode for vLLM gets promoted to a ProviderCapability.
 
 ---
 
