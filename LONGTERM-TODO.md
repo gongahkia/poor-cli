@@ -117,15 +117,8 @@ Update README to reflect Neovim-only focus. Remove TUI screenshots, TUI usage in
 
 These items operationalize the analysis of the memory-system axes (what's stored, when derived, how retrieved, curator, forgetting, provenance) and the "open harness" thesis (if your harness is closed/stateful/API-backed, you don't own your memory). poor-cli is strongly aligned with the open side — this work tightens that alignment and closes known gaps.
 
-### MH1. Memory provenance trail
-`MemoryEntry` currently has `created_at`, `updated_at`, but no link back to the conversation that produced it. Without that, "confidence without provenance" is the failure mode: the system states a remembered fact confidently but neither the user nor the agent can trace it back to what was actually said. Extend the YAML frontmatter with:
-- `source_session_id` — session ID active at extraction time.
-- `source_turn_id` — turn index or run ID in that session.
-- `source_message_hash` — SHA-256 of the user message(s) that triggered extraction.
-- `extractor` — `"heuristic"` | `"llm"` | `"user"`.
-- `derivation_depth` — `0` for raw user utterance, `1+` for LLM-distilled; refuse to re-summarize above a configurable cap (default `2`) to bound drift.
-
-Downstream unlocks: (a) `/memory show <name> --source` jumps into the originating session; (b) cascading delete (see MH3); (c) ability to answer "where did I learn this?"
+### MH1. Memory provenance trail — DONE 2026-04-14
+`MemoryEntry` frontmatter now carries `source_session_id`, `source_turn_id`, `source_message_hash` (16-char SHA-256 prefix), `extractor` (`heuristic|llm|user|unknown`), and `derivation_depth` (0 for raw, 1+ for LLM-distilled; `MAX_DERIVATION_DEPTH=2`). `extract_memories_from_history` + `extract_memories_with_llm` + `auto_save_session_memories` accept `source_session_id` kwarg and populate the fields. Round-trip tested in `tests/test_memory_provenance.py`. Unlocks: (a) "where did I learn this?" queries, (b) cascading deletes via MH3, (c) source-aware audit trails.
 
 ### MH2. Semantic memory retrieval
 `MemoryManager.search()` is token-overlap keyword scoring. This is the worst case for the "selective retrieval bias" failure mode — memories stored under an emotionally different framing than the current query become invisible. The `embeddings.py` infrastructure already exists (Phase 8D delivered HF provider). Add:
@@ -172,12 +165,8 @@ The "retrieval misfire" failure mode happens when candidates are close semantica
 - Optional `cross_encoder` strategy behind `memory.reranker.enabled` for users who've opted into HF local stack.
 - Hook into MH2's retrieval path: `semantic_search` returns top-K, reranker picks top-N from those.
 
-### MH8. Memory access-recency telemetry
-MH3 needs usage data to know what to forget. Today there is no per-memory hit counter. Add:
-- `MemoryEntry.hit_count` and `last_accessed_at` in frontmatter (backward-compatible — missing fields default to `0` / creation time).
-- `MemoryManager.search()` / `semantic_search()` / `get()` increment and timestamp on every read.
-- Surface hit counts in the `:PoorCLIMemory` picker so users see which memories are earning their keep.
-- Feeds MH3's decay: low-hit memories expire faster than high-hit ones.
+### MH8. Memory access-recency telemetry — DONE 2026-04-14
+`MemoryEntry.hit_count` and `last_accessed_at` now live in frontmatter (backward-compatible: missing fields default to `0` / `created_at`). `MemoryManager.search()` and `MemoryManager.get()` take a `record_hit`/`record_hits` flag (default true) that calls `entry.touch()` and persists the updated frontmatter to disk. `list_all()` stays read-only so enumeration doesn't inflate counts. Tested in `tests/test_memory_provenance.py`. Feeds into MH3's decay policy and the eventual `:PoorCLIMemory` picker sort-by-hits UX.
 
 ### MH9. Stateful-API portability gate
 Complements MH6 — the *enforcement* layer. Add to `config.py`:

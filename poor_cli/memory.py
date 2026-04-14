@@ -4,12 +4,18 @@ Persistent memory system for poor-cli.
 Stores cross-session memories (user prefs, feedback, project context, references)
 in ~/.poor-cli/memory/ as individual markdown files with YAML frontmatter.
 MEMORY.md acts as a searchable index loaded into every session.
+
+Provenance (MH1) and telemetry (MH8) fields live in each entry's frontmatter:
+source_session_id, source_turn_id, source_message_hash, extractor,
+derivation_depth, hit_count, last_accessed_at. All optional; older entries
+backfill with safe defaults on load.
 """
 
 from __future__ import annotations
 
+import hashlib
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -22,11 +28,18 @@ MEMORY_TYPES = ("user", "feedback", "project", "reference")
 MAX_INDEX_ENTRIES = 200
 MEMORY_DIR_NAME = "memory"
 INDEX_FILE = "MEMORY.md"
+MAX_DERIVATION_DEPTH = 2  # refuse to re-summarize above this depth to bound drift
+EXTRACTOR_KINDS = ("heuristic", "llm", "user", "unknown")
+
+
+def hash_source_message(text: str) -> str:
+    """Return a short SHA-256 prefix of the source message for provenance."""
+    return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:16]
 
 
 @dataclass
 class MemoryEntry:
-    """Single memory record."""
+    """Single memory record with provenance + telemetry."""
     name: str
     description: str
     type: str # user | feedback | project | reference
@@ -34,30 +47,59 @@ class MemoryEntry:
     filename: str = ""
     created_at: str = ""
     updated_at: str = ""
+    # provenance (MH1)
+    source_session_id: str = ""
+    source_turn_id: str = ""
+    source_message_hash: str = ""
+    extractor: str = "unknown"  # heuristic | llm | user | unknown
+    derivation_depth: int = 0  # 0 = raw user utterance; 1+ = LLM-distilled
+    # telemetry (MH8)
+    hit_count: int = 0
+    last_accessed_at: str = ""
 
     def __post_init__(self):
         if self.type not in MEMORY_TYPES:
             raise ValidationError(f"invalid memory type: {self.type}; expected one of {MEMORY_TYPES}")
+        if self.extractor not in EXTRACTOR_KINDS:
+            self.extractor = "unknown"
+        if self.derivation_depth < 0:
+            self.derivation_depth = 0
+        if self.hit_count < 0:
+            self.hit_count = 0
         now = datetime.now(timezone.utc).isoformat()
         if not self.created_at:
             self.created_at = now
         if not self.updated_at:
             self.updated_at = now
+        if not self.last_accessed_at:
+            self.last_accessed_at = self.created_at
         if not self.filename:
             self.filename = _slugify(self.name) + ".md"
 
     def render_file(self) -> str:
         """Render as markdown with YAML frontmatter."""
-        return (
-            f"---\n"
-            f"name: {self.name}\n"
-            f"description: {self.description}\n"
-            f"type: {self.type}\n"
-            f"created_at: {self.created_at}\n"
-            f"updated_at: {self.updated_at}\n"
-            f"---\n\n"
-            f"{self.content}\n"
-        )
+        fields = [
+            f"name: {self.name}",
+            f"description: {self.description}",
+            f"type: {self.type}",
+            f"created_at: {self.created_at}",
+            f"updated_at: {self.updated_at}",
+        ]
+        if self.source_session_id:
+            fields.append(f"source_session_id: {self.source_session_id}")
+        if self.source_turn_id:
+            fields.append(f"source_turn_id: {self.source_turn_id}")
+        if self.source_message_hash:
+            fields.append(f"source_message_hash: {self.source_message_hash}")
+        if self.extractor and self.extractor != "unknown":
+            fields.append(f"extractor: {self.extractor}")
+        if self.derivation_depth:
+            fields.append(f"derivation_depth: {self.derivation_depth}")
+        if self.hit_count:
+            fields.append(f"hit_count: {self.hit_count}")
+        if self.last_accessed_at and self.last_accessed_at != self.created_at:
+            fields.append(f"last_accessed_at: {self.last_accessed_at}")
+        return "---\n" + "\n".join(fields) + f"\n---\n\n{self.content}\n"
 
     def index_line(self) -> str:
         """One-line entry for MEMORY.md index."""
@@ -72,7 +114,19 @@ class MemoryEntry:
             "filename": self.filename,
             "createdAt": self.created_at,
             "updatedAt": self.updated_at,
+            "sourceSessionId": self.source_session_id,
+            "sourceTurnId": self.source_turn_id,
+            "sourceMessageHash": self.source_message_hash,
+            "extractor": self.extractor,
+            "derivationDepth": self.derivation_depth,
+            "hitCount": self.hit_count,
+            "lastAccessedAt": self.last_accessed_at,
         }
+
+    def touch(self) -> None:
+        """Record an access (for retrieval-recency telemetry)."""
+        self.hit_count += 1
+        self.last_accessed_at = datetime.now(timezone.utc).isoformat()
 
 
 def _slugify(text: str) -> str:
@@ -130,6 +184,11 @@ class MemoryManager:
             try:
                 text = path.read_text(encoding="utf-8")
                 meta, body = _parse_frontmatter(text)
+                def _int(key: str, default: int = 0) -> int:
+                    try:
+                        return int(meta.get(key, default) or default)
+                    except (TypeError, ValueError):
+                        return default
                 entry = MemoryEntry(
                     name=meta.get("name", path.stem),
                     description=meta.get("description", ""),
@@ -138,6 +197,13 @@ class MemoryManager:
                     filename=path.name,
                     created_at=meta.get("created_at", ""),
                     updated_at=meta.get("updated_at", ""),
+                    source_session_id=meta.get("source_session_id", ""),
+                    source_turn_id=meta.get("source_turn_id", ""),
+                    source_message_hash=meta.get("source_message_hash", ""),
+                    extractor=meta.get("extractor", "unknown"),
+                    derivation_depth=_int("derivation_depth", 0),
+                    hit_count=_int("hit_count", 0),
+                    last_accessed_at=meta.get("last_accessed_at", ""),
                 )
                 self._entries[path.name] = entry
             except Exception as exc:
@@ -202,8 +268,12 @@ class MemoryManager:
     # ── searching ────────────────────────────────────────────────────────
 
     def search(self, query: str, type_filter: Optional[str] = None,
-               max_results: int = 10) -> List[MemoryEntry]:
-        """Keyword search over memory names, descriptions, and content."""
+               max_results: int = 10, *, record_hits: bool = True) -> List[MemoryEntry]:
+        """Keyword search over memory names, descriptions, and content.
+
+        record_hits=False disables touch() side-effects (used by the semantic
+        retrieval layer to avoid double-counting).
+        """
         if not self._entries:
             self.load()
         query_lower = query.lower()
@@ -219,14 +289,17 @@ class MemoryManager:
             if score > 0:
                 scored.append((score, entry))
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [e for _, e in scored[:max_results]]
+        hits = [e for _, e in scored[:max_results]]
+        if record_hits:
+            self._record_retrieval(hits)
+        return hits
 
     def get_relevant(self, context: str, max_results: int = 5) -> List[MemoryEntry]:
         """Return memories relevant to the given context string."""
         return self.search(context, max_results=max_results)
 
     def list_all(self, type_filter: Optional[str] = None) -> List[MemoryEntry]:
-        """List all memories, optionally filtered by type."""
+        """List all memories, optionally filtered by type (no retrieval tracking)."""
         if not self._entries:
             self.load()
         entries = list(self._entries.values())
@@ -234,11 +307,29 @@ class MemoryManager:
             entries = [e for e in entries if e.type == type_filter]
         return sorted(entries, key=lambda e: e.updated_at, reverse=True)
 
-    def get(self, name: str) -> Optional[MemoryEntry]:
-        """Get a specific memory by name."""
+    def get(self, name: str, *, record_hit: bool = True) -> Optional[MemoryEntry]:
+        """Get a specific memory by name. Records a hit unless disabled."""
         if not self._entries:
             self.load()
-        return self._find_by_name(name)
+        entry = self._find_by_name(name)
+        if entry and record_hit:
+            self._record_retrieval([entry])
+        return entry
+
+    def _record_retrieval(self, entries: List[MemoryEntry]) -> None:
+        """Increment hit_count + bump last_accessed_at for retrieved entries.
+
+        Persists to disk asynchronously-safe: on failure we log and keep the
+        in-memory count, so subsequent retrievals keep updating even if disk
+        is temporarily unavailable.
+        """
+        for entry in entries:
+            entry.touch()
+            try:
+                path = self._memory_dir / entry.filename
+                path.write_text(entry.render_file(), encoding="utf-8")
+            except Exception as exc:
+                logger.debug("failed to persist hit telemetry for %s: %s", entry.filename, exc)
 
     # ── internal ─────────────────────────────────────────────────────────
 

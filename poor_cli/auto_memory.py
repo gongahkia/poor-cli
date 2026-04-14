@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .memory import MemoryManager, MemoryEntry, MEMORY_TYPES
+from .memory import MemoryManager, MemoryEntry, MEMORY_TYPES, hash_source_message
 from .exceptions import setup_logger
 
 logger = setup_logger(__name__)
@@ -50,17 +50,21 @@ _LLM_DISTILL_MAX_CHARS = 30000
 def extract_memories_from_history(
     messages: List[Dict[str, Any]],
     existing_names: Optional[set[str]] = None,
+    *,
+    source_session_id: str = "",
 ) -> List[MemoryEntry]:
     """
     Analyze conversation messages and extract candidate memories via heuristics.
 
     Looks for user messages containing preference signals, decisions,
-    or contextual information worth persisting.
+    or contextual information worth persisting. Records provenance
+    (source_session_id, source_turn_id, source_message_hash, extractor)
+    on every candidate so future cascading deletes and audit trails work.
     """
     existing = existing_names or set()
     candidates: List[MemoryEntry] = []
 
-    for msg in messages:
+    for turn_index, msg in enumerate(messages):
         role = msg.get("role", "")
         content = str(msg.get("content", "") or msg.get("parts", [""])[0] if isinstance(msg.get("parts"), list) else msg.get("content", ""))
         if role != "user" or len(content) < _MIN_CONTENT_LENGTH:
@@ -77,6 +81,11 @@ def extract_memories_from_history(
                     description=description,
                     type=mem_type,
                     content=content[:500].strip(),
+                    source_session_id=source_session_id,
+                    source_turn_id=str(turn_index),
+                    source_message_hash=hash_source_message(content),
+                    extractor="heuristic",
+                    derivation_depth=0,
                 ))
                 existing.add(name.lower())
                 break # one memory per message
@@ -91,8 +100,15 @@ async def extract_memories_with_llm(
     messages: List[Dict[str, Any]],
     provider: Any,
     existing_names: Optional[set[str]] = None,
+    *,
+    source_session_id: str = "",
 ) -> List[MemoryEntry]:
-    """Use LLM to distill memorable learnings from conversation history."""
+    """Use LLM to distill memorable learnings from conversation history.
+
+    Records provenance on every extracted memory including source_session_id,
+    an aggregate source_message_hash covering the distilled prompt, and
+    derivation_depth=1 (the LLM did one layer of summarization).
+    """
     existing = existing_names or set()
     conversation_parts = []
     total_chars = 0
@@ -106,7 +122,9 @@ async def extract_memories_with_llm(
         total_chars += len(entry)
     if not conversation_parts:
         return []
-    prompt = _LLM_DISTILL_PROMPT + "\n".join(conversation_parts)
+    joined = "\n".join(conversation_parts)
+    prompt = _LLM_DISTILL_PROMPT + joined
+    source_hash = hash_source_message(joined)
     response = await provider.send_message(prompt)
     raw = (response.content or "").strip()
     # extract JSON array from response (may be wrapped in ```json blocks)
@@ -130,6 +148,11 @@ async def extract_memories_with_llm(
             description=str(item.get("description", name))[:100],
             type=mem_type,
             content=str(item.get("content", ""))[:500].strip(),
+            source_session_id=source_session_id,
+            source_turn_id="aggregate",
+            source_message_hash=source_hash,
+            extractor="llm",
+            derivation_depth=1,
         ))
         existing.add(name.lower())
     return candidates
@@ -158,12 +181,15 @@ async def auto_save_session_memories(
     messages: List[Dict[str, Any]],
     base_dir: Any = None,
     provider: Any = None,
+    *,
+    source_session_id: str = "",
 ) -> List[str]:
     """
     Analyze a session's messages and auto-save any detected memories.
     Uses LLM distillation if provider is available, else falls back to heuristics.
 
-    Returns list of saved memory names.
+    Returns list of saved memory names. Memories carry provenance
+    (source_session_id, extractor, derivation_depth) for MH3 cascading deletes.
     """
     mgr = MemoryManager(base_dir, repo_root=Path.cwd() if base_dir is None else None, prefer_agent_rules=base_dir is None)
     mgr.load()
@@ -171,12 +197,12 @@ async def auto_save_session_memories(
 
     if provider:
         try:
-            candidates = await extract_memories_with_llm(messages, provider, existing_names)
+            candidates = await extract_memories_with_llm(messages, provider, existing_names, source_session_id=source_session_id)
         except Exception as e:
             logger.warning("LLM memory distillation failed, falling back to heuristics: %s", e)
-            candidates = extract_memories_from_history(messages, existing_names)
+            candidates = extract_memories_from_history(messages, existing_names, source_session_id=source_session_id)
     else:
-        candidates = extract_memories_from_history(messages, existing_names)
+        candidates = extract_memories_from_history(messages, existing_names, source_session_id=source_session_id)
 
     saved: List[str] = []
     for entry in candidates:
