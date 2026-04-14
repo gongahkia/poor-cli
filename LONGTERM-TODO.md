@@ -168,16 +168,8 @@ The "retrieval misfire" failure mode happens when candidates are close semantica
 ### MH8. Memory access-recency telemetry — DONE 2026-04-14
 `MemoryEntry.hit_count` and `last_accessed_at` now live in frontmatter (backward-compatible: missing fields default to `0` / `created_at`). `MemoryManager.search()` and `MemoryManager.get()` take a `record_hit`/`record_hits` flag (default true) that calls `entry.touch()` and persists the updated frontmatter to disk. `list_all()` stays read-only so enumeration doesn't inflate counts. Tested in `tests/test_memory_provenance.py`. Feeds into MH3's decay policy and the eventual `:PoorCLIMemory` picker sort-by-hits UX.
 
-### MH9. Stateful-API portability gate
-Complements MH6 — the *enforcement* layer. Add to `config.py`:
-```yaml
-providers:
-  portability_strict: true   # default
-```
-When `portability_strict` is true:
-- Any provider adapter that would make a stateful-API call (OpenAI `store=True`, Anthropic Managed Agents, etc.) raises `PortabilityViolation`.
-- `/status` shows portability mode prominently.
-- Users who explicitly want stateful APIs must flip to `false` and accept the lock-in trade-off with a one-time warning.
+### MH9. Stateful-API portability gate — DONE 2026-04-14
+`poor_cli/providers/portability.py` ships `enforce_portability(provider, feature, config)` and `PortabilityViolation`. `Config.providers_portability.strict` defaults to `True`; `allowed_stateful_features` maps provider → opt-in feature codes. Catalog of known non-portable feature codes: `openai_responses_stateful`, `anthropic_managed_agents`, `codex_encrypted_compaction`, `provider_side_memory`. Tested in `tests/test_portability_gate.py`. Provider adapters should call `enforce_portability()` before using any server-side-state path — the gate is now plumbed, future adapters just need to call it.
 
 ---
 

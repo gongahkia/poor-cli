@@ -229,6 +229,24 @@ class FallbackConfig:
 
 
 @dataclass
+class ProvidersPortabilityConfig:
+    """MH9: enforce portability across providers — block stateful-API usage.
+
+    When strict is True (default), provider adapters must NOT rely on any
+    server-side state store that cannot be reconstructed from local history.
+    This blocks OpenAI Responses API stateful calls, Anthropic Managed Agents,
+    and similar lock-in patterns. See docs/HARNESS_PORTABILITY.md.
+
+    Users who explicitly want the stateful variants (for latency, priced
+    features, etc.) must flip strict=False and accept the lock-in trade-off.
+    """
+    strict: bool = True
+    # per-provider opt-in overrides when strict is True — maps provider name to
+    # a list of feature codes the user explicitly allowed (e.g. "openai_responses_stateful")
+    allowed_stateful_features: Dict[str, list] = field(default_factory=dict)
+
+
+@dataclass
 class ContextCompressionConfig:
     """Context compression / summarization settings."""
     enabled: bool = True
@@ -525,6 +543,7 @@ class Config:
     agentic: AgenticConfig = field(default_factory=AgenticConfig)
     cost_guardrails: CostGuardrailConfig = field(default_factory=CostGuardrailConfig)
     fallback: FallbackConfig = field(default_factory=FallbackConfig)
+    providers_portability: ProvidersPortabilityConfig = field(default_factory=ProvidersPortabilityConfig)
     context_compression: ContextCompressionConfig = field(default_factory=ContextCompressionConfig)
     context: ContextConfig = field(default_factory=ContextConfig)
     output_truncation: OutputTruncationConfig = field(default_factory=OutputTruncationConfig)
@@ -567,6 +586,7 @@ class Config:
             "agentic": asdict(self.agentic),
             "cost_guardrails": asdict(self.cost_guardrails),
             "fallback": asdict(self.fallback),
+            "providers_portability": asdict(self.providers_portability),
             "context_compression": asdict(self.context_compression),
             "context": asdict(self.context),
             "output_truncation": asdict(self.output_truncation),
