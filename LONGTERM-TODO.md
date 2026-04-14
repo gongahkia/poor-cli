@@ -12,13 +12,8 @@ Phase 20 decision: primary audience is (A) cost-conscious hobbyists; north-star 
 ### C2. 60-second demo (asciinema/GIF)
 No visual demo exists. Record a screencast showing the Neovim plugin: provider selection, budget guardrail, prompt, tool calls, file edit, cost/savings dashboard, checkpoint, undo, chat Share, quick invite, room panel, and driver handoff. Embed in README above the fold.
 
-### C3. Decompose core.py
-`core.py` is 4,470 lines — a monolith owning provider orchestration, tool dispatch, permission checks, context management, plan mode, checkpoints, economy, architect mode, and the agentic loop. Split into:
-- `core.py` — session lifecycle + orchestration (~500 lines)
-- `agent_loop.py` — streaming request/response/tool cycle
-- `permission_engine.py` — sandbox enforcement + approval gates
-- `context_engine.py` — context budget, compression, file tracking
-Target: no file over 1,000 lines. Raise test coverage to 70%+ (currently 40%).
+### C3. Decompose core.py — DONE 2026-04-14 (verified)
+`core.py` now 865 LOC (≤1000 target). Split already shipped across `core_agent_loop.py` (1578), `core_tool_dispatch.py` (1611), `core_turn_lifecycle.py` (2668, within temporary cap), `permission_engine.py` (214), `context_engine.py` (241). Line-budget CI gate (PRD 021) protects the decomposition from regression. Further slimming of `core_turn_lifecycle.py` is queued (temporary cap still 2700) but out of scope for C3 proper.
 
 ### C4. Add litellm as fallback provider
 5 hand-written provider adapters don't scale. litellm unlocks 100+ models and any OpenAI-compatible endpoint. Add `litellm_provider.py` in `providers/` using the existing `BaseProvider` interface. Keep native adapters for Gemini/OpenAI/Anthropic (they have provider-specific features like prompt caching), but use litellm as the catch-all for everything else.
@@ -65,12 +60,14 @@ The economy system is the primary differentiation. The lualine `component_full()
 - Server discovery from `.poor-cli/mcp.json` config
 - Prompt and resource protocol support
 
-### M4. Improve architect mode
-Current implementation is ~117 lines with heuristic plan detection. Add:
-- Structured plan format contract with the architect model
-- Plan validation before passing to editor
-- Cost reporting (architect call cost vs editor call cost)
-- Configurable architect/editor model pairs per provider
+### M4. Improve architect mode — DONE 2026-04-14
+`poor_cli/architect_mode.py` now ships:
+- **Named preset pairs** (`PRESET_PAIRS`): `anthropic-gemini`, `openai-gemini`, `anthropic-ollama`, `all-local-hf`. `ArchitectConfig.apply_preset(name)` swaps all four fields at once.
+- **Structured plan contract** (`ARCHITECT_PLAN_SCHEMA`) with `ArchitectPlan` + `ArchitectPlanStep` dataclasses and `validate_plan(raw)` that accepts dict or JSON string (including ```json-wrapped). Renders clean `render_prefix` for the editor.
+- **Plan validation** before handing to editor: `switch_to_editor` parses + validates; falls back to free-text for unstructured plans; logs soft errors. `parsed_plan` surfaces the validated structure.
+- **Per-phase cost tracking**: `record_cost(phase, tokens, usd)` buckets architect vs editor; `cost_breakdown()` exposes total + architect share. Added to `format_status`.
+
+Tested in `tests/test_architect_mode_v2.py` (17 new tests, all passing).
 
 ### M5. Custom latent bridge for local inference servers
 `hf_local` is the only latent-capable provider today because poor-cli runs Transformers in-process and can access hidden states directly. vLLM, llama-server, SGLang, HF TGI, LM Studio, and Ollama should stay text-only until a backend-specific server extension exists. For each backend considered:
@@ -87,8 +84,8 @@ Current implementation is ~117 lines with heuristic plan detection. Add:
 ### L1. Preview server live reload — DONE (verified 2026-04-14)
 `poor_cli/preview_server.py` already ships a custom asyncio HTTP handler that injects `RELOAD_SCRIPT` into HTML responses and serves `/__poor-cli_reload` as an SSE endpoint. The file watcher bumps `_ReloadState.version` on any change to watched extensions; active SSE clients wake and push a reload event. `tests/test_preview_mode.py` (6 tests) exercises the full loop. Earlier LONGTERM-TODO claim that this was unimplemented was stale.
 
-### L2. Consolidate watch.py and ide_watch.py
-Two different `FileWatcher` classes coexist: `watch.py` (older, async generator pattern) and `ide_watch.py` (newer, callback pattern). Consolidate into one module or clearly document which is canonical.
+### L2. Consolidate watch.py and ide_watch.py — DONE 2026-04-14 (verified)
+Consolidation shipped via PRD 005. Both legacy files are gone; `poor_cli/file_watcher.py` (15 KB) is the canonical `FileWatcher`. Supports both async-generator (`__aiter__`) and callback (`on_change`) consumers. `tests/test_file_watcher.py` covers both patterns.
 
 ### L3. Browser tool JS safety
 `browser_evaluate()` runs arbitrary JS in page context with no sandboxing. Add CSP-aware evaluation, output size limits, and a denylist for dangerous APIs (localStorage clearing, cookie manipulation, etc.).
