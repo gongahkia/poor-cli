@@ -107,6 +107,18 @@ PROVIDER_CAPABILITIES: dict[str, frozenset[ProviderCapability]] = {
             ProviderCapability.SYSTEM_INSTRUCTIONS,
         }
     ),
+    # litellm routes to 100+ backends; conservative declaration, streaming +
+    # tool calling are supported by major targets (openai, anthropic, vertex,
+    # cohere, mistral). Model-specific gaps surface at call time via fallback.
+    "litellm": frozenset(
+        {
+            ProviderCapability.STREAMING,
+            ProviderCapability.TOOL_CALLING,
+            ProviderCapability.SYSTEM_INSTRUCTIONS,
+            ProviderCapability.JSON_MODE,
+            ProviderCapability.VISION,
+        }
+    ),
 }
 
 

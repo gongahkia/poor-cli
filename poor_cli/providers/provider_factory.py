@@ -109,6 +109,13 @@ class ProviderFactory:
         except ImportError as e:
             logger.warning(f"OpenRouter provider not available: {e}")
 
+        try:
+            from .litellm_provider import LiteLLMProvider
+            cls._providers["litellm"] = LiteLLMProvider
+            logger.debug("Registered LiteLLM provider")
+        except ImportError as e:
+            logger.warning(f"LiteLLM provider not available: {e}")
+
         cls._initialized = True
 
     @classmethod

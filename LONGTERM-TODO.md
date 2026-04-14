@@ -15,8 +15,8 @@ No visual demo exists. Record a screencast showing the Neovim plugin: provider s
 ### C3. Decompose core.py — DONE 2026-04-14 (verified)
 `core.py` now 865 LOC (≤1000 target). Split already shipped across `core_agent_loop.py` (1578), `core_tool_dispatch.py` (1611), `core_turn_lifecycle.py` (2668, within temporary cap), `permission_engine.py` (214), `context_engine.py` (241). Line-budget CI gate (PRD 021) protects the decomposition from regression. Further slimming of `core_turn_lifecycle.py` is queued (temporary cap still 2700) but out of scope for C3 proper.
 
-### C4. Add litellm as fallback provider
-5 hand-written provider adapters don't scale. litellm unlocks 100+ models and any OpenAI-compatible endpoint. Add `litellm_provider.py` in `providers/` using the existing `BaseProvider` interface. Keep native adapters for Gemini/OpenAI/Anthropic (they have provider-specific features like prompt caching), but use litellm as the catch-all for everything else.
+### C4. Add litellm as fallback provider — DONE 2026-04-14
+`poor_cli/providers/litellm_provider.py` ships the `LiteLLMProvider` adapter implementing the full BaseProvider surface: `initialize`, `send_message` (with structured_output passthrough + tool-call extraction), `send_message_stream`, `clear_history`, `get_history`, `set_history`, `get_capabilities`, `format_tool_results`. Models follow litellm's `<vendor>/<model>` naming (e.g. `groq/llama-3.1-70b-versatile`, `cohere/command-r-plus`, `mistral/mistral-large-latest`, `bedrock/anthropic.claude-3-sonnet-*`). Tracked in `PROVIDER_CAPABILITIES["litellm"]`, registered in `ProviderFactory`, declared in `provider_catalog.json` with 4 model tiers. Optional dep via `pip install 'poor-cli[litellm]'`. Tested in `tests/test_litellm_provider.py` (10 tests, all passing). Portability gate still active — stateful-API backends are blocked unless opted in. README + catalog updated.
 
 ---
 

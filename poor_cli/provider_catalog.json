@@ -208,6 +208,26 @@
         "qwen2.5-coder": { "tier": "balanced", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 2, "context_window": 32768 },
         "llama-3.2": { "tier": "quality", "cost_1k_in": 0, "cost_1k_out": 0, "speed_rank": 3, "context_window": 131072 }
       }
+    },
+    "litellm": {
+      "displayName": "LiteLLM (any backend)",
+      "envVar": "",
+      "defaultModel": "groq/llama-3.1-70b-versatile",
+      "commonModels": [
+        "groq/llama-3.1-70b-versatile",
+        "groq/llama-3.1-8b-instant",
+        "cohere/command-r-plus",
+        "mistral/mistral-large-latest",
+        "bedrock/anthropic.claude-3-sonnet-20240229-v1:0"
+      ],
+      "setupHelp": "Install poor-cli[litellm]. Uses the backend-specific env var (GROQ_API_KEY, COHERE_API_KEY, etc). Models use <vendor>/<model> naming.",
+      "capabilitySummary": "Catch-all router to 100+ backends via litellm; feature parity varies by underlying backend",
+      "modelTiers": {
+        "groq/llama-3.1-8b-instant": { "tier": "cheap", "cost_1k_in": 0.00005, "cost_1k_out": 0.00008, "speed_rank": 1, "context_window": 131072 },
+        "groq/llama-3.1-70b-versatile": { "tier": "balanced", "cost_1k_in": 0.00059, "cost_1k_out": 0.00079, "speed_rank": 1, "context_window": 131072 },
+        "mistral/mistral-large-latest": { "tier": "quality", "cost_1k_in": 0.002, "cost_1k_out": 0.006, "speed_rank": 2, "context_window": 128000 },
+        "cohere/command-r-plus": { "tier": "balanced", "cost_1k_in": 0.003, "cost_1k_out": 0.015, "speed_rank": 2, "context_window": 128000 }
+      }
     }
   }
 }
