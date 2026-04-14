@@ -123,13 +123,8 @@ These items operationalize the analysis of the memory-system axes (what's stored
 ### MH2. Semantic memory retrieval — DONE 2026-04-14
 `poor_cli/memory_semantic.py` ships `semantic_search` and `hybrid_search` on top of `MemoryManager`. Embeddings are cached in `<memory_dir>/embeddings.sqlite3` keyed by filename + content hash; stale caches invalidate on content change. Hybrid retrieval = union of top-K keyword + top-K semantic, deduped, semantic-first ordering. Falls back cleanly to keyword-only when no embedding provider is configured. Tested end-to-end with a deterministic token-overlap fake provider in `tests/test_memory_semantic.py` (6 tests). Integrates with MH8 hit-tracking by reusing `MemoryManager._record_retrieval`. MH7 reranker composes on top of the raw semantic list.
 
-### MH3. Forgetting policy with cascading deletes
-Today, `MemoryManager.delete()` is manual-only. There is no TTL, no access-recency decay, and no provenance-aware cascade (if the source session is deleted, derived memories persist orphaned). Implement:
-- Per-type soft-TTL defaults: `feedback` never expires; `project` 180d; `reference` 90d; `user` 365d. Configurable via `memory.ttl` in config.
-- Access-recency boost: each hit (from MH2) resets the TTL clock.
-- Cascade hook: when a session is deleted, call `MemoryManager.cascade_purge(source_session_id)` which deletes derived memories whose only source is the removed session (requires MH1).
-- User-confirmable purge flow: surface expiring memories in an end-of-session prompt (opt-in) — "these 3 memories are about to expire, keep/archive/delete?"
-- Archive (not delete) moves files to `~/.poor-cli/memory/archive/` with an expiry manifest so recovery stays cheap.
+### MH3. Forgetting policy with cascading deletes — DONE 2026-04-14
+`poor_cli/memory_forgetting.py` ships `ForgettingPolicy` (per-type TTL: feedback=∞, user=365d, project=180d, reference=90d) and `MemoryForgetter` with `due_for_expiry`, `archive`, `purge_source(session_id)`, `run_expiry_pass`. Archive target: `<memory_dir>/archive/<YYYY>-<MM>/` — no destructive deletes, just moves. Recency boost extends TTL by `recency_boost_days=60` when `hit_count >= 1` (composes with MH8). Cascade: `purge_source(session_id)` archives all memories with matching `source_session_id` (composes with MH1). Dry-run mode on all mutating paths. Tested in `tests/test_memory_forgetting.py` (8 tests). User-confirmable end-of-session UX is a Neovim surface (queued separately).
 
 ### MH4. In-loop memory review UX
 `auto_memory.py` runs at session end, distills, and silently persists. That is convenient but the curator is fully automated — there is no user-in-loop approval step. Ship:
