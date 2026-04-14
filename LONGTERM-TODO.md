@@ -229,8 +229,8 @@ Documented the caching matrix across all 11 providers in `poor_cli/providers/bas
 ### SBP2. Phase 4C — Structured output parity (Ollama / OpenRouter)
 `poor_cli/structured_output.py` supports `response_format` on Anthropic + OpenAI. Ollama's `/api/chat` supports a `format: "json"` field; OpenRouter routes transparently to the underlying provider. Audit `tool_translator.py` for coverage, add structured output passthrough for both, extend `tests/test_structured_output.py` with 1 case per provider. Estimated ~1 day.
 
-### SBP3. Phase 14A — Diff Review regenerate action
-`nvim-poor-cli/lua/poor-cli/diff_review.lua` wires `open`, `close`, and `toggle_layout` but no `regen` action even though PRD 014 lists it. Either add `:PoorCLIDiffReviewRegen` (server RPC `diff.regen` + Lua dispatcher that replays the triggering prompt with temperature bump) or drop the regen line from the PRD. Prefer to drop if cost for benefit is low — regenerate already ships via chat `<leader>rr` + PRD 043 branching.
+### SBP3. Phase 14A — Diff Review regenerate action — DONE (verified present 2026-04-14)
+False positive from the earlier audit. `diff_review.lua:162` binds `gc` to `regen_hunk`, `diff_review.lua:234-238` posts to `diff.regen`; server handler at `poor_cli/server/handlers/diff_review.py:120-121` registers both `diff.regen` and `poor-cli/regenerateHunk`; implementation in `edit_staging.py::regenerate_hunk`. No further action required.
 
 ### SBP4. Phase 15E / Phase 20D — Multiplayer 2-minute demo video
 Per `docs/phase_20/063_outcome.md`, recording the demo is a hard gating deliverable before using multiplayer as launch-ready marketing proof. Needs a clean Neovim config, two terminals (host + joiner), and ~10 minutes of recording + trim. Not automatable. Owner must record. Already tracked in M1; this entry just restates the block.
