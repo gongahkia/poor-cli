@@ -58,8 +58,8 @@ All listed surfaces shipped. Plan mode floating window, Telescope command palett
 ### M1. Multiplayer demo video
 Gating deliverable for PRD 063 commit. Record a 2-minute flow: host opens `:PoorCLIChat`, presses `S`, invite copies, joiner runs `:PoorCLICollab join <invite>`, room panel shows both members, host passes driver, joiner sends a suggestion, and both sides see the room event stream.
 
-### M2. Cost dashboard in Neovim
-The economy system is the primary differentiation. The lualine `component_full()` shows basic cost info. Add a `:PoorCLICostDashboard` command that opens a rich scratch buffer with: cumulative session cost, cost per tool call, model downshift savings, and projected monthly cost at current rate. Make cost visibility the marketing centerpiece.
+### M2. Cost dashboard in Neovim — DONE 2026-04-14 (verified)
+`:PoorCLICostDashboard` (commands.lua:593) opens `panels/cost_dashboard.lua` rich buffer. Surfaces match PRD 016 spec: session totals + delta, $/turn sparkline, top-10 tools by cost, cache hit-rate / hits / read+write tokens, daily-rate-projected monthly cost. Exports to `<state>/exports/cost-dashboard-*.json` via `e` keymap. Backed by `cost.snapshot` + `cost.history` RPC (`server/handlers/cost.py`). Tests in `tests/test_observability.py` (9 cost cases pass). PRD 047 chat virtual-text badges + lualine HUD also shipped.
 
 ### M3. Deepen MCP integration — DONE 2026-04-14 (verified)
 Shipped via PRD 024 (Phase 13A). `poor_cli/mcp/` package with stdio + Streamable HTTP transports, multi-server orchestration, tool namespacing (`<server>:<tool>`), discovery from `.poor-cli/mcp.json`, optional registry autodiscover (off by default). `docs/MCP.md` documents custom server loading. `tests/test_mcp_{multi_server,transport,scaffold,rpc}.py` cover the protocol surface.
