@@ -120,13 +120,8 @@ These items operationalize the analysis of the memory-system axes (what's stored
 ### MH1. Memory provenance trail — DONE 2026-04-14
 `MemoryEntry` frontmatter now carries `source_session_id`, `source_turn_id`, `source_message_hash` (16-char SHA-256 prefix), `extractor` (`heuristic|llm|user|unknown`), and `derivation_depth` (0 for raw, 1+ for LLM-distilled; `MAX_DERIVATION_DEPTH=2`). `extract_memories_from_history` + `extract_memories_with_llm` + `auto_save_session_memories` accept `source_session_id` kwarg and populate the fields. Round-trip tested in `tests/test_memory_provenance.py`. Unlocks: (a) "where did I learn this?" queries, (b) cascading deletes via MH3, (c) source-aware audit trails.
 
-### MH2. Semantic memory retrieval
-`MemoryManager.search()` is token-overlap keyword scoring. This is the worst case for the "selective retrieval bias" failure mode — memories stored under an emotionally different framing than the current query become invisible. The `embeddings.py` infrastructure already exists (Phase 8D delivered HF provider). Add:
-- Index memories into the existing SQLite + vector store on save, re-embed on update.
-- `MemoryManager.semantic_search(query, k=5, threshold=0.75)` returning ranked entries.
-- Hybrid retrieval: union of top-k keyword hits + top-k semantic hits, deduped.
-- Fall back to keyword when the embedding provider is unavailable.
-- Track per-memory hit/miss counts to feed MH8.
+### MH2. Semantic memory retrieval — DONE 2026-04-14
+`poor_cli/memory_semantic.py` ships `semantic_search` and `hybrid_search` on top of `MemoryManager`. Embeddings are cached in `<memory_dir>/embeddings.sqlite3` keyed by filename + content hash; stale caches invalidate on content change. Hybrid retrieval = union of top-K keyword + top-K semantic, deduped, semantic-first ordering. Falls back cleanly to keyword-only when no embedding provider is configured. Tested end-to-end with a deterministic token-overlap fake provider in `tests/test_memory_semantic.py` (6 tests). Integrates with MH8 hit-tracking by reusing `MemoryManager._record_retrieval`. MH7 reranker composes on top of the raw semantic list.
 
 ### MH3. Forgetting policy with cascading deletes
 Today, `MemoryManager.delete()` is manual-only. There is no TTL, no access-recency decay, and no provenance-aware cascade (if the source session is deleted, derived memories persist orphaned). Implement:
