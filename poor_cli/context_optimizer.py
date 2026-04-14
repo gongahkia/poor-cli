@@ -591,7 +591,14 @@ class TieredContextCompactor:
     """Tiered history compactor for provider chat transcripts."""
 
     def __init__(self):
-        self._history_pruner = HistoryPruner()
+        # CB3: pull the process-wide tracker so adaptive scoring activates
+        # automatically as recordings accumulate during the session.
+        try:
+            from .tool_success_tracker import get_default_tracker
+            tracker = get_default_tracker()
+        except Exception:
+            tracker = None
+        self._history_pruner = HistoryPruner(tool_success_tracker=tracker)
         self._failure_amnesia = FailureAmnesia()
 
     @property

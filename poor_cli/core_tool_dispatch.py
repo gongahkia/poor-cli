@@ -616,6 +616,12 @@ class ToolDispatcher:
                 "post_tool_use",
                 {**post_payload, "success": False, "error": str(error)},
             )
+            # CB3: record exception path as failure
+            try:
+                from .tool_success_tracker import get_default_tracker
+                get_default_tracker().record(tool_name, False)
+            except Exception:
+                pass
             raise
 
         if isinstance(result, ToolOutcome):
@@ -653,6 +659,17 @@ class ToolDispatcher:
         if tool_name not in _MUTATING_TOOLS and self._is_concurrency_safe_tool(tool_name, arguments):
             cache_key = self._turn_cache_key(tool_name, arguments)
             self._turn_tool_cache[cache_key] = result
+        # CB3: feed per-tool success/failure into the rolling tracker so the
+        # adaptive pruner has data to learn from.
+        try:
+            from .tool_success_tracker import get_default_tracker
+            tracker = get_default_tracker()
+            success = True
+            if isinstance(result, ToolOutcome):
+                success = bool(result.ok)
+            tracker.record(tool_name, success)
+        except Exception as exc:
+            logger.debug("CB3 record failed for %s: %s", tool_name, exc)
         return result
 
     def _check_auto_permission(self, tool_name: str, tool_args: Dict[str, Any]) -> Optional[bool]:

@@ -28,6 +28,7 @@ logger = setup_logger(__name__)
 
 CACHE_FILENAME = "tool_success_cache.json"
 DEFAULT_HALFLIFE_TURNS = 500  # decay old samples so early failures fade
+PERSIST_EVERY_N_RECORDS = 25  # auto-persist after this many record() calls
 
 
 @dataclass
@@ -63,6 +64,7 @@ class ToolSuccessTracker:
         self._stats: Dict[str, ToolStats] = {}
         self._lock = threading.Lock()
         self._loaded = False
+        self._records_since_persist = 0
 
     def load(self) -> None:
         self._loaded = True
@@ -85,7 +87,7 @@ class ToolSuccessTracker:
             self.load()
 
     def record(self, tool_name: str, success: bool) -> None:
-        """Increment success or failure for a tool."""
+        """Increment success or failure for a tool. Auto-persists periodically."""
         self._ensure_loaded()
         name = tool_name.strip().lower()
         if not name:
@@ -97,6 +99,11 @@ class ToolSuccessTracker:
             else:
                 stats.failure += 1
             stats.last_updated = datetime.now(timezone.utc).isoformat()
+            self._records_since_persist += 1
+            should_flush = self._records_since_persist >= PERSIST_EVERY_N_RECORDS
+        if should_flush:
+            self.persist()
+            self._records_since_persist = 0
 
     def rate_for(self, tool_name: str) -> Optional[float]:
         """Return success rate in [0, 1], or None when no data."""
@@ -151,3 +158,35 @@ class ToolSuccessTracker:
         """Return a read-only view of the current cache."""
         self._ensure_loaded()
         return {name: stats.to_dict() for name, stats in self._stats.items()}
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Process-wide default tracker
+# ──────────────────────────────────────────────────────────────────────────
+
+_default_tracker: Optional[ToolSuccessTracker] = None
+_default_tracker_lock = threading.Lock()
+
+
+def get_default_tracker(base_dir: Optional[Path] = None) -> ToolSuccessTracker:
+    """Return the lazily-constructed process-wide tracker.
+
+    Used by the turn lifecycle (writer) and the history pruner (reader) so
+    they share state without explicit plumbing through every constructor.
+    Tests should construct their own ``ToolSuccessTracker(tmpdir)`` instances
+    rather than touching this singleton.
+    """
+    global _default_tracker
+    if _default_tracker is not None:
+        return _default_tracker
+    with _default_tracker_lock:
+        if _default_tracker is None:
+            _default_tracker = ToolSuccessTracker(base_dir)
+    return _default_tracker
+
+
+def reset_default_tracker() -> None:
+    """Clear the singleton — for tests only."""
+    global _default_tracker
+    with _default_tracker_lock:
+        _default_tracker = None

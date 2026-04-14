@@ -156,6 +156,7 @@ class HistoryPruner:
             mode=normalized_mode,
             economy_preset=preset,
             score_threshold=max(-1.0, min(1.5, score_threshold)),
+            adaptive_tool_scoring=self._tool_tracker is not None,
         )
 
     def prune(
