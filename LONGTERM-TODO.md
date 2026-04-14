@@ -110,3 +110,147 @@ Resolved by PRD 061: the project was renamed from `poor-cli` to `poor-cli`, with
 
 ### L6. README rewrite
 Update README to reflect Neovim-only focus. Remove TUI screenshots, TUI usage instructions, Telegram mentions. Add Neovim setup as the primary getting-started path, lualine config examples, command palette usage.
+
+---
+
+## Memory & Harness — Open Ownership
+
+These items operationalize the analysis of the memory-system axes (what's stored, when derived, how retrieved, curator, forgetting, provenance) and the "open harness" thesis (if your harness is closed/stateful/API-backed, you don't own your memory). poor-cli is strongly aligned with the open side — this work tightens that alignment and closes known gaps.
+
+### MH1. Memory provenance trail
+`MemoryEntry` currently has `created_at`, `updated_at`, but no link back to the conversation that produced it. Without that, "confidence without provenance" is the failure mode: the system states a remembered fact confidently but neither the user nor the agent can trace it back to what was actually said. Extend the YAML frontmatter with:
+- `source_session_id` — session ID active at extraction time.
+- `source_turn_id` — turn index or run ID in that session.
+- `source_message_hash` — SHA-256 of the user message(s) that triggered extraction.
+- `extractor` — `"heuristic"` | `"llm"` | `"user"`.
+- `derivation_depth` — `0` for raw user utterance, `1+` for LLM-distilled; refuse to re-summarize above a configurable cap (default `2`) to bound drift.
+
+Downstream unlocks: (a) `/memory show <name> --source` jumps into the originating session; (b) cascading delete (see MH3); (c) ability to answer "where did I learn this?"
+
+### MH2. Semantic memory retrieval
+`MemoryManager.search()` is token-overlap keyword scoring. This is the worst case for the "selective retrieval bias" failure mode — memories stored under an emotionally different framing than the current query become invisible. The `embeddings.py` infrastructure already exists (Phase 8D delivered HF provider). Add:
+- Index memories into the existing SQLite + vector store on save, re-embed on update.
+- `MemoryManager.semantic_search(query, k=5, threshold=0.75)` returning ranked entries.
+- Hybrid retrieval: union of top-k keyword hits + top-k semantic hits, deduped.
+- Fall back to keyword when the embedding provider is unavailable.
+- Track per-memory hit/miss counts to feed MH8.
+
+### MH3. Forgetting policy with cascading deletes
+Today, `MemoryManager.delete()` is manual-only. There is no TTL, no access-recency decay, and no provenance-aware cascade (if the source session is deleted, derived memories persist orphaned). Implement:
+- Per-type soft-TTL defaults: `feedback` never expires; `project` 180d; `reference` 90d; `user` 365d. Configurable via `memory.ttl` in config.
+- Access-recency boost: each hit (from MH2) resets the TTL clock.
+- Cascade hook: when a session is deleted, call `MemoryManager.cascade_purge(source_session_id)` which deletes derived memories whose only source is the removed session (requires MH1).
+- User-confirmable purge flow: surface expiring memories in an end-of-session prompt (opt-in) — "these 3 memories are about to expire, keep/archive/delete?"
+- Archive (not delete) moves files to `~/.poor-cli/memory/archive/` with an expiry manifest so recovery stays cheap.
+
+### MH4. In-loop memory review UX
+`auto_memory.py` runs at session end, distills, and silently persists. That is convenient but the curator is fully automated — there is no user-in-loop approval step. Ship:
+- After `auto_save_session_memories` proposes candidates, persist them to `~/.poor-cli/memory/_pending/` instead of main directory.
+- Neovim command `:PoorCLIMemoryReview` opens a scratch buffer with: one memory per section, accept/edit/reject actions keyed to `a`/`e`/`r`, bulk-accept via `A`.
+- A CLI equivalent (`poor-cli memory review`) for non-Neovim surfaces.
+- Gate the UX behind `memory.review.mode = "auto" | "prompt"`; default to `"auto"` for hobbyists to keep zero-friction flow.
+
+### MH5. Retrieval mode switch (always-injected vs tool-driven)
+Today every turn loads the full `MEMORY.md` index into the system prompt via `instructions.py`. That is fine when the index is short, but as memories grow this exhibits "stale context dominance" — old memories crowd out relevant recent work because they appear on every turn. Split the retrieval mode:
+- **Always-injected** (default for small memories): entries with `content` <= 10 lines and `type in {feedback, user}` are pinned into system prompt, as today.
+- **Tool-driven** (for longer memories): entries above the size threshold are NOT injected; instead the agent gets a `recall_memory(query: str)` tool that calls `MemoryManager.semantic_search` on demand.
+- This mirrors how humans work — ambient context for beliefs and preferences, explicit recall for episodic facts.
+
+### MH6. Harness-portability audit test
+Post 2's thesis is sharp: if memory is behind a closed stateful API (Anthropic Managed Agents, OpenAI Responses API, Codex encrypted compaction), you don't own your memory. poor-cli stores everything in plain `.md` + SQLite today, which is good. Lock that in with a regression test:
+- `tests/test_harness_portability.py` — spins up a session, runs N turns, then asserts:
+  1. Every message is reconstructible from `~/.poor-cli/history.json` + `~/.poor-cli/sessions/` alone (no provider-side state fetch required).
+  2. No provider adapter (`anthropic_provider.py`, `openai_provider.py`, etc.) passes `store=True` / `stateful=True` / cache-only-on-server flags unless explicitly enabled via config.
+  3. On swap-provider mid-session, the new provider receives the full local history (no orphaned server state).
+- Audit `anthropic_provider.py` for `cache_control` usage — is it reading from a server-side cache, or only hint-marking prefix for recompute? Document findings in `docs/HARNESS_PORTABILITY.md`.
+- Same audit for `openai_provider.py` Responses API calls. If any stateful-API code path exists, gate it behind `provider.stateful_api_opt_in = false` default.
+
+### MH7. Post-retrieval reranker
+The "retrieval misfire" failure mode happens when candidates are close semantically but wrong contextually. A cheap local reranker (e.g. a ~30M-param cross-encoder running on CPU via `sentence-transformers`, or a simple MMR rerank using existing embeddings) boosts perceived quality a lot. Ship:
+- `poor_cli/memory_reranker.py` with `rerank(query, candidates, strategy="mmr" | "cross_encoder")`.
+- Default to MMR (no new dependency) — it trades off similarity vs. diversity using existing vectors.
+- Optional `cross_encoder` strategy behind `memory.reranker.enabled` for users who've opted into HF local stack.
+- Hook into MH2's retrieval path: `semantic_search` returns top-K, reranker picks top-N from those.
+
+### MH8. Memory access-recency telemetry
+MH3 needs usage data to know what to forget. Today there is no per-memory hit counter. Add:
+- `MemoryEntry.hit_count` and `last_accessed_at` in frontmatter (backward-compatible — missing fields default to `0` / creation time).
+- `MemoryManager.search()` / `semantic_search()` / `get()` increment and timestamp on every read.
+- Surface hit counts in the `:PoorCLIMemory` picker so users see which memories are earning their keep.
+- Feeds MH3's decay: low-hit memories expire faster than high-hit ones.
+
+### MH9. Stateful-API portability gate
+Complements MH6 — the *enforcement* layer. Add to `config.py`:
+```yaml
+providers:
+  portability_strict: true   # default
+```
+When `portability_strict` is true:
+- Any provider adapter that would make a stateful-API call (OpenAI `store=True`, Anthropic Managed Agents, etc.) raises `PortabilityViolation`.
+- `/status` shows portability mode prominently.
+- Users who explicitly want stateful APIs must flip to `false` and accept the lock-in trade-off with a one-time warning.
+
+---
+
+## Compression & Budget Alternatives
+
+These items came out of the alternative-defaults audit for `prompt_compressor.py`, `history_pruning.py`, `token_budget_controller.py`. The CHEAP items that did not block on other work have already shipped (aggressive filler strip in frugal mode). The rest are queued here.
+
+### CB1. Diff-of-diff file context caching
+When the agent re-reads the same file across turns, poor-cli currently re-sends the full compressed text each time. Instead, hash the last compressed version per `(file_path, hash(pinned_context))` and on re-read send only the diff since last send, with a `[... N lines unchanged ...]` placeholder for static spans. Estimated token savings: 10–15% on repeated file context (common in long refactor sessions). Implementation: `poor_cli/context/diff_cache.py`, integrate in `ContextAssemblyOrchestrator`.
+
+### CB2. History pruning soft-pin protection
+`history_pruning.py` already respects a `pinned` metadata flag. Extend to a two-tier system:
+- `pinned: hard` — never prune under any budget (existing behavior).
+- `pinned: soft` — prune only under extreme budget pressure (>95% context used).
+Surface via chat keymap `<leader>mp` to toggle soft-pin on the current turn. Safety net for user-important context.
+
+### CB3. Per-tool-success adaptive history pruning
+Augment the pruner's tool-success weight with historical data: track per-tool success rate in `.poor-cli/tool_success_cache.json`. Tools with >90% success rate get lower pruning-priority (preserve them — they worked); tools with <50% get higher pruning-priority (their results likely aren't load-bearing for the next turn). Self-tuning, no user config. Ship behind `history_pruning.adaptive_tool_scoring = true` opt-in first, flip to default-on after two release cycles of telemetry.
+
+### CB4. Per-session reward moving-average budget adaptation
+Current `token_budget_controller.py` uses a static rule-based decision tree. Add session-local adaptation: maintain a rolling buffer of the last 10 turn rewards (`compute_reward`). If trend is negative (tasks getting worse), bump thinking budget +10% and lower compression ratio; if positive, relax both. No offline training; self-contained learning within a session. Integrates with Phase 7A budget controller.
+
+### CB5. Offline weekly budget retuning job
+`thinking_budget.py` already has `ThinkingBudgetOptimizer.analyze()` that can re-derive per-task-type budgets from `.poor-cli/budget_logs.jsonl`. Schedule it weekly via an AutomationRule (`0 3 * * 1` — Monday 03:00), dump results into `.poor-cli/budget_tunings/<date>.json`, hotload into running server without restart. No new dependency; just wiring.
+
+### CB6. LLMLingua-2 — explicit NOT-SHIPPING rationale
+Leaving this line in the TODO as an archaeological note: LLMLingua-2 was evaluated in Phase 5A. A ~110MB BERT-based compressor for <5% quality delta vs. heuristic is the wrong trade for the cost-conscious-hobbyist audience. If a future audience shift changes this, revisit. Current heuristic path (esp. with MH7 aggressive filler in frugal mode) is sufficient.
+
+---
+
+## Ship-Blocking Partials (from implementation sweep 2026-04-14)
+
+These are the remaining PARTIAL items surfaced by a full audit of every phase in `docs/implementation_waves.md` against the codebase. All are narrow, well-scoped gaps in otherwise-shipped phases.
+
+### SBP1. Phase 2C — Prompt caching parity across providers — DONE 2026-04-14
+Documented the caching matrix across all 11 providers in `poor_cli/providers/base.py` module docstring. Anthropic stays the only provider with explicit `cache_control` markers; others rely on their native server-side caches (OpenAI implicit prefix, Gemini `cachedContent` opt-in, vLLM/SGLang/TGI automatic). Follow-up work is gated on telemetry signals showing non-Anthropic cache hit rate materially affects `median_usd_per_completion`.
+
+### SBP2. Phase 4C — Structured output parity (Ollama / OpenRouter)
+`poor_cli/structured_output.py` supports `response_format` on Anthropic + OpenAI. Ollama's `/api/chat` supports a `format: "json"` field; OpenRouter routes transparently to the underlying provider. Audit `tool_translator.py` for coverage, add structured output passthrough for both, extend `tests/test_structured_output.py` with 1 case per provider. Estimated ~1 day.
+
+### SBP3. Phase 14A — Diff Review regenerate action
+`nvim-poor-cli/lua/poor-cli/diff_review.lua` wires `open`, `close`, and `toggle_layout` but no `regen` action even though PRD 014 lists it. Either add `:PoorCLIDiffReviewRegen` (server RPC `diff.regen` + Lua dispatcher that replays the triggering prompt with temperature bump) or drop the regen line from the PRD. Prefer to drop if cost for benefit is low — regenerate already ships via chat `<leader>rr` + PRD 043 branching.
+
+### SBP4. Phase 15E / Phase 20D — Multiplayer 2-minute demo video
+Per `docs/phase_20/063_outcome.md`, recording the demo is a hard gating deliverable before using multiplayer as launch-ready marketing proof. Needs a clean Neovim config, two terminals (host + joiner), and ~10 minutes of recording + trim. Not automatable. Owner must record. Already tracked in M1; this entry just restates the block.
+
+### SBP5. Phase 21A — SWE-bench Lite citable number
+`bench/swe_bench_lite/run.py`, `make bench-swe`, `tests/test_swe_bench_lite_runner.py`, and `docs/BENCHMARKS.md` are all shipped. BENCHMARKS.md line 20 says "pending / not run". To publish a citable pass@1:
+- Owner runs `make bench-swe` with `ARGS="--model gemini-2.5-flash"` (or choice of primary) — the Makefile requires typed confirmation due to API cost.
+- Full 300-task suite: budget ~4-12 USD depending on model choice. Owner previously confirmed "start with SWE-bench pending" so this stays queued.
+- After the run, publish pass@1 + total cost + timestamp in BENCHMARKS.md + README badge.
+
+---
+
+## Done (recent)
+
+- **2026-04-14** — Per-provider model tier table (Phase 4B #7): `provider_catalog.json` now declares explicit `cheap`/`balanced`/`quality` tiers for all 11 providers; `model_router._build_default_routing_table` honors explicit tier labels with cost fallback.
+- **2026-04-14** — POOR.md rule file recognized by `agent_rules.py` + `instructions.py` alongside AGENTS.md/CLAUDE.md; user-global `~/.poor-cli/POOR.md` supported.
+- **2026-04-14** — `docs/MCP.md` ships as the full custom-MCP-server guide; README links to it.
+- **2026-04-14** — Aggressive filler strip added to `prompt_compressor._compress_heuristic` stage 2b, fires only when ratio ≤ 0.35 (frugal mode).
+- **2026-04-14** — `tools_async.py` refactor: 4704 → 3735 LOC via extraction of `_register_tools` body into `_tool_registry_builder.py`.
+- **2026-04-14** — `core_turn_lifecycle.py` refactor: 2737 → ≤2700 LOC via extraction of `_save_transcript` + `_save_pruning_sidecar` into `_turn_transcripts.py`.
+- **2026-04-14** — Tests fixes: `test_completion_parity.py` (hyphen filenames), `test_research_relocation.py` (module name), `test_run_diagnostics.py` (kwargs drift), `tests/__init__.py` (package marker). Full suite: 1184 passed / 0 failed.
+- **2026-04-14** — `docs/phase_20/061_outcome.md` recorded: "Keep poor-cli" decision extracted from inline strategic doc into its own outcome file for consistency with 059/062/063.
+- **2026-04-14** — Line-budget caps ratcheted down: `tools_async.py` 4300 → 3800 to lock in the `_tool_registry_builder` extraction gain and prevent regression.

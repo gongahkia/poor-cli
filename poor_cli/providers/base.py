@@ -1,5 +1,37 @@
-"""
-Base provider interface for AI models
+"""Base provider interface for AI models.
+
+## Prompt Caching Parity (2026-04-14)
+
+Provider-side prompt caching is **not uniform** across the ecosystem. poor-cli
+treats Anthropic as the first-class caching provider and all others as
+prefix-stable-but-best-effort. The static-prefix-stability contract (system
+message → tools → repo map → instructions → history → user) is enforced
+regardless of provider in `poor_cli/context_providers.py`, so cache-capable
+providers can hit their own caches when they exist.
+
+| Provider      | Caching mechanism                                                   | `cache_control` markers | Hit-rate telemetry |
+|---------------|---------------------------------------------------------------------|-------------------------|--------------------|
+| Anthropic     | Explicit `cache_control: {type: "ephemeral"}` blocks                | Wired in `anthropic_provider.py` | Yes (`cache_read_input_tokens`) |
+| OpenAI        | Implicit prefix-match (server-side, opaque)                         | No markers needed       | Partial (provider returns `prompt_tokens_details.cached_tokens` when available) |
+| Gemini        | `cachedContent` resource (explicit TTL, opt-in per-content)         | Not wired; would need per-call resource creation | No |
+| OpenRouter    | Passthrough to underlying provider                                  | Follows underlying provider | Depends on upstream |
+| Ollama        | No API-level cache (local server; KV cache via `num_keep` on model) | N/A                     | N/A |
+| hf_local      | Tied to `kv_cache_store.py` when `kv_cache.enabled=true`            | N/A (in-process)        | Yes via KV store |
+| vLLM          | Server-side prefix cache (automatic when enabled on server)         | N/A (server config)     | No (not exposed in response) |
+| llama_server  | Server-side cache (varies by build)                                 | N/A                     | No |
+| SGLang        | RadixAttention prefix cache (automatic)                             | N/A                     | No |
+| HF TGI        | Server-side KV cache (automatic)                                    | N/A                     | No |
+| LM Studio     | Depends on loaded backend                                           | N/A                     | No |
+
+Adding explicit markers for a non-Anthropic provider requires: (a) a provider
+SDK surface for it (Gemini `cachedContent` is the only other one today), and
+(b) telemetry plumbing through `UsageMetadata` so `/cost` can show hit rates.
+If a user reports that their primary provider's cache hit rate matters for
+`median_usd_per_completion`, revisit Gemini `cachedContent` wiring first.
+
+Callers should not assume a given provider supports any specific cache
+control. Use `ProviderCapabilities.supports_caching` (if it exists) or check
+the provider adapter directly.
 """
 
 from abc import ABC, abstractmethod
