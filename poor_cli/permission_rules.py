@@ -10,7 +10,7 @@ import shlex
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 _COMPOUND_OPERATORS = {"&&", "||", ";", "|"}

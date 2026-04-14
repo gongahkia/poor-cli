@@ -10,7 +10,6 @@ import datetime
 import difflib
 import hashlib
 import json
-import os
 import subprocess
 import re
 import sys
@@ -2199,80 +2198,12 @@ class TurnLifecycle:
         return result
 
     def _save_transcript(self, history: List[Dict[str, Any]]) -> Optional[str]:
-        """Save raw history to disk before compaction. Returns transcript path or None."""
-        if not self.config or not getattr(self.config.context_compression, "preserve_transcripts", True):
-            return None
-        transcript_dir = Path.cwd() / getattr(self.config.context_compression, "transcript_dir", ".poor-cli/transcripts")
-        try:
-            transcript_dir.mkdir(parents=True, exist_ok=True)
-            import json as _json
-            import uuid as _uuid
-            session_id = getattr(self, "_last_run_id", None) or _uuid.uuid4().hex[:12]
-            ts = time.strftime("%Y%m%dT%H%M%S")
-            filename = f"{session_id}_{ts}.json"
-            dest = transcript_dir / filename
-            import tempfile as _tf
-            fd, tmp = _tf.mkstemp(dir=str(transcript_dir), suffix=".tmp")
-            try:
-                data = _json.dumps(history, indent=None, default=str).encode()
-                os.write(fd, data)
-                os.fsync(fd)
-                os.close(fd)
-                os.replace(tmp, str(dest))
-            except Exception:
-                try:
-                    os.close(fd)
-                except OSError:
-                    pass
-                if os.path.exists(tmp):
-                    os.unlink(tmp)
-                raise
-            logger.info("Saved pre-compaction transcript: %s (%d messages)", dest, len(history))
-            return str(dest)
-        except Exception as exc:
-            logger.warning("Failed to save transcript: %s", exc)
-            return None
+        from ._turn_transcripts import save_transcript
+        return save_transcript(self, history)
 
     def _save_pruning_sidecar(self, pruned_turns: List[Dict[str, Any]]) -> Optional[str]:
-        """Save pruned turns for later recovery."""
-        if not pruned_turns:
-            return None
-        transcript_root = ".poor-cli/transcripts"
-        if self.config and getattr(self.config, "context_compression", None):
-            transcript_root = getattr(self.config.context_compression, "transcript_dir", transcript_root)
-        sidecar_dir = Path.cwd() / transcript_root / "pruned"
-        try:
-            sidecar_dir.mkdir(parents=True, exist_ok=True)
-            session_id = getattr(self, "_last_run_id", None) or hashlib.sha1(str(time.time()).encode()).hexdigest()[:12]
-            ts = time.strftime("%Y%m%dT%H%M%S")
-            filename = f"{session_id}_{ts}_pruned.json"
-            dest = sidecar_dir / filename
-            payload = {
-                "runId": getattr(self, "_last_run_id", None),
-                "createdAt": ts,
-                "turns": pruned_turns,
-            }
-            import tempfile as _tf
-            fd, tmp = _tf.mkstemp(dir=str(sidecar_dir), suffix=".tmp")
-            try:
-                data = json.dumps(payload, indent=None, default=str).encode()
-                os.write(fd, data)
-                os.fsync(fd)
-                os.close(fd)
-                os.replace(tmp, str(dest))
-            except Exception:
-                try:
-                    os.close(fd)
-                except OSError:
-                    pass
-                if os.path.exists(tmp):
-                    os.unlink(tmp)
-                raise
-            logger.info("Saved pruning sidecar: %s (%d turns)", dest, len(pruned_turns))
-            return str(dest)
-        except Exception as exc:
-            logger.warning("Failed to save pruning sidecar: %s", exc)
-            return None
+        from ._turn_transcripts import save_pruning_sidecar
+        return save_pruning_sidecar(self, pruned_turns)
 
     async def _compact_summarize(self, history: List[Dict[str, Any]], messages_before: int) -> Dict[str, Any]:
         """Summarize conversation in-place, re-seed provider."""

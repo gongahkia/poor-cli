@@ -76,6 +76,19 @@ _FILLER_RE = re.compile(
     r"as we discussed|going forward)\b",
     re.IGNORECASE,
 )
+# aggressive filler used only in frugal economy mode — trims softeners/hedges that
+# add tokens without adding meaning. Safe on code-adjacent prose; never runs on
+# preserved regions (code fences, file paths, URLs, error lines).
+_AGGRESSIVE_FILLER_RE = re.compile(
+    r"\b(?:simply|just|very|really|quite|rather|somewhat|slightly|"
+    r"perhaps|maybe|kind of|sort of|a bit|a little|"
+    r"at this point|at this time|at present|currently|"
+    r"in fact|indeed|of course|needless to say|"
+    r"to be (?:clear|honest|fair|precise)|"
+    r"as a matter of fact|first of all|last but not least|"
+    r"in order to(?= \w+))\b",
+    re.IGNORECASE,
+)
 _REPEATED_PUNCT_RE = re.compile(r"([!?.])\1{2,}")
 _LICENSE_HEADER_RE = re.compile(
     r"(?:^|\n)(?:#|//|/\*|\*) (?:Copyright|License|SPDX|MIT|Apache|GNU|BSD).*?(?:\n(?:#|//|\*/).*)*",
@@ -317,6 +330,10 @@ class PromptCompressor:
             return result.strip()
         # stage 2: remove filler phrases
         result = _FILLER_RE.sub("", result)
+        # stage 2b: aggressive filler strip for frugal targets (ratio <= 0.35)
+        # frugal ratios on tool_output/conversation are <=0.35; only strip then.
+        if ratio <= 0.35:
+            result = _AGGRESSIVE_FILLER_RE.sub("", result)
         result = re.sub(r"  +", " ", result) # clean up double spaces left behind
         if len(result) <= target_len:
             return result.strip()

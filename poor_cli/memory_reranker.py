@@ -18,7 +18,7 @@ Optional cross-encoder strategy is stubbed but gated behind
 
 from __future__ import annotations
 
-from typing import List, Optional, Sequence, Tuple
+from typing import List, Sequence, Tuple
 
 from .embeddings import cosine_similarity
 from .memory import MemoryEntry

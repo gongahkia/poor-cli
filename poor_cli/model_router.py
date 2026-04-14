@@ -118,41 +118,90 @@ _TIER_ORDER = {"cheap": 0, "private": 0, "balanced": 1, "quality": 2}
 
 
 def _build_default_routing_table(provider: str) -> Dict[TaskComplexity, str]:
-    """Build routing table from provider_catalog.json model tiers."""
+    """Build routing table from provider_catalog.json model tiers.
+
+    Prefers explicit tier labels (cheap/balanced/quality) over cost sorting.
+    Falls back to cost ordering when tier labels are missing or ambiguous.
+    """
     canonical = canonical_provider_name(provider)
     payload = _catalog_payload().get("providers", {}).get(canonical, {})
     tiers = payload.get("modelTiers", {})
     if not tiers:
         return {}
 
-    # sort models by cost (ascending)
-    sorted_models: List[Tuple[str, Dict]] = sorted(
-        tiers.items(), key=lambda x: float(x[1].get("cost_1k_in", 0))
-    )
-    if not sorted_models:
-        return {}
+    # bucket by explicit tier label
+    by_tier: Dict[str, List[Tuple[str, Dict]]] = {"cheap": [], "balanced": [], "quality": []}
+    unlabeled: List[Tuple[str, Dict]] = []
+    for name, meta in tiers.items():
+        tier_label = str(meta.get("tier", "")).lower()
+        if tier_label in by_tier:
+            by_tier[tier_label].append((name, meta))
+        elif tier_label == "private":
+            unlabeled.append((name, meta))  # treat legacy "private" as unlabeled
+        else:
+            unlabeled.append((name, meta))
 
-    cheapest = sorted_models[0][0]
-    mid = sorted_models[len(sorted_models) // 2][0] if len(sorted_models) > 1 else cheapest
-    expensive = sorted_models[-1][0]
+    def _pick(bucket: List[Tuple[str, Dict]]) -> Optional[str]:
+        if not bucket:
+            return None
+        # within a bucket, prefer lower speed_rank (faster) then lower cost
+        bucket.sort(key=lambda x: (int(x[1].get("speed_rank", 99)), float(x[1].get("cost_1k_in", 0))))
+        return bucket[0][0]
+
+    cheap = _pick(by_tier["cheap"])
+    balanced = _pick(by_tier["balanced"])
+    quality = _pick(by_tier["quality"])
+
+    # fall back to cost-sorted split when tier labels are missing
+    if cheap is None or balanced is None or quality is None:
+        sorted_models = sorted(tiers.items(), key=lambda x: (float(x[1].get("cost_1k_in", 0)), int(x[1].get("speed_rank", 99))))
+        names = [m[0] for m in sorted_models]
+        if cheap is None and names:
+            cheap = names[0]
+        if balanced is None and names:
+            balanced = names[len(names) // 2]
+        if quality is None and names:
+            quality = names[-1]
+
+    if not cheap:
+        return {}
+    balanced = balanced or cheap
+    quality = quality or balanced
 
     return {
-        TaskComplexity.TRIVIAL: cheapest,
-        TaskComplexity.SIMPLE: cheapest,
-        TaskComplexity.MODERATE: mid,
-        TaskComplexity.COMPLEX: expensive,
+        TaskComplexity.TRIVIAL: cheap,
+        TaskComplexity.SIMPLE: cheap,
+        TaskComplexity.MODERATE: balanced,
+        TaskComplexity.COMPLEX: quality,
     }
 
 
+_TIER_RANK = {"cheap": 0, "balanced": 1, "quality": 2}
+
+
 def _get_next_tier_model(provider: str, current_model: str) -> Optional[str]:
-    """Get the next more expensive model for cascade escalation."""
+    """Get the next more expensive model for cascade escalation.
+
+    Uses explicit tier labels when available so the cascade respects the
+    user-approved tier table. Falls back to cost sorting when labels are missing.
+    """
     canonical = canonical_provider_name(provider)
     payload = _catalog_payload().get("providers", {}).get(canonical, {})
     tiers = payload.get("modelTiers", {})
     if not tiers:
         return None
+    current_meta = tiers.get(current_model) or {}
+    current_tier = str(current_meta.get("tier", "")).lower()
+    if current_tier in _TIER_RANK and _TIER_RANK[current_tier] < 2:
+        target_rank = _TIER_RANK[current_tier] + 1
+        candidates = [(name, meta) for name, meta in tiers.items()
+                      if _TIER_RANK.get(str(meta.get("tier", "")).lower()) == target_rank]
+        if candidates:
+            candidates.sort(key=lambda x: (int(x[1].get("speed_rank", 99)), float(x[1].get("cost_1k_in", 0))))
+            return candidates[0][0]
+    # fallback: cost-ordered walk
     sorted_models = sorted(
-        tiers.items(), key=lambda x: float(x[1].get("cost_1k_in", 0))
+        tiers.items(), key=lambda x: (float(x[1].get("cost_1k_in", 0)), int(x[1].get("speed_rank", 99)))
     )
     model_names = [m[0] for m in sorted_models]
     try:
@@ -161,7 +210,7 @@ def _get_next_tier_model(provider: str, current_model: str) -> Optional[str]:
         return None
     if idx + 1 < len(model_names):
         return model_names[idx + 1]
-    return None # already at top tier
+    return None  # already at top tier
 
 
 # ── confidence detection ─────────────────────────────────────────────

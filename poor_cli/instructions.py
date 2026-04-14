@@ -23,7 +23,7 @@ import yaml
 from .agent_rules import discover_rule_paths, load_rules
 from .skills import InstructionSkillContext, SkillLoadPlan, SkillRegistry
 
-INSTRUCTION_FILE_NAMES: tuple[str, ...] = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
+INSTRUCTION_FILE_NAMES: tuple[str, ...] = ("AGENTS.md", "POOR.md", "CLAUDE.md", "GEMINI.md")
 MAX_INCLUDE_DEPTH = 5
 MANAGED_MEMORY_ENV = "POOR_CLI_MANAGED_MEMORY"
 DEFAULT_MANAGED_MEMORY = "/etc/poor-cli/CLAUDE.md"

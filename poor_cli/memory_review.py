@@ -14,7 +14,6 @@ memories, so the existing `_parse_frontmatter` reader can consume them.
 
 from __future__ import annotations
 
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Sequence

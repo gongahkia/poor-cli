@@ -13,7 +13,7 @@ adaptation is cheap, bounded, and explainable.
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Deque, Optional
 
 from .exceptions import setup_logger

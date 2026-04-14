@@ -9,7 +9,7 @@ from typing import Any, Literal, Optional, Sequence
 
 import yaml
 
-RuleKind = Literal["agents_md", "claude_md", "poor_memory", "user_global"]
+RuleKind = Literal["agents_md", "poor_md", "claude_md", "poor_memory", "user_global"]
 _TEXT_INCLUDE_SUFFIXES = {
     ".md",
     ".txt",
@@ -66,8 +66,22 @@ def load_rules(
         agent_dirs.add(directory.resolve())
         precedence += 1
 
+    poor_dirs: set[Path] = set()
     for directory in dirs:
-        if directory.resolve() in agent_dirs:
+        path = directory / "POOR.md"
+        resolved = path.resolve()
+        if resolved in seen_paths:
+            continue
+        source = _source_from_file(path, precedence=precedence, kind="poor_md", refs=refs, repo_root=root)
+        if source is None:
+            continue
+        sources.append(source)
+        seen_paths.add(resolved)
+        poor_dirs.add(directory.resolve())
+        precedence += 1
+
+    for directory in dirs:
+        if directory.resolve() in agent_dirs or directory.resolve() in poor_dirs:
             continue
         path = directory / "CLAUDE.md"
         resolved = path.resolve()
@@ -80,11 +94,19 @@ def load_rules(
         seen_paths.add(resolved)
         precedence += 1
 
-    global_path = (Path.home() / ".poor-cli" / "AGENTS.md").resolve()
-    if global_path not in seen_paths:
+    global_candidates = [
+        (Path.home() / ".poor-cli" / "POOR.md").resolve(),
+        (Path.home() / ".poor-cli" / "AGENTS.md").resolve(),
+    ]
+    for global_path in global_candidates:
+        if global_path in seen_paths:
+            continue
         source = _source_from_file(global_path, precedence=precedence, kind="user_global", refs=refs, repo_root=None)
-        if source is not None:
-            sources.append(source)
+        if source is None:
+            continue
+        sources.append(source)
+        seen_paths.add(global_path)
+        precedence += 1
     return sources
 
 
@@ -94,14 +116,17 @@ def discover_rule_paths(cwd: Path, *, repo_root: Optional[Path] = None) -> list[
     paths: list[Path] = []
     seen: set[Path] = set()
     for directory in _dirs_closest_to_root(cwd, root):
-        for name in ("AGENTS.md", "CLAUDE.md"):
+        for name in ("AGENTS.md", "POOR.md", "CLAUDE.md"):
             path = (directory / name).resolve()
             if path in seen:
                 continue
             seen.add(path)
             paths.append(path)
-    global_path = (Path.home() / ".poor-cli" / "AGENTS.md").resolve()
-    if global_path not in seen:
+    for name in ("POOR.md", "AGENTS.md"):
+        global_path = (Path.home() / ".poor-cli" / name).resolve()
+        if global_path in seen:
+            continue
+        seen.add(global_path)
         paths.append(global_path)
     return paths
 
@@ -120,17 +145,23 @@ def merge(sources: Sequence[RuleSource]) -> str:
 
 
 def append_memory_entry(repo_root: Path, title: str, content: str, description: str = "") -> Optional[Path]:
-    path = Path(repo_root).expanduser().resolve() / "AGENTS.md"
-    if not path.is_file():
+    repo_root_resolved = Path(repo_root).expanduser().resolve()
+    target: Optional[Path] = None
+    for name in ("AGENTS.md", "POOR.md"):
+        candidate = repo_root_resolved / name
+        if candidate.is_file():
+            target = candidate
+            break
+    if target is None:
         return None
     lines = ["", f"## Memory: {title.strip() or 'project note'}"]
     if description.strip():
         lines.append(description.strip())
     if content.strip():
         lines.extend(["", content.strip()])
-    with path.open("a", encoding="utf-8") as fh:
+    with target.open("a", encoding="utf-8") as fh:
         fh.write("\n".join(lines).rstrip() + "\n")
-    return path
+    return target
 
 
 def _dirs_closest_to_root(cwd: Path, root: Optional[Path]) -> list[Path]:
