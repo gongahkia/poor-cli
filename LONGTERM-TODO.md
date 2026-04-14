@@ -84,8 +84,8 @@ Current implementation is ~117 lines with heuristic plan detection. Add:
 
 ## Low — Polish
 
-### L1. Preview server live reload
-`RELOAD_SCRIPT` (SSE-based) is defined but never injected into served HTML. The file watcher sets `_reload_pending` flag but no SSE endpoint serves it. Replace `python3 -m http.server` with a custom asyncio HTTP handler that injects the reload script and serves an SSE endpoint.
+### L1. Preview server live reload — DONE (verified 2026-04-14)
+`poor_cli/preview_server.py` already ships a custom asyncio HTTP handler that injects `RELOAD_SCRIPT` into HTML responses and serves `/__poor-cli_reload` as an SSE endpoint. The file watcher bumps `_ReloadState.version` on any change to watched extensions; active SSE clients wake and push a reload event. `tests/test_preview_mode.py` (6 tests) exercises the full loop. Earlier LONGTERM-TODO claim that this was unimplemented was stale.
 
 ### L2. Consolidate watch.py and ide_watch.py
 Two different `FileWatcher` classes coexist: `watch.py` (older, async generator pattern) and `ide_watch.py` (newer, callback pattern). Consolidate into one module or clearly document which is canonical.
