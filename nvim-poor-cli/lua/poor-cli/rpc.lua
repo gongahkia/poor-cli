@@ -530,6 +530,17 @@ function M.capture_initialize_result(result)
         M.multiplayer_state.preset = multiplayer.preset or ""
     end
 
+    local key_validity = caps.apiKeyValidity
+    if type(key_validity) == "table" and key_validity.status == "invalid" then
+        local provider = tostring(key_validity.provider or "?")
+        local reason = tostring(key_validity.reason or "")
+        local msg = string.format(
+            "[poor-cli] API key for %s is invalid (%s). Rotate the key and run :PoorCLIOnboarding.",
+            provider, reason ~= "" and reason or "server rejected it"
+        )
+        pcall(require("poor-cli.notify").notify, msg, vim.log.levels.ERROR)
+    end
+
     update_state("ready", "Initialized")
 end
 
