@@ -49,6 +49,53 @@ def test_anthropic_401_is_invalid():
     assert "401" in r.reason
 
 
+def test_extract_message_from_openai_shape():
+    body = '{"error": {"message": "Incorrect API key provided: sk-proj-xxxx", "type": "invalid_request_error"}}'
+    msg = V._extract_message(body)
+    assert msg == "Incorrect API key provided: sk-proj-xxxx"
+
+
+def test_extract_message_from_anthropic_string_shape():
+    body = '{"error": "invalid x-api-key"}'
+    assert V._extract_message(body) == "invalid x-api-key"
+
+
+def test_extract_message_from_top_level_message_field():
+    body = '{"message": "quota exceeded"}'
+    assert V._extract_message(body) == "quota exceeded"
+
+
+def test_extract_message_handles_plain_text_body():
+    body = "Unauthorized"
+    assert V._extract_message(body) == "Unauthorized"
+
+
+def test_extract_message_handles_empty_body():
+    assert V._extract_message("") == ""
+    assert V._extract_message(None) == ""  # type: ignore[arg-type]
+
+
+def test_reason_prepends_http_code():
+    body = '{"error": {"message": "bad key"}}'
+    assert V._reason(401, body) == "HTTP 401: bad key"
+
+
+def test_reason_network_error_no_body():
+    assert V._reason(0, "") == "network error"
+
+
+def test_openai_401_reason_contains_clean_message():
+    raw = b'{"error": {"message": "Incorrect API key provided: sk-proj-yyyy", "type": "invalid_request_error"}}'
+    err = HTTPError("url", 401, "Unauthorized", {}, io.BytesIO(raw))
+    with patch("poor_cli.api_key_validator.urlopen", side_effect=err):
+        r = V.validate_openai("sk-proj-yyyy")
+    assert r.status == V.INVALID
+    assert "HTTP 401" in r.reason
+    assert "Incorrect API key provided" in r.reason
+    # no raw JSON braces leaking through
+    assert "{" not in r.reason
+
+
 def test_anthropic_network_error_is_unknown():
     from urllib.error import URLError
     with patch("poor_cli.api_key_validator.urlopen", side_effect=URLError("unreachable")):

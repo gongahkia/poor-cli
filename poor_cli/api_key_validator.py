@@ -51,16 +51,55 @@ def _probe(url: str, headers: Optional[dict] = None) -> tuple[int, str]:
     req = Request(url, headers=headers or {})
     try:
         with urlopen(req, timeout=PROBE_TIMEOUT_SEC) as resp:
-            body = resp.read(512)
+            body = resp.read(1024)
             return resp.status, body.decode("utf-8", errors="replace")[:200]
     except HTTPError as exc:
         try:
-            body = exc.read(512).decode("utf-8", errors="replace")[:200]
+            body = exc.read(1024).decode("utf-8", errors="replace")
         except Exception:
             body = ""
         return exc.code, body
     except (URLError, OSError, TimeoutError) as exc:
         return 0, str(exc)[:200]
+
+
+def _extract_message(body: str) -> str:
+    """Extract the human-readable error message from a provider JSON body.
+
+    Providers wrap errors differently. Walks known shapes in order:
+    - Anthropic/OpenAI:  ``{"error": {"message": "..."}}``
+    - Gemini:            ``{"error": {"message": "..."}}`` (same)
+    - OpenRouter:        ``{"error": {"message": "..."}}`` or top-level ``"message"``
+    - Fallback:          first 80 chars of body.
+    Always returns a single-line string.
+    """
+    body = (body or "").strip()
+    if not body:
+        return ""
+    try:
+        data = json.loads(body)
+    except (ValueError, TypeError):
+        return body.replace("\n", " ")[:120]
+    if isinstance(data, dict):
+        err = data.get("error")
+        if isinstance(err, dict):
+            msg = err.get("message")
+            if isinstance(msg, str) and msg:
+                return msg.replace("\n", " ")[:200]
+        elif isinstance(err, str) and err:
+            return err.replace("\n", " ")[:200]
+        msg = data.get("message")
+        if isinstance(msg, str) and msg:
+            return msg.replace("\n", " ")[:200]
+    return body.replace("\n", " ")[:120]
+
+
+def _reason(code: int, body: str) -> str:
+    message = _extract_message(body)
+    prefix = f"HTTP {code}" if code else "network error"
+    if message:
+        return f"{prefix}: {message}"
+    return prefix
 
 
 def validate_anthropic(api_key: str) -> KeyValidityResult:
@@ -73,8 +112,8 @@ def validate_anthropic(api_key: str) -> KeyValidityResult:
     if code == 200:
         return KeyValidityResult("anthropic", VALID)
     if code in (401, 403):
-        return KeyValidityResult("anthropic", INVALID, f"HTTP {code}: {body[:80]}")
-    return KeyValidityResult("anthropic", UNKNOWN, f"HTTP {code}" if code else "network unreachable")
+        return KeyValidityResult("anthropic", INVALID, _reason(code, body))
+    return KeyValidityResult("anthropic", UNKNOWN, _reason(code, body) if code else "network unreachable")
 
 
 def validate_openai(api_key: str) -> KeyValidityResult:
@@ -87,8 +126,8 @@ def validate_openai(api_key: str) -> KeyValidityResult:
     if code == 200:
         return KeyValidityResult("openai", VALID)
     if code in (401, 403):
-        return KeyValidityResult("openai", INVALID, f"HTTP {code}: {body[:80]}")
-    return KeyValidityResult("openai", UNKNOWN, f"HTTP {code}" if code else "network unreachable")
+        return KeyValidityResult("openai", INVALID, _reason(code, body))
+    return KeyValidityResult("openai", UNKNOWN, _reason(code, body) if code else "network unreachable")
 
 
 def validate_gemini(api_key: str) -> KeyValidityResult:
@@ -100,8 +139,8 @@ def validate_gemini(api_key: str) -> KeyValidityResult:
     if code == 200:
         return KeyValidityResult("gemini", VALID)
     if code in (400, 401, 403):
-        return KeyValidityResult("gemini", INVALID, f"HTTP {code}: {body[:80]}")
-    return KeyValidityResult("gemini", UNKNOWN, f"HTTP {code}" if code else "network unreachable")
+        return KeyValidityResult("gemini", INVALID, _reason(code, body))
+    return KeyValidityResult("gemini", UNKNOWN, _reason(code, body) if code else "network unreachable")
 
 
 def validate_openrouter(api_key: str) -> KeyValidityResult:
@@ -114,8 +153,8 @@ def validate_openrouter(api_key: str) -> KeyValidityResult:
     if code == 200:
         return KeyValidityResult("openrouter", VALID)
     if code in (401, 403):
-        return KeyValidityResult("openrouter", INVALID, f"HTTP {code}: {body[:80]}")
-    return KeyValidityResult("openrouter", UNKNOWN, f"HTTP {code}" if code else "network unreachable")
+        return KeyValidityResult("openrouter", INVALID, _reason(code, body))
+    return KeyValidityResult("openrouter", UNKNOWN, _reason(code, body) if code else "network unreachable")
 
 
 _VALIDATORS = {
