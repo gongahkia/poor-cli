@@ -78,14 +78,16 @@ func (s ModalStack) Render(base string, regions Regions) string {
 func (m Modal) Render(width, height int) string {
 	width = maxInt(1, width)
 	height = maxInt(1, height)
-	bodyHeight := maxInt(1, height-2)
+	innerWidth := maxInt(1, width-2)
+	innerHeight := maxInt(1, height-2)
+	bodyHeight := maxInt(1, innerHeight-1)
 	title := modalTitle(m.Kind)
-	body := modalBody(m, width-2, bodyHeight)
+	body := constrainModalBody(modalBody(m, innerWidth, bodyHeight), innerWidth, bodyHeight)
 	box := lipgloss.NewStyle().
-		Width(width).
-		Height(height).
+		Width(innerWidth).
+		Height(innerHeight).
 		Border(lipgloss.NormalBorder()).
-		Render(title + "\n" + lipgloss.Place(width-2, bodyHeight, lipgloss.Left, lipgloss.Top, body))
+		Render(title + "\n" + lipgloss.Place(innerWidth, bodyHeight, lipgloss.Left, lipgloss.Top, body))
 	return box
 }
 
@@ -136,6 +138,20 @@ func modalBody(m Modal, width, height int) string {
 		return m.Input
 	}
 	return "type to filter"
+}
+
+func constrainModalBody(body string, width, height int) string {
+	if width <= 0 || height <= 0 {
+		return ""
+	}
+	lines := strings.Split(body, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for i, line := range lines {
+		lines[i] = fitLine(line, width)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func overlay(base, cover string, rect Rect) string {

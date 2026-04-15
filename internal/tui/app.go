@@ -35,6 +35,7 @@ type Model struct {
 	Chat             *widgets.ChatView
 	Users            *widgets.UsersPanel
 	UsersOpen        bool
+	QueuedInputs     []string
 	connectCmd       tea.Cmd
 	rpc              flows.RPCClient
 	registry         *flows.Registry
@@ -152,6 +153,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resize(msg.Width, msg.Height)
 		return m, batch()
 	case stateUpdatedMsg:
+		wasInFlight := m.State != nil && m.State.InFlight != nil
 		m.State = &msg.State
 		if m.Chat != nil {
 			m.Chat.SetMultiplayer(msg.State.Multiplayer)
@@ -163,11 +165,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.relayout()
 		m.markDirty()
 		cmds := []tea.Cmd{waitStateUpdate(m.stateUpdates)}
+		if wasInFlight && msg.State.InFlight == nil {
+			if cmd := m.dequeueQueuedInputCmd(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
 		if msg.State.InFlight != nil && !m.thinkingTicking {
 			m.thinkingTicking = true
 			cmds = append(cmds, thinkingTickCmd())
 		}
 		return m, batch(cmds...)
+	case widgets.SubmitMsg:
+		if !m.thinkingTicking {
+			m.thinkingTicking = true
+			m.markDirty()
+			return m, batch(thinkingTickCmd())
+		}
+		return m, batch()
 	case thinkingTickMsg:
 		if m.State == nil || m.State.InFlight == nil {
 			m.thinkingTicking = false
@@ -279,6 +293,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.attachImagePath(msg.Path)
 		return m, batch()
+	case watchStatusLoadedMsg:
+		if msg.Err != nil {
+			m.setWatchPanelText("watch failed: " + msg.Err.Error())
+			m.Toast = ToastMsg{Kind: ToastError, Text: "watch failed", TTL: 3 * time.Second}
+			return m, batch()
+		}
+		m.setWatchPanelText(watchText(flows.WatchPayload{Status: msg.Status}))
+		return m, batch()
 	case ToastMsg:
 		m.Toast = msg
 		return m, batch()
@@ -376,7 +398,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.setFocus(FocusChat)
 		return m, nil
-	case "ctrl+enter", "cmd+enter", "super+enter", "alt+enter":
+	case "ctrl+enter", "cmd+enter", "super+enter", "alt+enter", "ctrl+n":
 		if m.Focus.Target == FocusInput || m.Focus.Target == FocusIntro {
 			return m, m.insertPromptText("\n")
 		}
@@ -540,6 +562,18 @@ func (m *Model) attachImagePath(path string) {
 	m.markDirty()
 }
 
+func (m *Model) setWatchPanelText(text string) {
+	if text == "" {
+		text = "watch status unavailable"
+	}
+	if top, ok := m.Modals.Top(); ok && top.Kind == ModalWatchPanel {
+		m.Modals.UpdateTopPayload(func(any) any { return text })
+	} else {
+		m.openModal(ModalWatchPanel, text)
+	}
+	m.markDirty()
+}
+
 func (m *Model) closeModal() {
 	if modal, ok := m.Modals.Pop(); ok {
 		if cleaner, ok := modal.Payload.(ModalPayloadCleaner); ok {
@@ -583,6 +617,11 @@ func (m *Model) submitInput() tea.Cmd {
 	input := strings.TrimSpace(m.Input)
 	m.Input = ""
 	m.relayout()
+	m.markDirty()
+	if input != "" && !strings.HasPrefix(input, "/") && m.inFlight() {
+		m.queueInput(input)
+		return nil
+	}
 	return m.dispatchCommandInput(input)
 }
 
@@ -611,8 +650,36 @@ func (m *Model) dispatchCommandInput(input string) tea.Cmd {
 	switch commandID {
 	case "/users":
 		return m.toggleUsers()
+	case "/watch":
+		m.openModal(ModalWatchPanel, "loading watch status...")
+		return fetchWatchStatusCmd(m.rpc)
 	}
 	return m.commandFlow().Dispatch(commandID, args)
+}
+
+func (m Model) inFlight() bool {
+	return m.State != nil && m.State.InFlight != nil
+}
+
+func (m *Model) queueInput(input string) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return
+	}
+	m.QueuedInputs = append(m.QueuedInputs, input)
+	m.Toast = ToastMsg{Kind: ToastInfo, Text: fmt.Sprintf("queued %d", len(m.QueuedInputs)), TTL: 3 * time.Second}
+	m.markDirty()
+}
+
+func (m *Model) dequeueQueuedInputCmd() tea.Cmd {
+	if len(m.QueuedInputs) == 0 {
+		return nil
+	}
+	input := m.QueuedInputs[0]
+	m.QueuedInputs = append([]string(nil), m.QueuedInputs[1:]...)
+	m.Toast = ToastMsg{}
+	m.markDirty()
+	return m.dispatchCommandInput(input)
 }
 
 func splitCommandInput(input string) (string, string) {
@@ -1115,23 +1182,35 @@ func (m Model) renderTypingFooter() string {
 
 func (m Model) renderStatusBar() string {
 	text := "ready"
-	if m.Toast.Text != "" {
-		text = m.Toast.Text
-	} else if m.State != nil && len(m.State.Toasts) > 0 {
-		text = m.State.Toasts[len(m.State.Toasts)-1].Text
-	} else if m.State != nil && m.State.InFlight != nil {
+	if m.State != nil && m.State.InFlight != nil {
 		msg := m.progressMessage()
 		if msg == "" {
 			msg = "thinking"
 		}
-		text = m.thinkingFrame() + " " + msg + "…"
+		text = m.thinkingFrame() + " " + msg + thinkingDots()
+		if len(m.QueuedInputs) > 0 {
+			text += fmt.Sprintf(" · queued %d", len(m.QueuedInputs))
+		}
+		if m.Toast.Text != "" {
+			text += " · " + m.Toast.Text
+		}
+	} else if m.Toast.Text != "" {
+		text = m.Toast.Text
+	} else if m.State != nil && len(m.State.Toasts) > 0 {
+		text = m.State.Toasts[len(m.State.Toasts)-1].Text
+	} else if len(m.QueuedInputs) > 0 {
+		text = fmt.Sprintf("queued %d", len(m.QueuedInputs))
 	}
 	return renderBlock(m.Regions.StatusBar, text)
 }
 
 func (m Model) thinkingFrame() string {
-	frames := [...]string{"·", "··", "···", "··"}
+	frames := [...]string{"|", "/", "-", "\\"}
 	return frames[int(m.uiRevision)%len(frames)]
+}
+
+func thinkingDots() string {
+	return "..."
 }
 
 func (m Model) progressMessage() string {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/exp/teatest"
 	"github.com/gongahkia/gocli-poor/internal/protocol"
 	"github.com/gongahkia/gocli-poor/internal/state"
@@ -220,8 +221,58 @@ func TestStatusBarShowsThinkingCue(t *testing.T) {
 		},
 	})
 	view := m.renderStatusBar()
-	if !strings.Contains(view, "· thinking…") {
+	if !strings.Contains(view, "| thinking...") {
 		t.Fatalf("status=%q", view)
+	}
+	m.Store.Close()
+}
+
+func TestPromptQueuesWhileInFlight(t *testing.T) {
+	m := NewModel(&state.AppState{InFlight: &state.InFlightRequest{RequestID: "r1", StartedAt: time.Unix(1, 0)}})
+	m.Input = "next prompt"
+	cmd := m.submitInput()
+	if cmd != nil {
+		t.Fatalf("queued submit returned cmd")
+	}
+	if m.Input != "" || len(m.QueuedInputs) != 1 || m.QueuedInputs[0] != "next prompt" {
+		t.Fatalf("input=%q queue=%#v", m.Input, m.QueuedInputs)
+	}
+	cmd = m.dequeueQueuedInputCmd()
+	if cmd == nil {
+		t.Fatal("dequeue cmd nil")
+	}
+	msg, ok := cmd().(widgets.SubmitMsg)
+	if !ok || msg.Text != "next prompt" {
+		t.Fatalf("msg=%#v", msg)
+	}
+	m.Store.Close()
+}
+
+func TestWatchModalBodyIsClipped(t *testing.T) {
+	modal := Modal{Kind: ModalWatchPanel, Payload: strings.Repeat("x", 200)}
+	view := modal.Render(30, 6)
+	for _, line := range strings.Split(view, "\n") {
+		if lipgloss.Width(line) > 30 {
+			t.Fatalf("line too wide width=%d line=%q view=%q", lipgloss.Width(line), line, view)
+		}
+	}
+}
+
+func TestWatchCommandShowsErrorModal(t *testing.T) {
+	m := NewModel(nil)
+	cmd := m.dispatchCommandInput("/watch")
+	if cmd == nil {
+		t.Fatal("watch cmd nil")
+	}
+	top, ok := m.Modals.Top()
+	if !ok || top.Payload != "loading watch status..." {
+		t.Fatalf("loading modal=%#v", top)
+	}
+	next, _ := m.Update(watchStatusLoadedMsg{Err: errors.New("boom")})
+	m = next.(Model)
+	top, _ = m.Modals.Top()
+	if !strings.Contains(top.Payload.(string), "watch failed: boom") {
+		t.Fatalf("watch payload=%#v", top.Payload)
 	}
 	m.Store.Close()
 }
@@ -306,6 +357,26 @@ func TestCtrlEnterAddsPromptNewline(t *testing.T) {
 	m.Store.Close()
 }
 
+func TestAltEnterAndCtrlNAddPromptNewline(t *testing.T) {
+	m := NewModel(nil)
+	next, _ := m.Update(IntroDoneMsg{})
+	m = next.(Model)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = next.(Model)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter, Alt: true})
+	m = next.(Model)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
+	m = next.(Model)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlN})
+	m = next.(Model)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = next.(Model)
+	if m.Input != "a\nb\nc" {
+		t.Fatalf("input=%q", m.Input)
+	}
+	m.Store.Close()
+}
+
 func TestClipboardImagePasteRequiresVision(t *testing.T) {
 	m := NewModel(&state.AppState{Provider: state.ProviderState{Caps: map[string]any{"vision": false}}})
 	next, cmd := m.Update(IntroDoneMsg{})
@@ -361,10 +432,14 @@ func TestSlashSessionUsersWatchWork(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("watch cmd nil")
 	}
+	top, ok = m.Modals.Top()
+	if !ok || top.Kind != ModalWatchPanel || top.Payload != "loading watch status..." {
+		t.Fatalf("watch loading modal=%#v", top)
+	}
 	next, _ = m.Update(cmd())
 	m = next.(Model)
 	top, ok = m.Modals.Top()
-	if !ok || top.Kind != ModalWatchPanel {
+	if !ok || top.Kind != ModalWatchPanel || !strings.Contains(top.Payload.(string), "qa_enabled") {
 		t.Fatalf("watch modal=%#v", top)
 	}
 	m.closeModal()
