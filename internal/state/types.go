@@ -9,6 +9,7 @@ import (
 const MaxMessages = 1000
 
 type AppState struct {
+	Revision        uint64
 	Messages        []Message
 	InFlight        *InFlightRequest
 	Progress        *ProgressState

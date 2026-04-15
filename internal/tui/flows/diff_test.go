@@ -28,12 +28,12 @@ func TestDiffListRenderCorrectWithANSI(t *testing.T) {
 		open: true,
 	}
 	view := flow.View(72, 18)
-	for _, want := range []string{"Pending edits (2)", "> internal/foo.go  +3 -1", "  README.md  +1 -0", "Diff: internal/foo.go", "[y] accept hunk"} {
+	for _, want := range []string{"pending edits · 2", "› internal/foo.go  +3 -1", "  README.md  +1 -0", "diff · internal/foo.go", "[y] accept hunk"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("render missing %q\n%s", want, view)
 		}
 	}
-	for _, want := range []string{"\x1b[36m@@ -1,6 +1,7 @@", "\x1b[32m+import \"fmt\"", "\x1b[31m-    println(\"hi\")"} {
+	for _, want := range []string{"\x1b[36m@@ -1,6 +1,7 @@", "\x1b[32m+import \"fmt\"", "\x1b[31m-\tprintln(\"hi\")"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("ANSI render missing %q\n%s", want, view)
 		}

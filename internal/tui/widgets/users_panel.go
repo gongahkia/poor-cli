@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/gongahkia/gocli-poor/internal/state"
 	"github.com/gongahkia/gocli-poor/internal/theme"
+	"github.com/gongahkia/gocli-poor/internal/tui/emptystate"
 )
 
 const UsersPanelWidth = 28
@@ -83,6 +84,9 @@ func (p *UsersPanel) View(width, height int) string {
 }
 
 func (p *UsersPanel) header() string {
+	if len(p.members) == 0 {
+		return emptystate.EmptyStateFor(emptystate.UsersJustYou).Render(p.theme)
+	}
 	return fmt.Sprintf("users · %d", len(p.members))
 }
 
@@ -92,7 +96,7 @@ func (p *UsersPanel) memberLines(index, width int) (string, string) {
 	role := firstNonEmpty(member.Role, "viewer")
 	marker := " "
 	if index == p.selected {
-		marker = ">"
+		marker = "›"
 	}
 	status := p.status(member)
 	nameWidth := usersMax(1, width-1-1-lipgloss.Width(role))

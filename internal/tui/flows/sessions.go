@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gongahkia/gocli-poor/internal/protocol"
+	"github.com/gongahkia/gocli-poor/internal/tui/emptystate"
 )
 
 type SessionPicker struct {
@@ -139,7 +140,7 @@ func (p *SessionPicker) View(width, height int) string {
 	width = max(20, width)
 	bodyHeight := max(1, height-2)
 	if p.Loading {
-		return "loading sessions..."
+		return emptystate.EmptyStateFor(emptystate.SessionsLoading).Render(nil)
 	}
 	lines := make([]string, 0, bodyHeight)
 	if p.Error != "" {
@@ -151,14 +152,14 @@ func (p *SessionPicker) View(width, height int) string {
 		}
 		marker := " "
 		if i == p.Selected {
-			marker = ">"
+			marker = "›"
 		}
 		label := sessionTitle(session)
 		line := fmt.Sprintf("%s %-24s %4d msgs  %s", marker, label, session.MessageCount, session.Model)
 		lines = append(lines, fit(line, width-2))
 	}
 	if len(lines) == 0 {
-		lines = append(lines, "no sessions")
+		lines = append(lines, emptystate.EmptyStateFor(emptystate.SessionsNone).Render(nil))
 	}
 	return strings.Join(lines, "\n")
 }

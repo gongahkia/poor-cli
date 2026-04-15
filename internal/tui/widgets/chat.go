@@ -9,6 +9,8 @@ import (
 	"github.com/gongahkia/gocli-poor/internal/markdown"
 	"github.com/gongahkia/gocli-poor/internal/state"
 	"github.com/gongahkia/gocli-poor/internal/theme"
+	"github.com/gongahkia/gocli-poor/internal/tui/emptystate"
+	"github.com/mattn/go-runewidth"
 )
 
 const frameInterval = time.Second / 60
@@ -34,6 +36,7 @@ type ChatView struct {
 	lastFrame   time.Time
 	dirty       bool
 	viewCache   string
+	rowScratch  []string
 }
 
 type renderedMsg struct {
@@ -141,6 +144,9 @@ func (c *ChatView) View(width, height int) string {
 		return c.viewCache
 	}
 	rows := c.visibleRows()
+	if len(c.messages) == 0 {
+		rows = []string{"", emptystate.EmptyStateFor(emptystate.FreshLaunch).Render(c.theme)}
+	}
 	for len(rows) < height {
 		rows = append(rows, "")
 	}
@@ -177,13 +183,17 @@ func (c *ChatView) AppendChunk(requestID string, chunk string, segs ...[]markdow
 	if i < 0 {
 		return
 	}
+	prevEmpty := c.messages[i].Content == ""
 	c.messages[i].Content += chunk
+	tail := markdownSegments(segs)
 	if len(segs) > 0 {
 		for _, seg := range segs[0] {
 			c.messages[i].Segments = append(c.messages[i].Segments, state.MarkdownSegment{Text: seg.Text, Plain: seg.Plain, Width: seg.Width})
 		}
 	}
-	c.renderIndex(i)
+	if !c.appendRenderedTail(i, prevEmpty, tail) {
+		c.renderIndex(i)
+	}
 	if atBottom {
 		c.ScrollToBottom()
 	} else {
@@ -233,6 +243,10 @@ func (c *ChatView) renderIndex(i int) {
 		return
 	}
 	rm := renderMessage(c.messages[i], c.theme, c.mdRenderer, maxInt(1, c.width), c.expanded, c.multiplayer)
+	if i < len(c.messages)-1 {
+		rm.blocks = append(rm.blocks, "")
+		rm.totalHeight = len(rm.blocks)
+	}
 	c.rendered[i] = rm
 }
 
@@ -283,7 +297,7 @@ func (c *ChatView) visibleRows() []string {
 	if c.height <= 0 || len(c.rendered) == 0 {
 		return nil
 	}
-	rows := make([]string, 0, c.height)
+	rows := c.rowScratch[:0]
 	i := c.viewport.topIdx
 	offset := c.viewport.topOffset
 	for i < len(c.rendered) && len(rows) < c.height {
@@ -297,7 +311,61 @@ func (c *ChatView) visibleRows() []string {
 	if len(rows) > c.height {
 		rows = rows[:c.height]
 	}
+	c.rowScratch = rows
 	return rows
+}
+
+func (c *ChatView) appendRenderedTail(i int, prevEmpty bool, tail []state.MarkdownSegment) bool {
+	if i < 0 || i >= len(c.messages) || len(tail) == 0 {
+		return false
+	}
+	msg := c.messages[i]
+	if msg.Role != state.RoleAssistant || len(msg.ToolCalls) > 0 {
+		return false
+	}
+	lines := segmentTextLines(tail)
+	if len(lines) == 0 {
+		return true
+	}
+	label := messageLabel(msg, c.multiplayer)
+	prefix := rolePrefix(label, c.theme) + " "
+	prefixWidth := runewidth.StringWidth(label) + 1
+	indent := strings.Repeat(" ", prefixWidth)
+	rm := &c.rendered[i]
+	if prevEmpty || len(rm.blocks) == 0 || (len(rm.blocks) == 1 && rm.raw.Content == "") {
+		rm.blocks = rm.blocks[:0]
+		rm.blocks = append(rm.blocks, prefix+lines[0])
+		lines = lines[1:]
+	}
+	for _, line := range lines {
+		rm.blocks = append(rm.blocks, indent+line)
+	}
+	rm.raw = msg
+	rm.totalHeight = len(rm.blocks)
+	return true
+}
+
+func markdownSegments(segs [][]markdown.Segment) []state.MarkdownSegment {
+	if len(segs) == 0 || len(segs[0]) == 0 {
+		return nil
+	}
+	out := make([]state.MarkdownSegment, len(segs[0]))
+	for i, seg := range segs[0] {
+		out[i] = state.MarkdownSegment{Text: seg.Text, Plain: seg.Plain, Width: seg.Width}
+	}
+	return out
+}
+
+func segmentTextLines(segs []state.MarkdownSegment) []string {
+	lines := make([]string, 0, len(segs))
+	for _, seg := range segs {
+		line := seg.Text
+		if line == "" {
+			line = seg.Plain
+		}
+		lines = append(lines, strings.TrimSuffix(line, "\n"))
+	}
+	return lines
 }
 
 func (c *ChatView) toggleFocusedTool() {

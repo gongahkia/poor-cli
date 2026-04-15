@@ -13,21 +13,26 @@ func Reduce(st AppState, action Action) AppState {
 		next.Messages = trimMessages(append(next.Messages, cloneMessage(a.Msg)))
 		return next
 	case ActionAppendChunk:
-		next := cloneAppState(st)
-		for i := len(next.Messages) - 1; i >= 0; i-- {
+		if i := streamingMessageIndex(st.Messages, a.RequestID); i >= 0 {
+			next := cloneAppStateForMessageEdit(st, i)
 			msg := &next.Messages[i]
+			beforeContent := msg.Content
+			beforeSegments := len(msg.Segments)
 			if msg.RequestID == a.RequestID && msg.Streaming {
 				msg.Content += a.Chunk
 				msg.Segments = append(msg.Segments, cloneSegments(a.Segments)...)
+				if msg.Content == beforeContent && len(msg.Segments) == beforeSegments && a.AuthorConnectionID == "" && a.AuthorDisplayName == "" && a.AuthorRole == "" {
+					return st
+				}
 				applyAuthor(msg, a.AuthorConnectionID, a.AuthorDisplayName, a.AuthorRole)
 				markMultiplayerForAuthor(&next, a.AuthorConnectionID)
 				return next
 			}
 		}
-		return next
+		return st
 	case ActionAppendThinking:
-		next := cloneAppState(st)
-		for i := len(next.Messages) - 1; i >= 0; i-- {
+		if i := streamingMessageIndex(st.Messages, a.RequestID); i >= 0 {
+			next := cloneAppStateForMessageEdit(st, i)
 			msg := &next.Messages[i]
 			if msg.RequestID == a.RequestID && msg.Streaming {
 				msg.Thinking += a.Chunk
@@ -36,7 +41,7 @@ func Reduce(st AppState, action Action) AppState {
 				return next
 			}
 		}
-		return next
+		return st
 	case ActionAppendToolCall:
 		next := cloneAppState(st)
 		for i := len(next.Messages) - 1; i >= 0; i-- {
@@ -79,6 +84,9 @@ func Reduce(st AppState, action Action) AppState {
 		for i := len(next.Messages) - 1; i >= 0; i-- {
 			if next.Messages[i].RequestID == a.RequestID && next.Messages[i].Streaming {
 				next.Messages[i].Streaming = false
+				if a.Reason == "cancelled" {
+					next.Messages[i].Progress = "cancelled"
+				}
 				break
 			}
 		}
@@ -198,7 +206,7 @@ func Reduce(st AppState, action Action) AppState {
 		}
 		return next
 	default:
-		return cloneAppState(st)
+		return st
 	}
 }
 
@@ -255,6 +263,42 @@ func trimMessages(messages []Message) []Message {
 	out := make([]Message, MaxMessages)
 	copy(out, messages[len(messages)-MaxMessages:])
 	return out
+}
+
+func streamingMessageIndex(messages []Message, requestID string) int {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].RequestID == requestID && messages[i].Streaming {
+			return i
+		}
+	}
+	return -1
+}
+
+func cloneAppStateForMessageEdit(st AppState, idx int) AppState {
+	next := cloneAppStateShallowMessages(st)
+	next.Messages = append([]Message(nil), st.Messages...)
+	if idx >= 0 && idx < len(next.Messages) {
+		next.Messages[idx] = cloneMessage(st.Messages[idx])
+	}
+	return next
+}
+
+func cloneAppStateShallowMessages(st AppState) AppState {
+	next := st
+	if st.InFlight != nil {
+		inFlight := *st.InFlight
+		next.InFlight = &inFlight
+	}
+	if st.Progress != nil {
+		progress := *st.Progress
+		next.Progress = &progress
+	}
+	next.Provider.Caps = cloneMap(st.Provider.Caps)
+	next.Session.Checkpoints = cloneCheckpoints(st.Session.Checkpoints)
+	next.FileCatalog = cloneFileCatalog(st.FileCatalog)
+	next.Multiplayer = cloneMultiplayer(st.Multiplayer)
+	next.Toasts = cloneToasts(st.Toasts)
+	return next
 }
 
 func cloneAppState(st AppState) AppState {

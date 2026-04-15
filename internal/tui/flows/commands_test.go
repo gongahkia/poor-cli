@@ -128,7 +128,7 @@ func TestCommandCostFetchesDashboard(t *testing.T) {
 		t.Fatalf("payload=%T", open.Payload)
 	}
 	view := payload.View(80, 20)
-	if !strings.Contains(view, "anthropic") || !strings.Contains(view, "Savings") {
+	if !strings.Contains(view, "anthropic") || !strings.Contains(view, "savings") {
 		t.Fatalf("view=%q", view)
 	}
 }
@@ -145,6 +145,11 @@ func TestClientCommandsRoute(t *testing.T) {
 	quit := run(t, flow.Dispatch("/quit", ""))
 	if _, ok := quit.(tea.QuitMsg); !ok {
 		t.Fatalf("wrong quit msg: %#v", quit)
+	}
+
+	exit := run(t, flow.Dispatch("/exit", ""))
+	if _, ok := exit.(tea.QuitMsg); !ok {
+		t.Fatalf("wrong exit msg: %#v", exit)
 	}
 }
 

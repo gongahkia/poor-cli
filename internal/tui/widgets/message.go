@@ -9,6 +9,7 @@ import (
 	"github.com/gongahkia/gocli-poor/internal/markdown"
 	"github.com/gongahkia/gocli-poor/internal/state"
 	"github.com/gongahkia/gocli-poor/internal/theme"
+	"github.com/gongahkia/gocli-poor/internal/tui/emptystate"
 )
 
 func renderMessage(msg state.Message, t *theme.Theme, md markdown.LineRenderer, width int, expanded map[string]bool, mp state.MultiplayerState) renderedMsg {
@@ -23,7 +24,14 @@ func renderMessage(msg state.Message, t *theme.Theme, md markdown.LineRenderer, 
 		lines = append(lines, renderContent(msg, t, md, width, mp)...)
 	}
 	if len(lines) == 0 {
-		lines = []string{rolePrefix(messageLabel(msg, mp), t)}
+		if msg.Role == state.RoleAssistant && msg.Streaming {
+			lines = []string{emptystate.EmptyStateFor(emptystate.WaitingResponse).Render(t)}
+		} else {
+			lines = []string{rolePrefix(messageLabel(msg, mp), t)}
+		}
+	}
+	if msg.Progress == "cancelled" {
+		lines = append(lines, strings.Repeat(" ", runewidth.StringWidth(messageLabel(msg, mp))+1)+emptystate.EmptyStateFor(emptystate.Cancelled).Render(t))
 	}
 	return renderedMsg{id: msg.ID, raw: msg, blocks: lines, totalHeight: len(lines)}
 }
@@ -182,5 +190,5 @@ func truncateWidth(text string, width int) string {
 		b.WriteRune(r)
 		col += w
 	}
-	return fmt.Sprintf("%s…", b.String())
+	return fmt.Sprintf("%s.", b.String())
 }

@@ -73,6 +73,7 @@ var executors = map[string]commandExecutorFactory{
 	"/clear":    func(c *CommandsFlow) CommandExecutor { return c.cmdClear },
 	"/compact":  func(c *CommandsFlow) CommandExecutor { return c.cmdCompact },
 	"/quit":     func(c *CommandsFlow) CommandExecutor { return c.cmdQuit },
+	"/exit":     func(c *CommandsFlow) CommandExecutor { return c.cmdQuit },
 	"/help":     func(c *CommandsFlow) CommandExecutor { return c.cmdHelp },
 	"/cost":     func(c *CommandsFlow) CommandExecutor { return c.cmdCost },
 	"/provider": func(c *CommandsFlow) CommandExecutor { return c.cmdProvider },

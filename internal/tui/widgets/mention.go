@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/gongahkia/gocli-poor/internal/state"
+	"github.com/gongahkia/gocli-poor/internal/tui/emptystate"
 	"github.com/sahilm/fuzzy"
 )
 
@@ -200,38 +201,29 @@ func (p *MentionPicker) View(width, height int) string {
 	}
 	width = max(1, width)
 	height = max(1, height)
-	leftWidth := max(1, width/2)
-	rightWidth := max(1, width-leftWidth)
-	rows := p.visibleRows(height)
-	left := []string{"@ files", "@" + p.query}
+	rows := p.visibleRows(max(1, height-2))
+	lines := []string{"@" + p.query}
 	if p.loading {
-		left = append(left, "loading files...")
+		lines = append(lines, emptystate.EmptyStateFor(emptystate.FileCatalogLoading).Render(nil))
 	} else if len(p.matches) == 0 {
-		left = append(left, "no matches")
+		lines = append(lines, emptystate.EmptyStateFor(emptystate.MentionNoMatches).Render(nil))
 	} else {
 		for i := 0; i < rows; i++ {
 			m := p.matches[i]
 			prefix := "  "
 			if i == p.selected {
-				prefix = "> "
+				prefix = "› "
 			}
-			left = append(left, prefix+m.Path)
+			lines = append(lines, prefix+m.Path)
 		}
 	}
-	right := p.previewLines()
-	lines := make([]string, max(len(left), len(right)))
+	if preview := p.previewRow(); preview != "" {
+		lines = append(lines, preview)
+	}
 	for i := range lines {
-		l, r := "", ""
-		if i < len(left) {
-			l = left[i]
-		}
-		if i < len(right) {
-			r = right[i]
-		}
-		lines[i] = mentionFit(l, leftWidth) + mentionFit(r, rightWidth)
+		lines[i] = mentionFit(lines[i], width)
 	}
-	body := strings.Join(firstLines(lines, height), "\n")
-	return lipgloss.NewStyle().Width(width).Height(height).Render(body)
+	return strings.Join(firstLines(lines, height), "\n")
 }
 
 func (p *MentionPicker) loadFromState() {
@@ -325,23 +317,22 @@ func (p *MentionPicker) ensurePreviewCmd() tea.Cmd {
 	}
 }
 
-func (p *MentionPicker) previewLines() []string {
+func (p *MentionPicker) previewRow() string {
 	path := p.SelectedPath()
 	if path == "" {
-		return []string{"Preview:"}
+		return ""
 	}
-	out := []string{"Preview:"}
 	if p.previewLoading[path] {
-		return append(out, "loading...")
+		return emptystate.EmptyStateFor(emptystate.PreviewLoading).Render(nil)
 	}
 	if err := p.previewErr[path]; err != nil {
-		return append(out, err.Error())
+		return err.Error()
 	}
 	lines := p.preview[path]
 	if len(lines) == 0 {
-		return append(out, "")
+		return emptystate.EmptyStateFor(emptystate.PreviewEmpty).Render(nil)
 	}
-	return append(out, lines...)
+	return lines[0]
 }
 
 func (p *MentionPicker) readPreviewFile(path string) ([]string, error) {

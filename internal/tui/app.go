@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -36,6 +37,32 @@ type Model struct {
 	usersFlow        *flows.UsersFlow
 	stateUpdates     <-chan state.AppState
 	unsubscribeState func()
+	uiRevision       uint64
+	viewCache        *modelViewCache
+}
+
+type modelViewCache struct {
+	key   modelViewKey
+	value string
+	valid bool
+}
+
+type modelViewKey struct {
+	stateRevision   uint64
+	uiRevision      uint64
+	width           int
+	height          int
+	regions         Regions
+	focus           FocusTarget
+	input           string
+	chatScroll      int
+	toastText       string
+	toastKind       ToastKind
+	introActive     bool
+	introVersion    string
+	usersOpen       bool
+	modalSignature  string
+	typingFooterRow int
 }
 
 type Option func(*Model)
@@ -64,14 +91,15 @@ func NewModel(appState *state.AppState, opts ...Option) Model {
 		initial = *appState
 	}
 	m := Model{
-		State:  &initial,
-		Store:  state.NewStoreWithState(initial),
-		Chat:   widgets.NewChatView(widgets.ChatDeps{}),
-		Users:  widgets.NewUsersPanel(nil),
-		Focus:  FocusRouter{Target: FocusIntro},
-		Intro:  IntroModel{Active: true, Version: defaultIntroVersion},
-		Width:  80,
-		Height: 24,
+		State:     &initial,
+		Store:     state.NewStoreWithState(initial),
+		Chat:      widgets.NewChatView(widgets.ChatDeps{}),
+		Users:     widgets.NewUsersPanel(nil),
+		Focus:     FocusRouter{Target: FocusIntro},
+		Intro:     IntroModel{Active: true, Version: defaultIntroVersion},
+		Width:     80,
+		Height:    24,
+		viewCache: &modelViewCache{},
 	}
 	for _, opt := range opts {
 		opt(&m)
@@ -105,6 +133,8 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	trace := traceStart("update", fmt.Sprintf("%T", msg))
+	defer traceDone("update", trace, m.Width, m.Height)
 	flowCmds := m.registry.UpdateAll(msg)
 	batch := func(cmds ...tea.Cmd) tea.Cmd {
 		return tea.Batch(append(flowCmds, cmds...)...)
@@ -155,6 +185,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, batch()
 	case flows.ProvidersLoadedMsg:
 		m.withTopProviderPicker(func(p *flows.ProviderPicker) { p.ApplyLoaded(msg) })
+		m.markDirty()
 		return m, batch()
 	case flows.ProviderSelectedMsg:
 		previous := m.currentProviderInfo()
@@ -178,6 +209,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, batch()
 	case flows.SessionsLoadedMsg:
 		m.withTopSessionPicker(func(p *flows.SessionPicker) { p.ApplyLoaded(msg) })
+		m.markDirty()
 		return m, batch()
 	case flows.SessionSelectedMsg:
 		return m, batch(flows.SwitchSessionCmd(m.rpc, msg.Session))
@@ -206,10 +238,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err != nil {
 			m.Toast = ToastMsg{Kind: ToastError, Text: msg.Err.Error(), TTL: 3 * time.Second}
 		}
+		m.markDirty()
 		return m, batch()
 	case flows.APIKeySubmittedMsg:
 		if msg.Err != nil {
 			m.withTopAPIKeyPrompt(func(p *flows.APIKeyPrompt) { p.SetError(msg.Err) })
+			m.markDirty()
 			return m, batch()
 		}
 		m.closeModal()
@@ -228,6 +262,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
+	trace := traceStart("view", "")
+	defer traceDone("view", trace, m.Width, m.Height)
+	key := m.viewKey()
+	if m.viewCache != nil && m.viewCache.valid && m.viewCache.key == key {
+		return m.viewCache.value
+	}
 	parts := []string{
 		m.renderTopBar(),
 		m.renderChat(),
@@ -239,7 +279,12 @@ func (m Model) View() string {
 	parts = append(parts, m.renderStatusBar())
 	body := strings.Join(parts, "\n")
 	if m.Modals.Len() > 0 {
-		return m.Modals.Render(body, m.Regions)
+		body = m.Modals.Render(body, m.Regions)
+	}
+	if m.viewCache != nil {
+		m.viewCache.key = key
+		m.viewCache.value = body
+		m.viewCache.valid = true
 	}
 	return body
 }
@@ -254,17 +299,20 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "backspace":
 			if handled, cmd := m.updateTopModal(msg); handled {
+				m.markDirty()
 				return m, cmd
 			}
 			m.backspaceModal()
 			return m, nil
 		case "enter":
 			if handled, cmd := m.updateTopModal(msg); handled {
+				m.markDirty()
 				return m, cmd
 			}
 			return m, m.submitModalInput()
 		default:
 			if handled, cmd := m.updateTopModal(msg); handled {
+				m.markDirty()
 				return m, cmd
 			}
 			if msg.Type == tea.KeyRunes {
@@ -278,6 +326,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "up", "down", "k", "j":
 			if m.Users != nil {
 				m.Users.Update(msg, m.Regions.Users.Height)
+				m.markDirty()
 			}
 			return m, nil
 		case "a", "d", "x", "p", "r", "enter":
@@ -369,7 +418,7 @@ func (m *Model) inputRows() int {
 	if m.Input != "" {
 		lines = strings.Count(m.Input, "\n") + 1
 	}
-	return clampInt(lines+2, 3, 10)
+	return clampInt(lines, 1, 8)
 }
 
 func (m *Model) setFocus(target FocusTarget) {
@@ -472,6 +521,8 @@ func (m *Model) dispatchCommandInput(input string) tea.Cmd {
 		return flows.FetchSessionsCmd(m.rpc)
 	case "/users":
 		return m.toggleUsers()
+	case "/quit", "/exit":
+		return tea.Quit
 	default:
 		m.Toast = ToastMsg{Kind: ToastWarning, Text: "unknown command", TTL: 2 * time.Second}
 		return nil
@@ -726,8 +777,82 @@ func (m *Model) userRoleCmd(member state.Member, role string) tea.Cmd {
 	return m.usersFlow.SetRole(member, role)
 }
 
+func (m *Model) markDirty() {
+	m.uiRevision++
+	if m.viewCache != nil {
+		m.viewCache.valid = false
+	}
+}
+
+func (m Model) viewKey() modelViewKey {
+	var stateRevision uint64
+	if m.State != nil {
+		stateRevision = m.State.Revision
+	}
+	return modelViewKey{
+		stateRevision:   stateRevision,
+		uiRevision:      m.uiRevision,
+		width:           m.Width,
+		height:          m.Height,
+		regions:         m.Regions,
+		focus:           m.Focus.Target,
+		input:           m.Input,
+		chatScroll:      m.ChatScrollAnchor,
+		toastText:       m.Toast.Text,
+		toastKind:       m.Toast.Kind,
+		introActive:     m.Intro.Active,
+		introVersion:    m.Intro.Version,
+		usersOpen:       m.UsersOpen,
+		modalSignature:  m.modalSignature(),
+		typingFooterRow: m.Regions.TypingFooter.Height,
+	}
+}
+
+func (m Model) modalSignature() string {
+	if len(m.Modals) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, modal := range m.Modals {
+		b.WriteString(fmt.Sprintf("%d:%s:%T:%p;", modal.Kind, modal.Input, modal.Payload, modalPayloadPtr(modal.Payload)))
+	}
+	return b.String()
+}
+
+func modalPayloadPtr(payload any) any {
+	switch p := payload.(type) {
+	case *flows.ProviderPicker:
+		return p
+	case *flows.SessionPicker:
+		return p
+	case *flows.RolePicker:
+		return p
+	case *flows.APIKeyPrompt:
+		return p
+	case *flows.CostPayload:
+		return p
+	default:
+		return nil
+	}
+}
+
 func (m Model) renderTopBar() string {
-	return renderBlock(m.Regions.TopBar, "gocli-poor · repo:poor-cli · branch:main")
+	return renderBlock(m.Regions.TopBar, m.topBarText())
+}
+
+func (m Model) topBarText() string {
+	if m.Intro.Active || m.State == nil || m.State.Connection.Phase == state.Starting {
+		return EmptyStateFor(EmptyConnecting).Text
+	}
+	switch m.State.Connection.Phase {
+	case state.Disconnected, state.Error:
+		return EmptyStateFor(EmptyDisconnected).Text
+	}
+	provider := strings.TrimSpace(m.providerName())
+	if provider == "" {
+		provider = "anthropic"
+	}
+	return "gocli-poor · connected · " + provider
 }
 
 func (m Model) renderChat() string {
@@ -766,9 +891,9 @@ func (m Model) renderTranscript(text string) string {
 func (m Model) renderInput() string {
 	value := m.Input
 	if value == "" {
-		value = "> "
+		value = "› ·"
 	} else {
-		value = "> " + value
+		value = "› " + value
 	}
 	return renderBlock(m.Regions.Input, value)
 }
@@ -868,5 +993,5 @@ func (m IntroModel) View() string {
 	if m.Version == "" {
 		m.Version = defaultIntroVersion
 	}
-	return "gocli-poor " + m.Version + " · connecting..."
+	return EmptyStateFor(EmptyConnecting).Text
 }

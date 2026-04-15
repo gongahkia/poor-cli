@@ -107,7 +107,7 @@ func TestTypingFooterFormatsAndSkipsLocal(t *testing.T) {
 		},
 		Typing: map[string]bool{"c1": true, "c2": true, "c3": true, "c4": true, "c5": true},
 	}}
-	if got := TypingFooterText(st); got != "alice, bob, carol +1 typing…" {
+	if got := TypingFooterText(st); got != "alice, bob, carol +1 typing" {
 		t.Fatalf("footer=%q", got)
 	}
 	st.Multiplayer.Typing = nil

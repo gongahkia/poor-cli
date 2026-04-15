@@ -113,8 +113,15 @@ func (s *Store) loop() {
 func (s *Store) apply(req dispatchedAction) {
 	s.mu.Lock()
 	s.state = Reduce(s.state, req.action)
+	s.state.Revision++
 	snapshot := cloneAppState(s.state)
+	first := true
 	for ch := range s.subs {
+		if first {
+			ch <- snapshot
+			first = false
+			continue
+		}
 		ch <- cloneAppState(snapshot)
 	}
 	s.mu.Unlock()

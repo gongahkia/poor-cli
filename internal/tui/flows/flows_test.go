@@ -141,7 +141,7 @@ func TestCostModalFetchesAndRendersDashboard(t *testing.T) {
 		t.Fatalf("calls=%#v", rpc.calls)
 	}
 	view := msg.Payload.View(80, 20)
-	for _, want := range []string{"Current turn:", "$0.0083", "anthropic", "$0.0412", "openai", "$0.0060", "Savings (economy mode): $0.0134"} {
+	for _, want := range []string{"turn", "$0.0083", "anthropic", "$0.0412", "openai", "$0.0060", "savings", "$0.0134"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("missing %q in %q", want, view)
 		}

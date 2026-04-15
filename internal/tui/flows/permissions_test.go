@@ -52,13 +52,10 @@ func TestPermissionTimeoutVisualIndicator(t *testing.T) {
 		ToolArgs:  map[string]any{"command": "npm install -D vitest"},
 	}, start)
 	view := flow.View(72, 14, start.Add(10*time.Second))
-	for _, want := range []string{"Permission requested", "Tool: bash", "Rationale: install dev dependency", "npm install -D vitest", "timeout: 20s", "[A] allow once"} {
+	for _, want := range []string{"permission · 20s", "tool · bash", "why · install dev dependency", "npm install -D vitest", "[a] once"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("render missing %q\n%s", want, view)
 		}
-	}
-	if !strings.Contains(view, "########") || !strings.Contains(view, "----") {
-		t.Fatalf("countdown bar missing mixed fill\n%s", view)
 	}
 }
 

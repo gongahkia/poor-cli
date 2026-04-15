@@ -77,8 +77,8 @@ func (p *Palette) Update(msg tea.Msg) tea.Cmd {
 func (p *Palette) View() string {
 	width := max(1, p.width)
 	height := max(1, p.height)
-	bodyHeight := max(1, height-4)
-	lines := []string{"Commands", "> " + p.input, strings.Repeat("-", max(1, width-2))}
+	bodyHeight := max(1, height-1)
+	lines := []string{"› " + p.input}
 	if len(p.items) == 0 {
 		lines = append(lines, fitPalette("  no commands", width-2))
 	} else {
@@ -89,18 +89,20 @@ func (p *Palette) View() string {
 			marker := " "
 			style := p.theme.Palette
 			if i == p.selected {
-				marker = ">"
+				marker = "›"
 				style = p.theme.PaletteHighlight
 			}
 			line := fitPalette(marker+" "+cmd.Label+"  "+cmd.Description, width-2)
 			lines = append(lines, style.Render(line))
 		}
 	}
-	return p.theme.Modal.
-		Width(width).
-		Height(height).
-		Border(lipgloss.NormalBorder()).
-		Render(strings.Join(lines, "\n"))
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (p *Palette) SetSize(width, height int) {

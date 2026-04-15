@@ -213,7 +213,6 @@ func (r *Renderer) openBlock(kind BlockKind, info string) {
 		r.codePending = false
 		r.codeStart = 0
 		r.codeLang = normalizeLang(info)
-		r.addCodeBorder(true)
 	case BlockParagraph, BlockBlockquote, BlockListItem:
 		r.blockLines = nil
 	case BlockHeading1, BlockHeading2, BlockHeading3, BlockHeading4, BlockHeading5, BlockHeading6:
@@ -235,7 +234,7 @@ func (r *Renderer) openBlock(kind BlockKind, info string) {
 			r.itemPrefix = strconv.Itoa(r.listNumber) + ". "
 			r.listNumber++
 		} else {
-			r.itemPrefix = "• "
+			r.itemPrefix = "· "
 		}
 	}
 }
@@ -249,7 +248,6 @@ func (r *Renderer) closeBlock(kind BlockKind) {
 	case BlockCodeFence:
 		r.codePending = false
 		r.codeStart = 0
-		r.addCodeBorder(false)
 		r.codeLang = ""
 	case BlockBlockquote:
 		r.renderBlockquote()
@@ -314,10 +312,10 @@ func (r *Renderer) renderHeading(kind BlockKind) {
 func (r *Renderer) renderBlockquote() {
 	for _, line := range r.blockLines {
 		if strings.TrimSpace(line) == "" {
-			r.addLine(r.theme.Muted.Render("│ "), "│ ", runewidth.StringWidth("│ "))
+			r.addLine(r.theme.Muted.Render("  "), "  ", 2)
 			continue
 		}
-		r.renderInlineText(line, r.theme.Muted, "│ ", "│ ", r.theme.Muted)
+		r.renderInlineText(line, r.theme.Muted, "  ", "  ", r.theme.Muted)
 	}
 }
 
@@ -332,7 +330,7 @@ func (r *Renderer) renderListItem() {
 
 func (r *Renderer) renderThematicBreak() {
 	width := r.wrapWidth()
-	line := strings.Repeat("─", width)
+	line := strings.Repeat("-", width)
 	r.addLine(r.theme.Muted.Render(line), line, width)
 }
 
@@ -341,7 +339,7 @@ func (r *Renderer) renderCodeLine(lang, line string) {
 	if lang == "" {
 		lang = r.codeLang
 	}
-	prefix := "│ "
+	prefix := "  "
 	prefixWidth := runewidth.StringWidth(prefix)
 	width := mdMaxInt(1, r.wrapWidth()-prefixWidth)
 	for _, chunk := range wrapLineCap(strings.ReplaceAll(line, "\t", "    "), width) {
@@ -365,22 +363,6 @@ func (r *Renderer) renderCodeDelta(e CodeBlockDeltaEvent) {
 	if e.Final {
 		r.codeStart = 0
 	}
-}
-
-func (r *Renderer) addCodeBorder(open bool) {
-	width := r.wrapWidth()
-	var line string
-	if open {
-		if r.codeLang != "" {
-			head := "╭─ " + r.codeLang + " "
-			line = head + strings.Repeat("─", mdMaxInt(0, width-runewidth.StringWidth(head)))
-		} else {
-			line = "╭" + strings.Repeat("─", mdMaxInt(0, width-1))
-		}
-	} else {
-		line = "╰" + strings.Repeat("─", mdMaxInt(0, width-1))
-	}
-	r.addLine(r.theme.Muted.Render(line), line, runewidth.StringWidth(line))
 }
 
 func (r *Renderer) renderInlineText(text string, base lipgloss.Style, firstPrefix, nextPrefix string, prefixStyle lipgloss.Style) {

@@ -308,15 +308,15 @@ func (i *InputField) displayClusters() []string {
 	out := make([]string, 0, len(i.buf)+1)
 	for n, c := range i.buf {
 		if n == i.cursor && i.focused {
-			out = append(out, "█")
+			out = append(out, "·")
 		}
 		out = append(out, c)
 	}
 	if i.cursor == len(i.buf) && i.focused {
-		out = append(out, "█")
+		out = append(out, "·")
 	}
-	if len(out) == 1 && out[0] == "█" {
-		return []string{"> ", "█"}
+	if len(out) == 1 && out[0] == "·" {
+		return []string{"› ·"}
 	}
 	return out
 }

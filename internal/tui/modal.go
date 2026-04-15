@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/gongahkia/gocli-poor/internal/tui/widgets"
 )
 
 type Modal struct {
@@ -73,33 +74,34 @@ func (s ModalStack) Render(base string, regions Regions) string {
 func (m Modal) Render(width, height int) string {
 	width = maxInt(1, width)
 	height = maxInt(1, height)
-	bodyHeight := maxInt(1, height-2)
 	title := modalTitle(m.Kind)
-	body := modalBody(m, width-2, bodyHeight)
-	box := lipgloss.NewStyle().
-		Width(width).
-		Height(height).
-		Border(lipgloss.NormalBorder()).
-		Render(title + "\n" + lipgloss.Place(width-2, bodyHeight, lipgloss.Left, lipgloss.Top, body))
-	return box
+	bodyHeight := height
+	if title != "" {
+		bodyHeight = maxInt(1, height-1)
+	}
+	body := modalBody(m, width, bodyHeight)
+	if title == "" {
+		return lipgloss.Place(width, height, lipgloss.Left, lipgloss.Top, body)
+	}
+	return lipgloss.Place(width, height, lipgloss.Left, lipgloss.Top, widgets.FlushHeader(nil, title)+"\n"+body)
 }
 
 func modalTitle(kind ModalKind) string {
 	switch kind {
 	case ModalPalette:
-		return "command palette"
+		return ""
 	case ModalMention:
-		return "mention"
+		return ""
 	case ModalCost:
-		return "Cost this session"
+		return "cost"
 	case ModalProviderPicker:
-		return "Switch provider"
+		return "provider"
 	case ModalSessionPicker:
-		return "Switch session"
+		return "session"
 	case ModalRolePicker:
-		return "Set role"
+		return "role"
 	case ModalAPIKeyPrompt:
-		return "API key required"
+		return "api key"
 	case ModalPermissionPrompt:
 		return "permission"
 	default:

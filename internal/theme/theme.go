@@ -218,23 +218,11 @@ func buildTheme(name string, caps Capability, darkBackground bool, specs map[Tok
 
 func buildStyle(renderer *lipgloss.Renderer, caps Capability, spec styleSpec) lipgloss.Style {
 	style := renderer.NewStyle()
-	switch spec.border {
-	case borderNormal:
-		style = style.Border(lipgloss.NormalBorder())
-	case borderRounded:
-		style = style.Border(lipgloss.RoundedBorder())
-	}
 	if caps == CapabilityMonochrome {
 		return style
 	}
 	if spec.foreground != "" {
 		style = style.Foreground(lipgloss.Color(spec.foreground))
-	}
-	if spec.background != "" {
-		style = style.Background(lipgloss.Color(spec.background))
-	}
-	if spec.borderForeground != "" {
-		style = style.BorderForeground(lipgloss.Color(spec.borderForeground))
 	}
 	return style.
 		Bold(spec.bold).

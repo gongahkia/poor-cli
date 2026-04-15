@@ -41,7 +41,7 @@ func TestSlashAtEmptyInputOpensPalette(t *testing.T) {
 
 	tm.Send(IntroDoneMsg{})
 	tm.Type("/")
-	waitForText(t, tm, "command palette")
+	waitForText(t, tm, "type to filter")
 
 	final := finalModel(t, tm)
 	if final.Modals.Len() != 1 {
@@ -77,6 +77,18 @@ func TestPaletteInputRunsSlashCommandWithoutLeadingSlash(t *testing.T) {
 	if m.Modals.Len() == 0 {
 		t.Fatal("provider modal not opened")
 	}
+}
+
+func TestExitSlashQuitsApp(t *testing.T) {
+	m := NewModel(nil)
+	cmd := m.dispatchCommandInput("/exit")
+	if cmd == nil {
+		t.Fatal("missing quit cmd")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatalf("wrong msg")
+	}
+	m.Store.Close()
 }
 
 func TestEscapeClosesOpenModal(t *testing.T) {
@@ -183,9 +195,24 @@ func TestCostSlashOpensModalAndRendersDashboard(t *testing.T) {
 	m = next.(Model)
 	top, _ := m.Modals.Top()
 	view := top.Payload.(flows.CostPayload).View(80, 20)
-	if !strings.Contains(view, "Current turn:") || !strings.Contains(view, "anthropic") {
+	if !strings.Contains(view, "turn") || !strings.Contains(view, "anthropic") {
 		t.Fatalf("view=%q", view)
 	}
+}
+
+func TestStatusBarHasNoThinkingSpinner(t *testing.T) {
+	m := NewModel(&state.AppState{
+		InFlight: &state.InFlightRequest{RequestID: "r1", StartedAt: time.Unix(1, 0)},
+		Progress: &state.ProgressState{
+			RequestID: "r1",
+			Message:   "thinking",
+		},
+	})
+	view := m.renderStatusBar()
+	if strings.Contains(view, "thinking") || strings.ContainsAny(view, "|/\\*+xo") {
+		t.Fatalf("status=%q", view)
+	}
+	m.Store.Close()
 }
 
 type appRPC struct {

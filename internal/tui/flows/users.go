@@ -234,7 +234,7 @@ func (p *RolePicker) View(width, height int) string {
 	for i, role := range p.Roles {
 		marker := " "
 		if i == p.Selected {
-			marker = ">"
+			marker = "›"
 		}
 		lines = append(lines, marker+" "+role)
 	}

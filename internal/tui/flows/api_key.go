@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gongahkia/gocli-poor/internal/protocol"
+	"github.com/gongahkia/gocli-poor/internal/tui/emptystate"
 )
 
 type APIKeyPrompt struct {
@@ -66,18 +67,20 @@ func (p *APIKeyPrompt) View(width, height int) string {
 	var lines []string
 	if p.Message != "" {
 		lines = append(lines, fit(p.Message, width-2), "")
+	} else {
+		lines = append(lines, fit(emptystate.EmptyStateFor(emptystate.APIKeyNeeded, p.Provider).Render(nil), width-2), "")
 	}
-	lines = append(lines, "Enter API key:")
+	lines = append(lines, "api key")
 	mask := strings.Repeat("*", len([]rune(p.Input)))
 	if mask == "" {
 		mask = "_"
 	}
 	lines = append(lines, fit(mask, width-2), "")
-	box := "[ ]"
+	box := "◌"
 	if p.Persist {
-		box = "[x]"
+		box = "✓"
 	}
-	lines = append(lines, box+" save to keyring", "", "[Enter] save  [Esc] cancel")
+	lines = append(lines, box+" keyring", "", "[enter] save  [esc] cancel")
 	if p.Error != "" {
 		lines = append(lines, "", fit("error: "+p.Error, width-2))
 	}

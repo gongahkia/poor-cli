@@ -4,12 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/gongahkia/gocli-poor/internal/protocol"
+	"github.com/gongahkia/gocli-poor/internal/tui/widgets"
 )
 
 const DefaultPermissionTimeout = 30 * time.Second
@@ -132,35 +131,30 @@ func (m PermissionModal) View() string {
 		if now.IsZero() {
 			now = time.Now()
 		}
-		body = m.Flow.render(width-2, height-2, now)
+		body = m.Flow.render(width, height, now)
 	}
-	return lipgloss.NewStyle().
-		Width(width).
-		Height(height).
-		Border(lipgloss.NormalBorder()).
-		Render(body)
+	return body
 }
 
 func (f *PermissionFlow) render(width, height int, now time.Time) string {
 	lines := []string{
-		fit("Permission requested", width),
-		fit("Tool: "+nonEmpty(f.req.ToolName, "unknown"), width),
-		fit("Rationale: "+permissionRationale(f.req), width),
+		fit(widgets.FlushHeader(nil, fmt.Sprintf("permission · %ds", int(f.Remaining(now).Seconds()))), width),
+		fit("tool · "+nonEmpty(f.req.ToolName, "unknown"), width),
+		fit("why · "+permissionRationale(f.req), width),
 		fit("", width),
 	}
 	command := permissionCommand(f.req)
 	if command != "" {
-		lines = append(lines, fit("Command:", width))
+		lines = append(lines, fit("cmd", width))
 		for _, line := range strings.Split(command, "\n") {
 			lines = append(lines, fit("  "+line, width))
 		}
 	} else if len(f.req.Paths) > 0 {
-		lines = append(lines, fit("Paths: "+strings.Join(f.req.Paths, ", "), width))
+		lines = append(lines, fit("paths · "+strings.Join(f.req.Paths, ", "), width))
 	}
 	lines = append(lines, fit("", width))
-	lines = append(lines, fit(countdownBar(f.Remaining(now), f.timeout, width), width))
-	lines = append(lines, fit("[A] allow once  [S] allow session", width))
-	lines = append(lines, fit("[P] allow permanently  [D] deny  [Esc] deny", width))
+	lines = append(lines, fit("[a] once  [s] session", width))
+	lines = append(lines, fit("[p] always  [d] deny  [esc] deny", width))
 	for len(lines) < height {
 		lines = append(lines, fit("", width))
 	}
@@ -192,28 +186,4 @@ func permissionCommand(req protocol.PermissionReq) string {
 		return ""
 	}
 	return fmt.Sprint(req.ToolArgs)
-}
-
-func countdownBar(remaining, timeout time.Duration, width int) string {
-	if timeout <= 0 {
-		timeout = DefaultPermissionTimeout
-	}
-	seconds := int(math.Ceil(remaining.Seconds()))
-	if seconds < 0 {
-		seconds = 0
-	}
-	label := fmt.Sprintf("timeout: %ds ", seconds)
-	barWidth := max(1, width-lipgloss.Width(label)-2)
-	pct := float64(remaining) / float64(timeout)
-	if pct < 0 {
-		pct = 0
-	}
-	if pct > 1 {
-		pct = 1
-	}
-	filled := int(math.Round(float64(barWidth) * pct))
-	if filled > barWidth {
-		filled = barWidth
-	}
-	return label + "[" + strings.Repeat("#", filled) + strings.Repeat("-", barWidth-filled) + "]"
 }

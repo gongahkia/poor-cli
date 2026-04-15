@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gongahkia/gocli-poor/internal/protocol"
+	"github.com/gongahkia/gocli-poor/internal/tui/emptystate"
 )
 
 type CostModalLoadedMsg struct {
@@ -42,32 +43,28 @@ func fetchCostPayload(rpc RPCClient) (CostPayload, error) {
 
 func (p CostPayload) View(width, height int) string {
 	if p.Loading {
-		return "loading cost..."
+		return emptystate.EmptyStateFor(emptystate.CostLoading).Render(nil)
 	}
 	if p.Error != "" {
 		return fit("error: "+p.Error, max(1, width))
 	}
 	lines := []string{
-		fmt.Sprintf("%-18s %s", "Current turn:", formatModalUSD(currentTurnUSD(p.Snapshot))),
-		fmt.Sprintf("%-18s %s", "Session total:", formatModalUSD(sessionUSD(p.Snapshot))),
-		"",
-		"Tokens:",
-		fmt.Sprintf("  %-14s %s", "Input:", commaInt(inputTokens(p.Snapshot))),
-		fmt.Sprintf("  %-14s %s", "Output:", commaInt(outputTokens(p.Snapshot))),
-		fmt.Sprintf("  %-14s %s", "Cache read:", commaInt(cacheReadTokens(p.Snapshot))),
-		fmt.Sprintf("  %-14s %s", "Cache write:", commaInt(cacheWriteTokens(p.Snapshot))),
-		"",
-		"By provider:",
+		fmt.Sprintf("%-12s %s", "turn", formatModalUSD(currentTurnUSD(p.Snapshot))),
+		fmt.Sprintf("%-12s %s", "session", formatModalUSD(sessionUSD(p.Snapshot))),
+		fmt.Sprintf("%-12s %s", "input", commaInt(inputTokens(p.Snapshot))),
+		fmt.Sprintf("%-12s %s", "output", commaInt(outputTokens(p.Snapshot))),
+		fmt.Sprintf("%-12s %s", "cache read", commaInt(cacheReadTokens(p.Snapshot))),
+		fmt.Sprintf("%-12s %s", "cache write", commaInt(cacheWriteTokens(p.Snapshot))),
 	}
 	providers := providerCosts(p.Snapshot)
 	if len(providers) == 0 {
-		lines = append(lines, "  none           $0.0000")
+		lines = append(lines, fmt.Sprintf("%-12s %s", "provider", "$0.0000"))
 	} else {
 		for _, p := range providers {
-			lines = append(lines, fmt.Sprintf("  %-14s %s", p.name, formatModalUSD(p.usd)))
+			lines = append(lines, fmt.Sprintf("%-12s %s", p.name, formatModalUSD(p.usd)))
 		}
 	}
-	lines = append(lines, "", savingsLine(p.Savings, sessionUSD(p.Snapshot)))
+	lines = append(lines, savingsLine(p.Savings, sessionUSD(p.Snapshot)))
 	if height > 0 && len(lines) > height {
 		footer := lines[len(lines)-1]
 		lines = lines[:height]
@@ -171,7 +168,7 @@ func savingsLine(snapshot protocol.SavingsSnapshot, sessionUSD float64) string {
 	if sessionUSD+usd > 0 {
 		pct = usd / (sessionUSD + usd) * 100
 	}
-	return fmt.Sprintf("Savings (economy mode): %s (%.0f%%)", formatModalUSD(usd), pct)
+	return fmt.Sprintf("%-12s %s (%.0f%%)", "savings", formatModalUSD(usd), pct)
 }
 
 func savingsUSD(snapshot protocol.SavingsSnapshot) float64 {

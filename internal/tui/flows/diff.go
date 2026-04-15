@@ -12,6 +12,8 @@ import (
 	"github.com/gongahkia/gocli-poor/internal/protocol"
 	"github.com/gongahkia/gocli-poor/internal/state"
 	"github.com/gongahkia/gocli-poor/internal/theme"
+	"github.com/gongahkia/gocli-poor/internal/tui/emptystate"
+	"github.com/gongahkia/gocli-poor/internal/tui/widgets"
 )
 
 var ErrNoPendingEdits = errors.New("diff: no pending edits")
@@ -248,15 +250,18 @@ func (f *DiffReviewFlow) Opened() bool {
 func (m DiffReviewModal) View() string {
 	width := max(20, m.Width)
 	height := max(8, m.Height)
-	body := "no pending edits"
+	body := emptystate.EmptyStateFor(emptystate.PendingEditsNone).Render(m.theme())
 	if m.Flow != nil && len(m.Flow.edits) > 0 {
-		body = m.Flow.render(width-2, height-2)
+		body = m.Flow.render(width, height)
 	}
-	return lipgloss.NewStyle().
-		Width(width).
-		Height(height).
-		Border(lipgloss.NormalBorder()).
-		Render(body)
+	return body
+}
+
+func (m DiffReviewModal) theme() *theme.Theme {
+	if m.Flow == nil {
+		return nil
+	}
+	return m.Flow.theme
 }
 
 func (f *DiffReviewFlow) render(width, height int) string {
@@ -264,26 +269,26 @@ func (f *DiffReviewFlow) render(width, height int) string {
 	height = max(1, height)
 	listHeight := clamp(len(f.edits)+1, 2, min(6, max(2, height/3)))
 	lines := make([]string, 0, height)
-	lines = append(lines, fit(fmt.Sprintf("Pending edits (%d)", len(f.edits)), width))
+	lines = append(lines, fit(widgets.FlushHeader(f.theme, fmt.Sprintf("pending edits · %d", len(f.edits))), width))
+	items := make([]string, 0, listHeight-1)
 	for i := 0; i < listHeight-1; i++ {
 		if i >= len(f.edits) {
-			lines = append(lines, fit("", width))
+			items = append(items, "")
 			continue
 		}
 		edit := f.edits[i]
-		marker := " "
-		if i == f.selectedEdit {
-			marker = ">"
-		}
 		added, removed := editStats(edit)
-		lines = append(lines, fit(fmt.Sprintf("%s %s  +%d -%d", marker, edit.Path, added, removed), width))
+		items = append(items, fit(fmt.Sprintf("%s  +%d -%d", edit.Path, added, removed), max(1, width-2)))
+	}
+	if len(items) > 0 {
+		lines = append(lines, strings.Split(widgets.FlushList(f.theme, items, f.selectedEdit), "\n")...)
 	}
 	edit, hunk, ok := f.current()
 	if !ok {
 		return strings.Join(lines, "\n")
 	}
 	lines = append(lines, fit("", width))
-	lines = append(lines, fit(fmt.Sprintf("Diff: %s  hunk %d/%d", edit.Path, f.selectedHunk+1, len(edit.Hunks)), width))
+	lines = append(lines, fit(fmt.Sprintf("diff · %s · %d/%d", edit.Path, f.selectedHunk+1, len(edit.Hunks)), width))
 	if row, ok := f.renderVoteRow(hunk, width); ok {
 		lines = append(lines, row)
 	}

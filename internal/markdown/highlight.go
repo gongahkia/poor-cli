@@ -128,12 +128,7 @@ func (h *Highlighter) tokenStyle(tt chroma.TokenType) lipgloss.Style {
 	style = h.theme.Base
 	if h.style != nil {
 		entry := h.style.Get(tt)
-		if entry.Colour.IsSet() {
-			style = style.Foreground(lipgloss.Color(entry.Colour.String()))
-		}
-		if entry.Background.IsSet() {
-			style = style.Background(lipgloss.Color(entry.Background.String()))
-		}
+		style = h.tokenBaseStyle(tt)
 		style = style.
 			Bold(entry.Bold == chroma.Yes).
 			Italic(entry.Italic == chroma.Yes).
@@ -143,4 +138,22 @@ func (h *Highlighter) tokenStyle(tt chroma.TokenType) lipgloss.Style {
 	h.styles[tt] = style
 	h.mu.Unlock()
 	return style
+}
+
+func (h *Highlighter) tokenBaseStyle(tt chroma.TokenType) lipgloss.Style {
+	name := tt.String()
+	switch {
+	case strings.HasPrefix(name, "Keyword"), strings.HasPrefix(name, "NameFunction"), strings.HasPrefix(name, "NameClass"):
+		return h.theme.Focus
+	case strings.Contains(name, "String"):
+		return h.theme.Success
+	case strings.Contains(name, "Number"):
+		return h.theme.Warning
+	case strings.HasPrefix(name, "Comment"):
+		return h.theme.Muted
+	case strings.HasPrefix(name, "Error"):
+		return h.theme.Error
+	default:
+		return h.theme.Base
+	}
 }

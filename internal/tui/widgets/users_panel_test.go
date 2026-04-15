@@ -23,7 +23,7 @@ func TestUsersPanelGoldenRender(t *testing.T) {
 	got := panel.View(UsersPanelWidth, 9)
 	want := strings.Join([]string{
 		"users · 4                   ",
-		">alice                 owner",
+		"›alice                 owner",
 		"  ● typing                  ",
 		" bob                prompter",
 		"  #3 queue                  ",

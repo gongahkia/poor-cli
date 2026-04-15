@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gongahkia/gocli-poor/internal/protocol"
+	"github.com/gongahkia/gocli-poor/internal/tui/emptystate"
 )
 
 type RPCClient interface {
@@ -106,7 +107,7 @@ func (p *ProviderPicker) View(width, height int) string {
 	width = max(20, width)
 	bodyHeight := max(1, height-2)
 	if p.Loading {
-		return "loading providers..."
+		return emptystate.EmptyStateFor(emptystate.ProvidersLoading).Render(nil)
 	}
 	lines := make([]string, 0, bodyHeight)
 	if p.Error != "" {
@@ -118,14 +119,14 @@ func (p *ProviderPicker) View(width, height int) string {
 		}
 		marker := " "
 		if i == p.Selected {
-			marker = ">"
+			marker = "›"
 		}
 		status := providerStatus(choice.Detail)
 		line := fmt.Sprintf("%s %-16s %-18s [%s]", marker, choice.Provider, choice.Model, status)
 		lines = append(lines, fit(line, width-2))
 	}
 	if len(lines) == 0 {
-		lines = append(lines, "no providers")
+		lines = append(lines, emptystate.EmptyStateFor(emptystate.ProvidersNone).Render(nil))
 	}
 	return strings.Join(lines, "\n")
 }
