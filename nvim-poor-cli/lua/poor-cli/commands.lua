@@ -1670,6 +1670,7 @@ create_command("PoorCLIPlanBoard", function()
 end, { desc = "Open plan board" })
 
 -- batch B: newly exposed backend capabilities
+local rpc = require("poor-cli.rpc")
 create_command("PoorCLIProviders", function()
     local result, err = rpc.list_providers(10000)
     if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
