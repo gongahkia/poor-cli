@@ -53,6 +53,10 @@ poor-cli.log
 # but actual snapshot files should not be committed
 
 # Test / Coverage
+bin/
+*.out
+*.test
+*.exe
 htmlcov/
 .coverage
 coverage.xml

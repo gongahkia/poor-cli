@@ -40,6 +40,24 @@ func TestPaletteSelectionEnterEmitsSelectCommandMsg(t *testing.T) {
 	}
 }
 
+func TestPaletteSpaceSeparatesCommandArgs(t *testing.T) {
+	p := testPalette()
+	p.Update(keyRunes("session"))
+	p.Update(keyMsg(tea.KeySpace, " "))
+	p.Update(keyRunes("s1"))
+	cmd := p.Update(keyMsg(tea.KeyEnter, "enter"))
+	if cmd == nil {
+		t.Fatalf("enter returned nil cmd")
+	}
+	msg, ok := cmd().(SelectCommandMsg)
+	if !ok {
+		t.Fatalf("wrong msg: %#v", cmd())
+	}
+	if msg.CommandID != "/session" || msg.Args != "s1" {
+		t.Fatalf("wrong selection: %#v", msg)
+	}
+}
+
 func TestPaletteEscapeClosesWithResidualSlash(t *testing.T) {
 	p := testPalette()
 	cmd := p.Update(keyMsg(tea.KeyEsc, "esc"))

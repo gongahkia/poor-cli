@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 )
 
 const defaultIntroVersion = "v0.0.0"
+const usersDivider = "│"
 
 type Model struct {
 	State            *state.AppState
@@ -40,6 +42,7 @@ type Model struct {
 	stateUpdates     <-chan state.AppState
 	unsubscribeState func()
 	uiRevision       uint64
+	thinkingTicking  bool
 	viewCache        *modelViewCache
 }
 
@@ -165,7 +168,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.relayout()
 		}
 		m.relayout()
-		return m, batch(waitStateUpdate(m.stateUpdates))
+		m.markDirty()
+		cmds := []tea.Cmd{waitStateUpdate(m.stateUpdates)}
+		if msg.State.InFlight != nil && !m.thinkingTicking {
+			m.thinkingTicking = true
+			cmds = append(cmds, thinkingTickCmd())
+		}
+		return m, batch(cmds...)
+	case thinkingTickMsg:
+		if m.State == nil || m.State.InFlight == nil {
+			m.thinkingTicking = false
+			return m, batch()
+		}
+		m.markDirty()
+		return m, batch(thinkingTickCmd())
 	case IntroDoneMsg:
 		m.closeIntro()
 		return m, batch()
@@ -200,7 +216,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, batch()
 	case flows.ProviderSelectedMsg:
 		previous := m.currentProviderInfo()
-		m.dispatchState(state.ActionSetProvider{Info: protocol.ProviderInfo{Name: msg.Choice.Provider, Model: msg.Choice.Model}})
+		m.dispatchState(state.ActionSetProvider{Info: protocol.ProviderInfo{Name: msg.Choice.Provider, Model: msg.Choice.Model, Capabilities: providerDetailCaps(msg.Choice.Detail)}})
 		return m, batch(flows.SwitchProviderCmd(m.rpc, msg.Choice, previous))
 	case flows.ProviderSwitchedMsg:
 		if msg.Err != nil {
@@ -262,6 +278,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case flows.UserRoleSelectedMsg:
 		m.closeModal()
 		return m, batch(m.userRoleCmd(msg.Member, msg.Role))
+	case clipboardImageMsg:
+		if msg.Err != nil {
+			m.Toast = ToastMsg{Kind: ToastError, Text: msg.Err.Error(), TTL: 3 * time.Second}
+			m.markDirty()
+			return m, batch()
+		}
+		m.attachImagePath(msg.Path)
+		return m, batch()
 	case ToastMsg:
 		m.Toast = msg
 		return m, batch()
@@ -329,8 +353,9 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.markDirty()
 				return m, cmd
 			}
-			if msg.Type == tea.KeyRunes {
-				m.Modals.UpdateTopInput(string(msg.Runes))
+			if text, ok := keyInputText(msg); ok {
+				m.Modals.UpdateTopInput(text)
+				m.markDirty()
 			}
 			return m, nil
 		}
@@ -353,7 +378,25 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+u":
 		return m, m.toggleUsers()
 	case "ctrl+j":
+		if m.Focus.Target == FocusInput || m.Focus.Target == FocusIntro {
+			return m, m.insertPromptText("\n")
+		}
 		m.setFocus(FocusChat)
+		return m, nil
+	case "ctrl+enter", "cmd+enter", "super+enter", "alt+enter":
+		if m.Focus.Target == FocusInput || m.Focus.Target == FocusIntro {
+			return m, m.insertPromptText("\n")
+		}
+		return m, nil
+	case "ctrl+v", "cmd+v", "super+v":
+		if m.Focus.Target == FocusInput || m.Focus.Target == FocusIntro {
+			if !m.providerSupportsVision() {
+				m.Toast = ToastMsg{Kind: ToastWarning, Text: "current model does not support images", TTL: 3 * time.Second}
+				m.markDirty()
+				return m, nil
+			}
+			return m, pasteClipboardImageCmd()
+		}
 		return m, nil
 	case "ctrl+i", "esc":
 		m.setFocus(FocusInput)
@@ -386,21 +429,36 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		return m, m.submitInput()
 	}
-	if msg.Type != tea.KeyRunes {
+	text, ok := keyInputText(msg)
+	if !ok {
 		return m, nil
 	}
-	text := string(msg.Runes)
 	if text == "/" && strings.TrimSpace(m.Input) == "" && m.Focus.Target != FocusChat {
 		m.openModal(ModalPalette, newCommandPalette())
 		return m, nil
 	}
 	if m.Focus.Target == FocusInput || m.Focus.Target == FocusIntro {
-		m.Input += text
-		m.closeIntro()
-		m.relayout()
-		return m, emitApp(flows.LocalInputChangedMsg{})
+		return m, m.insertPromptText(text)
 	}
 	return m, nil
+}
+
+func (m *Model) insertPromptText(text string) tea.Cmd {
+	m.Input += text
+	m.closeIntro()
+	m.relayout()
+	m.markDirty()
+	return emitApp(flows.LocalInputChangedMsg{})
+}
+
+func keyInputText(msg tea.KeyMsg) (string, bool) {
+	if msg.Type == tea.KeyRunes {
+		return string(msg.Runes), true
+	}
+	if msg.Type == tea.KeySpace || msg.String() == " " {
+		return " ", true
+	}
+	return "", false
 }
 
 func (m *Model) resize(width, height int) {
@@ -448,6 +506,7 @@ func (m *Model) openModal(kind ModalKind, payload any) {
 	}
 	m.Modals.Push(Modal{Kind: kind, Payload: payload})
 	m.setFocus(FocusModal)
+	m.markDirty()
 }
 
 func newCommandPalette() *widgets.Palette {
@@ -471,6 +530,21 @@ func (m Model) openModalCmd(kind ModalKind, payload any) tea.Cmd {
 		}
 	}
 	return nil
+}
+
+func (m *Model) attachImagePath(path string) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return
+	}
+	if strings.TrimSpace(m.Input) != "" && !strings.HasSuffix(m.Input, "\n") {
+		m.Input += "\n"
+	}
+	m.Input += path
+	m.Toast = ToastMsg{Kind: ToastInfo, Text: "image attached", TTL: 3 * time.Second}
+	m.closeIntro()
+	m.relayout()
+	m.markDirty()
 }
 
 func (m *Model) closeModal() {
@@ -621,9 +695,14 @@ func watchText(payload flows.WatchPayload) string {
 	if len(payload.Status) == 0 {
 		return "watch status unavailable"
 	}
-	lines := make([]string, 0, len(payload.Status))
-	for key, value := range payload.Status {
-		lines = append(lines, fmt.Sprintf("%s: %v", key, value))
+	keys := make([]string, 0, len(payload.Status))
+	for key := range payload.Status {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	lines := make([]string, 0, len(keys))
+	for _, key := range keys {
+		lines = append(lines, fmt.Sprintf("%s: %v", key, payload.Status[key]))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -695,7 +774,7 @@ func (m *Model) dispatchState(action state.Action) {
 }
 
 func (m Model) currentProviderInfo() protocol.ProviderInfo {
-	return protocol.ProviderInfo{Name: m.providerName(), Model: m.providerModel(), Capabilities: m.providerCaps()}
+	return protocol.ProviderInfo{Name: m.providerName(), Model: m.providerModel(), Capabilities: m.providerCaps(), Vision: m.providerSupportsVision()}
 }
 
 func (m Model) providerName() string {
@@ -721,6 +800,44 @@ func (m Model) providerCaps() map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+func (m Model) providerSupportsVision() bool {
+	if m.State == nil {
+		return false
+	}
+	for _, key := range []string{"vision", "supports_vision", "supportsVision"} {
+		if boolish(m.State.Provider.Caps[key]) {
+			return true
+		}
+	}
+	return false
+}
+
+func boolish(value any) bool {
+	switch v := value.(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(v, "true") || strings.EqualFold(v, "vision")
+	default:
+		return false
+	}
+}
+
+func providerDetailCaps(detail protocol.ProviderDetail) map[string]any {
+	if len(detail.Capabilities) == 0 {
+		return nil
+	}
+	caps := make(map[string]any, len(detail.Capabilities)+1)
+	for _, cap := range detail.Capabilities {
+		key := strings.TrimSpace(cap)
+		if key == "" {
+			continue
+		}
+		caps[strings.ToLower(key)] = true
+	}
+	return caps
 }
 
 func (m Model) sessionID() string {
@@ -798,20 +915,19 @@ func (m *Model) toggleUsers() tea.Cmd {
 			m.setFocus(FocusInput)
 		}
 		m.relayout()
+		m.markDirty()
 		return nil
 	}
 	if m.Width < 100 {
 		m.Toast = ToastMsg{Kind: ToastWarning, Text: "users hidden: terminal too narrow", TTL: 3 * time.Second}
-		return nil
-	}
-	if m.State == nil || !m.State.Multiplayer.Enabled {
-		m.Toast = ToastMsg{Kind: ToastWarning, Text: "multiplayer disabled", TTL: 3 * time.Second}
+		m.markDirty()
 		return nil
 	}
 	m.UsersOpen = true
 	m.setFocus(FocusUsers)
 	m.relayout()
-	if m.usersFlow != nil {
+	m.markDirty()
+	if m.usersFlow != nil && m.State != nil && m.State.Multiplayer.Enabled {
 		return m.usersFlow.RefreshCmd()
 	}
 	return nil
@@ -982,7 +1098,7 @@ func (m Model) renderTranscript(text string) string {
 		if i < len(userLines) {
 			right = userLines[i]
 		}
-		out[i] = fitLine(left, m.Regions.Chat.Width) + " " + fitLine(right, m.Regions.Users.Width)
+		out[i] = fitLine(left, m.Regions.Chat.Width) + usersDivider + fitLine(right, m.Regions.Users.Width)
 	}
 	return strings.Join(out, "\n")
 }
@@ -1015,9 +1131,14 @@ func (m Model) renderStatusBar() string {
 		if msg == "" {
 			msg = "thinking"
 		}
-		text = "· " + msg + "…"
+		text = m.thinkingFrame() + " " + msg + "…"
 	}
 	return renderBlock(m.Regions.StatusBar, text)
+}
+
+func (m Model) thinkingFrame() string {
+	frames := [...]string{"·", "··", "···", "··"}
+	return frames[int(m.uiRevision)%len(frames)]
 }
 
 func (m Model) progressMessage() string {
@@ -1029,6 +1150,12 @@ func (m Model) progressMessage() string {
 
 type stateUpdatedMsg struct {
 	State state.AppState
+}
+
+type thinkingTickMsg time.Time
+
+func thinkingTickCmd() tea.Cmd {
+	return tea.Tick(250*time.Millisecond, func(t time.Time) tea.Msg { return thinkingTickMsg(t) })
 }
 
 func waitStateUpdate(ch <-chan state.AppState) tea.Cmd {

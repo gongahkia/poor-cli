@@ -155,10 +155,9 @@ These are internal — the flow dispatches state actions directly and emits `tea
 | /help | open help modal | No |
 | /cost | open cost modal | `poor-cli/costSummary` |
 | /provider | open provider picker modal | `poor-cli/listProviders` |
-| /model [name] | switch model (implicit provider) | `poor-cli/switchProvider` |
 | /session | open session picker | `poor-cli/listSessions` |
 | /diff | open diff review modal | `poor-cli/listPendingEdits` |
-| /watch | toggle watch panel (v1: toast) | `poor-cli/contextStatus` |
+| /watch | toggle watch panel | `watch.status` |
 
 ### API
 
@@ -197,7 +196,6 @@ Called once at startup; re-called when server sends a `poor-cli/commandsChanged`
 ### Tests
 
 1. `/clear` empties messages.
-2. `/model claude-4-6-haiku` issues switchProvider call with correct args.
 3. Server error on switch → toast message.
 4. Unknown command → toast "unknown command: /foo".
 

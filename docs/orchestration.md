@@ -675,7 +675,7 @@ FIRST: Read docs/phase_go_03_widgets.md, specifically the "Agent 3D" section
 for the command registry interface.
 
 CONTEXT:
-- Built-in commands: /compact, /clear, /provider, /model, /session, /cost, /diff, /watch, /quit, /help.
+- Built-in commands: /compact, /clear, /provider, /session, /cost, /diff, /watch, /quit, /help.
 - Server-side custom commands: loaded via poor-cli/listCustomCommands and poor-cli/getCommandManifest.
 - Fuzzy matching: use github.com/sahilm/fuzzy.
 
@@ -964,7 +964,7 @@ the command manifest.
 
 CONTEXT:
 - Client-side commands: /clear (state reset), /quit, /help (modal).
-- Server-backed commands: /compact (poor-cli/clearHistory + summary), /provider (switchProvider), /model (switchProvider with model arg), /session (switchSession), /cost (poor-cli/getSessionCost), /diff (open diff review), /watch (toggle watch panel).
+- Server-backed commands: /compact (poor-cli/clearHistory + summary), /provider (switchProvider), /session (switchSession), /cost (poor-cli/getSessionCost), /diff (open diff review), /watch (toggle watch panel).
 - Custom commands: fetched via poor-cli/listCustomCommands.
 
 YOUR DELIVERABLES:

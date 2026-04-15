@@ -25,7 +25,7 @@ func renderMessage(msg state.Message, t *theme.Theme, md markdown.LineRenderer, 
 	}
 	if len(lines) == 0 {
 		if msg.Role == state.RoleAssistant && msg.Streaming {
-			lines = []string{emptystate.EmptyStateFor(emptystate.WaitingResponse).Render(t)}
+			lines = []string{renderWaitingResponse(msg, t, mp)}
 		} else {
 			lines = []string{rolePrefix(messageLabel(msg, mp), t)}
 		}
@@ -34,6 +34,14 @@ func renderMessage(msg state.Message, t *theme.Theme, md markdown.LineRenderer, 
 		lines = append(lines, strings.Repeat(" ", runewidth.StringWidth(messageLabel(msg, mp))+1)+emptystate.EmptyStateFor(emptystate.Cancelled).Render(t))
 	}
 	return renderedMsg{id: msg.ID, raw: msg, blocks: lines, totalHeight: len(lines)}
+}
+
+func renderWaitingResponse(msg state.Message, t *theme.Theme, mp state.MultiplayerState) string {
+	progress := strings.TrimSpace(msg.Progress)
+	if progress == "" {
+		progress = "thinking"
+	}
+	return rolePrefix(messageLabel(msg, mp), t) + " · " + progress + "…"
 }
 
 func renderContent(msg state.Message, t *theme.Theme, md markdown.LineRenderer, width int, mp state.MultiplayerState) []string {

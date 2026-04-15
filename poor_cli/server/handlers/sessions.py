@@ -31,7 +31,7 @@ class SessionsHandlersMixin:
             auto_migrate = self.core.config.history.auto_migrate_legacy_history
         return get_repo_config(enable_legacy_history_migration=auto_migrate)
 
-    def _clamp_count(value: Any, default: int, min_value: int, max_value: int) -> int:
+    def _clamp_count(self, value: Any, default: int, min_value: int, max_value: int) -> int:
         try:
             parsed = int(value)
         except (TypeError, ValueError):

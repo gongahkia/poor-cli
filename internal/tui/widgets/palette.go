@@ -156,12 +156,22 @@ func (p *Palette) updateKey(msg tea.KeyMsg) tea.Cmd {
 	case "backspace":
 		p.backspace()
 	default:
-		if msg.Type == tea.KeyRunes {
-			p.input += string(msg.Runes)
+		if text, ok := paletteInputText(msg); ok {
+			p.input += text
 		}
 	}
 	p.refresh()
 	return nil
+}
+
+func paletteInputText(msg tea.KeyMsg) (string, bool) {
+	if msg.Type == tea.KeyRunes {
+		return string(msg.Runes), true
+	}
+	if msg.Type == tea.KeySpace || msg.String() == " " {
+		return " ", true
+	}
+	return "", false
 }
 
 func (p *Palette) backspace() {

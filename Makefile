@@ -1,9 +1,12 @@
-.PHONY: cli server install installer install-info dev test test-unit test-integration test-e2e coverage coverage-html test-lua lint lint-sizes bench-swe clean help hooks
+.PHONY: cli server install installer install-info dev build go-build run go-run test test-go test-unit test-integration test-e2e coverage coverage-html test-lua lint lint-sizes go-lint bench-swe vet go-vet release go-release clean help hooks
 
 PYTHON := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/python,python3)
 PIP := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/pip,pip)
 NVIM_TEST_RUNTIME := $(CURDIR)/nvim-poor-cli/.test-runtime
 PLENARY_DIR ?= $(NVIM_TEST_RUNTIME)/site/pack/test/start/plenary.nvim
+VERSION := $(shell cat VERSION 2>/dev/null || echo dev)
+COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
+GO_LDFLAGS := -X main.Version=$(VERSION) -X main.Commit=$(COMMIT)
 
 # ── venv guard ──────────────────────────────────────────────────────
 REQUIRE_VENV := cli server exec agent-start agent-list watch preview deploy review-pr installer install-info install dev test lint index bench-swe
@@ -58,6 +61,16 @@ install-info: ## inspect install details
 install: ## install the Python package in dev mode
 	$(PIP) install -e ".[dev]"
 
+build: go-build ## build gocli-poor
+
+go-build: ## build gocli-poor
+	go build -trimpath -ldflags "$(GO_LDFLAGS)" -o bin/gocli-poor ./cmd/gocli-poor
+
+run: go-run ## build and run gocli-poor
+
+go-run: go-build ## build and run gocli-poor
+	./bin/gocli-poor
+
 # ── dev ──────────────────────────────────────────────────────────────
 
 dev: ## install deps + launch CLI
@@ -65,6 +78,9 @@ dev: ## install deps + launch CLI
 
 test: ## run Python tests with coverage
 	$(PYTHON) -m pytest tests/ -x -q --cov=poor_cli --cov-report=term-missing
+
+test-go: ## run all Go tests
+	go test ./...
 
 test-unit: ## run Go internal unit tests
 	go test ./internal/...
@@ -94,6 +110,19 @@ lint: lint-sizes ## run linters
 lint-sizes: ## check Python file line budgets
 	$(PYTHON) scripts/check_line_budgets.py
 
+go-lint: ## run Go linters
+	golangci-lint run
+
+vet: go-vet ## run Go vet
+
+go-vet: ## run Go vet
+	go vet ./...
+
+release: go-release ## build Go release artifacts
+
+go-release: ## build Go release artifacts
+	goreleaser release --clean
+
 index: ## build/refresh the semantic search index
 	$(PYTHON) -c "from poor_cli.indexer import CodebaseIndexer; i=CodebaseIndexer(); s=i.index(); print(f'{s.total_files} files, {s.total_chunks} chunks')"
 
@@ -105,7 +134,7 @@ hooks: ## activate git hooks from .githooks/
 	git config core.hooksPath .githooks
 
 clean: ## remove build artifacts
-	rm -rf build/ dist/ *.egg-info .poor-cli/index/
+	rm -rf build/ dist/ bin/ *.egg-info .poor-cli/index/
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
 # ── help ─────────────────────────────────────────────────────────────

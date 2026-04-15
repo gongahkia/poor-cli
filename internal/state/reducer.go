@@ -93,7 +93,14 @@ func Reduce(st AppState, action Action) AppState {
 		return next
 	case ActionSetProvider:
 		next := cloneAppState(st)
-		next.Provider = ProviderState{Name: a.Info.Name, Model: a.Info.Model, Caps: cloneMap(a.Info.Capabilities)}
+		caps := cloneMap(a.Info.Capabilities)
+		if a.Info.Vision {
+			if caps == nil {
+				caps = map[string]any{}
+			}
+			caps["vision"] = true
+		}
+		next.Provider = ProviderState{Name: a.Info.Name, Model: a.Info.Model, Caps: caps}
 		return next
 	case ActionSetSession:
 		next := cloneAppState(st)

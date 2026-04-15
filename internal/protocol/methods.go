@@ -146,4 +146,5 @@ const (
 	MethodContextEngine  = "context.engine"
 	MethodContextExplain = "context.explain"
 	MethodContextStatus  = "poor-cli/contextStatus"
+	MethodWatchStatus    = "watch.status"
 )

@@ -125,7 +125,6 @@ func builtinCommands() []Command {
 		{ID: "/compact", Icon: "◌", Label: "/compact", Description: "Compact conversation history", Usage: "/compact [tier]"},
 		{ID: "/clear", Icon: "✗", Label: "/clear", Description: "Clear current conversation", Usage: "/clear"},
 		{ID: "/provider", Icon: "●", Label: "/provider", Description: "Switch provider", Usage: "/provider [name]", RequiresArg: true},
-		{ID: "/model", Icon: "●", Label: "/model", Description: "Switch model", Usage: "/model [name]", RequiresArg: true},
 		{ID: "/session", Icon: "◌", Label: "/session", Description: "Manage sessions", Usage: "/session [name]"},
 		{ID: "/cost", Icon: "·", Label: "/cost", Description: "Show cost dashboard", Usage: "/cost"},
 		{ID: "/diff", Icon: "✓", Label: "/diff", Description: "Review pending edits", Usage: "/diff"},

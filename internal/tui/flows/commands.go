@@ -76,7 +76,6 @@ var executors = map[string]commandExecutorFactory{
 	"/help":     func(c *CommandsFlow) CommandExecutor { return c.cmdHelp },
 	"/cost":     func(c *CommandsFlow) CommandExecutor { return c.cmdCost },
 	"/provider": func(c *CommandsFlow) CommandExecutor { return c.cmdProvider },
-	"/model":    func(c *CommandsFlow) CommandExecutor { return c.cmdModel },
 	"/session":  func(c *CommandsFlow) CommandExecutor { return c.cmdSession },
 	"/sessions": func(c *CommandsFlow) CommandExecutor { return c.cmdSession },
 	"/diff":     func(c *CommandsFlow) CommandExecutor { return c.cmdDiff },
@@ -287,13 +286,6 @@ func (c *CommandsFlow) cmdProvider(args string) tea.Cmd {
 	}
 }
 
-func (c *CommandsFlow) cmdModel(args string) tea.Cmd {
-	if strings.TrimSpace(args) == "" {
-		return c.cmdProvider("")
-	}
-	return c.switchProvider("", args)
-}
-
 func (c *CommandsFlow) cmdSession(args string) tea.Cmd {
 	if args != "" {
 		return func() tea.Msg {
@@ -332,7 +324,7 @@ func (c *CommandsFlow) cmdDiff(args string) tea.Cmd {
 func (c *CommandsFlow) cmdWatch(args string) tea.Cmd {
 	return func() tea.Msg {
 		var result map[string]any
-		if err := c.call(protocol.MethodContextStatus, nil, &result); err != nil {
+		if err := c.call(protocol.MethodWatchStatus, map[string]any{"limit": 20}, &result); err != nil {
 			return runCmd(c.toast(ToastError, fmt.Sprintf("watch failed: %v", err)))
 		}
 		if c.openWatchPanel != nil {

@@ -129,7 +129,7 @@ func TestChatWaitingResponseGlyph(t *testing.T) {
 	c := testChat()
 	c.SetMessages([]state.Message{{ID: "a1", Role: state.RoleAssistant, RequestID: "r1", Streaming: true}})
 	got := c.View(24, 2)
-	if !strings.Contains(got, "poor-cli › ·") {
+	if !strings.Contains(got, "poor-cli › · thinking…") {
 		t.Fatalf("waiting glyph missing:\n%s", got)
 	}
 }

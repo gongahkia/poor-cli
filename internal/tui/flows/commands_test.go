@@ -10,7 +10,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gongahkia/gocli-poor/internal/protocol"
 	"github.com/gongahkia/gocli-poor/internal/state"
-	"github.com/gongahkia/gocli-poor/internal/tui/widgets"
 	"github.com/gongahkia/gocli-poor/internal/tui/widgets/commands"
 )
 
@@ -30,31 +29,11 @@ func TestCommandClearEmptiesMessages(t *testing.T) {
 	}
 }
 
-func TestCommandModelSwitchProviderArgs(t *testing.T) {
-	rpc := &commandMockRPC{}
-	store := &mockState{}
-	flow := NewCommandsFlow(Deps{RPC: rpc, State: store})
-
-	msg := run(t, flow.DispatchSelect(widgets.SelectCommandMsg{CommandID: "/model", Args: "claude-4-6-haiku"}))
-
-	requireCall(t, rpc, protocol.MethodSwitchProvider, protocol.SwitchProviderParams{Provider: "", Model: "claude-4-6-haiku"})
-	if len(store.actions) != 1 {
-		t.Fatalf("provider action count=%d", len(store.actions))
-	}
-	if _, ok := store.actions[0].(state.ActionSetProvider); !ok {
-		t.Fatalf("wrong action: %#v", store.actions[0])
-	}
-	toast, ok := msg.(ToastMsg)
-	if !ok || toast.Kind != ToastSuccess {
-		t.Fatalf("wrong msg: %#v", msg)
-	}
-}
-
 func TestCommandSwitchErrorToasts(t *testing.T) {
 	rpc := &commandMockRPC{errs: map[string]error{protocol.MethodSwitchProvider: errors.New("boom")}}
 	flow := NewCommandsFlow(Deps{RPC: rpc})
 
-	msg := run(t, flow.Dispatch("/model", "claude-4-6-haiku"))
+	msg := run(t, flow.Dispatch("/provider", "anthropic"))
 
 	toast, ok := msg.(ToastMsg)
 	if !ok {
@@ -88,12 +67,11 @@ func TestServerBackedCommandsRoute(t *testing.T) {
 		{name: "compact", commandID: "/compact", method: protocol.MethodClearHistory},
 		{name: "provider picker", commandID: "/provider", method: protocol.MethodListProviders},
 		{name: "provider switch", commandID: "/provider", args: "anthropic", method: protocol.MethodSwitchProvider, wantParams: protocol.SwitchProviderParams{Provider: "anthropic"}},
-		{name: "model", commandID: "/model", args: "claude-4-6-haiku", method: protocol.MethodSwitchProvider, wantParams: protocol.SwitchProviderParams{Model: "claude-4-6-haiku"}},
 		{name: "session picker", commandID: "/session", method: protocol.MethodListSessions},
 		{name: "sessions alias", commandID: "/sessions", method: protocol.MethodListSessions},
 		{name: "session switch", commandID: "/session", args: "s1", method: protocol.MethodSwitchSession, wantParams: protocol.SwitchSessionParams{SessionID: "s1"}},
 		{name: "diff", commandID: "/diff", method: protocol.MethodListPendingEdits, wantParams: protocol.DiffListParams{}},
-		{name: "watch", commandID: "/watch", method: protocol.MethodContextStatus},
+		{name: "watch", commandID: "/watch", method: protocol.MethodWatchStatus, wantParams: map[string]any{"limit": 20}},
 	}
 
 	for _, tc := range cases {

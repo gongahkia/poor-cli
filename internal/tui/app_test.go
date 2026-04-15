@@ -246,7 +246,7 @@ func TestAllPaletteBuiltinsDispatch(t *testing.T) {
 		protocol.MethodListPendingEdits: func(_ any, result any) error {
 			return setAppResult(result, protocol.DiffListResult{})
 		},
-		protocol.MethodContextStatus: func(_ any, result any) error {
+		protocol.MethodWatchStatus: func(_ any, result any) error {
 			return setAppResult(result, map[string]any{"watch": "ok"})
 		},
 	}}
@@ -272,6 +272,108 @@ func TestAllPaletteBuiltinsDispatch(t *testing.T) {
 		}
 		m.Store.Close()
 	}
+}
+
+func TestSpaceKeyTypesIntoInput(t *testing.T) {
+	m := NewModel(nil)
+	next, _ := m.Update(IntroDoneMsg{})
+	m = next.(Model)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = next.(Model)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	m = next.(Model)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
+	m = next.(Model)
+	if m.Input != "a b" {
+		t.Fatalf("input=%q", m.Input)
+	}
+	m.Store.Close()
+}
+
+func TestCtrlEnterAddsPromptNewline(t *testing.T) {
+	m := NewModel(nil)
+	next, _ := m.Update(IntroDoneMsg{})
+	m = next.(Model)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("hello")})
+	m = next.(Model)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	m = next.(Model)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("world")})
+	m = next.(Model)
+	if m.Input != "hello\nworld" {
+		t.Fatalf("input=%q", m.Input)
+	}
+	m.Store.Close()
+}
+
+func TestClipboardImagePasteRequiresVision(t *testing.T) {
+	m := NewModel(&state.AppState{Provider: state.ProviderState{Caps: map[string]any{"vision": false}}})
+	next, cmd := m.Update(IntroDoneMsg{})
+	m = next.(Model)
+	next, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlV})
+	m = next.(Model)
+	if cmd != nil || m.Toast.Kind != ToastWarning || !strings.Contains(m.Toast.Text, "does not support images") {
+		t.Fatalf("cmd=%v toast=%#v", cmd, m.Toast)
+	}
+	m.Store.Close()
+
+	m = NewModel(&state.AppState{Provider: state.ProviderState{Caps: map[string]any{"vision": true}}})
+	next, _ = m.Update(IntroDoneMsg{})
+	m = next.(Model)
+	next, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlV})
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatal("vision paste cmd missing")
+	}
+	next, _ = m.Update(clipboardImageMsg{Path: "/tmp/shot.png"})
+	m = next.(Model)
+	if m.Input != "/tmp/shot.png" || m.Toast.Kind != ToastInfo {
+		t.Fatalf("input=%q toast=%#v", m.Input, m.Toast)
+	}
+	m.Store.Close()
+}
+
+func TestSlashSessionUsersWatchWork(t *testing.T) {
+	rpc := &appRPC{handlers: map[string]func(any, any) error{
+		protocol.MethodListSessions: func(_ any, result any) error {
+			return setAppResult(result, protocol.ListSessionsResult{Sessions: []protocol.SessionSummary{{SessionID: "s1", Model: "claude"}}})
+		},
+		protocol.MethodWatchStatus: func(_ any, result any) error {
+			return setAppResult(result, map[string]any{"watches": []any{}, "qa_enabled": false})
+		},
+	}}
+	m := NewModel(&state.AppState{}, WithRPCClient(rpc))
+	m.resize(120, 40)
+
+	cmd := m.dispatchCommandInput("/session")
+	if cmd == nil {
+		t.Fatal("session cmd nil")
+	}
+	next, _ := m.Update(cmd())
+	m = next.(Model)
+	top, ok := m.Modals.Top()
+	if !ok || top.Kind != ModalSessionPicker {
+		t.Fatalf("session modal=%#v", top)
+	}
+	m.closeModal()
+
+	cmd = m.dispatchCommandInput("/watch")
+	if cmd == nil {
+		t.Fatal("watch cmd nil")
+	}
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	top, ok = m.Modals.Top()
+	if !ok || top.Kind != ModalWatchPanel {
+		t.Fatalf("watch modal=%#v", top)
+	}
+	m.closeModal()
+
+	cmd = m.dispatchCommandInput("/users")
+	if !m.UsersOpen || m.Focus.Target != FocusUsers {
+		t.Fatalf("users open=%v focus=%v", m.UsersOpen, m.Focus.Target)
+	}
+	m.Store.Close()
 }
 
 type appRPC struct {

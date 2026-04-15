@@ -206,7 +206,7 @@ func TestAppUsersRailOccupiesRight28AndClosedIsZeroFootprint(t *testing.T) {
 		t.Fatalf("regions=%#v open=%v", m.Regions, m.UsersOpen)
 	}
 	line := strings.Split(m.View(), "\n")[1]
-	if lipgloss.Width(line) != 120 || !strings.HasSuffix(line, "users · 4                   ") {
+	if lipgloss.Width(line) != 120 || !strings.Contains(line, usersDivider+"users · 4") {
 		t.Fatalf("rail line width=%d line=%q", lipgloss.Width(line), line)
 	}
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
@@ -217,7 +217,7 @@ func TestAppUsersRailOccupiesRight28AndClosedIsZeroFootprint(t *testing.T) {
 	m.Store.Close()
 }
 
-func TestAppUsersRailDisabledNeverRenders(t *testing.T) {
+func TestAppUsersRailOpensWithoutMultiplayer(t *testing.T) {
 	m := NewModel(&state.AppState{})
 	next, _ := m.Update(IntroDoneMsg{})
 	m = next.(Model)
@@ -225,8 +225,8 @@ func TestAppUsersRailDisabledNeverRenders(t *testing.T) {
 	m = next.(Model)
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
 	m = next.(Model)
-	if m.UsersOpen || m.Regions.Chat.Width != 120 || strings.Contains(m.View(), "users ·") {
-		t.Fatalf("disabled rendered open=%v regions=%#v", m.UsersOpen, m.Regions)
+	if !m.UsersOpen || m.Regions.Chat.Width != 91 || !strings.Contains(m.View(), "just you") {
+		t.Fatalf("users not rendered open=%v regions=%#v view=%q", m.UsersOpen, m.Regions, m.View())
 	}
 	m.Store.Close()
 }
