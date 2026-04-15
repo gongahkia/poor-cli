@@ -1864,10 +1864,24 @@ create_command("PoorCLIApiKey", function()
         if not provider then return end
         vim.ui.input({ prompt = "API key for " .. provider .. ": " }, function(key)
             if not key or key == "" then return end
-            rpc.request("poor-cli/setApiKey", { provider = provider, apiKey = key }, function(_, err)
+            rpc.request("poor-cli/setApiKey", {
+                provider = provider,
+                apiKey = key,
+                persist = true,
+                reloadActiveProvider = true,
+            }, function(_, err)
                 vim.schedule(function()
                     if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
-                    require("poor-cli.notify").notify("[poor-cli] API key set for " .. provider, vim.log.levels.INFO)
+                    -- clear the stale "invalid" flag locally so chat/inline unblock
+                    -- immediately; the next initialize event will refresh with the
+                    -- validator's live check against the new key.
+                    if type(rpc.capabilities) == "table" then
+                        rpc.capabilities.apiKeyValidity = nil
+                    end
+                    require("poor-cli.notify").notify(
+                        "[poor-cli] API key set for " .. provider .. " — chat + completion unblocked",
+                        vim.log.levels.INFO
+                    )
                 end)
             end)
         end)

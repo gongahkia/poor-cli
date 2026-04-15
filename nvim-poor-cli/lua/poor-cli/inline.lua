@@ -603,6 +603,27 @@ function M.trigger(opts)
         return
     end
 
+    -- short-circuit if the backend told us at init the API key is invalid:
+    -- silently mark disabled for auto triggers so we don't hammer 401s on
+    -- every keystroke; for manual triggers, surface the fix commands.
+    local caps = rpc.get_capabilities() or {}
+    local validity = caps.apiKeyValidity or {}
+    if validity.status == "invalid" then
+        local provider = tostring(validity.provider or "?")
+        set_status("disabled", "api key invalid: " .. provider, "")
+        if manual then
+            require("poor-cli.notify").notify(
+                string.format(
+                    "Blocked: API key for %s is invalid.\nFix with :PoorCLIApiKey or :PoorCLIOnboarding.",
+                    provider
+                ),
+                vim.log.levels.ERROR,
+                { title = "poor-cli", timeout = 8000 }
+            )
+        end
+        return
+    end
+
     local bufnr = vim.api.nvim_get_current_buf()
     local enabled, reason = M.is_enabled_for_buffer(bufnr, { manual = manual })
     if not enabled then

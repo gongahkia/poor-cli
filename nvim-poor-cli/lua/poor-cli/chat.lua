@@ -1195,6 +1195,29 @@ function M.send(message, opts)
         return
     end
 
+    -- short-circuit if we already know the API key is invalid: don't spin
+    -- up a "Thinking..." placeholder just to fail once the request hits
+    -- the provider. Direct the user at the fix command.
+    local caps = rpc.get_capabilities() or {}
+    local validity = caps.apiKeyValidity or {}
+    if validity.status == "invalid" then
+        local provider = tostring(validity.provider or "?")
+        local reason = tostring(validity.reason or "server rejected the key")
+        local lines = {
+            string.format("Blocked: API key for %s is invalid.", provider),
+            "  " .. reason,
+            "",
+            "Fix before sending:",
+            string.format("  :PoorCLIApiKey         — rotate the %s key interactively", provider),
+            "  :PoorCLIOnboarding     — full provider + key wizard",
+        }
+        require("poor-cli.notify").notify(table.concat(lines, "\n"), vim.log.levels.ERROR, {
+            title = "poor-cli",
+            timeout = 8000,
+        })
+        return
+    end
+
     M.open()
 
     local prepared = prepare_message(message)
