@@ -1,126 +1,69 @@
 # Quickstart
 
-Asciicast: [https://asciinema.org/a/XXXXXX](https://asciinema.org/a/XXXXXX)
+Goal: install backend, launch the Neovim plugin, send one chat turn, switch model, inspect cost.
 
-Goal: install backend, launch `gocli-poor`, send one chat turn, switch model, inspect cost, quit.
-
-## 0:00 - Install
+## 0:00 — Install backend
 
 ```sh
 python3 -m pip install --upgrade 'poor-cli[all]'
-poor-cli-server --stdio --help
+poor-cli --version
 ```
 
-Install the TUI:
+Supported Python: 3.11, 3.12, 3.13, 3.14.
 
-```sh
-brew install gongahkia/tap/gocli-poor
-```
+## 0:30 — Install Neovim plugin
 
-or:
+lazy.nvim:
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/gongahkia/gocli-poor/main/install.sh | sh
+```lua
+{ 'gongahkia/poor-cli', dir = '<path>/nvim-poor-cli',
+  config = function() require('poor-cli').setup({}) end }
 ```
 
 From a source checkout:
 
 ```sh
-go build -o ./bin/gocli-poor ./cmd/gocli-poor
+./install_nvim_plugin.sh
 ```
 
-## 1:00 - Configure a key
-
-Use one provider key:
+## 1:00 — Configure an API key
 
 ```sh
 export ANTHROPIC_API_KEY="..."
 ```
 
-Other backend-supported env vars include `OPENAI_API_KEY`, `GEMINI_API_KEY`, and `OPENROUTER_API_KEY`.
+Other supported env vars: `OPENAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `HF_API_TOKEN`.
 
-Optional log path:
-
-```sh
-mkdir -p "$HOME/.local/state/gocli-poor"
-export POOR_CLI_SERVER_LOG_FILE="$HOME/.local/state/gocli-poor/server.log"
-```
-
-## 2:00 - Launch
+## 2:00 — Launch
 
 ```sh
-gocli-poor
+nvim
 ```
 
-If the server is not on `PATH`:
+Inside Neovim:
 
-```sh
-export POOR_CLI_SERVER_PATH="$(command -v poor-cli-server)"
-gocli-poor
-```
+- `:PoorCLIStart` — start the backend (auto if `auto_start = true` in setup).
+- `:PoorCLIChat` — open the chat panel; send with `<CR>`.
 
-## 3:00 - First turn
+## 3:00 — First turn
 
-Type:
+Type in the chat input:
 
 ```txt
 Summarize this repository in 5 bullets.
 ```
 
-Press `ctrl+enter`.
+Press `<CR>` to send. Use `:PoorCLIHome` (if `ux.home_nav = true`) to return to the editor.
 
-While streaming, use:
+## 4:00 — Provider and cost
 
-- `ctrl+j` to focus chat.
-- `pgup` / `pgdown` to scroll.
-- `ctrl+i` or `esc` to return to input.
-
-## 4:00 - Provider and cost
-
-Open provider picker:
-
-```txt
-/provider
-```
-
-Use `up` / `down` to choose a provider and `left` / `right` to cycle models. Press `enter`.
-
-Open cost:
-
-```txt
-/cost
-```
-
-Quit:
-
-```txt
-ctrl+q
-```
-
-## 5-Minute Video Script
-
-0:00 - Title: "gocli-poor in 5 minutes". Show terminal with `python3 -m pip install --upgrade 'poor-cli[all]'`.
-
-0:30 - Run `poor-cli-server --stdio --help`. Say this confirms the backend executable is visible.
-
-1:00 - Install TUI with Homebrew or `install.sh`. Run `gocli-poor --version`.
-
-1:30 - Export one API key and `POOR_CLI_SERVER_LOG_FILE`. Explain key lookup: backend keyring, env var, then config fallback.
-
-2:00 - Launch `gocli-poor`. Wait for the intro line to clear.
-
-2:30 - Send "Summarize this repository in 5 bullets." with `ctrl+enter`.
-
-3:15 - Scroll the chat with `ctrl+j`, `pgup`, `pgdown`, then return to input with `ctrl+i`.
-
-3:45 - Type `/provider`, pick another model, press `enter`.
-
-4:15 - Type `/cost`, point out session cost and context pressure.
-
-4:45 - Mention docs: config, keybindings, troubleshooting. Quit with `ctrl+q`.
+- `:PoorCLIProviders` — pick provider or model.
+- `:PoorCLICost` / `:PoorCLICostDashboard` — inspect session tokens and cost.
 
 ## Next
 
-- Rebind keys: [keybindings.md](./keybindings.md)
-- Tune config: [config.md](./config.md)
+- Slash commands: [COMMANDS.md](./COMMANDS.md)
+- Providers: [PROVIDERS.md](./PROVIDERS.md)
 - Fix startup issues: [troubleshooting.md](./troubleshooting.md)
+- Multiplayer: [MULTIPLAYER.md](./MULTIPLAYER.md)
+- Neovim plugin README: [../nvim-poor-cli/README.md](../nvim-poor-cli/README.md)

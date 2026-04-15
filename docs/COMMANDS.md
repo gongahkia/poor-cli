@@ -1,6 +1,6 @@
 # Slash Command Reference
 
-poor-cli ships **122 slash commands** across 10 categories.
+poor-cli ships **121 slash commands** across 10 categories.
 Generated from `poor_cli/command_manifest.json` — do not edit by hand.
 Re-run `python scripts/generate_command_docs.py` after manifest changes.
 
@@ -9,7 +9,7 @@ Re-run `python scripts/generate_command_docs.py` after manifest changes.
 - [Automation & Tasks](#automation-tasks) (9 commands)
 - [Collaboration](#collaboration) (4 commands)
 - [Context & Reuse](#context-reuse) (15 commands)
-- [Core Workflow](#core-workflow) (24 commands)
+- [Core Workflow](#core-workflow) (23 commands)
 - [Economy & Output](#economy-output) (5 commands)
 - [Git & Workspace](#git-workspace) (1 commands)
 - [Providers & Config](#providers-config) (16 commands)

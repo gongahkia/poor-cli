@@ -117,6 +117,40 @@ class BranchesHandlersMixin:
     async def handle_chat_switch(self, params: Dict[str, Any]) -> Dict[str, Any]:
         return await self.handle_branches_switch(params)
 
+    async def handle_set_turn_pin(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """CB2-UI: persist a soft/hard/null pin state for a turn id.
+
+        state in {"soft", "hard", null, ""}; null/empty clears the pin.
+        Pins are stored at .poor-cli/turn_pins.json and merged into history
+        metadata by `history_pruning.prune(turn_pin_overlay=...)`.
+        """
+        from poor_cli.turn_pin_overlay import TurnPinOverlay, VALID_STATES
+        turn_id = str(params.get("turnId") or params.get("turn_id") or "").strip()
+        if not turn_id:
+            raise InvalidParamsError("turnId is required")
+        raw_state = params.get("state")
+        state: Optional[str]
+        if raw_state is None:
+            state = None
+        else:
+            state_str = str(raw_state).strip().lower()
+            if state_str in ("", "null", "none", "false", "unpin"):
+                state = None
+            elif state_str in VALID_STATES:
+                state = state_str
+            else:
+                raise InvalidParamsError(
+                    f"state must be one of {VALID_STATES} or null; got {raw_state!r}"
+                )
+        overlay = TurnPinOverlay().load()
+        overlay.set(turn_id, state)
+        return {"turnId": turn_id, "state": state, "pins": overlay.all()}
+
+    async def handle_list_turn_pins(self, _params: Dict[str, Any]) -> Dict[str, Any]:
+        from poor_cli.turn_pin_overlay import TurnPinOverlay
+        overlay = TurnPinOverlay().load()
+        return {"pins": overlay.all()}
+
     async def handle_chat_siblings(self, params: Dict[str, Any]) -> Dict[str, Any]:
         self._ensure_initialized()
         turn_id = str(params.get("turnId") or params.get("turn_id") or "").strip()
@@ -161,3 +195,13 @@ async def _rpc_chat_switch(ctx, params):
 @register("chat.siblings")
 async def _rpc_chat_siblings(ctx, params):
     return await ctx.handle_chat_siblings(params)
+
+
+@register("poor-cli/setTurnPin")
+async def _rpc_set_turn_pin(ctx, params):
+    return await ctx.handle_set_turn_pin(params)
+
+
+@register("poor-cli/listTurnPins")
+async def _rpc_list_turn_pins(ctx, params):
+    return await ctx.handle_list_turn_pins(params)

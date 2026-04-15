@@ -503,26 +503,62 @@ class TurnLifecycle:
         *,
         cache_creation_input_tokens: int = 0,
         cache_read_input_tokens: int = 0,
+        provider: Optional[str] = None,
     ) -> float:
-        """Accumulate session and per-task cost tracking."""
+        """Accumulate session and per-task cost tracking.
+
+        ``provider``: optional provider name for SBP1 per-provider cache
+        telemetry. Defaults to the current active provider, or the string
+        ``"unknown"`` if nothing can be inferred.
+        """
         est = self._estimate_cost(input_tokens, output_tokens)
         self._session_total_input_tokens += input_tokens
         self._session_total_output_tokens += output_tokens
         self._session_total_cost_usd += est
         self._session_cache_creation_input_tokens += cache_creation_input_tokens
         self._session_cache_read_input_tokens += cache_read_input_tokens
-        if cache_read_input_tokens > 0:
+        is_hit = cache_read_input_tokens > 0
+        is_call = input_tokens > 0 or cache_creation_input_tokens > 0
+        if is_hit:
             self._session_provider_cache_hits += 1
-        elif input_tokens > 0 or cache_creation_input_tokens > 0:
+        elif is_call:
             self._session_provider_cache_misses += 1
-        if cache_read_input_tokens > 0:
-            self._session_estimated_cache_savings_usd += self._estimate_cost(cache_read_input_tokens, 0)
+        savings = self._estimate_cost(cache_read_input_tokens, 0) if is_hit else 0.0
+        if is_hit:
+            self._session_estimated_cache_savings_usd += savings
+        # SBP1 per-provider aggregation
+        provider_name = provider or self._resolve_current_provider_name() or "unknown"
+        per = self._session_provider_cache_stats.setdefault(provider_name, {
+            "hits": 0, "misses": 0, "read_tokens": 0, "write_tokens": 0, "savings_usd": 0.0,
+            "cost_usd": 0.0, "input_tokens": 0, "output_tokens": 0,
+        })
+        per["hits"] += 1 if is_hit else 0
+        per["misses"] += 1 if (not is_hit and is_call) else 0
+        per["read_tokens"] += cache_read_input_tokens
+        per["write_tokens"] += cache_creation_input_tokens
+        per["savings_usd"] = round(per["savings_usd"] + savings, 6)
+        per["cost_usd"] = round(per["cost_usd"] + est, 6)
+        per["input_tokens"] += input_tokens
+        per["output_tokens"] += output_tokens
         self._task_input_tokens += input_tokens
         self._task_output_tokens += output_tokens
         self._task_cost_usd += est
         self._task_cache_creation_input_tokens = getattr(self, "_task_cache_creation_input_tokens", 0) + cache_creation_input_tokens
         self._task_cache_read_input_tokens = getattr(self, "_task_cache_read_input_tokens", 0) + cache_read_input_tokens
         return est
+
+    def _resolve_current_provider_name(self) -> Optional[str]:
+        provider = getattr(self, "provider", None)
+        if provider is None:
+            return None
+        # prefer canonical short name
+        name = getattr(provider, "name", None)
+        if isinstance(name, str) and name:
+            return name.lower()
+        klass = provider.__class__.__name__
+        if klass.endswith("Provider"):
+            klass = klass[:-len("Provider")]
+        return klass.lower() or None
 
     def _record_tool_cost_surface(self, tool_name: str, result_text: str) -> None:
         """Track tool-result token surface cost for dashboards only."""
@@ -671,8 +707,32 @@ class TurnLifecycle:
                 "misses": summary.get("cache_miss_count", 0),
                 "read_tokens": summary.get("cache_read_input_tokens", 0),
                 "write_tokens": summary.get("cache_creation_input_tokens", 0),
+                # SBP1: per-provider breakdown
+                "by_provider": self._build_provider_cache_breakdown(),
             },
         }
+
+    def _build_provider_cache_breakdown(self) -> Dict[str, Any]:
+        """SBP1: return {provider_name: {hits, misses, hit_rate_pct, ...}}."""
+        per = dict(getattr(self, "_session_provider_cache_stats", {}) or {})
+        out: Dict[str, Any] = {}
+        for name, stats in per.items():
+            hits = int(stats.get("hits", 0) or 0)
+            misses = int(stats.get("misses", 0) or 0)
+            total = hits + misses
+            hit_rate = round(hits / total * 100, 1) if total > 0 else 0.0
+            out[name] = {
+                "hits": hits,
+                "misses": misses,
+                "hit_rate_pct": hit_rate,
+                "read_tokens": int(stats.get("read_tokens", 0) or 0),
+                "write_tokens": int(stats.get("write_tokens", 0) or 0),
+                "savings_usd": round(float(stats.get("savings_usd", 0.0) or 0.0), 6),
+                "cost_usd": round(float(stats.get("cost_usd", 0.0) or 0.0), 6),
+                "input_tokens": int(stats.get("input_tokens", 0) or 0),
+                "output_tokens": int(stats.get("output_tokens", 0) or 0),
+            }
+        return out
 
     def get_session_cost_summary(self) -> Dict[str, Any]:
         """Return current session cost/token totals."""

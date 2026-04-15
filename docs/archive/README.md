@@ -3,7 +3,9 @@
 Historical roadmap and research docs for work that has already shipped. Kept for archaeological reference; not load-bearing for current users or contributors.
 
 Live user/contributor docs stay under `docs/` (one level up):
-- `ARCHITECTURE.md`, `AUTO_COMMIT.md`, `BENCHMARKS.md`, `HARNESS_PORTABILITY.md`, `kv_cache_setup.md`, `LATENT_COMMUNICATION.md`, `M5_LATENT_BRIDGE.md`, `MCP.md`, `MULTIPLAYER.md`, `PROVIDERS.md`, `phase_20/063_outcome.md` (the single strategic decision with a still-open gating deliverable).
+- `AUTO_COMMIT.md`, `AUTOMATIONS.md`, `COMMANDS.md` (generated), `ECONOMY.md`, `HARNESS_PORTABILITY.md`, `kv_cache_setup.md`, `LATENT_COMMUNICATION.md`, `M5_LATENT_BRIDGE.md`, `MCP.md`, `MULTIPLAYER.md`, `PROVIDERS.md`, `SANDBOX.md`, `quickstart.md`, `troubleshooting.md`, and `phase_20/063_outcome.md` (the single strategic decision with a still-open gating deliverable).
+
+Repo-root reference docs: `README.md`, `ARCHITECTURE.md`, `POOR.md`, `NORTH_STAR.md`, `AGENTS.md`, `CONTRIBUTING.md`, `CLAUDE.md`, `TODO.md`, `LONGTERM-TODO.md`.
 
 ## Contents
 
@@ -60,6 +62,12 @@ Each doc closed out its research question and informed a shipped feature or a de
 |---|---|
 | `core_pre_slice_placement_map.md` | PRD 017 decomposition map; `core.py` now at 865 LOC, decomposition complete |
 | `CACHE_AUDIT.md` | One-shot cache-consolidation audit; recommendations flagged low-priority, kept for future PRD reference |
+| `PAIN-POINTS.md` | Pain-point analysis that informed the 2026-Q1 sweep; all entries now captured in `LONGTERM-TODO.md` "Done" sections |
+| `SOLUTIONS.md` | Companion to PAIN-POINTS.md with per-problem solution design; all shipped (Phase 01–19) or explicitly rejected (CB6, L5) |
+
+### Go TUI (deprecated 2026-04-15)
+
+The Go Bubble Tea client (`gocli-poor`) is archived at `../archived/go-tui/` (repo root `archived/go-tui/`). It is not built or tested. Phase docs (`phase_go_00` through `phase_go_10`), BENCHMARKS.md, keybindings.md, config.md, orchestration.md, perceived_latency.md, and visual_audit.md live there. See `archived/go-tui/README.md` for the rebuild path.
 
 ## Why archive instead of delete?
 

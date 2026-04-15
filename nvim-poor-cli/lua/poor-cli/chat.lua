@@ -20,6 +20,39 @@ M.loading_ns = vim.api.nvim_create_namespace("poor-cli-chat-loading")
 M.cost_ns = vim.api.nvim_create_namespace("poor-cli-chat-cost")
 M.branch_ns = vim.api.nvim_create_namespace("poor-cli-chat-branches")
 M.edit_ns = vim.api.nvim_create_namespace("poor-cli-chat-edit")
+M.diff_ns = vim.api.nvim_create_namespace("poor-cli-chat-diff") -- fallback +/- highlights when treesitter unavailable
+
+local function highlight_diff_block(buf, first_line, last_line)
+    if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+    local lines = vim.api.nvim_buf_get_lines(buf, first_line, last_line, false)
+    local in_fence = false
+    for i, line in ipairs(lines) do
+        local row = first_line + i - 1
+        if not in_fence then
+            if line:match("^%s*```diff%s*$") then in_fence = true end
+        else
+            if line:match("^%s*```%s*$") then
+                in_fence = false
+            else
+                local hl
+                if line:match("^%+%+%+") or line:match("^%-%-%-") then
+                    hl = "DiffFile"
+                elseif line:sub(1, 1) == "+" then
+                    hl = "DiffAdd"
+                elseif line:sub(1, 1) == "-" then
+                    hl = "DiffDelete"
+                elseif line:sub(1, 2) == "@@" then
+                    hl = "DiffChange"
+                end
+                if hl then
+                    pcall(vim.api.nvim_buf_set_extmark, buf, M.diff_ns, row, 0, { line_hl_group = hl, priority = 80 })
+                end
+            end
+        end
+    end
+end
+
+M._highlight_diff_block = highlight_diff_block -- exposed for tests
 M.turns = {}
 M.loading_marker = nil
 M.streaming_buf_line = nil
@@ -485,6 +518,11 @@ function M.open()
     vim.cmd("normal! G")
     M.setup_buffer_keymaps()
     M.refresh_typing_presence()
+    local ok_pin, turn_pin = pcall(require, "poor-cli.turn_pin")
+    if ok_pin then
+        pcall(turn_pin.install_keymaps, M.buf)
+        pcall(turn_pin.hydrate)
+    end
 end
 
 local typing_footer_close
@@ -635,6 +673,8 @@ function M.append_message(role, content, turn)
     local line_count = vim.api.nvim_buf_line_count(M.buf)
     vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, lines)
     record_turn_extmark(role, line_count, line_count + #lines, turn, content)
+    local ok_pin, turn_pin = pcall(require, "poor-cli.turn_pin")
+    if ok_pin then pcall(turn_pin.render) end
 
     if M.win and vim.api.nvim_win_is_valid(M.win) then
         local new_count = vim.api.nvim_buf_line_count(M.buf)
@@ -1182,6 +1222,15 @@ local function format_thinking_duration(seconds)
     end
 end
 
+-- single-column spinner frames (braille); matches the Claude Code / Codex feel.
+-- change this table to swap spinners — e.g. { "|", "/", "-", "\\" } for pure ASCII.
+local SPINNER_FRAMES = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
+local SPINNER_INTERVAL_MS = 80
+
+local function spinner_frame(tick)
+    return SPINNER_FRAMES[(tick % #SPINNER_FRAMES) + 1]
+end
+
 function M._stop_thinking_timer()
     if M._thinking_timer then
         pcall(function()
@@ -1212,7 +1261,8 @@ function M._start_streaming_block(event)
         return
     end
     local line_count = vim.api.nvim_buf_line_count(M.buf)
-    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, { message_header("assistant", event), "", "💭 Thinking (0 sec)...", "" })
+    local initial_line = string.format("%s Thinking (0 sec)...", spinner_frame(0))
+    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, { message_header("assistant", event), "", initial_line, "" })
     if M.stream_meta then
         M.stream_meta.assistant_header_line = line_count
     end
@@ -1224,26 +1274,33 @@ function M._start_streaming_block(event)
 
     -- live-update the placeholder until first chunk arrives or finalize fires
     M._thinking_started_ns = (vim.loop.hrtime and vim.loop.hrtime()) or 0
+    M._thinking_tick = 0
     M._stop_thinking_timer()
     if vim.loop.new_timer then
         M._thinking_timer = vim.loop.new_timer()
-        M._thinking_timer:start(1000, 1000, vim.schedule_wrap(function()
+        M._thinking_timer:start(SPINNER_INTERVAL_MS, SPINNER_INTERVAL_MS, vim.schedule_wrap(function()
             if not M._streaming_placeholder_active or not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
                 M._stop_thinking_timer()
                 return
             end
+            M._thinking_tick = (M._thinking_tick or 0) + 1
             local elapsed = 0
             if M._thinking_started_ns > 0 and vim.loop.hrtime then
                 elapsed = math.max(0, math.floor((vim.loop.hrtime() - M._thinking_started_ns) / 1000000000))
             end
             local ln = M._streaming_placeholder_line
             if ln then
-                local new_text = string.format("💭 Thinking (%s)...", format_thinking_duration(elapsed))
+                local new_text = string.format("%s Thinking (%s)...",
+                    spinner_frame(M._thinking_tick),
+                    format_thinking_duration(elapsed))
                 pcall(vim.api.nvim_buf_set_lines, M.buf, ln - 1, ln, false, { new_text })
             end
         end))
     end
 end
+
+M._spinner_frame = spinner_frame -- test hook
+M._spinner_frames = SPINNER_FRAMES
 
 local function start_remote_stream(data)
     if is_active_request(data.request_id or "") then return true end
@@ -1749,6 +1806,7 @@ function M._handle_permission_request(data)
 
     vim.bo[ui.buf].modifiable = true
     vim.api.nvim_buf_set_lines(ui.buf, 0, -1, false, lines)
+    highlight_diff_block(ui.buf, 0, #lines)
     vim.bo[ui.buf].modifiable = false
 
     local width = math.min(90, math.floor(vim.o.columns * 0.7))
@@ -2039,6 +2097,7 @@ function M._append_diff_view(name, diff_text)
     table.insert(lines, "```")
     table.insert(lines, "")
     vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, lines)
+    highlight_diff_block(M.buf, line_count, line_count + #lines)
 end
 
 function M.get_context_files()

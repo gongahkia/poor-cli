@@ -174,6 +174,9 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
         self._session_provider_cache_hits: int = 0
         self._session_provider_cache_misses: int = 0
         self._session_estimated_cache_savings_usd: float = 0.0
+        # SBP1: per-provider cache telemetry.
+        # Shape: {provider_name: {hits, misses, read_tokens, write_tokens, savings_usd}}
+        self._session_provider_cache_stats: Dict[str, Dict[str, Any]] = {}
         self._task_input_tokens: int = 0
         self._task_output_tokens: int = 0
         self._task_cost_usd: float = 0.0

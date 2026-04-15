@@ -185,12 +185,11 @@ async def hybrid_search(
     semantic_threshold: float = DEFAULT_SEMANTIC_THRESHOLD,
     provider: Optional[EmbeddingProvider] = None,
     record_hits: bool = True,
+    rerank: bool = True,
 ) -> List[MemoryEntry]:
-    """Union of top-K keyword + top-K semantic hits, deduped by filename.
-
-    Semantic results keep their order for tie-breaking; keyword-only entries
-    sort after semantic ones. If both retrievers agree, the entry surfaces
-    at the top. This is a cheap, high-signal default before MH7 reranker.
+    """Union of top-K keyword + top-K semantic hits, deduped by filename,
+    optionally reranked via the user-selected strategy
+    (``ux_strategies.memory_reranker_strategy``).
     """
     keyword_hits = manager.search(query, max_results=max_results, record_hits=False)
     semantic_hits = await semantic_search(
@@ -199,6 +198,50 @@ async def hybrid_search(
         threshold=semantic_threshold,
         provider=provider,
     )
+    if rerank and semantic_hits:
+        try:
+            from .ux_strategies import load as _load_strategies
+            from .memory_reranker import rerank_semantic_hits
+            strategies = _load_strategies()
+            strategy = strategies.get("memory_reranker_strategy", "mmr")
+            cross_model = strategies.get("memory_reranker_cross_encoder_model", "")
+            # fetch embeddings dict for MMR path
+            try:
+                store = manager._embedding_store()  # type: ignore[reportPrivateUsage]
+                embeddings = store.all_vectors() if hasattr(store, "all_vectors") else {}
+            except Exception:
+                embeddings = {}
+            query_vec = semantic_hits[0][1] if semantic_hits else [0.0]
+            if isinstance(query_vec, (int, float)):
+                query_vec = [float(query_vec)]
+            kwargs = {"strategy": strategy, "k": max_results, "query_text": query}
+            if cross_model:
+                kwargs["cross_encoder_model"] = cross_model
+            reranked = rerank_semantic_hits(
+                query_vec, semantic_hits, embeddings, **kwargs,
+            )
+            if reranked:
+                # reranked ordering overrides the semantic-first path, then
+                # keyword-only entries come after
+                seen: set[str] = set()
+                ordered: List[MemoryEntry] = []
+                for entry in reranked:
+                    if entry.filename in seen:
+                        continue
+                    seen.add(entry.filename)
+                    ordered.append(entry)
+                for entry in keyword_hits:
+                    if entry.filename in seen:
+                        continue
+                    seen.add(entry.filename)
+                    ordered.append(entry)
+                hits = ordered[:max_results]
+                if record_hits:
+                    manager._record_retrieval(hits)  # type: ignore[reportPrivateUsage]
+                return hits
+        except Exception:
+            # rerank is best-effort; fall through to legacy semantic-first ordering
+            pass
     seen: set[str] = set()
     ordered: List[MemoryEntry] = []
     for entry, _ in semantic_hits:

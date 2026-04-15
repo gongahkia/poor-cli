@@ -39,6 +39,12 @@ Everything the user sees in Neovim is a thin projection of server state. All bus
 - `lua/poor-cli/timeline.lua` — live tool-call timeline with cancel/retry/dismiss.
 - `lua/poor-cli/panels/*.lua` — scratch-buffer dashboards (cost, savings, policy, watch, etc.).
 - `lua/poor-cli/integrations/*.lua` — runtime-detected optional plugins (trouble, gitsigns, snacks, oil, overseer, neogit, dap).
+- `lua/poor-cli/turn_pin.lua` — CB2 soft/hard pin toggle + badge render on chat turns (`gp` keymap).
+- `lua/poor-cli/pins_list.lua` — CB2 cross-session pin viewer (`:PoorCLIPinsList`).
+- `lua/poor-cli/memory_picker.lua` — MH8 memory picker sorted by hits / recency / name.
+- `lua/poor-cli/memory_expire.lua` — MH3 end-of-session expiry confirmation dialog.
+- `lua/poor-cli/strategies.lua` — runtime UI for swap-able strategies (MH7 reranker, CB3 adaptive scoring).
+- `lua/poor-cli/ux.lua` + `lua/poor-cli/ux/*.lua` — opt-in UX features (command palette, streaming indicator, home nav, etc.). Off by default; enable via `setup({ ux = { <feature> = true } })`.
 - No hard dependencies beyond Neovim + plenary (test-time only).
 
 ### Python Server (`poor_cli/`)
@@ -52,16 +58,17 @@ Key modules by role:
 | Entry | `__main__.py`, `_server.py`, `server/cli.py`, `server/runtime.py` |
 | Core loop | `core.py`, `core_agent_loop.py`, `core_tool_dispatch.py`, `core_turn_lifecycle.py` |
 | Context | `context_assembly.py`, `context_providers.py`, `context_engine.py`, `context/`, `context_optimizer.py` |
-| Memory | `memory.py`, `memory_semantic.py`, `memory_reranker.py`, `memory_forgetting.py`, `memory_review.py`, `memory_retrieval_mode.py`, `auto_memory.py`, `working_memory.py` |
-| Providers | `providers/base.py`, `providers/{gemini,openai,anthropic,openrouter,ollama,hf_local,vllm,llama_server,sglang,hf_tgi,lmstudio}_provider.py`, `providers/portability.py` |
-| Tools | `tools_async.py`, `_tool_registry_builder.py`, `shell_filters/`, `tool_output_filter.py`, `tool_events.py` |
+| Memory | `memory.py`, `memory_semantic.py`, `memory_reranker.py` (MMR + cross-encoder + score-order strategies), `memory_forgetting.py`, `memory_review.py`, `memory_retrieval_mode.py`, `auto_memory.py`, `working_memory.py` |
+| Providers | `providers/base.py`, `providers/{gemini,openai,anthropic,openrouter,ollama,hf_local,vllm,llama_server,sglang,hf_tgi,lmstudio,litellm}_provider.py`, `providers/portability.py` |
+| Tools | `tools_async.py`, `_tool_registry_builder.py`, `shell_filters/`, `tool_output_filter.py`, `tool_events.py`, `tool_success_tracker.py` (CB3 rolling per-tool success counter) |
 | Sandbox + policy | `sandbox.py`, `permission_rules.py`, `permission_engine.py`, `policy_hooks.py`, `trust.py` |
-| Economy | `economy.py`, `cost.py`, `token_counter.py`, `thinking_budget.py`, `token_budget_controller.py`, `adaptive_budget.py` |
-| Sessions | `session_manager.py`, `session_store.py`, `history.py`, `history_pruning.py`, `run_history.py`, `checkpoint.py` |
+| Economy | `economy.py`, `cost.py`, `token_counter.py`, `thinking_budget.py`, `token_budget_controller.py`, `adaptive_budget.py`, `budget_retuning.py` |
+| Sessions | `session_manager.py`, `session_store.py`, `history.py`, `history_pruning.py` (CB2 overlay-aware, CB3 adaptive-scored), `run_history.py`, `checkpoint.py`, `turn_pin_overlay.py` (CB2 per-repo soft/hard pin overlay) |
 | Multiplayer | `multiplayer.py`, `multiplayer_invites.py`, `multiplayer_session.py`, `server/multiplayer_{runtime,state}.py` |
 | MCP | `mcp/` (stdio + http transports, multi-server, registry) |
 | RPC layer | `server/runtime.py`, `server/handlers/`, `server/transport.py`, `server/rate_limit.py`, `server/registry.py` |
-| Research (gated) | `research/latent_communication.py`, `research/neural_code_encoder.py` |
+| User-facing strategy toggles | `ux_strategies.py` (persists `.poor-cli/strategies.json`; feeds reranker strategy + CB3 adaptive override into consumers) |
+| Research (gated) | `research/latent_communication.py`, `research/neural_code_encoder.py`, `research/latent_bridge.py` |
 
 ### JSON-RPC Contract
 

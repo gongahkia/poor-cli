@@ -1,6 +1,6 @@
 # gocli-poor
 
-[![](https://img.shields.io/badge/internal%20coverage-80%25%2B-brightgreen)](https://github.com/gongahkia/poor-cli/actions/workflows/tests.yml)
+[![](https://img.shields.io/badge/tests-passing-brightgreen)](https://github.com/gongahkia/poor-cli/actions/workflows/tests.yml)
 [![](https://img.shields.io/badge/poor-cli_5.0.0-blue)](https://github.com/gongahkia/poor-cli)
 
 > A fast, flicker-free TUI chat client for the poor-cli backend.
@@ -9,64 +9,55 @@ Demo asciicast: [https://asciinema.org/a/XXXXXX](https://asciinema.org/a/XXXXXX)
 
 ## Install
 
-Install the backend first:
+Backend (Python):
 
 ```sh
 python3 -m pip install --upgrade 'poor-cli[all]'
-poor-cli-server --stdio --help
+poor-cli --version
 ```
 
 Supported Python versions are `3.11`, `3.12`, `3.13`, and `3.14`.
 
-Install `gocli-poor`:
+Neovim plugin (lazy.nvim):
 
-```sh
-brew install gongahkia/tap/gocli-poor
+```lua
+{ 'gongahkia/poor-cli', dir = '<path>/nvim-poor-cli',
+  config = function() require('poor-cli').setup({}) end }
 ```
 
-or:
+Or from this checkout:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/gongahkia/gocli-poor/main/install.sh | sh
-```
-
-or download a release archive from [GitHub Releases](https://github.com/gongahkia/gocli-poor/releases), then put `gocli-poor` on `PATH`.
-
-From this checkout:
-
-```sh
-go build -o ./bin/gocli-poor ./cmd/gocli-poor
-./bin/gocli-poor --version
+./install_nvim_plugin.sh
 ```
 
 ## Quickstart
 
 ```sh
 export ANTHROPIC_API_KEY="..."
-export POOR_CLI_SERVER_LOG_FILE="$HOME/.local/state/gocli-poor/server.log"
-gocli-poor
+nvim
 ```
 
 60-second path:
 
-1. Type a prompt in the input line.
-2. Press `ctrl+enter`.
-3. Use `/provider` to switch provider or model.
-4. Use `/cost` to inspect token and cost state.
-5. Press `ctrl+q` to quit.
+1. `:PoorCLIStart` — attach to the backend.
+2. `:PoorCLIChat` — open the chat panel; send with `<CR>`.
+3. `:PoorCLIProviders` — switch provider or model.
+4. `:PoorCLICost` — inspect token and cost state.
 
 Full walkthrough: [docs/quickstart.md](./docs/quickstart.md).
 
 ## Features
 
-- Bubble Tea TUI for `poor-cli-server`.
-- Streaming markdown chat.
-- Provider/model picker.
+- Neovim-native chat, diff review, and inline completion surfaces.
+- Streaming markdown chat with slash commands and @mentions.
+- Provider/model picker and per-repo config.
 - API-key prompt with keyring-backed backend storage.
-- Cost, context-pressure, and savings HUDs.
-- Diff review, checkpoint, session, permission, and command flows.
-- Configurable keybindings and XDG config loading.
-- Terminal color fallback for `NO_COLOR`, `COLORTERM`, and `TERM`.
+- Cost, context-pressure, and savings dashboards.
+- Checkpoint, session, permission, and multiplayer-room flows.
+- Telescope / snacks / blink / lualine / gitsigns / neogit / overseer / trouble integrations.
+- Treesitter-aware context; LSP-aware context.
+- Policy + trust center.
 
 ## Provider Support
 
@@ -87,28 +78,22 @@ Full walkthrough: [docs/quickstart.md](./docs/quickstart.md).
 
 ## Configuration
 
-Config guide: [docs/config.md](./docs/config.md).
+Backend config (per-repo, persisted): `.poor-cli/` under repo root.
 
-Default config path:
-
-```txt
-$XDG_CONFIG_HOME/gocli-poor/config.yaml
-~/.config/gocli-poor/config.yaml
-~/.gocli-poor.yaml
-```
+Neovim plugin config: pass options to `require('poor-cli').setup({ ... })` in your init.lua. See `:help poor-cli` and [nvim-poor-cli/README.md](./nvim-poor-cli/README.md).
 
 ## Documentation
 
 - [Quickstart](./docs/quickstart.md)
-- [Keybindings](./docs/keybindings.md)
-- [Config](./docs/config.md)
 - [Troubleshooting](./docs/troubleshooting.md)
 - [Slash commands](./docs/COMMANDS.md)
 - [Providers](./docs/PROVIDERS.md)
 - [MCP](./docs/MCP.md)
 - [Sandbox](./docs/SANDBOX.md)
 - [Multiplayer](./docs/MULTIPLAYER.md)
-- [Benchmarks](./docs/BENCHMARKS.md)
+- [Automations](./docs/AUTOMATIONS.md)
+- [Economy](./docs/ECONOMY.md)
+- [Neovim plugin](./nvim-poor-cli/README.md)
 
 ## License
 

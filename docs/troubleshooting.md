@@ -15,16 +15,12 @@ python3 -m pip install --upgrade 'poor-cli[all]'
 command -v poor-cli-server
 ```
 
-If the executable is outside `PATH`:
+If the executable is outside `PATH`, point the Neovim plugin at it:
 
-```sh
-export POOR_CLI_SERVER_PATH="/absolute/path/to/poor-cli-server"
-```
-
-or in config:
-
-```yaml
-server_path: /absolute/path/to/poor-cli-server
+```lua
+require('poor-cli').setup({
+    server_cmd = '/absolute/path/to/poor-cli-server --stdio',
+})
 ```
 
 ## API Key Prompt
@@ -37,8 +33,6 @@ Recommended:
 python3 -m pip install --upgrade 'poor-cli[keyring]'
 ```
 
-Then use the API-key prompt and keep persistence enabled.
-
 Env fallback:
 
 ```sh
@@ -48,144 +42,79 @@ export GEMINI_API_KEY="..."
 export OPENROUTER_API_KEY="..."
 ```
 
-Status:
+Check status:
 
 ```sh
 poor-cli provider list
 poor-cli config get model.provider
 ```
 
+Inside Neovim, `:checkhealth poor-cli` reports which keys are present.
+
 ## Streaming Appears Frozen
 
-Set a log path before launching:
+Inspect server logs:
 
 ```sh
-mkdir -p "$HOME/.local/state/gocli-poor"
-export POOR_CLI_SERVER_LOG_FILE="$HOME/.local/state/gocli-poor/server.log"
-gocli-poor
+tail -n 100 "$(nvim --headless +'lua print(require("poor-cli.config").get_server_log_file())' +qa 2>&1 | tail -n1)"
 ```
 
-Inspect:
+Or set a custom log path in setup:
 
-```sh
-tail -n 100 "$POOR_CLI_SERVER_LOG_FILE"
+```lua
+require('poor-cli').setup({
+    server_log_file = vim.fn.expand('~/.local/state/poor-cli/server.log'),
+})
 ```
 
-Also verify the backend starts alone:
+Verify the backend starts standalone:
 
 ```sh
 poor-cli-server --stdio
 ```
 
-Quit with `ctrl+c`.
+## Plugin loaded but `:PoorCLI…` commands missing
 
-## Colors Look Wrong
-
-Disable color:
-
-```sh
-NO_COLOR=1 gocli-poor
-```
-
-Force truecolor:
-
-```sh
-COLORTERM=truecolor gocli-poor
-```
-
-Use 256-color fallback:
-
-```sh
-TERM=xterm-256color gocli-poor
-```
-
-Terminal capability order:
-
-1. `NO_COLOR` forces monochrome.
-2. `COLORTERM=truecolor` or `24bit` enables truecolor.
-3. `TERM=xterm-256color` enables ANSI 256.
-4. Other terms use ANSI 16.
-
-## Keybinding Fails
-
-Run with a minimal config:
-
-```sh
-mv ~/.config/gocli-poor/config.yaml ~/.config/gocli-poor/config.yaml.bak
-gocli-poor
-```
-
-Common issues:
-
-- `pgdn` and `pagedown` are accepted and normalized to `pgdown`.
-- Use `esc`, not `escape`.
-- Use comma-separated alternatives: `ctrl+c,esc`.
-- Use space-separated chords: `ctrl+x p`.
-
-Reference: [keybindings.md](./keybindings.md).
+Make sure `require('poor-cli').setup({})` actually ran. On `VimEnter`, the plugin prints a warning if `setup()` was never called.
 
 ## Config Not Loading
 
-Check path precedence:
+The Neovim plugin reads options from the `setup({...})` call — it does not consult a YAML file. If values don't take effect:
 
-```sh
-printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/gocli-poor/config.yaml"
-printf '%s\n' "$HOME/.config/gocli-poor/config.yaml"
-printf '%s\n' "$HOME/.gocli-poor.yaml"
+1. Confirm `setup()` is called *after* your other plugin bootstrap.
+2. `:lua = require('poor-cli.config').sanitized_for_debug()` — dump the live merged config.
+
+## Completion Disabled in a Buffer
+
+Run `:PoorCLICompletionReason` (requires `ux.completion_reason = true`) to see why. Typical causes:
+
+- Filetype is in `completion_filetype_blocklist`.
+- Buftype is in `completion_buftype_blocklist` (e.g. `nofile`, `terminal`).
+- `completion_manual_only = true` and no manual trigger.
+
+Toggle for the current filetype: `:PoorCLICompletionToggle`.
+
+## Multiplayer Room Won't Connect
+
+- Both sides must run the same backend version.
+- Use `:PoorCLICollabQuick` to generate/accept invites; paste whole invite string.
+- `:PoorCLIStatus` reports the room + role.
+
+## `:checkhealth poor-cli`
+
+Always start here:
+
+```vim
+:checkhealth poor-cli
 ```
 
-Only the first existing file is loaded. Env vars override it.
+Reports Neovim version, server executable, log dir, Python version, API keys, plugin integrations (nvim-cmp, blink.cmp, treesitter), and domain modules.
 
-## Windows Terminal Quirks
+With `ux.health_actions = true`, the report appends actionable `:PoorCLIOnboarding` / `:PoorCLIStart` hints.
 
-Use Windows Terminal, PowerShell 7, or a recent terminal with VT processing.
+## Reference
 
-If archive install is used, download the `.zip` release asset and place `gocli-poor.exe` on `PATH`.
-
-If colors render badly:
-
-```powershell
-$env:NO_COLOR = "1"
-gocli-poor.exe
-```
-
-If `ctrl+enter` is intercepted by the terminal, rebind submit:
-
-```yaml
-keybindings:
-  submit: enter
-```
-
-or:
-
-```powershell
-$env:GOCLI_POOR_KEYBINDINGS_SUBMIT = "enter"
-gocli-poor.exe
-```
-
-## Homebrew Install Fails
-
-Update tap metadata:
-
-```sh
-brew update
-brew install gongahkia/tap/gocli-poor
-```
-
-Direct install fallback:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/gongahkia/gocli-poor/main/install.sh | sh
-```
-
-## Source Build Fails
-
-Verify Go:
-
-```sh
-go version
-go test ./...
-go build -o ./bin/gocli-poor ./cmd/gocli-poor
-```
-
-If `go test ./...` fails, fix that first; the source build uses the same module graph.
+- [quickstart.md](./quickstart.md)
+- [COMMANDS.md](./COMMANDS.md)
+- [PROVIDERS.md](./PROVIDERS.md)
+- Neovim plugin README: [../nvim-poor-cli/README.md](../nvim-poor-cli/README.md)

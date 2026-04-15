@@ -598,7 +598,19 @@ class TieredContextCompactor:
             tracker = get_default_tracker()
         except Exception:
             tracker = None
-        self._history_pruner = HistoryPruner(tool_success_tracker=tracker)
+        # Respect the user-facing adaptive_tool_scoring strategy override.
+        adaptive_override = None
+        try:
+            from .ux_strategies import load as _load_strategies, adaptive_override_from_str
+            adaptive_override = adaptive_override_from_str(
+                _load_strategies().get("adaptive_tool_scoring", "auto")
+            )
+        except Exception:
+            adaptive_override = None
+        self._history_pruner = HistoryPruner(
+            tool_success_tracker=tracker,
+            adaptive_tool_scoring_override=adaptive_override,
+        )
         self._failure_amnesia = FailureAmnesia()
 
     @property
@@ -701,12 +713,18 @@ class TieredContextCompactor:
                 pruning_reasons={},
             )
         target_tokens = int(max_tokens * policy.auto_compact_target) if max_tokens > 0 and policy.auto_compact_target > 0 else 0
+        try:
+            from .turn_pin_overlay import TurnPinOverlay
+            turn_pin_overlay = TurnPinOverlay().load().all() or None
+        except Exception:
+            turn_pin_overlay = None
         pruning = self._history_pruner.prune(
             normalized_history,
             target_tokens=target_tokens,
             mode=policy.mode,
             economy_preset=policy.economy_preset,
             trigger=trigger,
+            turn_pin_overlay=turn_pin_overlay,
         )
         working_history = pruning.history
         assessments = self._assess_history(working_history, policy)

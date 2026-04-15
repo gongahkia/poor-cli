@@ -160,6 +160,12 @@ class ChatHandlersMixin:
                     logger.debug("emit initialized notification failed: %s", exc)
             asyncio.create_task(_emit_initialized())
 
+            # Validate the API key against the live provider endpoint.
+            # Catches the "key was valid at subprocess spawn but has since
+            # been rotated/revoked" case. Runs in a thread so we don't
+            # block the initialize handler on a slow network.
+            key_validity = await self._validate_api_key_async(provider_info)
+
             return {
                 "capabilities": {
                     "completionProvider": True,
@@ -181,6 +187,7 @@ class ChatHandlersMixin:
                         "trustedRoots": [str(root) for root in self._trusted_workspace_roots()],
                     },
                     "repoIndex": self.core._repo_graph.get_stats() if self.core._repo_graph else None,
+                    "apiKeyValidity": key_validity,
                 }
             }
         except MissingAPIKeyError as e:
@@ -214,6 +221,36 @@ class ChatHandlersMixin:
             raise ConfigurationError(
                 f"Initialization failed unexpectedly: {e}"
             ) from e
+
+    async def _validate_api_key_async(self, provider_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Probe the live provider endpoint for key validity; non-blocking.
+
+        Runs in the default executor since urllib is synchronous. Caps the
+        total time via the validator's own 2s per-request timeout. Returns
+        a dict like ``{"provider": "anthropic", "status": "valid", "reason": ""}``
+        so the client can decide whether to prompt for re-auth.
+        """
+        try:
+            from poor_cli.api_key_validator import validate
+            provider_name = str((provider_info or {}).get("name") or "").strip()
+            if not provider_name:
+                return {"provider": "unknown", "status": "unknown", "reason": "no provider"}
+            config_manager = getattr(self.core, "_config_manager", None) or getattr(self.core, "config_manager", None)
+            if config_manager is None:
+                return {"provider": provider_name, "status": "unknown", "reason": "no config manager"}
+            key_info = config_manager.get_api_key_info(provider_name)
+            api_key = str(key_info.get("key") or "")
+            if not api_key:
+                # Local/keyless providers have no concept of validity;
+                # mark unknown rather than invalid so the client doesn't
+                # nag on ollama/vllm/hf_local.
+                return {"provider": provider_name, "status": "unknown", "reason": "no key configured"}
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, validate, provider_name, api_key)
+            return result.to_dict()
+        except Exception as exc:
+            logger.debug("api key validity probe failed: %s", exc)
+            return {"provider": "unknown", "status": "unknown", "reason": f"probe error: {exc}"}
 
     async def handle_shutdown(self, params: Dict[str, Any]) -> None:
         """Shutdown the server."""

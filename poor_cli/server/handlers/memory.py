@@ -122,13 +122,25 @@ class MemoryHandlersMixin:
         return {"expiring": [e.to_dict() for e in stale]}
 
     async def handle_memory_expire_run(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """MH3: archive expired memories. dryRun=True returns candidate set only."""
+        """MH3: archive expired memories. dryRun=True returns candidate set only.
+
+        Optional ``includeFilenames`` param (list of filenames) restricts the
+        pass to those specific entries — lets the nvim MH3-UX dialog confirm
+        per-item before archiving.
+        """
         from poor_cli.memory import MemoryManager
         from poor_cli.memory_forgetting import MemoryForgetter
         mgr = MemoryManager()
         mgr.load()
         dry = bool(params.get("dryRun", False))
-        summary = MemoryForgetter(mgr).run_expiry_pass(dry_run=dry)
+        include = params.get("includeFilenames") or params.get("include_filenames")
+        include_list = None
+        if isinstance(include, list):
+            include_list = [str(x) for x in include if isinstance(x, (str, bytes))]
+        summary = MemoryForgetter(mgr).run_expiry_pass(
+            dry_run=dry,
+            include_filenames=include_list,
+        )
         return summary.to_dict()
 
 
@@ -171,3 +183,30 @@ async def _rpc_expiring(ctx, params):
 @register('poor-cli/memoryExpireRun')
 async def _rpc_expire_run(ctx, params):
     return await ctx.handle_memory_expire_run(params)
+
+
+@register('poor-cli/getStrategies')
+async def _rpc_get_strategies(_ctx, _params):
+    from poor_cli.ux_strategies import load, DEFAULTS, RERANKER_CHOICES, ADAPTIVE_CHOICES
+    return {
+        "strategies": load(),
+        "defaults": DEFAULTS,
+        "choices": {
+            "memory_reranker_strategy": list(RERANKER_CHOICES),
+            "adaptive_tool_scoring": list(ADAPTIVE_CHOICES),
+        },
+    }
+
+
+@register('poor-cli/setStrategy')
+async def _rpc_set_strategy(_ctx, params):
+    from poor_cli.ux_strategies import set_value
+    name = str(params.get("name") or "").strip()
+    value = params.get("value")
+    if not name:
+        return {"error": "name is required"}
+    try:
+        updated = set_value(name, value)
+    except ValueError as exc:
+        return {"error": str(exc)}
+    return {"strategies": updated}

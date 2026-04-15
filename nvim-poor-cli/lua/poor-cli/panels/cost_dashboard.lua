@@ -98,6 +98,28 @@ function M.render_lines(snapshot)
         string.format("- hit rate: %s", pct(cache.hit_rate_pct or session.cache_hit_rate or summary.cache_hit_rate_pct or summary.cacheHitRatePct)),
         string.format("- hits/misses: %d/%d", n(cache.hits or summary.cache_hit_count or summary.cacheHitCount), n(cache.misses or summary.cache_miss_count or summary.cacheMissCount)),
         string.format("- read/write tokens: %d/%d", n(cache.read_tokens or summary.cache_read_input_tokens or summary.cacheReadInputTokens), n(cache.write_tokens or summary.cache_creation_input_tokens or summary.cacheCreationInputTokens)),
+    })
+    local by_provider = cache.by_provider or cache.byProvider
+    if type(by_provider) == "table" and not vim.tbl_isempty(by_provider) then
+        table.insert(lines, "")
+        table.insert(lines, "### Per-provider cache")
+        table.insert(lines, "")
+        local names = {}
+        for name, _ in pairs(by_provider) do names[#names + 1] = name end
+        table.sort(names)
+        for _, name in ipairs(names) do
+            local stats = by_provider[name] or {}
+            table.insert(lines, string.format(
+                "- %-12s hit-rate=%s  hits/misses=%d/%d  read=%d  write=%d  saved=%s",
+                name,
+                pct(stats.hit_rate_pct),
+                n(stats.hits), n(stats.misses),
+                n(stats.read_tokens), n(stats.write_tokens),
+                usd(stats.savings_usd)
+            ))
+        end
+    end
+    vim.list_extend(lines, {
         "",
         "## Projection",
         "",

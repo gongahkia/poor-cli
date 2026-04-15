@@ -45,6 +45,32 @@ PIN_HARD = "hard"
 PIN_SOFT = "soft"
 
 
+def _apply_turn_pin_overlay(
+    history: List[Dict[str, Any]],
+    overlay: Dict[str, str],
+) -> List[Dict[str, Any]]:
+    """Return a copy of history with overlay pin states merged into
+    ``metadata.pinned`` for messages whose ``metadata.turn_id`` appears in
+    the overlay. Invalid overlay values are ignored.
+    """
+    if not overlay:
+        return history
+    result: List[Dict[str, Any]] = []
+    for message in history:
+        meta = message.get("metadata") if isinstance(message.get("metadata"), dict) else {}
+        turn_id = str(meta.get("turn_id") or meta.get("turnId") or "")
+        state = overlay.get(turn_id)
+        if turn_id and state in (PIN_SOFT, PIN_HARD):
+            new_meta = dict(meta)
+            new_meta["pinned"] = state
+            new_msg = dict(message)
+            new_msg["metadata"] = new_meta
+            result.append(new_msg)
+        else:
+            result.append(message)
+    return result
+
+
 @dataclass(frozen=True)
 class ScoredTurn:
     index: int
@@ -133,14 +159,19 @@ class PruningResult:
 class HistoryPruner:
     """score conversation turns and selectively prune low-value turns."""
 
-    def __init__(self, tool_success_tracker=None):
+    def __init__(self, tool_success_tracker=None, adaptive_tool_scoring_override=None):
         """Optional tool_success_tracker enables CB3 adaptive scoring.
 
         When provided AND ``policy.adaptive_tool_scoring`` is True, each tool
         turn's score is multiplied by ``tracker.tool_weight_multiplier(name)``,
         which maps a rolling per-tool success rate into [0.5, 1.5].
+
+        ``adaptive_tool_scoring_override``: force the policy flag regardless of
+        tracker presence. ``None`` = auto (flag follows tracker presence);
+        ``True`` = always on (requires tracker to have effect); ``False`` = off.
         """
         self._tool_tracker = tool_success_tracker
+        self._adaptive_override = adaptive_tool_scoring_override
 
     def policy_for(self, *, mode: str = "balanced", economy_preset: str = "balanced") -> PruningPolicy:
         normalized_mode = str(mode or "balanced").strip().lower() or "balanced"
@@ -152,11 +183,15 @@ class HistoryPruner:
             score_threshold += 0.1
         elif preset == "quality":
             score_threshold -= 0.1
+        if self._adaptive_override is None:
+            adaptive = self._tool_tracker is not None
+        else:
+            adaptive = bool(self._adaptive_override)
         return PruningPolicy(
             mode=normalized_mode,
             economy_preset=preset,
             score_threshold=max(-1.0, min(1.5, score_threshold)),
-            adaptive_tool_scoring=self._tool_tracker is not None,
+            adaptive_tool_scoring=adaptive,
         )
 
     def prune(
@@ -168,7 +203,10 @@ class HistoryPruner:
         economy_preset: str = "balanced",
         trigger: str = "manual",
         active_files: Optional[Sequence[str]] = None,
+        turn_pin_overlay: Optional[Dict[str, str]] = None,
     ) -> PruningResult:
+        if turn_pin_overlay:
+            history = _apply_turn_pin_overlay(history, turn_pin_overlay)
         policy = self.policy_for(mode=mode, economy_preset=economy_preset)
         scored_turns = self.score_history(history, policy=policy, active_files=active_files)
         current_tokens = self._history_tokens(history)

@@ -163,10 +163,23 @@ class MemoryForgetter:
                 archived.append(entry)
         return archived
 
-    def run_expiry_pass(self, *, dry_run: bool = False) -> ExpirySummary:
-        """Evaluate all memories, archive those past TTL. Returns summary."""
+    def run_expiry_pass(
+        self,
+        *,
+        dry_run: bool = False,
+        include_filenames: Optional[List[str]] = None,
+    ) -> ExpirySummary:
+        """Evaluate all memories, archive those past TTL. Returns summary.
+
+        ``include_filenames``: optional whitelist. If provided, only stale entries
+        whose filename is in this list are archived; other stale entries are left
+        alone. Used by the nvim MH3-UX dialog to let the user confirm per-item.
+        """
         summary = ExpirySummary()
         stale = self.due_for_expiry()
+        if include_filenames is not None:
+            allow = {str(f) for f in include_filenames}
+            stale = [e for e in stale if e.filename in allow]
         if dry_run:
             summary.archived = [e.filename for e in stale]
             return summary
