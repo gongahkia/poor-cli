@@ -113,6 +113,18 @@ function M.check()
         info("nvim-treesitter not found. Some features like :PoorCLIDoc may be limited")
     end
 
+    -- notification plugin: soft dep, but strongly recommended because
+    -- error messages render much better with a real toast system
+    local has_snacks = pcall(require, "snacks")
+    local has_notify = pcall(require, "notify")
+    if has_snacks then
+        ok("snacks.nvim available — notifications will render as floating toasts")
+    elseif has_notify then
+        ok("rcarriga/nvim-notify available — notifications will render as floating toasts")
+    else
+        warn("No notification plugin detected. ERROR/WARN messages will fall back to a one-line summary + :messages history. Install rcarriga/nvim-notify or folke/snacks.nvim for multi-line toasts.")
+    end
+
     local has_cmp, cmp = pcall(require, "cmp")
     if has_cmp then
         ok("nvim-cmp available")

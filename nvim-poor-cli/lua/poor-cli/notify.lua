@@ -125,6 +125,30 @@ end
 M._flatten = flatten  -- test hook
 M._headline = headline  -- test hook
 
+-- Nudge the user once per session if neither nvim-notify nor snacks is
+-- installed. ERROR/WARN notifications still work via the fallback path,
+-- but multi-line toasts render much better with either plugin.
+local function warn_missing_notify_plugin()
+    if M._dep_checked then return end
+    M._dep_checked = true
+    local has_snacks = pcall(require, "snacks")
+    local has_notify = pcall(require, "notify")
+    if has_snacks or has_notify then return end
+    local cfg_tbl = cfg()
+    if cfg_tbl.suppress_notify_dep_warning == true then return end
+    vim.schedule(function()
+        vim.notify(
+            "[poor-cli] no notification plugin detected. Install rcarriga/nvim-notify or folke/snacks.nvim for multi-line toasts. "
+            .. "Suppress with: setup({ notifications = { suppress_notify_dep_warning = true } })",
+            vim.log.levels.WARN
+        )
+    end)
+end
+
+function M.has_notify_plugin()
+    return (pcall(require, "snacks") == true) or (pcall(require, "notify") == true)
+end
+
 function M.setup()
     if M._setup then return end
     M._setup = true
@@ -134,6 +158,7 @@ function M.setup()
         group = group,
         callback = function()
             M.detect(true)
+            warn_missing_notify_plugin()
             local ok, dashboard = pcall(require, "poor-cli.snacks_dashboard")
             if ok and type(dashboard.setup) == "function" then dashboard.setup() end
         end,
@@ -144,6 +169,7 @@ function M._reset()
     M._checked = false
     M._snacks = nil
     M._setup = false
+    M._dep_checked = false
 end
 
 return M
