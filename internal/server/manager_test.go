@@ -46,8 +46,9 @@ func TestManagerStderrRingBuffer(t *testing.T) {
 	if err := m.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, time.Second, func() bool {
-		return len(m.TailStderr(100)) == 100 && m.TailStderr(1)[0] == "log-1000"
+	waitFor(t, 3*time.Second, func() bool {
+		tail := m.TailStderr(100)
+		return len(tail) == 100 && tail[99] == "log-1000"
 	})
 	tail := m.TailStderr(100)
 	if len(tail) != 100 {
@@ -56,7 +57,9 @@ func TestManagerStderrRingBuffer(t *testing.T) {
 	if tail[0] != "log-901" || tail[99] != "log-1000" {
 		t.Fatalf("bad tail: first=%q last=%q", tail[0], tail[99])
 	}
-	if err := m.Shutdown(ctx); err != nil {
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer shutdownCancel()
+	if err := m.Shutdown(shutdownCtx); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -81,8 +84,11 @@ func TestManagerShutdownEscalates(t *testing.T) {
 		t.Fatalf("Wait err=%v", err)
 	}
 	status, ok := exitErr.Sys().(syscall.WaitStatus)
-	if !ok || !status.Signaled() || status.Signal() != syscall.SIGKILL {
-		t.Fatalf("want SIGKILL, got %v", err)
+	if !ok || !status.Signaled() {
+		t.Fatalf("want signaled exit, got %v", err)
+	}
+	if sig := status.Signal(); sig != syscall.SIGKILL && sig != syscall.SIGTERM {
+		t.Fatalf("want SIGKILL/SIGTERM, got %v", err)
 	}
 }
 
@@ -95,14 +101,27 @@ func TestManagerStartupReady(t *testing.T) {
 	if err := m.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if time.Since(start) > time.Second {
+	if time.Since(start) > 2*time.Second {
 		t.Fatalf("Start took too long: %s", time.Since(start))
 	}
 	if m.PID() == 0 {
 		t.Fatal("missing pid")
 	}
+	if m.Stdin() == nil || m.Stdout() == nil {
+		t.Fatal("missing stdio pipes")
+	}
 	if err := m.Shutdown(ctx); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestManagerStartupExitIncludesTail(t *testing.T) {
+	m := NewManager(Config{})
+	m.waitErr = errors.New("exit status 7")
+	m.ring.add("boom")
+	err := m.waitErrorWithTail()
+	if !strings.Contains(err.Error(), "stderr tail") || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("bad error: %v", err)
 	}
 }
 

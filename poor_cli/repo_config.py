@@ -142,6 +142,7 @@ class ChatMessage:
     content: str
     timestamp: str
     tool_calls: Optional[List[Dict[str, Any]]] = None
+    author: Optional[Dict[str, Any]] = None
     id: Optional[str] = None
     parent_id: Optional[str] = None
     branch_of: Optional[str] = None
@@ -603,7 +604,13 @@ class RepoConfig:
             logger.info(f"Ended session: {self.current_session.session_id}")
             self.current_session = None
 
-    def add_message(self, role: str, content: str, tool_calls: Optional[List[Dict[str, Any]]] = None) -> None:
+    def add_message(
+        self,
+        role: str,
+        content: str,
+        tool_calls: Optional[List[Dict[str, Any]]] = None,
+        author: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """Add a message to current session"""
         if not self.current_session:
             logger.warning("No active session, creating new one")
@@ -619,6 +626,7 @@ class RepoConfig:
             content=content,
             timestamp=datetime.now().isoformat(),
             tool_calls=tool_calls,
+            author=author,
             id=turn_id,
             parent_id=parent_id,
             branch_of=None,
@@ -641,6 +649,7 @@ class RepoConfig:
         parent_id: str,
         branch_of: str,
         turn_id: str,
+        author: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Add a regenerated sibling message to current session."""
         if not self.current_session:
@@ -650,6 +659,7 @@ class RepoConfig:
             role=role,
             content=content,
             timestamp=datetime.now().isoformat(),
+            author=author,
             id=turn_id,
             parent_id=parent_id,
             branch_of=branch_of,

@@ -18,9 +18,6 @@ func ResolveBinary(override string) (string, error) {
 	if path, err := exec.LookPath("poor-cli-server"); err == nil {
 		return path, nil
 	}
-	if path, err := exec.LookPath("poor-cli"); err == nil {
-		return path, nil
-	}
 	return "", errors.New("server: poor-cli-server not found; install poor-cli-server or set POOR_CLI_SERVER_PATH to an executable path")
 }
 

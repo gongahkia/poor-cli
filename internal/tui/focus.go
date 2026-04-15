@@ -8,6 +8,7 @@ const (
 	KeyOwnerNone KeyOwner = iota
 	KeyOwnerInput
 	KeyOwnerChat
+	KeyOwnerUsers
 	KeyOwnerModal
 	KeyOwnerGlobal
 )
@@ -30,7 +31,7 @@ func (r FocusRouter) Owns(msg tea.KeyMsg) KeyOwner {
 		return KeyOwnerModal
 	}
 	switch msg.String() {
-	case "ctrl+c", "ctrl+q", "ctrl+j", "ctrl+i":
+	case "ctrl+c", "ctrl+q", "ctrl+j", "ctrl+i", "ctrl+u":
 		return KeyOwnerGlobal
 	case "esc":
 		return KeyOwnerGlobal
@@ -38,10 +39,22 @@ func (r FocusRouter) Owns(msg tea.KeyMsg) KeyOwner {
 	if r.Target == FocusChat {
 		return chatKeyOwner(msg)
 	}
+	if r.Target == FocusUsers {
+		return usersKeyOwner(msg)
+	}
 	if r.Target == FocusInput || r.Target == FocusIntro {
 		return inputKeyOwner(msg)
 	}
 	return KeyOwnerNone
+}
+
+func usersKeyOwner(msg tea.KeyMsg) KeyOwner {
+	switch msg.String() {
+	case "up", "down", "k", "j", "a", "d", "x", "r", "p", "enter":
+		return KeyOwnerUsers
+	default:
+		return KeyOwnerGlobal
+	}
 }
 
 func inputKeyOwner(msg tea.KeyMsg) KeyOwner {

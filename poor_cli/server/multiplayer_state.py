@@ -323,6 +323,16 @@ class MultiplayerStateMixin:
                 invite_ttl_seconds=config.multiplayer.invite_ttl_seconds,
                 owner_name=config.multiplayer.owner_name,
                 ice_servers=self._build_multiplayer_ice_servers(config),
+                typing_presence_enabled=config.multiplayer.features.typingPresence,
+                message_attribution_enabled=config.multiplayer.features.messageAttribution,
+                multi_prompter_enabled=config.multiplayer.features.multiPrompter,
+                typing_presence_debounce_ms=config.multiplayer.typingPresence.debounceMs,
+                typing_presence_broadcast_interval_ms=(
+                    config.multiplayer.typingPresence.broadcastIntervalMs
+                ),
+                diff_voting_enabled=config.multiplayer.features.diffVoting,
+                diff_voting_threshold=config.multiplayer.diffVoting.threshold,
+                diff_voting_required_voters=config.multiplayer.diffVoting.requiredVoters,
             )
             try:
                 await host.start()
@@ -549,6 +559,92 @@ class MultiplayerStateMixin:
 
             rooms_payload = host.list_room_members(requested_room or None)
             return {"running": True, "rooms": rooms_payload}
+
+    async def handle_set_typing(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+
+        connection_id = str(params.get("connectionId", "")).strip()
+        if not connection_id:
+            raise InvalidParamsError("Missing connectionId")
+        requested_room = str(params.get("room", "")).strip()
+        typing = bool(params.get("typing", False))
+
+        async with self._get_host_server_lock():
+            if self._host_server is None:
+                raise InvalidParamsError("No multiplayer host is currently running")
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+            if not getattr(host, "typing_presence_enabled", False):
+                raise InvalidParamsError("typingPresence feature is disabled")
+            if not hasattr(host, "set_member_typing"):
+                raise RuntimeError("Active host does not support typing presence")
+            result = await host.set_member_typing(room_name, connection_id, typing)
+            if result is None:
+                raise InvalidParamsError(
+                    f"Connection `{connection_id}` was not found in room `{room_name}`"
+                )
+            return result
+
+    async def handle_list_presence(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+
+        requested_room = str(params.get("room", "")).strip()
+        async with self._get_host_server_lock():
+            if self._host_server is None:
+                raise InvalidParamsError("No multiplayer host is currently running")
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+            if not getattr(host, "typing_presence_enabled", False):
+                raise InvalidParamsError("typingPresence feature is disabled")
+            if not hasattr(host, "list_room_presence"):
+                raise RuntimeError("Active host does not support typing presence")
+            result = await host.list_room_presence(room_name)
+            if result is None:
+                raise InvalidParamsError(f"Unknown room `{room_name}`")
+            return result
+
+    async def handle_list_room_queue(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+
+        requested_room = str(params.get("room", "")).strip()
+        async with self._get_host_server_lock():
+            if self._host_server is None:
+                raise InvalidParamsError("No multiplayer host is currently running")
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+            if not getattr(host, "multi_prompter_enabled", False):
+                raise InvalidParamsError("multiPrompter feature is disabled")
+            if not hasattr(host, "list_room_queue"):
+                raise RuntimeError("Active host does not support room queues")
+            result = host.list_room_queue(room_name)
+            if result is None:
+                raise InvalidParamsError(f"Unknown room `{room_name}`")
+            return result
+
+    async def handle_cancel_queue_item(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+
+        requested_room = str(params.get("room", "")).strip()
+        queue_id = str(params.get("queueId", params.get("queue_id", ""))).strip()
+        if not queue_id:
+            raise InvalidParamsError("queueId is required")
+        async with self._get_host_server_lock():
+            if self._host_server is None:
+                raise InvalidParamsError("No multiplayer host is currently running")
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+            if not getattr(host, "multi_prompter_enabled", False):
+                raise InvalidParamsError("multiPrompter feature is disabled")
+            if not hasattr(host, "cancel_room_queue_item"):
+                raise RuntimeError("Active host does not support room queues")
+            result = await host.cancel_room_queue_item(room_name, queue_id, owner=True)
+            if result is None or result.get("reason") == "not_found":
+                raise InvalidParamsError(f"Unknown queue item: {queue_id}")
+            return result
 
     async def handle_remove_host_member(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """

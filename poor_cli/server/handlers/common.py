@@ -37,7 +37,7 @@ class CommonHandlersMixin:
         self._sandbox_preset: str = "workspace-write"
         self._permission_rules = PermissionRuleEngine(Path.cwd())
 
-    def _normalize_client_capabilities(raw_capabilities: Any) -> Dict[str, Any]:
+    def _normalize_client_capabilities(self, raw_capabilities: Any) -> Dict[str, Any]:
         if isinstance(raw_capabilities, dict):
             return dict(raw_capabilities)
         return {}

@@ -3,9 +3,26 @@ from __future__ import annotations
 
 from poor_cli.server.handler_deps import *
 from poor_cli.server.registry import register
+from poor_cli.multiplayer_attribution import (
+    attribution_explicitly_disabled,
+    local_author_tag,
+)
 
 
 class SessionsHandlersMixin:
+    def _history_message_payload(self, msg: Any) -> Dict[str, Any]:
+        payload = {
+            "role": msg.role,
+            "content": msg.content,
+            "timestamp": msg.timestamp,
+        }
+        if (
+            getattr(self, "_embedded_multiplayer_room", False)
+            or not attribution_explicitly_disabled(getattr(self, "_client_capabilities", {}))
+        ):
+            payload["author"] = msg.author or local_author_tag()
+        return payload
+
     def _get_repo_config(self):
         from ..repo_config import get_repo_config
 
@@ -83,14 +100,7 @@ class SessionsHandlersMixin:
 
         return {
             "sessionId": session_id,
-            "messages": [
-                {
-                    "role": msg.role,
-                    "content": msg.content,
-                    "timestamp": msg.timestamp,
-                }
-                for msg in messages
-            ],
+            "messages": [self._history_message_payload(msg) for msg in messages],
         }
 
     async def handle_search_history(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -108,11 +118,7 @@ class SessionsHandlersMixin:
         lowered = term.lower()
 
         matches = [
-            {
-                "role": msg.role,
-                "content": msg.content,
-                "timestamp": msg.timestamp,
-            }
+            self._history_message_payload(msg)
             for msg in messages
             if lowered in msg.content.lower()
         ]
@@ -212,14 +218,7 @@ class SessionsHandlersMixin:
                 "provider": self.core.config.model.provider if self.core.config else "unknown",
                 "model": self.core.config.model.model_name if self.core.config else "unknown",
                 "message_count": len(messages),
-                "messages": [
-                    {
-                        "role": msg.role,
-                        "content": msg.content,
-                        "timestamp": msg.timestamp,
-                    }
-                    for msg in messages
-                ],
+                "messages": [self._history_message_payload(msg) for msg in messages],
             }
             output_path.write_text(
                 json.dumps(payload, indent=2, ensure_ascii=False),

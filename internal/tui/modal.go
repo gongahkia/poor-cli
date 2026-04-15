@@ -12,6 +12,14 @@ type Modal struct {
 	Input   string
 }
 
+type ModalPayloadViewer interface {
+	View(width, height int) string
+}
+
+type ModalPayloadCleaner interface {
+	Clear()
+}
+
 type ModalStack []Modal
 
 func (s *ModalStack) Push(modal Modal) {
@@ -32,6 +40,14 @@ func (s ModalStack) Top() (Modal, bool) {
 		return Modal{}, false
 	}
 	return s[len(s)-1], true
+}
+
+func (s *ModalStack) UpdateTopPayload(fn func(any) any) {
+	if len(*s) == 0 {
+		return
+	}
+	top := &(*s)[len(*s)-1]
+	top.Payload = fn(top.Payload)
 }
 
 func (s ModalStack) Len() int {
@@ -59,7 +75,7 @@ func (m Modal) Render(width, height int) string {
 	height = maxInt(1, height)
 	bodyHeight := maxInt(1, height-2)
 	title := modalTitle(m.Kind)
-	body := modalBody(m)
+	body := modalBody(m, width-2, bodyHeight)
 	box := lipgloss.NewStyle().
 		Width(width).
 		Height(height).
@@ -74,8 +90,16 @@ func modalTitle(kind ModalKind) string {
 		return "command palette"
 	case ModalMention:
 		return "mention"
+	case ModalCost:
+		return "Cost this session"
 	case ModalProviderPicker:
-		return "provider"
+		return "Switch provider"
+	case ModalSessionPicker:
+		return "Switch session"
+	case ModalRolePicker:
+		return "Set role"
+	case ModalAPIKeyPrompt:
+		return "API key required"
 	case ModalPermissionPrompt:
 		return "permission"
 	default:
@@ -83,7 +107,10 @@ func modalTitle(kind ModalKind) string {
 	}
 }
 
-func modalBody(m Modal) string {
+func modalBody(m Modal, width, height int) string {
+	if viewer, ok := m.Payload.(ModalPayloadViewer); ok {
+		return viewer.View(width, height)
+	}
 	if text, ok := m.Payload.(string); ok && text != "" {
 		if m.Input != "" {
 			return text + "\n" + m.Input

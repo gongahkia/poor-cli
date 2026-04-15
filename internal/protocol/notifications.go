@@ -3,34 +3,43 @@ package protocol
 import "encoding/json"
 
 type StreamChunk struct {
-	RequestID string `json:"requestId"`
-	Chunk     string `json:"chunk"`
-	Done      bool   `json:"done"`
-	Reason    string `json:"reason,omitempty"`
+	RequestID          string `json:"requestId"`
+	Chunk              string `json:"chunk"`
+	Done               bool   `json:"done"`
+	Reason             string `json:"reason,omitempty"`
+	AuthorConnectionID string `json:"authorConnectionId,omitempty"`
+	AuthorDisplayName  string `json:"authorDisplayName,omitempty"`
+	AuthorRole         string `json:"authorRole,omitempty"`
 }
 
 type ThinkingChunk struct {
-	RequestID string `json:"requestId"`
-	Chunk     string `json:"chunk"`
+	RequestID          string `json:"requestId"`
+	Chunk              string `json:"chunk"`
+	AuthorConnectionID string `json:"authorConnectionId,omitempty"`
+	AuthorDisplayName  string `json:"authorDisplayName,omitempty"`
+	AuthorRole         string `json:"authorRole,omitempty"`
 }
 
 type ToolEvent struct {
-	RequestID      string          `json:"requestId"`
-	EventType      string          `json:"eventType"`
-	ToolName       string          `json:"toolName"`
-	ToolArgs       map[string]any  `json:"toolArgs"`
-	ToolResult     json.RawMessage `json:"toolResult,omitempty"`
-	CallID         string          `json:"callId,omitempty"`
-	Diff           string          `json:"diff,omitempty"`
-	Paths          []string        `json:"paths,omitempty"`
-	CheckpointID   *string         `json:"checkpointId,omitempty"`
-	Changed        *bool           `json:"changed,omitempty"`
-	Message        string          `json:"message,omitempty"`
-	OutputFilter   map[string]any  `json:"outputFilter,omitempty"`
-	OriginalSize   *int            `json:"originalSize,omitempty"`
-	FilteredSize   *int            `json:"filteredSize,omitempty"`
-	IterationIndex *int            `json:"iterationIndex,omitempty"`
-	IterationCap   *int            `json:"iterationCap,omitempty"`
+	RequestID          string          `json:"requestId"`
+	EventType          string          `json:"eventType"`
+	ToolName           string          `json:"toolName"`
+	ToolArgs           map[string]any  `json:"toolArgs"`
+	ToolResult         json.RawMessage `json:"toolResult,omitempty"`
+	CallID             string          `json:"callId,omitempty"`
+	Diff               string          `json:"diff,omitempty"`
+	Paths              []string        `json:"paths,omitempty"`
+	CheckpointID       *string         `json:"checkpointId,omitempty"`
+	Changed            *bool           `json:"changed,omitempty"`
+	Message            string          `json:"message,omitempty"`
+	OutputFilter       map[string]any  `json:"outputFilter,omitempty"`
+	OriginalSize       *int            `json:"originalSize,omitempty"`
+	FilteredSize       *int            `json:"filteredSize,omitempty"`
+	IterationIndex     *int            `json:"iterationIndex,omitempty"`
+	IterationCap       *int            `json:"iterationCap,omitempty"`
+	AuthorConnectionID string          `json:"authorConnectionId,omitempty"`
+	AuthorDisplayName  string          `json:"authorDisplayName,omitempty"`
+	AuthorRole         string          `json:"authorRole,omitempty"`
 }
 
 type CostUpdate struct {
@@ -51,14 +60,20 @@ type CostUpdate struct {
 	IsEstimate               *bool   `json:"isEstimate,omitempty"`
 	ConfidencePercent        *int    `json:"confidencePercent,omitempty"`
 	ConfidenceCategory       string  `json:"confidenceCategory,omitempty"`
+	AuthorConnectionID       string  `json:"authorConnectionId,omitempty"`
+	AuthorDisplayName        string  `json:"authorDisplayName,omitempty"`
+	AuthorRole               string  `json:"authorRole,omitempty"`
 }
 
 type Progress struct {
-	RequestID      string `json:"requestId,omitempty"`
-	Phase          string `json:"phase"`
-	Message        string `json:"message"`
-	IterationIndex *int   `json:"iterationIndex,omitempty"`
-	IterationCap   *int   `json:"iterationCap,omitempty"`
+	RequestID          string `json:"requestId,omitempty"`
+	Phase              string `json:"phase"`
+	Message            string `json:"message"`
+	IterationIndex     *int   `json:"iterationIndex,omitempty"`
+	IterationCap       *int   `json:"iterationCap,omitempty"`
+	AuthorConnectionID string `json:"authorConnectionId,omitempty"`
+	AuthorDisplayName  string `json:"authorDisplayName,omitempty"`
+	AuthorRole         string `json:"authorRole,omitempty"`
 }
 
 type PermissionReq struct {
@@ -107,4 +122,8 @@ type InlineChunk struct {
 	RequestID string `json:"requestId"`
 	Chunk     string `json:"chunk"`
 	Done      bool   `json:"done"`
+}
+
+type SetTypingParams struct {
+	Typing bool `json:"typing"`
 }

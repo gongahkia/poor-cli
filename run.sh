@@ -53,6 +53,13 @@ else
     echo "Info: .env not found. Launching poor-cli anyway; use /setup in chat to create one."
 fi
 
-# Run poor-cli (Python backend + Neovim plugin surface)
+# No args / flags launch the Go TUI; Python subcommands still route to poor_cli.
 clear
-exec python3 -m poor_cli "$@"
+case "${1:-}" in
+    ""|-*|help|version)
+        exec go run ./cmd/gocli-poor "$@"
+        ;;
+    *)
+        exec python3 -m poor_cli "$@"
+        ;;
+esac

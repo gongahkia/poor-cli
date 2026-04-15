@@ -23,8 +23,12 @@ type dispatchedAction struct {
 }
 
 func NewStore() *Store {
+	return NewStoreWithState(AppState{Connection: ConnState{Phase: Disconnected}})
+}
+
+func NewStoreWithState(initial AppState) *Store {
 	s := &Store{
-		state:   AppState{Connection: ConnState{Phase: Disconnected}},
+		state:   cloneAppState(initial),
 		actions: make(chan dispatchedAction, MaxMessages),
 		subs:    make(map[chan AppState]struct{}),
 		quit:    make(chan struct{}),

@@ -8,6 +8,7 @@ type CostSnapshot struct {
 	InputTokens                   int              `json:"inputTokens,omitempty"`
 	OutputTokens                  int              `json:"outputTokens,omitempty"`
 	CacheReadTokens               int              `json:"cacheReadTokens,omitempty"`
+	CacheWriteTokens              int              `json:"cacheWriteTokens,omitempty"`
 	PerProvider                   map[string]any   `json:"perProvider,omitempty"`
 	PerTurn                       []map[string]any `json:"per_turn,omitempty"`
 	PerTurnCamel                  []map[string]any `json:"perTurn,omitempty"`
@@ -66,6 +67,7 @@ type CostSummary struct {
 	SessionCost                    float64        `json:"sessionCost,omitempty"`
 	TotalCost                      float64        `json:"totalCost,omitempty"`
 	CacheReadTokens                int            `json:"cacheReadTokens,omitempty"`
+	CacheWriteTokens               int            `json:"cacheWriteTokens,omitempty"`
 	PerProvider                    map[string]any `json:"perProvider,omitempty"`
 }
 
@@ -105,6 +107,8 @@ type SavingsSnapshot struct {
 	History               map[string]any     `json:"history,omitempty"`
 	TopContributorsByWeek []map[string]any   `json:"top_contributors_by_week,omitempty"`
 	TotalSavedUSD         float64            `json:"totalSavedUsd,omitempty"`
+	CostSaved             float64            `json:"costSaved,omitempty"`
+	TokensSavedCamel      int                `json:"tokensSaved,omitempty"`
 	ByStrategy            map[string]float64 `json:"byStrategy,omitempty"`
 	LastUpdatedAt         int64              `json:"lastUpdatedAt,omitempty"`
 }

@@ -7,6 +7,7 @@ local diagnostics = require("poor-cli.diagnostics")
 local timeline = require("poor-cli.timeline")
 local pickers = require("poor-cli.pickers")
 local mentions = require("poor-cli.mentions")
+local attribution = require("poor-cli.chat_attribution")
 
 local M = {}
 
@@ -29,6 +30,9 @@ M.message_queue = {} -- FIFO queue of { message = string, resolved_msg = string,
 M.stream_meta = nil -- { started_at_ns, input_tokens, output_tokens, estimated_cost, cache_read, cache_creation }
 M.last_non_chat_win = nil
 M.edit_state = nil
+M.typing_presence = { presence = {}, members = {}, localConnectionId = "" }
+M._typing_footer = { buf = nil, win = nil, text = nil }
+M._local_typing = { typing = false, last_true_ms = 0, idle_timer = nil }
 
 M.register_source = mentions.register_source
 
@@ -82,6 +86,47 @@ setup_target_window_tracking()
 
 local function trim(value)
     return tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function now_ms()
+    local uv = vim.uv or vim.loop
+    return uv and uv.now and uv.now() or math.floor(os.clock() * 1000)
+end
+
+local function multiplayer_state()
+    if type(rpc.get_multiplayer_state) ~= "function" then return {} end
+    return rpc.get_multiplayer_state() or {}
+end
+
+local function multiplayer_active()
+    local state = multiplayer_state()
+    return state.enabled == true or trim(state.room) ~= ""
+end
+
+local function local_connection_id()
+    local state = multiplayer_state()
+    return trim(state.local_connection_id or state.localConnectionId)
+end
+
+local function remote_author_prefix(event)
+    if not multiplayer_active() or type(event) ~= "table" then return "" end
+    local author_id = trim(event.authorConnectionId or event.author_connection_id)
+    if author_id == "" then return "" end
+    local local_id = local_connection_id()
+    if local_id ~= "" and author_id == local_id then return "" end
+    if author_id == "local" then return "" end
+    return attribution.format_author(event)
+end
+
+local function message_header(role, event)
+    local prefix = remote_author_prefix(event)
+    if prefix ~= "" then
+        return "## " .. prefix
+    end
+    if role == "user" then
+        return "## 👤 You"
+    end
+    return "## 🤖 Assistant"
 end
 
 local function parse_fence_lang(line)
@@ -439,12 +484,93 @@ function M.open()
     vim.wo[M.win].signcolumn = "no"
     vim.cmd("normal! G")
     M.setup_buffer_keymaps()
+    M.refresh_typing_presence()
 end
+
+local typing_footer_close
 
 function M.close()
     if M.win and vim.api.nvim_win_is_valid(M.win) then
         vim.api.nvim_win_close(M.win, true)
         M.win = nil
+    end
+    if typing_footer_close then typing_footer_close() end
+end
+
+typing_footer_close = function()
+    local footer = M._typing_footer
+    if footer.win and vim.api.nvim_win_is_valid(footer.win) then
+        vim.api.nvim_win_close(footer.win, true)
+    end
+    footer.win = nil
+    if footer.buf and vim.api.nvim_buf_is_valid(footer.buf) then
+        vim.api.nvim_buf_delete(footer.buf, { force = true })
+    end
+    footer.buf = nil
+    footer.text = nil
+    local ip = M._input_popup
+    if ip and ip.win and vim.api.nvim_win_is_valid(ip.win) and M.win and vim.api.nvim_win_is_valid(M.win) then
+        local pos = vim.api.nvim_win_get_position(M.win)
+        pcall(vim.api.nvim_win_set_config, ip.win, { relative = "editor", row = pos[1] + vim.api.nvim_win_get_height(M.win) - 1, col = pos[2] + 1 })
+    end
+end
+
+local function render_typing_footer()
+    local state = multiplayer_state()
+    M.typing_presence.localConnectionId = state.local_connection_id or state.localConnectionId or M.typing_presence.localConnectionId or ""
+    M.typing_presence.members = state.members or M.typing_presence.members or {}
+    local text = attribution.format_typing_footer(M.typing_presence)
+    if not text then
+        typing_footer_close()
+        return
+    end
+    if not M.win or not vim.api.nvim_win_is_valid(M.win) then
+        return
+    end
+    local footer = M._typing_footer
+    if not footer.buf or not vim.api.nvim_buf_is_valid(footer.buf) then
+        footer.buf = vim.api.nvim_create_buf(false, true)
+        vim.bo[footer.buf].buftype = "nofile"
+        vim.bo[footer.buf].bufhidden = "wipe"
+        vim.bo[footer.buf].swapfile = false
+    end
+    if footer.text ~= text then
+        vim.api.nvim_buf_set_lines(footer.buf, 0, -1, false, { " " .. text })
+        footer.text = text
+    end
+    local width = math.max(20, vim.api.nvim_win_get_width(M.win) - 2)
+    local pos = vim.api.nvim_win_get_position(M.win)
+    local row = pos[1] + vim.api.nvim_win_get_height(M.win) - 1
+    local col = pos[2] + 1
+    local ip = M._input_popup
+    if ip and ip.win and vim.api.nvim_win_is_valid(ip.win) then
+        pcall(vim.api.nvim_win_set_config, ip.win, { relative = "editor", row = math.max(0, row - 2), col = col })
+    end
+    if footer.win and vim.api.nvim_win_is_valid(footer.win) then
+        pcall(vim.api.nvim_win_set_config, footer.win, {
+            relative = "editor",
+            width = width,
+            height = 1,
+            row = row,
+            col = col,
+            style = "minimal",
+            focusable = false,
+            zindex = 54,
+        })
+        return
+    end
+    footer.win = vim.api.nvim_open_win(footer.buf, false, {
+        relative = "editor",
+        width = width,
+        height = 1,
+        row = row,
+        col = col,
+        style = "minimal",
+        focusable = false,
+        zindex = 54,
+    })
+    if footer.win and vim.api.nvim_win_is_valid(footer.win) then
+        vim.wo[footer.win].winblend = 10
     end
 end
 
@@ -496,12 +622,7 @@ function M.append_message(role, content, turn)
         return
     end
 
-    local lines = {}
-    if role == "user" then
-        table.insert(lines, "## 👤 You")
-    else
-        table.insert(lines, "## 🤖 Assistant")
-    end
+    local lines = { message_header(role, turn) }
 
     table.insert(lines, "")
     for _, line in ipairs(vim.split(content, "\n", { plain = true })) do
@@ -526,6 +647,8 @@ function M.append_message(role, content, turn)
         id = turn and (turn.id or turn.turnId or turn.turn_id) or nil,
         parentId = turn and (turn.parentId or turn.parent_id) or nil,
         branchOf = turn and (turn.branchOf or turn.branch_of) or nil,
+        authorConnectionId = turn and (turn.authorConnectionId or turn.author_connection_id) or nil,
+        authorDisplayName = turn and (turn.authorDisplayName or turn.author_display_name) or nil,
     })
     if role == "assistant" then
         diagnostics.apply_from_text(content)
@@ -550,6 +673,16 @@ local function history_content(message)
     return ""
 end
 
+local function history_meta(message, turn)
+    local meta = type(turn) == "table" and vim.deepcopy(turn) or {}
+    if type(message) ~= "table" then return meta end
+    local author = type(message.author) == "table" and message.author or {}
+    meta.authorConnectionId = message.authorConnectionId or message.author_connection_id or author.authorConnectionId or author.author_connection_id or meta.authorConnectionId
+    meta.authorDisplayName = message.authorDisplayName or message.author_display_name or author.authorDisplayName or author.author_display_name or meta.authorDisplayName
+    meta.authorRole = message.authorRole or message.author_role or author.authorRole or author.author_role or meta.authorRole
+    return meta
+end
+
 local function history_role(message)
     local role = tostring(message.role or "assistant")
     if role == "model" then return "assistant" end
@@ -565,7 +698,7 @@ function M.render_history(messages, branch_payload)
     M.turns = {}
     local active_path = type(branch_payload) == "table" and branch_payload.activePath or {}
     for idx, message in ipairs(messages or {}) do
-        M.append_message(history_role(message), history_content(message), active_path[idx] or message)
+        M.append_message(history_role(message), history_content(message), history_meta(message, active_path[idx] or message))
     end
 end
 
@@ -1059,12 +1192,27 @@ function M._stop_thinking_timer()
     end
 end
 
-function M._start_streaming_block()
+local function ensure_stream_meta()
+    if M.stream_meta then return end
+    M.stream_meta = {
+        started_at_ns = vim.loop.hrtime and vim.loop.hrtime() or 0,
+        input_tokens = 0,
+        output_tokens = 0,
+        estimated_cost = 0,
+        cache_read = 0,
+        cache_creation = 0,
+        estimated_output_tokens = 0,
+        confidence_percent = nil,
+        confidence_category = nil,
+    }
+end
+
+function M._start_streaming_block(event)
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
     end
     local line_count = vim.api.nvim_buf_line_count(M.buf)
-    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, { "## 🤖 Assistant", "", "💭 Thinking (0 sec)...", "" })
+    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, { message_header("assistant", event), "", "💭 Thinking (0 sec)...", "" })
     if M.stream_meta then
         M.stream_meta.assistant_header_line = line_count
     end
@@ -1095,6 +1243,18 @@ function M._start_streaming_block()
             end
         end))
     end
+end
+
+local function start_remote_stream(data)
+    if is_active_request(data.request_id or "") then return true end
+    local prefix = remote_author_prefix(data)
+    if prefix == "" or trim(data.request_id) == "" then return false end
+    M.open()
+    M.active_stream = { request_id = data.request_id, remote = true }
+    M.streaming_request_id = data.request_id
+    ensure_stream_meta()
+    M._start_streaming_block(data)
+    return true
 end
 
 function M._append_streaming_chunk(chunk)
@@ -1265,7 +1425,7 @@ function M.setup_streaming_autocmds()
         pattern = "PoorCLIThinkingChunk",
         callback = function(ev)
             local data = ev.data or {}
-            if not is_active_request(data.request_id or "") then
+            if not is_active_request(data.request_id or "") and not start_remote_stream(data) then
                 return
             end
             if data.chunk and data.chunk ~= "" then
@@ -1294,7 +1454,7 @@ function M.setup_streaming_autocmds()
         pattern = "PoorCLIStreamChunk",
         callback = function(ev)
             local data = ev.data or {}
-            if not is_active_request(data.request_id or "") then
+            if not is_active_request(data.request_id or "") and not start_remote_stream(data) then
                 return
             end
             if data.done then
@@ -1443,7 +1603,20 @@ function M.setup_streaming_autocmds()
         callback = function(ev)
             local data = ev.data or {}
             vim.schedule(function()
+                if data.event_type == "started" then
+                    start_remote_stream(data)
+                end
                 M._handle_room_event(data)
+            end)
+        end,
+    })
+    vim.api.nvim_create_autocmd("User", {
+        group = group,
+        pattern = "PoorCLIMemberTyping",
+        callback = function(ev)
+            local data = ev.data or {}
+            vim.schedule(function()
+                M._handle_member_typing(data)
             end)
         end,
     })
@@ -1692,6 +1865,108 @@ function M._handle_suggestion(data)
     require("poor-cli.notify").notify("[poor-cli] " .. summary, vim.log.levels.INFO)
     M.open()
     M.append_system_note(summary)
+end
+
+function M._handle_member_typing(data)
+    if type(data) ~= "table" then return end
+    local connection_id = trim(data.connection_id or data.connectionId)
+    if connection_id == "" then return end
+    M.typing_presence.presence = M.typing_presence.presence or {}
+    M.typing_presence.presence[connection_id] = data.typing == true
+    M.typing_presence.members = M.typing_presence.members or {}
+    M.typing_presence.members[connection_id] = {
+        connectionId = connection_id,
+        displayName = data.display_name or data.displayName or connection_id,
+    }
+    render_typing_footer()
+end
+
+function M._apply_presence_snapshot(snapshot)
+    if type(snapshot) ~= "table" then return end
+    local state = multiplayer_state()
+    M.typing_presence = {
+        presence = type(snapshot.presence) == "table" and snapshot.presence or {},
+        members = type(snapshot.members) == "table" and snapshot.members or state.members or {},
+        localConnectionId = state.local_connection_id or state.localConnectionId or "",
+    }
+    render_typing_footer()
+end
+
+function M.refresh_typing_presence()
+    if not multiplayer_active() or type(rpc.request) ~= "function" or (type(rpc.is_running) == "function" and not rpc.is_running()) then
+        return
+    end
+    local state = multiplayer_state()
+    local params = {}
+    if trim(state.room) ~= "" then params.room = state.room end
+    rpc.request("poor-cli/listPresence", params, function(result, _err)
+        vim.schedule(function()
+            M._apply_presence_snapshot(result)
+        end)
+    end)
+end
+
+local function typing_debounce_ms()
+    local multiplayer = config.get("multiplayer") or {}
+    local presence = type(multiplayer) == "table" and multiplayer.typingPresence or {}
+    local configured = type(presence) == "table" and tonumber(presence.debounceMs or presence.debounce_ms) or nil
+    return math.max(250, configured or 250)
+end
+
+local function stop_local_idle_timer()
+    local local_state = M._local_typing
+    if local_state.idle_timer then
+        pcall(function()
+            local_state.idle_timer:stop()
+            local_state.idle_timer:close()
+        end)
+        local_state.idle_timer = nil
+    end
+end
+
+local function send_typing_state(typing, force)
+    if not multiplayer_active() or type(rpc.request) ~= "function" then return end
+    if type(rpc.is_running) == "function" and not rpc.is_running() then return end
+    local local_state = M._local_typing
+    local now = now_ms()
+    if typing then
+        local debounce = typing_debounce_ms()
+        if not force and local_state.typing and (now - (local_state.last_true_ms or 0)) < debounce then
+            return
+        end
+        local_state.last_true_ms = now
+    elseif not local_state.typing and not force then
+        return
+    end
+    local_state.typing = typing == true
+    local mp = multiplayer_state()
+    local params = { typing = typing == true }
+    if trim(mp.room) ~= "" then params.room = mp.room end
+    local id = trim(mp.local_connection_id or mp.localConnectionId)
+    if id ~= "" then params.connectionId = id end
+    rpc.request("poor-cli/setTyping", params, function() end)
+end
+
+local function mark_local_typing()
+    send_typing_state(true, false)
+    stop_local_idle_timer()
+    local uv = vim.uv or vim.loop
+    if uv and uv.new_timer then
+        M._local_typing.idle_timer = uv.new_timer()
+        M._local_typing.idle_timer:start(2000, 0, vim.schedule_wrap(function()
+            send_typing_state(false, true)
+            stop_local_idle_timer()
+        end))
+    else
+        vim.defer_fn(function()
+            send_typing_state(false, true)
+        end, 2000)
+    end
+end
+
+local function clear_local_typing()
+    stop_local_idle_timer()
+    send_typing_state(false, true)
 end
 
 function M._append_tool_call(name, args)
@@ -2426,6 +2701,7 @@ function M.prompt_and_send(opts)
     vim.keymap.set("i", "<CR>", function()
         local line = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
         local edit_state = opts.edit_state
+        clear_local_typing()
         input_close()
         vim.cmd("stopinsert")
         if line == "" then
@@ -2452,17 +2728,20 @@ function M.prompt_and_send(opts)
 
     -- cancel
     vim.keymap.set("i", "<Esc>", function()
+        clear_local_typing()
         input_close()
         if opts.edit_state then clear_edit_state() end
         vim.cmd("stopinsert")
     end, { buffer = buf, nowait = true })
 
     vim.keymap.set("n", "<Esc>", function()
+        clear_local_typing()
         input_close()
         if opts.edit_state then clear_edit_state() end
     end, { buffer = buf, nowait = true })
 
     vim.keymap.set("n", "q", function()
+        clear_local_typing()
         input_close()
         if opts.edit_state then clear_edit_state() end
     end, { buffer = buf, nowait = true })
@@ -2489,6 +2768,7 @@ function M.prompt_and_send(opts)
     vim.api.nvim_create_autocmd({ "TextChangedI", "TextChanged" }, {
         buffer = buf,
         callback = function()
+            mark_local_typing()
             vim.schedule(update_completions)
         end,
     })

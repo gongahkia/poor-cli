@@ -30,6 +30,7 @@ const (
 	FocusIntro FocusTarget = iota
 	FocusInput
 	FocusChat
+	FocusUsers
 	FocusModal
 )
 
@@ -38,7 +39,11 @@ type ModalKind int
 const (
 	ModalPalette ModalKind = iota
 	ModalMention
+	ModalCost
 	ModalProviderPicker
+	ModalSessionPicker
+	ModalRolePicker
+	ModalAPIKeyPrompt
 	ModalPermissionPrompt
 )
 
@@ -54,3 +59,8 @@ const (
 type IntroDoneMsg struct{}
 
 type InitializeOKMsg struct{}
+
+type InitializeNeedsAPIKeyMsg struct {
+	Provider string
+	Message  string
+}

@@ -16,7 +16,7 @@ local EAGER_SETUPS = {
     "custom_commands", "skills_nvim", "trust", "context_mgr",
     "cost", "providers", "collab_ext", "deploy_ext",
     "diagnostics_ext", "onboarding", "prompt_library", "workflow_picker", "pickers",
-    "collab", "multiplayer_room", "panels", "diff_review", "timeline", "branches",
+    "collab", "multiplayer_room", "users_panel", "panels", "diff_review", "timeline", "branches",
 }
 
 -- everything else is loaded on first access. the metatable below caches

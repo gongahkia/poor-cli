@@ -62,7 +62,8 @@ func (m *Manager) Start(ctx context.Context) error {
 		return err
 	}
 
-	args := append([]string{"--stdio"}, m.cfg.Args...)
+	args := append([]string(nil), m.cfg.Args...)
+	args = append(args, "--stdio")
 	cmd := exec.Command(bin, args...)
 	cmd.Dir = m.cfg.Cwd
 	cmd.Env = mergedEnv(m.cfg.Env)

@@ -57,6 +57,12 @@ func TestLoadPartialConfigMergesDefaults(t *testing.T) {
 	}
 }
 
+func TestDefaultAutoAcceptSafeEditsOn(t *testing.T) {
+	if !DefaultConfig().AutoAcceptSafeEdits {
+		t.Fatalf("AutoAcceptSafeEdits default off")
+	}
+}
+
 func TestLoadRejectsUnknownKeybinding(t *testing.T) {
 	home := testHome(t)
 	path := filepath.Join(home, ".gocli-poor.yaml")

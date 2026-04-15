@@ -21,6 +21,7 @@ from ..config import ConfigManager
 from ..core import PoorCLICore
 from ..exceptions import (
     PermissionDeniedError,
+    PoorCLIError,
     get_error_code,
     log_context,
     set_log_context,
@@ -139,13 +140,22 @@ class PoorCLIServer(HandlerMixin):
                         },
                     ),
                 )
+            except PoorCLIError as e:
+                return JsonRpcMessage(
+                    id=message.id,
+                    error=JsonRpcError.make_error(
+                        int(getattr(e, "RPC_CODE", JsonRpcError.INTERNAL_ERROR)),
+                        _sanitize_exception_message(e),
+                        {"error_code": e.error_code},
+                    ),
+                )
             except Exception as e:
                 error_code = get_error_code(e)
                 self.logger.exception(f"Handler error for {message.method}")
                 return JsonRpcMessage(
                     id=message.id,
                     error=JsonRpcError.make_error(
-                        JsonRpcError.INTERNAL_ERROR,
+                        int(getattr(e, "RPC_CODE", JsonRpcError.INTERNAL_ERROR)),
                         _sanitize_exception_message(e),
                         {"error_code": error_code},
                     ),

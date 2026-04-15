@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from .multiplayer_voting import VoteLedger
+
 
 @dataclass
 class InviteToken:
@@ -28,9 +30,10 @@ class AgendaItem:
     resolved: bool = False
     resolved_at: Optional[str] = None
     resolved_by: str = ""
+    votes: Optional[VoteLedger] = None
 
     def to_payload(self) -> Dict[str, Any]:
-        return {
+        payload = {
             "id": self.item_id,
             "text": self.text,
             "author": self.author,
@@ -39,6 +42,9 @@ class AgendaItem:
             "resolvedAt": self.resolved_at or "",
             "resolvedBy": self.resolved_by,
         }
+        if self.votes is not None:
+            payload["votes"] = self.votes.snapshot_payload()
+        return payload
 
 
 class CollaborationSession:
@@ -85,6 +91,55 @@ class CollaborationSession:
             "open": len(open_items),
             "openItems": [item.to_payload() for item in open_items[-10:]],
         }
+
+    def diff_voting_enabled(self) -> bool:
+        return bool(getattr(self.state, "diff_voting_enabled", False))
+
+    def multi_prompter_enabled(self) -> bool:
+        return bool(getattr(self.state, "multi_prompter_enabled", False))
+
+    def diff_voting_threshold(self) -> str:
+        return str(getattr(self.state, "diff_voting_threshold", "majority") or "majority")
+
+    def diff_voting_required_voters(self) -> int:
+        try:
+            return int(getattr(self.state, "diff_voting_required_voters", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def connected_approved_member_ids(self) -> List[str]:
+        return [
+            connection_id
+            for connection_id, member in self.state.members.items()
+            if member.approved and not self._is_member_closed(member)
+        ]
+
+    def create_vote_ledger(self) -> VoteLedger:
+        return VoteLedger(
+            threshold=self.diff_voting_threshold(),  # type: ignore[arg-type]
+            required_voters=self.diff_voting_required_voters(),
+            voter_ids=self.connected_approved_member_ids,
+        )
+
+    def ensure_vote_ledger(self, edit_id: str) -> VoteLedger:
+        ledgers = getattr(self.state, "hunk_vote_ledgers", None)
+        if ledgers is None:
+            ledgers = {}
+            setattr(self.state, "hunk_vote_ledgers", ledgers)
+        normalized = str(edit_id or "").strip()
+        if not normalized:
+            raise ValueError("editId is required")
+        ledger = ledgers.get(normalized)
+        if ledger is None:
+            ledger = self.create_vote_ledger()
+            ledgers[normalized] = ledger
+        return ledger
+
+    def get_vote_ledger(self, edit_id: str) -> Optional[VoteLedger]:
+        ledgers = getattr(self.state, "hunk_vote_ledgers", None)
+        if not isinstance(ledgers, dict):
+            return None
+        return ledgers.get(str(edit_id or "").strip())
 
     @staticmethod
     def is_token_expired(invite: InviteToken) -> bool:
@@ -183,6 +238,45 @@ class CollaborationSession:
         preferred_connection_id: Optional[str] = None,
         promote_fallback: bool = False,
     ) -> Optional[str]:
+        if self.multi_prompter_enabled():
+            promoted_connection_id = None
+            if preferred_connection_id:
+                preferred = self.state.members.get(preferred_connection_id)
+                if (
+                    preferred is not None
+                    and preferred.approved
+                    and not self._is_member_closed(preferred)
+                ):
+                    preferred.role = "prompter"
+                    preferred.hand_raised = False
+                    promoted_connection_id = preferred_connection_id
+            approved_prompters = [
+                connection_id
+                for connection_id, member in self.state.members.items()
+                if (
+                    member.approved
+                    and not self._is_member_closed(member)
+                    and member.role == "prompter"
+                )
+            ]
+            if approved_prompters:
+                return promoted_connection_id or approved_prompters[0]
+            if promote_fallback:
+                fallback = next(
+                    (
+                        (connection_id, member)
+                        for connection_id, member in self.state.members.items()
+                        if member.approved and not self._is_member_closed(member)
+                    ),
+                    None,
+                )
+                if fallback is not None:
+                    connection_id, member = fallback
+                    member.role = "prompter"
+                    member.hand_raised = False
+                    return connection_id
+            return promoted_connection_id
+
         promoted_connection_id = self.pick_room_prompter(
             preferred_connection_id=preferred_connection_id,
             promote_fallback=promote_fallback,
@@ -277,6 +371,7 @@ class CollaborationSession:
             text=normalized_text,
             author=author.strip() or "unknown",
             created_at=self.now_iso(),
+            votes=self.create_vote_ledger() if self.diff_voting_enabled() else None,
         )
         self.state.next_agenda_id += 1
         self.state.agenda.append(item)

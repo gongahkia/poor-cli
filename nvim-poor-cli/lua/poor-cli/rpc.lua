@@ -58,6 +58,7 @@ M.multiplayer_state = {
     last_event_type = "",
     members = {},
     last_suggestion = nil,
+    typing = {},
 }
 local uv = vim.uv or vim.loop
 local spinner_frames = { "-", "\\", "|", "/" }
@@ -76,6 +77,8 @@ local SILENT_METHODS = {
     ["poor-cli/getStatusView"] = true,
     ["poor-cli/getCollabSummary"] = true,
     ["poor-cli/listHostMembers"] = true, -- collab panel refresh
+    ["poor-cli/listPresence"] = true,
+    ["poor-cli/listRoomQueue"] = true,
     ["collab.room"] = true,
     ["collab.room/members"] = true,
     ["collab.room/events"] = true,
@@ -393,6 +396,7 @@ local function fresh_multiplayer_state()
         last_event_type = "",
         members = {},
         last_suggestion = nil,
+        typing = {},
     }
 end
 
@@ -486,6 +490,8 @@ function M.client_capabilities()
             roleUpdates = true,
             suggestions = true,
             roomPresence = true,
+            memberTyping = true,
+            queueUpdated = true,
             roomActions = {
                 suggestText = true,
                 passDriver = true,
@@ -1360,6 +1366,9 @@ function M.handle_notification(message)
             data = {
                 request_id = params.requestId or "",
                 chunk = params.chunk or "",
+                authorConnectionId = params.authorConnectionId or "",
+                authorDisplayName = params.authorDisplayName or "",
+                authorRole = params.authorRole or "",
             },
         })
     elseif message.method == "poor-cli/streamChunk" or message.method == "poor-cli/streamingChunk" then
@@ -1370,6 +1379,9 @@ function M.handle_notification(message)
                 chunk = params.chunk or params.content or "",
                 done = params.done or false,
                 reason = params.reason,
+                authorConnectionId = params.authorConnectionId or "",
+                authorDisplayName = params.authorDisplayName or "",
+                authorRole = params.authorRole or "",
             },
         })
     elseif message.method == "poor-cli/inlineChunk" then
@@ -1392,6 +1404,9 @@ function M.handle_notification(message)
                 chunk_index = params.chunkIndex or 0,
                 chunk = params.chunk or "",
                 task_id = params.taskId or params.sourceId or "",
+                authorConnectionId = params.authorConnectionId or "",
+                authorDisplayName = params.authorDisplayName or "",
+                authorRole = params.authorRole or "",
             },
         })
     elseif message.method == "poor-cli/taskStarted" or message.method == "poor-cli/taskProgress" or message.method == "poor-cli/taskFinished" then
@@ -1425,6 +1440,9 @@ function M.handle_notification(message)
                 filtered_size = params.filteredSize or 0,
                 iteration_index = params.iterationIndex or 0,
                 iteration_cap = params.iterationCap or 25,
+                authorConnectionId = params.authorConnectionId or "",
+                authorDisplayName = params.authorDisplayName or "",
+                authorRole = params.authorRole or "",
             },
         })
     elseif message.method == "poor-cli/timelineEvent" then
@@ -1493,6 +1511,11 @@ function M.handle_notification(message)
             pattern = "PoorCLIEditCommitted",
             data = params,
         })
+    elseif message.method == "poor-cli/hunkVoteUpdated" then
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = "PoorCLIHunkVoteUpdated",
+            data = params,
+        })
     elseif message.method == "poor-cli/progress" then
         vim.api.nvim_exec_autocmds("User", {
             pattern = "PoorCLIProgress",
@@ -1502,6 +1525,9 @@ function M.handle_notification(message)
                 message = params.message or "",
                 iteration_index = params.iterationIndex or 0,
                 iteration_cap = params.iterationCap or 25,
+                authorConnectionId = params.authorConnectionId or "",
+                authorDisplayName = params.authorDisplayName or "",
+                authorRole = params.authorRole or "",
             },
         })
     elseif message.method == "poor-cli/costUpdate" then
@@ -1517,6 +1543,9 @@ function M.handle_notification(message)
                 is_estimate = params.isEstimate or false,
                 confidence_percent = params.confidencePercent,
                 confidence_category = params.confidenceCategory,
+                authorConnectionId = params.authorConnectionId or "",
+                authorDisplayName = params.authorDisplayName or "",
+                authorRole = params.authorRole or "",
             },
         })
     elseif message.method == "poor-cli/roomEvent" then
@@ -1535,6 +1564,24 @@ function M.handle_notification(message)
                 preset = params.preset or "",
                 members = params.members or {},
                 details = params.details or {},
+                authorConnectionId = params.authorConnectionId or "",
+                authorDisplayName = params.authorDisplayName or "",
+                authorRole = params.authorRole or "",
+            },
+        })
+    elseif message.method == "poor-cli/memberTyping" then
+        local connection_id = params.connectionId or ""
+        M.multiplayer_state.typing = M.multiplayer_state.typing or {}
+        if connection_id ~= "" then
+            M.multiplayer_state.typing[connection_id] = params.typing == true
+        end
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = "PoorCLIMemberTyping",
+            data = {
+                room = params.room or "",
+                connection_id = connection_id,
+                display_name = params.displayName or "",
+                typing = params.typing == true,
             },
         })
     elseif message.method == "poor-cli/peerMessage" then
@@ -1556,6 +1603,20 @@ function M.handle_notification(message)
                 connection_id = params.connectionId or "",
                 role = params.role or "",
             },
+        })
+    elseif message.method == "poor-cli/queueUpdated" then
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = "PoorCLIQueueUpdated",
+            data = {
+                room = params.room or params.roomId or "",
+                room_id = params.roomId or params.room or "",
+                snapshot = params.snapshot or {},
+            },
+        })
+    elseif message.method == "poor-cli/collabMemberJoined" or message.method == "poor-cli/collabMemberLeft" then
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = message.method == "poor-cli/collabMemberJoined" and "PoorCLICollabMemberJoined" or "PoorCLICollabMemberLeft",
+            data = params,
         })
     elseif message.method == "poor-cli/suggestion" then
         M.multiplayer_state.last_suggestion = {

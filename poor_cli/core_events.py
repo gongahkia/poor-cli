@@ -176,7 +176,9 @@ class RepoHistoryAdapter:
         self._repo_config.start_session(model=model)
 
     def add_message(self, role: str, content: str) -> None:
-        self._repo_config.add_message(role=role, content=content)
+        from .multiplayer_attribution import current_author_tag
+
+        self._repo_config.add_message(role=role, content=content, author=current_author_tag())
 
     def clear_history(self) -> None:
         self._repo_config.clear_history()
@@ -185,10 +187,13 @@ class RepoHistoryAdapter:
         self._repo_config.set_active_leaf(turn_id)
 
     def add_branch_message(self, role: str, content: str, parent_id: str, branch_of: str, turn_id: str) -> None:
+        from .multiplayer_attribution import current_author_tag
+
         self._repo_config.add_branch_message(
             role=role,
             content=content,
             parent_id=parent_id,
             branch_of=branch_of,
             turn_id=turn_id,
+            author=current_author_tag(),
         )

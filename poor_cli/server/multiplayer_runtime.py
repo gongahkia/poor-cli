@@ -349,6 +349,16 @@ async def _run_multiplayer_host(
         invite_ttl_seconds=config.multiplayer.invite_ttl_seconds,
         owner_name=config.multiplayer.owner_name,
         ice_servers=PoorCLIServer._build_multiplayer_ice_servers(config),
+        typing_presence_enabled=config.multiplayer.features.typingPresence,
+        message_attribution_enabled=config.multiplayer.features.messageAttribution,
+        multi_prompter_enabled=config.multiplayer.features.multiPrompter,
+        typing_presence_debounce_ms=config.multiplayer.typingPresence.debounceMs,
+        typing_presence_broadcast_interval_ms=(
+            config.multiplayer.typingPresence.broadcastIntervalMs
+        ),
+        diff_voting_enabled=config.multiplayer.features.diffVoting,
+        diff_voting_threshold=config.multiplayer.diffVoting.threshold,
+        diff_voting_required_voters=config.multiplayer.diffVoting.requiredVoters,
     )
 
     tunnel: Optional[NgrokTunnel] = None

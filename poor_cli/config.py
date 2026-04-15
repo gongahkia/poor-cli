@@ -7,7 +7,7 @@ Handles loading, saving, and validating user configuration from YAML files.
 import yaml
 from pathlib import Path
 from typing import Dict, Any, Optional, List
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict, field, fields
 from enum import Enum
 from poor_cli.exceptions import ConfigurationError, setup_logger
 from poor_cli.provider_catalog import all_provider_entries, default_model_for_provider
@@ -418,6 +418,26 @@ class SandboxConfig:
 
 
 @dataclass
+class MultiplayerFeaturesConfig:
+    multiPrompter: bool = False
+    typingPresence: bool = False
+    messageAttribution: bool = False
+    diffVoting: bool = False
+
+
+@dataclass
+class MultiplayerTypingPresenceConfig:
+    debounceMs: int = 250
+    broadcastIntervalMs: int = 500
+
+
+@dataclass
+class MultiplayerDiffVotingConfig:
+    threshold: str = "majority"
+    requiredVoters: int = 0
+
+
+@dataclass
 class MultiplayerConfig:
     """Configuration for owner-authoritative P2P multiplayer."""
 
@@ -437,6 +457,34 @@ class MultiplayerConfig:
     turn_username_env: str = "POOR_CLI_TURN_USERNAME"
     turn_credential_env: str = "POOR_CLI_TURN_CREDENTIAL"
     turn_realm: str = ""
+    features: MultiplayerFeaturesConfig = field(default_factory=MultiplayerFeaturesConfig)
+    typingPresence: MultiplayerTypingPresenceConfig = field(default_factory=MultiplayerTypingPresenceConfig)
+    diffVoting: MultiplayerDiffVotingConfig = field(default_factory=MultiplayerDiffVotingConfig)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "MultiplayerConfig":
+        data = data.copy() if isinstance(data, dict) else {}
+        features_data = data.get("features", {})
+        typing_data = data.get("typingPresence", {})
+        diff_voting_data = data.get("diffVoting", {})
+        data["features"] = (
+            MultiplayerFeaturesConfig(**features_data)
+            if isinstance(features_data, dict)
+            else MultiplayerFeaturesConfig()
+        )
+        data["typingPresence"] = (
+            MultiplayerTypingPresenceConfig(**typing_data)
+            if isinstance(typing_data, dict)
+            else MultiplayerTypingPresenceConfig()
+        )
+        data["diffVoting"] = (
+            MultiplayerDiffVotingConfig(**diff_voting_data)
+            if isinstance(diff_voting_data, dict)
+            else MultiplayerDiffVotingConfig()
+        )
+        allowed = {item.name for item in fields(cls)}
+        data = {key: value for key, value in data.items() if key in allowed}
+        return cls(**data)
 
 
 @dataclass
@@ -620,7 +668,7 @@ class Config:
             security=SecurityConfig.from_dict(data.get("security", {})),
             tools=ToolConfig(**data.get("tools", {})),
             sandbox=SandboxConfig(**data.get("sandbox", {})),
-            multiplayer=MultiplayerConfig(**data.get("multiplayer", {})),
+            multiplayer=MultiplayerConfig.from_dict(data.get("multiplayer", {})),
             tasks=TasksConfig(**data.get("tasks", {})),
             skills=SkillsConfig(**data.get("skills", {})),
             workflow=WorkflowConfig(**data.get("workflow", {})),
@@ -974,6 +1022,11 @@ class ConfigManager:
             raise ConfigurationError("multiplayer.reconnect_grace_seconds must be at least 1")
         if not self.config.multiplayer.signaling_path.startswith("/"):
             raise ConfigurationError("multiplayer.signaling_path must start with '/'")
+        threshold = str(self.config.multiplayer.diffVoting.threshold or "").strip().lower()
+        if threshold not in {"majority", "unanimous", "owner_only"}:
+            raise ConfigurationError("multiplayer.diffVoting.threshold must be majority, unanimous, or owner_only")
+        if self.config.multiplayer.diffVoting.requiredVoters < 0:
+            raise ConfigurationError("multiplayer.diffVoting.requiredVoters must be at least 0")
 
         logger.info("Configuration validated successfully")
         return True

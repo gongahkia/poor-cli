@@ -1,29 +1,41 @@
 package state
 
-import "time"
+import (
+	"time"
+
+	"github.com/gongahkia/gocli-poor/internal/protocol"
+)
 
 const MaxMessages = 1000
 
 type AppState struct {
 	Messages        []Message
 	InFlight        *InFlightRequest
+	Progress        *ProgressState
 	Provider        ProviderState
 	Cost            CostState
 	Session         SessionState
 	Connection      ConnState
 	ContextPressure ContextPressure
+	FileCatalog     FileCatalog
+	Multiplayer     MultiplayerState
 	Toasts          []ToastItem
 }
 
 type Message struct {
-	ID        string
-	Role      Role
-	Content   string
-	Streaming bool
-	RequestID string
-	Segments  []MarkdownSegment
-	ToolCalls []ToolCall
-	CreatedAt time.Time
+	ID                 string
+	Role               Role
+	Content            string
+	Streaming          bool
+	RequestID          string
+	AuthorConnectionID string
+	AuthorDisplayName  string
+	AuthorRole         string
+	Segments           []MarkdownSegment
+	ToolCalls          []ToolCall
+	Thinking           string
+	Progress           string
+	CreatedAt          time.Time
 }
 
 type Role string
@@ -60,6 +72,14 @@ type InFlightRequest struct {
 }
 
 type InFlight = InFlightRequest
+
+type ProgressState struct {
+	RequestID      string
+	Phase          string
+	Message        string
+	IterationIndex *int
+	IterationCap   *int
+}
 
 type ProviderState struct {
 	Name  string
@@ -107,6 +127,46 @@ type ContextPressure struct {
 	Tokens int
 	Budget int
 	Pct    float64
+}
+
+type FileCatalog struct {
+	Files         []FileCatalogFile
+	Loading       bool
+	LastUpdatedAt time.Time
+}
+
+type FileCatalogFile struct {
+	Path     string
+	Language string
+	Score    float64
+}
+
+type MultiplayerState struct {
+	Enabled           bool
+	RoomName          string
+	LocalConnectionID string
+	LocalDisplayName  string
+	Members           []Member
+	Typing            map[string]bool
+	Queue             []QueueItem
+	HunkVotes         map[string]protocol.HunkVoteUpdate
+	PresenceAt        time.Time
+}
+
+type Member struct {
+	ConnectionID  string
+	DisplayName   string
+	Role          string
+	ApprovalState string
+	HandRaised    bool
+	QueuePosition int
+	VotesCast     int
+	VotesPending  int
+}
+
+type QueueItem struct {
+	ConnectionID string
+	Position     int
 }
 
 type ToastItem struct {

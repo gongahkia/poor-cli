@@ -1,0 +1,9 @@
+{"dir":"c2s","body":{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"provider":"ollama","model":"llama3.1","streaming":true}}}
+{"dir":"s2c","body":{"jsonrpc":"2.0","id":1,"result":{"capabilities":{"chatStreamingProvider":true,"providerInfo":{"name":"ollama","model":"llama3.1"}}}}}
+{"dir":"c2s","body":{"jsonrpc":"2.0","id":2,"method":"poor-cli/chatStreaming","params":{"message":"say hi","requestId":"fixture-request"}}}
+{"dir":"s2c","body":{"jsonrpc":"2.0","method":"poor-cli/progress","params":{"requestId":"fixture-request","phase":"chat","message":"thinking"}}}
+{"dir":"s2c","body":{"jsonrpc":"2.0","method":"poor-cli/streamChunk","params":{"requestId":"fixture-request","chunk":"hello","done":false}}}
+{"dir":"s2c","body":{"jsonrpc":"2.0","method":"poor-cli/streamChunk","params":{"requestId":"fixture-request","chunk":" from fixture","done":false}}}
+{"dir":"s2c","body":{"jsonrpc":"2.0","method":"poor-cli/costUpdate","params":{"requestId":"fixture-request","inputTokens":4,"outputTokens":3,"estimatedCost":0.0001}}}
+{"dir":"s2c","body":{"jsonrpc":"2.0","method":"poor-cli/streamChunk","params":{"requestId":"fixture-request","chunk":"","done":true,"reason":"complete"}}}
+{"dir":"s2c","body":{"jsonrpc":"2.0","id":2,"result":{"content":"hello from fixture","role":"assistant"}}}

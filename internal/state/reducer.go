@@ -19,6 +19,32 @@ func Reduce(st AppState, action Action) AppState {
 			if msg.RequestID == a.RequestID && msg.Streaming {
 				msg.Content += a.Chunk
 				msg.Segments = append(msg.Segments, cloneSegments(a.Segments)...)
+				applyAuthor(msg, a.AuthorConnectionID, a.AuthorDisplayName, a.AuthorRole)
+				markMultiplayerForAuthor(&next, a.AuthorConnectionID)
+				return next
+			}
+		}
+		return next
+	case ActionAppendThinking:
+		next := cloneAppState(st)
+		for i := len(next.Messages) - 1; i >= 0; i-- {
+			msg := &next.Messages[i]
+			if msg.RequestID == a.RequestID && msg.Streaming {
+				msg.Thinking += a.Chunk
+				applyAuthor(msg, a.AuthorConnectionID, a.AuthorDisplayName, a.AuthorRole)
+				markMultiplayerForAuthor(&next, a.AuthorConnectionID)
+				return next
+			}
+		}
+		return next
+	case ActionAppendToolCall:
+		next := cloneAppState(st)
+		for i := len(next.Messages) - 1; i >= 0; i-- {
+			msg := &next.Messages[i]
+			if msg.RequestID == a.RequestID {
+				applyAuthor(msg, a.AuthorConnectionID, a.AuthorDisplayName, a.AuthorRole)
+				markMultiplayerForAuthor(&next, a.AuthorConnectionID)
+				mergeToolCall(msg, a.Call)
 				return next
 			}
 		}
@@ -61,9 +87,35 @@ func Reduce(st AppState, action Action) AppState {
 		next := cloneAppState(st)
 		next.Provider = ProviderState{Name: a.Info.Name, Model: a.Info.Model, Caps: cloneMap(a.Info.Capabilities)}
 		return next
+	case ActionSetSession:
+		next := cloneAppState(st)
+		if a.SessionID != "" {
+			next.Session.ID = a.SessionID
+		}
+		if a.Turns != 0 {
+			next.Session.Turns = a.Turns
+		}
+		if a.Checkpoints != nil {
+			next.Session.Checkpoints = cloneCheckpoints(a.Checkpoints)
+		}
+		return next
 	case ActionUpdateCost:
 		next := cloneAppState(st)
 		next.Cost = costStateFromSnapshot(a.Snapshot, a.UpdatedAt)
+		return next
+	case ActionSetProgress:
+		next := cloneAppState(st)
+		progress := a.Progress
+		next.Progress = &progress
+		for i := len(next.Messages) - 1; i >= 0; i-- {
+			msg := &next.Messages[i]
+			if msg.RequestID == a.Progress.RequestID && msg.Streaming {
+				msg.Progress = a.Progress.Message
+				applyAuthor(msg, a.AuthorConnectionID, a.AuthorDisplayName, a.AuthorRole)
+				markMultiplayerForAuthor(&next, a.AuthorConnectionID)
+				break
+			}
+		}
 		return next
 	case ActionSetConnection:
 		next := cloneAppState(st)
@@ -81,12 +133,103 @@ func Reduce(st AppState, action Action) AppState {
 		next := cloneAppState(st)
 		next.ContextPressure = a.Pressure
 		return next
+	case ActionSetFileCatalog:
+		next := cloneAppState(st)
+		next.FileCatalog = cloneFileCatalog(a.Catalog)
+		return next
+	case ActionSetMultiplayer:
+		next := cloneAppState(st)
+		next.Multiplayer = cloneMultiplayer(a.Multiplayer)
+		return next
+	case ActionUpdateMemberTyping:
+		next := cloneAppState(st)
+		if next.Multiplayer.Typing == nil {
+			next.Multiplayer.Typing = map[string]bool{}
+		}
+		if a.ConnectionID != "" {
+			next.Multiplayer.Enabled = true
+			if a.Typing {
+				next.Multiplayer.Typing[a.ConnectionID] = true
+			} else {
+				delete(next.Multiplayer.Typing, a.ConnectionID)
+			}
+			upsertMemberDisplayName(&next.Multiplayer, a.ConnectionID, a.DisplayName)
+		}
+		if !a.At.IsZero() {
+			next.Multiplayer.PresenceAt = a.At
+		}
+		return next
+	case ActionUpdateQueue:
+		next := cloneAppState(st)
+		next.Multiplayer.Queue = cloneQueueItems(a.Queue)
+		positions := map[string]int{}
+		for _, item := range a.Queue {
+			if item.ConnectionID != "" {
+				positions[item.ConnectionID] = item.Position
+			}
+		}
+		for i := range next.Multiplayer.Members {
+			next.Multiplayer.Members[i].QueuePosition = positions[next.Multiplayer.Members[i].ConnectionID]
+		}
+		return next
+	case ActionUpdateHunkVotes:
+		next := cloneAppState(st)
+		key := hunkVoteKey(a.Update)
+		if key != "" {
+			if next.Multiplayer.HunkVotes == nil {
+				next.Multiplayer.HunkVotes = map[string]protocol.HunkVoteUpdate{}
+			}
+			next.Multiplayer.HunkVotes[key] = cloneHunkVoteUpdate(a.Update)
+		}
+		return next
 	case ActionCancelInFlight:
 		next := cloneAppState(st)
 		next.InFlight = nil
 		return next
+	case ActionSetMessageAuthor:
+		next := cloneAppState(st)
+		for i := len(next.Messages) - 1; i >= 0; i-- {
+			msg := &next.Messages[i]
+			if msg.RequestID == a.RequestID {
+				applyAuthor(msg, a.AuthorConnectionID, a.AuthorDisplayName, a.AuthorRole)
+				markMultiplayerForAuthor(&next, a.AuthorConnectionID)
+				return next
+			}
+		}
+		return next
 	default:
 		return cloneAppState(st)
+	}
+}
+
+func applyAuthor(msg *Message, connectionID, displayName, role string) {
+	if connectionID != "" {
+		msg.AuthorConnectionID = connectionID
+	}
+	if displayName != "" {
+		msg.AuthorDisplayName = displayName
+	}
+	if role != "" {
+		msg.AuthorRole = role
+	}
+}
+
+func upsertMemberDisplayName(mp *MultiplayerState, connectionID, displayName string) {
+	if displayName == "" {
+		return
+	}
+	for i := range mp.Members {
+		if mp.Members[i].ConnectionID == connectionID {
+			mp.Members[i].DisplayName = displayName
+			return
+		}
+	}
+	mp.Members = append(mp.Members, Member{ConnectionID: connectionID, DisplayName: displayName})
+}
+
+func markMultiplayerForAuthor(st *AppState, connectionID string) {
+	if connectionID != "" && connectionID != "local" {
+		st.Multiplayer.Enabled = true
 	}
 }
 
@@ -121,10 +264,66 @@ func cloneAppState(st AppState) AppState {
 		inFlight := *st.InFlight
 		next.InFlight = &inFlight
 	}
+	if st.Progress != nil {
+		progress := *st.Progress
+		next.Progress = &progress
+	}
 	next.Provider.Caps = cloneMap(st.Provider.Caps)
 	next.Session.Checkpoints = cloneCheckpoints(st.Session.Checkpoints)
+	next.FileCatalog = cloneFileCatalog(st.FileCatalog)
+	next.Multiplayer = cloneMultiplayer(st.Multiplayer)
 	next.Toasts = cloneToasts(st.Toasts)
 	return next
+}
+
+func mergeToolCall(msg *Message, call ToolCall) {
+	idx := toolCallIndex(msg.ToolCalls, call)
+	if idx < 0 {
+		msg.ToolCalls = append(msg.ToolCalls, cloneToolCalls([]ToolCall{call})[0])
+		return
+	}
+	dst := &msg.ToolCalls[idx]
+	if call.EventID != "" {
+		dst.EventID = call.EventID
+	}
+	if call.TurnID != "" {
+		dst.TurnID = call.TurnID
+	}
+	if call.ToolCallID != "" {
+		dst.ToolCallID = call.ToolCallID
+	}
+	if call.ToolName != "" {
+		dst.ToolName = call.ToolName
+	}
+	if call.Status != "" {
+		dst.Status = call.Status
+	}
+	if call.ArgsPreview != "" {
+		dst.ArgsPreview = call.ArgsPreview
+	}
+	if call.ResultPreview != "" {
+		dst.ResultPreview = call.ResultPreview
+	}
+	if call.Error != "" {
+		dst.Error = call.Error
+	}
+	if len(call.Chunks) > 0 {
+		dst.Chunks = append(dst.Chunks, call.Chunks...)
+	}
+}
+
+func toolCallIndex(calls []ToolCall, call ToolCall) int {
+	for i := range calls {
+		switch {
+		case call.ToolCallID != "" && calls[i].ToolCallID == call.ToolCallID:
+			return i
+		case call.EventID != "" && calls[i].EventID == call.EventID:
+			return i
+		case call.ToolCallID == "" && call.EventID == "" && call.ToolName != "" && calls[i].ToolName == call.ToolName:
+			return i
+		}
+	}
+	return -1
 }
 
 func cloneMessages(messages []Message) []Message {
@@ -174,6 +373,87 @@ func cloneCheckpoints(checkpoints []Checkpoint) []Checkpoint {
 	out := make([]Checkpoint, len(checkpoints))
 	copy(out, checkpoints)
 	return out
+}
+
+func cloneFileCatalog(catalog FileCatalog) FileCatalog {
+	if catalog.Files == nil {
+		return catalog
+	}
+	next := catalog
+	next.Files = make([]FileCatalogFile, len(catalog.Files))
+	copy(next.Files, catalog.Files)
+	return next
+}
+
+func cloneMultiplayer(mp MultiplayerState) MultiplayerState {
+	next := mp
+	next.Members = cloneMembers(mp.Members)
+	next.Typing = cloneBoolMap(mp.Typing)
+	next.Queue = cloneQueueItems(mp.Queue)
+	next.HunkVotes = cloneHunkVoteUpdates(mp.HunkVotes)
+	return next
+}
+
+func cloneMembers(members []Member) []Member {
+	if members == nil {
+		return nil
+	}
+	out := make([]Member, len(members))
+	copy(out, members)
+	return out
+}
+
+func cloneQueueItems(items []QueueItem) []QueueItem {
+	if items == nil {
+		return nil
+	}
+	out := make([]QueueItem, len(items))
+	copy(out, items)
+	return out
+}
+
+func cloneBoolMap(in map[string]bool) map[string]bool {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]bool, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneHunkVoteUpdates(in map[string]protocol.HunkVoteUpdate) map[string]protocol.HunkVoteUpdate {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]protocol.HunkVoteUpdate, len(in))
+	for key, update := range in {
+		out[key] = cloneHunkVoteUpdate(update)
+	}
+	return out
+}
+
+func cloneHunkVoteUpdate(update protocol.HunkVoteUpdate) protocol.HunkVoteUpdate {
+	if update.Votes != nil {
+		update.Votes = append(protocol.HunkVotes(nil), update.Votes...)
+	}
+	return update
+}
+
+func hunkVoteKey(update protocol.HunkVoteUpdate) string {
+	hunkID := update.HunkID
+	if hunkID == "" {
+		hunkID = update.HunkIDLegacy
+	}
+	if hunkID == "" {
+		return ""
+	}
+	editID := update.EditID
+	if editID == "" {
+		editID = update.EditIDLegacy
+	}
+	return editID + "\x00" + hunkID
 }
 
 func cloneToasts(toasts []ToastItem) []ToastItem {

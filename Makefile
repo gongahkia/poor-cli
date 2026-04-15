@@ -1,4 +1,4 @@
-.PHONY: cli server install installer install-info dev test test-lua lint lint-sizes bench-swe clean help hooks
+.PHONY: cli server install installer install-info dev test test-unit test-integration test-e2e coverage coverage-html test-lua lint lint-sizes bench-swe clean help hooks
 
 PYTHON := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/python,python3)
 PIP := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/pip,pip)
@@ -65,6 +65,24 @@ dev: ## install deps + launch CLI
 
 test: ## run Python tests with coverage
 	$(PYTHON) -m pytest tests/ -x -q --cov=poor_cli --cov-report=term-missing
+
+test-unit: ## run Go internal unit tests
+	go test ./internal/...
+
+test-integration: ## run Go internal and integration tests
+	go test ./internal/...
+	go test -tags=e2e -run FixtureReplay ./test/e2e/...
+
+test-e2e: ## run Go e2e tests; real server requires GOCLI_POOR_E2E_SERVER
+	go test -tags=e2e -run E2E ./test/e2e/...
+
+coverage: ## run Go internal coverage and enforce 80%
+	go test -covermode=atomic -coverprofile=coverage.out ./internal/...
+	go tool cover -func=coverage.out
+	@go tool cover -func=coverage.out | awk '/^total:/ { sub(/%/,"",$$3); if ($$3+0 < 80) { printf("coverage %.1f%% < 80%%\n", $$3); exit 1 } }'
+	go tool cover -html=coverage.out -o coverage.html
+
+coverage-html: coverage ## alias: writes coverage.html
 
 test-lua: ## run Lua plenary specs
 	@mkdir -p "$(NVIM_TEST_RUNTIME)/data" "$(NVIM_TEST_RUNTIME)/state" "$(NVIM_TEST_RUNTIME)/cache" "$(NVIM_TEST_RUNTIME)/config" "$(NVIM_TEST_RUNTIME)/site/pack/test/start"

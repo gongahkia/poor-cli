@@ -1,0 +1,12 @@
+gocli-poor · repo:poor-cli · branch:main
+you say hi
+poor-cli hello from fixture
+
+
+
+
+
+>
+
+
+ready

@@ -27,7 +27,15 @@ from .multiplayer_invites import (
     build_signed_invite,
     verify_signed_invite,
 )
+from .multiplayer_attribution import (
+    add_author_tag,
+    author_tag_for,
+    reset_current_author_tag,
+    set_current_author_tag,
+)
 from .multiplayer_session import AgendaItem, CollaborationSession, InviteToken
+from .multiplayer_presence import PresenceTracker
+from .multiplayer_queue import MultiPrompterQueue, MultiPrompterQueueFull, QueuedRequest
 
 logger = setup_logger(__name__)
 
@@ -73,14 +81,6 @@ class DataChannelTransport:
             self._channel.close()
 
 @dataclass
-class QueuedRequest:
-    """Queued request for room worker."""
-
-    connection_id: str
-    message: Any
-
-
-@dataclass
 class RoomState:
     """Per-room runtime state."""
 
@@ -89,7 +89,9 @@ class RoomState:
     tokens: Dict[str, InviteToken]
     members: Dict[str, ConnectionState] = field(default_factory=dict)
     request_queue: "asyncio.Queue[QueuedRequest]" = field(default_factory=asyncio.Queue)
+    multi_queue: Optional[MultiPrompterQueue] = None
     worker_task: Optional[asyncio.Task] = None
+    presence_sweep_task: Optional[asyncio.Task] = None
     dispatch_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     initialized: bool = False
     base_capabilities: Dict[str, Any] = field(default_factory=dict)
@@ -99,8 +101,14 @@ class RoomState:
     activity: List[Dict[str, Any]] = field(default_factory=list)
     agenda: List[AgendaItem] = field(default_factory=list)
     hand_raise_queue: List[str] = field(default_factory=list)
+    hunk_vote_ledgers: Dict[str, Any] = field(default_factory=dict)
+    multi_prompter_enabled: bool = False
+    diff_voting_enabled: bool = False
+    diff_voting_threshold: str = "majority"
+    diff_voting_required_voters: int = 0
     next_agenda_id: int = 1
     persist_path: Optional[str] = None  # path to persist room state
+    presence: Optional[PresenceTracker] = None
     session: CollaborationSession = field(init=False, repr=False)
 
 
@@ -202,6 +210,15 @@ class MultiplayerHost:
         invite_ttl_seconds: int = 900,
         owner_name: str = "",
         ice_servers: Optional[List[Dict[str, Any]]] = None,
+        typing_presence_enabled: bool = False,
+        message_attribution_enabled: bool = False,
+        typing_presence_debounce_ms: int = 250,
+        typing_presence_broadcast_interval_ms: int = 500,
+        multi_prompter_enabled: bool = False,
+        multi_prompter_max_per_user: int = 3,
+        diff_voting_enabled: bool = False,
+        diff_voting_threshold: str = "majority",
+        diff_voting_required_voters: int = 0,
     ):
         self.bind_host = bind_host
         self.port = port
@@ -216,6 +233,18 @@ class MultiplayerHost:
         self.owner_id = f"owner-{uuid.uuid4().hex[:12]}"
         self.owner_fingerprint = build_owner_fingerprint(self.invite_secret)
         self.ice_servers = [dict(entry) for entry in (ice_servers or [])]
+        self.typing_presence_enabled = bool(typing_presence_enabled)
+        self.message_attribution_enabled = bool(message_attribution_enabled)
+        self.multi_prompter_enabled = bool(multi_prompter_enabled)
+        self.multi_prompter_max_per_user = max(1, int(multi_prompter_max_per_user or 1))
+        self.typing_presence_debounce_ms = max(0, int(typing_presence_debounce_ms))
+        self.typing_presence_broadcast_interval_ms = max(
+            0,
+            int(typing_presence_broadcast_interval_ms),
+        )
+        self.diff_voting_enabled = bool(diff_voting_enabled)
+        self.diff_voting_threshold = str(diff_voting_threshold or "majority").strip().lower()
+        self.diff_voting_required_voters = max(0, int(diff_voting_required_voters or 0))
 
         self.rooms: Dict[str, RoomState] = {}
         self.connections: Dict[str, ConnectionState] = {}
@@ -337,8 +366,28 @@ class MultiplayerHost:
         }
         token_index = {token.token: token for token in tokens.values()}
 
-        room = RoomState(name=room_name, server=server, tokens=token_index)
+        room = RoomState(
+            name=room_name,
+            server=server,
+            tokens=token_index,
+            multi_prompter_enabled=self.multi_prompter_enabled,
+            diff_voting_enabled=self.diff_voting_enabled,
+            diff_voting_threshold=self.diff_voting_threshold,
+            diff_voting_required_voters=self.diff_voting_required_voters,
+        )
         room.session = CollaborationSession(room, is_member_closed=lambda member: member.ws.closed)
+        room.server._multiplayer_room = room  # type: ignore[attr-defined]
+        if self.multi_prompter_enabled:
+            room.multi_queue = MultiPrompterQueue(
+                room,
+                max_concurrent=1,
+                max_per_user=self.multi_prompter_max_per_user,
+            )
+        if self.typing_presence_enabled:
+            room.presence = PresenceTracker(
+                debounce_ms=self.typing_presence_debounce_ms,
+                broadcast_interval_ms=self.typing_presence_broadcast_interval_ms,
+            )
 
         async def _room_notification_sink(message: Any) -> None:
             method = str(getattr(message, "method", "") or "")
@@ -346,11 +395,17 @@ class MultiplayerHost:
             if not isinstance(params, dict):
                 params = {}
             if method == "poor-cli/streamChunk":
+                author = {
+                    key: str(params.get(key, "") or "")
+                    for key in ("authorConnectionId", "authorDisplayName", "authorRole")
+                    if params.get(key) is not None
+                }
                 await self._broadcast_streaming_chunk(
                     room,
                     request_id=str(params.get("requestId", "")),
                     content=str(params.get("chunk", "")),
                     done=bool(params.get("done", False)),
+                    author=author or None,
                 )
                 return
             await self._broadcast_rpc(room, message)
@@ -360,6 +415,11 @@ class MultiplayerHost:
         room.worker_task = asyncio.create_task(
             self._room_worker(room), name=f"poor-cli-room-worker-{room_name}"
         )
+        if room.presence is not None:
+            room.presence_sweep_task = asyncio.create_task(
+                self._presence_sweep_loop(room),
+                name=f"poor-cli-presence-sweep-{room_name}",
+            )
         return room
 
     @staticmethod
@@ -455,6 +515,12 @@ class MultiplayerHost:
     def _prune_hand_raise_queue(room: RoomState) -> None:
         room.session.prune_hand_raise_queue()
 
+    @staticmethod
+    def _queue_depth(room: RoomState) -> int:
+        if room.multi_queue is not None:
+            return room.multi_queue.qsize()
+        return room.request_queue.qsize()
+
     def resolve_room_member_reference(self, room_name: str, reference: str) -> Optional[str]:
         room = self.rooms.get(room_name)
         if room is None:
@@ -488,7 +554,7 @@ class MultiplayerHost:
             room,
             "agenda_added",
             actor=actor_connection_id,
-            queue_depth=room.request_queue.qsize(),
+            queue_depth=self._queue_depth(room),
             details={"agendaItem": item},
         )
         return item
@@ -511,7 +577,7 @@ class MultiplayerHost:
             room,
             "agenda_resolved",
             actor=actor_connection_id,
-            queue_depth=room.request_queue.qsize(),
+            queue_depth=self._queue_depth(room),
             details={"agendaItem": item},
         )
         return item
@@ -532,7 +598,7 @@ class MultiplayerHost:
             room,
             "hand_raised" if result.get("handRaised") else "hand_lowered",
             actor=connection_id,
-            queue_depth=room.request_queue.qsize(),
+            queue_depth=self._queue_depth(room),
             details=result,
         )
         return result
@@ -556,7 +622,7 @@ class MultiplayerHost:
             room,
             "next_driver_selected",
             actor=next_connection_id,
-            queue_depth=room.request_queue.qsize(),
+            queue_depth=self._queue_depth(room),
             details={"connectionId": next_connection_id},
         )
         return next_connection_id
@@ -582,8 +648,81 @@ class MultiplayerHost:
             if room is None:
                 continue
 
-            output.append(room.session.room_snapshot(queue_depth=room.request_queue.qsize()))
+            output.append(room.session.room_snapshot(queue_depth=self._queue_depth(room)))
         return output
+
+    async def set_member_typing(
+        self,
+        room_name: str,
+        connection_id: str,
+        typing: bool,
+    ) -> Optional[Dict[str, Any]]:
+        room = self.rooms.get(room_name)
+        if room is None or room.presence is None:
+            return None
+        if connection_id not in room.members:
+            return None
+        changed = (
+            room.presence.mark_typing(connection_id)
+            if typing
+            else room.presence.mark_idle(connection_id)
+        )
+        if changed:
+            await self._broadcast_member_typing(room, connection_id, typing)
+        return {"room": room.name, "connectionId": connection_id, "typing": typing}
+
+    async def list_room_presence(self, room_name: str) -> Optional[Dict[str, Any]]:
+        room = self.rooms.get(room_name)
+        if room is None or room.presence is None:
+            return None
+        for connection_id, typing in room.presence.sweep().items():
+            await self._broadcast_member_typing(room, connection_id, typing)
+        snapshot = room.presence.snapshot()
+        return {
+            "room": room.name,
+            "presence": snapshot,
+            "members": [
+                {
+                    "connectionId": connection_id,
+                    "displayName": self._member_display_name(member),
+                    "typing": bool(snapshot.get(connection_id, False)),
+                }
+                for connection_id, member in self._ordered_member_items(room)
+            ],
+        }
+
+    def list_room_queue(self, room_name: str) -> Optional[Dict[str, Any]]:
+        room = self.rooms.get(room_name)
+        if room is None or room.multi_queue is None:
+            return None
+        return {"room": room.name, "snapshot": room.multi_queue.snapshot()}
+
+    async def cancel_room_queue_item(
+        self,
+        room_name: str,
+        queue_id: str,
+        *,
+        actor_connection_id: str = "",
+        owner: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        room = self.rooms.get(room_name)
+        if room is None or room.multi_queue is None:
+            return None
+        normalized = str(queue_id or "").strip()
+        snapshot = room.multi_queue.snapshot()
+        item = next(
+            (entry for entry in snapshot if str(entry.get("queueId", "")) == normalized),
+            None,
+        )
+        if item is None:
+            return {"room": room.name, "queueId": normalized, "cancelled": False, "reason": "not_found"}
+        author_id = str(item.get("connectionId", ""))
+        if not owner and actor_connection_id != author_id:
+            return {"room": room.name, "queueId": normalized, "cancelled": False, "reason": "permission_denied"}
+        cancelled = await room.multi_queue.cancel(normalized)
+        if cancelled:
+            await self._broadcast_queue_updated(room)
+        return {"room": room.name, "queueId": normalized, "cancelled": cancelled}
 
     def list_room_activity(
         self,
@@ -607,7 +746,7 @@ class MultiplayerHost:
             room,
             "lobby_updated",
             details={"lobbyEnabled": enabled},
-            queue_depth=room.request_queue.qsize(),
+            queue_depth=self._queue_depth(room),
         )
         return True
 
@@ -624,7 +763,7 @@ class MultiplayerHost:
             room,
             "member_approved",
             actor=connection_id,
-            queue_depth=room.request_queue.qsize(),
+            queue_depth=self._queue_depth(room),
         )
         return True
 
@@ -640,6 +779,18 @@ class MultiplayerHost:
             return False
 
         self.connections.pop(connection_id, None)
+        if room.presence is not None and room.presence.remove(connection_id):
+            await self._broadcast_member_typing(
+                room,
+                connection_id,
+                False,
+                display_name=self._member_display_name(member),
+            )
+        if (
+            room.multi_queue is not None
+            and await room.multi_queue.remove_connection(connection_id)
+        ):
+            await self._broadcast_queue_updated(room)
 
         try:
             await member.ws.close(code=4003, message=b"Denied by host")
@@ -653,7 +804,7 @@ class MultiplayerHost:
             room,
             "member_denied",
             actor=connection_id,
-            queue_depth=room.request_queue.qsize(),
+            queue_depth=self._queue_depth(room),
         )
         return True
 
@@ -675,7 +826,7 @@ class MultiplayerHost:
             room,
             "token_rotated",
             details={"role": role.strip().lower()},
-            queue_depth=room.request_queue.qsize(),
+            queue_depth=self._queue_depth(room),
         )
         return new_token
 
@@ -691,7 +842,7 @@ class MultiplayerHost:
             room,
             "token_revoked",
             details={"role": invite.role},
-            queue_depth=room.request_queue.qsize(),
+            queue_depth=self._queue_depth(room),
         )
         return True
 
@@ -707,7 +858,7 @@ class MultiplayerHost:
             room,
             "role_handoff",
             actor=connection_id,
-            queue_depth=room.request_queue.qsize(),
+            queue_depth=self._queue_depth(room),
         )
         return True
 
@@ -725,7 +876,7 @@ class MultiplayerHost:
                 "mode": self._room_mode(room),
                 "lobbyEnabled": room.lobby_enabled,
             },
-            queue_depth=room.request_queue.qsize(),
+            queue_depth=self._queue_depth(room),
         )
         return True
 
@@ -742,6 +893,18 @@ class MultiplayerHost:
             return False
 
         self.connections.pop(connection_id, None)
+        if room.presence is not None and room.presence.remove(connection_id):
+            await self._broadcast_member_typing(
+                room,
+                connection_id,
+                False,
+                display_name=self._member_display_name(member),
+            )
+        if (
+            room.multi_queue is not None
+            and await room.multi_queue.remove_connection(connection_id)
+        ):
+            await self._broadcast_queue_updated(room)
 
         try:
             await member.ws.close(code=4001, message=b"Removed by host")
@@ -755,7 +918,7 @@ class MultiplayerHost:
             room,
             "member_removed",
             actor=connection_id,
-            queue_depth=room.request_queue.qsize(),
+            queue_depth=self._queue_depth(room),
         )
         return True
 
@@ -771,7 +934,7 @@ class MultiplayerHost:
             room,
             "member_role_updated",
             actor=connection_id,
-            queue_depth=room.request_queue.qsize(),
+            queue_depth=self._queue_depth(room),
         )
         return True
 
@@ -999,10 +1162,19 @@ class MultiplayerHost:
         self._stopped = True
 
         for room in self.rooms.values():
+            if room.multi_queue is not None:
+                room.multi_queue.close()
+            if room.presence_sweep_task:
+                room.presence_sweep_task.cancel()
             if room.worker_task:
                 room.worker_task.cancel()
 
         for room in self.rooms.values():
+            if room.presence_sweep_task:
+                try:
+                    await room.presence_sweep_task
+                except asyncio.CancelledError:
+                    pass
             if room.worker_task:
                 try:
                     await room.worker_task
@@ -1084,6 +1256,14 @@ class MultiplayerHost:
 
         method = message.method or ""
 
+        if method in {"poor-cli/setTyping", "poor-cli/listPresence"} and room.presence is None:
+            await self._send_method_not_found(conn.ws, message.id, method)
+            return
+
+        if method in {"poor-cli/listRoomQueue", "poor-cli/cancelQueueItem"} and room.multi_queue is None:
+            await self._send_method_not_found(conn.ws, message.id, method)
+            return
+
         if method in {"poor-cli/permissionRes", "poor-cli/planRes"}:
             if conn.role != "prompter" or not conn.approved:
                 await self._send_error_response(
@@ -1091,6 +1271,15 @@ class MultiplayerHost:
                     request_id=message.id,
                     code=self.rpc_error_cls.INTERNAL_ERROR,
                     message="Only the active driver can answer interactive review prompts",
+                    data={"error_code": "permission_denied", "role": conn.role},
+                )
+                return
+            if room.multi_queue is not None and room.active_connection_id != conn.connection_id:
+                await self._send_error_response(
+                    conn.ws,
+                    request_id=message.id,
+                    code=self.rpc_error_cls.INTERNAL_ERROR,
+                    message="Only the active requester can answer interactive review prompts",
                     data={"error_code": "permission_denied", "role": conn.role},
                 )
                 return
@@ -1133,6 +1322,30 @@ class MultiplayerHost:
 
         if method == "poor-cli/nextDriver":
             await self._handle_next_driver(conn, room, message)
+            return
+
+        if method == "poor-cli/voteOnHunk":
+            await self._handle_vote_on_hunk(conn, room, message)
+            return
+
+        if method == "poor-cli/getHunkVotes":
+            await self._handle_get_hunk_votes(conn, room, message)
+            return
+
+        if method == "poor-cli/setTyping":
+            await self._handle_set_typing(conn, room, message)
+            return
+
+        if method == "poor-cli/listPresence":
+            await self._handle_list_presence(conn, room, message)
+            return
+
+        if method == "poor-cli/listRoomQueue":
+            await self._handle_list_room_queue(conn, room, message)
+            return
+
+        if method == "poor-cli/cancelQueueItem":
+            await self._handle_cancel_queue_item(conn, room, message)
             return
 
         if method == "poor-cli/passDriver":
@@ -1217,13 +1430,38 @@ class MultiplayerHost:
                     },
                 )
                 return
-            await room.request_queue.put(QueuedRequest(connection_id=conn.connection_id, message=message))
+            author = author_tag_for(conn.connection_id, room.session)
+            details: Dict[str, Any] = {}
+            if room.multi_queue is not None:
+                try:
+                    queue_id = await room.multi_queue.submit(conn.connection_id, message)
+                except MultiPrompterQueueFull as error:
+                    await self._send_error_response(
+                        conn.ws,
+                        request_id=message.id,
+                        code=-32080,
+                        message="Per-user queue limit reached",
+                        data={
+                            "error_code": "QUEUE_LIMIT_REACHED",
+                            "connectionId": error.connection_id,
+                            "maxPerUser": error.max_per_user,
+                        },
+                    )
+                    return
+                details["queueId"] = queue_id
+                await self._broadcast_queue_updated(room)
+            else:
+                await room.request_queue.put(
+                    QueuedRequest(connection_id=conn.connection_id, message=message, author=author)
+                )
             await self._broadcast_room_event(
                 room,
                 "queued",
                 request_id=self._extract_request_id(message),
                 actor=conn.connection_id,
-                queue_depth=room.request_queue.qsize(),
+                queue_depth=self._queue_depth(room),
+                details=details,
+                author=author,
             )
             return
 
@@ -1457,6 +1695,39 @@ class MultiplayerHost:
                 ),
             )
 
+    async def _handle_vote_on_hunk(
+        self,
+        conn: ConnectionState,
+        room: RoomState,
+        message: Any,
+    ) -> None:
+        params = dict(message.params or {})
+        params["actorConnectionId"] = conn.connection_id
+        params["actorDisplayName"] = self._member_display_name(conn)
+        response = await room.server.dispatch(
+            self.message_cls(id=message.id, method=message.method, params=params)
+        )
+        if response.error is None and response.result is not None:
+            await self._broadcast_rpc(
+                room,
+                self.message_cls(
+                    method="poor-cli/hunkVoteUpdated",
+                    params=dict(response.result),
+                ),
+            )
+        if message.id is not None:
+            await self._send_rpc(conn.ws, response)
+
+    async def _handle_get_hunk_votes(
+        self,
+        conn: ConnectionState,
+        room: RoomState,
+        message: Any,
+    ) -> None:
+        response = await room.server.dispatch(message)
+        if message.id is not None:
+            await self._send_rpc(conn.ws, response)
+
     async def _handle_kick_member(self, conn: ConnectionState, room: RoomState, message: Any) -> None:
         params = message.params or {}
         target_connection_id = str(
@@ -1523,6 +1794,18 @@ class MultiplayerHost:
             return
 
         self.connections.pop(target_connection_id, None)
+        if room.presence is not None and room.presence.remove(target_connection_id):
+            await self._broadcast_member_typing(
+                room,
+                target_connection_id,
+                False,
+                display_name=self._member_display_name(member),
+            )
+        if (
+            room.multi_queue is not None
+            and await room.multi_queue.remove_connection(target_connection_id)
+        ):
+            await self._broadcast_queue_updated(room)
 
         try:
             await member.ws.close(code=4001, message=b"Kicked by host")
@@ -1536,7 +1819,7 @@ class MultiplayerHost:
             room,
             "member_kicked",
             actor=conn.connection_id,
-            queue_depth=room.request_queue.qsize(),
+            queue_depth=self._queue_depth(room),
             details={"targetConnectionId": target_connection_id},
         )
 
@@ -1754,7 +2037,7 @@ class MultiplayerHost:
             "uiRole": self._member_ui_role(room, conn),
             "connectionId": conn.connection_id,
             "displayName": self._member_display_name(conn),
-            "queueMode": "serialized",
+            "queueMode": "roundRobin" if room.multi_queue is not None else "serialized",
             "approved": conn.approved,
             "approvalState": self._member_approval_state(conn),
             "handRaised": conn.hand_raised,
@@ -1766,9 +2049,21 @@ class MultiplayerHost:
                 "roomEvent": True,
                 "memberRoleUpdated": True,
                 "suggestion": True,
+                "queueUpdated": room.multi_queue is not None,
+                "hunkVoteUpdated": room.diff_voting_enabled,
+            },
+            "features": {
+                "multiPrompter": room.multi_queue is not None,
+                "messageAttribution": self.message_attribution_enabled,
+                "typingPresence": room.presence is not None,
+                "diffVoting": room.diff_voting_enabled,
             },
             "roomActions": {
                 "listRoomMembers": True,
+                "listRoomQueue": room.multi_queue is not None,
+                "cancelQueueItem": room.multi_queue is not None,
+                "listPresence": room.presence is not None,
+                "setTyping": room.presence is not None,
                 "suggestText": True,
                 "passDriver": True,
                 "addAgendaItem": True,
@@ -1776,6 +2071,8 @@ class MultiplayerHost:
                 "resolveAgendaItem": True,
                 "setHandRaised": True,
                 "nextDriver": True,
+                "voteOnHunk": room.diff_voting_enabled,
+                "getHunkVotes": room.diff_voting_enabled,
             },
         }
 
@@ -1786,12 +2083,19 @@ class MultiplayerHost:
             room,
             "member_joined" if conn.approved else "member_pending",
             actor=conn.connection_id,
-            queue_depth=room.request_queue.qsize(),
+            queue_depth=self._queue_depth(room),
         )
 
     async def _room_worker(self, room: RoomState) -> None:
         while True:
-            queued = await room.request_queue.get()
+            queued: Optional[QueuedRequest]
+            if room.multi_queue is not None:
+                queued = await room.multi_queue.next()
+                if queued is None:
+                    continue
+                await self._broadcast_queue_updated(room)
+            else:
+                queued = await room.request_queue.get()
             try:
                 conn = room.members.get(queued.connection_id)
                 # Audit note: queued work for disconnected/stale members is dropped
@@ -1807,12 +2111,17 @@ class MultiplayerHost:
                     "started",
                     request_id=request_id,
                     actor=queued.connection_id,
-                    queue_depth=room.request_queue.qsize(),
+                    queue_depth=self._queue_depth(room),
+                    author=queued.author,
                 )
 
                 try:
                     async with room.dispatch_lock:
-                        response = await room.server.dispatch(queued.message)
+                        token = set_current_author_tag(queued.author)
+                        try:
+                            response = await room.server.dispatch(queued.message)
+                        finally:
+                            reset_current_author_tag(token)
                     if queued.message.id is not None and not conn.ws.closed:
                         await self._send_rpc(conn.ws, response)
                 except Exception as e:
@@ -1839,10 +2148,192 @@ class MultiplayerHost:
                         "finished",
                         request_id=request_id,
                         actor=queued.connection_id,
-                        queue_depth=room.request_queue.qsize(),
+                        queue_depth=self._queue_depth(room),
+                        author=queued.author,
                     )
             finally:
-                room.request_queue.task_done()
+                if room.multi_queue is not None:
+                    await room.multi_queue.task_done(queued)
+                else:
+                    room.request_queue.task_done()
+
+    async def _presence_sweep_loop(self, room: RoomState) -> None:
+        interval_ms = min(
+            self.typing_presence_debounce_ms,
+            self.typing_presence_broadcast_interval_ms,
+        )
+        interval_s = max(0.01, interval_ms / 1000.0)
+        while True:
+            await asyncio.sleep(interval_s)
+            tracker = room.presence
+            if tracker is None:
+                return
+            for connection_id, typing in tracker.sweep().items():
+                await self._broadcast_member_typing(room, connection_id, typing)
+
+    async def _handle_set_typing(
+        self,
+        conn: ConnectionState,
+        room: RoomState,
+        message: Any,
+    ) -> None:
+        tracker = room.presence
+        if tracker is None:
+            await self._send_method_not_found(conn.ws, message.id, message.method or "")
+            return
+        params = message.params or {}
+        typing = bool(params.get("typing", False))
+        changed = (
+            tracker.mark_typing(conn.connection_id)
+            if typing
+            else tracker.mark_idle(conn.connection_id)
+        )
+        if changed:
+            await self._broadcast_member_typing(room, conn.connection_id, typing)
+        if message.id is not None:
+            await self._send_rpc(
+                conn.ws,
+                self.message_cls(
+                    id=message.id,
+                    result={"success": True, "room": room.name, "typing": typing},
+                ),
+            )
+
+    async def _handle_list_presence(
+        self,
+        conn: ConnectionState,
+        room: RoomState,
+        message: Any,
+    ) -> None:
+        tracker = room.presence
+        if tracker is None:
+            await self._send_method_not_found(conn.ws, message.id, message.method or "")
+            return
+        for connection_id, typing in tracker.sweep().items():
+            await self._broadcast_member_typing(room, connection_id, typing)
+        snapshot = tracker.snapshot()
+        if message.id is not None:
+            await self._send_rpc(
+                conn.ws,
+                self.message_cls(
+                    id=message.id,
+                    result={
+                        "room": room.name,
+                        "presence": snapshot,
+                        "members": [
+                            {
+                                "connectionId": connection_id,
+                                "displayName": self._member_display_name(member),
+                                "typing": bool(snapshot.get(connection_id, False)),
+                            }
+                            for connection_id, member in self._ordered_member_items(room)
+                        ],
+                    },
+                ),
+            )
+
+    async def _handle_list_room_queue(
+        self,
+        conn: ConnectionState,
+        room: RoomState,
+        message: Any,
+    ) -> None:
+        if room.multi_queue is None:
+            await self._send_method_not_found(conn.ws, message.id, message.method or "")
+            return
+        if message.id is not None:
+            await self._send_rpc(
+                conn.ws,
+                self.message_cls(
+                    id=message.id,
+                    result={"room": room.name, "snapshot": room.multi_queue.snapshot()},
+                ),
+            )
+
+    async def _handle_cancel_queue_item(
+        self,
+        conn: ConnectionState,
+        room: RoomState,
+        message: Any,
+    ) -> None:
+        if room.multi_queue is None:
+            await self._send_method_not_found(conn.ws, message.id, message.method or "")
+            return
+        params = message.params or {}
+        queue_id = str(params.get("queueId", params.get("queue_id", ""))).strip()
+        if not queue_id:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INVALID_PARAMS,
+                message="queueId is required",
+                data={"error_code": "INVALID_PARAMS"},
+            )
+            return
+        result = await self.cancel_room_queue_item(
+            room.name,
+            queue_id,
+            actor_connection_id=conn.connection_id,
+        )
+        if result is None or result.get("reason") == "not_found":
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INVALID_PARAMS,
+                message=f"Unknown queue item: {queue_id}",
+                data={"error_code": "QUEUE_ITEM_NOT_FOUND"},
+            )
+            return
+        if result.get("reason") == "permission_denied":
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INTERNAL_ERROR,
+                message="Only the author or owner can cancel this queue item",
+                data={"error_code": "permission_denied"},
+            )
+            return
+        if message.id is not None:
+            await self._send_rpc(conn.ws, self.message_cls(id=message.id, result=result))
+
+    async def _broadcast_member_typing(
+        self,
+        room: RoomState,
+        connection_id: str,
+        typing: bool,
+        *,
+        display_name: str = "",
+    ) -> None:
+        member = room.members.get(connection_id)
+        if not display_name:
+            display_name = self._member_display_name(member) if member is not None else connection_id
+        notification = self.message_cls(
+            method="poor-cli/memberTyping",
+            params={
+                "room": room.name,
+                "connectionId": connection_id,
+                "displayName": display_name,
+                "typing": typing,
+            },
+        )
+        dead_members: List[str] = []
+        for recipient_id, recipient in list(room.members.items()):
+            if recipient_id == connection_id:
+                continue
+            if not recipient.approved:
+                continue
+            if recipient.ws.closed:
+                dead_members.append(recipient_id)
+                continue
+            try:
+                await self._send_rpc(recipient.ws, notification)
+            except Exception:
+                dead_members.append(recipient_id)
+
+        for dead_id in dict.fromkeys(dead_members):
+            dead_member = room.members.get(dead_id) or self.connections.get(dead_id)
+            if dead_member is not None:
+                await self._cleanup_connection(dead_member)
 
     async def _handle_suggest_text(self, conn: ConnectionState, room: RoomState, message: Any) -> None:
         """Broadcast a suggestion from any member to all prompter-role members."""
@@ -1985,13 +2476,26 @@ class MultiplayerHost:
         if member is None:
             return
 
+        if room.presence is not None and room.presence.remove(conn.connection_id):
+            await self._broadcast_member_typing(
+                room,
+                conn.connection_id,
+                False,
+                display_name=self._member_display_name(member),
+            )
+        if (
+            room.multi_queue is not None
+            and await room.multi_queue.remove_connection(conn.connection_id)
+        ):
+            await self._broadcast_queue_updated(room)
+
         if promoted_connection_id is not None:
             await self._broadcast_member_role_updates(room)
         await self._broadcast_room_event(
             room,
             "member_left",
             actor=conn.connection_id,
-            queue_depth=room.request_queue.qsize(),
+            queue_depth=self._queue_depth(room),
         )
 
     async def _broadcast_rpc(self, room: RoomState, message: Any) -> None:
@@ -2018,15 +2522,20 @@ class MultiplayerHost:
         request_id: str,
         content: str,
         done: bool,
+        author: Optional[Dict[str, Any]] = None,
     ) -> None:
         requester_id = room.active_connection_id or ""
+        author_payload = author or author_tag_for(requester_id, room.session)
         notification = self.message_cls(
             method="poor-cli/streamingChunk",
-            params={
-                "requestId": request_id,
-                "content": content,
-                "done": done,
-            },
+            params=add_author_tag(
+                {
+                    "requestId": request_id,
+                    "content": content,
+                    "done": done,
+                },
+                author_payload,
+            ),
         )
         dead_members: List[str] = []
         for connection_id, member in list(room.members.items()):
@@ -2055,6 +2564,7 @@ class MultiplayerHost:
         actor: str = "",
         queue_depth: int = 0,
         details: Optional[Dict[str, Any]] = None,
+        author: Optional[Dict[str, Any]] = None,
     ) -> None:
         member_snapshots = self._room_member_snapshots(room)
         payload = {
@@ -2072,6 +2582,8 @@ class MultiplayerHost:
             "members": member_snapshots,
             "details": details or {},
         }
+        if author is not None:
+            payload.update(add_author_tag({}, author))
         self._record_activity(
             room,
             event_type=event_type,
@@ -2085,8 +2597,32 @@ class MultiplayerHost:
         )
         await self._broadcast_rpc(room, notification)
 
+    async def _broadcast_queue_updated(self, room: RoomState) -> None:
+        if room.multi_queue is None:
+            return
+        notification = self.message_cls(
+            method="poor-cli/queueUpdated",
+            params={
+                "room": room.name,
+                "roomId": room.name,
+                "snapshot": room.multi_queue.snapshot(),
+            },
+        )
+        await self._broadcast_rpc(room, notification)
+
     async def _send_rpc(self, ws: Any, message: Any) -> None:
         await ws.send_str(message.to_json())
+
+    async def _send_method_not_found(self, ws: Any, request_id: Any, method: str) -> None:
+        if request_id is None:
+            return
+        await self._send_error_response(
+            ws,
+            request_id=request_id,
+            code=self.rpc_error_cls.METHOD_NOT_FOUND,
+            message=f"Unknown method: {method}",
+            data={"error_code": "METHOD_NOT_FOUND"},
+        )
 
     async def _send_error_response(
         self,

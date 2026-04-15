@@ -2,11 +2,18 @@ package tui
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/exp/teatest"
+	"github.com/gongahkia/gocli-poor/internal/protocol"
+	"github.com/gongahkia/gocli-poor/internal/state"
+	"github.com/gongahkia/gocli-poor/internal/tui/flows"
 )
 
 func TestResizePreservesChatScrollAnchor(t *testing.T) {
@@ -49,6 +56,29 @@ func TestSlashAtEmptyInputOpensPalette(t *testing.T) {
 	}
 }
 
+func TestPaletteInputRunsSlashCommandWithoutLeadingSlash(t *testing.T) {
+	rpc := &appRPC{handlers: map[string]func(any, any) error{
+		protocol.MethodListProviders: func(_ any, result any) error {
+			return setAppResult(result, protocol.ListProvidersResult{})
+		},
+	}}
+	m := NewModel(nil, WithRPCClient(rpc))
+	m.openModal(ModalPalette, nil)
+	m.Modals.UpdateTopInput("provider")
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatal("missing command")
+	}
+	_ = cmd()
+	if len(rpc.calls) != 1 || rpc.calls[0].Method != protocol.MethodListProviders {
+		t.Fatalf("calls=%#v", rpc.calls)
+	}
+	if m.Modals.Len() == 0 {
+		t.Fatal("provider modal not opened")
+	}
+}
+
 func TestEscapeClosesOpenModal(t *testing.T) {
 	tm := teatest.NewTestModel(t, NewModel(nil), teatest.WithInitialTermSize(80, 24))
 	t.Cleanup(func() { _ = tm.Quit() })
@@ -86,6 +116,102 @@ func TestTypingWithModalOpenGoesToModal(t *testing.T) {
 	if top.Input != "abc" {
 		t.Fatalf("modal did not receive input: %q", top.Input)
 	}
+}
+
+func TestProviderPickerSelectUpdatesState(t *testing.T) {
+	rpc := &appRPC{handlers: map[string]func(any, any) error{
+		protocol.MethodSwitchProvider: func(_ any, result any) error {
+			return setAppResult(result, protocol.SwitchProviderResult{Success: true, Provider: protocol.ProviderInfo{Name: "openai", Model: "gpt-5"}})
+		},
+	}}
+	st := &state.AppState{Provider: state.ProviderState{Name: "anthropic", Model: "old"}}
+	m := NewModel(st, WithRPCClient(rpc))
+	choice := flows.ProviderChoice{Provider: "openai", Model: "gpt-5", Detail: protocol.ProviderDetail{Ready: true}}
+	next, cmd := m.Update(flows.ProviderSelectedMsg{Choice: choice})
+	if cmd == nil {
+		t.Fatalf("missing switch cmd")
+	}
+	m = next.(Model)
+	if m.State.Provider.Name != "openai" {
+		t.Fatalf("optimistic provider=%q", m.State.Provider.Name)
+	}
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if m.State.Provider.Name != "openai" || m.State.Provider.Model != "gpt-5" {
+		t.Fatalf("provider=%#v", m.State.Provider)
+	}
+}
+
+func TestAPIKeyRejectKeepsModalOpenWithError(t *testing.T) {
+	rpc := &appRPC{handlers: map[string]func(any, any) error{
+		protocol.MethodSetAPIKey: func(_ any, _ any) error { return errors.New("bad key") },
+	}}
+	m := NewModel(nil, WithRPCClient(rpc))
+	m.openModal(ModalAPIKeyPrompt, flows.NewAPIKeyPrompt("openai", ""))
+	next, _ := m.Update(flows.APIKeySubmittedMsg{Provider: "openai", Err: errors.New("bad key")})
+	m = next.(Model)
+	if m.Modals.Len() != 1 {
+		t.Fatalf("modal closed")
+	}
+	top, _ := m.Modals.Top()
+	got := top.Payload.(*flows.APIKeyPrompt)
+	if got.Error != "bad key" {
+		t.Fatalf("error=%q", got.Error)
+	}
+}
+
+func TestCostSlashOpensModalAndRendersDashboard(t *testing.T) {
+	rpc := &appRPC{handlers: map[string]func(any, any) error{
+		protocol.MethodCostSummary: func(_ any, result any) error {
+			return setAppResult(result, protocol.CostSnapshot{
+				Session:     protocol.CostSession{TotalUSD: 0.0472},
+				LastTurn:    map[string]any{"cost_usd": 0.0083},
+				PerProvider: map[string]any{"anthropic": 0.0412},
+			})
+		},
+		protocol.MethodGetEconomySavings: func(_ any, result any) error {
+			return setAppResult(result, protocol.SavingsSnapshot{CostSaved: 0.0134})
+		},
+	}}
+	m := NewModel(nil, WithRPCClient(rpc))
+
+	cmd := m.dispatchCommandInput("/cost")
+	if cmd == nil || m.Modals.Len() != 1 {
+		t.Fatalf("modal/cmd missing")
+	}
+	next, _ := m.Update(cmd())
+	m = next.(Model)
+	top, _ := m.Modals.Top()
+	view := top.Payload.(flows.CostPayload).View(80, 20)
+	if !strings.Contains(view, "Current turn:") || !strings.Contains(view, "anthropic") {
+		t.Fatalf("view=%q", view)
+	}
+}
+
+type appRPC struct {
+	handlers map[string]func(any, any) error
+	calls    []appRPCCall
+}
+
+type appRPCCall struct {
+	Method string
+	Params any
+}
+
+func (a *appRPC) Call(_ context.Context, method string, params any, result any) error {
+	a.calls = append(a.calls, appRPCCall{Method: method, Params: params})
+	if h := a.handlers[method]; h != nil {
+		return h(params, result)
+	}
+	return nil
+}
+
+func setAppResult(dst any, src any) error {
+	b, err := json.Marshal(src)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(b, dst)
 }
 
 func waitForText(t *testing.T, tm *teatest.TestModel, text string) {

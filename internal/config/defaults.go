@@ -7,10 +7,16 @@ const (
 	ActionMention      = "mention"
 	ActionFocusChat    = "focus.chat"
 	ActionFocusInput   = "focus.input"
+	ActionFocusUsers   = "focus.users"
 	ActionScrollUp     = "scroll.up"
 	ActionScrollDown   = "scroll.down"
 	ActionScrollTop    = "scroll.top"
 	ActionScrollBottom = "scroll.bottom"
+	ActionUsersApprove = "users.approve"
+	ActionUsersDeny    = "users.deny"
+	ActionUsersKick    = "users.kick"
+	ActionUsersRole    = "users.role"
+	ActionUsersPass    = "users.pass"
 	ActionAcceptEdit   = "accept.edit"
 	ActionRejectEdit   = "reject.edit"
 	ActionRegenEdit    = "regen.edit"
@@ -24,10 +30,16 @@ var DefaultActions = []string{
 	ActionMention,
 	ActionFocusChat,
 	ActionFocusInput,
+	ActionFocusUsers,
 	ActionScrollUp,
 	ActionScrollDown,
 	ActionScrollTop,
 	ActionScrollBottom,
+	ActionUsersApprove,
+	ActionUsersDeny,
+	ActionUsersKick,
+	ActionUsersRole,
+	ActionUsersPass,
 	ActionAcceptEdit,
 	ActionRejectEdit,
 	ActionRegenEdit,
@@ -42,7 +54,7 @@ func DefaultConfig() *Config {
 		DefaultModel:        "claude-4-6-sonnet",
 		ContextBudgetTokens: 180000,
 		MaxResponseTokens:   8192,
-		AutoAcceptSafeEdits: false,
+		AutoAcceptSafeEdits: true,
 		HistoryFile:         "~/.local/share/gocli-poor/history",
 		LogLevel:            "info",
 		Keybindings:         DefaultKeybindings(),
@@ -57,10 +69,16 @@ func DefaultKeybindings() map[string]string {
 		ActionMention:      "@",
 		ActionFocusChat:    "ctrl+j",
 		ActionFocusInput:   "ctrl+i",
+		ActionFocusUsers:   "ctrl+u",
 		ActionScrollUp:     "pgup",
 		ActionScrollDown:   "pgdn",
 		ActionScrollTop:    "home",
 		ActionScrollBottom: "end",
+		ActionUsersApprove: "a",
+		ActionUsersDeny:    "d",
+		ActionUsersKick:    "x",
+		ActionUsersRole:    "r",
+		ActionUsersPass:    "p",
 		ActionAcceptEdit:   "ctrl+y",
 		ActionRejectEdit:   "ctrl+n",
 		ActionRegenEdit:    "ctrl+r",

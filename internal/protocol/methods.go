@@ -32,6 +32,21 @@ const (
 	MethodPlanReq           = "poor-cli/planReq"
 	MethodPlanRes           = "poor-cli/planRes"
 
+	MethodMemberTyping     = "poor-cli/memberTyping"
+	MethodSetTyping        = "poor-cli/setTyping"
+	MethodQueueUpdated     = "poor-cli/queueUpdated"
+	MethodCollabMemberJoin = "poor-cli/collabMemberJoined"
+	MethodCollabMemberLeft = "poor-cli/collabMemberLeft"
+
+	MethodListHostMembers   = "poor-cli/listHostMembers"
+	MethodListPresence      = "poor-cli/listPresence"
+	MethodListRoomQueue     = "poor-cli/listRoomQueue"
+	MethodApproveHostMember = "poor-cli/approveHostMember"
+	MethodDenyHostMember    = "poor-cli/denyHostMember"
+	MethodRemoveHostMember  = "poor-cli/removeHostMember"
+	MethodSetHostMemberRole = "poor-cli/setHostMemberRole"
+	MethodHandoffHostMember = "poor-cli/handoffHostMember"
+
 	MethodGetProviderInfo    = "poor-cli/getProviderInfo"
 	MethodListProviders      = "poor-cli/listProviders"
 	MethodListProvidersBare  = "listProviders"
@@ -57,6 +72,9 @@ const (
 	MethodRejectAll        = "poor-cli/rejectAll"
 	MethodDiffRegen        = "diff.regen"
 	MethodRegenerateHunk   = "poor-cli/regenerateHunk"
+	MethodVoteOnHunk       = "poor-cli/voteOnHunk"
+	MethodGetHunkVotes     = "poor-cli/getHunkVotes"
+	MethodHunkVoteUpdated  = "poor-cli/hunkVoteUpdated"
 
 	MethodTimelineList    = "timeline.list"
 	MethodTimelineCancel  = "timeline.cancel"

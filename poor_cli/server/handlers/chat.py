@@ -11,14 +11,14 @@ class ChatHandlersMixin:
         sid = params.get("sessionId")
         return self._session_manager.get_session(sid).core
 
-    def _chat_request_id(params: Dict[str, Any]) -> str:
+    def _chat_request_id(self, params: Dict[str, Any]) -> str:
         """Return a stable request id string for chat logging."""
         request_id = str(params.get("requestId", "")).strip()
         if request_id:
             return request_id
         return f"chat-{uuid.uuid4().hex[:8]}"
 
-    def _chat_context_count(context_files: Any) -> int:
+    def _chat_context_count(self, context_files: Any) -> int:
         """Best-effort context file count for chat logging."""
         if isinstance(context_files, list):
             return len(context_files)

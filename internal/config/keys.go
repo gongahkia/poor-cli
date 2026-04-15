@@ -15,10 +15,16 @@ type Keymap struct {
 	Mention      key.Binding
 	FocusChat    key.Binding
 	FocusInput   key.Binding
+	FocusUsers   key.Binding
 	ScrollUp     key.Binding
 	ScrollDown   key.Binding
 	ScrollTop    key.Binding
 	ScrollBottom key.Binding
+	UsersApprove key.Binding
+	UsersDeny    key.Binding
+	UsersKick    key.Binding
+	UsersRole    key.Binding
+	UsersPass    key.Binding
 	AcceptEdit   key.Binding
 	RejectEdit   key.Binding
 	RegenEdit    key.Binding
@@ -71,10 +77,16 @@ func (k *Keymap) FromConfig(c *Config) error {
 	k.Mention = k.actions[ActionMention].binding
 	k.FocusChat = k.actions[ActionFocusChat].binding
 	k.FocusInput = k.actions[ActionFocusInput].binding
+	k.FocusUsers = k.actions[ActionFocusUsers].binding
 	k.ScrollUp = k.actions[ActionScrollUp].binding
 	k.ScrollDown = k.actions[ActionScrollDown].binding
 	k.ScrollTop = k.actions[ActionScrollTop].binding
 	k.ScrollBottom = k.actions[ActionScrollBottom].binding
+	k.UsersApprove = k.actions[ActionUsersApprove].binding
+	k.UsersDeny = k.actions[ActionUsersDeny].binding
+	k.UsersKick = k.actions[ActionUsersKick].binding
+	k.UsersRole = k.actions[ActionUsersRole].binding
+	k.UsersPass = k.actions[ActionUsersPass].binding
 	k.AcceptEdit = k.actions[ActionAcceptEdit].binding
 	k.RejectEdit = k.actions[ActionRejectEdit].binding
 	k.RegenEdit = k.actions[ActionRegenEdit].binding

@@ -3,9 +3,26 @@ from __future__ import annotations
 
 from poor_cli.server.handler_deps import *
 from poor_cli.server.registry import register
+from poor_cli.multiplayer_attribution import (
+    attribution_explicitly_disabled,
+    current_author_tag,
+)
 
 
 class ChatStreamingHandlersMixin:
+    def _chat_author_fields(self) -> Dict[str, str]:
+        if (
+            not getattr(self, "_embedded_multiplayer_room", False)
+            and attribution_explicitly_disabled(getattr(self, "_client_capabilities", {}))
+        ):
+            return {}
+        return current_author_tag()
+
+    def _with_chat_author(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        tagged = dict(params)
+        tagged.update(self._chat_author_fields())
+        return tagged
+
     def _restore_edit_parent(self, params: Dict[str, Any]) -> None:
         turn_id = str(params.get("editTurnId") or params.get("edit_turn_id") or "").strip()
         if not turn_id:
@@ -53,7 +70,7 @@ class ChatStreamingHandlersMixin:
         preview = preview or {}
         notification = JsonRpcMessage(
             method="poor-cli/permissionReq",
-            params={
+            params=self._with_chat_author({
                 "requestId": str(preview.get("requestId", "")),
                 "toolName": tool_name,
                 "toolArgs": tool_args,
@@ -66,7 +83,7 @@ class ChatStreamingHandlersMixin:
                 "message": str(preview.get("message", "")),
                 "capabilities": preview.get("capabilities") or decision.capabilities,
                 "sandboxPreset": preview.get("sandboxPreset") or self._current_sandbox_preset(),
-            },
+            }),
         )
         await self.write_message_stdio(notification)
         loop = asyncio.get_event_loop()
@@ -97,14 +114,14 @@ class ChatStreamingHandlersMixin:
         prompt_id = str(uuid.uuid4())
         notification = JsonRpcMessage(
             method="poor-cli/planReq",
-            params={
+            params=self._with_chat_author({
                 "requestId": str(payload.get("requestId", "")),
                 "promptId": prompt_id,
                 "planId": str(payload.get("planId", "")),
                 "summary": str(payload.get("summary", "")),
                 "originalRequest": str(payload.get("originalRequest", "")),
                 "steps": payload.get("steps") or [],
-            },
+            }),
         )
         await self.write_message_stdio(notification)
         loop = asyncio.get_event_loop()
@@ -221,6 +238,7 @@ class ChatStreamingHandlersMixin:
         )
 
         async def send_tool_chunk(payload: Dict[str, Any]) -> None:
+            payload = self._with_chat_author(payload)
             event = self._timeline_store().append_chunk(
                 event_id=str(payload.get("eventId", "")),
                 turn_id=str(payload.get("requestId", "")),
@@ -249,20 +267,20 @@ class ChatStreamingHandlersMixin:
                     if event.type == "thinking_chunk":
                         notification = JsonRpcMessage(
                             method="poor-cli/thinkingChunk",
-                            params={
+                            params=self._with_chat_author({
                                 "requestId": request_id,
                                 "chunk": event.data.get("chunk", ""),
-                            },
+                            }),
                         )
                         await self.write_message_stdio(notification)
                     elif event.type == "text_chunk":
                         notification = JsonRpcMessage(
                             method="poor-cli/streamChunk",
-                            params={
+                            params=self._with_chat_author({
                                 "requestId": request_id,
                                 "chunk": event.data.get("chunk", ""),
                                 "done": False,
-                            },
+                            }),
                         )
                         await self.write_message_stdio(notification)
                         accumulated_text += event.data.get("chunk", "")
@@ -277,7 +295,7 @@ class ChatStreamingHandlersMixin:
                             await self._notify_timeline_event(timeline_event)
                         notification = JsonRpcMessage(
                             method="poor-cli/toolEvent",
-                            params={
+                            params=self._with_chat_author({
                                 "requestId": request_id,
                                 "eventType": event_type,
                                 "toolName": event.data.get("toolName", ""),
@@ -294,7 +312,7 @@ class ChatStreamingHandlersMixin:
                                 "filteredSize": event.data.get("filteredSize", 0),
                                 "iterationIndex": event.data.get("iterationIndex", 0),
                                 "iterationCap": event.data.get("iterationCap", 25),
-                            },
+                            }),
                         )
                         await self.write_message_stdio(notification)
                     elif event.type == "permission_request":
@@ -314,41 +332,44 @@ class ChatStreamingHandlersMixin:
                                    "confidencePercent", "confidenceCategory"):
                             if event.data.get(_k):
                                 cost_params[_k] = event.data[_k]
-                        notification = JsonRpcMessage(method="poor-cli/costUpdate", params=cost_params)
+                        notification = JsonRpcMessage(
+                            method="poor-cli/costUpdate",
+                            params=self._with_chat_author(cost_params),
+                        )
                         await self.write_message_stdio(notification)
                     elif event.type == "context_pressure":
                         notification = JsonRpcMessage(
                             method="poor-cli/contextPressure",
-                            params={"requestId": request_id, **event.data},
+                            params=self._with_chat_author({"requestId": request_id, **event.data}),
                         )
                         await self.write_message_stdio(notification)
                     elif event.type == "economy_turn_report":
                         notification = JsonRpcMessage(
                             method="poor-cli/economyTurnReport",
-                            params={"requestId": request_id, **event.data},
+                            params=self._with_chat_author({"requestId": request_id, **event.data}),
                         )
                         await self.write_message_stdio(notification)
                     elif event.type == "progress":
                         notification = JsonRpcMessage(
                             method="poor-cli/progress",
-                            params={
+                            params=self._with_chat_author({
                                 "requestId": request_id,
                                 "phase": event.data.get("phase", ""),
                                 "message": event.data.get("message", ""),
                                 "iterationIndex": event.data.get("iterationIndex", 0),
                                 "iterationCap": event.data.get("iterationCap", 25),
-                            },
+                            }),
                         )
                         await self.write_message_stdio(notification)
                     elif event.type == "done":
                         done_notification = JsonRpcMessage(
                             method="poor-cli/streamChunk",
-                            params={
+                            params=self._with_chat_author({
                                 "requestId": request_id,
                                 "chunk": "",
                                 "done": True,
                                 "reason": event.data.get("reason", "complete"),
-                            },
+                            }),
                         )
                         await self.write_message_stdio(done_notification)
         except Exception:

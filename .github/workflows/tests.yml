@@ -201,6 +201,31 @@ jobs:
       - name: Run Lua specs
         run: PLENARY_DIR="$PWD/nvim-poor-cli/.test-runtime/site/pack/test/start/plenary.nvim" make test-lua
 
+  go-internal-coverage:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run Go coverage
+        run: make coverage
+
+      - name: Run fixture e2e
+        run: make test-e2e
+
+      - name: Upload Go coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-internal-coverage
+          path: |
+            coverage.out
+            coverage.html
+
   docker-smoke:
     runs-on: ubuntu-latest
 

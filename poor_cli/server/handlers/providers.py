@@ -145,13 +145,13 @@ class ProvidersHandlersMixin:
             }
         return result
 
-    def _normalize_provider_name(provider_name: str) -> str:
+    def _normalize_provider_name(self, provider_name: str) -> str:
         provider = provider_name.strip().lower()
         if provider == "claude":
             return "anthropic"
         return provider
 
-    def _mask_api_key(raw_key: Optional[str]) -> str:
+    def _mask_api_key(self, raw_key: Optional[str]) -> str:
         if not raw_key:
             return "(not set)"
         if len(raw_key) <= 8:
