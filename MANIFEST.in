@@ -2,21 +2,14 @@
 include README.md
 include pyproject.toml
 include requirements.txt
-include install.sh
-include run.sh
-include run_tui.sh
-include uninstall.sh
 
 # Include configuration examples
 include .env.example
 
 # Include product assets and source surfaces
-recursive-include completions *
 recursive-include asset *.png
 recursive-include poor_cli *.json
-graft poor-cli-tui
 graft nvim-poor-cli
-prune poor-cli-tui/target
 
 # Exclude unwanted files
 global-exclude __pycache__

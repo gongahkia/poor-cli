@@ -290,44 +290,7 @@ def _handle_install() -> None:
     else:
         parts = cmd.split()
         _run([sys.executable, "-m", *parts], check=False)
-    # install shell completions
-    if _confirm("install shell completions?"):
-        _install_completions()
     _press_enter()
-
-def _install_completions() -> None:
-    completions_dir = Path(__file__).resolve().parent.parent / "completions"
-    shell = os.environ.get("SHELL", "")
-    if "zsh" in shell:
-        src = completions_dir / "_poor-cli"
-        if src.is_file():
-            dest = Path.home() / ".zfunc" / "_poor-cli"
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dest)
-            print(f"  {_green('✓')} zsh completion -> {dest}")
-            print(f"  {_dim('add to .zshrc: fpath=(~/.zfunc $fpath) && autoload -Uz compinit && compinit')}")
-        else:
-            print(f"  {_yellow('!')} zsh completion file not found at {src}")
-    elif "bash" in shell:
-        src = completions_dir / "poor_cli.bash"
-        if src.is_file():
-            dest = Path.home() / ".local" / "share" / "bash-completion" / "completions" / "poor-cli"
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dest)
-            print(f"  {_green('✓')} bash completion -> {dest}")
-        else:
-            print(f"  {_yellow('!')} bash completion file not found at {src}")
-    elif "fish" in shell:
-        src = completions_dir / "poor_cli.fish"
-        if src.is_file():
-            dest = Path.home() / ".config" / "fish" / "completions" / "poor_cli.fish"
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dest)
-            print(f"  {_green('✓')} fish completion -> {dest}")
-        else:
-            print(f"  {_yellow('!')} fish completion file not found at {src}")
-    else:
-        print(f"  {_yellow('!')} shell not detected, skipping completions")
 
 # -- 2. configure providers --
 

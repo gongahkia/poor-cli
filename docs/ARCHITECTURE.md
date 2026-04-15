@@ -163,7 +163,6 @@ Invite-only, owner-authoritative WebRTC DataChannel sessions. `multiplayer.py` h
 
 - Python: `make test` — pytest over `tests/`. Sub-1000 unit tests; no network or provider access required.
 - Lua: `make test-lua` — plenary.busted under a test-only Neovim runtime.
-- Line budgets: `scripts/check_line_budgets.py` enforces caps (core.py ≤1000, config.py ≤1500, others ≤2000, with temporary caps for pre-existing monoliths).
 
 ### Common Patterns
 

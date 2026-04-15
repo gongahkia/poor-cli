@@ -11,8 +11,7 @@ North-star: `median_usd_per_completion`. Audience: cost-conscious hobbyists (PRD
 
 ## Key Conventions
 
-- File naming: Python package uses `poor_cli` (underscore), CLI and plugin use `poor-cli` (hyphen). Completions ship as `completions/poor-cli.{bash,fish,zsh}`.
-- Line budgets (enforced by `scripts/check_line_budgets.py` + CI): `core.py` ≤1000, `config.py` ≤1500, any other py ≤2000, with explicit temporary caps for `server/runtime.py`, `tools_async.py`, `multiplayer.py`, `core_turn_lifecycle.py`.
+- File naming: Python package uses `poor_cli` (underscore), CLI and plugin use `poor-cli` (hyphen).
 - Rules precedence (high → low): repo AGENTS.md (closest-dir-wins), repo POOR.md, repo CLAUDE.md, `~/.poor-cli/POOR.md`, `~/.poor-cli/AGENTS.md`.
 - Memory (cross-session): `~/.poor-cli/memory/*.md` with YAML frontmatter; `~/.poor-cli/memory/MEMORY.md` is the index.
 

@@ -21,7 +21,7 @@
 ### Collisions flagged
 
 - **11E and 11F both mutate `nvim-poor-cli/lua/poor-cli/commands.lua`** (both register a user command — `:PoorCLITrust` and `:PoorCLIPolicy` respectively). **Resolution: serialize into sub-waves.** 11E lands first (sub-wave A), 11F rebases on top (sub-wave B). The mutations are purely additive (new command registrations, no shared function bodies), so the rebase is trivial — but running them truly in parallel risks a merge conflict on the same `M.setup()` block. Splitting into A/B is lower friction than trying to pre-carve a shared stub.
-- **11B and 11C both touch `poor-cli/cli/`** but each owns a distinct subcommand module (`audit.py` vs. `setup.py` / installer). Confirm on implementation that entries land in different files; if a single `cli/__init__.py` dispatcher needs editing, treat as additive (new subparser) and land sequentially. Not a true collision — noted for vigilance.
+- **11B and 11C both touch `poor-cli/cli/`** but each owns a distinct subcommand module (`audit.py` vs. installer). Confirm on implementation that entries land in different files; if a single `cli/__init__.py` dispatcher needs editing, treat as additive (new subparser) and land sequentially. Not a true collision — noted for vigilance.
 - All other file scopes are fully disjoint.
 
 ---

@@ -46,7 +46,6 @@ Full set now lives under `docs/`:
 - `BENCHMARKS.md` — pending pass@1 tracking.
 - `kv_cache_setup.md` — self-hosted KV cache setup.
 - `ARCHITECTURE.md`, `POOR.md`, `NORTH_STAR.md` at repo root.
-`scripts/generate_command_docs.py` regenerates COMMANDS.md from the manifest so it never drifts.
 
 ### H5. Neovim plugin as primary marketing surface — DONE 2026-04-14 (verified)
 All listed surfaces shipped. Plan mode floating window, Telescope command palette, enhanced lualine (cost/savings/provider/sandbox/users badges), prompt queue, inline completion, diff review, timeline, context panel, Savings dashboard, Watch status panel, Trust Center, Policy inspector, multiplayer room — all present in `nvim-poor-cli/lua/poor-cli/`. Command end-to-end verification is a manual QA pass, queued as part of C1 pip-install validation.

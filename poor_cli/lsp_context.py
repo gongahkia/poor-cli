@@ -25,7 +25,7 @@ LSP_SERVER_MAP: Dict[str, List[str]] = {
 def detect_project_language(root_path: str) -> Optional[str]:
     root = Path(root_path)
     checks = [
-        (["pyproject.toml", "setup.py", "requirements.txt"], "python"),
+        (["pyproject.toml", "requirements.txt"], "python"),
         (["package.json"], "typescript"),
         (["Cargo.toml"], "rust"),
         (["go.mod"], "go"),

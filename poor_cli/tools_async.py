@@ -2837,7 +2837,7 @@ class ToolRegistryAsync:
 
     def _detect_test_framework(self, work_dir: Path) -> str:
         """Auto-detect test framework from workspace files."""
-        if (work_dir / "pytest.ini").exists() or (work_dir / "pyproject.toml").exists() or (work_dir / "setup.py").exists():
+        if (work_dir / "pytest.ini").exists() or (work_dir / "pyproject.toml").exists():
             return "pytest"
         if (work_dir / "package.json").exists():
             return "jest"

@@ -1,8 +1,8 @@
 # Phase 9: Repo Cleanup & Dead Code Purge
 
 **Priority:** High — removes carrying cost (cold-start imports, contributor confusion, misleading docs) and installs guardrails against monolith regrowth.
-**Estimated agents:** 6 (mixed parallel / serialized — see ordering table).
-**Dependencies:** 9C depends on 9B (stub decisions gate relocation). 9D should land after 9B (README references to archived stubs). 9F depends on 9E (line-count floor only enforceable after pre-slice).
+**Estimated agents:** 5 (mixed parallel / serialized — see ordering table).
+**Dependencies:** 9C depends on 9B (stub decisions gate relocation). 9D should land after 9B (README references to archived stubs).
 **Philosophy:** Delete first, relocate second, rewrite docs third, then CI-pin the result. Every agent here is either a destructive cleanup or a regression guard. No new product features.
 
 ---
@@ -16,7 +16,6 @@
 | 9C | Research relocation | `poor-cli/research/__init__.py`, `poor-cli/research/README.md` | Moves `latent_communication.py`, `neural_code_encoder.py`, `embeddings.py`†, `code_tokenizer.py`† into `poor-cli/research/`; `poor-cli/__init__.py`, `pyproject.toml` |
 | 9D | Top-level docs + screenshots | `asset/reference/v6/*.png` | `README.md`, `nvim-poor-cli/README.md`; deletes `asset/reference/v5/*.png` |
 | 9E | `core.py` pre-slice | `poor-cli/agent_loop.py`, `poor-cli/tool_dispatch.py`, `poor-cli/turn_lifecycle.py`, `tests/test_core_pre_slice.py` | `poor-cli/core.py`, importers' import paths |
-| 9F | CI size gate | `scripts/check_line_budgets.py` | `.github/workflows/tests.yml`, `Makefile` |
 
 † Only moved if not actively used in production call sites (9C audits first).
 
@@ -360,97 +359,3 @@ This is an **extract class** refactor, not a clean-room rewrite. `core.py` curre
 - [ ] If user-visible regression surfaces post-merge, single `git revert` on the PR undoes cleanly.
 
 ---
-
-## Agent 9F: CI gate — pin monolith sizes
-
-**Pain points addressed:** without a line-count gate, `core.py` regrows to 6,000 lines one feature at a time.
-
-### What to build
-
-Add a CI step (and `make lint-sizes` target) that fails the build when tracked monoliths exceed their hard limits. Must land **after** 9E so `core.py` actually fits under its cap with budget slack.
-
-### Implementation details
-
-1. **Hard limits** (`scripts/check_line_budgets.py`):
-   ```python
-   LINE_LIMITS = {
-       "poor-cli/core.py":           1_000,
-       "poor-cli/server/runtime.py": 5_600,  # Phase 10B owns the split
-       "poor-cli/config.py":         1_500,
-       "poor-cli/tools_async.py":    4_300,  # pre-existing monolith
-       "poor-cli/multiplayer.py":    2_150,  # PRD 063 owns fate
-       "poor-cli/core_turn_lifecycle.py": 2_700,
-       "__default__":                2_000,
-   }
-   ```
-
-   CI and pre-commit report overages as `path current/limit (+delta)`, for example `poor-cli/core.py 1124/1000 (+124)`.
-
-2. **Full script** (reference implementation):
-   ```python
-   #!/usr/bin/env python3
-   import sys
-   from pathlib import Path
-
-   HARD_LIMITS = {
-       "poor-cli/core.py":           1_000,
-       "poor-cli/server/runtime.py": 5_600,
-       "poor-cli/config.py":         1_500,
-       "poor-cli/tools_async.py":    4_300,
-       "poor-cli/multiplayer.py":    2_150,
-       "poor-cli/core_turn_lifecycle.py": 2_700,
-   }
-   GLOBAL_FILE_LIMIT = 2_000
-
-   def main() -> int:
-       errors: list[str] = []
-       repo_root = Path(__file__).parent.parent
-       for path, limit in HARD_LIMITS.items():
-           p = repo_root / path
-           if not p.exists():
-               continue
-           lines = p.read_text().count("\n")
-           if lines > limit:
-               errors.append(
-                   f"{path}: {lines} lines > {limit} limit "
-                   f"(overage {lines - limit})"
-               )
-       for p in (repo_root / "poor-cli").rglob("*.py"):
-           lines = p.read_text().count("\n")
-           rel = str(p.relative_to(repo_root))
-           if lines > GLOBAL_FILE_LIMIT and rel not in HARD_LIMITS:
-               errors.append(f"{rel}: {lines} > {GLOBAL_FILE_LIMIT}")
-       for e in errors:
-           print(f"::error::{e}", file=sys.stderr)
-       return 1 if errors else 0
-
-   if __name__ == "__main__":
-       sys.exit(main())
-   ```
-
-3. **Wire into CI** as a fast pre-test step in `.github/workflows/tests.yml`; fails before Python tests to surface quickly.
-
-4. **Makefile target:** `lint-sizes: ## check monolith sizes` invoking the script. Wire into `make lint` if appropriate.
-
-5. **Test:** `tests/` add `test_script_fails_on_oversized_file_fixture` — pytest fixture writes a fake too-big file into a tmp path and asserts exit code 1.
-
-6. **Budget slack.** Do not set limits below what 9E (and the follow-on context-assembly PRD) actually deliver. If `core.py` lands at 900 lines, limit at 1,000 gives headroom. Enforcement must not immediately re-block work.
-
-7. **Exemptions:** any exception must be inlined in the script with a comment explaining why. Do not externalize to a separate allow-list file.
-
-8. **Boundary:** no enforcement on `tests/`, `docs/`, `asset/`, Lua files. Do not set aesthetic limits (line length etc.) — ruff handles that.
-
-### Files to create/modify
-
-- **Create:** `scripts/check_line_budgets.py`.
-- **Modify:** `.github/workflows/tests.yml` (add pre-test step), `Makefile` (add `lint-sizes` target).
-- **Delete:** none.
-- **Collision note:** enforces a size ceiling on `poor-cli/core.py` that 9E just delivered — 9E must land first.
-
-### Acceptance criteria
-
-- [ ] `scripts/check_line_budgets.py` runs locally, passes after 9E lands, fails on pretend-bloat.
-- [ ] CI step visible in PR checks and blocking on overage.
-- [ ] `make lint-sizes` exists and runs the same check.
-- [ ] Overage error message includes path, current lines, limit, and delta.
-- [ ] Contributors cannot merge a `core.py` over 1,000 lines without editing the script (requires reviewer sign-off via inline comment).

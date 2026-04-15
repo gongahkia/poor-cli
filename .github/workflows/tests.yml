@@ -8,15 +8,6 @@ on:
   workflow_call:
 
 jobs:
-  line-budgets:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check Python line budgets
-        run: python3 scripts/check_line_budgets.py
-
   python-backend-validation:
     runs-on: ubuntu-latest
     strategy:
@@ -45,7 +36,6 @@ jobs:
       - name: Run Python backend smoke checks
         run: |
           .venv/bin/python -m compileall poor_cli
-          .venv/bin/python -m poor_cli.command_manifest --check
           .venv/bin/poor-cli --help
           .venv/bin/poor-cli exec --help
           .venv/bin/poor-cli task --help

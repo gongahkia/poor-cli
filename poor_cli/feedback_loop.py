@@ -55,7 +55,7 @@ def detect_project(cwd: Optional[str] = None) -> ProjectDetection:
     detection = ProjectDetection(project_type="unknown", root=str(root))
 
     # python
-    if (root / "pyproject.toml").exists() or (root / "setup.py").exists():
+    if (root / "pyproject.toml").exists():
         detection.project_type = "python"
         detection.lint_command = "ruff check --fix ." if _has_bin("ruff") else None
         detection.test_command = "python -m pytest -x -q --tb=short"

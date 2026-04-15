@@ -1136,7 +1136,7 @@ CONTEXT:
 - Must not gate test files
 
 YOUR DELIVERABLES:
-1. Add `scripts/check_line_budgets.py` (or similar) with per-file caps
+1. Add a line-budget check with per-file caps
 2. Wire it into CI as a required check
 3. Add a pre-commit hook mirroring the same check
 4. Document the budgets in `docs/phase_09_repo_cleanup.md` and CONTRIBUTING

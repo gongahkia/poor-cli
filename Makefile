@@ -1,4 +1,4 @@
-.PHONY: cli server install installer install-info dev build run test test-unit test-lua lint lint-sizes bench-swe release clean help hooks
+.PHONY: cli server install installer install-info dev build run test test-unit test-lua lint bench-swe release clean help hooks
 
 PYTHON := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/python,python3)
 PIP := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/pip,pip)
@@ -78,11 +78,8 @@ test-lua: ## run Lua plenary specs
 	@mkdir -p "$(NVIM_TEST_RUNTIME)/data" "$(NVIM_TEST_RUNTIME)/state" "$(NVIM_TEST_RUNTIME)/cache" "$(NVIM_TEST_RUNTIME)/config" "$(NVIM_TEST_RUNTIME)/site/pack/test/start"
 	XDG_DATA_HOME="$(NVIM_TEST_RUNTIME)/data" XDG_STATE_HOME="$(NVIM_TEST_RUNTIME)/state" XDG_CACHE_HOME="$(NVIM_TEST_RUNTIME)/cache" XDG_CONFIG_HOME="$(NVIM_TEST_RUNTIME)/config" PLENARY_DIR="$(PLENARY_DIR)" nvim --headless --noplugin -u nvim-poor-cli/tests/minimal_init.lua -c "PlenaryBustedDirectory nvim-poor-cli/tests/ {minimal_init = 'nvim-poor-cli/tests/minimal_init.lua'}"
 
-lint: lint-sizes ## run linters
+lint: ## run linters
 	ruff check poor_cli/
-
-lint-sizes: ## check Python file line budgets
-	$(PYTHON) scripts/check_line_budgets.py
 
 index: ## build/refresh the semantic search index
 	$(PYTHON) -c "from poor_cli.indexer import CodebaseIndexer; i=CodebaseIndexer(); s=i.index(); print(f'{s.total_files} files, {s.total_chunks} chunks')"

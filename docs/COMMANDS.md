@@ -1,8 +1,6 @@
 # Slash Command Reference
 
 poor-cli ships **121 slash commands** across 10 categories.
-Generated from `poor_cli/command_manifest.json` — do not edit by hand.
-Re-run `python scripts/generate_command_docs.py` after manifest changes.
 
 ## Categories
 
