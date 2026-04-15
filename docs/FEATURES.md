@@ -27,7 +27,7 @@ Command count: ~150 `PoorCLI*` user commands.
 
 - **Context panel** — `:PoorCLIContextPanel`. `p` pin · `d` drop · `D` drop all non-pinned (opt-in `context_remove_files`) · `/` filter · `o` open. Over-budget badge when tokens exceed limit.
 - **Repo map** — `:PoorCLIRepoMap`. Treesitter-aware semantic map; feeds PageRank file selection.
-- **@mentions** — type `@path/to/file` in chat input; attaches at send time.
+- **@mentions** — type `@` in chat input → file picker opens directly (Claude Code / Codex style). Other sources: type `@buffer:` or `@lsp:` manually. Configurable via `setup({ mentions = { default_source = "file" | "buffer" | "lsp" | "picker" } })`.
 
 ## Model, cost, economy
 

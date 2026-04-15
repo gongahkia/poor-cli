@@ -49,6 +49,15 @@ M.defaults = {
         snacks = true,
     },
     max_context_files = 20, -- Maximum open buffers sent as chat context
+
+    -- Mention picker behavior on `@` in chat:
+    -- - "file"   (default) → jump straight to file picker; Claude-Code style.
+    --                        Other sources reachable via manual `@buffer:` / `@lsp:`.
+    -- - "buffer" / "lsp"   → same shortcut but defaults to that source.
+    -- - "picker"           → show source picker (legacy multi-source flow).
+    mentions = {
+        default_source = "file",
+    },
     diff_review = {
         mode = "review",
         layout = "unified",

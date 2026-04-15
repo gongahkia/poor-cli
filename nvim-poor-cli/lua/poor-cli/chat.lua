@@ -2687,8 +2687,23 @@ end
 local function trigger_mention_picker(buf, win, char)
     if char == "@" then
         if not mention_at_word_start(buf, win) then return false end
+        -- honor `mentions.default_source` so `@` can jump straight to
+        -- a specific source (Claude-Code / Codex behavior) instead of
+        -- the multi-source picker.
+        local mentions_cfg = config.get("mentions") or {}
+        local default_source = tostring(mentions_cfg.default_source or "file"):lower()
         vim.schedule(function()
-            open_mention_source_picker(buf, win)
+            if default_source == "picker" then
+                open_mention_source_picker(buf, win)
+            elseif default_source == "file" or default_source == "buffer" or default_source == "lsp" then
+                if not open_mention_item_picker(default_source, buf, win, false) then
+                    -- fallback: if the preferred source has no items, let the
+                    -- user see the multi-source picker instead of a dead end.
+                    open_mention_source_picker(buf, win)
+                end
+            else
+                open_mention_source_picker(buf, win)
+            end
         end)
         return true
     end
