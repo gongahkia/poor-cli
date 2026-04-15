@@ -64,7 +64,10 @@ function M.render_lines(payload)
     local lines = {
         "# poor-cli branches",
         "",
-        "[[ previous sibling | ]] next sibling | <CR> switch | r refresh | q close",
+        -- keys wrapped in backticks so markdown filetype + vim-markdown plugin
+        -- don't interpret `[[` / `]]` as wiki-link syntax and draw boxes.
+        "keys: `[[` prev sibling | `]]` next sibling | `<CR>` switch",
+        "      `r` refresh | `q` close",
         "",
     }
     local roots = type(payload) == "table" and payload.roots or {}
@@ -115,9 +118,12 @@ function M.open()
         vim.cmd("botright " .. width .. "vsplit")
         M.win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_buf(M.win, buf)
-        vim.wo[M.win].wrap = false
+        vim.wo[M.win].wrap = true             -- let the help/header wrap on narrow panels
+        vim.wo[M.win].linebreak = true        -- wrap at word boundaries, not mid-word
+        vim.wo[M.win].breakindent = true      -- continuation lines keep indent
         vim.wo[M.win].number = false
         vim.wo[M.win].relativenumber = false
+        vim.wo[M.win].conceallevel = 0        -- show literal `[[`/`]]` if they ever appear in data
     end
     map("q", M.close, "close branches")
     map("r", M.refresh, "refresh branches")
