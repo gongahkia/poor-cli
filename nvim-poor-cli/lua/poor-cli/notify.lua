@@ -47,21 +47,42 @@ local function route_snacks(snacks, msg, level, opts)
     return false
 end
 
+-- collapse multi-line text into a single ;-separated line so plugin-less
+-- vim.notify (which drops to the command area + "Press ENTER") stays on
+-- one screen row instead of smearing across the whole bottom.
+local function flatten(msg)
+    local s = tostring(msg or "")
+    if not s:find("\n", 1, true) then return s end
+    local parts = {}
+    for line in s:gmatch("([^\n]+)") do
+        line = line:gsub("^%s+", ""):gsub("%s+$", "")
+        if line ~= "" then parts[#parts + 1] = line end
+    end
+    return table.concat(parts, " · ")
+end
+
 function M.notify(msg, level, opts)
     level = level or vim.log.levels.INFO
     opts = opts or {}
-    if level == vim.log.levels.ERROR then
-        return vim.notify(msg, level, opts)
-    end
     local notifications = cfg()
     local snacks = notifications.snacks == false and nil or M.detect(false)
+    local has_nvim_notify = pcall(require, "notify")
     if snacks then
         local snack_opts = vim.tbl_extend("keep", vim.deepcopy(opts), { group = group_name() })
         local ok, result = route_snacks(snacks, msg, level, snack_opts)
         if ok then return result end
     end
+    if has_nvim_notify then
+        return vim.notify(msg, level, opts)
+    end
+    -- fallback: plain vim.notify renders multi-line badly. flatten for errors/warns.
+    if level == vim.log.levels.ERROR or level == vim.log.levels.WARN then
+        return vim.notify(flatten(msg), level, opts)
+    end
     return vim.notify(msg, level, opts)
 end
+
+M._flatten = flatten  -- test hook
 
 function M.setup()
     if M._setup then return end

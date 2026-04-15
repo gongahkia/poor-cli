@@ -205,7 +205,7 @@ class ProvidersHandlersMixin:
 
         stored_securely = False
         if persist:
-            from ..credentials import get_credential_store
+            from ...credentials import get_credential_store
 
             stored_securely = get_credential_store().set(provider, api_key, store="keyring") == "keyring"
 
@@ -262,7 +262,7 @@ class ProvidersHandlersMixin:
         else:
             providers = sorted(config.model.providers.keys())
 
-        from ..credentials import get_credential_store
+        from ...credentials import get_credential_store
 
         credential_store = get_credential_store()
 
