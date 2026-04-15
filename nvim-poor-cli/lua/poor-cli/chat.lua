@@ -1204,12 +1204,10 @@ function M.send(message, opts)
         local provider = tostring(validity.provider or "?")
         local reason = tostring(validity.reason or "server rejected the key")
         local lines = {
-            string.format("Blocked: API key for %s is invalid.", provider),
-            "  " .. reason,
+            string.format("%s API key invalid — run :PoorCLIApiKey to fix", provider),
+            reason,
             "",
-            "Fix before sending:",
-            string.format("  :PoorCLIApiKey         — rotate the %s key interactively", provider),
-            "  :PoorCLIOnboarding     — full provider + key wizard",
+            "Send blocked. Rotate the key, then retry.",
         }
         require("poor-cli.notify").notify(table.concat(lines, "\n"), vim.log.levels.ERROR, {
             title = "poor-cli",

@@ -534,17 +534,13 @@ function M.capture_initialize_result(result)
     if type(key_validity) == "table" and key_validity.status == "invalid" then
         local provider = tostring(key_validity.provider or "?")
         local reason = tostring(key_validity.reason or "server rejected the key")
-        -- two-line notification: problem on top, fix on bottom.
-        -- keep each line short so it renders cleanly in both vim.notify
-        -- and snacks/nvim-notify popups.
+        -- first line MUST be self-sufficient: plugin-less terminals only
+        -- show it. Details follow for snacks/nvim-notify users.
         local lines = {
-            string.format("API key for %s is invalid.", provider),
-            "  " .. reason,
+            string.format("%s API key invalid — run :PoorCLIApiKey to fix", provider),
+            reason,
             "",
-            "Fix options:",
-            string.format("  :PoorCLIApiKey         — rotate the %s key interactively", provider),
-            "  :PoorCLIOnboarding     — full provider + key wizard",
-            "  :PoorCLIApiKeyStatus   — inspect current key source / keyring state",
+            "More options: :PoorCLIOnboarding | :PoorCLIApiKeyStatus",
         }
         pcall(require("poor-cli.notify").notify, table.concat(lines, "\n"), vim.log.levels.ERROR, {
             title = "poor-cli",

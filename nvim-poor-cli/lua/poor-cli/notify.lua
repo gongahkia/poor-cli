@@ -47,9 +47,8 @@ local function route_snacks(snacks, msg, level, opts)
     return false
 end
 
--- collapse multi-line text into a single ;-separated line so plugin-less
--- vim.notify (which drops to the command area + "Press ENTER") stays on
--- one screen row instead of smearing across the whole bottom.
+-- collapse multi-line text into a single ·-separated line — used only as
+-- a LAST RESORT when nothing better is available.
 local function flatten(msg)
     local s = tostring(msg or "")
     if not s:find("\n", 1, true) then return s end
@@ -61,12 +60,45 @@ local function flatten(msg)
     return table.concat(parts, " · ")
 end
 
+-- pick the first non-empty line as a terse headline that fits on one row
+-- without wrapping even on narrow terminals.
+local function headline(msg)
+    local s = tostring(msg or "")
+    for line in s:gmatch("([^\n]+)") do
+        line = line:gsub("^%s+", ""):gsub("%s+$", "")
+        if line ~= "" then return line end
+    end
+    return s
+end
+
+-- write full multi-line text into :messages history via nvim_echo so the
+-- user can recall with `:messages` after dismissing the short notification.
+local function echo_to_history(msg, level)
+    local hl = "Normal"
+    if level == vim.log.levels.ERROR then hl = "ErrorMsg"
+    elseif level == vim.log.levels.WARN then hl = "WarningMsg"
+    elseif level == vim.log.levels.INFO then hl = "MoreMsg"
+    end
+    local chunks = {}
+    for line in tostring(msg or ""):gmatch("([^\n]*)\n?") do
+        if line ~= "" then
+            chunks[#chunks + 1] = { line .. "\n", hl }
+        end
+    end
+    if #chunks > 0 then
+        -- ok=false on older neovim; swallow errors
+        pcall(vim.api.nvim_echo, chunks, true, {})
+    end
+end
+
 function M.notify(msg, level, opts)
     level = level or vim.log.levels.INFO
     opts = opts or {}
     local notifications = cfg()
     local snacks = notifications.snacks == false and nil or M.detect(false)
     local has_nvim_notify = pcall(require, "notify")
+
+    -- best path: snacks or nvim-notify render multi-line natively
     if snacks then
         local snack_opts = vim.tbl_extend("keep", vim.deepcopy(opts), { group = group_name() })
         local ok, result = route_snacks(snacks, msg, level, snack_opts)
@@ -75,14 +107,23 @@ function M.notify(msg, level, opts)
     if has_nvim_notify then
         return vim.notify(msg, level, opts)
     end
-    -- fallback: plain vim.notify renders multi-line badly. flatten for errors/warns.
-    if level == vim.log.levels.ERROR or level == vim.log.levels.WARN then
-        return vim.notify(flatten(msg), level, opts)
+
+    -- plugin-less fallback: show the first line only (avoids any wrap →
+    -- Press-ENTER wall on narrow terminals). Full text goes to :messages
+    -- so the user can recall it; add a breadcrumb suffix when we truncated.
+    local tag = "[poor-cli] "
+    local one = headline(msg)
+    local full = tostring(msg or "")
+    local multiline = full:find("\n", 1, true) ~= nil
+    if multiline then
+        echo_to_history(full, level)
+        one = one .. "  (run :messages for details)"
     end
-    return vim.notify(msg, level, opts)
+    return vim.notify(tag .. one, level, opts)
 end
 
 M._flatten = flatten  -- test hook
+M._headline = headline  -- test hook
 
 function M.setup()
     if M._setup then return end

@@ -1859,7 +1859,11 @@ create_command("PoorCLISetPermissions", function(opts)
 end, { nargs = "?", desc = "Set permission mode" })
 
 create_command("PoorCLIApiKey", function()
-    local providers = { "gemini", "openai", "anthropic", "openrouter", "ollama" }
+    -- keep in sync with nvim-poor-cli/lua/poor-cli/onboarding.lua::ALL_PROVIDERS
+    local providers = {
+        "gemini", "openai", "anthropic", "openrouter", "litellm",
+        "ollama", "lmstudio", "llama_server", "vllm", "sglang", "hf_tgi", "hf_local",
+    }
     vim.ui.select(providers, { prompt = "Provider:" }, function(provider)
         if not provider then return end
         vim.ui.input({ prompt = "API key for " .. provider .. ": " }, function(key)

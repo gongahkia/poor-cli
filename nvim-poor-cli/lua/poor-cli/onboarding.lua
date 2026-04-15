@@ -10,6 +10,15 @@ local ONBOARDING_VERSION = 1
 local TOTAL_STEPS = 9
 local TOUR_TOTAL_STEPS = 5
 
+-- All provider adapters poor-cli ships. Cloud providers first (API-key),
+-- then local / self-hosted. `claude` is an alias for `anthropic`, so we
+-- only list the canonical name. Kept in sync with
+-- poor_cli/providers/provider_factory.py::ProviderFactory.list_providers.
+local ALL_PROVIDERS = {
+    "gemini", "openai", "anthropic", "openrouter", "litellm",
+    "ollama", "lmstudio", "llama_server", "vllm", "sglang", "hf_tgi", "hf_local",
+}
+
 M.state = {
     step = 1,
     choices = { provider = nil, api_key = nil, model = nil, keybindings = {}, permission_mode = "default", economy_preset = "balanced", budget = nil },
@@ -110,13 +119,12 @@ end
 local function render_provider()
     local lines = header("provider", 2)
     vim.list_extend(lines, { "Select your primary LLM provider.", "" })
-    local providers = { "gemini", "openai", "anthropic", "ollama", "openrouter" }
     local pd = M.state.provider_data or {}
-    for _, name in ipairs(providers) do
+    for _, name in ipairs(ALL_PROVIDERS) do
         local info = pd[name] or {}
         local status = info.statusLabel or "unknown"
         local marker = (M.state.choices.provider == name) and " <--" or ""
-        table.insert(lines, ("  %s  [%s]%s"):format(name, status, marker))
+        table.insert(lines, ("  %-14s  [%s]%s"):format(name, status, marker))
     end
     vim.list_extend(lines, { "", "Press Enter to pick, or type provider name." })
     vim.list_extend(lines, footer_nav())
@@ -317,8 +325,7 @@ local function handle_enter()
     end
 
     if step.id == "provider" then
-        local providers = { "gemini", "openai", "anthropic", "ollama", "openrouter" }
-        vim.ui.select(providers, { prompt = "Select provider:" }, function(choice)
+        vim.ui.select(ALL_PROVIDERS, { prompt = "Select provider:" }, function(choice)
             if choice then
                 if choice ~= M.state.choices.provider then
                     M.state.choices.api_key = nil -- clear dependent choices
