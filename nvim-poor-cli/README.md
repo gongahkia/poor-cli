@@ -30,9 +30,9 @@
 - Python 3.11+
 - `poor-cli` Python package installed: `python3 -m pip install --upgrade 'poor-cli[all]'` (provides `poor-cli-server`)
 - At least one API key: `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
-- Optional: `telescope.nvim` for `:PoorCLICheckpoints`
+- **Recommended:** `rcarriga/nvim-notify` OR `folke/snacks.nvim` for pretty multi-line error toasts (plugin falls back to one-line `:messages` echo if neither is present; `:checkhealth poor-cli` warns when missing).
+- Optional: `telescope.nvim` for `:PoorCLICheckpoints` and picker fallbacks
 - Optional: `trouble.nvim` for `:Trouble poor-cli`
-- Optional: `snacks.nvim` for grouped non-error notifications and a dashboard section
 - Optional: `oil.nvim` for `@oil:` chat mentions
 
 ### Lazy.nvim
@@ -41,6 +41,12 @@
 {
     "gongahkia/poor-cli",
     submodules = false,
+    dependencies = {
+        -- pick ONE for pretty multi-line error toasts; plugin degrades
+        -- gracefully if neither is present but :checkhealth will warn.
+        "rcarriga/nvim-notify",
+        -- or: "folke/snacks.nvim",
+    },
     config = function()
         require("poor-cli").setup({
             -- your options here
