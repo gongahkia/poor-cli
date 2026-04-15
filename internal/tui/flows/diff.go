@@ -57,6 +57,15 @@ func (f *DiffReviewFlow) SetTheme(tm *theme.Theme) {
 	f.theme = tm
 }
 
+func (f *DiffReviewFlow) SetEdits(edits []protocol.PendingEdit) {
+	f.edits = append([]protocol.PendingEdit(nil), edits...)
+	f.open = len(f.edits) > 0
+	f.selectedEdit = clamp(f.selectedEdit, 0, max(0, len(f.edits)-1))
+	if f.open {
+		f.selectedHunk = clamp(f.selectedHunk, 0, max(0, len(f.edits[f.selectedEdit].Hunks)-1))
+	}
+}
+
 func (f *DiffReviewFlow) Open(ctx context.Context) error {
 	if err := f.fetch(ctx); err != nil {
 		return err

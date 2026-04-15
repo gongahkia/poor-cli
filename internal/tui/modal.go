@@ -101,6 +101,12 @@ func modalTitle(kind ModalKind) string {
 		return "Switch provider"
 	case ModalSessionPicker:
 		return "Switch session"
+	case ModalHelp:
+		return "commands"
+	case ModalDiffReview:
+		return "diff review"
+	case ModalWatchPanel:
+		return "watch"
 	case ModalRolePicker:
 		return "Set role"
 	case ModalAPIKeyPrompt:

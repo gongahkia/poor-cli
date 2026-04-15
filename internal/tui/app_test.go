@@ -15,6 +15,7 @@ import (
 	"github.com/gongahkia/gocli-poor/internal/state"
 	"github.com/gongahkia/gocli-poor/internal/tui/flows"
 	"github.com/gongahkia/gocli-poor/internal/tui/widgets"
+	"github.com/gongahkia/gocli-poor/internal/tui/widgets/commands"
 )
 
 func TestResizePreservesChatScrollAnchor(t *testing.T) {
@@ -79,7 +80,8 @@ func TestPaletteInputRunsSlashCommandWithoutLeadingSlash(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("missing command")
 	}
-	_ = cmd()
+	next, _ = m.Update(cmd())
+	m = next.(Model)
 	if len(rpc.calls) != 1 || rpc.calls[0].Method != protocol.MethodListProviders {
 		t.Fatalf("calls=%#v", rpc.calls)
 	}
@@ -88,14 +90,14 @@ func TestPaletteInputRunsSlashCommandWithoutLeadingSlash(t *testing.T) {
 	}
 }
 
-func TestExitSlashQuitsApp(t *testing.T) {
+func TestQuitSlashQuitsApp(t *testing.T) {
 	m := NewModel(nil)
-	cmd := m.dispatchCommandInput("/exit")
+	cmd := m.dispatchCommandInput("/quit")
 	if cmd == nil {
 		t.Fatal("missing quit cmd")
 	}
 	if _, ok := cmd().(tea.QuitMsg); !ok {
-		t.Fatalf("wrong msg")
+		t.Fatalf("wrong quit msg")
 	}
 	m.Store.Close()
 }
@@ -197,7 +199,7 @@ func TestCostSlashOpensModalAndRendersDashboard(t *testing.T) {
 	m := NewModel(nil, WithRPCClient(rpc))
 
 	cmd := m.dispatchCommandInput("/cost")
-	if cmd == nil || m.Modals.Len() != 1 {
+	if cmd == nil {
 		t.Fatalf("modal/cmd missing")
 	}
 	next, _ := m.Update(cmd())
@@ -222,6 +224,54 @@ func TestStatusBarShowsThinkingCue(t *testing.T) {
 		t.Fatalf("status=%q", view)
 	}
 	m.Store.Close()
+}
+
+func TestAllPaletteBuiltinsDispatch(t *testing.T) {
+	rpc := &appRPC{handlers: map[string]func(any, any) error{
+		protocol.MethodClearHistory: func(_ any, result any) error {
+			return setAppResult(result, map[string]any{"ok": true})
+		},
+		protocol.MethodListProviders: func(_ any, result any) error {
+			return setAppResult(result, protocol.ListProvidersResult{"anthropic": {Available: true, Ready: true, Models: []string{"claude"}}})
+		},
+		protocol.MethodListSessions: func(_ any, result any) error {
+			return setAppResult(result, protocol.ListSessionsResult{Sessions: []protocol.SessionSummary{{SessionID: "s1", Model: "claude"}}})
+		},
+		protocol.MethodCostSummary: func(_ any, result any) error {
+			return setAppResult(result, protocol.CostSnapshot{PerProvider: map[string]any{"anthropic": 0.01}})
+		},
+		protocol.MethodGetEconomySavings: func(_ any, result any) error {
+			return setAppResult(result, protocol.SavingsSnapshot{})
+		},
+		protocol.MethodListPendingEdits: func(_ any, result any) error {
+			return setAppResult(result, protocol.DiffListResult{})
+		},
+		protocol.MethodContextStatus: func(_ any, result any) error {
+			return setAppResult(result, map[string]any{"watch": "ok"})
+		},
+	}}
+	for _, cmdDef := range commands.NewRegistry().Builtins() {
+		m := NewModel(nil, WithRPCClient(rpc))
+		cmd := m.dispatchCommandInput(cmdDef.ID)
+		if cmd == nil {
+			if cmdDef.ID == "/users" && m.Toast.Kind == ToastWarning {
+				m.Store.Close()
+				continue
+			}
+			t.Fatalf("%s returned nil cmd", cmdDef.ID)
+		}
+		msg := cmd()
+		if _, ok := msg.(tea.QuitMsg); ok {
+			m.Store.Close()
+			continue
+		}
+		next, _ := m.Update(msg)
+		m = next.(Model)
+		if m.Toast.Kind == ToastError && strings.Contains(m.Toast.Text, "unknown command") {
+			t.Fatalf("%s unknown: %#v", cmdDef.ID, m.Toast)
+		}
+		m.Store.Close()
+	}
 }
 
 type appRPC struct {

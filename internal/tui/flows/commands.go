@@ -73,7 +73,6 @@ var executors = map[string]commandExecutorFactory{
 	"/clear":    func(c *CommandsFlow) CommandExecutor { return c.cmdClear },
 	"/compact":  func(c *CommandsFlow) CommandExecutor { return c.cmdCompact },
 	"/quit":     func(c *CommandsFlow) CommandExecutor { return c.cmdQuit },
-	"/exit":     func(c *CommandsFlow) CommandExecutor { return c.cmdQuit },
 	"/help":     func(c *CommandsFlow) CommandExecutor { return c.cmdHelp },
 	"/cost":     func(c *CommandsFlow) CommandExecutor { return c.cmdCost },
 	"/provider": func(c *CommandsFlow) CommandExecutor { return c.cmdProvider },
@@ -290,7 +289,7 @@ func (c *CommandsFlow) cmdProvider(args string) tea.Cmd {
 
 func (c *CommandsFlow) cmdModel(args string) tea.Cmd {
 	if strings.TrimSpace(args) == "" {
-		return c.toast(ToastWarning, "model name required")
+		return c.cmdProvider("")
 	}
 	return c.switchProvider("", args)
 }

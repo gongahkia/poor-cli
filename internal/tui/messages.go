@@ -42,6 +42,9 @@ const (
 	ModalCost
 	ModalProviderPicker
 	ModalSessionPicker
+	ModalHelp
+	ModalDiffReview
+	ModalWatchPanel
 	ModalRolePicker
 	ModalAPIKeyPrompt
 	ModalPermissionPrompt

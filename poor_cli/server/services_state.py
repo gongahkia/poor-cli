@@ -118,6 +118,7 @@ class ServicesStateMixin:
             return default_base_url
         return str(provider_cfg.base_url or default_base_url).strip() or default_base_url
 
+    @staticmethod
     def _is_tcp_endpoint_reachable(host: str, port: int, timeout_seconds: float = 0.8) -> bool:
         """Cheap TCP readiness check used for local service health probes."""
         try:

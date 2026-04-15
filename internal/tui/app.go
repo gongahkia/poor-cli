@@ -500,6 +500,13 @@ func (m *Model) updateTopModal(msg tea.KeyMsg) (bool, tea.Cmd) {
 		return true, payload.Update(msg, m.rpc)
 	case *widgets.Palette:
 		return true, payload.Update(msg)
+	case *flows.DiffReviewFlow:
+		return true, func() tea.Msg {
+			if err := payload.HandleKey(context.Background(), msg.String()); err != nil {
+				return ToastMsg{Kind: ToastError, Text: err.Error(), TTL: 3 * time.Second}
+			}
+			return nil
+		}
 	default:
 		return false, nil
 	}
@@ -533,24 +540,92 @@ func (m *Model) dispatchCommandInput(input string) tea.Cmd {
 	if !strings.HasPrefix(input, "/") {
 		return emitApp(widgets.SubmitMsg{Text: input})
 	}
-	switch input {
-	case "/cost":
-		m.openModal(ModalCost, flows.CostPayload{Loading: true})
-		return flows.FetchCostModalCmd(m.rpc)
-	case "/provider", "/model":
-		m.openModal(ModalProviderPicker, flows.NewProviderPicker(m.providerName(), m.providerModel()))
-		return flows.FetchProvidersCmd(m.rpc)
-	case "/session":
-		m.openModal(ModalSessionPicker, flows.NewSessionPicker(m.sessionID()))
-		return flows.FetchSessionsCmd(m.rpc)
+	commandID, args := splitCommandInput(input)
+	switch commandID {
 	case "/users":
 		return m.toggleUsers()
-	case "/quit", "/exit":
-		return tea.Quit
-	default:
-		m.Toast = ToastMsg{Kind: ToastWarning, Text: "unknown command", TTL: 2 * time.Second}
-		return nil
 	}
+	return m.commandFlow().Dispatch(commandID, args)
+}
+
+func splitCommandInput(input string) (string, string) {
+	fields := strings.Fields(input)
+	if len(fields) == 0 {
+		return "", ""
+	}
+	commandID := strings.ToLower(fields[0])
+	args := strings.TrimSpace(strings.TrimPrefix(input, fields[0]))
+	return commandID, args
+}
+
+func (m *Model) commandFlow() *flows.CommandsFlow {
+	return flows.NewCommandsFlow(flows.Deps{
+		RPC:      m.rpc,
+		State:    m.Store,
+		Store:    m.Store,
+		Registry: commands.NewRegistry(),
+		Toast: func(kind flows.ToastKind, text string) tea.Cmd {
+			return emitApp(ToastMsg{Kind: appToastKind(kind), Text: text, TTL: 3 * time.Second})
+		},
+		OpenHelpModal: func(payload flows.HelpPayload) tea.Cmd {
+			return emitApp(OpenModalMsg{Kind: ModalHelp, Payload: helpText(payload)})
+		},
+		OpenCostModal: func(payload flows.CostPayload) tea.Cmd {
+			return emitApp(OpenModalMsg{Kind: ModalCost, Payload: payload})
+		},
+		OpenProviderPicker: func(payload flows.ProviderPayload) tea.Cmd {
+			picker := flows.NewProviderPicker(m.providerName(), m.providerModel())
+			picker.ApplyLoaded(flows.ProvidersLoadedMsg{Result: payload.Providers})
+			return emitApp(OpenModalMsg{Kind: ModalProviderPicker, Payload: picker})
+		},
+		OpenSessionPicker: func(payload flows.SessionPayload) tea.Cmd {
+			picker := flows.NewSessionPicker(payload.ActiveSessionID)
+			picker.ApplyLoaded(flows.SessionsLoadedMsg{Result: protocol.ListSessionsResult{Sessions: payload.Sessions, ActiveSessionID: payload.ActiveSessionID}})
+			return emitApp(OpenModalMsg{Kind: ModalSessionPicker, Payload: picker})
+		},
+		OpenDiffReview: func(payload flows.DiffPayload) tea.Cmd {
+			review := flows.NewDiffReviewFlow(m.rpc, false)
+			review.SetStateDispatcher(m.Store)
+			review.SetEdits(payload.Edits)
+			return emitApp(OpenModalMsg{Kind: ModalDiffReview, Payload: review})
+		},
+		OpenWatchPanel: func(payload flows.WatchPayload) tea.Cmd {
+			return emitApp(OpenModalMsg{Kind: ModalWatchPanel, Payload: watchText(payload)})
+		},
+		Quit: tea.Quit,
+	})
+}
+
+func appToastKind(kind flows.ToastKind) ToastKind {
+	switch kind {
+	case flows.ToastSuccess:
+		return ToastSuccess
+	case flows.ToastWarning:
+		return ToastWarning
+	case flows.ToastError:
+		return ToastError
+	default:
+		return ToastInfo
+	}
+}
+
+func helpText(payload flows.HelpPayload) string {
+	lines := make([]string, 0, len(payload.Commands))
+	for _, cmd := range payload.Commands {
+		lines = append(lines, fmt.Sprintf("%s %-12s %s", cmd.Icon, cmd.ID, cmd.Description))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func watchText(payload flows.WatchPayload) string {
+	if len(payload.Status) == 0 {
+		return "watch status unavailable"
+	}
+	lines := make([]string, 0, len(payload.Status))
+	for key, value := range payload.Status {
+		lines = append(lines, fmt.Sprintf("%s: %v", key, value))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m *Model) withTopProviderPicker(fn func(*flows.ProviderPicker)) {

@@ -71,7 +71,6 @@ Re-run `python scripts/generate_command_docs.py` after manifest changes.
 | `/copy` | Copy last assistant response |
 | `/cost` ⭐ | Show session token usage and estimated cost |
 | `/edit-last` | Edit and resend last prompt |
-| `/exit` | Exit the TUI (alias) |
 | `/export` | Export conversation history |
 | `/help` ⭐ | Show all available commands |
 | `/history` ⭐ | Show recent messages |

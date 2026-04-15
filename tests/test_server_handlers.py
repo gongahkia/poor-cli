@@ -8,6 +8,7 @@ import pytest
 import poor_cli.server.handlers as server_handlers
 from poor_cli.server.registry import REGISTRY, register
 from poor_cli.server.runtime import PoorCLIServer
+from poor_cli.server.services_state import ServicesStateMixin
 from poor_cli.server.types import JsonRpcMessage
 
 
@@ -217,6 +218,28 @@ poor-cli/regenerateTurn
 chat.switch
 chat.siblings
 """.split()
+
+
+def test_tcp_endpoint_reachable_bound_method_uses_host_string(monkeypatch):
+    seen = {}
+
+    def fake_create_connection(addr, timeout):
+        seen["addr"] = addr
+        seen["timeout"] = timeout
+
+        class Conn:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+        return Conn()
+
+    monkeypatch.setattr("socket.create_connection", fake_create_connection)
+
+    assert ServicesStateMixin()._is_tcp_endpoint_reachable("localhost", 11434, 0.1)
+    assert seen == {"addr": ("localhost", 11434), "timeout": 0.1}
 
 
 def test_registry_registers_unique_methods():

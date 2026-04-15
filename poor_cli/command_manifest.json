@@ -117,13 +117,6 @@
       "category": "Core Workflow"
     },
     {
-      "command": "/exit",
-      "description": "Exit the TUI (alias)",
-      "recommended": false,
-      "category": "Core Workflow",
-      "hidden": true
-    },
-    {
       "command": "/clear",
       "description": "Clear conversation history",
       "recommended": false,

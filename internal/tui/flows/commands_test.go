@@ -147,10 +147,6 @@ func TestClientCommandsRoute(t *testing.T) {
 		t.Fatalf("wrong quit msg: %#v", quit)
 	}
 
-	exit := run(t, flow.Dispatch("/exit", ""))
-	if _, ok := exit.(tea.QuitMsg); !ok {
-		t.Fatalf("wrong exit msg: %#v", exit)
-	}
 }
 
 func TestCustomCommandsSyncAndRoute(t *testing.T) {

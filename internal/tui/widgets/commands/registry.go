@@ -132,7 +132,6 @@ func builtinCommands() []Command {
 		{ID: "/watch", Icon: "●", Label: "/watch", Description: "Watch repository changes", Usage: "/watch"},
 		{ID: "/users", Icon: "◌", Label: "/users", Description: "Toggle users panel", Usage: "/users"},
 		{ID: "/quit", Icon: "✗", Label: "/quit", Description: "Quit poor-cli", Usage: "/quit"},
-		{ID: "/exit", Icon: "✗", Label: "/exit", Description: "Quit poor-cli", Usage: "/exit"},
 		{ID: "/help", Icon: "·", Label: "/help", Description: "Show help", Usage: "/help"},
 	}
 }

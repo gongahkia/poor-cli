@@ -174,9 +174,11 @@ func TestAppInputModalBackspaceAndFocusBranches(t *testing.T) {
 	}
 	m.openModal(ModalPalette, nil)
 	m.Modals.UpdateTopInput("/unknown")
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(Model)
-	if m.Toast.Kind != ToastWarning {
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if m.Toast.Kind != ToastError {
 		t.Fatalf("toast=%#v", m.Toast)
 	}
 	m.Store.Close()
