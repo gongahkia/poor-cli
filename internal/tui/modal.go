@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/gongahkia/gocli-poor/internal/tui/widgets"
 )
 
 type Modal struct {
@@ -15,6 +14,11 @@ type Modal struct {
 
 type ModalPayloadViewer interface {
 	View(width, height int) string
+}
+
+type ModalPayloadSizerViewer interface {
+	SetSize(width, height int)
+	View() string
 }
 
 type ModalPayloadCleaner interface {
@@ -74,34 +78,33 @@ func (s ModalStack) Render(base string, regions Regions) string {
 func (m Modal) Render(width, height int) string {
 	width = maxInt(1, width)
 	height = maxInt(1, height)
+	bodyHeight := maxInt(1, height-2)
 	title := modalTitle(m.Kind)
-	bodyHeight := height
-	if title != "" {
-		bodyHeight = maxInt(1, height-1)
-	}
-	body := modalBody(m, width, bodyHeight)
-	if title == "" {
-		return lipgloss.Place(width, height, lipgloss.Left, lipgloss.Top, body)
-	}
-	return lipgloss.Place(width, height, lipgloss.Left, lipgloss.Top, widgets.FlushHeader(nil, title)+"\n"+body)
+	body := modalBody(m, width-2, bodyHeight)
+	box := lipgloss.NewStyle().
+		Width(width).
+		Height(height).
+		Border(lipgloss.NormalBorder()).
+		Render(title + "\n" + lipgloss.Place(width-2, bodyHeight, lipgloss.Left, lipgloss.Top, body))
+	return box
 }
 
 func modalTitle(kind ModalKind) string {
 	switch kind {
 	case ModalPalette:
-		return ""
+		return "command palette"
 	case ModalMention:
-		return ""
+		return "mention"
 	case ModalCost:
-		return "cost"
+		return "Cost this session"
 	case ModalProviderPicker:
-		return "provider"
+		return "Switch provider"
 	case ModalSessionPicker:
-		return "session"
+		return "Switch session"
 	case ModalRolePicker:
-		return "role"
+		return "Set role"
 	case ModalAPIKeyPrompt:
-		return "api key"
+		return "API key required"
 	case ModalPermissionPrompt:
 		return "permission"
 	default:
@@ -110,6 +113,10 @@ func modalTitle(kind ModalKind) string {
 }
 
 func modalBody(m Modal, width, height int) string {
+	if viewer, ok := m.Payload.(ModalPayloadSizerViewer); ok {
+		viewer.SetSize(width, height)
+		return viewer.View()
+	}
 	if viewer, ok := m.Payload.(ModalPayloadViewer); ok {
 		return viewer.View(width, height)
 	}

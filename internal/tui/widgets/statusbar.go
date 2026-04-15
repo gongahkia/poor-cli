@@ -141,13 +141,13 @@ func TypingFooterText(snapshot state.AppState) string {
 	case 0:
 		return ""
 	case 1:
-		return typers[0] + " is typing"
+		return typers[0] + " is typing…"
 	case 2:
-		return typers[0] + " and " + typers[1] + " are typing"
+		return typers[0] + " and " + typers[1] + " are typing…"
 	case 3:
-		return typers[0] + ", " + typers[1] + ", and " + typers[2] + " are typing"
+		return typers[0] + ", " + typers[1] + ", and " + typers[2] + " are typing…"
 	default:
-		return typers[0] + ", " + typers[1] + ", " + typers[2] + fmt.Sprintf(" +%d typing", len(typers)-3)
+		return typers[0] + ", " + typers[1] + ", " + typers[2] + fmt.Sprintf(" +%d typing…", len(typers)-3)
 	}
 }
 

@@ -43,7 +43,7 @@ func TestRendererGoldenBlocks(t *testing.T) {
 		{
 			name: "unordered list",
 			in:   "- one\n- two\n\n",
-			want: "· one\n· two\n",
+			want: "• one\n• two\n",
 		},
 		{
 			name: "ordered list",
@@ -53,12 +53,12 @@ func TestRendererGoldenBlocks(t *testing.T) {
 		{
 			name: "blockquote",
 			in:   "> quoted\n> more\n\n",
-			want: "  quoted\n  more\n",
+			want: "│ quoted\n│ more\n",
 		},
 		{
 			name: "thematic break",
 			in:   "---\n",
-			want: strings.Repeat("-", width-2) + "\n",
+			want: strings.Repeat("─", width-2) + "\n",
 		},
 	}
 	for _, tt := range tests {
@@ -110,10 +110,10 @@ func TestRendererCodeDeltaReplacesPendingLine(t *testing.T) {
 	})
 	r.Feed([]Event{CodeBlockDeltaEvent{Lang: "go", Line: "fmt.Println(1)", Final: true}, BlockCloseEvent{Kind: BlockCodeFence}, CommitEvent{}})
 	got := stripANSI(r.Full())
-	if strings.Contains(got, "fmt.\n  fmt.Println") {
+	if strings.Contains(got, "fmt.\n│ fmt.Println") {
 		t.Fatalf("pending code line was appended, not replaced:\n%q", got)
 	}
-	if !strings.Contains(got, "  fmt.Println(1)\n") {
+	if !strings.Contains(got, "│ fmt.Println(1)\n") {
 		t.Fatalf("final code line missing:\n%q", got)
 	}
 }
@@ -126,12 +126,20 @@ func renderMarkdown(tm *theme.Theme, doc string, width int) string {
 }
 
 func codeFencePlain(lang string, lines []string, width int) string {
+	wrap := width - 2
+	head := "╭─ " + lang + " "
 	var b strings.Builder
+	b.WriteString(head)
+	b.WriteString(strings.Repeat("─", wrap-len([]rune(head))))
+	b.WriteByte('\n')
 	for _, line := range lines {
-		b.WriteString("  ")
+		b.WriteString("│ ")
 		b.WriteString(line)
 		b.WriteByte('\n')
 	}
+	b.WriteString("╰")
+	b.WriteString(strings.Repeat("─", wrap-1))
+	b.WriteByte('\n')
 	return b.String()
 }
 

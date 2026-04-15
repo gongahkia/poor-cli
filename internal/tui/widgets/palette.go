@@ -92,7 +92,7 @@ func (p *Palette) View() string {
 				marker = "›"
 				style = p.theme.PaletteHighlight
 			}
-			line := fitPalette(marker+" "+cmd.Label+"  "+cmd.Description, width-2)
+			line := fitPalette(marker+" "+cmd.Icon+" "+cmd.Label+"  "+cmd.Description, width-2)
 			lines = append(lines, style.Render(line))
 		}
 	}

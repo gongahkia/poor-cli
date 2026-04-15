@@ -19,6 +19,7 @@ const (
 
 type Command struct {
 	ID          string
+	Icon        string
 	Label       string
 	Description string
 	Usage       string
@@ -121,18 +122,18 @@ func (r *Registry) Filter(prefix string) []Command {
 
 func builtinCommands() []Command {
 	return []Command{
-		{ID: "/compact", Label: "/compact", Description: "Compact conversation history", Usage: "/compact [tier]"},
-		{ID: "/clear", Label: "/clear", Description: "Clear current conversation", Usage: "/clear"},
-		{ID: "/provider", Label: "/provider", Description: "Switch provider", Usage: "/provider [name]", RequiresArg: true},
-		{ID: "/model", Label: "/model", Description: "Switch model", Usage: "/model [name]", RequiresArg: true},
-		{ID: "/session", Label: "/session", Description: "Manage sessions", Usage: "/session [name]"},
-		{ID: "/cost", Label: "/cost", Description: "Show cost dashboard", Usage: "/cost"},
-		{ID: "/diff", Label: "/diff", Description: "Review pending edits", Usage: "/diff"},
-		{ID: "/watch", Label: "/watch", Description: "Watch repository changes", Usage: "/watch"},
-		{ID: "/users", Label: "/users", Description: "Toggle users panel", Usage: "/users"},
-		{ID: "/quit", Label: "/quit", Description: "Quit poor-cli", Usage: "/quit"},
-		{ID: "/exit", Label: "/exit", Description: "Quit poor-cli", Usage: "/exit"},
-		{ID: "/help", Label: "/help", Description: "Show help", Usage: "/help"},
+		{ID: "/compact", Icon: "◌", Label: "/compact", Description: "Compact conversation history", Usage: "/compact [tier]"},
+		{ID: "/clear", Icon: "✗", Label: "/clear", Description: "Clear current conversation", Usage: "/clear"},
+		{ID: "/provider", Icon: "●", Label: "/provider", Description: "Switch provider", Usage: "/provider [name]", RequiresArg: true},
+		{ID: "/model", Icon: "●", Label: "/model", Description: "Switch model", Usage: "/model [name]", RequiresArg: true},
+		{ID: "/session", Icon: "◌", Label: "/session", Description: "Manage sessions", Usage: "/session [name]"},
+		{ID: "/cost", Icon: "·", Label: "/cost", Description: "Show cost dashboard", Usage: "/cost"},
+		{ID: "/diff", Icon: "✓", Label: "/diff", Description: "Review pending edits", Usage: "/diff"},
+		{ID: "/watch", Icon: "●", Label: "/watch", Description: "Watch repository changes", Usage: "/watch"},
+		{ID: "/users", Icon: "◌", Label: "/users", Description: "Toggle users panel", Usage: "/users"},
+		{ID: "/quit", Icon: "✗", Label: "/quit", Description: "Quit poor-cli", Usage: "/quit"},
+		{ID: "/exit", Icon: "✗", Label: "/exit", Description: "Quit poor-cli", Usage: "/exit"},
+		{ID: "/help", Icon: "·", Label: "/help", Description: "Show help", Usage: "/help"},
 	}
 }
 
@@ -148,6 +149,9 @@ func normalizeCommands(origin Origin, cmds []Command) []Command {
 		}
 		if cmd.Label == "" {
 			cmd.Label = cmd.ID
+		}
+		if cmd.Icon == "" {
+			cmd.Icon = "·"
 		}
 		if cmd.Usage == "" {
 			cmd.Usage = cmd.ID

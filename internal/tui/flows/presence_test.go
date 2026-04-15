@@ -60,7 +60,7 @@ func TestPresenceFlowRemoteTypingUpdatesState(t *testing.T) {
 	if !snap.Multiplayer.Typing["c1"] {
 		t.Fatalf("typing missing: %#v", snap.Multiplayer)
 	}
-	if got := widgets.TypingFooterText(snap); got != "alice is typing" {
+	if got := widgets.TypingFooterText(snap); got != "alice is typing…" {
 		t.Fatalf("footer=%q", got)
 	}
 }

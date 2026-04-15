@@ -2,9 +2,10 @@ package theme
 
 const (
 	darkBase    = "#f4f4f5"
+	darkSurface = "#111111"
+	darkPanel   = "#1a1a1a"
 	darkMuted   = "#585858"
 	darkAccent  = "#89b4fa"
-	darkSuccess = "#a6e3a1"
 	darkWarn    = "#f9e2af"
 	darkError   = "#f38ba8"
 )
@@ -24,31 +25,31 @@ func darkSpecs() map[Token]styleSpec {
 		TokenBorder:            {foreground: darkMuted},
 		TokenFocus:             {foreground: darkAccent, bold: true},
 		TokenError:             {foreground: darkError, bold: true},
-		TokenSuccess:           {foreground: darkSuccess, bold: true},
+		TokenSuccess:           {foreground: "#a6e3a1", bold: true},
 		TokenWarning:           {foreground: darkWarn, bold: true},
 		TokenInfo:              {foreground: darkAccent},
-		TokenChatUser:          {foreground: darkBase, bold: true},
-		TokenChatAssistant:     {foreground: darkBase},
+		TokenChatUser:          {foreground: "#89dceb", bold: true},
+		TokenChatAssistant:     {foreground: "#cdd6f4"},
 		TokenChatTool:          {foreground: darkWarn},
 		TokenChatSystem:        {foreground: darkMuted, faint: true},
-		TokenChatCode:          {foreground: darkSuccess},
+		TokenChatCode:          {foreground: "#a6e3a1"},
 		TokenChatLink:          {foreground: darkAccent, underline: true},
-		TokenStatusBar:         {foreground: darkBase},
-		TokenStatusBarActive:   {foreground: darkAccent, bold: true},
-		TokenTopBar:            {foreground: darkBase, bold: true},
-		TokenInputField:        {foreground: darkBase},
-		TokenInputFieldFocused: {foreground: darkBase},
-		TokenModal:             {foreground: darkBase},
-		TokenModalTitle:        {foreground: darkAccent, bold: true},
-		TokenPalette:           {foreground: darkBase},
-		TokenPaletteHighlight:  {foreground: darkAccent, bold: true},
-		TokenMentionList:       {foreground: darkBase},
-		TokenMentionHighlight:  {foreground: darkAccent, bold: true},
-		TokenCostGood:          {foreground: darkSuccess, bold: true},
+		TokenStatusBar:         {foreground: "#d4d4d8", background: darkPanel},
+		TokenStatusBarActive:   {foreground: "#11111b", background: darkAccent, bold: true},
+		TokenTopBar:            {foreground: "#e4e4e7", background: darkPanel, bold: true},
+		TokenInputField:        {foreground: darkBase, borderForeground: darkMuted, border: borderRounded},
+		TokenInputFieldFocused: {foreground: darkBase, borderForeground: darkAccent, border: borderRounded},
+		TokenModal:             {foreground: darkBase, background: darkSurface, borderForeground: darkMuted, border: borderRounded},
+		TokenModalTitle:        {foreground: "#11111b", background: darkAccent, bold: true},
+		TokenPalette:           {foreground: darkBase, background: darkSurface},
+		TokenPaletteHighlight:  {foreground: "#11111b", background: darkAccent, bold: true},
+		TokenMentionList:       {foreground: darkBase, background: darkSurface},
+		TokenMentionHighlight:  {foreground: "#11111b", background: "#89dceb", bold: true},
+		TokenCostGood:          {foreground: "#a6e3a1", bold: true},
 		TokenCostWarn:          {foreground: darkWarn, bold: true},
 		TokenCostBad:           {foreground: darkError, bold: true},
 		TokenToolPending:       {foreground: darkWarn},
-		TokenToolSuccess:       {foreground: darkSuccess},
+		TokenToolSuccess:       {foreground: "#a6e3a1"},
 		TokenToolError:         {foreground: darkError},
 	}
 }

@@ -190,5 +190,5 @@ func truncateWidth(text string, width int) string {
 		b.WriteRune(r)
 		col += w
 	}
-	return fmt.Sprintf("%s.", b.String())
+	return fmt.Sprintf("%s…", b.String())
 }

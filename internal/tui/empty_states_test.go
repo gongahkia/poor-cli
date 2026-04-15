@@ -12,10 +12,10 @@ func TestEmptyStateFor(t *testing.T) {
 		want string
 	}{
 		{key: EmptyFreshLaunch, want: "ready."},
-		{key: EmptyConnecting, want: "gocli-poor · connecting"},
+		{key: EmptyConnecting, want: "gocli-poor · connecting…"},
 		{key: EmptyDisconnected, want: "gocli-poor · disconnected - press ctrl+r to retry"},
 		{key: EmptyAPIKeyNeeded, data: []any{"anthropic"}, want: "gocli-poor · anthropic needs an API key · press / for commands"},
-		{key: EmptyWaitingResponse, want: "poor-cli ›"},
+		{key: EmptyWaitingResponse, want: "poor-cli › ·"},
 		{key: EmptyStreaming, want: ""},
 		{key: EmptyCancelled, want: "- cancelled"},
 		{key: EmptyPendingEditsNone, want: "pending edits · none"},

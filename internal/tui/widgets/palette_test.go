@@ -1,6 +1,7 @@
 package widgets
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -66,6 +67,14 @@ func TestPaletteIncludesCustomCommandsAfterSetCustoms(t *testing.T) {
 	got := commandIDs(p.Commands())
 	if len(got) != 1 || got[0] != "/deploy" {
 		t.Fatalf("custom command missing: %v", got)
+	}
+}
+
+func TestPaletteRendersCommandIcons(t *testing.T) {
+	p := testPalette()
+	view := p.View()
+	if !strings.Contains(view, "› ◌ /compact") || !strings.Contains(view, "  ✗ /clear") {
+		t.Fatalf("icons missing from palette view: %q", view)
 	}
 }
 

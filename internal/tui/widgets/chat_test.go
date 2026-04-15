@@ -115,13 +115,22 @@ func TestToolBlockToggles(t *testing.T) {
 		}},
 	}})
 	collapsed := c.View(40, 5)
-	if strings.Contains(collapsed, "output:") {
+	if strings.Contains(collapsed, "output:") || !strings.Contains(collapsed, "▸ bash · ok") || !strings.Contains(collapsed, "└─ command=git status") {
 		t.Fatalf("collapsed output visible:\n%s", collapsed)
 	}
 	_, _ = c.Update(tea.KeyMsg{Type: tea.KeySpace})
 	expanded := c.View(40, 5)
-	if !strings.Contains(expanded, "output:") || !strings.Contains(expanded, "clean") {
+	if !strings.Contains(expanded, "▾ bash · ok") || !strings.Contains(expanded, "output:") || !strings.Contains(expanded, "clean") {
 		t.Fatalf("expanded output missing:\n%s", expanded)
+	}
+}
+
+func TestChatWaitingResponseGlyph(t *testing.T) {
+	c := testChat()
+	c.SetMessages([]state.Message{{ID: "a1", Role: state.RoleAssistant, RequestID: "r1", Streaming: true}})
+	got := c.View(24, 2)
+	if !strings.Contains(got, "poor-cli › ·") {
+		t.Fatalf("waiting glyph missing:\n%s", got)
 	}
 }
 

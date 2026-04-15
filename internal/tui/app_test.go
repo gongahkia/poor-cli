@@ -14,6 +14,7 @@ import (
 	"github.com/gongahkia/gocli-poor/internal/protocol"
 	"github.com/gongahkia/gocli-poor/internal/state"
 	"github.com/gongahkia/gocli-poor/internal/tui/flows"
+	"github.com/gongahkia/gocli-poor/internal/tui/widgets"
 )
 
 func TestResizePreservesChatScrollAnchor(t *testing.T) {
@@ -36,24 +37,32 @@ func TestResizePreservesChatScrollAnchor(t *testing.T) {
 }
 
 func TestSlashAtEmptyInputOpensPalette(t *testing.T) {
-	tm := teatest.NewTestModel(t, NewModel(nil), teatest.WithInitialTermSize(80, 24))
-	t.Cleanup(func() { _ = tm.Quit() })
-
-	tm.Send(IntroDoneMsg{})
-	tm.Type("/")
-	waitForText(t, tm, "type to filter")
-
-	final := finalModel(t, tm)
-	if final.Modals.Len() != 1 {
+	m := NewModel(nil)
+	next, _ := m.Update(IntroDoneMsg{})
+	m = next.(Model)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = next.(Model)
+	if m.Modals.Len() != 1 {
 		t.Fatalf("palette modal not opened")
 	}
-	top, ok := final.Modals.Top()
+	top, ok := m.Modals.Top()
 	if !ok || top.Kind != ModalPalette {
 		t.Fatalf("wrong modal: %#v", top)
 	}
-	if final.Input != "" {
-		t.Fatalf("slash leaked into input: %q", final.Input)
+	if m.Input != "" {
+		t.Fatalf("slash leaked into input: %q", m.Input)
 	}
+	palette, ok := top.Payload.(*widgets.Palette)
+	if !ok {
+		t.Fatalf("palette payload missing: %#v", top.Payload)
+	}
+	if view := top.Render(60, 12); !strings.Contains(view, "command palette") || !strings.Contains(view, "/compact") {
+		t.Fatalf("palette view missing commands:\n%s", view)
+	}
+	if len(palette.Commands()) == 0 {
+		t.Fatal("palette commands missing")
+	}
+	m.Store.Close()
 }
 
 func TestPaletteInputRunsSlashCommandWithoutLeadingSlash(t *testing.T) {
@@ -200,7 +209,7 @@ func TestCostSlashOpensModalAndRendersDashboard(t *testing.T) {
 	}
 }
 
-func TestStatusBarHasNoThinkingSpinner(t *testing.T) {
+func TestStatusBarShowsThinkingCue(t *testing.T) {
 	m := NewModel(&state.AppState{
 		InFlight: &state.InFlightRequest{RequestID: "r1", StartedAt: time.Unix(1, 0)},
 		Progress: &state.ProgressState{
@@ -209,7 +218,7 @@ func TestStatusBarHasNoThinkingSpinner(t *testing.T) {
 		},
 	})
 	view := m.renderStatusBar()
-	if strings.Contains(view, "thinking") || strings.ContainsAny(view, "|/\\*+xo") {
+	if !strings.Contains(view, "· thinking…") {
 		t.Fatalf("status=%q", view)
 	}
 	m.Store.Close()

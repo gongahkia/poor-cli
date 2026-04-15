@@ -10,15 +10,15 @@ import (
 
 func renderToolBlock(call state.ToolCall, expanded bool, width int, t *theme.Theme) []string {
 	width = maxInt(1, width)
-	head := "›"
+	head := "▸"
 	if expanded {
-		head = "·"
+		head = "▾"
 	}
 	header := truncateWidth(fmt.Sprintf("%s %s", head, toolHeader(call)), width)
 	lines := []string{muted(header, t)}
 	if !expanded {
 		if preview := firstLine(call.ArgsPreview); preview != "" {
-			lines = append(lines, muted("  args: "+truncateWidth(preview, maxInt(1, width-8)), t))
+			lines = append(lines, muted("  └─ "+truncateWidth(preview, maxInt(1, width-5)), t))
 		}
 		return lines
 	}

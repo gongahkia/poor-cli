@@ -10,8 +10,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/gongahkia/gocli-poor/internal/protocol"
 	"github.com/gongahkia/gocli-poor/internal/state"
+	"github.com/gongahkia/gocli-poor/internal/theme"
 	"github.com/gongahkia/gocli-poor/internal/tui/flows"
 	"github.com/gongahkia/gocli-poor/internal/tui/widgets"
+	"github.com/gongahkia/gocli-poor/internal/tui/widgets/commands"
 )
 
 const defaultIntroVersion = "v0.0.0"
@@ -183,6 +185,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case CloseModalMsg:
 		m.closeModal()
 		return m, batch()
+	case widgets.SelectCommandMsg:
+		m.closeModal()
+		input := strings.TrimSpace(msg.CommandID + " " + msg.Args)
+		return m, batch(m.dispatchCommandInput(input))
+	case widgets.ClosePaletteMsg:
+		m.closeModal()
+		m.Input = msg.Residual
+		m.relayout()
+		return m, batch()
 	case flows.ProvidersLoadedMsg:
 		m.withTopProviderPicker(func(p *flows.ProviderPicker) { p.ApplyLoaded(msg) })
 		m.markDirty()
@@ -305,6 +316,9 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.backspaceModal()
 			return m, nil
 		case "enter":
+			if top, ok := m.Modals.Top(); ok && top.Kind == ModalPalette && top.Input != "" {
+				return m, m.submitModalInput()
+			}
 			if handled, cmd := m.updateTopModal(msg); handled {
 				m.markDirty()
 				return m, cmd
@@ -377,7 +391,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	text := string(msg.Runes)
 	if text == "/" && strings.TrimSpace(m.Input) == "" && m.Focus.Target != FocusChat {
-		m.openModal(ModalPalette, nil)
+		m.openModal(ModalPalette, newCommandPalette())
 		return m, nil
 	}
 	if m.Focus.Target == FocusInput || m.Focus.Target == FocusIntro {
@@ -429,8 +443,16 @@ func (m *Model) setFocus(target FocusTarget) {
 }
 
 func (m *Model) openModal(kind ModalKind, payload any) {
+	if kind == ModalPalette && payload == nil {
+		payload = newCommandPalette()
+	}
 	m.Modals.Push(Modal{Kind: kind, Payload: payload})
 	m.setFocus(FocusModal)
+}
+
+func newCommandPalette() *widgets.Palette {
+	tm := theme.DarkWithCapability(theme.DetectCapability())
+	return widgets.NewPalette(tm, commands.NewRegistry())
 }
 
 func (m Model) openModalCmd(kind ModalKind, payload any) tea.Cmd {
@@ -476,6 +498,8 @@ func (m *Model) updateTopModal(msg tea.KeyMsg) (bool, tea.Cmd) {
 		return true, payload.Update(msg)
 	case *flows.APIKeyPrompt:
 		return true, payload.Update(msg, m.rpc)
+	case *widgets.Palette:
+		return true, payload.Update(msg)
 	default:
 		return false, nil
 	}
@@ -911,8 +935,21 @@ func (m Model) renderStatusBar() string {
 		text = m.Toast.Text
 	} else if m.State != nil && len(m.State.Toasts) > 0 {
 		text = m.State.Toasts[len(m.State.Toasts)-1].Text
+	} else if m.State != nil && m.State.InFlight != nil {
+		msg := m.progressMessage()
+		if msg == "" {
+			msg = "thinking"
+		}
+		text = "· " + msg + "…"
 	}
 	return renderBlock(m.Regions.StatusBar, text)
+}
+
+func (m Model) progressMessage() string {
+	if m.State == nil || m.State.Progress == nil {
+		return ""
+	}
+	return strings.TrimSpace(m.State.Progress.Message)
 }
 
 type stateUpdatedMsg struct {

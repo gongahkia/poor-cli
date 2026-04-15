@@ -38,13 +38,13 @@ func EmptyStateFor(key string, data ...any) EmptyState {
 	case FreshLaunch:
 		return state(key, "ready.")
 	case Connecting:
-		return state(key, "gocli-poor · connecting")
+		return state(key, "gocli-poor · connecting…")
 	case Disconnected:
 		return state(key, "gocli-poor · disconnected - press ctrl+r to retry")
 	case APIKeyNeeded:
 		return state(key, fmt.Sprintf("gocli-poor · %s needs an API key · press / for commands", provider(data...)))
 	case WaitingResponse:
-		return state(key, "poor-cli ›")
+		return state(key, "poor-cli › ·")
 	case Streaming:
 		return state(key, "")
 	case Cancelled:
@@ -56,19 +56,19 @@ func EmptyStateFor(key string, data ...any) EmptyState {
 	case UsersJustYou:
 		return state(key, "users · just you")
 	case SessionsLoading:
-		return state(key, "sessions · loading")
+		return state(key, "sessions · loading…")
 	case ProvidersLoading:
-		return state(key, "providers · loading")
+		return state(key, "providers · loading…")
 	case ProvidersNone:
 		return state(key, "providers · none")
 	case CostLoading:
-		return state(key, "cost · loading")
+		return state(key, "cost · loading…")
 	case FileCatalogLoading:
-		return state(key, "files · loading")
+		return state(key, "files · loading…")
 	case MentionNoMatches:
 		return state(key, "files · no matches")
 	case PreviewLoading:
-		return state(key, "preview · loading")
+		return state(key, "preview · loading…")
 	case PreviewEmpty:
 		return state(key, "preview · empty")
 	default:
