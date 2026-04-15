@@ -228,6 +228,11 @@ func TestAppUsersRailOpensWithoutMultiplayer(t *testing.T) {
 	if !m.UsersOpen || m.Regions.Chat.Width != 91 || !strings.Contains(m.View(), "just you") {
 		t.Fatalf("users not rendered open=%v regions=%#v view=%q", m.UsersOpen, m.Regions, m.View())
 	}
+	next, _ = m.Update(stateUpdatedMsg{State: state.AppState{Revision: 2}})
+	m = next.(Model)
+	if !m.UsersOpen || m.Regions.Chat.Width != 91 {
+		t.Fatalf("users closed after state update open=%v regions=%#v", m.UsersOpen, m.Regions)
+	}
 	m.Store.Close()
 }
 

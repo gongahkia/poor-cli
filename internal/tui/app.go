@@ -160,13 +160,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.Users != nil {
 			m.Users.SetState(msg.State.Multiplayer)
 		}
-		if !msg.State.Multiplayer.Enabled && m.UsersOpen {
-			m.UsersOpen = false
-			if m.Focus.Target == FocusUsers {
-				m.setFocus(FocusInput)
-			}
-			m.relayout()
-		}
 		m.relayout()
 		m.markDirty()
 		cmds := []tea.Cmd{waitStateUpdate(m.stateUpdates)}
