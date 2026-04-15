@@ -423,6 +423,10 @@ local function copy_existing_collab_invite(role, room, start_if_missing)
             end
             local payload = extract_share_payload(result or {}, role, room)
             if copy_share_payload(payload, "Copied") then
+                -- host is live; flip local state so :PoorCLICollab stops gating
+                if type(rpc.multiplayer_state) == "table" then
+                    rpc.multiplayer_state.enabled = true
+                end
                 return
             end
             if start_if_missing then
@@ -1860,6 +1864,7 @@ create_command("PoorCLISetPermissions", function(opts)
 end, { nargs = "?", desc = "Set permission mode" })
 
 create_command("PoorCLIApiKey", function()
+    local rpc = require("poor-cli.rpc")
     -- keep in sync with nvim-poor-cli/lua/poor-cli/onboarding.lua::ALL_PROVIDERS
     local providers = {
         "gemini", "openai", "anthropic", "openrouter", "litellm",

@@ -76,11 +76,33 @@ function M.open_source(name, opts)
     return provider.open(opts or {}) == true
 end
 
+local function scan_fallback()
+    -- fallback when `git ls-files` returns nothing (not a repo, git missing, or cwd outside repo)
+    local out = vim.fn.systemlist({ "find", ".", "-type", "f",
+        "-not", "-path", "*/.git/*",
+        "-not", "-path", "*/node_modules/*",
+        "-not", "-path", "*/.venv/*",
+        "-not", "-path", "*/__pycache__/*",
+        "-not", "-path", "*/.pytest_cache/*",
+        "-not", "-path", "*/.ruff_cache/*",
+        "-not", "-path", "*/dist/*",
+        "-not", "-path", "*/build/*",
+    })
+    if vim.v.shell_error ~= 0 then return {} end
+    local cleaned = {}
+    for _, p in ipairs(out) do
+        local stripped = tostring(p):gsub("^%./", "")
+        table.insert(cleaned, stripped)
+    end
+    return cleaned
+end
+
 local function file_items()
     local items = {}
     local seen = {}
     local files = vim.fn.systemlist({ "git", "ls-files", "--cached", "--others", "--exclude-standard" })
     if vim.v.shell_error ~= 0 then files = {} end
+    if #files == 0 then files = scan_fallback() end
     table.sort(files)
     for _, path in ipairs(files) do
         path = trim(path)

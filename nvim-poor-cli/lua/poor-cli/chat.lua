@@ -16,6 +16,8 @@ M.win = nil
 M.history = {}
 M.input_buf = nil
 M.input_win = nil
+M.input_history = {}                                    -- ordered oldest->newest submitted messages
+M.input_history_max = 200
 M.loading_ns = vim.api.nvim_create_namespace("poor-cli-chat-loading")
 M.cost_ns = vim.api.nvim_create_namespace("poor-cli-chat-cost")
 M.branch_ns = vim.api.nvim_create_namespace("poor-cli-chat-branches")
@@ -1237,9 +1239,17 @@ local function format_thinking_duration(seconds)
     if seconds < 60 then
         return string.format("%d sec", seconds)
     elseif seconds < 3600 then
-        return string.format("%d min", math.floor(seconds / 60))
+        local m = math.floor(seconds / 60)
+        local s = seconds % 60
+        if s == 0 then return string.format("%d min", m) end
+        return string.format("%d min %d sec", m, s)
     else
-        return string.format("%d hr", math.floor(seconds / 3600))
+        local h = math.floor(seconds / 3600)
+        local m = math.floor((seconds % 3600) / 60)
+        local s = seconds % 60
+        if m == 0 and s == 0 then return string.format("%d hr", h) end
+        if s == 0 then return string.format("%d hr %d min", h, m) end
+        return string.format("%d hr %d min %d sec", h, m, s)
     end
 end
 
@@ -2792,6 +2802,48 @@ function M.prompt_and_send(opts)
         pcall(vim.api.nvim_win_set_cursor, ip.win, { 1, #first_line })
     end
 
+    -- input history cursor: points past the end (at the draft) by default
+    local hist_index = #M.input_history + 1
+    local draft_snapshot = nil
+
+    local function push_history(line)
+        if not line or line == "" then return end
+        -- dedupe consecutive duplicates
+        if M.input_history[#M.input_history] == line then return end
+        table.insert(M.input_history, line)
+        while #M.input_history > (M.input_history_max or 200) do
+            table.remove(M.input_history, 1)
+        end
+    end
+
+    local function set_buf_text(text)
+        local lines = vim.split(text or "", "\n", { plain = true })
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+        local last = lines[#lines] or ""
+        pcall(vim.api.nvim_win_set_cursor, ip.win, { #lines, #last })
+    end
+
+    local function history_prev()
+        if #M.input_history == 0 then return end
+        if hist_index > #M.input_history then
+            -- stash current draft before leaving it
+            draft_snapshot = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
+        end
+        if hist_index > 1 then hist_index = hist_index - 1 end
+        set_buf_text(M.input_history[hist_index])
+    end
+
+    local function history_next()
+        if hist_index > #M.input_history then return end
+        hist_index = hist_index + 1
+        if hist_index > #M.input_history then
+            set_buf_text(draft_snapshot or "")
+            draft_snapshot = nil
+        else
+            set_buf_text(M.input_history[hist_index])
+        end
+    end
+
     -- submit
     vim.keymap.set("i", "<CR>", function()
         local line = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
@@ -2803,6 +2855,8 @@ function M.prompt_and_send(opts)
             if edit_state then clear_edit_state() end
             return
         end
+
+        push_history(line)
 
         if edit_state then
             trim_for_edit(edit_state)
@@ -2820,6 +2874,10 @@ function M.prompt_and_send(opts)
 
         M.send(line)
     end, { buffer = buf, nowait = true })
+
+    -- history navigation (shell-like): Up = older, Down = newer, also in normal mode
+    vim.keymap.set({ "i", "n" }, "<Up>", history_prev, { buffer = buf, nowait = true })
+    vim.keymap.set({ "i", "n" }, "<Down>", history_next, { buffer = buf, nowait = true })
 
     -- cancel
     vim.keymap.set("i", "<Esc>", function()

@@ -27,7 +27,7 @@ local function add_event(data)
         tostring(data.event_type or data.eventType or "event"),
         tostring(data.actor or "")
     )
-    table.insert(M.events, 1, text:gsub("%s+$", ""))
+    table.insert(M.events, 1, (text:gsub("%s+$", "")))
     while #M.events > M.max_events do table.remove(M.events) end
 end
 

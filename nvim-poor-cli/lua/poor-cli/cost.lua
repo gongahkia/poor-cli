@@ -170,6 +170,36 @@ local function open_scratch(title, content, filetype)
     return buf
 end
 
+local function open_float(title, content, filetype)
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[buf].buftype = "nofile"
+    vim.bo[buf].bufhidden = "wipe"
+    vim.bo[buf].swapfile = false
+    vim.bo[buf].filetype = filetype or "markdown"
+    local lines = vim.split(content, "\n", { plain = true })
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    local ui = vim.api.nvim_list_uis()[1] or { width = 120, height = 40 }
+    local max_w = 0
+    for _, l in ipairs(lines) do if #l > max_w then max_w = #l end end
+    local width = math.min(math.max(max_w + 4, 40), math.floor(ui.width * 0.8))
+    local height = math.min(#lines + 2, math.floor(ui.height * 0.8))
+    local win = vim.api.nvim_open_win(buf, true, {
+        relative = "editor",
+        width = width,
+        height = height,
+        row = math.floor((ui.height - height) / 2),
+        col = math.floor((ui.width - width) / 2),
+        style = "minimal",
+        border = "rounded",
+        title = " " .. title .. " ",
+        title_pos = "center",
+    })
+    vim.wo[win].wrap = false
+    vim.api.nvim_buf_set_keymap(buf, "n", "q", "<cmd>close<CR>", { noremap = true, silent = true })
+    vim.api.nvim_buf_set_keymap(buf, "n", "<Esc>", "<cmd>close<CR>", { noremap = true, silent = true })
+    return buf, win
+end
+
 function M.setup()
     M.setup_hud_autocmds()
     local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
@@ -193,7 +223,7 @@ function M.setup()
                 "Safe pre-tokenization: " .. tostring(pretok.tokens_saved or r.safePretokenizationTokensSaved or r.safe_pretokenization_tokens_saved or 0) .. " tokens across " .. tostring(pretok.files or 0) .. " files",
                 "Requests: " .. tostring(r.requestCount or 0),
             }
-            open_scratch("[poor-cli cost]", table.concat(lines, "\n"), "markdown")
+            open_float("poor-cli cost", table.concat(lines, "\n"), "markdown")
         end) end)
     end, { desc = "Show session cost" })
     create_command("PoorCLISavings", function()

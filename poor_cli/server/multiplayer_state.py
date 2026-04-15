@@ -14,6 +14,7 @@ class MultiplayerStateMixin:
             )
 
     def _normalize_multiplayer_room_names(
+        self,
         raw_rooms: Any,
         fallback_room: str = "",
     ) -> List[str]:
@@ -51,7 +52,7 @@ class MultiplayerStateMixin:
 
         return normalized
 
-    def _resolve_multiplayer_share_host(bind_host: str) -> str:
+    def _resolve_multiplayer_share_host(self, bind_host: str) -> str:
         """Resolve a shareable host/IP when binding to wildcard interfaces."""
         host = bind_host.strip()
         if host and host not in {"0.0.0.0", "::"}:
@@ -68,7 +69,7 @@ class MultiplayerStateMixin:
 
         return "127.0.0.1"
 
-    def _build_multiplayer_ice_servers(config: Config) -> List[Dict[str, Any]]:
+    def _build_multiplayer_ice_servers(self, config: Config) -> List[Dict[str, Any]]:
         """Build ICE server configuration from loaded config and env-backed TURN creds."""
         multiplayer = config.multiplayer
         ice_servers = [dict(entry) for entry in (multiplayer.ice_servers or [])]
@@ -93,7 +94,7 @@ class MultiplayerStateMixin:
         ice_servers.append(turn_entry)
         return ice_servers
 
-    def _is_port_bindable(bind_host: str, port: int) -> bool:
+    def _is_port_bindable(self, bind_host: str, port: int) -> bool:
         """Return True when the given host/port pair can be bound."""
         try:
             address_info = socket.getaddrinfo(bind_host, port, type=socket.SOCK_STREAM)
@@ -242,7 +243,7 @@ class MultiplayerStateMixin:
             "rooms": rooms,
         }
 
-    def _find_host_room_payload(payload: Dict[str, Any], room_name: str) -> Optional[Dict[str, Any]]:
+    def _find_host_room_payload(self, payload: Dict[str, Any], room_name: str) -> Optional[Dict[str, Any]]:
         rooms = payload.get("rooms")
         if not isinstance(rooms, list):
             return None
@@ -311,6 +312,7 @@ class MultiplayerStateMixin:
             port = self._select_multiplayer_port(bind_host, requested_port)
 
             from ..multiplayer import MultiplayerHost
+            from .runtime import PoorCLIServer
 
             host = MultiplayerHost(
                 bind_host=bind_host,
@@ -443,7 +445,7 @@ class MultiplayerStateMixin:
             "Multiple rooms are active; specify one with `room`."
         )
 
-    def _normalize_member_role(raw_role: Any) -> str:
+    def _normalize_member_role(self, raw_role: Any) -> str:
         """Normalize role values used by host-member controls."""
         role_name = str(raw_role or "").strip().lower()
         if role_name in {"viewer", "read", "read-only"}:
