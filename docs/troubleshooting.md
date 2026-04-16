@@ -94,12 +94,6 @@ Run `:PoorCLICompletionReason` (requires `ux.completion_reason = true`) to see w
 
 Toggle for the current filetype: `:PoorCLICompletionToggle`.
 
-## Multiplayer Room Won't Connect
-
-- Both sides must run the same backend version.
-- Use `:PoorCLICollabQuick` to generate/accept invites; paste whole invite string.
-- `:PoorCLIStatus` reports the room + role.
-
 ## `:checkhealth poor-cli`
 
 Always start here:

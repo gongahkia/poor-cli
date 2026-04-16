@@ -41,15 +41,6 @@ class TestSkillLoading(unittest.TestCase):
         self.assertIn("debugging", plan.prompt_skill_names)
         self.assertIn("git", plan.prompt_skill_names)
 
-    def test_context_classifier_routes_multiplayer_skill(self) -> None:
-        registry = SkillRegistry(self.repo)
-        context = InstructionSkillContext(
-            current_dir=str(self.repo),
-            multiplayer_active=True,
-        )
-        plan = registry.build_instruction_plan("show room state", context)
-        self.assertIn("multiplayer", plan.prompt_skill_names)
-
     def test_user_defined_repo_skill_is_loaded(self) -> None:
         skill_dir = self.repo / ".poor-cli" / "skills"
         skill_dir.mkdir(parents=True, exist_ok=True)

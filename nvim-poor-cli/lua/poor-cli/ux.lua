@@ -13,7 +13,6 @@ local FEATURES = {
     cost_lualine_auto    = "poor-cli.ux.cost_lualine",
     diff_accept_all      = "poor-cli.ux.diff_accept_all",
     context_remove_files = "poor-cli.ux.context_remove",
-    multiplayer_presence = "poor-cli.ux.collaborators",
     home_nav             = "poor-cli.ux.home",
     provider_cost_preview = "poor-cli.ux.provider_cost",
     inline_status_lualine = "poor-cli.ux.inline_status",

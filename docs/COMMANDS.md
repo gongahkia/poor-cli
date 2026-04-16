@@ -1,11 +1,10 @@
 # Slash Command Reference
 
-poor-cli ships **121 slash commands** across 10 categories.
+poor-cli ships **117 slash commands** across 9 categories.
 
 ## Categories
 
 - [Automation & Tasks](#automation-tasks) (9 commands)
-- [Collaboration](#collaboration) (4 commands)
 - [Context & Reuse](#context-reuse) (15 commands)
 - [Core Workflow](#core-workflow) (23 commands)
 - [Economy & Output](#economy-output) (5 commands)
@@ -28,15 +27,6 @@ poor-cli ships **121 slash commands** across 10 categories.
 | `/task` | Manage durable background tasks, including retry and replay |
 | `/unwatch` | Stop watch mode |
 | `/watch` | Watch directory for changes |
-
-## Collaboration
-
-| Command | Description |
-|---|---|
-| `/collab` | Start, join, summarize, and manage collaboration sessions |
-| `/leave` | Disconnect from collaboration session |
-| `/pass` | Hand driver role to the next collaborator |
-| `/suggest` | Send suggestion to the active driver |
 
 ## Context & Reuse
 
@@ -198,5 +188,4 @@ poor-cli ships **121 slash commands** across 10 categories.
 - [ECONOMY.md](./ECONOMY.md) — `/broke`, `/my-treat`, `/economy`, `/savings`
 - [SANDBOX.md](./SANDBOX.md) — `/sandbox`, `/permission-mode`, `/trust`, `/policy`
 - [AUTOMATIONS.md](./AUTOMATIONS.md) — `/automation`, `/workflow`, `/skills`
-- [MULTIPLAYER.md](./MULTIPLAYER.md) — `/collab`, `/pass`, `/suggest`, `/leave`
 - [AUTO_COMMIT.md](./AUTO_COMMIT.md) — `/commit`

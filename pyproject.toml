@@ -32,7 +32,6 @@ dependencies = [
     "PyYAML>=6.0",
     "aiofiles>=23.0.0",
     "aiohttp>=3.9.0",
-    "aiortc>=1.14,<1.15",
     "cryptography>=41.0.0",
     "pydantic>=2.0,<3",
 ]
@@ -43,7 +42,6 @@ openrouter = ["openai>=1.0.0"]
 anthropic = ["anthropic>=0.18.0"]
 litellm = ["litellm>=1.50.0"]
 hf-local = ["torch", "transformers", "accelerate"]
-multiplayer = ["aiortc>=1.14,<1.15"]
 compression = ["llmlingua>=0.2.0"]
 keyring = ["keyring>=24.0.0"]
 repo-map = [
@@ -63,7 +61,6 @@ all = [
     "openai>=1.0.0",
     "anthropic>=0.18.0",
     "litellm>=1.50.0",
-    "aiortc>=1.14,<1.15",
     "llmlingua>=0.2.0",
     "keyring>=24.0.0",
     "tree-sitter",

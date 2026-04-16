@@ -215,8 +215,7 @@ COMMANDS                                                *poor-cli-commands*
     Cancel the active inline or chat request.
 
 :PoorCLIStatus                                          *:PoorCLIStatus*
-    Show the shared session status summary with routing, context, and
-    collaboration state.
+    Show the shared session status summary with routing and context.
 
 :PoorCLITrust                                           *:PoorCLITrust*
     Open the trust center for provider, sandbox, rollback, policy, and

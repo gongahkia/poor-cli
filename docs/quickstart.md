@@ -65,5 +65,4 @@ Press `<CR>` to send. Use `:PoorCLIHome` (if `ux.home_nav = true`) to return to 
 - Slash commands: [COMMANDS.md](./COMMANDS.md)
 - Providers: [PROVIDERS.md](./PROVIDERS.md)
 - Fix startup issues: [troubleshooting.md](./troubleshooting.md)
-- Multiplayer: [MULTIPLAYER.md](./MULTIPLAYER.md)
 - Neovim plugin README: [../nvim-poor-cli/README.md](../nvim-poor-cli/README.md)

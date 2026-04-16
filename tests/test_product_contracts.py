@@ -46,13 +46,11 @@ class ProductContractTests(unittest.TestCase):
             render_readme_model_support_table(),
         )
 
-    def test_python_support_and_aiortc_pin_are_aligned(self) -> None:
+    def test_python_support_pinned(self) -> None:
         project = self._pyproject_data()["project"]
-        dependencies = set(project["dependencies"])
         readme = self._readme_text()
 
         self.assertEqual(project["requires-python"], ">=3.11,<3.15")
-        self.assertIn("aiortc>=1.14,<1.15", dependencies)
         self.assertIn(
             "Supported Python versions are `3.11`, `3.12`, `3.13`, and `3.14`.",
             readme,
@@ -66,7 +64,7 @@ class ProductContractTests(unittest.TestCase):
 
         self.assertEqual(
             set(payload.keys()),
-            {"session", "trust", "provider", "context", "runs", "collaboration", "recovery"},
+            {"session", "trust", "provider", "context", "runs", "recovery"},
         )
         self.assertIn("routingMode", payload["session"])
         self.assertIn("sandboxPreset", payload["trust"])
@@ -88,7 +86,7 @@ class ProductContractTests(unittest.TestCase):
         self.assertIn("statusView", payload)
         self.assertEqual(
             set(payload["statusView"].keys()),
-            {"session", "trust", "provider", "context", "runs", "collaboration", "recovery"},
+            {"session", "trust", "provider", "context", "runs", "recovery"},
         )
 
     def test_context_preview_entries_include_explanation_fields(self) -> None:

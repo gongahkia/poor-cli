@@ -18,7 +18,6 @@
 - 🎯 **Context-Aware** - Uses open buffers as context
 - 🩺 **Inline Diagnostics** - Optional file:line suggestions as Neovim diagnostics
 - ✅ **Guarded Plan Review** - Approve or reject backend execution plans from Neovim
-- 🤝 **Remote Multiplayer Bridge** - Pair-session status, role updates, room events, and driver suggestions
 - 🧾 **Fail-Open Debugging** - managed server log, doctor report, copyable debug bundle, and minimal repro init generation
 - 🔐 **BYOK** - Bring Your Own Key, no subscription needed
 
@@ -149,12 +148,6 @@ require("poor-cli").setup({
     completion_provider = nil,
     completion_model = nil,
 
-    -- Invite-only remote multiplayer bridge
-    multiplayer = {
-        enabled = false,
-        invite = nil,
-    },
-    
     -- Completion behavior
     completion_enabled = true,
     completion_manual_only = false,
@@ -240,7 +233,7 @@ This reuses the same enablement rules and completion request shaping as the inli
 | `:PoorCLIStop` | Stop the AI server |
 | `:PoorCLIRestart` | Restart the AI server and re-initialize the session |
 | `:PoorCLICancel` | Cancel the active inline/chat request |
-| `:PoorCLIStatus` | Show the shared session status summary with routing, context, and collaboration state |
+| `:PoorCLIStatus` | Show the shared session status summary with routing and context |
 | `:PoorCLITrust` | Open the trust center for provider, sandbox, rollback, policy, and privacy posture |
 | `:PoorCLIRuns` | Open recent shared run history |
 | `:PoorCLIWorkflow [name]` | Legacy alias: list slash-trigger AutomationRule scaffolds |
@@ -282,30 +275,6 @@ Run `:checkhealth poor-cli` to verify:
 ## Guarded Execution
 
 When the backend requests plan review, the plugin opens the chat panel, shows the plan summary, and prompts through `vim.ui.select()` for `Approve` or `Reject`. Permission reviews use the same backend RPC path and are surfaced through notifications.
-
-## Multiplayer
-
-Press `S` in `:PoorCLIChat` or run `:PoorCLICollabQuick` to start or share a prompter invite. Open the room panel with `:PoorCLIRoom`.
-
-Configure the plugin to attach to an existing host room:
-
-```lua
-require("poor-cli").setup({
-    multiplayer = {
-        enabled = true,
-        invite = "<signed-viewer-or-prompter-invite>",
-    },
-})
-```
-
-Neovim supports:
-- chat-panel Share via `S`
-- quick invite creation with `:PoorCLICollabQuick [viewer|prompter]`
-- joining an existing room through the stdio bridge
-- room/member state updates in `:PoorCLIStatus`
-- room panel via `:PoorCLIRoom`
-- trust-center visibility in `:PoorCLITrust`
-- plan review prompts, room events, suggestions, and driver handoff
 
 ## 🔧 API
 
@@ -383,13 +352,6 @@ Specs must not start or require a live `poor-cli-server`.
 1. Check that the server initialized successfully with `:PoorCLIStatus`
 2. Ensure your `vim.ui.select()` provider is working
 3. Open the chat panel and inspect `:PoorCLIDoctor` for RPC errors and remediation guidance
-
-### Multiplayer room state missing
-
-1. Run `:PoorCLICollabQuick` to start or share a host invite
-2. Confirm joiners have `multiplayer.enabled = true` and an `invite`
-3. Check `:PoorCLIStatus` or `:PoorCLICollab summary` for room, role, and member count
-4. Verify the remote host `/rpc` endpoint is reachable from Neovim
 
 ### Ghost text not visible
 

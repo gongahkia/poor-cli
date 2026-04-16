@@ -64,7 +64,6 @@ M.config = {
             events = {
                 "DiagnosticChanged",
                 "User PoorCLISuggestionsChanged",
-                "User PoorCLISuggestion",
                 "User PoorCLITurnEnded",
             },
             groups = {
@@ -83,7 +82,6 @@ function M.source.setup()
         group = group,
         pattern = {
             "PoorCLISuggestionsChanged",
-            "PoorCLISuggestion",
             "PoorCLITurnEnded",
         },
         callback = M.refresh,

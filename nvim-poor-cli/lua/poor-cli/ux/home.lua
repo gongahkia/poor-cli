@@ -8,7 +8,6 @@ local AUX_PATTERNS = {
     "%[poor%-cli .-%]",       -- any [poor-cli *] scratch
     "poor%-cli context",
     "poor%-cli diff review",
-    "poor%-cli collaborators",
     "poor%-cli palette",
     "poor%-cli permission",
 }

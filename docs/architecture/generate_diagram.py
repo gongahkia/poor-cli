@@ -42,7 +42,6 @@ LOGOS: dict[str, str] = {
     "anthropic.png":  f"{SI}/anthropic/191919",
     "google.png":     f"{SI}/googlegemini/4285F4",
     "ollama.png":     f"{SI}/ollama/000000",
-    "webrtc.png":     f"{SI}/webrtc/333333",
     "git.png":        f"{SI}/git/F05032",
     "aiohttp.png":    f"{SI}/aiohttp/2C5BB4",
     "json.png":       f"{SI}/json/000000",
@@ -158,7 +157,6 @@ def build() -> None:
                 rpc_mod = Custom("rpc.lua\n(stdio JSON-RPC,\nstate machine)", logo("lua.png"))
                 panels_mod = Custom("panels/*\n(tasks, agents,\ntimeline, diff)", logo("lua.png"))
                 inline_mod = Custom("inline.lua\n(ghost-text\ncompletion)", logo("lua.png"))
-                mp_mod = Custom("multiplayer_room.lua\n(collab UI)", logo("lua.png"))
 
             with Cluster("Required plugins", graph_attr={"bgcolor": "#fffaf2", "style": "rounded"}):
                 snacks = Custom("snacks.nvim\n(notify + pickers)", logo("neovim.png"))
@@ -187,11 +185,6 @@ def build() -> None:
                 cost = Custom("cost tracker\n(per-turn + daily)", logo("python.png"))
                 file_cache = Custom("file cache +\nindexer", logo("python.png"))
 
-            with Cluster("multiplayer", graph_attr={"bgcolor": "white", "style": "rounded,dotted"}):
-                mp_host = Custom("signaling host\n(aiohttp /rpc)", logo("aiohttp.png"))
-                mp_bridge = Custom("P2P bridge\n(aiortc)", logo("webrtc.png"))
-                mp_session = Custom("session layer\n(roles, queue,\nagenda)", logo("python.png"))
-
         # --------------------------------------------------------------
         # External providers
         with Cluster("LLM providers", graph_attr={"bgcolor": "#fff7f7", "style": "rounded"}):
@@ -206,10 +199,6 @@ def build() -> None:
             repo = Custom("repo\n(.poor-cli/ per-repo\nconfig + checkpoints)", logo("git.png"))
             keyring = Custom("OS keyring\n(provider API keys)", logo("shield.png"))
             repo_index = Custom("repo index\n(PageRank,\nsymbols, edges)", logo("sqlite.png"))
-
-        # --------------------------------------------------------------
-        # Remote peer (other laptop)
-        remote_peer = Custom("Remote participant\n(another Neovim +\nbridge subprocess)", logo("neovim.png"))
 
         # --------------------------------------------------------------
         # Edges — client layer internals
@@ -245,13 +234,6 @@ def build() -> None:
         perm >> Edge(color="#228844", label="audit.db") >> repo
         file_cache >> Edge(color="#228844", style="dashed") >> repo_index
         handlers >> Edge(color="#228844", style="dashed", label="credentials") >> keyring
-
-        # multiplayer wiring
-        mp_mod >> Edge(color="#aa33aa", label="join /\nhost ctrl") >> handlers
-        handlers >> mp_session
-        mp_session >> mp_host
-        mp_session >> mp_bridge
-        mp_bridge >> Edge(color="#aa33aa", label="WebRTC\nDataChannel", penwidth="2") >> remote_peer
 
     print(f"\n✓ wrote {OUT_STEM.with_suffix('.png')}")
 

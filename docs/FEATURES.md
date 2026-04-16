@@ -58,14 +58,6 @@ Command count: ~150 `PoorCLI*` user commands.
 - **Policy panel** — `:PoorCLIPolicyPanel`. Sandbox preset + permission rules.
 - **Audit log export** — `:PoorCLIAuditExport`.
 
-## Multiplayer / collaboration
-
-- **Collab invite** — `:PoorCLICollabQuick` (copy) / `:PoorCLICollab join <invite>`.
-- **Room panel** — `:PoorCLIRoom`.
-- **Users panel** — `:PoorCLIUsers`. Members, presence, driver role, typing indicators.
-- **Collaborators panel** — `:PoorCLICollaboratorsPanel` (opt-in `multiplayer_presence`). Persistent room view.
-- **Voting on diffs** — hunks with vote thresholds require quorum; `va`/`vr`/`vc` in diff review.
-
 ## Automation, agents, MCP
 
 - **Automations** — `:PoorCLIAutomations*`. Cron + event + slash triggers.
@@ -152,7 +144,6 @@ All default `false`. Enable via `require('poor-cli').setup({ ux = { <flag> = tru
 | `cost_lualine_auto` | Auto-register cost component in lualine |
 | `diff_accept_all` | `gAA` accept-all in diff review |
 | `context_remove_files` | `D` drops all non-pinned + budget warning |
-| `multiplayer_presence` | `:PoorCLICollaboratorsPanel` |
 | `home_nav` | `:PoorCLIHome` back-to-editor |
 | `provider_cost_preview` | `:PoorCLIProviderCompare` |
 | `inline_status_lualine` | Real-time inline status refresh |
@@ -177,9 +168,8 @@ Minimal matrix to exercise everything with reasonable coverage. Each row is one 
 9. **Memory expire** — `:PoorCLIMemoryExpire`, toggle items, commit.
 10. **Context** — `:PoorCLIContextPanel`, pin a file, drop another, send a chat turn and confirm the included files match.
 11. **Permissions** — run a tool call requiring approval; verify the approve/deny modal.
-12. **Multiplayer** — terminal A: `:PoorCLICollabQuick`; terminal B: `:PoorCLICollab join <invite>`; both see `:PoorCLIUsers`; pass driver; joiner sends suggestion; both see the event.
-13. **MCP** — register an MCP server in `.poor-cli/mcp.json`; verify tools appear namespaced.
-14. **Panels bulk** — `:PoorCLIPanels open tasks memory`, `:PoorCLIPanels close`.
+12. **MCP** — register an MCP server in `.poor-cli/mcp.json`; verify tools appear namespaced.
+13. **Panels bulk** — `:PoorCLIPanels open tasks memory`, `:PoorCLIPanels close`.
 15. **Home nav** — open multiple panels, `:PoorCLIHome`.
 16. **Strategies** — `:PoorCLIRerankerStrategy cross_encoder` (warns if HF not installed), `:PoorCLIAdaptivePruning on`.
 17. **API key invalidation** — revoke a key externally, restart nvim, verify the error notification short-circuits `:PoorCLIChat`.
