@@ -22,11 +22,16 @@ Neovim plugin (lazy.nvim):
 
 ```lua
 { 'gongahkia/poor-cli', dir = '<path>/nvim-poor-cli',
-  dependencies = { 'folke/snacks.nvim' }, -- REQUIRED
+  dependencies = {
+    'folke/snacks.nvim',       -- REQUIRED: notifications + pickers
+    'folke/trouble.nvim',      -- REQUIRED: :Trouble poor-cli
+    'mfussenegger/nvim-dap',   -- REQUIRED: breakpoint keymaps
+    'NeogitOrg/neogit',        -- REQUIRED: auto-open-on-commit
+  },
   config = function() require('poor-cli').setup({}) end }
 ```
 
-> **Required plugin:** [`folke/snacks.nvim`](https://github.com/folke/snacks.nvim) powers poor-cli's notifications and pickers. `setup()` refuses to load without it.
+> **Required plugins:** snacks.nvim (notifications + pickers), trouble.nvim (diagnostics list), nvim-dap (breakpoint keymaps), neogit (commit flow). `setup()` lists every missing one and refuses to load until they're installed. See [nvim-poor-cli/README.md](./nvim-poor-cli/README.md#requirements) for the full list + per-plugin rationale.
 
 Or from this checkout:
 
@@ -58,7 +63,7 @@ Full walkthrough: [docs/quickstart.md](./docs/quickstart.md).
 - API-key prompt with keyring-backed backend storage.
 - Cost, context-pressure, and savings dashboards.
 - Checkpoint, session, permission, and multiplayer-room flows.
-- snacks.nvim (required), plus optional blink.cmp / nvim-cmp / lualine / gitsigns / neogit / overseer / trouble / oil / nvim-dap integrations.
+- snacks.nvim + trouble.nvim + nvim-dap + neogit (all required), plus optional blink.cmp / nvim-cmp / lualine / gitsigns / overseer / oil integrations.
 - Treesitter-aware context; LSP-aware context.
 - Policy + trust center.
 

@@ -30,17 +30,18 @@
 - Python 3.11+
 - `poor-cli` Python package installed: `python3 -m pip install --upgrade 'poor-cli[all]'` (provides `poor-cli-server`)
 - At least one API key: `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
-- **Required:** [`folke/snacks.nvim`](https://github.com/folke/snacks.nvim) — powers both notifications (`snacks.notify`) and pickers (`snacks.pick`). `require('poor-cli').setup()` will refuse to load without it.
+- **Required plugins** (`require('poor-cli').setup()` refuses to load without any of these):
+  - [`folke/snacks.nvim`](https://github.com/folke/snacks.nvim) — notifications + pickers
+  - [`folke/trouble.nvim`](https://github.com/folke/trouble.nvim) — `:Trouble poor-cli` diagnostics list
+  - [`mfussenegger/nvim-dap`](https://github.com/mfussenegger/nvim-dap) — `<leader>pb` / `<leader>pB` breakpoint keymaps
+  - [`NeogitOrg/neogit`](https://github.com/NeogitOrg/neogit) — auto-open-on-commit flow
 
 ### Optional integrations
 
-Each integration below enables one extra feature but is not required for poor-cli to start or for any core workflow. Missing plugins never produce errors — the affected feature simply doesn't register. Most features with a missing integration have a parallel path that still works; a few disappear entirely. The two columns below tell you which.
+Each integration below enables one extra feature but is not required for poor-cli to start. Missing plugins never produce errors — the affected feature simply doesn't register. Every feature in this table has a parallel path that still works (or a built-in native fallback), so you can skip any of them without losing core functionality.
 
 | Plugin | Feature it enables | If missing |
 |---|---|---|
-| [`trouble.nvim`](https://github.com/folke/trouble.nvim) | `:Trouble poor-cli` to view assistant diagnostics in the Trouble list | Feature **disappears** — use the default diagnostics / `:PoorCLIDiagnostics` flow instead |
-| [`mfussenegger/nvim-dap`](https://github.com/mfussenegger/nvim-dap) | `<leader>pb` / `<leader>pB` to toggle breakpoints from `file:line` refs | Feature **disappears** — the keymaps don't bind |
-| [`NeogitOrg/neogit`](https://github.com/NeogitOrg/neogit) | Auto-open neogit on `PoorCLICommit` commit flow | Feature **disappears** — commits still land, just without opening neogit |
 | [`stevearc/oil.nvim`](https://github.com/stevearc/oil.nvim) | `@oil:` mention in chat to pick a file via oil's buffer | **Degraded** — `@file:` and `@buffer:` mentions still work |
 | [`hrsh7th/nvim-cmp`](https://github.com/hrsh7th/nvim-cmp) | Registers a `poor-cli` source in nvim-cmp's completion menu | **Degraded** — inline ghost-text completion (`<C-Space>` / `<Tab>`) still works |
 | [`saghen/blink.cmp`](https://github.com/saghen/blink.cmp) | Registers a `poor-cli` source in blink.cmp | **Degraded** — inline ghost-text completion still works |
@@ -58,7 +59,10 @@ Run `:checkhealth poor-cli` to see which integrations are currently active and w
     "gongahkia/poor-cli",
     submodules = false,
     dependencies = {
-        "folke/snacks.nvim", -- REQUIRED: notifications + pickers
+        "folke/snacks.nvim",        -- REQUIRED: notifications + pickers
+        "folke/trouble.nvim",       -- REQUIRED: :Trouble poor-cli
+        "mfussenegger/nvim-dap",    -- REQUIRED: breakpoint keymaps
+        "NeogitOrg/neogit",         -- REQUIRED: auto-open-on-commit
     },
     config = function()
         require("poor-cli").setup({
@@ -73,7 +77,12 @@ Run `:checkhealth poor-cli` to see which integrations are currently active and w
 ```lua
 use {
     "gongahkia/poor-cli",
-    requires = { "folke/snacks.nvim" }, -- REQUIRED
+    requires = {
+        "folke/snacks.nvim",
+        "folke/trouble.nvim",
+        "mfussenegger/nvim-dap",
+        "NeogitOrg/neogit",
+    },
     config = function()
         require("poor-cli").setup({})
     end,

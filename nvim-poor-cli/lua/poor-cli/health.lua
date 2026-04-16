@@ -113,17 +113,23 @@ function M.check()
         info("nvim-treesitter not found. Some features like :PoorCLIDoc may be limited")
     end
 
-    -- snacks.nvim is a HARD dependency: it powers notifications and pickers.
-    -- If it's missing, setup() would have already errored out, so reaching
-    -- this branch at all means something went wrong.
-    local has_snacks = pcall(require, "snacks")
-    if has_snacks then
-        ok("snacks.nvim available (required)")
-    else
-        local h = vim.health or require("health")
-        (h.error or h.report_error)("snacks.nvim is a REQUIRED dependency and is not installed. "
-            .. "Install via your plugin manager ({'folke/snacks.nvim'}). "
-            .. "poor-cli will refuse to load without it.")
+    -- Hard dependencies. setup() refuses to load without any of these, so
+    -- reaching this branch while one is missing means the user has not yet
+    -- reloaded their config after updating.
+    local required = {
+        { module = "snacks",  spec = "folke/snacks.nvim" },
+        { module = "trouble", spec = "folke/trouble.nvim" },
+        { module = "dap",     spec = "mfussenegger/nvim-dap" },
+        { module = "neogit",  spec = "NeogitOrg/neogit" },
+    }
+    for _, dep in ipairs(required) do
+        if pcall(require, dep.module) then
+            ok(dep.spec .. " available (required)")
+        else
+            local h = vim.health or require("health")
+            (h.error or h.report_error)(dep.spec .. " is a REQUIRED dependency and is not installed. "
+                .. "poor-cli will refuse to load without it.")
+        end
     end
 
     local has_cmp, cmp = pcall(require, "cmp")
