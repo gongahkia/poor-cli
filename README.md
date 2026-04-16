@@ -58,7 +58,7 @@ Full walkthrough: [docs/quickstart.md](./docs/quickstart.md).
 - API-key prompt with keyring-backed backend storage.
 - Cost, context-pressure, and savings dashboards.
 - Checkpoint, session, permission, and multiplayer-room flows.
-- Telescope / snacks / blink / lualine / gitsigns / neogit / overseer / trouble integrations.
+- snacks.nvim (required), plus optional blink.cmp / nvim-cmp / lualine / gitsigns / neogit / overseer / trouble / oil / nvim-dap integrations.
 - Treesitter-aware context; LSP-aware context.
 - Policy + trust center.
 

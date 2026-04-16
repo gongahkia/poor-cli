@@ -31,10 +31,25 @@
 - `poor-cli` Python package installed: `python3 -m pip install --upgrade 'poor-cli[all]'` (provides `poor-cli-server`)
 - At least one API key: `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
 - **Required:** [`folke/snacks.nvim`](https://github.com/folke/snacks.nvim) — powers both notifications (`snacks.notify`) and pickers (`snacks.pick`). `require('poor-cli').setup()` will refuse to load without it.
-- Optional: `trouble.nvim` for `:Trouble poor-cli`
-- Optional: `oil.nvim` for `@oil:` chat mentions
-- Optional: `nvim-dap` for breakpoint keymaps at `file:line` references
-- Optional: `gitsigns.nvim` / `neogit.nvim` / `overseer.nvim` for respective integrations
+
+### Optional integrations
+
+Each integration below enables one extra feature but is not required for poor-cli to start or for any core workflow. Missing plugins never produce errors — the affected feature simply doesn't register. Most features with a missing integration have a parallel path that still works; a few disappear entirely. The two columns below tell you which.
+
+| Plugin | Feature it enables | If missing |
+|---|---|---|
+| [`trouble.nvim`](https://github.com/folke/trouble.nvim) | `:Trouble poor-cli` to view assistant diagnostics in the Trouble list | Feature **disappears** — use the default diagnostics / `:PoorCLIDiagnostics` flow instead |
+| [`mfussenegger/nvim-dap`](https://github.com/mfussenegger/nvim-dap) | `<leader>pb` / `<leader>pB` to toggle breakpoints from `file:line` refs | Feature **disappears** — the keymaps don't bind |
+| [`NeogitOrg/neogit`](https://github.com/NeogitOrg/neogit) | Auto-open neogit on `PoorCLICommit` commit flow | Feature **disappears** — commits still land, just without opening neogit |
+| [`stevearc/oil.nvim`](https://github.com/stevearc/oil.nvim) | `@oil:` mention in chat to pick a file via oil's buffer | **Degraded** — `@file:` and `@buffer:` mentions still work |
+| [`hrsh7th/nvim-cmp`](https://github.com/hrsh7th/nvim-cmp) | Registers a `poor-cli` source in nvim-cmp's completion menu | **Degraded** — inline ghost-text completion (`<C-Space>` / `<Tab>`) still works |
+| [`saghen/blink.cmp`](https://github.com/saghen/blink.cmp) | Registers a `poor-cli` source in blink.cmp | **Degraded** — inline ghost-text completion still works |
+| [`lewis6991/gitsigns.nvim`](https://github.com/lewis6991/gitsigns.nvim) | AI-hunk signs in the sign column showing lines edited by the assistant | **Degraded** — `:PoorCLIDiffReview` still shows the same hunks |
+| [`stevearc/overseer.nvim`](https://github.com/stevearc/overseer.nvim) | Mirrors poor-cli tasks into overseer's task list | **Degraded** — `:PoorCLITasksPanel` still shows tasks |
+| [`nvim-lualine/lualine.nvim`](https://github.com/nvim-lualine/lualine.nvim) | Cost / streaming-status component in the statusline | **Degraded** — cost still visible via `:PoorCLICost`, `:PoorCLIStatus` |
+| [`nvim-treesitter/nvim-treesitter`](https://github.com/nvim-treesitter/nvim-treesitter) | Richer context extraction for completion / `:PoorCLIDoc` | **Fallback** — uses native `vim.treesitter` (built into Neovim 0.9+) automatically |
+
+Run `:checkhealth poor-cli` to see which integrations are currently active and which are missing.
 
 ### Lazy.nvim
 
