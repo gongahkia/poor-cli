@@ -1266,15 +1266,15 @@ function M.send(message, opts)
         return
     end
 
-    -- user-input trace: log a truncated preview of the message so bug
-    -- reports / :PoorCLIOpenLog captures show what the user actually typed.
-    -- Gated on config.log_user_input; see commands.lua::_log_user_input.
+    -- session trace: log a truncated preview of the outgoing message so
+    -- bug reports / :messages captures show what the user actually typed.
+    -- Gated on config.log_user_input; see commands.lua::_log_session.
     do
         local ok_cmds, cmds = pcall(require, "poor-cli.commands")
-        if ok_cmds and type(cmds._log_user_input) == "function" then
+        if ok_cmds and type(cmds._log_session) == "function" then
             local preview = tostring(message):gsub("\n", "\\n"):sub(1, 400)
-            cmds._log_user_input("chat.send",
-                string.format("(%d chars) %s", #message, preview))
+            cmds._log_session("input",
+                string.format("chat.send (%d chars) %s", #message, preview))
         end
     end
 
@@ -1602,6 +1602,13 @@ function M._finalize_streaming_block(request_id)
         })
         chat_trace("basic", string.format("✓ turn complete · %d tokens · $%.4f · %.1fs",
             ended_meta.total_tokens or 0, ended_meta.cost_usd or 0, ended_meta.duration_s or 0))
+        do
+            local ok_cmds, cmds = pcall(require, "poor-cli.commands")
+            if ok_cmds and type(cmds._log_session) == "function" then
+                cmds._log_session("event", string.format("turn_end tokens=%d cost=$%.4f dur=%.1fs",
+                    ended_meta.total_tokens or 0, ended_meta.cost_usd or 0, ended_meta.duration_s or 0))
+            end
+        end
     end
     diagnostics.apply_from_text(M.streaming_response_text or "")
     M.streaming_buf_line = nil
@@ -1920,6 +1927,13 @@ function M._handle_permission_request(data)
     -- Config-driven allow/deny-list bypass. deny wins over allow. Any hit
     -- short-circuits the modal and responds to the server immediately.
     local verdict, matched_entry = _permission_verdict(tool_name, tool_args)
+    if verdict == "allow" or verdict == "deny" then
+        local ok_cmds, cmds = pcall(require, "poor-cli.commands")
+        if ok_cmds and type(cmds._log_session) == "function" then
+            cmds._log_session("event", string.format("permission_auto_%s tool=%s matched=%s",
+                verdict, tool_name, tostring(matched_entry)))
+        end
+    end
     if verdict == "allow" then
         rpc.notify("poor-cli/permissionRes", { promptId = prompt_id, allowed = true })
         require("poor-cli.notify").notify(
@@ -2040,6 +2054,13 @@ function M._handle_permission_request(data)
             promptId = prompt_id,
             allowed = allowed,
         })
+        do
+            local ok_cmds, cmds = pcall(require, "poor-cli.commands")
+            if ok_cmds and type(cmds._log_session) == "function" then
+                cmds._log_session("event", string.format("permission_%s tool=%s op=%s",
+                    allowed and "approved" or "denied", tool_name, operation))
+            end
+        end
         perm_ui_close()
     end
 
@@ -2368,6 +2389,15 @@ function M._append_tool_call(name, args)
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
     end
+    -- session trace: surface agent tool calls in the unified log
+    do
+        local ok_cmds, cmds = pcall(require, "poor-cli.commands")
+        if ok_cmds and type(cmds._log_session) == "function" then
+            local args_preview = type(args) == "table" and vim.inspect(args) or tostring(args or "")
+            args_preview = tostring(args_preview):gsub("\n", " "):sub(1, 240)
+            cmds._log_session("event", string.format("tool_call %s %s", name or "?", args_preview))
+        end
+    end
     local line_count = vim.api.nvim_buf_line_count(M.buf)
     local args_str = type(args) == "table" and vim.inspect(args) or tostring(args or "")
     local args_lines = vim.split(args_str, "\n", { plain = true })
@@ -2405,6 +2435,13 @@ function M._append_tool_result(name, result, original_size, filtered_size)
     end
     local full_str = tostring(result or "")
     local truncated = #full_str > 500
+    do
+        local ok_cmds, cmds = pcall(require, "poor-cli.commands")
+        if ok_cmds and type(cmds._log_session) == "function" then
+            cmds._log_session("event", string.format("tool_result %s (%d bytes%s)",
+                name or "?", #full_str, truncated and ", truncated" or ""))
+        end
+    end
     local display_str = truncated and (full_str:sub(1, 500) .. "…") or full_str
     local size_note = ""
     if tonumber(original_size or 0) > 0 and tonumber(filtered_size or 0) > 0 and original_size ~= filtered_size then

@@ -3,19 +3,41 @@
 
 local M = {}
 
--- User-input trace. When config.log_user_input is true, every :PoorCLI*
--- invocation routes through this helper and lands in :messages (via
--- vim.api.nvim_echo) with a distinctive "[poor-cli input]" prefix so it
--- shows up in :PoorCLIOpenLog / bug reports alongside RPC chatter.
-local function _log_user_input(kind, detail)
+-- Session trace. Emits unified log lines to :messages when
+-- config.log_user_input is true (on by default):
+--   [poor-cli log HH:MM:SS.mmm] <category> <detail>
+-- Category conventions:
+--   input  — :PoorCLI* command invocations, chat.send previews
+--   rpc    — RPC method names (from verbose_rpc hook)
+--   state  — server state transitions, api-key validity flips
+--   event  — tool calls, permission decisions, turn boundaries, crashes,
+--            multiplayer member events
+-- Other modules call M._log_session(category, detail) directly. The legacy
+-- _log_user_input alias stays for existing callers.
+local function _log_session(category, detail)
     local ok, cfg = pcall(require, "poor-cli.config")
     if not ok or not cfg.get or not cfg.get("log_user_input") then return end
-    local stamp = os.date("%H:%M:%S")
-    local line = string.format("[poor-cli input %s] %s %s", stamp, kind, detail or "")
+    -- millisecond precision helps reconstruct tight event sequences
+    local ms = 0
+    if vim.loop and vim.loop.gettimeofday then
+        local sec, usec = vim.loop.gettimeofday()
+        if usec then ms = math.floor(usec / 1000) end
+    elseif vim.loop and vim.loop.hrtime then
+        ms = math.floor((vim.loop.hrtime() / 1e6) % 1000)
+    end
+    local stamp = string.format("%s.%03d", os.date("%H:%M:%S"), ms)
+    local line = string.format("[poor-cli log %s] %-6s %s", stamp, tostring(category), detail or "")
     pcall(vim.api.nvim_echo, { { line, "Comment" } }, true, {})
 end
 
-M._log_user_input = _log_user_input -- shared with chat.lua
+local function _log_user_input(kind, detail)
+    -- Back-compat shim. Old callers pass the command name as `kind`; route
+    -- through _log_session with category "input".
+    _log_session("input", string.format("%s %s", kind or "?", detail or ""))
+end
+
+M._log_session = _log_session   -- shared with chat.lua / rpc.lua
+M._log_user_input = _log_user_input -- legacy alias
 
 local function create_command(name, fn, opts)
     pcall(vim.api.nvim_del_user_command, name)

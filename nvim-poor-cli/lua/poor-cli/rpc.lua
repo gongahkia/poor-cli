@@ -317,6 +317,7 @@ local function ensure_startup_feedback()
 end
 
 local function update_state(state, message)
+    local prev = M.server_state
     M.server_state = state
     if message then
         M.last_status_message = message
@@ -326,6 +327,15 @@ local function update_state(state, message)
         render_startup_feedback()
     else
         stop_startup_feedback(state)
+    end
+    -- Session trace: every transition is a breadcrumb for debugging.
+    if prev ~= state then
+        local ok_cmds, cmds = pcall(require, "poor-cli.commands")
+        if ok_cmds and type(cmds._log_session) == "function" then
+            local detail = string.format("server: %s → %s", tostring(prev or "?"), tostring(state))
+            if message and message ~= "" then detail = detail .. "  (" .. message .. ")" end
+            cmds._log_session("state", detail)
+        end
     end
     emit_status_changed()
 end
@@ -1719,6 +1729,12 @@ function M.handle_exit(code)
         end
     end
 
+    do
+        local ok_cmds, cmds = pcall(require, "poor-cli.commands")
+        if ok_cmds and type(cmds._log_session) == "function" then
+            cmds._log_session("event", string.format("server_crashed code=%s%s", tostring(code), hint))
+        end
+    end
     if config.get("auto_restart") then
         require("poor-cli.notify").notify("[poor-cli] Server crashed" .. hint .. " — restarting. Chat context was reset.", vim.log.levels.WARN)
         schedule_restart()
