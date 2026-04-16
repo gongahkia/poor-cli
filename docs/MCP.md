@@ -150,9 +150,8 @@ Registry autodiscovery adds servers advertised in your organization/account regi
 - Prefer `deny_tools` over `allow_tools` when you want "almost everything, minus these dangerous ones."
 - Prefer `allow_tools` when you want a hard allowlist.
 - The Trust Center (`:PoorCLITrustCenter`) shows which MCP tools are currently allowed, per server.
-- Audit logs capture every MCP tool invocation (see `docs/archive/phase_11_security_hardening.md` for audit retention).
+- Audit logs capture every MCP tool invocation.
 
 ## See Also
 
-- [phase_13_protocol_streaming.md](./phase_13_protocol_streaming.md) — streaming protocol internals
-- [phase_15_nvim_navigator_panels.md](./phase_15_nvim_navigator_panels.md) — `:PoorCLIMcp` UX spec
+- [../nvim-poor-cli/README.md](../nvim-poor-cli/README.md) — Neovim plugin's `:PoorCLIMcp` picker

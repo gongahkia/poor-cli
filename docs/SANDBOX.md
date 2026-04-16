@@ -111,4 +111,3 @@ Audit logs rotate at 100 MB (configurable in `audit.size_limit_mb`), with monthl
 
 - [HARNESS_PORTABILITY.md](./HARNESS_PORTABILITY.md) — why local-first matters.
 - [PROVIDERS.md](./PROVIDERS.md) — the credentials sandbox sits in front of.
-- `archive/phase_11_security_hardening.md` — the original PRDs (PRDs 010-013, 034, 036).

@@ -191,5 +191,4 @@ Invite-only, owner-authoritative WebRTC DataChannel sessions. `multiplayer.py` h
 - [docs/MCP.md](./docs/MCP.md) — custom MCP server configuration.
 - [docs/HARNESS_PORTABILITY.md](./docs/HARNESS_PORTABILITY.md) — anti-lock-in stance.
 - [docs/MULTIPLAYER.md](./docs/MULTIPLAYER.md) — real-time collab protocol.
-- [docs/archive/implementation_waves.md](./docs/archive/implementation_waves.md) — 21-phase roadmap, archived (all waves shipped or tracked in TODO.md).
 - [LONGTERM-TODO.md](./LONGTERM-TODO.md) — prioritized remaining work.
