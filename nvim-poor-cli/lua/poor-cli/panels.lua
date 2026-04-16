@@ -357,15 +357,50 @@ end
 -- ───────────────────────── Sessions ─────────────────────────
 local function build_sessions_panel()
     local panel
+    local width, height = sidebar_dims()
+
+    local function id_from_session_line(line)
+        if not line then return nil end
+        return line:match("^[%s●]*(%S+)$")
+    end
+
     panel = base.new_panel({
         name = "[poor-cli sessions]",
-        width = 80,
+        width = width,
+        height = height,
+        position = "right",
+        keymaps = {
+            ["<CR>"] = function()
+                local id = id_from_session_line(vim.api.nvim_get_current_line())
+                if not id or id == "?" or id == "Active:" then return end
+                rpc.request("poor-cli/switchSession", { sessionId = id }, function(_, e) vim.schedule(function()
+                    if e then notify(vim.inspect(e), vim.log.levels.ERROR)
+                    else notify("switched to " .. id, vim.log.levels.INFO); panel.refresh() end
+                end) end)
+            end,
+            ["f"] = function()
+                local id = id_from_session_line(vim.api.nvim_get_current_line())
+                if not id or id == "?" or id == "Active:" then return end
+                rpc.request("poor-cli/forkSession", { sessionId = id }, function(_, e) vim.schedule(function()
+                    if e then notify(vim.inspect(e), vim.log.levels.ERROR)
+                    else notify("forked " .. id, vim.log.levels.INFO); panel.refresh() end
+                end) end)
+            end,
+            ["x"] = function()
+                local id = id_from_session_line(vim.api.nvim_get_current_line())
+                if not id or id == "?" or id == "Active:" then return end
+                rpc.request("poor-cli/destroySession", { sessionId = id }, function(_, e) vim.schedule(function()
+                    if e then notify(vim.inspect(e), vim.log.levels.ERROR)
+                    else notify("destroyed " .. id, vim.log.levels.INFO); panel.refresh() end
+                end) end)
+            end,
+        },
         on_refresh = function(render_now)
             render_now()
             fetch("poor-cli/listSessions", {}, "sessions", panel)
         end,
         render = function()
-            local lines = { "# poor-cli Sessions", "", "Press q to close, r to refresh. `:PoorCLISessionSwitch <id>` to switch.", "" }
+            local lines = { "# poor-cli Sessions", "", "<CR> switch · f fork · x destroy · r refresh · q close", "" }
             local data = (panel._cache or {}).sessions
             section(lines, "Sessions")
             if not data then empty(lines, "loading…")
