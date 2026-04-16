@@ -1,7 +1,21 @@
 -- poor-cli/panel_base.lua
--- Shared primitives for right-split info panels (tasks, agents, history, etc.)
+-- Shared primitives for info panels (tasks, agents, history, etc.).
+-- Mode "float" (default) uses float_win; mode "vsplit" keeps the legacy sidebar.
+-- Caller can pin a mode via opts.mode, otherwise we read config.layout.panels.
 
 local M = {}
+
+local function resolve_mode(opt_mode)
+    if opt_mode == "float" or opt_mode == "vsplit" then
+        return opt_mode
+    end
+    local ok, cfg = pcall(require, "poor-cli.config")
+    if ok and cfg and cfg.config and cfg.config.layout and cfg.config.layout.panels then
+        local m = cfg.config.layout.panels
+        if m == "float" or m == "vsplit" then return m end
+    end
+    return "float"
+end
 
 function M.new_panel(opts)
     local panel = {
@@ -9,11 +23,13 @@ function M.new_panel(opts)
         win = nil,
         name = opts.name or "[poor-cli panel]",
         width = opts.width or 60,
+        height = opts.height,
         filetype = opts.filetype or "markdown",
         render = opts.render or function() return {} end,
         on_refresh = opts.on_refresh,
         keymaps = opts.keymaps or {},
         events = opts.events or {},
+        mode = opts.mode,
     }
 
     function panel.refresh()
@@ -55,15 +71,31 @@ function M.new_panel(opts)
             vim.bo[panel.buf].filetype = panel.filetype
             vim.api.nvim_buf_set_name(panel.buf, panel.name)
         end
-        vim.cmd("botright " .. panel.width .. "vsplit")
-        panel.win = vim.api.nvim_get_current_win()
-        vim.api.nvim_win_set_buf(panel.win, panel.buf)
-        vim.wo[panel.win].wrap = true
-        vim.wo[panel.win].number = false
-        vim.wo[panel.win].relativenumber = false
-        vim.wo[panel.win].signcolumn = "no"
+
+        local mode = resolve_mode(panel.mode)
+        if mode == "float" then
+            local float_win = require("poor-cli.float_win")
+            local height = panel.height or math.floor(vim.o.lines * 0.7)
+            panel.win = float_win.open(panel.buf, {
+                width = panel.width,
+                height = height,
+                position = opts.position or "center",
+                title = " " .. panel.name:gsub("^%[", ""):gsub("%]$", "") .. " ",
+                close_keys = {},
+                signcolumn = "no",
+            })
+        else
+            vim.cmd("botright " .. panel.width .. "vsplit")
+            panel.win = vim.api.nvim_get_current_win()
+            vim.api.nvim_win_set_buf(panel.win, panel.buf)
+            vim.wo[panel.win].wrap = true
+            vim.wo[panel.win].number = false
+            vim.wo[panel.win].relativenumber = false
+            vim.wo[panel.win].signcolumn = "no"
+        end
 
         vim.keymap.set("n", "q", panel.close, { buffer = panel.buf, desc = "Close panel", nowait = true })
+        vim.keymap.set("n", "<Esc>", panel.close, { buffer = panel.buf, desc = "Close panel", nowait = true })
         vim.keymap.set("n", "r", panel.refresh, { buffer = panel.buf, desc = "Refresh panel", nowait = true })
         for key, fn in pairs(panel.keymaps) do
             vim.keymap.set("n", key, fn, { buffer = panel.buf, desc = "Panel action", nowait = true })

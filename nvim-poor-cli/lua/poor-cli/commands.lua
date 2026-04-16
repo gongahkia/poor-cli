@@ -16,14 +16,38 @@ local function create_command(name, fn, opts)
     end
 end
 
-local function open_scratch(title, content, filetype)
+local function resolve_scratch_mode(mode)
+    if mode == "float" or mode == "vsplit" then return mode end
+    local ok, cfg = pcall(require, "poor-cli.config")
+    if ok and cfg and cfg.config and cfg.config.layout and cfg.config.layout.scratch then
+        local m = cfg.config.layout.scratch
+        if m == "float" or m == "vsplit" then return m end
+    end
+    return "float"
+end
+
+local function open_scratch(title, content, filetype, mode)
+    local lines = vim.split(content, "\n", { plain = true })
+    mode = resolve_scratch_mode(mode)
+    if mode == "float" then
+        local float_win = require("poor-cli.float_win")
+        local buf = float_win.open_lines(lines, {
+            filetype = filetype or "markdown",
+            name = title,
+            title = " " .. title:gsub("^%[", ""):gsub("%]$", "") .. " ",
+            width = 0.7,
+            height = 0.7,
+            position = "center",
+        })
+        return buf
+    end
     local buf = vim.api.nvim_create_buf(false, true)
     vim.bo[buf].buftype = "nofile"
     vim.bo[buf].bufhidden = "wipe"
     vim.bo[buf].swapfile = false
     vim.bo[buf].filetype = filetype or "markdown"
     vim.api.nvim_buf_set_name(buf, title)
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(content, "\n", { plain = true }))
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     vim.cmd("botright split")
     vim.api.nvim_win_set_buf(0, buf)
     vim.api.nvim_buf_set_keymap(buf, "n", "q", ":close<CR>", { noremap = true, silent = true })

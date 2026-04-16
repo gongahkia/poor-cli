@@ -44,6 +44,12 @@ M.defaults = {
     -- UI options
     chat_width = 60,
     chat_position = "right",  -- "right" or "left"
+    -- Surface layout: "float" (default) opens panels/scratch as floating windows.
+    -- Set to "vsplit" to restore the legacy right-side sidebar behavior.
+    layout = {
+        panels = "float",
+        scratch = "float",
+    },
     notifications = {
         group = "poor-cli",
         snacks = true,
