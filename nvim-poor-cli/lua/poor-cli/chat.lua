@@ -2140,41 +2140,183 @@ local function clear_local_typing()
     send_typing_state(false, true)
 end
 
+-- Tool-call rendering state. Inline running-indicator + truncated-result
+-- expansion. _pending_tools is a FIFO of in-flight tool calls so _append_tool_result
+-- can locate the matching "⠋ running…" line and replace it in place.
+-- _tool_full_results maps extmark id → full text for <CR>-expand.
+M.tool_ns = M.tool_ns or vim.api.nvim_create_namespace("poor-cli-tool")
+M._pending_tools = M._pending_tools or {}
+M._tool_full_results = M._tool_full_results or {}
+M._tool_spinner_timer = M._tool_spinner_timer or nil
+M._tool_spinner_tick = 0
+
+local function _tool_spinner_frame()
+    local frames = SPINNER_FRAMES or { "|", "/", "-", "\\" }
+    return frames[(M._tool_spinner_tick % #frames) + 1]
+end
+
+local function _update_tool_spinners()
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then return end
+    if #M._pending_tools == 0 then return end
+    M._tool_spinner_tick = M._tool_spinner_tick + 1
+    local frame = _tool_spinner_frame()
+    for _, pending in ipairs(M._pending_tools) do
+        local pos = vim.api.nvim_buf_get_extmark_by_id(M.buf, M.tool_ns, pending.extmark_id, {})
+        if pos and pos[1] then
+            local elapsed_s = math.max(0, math.floor(((vim.loop.hrtime() or 0) - (pending.started_ns or 0)) / 1e9))
+            local line = string.format("%s running %s… (%ds)", frame, pending.name or "tool", elapsed_s)
+            pcall(vim.api.nvim_buf_set_lines, M.buf, pos[1], pos[1] + 1, false, { line })
+        end
+    end
+end
+
+local function _ensure_tool_spinner_timer()
+    if M._tool_spinner_timer or not vim.loop.new_timer then return end
+    M._tool_spinner_timer = vim.loop.new_timer()
+    M._tool_spinner_timer:start(120, 120, vim.schedule_wrap(function()
+        if #M._pending_tools == 0 then
+            if M._tool_spinner_timer then
+                pcall(M._tool_spinner_timer.stop, M._tool_spinner_timer)
+                pcall(M._tool_spinner_timer.close, M._tool_spinner_timer)
+                M._tool_spinner_timer = nil
+            end
+            return
+        end
+        _update_tool_spinners()
+    end))
+end
+
 function M._append_tool_call(name, args)
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
     end
     local line_count = vim.api.nvim_buf_line_count(M.buf)
     local args_str = type(args) == "table" and vim.inspect(args) or tostring(args or "")
-    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, {
-        "**🔧 " .. (name or "tool") .. "**",
-        "```",
-        args_str,
-        "```",
-        "",
+    local args_lines = vim.split(args_str, "\n", { plain = true })
+    -- header + args fence + running line + blank; running line is the one
+    -- we'll replace when the result arrives.
+    local initial = string.format("%s running %s… (0s)", _tool_spinner_frame(), name or "tool")
+    local block = { "**🔧 " .. (name or "tool") .. "**", "```" }
+    for _, l in ipairs(args_lines) do table.insert(block, l) end
+    table.insert(block, "```")
+    table.insert(block, initial)
+    table.insert(block, "")
+    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, block)
+    local running_line = line_count + (#block - 2) -- 0-indexed row of the "running..." line
+    local extmark_id = vim.api.nvim_buf_set_extmark(M.buf, M.tool_ns, running_line, 0, {})
+    table.insert(M._pending_tools, {
+        name = name or "tool",
+        extmark_id = extmark_id,
+        started_ns = vim.loop.hrtime and vim.loop.hrtime() or 0,
     })
+    _ensure_tool_spinner_timer()
+end
+
+local function _take_pending_tool(name)
+    -- FIFO match by name; if the backend sends results out of order for
+    -- parallel tool calls with the same name, first-pending wins.
+    for i, p in ipairs(M._pending_tools) do
+        if p.name == name then return table.remove(M._pending_tools, i) end
+    end
+    return M._pending_tools[1] and table.remove(M._pending_tools, 1) or nil
 end
 
 function M._append_tool_result(name, result, original_size, filtered_size)
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
     end
-    local line_count = vim.api.nvim_buf_line_count(M.buf)
-    local result_str = tostring(result or "")
-    if #result_str > 500 then
-        result_str = result_str:sub(1, 500) .. "…"
-    end
+    local full_str = tostring(result or "")
+    local truncated = #full_str > 500
+    local display_str = truncated and (full_str:sub(1, 500) .. "…") or full_str
     local size_note = ""
     if tonumber(original_size or 0) > 0 and tonumber(filtered_size or 0) > 0 and original_size ~= filtered_size then
         size_note = string.format(" (%.1f KB → %.1f KB)", original_size / 1024, filtered_size / 1024)
     end
-    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, {
-        "**✓ " .. (name or "tool") .. " result" .. size_note .. "**",
-        "```",
-        result_str,
-        "```",
-        "",
-    })
+    local header = "**✓ " .. (name or "tool") .. " result" .. size_note .. "**"
+
+    local pending = _take_pending_tool(name or "tool")
+    local elapsed_suffix = ""
+    if pending and pending.started_ns and vim.loop.hrtime then
+        local ms = math.floor((vim.loop.hrtime() - pending.started_ns) / 1000000)
+        elapsed_suffix = string.format(" · %dms", ms)
+    end
+    local result_lines = { header .. elapsed_suffix, "```", display_str, "```", "" }
+
+    if pending then
+        local pos = vim.api.nvim_buf_get_extmark_by_id(M.buf, M.tool_ns, pending.extmark_id, {})
+        pcall(vim.api.nvim_buf_del_extmark, M.buf, M.tool_ns, pending.extmark_id)
+        if pos and pos[1] then
+            -- replace the single "running…" line with the result block in place
+            pcall(vim.api.nvim_buf_set_lines, M.buf, pos[1], pos[1] + 1, false, result_lines)
+            if truncated then
+                local full_ext = vim.api.nvim_buf_set_extmark(M.buf, M.tool_ns, pos[1], 0, {
+                    virt_text = { { string.format(" [%d chars truncated · <CR> to expand]", #full_str - 500), "Comment" } },
+                    virt_text_pos = "eol",
+                    hl_mode = "combine",
+                })
+                M._tool_full_results[full_ext] = {
+                    full = full_str,
+                    header = header .. elapsed_suffix,
+                    start_row = pos[1],
+                    end_row = pos[1] + #result_lines,
+                }
+            end
+            return
+        end
+    end
+    -- fallback: no pending entry matched (e.g. result without start event) —
+    -- append at end-of-buffer as before, but still mark truncation
+    local line_count = vim.api.nvim_buf_line_count(M.buf)
+    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, result_lines)
+    if truncated then
+        local full_ext = vim.api.nvim_buf_set_extmark(M.buf, M.tool_ns, line_count, 0, {
+            virt_text = { { string.format(" [%d chars truncated · <CR> to expand]", #full_str - 500), "Comment" } },
+            virt_text_pos = "eol",
+            hl_mode = "combine",
+        })
+        M._tool_full_results[full_ext] = {
+            full = full_str,
+            header = header .. elapsed_suffix,
+            start_row = line_count,
+            end_row = line_count + #result_lines,
+        }
+    end
+end
+
+-- Look up a truncated-tool-result extmark at or above the cursor's row.
+-- Returns { extmark_id, entry } or nil.
+function M._tool_result_at_cursor()
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then return nil end
+    local row = (vim.api.nvim_win_get_cursor(0) or { 1, 0 })[1] - 1
+    local marks = vim.api.nvim_buf_get_extmarks(M.buf, M.tool_ns, 0, -1, { details = true })
+    local best
+    for _, m in ipairs(marks) do
+        local id, mrow = m[1], m[2]
+        local entry = M._tool_full_results[id]
+        if entry and mrow <= row and row < entry.end_row then
+            if not best or mrow > best.row then
+                best = { id = id, row = mrow, entry = entry }
+            end
+        end
+    end
+    return best
+end
+
+function M.expand_tool_result_at_cursor()
+    local hit = M._tool_result_at_cursor()
+    if not hit then return false end
+    local entry = hit.entry
+    local new_lines = { entry.header .. " (expanded)", "```" }
+    for _, line in ipairs(vim.split(entry.full, "\n", { plain = true })) do
+        table.insert(new_lines, line)
+    end
+    table.insert(new_lines, "```")
+    table.insert(new_lines, "")
+    vim.bo[M.buf].modifiable = true
+    pcall(vim.api.nvim_buf_set_lines, M.buf, entry.start_row, entry.end_row, false, new_lines)
+    pcall(vim.api.nvim_buf_del_extmark, M.buf, M.tool_ns, hit.id)
+    M._tool_full_results[hit.id] = nil
+    return true
 end
 
 function M._append_tool_stream_chunk(name, chunk)
@@ -2276,8 +2418,11 @@ function M.setup_buffer_keymaps()
     end, { buffer = M.buf, desc = "Share collaboration invite", nowait = true, silent = true })
 
     vim.keymap.set("n", "<CR>", function()
+        -- Context-sensitive: expand a truncated tool result if the cursor
+        -- is on one, otherwise fall through to the send prompt.
+        if M.expand_tool_result_at_cursor() then return end
         M.prompt_and_send()
-    end, { buffer = M.buf, desc = "Send message", nowait = true, silent = true })
+    end, { buffer = M.buf, desc = "Send message (or expand tool result under cursor)", nowait = true, silent = true })
     vim.keymap.set("n", "<leader>rr", function()
         M.regenerate_turn()
     end, { buffer = M.buf, desc = "Regenerate assistant turn", nowait = true, silent = true })
