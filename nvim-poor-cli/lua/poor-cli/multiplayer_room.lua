@@ -27,7 +27,10 @@ local function add_event(data)
         tostring(data.event_type or data.eventType or "event"),
         tostring(data.actor or "")
     )
-    table.insert(M.events, 1, text:gsub("%s+$", ""))
+    -- gsub returns (string, count); wrap in parens so table.insert only
+    -- sees the string. Without this, Lua unpacks the count into a fourth
+    -- arg → "wrong number of arguments to 'insert'" on every room event.
+    table.insert(M.events, 1, (text:gsub("%s+$", "")))
     while #M.events > M.max_events do table.remove(M.events) end
 end
 
@@ -95,7 +98,11 @@ function M.render_lines(snapshot)
         for _, member in ipairs(members) do
             if type(member) == "table" then
                 local cid = connection_id(member)
-                local driver = cid ~= "" and cid == active_id or tostring(member.uiRole or member.ui_role or "") == "driver" or member.role == "prompter"
+                -- Driver = the ONE active connection or an explicit uiRole=="driver".
+                -- Being a prompter doesn't automatically make you a driver; a room
+                -- can have multiple prompters with only one driver at a time.
+                local driver = (cid ~= "" and cid == active_id)
+                    or tostring(member.uiRole or member.ui_role or "") == "driver"
                 local marker = driver and " <- driver" or ""
                 local hand = member.handRaised == true or member.hand_raised == true
                 local queue = tonumber(member.queuePosition or member.queue_position) or 0
