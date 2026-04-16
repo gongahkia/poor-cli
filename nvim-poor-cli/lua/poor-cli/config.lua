@@ -155,6 +155,15 @@ M.defaults = {
     -- Disabled by default to reduce terminal noise; enable for debugging.
     verbose_rpc = false,
 
+    -- Chat turn tracing:
+    --   "off"     — no trace toasts (default)
+    --   "basic"   — toast when message sent, when provider returns first
+    --               token, and when the turn finishes (tokens + cost + elapsed)
+    --   "verbose" — basic + "💭 thinking started/ended" brackets around
+    --               any chain-of-thought the provider emits
+    -- Toggle at runtime with :PoorCLIChatTrace [off|basic|verbose].
+    chat_trace = "off",
+
     -- opt-in UX features (off by default; set true to enable)
     ux = {
         command_palette = false,        -- :PoorCLIPalette fuzzy-find across all commands

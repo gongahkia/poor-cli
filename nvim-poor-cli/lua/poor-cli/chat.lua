@@ -53,6 +53,32 @@ local function highlight_diff_block(buf, first_line, last_line)
 end
 
 M._highlight_diff_block = highlight_diff_block -- exposed for tests
+
+-- Chat-turn tracing. Controlled by config.chat_trace = "off"|"basic"|"verbose".
+-- "basic" surfaces the 3 turn boundaries (sent / first-token / done) as
+-- user-visible toasts; "verbose" adds thinking-start and thinking-end
+-- markers. See the :PoorCLIChatTrace command below for a runtime switch.
+local function _chat_trace_mode()
+    local ok, cfg = pcall(require, "poor-cli.config")
+    if not ok or type(cfg.get) ~= "function" then return "off" end
+    local mode = cfg.get("chat_trace")
+    if mode == "basic" or mode == "verbose" then return mode end
+    return "off"
+end
+
+local function chat_trace(level, msg)
+    local mode = _chat_trace_mode()
+    if mode == "off" then return end
+    if level == "verbose" and mode ~= "verbose" then return end
+    local ok, notify = pcall(require, "poor-cli.notify")
+    if ok then notify.notify("[poor-cli trace] " .. msg, vim.log.levels.INFO, { title = "poor-cli trace" }) end
+end
+
+local function _ms_since(started_ns)
+    if not started_ns or started_ns == 0 or not vim.loop.hrtime then return 0 end
+    return math.floor((vim.loop.hrtime() - started_ns) / 1000000)
+end
+
 M.turns = {}
 M.loading_marker = nil
 M.streaming_buf_line = nil
@@ -1148,6 +1174,15 @@ local function dispatch_message(prepared, opts)
     }
     if opts.edit_turn_id then params.editTurnId = opts.edit_turn_id end
 
+    do
+        local status = (rpc.get_status and rpc.get_status()) or {}
+        local provider = tostring(status.provider or status.activeProvider or "?")
+        local model = tostring(status.model or status.activeModel or "?")
+        chat_trace("basic", string.format("→ sent to %s/%s · %d chars · %d context file%s",
+            provider, model, #prepared.resolved_msg,
+            #prepared.context_files, #prepared.context_files == 1 and "" or "s"))
+    end
+    M._thinking_start_traced = false
     local rpc_request_id = rpc.request("poor-cli/chatStreaming", params, function(_result, err)
         vim.schedule(function()
             if not is_active_request(request_id) then
@@ -1349,6 +1384,14 @@ function M._append_streaming_chunk(chunk)
 
     if M._streaming_placeholder_active then
         -- first real chunk: stop timer, remove Thinking placeholder lines
+        local latency_ms = _ms_since(M._thinking_started_ns)
+        chat_trace("basic", string.format("← provider responded · first token +%dms", latency_ms))
+        if M._thinking_start_traced and M._thinking_buffer and M._thinking_buffer ~= "" then
+            chat_trace("verbose", string.format("💭 thinking ended · %d chars across %d line%s",
+                #M._thinking_buffer,
+                select(2, M._thinking_buffer:gsub("\n", "\n")) + 1,
+                M._thinking_buffer:find("\n") and "s" or ""))
+        end
         M._stop_thinking_timer()
         local ln = M.streaming_buf_line
         vim.api.nvim_buf_set_lines(M.buf, ln - 1, ln + 1, false, { "" })
@@ -1483,6 +1526,8 @@ function M._finalize_streaming_block(request_id)
             pattern = "PoorCLITurnEnded",
             data = ended_meta,
         })
+        chat_trace("basic", string.format("✓ turn complete · %d tokens · $%.4f · %.1fs",
+            ended_meta.total_tokens or 0, ended_meta.cost_usd or 0, ended_meta.duration_s or 0))
     end
     diagnostics.apply_from_text(M.streaming_response_text or "")
     M.streaming_buf_line = nil
@@ -1512,6 +1557,10 @@ function M.setup_streaming_autocmds()
             end
             if data.chunk and data.chunk ~= "" then
                 vim.schedule(function()
+                    if not M._thinking_start_traced then
+                        M._thinking_start_traced = true
+                        chat_trace("verbose", "💭 thinking started (chain-of-thought streaming)")
+                    end
                     M._thinking_buffer = M._thinking_buffer .. data.chunk
                     -- Update the streaming block with thinking content
                     if M.streaming_buf_line and M.buf and vim.api.nvim_buf_is_valid(M.buf) then

@@ -1897,6 +1897,30 @@ create_command("PoorCLISetPermissions", function(opts)
     end)
 end, { nargs = "?", desc = "Set permission mode" })
 
+create_command("PoorCLIChatTrace", function(opts)
+    local cfg = require("poor-cli.config")
+    local notify = require("poor-cli.notify")
+    local mode = (opts.args or ""):match("^%s*(%S*)%s*$") or ""
+    if mode == "" then
+        notify.notify(
+            "[poor-cli] chat_trace = " .. tostring(cfg.get("chat_trace") or "off")
+            .. " — usage: :PoorCLIChatTrace off|basic|verbose",
+            vim.log.levels.INFO
+        )
+        return
+    end
+    if mode ~= "off" and mode ~= "basic" and mode ~= "verbose" then
+        notify.notify("[poor-cli] chat_trace must be off|basic|verbose", vim.log.levels.WARN)
+        return
+    end
+    cfg.config.chat_trace = mode
+    notify.notify("[poor-cli] chat_trace = " .. mode, vim.log.levels.INFO)
+end, {
+    nargs = "?",
+    desc = "Toggle chat turn tracing (off|basic|verbose)",
+    complete = function() return { "off", "basic", "verbose" } end,
+})
+
 create_command("PoorCLIApiKey", function()
     -- keep in sync with nvim-poor-cli/lua/poor-cli/onboarding.lua::ALL_PROVIDERS
     local providers = {
