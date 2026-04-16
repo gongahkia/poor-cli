@@ -411,9 +411,9 @@ local function set_collab_preset(room, mode)
     }, function() end)
 end
 
-local function start_collab_and_copy(role, mode)
+local function start_collab_and_copy(role, mode, start_opts)
     local rpc = require("poor-cli.rpc")
-    rpc.start_collab({}, function(result, err)
+    rpc.start_collab(start_opts or {}, function(result, err)
         vim.schedule(function()
             if err then
                 require("poor-cli.notify").notify("[poor-cli] Start failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
@@ -670,13 +670,39 @@ function M.setup()
 
     create_command("PoorCLICollabQuick", function(opts)
         local args = vim.split(opts.args or "", " ", { trimempty = true })
-        local role = args[1] or "prompter"
-        if role ~= "viewer" and role ~= "prompter" then
-            require("poor-cli.notify").notify("[poor-cli] Usage: :PoorCLICollabQuick [viewer|prompter]", vim.log.levels.WARN)
-            return
+        local role, bind_host
+        -- Accept "[viewer|prompter]" and/or "local" in any order.
+        -- "local" forces the signaling bind host to 127.0.0.1, which is the
+        -- right choice for same-machine testing — otherwise aiortc gathers
+        -- ICE candidates on every interface (LAN, Docker bridge, public IP)
+        -- and the loopback pair often isn't selected, causing the RFC 7675
+        -- "Consent to send expired" drop after a few minutes.
+        for _, a in ipairs(args) do
+            if a == "viewer" or a == "prompter" then
+                role = a
+            elseif a == "local" or a == "loopback" then
+                bind_host = "127.0.0.1"
+            else
+                require("poor-cli.notify").notify(
+                    "[poor-cli] Usage: :PoorCLICollabQuick [viewer|prompter] [local]",
+                    vim.log.levels.WARN
+                )
+                return
+            end
         end
-        copy_existing_collab_invite(role, current_multiplayer_room(), true)
-    end, { nargs = "?", desc = "Start or share a poor-cli collaboration invite" })
+        role = role or "prompter"
+        if bind_host then
+            -- Bypass the "reuse existing invite" helper since we want to
+            -- force-start a fresh host with the loopback bind.
+            start_collab_and_copy(role, "mob", { bindHost = bind_host })
+        else
+            copy_existing_collab_invite(role, current_multiplayer_room(), true)
+        end
+    end, {
+        nargs = "*",
+        desc = "Start or share a collaboration invite ([viewer|prompter] [local])",
+        complete = function() return { "prompter", "viewer", "local" } end,
+    })
 
     create_command("PoorCLICollab", function(opts)
         local args = vim.split(opts.args or "", " ", { trimempty = true })
