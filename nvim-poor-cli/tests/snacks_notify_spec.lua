@@ -96,26 +96,21 @@ describe("snacks notifications", function()
         assert.is_nil(calls.vim)
     end)
 
-    it("errors_bypass_snacks", function()
+    it("errors_still_route_to_snacks", function()
         fake_modules.snacks = {
             notify = function(msg, level, opts)
                 calls.snacks = { msg = msg, level = level, opts = opts }
+                return "snack-id"
             end,
         }
         require("poor-cli.notify").notify("boom", vim.log.levels.ERROR)
 
-        assert.is_nil(calls.snacks)
-        assert.are.equal("boom", calls.vim.msg)
-        assert.are.equal(vim.log.levels.ERROR, calls.vim.level)
-    end)
-
-    it("test_bridge_fallbacks_vim_notify", function()
-        fake_modules.snacks = false
-        require("poor-cli.notify").notify("fallback", vim.log.levels.WARN)
-
-        assert.are.equal("fallback", calls.vim.msg)
-        assert.are.equal(vim.log.levels.WARN, calls.vim.level)
-        assert.is_nil(calls.snacks)
+        -- With snacks as a hard dep there is no longer an "errors bypass
+        -- snacks" branch; ERROR messages render through snacks like
+        -- everything else.
+        assert.are.equal("boom", calls.snacks.msg)
+        assert.are.equal(vim.log.levels.ERROR, calls.snacks.level)
+        assert.is_nil(calls.vim)
     end)
 
     it("test_dashboard_tile_registered", function()
