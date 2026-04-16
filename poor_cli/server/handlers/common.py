@@ -18,17 +18,6 @@ class CommonHandlersMixin:
         from poor_cli.tool_events import TimelineStore
         self._tool_events = TimelineStore()
         self._conversation_branches = None
-        self._embedded_multiplayer_room = False
-        self._host_server_lock: Optional[asyncio.Lock] = None
-        self._host_server: Optional[Any] = None
-        self._host_tunnel: Optional[Any] = None
-        self._host_bind_host = ""
-        self._host_port = 0
-        self._host_local_signaling_url = ""
-        self._host_share_signaling_url = ""
-        self._host_public_signaling_url: Optional[str] = None
-        self._host_rooms: List[str] = []
-        self._host_ngrok_enabled = False
         self._service_lock: Optional[asyncio.Lock] = None
         self._managed_services: Dict[str, ManagedServiceRuntime] = {}
         self._service_logs_dir = Path.home() / ".poor-cli" / "services"
@@ -78,11 +67,6 @@ class CommonHandlersMixin:
 
     def _command_registry(self) -> CustomCommandRegistry:
         return CustomCommandRegistry(Path.cwd())
-
-    def _get_host_server_lock(self) -> asyncio.Lock:
-        if self._host_server_lock is None:
-            self._host_server_lock = asyncio.Lock()
-        return self._host_server_lock
 
     def _get_service_lock(self) -> asyncio.Lock:
         if self._service_lock is None:

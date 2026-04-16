@@ -10,8 +10,7 @@ local M = {}
 --   input  — :PoorCLI* command invocations, chat.send previews
 --   rpc    — RPC method names (from verbose_rpc hook)
 --   state  — server state transitions, api-key validity flips
---   event  — tool calls, permission decisions, turn boundaries, crashes,
---            multiplayer member events
+--   event  — tool calls, permission decisions, turn boundaries, crashes
 -- Other modules call M._log_session(category, detail) directly. The legacy
 -- _log_user_input alias stays for existing callers.
 local function _log_session(category, detail)
@@ -121,7 +120,6 @@ local function build_status_text()
     local active = type(provider.active) == "table" and provider.active or {}
     local context = type(status_view.context) == "table" and status_view.context or {}
     local last_preview = type(context.lastPreview) == "table" and context.lastPreview or {}
-    local collaboration = type(status_view.collaboration) == "table" and status_view.collaboration or {}
     local recovery = type(status_view.recovery) == "table" and status_view.recovery or {}
     local last_mutation = type(recovery.lastMutation) == "table" and recovery.lastMutation or {}
 
@@ -135,9 +133,6 @@ local function build_status_text()
         "Context selected: " .. tostring(type(last_preview.selected) == "table" and #last_preview.selected or 0),
         "Context excluded: " .. tostring(type(last_preview.excluded) == "table" and #last_preview.excluded or 0),
         "Context tokens: " .. tostring(last_preview.totalTokens or 0),
-        "Collaboration role: " .. tostring(collaboration.role or "solo"),
-        "Collaboration room: " .. tostring(collaboration.room or ""),
-        "Collaboration members: " .. tostring(collaboration.memberCount or 0),
         "Last mutation: " .. tostring(last_mutation.intent or ""),
     }
 
@@ -337,27 +332,6 @@ local function build_context_text()
     return table.concat(lines, "\n")
 end
 
-local function build_collab_summary_text()
-    local rpc = require("poor-cli.rpc")
-    local payload, err = rpc.get_collab_summary(15000)
-    if err or type(payload) ~= "table" then
-        return "Failed to load collaboration summary: " .. rpc.format_error(err)
-    end
-    local collab = type(payload.collaboration) == "table" and payload.collaboration or {}
-    return table.concat({
-        "# collaboration summary",
-        "",
-        "- Running: `" .. tostring(collab.running == true) .. "`",
-        "- Role: `" .. tostring(collab.role or "solo") .. "`",
-        "- Room: `" .. tostring(collab.room or "") .. "`",
-        "- Members: " .. tostring(collab.memberCount or 0),
-        "- Queue depth: " .. tostring(((collab.queueState or {}).depth) or 0),
-        "- Hands raised: " .. tostring(((collab.queueState or {}).handsRaised) or 0),
-        "- Health: `" .. tostring(collab.connectionHealth or "unknown") .. "`",
-        "- Summary: " .. tostring(collab.summary or ""),
-    }, "\n")
-end
-
 local function copy_to_clipboard(text)
     local ok = pcall(vim.fn.setreg, "+", text)
     if ok then
@@ -365,142 +339,6 @@ local function copy_to_clipboard(text)
     end
     vim.fn.setreg('"', text)
     return false
-end
-
-local function collab_usage()
-    return table.concat({
-        "Usage: :PoorCLICollabQuick [viewer|prompter]",
-        "Usage: :PoorCLICollab",
-        "       :PoorCLICollab start [pairing|mob|review]",
-        "       :PoorCLICollab join <invite>",
-        "       :PoorCLICollab share [viewer|prompter] [room]",
-        "       :PoorCLICollab leave",
-        "       :PoorCLICollab pass [connection-id|display-name]",
-        "       :PoorCLICollab suggest <text>",
-        "       :PoorCLICollab say <text>        (broadcast to all peers)",
-        "       :PoorCLICollab members [room]",
-        "       :PoorCLICollab status",
-        "       :PoorCLICollab summary",
-    }, "\n")
-end
-
-local function current_multiplayer_room()
-    local rpc = require("poor-cli.rpc")
-    local state = rpc.get_multiplayer_state() or {}
-    local room = state.room or ""
-    if room == "" then
-        return nil
-    end
-    return room
-end
-
-local function find_room_payload(payload, room_name)
-    local rooms = payload and payload.rooms or nil
-    if type(rooms) ~= "table" then
-        return nil
-    end
-    if room_name == nil or room_name == "" then
-        return type(rooms[1]) == "table" and rooms[1] or nil
-    end
-    for _, room in ipairs(rooms) do
-        if type(room) == "table" and tostring(room.name or "") == tostring(room_name or "") then
-            return room
-        end
-    end
-    return nil
-end
-
-local function extract_share_payload(payload, role, room_name)
-    local room = find_room_payload(payload, room_name)
-    if type(room) ~= "table" then
-        return nil
-    end
-    local normalized_role = (role == "viewer") and "viewer" or "prompter"
-    local invite_key = normalized_role == "viewer" and "viewerInviteCode" or "prompterInviteCode"
-    local invite = room[invite_key] or ""
-    return {
-        room = room.name or room_name or "",
-        invite = invite,
-        role = normalized_role,
-    }
-end
-
-local function copy_share_payload(payload, verb)
-    if not payload or payload.invite == "" then
-        return false
-    end
-    copy_to_clipboard(payload.invite)
-    require("poor-cli.notify").notify(
-        "[poor-cli] " .. verb .. " " .. payload.role .. " invite for room " .. payload.room,
-        vim.log.levels.INFO
-    )
-    return true
-end
-
-local function first_collab_room(payload)
-    local rooms = payload and payload.rooms or {}
-    if type(rooms) == "table" and type(rooms[1]) == "table" then
-        return rooms[1].name or ""
-    end
-    return ""
-end
-
-local function set_collab_preset(room, mode)
-    if mode == "" or mode == "pairing" or room == "" then
-        return
-    end
-    local rpc = require("poor-cli.rpc")
-    rpc.request("poor-cli/setHostPreset", {
-        room = room,
-        preset = mode,
-    }, function() end)
-end
-
-local function start_collab_and_copy(role, mode, start_opts)
-    local rpc = require("poor-cli.rpc")
-    rpc.start_collab(start_opts or {}, function(result, err)
-        vim.schedule(function()
-            if err then
-                require("poor-cli.notify").notify("[poor-cli] Start failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
-                return
-            end
-            local room_name = first_collab_room(result or {})
-            set_collab_preset(room_name, mode or "mob")
-            local share_payload = extract_share_payload(result or {}, role or "prompter", room_name)
-            if not copy_share_payload(share_payload, "Copied") then
-                require("poor-cli.notify").notify("[poor-cli] Collaboration host started, but no invite was returned", vim.log.levels.WARN)
-                return
-            end
-            require("poor-cli.multiplayer_room").open()
-        end)
-    end)
-end
-
-local function copy_existing_collab_invite(role, room, start_if_missing)
-    local rpc = require("poor-cli.rpc")
-    role = role or "prompter"
-    room = room or current_multiplayer_room() or ""
-    rpc.get_collab_status(function(result, err)
-        vim.schedule(function()
-            if err then
-                if start_if_missing then
-                    start_collab_and_copy(role, "mob")
-                    return
-                end
-                require("poor-cli.notify").notify("[poor-cli] Share failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
-                return
-            end
-            local payload = extract_share_payload(result or {}, role, room)
-            if copy_share_payload(payload, "Copied") then
-                return
-            end
-            if start_if_missing then
-                start_collab_and_copy(role, "mob")
-                return
-            end
-            require("poor-cli.notify").notify("[poor-cli] No share payload found for " .. tostring(room), vim.log.levels.WARN)
-        end)
-    end)
 end
 
 local function write_min_init(path)
@@ -713,182 +551,6 @@ function M.setup()
         require("poor-cli.repo_map").open(tonumber(opts.args))
     end, { nargs = "?", desc = "Open poor-cli repo map" })
 
-    create_command("PoorCLICollabQuick", function(opts)
-        local args = vim.split(opts.args or "", " ", { trimempty = true })
-        local role, bind_host
-        -- Accept "[viewer|prompter]" and/or "local" in any order.
-        -- "local" forces the signaling bind host to 127.0.0.1, which is the
-        -- right choice for same-machine testing — otherwise aiortc gathers
-        -- ICE candidates on every interface (LAN, Docker bridge, public IP)
-        -- and the loopback pair often isn't selected, causing the RFC 7675
-        -- "Consent to send expired" drop after a few minutes.
-        for _, a in ipairs(args) do
-            if a == "viewer" or a == "prompter" then
-                role = a
-            elseif a == "local" or a == "loopback" then
-                bind_host = "127.0.0.1"
-            else
-                require("poor-cli.notify").notify(
-                    "[poor-cli] Usage: :PoorCLICollabQuick [viewer|prompter] [local]",
-                    vim.log.levels.WARN
-                )
-                return
-            end
-        end
-        role = role or "prompter"
-        if bind_host then
-            -- Bypass the "reuse existing invite" helper since we want to
-            -- force-start a fresh host with the loopback bind.
-            start_collab_and_copy(role, "mob", { bindHost = bind_host })
-        else
-            copy_existing_collab_invite(role, current_multiplayer_room(), true)
-        end
-    end, {
-        nargs = "*",
-        desc = "Start or share a collaboration invite ([viewer|prompter] [local])",
-        complete = function() return { "prompter", "viewer", "local" } end,
-    })
-
-    create_command("PoorCLICollab", function(opts)
-        local args = vim.split(opts.args or "", " ", { trimempty = true })
-        local subcommand = args[1] or "room"
-
-        if subcommand == "room" then
-            require("poor-cli.multiplayer_room").open()
-            return
-        end
-
-        if subcommand == "status" then
-            require("poor-cli.notify").notify("[poor-cli]\n" .. build_status_text(), vim.log.levels.INFO)
-            return
-        end
-
-        if subcommand == "summary" then
-            open_scratch("[poor-cli collab summary]", build_collab_summary_text(), "markdown")
-            return
-        end
-
-        if subcommand == "join" then
-            if #args == 2 then
-                rpc.restart_with_bootstrap({
-                    enabled = true,
-                    invite = args[2],
-                }, function(_result, err)
-                    vim.schedule(function()
-                        if err then
-                            require("poor-cli.notify").notify("[poor-cli] Join failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
-                        else
-                            require("poor-cli.notify").notify("[poor-cli] Joined collaboration via invite", vim.log.levels.INFO)
-                        end
-                    end)
-                end)
-                return
-            end
-
-            require("poor-cli.notify").notify("[poor-cli]\n" .. collab_usage(), vim.log.levels.WARN)
-            return
-        end
-
-        if subcommand == "leave" then
-            rpc.leave_collab(function(_result, err)
-                vim.schedule(function()
-                    if err then
-                        require("poor-cli.notify").notify("[poor-cli] Leave failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
-                    else
-                        require("poor-cli.notify").notify("[poor-cli] Left collaboration session", vim.log.levels.INFO)
-                    end
-                end)
-            end)
-            return
-        end
-
-        if subcommand == "pass" then
-            local target = table.concat(vim.list_slice(args, 2), " ")
-            rpc.pass_driver(target, function(_result, err)
-                vim.schedule(function()
-                    if err then
-                        require("poor-cli.notify").notify("[poor-cli] Pass failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
-                    else
-                        require("poor-cli.notify").notify("[poor-cli] Driver role updated", vim.log.levels.INFO)
-                    end
-                end)
-            end)
-            return
-        end
-
-        if subcommand == "say" then
-            local text = table.concat(vim.list_slice(args, 2), " ")
-            if text == "" then
-                require("poor-cli.notify").notify("[poor-cli] Usage: :PoorCLICollab say <text>", vim.log.levels.WARN)
-                return
-            end
-            rpc.peer_message(text, function(result, err)
-                vim.schedule(function()
-                    if err then
-                        require("poor-cli.notify").notify("[poor-cli] Say failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
-                        return
-                    end
-                    local delivered = (result or {}).delivered or 0
-                    require("poor-cli.notify").notify(string.format("[poor-cli] Message sent (delivered to %d peer%s)", delivered, delivered == 1 and "" or "s"), vim.log.levels.INFO)
-                end)
-            end)
-            return
-        end
-
-        if subcommand == "suggest" then
-            local text = table.concat(vim.list_slice(args, 2), " ")
-            if text == "" then
-                require("poor-cli.notify").notify("[poor-cli] Usage: :PoorCLICollab suggest <text>", vim.log.levels.WARN)
-                return
-            end
-            rpc.suggest_text(text, function(_result, err)
-                vim.schedule(function()
-                    if err then
-                        require("poor-cli.notify").notify("[poor-cli] Suggest failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
-                    else
-                        require("poor-cli.notify").notify("[poor-cli] Suggestion sent", vim.log.levels.INFO)
-                    end
-                end)
-            end)
-            return
-        end
-
-        if subcommand == "members" then
-            local room = args[2]
-            local request = current_multiplayer_room() and rpc.list_joined_room_members or rpc.list_host_room_members
-            request(room, function(result, err)
-                vim.schedule(function()
-                    if err then
-                        require("poor-cli.notify").notify("[poor-cli] Members failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
-                        return
-                    end
-                    local rendered = vim.inspect(result or {})
-                    open_scratch("[poor-cli collab members]", rendered, "lua")
-                end)
-            end)
-            return
-        end
-
-        if subcommand == "share" then
-            local role = args[2] or "prompter"
-            local room = args[3] or current_multiplayer_room() or ""
-            copy_existing_collab_invite(role, room, false)
-            return
-        end
-
-        if subcommand == "start" then
-            local mode = args[2] or "mob"
-            start_collab_and_copy("prompter", mode)
-            return
-        end
-
-        require("poor-cli.notify").notify("[poor-cli]\n" .. collab_usage(), vim.log.levels.WARN)
-    end, { nargs = "*", desc = "Manage poor-cli collaboration sessions" })
-
-    create_command("PoorCLIRoom", function()
-        require("poor-cli.multiplayer_room").open()
-    end, { desc = "Open poor-cli multiplayer room" })
-
     create_command("PoorCLIDoctor", function()
         open_scratch("[poor-cli doctor]", build_doctor_text(), "markdown")
     end, { desc = "Open poor-cli diagnostic report" })
@@ -1088,16 +750,6 @@ function M.setup()
         require("poor-cli.onboarding").open(opts.args ~= "" and opts.args or nil)
     end, { nargs = "?", desc = "Interactive onboarding guide" })
 
-    -- bootstrap
-    create_command("PoorCLIBootstrap", function()
-        rpc.restart_with_bootstrap({}, function(_, err)
-            vim.schedule(function()
-                if err then require("poor-cli.notify").notify("[poor-cli] bootstrap: " .. rpc.format_error(err), vim.log.levels.ERROR)
-                else require("poor-cli.notify").notify("[poor-cli] bootstrapped", vim.log.levels.INFO) end
-            end)
-        end)
-    end, { desc = "Bootstrap project with recommendations" })
-
     -- search / indexing
     create_command("PoorCLISearch", function(opts)
         if opts.args == "" then require("poor-cli.notify").notify("[poor-cli] usage: PoorCLISearch <query>", vim.log.levels.WARN); return end
@@ -1292,35 +944,6 @@ function M.setup()
     create_command("PoorCLIDiffLayout", function()
         require("poor-cli.diff_review").toggle_layout()
     end, { desc = "Toggle staged diff layout" })
-
-    -- host server standalone
-    create_command("PoorCLIHostServer", function(opts)
-        local args = vim.split(opts.args or "", " ", { trimempty = true })
-        local sub = args[1] or ""
-        if sub == "start" then
-            local preset = args[2]
-            rpc.start_host_server(preset and { preset = preset } or {}, function(result, err)
-                vim.schedule(function()
-                    if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
-                    local info = result or {}
-                    require("poor-cli.notify").notify("[poor-cli] host started" .. (info.url and (": " .. info.url) or ""), vim.log.levels.INFO)
-                end)
-            end)
-        elseif sub == "stop" then
-            rpc.stop_host_server(function(_, err)
-                vim.schedule(function()
-                    if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
-                    else require("poor-cli.notify").notify("[poor-cli] host stopped", vim.log.levels.INFO) end
-                end)
-            end)
-        elseif sub == "status" then
-            local result, err = rpc.get_host_server_status(10000)
-            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
-            open_scratch("[poor-cli host status]", vim.inspect(result or {}), "lua")
-        else
-            require("poor-cli.notify").notify("[poor-cli] usage: PoorCLIHostServer {start [preset]|stop|status}", vim.log.levels.WARN)
-        end
-    end, { nargs = "+", desc = "Manage multiplayer host server" })
 
     -- response modes
     create_command("PoorCLIBroke", function()

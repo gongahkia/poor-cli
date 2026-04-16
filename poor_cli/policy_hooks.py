@@ -31,7 +31,6 @@ HOOK_EVENTS: tuple[str, ...] = (
     "automation_started",
     "automation_finished",
     "checkpoint_restored",
-    "collaboration_event",
     "session_end",
 )
 SUPPORTED_SCHEMA_VERSIONS: tuple[int, ...] = (1,)

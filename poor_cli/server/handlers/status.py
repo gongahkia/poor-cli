@@ -6,63 +6,8 @@ from poor_cli.server.registry import register
 
 
 class StatusHandlersMixin:
-    def _collaboration_status_payload(self) -> Dict[str, Any]:
-        payload = {
-            "running": False,
-            "role": "solo",
-            "room": "",
-            "memberCount": 0,
-            "queueState": {"depth": 0, "handsRaised": 0},
-            "connectionHealth": "offline",
-            "recentRecoveryEvents": [],
-            "summary": "No active collaboration session.",
-        }
-        if self._host_server is None:
-            return payload
-
-        host_payload = self._compose_host_server_payload(created=False, stopped=False)
-        rooms = host_payload.get("rooms") if isinstance(host_payload, dict) else None
-        first_room = rooms[0] if isinstance(rooms, list) and rooms else {}
-        if not isinstance(first_room, dict):
-            first_room = {}
-        room_name = str(first_room.get("name", "")).strip()
-        member_count = int(first_room.get("memberCount", 0) or 0)
-        hands_raised = int(first_room.get("handsRaised", 0) or 0)
-        lobby_enabled = bool(first_room.get("lobbyEnabled", False))
-        payload.update(
-            {
-                "running": True,
-                "role": "host",
-                "room": room_name,
-                "memberCount": member_count,
-                "queueState": {"depth": member_count, "handsRaised": hands_raised},
-                "connectionHealth": "healthy",
-                "recentRecoveryEvents": [],
-                "summary": (
-                    f"Hosting `{room_name}` with {member_count} member(s)"
-                    if room_name
-                    else f"Hosting {member_count} member(s)"
-                ),
-                "lobbyEnabled": lobby_enabled,
-                "preset": str(first_room.get("preset", "") or ""),
-                "mode": str(first_room.get("mode", "") or ""),
-                "signalingUrl": str(host_payload.get("signalingUrl", "") or ""),
-            }
-        )
-        return payload
-
-    async def _emit_collaboration_event(self, action: str, payload: Dict[str, Any]) -> None:
-        await self.core._emit_policy_hooks(
-            "collaboration_event",
-            {
-                "action": action,
-                **payload,
-            },
-        )
-
     def _status_view_payload(self) -> Dict[str, Any]:
         payload = self.core.build_status_view()
-        payload["collaboration"] = self._collaboration_status_payload()
         trust = payload.get("trust")
         if isinstance(trust, dict):
             trust["mcp"] = self.core.get_mcp_status()
@@ -72,18 +17,6 @@ class StatusHandlersMixin:
     def _doctor_report_payload(self) -> Dict[str, Any]:
         payload = self.core.build_doctor_report()
         payload["statusView"] = self._status_view_payload()
-        checks = payload.get("checks")
-        if isinstance(checks, list):
-            collab = payload["statusView"].get("collaboration", {})
-            checks.append(
-                {
-                    "id": "collaboration",
-                    "title": "Collaboration session",
-                    "status": "ok" if collab.get("running") else "warning",
-                    "message": collab.get("summary", "No active collaboration session."),
-                    "action": "Use `/collab start`, `/collab join`, or inspect `/collab summary`.",
-                }
-            )
         return payload
 
     async def handle_get_instruction_stack(self, params: Dict[str, Any]) -> Dict[str, Any]:

@@ -35,16 +35,6 @@ M.defaults = {
     completion_model = nil,
     rtk_enabled = true,
 
-    -- Multiplayer. `enabled` is a UI/command gate (unlocks :PoorCLIRoom,
-    -- :PoorCLIUsers, :PoorCLICollab*). `invite` triggers the joiner bridge
-    -- subprocess — only set it when you actually want to connect to a
-    -- remote host. Hosting your own room via :PoorCLICollabQuick does
-    -- not require an invite; enabled alone is enough.
-    multiplayer = {
-        enabled = true,
-        invite = nil,
-    },
-    
     -- UI options
     chat_width = 60,
     chat_position = "right",  -- "right" or "left"
@@ -183,7 +173,7 @@ M.defaults = {
     --   rpc    — outgoing RPC method names (forwarded from verbose_rpc)
     --   state  — server state transitions + api-key validity flips
     --   event  — tool calls, permission decisions, turn boundaries,
-    --             server crashes, multiplayer member events
+    --             server crashes
     -- ON by default so bug reports naturally include the trace; turn off
     -- via :PoorCLIInputLog off if the :messages noise gets in your way.
     log_user_input = true,
@@ -212,7 +202,6 @@ M.defaults = {
         cost_lualine_auto = false,      -- auto-register cost component in lualine
         diff_accept_all = false,        -- gAA accept-all shortcut in diff review
         context_remove_files = false,   -- 'd' in context panel marks file excluded from next send
-        multiplayer_presence = false,   -- :PoorCLICollaboratorsPanel + chat vote overlay
         home_nav = false,               -- :PoorCLIHome close aux windows, return to editor
         provider_cost_preview = false,  -- cost column in provider picker
         inline_status_lualine = false,  -- realtime inline completion status in lualine
@@ -268,21 +257,6 @@ function M.get(key)
     return M.config[key]
 end
 
-function M.set_multiplayer_bootstrap(opts)
-    local multiplayer = vim.deepcopy(M.config.multiplayer or {})
-    multiplayer.enabled = opts and opts.enabled == true or false
-    multiplayer.invite = opts and opts.invite or nil
-    M.config.multiplayer = multiplayer
-    return multiplayer
-end
-
-function M.clear_multiplayer_bootstrap()
-    return M.set_multiplayer_bootstrap({
-        enabled = false,
-        invite = nil,
-    })
-end
-
 -- Check if debug mode is enabled
 function M.is_debug()
     return M.config.debug
@@ -309,12 +283,6 @@ end
 function M.sanitized_for_debug()
     local debug_config = vim.deepcopy(M.config)
     debug_config.api_key_env = nil
-    local multiplayer = debug_config.multiplayer
-    if type(multiplayer) == "table" then
-        if multiplayer.invite then
-            multiplayer.invite = "<redacted>"
-        end
-    end
     return debug_config
 end
 
