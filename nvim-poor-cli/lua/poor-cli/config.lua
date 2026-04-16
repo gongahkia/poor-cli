@@ -35,9 +35,13 @@ M.defaults = {
     completion_model = nil,
     rtk_enabled = true,
 
-    -- Multiplayer remote bridge mode
+    -- Multiplayer. `enabled` is a UI/command gate (unlocks :PoorCLIRoom,
+    -- :PoorCLIUsers, :PoorCLICollab*). `invite` triggers the joiner bridge
+    -- subprocess — only set it when you actually want to connect to a
+    -- remote host. Hosting your own room via :PoorCLICollabQuick does
+    -- not require an invite; enabled alone is enough.
     multiplayer = {
-        enabled = false,
+        enabled = true,
         invite = nil,
     },
     

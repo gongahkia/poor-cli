@@ -198,7 +198,17 @@ end
 
 function M.open()
     if not multiplayer_enabled() then
-        require("poor-cli.notify").notify("[poor-cli] multiplayer.enabled is required for :PoorCLICollab", vim.log.levels.WARN)
+        require("poor-cli.notify").notify(
+            "[poor-cli] :PoorCLIRoom / :PoorCLICollab require multiplayer to be enabled. "
+            .. "Add to your setup:\n\n"
+            .. "  require('poor-cli').setup({\n"
+            .. "    multiplayer = { enabled = true },\n"
+            .. "  })\n\n"
+            .. "Then restart nvim or :PoorCLIRestart. "
+            .. "(This is the default on new installs; you're seeing this because enabled is explicitly false.)",
+            vim.log.levels.WARN,
+            { title = "poor-cli multiplayer", timeout = 10000 }
+        )
         return nil
     end
     local state = tab_state()

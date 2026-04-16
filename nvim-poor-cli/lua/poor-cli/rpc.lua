@@ -699,11 +699,13 @@ end
 
 function M.resolve_server_command()
     local multiplayer = config.get("multiplayer") or {}
-    if type(multiplayer) == "table" and multiplayer.enabled then
-        local invite = multiplayer.invite
-        if not invite or invite == "" then
-            return nil, "multiplayer.enabled requires multiplayer.invite"
-        end
+    -- Bridge-joiner mode is triggered by the presence of an invite, not by
+    -- the enabled flag. enabled is a UI gate; invite is the bridge trigger.
+    -- This decoupling lets users keep enabled=true for :PoorCLIRoom /
+    -- :PoorCLIUsers / :PoorCLICollabQuick host flows without pinning them
+    -- to a joiner bridge they don't want yet.
+    local invite = type(multiplayer) == "table" and multiplayer.invite or nil
+    if invite and invite ~= "" then
         -- derive the server binary from the user's configured server_cmd so we
         -- honour the venv path instead of relying on "poor-cli-server" on PATH
         local configured = config.get("server_cmd") or "poor-cli-server --stdio"
