@@ -94,8 +94,14 @@ end
 
 local function ensure_window(buf)
     if vim.api.nvim_get_current_buf() == buf then return end
-    vim.cmd("botright " .. M.width .. "vsplit")
-    vim.api.nvim_win_set_buf(0, buf)
+    local float_win = require("poor-cli.float_win")
+    float_win.open(buf, {
+        width = math.min(110, vim.o.columns - 4),
+        height = math.max(20, vim.o.lines - 4),
+        position = "center",
+        title = " poor-cli policy ",
+        close_keys = { "q", "<Esc>" },
+    })
 end
 
 local function source_key(file)

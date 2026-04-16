@@ -42,8 +42,14 @@ end
 
 local function ensure_window(buf)
     if vim.api.nvim_get_current_buf() ~= buf then
-        vim.cmd("botright split")
-        vim.api.nvim_win_set_buf(0, buf)
+        local float_win = require("poor-cli.float_win")
+        float_win.open(buf, {
+            width = 0.8,
+            height = 0.8,
+            position = "center",
+            title = " poor-cli trust center ",
+            close_keys = { "q", "<Esc>" },
+        })
     end
 end
 

@@ -7,25 +7,25 @@ function M.untrust_repo(params, callback) return rpc.request("poor-cli/untrustRe
 function M.list_profiles(params, callback) return rpc.request("poor-cli/listProfiles", params or {}, callback) end
 function M.apply_profile(params, callback) return rpc.request("poor-cli/applyProfile", params or {}, callback) end
 
-local function open_scratch(title, content, filetype)
-    local buf = vim.api.nvim_create_buf(false, true)
-    vim.bo[buf].buftype = "nofile"
-    vim.bo[buf].bufhidden = "wipe"
-    vim.bo[buf].swapfile = false
-    vim.bo[buf].filetype = filetype or "markdown"
-    vim.api.nvim_buf_set_name(buf, title)
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(content, "\n", { plain = true }))
-    vim.cmd("botright split")
-    vim.api.nvim_win_set_buf(0, buf)
-    vim.api.nvim_buf_set_keymap(buf, "n", "q", ":close<CR>", { noremap = true, silent = true })
-    return buf
+local function notify(msg, level) require("poor-cli.notify").notify("[poor-cli] " .. msg, level) end
+
+local function show_lines(title, lines, filetype)
+    local float_win = require("poor-cli.float_win")
+    float_win.open_lines(lines, {
+        filetype = filetype or "markdown",
+        name = title,
+        title = " " .. title:gsub("^%[", ""):gsub("%]$", "") .. " ",
+        width = 0.6,
+        height = 0.5,
+        position = "center",
+    })
 end
 
 function M.setup()
     local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
     create_command("PoorCLITrustStatus", function()
         M.get_status({}, function(result, err) vim.schedule(function()
-            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+            if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
             local t = result or {}
             local lines = {
                 "# trust status", "",
@@ -34,37 +34,48 @@ function M.setup()
                 "Sandbox: " .. tostring(t.sandboxPreset or ""),
                 "Checkpointing: " .. tostring(t.checkpointing or false),
             }
-            open_scratch("[poor-cli trust status]", table.concat(lines, "\n"), "markdown")
+            show_lines("[poor-cli trust status]", lines, "markdown")
         end) end)
     end, { desc = "Show trust status" })
     create_command("PoorCLITrustRepo", function()
         M.trust_repo({}, function(_, err) vim.schedule(function()
-            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
-            else require("poor-cli.notify").notify("[poor-cli] repo trusted", vim.log.levels.INFO) end
+            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+            else notify("repo trusted", vim.log.levels.INFO) end
         end) end)
     end, { desc = "Trust current repo" })
     create_command("PoorCLIUntrustRepo", function()
         M.untrust_repo({}, function(_, err) vim.schedule(function()
-            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
-            else require("poor-cli.notify").notify("[poor-cli] repo untrusted", vim.log.levels.INFO) end
+            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+            else notify("repo untrusted", vim.log.levels.INFO) end
         end) end)
     end, { desc = "Untrust current repo" })
     create_command("PoorCLIProfiles", function()
+        local pickers = require("poor-cli.pickers")
         M.list_profiles({}, function(result, err) vim.schedule(function()
-            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+            if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
             local profiles = (result or {}).profiles or {}
-            local lines = { "# profiles", "" }
+            if #profiles == 0 then notify("no profiles found", vim.log.levels.INFO); return end
+            local items = {}
             for _, p in ipairs(profiles) do
-                table.insert(lines, string.format("%s: %s", tostring(p.name or "?"), tostring(p.description or "")))
+                items[#items + 1] = {
+                    id = tostring(p.name or "?"),
+                    label = string.format("%s: %s", tostring(p.name or "?"), tostring(p.description or "")),
+                    preview = vim.inspect(p),
+                    data = p,
+                }
             end
-            if #profiles == 0 then table.insert(lines, "no profiles found") end
-            open_scratch("[poor-cli profiles]", table.concat(lines, "\n"), "markdown")
+            pickers.pick(items, { title = "poor-cli trust profiles", on_pick = function(p)
+                M.apply_profile({ name = p.name }, function(_, e) vim.schedule(function()
+                    if e then notify(rpc.format_error(e), vim.log.levels.ERROR)
+                    else notify("profile applied: " .. p.name, vim.log.levels.INFO) end
+                end) end)
+            end })
         end) end)
     end, { desc = "List trust profiles" })
     create_command("PoorCLIProfileApply", function(opts)
         M.apply_profile({ name = opts.args }, function(_, err) vim.schedule(function()
-            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
-            else require("poor-cli.notify").notify("[poor-cli] profile applied: " .. opts.args, vim.log.levels.INFO) end
+            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+            else notify("profile applied: " .. opts.args, vim.log.levels.INFO) end
         end) end)
     end, { nargs = 1, desc = "Apply trust profile" })
 end
