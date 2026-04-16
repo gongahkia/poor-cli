@@ -3,15 +3,38 @@
 
 local M = {}
 
+-- User-input trace. When config.log_user_input is true, every :PoorCLI*
+-- invocation routes through this helper and lands in :messages (via
+-- vim.api.nvim_echo) with a distinctive "[poor-cli input]" prefix so it
+-- shows up in :PoorCLIOpenLog / bug reports alongside RPC chatter.
+local function _log_user_input(kind, detail)
+    local ok, cfg = pcall(require, "poor-cli.config")
+    if not ok or not cfg.get or not cfg.get("log_user_input") then return end
+    local stamp = os.date("%H:%M:%S")
+    local line = string.format("[poor-cli input %s] %s %s", stamp, kind, detail or "")
+    pcall(vim.api.nvim_echo, { { line, "Comment" } }, true, {})
+end
+
+M._log_user_input = _log_user_input -- shared with chat.lua
+
 local function create_command(name, fn, opts)
     pcall(vim.api.nvim_del_user_command, name)
-    vim.api.nvim_create_user_command(name, fn, opts or {})
+    local wrapped = function(command_opts)
+        local args = command_opts and command_opts.args or ""
+        if args ~= "" then
+            _log_user_input(":" .. name, "args=" .. args:sub(1, 400))
+        else
+            _log_user_input(":" .. name, "")
+        end
+        return fn(command_opts)
+    end
+    vim.api.nvim_create_user_command(name, wrapped, opts or {})
     if name:sub(1, 10) == "PoorCLI" then
         local legacy = "PoorCli" .. name:sub(11)
         pcall(vim.api.nvim_del_user_command, legacy)
         vim.api.nvim_create_user_command(legacy, function(command_opts)
             vim.deprecate(":" .. legacy, ":" .. name, "6.0.0", "poor-cli")
-            return fn(command_opts)
+            return wrapped(command_opts)
         end, opts or {})
     end
 end
@@ -1922,6 +1945,32 @@ create_command("PoorCLISetPermissions", function(opts)
         end)
     end)
 end, { nargs = "?", desc = "Set permission mode" })
+
+create_command("PoorCLIInputLog", function(opts)
+    local cfg = require("poor-cli.config")
+    local notify = require("poor-cli.notify")
+    local mode = (opts.args or ""):match("^%s*(%S*)%s*$") or ""
+    if mode == "" then
+        notify.notify("[poor-cli] log_user_input = "
+            .. tostring(cfg.get("log_user_input"))
+            .. " — usage: :PoorCLIInputLog on|off",
+            vim.log.levels.INFO)
+        return
+    end
+    if mode ~= "on" and mode ~= "off" then
+        notify.notify("[poor-cli] log_user_input must be on|off", vim.log.levels.WARN)
+        return
+    end
+    cfg.config.log_user_input = (mode == "on")
+    notify.notify("[poor-cli] log_user_input = "
+        .. tostring(cfg.config.log_user_input)
+        .. (mode == "on" and " — :PoorCLI* commands + chat sends now tracing to :messages" or ""),
+        vim.log.levels.INFO)
+end, {
+    nargs = "?",
+    desc = "Toggle user-input tracing (on|off)",
+    complete = function() return { "on", "off" } end,
+})
 
 create_command("PoorCLIChatTrace", function(opts)
     local cfg = require("poor-cli.config")

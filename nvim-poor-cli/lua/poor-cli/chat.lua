@@ -1266,6 +1266,18 @@ function M.send(message, opts)
         return
     end
 
+    -- user-input trace: log a truncated preview of the message so bug
+    -- reports / :PoorCLIOpenLog captures show what the user actually typed.
+    -- Gated on config.log_user_input; see commands.lua::_log_user_input.
+    do
+        local ok_cmds, cmds = pcall(require, "poor-cli.commands")
+        if ok_cmds and type(cmds._log_user_input) == "function" then
+            local preview = tostring(message):gsub("\n", "\\n"):sub(1, 400)
+            cmds._log_user_input("chat.send",
+                string.format("(%d chars) %s", #message, preview))
+        end
+    end
+
     if not rpc.is_running() then
         require("poor-cli.notify").notify("[poor-cli] Server not running", vim.log.levels.WARN)
         return

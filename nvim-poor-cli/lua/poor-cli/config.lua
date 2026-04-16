@@ -175,6 +175,14 @@ M.defaults = {
         deny = {},
     },
 
+    -- User-input tracing. When true, every :PoorCLI* command invocation
+    -- AND every outgoing chat message is logged to :messages history and
+    -- echoed as a WARN-level snacks toast. Useful for debugging "why did
+    -- this happen?" or filing a bug report that needs to reproduce an
+    -- exact sequence. Off by default because chat messages may contain
+    -- sensitive content. Toggle at runtime via :PoorCLIInputLog on|off.
+    log_user_input = false,
+
     -- Chat turn tracing:
     --   "off"     — no trace toasts (default)
     --   "basic"   — toast when message sent, when provider returns first
