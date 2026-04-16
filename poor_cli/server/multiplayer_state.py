@@ -316,6 +316,9 @@ class MultiplayerStateMixin:
             port = self._select_multiplayer_port(bind_host, requested_port)
 
             from ..multiplayer import MultiplayerHost
+            # Deferred import avoids the runtime → handlers → multiplayer_state
+            # → runtime circular load path at module-import time.
+            from .runtime import PoorCLIServer
 
             host = MultiplayerHost(
                 bind_host=bind_host,
