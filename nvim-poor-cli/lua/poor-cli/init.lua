@@ -14,9 +14,9 @@ local EAGER_SETUPS = {
     "tasks", "automations", "agents", "sessions", "memory",
     "checkpoints_ext", "config_mgr", "history_browser",
     "custom_commands", "skills_nvim", "trust", "context_mgr",
-    "cost", "providers", "collab_ext", "deploy_ext",
+    "cost", "providers", "deploy_ext",
     "diagnostics_ext", "onboarding", "prompt_library", "workflow_picker", "pickers",
-    "collab", "multiplayer_room", "users_panel", "panels", "diff_review", "timeline", "branches",
+    "panels", "diff_review", "timeline", "branches",
     "memory_picker", "memory_expire", "pins_list", "strategies",
 }
 

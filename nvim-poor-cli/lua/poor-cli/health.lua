@@ -172,7 +172,6 @@ function M.check()
         { mod = "poor-cli.context_mgr", name = "context_mgr" },
         { mod = "poor-cli.cost", name = "cost" },
         { mod = "poor-cli.providers", name = "providers" },
-        { mod = "poor-cli.collab_ext", name = "collab_ext" },
     }
     for _, d in ipairs(domains) do
         local loaded, _ = pcall(require, d.mod)
