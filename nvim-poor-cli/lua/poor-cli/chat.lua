@@ -1234,13 +1234,17 @@ function M.send(message, opts)
 end
 
 local function format_thinking_duration(seconds)
+    seconds = math.max(0, math.floor(seconds))
     if seconds < 60 then
         return string.format("%d sec", seconds)
-    elseif seconds < 3600 then
-        return string.format("%d min", math.floor(seconds / 60))
-    else
-        return string.format("%d hr", math.floor(seconds / 3600))
     end
+    local mins = math.floor(seconds / 60) % 60
+    local secs = seconds % 60
+    if seconds < 3600 then
+        return string.format("%d min %d sec", mins, secs)
+    end
+    local hrs = math.floor(seconds / 3600)
+    return string.format("%d hr %d min %d sec", hrs, mins, secs)
 end
 
 -- single-column spinner frames (braille); matches the Claude Code / Codex feel.
