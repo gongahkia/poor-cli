@@ -1,6 +1,5 @@
 local rpc = require("poor-cli.rpc")
 local config = require("poor-cli.config")
-local voting = require("poor-cli.diff_voting")
 
 local M = {
     ns = vim.api.nvim_create_namespace("poor-cli-diff-review"),
@@ -34,33 +33,6 @@ local function hunk_id(hunk)
     return hunk.hunkId or hunk.hunk_id or ""
 end
 
-local function hunk_vote_status(hunk)
-    return s(hunk.voteStatus or hunk.vote_status or hunk.votingStatus or hunk.voting_status or "")
-end
-
-local function hunk_vote_threshold(hunk)
-    return s(hunk.voteThreshold or hunk.vote_threshold or hunk.threshold or "")
-end
-
-local function vote_gate(hunk)
-    local threshold = hunk_vote_threshold(hunk):lower()
-    return threshold ~= "" and threshold ~= "owner_only"
-end
-
-local function toast_needs_vote()
-    require("poor-cli.notify").notify("needs vote threshold", vim.log.levels.WARN)
-end
-
-local function has_visible_vote_rows(edits)
-    for _, edit in ipairs(edits or {}) do
-        for _, hunk in ipairs(edit.hunks or {}) do
-            local threshold = hunk_vote_threshold(hunk):lower()
-            if threshold ~= "" and threshold ~= "owner_only" then return true end
-        end
-    end
-    return false
-end
-
 local function hunk_at_cursor()
     local row = M.rows[vim.api.nvim_win_get_cursor(0)[1]]
     if row and row.hunk then return row.edit, row.hunk end
@@ -80,11 +52,7 @@ local function set_lines(lines)
     vim.api.nvim_buf_clear_namespace(M.buf, M.ns, 0, -1)
     vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, lines)
     for line, row in pairs(M.rows) do
-        if row.kind == "vote" then
-            local status = hunk_vote_status(row.hunk)
-            local hl = status == "approved" and "DiagnosticOk" or status == "rejected" and "DiagnosticError" or "Comment"
-            vim.api.nvim_buf_set_extmark(M.buf, M.ns, line - 1, 0, { line_hl_group = hl })
-        elseif row.hunk then
+        if row.hunk then
             local status = row.hunk.status or "pending"
             local hl = status == "accepted" and "DiagnosticOk" or status == "rejected" and "DiagnosticError" or "DiagnosticWarn"
             vim.api.nvim_buf_set_extmark(M.buf, M.ns, line - 1, 0, {
@@ -100,9 +68,6 @@ local function render()
     M.rows = {}
     M.edit_lines = {}
     local help = "ga accept hunk | gr reject hunk | gA accept edit | gR reject edit | gc regen | gl layout | gf file | q close"
-    if has_visible_vote_rows(M.edits) then
-        help = "a/ga accept hunk | gr reject hunk | va/vr/vc vote approve/reject/clear | gA accept edit | gR reject edit | gc regen | gl layout | gf file | q close"
-    end
     local lines = {
         "# poor-cli diff review",
         "",
@@ -122,10 +87,6 @@ local function render()
         table.insert(lines, "Status: " .. s(edit.status or "pending"))
         for _, hunk in ipairs(edit.hunks or {}) do
             table.insert(lines, "")
-            for _, line in ipairs(voting.render_vote_row(hunk_id(hunk), hunk.votes or hunk.voteVotes or {}, hunk_vote_status(hunk), hunk_vote_threshold(hunk))) do
-                table.insert(lines, line)
-                M.rows[#lines] = { edit = edit, hunk = hunk, kind = "vote" }
-            end
             table.insert(lines, s(hunk.header))
             M.rows[#lines] = { edit = edit, hunk = hunk, kind = "hunk" }
             local before = s(hunk.before)
@@ -202,9 +163,6 @@ function M.open()
     map("a", M.accept_hunk, "accept hunk")
     map("ga", M.accept_hunk, "accept hunk")
     map("gr", M.reject_hunk, "reject hunk")
-    map("va", M.vote_approve_hunk, "vote approve hunk")
-    map("vr", M.vote_reject_hunk, "vote reject hunk")
-    map("vc", M.vote_clear_hunk, "clear hunk vote")
     map("gA", M.accept_edit, "accept edit")
     map("gR", M.reject_edit, "reject edit")
     map("gc", M.regen_hunk, "regenerate hunk")
@@ -251,29 +209,9 @@ local function refresh_after(method, params)
     end)
 end
 
-local function vote_after(decision)
-    local edit, hunk = hunk_at_cursor()
-    if not edit or not hunk then return false end
-    voting.vote(hunk_id(hunk), decision, edit_id(edit), function(_, err)
-        vim.schedule(function()
-            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
-            M.refresh()
-        end)
-    end)
-    return true
-end
-
-function M.vote_approve_hunk() return vote_after("approve") end
-function M.vote_reject_hunk() return vote_after("reject") end
-function M.vote_clear_hunk() return vote_after("clear") end
-
 function M.accept_hunk()
     local edit, hunk = hunk_at_cursor()
     if not edit or not hunk then return false end
-    if vote_gate(hunk) and hunk_vote_status(hunk) ~= "approved" then
-        toast_needs_vote()
-        return false
-    end
     refresh_after("diff.accept", { editId = edit_id(edit), hunkId = hunk_id(hunk) })
     return true
 end
@@ -281,10 +219,6 @@ end
 function M.reject_hunk()
     local edit, hunk = hunk_at_cursor()
     if not edit or not hunk then return false end
-    if vote_gate(hunk) and hunk_vote_status(hunk) ~= "rejected" then
-        toast_needs_vote()
-        return false
-    end
     refresh_after("diff.reject", { editId = edit_id(edit), hunkId = hunk_id(hunk) })
     return true
 end
@@ -376,34 +310,6 @@ function M.setup()
             if M.buf and vim.api.nvim_buf_is_valid(M.buf) then M.refresh() end
         end,
     })
-    vim.api.nvim_create_autocmd("User", {
-        group = group,
-        pattern = "PoorCLIHunkVoteUpdated",
-        callback = function(event)
-            M.apply_vote_update(event.data or {})
-        end,
-    })
-end
-
-function M.apply_vote_update(data)
-    local edit_id_value = s(data.editId or data.edit_id)
-    local hunk_id_value = s(data.hunkId or data.hunk_id)
-    if hunk_id_value == "" then return false end
-    for _, edit in ipairs(M.edits or {}) do
-        if edit_id_value == "" or edit_id(edit) == edit_id_value then
-            for _, hunk in ipairs(edit.hunks or {}) do
-                if hunk_id(hunk) == hunk_id_value then
-                    hunk.votes = data.votes or hunk.votes or {}
-                    hunk.voteStatus = data.status or data.voteStatus or data.vote_status or hunk.voteStatus
-                    hunk.voteThreshold = data.threshold or data.voteThreshold or data.vote_threshold or hunk.voteThreshold
-                    if M.buf and vim.api.nvim_buf_is_valid(M.buf) then set_lines(render()) end
-                    return true
-                end
-            end
-        end
-    end
-    if M.buf and vim.api.nvim_buf_is_valid(M.buf) then M.refresh() end
-    return false
 end
 
 return M
