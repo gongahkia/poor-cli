@@ -26,7 +26,6 @@ function M.setup()
     local config = require("poor-cli.config")
     local inline = require("poor-cli.inline")
     local chat = require("poor-cli.chat")
-    local telescope = require("poor-cli.telescope")
     
     -- Trigger completion in insert mode
     safe_map("i", config.get("trigger_key"), function()
@@ -108,7 +107,7 @@ function M.setup()
     local checkpoints_key = config.get("checkpoints_key")
     if checkpoints_key and checkpoints_key ~= "" then
         safe_map("n", checkpoints_key, function()
-            telescope.open_checkpoints_picker()
+            require("poor-cli.checkpoints_ext").open_picker()
         end, { desc = "Browse poor-cli checkpoints" })
     end
     
@@ -153,7 +152,7 @@ function M.setup()
     local palette_key = config.get("palette_key")
     if palette_key and palette_key ~= "" then
         safe_map("n", palette_key, function()
-            require("poor-cli.telescope").command_palette()
+            vim.cmd("PoorCLIPalette")
         end, { desc = "poor-cli command palette" })
     end
 

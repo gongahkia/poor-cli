@@ -140,19 +140,7 @@ describe("dap bridge", function()
         assert.truthy(notifies[1].msg:find("no configuration", 1, true))
     end)
 
-    it("test_noop_when_dap_absent", function()
-        package.preload["dap"] = function() error("no dap") end
-        local buf = ref_buf(2)
-        local bridge = require("poor-cli.integrations.dap")
-
-        assert.is_false(bridge.setup())
-        assert.is_false(bridge.attach(buf))
-        assert.is_false(bridge.set_breakpoint())
-        assert.are.equal(0, #calls.breakpoints)
-
-        local maps = vim.api.nvim_buf_get_keymap(buf, "n")
-        for _, map in ipairs(maps) do
-            assert.are_not.equal("<leader>pb", map.lhs)
-        end
-    end)
+    -- "noop when dap absent" test removed: nvim-dap is now a hard
+    -- dependency (see init.lua::setup); the bridge no longer has a
+    -- graceful-absent code path.
 end)

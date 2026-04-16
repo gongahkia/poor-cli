@@ -3,27 +3,96 @@
 
 local M = {}
 
+-- Session trace. Emits unified log lines to :messages when
+-- config.log_user_input is true (on by default):
+--   [poor-cli log HH:MM:SS.mmm] <category> <detail>
+-- Category conventions:
+--   input  — :PoorCLI* command invocations, chat.send previews
+--   rpc    — RPC method names (from verbose_rpc hook)
+--   state  — server state transitions, api-key validity flips
+--   event  — tool calls, permission decisions, turn boundaries, crashes,
+--            multiplayer member events
+-- Other modules call M._log_session(category, detail) directly. The legacy
+-- _log_user_input alias stays for existing callers.
+local function _log_session(category, detail)
+    local ok, cfg = pcall(require, "poor-cli.config")
+    if not ok or not cfg.get or not cfg.get("log_user_input") then return end
+    -- millisecond precision helps reconstruct tight event sequences
+    local ms = 0
+    if vim.loop and vim.loop.gettimeofday then
+        local sec, usec = vim.loop.gettimeofday()
+        if usec then ms = math.floor(usec / 1000) end
+    elseif vim.loop and vim.loop.hrtime then
+        ms = math.floor((vim.loop.hrtime() / 1e6) % 1000)
+    end
+    local stamp = string.format("%s.%03d", os.date("%H:%M:%S"), ms)
+    local line = string.format("[poor-cli log %s] %-6s %s", stamp, tostring(category), detail or "")
+    pcall(vim.api.nvim_echo, { { line, "Comment" } }, true, {})
+end
+
+local function _log_user_input(kind, detail)
+    -- Back-compat shim. Old callers pass the command name as `kind`; route
+    -- through _log_session with category "input".
+    _log_session("input", string.format("%s %s", kind or "?", detail or ""))
+end
+
+M._log_session = _log_session   -- shared with chat.lua / rpc.lua
+M._log_user_input = _log_user_input -- legacy alias
+
 local function create_command(name, fn, opts)
     pcall(vim.api.nvim_del_user_command, name)
-    vim.api.nvim_create_user_command(name, fn, opts or {})
+    local wrapped = function(command_opts)
+        local args = command_opts and command_opts.args or ""
+        if args ~= "" then
+            _log_user_input(":" .. name, "args=" .. args:sub(1, 400))
+        else
+            _log_user_input(":" .. name, "")
+        end
+        return fn(command_opts)
+    end
+    vim.api.nvim_create_user_command(name, wrapped, opts or {})
     if name:sub(1, 10) == "PoorCLI" then
         local legacy = "PoorCli" .. name:sub(11)
         pcall(vim.api.nvim_del_user_command, legacy)
         vim.api.nvim_create_user_command(legacy, function(command_opts)
             vim.deprecate(":" .. legacy, ":" .. name, "6.0.0", "poor-cli")
-            return fn(command_opts)
+            return wrapped(command_opts)
         end, opts or {})
     end
 end
 
-local function open_scratch(title, content, filetype)
+local function resolve_scratch_mode(mode)
+    if mode == "float" or mode == "vsplit" then return mode end
+    local ok, cfg = pcall(require, "poor-cli.config")
+    if ok and cfg and cfg.config and cfg.config.layout and cfg.config.layout.scratch then
+        local m = cfg.config.layout.scratch
+        if m == "float" or m == "vsplit" then return m end
+    end
+    return "float"
+end
+
+local function open_scratch(title, content, filetype, mode)
+    local lines = vim.split(content, "\n", { plain = true })
+    mode = resolve_scratch_mode(mode)
+    if mode == "float" then
+        local float_win = require("poor-cli.float_win")
+        local buf = float_win.open_lines(lines, {
+            filetype = filetype or "markdown",
+            name = title,
+            title = " " .. title:gsub("^%[", ""):gsub("%]$", "") .. " ",
+            width = 0.7,
+            height = 0.7,
+            position = "center",
+        })
+        return buf
+    end
     local buf = vim.api.nvim_create_buf(false, true)
     vim.bo[buf].buftype = "nofile"
     vim.bo[buf].bufhidden = "wipe"
     vim.bo[buf].swapfile = false
     vim.bo[buf].filetype = filetype or "markdown"
     vim.api.nvim_buf_set_name(buf, title)
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(content, "\n", { plain = true }))
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     vim.cmd("botright split")
     vim.api.nvim_win_set_buf(0, buf)
     vim.api.nvim_buf_set_keymap(buf, "n", "q", ":close<CR>", { noremap = true, silent = true })
@@ -387,9 +456,9 @@ local function set_collab_preset(room, mode)
     }, function() end)
 end
 
-local function start_collab_and_copy(role, mode)
+local function start_collab_and_copy(role, mode, start_opts)
     local rpc = require("poor-cli.rpc")
-    rpc.start_collab({}, function(result, err)
+    rpc.start_collab(start_opts or {}, function(result, err)
         vim.schedule(function()
             if err then
                 require("poor-cli.notify").notify("[poor-cli] Start failed: " .. rpc.format_error(err), vim.log.levels.ERROR)
@@ -456,7 +525,6 @@ function M.setup()
     local chat = require("poor-cli.chat")
     local inline = require("poor-cli.inline")
     local diagnostics = require("poor-cli.diagnostics")
-    local telescope = require("poor-cli.telescope")
 
     create_command("PoorCLIStart", function()
         local status = rpc.get_status()
@@ -535,7 +603,7 @@ function M.setup()
     end, { desc = "Open poor-cli suggestions in trouble.nvim" })
 
     create_command("PoorCLICheckpoints", function()
-        telescope.open_checkpoints_picker()
+        require("poor-cli.checkpoints_ext").open_picker()
     end, { desc = "Browse/restore checkpoints" })
 
     create_command("PoorCLIComplete", function()
@@ -647,13 +715,39 @@ function M.setup()
 
     create_command("PoorCLICollabQuick", function(opts)
         local args = vim.split(opts.args or "", " ", { trimempty = true })
-        local role = args[1] or "prompter"
-        if role ~= "viewer" and role ~= "prompter" then
-            require("poor-cli.notify").notify("[poor-cli] Usage: :PoorCLICollabQuick [viewer|prompter]", vim.log.levels.WARN)
-            return
+        local role, bind_host
+        -- Accept "[viewer|prompter]" and/or "local" in any order.
+        -- "local" forces the signaling bind host to 127.0.0.1, which is the
+        -- right choice for same-machine testing — otherwise aiortc gathers
+        -- ICE candidates on every interface (LAN, Docker bridge, public IP)
+        -- and the loopback pair often isn't selected, causing the RFC 7675
+        -- "Consent to send expired" drop after a few minutes.
+        for _, a in ipairs(args) do
+            if a == "viewer" or a == "prompter" then
+                role = a
+            elseif a == "local" or a == "loopback" then
+                bind_host = "127.0.0.1"
+            else
+                require("poor-cli.notify").notify(
+                    "[poor-cli] Usage: :PoorCLICollabQuick [viewer|prompter] [local]",
+                    vim.log.levels.WARN
+                )
+                return
+            end
         end
-        copy_existing_collab_invite(role, current_multiplayer_room(), true)
-    end, { nargs = "?", desc = "Start or share a poor-cli collaboration invite" })
+        role = role or "prompter"
+        if bind_host then
+            -- Bypass the "reuse existing invite" helper since we want to
+            -- force-start a fresh host with the loopback bind.
+            start_collab_and_copy(role, "mob", { bindHost = bind_host })
+        else
+            copy_existing_collab_invite(role, current_multiplayer_room(), true)
+        end
+    end, {
+        nargs = "*",
+        desc = "Start or share a collaboration invite ([viewer|prompter] [local])",
+        complete = function() return { "prompter", "viewer", "local" } end,
+    })
 
     create_command("PoorCLICollab", function(opts)
         local args = vim.split(opts.args or "", " ", { trimempty = true })
@@ -1657,7 +1751,22 @@ end, { desc = "Clear prompt queue" })
 
 -- command palette
 create_command("PoorCLIPalette", function()
-    require("poor-cli.telescope").command_palette()
+    local pickers = require("poor-cli.pickers")
+    local cmds = vim.api.nvim_get_commands({})
+    local entries = {}
+    for name, info in pairs(cmds) do
+        if name:match("^PoorCLI") then
+            table.insert(entries, { name = name, desc = info.definition or info.desc or "" })
+        end
+    end
+    table.sort(entries, function(a, b) return a.name < b.name end)
+    local items = {}
+    for _, entry in ipairs(entries) do
+        local display = entry.name
+        if entry.desc ~= "" then display = display .. "  " .. entry.desc end
+        items[#items + 1] = { id = entry.name, label = display, data = entry.name }
+    end
+    pickers.pick(items, { title = "poor-cli commands", preview = false, on_pick = function(name) vim.cmd(name) end })
 end, { desc = "Open command palette" })
 
 -- plan mode
@@ -1859,38 +1968,166 @@ create_command("PoorCLISetPermissions", function(opts)
     end)
 end, { nargs = "?", desc = "Set permission mode" })
 
+create_command("PoorCLIInputLog", function(opts)
+    local cfg = require("poor-cli.config")
+    local notify = require("poor-cli.notify")
+    local mode = (opts.args or ""):match("^%s*(%S*)%s*$") or ""
+    if mode == "" then
+        notify.notify("[poor-cli] log_user_input = "
+            .. tostring(cfg.get("log_user_input"))
+            .. " — usage: :PoorCLIInputLog on|off",
+            vim.log.levels.INFO)
+        return
+    end
+    if mode ~= "on" and mode ~= "off" then
+        notify.notify("[poor-cli] log_user_input must be on|off", vim.log.levels.WARN)
+        return
+    end
+    cfg.config.log_user_input = (mode == "on")
+    notify.notify("[poor-cli] log_user_input = "
+        .. tostring(cfg.config.log_user_input)
+        .. (mode == "on" and " — :PoorCLI* commands + chat sends now tracing to :messages" or ""),
+        vim.log.levels.INFO)
+end, {
+    nargs = "?",
+    desc = "Toggle user-input tracing (on|off)",
+    complete = function() return { "on", "off" } end,
+})
+
+create_command("PoorCLIChatTrace", function(opts)
+    local cfg = require("poor-cli.config")
+    local notify = require("poor-cli.notify")
+    local mode = (opts.args or ""):match("^%s*(%S*)%s*$") or ""
+    if mode == "" then
+        notify.notify(
+            "[poor-cli] chat_trace = " .. tostring(cfg.get("chat_trace") or "off")
+            .. " — usage: :PoorCLIChatTrace off|basic|verbose",
+            vim.log.levels.INFO
+        )
+        return
+    end
+    if mode ~= "off" and mode ~= "basic" and mode ~= "verbose" then
+        notify.notify("[poor-cli] chat_trace must be off|basic|verbose", vim.log.levels.WARN)
+        return
+    end
+    cfg.config.chat_trace = mode
+    notify.notify("[poor-cli] chat_trace = " .. mode, vim.log.levels.INFO)
+    if mode == "verbose" then
+        -- Surface the capability gap at the moment of enabling, not on the
+        -- user's next chat turn. Reset the per-session dedupe so this
+        -- always fires when the user explicitly asks for verbose.
+        local chat = require("poor-cli.chat")
+        if chat._thinking_unsupported_nudge then
+            chat._thinking_unsupported_nudge.key = nil
+        end
+        local supported, label = chat._provider_supports_thinking and chat._provider_supports_thinking()
+        if supported == false then
+            notify.notify(
+                "[poor-cli] heads-up: " .. tostring(label) .. " does not emit chain-of-thought. "
+                .. "Basic traces will fire; thinking brackets will not. "
+                .. "Switch to an EXTENDED_THINKING-capable model to see them.",
+                vim.log.levels.WARN
+            )
+        elseif supported == nil then
+            notify.notify(
+                "[poor-cli] chat_trace=verbose set before provider initialize — "
+                .. "capability will be verified on first turn.",
+                vim.log.levels.INFO
+            )
+        end
+    end
+end, {
+    nargs = "?",
+    desc = "Toggle chat turn tracing (off|basic|verbose)",
+    complete = function() return { "off", "basic", "verbose" } end,
+})
+
 create_command("PoorCLIApiKey", function()
     -- keep in sync with nvim-poor-cli/lua/poor-cli/onboarding.lua::ALL_PROVIDERS
     local providers = {
         "gemini", "openai", "anthropic", "openrouter", "litellm",
         "ollama", "lmstudio", "llama_server", "vllm", "sglang", "hf_tgi", "hf_local",
     }
+    local notify = require("poor-cli.notify")
+
+    local function persist(provider, key)
+        rpc.request("poor-cli/setApiKey", {
+            provider = provider,
+            apiKey = key,
+            persist = true,
+            reloadActiveProvider = true,
+        }, function(_, err)
+            vim.schedule(function()
+                if err then notify.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+                -- clear the stale "invalid" flag locally so chat/inline unblock
+                -- immediately; the next initialize event will refresh with the
+                -- validator's live check against the new key.
+                if type(rpc.capabilities) == "table" then
+                    rpc.capabilities.apiKeyValidity = nil
+                end
+                notify.notify(
+                    "[poor-cli] API key set for " .. provider .. " — chat + completion unblocked",
+                    vim.log.levels.INFO
+                )
+            end)
+        end)
+    end
+
     vim.ui.select(providers, { prompt = "Provider:" }, function(provider)
         if not provider then return end
         vim.ui.input({ prompt = "API key for " .. provider .. ": " }, function(key)
             if not key or key == "" then return end
-            rpc.request("poor-cli/setApiKey", {
-                provider = provider,
-                apiKey = key,
-                persist = true,
-                reloadActiveProvider = true,
-            }, function(_, err)
+            -- Live-validate against the provider's model-list endpoint BEFORE
+            -- persisting. Keyless local providers (ollama, hf_local, vllm,
+            -- etc.) run a reachability probe inside testApiKey instead.
+            notify.notify("[poor-cli] validating key against " .. provider .. "...", vim.log.levels.INFO)
+            rpc.request("poor-cli/testApiKey", { provider = provider, apiKey = key }, function(result, err)
                 vim.schedule(function()
-                    if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
-                    -- clear the stale "invalid" flag locally so chat/inline unblock
-                    -- immediately; the next initialize event will refresh with the
-                    -- validator's live check against the new key.
-                    if type(rpc.capabilities) == "table" then
-                        rpc.capabilities.apiKeyValidity = nil
+                    if err then
+                        notify.notify(
+                            "[poor-cli] validation RPC failed: " .. rpc.format_error(err)
+                                .. " — saving key anyway (couldn't verify). Re-run :PoorCLIApiKey if chat errors later.",
+                            vim.log.levels.WARN
+                        )
+                        persist(provider, key)
+                        return
                     end
-                    require("poor-cli.notify").notify(
-                        "[poor-cli] API key set for " .. provider .. " — chat + completion unblocked",
-                        vim.log.levels.INFO
-                    )
+                    -- Three-state: valid / invalid / unknown. The server
+                    -- returns status so we can distinguish "provably wrong"
+                    -- (401/403 — refuse unless user overrides) from "couldn't
+                    -- verify" (429 / 5xx / timeout / DNS — save optimistically
+                    -- so a transient hiccup doesn't force re-paste).
+                    local status = result and tostring(result.status or "")
+                    local reason = result and result.error or "unknown error"
+                    if status == "valid" or (result and result.valid and status == "") then
+                        notify.notify("[poor-cli] ✓ key valid for " .. provider, vim.log.levels.INFO)
+                        persist(provider, key)
+                        return
+                    end
+                    if status == "unknown" then
+                        notify.notify(
+                            "[poor-cli] couldn't verify key (" .. reason .. ") — saving anyway. "
+                                .. "Chat will surface a clear error if the key is genuinely bad.",
+                            vim.log.levels.WARN
+                        )
+                        persist(provider, key)
+                        return
+                    end
+                    -- status == "invalid" (or legacy false without status) — confirmed bad
+                    vim.ui.select({ "Save anyway", "Discard" }, {
+                        prompt = "Key rejected by " .. provider .. " (" .. reason .. "). Save anyway?",
+                    }, function(choice)
+                        if choice == "Save anyway" then
+                            notify.notify("[poor-cli] saving invalid key on your request", vim.log.levels.WARN)
+                            persist(provider, key)
+                        else
+                            notify.notify("[poor-cli] discarded. Re-run :PoorCLIApiKey to retry.", vim.log.levels.INFO)
+                        end
+                    end)
                 end)
             end)
         end)
     end)
-end, { desc = "Set API key for a provider" })
+end, { desc = "Set API key for a provider (live-validated before save)" })
 
 return M

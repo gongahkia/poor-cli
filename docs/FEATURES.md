@@ -98,19 +98,23 @@ Bulk control via `:PoorCLIPanels {open|close|toggle} [names...]` (opt-in `panels
 - **Streaming indicator** — `▶ streaming… press q to cancel` virt_text (opt-in `streaming_indicator`).
 - **Animated thinking spinner** — 10-frame braille spinner cycles at 80 ms while the model reasons.
 
-## Editor integrations (auto-detected)
+## Editor integrations
 
-- **Telescope** — pickers for files/memories/sessions.
-- **snacks.nvim** — dashboard + notifications.
-- **nvim-notify** — notifications.
+Required (poor-cli refuses to load without these):
+
+- **snacks.nvim** — notifications, pickers, and the dashboard tile.
+- **trouble.nvim** — `:Trouble poor-cli` surfaces assistant findings.
+- **nvim-dap** — `<leader>pb` / `<leader>pB` breakpoint + run shortcuts.
+- **neogit** — commit hook for auto-commit.
+
+Optional (feature degrades or silently skips if missing):
+
 - **blink.cmp / nvim-cmp** — completion source.
 - **gitsigns** — AI hunk glyph (`✱`) on modified lines.
-- **neogit** — commit hook for auto-commit.
 - **oil.nvim** — file mentions from oil buffers.
 - **overseer.nvim** — background-task strategy.
-- **trouble.nvim** — poor-cli findings as a trouble source.
-- **nvim-dap** — breakpoint + run shortcuts.
-- **lualine** — all badges above.
+- **lualine** — status-line badges.
+- **nvim-treesitter** — richer context extraction; falls back to built-in `vim.treesitter`.
 
 ## Timeline & debugging
 
@@ -183,4 +187,4 @@ Minimal matrix to exercise everything with reasonable coverage. Each row is one 
 19. **Automation** — define an `AutomationRule` for a cron trigger; verify it runs.
 20. **Checkpoint rewind** — agent edits → rewind to a prior checkpoint → files restored.
 21. **Session fork** — `:PoorCLISessionsFork`, continue with new session, switch back.
-22. **Notify fallback** — uninstall nvim-notify + snacks; confirm errors still render as one-line + `:messages` detail.
+22. **Layout switch** — `require('poor-cli').setup({ layout = { panels = 'vsplit' } })`; confirm `:PoorCLITasksPanel` now opens as a right-side sidebar instead of a float.

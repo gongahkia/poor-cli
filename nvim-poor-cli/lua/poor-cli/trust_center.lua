@@ -42,8 +42,14 @@ end
 
 local function ensure_window(buf)
     if vim.api.nvim_get_current_buf() ~= buf then
-        vim.cmd("botright split")
-        vim.api.nvim_win_set_buf(0, buf)
+        local float_win = require("poor-cli.float_win")
+        float_win.open(buf, {
+            width = 0.8,
+            height = 0.8,
+            position = "center",
+            title = " poor-cli trust center ",
+            close_keys = { "q", "<Esc>" },
+        })
     end
 end
 
@@ -132,6 +138,33 @@ function M.build_lines(status, state)
     add_section(lines, "Permission rules count")
     add_line(lines, "  rules: " .. tostring(status.permissionRulesCount or counts.total or 0))
     add_action(state, add_line(lines, "  action:"), "view_permissions", "[View permission rules]")
+
+    -- Client-side allow/deny-list (configured via setup({ permission = {...} })).
+    -- Complements the server's permission rules: entries here short-circuit
+    -- the permission modal without involving the backend policy engine.
+    add_section(lines, "Permission allow/deny-list (client)")
+    local ok_cfg, plugin_cfg = pcall(require, "poor-cli.config")
+    local permission_cfg = ok_cfg and plugin_cfg.get and plugin_cfg.get("permission") or {}
+    local allow_list = t(permission_cfg.allow)
+    local deny_list = t(permission_cfg.deny)
+    if #allow_list == 0 and #deny_list == 0 then
+        add_line(lines, "  none configured")
+        add_line(lines, "  set via setup({ permission = { allow = {...}, deny = {...} } })")
+    else
+        add_line(lines, "  allow (" .. #allow_list .. "):")
+        if #allow_list == 0 then
+            add_line(lines, "    none")
+        else
+            for _, entry in ipairs(allow_list) do add_line(lines, "    " .. tostring(entry)) end
+        end
+        add_line(lines, "  deny (" .. #deny_list .. "):")
+        if #deny_list == 0 then
+            add_line(lines, "    none")
+        else
+            for _, entry in ipairs(deny_list) do add_line(lines, "    " .. tostring(entry)) end
+        end
+        add_line(lines, "  note: deny wins over allow; both short-circuit the modal.")
+    end
 
     add_section(lines, "Rollback")
     add_line(lines, "  checkpointing: " .. b(status.checkpointing))

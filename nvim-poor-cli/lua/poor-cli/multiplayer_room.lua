@@ -27,7 +27,10 @@ local function add_event(data)
         tostring(data.event_type or data.eventType or "event"),
         tostring(data.actor or "")
     )
-    table.insert(M.events, 1, text:gsub("%s+$", ""))
+    -- gsub returns (string, count); wrap in parens so table.insert only
+    -- sees the string. Without this, Lua unpacks the count into a fourth
+    -- arg → "wrong number of arguments to 'insert'" on every room event.
+    table.insert(M.events, 1, (text:gsub("%s+$", "")))
     while #M.events > M.max_events do table.remove(M.events) end
 end
 
@@ -95,7 +98,11 @@ function M.render_lines(snapshot)
         for _, member in ipairs(members) do
             if type(member) == "table" then
                 local cid = connection_id(member)
-                local driver = cid ~= "" and cid == active_id or tostring(member.uiRole or member.ui_role or "") == "driver" or member.role == "prompter"
+                -- Driver = the ONE active connection or an explicit uiRole=="driver".
+                -- Being a prompter doesn't automatically make you a driver; a room
+                -- can have multiple prompters with only one driver at a time.
+                local driver = (cid ~= "" and cid == active_id)
+                    or tostring(member.uiRole or member.ui_role or "") == "driver"
                 local marker = driver and " <- driver" or ""
                 local hand = member.handRaised == true or member.hand_raised == true
                 local queue = tonumber(member.queuePosition or member.queue_position) or 0
@@ -198,7 +205,17 @@ end
 
 function M.open()
     if not multiplayer_enabled() then
-        require("poor-cli.notify").notify("[poor-cli] multiplayer.enabled is required for :PoorCLICollab", vim.log.levels.WARN)
+        require("poor-cli.notify").notify(
+            "[poor-cli] :PoorCLIRoom / :PoorCLICollab require multiplayer to be enabled. "
+            .. "Add to your setup:\n\n"
+            .. "  require('poor-cli').setup({\n"
+            .. "    multiplayer = { enabled = true },\n"
+            .. "  })\n\n"
+            .. "Then restart nvim or :PoorCLIRestart. "
+            .. "(This is the default on new installs; you're seeing this because enabled is explicitly false.)",
+            vim.log.levels.WARN,
+            { title = "poor-cli multiplayer", timeout = 10000 }
+        )
         return nil
     end
     local state = tab_state()

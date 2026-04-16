@@ -245,13 +245,17 @@ function M.open(limit)
         vim.bo[M.buf].filetype = "poor-cli-repo-map"
         vim.api.nvim_buf_set_name(M.buf, "[poor-cli repo map]")
     end
-    vim.cmd("botright 92vsplit")
-    M.win = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(M.win, M.buf)
-    vim.wo[M.win].wrap = false
-    vim.wo[M.win].number = false
-    vim.wo[M.win].relativenumber = false
+    local float_win = require("poor-cli.float_win")
+    M.win = float_win.open(M.buf, {
+        width = math.min(100, vim.o.columns - 4),
+        height = math.max(24, vim.o.lines - 4),
+        position = "right",
+        title = " poor-cli repo map ",
+        close_keys = {},
+        wrap = false,
+    })
     vim.keymap.set("n", "q", M.close, { buffer = M.buf, nowait = true, desc = "Close repo map" })
+    vim.keymap.set("n", "<Esc>", M.close, { buffer = M.buf, nowait = true, desc = "Close repo map" })
     vim.keymap.set("n", "r", M.refresh, { buffer = M.buf, nowait = true, desc = "Refresh repo map" })
     vim.keymap.set("n", "<CR>", M.open_current, { buffer = M.buf, nowait = true, desc = "Open repo map file" })
     vim.keymap.set("n", "gl", M.toggle_imports, { buffer = M.buf, nowait = true, desc = "Expand repo map imports" })

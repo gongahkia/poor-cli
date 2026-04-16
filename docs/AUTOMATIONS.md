@@ -149,4 +149,3 @@ Pre-PRD 064, three concepts coexisted: AutomationRule, custom slash commands, an
 
 - `nvim-poor-cli/lua/poor-cli/automations.lua` — Neovim integration.
 - `tests/test_automations.py` — round-trip + scheduler tests.
-- `archive/phase_19_plugin_integrations.md` — overseer/dap/snacks integration.

@@ -35,15 +35,25 @@ M.defaults = {
     completion_model = nil,
     rtk_enabled = true,
 
-    -- Multiplayer remote bridge mode
+    -- Multiplayer. `enabled` is a UI/command gate (unlocks :PoorCLIRoom,
+    -- :PoorCLIUsers, :PoorCLICollab*). `invite` triggers the joiner bridge
+    -- subprocess — only set it when you actually want to connect to a
+    -- remote host. Hosting your own room via :PoorCLICollabQuick does
+    -- not require an invite; enabled alone is enough.
     multiplayer = {
-        enabled = false,
+        enabled = true,
         invite = nil,
     },
     
     -- UI options
     chat_width = 60,
     chat_position = "right",  -- "right" or "left"
+    -- Surface layout: "float" (default) opens panels/scratch as floating windows.
+    -- Set to "vsplit" to restore the legacy right-side sidebar behavior.
+    layout = {
+        panels = "float",
+        scratch = "float",
+    },
     notifications = {
         group = "poor-cli",
         snacks = true,
@@ -148,6 +158,49 @@ M.defaults = {
     -- Verbose RPC echo: show per-request "⏳ method" feedback in :messages.
     -- Disabled by default to reduce terminal noise; enable for debugging.
     verbose_rpc = false,
+
+    -- Per-tool permission allow/deny-list. Complements permission_mode:
+    --   allow = {...} — these tools auto-approve without showing the modal.
+    --   deny  = {...} — these tools auto-reject without showing the modal.
+    -- Entry format:
+    --   "tool_name"            — matches any invocation of that tool
+    --   "tool_name:pattern"    — pattern is a glob (`*` → any). Matches
+    --                             against vim.inspect(args), so e.g.
+    --                             "bash:*pip install*" auto-allows pip
+    --                             installs, "bash:*rm -rf*" auto-denies
+    --                             dangerous deletes.
+    -- deny is checked first; a tool in both lists gets denied.
+    permission = {
+        allow = {},
+        deny = {},
+    },
+
+    -- Session trace. When true, every interesting event flows into a
+    -- unified log line format in :messages:
+    --   [poor-cli log HH:MM:SS.mmm] <category> <detail>
+    -- Categories:
+    --   input  — :PoorCLI* command invocations + chat sends
+    --   rpc    — outgoing RPC method names (forwarded from verbose_rpc)
+    --   state  — server state transitions + api-key validity flips
+    --   event  — tool calls, permission decisions, turn boundaries,
+    --             server crashes, multiplayer member events
+    -- ON by default so bug reports naturally include the trace; turn off
+    -- via :PoorCLIInputLog off if the :messages noise gets in your way.
+    log_user_input = true,
+
+    -- Chat turn tracing:
+    --   "off"     — no trace toasts (default)
+    --   "basic"   — toast when message sent, when provider returns first
+    --               token, and when the turn finishes (tokens + cost + elapsed)
+    --   "verbose" — basic + "💭 thinking started/ended" brackets around
+    --               any chain-of-thought the provider emits.
+    --               Requires a model that reports the EXTENDED_THINKING
+    --               capability (Anthropic Claude with extended thinking,
+    --               OpenAI reasoning-mode models). If the active provider
+    --               doesn't support it, the plugin surfaces a one-time
+    --               notice and the basic traces still fire.
+    -- Toggle at runtime with :PoorCLIChatTrace [off|basic|verbose].
+    chat_trace = "off",
 
     -- opt-in UX features (off by default; set true to enable)
     ux = {

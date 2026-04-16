@@ -30,10 +30,27 @@
 - Python 3.11+
 - `poor-cli` Python package installed: `python3 -m pip install --upgrade 'poor-cli[all]'` (provides `poor-cli-server`)
 - At least one API key: `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
-- **Recommended:** `rcarriga/nvim-notify` OR `folke/snacks.nvim` for pretty multi-line error toasts (plugin falls back to one-line `:messages` echo if neither is present; `:checkhealth poor-cli` warns when missing).
-- Optional: `telescope.nvim` for `:PoorCLICheckpoints` and picker fallbacks
-- Optional: `trouble.nvim` for `:Trouble poor-cli`
-- Optional: `oil.nvim` for `@oil:` chat mentions
+- **Required plugins** (`require('poor-cli').setup()` refuses to load without any of these):
+  - [`folke/snacks.nvim`](https://github.com/folke/snacks.nvim) — notifications + pickers
+  - [`folke/trouble.nvim`](https://github.com/folke/trouble.nvim) — `:Trouble poor-cli` diagnostics list
+  - [`mfussenegger/nvim-dap`](https://github.com/mfussenegger/nvim-dap) — `<leader>pb` / `<leader>pB` breakpoint keymaps
+  - [`NeogitOrg/neogit`](https://github.com/NeogitOrg/neogit) — auto-open-on-commit flow
+
+### Optional integrations
+
+Each integration below enables one extra feature but is not required for poor-cli to start. Missing plugins never produce errors — the affected feature simply doesn't register. Every feature in this table has a parallel path that still works (or a built-in native fallback), so you can skip any of them without losing core functionality.
+
+| Plugin | Feature it enables | If missing |
+|---|---|---|
+| [`stevearc/oil.nvim`](https://github.com/stevearc/oil.nvim) | `@oil:` mention in chat to pick a file via oil's buffer | **Degraded** — `@file:` and `@buffer:` mentions still work |
+| [`hrsh7th/nvim-cmp`](https://github.com/hrsh7th/nvim-cmp) | Registers a `poor-cli` source in nvim-cmp's completion menu | **Degraded** — inline ghost-text completion (`<C-Space>` / `<Tab>`) still works |
+| [`saghen/blink.cmp`](https://github.com/saghen/blink.cmp) | Registers a `poor-cli` source in blink.cmp | **Degraded** — inline ghost-text completion still works |
+| [`lewis6991/gitsigns.nvim`](https://github.com/lewis6991/gitsigns.nvim) | AI-hunk signs in the sign column showing lines edited by the assistant | **Degraded** — `:PoorCLIDiffReview` still shows the same hunks |
+| [`stevearc/overseer.nvim`](https://github.com/stevearc/overseer.nvim) | Mirrors poor-cli tasks into overseer's task list | **Degraded** — `:PoorCLITasksPanel` still shows tasks |
+| [`nvim-lualine/lualine.nvim`](https://github.com/nvim-lualine/lualine.nvim) | Cost / streaming-status component in the statusline | **Degraded** — cost still visible via `:PoorCLICost`, `:PoorCLIStatus` |
+| [`nvim-treesitter/nvim-treesitter`](https://github.com/nvim-treesitter/nvim-treesitter) | Richer context extraction for completion / `:PoorCLIDoc` | **Fallback** — uses native `vim.treesitter` (built into Neovim 0.9+) automatically |
+
+Run `:checkhealth poor-cli` to see which integrations are currently active and which are missing.
 
 ### Lazy.nvim
 
@@ -42,10 +59,10 @@
     "gongahkia/poor-cli",
     submodules = false,
     dependencies = {
-        -- pick ONE for pretty multi-line error toasts; plugin degrades
-        -- gracefully if neither is present but :checkhealth will warn.
-        "rcarriga/nvim-notify",
-        -- or: "folke/snacks.nvim",
+        "folke/snacks.nvim",        -- REQUIRED: notifications + pickers
+        "folke/trouble.nvim",       -- REQUIRED: :Trouble poor-cli
+        "mfussenegger/nvim-dap",    -- REQUIRED: breakpoint keymaps
+        "NeogitOrg/neogit",         -- REQUIRED: auto-open-on-commit
     },
     config = function()
         require("poor-cli").setup({
@@ -60,6 +77,12 @@
 ```lua
 use {
     "gongahkia/poor-cli",
+    requires = {
+        "folke/snacks.nvim",
+        "folke/trouble.nvim",
+        "mfussenegger/nvim-dap",
+        "NeogitOrg/neogit",
+    },
     config = function()
         require("poor-cli").setup({})
     end,
@@ -110,6 +133,13 @@ require("poor-cli").setup({
         group = "poor-cli",
         snacks = true,
     },
+
+    -- Info-panel surface: "float" (default, centered/sidebar floats via
+    -- snacks) or "vsplit" (legacy right-side vertical split).
+    layout = {
+        panels = "float",
+        scratch = "float",
+    },
     
     -- Default chat provider (nil = auto-detect from environment)
     provider = nil,
@@ -155,7 +185,9 @@ require("poor-cli").setup({
 })
 ```
 
-With `snacks.nvim` installed, non-error poor-cli notifications route through `snacks.notify` using the configured `notifications.group`. Error-level notifications stay on `vim.notify`. The optional `snacks.dashboard` section is registered as `poor-cli`; add it to your Snacks dashboard sections to show session cost and active turns.
+All poor-cli notifications route through `snacks.notify` using the configured `notifications.group`. The `snacks.dashboard` section is registered as `poor-cli`; add it to your Snacks dashboard sections to show session cost and active turns.
+
+Info panels (`:PoorCLITasksPanel`, `:PoorCLIAgentsPanel`, `:PoorCLISessionsPanel`, `:PoorCLIAutomationsPanel`) open as right-side sidebar floats by default, with per-row action keymaps (e.g. `<CR>` detail, `x` cancel, `t` toggle, `h` history, `f` fork). Set `layout = { panels = "vsplit" }` to restore the legacy vertical-split sidebar.
 
 ## 🎮 Usage
 

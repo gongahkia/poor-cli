@@ -56,6 +56,4 @@ Or use poor-cli's `/undo` (restores the last checkpoint, which usually correspon
 
 ## See Also
 
-- `docs/archive/phase_14_nvim_observability_panels.md` Agent 14A — Diff Review panel, the alternative to auto-commit.
-- `CHECKPOINTS.md` (if it exists) — checkpoint system details.
 - `HARNESS_PORTABILITY.md` — why every mutation is local + reconstructible.

@@ -115,17 +115,21 @@ function M.open()
         vim.api.nvim_set_current_win(M.win)
     else
         local width = tonumber(cfg().panel_width) or 60
-        vim.cmd("botright " .. width .. "vsplit")
-        M.win = vim.api.nvim_get_current_win()
-        vim.api.nvim_win_set_buf(M.win, buf)
-        vim.wo[M.win].wrap = true             -- let the help/header wrap on narrow panels
-        vim.wo[M.win].linebreak = true        -- wrap at word boundaries, not mid-word
-        vim.wo[M.win].breakindent = true      -- continuation lines keep indent
-        vim.wo[M.win].number = false
-        vim.wo[M.win].relativenumber = false
-        vim.wo[M.win].conceallevel = 0        -- show literal `[[`/`]]` if they ever appear in data
+        local float_win = require("poor-cli.float_win")
+        M.win = float_win.open(buf, {
+            width = width,
+            height = math.max(20, vim.o.lines - 4),
+            position = "right",
+            title = " poor-cli branches ",
+            close_keys = {},
+            wrap = true,
+        })
+        vim.wo[M.win].linebreak = true
+        vim.wo[M.win].breakindent = true
+        vim.wo[M.win].conceallevel = 0
     end
     map("q", M.close, "close branches")
+    map("<Esc>", M.close, "close branches")
     map("r", M.refresh, "refresh branches")
     map("<CR>", function() M.switch(branch_at_cursor()) end, "switch branch")
     map("[[", function() M.switch(branch_at_cursor(), "prev") end, "previous sibling")

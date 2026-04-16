@@ -185,15 +185,19 @@ function M.open()
     if M.win and vim.api.nvim_win_is_valid(M.win) then
         vim.api.nvim_set_current_win(M.win)
     else
-        local width = tonumber(cfg().panel_width) or 90
-        vim.cmd("botright " .. width .. "vsplit")
-        M.win = vim.api.nvim_get_current_win()
-        vim.api.nvim_win_set_buf(M.win, buf)
-        vim.wo[M.win].wrap = false
-        vim.wo[M.win].number = false
-        vim.wo[M.win].relativenumber = false
+        local width = tonumber(cfg().panel_width) or 100
+        local float_win = require("poor-cli.float_win")
+        M.win = float_win.open(buf, {
+            width = math.min(width, vim.o.columns - 4),
+            height = math.max(24, vim.o.lines - 4),
+            position = "center",
+            title = " poor-cli diff review ",
+            close_keys = {},
+            wrap = false,
+        })
     end
     map("q", M.close, "close diff review")
+    map("<Esc>", M.close, "close diff review")
     map("r", M.refresh, "refresh diff review")
     map("a", M.accept_hunk, "accept hunk")
     map("ga", M.accept_hunk, "accept hunk")

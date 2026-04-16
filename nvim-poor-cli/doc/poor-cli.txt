@@ -21,9 +21,18 @@ Features:
 REQUIREMENTS                                            *poor-cli-requirements*
 
 - Neovim 0.9+
-- Python 3.9+
+- Python 3.11+
 - poor-cli installed: `pip install poor-cli`
 - API key for at least one provider
+
+Hard dependencies (setup() refuses to load without these):
+- folke/snacks.nvim       notifications + pickers
+- folke/trouble.nvim      `:Trouble poor-cli` diagnostics list
+- mfussenegger/nvim-dap   `<leader>pb` / `<leader>pB` breakpoints
+- NeogitOrg/neogit        auto-open on commit flow
+
+See nvim-poor-cli/README.md for the install snippet + optional
+integrations (oil, cmp, blink, gitsigns, overseer, lualine).
 
 SETUP                                                   *poor-cli-setup*
 
@@ -61,6 +70,15 @@ auto_restart ~
 ghost_text_hl ~
     Default: "Comment"
     Highlight group for ghost text completions.
+
+                                                        *poor-cli-config.layout*
+layout ~
+    Default: { panels = "float", scratch = "float" }
+    Surface layout for info panels (`:PoorCLITasksPanel`,
+    `:PoorCLIAgentsPanel`, `:PoorCLISessionsPanel`,
+    `:PoorCLIAutomationsPanel`, etc.) and read-only float outputs.
+    Set to `{ panels = "vsplit" }` to restore the legacy right-side
+    vertical-split sidebar instead of floating windows.
 
                                                         *poor-cli-config.trigger_key*
 trigger_key ~
@@ -241,7 +259,7 @@ COMMANDS                                                *poor-cli-commands*
     Toggle assistant diagnostics integration.
 
 :PoorCLICheckpoints                                     *:PoorCLICheckpoints*
-    Browse and restore checkpoints via telescope.nvim.
+    Browse and restore checkpoints via the snacks picker.
 
 :PoorCLIComplete                                        *:PoorCLIComplete*
     Trigger inline completion at cursor.
@@ -337,7 +355,7 @@ TROUBLESHOOTING                                         *poor-cli-troubleshootin
 Server won't start:
 1. Check `poor-cli-server` is in PATH: `which poor-cli-server`
 2. Install if missing: `pip install poor-cli`
-3. Check Python version: `python3 --version` (needs 3.9+)
+3. Check Python version: `python3 --version` (needs 3.11+)
 4. Open the log with `:PoorCLIOpenLog`
 5. Capture a report with `:PoorCLIDoctor` or `:PoorCLITrust`
 

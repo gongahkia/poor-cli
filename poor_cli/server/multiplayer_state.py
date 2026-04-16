@@ -13,6 +13,7 @@ class MultiplayerStateMixin:
                 "Host controls are unavailable inside multiplayer room sessions"
             )
 
+    @staticmethod
     def _normalize_multiplayer_room_names(
         raw_rooms: Any,
         fallback_room: str = "",
@@ -51,6 +52,7 @@ class MultiplayerStateMixin:
 
         return normalized
 
+    @staticmethod
     def _resolve_multiplayer_share_host(bind_host: str) -> str:
         """Resolve a shareable host/IP when binding to wildcard interfaces."""
         host = bind_host.strip()
@@ -68,6 +70,7 @@ class MultiplayerStateMixin:
 
         return "127.0.0.1"
 
+    @staticmethod
     def _build_multiplayer_ice_servers(config: Config) -> List[Dict[str, Any]]:
         """Build ICE server configuration from loaded config and env-backed TURN creds."""
         multiplayer = config.multiplayer
@@ -93,6 +96,7 @@ class MultiplayerStateMixin:
         ice_servers.append(turn_entry)
         return ice_servers
 
+    @staticmethod
     def _is_port_bindable(bind_host: str, port: int) -> bool:
         """Return True when the given host/port pair can be bound."""
         try:
@@ -242,6 +246,7 @@ class MultiplayerStateMixin:
             "rooms": rooms,
         }
 
+    @staticmethod
     def _find_host_room_payload(payload: Dict[str, Any], room_name: str) -> Optional[Dict[str, Any]]:
         rooms = payload.get("rooms")
         if not isinstance(rooms, list):
@@ -311,6 +316,9 @@ class MultiplayerStateMixin:
             port = self._select_multiplayer_port(bind_host, requested_port)
 
             from ..multiplayer import MultiplayerHost
+            # Deferred import avoids the runtime → handlers → multiplayer_state
+            # → runtime circular load path at module-import time.
+            from .runtime import PoorCLIServer
 
             host = MultiplayerHost(
                 bind_host=bind_host,
@@ -443,6 +451,7 @@ class MultiplayerStateMixin:
             "Multiple rooms are active; specify one with `room`."
         )
 
+    @staticmethod
     def _normalize_member_role(raw_role: Any) -> str:
         """Normalize role values used by host-member controls."""
         role_name = str(raw_role or "").strip().lower()

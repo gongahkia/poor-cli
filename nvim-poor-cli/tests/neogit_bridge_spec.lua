@@ -133,14 +133,7 @@ describe("neogit bridge", function()
         assert.are.same({ "feat: ai change" }, vim.api.nvim_buf_get_lines(0, 0, -1, false))
     end)
 
-    it("test_noop_when_neogit_absent", function()
-        fake_modules.neogit = false
-        load_bridge({ edits = { { path = tmp .. "/ai.lua" } } })
-        local done
-        assert.is_false(bridge.open_for_commit("feat: ai change", function(ok, reason)
-            done = { ok = ok, reason = reason }
-        end))
-        assert.are.same({ ok = false, reason = "absent" }, done)
-        assert.is_nil(calls.open)
-    end)
+    -- "noop when neogit absent" test removed: neogit is now a hard
+    -- dependency (see init.lua::setup); open_for_commit no longer has
+    -- a graceful-absent code path.
 end)

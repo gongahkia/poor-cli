@@ -110,13 +110,9 @@ describe("trouble source", function()
         assert.are.equal("poor-cli", calls.refresh)
     end)
 
-    it("test_source_noop_when_trouble_absent", function()
-        fake_modules["trouble"] = false
-        local trouble = require("poor-cli.integrations.trouble")
-        assert.is_false(trouble.setup())
-        assert.is_nil(calls.notify)
-        assert.is_nil(calls.setup)
-    end)
+    -- "noop when trouble absent" test removed: trouble.nvim is now a
+    -- hard dependency (see init.lua::setup); the source no longer has
+    -- a graceful-absent code path.
 
     it("test_source_returns_items_matching_namespace", function()
         local trouble = require("poor-cli.integrations.trouble")
