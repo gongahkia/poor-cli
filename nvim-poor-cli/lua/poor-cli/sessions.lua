@@ -54,57 +54,75 @@ function M.open_picker()
     end)
 end
 
+local function require_id(fargs, verb)
+    local id = fargs[1]
+    if not id or id == "" then
+        notify("usage: :PoorCLISession " .. verb .. " <session-id>", vim.log.levels.WARN)
+        return nil
+    end
+    return id
+end
+
 function M.setup()
-    local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
-    create_command("PoorCLISessions", function() M.open_picker() end, { desc = "Browse sessions" })
-    create_command("PoorCLISessionsPicker", function() M.open_picker() end, { desc = "Browse sessions (alias)" })
-    create_command("PoorCLISessionCreate", function()
-        vim.ui.input({ prompt = "Session name: " }, function(name)
-            if not name or name == "" then return end
-            M.create({ name = name }, function(_, err) vim.schedule(function()
-                if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-                else notify("session created", vim.log.levels.INFO) end
-            end) end)
-        end)
-    end, { desc = "Create session" })
-    create_command("PoorCLISessionSwitch", function(opts)
-        M.switch({ sessionId = opts.args }, function(_, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("session switched", vim.log.levels.INFO) end
-        end) end)
-    end, { nargs = 1, desc = "Switch session" })
-    create_command("PoorCLISessionFork", function(opts)
-        M.fork({ sessionId = opts.args }, function(_, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("session forked", vim.log.levels.INFO) end
-        end) end)
-    end, { nargs = 1, desc = "Fork session" })
-    create_command("PoorCLISessionDestroy", function(opts)
-        M.destroy({ sessionId = opts.args }, function(_, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("session destroyed", vim.log.levels.INFO) end
-        end) end)
-    end, { nargs = 1, desc = "Destroy session" })
-    create_command("PoorCLISessionRename", function(opts)
-        local args = vim.split(opts.args, " ", { trimempty = true })
-        if #args < 2 then notify("usage: :PoorCLISessionRename <id> <name>", vim.log.levels.WARN); return end
-        M.rename({ sessionId = args[1], name = table.concat(args, " ", 2) }, function(_, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("session renamed", vim.log.levels.INFO) end
-        end) end)
-    end, { nargs = "+", desc = "Rename session" })
-    create_command("PoorCLISessionSave", function()
-        M.save({}, function(_, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("session saved", vim.log.levels.INFO) end
-        end) end)
-    end, { desc = "Save session" })
-    create_command("PoorCLISessionRestore", function()
-        M.restore({}, function(_, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("session restored", vim.log.levels.INFO) end
-        end) end)
-    end, { desc = "Restore session" })
+    require("poor-cli.command_spec").install("session", {
+        desc = "Manage conversation sessions",
+        verb_names = { "list", "create", "switch", "fork", "destroy", "rename", "save", "restore", "branches" },
+        verbs = {
+            list = function() M.open_picker() end,
+            create = function()
+                vim.ui.input({ prompt = "Session name: " }, function(name)
+                    if not name or name == "" then return end
+                    M.create({ name = name }, function(_, err) vim.schedule(function()
+                        if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                        else notify("session created", vim.log.levels.INFO) end
+                    end) end)
+                end)
+            end,
+            switch = function(fargs)
+                local id = require_id(fargs, "switch"); if not id then return end
+                M.switch({ sessionId = id }, function(_, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                    else notify("session switched", vim.log.levels.INFO) end
+                end) end)
+            end,
+            fork = function(fargs)
+                local id = require_id(fargs, "fork"); if not id then return end
+                M.fork({ sessionId = id }, function(_, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                    else notify("session forked", vim.log.levels.INFO) end
+                end) end)
+            end,
+            destroy = function(fargs)
+                local id = require_id(fargs, "destroy"); if not id then return end
+                M.destroy({ sessionId = id }, function(_, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                    else notify("session destroyed", vim.log.levels.INFO) end
+                end) end)
+            end,
+            rename = function(fargs)
+                if #fargs < 2 then notify("usage: :PoorCLISession rename <id> <name>", vim.log.levels.WARN); return end
+                local id = fargs[1]
+                local name = table.concat(fargs, " ", 2)
+                M.rename({ sessionId = id, name = name }, function(_, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                    else notify("session renamed", vim.log.levels.INFO) end
+                end) end)
+            end,
+            save = function()
+                M.save({}, function(_, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                    else notify("session saved", vim.log.levels.INFO) end
+                end) end)
+            end,
+            restore = function()
+                M.restore({}, function(_, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                    else notify("session restored", vim.log.levels.INFO) end
+                end) end)
+            end,
+            branches = function() require("poor-cli.branches").open() end,
+        },
+    })
 end
 
 return M

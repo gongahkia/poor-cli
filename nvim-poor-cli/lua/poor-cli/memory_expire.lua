@@ -156,12 +156,9 @@ function M.open()
     M.refresh()
 end
 
-function M.setup()
-    pcall(vim.api.nvim_del_user_command, "PoorCLIMemoryExpire")
-    vim.api.nvim_create_user_command("PoorCLIMemoryExpire", function() M.open() end, {
-        desc = "poor-cli: review + archive expired memories (MH3)",
-    })
-end
+-- setup() intentionally removed: this UI opens via `:PoorCLIMemory expire`.
+-- M.open() remains as the module API called by the memory dispatcher.
+function M.setup() end
 
 -- test hooks
 M._row_for_entry = row_for_entry

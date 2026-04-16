@@ -94,29 +94,36 @@ function M.open_picker()
 end
 
 function M.setup()
-    local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
-    create_command("PoorCLICheckpoints", function() M.open_picker() end, { desc = "Browse checkpoints" })
-    create_command("PoorCLICheckpointCreate", function()
-        vim.ui.input({ prompt = "Checkpoint label: " }, function(label)
-            if not label or label == "" then return end
-            M.create({ label = label }, function(result, err) vim.schedule(function()
-                if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-                else notify("checkpoint created: " .. tostring((result or {}).checkpointId or ""), vim.log.levels.INFO) end
-            end) end)
-        end)
-    end, { desc = "Create checkpoint" })
-    create_command("PoorCLICheckpointPreview", function(opts)
-        M.preview({ checkpointId = opts.args }, function(result, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-            show_lines("[poor-cli checkpoint preview]", preview_lines(opts.args, result), "markdown")
-        end) end)
-    end, { nargs = 1, desc = "Preview checkpoint" })
-    create_command("PoorCLICheckpointGc", function()
-        M.gc({}, function(result, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("gc complete: " .. tostring((result or {}).removedCount or 0) .. " removed", vim.log.levels.INFO) end
-        end) end)
-    end, { desc = "Garbage collect checkpoints" })
+    require("poor-cli.command_spec").install("checkpoint", {
+        desc = "Manage filesystem checkpoints",
+        verb_names = { "list", "create", "preview", "gc" },
+        verbs = {
+            list = function() M.open_picker() end,
+            create = function()
+                vim.ui.input({ prompt = "Checkpoint label: " }, function(label)
+                    if not label or label == "" then return end
+                    M.create({ label = label }, function(result, err) vim.schedule(function()
+                        if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                        else notify("checkpoint created: " .. tostring((result or {}).checkpointId or ""), vim.log.levels.INFO) end
+                    end) end)
+                end)
+            end,
+            preview = function(fargs)
+                local id = fargs[1]
+                if not id or id == "" then notify("usage: :PoorCLICheckpoint preview <id>", vim.log.levels.WARN); return end
+                M.preview({ checkpointId = id }, function(result, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                    show_lines("[poor-cli checkpoint preview]", preview_lines(id, result), "markdown")
+                end) end)
+            end,
+            gc = function()
+                M.gc({}, function(result, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                    else notify("gc complete: " .. tostring((result or {}).removedCount or 0) .. " removed", vim.log.levels.INFO) end
+                end) end)
+            end,
+        },
+    })
 end
 
 return M

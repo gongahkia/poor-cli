@@ -40,11 +40,9 @@ function M.toggle_filetype()
     config.config.completion_filetype_blocklist = blocklist
 end
 
-function M.install()
-    pcall(vim.api.nvim_del_user_command, "PoorCLICompletionReason")
-    pcall(vim.api.nvim_del_user_command, "PoorCLICompletionToggle")
-    vim.api.nvim_create_user_command("PoorCLICompletionReason", function() M.report() end, { desc = "Report inline completion status" })
-    vim.api.nvim_create_user_command("PoorCLICompletionToggle", function() M.toggle_filetype() end, { desc = "Toggle inline completion for current filetype" })
-end
+-- install() intentionally removed: reachable via
+-- `:PoorCLICompletion reason` and `:PoorCLICompletion toggle`.
+-- M.report() and M.toggle_filetype() remain as the module API.
+function M.install() end
 
 return M

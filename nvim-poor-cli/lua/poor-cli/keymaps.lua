@@ -138,21 +138,21 @@ function M.setup()
         -- Get visual selection bounds
         local start_pos = vim.fn.getpos("'<")
         local end_pos = vim.fn.getpos("'>")
-        vim.cmd(start_pos[2] .. "," .. end_pos[2] .. "PoorCLIRefactor")
+        vim.cmd(start_pos[2] .. "," .. end_pos[2] .. "PoorCLIChat refactor")
     end, { desc = "Refactor selection with poor-cli" })
-    
+
     -- Quick explain
     safe_map("v", "<leader>pe", function()
         local start_pos = vim.fn.getpos("'<")
         local end_pos = vim.fn.getpos("'>")
-        vim.cmd(start_pos[2] .. "," .. end_pos[2] .. "PoorCLIExplain")
+        vim.cmd(start_pos[2] .. "," .. end_pos[2] .. "PoorCLIChat explain")
     end, { desc = "Explain selection with poor-cli" })
 
     -- command palette
     local palette_key = config.get("palette_key")
     if palette_key and palette_key ~= "" then
         safe_map("n", palette_key, function()
-            vim.cmd("PoorCLIPalette")
+            vim.cmd("PoorCLIHelp palette")
         end, { desc = "poor-cli command palette" })
     end
 

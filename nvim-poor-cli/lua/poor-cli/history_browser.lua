@@ -60,19 +60,25 @@ function M.open_picker(query)
 end
 
 function M.setup()
-    local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
-    create_command("PoorCLIHistory", function() M.open_picker() end, { desc = "Browse history" })
-    create_command("PoorCLIHistorySearch", function(opts) M.open_picker(opts.args) end, { nargs = 1, desc = "Search history" })
-    create_command("PoorCLIHistoryPicker", function(opts)
-        M.open_picker(opts.args ~= "" and opts.args or nil)
-    end, { nargs = "?", desc = "Browse history (alias)" })
-    create_command("PoorCLIExportConversation", function()
-        M.export({}, function(result, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-            local content = (result or {}).content or (result or {}).markdown or vim.inspect(result)
-            show_lines("[poor-cli export]", content, "markdown")
-        end) end)
-    end, { desc = "Export conversation" })
+    require("poor-cli.command_spec").install("history", {
+        desc = "Browse and export conversation history",
+        verb_names = { "list", "search", "export" },
+        verbs = {
+            list = function() M.open_picker() end,
+            search = function(fargs)
+                local q = table.concat(fargs, " ")
+                if q == "" then notify("usage: :PoorCLIHistory search <query>", vim.log.levels.WARN); return end
+                M.open_picker(q)
+            end,
+            export = function()
+                M.export({}, function(result, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                    local content = (result or {}).content or (result or {}).markdown or vim.inspect(result)
+                    show_lines("[poor-cli export]", content, "markdown")
+                end) end)
+            end,
+        },
+    })
 end
 
 return M

@@ -116,7 +116,7 @@ function M.render_lines(snapshot)
         "",
         "## Navigation",
         "",
-        "- `:PoorCLICostDashboard`",
+        "- `:PoorCLICost dashboard`",
     })
     return lines
 end
@@ -149,7 +149,7 @@ function M.refresh()
 end
 
 function M.open_cost()
-    vim.cmd("PoorCLICostDashboard")
+    vim.cmd("PoorCLICost dashboard")
 end
 
 function M.open()

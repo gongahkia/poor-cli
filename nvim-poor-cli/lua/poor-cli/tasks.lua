@@ -113,58 +113,55 @@ function M.open_picker()
     end)
 end
 
+local function require_id(fargs, verb)
+    local id = fargs[1]
+    if not id or id == "" then
+        notify("usage: :PoorCLITask " .. verb .. " <task-id>", vim.log.levels.WARN)
+        return nil
+    end
+    return id
+end
+
+local function action(method_name, verb, fargs, success_msg)
+    local id = require_id(fargs, verb); if not id then return end
+    rpc.request("poor-cli/" .. method_name, { taskId = id }, function(_, err) vim.schedule(function()
+        if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+        else notify(success_msg, vim.log.levels.INFO) end
+    end) end)
+end
+
 function M.setup()
-    local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
-    create_command("PoorCLITasks", function() M.open_picker() end, { desc = "Browse tasks" })
-    create_command("PoorCLITasksPicker", function() M.open_picker() end, { desc = "Browse tasks (alias)" })
-    create_command("PoorCLITaskCreate", function()
-        vim.ui.input({ prompt = "Task title: " }, function(title)
-            if not title or title == "" then return end
-            vim.ui.input({ prompt = "Task prompt: " }, function(prompt)
-                if not prompt or prompt == "" then return end
-                M.create({ title = title, prompt = prompt }, function(_, err) vim.schedule(function()
-                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-                    else notify("task created", vim.log.levels.INFO) end
+    require("poor-cli.command_spec").install("task", {
+        desc = "Manage durable tasks",
+        verb_names = { "list", "create", "start", "approve", "cancel", "retry", "replay", "show" },
+        verbs = {
+            list = function() M.open_picker() end,
+            create = function()
+                vim.ui.input({ prompt = "Task title: " }, function(title)
+                    if not title or title == "" then return end
+                    vim.ui.input({ prompt = "Task prompt: " }, function(prompt)
+                        if not prompt or prompt == "" then return end
+                        M.create({ title = title, prompt = prompt }, function(_, err) vim.schedule(function()
+                            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                            else notify("task created", vim.log.levels.INFO) end
+                        end) end)
+                    end)
+                end)
+            end,
+            start   = function(fargs) action("startTask",   "start",   fargs, "task started")   end,
+            approve = function(fargs) action("approveTask", "approve", fargs, "task approved")  end,
+            cancel  = function(fargs) action("cancelTask",  "cancel",  fargs, "task cancelled") end,
+            retry   = function(fargs) action("retryTask",   "retry",   fargs, "task retried")   end,
+            replay  = function(fargs) action("replayTask",  "replay",  fargs, "task replayed")  end,
+            show = function(fargs)
+                local id = require_id(fargs, "show"); if not id then return end
+                M.get({ taskId = id }, function(result, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                    show_detail("[poor-cli task " .. id .. "]", result)
                 end) end)
-            end)
-        end)
-    end, { desc = "Create task" })
-    create_command("PoorCLITaskStart", function(opts)
-        M.start({ taskId = opts.args }, function(_, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("task started", vim.log.levels.INFO) end
-        end) end)
-    end, { nargs = 1, desc = "Start task" })
-    create_command("PoorCLITaskApprove", function(opts)
-        M.approve({ taskId = opts.args }, function(_, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("task approved", vim.log.levels.INFO) end
-        end) end)
-    end, { nargs = 1, desc = "Approve task" })
-    create_command("PoorCLITaskCancel", function(opts)
-        M.cancel({ taskId = opts.args }, function(_, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("task cancelled", vim.log.levels.INFO) end
-        end) end)
-    end, { nargs = 1, desc = "Cancel task" })
-    create_command("PoorCLITaskRetry", function(opts)
-        M.retry({ taskId = opts.args }, function(_, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("task retried", vim.log.levels.INFO) end
-        end) end)
-    end, { nargs = 1, desc = "Retry task" })
-    create_command("PoorCLITaskReplay", function(opts)
-        M.replay({ taskId = opts.args }, function(_, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("task replayed", vim.log.levels.INFO) end
-        end) end)
-    end, { nargs = 1, desc = "Replay task" })
-    create_command("PoorCLITaskShow", function(opts)
-        M.get({ taskId = opts.args }, function(result, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-            show_detail("[poor-cli task " .. opts.args .. "]", result)
-        end) end)
-    end, { nargs = 1, desc = "Show task details" })
+            end,
+        },
+    })
 end
 
 return M

@@ -65,140 +65,151 @@ function M.open_picker(query)
     end)
 end
 
+local function require_arg(fargs, verb, label)
+    local v = fargs[1]
+    if not v or v == "" then
+        notify("usage: :PoorCLIMemory " .. verb .. " <" .. (label or "arg") .. ">", vim.log.levels.WARN)
+        return nil
+    end
+    return v
+end
+
 function M.setup()
-    local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
-    create_command("PoorCLIMemory", function() M.open_picker() end, { desc = "Browse memory" })
-    create_command("PoorCLIMemorySave", function()
-        vim.ui.input({ prompt = "Memory key: " }, function(key)
-            if not key or key == "" then return end
-            vim.ui.input({ prompt = "Memory value: " }, function(value)
-                if not value or value == "" then return end
-                M.save({ key = key, value = value }, function(_, err) vim.schedule(function()
+    require("poor-cli.command_spec").install("memory", {
+        desc = "Manage memory entries",
+        verb_names = {
+            "list", "save", "search", "delete", "review",
+            "review-accept", "review-reject", "review-bulk",
+            "expiring", "expire", "expire-run", "sort",
+        },
+        verbs = {
+            list = function() M.open_picker() end,
+            save = function()
+                vim.ui.input({ prompt = "Memory key: " }, function(key)
+                    if not key or key == "" then return end
+                    vim.ui.input({ prompt = "Memory value: " }, function(value)
+                        if not value or value == "" then return end
+                        M.save({ key = key, value = value }, function(_, err) vim.schedule(function()
+                            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                            else notify("memory saved", vim.log.levels.INFO) end
+                        end) end)
+                    end)
+                end)
+            end,
+            search = function(fargs)
+                local q = table.concat(fargs, " ")
+                if q == "" then notify("usage: :PoorCLIMemory search <query>", vim.log.levels.WARN); return end
+                M.open_picker(q)
+            end,
+            delete = function(fargs)
+                local key = require_arg(fargs, "delete", "key"); if not key then return end
+                M.delete({ key = key }, function(_, err) vim.schedule(function()
                     if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-                    else notify("memory saved", vim.log.levels.INFO) end
+                    else notify("memory deleted", vim.log.levels.INFO) end
                 end) end)
-            end)
-        end)
-    end, { desc = "Save memory" })
-    create_command("PoorCLIMemorySearch", function(opts)
-        M.open_picker(opts.args)
-    end, { nargs = 1, desc = "Search memory" })
-    create_command("PoorCLIMemoryDelete", function(opts)
-        M.delete({ key = opts.args }, function(_, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("memory deleted", vim.log.levels.INFO) end
-        end) end)
-    end, { nargs = 1, desc = "Delete memory" })
-    create_command("PoorCLIMemoryReview", function()
-        if not rpc.is_running() then
-            notify("server not running", vim.log.levels.WARN)
-            return
-        end
-        rpc.request("poor-cli/memoryReviewList", {}, function(result, err)
-            vim.schedule(function()
-                if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                local pending = (result or {}).pending or {}
-                local lines = { "# pending memories", "" }
-                if #pending == 0 then
-                    table.insert(lines, "no pending memories")
-                else
-                    for i, m in ipairs(pending) do
-                        table.insert(lines, string.format("## %d. %s [%s]", i, m.name or "?", m.type or "?"))
-                        table.insert(lines, m.description or "")
-                        if m.content and m.content ~= "" then
-                            for _, ln in ipairs(vim.split(m.content, "\n", { plain = true })) do
-                                table.insert(lines, "  " .. ln)
+            end,
+            review = function()
+                if not rpc.is_running() then notify("server not running", vim.log.levels.WARN); return end
+                rpc.request("poor-cli/memoryReviewList", {}, function(result, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                    local pending = (result or {}).pending or {}
+                    local lines = { "# pending memories", "" }
+                    if #pending == 0 then
+                        table.insert(lines, "no pending memories")
+                    else
+                        for i, m in ipairs(pending) do
+                            table.insert(lines, string.format("## %d. %s [%s]", i, m.name or "?", m.type or "?"))
+                            table.insert(lines, m.description or "")
+                            if m.content and m.content ~= "" then
+                                for _, ln in ipairs(vim.split(m.content, "\n", { plain = true })) do
+                                    table.insert(lines, "  " .. ln)
+                                end
                             end
+                            table.insert(lines, "")
+                            table.insert(lines, "  filename: " .. (m.filename or ""))
+                            if m.sourceSessionId and m.sourceSessionId ~= "" then
+                                table.insert(lines, "  source: " .. m.sourceSessionId .. " (" .. (m.extractor or "?") .. ")")
+                            end
+                            table.insert(lines, "")
+                        end
+                        table.insert(lines, "Actions: :PoorCLIMemory review-accept <filename>  /  review-reject <filename>")
+                        table.insert(lines, "Bulk:    :PoorCLIMemory review-bulk accept  /  reject")
+                    end
+                    show_lines("[poor-cli memory review]", lines, "markdown")
+                end) end)
+            end,
+            ["review-accept"] = function(fargs)
+                local fname = require_arg(fargs, "review-accept", "filename"); if not fname then return end
+                rpc.request("poor-cli/memoryReviewAccept", { filename = fname }, function(result, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                    else
+                        local accepted = (result or {}).accepted
+                        notify(accepted and "accepted" or "not found", vim.log.levels.INFO)
+                    end
+                end) end)
+            end,
+            ["review-reject"] = function(fargs)
+                local fname = require_arg(fargs, "review-reject", "filename"); if not fname then return end
+                rpc.request("poor-cli/memoryReviewReject", { filename = fname }, function(_, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                    else notify("rejected", vim.log.levels.INFO) end
+                end) end)
+            end,
+            ["review-bulk"] = function(fargs)
+                local action = (fargs[1] or ""):lower()
+                if action ~= "accept" and action ~= "reject" then
+                    notify("usage: :PoorCLIMemory review-bulk {accept|reject}", vim.log.levels.WARN); return
+                end
+                rpc.request("poor-cli/memoryReviewBulk", { action = action }, function(result, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                    local accepted = (result or {}).accepted or {}
+                    local rejected = (result or {}).rejected or {}
+                    notify(string.format("bulk %s: %d accepted, %d rejected", action, #accepted, #rejected), vim.log.levels.INFO)
+                end) end)
+            end,
+            expiring = function()
+                if not rpc.is_running() then notify("server not running", vim.log.levels.WARN); return end
+                rpc.request("poor-cli/memoryExpiring", {}, function(result, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                    local entries = (result or {}).expiring or {}
+                    local lines = { "# expiring memories", "" }
+                    if #entries == 0 then
+                        table.insert(lines, "no memories due for expiry")
+                        table.insert(lines, "")
+                        table.insert(lines, "(MH3 forgetting policy: feedback never expires; user 365d; project 180d; reference 90d)")
+                    else
+                        for _, m in ipairs(entries) do
+                            table.insert(lines, string.format("- [%s] %s — last accessed %s, hits %d",
+                                m.type or "?", m.name or "?",
+                                m.lastAccessedAt or m.updatedAt or "?",
+                                m.hitCount or 0))
                         end
                         table.insert(lines, "")
-                        table.insert(lines, "  filename: " .. (m.filename or ""))
-                        if m.sourceSessionId and m.sourceSessionId ~= "" then
-                            table.insert(lines, "  source: " .. m.sourceSessionId .. " (" .. (m.extractor or "?") .. ")")
-                        end
-                        table.insert(lines, "")
+                        table.insert(lines, "Run :PoorCLIMemory expire-run to archive these (or expire-run dry).")
                     end
-                    table.insert(lines, "Actions: :PoorCLIMemoryReviewAccept <filename>  /  :PoorCLIMemoryReviewReject <filename>")
-                    table.insert(lines, "Bulk:    :PoorCLIMemoryReviewBulk accept  /  reject")
-                end
-                show_lines("[poor-cli memory review]", lines, "markdown")
-            end)
-        end)
-    end, { desc = "Review pending memory candidates" })
-    create_command("PoorCLIMemoryReviewAccept", function(opts)
-        local fname = opts.args
-        if not fname or fname == "" then notify("filename required", vim.log.levels.WARN); return end
-        rpc.request("poor-cli/memoryReviewAccept", { filename = fname }, function(result, err)
-            vim.schedule(function()
-                if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-                else
-                    local accepted = (result or {}).accepted
-                    notify(accepted and "accepted" or "not found", vim.log.levels.INFO)
-                end
-            end)
-        end)
-    end, { nargs = 1, desc = "Accept a pending memory by filename" })
-    create_command("PoorCLIMemoryReviewReject", function(opts)
-        local fname = opts.args
-        if not fname or fname == "" then notify("filename required", vim.log.levels.WARN); return end
-        rpc.request("poor-cli/memoryReviewReject", { filename = fname }, function(_, err)
-            vim.schedule(function()
-                if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-                else notify("rejected", vim.log.levels.INFO) end
-            end)
-        end)
-    end, { nargs = 1, desc = "Reject a pending memory by filename" })
-    create_command("PoorCLIMemoryReviewBulk", function(opts)
-        local action = (opts.args or ""):lower()
-        if action ~= "accept" and action ~= "reject" then
-            notify("action must be 'accept' or 'reject'", vim.log.levels.WARN); return
-        end
-        rpc.request("poor-cli/memoryReviewBulk", { action = action }, function(result, err)
-            vim.schedule(function()
-                if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                local accepted = (result or {}).accepted or {}
-                local rejected = (result or {}).rejected or {}
-                notify(string.format("bulk %s: %d accepted, %d rejected", action, #accepted, #rejected), vim.log.levels.INFO)
-            end)
-        end)
-    end, { nargs = 1, desc = "Bulk accept|reject pending memories" })
-    create_command("PoorCLIMemoryExpiring", function()
-        if not rpc.is_running() then
-            notify("server not running", vim.log.levels.WARN); return
-        end
-        rpc.request("poor-cli/memoryExpiring", {}, function(result, err)
-            vim.schedule(function()
-                if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                local entries = (result or {}).expiring or {}
-                local lines = { "# expiring memories", "" }
-                if #entries == 0 then
-                    table.insert(lines, "no memories due for expiry")
-                    table.insert(lines, "")
-                    table.insert(lines, "(MH3 forgetting policy: feedback never expires; user 365d; project 180d; reference 90d)")
-                else
-                    for _, m in ipairs(entries) do
-                        table.insert(lines, string.format("- [%s] %s — last accessed %s, hits %d",
-                            m.type or "?", m.name or "?",
-                            m.lastAccessedAt or m.updatedAt or "?",
-                            m.hitCount or 0))
-                    end
-                    table.insert(lines, "")
-                    table.insert(lines, "Run :PoorCLIMemoryExpireRun to archive these (or :PoorCLIMemoryExpireRun dry).")
-                end
-                show_lines("[poor-cli memory expiring]", lines, "markdown")
-            end)
-        end)
-    end, { desc = "List memories due for expiry" })
-    create_command("PoorCLIMemoryExpireRun", function(opts)
-        local dry = (opts.args or ""):lower() == "dry"
-        rpc.request("poor-cli/memoryExpireRun", { dryRun = dry }, function(result, err)
-            vim.schedule(function()
-                if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                local archived = (result or {}).archived or {}
-                local prefix = dry and "dry-run" or "archived"
-                notify(string.format("%s %d memories", prefix, #archived), vim.log.levels.INFO)
-            end)
-        end)
-    end, { nargs = "?", desc = "Archive expired memories (pass 'dry' for preview)" })
+                    show_lines("[poor-cli memory expiring]", lines, "markdown")
+                end) end)
+            end,
+            expire = function() require("poor-cli.memory_expire").open() end,
+            ["expire-run"] = function(fargs)
+                local dry = (fargs[1] or ""):lower() == "dry"
+                rpc.request("poor-cli/memoryExpireRun", { dryRun = dry }, function(result, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                    local archived = (result or {}).archived or {}
+                    local prefix = dry and "dry-run" or "archived"
+                    notify(string.format("%s %d memories", prefix, #archived), vim.log.levels.INFO)
+                end) end)
+            end,
+            sort = function()
+                local next_mode = require("poor-cli.memory_picker").cycle_sort()
+                notify("memory picker sort: " .. next_mode, vim.log.levels.INFO)
+            end,
+        },
+        arg_complete = {
+            ["review-bulk"] = function() return { "accept", "reject" } end,
+            ["expire-run"] = function() return { "dry" } end,
+        },
+    })
 end
 
 return M

@@ -81,55 +81,73 @@ function M.open_picker()
     end)
 end
 
+local function require_id(fargs, verb)
+    local id = fargs[1]
+    if not id or id == "" then
+        notify("usage: :PoorCLIAutomation " .. verb .. " <automation-id>", vim.log.levels.WARN)
+        return nil
+    end
+    return id
+end
+
 function M.setup()
-    local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
-    create_command("PoorCLIAutomations", function() M.open_picker() end, { desc = "Browse automations" })
-    create_command("PoorCLIAutomationsPicker", function() M.open_picker() end, { desc = "Browse automations (alias)" })
-    create_command("PoorCLIAutomationCreate", function()
-        vim.ui.input({ prompt = "Automation name: " }, function(name)
-            if not name or name == "" then return end
-            vim.ui.input({ prompt = "Schedule (cron): " }, function(schedule)
-                if not schedule or schedule == "" then return end
-                vim.ui.input({ prompt = "Prompt: " }, function(prompt)
-                    if not prompt or prompt == "" then return end
-                    M.create({ name = name, schedule = schedule, prompt = prompt }, function(_, err) vim.schedule(function()
-                        if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-                        else notify("automation created", vim.log.levels.INFO) end
-                    end) end)
+    require("poor-cli.command_spec").install("automation", {
+        desc = "Manage scheduled automations",
+        verb_names = { "list", "create", "enable", "disable", "run", "history", "replay" },
+        verbs = {
+            list = function() M.open_picker() end,
+            create = function()
+                vim.ui.input({ prompt = "Automation name: " }, function(name)
+                    if not name or name == "" then return end
+                    vim.ui.input({ prompt = "Schedule (cron): " }, function(schedule)
+                        if not schedule or schedule == "" then return end
+                        vim.ui.input({ prompt = "Prompt: " }, function(prompt)
+                            if not prompt or prompt == "" then return end
+                            M.create({ name = name, schedule = schedule, prompt = prompt }, function(_, err) vim.schedule(function()
+                                if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                                else notify("automation created", vim.log.levels.INFO) end
+                            end) end)
+                        end)
+                    end)
                 end)
-            end)
-        end)
-    end, { desc = "Create automation" })
-    create_command("PoorCLIAutomationEnable", function(opts)
-        M.set_enabled({ automationId = opts.args, enabled = true }, function(_, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("automation enabled", vim.log.levels.INFO) end
-        end) end)
-    end, { nargs = 1, desc = "Enable automation" })
-    create_command("PoorCLIAutomationDisable", function(opts)
-        M.set_enabled({ automationId = opts.args, enabled = false }, function(_, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("automation disabled", vim.log.levels.INFO) end
-        end) end)
-    end, { nargs = 1, desc = "Disable automation" })
-    create_command("PoorCLIAutomationRun", function(opts)
-        M.run_now({ automationId = opts.args }, function(_, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("automation triggered", vim.log.levels.INFO) end
-        end) end)
-    end, { nargs = 1, desc = "Run automation now" })
-    create_command("PoorCLIAutomationHistory", function(opts)
-        M.get_history({ automationId = opts.args }, function(result, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-            show_detail("[poor-cli automation history]", result)
-        end) end)
-    end, { nargs = 1, desc = "Show automation history" })
-    create_command("PoorCLIAutomationReplay", function(opts)
-        M.replay({ automationId = opts.args }, function(_, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("automation replayed", vim.log.levels.INFO) end
-        end) end)
-    end, { nargs = 1, desc = "Replay automation" })
+            end,
+            enable = function(fargs)
+                local id = require_id(fargs, "enable"); if not id then return end
+                M.set_enabled({ automationId = id, enabled = true }, function(_, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                    else notify("automation enabled", vim.log.levels.INFO) end
+                end) end)
+            end,
+            disable = function(fargs)
+                local id = require_id(fargs, "disable"); if not id then return end
+                M.set_enabled({ automationId = id, enabled = false }, function(_, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                    else notify("automation disabled", vim.log.levels.INFO) end
+                end) end)
+            end,
+            run = function(fargs)
+                local id = require_id(fargs, "run"); if not id then return end
+                M.run_now({ automationId = id }, function(_, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                    else notify("automation triggered", vim.log.levels.INFO) end
+                end) end)
+            end,
+            history = function(fargs)
+                local id = require_id(fargs, "history"); if not id then return end
+                M.get_history({ automationId = id }, function(result, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                    show_detail("[poor-cli automation history " .. id .. "]", result)
+                end) end)
+            end,
+            replay = function(fargs)
+                local id = require_id(fargs, "replay"); if not id then return end
+                M.replay({ automationId = id }, function(_, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                    else notify("automation replayed", vim.log.levels.INFO) end
+                end) end)
+            end,
+        },
+    })
 end
 
 return M

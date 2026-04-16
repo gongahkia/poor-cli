@@ -79,10 +79,9 @@ function M.open_picker()
     end })
 end
 
-function M.setup()
-    local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
-    create_command("PoorCLIQueue", function() M.open_picker() end, { desc = "Browse queued prompts" })
-    create_command("PoorCLIQueueClear", function() M.clear() end, { desc = "Clear prompt queue" })
-end
+-- setup() intentionally removed: queue verbs live on the Chat dispatcher
+-- (`:PoorCLIChat queue`, `:PoorCLIChat queue-clear`, `:PoorCLIChat enqueue`).
+-- M.open_picker, M.clear, M.enqueue, M.status remain as the module API.
+function M.setup() end
 
 return M

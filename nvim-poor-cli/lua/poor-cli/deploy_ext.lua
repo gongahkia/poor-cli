@@ -15,51 +15,57 @@ local function open_scratch(title, content, filetype)
     return buf
 end
 
+local function notify(msg, level) require("poor-cli.notify").notify("[poor-cli] " .. msg, level) end
+
 function M.setup()
-    local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
-    create_command("PoorCLIDeployTargets", function()
-        rpc.request("poor-cli/deployTargets", {}, function(result, err) vim.schedule(function()
-            if err then require("poor-cli.notify").notify("[poor-cli] deploy targets: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
-            local lines = { "# Deploy Targets", "" }
-            for _, t in ipairs((result or {}).targets or {}) do
-                local status = t.available and "✓" or "✗"
-                local cfg = t.configFile ~= "" and (" (" .. t.configFile .. ")") or ""
-                table.insert(lines, string.format("  [%s] %s: %s%s", status, t.name, t.description or "", cfg))
-            end
-            if #lines == 2 then table.insert(lines, "  (no targets)") end
-            open_scratch("[poor-cli deploy targets]", table.concat(lines, "\n"))
-        end) end)
-    end, { desc = "List deploy targets" })
-
-    create_command("PoorCLIDeployValidate", function()
-        rpc.request("poor-cli/deployValidate", {}, function(result, err) vim.schedule(function()
-            if err then require("poor-cli.notify").notify("[poor-cli] deploy validate: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
-            local r = result or {}
-            local lines = { "# Pre-Deploy Validation", "", r.valid and "Status: PASS" or "Status: FAIL", "" }
-            for _, issue in ipairs(r.issues or {}) do
-                table.insert(lines, "  - " .. issue)
-            end
-            if r.targets then
-                table.insert(lines, "")
-                table.insert(lines, "Configured targets: " .. table.concat(r.targets, ", "))
-            end
-            open_scratch("[poor-cli deploy validate]", table.concat(lines, "\n"))
-        end) end)
-    end, { desc = "Validate deploy configuration" })
-
-    create_command("PoorCLIDeployHistory", function(opts)
-        local limit = tonumber(opts.args) or 20
-        rpc.request("poor-cli/deployHistory", { limit = limit }, function(result, err) vim.schedule(function()
-            if err then require("poor-cli.notify").notify("[poor-cli] deploy history: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
-            local lines = { "# Deploy History", "" }
-            for _, e in ipairs((result or {}).history or {}) do
-                local status = e.success and "OK" or "FAIL"
-                table.insert(lines, string.format("  [%s] %s %s %s", e.target or "?", status, e.url or "", e.message or ""))
-            end
-            if #lines == 2 then table.insert(lines, "  (no deployments)") end
-            open_scratch("[poor-cli deploy history]", table.concat(lines, "\n"))
-        end) end)
-    end, { nargs = "?", desc = "Show deploy history (optional limit)" })
+    -- Deploy dispatcher is owned by deploy_ext.lua. commands.lua extends it
+    -- with `run`, `preview`, `preview-start`, `preview-stop`, `preview-status`
+    -- via command_spec.extend("deploy", ...).
+    require("poor-cli.command_spec").install("deploy", {
+        desc = "Deployment targets, validation, history, previews",
+        verb_names = { "targets", "validate", "history" },
+        verbs = {
+            targets = function()
+                rpc.request("poor-cli/deployTargets", {}, function(result, err) vim.schedule(function()
+                    if err then notify("deploy targets: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+                    local lines = { "# Deploy Targets", "" }
+                    for _, t in ipairs((result or {}).targets or {}) do
+                        local status = t.available and "✓" or "✗"
+                        local cfg = t.configFile ~= "" and (" (" .. t.configFile .. ")") or ""
+                        table.insert(lines, string.format("  [%s] %s: %s%s", status, t.name, t.description or "", cfg))
+                    end
+                    if #lines == 2 then table.insert(lines, "  (no targets)") end
+                    open_scratch("[poor-cli deploy targets]", table.concat(lines, "\n"))
+                end) end)
+            end,
+            validate = function()
+                rpc.request("poor-cli/deployValidate", {}, function(result, err) vim.schedule(function()
+                    if err then notify("deploy validate: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+                    local r = result or {}
+                    local lines = { "# Pre-Deploy Validation", "", r.valid and "Status: PASS" or "Status: FAIL", "" }
+                    for _, issue in ipairs(r.issues or {}) do table.insert(lines, "  - " .. issue) end
+                    if r.targets then
+                        table.insert(lines, "")
+                        table.insert(lines, "Configured targets: " .. table.concat(r.targets, ", "))
+                    end
+                    open_scratch("[poor-cli deploy validate]", table.concat(lines, "\n"))
+                end) end)
+            end,
+            history = function(fargs)
+                local limit = tonumber(fargs[1]) or 20
+                rpc.request("poor-cli/deployHistory", { limit = limit }, function(result, err) vim.schedule(function()
+                    if err then notify("deploy history: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+                    local lines = { "# Deploy History", "" }
+                    for _, e in ipairs((result or {}).history or {}) do
+                        local status = e.success and "OK" or "FAIL"
+                        table.insert(lines, string.format("  [%s] %s %s %s", e.target or "?", status, e.url or "", e.message or ""))
+                    end
+                    if #lines == 2 then table.insert(lines, "  (no deployments)") end
+                    open_scratch("[poor-cli deploy history]", table.concat(lines, "\n"))
+                end) end)
+            end,
+        },
+    })
 end
 
 return M

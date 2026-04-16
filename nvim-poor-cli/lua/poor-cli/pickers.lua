@@ -98,12 +98,9 @@ end
 function M.backend() return "snacks" end
 function M.detect() return "snacks" end
 
-function M.setup()
-    pcall(vim.api.nvim_del_user_command, "PoorCLIPickerBackend")
-    vim.api.nvim_create_user_command("PoorCLIPickerBackend", function()
-        require("poor-cli.notify").notify("[poor-cli] picker backend: snacks.pick", vim.log.levels.INFO)
-    end, { desc = "Show poor-cli picker backend" })
-end
+-- setup() intentionally removed: picker backend is reported via
+-- `:PoorCLIConfig picker-backend`. M.pick, M.backend, M.detect remain.
+function M.setup() end
 
 function M._reset_for_tests() end
 

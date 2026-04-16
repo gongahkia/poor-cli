@@ -91,7 +91,6 @@ function M.open_model_picker()
 end
 
 function M.setup()
-    local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
     local group = vim.api.nvim_create_augroup("PoorCLIProviderHints", { clear = true })
     vim.api.nvim_create_autocmd("User", {
         group = group,
@@ -102,15 +101,28 @@ function M.setup()
             require("poor-cli.provider_picker").maybe_prompt_hf_latent(info)
         end,
     })
-    create_command("PoorCLIProviders", function() M.open_picker() end, { desc = "Browse providers" })
-    create_command("PoorCLIProvidersPicker", function() M.open_picker() end, { desc = "Browse providers (alias)" })
-    create_command("PoorCLIProviderInfo", function()
-        M.get_info({}, function(result, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-            show_detail("[poor-cli provider info]", result)
-        end) end)
-    end, { desc = "Show active provider info" })
-    create_command("PoorCLIOllamaModels", function() M.open_ollama_picker() end, { desc = "List Ollama models" })
+    local cfg_mgr = require("poor-cli.config_mgr")
+    require("poor-cli.command_spec").install("provider", {
+        desc = "Browse, switch, and inspect AI providers",
+        verb_names = { "list", "info", "switch", "compare", "ollama", "api-key-status", "api-key-purge" },
+        verbs = {
+            list = function() M.open_picker() end,
+            info = function()
+                M.get_info({}, function(result, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                    show_detail("[poor-cli provider info]", result)
+                end) end)
+            end,
+            switch = function() require("poor-cli.provider_picker").open() end,
+            compare = function() require("poor-cli.ux.provider_cost").open() end,
+            ollama = function() M.open_ollama_picker() end,
+            ["api-key-status"] = function() cfg_mgr.api_key_status_view() end,
+            ["api-key-purge"] = function(fargs)
+                local provider = (fargs[1] or ""):match("^%s*(%S+)%s*$")
+                cfg_mgr.api_key_purge_flow(provider)
+            end,
+        },
+    })
 end
 
 return M

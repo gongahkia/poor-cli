@@ -7,7 +7,7 @@ function M.list_commands()
     local all = vim.api.nvim_get_commands({})
     local items = {}
     for name, info in pairs(all) do
-        if name:sub(1, 7) == "PoorCLI" and name:sub(1, 11) ~= "PoorCliQ" then
+        if name:sub(1, 7) == "PoorCLI" then
             table.insert(items, {
                 name = name,
                 desc = (info and info.definition) or "",
@@ -43,9 +43,10 @@ function M.open()
     end)
 end
 
-function M.install()
-    pcall(vim.api.nvim_del_user_command, "PoorCLIPalette")
-    vim.api.nvim_create_user_command("PoorCLIPalette", function() M.open() end, { desc = "poor-cli command palette" })
-end
+-- install() intentionally removed: palette opens via `:PoorCLIHelp palette`.
+-- The ux.command_palette config flag is preserved as a fig leaf for existing
+-- users but no longer gates command registration (it's always reachable via
+-- the Help noun). M.open() remains as the module API.
+function M.install() end
 
 return M

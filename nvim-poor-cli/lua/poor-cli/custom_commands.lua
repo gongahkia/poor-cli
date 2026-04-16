@@ -48,22 +48,10 @@ function M.open_picker()
     end)
 end
 
-function M.setup()
-    local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
-    create_command("PoorCLICommands", function() M.open_picker() end, { desc = "Browse command aliases" })
-    create_command("PoorCLICommandsPicker", function() M.open_picker() end, { desc = "Browse command aliases (alias)" })
-    create_command("PoorCLICommandRun", function(opts)
-        local args = vim.split(opts.args, " ", { trimempty = true })
-        if #args < 1 then notify("usage: :PoorCLICommandRun <name> [args]", vim.log.levels.WARN); return end
-        local name = args[1]
-        local cmd_args = #args > 1 and table.concat(args, " ", 2) or nil
-        local params = { name = name }
-        if cmd_args then params.args = cmd_args end
-        M.run(params, function(_, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("command " .. name .. " executed", vim.log.levels.INFO) end
-        end) end)
-    end, { nargs = "+", desc = "Run command alias" })
-end
+-- setup() intentionally removed: custom command aliases now live under the
+-- Skill noun as `:PoorCLISkill alias-list` / `:PoorCLISkill alias-run <name>`.
+-- M.list/M.get/M.run/M.open_picker remain as the module API called by the
+-- skill dispatcher.
+function M.setup() end
 
 return M

@@ -8,7 +8,6 @@ local FEATURES = {
     command_palette      = "poor-cli.ux.palette",
     streaming_indicator  = "poor-cli.ux.streaming",
     auto_onboarding      = "poor-cli.ux.auto_onboarding",
-    panels_bulk          = "poor-cli.ux.panels_bulk",
     inline_cycle_hint    = "poor-cli.ux.inline_cycle",
     cost_lualine_auto    = "poor-cli.ux.cost_lualine",
     diff_accept_all      = "poor-cli.ux.diff_accept_all",

@@ -105,7 +105,7 @@ local function _warn_thinking_unsupported_once()
     require("poor-cli.notify").notify(
         "[poor-cli] chat_trace=verbose but " .. label .. " does not emit "
         .. "chain-of-thought. Basic traces still fire. Switch to a reasoning-capable "
-        .. "model (e.g. :PoorCLISwitchProvider anthropic claude-sonnet-4-20250514) for "
+        .. "model (e.g. :PoorCLIProvider switch anthropic claude-sonnet-4-20250514) for "
         .. "thinking brackets.",
         vim.log.levels.WARN,
         { title = "poor-cli trace" }
@@ -131,7 +131,7 @@ local function chat_header_lines()
     return {
         "# poor-cli Chat",
         "",
-        "Use `:PoorCLISend` or press `<CR>` at the bottom to send a message.",
+        "Use `:PoorCLIChat send` or press `<CR>` at the bottom to send a message.",
         "",
         "---",
         "",
@@ -1177,7 +1177,7 @@ function M.send(message, opts)
         local provider = tostring(validity.provider or "?")
         local reason = tostring(validity.reason or "server rejected the key")
         local lines = {
-            string.format("%s API key invalid — run :PoorCLIApiKey to fix", provider),
+            string.format("%s API key invalid — run :PoorCLIConfig api-key to fix", provider),
             reason,
             "",
             "Send blocked. Rotate the key, then retry.",
@@ -1304,7 +1304,7 @@ function M._start_streaming_block(event)
             if ln then
                 local new_text
                 if silent_ms >= STALL_THRESHOLD_MS then
-                    new_text = string.format("⚠ no stream for %ds — may be disconnected (check :PoorCLIOpenLog or :PoorCLIStatus)",
+                    new_text = string.format("⚠ no stream for %ds — may be disconnected (check :PoorCLIDiag log-open or :PoorCLIDiag status)",
                         math.floor(silent_ms / 1000))
                 else
                     new_text = string.format("%s Thinking (%s)...",
@@ -2413,20 +2413,20 @@ local SLASH_HANDLERS = {
     ["/clear"]    = function() M.clear() end,
     ["/cancel"]   = function() M.cancel_active_stream("Cancelled by user.") end,
     ["/queue"]    = function() M.open_queue_manager() end,
-    ["/resume"]   = function() vim.cmd("PoorCLISessionRestore") end,
-    ["/sessions"] = function() vim.cmd("PoorCLISessions") end,
-    ["/save"]     = function() vim.cmd("PoorCLISessionSave") end,
-    ["/status"]   = function() vim.cmd("PoorCLIStatus") end,
-    ["/switch"]   = function() vim.cmd("PoorCLISwitchProvider") end,
-    ["/explain"]  = function() vim.cmd("PoorCLIExplain") end,
-    ["/refactor"] = function() vim.cmd("PoorCLIRefactor") end,
-    ["/test"]     = function() vim.cmd("PoorCLITest") end,
-    ["/doc"]      = function() vim.cmd("PoorCLIDoc") end,
+    ["/resume"]   = function() vim.cmd("PoorCLISession restore") end,
+    ["/sessions"] = function() vim.cmd("PoorCLISession list") end,
+    ["/save"]     = function() vim.cmd("PoorCLISession save") end,
+    ["/status"]   = function() vim.cmd("PoorCLIDiag status") end,
+    ["/switch"]   = function() vim.cmd("PoorCLIProvider switch") end,
+    ["/explain"]  = function() vim.cmd("PoorCLIChat explain") end,
+    ["/refactor"] = function() vim.cmd("PoorCLIChat refactor") end,
+    ["/test"]     = function() vim.cmd("PoorCLIChat test") end,
+    ["/doc"]      = function() vim.cmd("PoorCLIChat doc") end,
     ["/commit"]   = function() vim.cmd("PoorCLICommit") end,
-    ["/fix"]      = function() vim.cmd("PoorCLIFixDiagnostics") end,
-    ["/context"]  = function() vim.cmd("PoorCLIContext") end,
-    ["/rules"]    = function() vim.cmd("PoorCLIRules") end,
-    ["/cost"]     = function() vim.cmd("PoorCLICost") end,
+    ["/fix"]      = function() vim.cmd("PoorCLIDiag fix") end,
+    ["/context"]  = function() vim.cmd("PoorCLIContext show") end,
+    ["/rules"]    = function() vim.cmd("PoorCLIConfig rules") end,
+    ["/cost"]     = function() vim.cmd("PoorCLICost show") end,
     ["/audit-export"] = function(line)
         rpc.request("audit/exportRange", parse_audit_export_args(line), function(result, err)
             vim.schedule(function()
@@ -2442,8 +2442,8 @@ local SLASH_HANDLERS = {
             end)
         end)
     end,
-    ["/doctor"]   = function() vim.cmd("PoorCLIDoctor") end,
-    ["/help"]     = function() vim.cmd("PoorCLIHelp") end,
+    ["/doctor"]   = function() vim.cmd("PoorCLIDiag doctor") end,
+    ["/help"]     = function() vim.cmd("PoorCLIHelp palette") end,
 }
 
 M._input_popup = { buf = nil, win = nil, menu_buf = nil, menu_win = nil }
@@ -3062,7 +3062,7 @@ function M.clear()
         vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, {
             "# poor-cli Chat",
             "",
-            "Use `:PoorCLISend` or press `<CR>` at the bottom to send a message.",
+            "Use `:PoorCLIChat send` or press `<CR>` at the bottom to send a message.",
             "",
             "---",
             "",

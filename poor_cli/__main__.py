@@ -54,51 +54,46 @@ from . import __version__
 
 def _render_root_help() -> str:
     return (
-        "usage: poor-cli [subcommand] [options]\n\n"
-        "Interactive surface:\n"
+        "usage: poor-cli <noun> <verb> [options]\n\n"
+        "Interactive / lifecycle:\n"
         "  poor-cli server             Run the JSON-RPC server (for Neovim plugin)\n"
-        "  poor-cli install            Interactive installer and setup wizard\n"
-        "  poor-cli install-info       Inspect install details\n\n"
-        "Headless and automation:\n"
-        "  poor-cli exec              Run one shared-core request from the terminal or CI\n"
-        "  poor-cli task              Manage durable background tasks and worktrees\n"
-        "  poor-cli agent             Manage background agents\n"
-        "  poor-cli automation        Manage AutomationRule triggers and scheduled runs\n"
-        "  poor-cli github-task       Create a task from a GitHub event payload\n\n"
-        "State and session:\n"
-        "  poor-cli session           List, create, fork, or destroy sessions\n"
-        "  poor-cli history           Search, list, or export conversation history\n"
-        "  poor-cli checkpoint        List, create, preview, or restore checkpoints\n"
-        "  poor-cli memory            List, save, search, or delete memory entries\n\n"
-        "Configuration and diagnostics:\n"
-        "  poor-cli config            List, get, set, or toggle configuration values\n"
-        "  poor-cli provider          List, switch, or inspect AI providers\n"
-        "  poor-cli profile           List or apply execution profiles\n"
-        "  poor-cli trust             Show or manage repository trust\n"
-        "  poor-cli doctor            Run structured diagnostics\n"
-        "  poor-cli status            Show session status summary\n"
-        "  poor-cli cost              Show session cost and economy settings\n"
-        "  poor-cli audit             Export or rotate audit logs\n"
-        "  poor-cli policy            Show policy and audit hook status\n"
-        "  poor-cli tools             List available tools\n"
-        "  poor-cli mcp               Show MCP server status\n"
-        "  poor-cli search            Search the codebase\n\n"
-        "Code review and utilities:\n"
-        "  poor-cli review            Review a file or staged diff\n"
-        "  poor-cli commit            Generate a commit message from staged changes\n"
-        "  poor-cli review-pr         Review a GitHub pull request\n"
-        "  poor-cli deploy            Detect and deploy to platforms\n"
-        "  poor-cli preview           Start a web preview server\n"
-        "  poor-cli watch             Monitor files for inline instructions\n\n"
-        "Reuse and integration:\n"
-        "  poor-cli skills            List, inspect, or run repo/user skills\n"
-        "  poor-cli commands          Legacy alias for slash-trigger AutomationRules\n"
-        "  poor-cli server            Run the JSON-RPC server (for Neovim plugin)\n\n"
+        "  poor-cli install            Installer: poor-cli install (run) / poor-cli install info\n"
+        "  poor-cli exec               Run one shared-core request headlessly\n\n"
+        "Work units:\n"
+        "  poor-cli task               Durable background tasks + worktrees\n"
+        "  poor-cli agent              Background agents\n"
+        "  poor-cli automation         Scheduled AutomationRule triggers\n"
+        "  poor-cli pr                 Pull-request workflows (poor-cli pr review <n>, pr task create)\n\n"
+        "State:\n"
+        "  poor-cli session            List, create, fork, or destroy sessions\n"
+        "  poor-cli history            Search, list, or export conversation history\n"
+        "  poor-cli checkpoint         List, create, preview, or restore checkpoints\n"
+        "  poor-cli memory             List, save, search, or delete memory entries\n\n"
+        "Configuration:\n"
+        "  poor-cli config             List, get, set, or toggle configuration\n"
+        "  poor-cli provider           List, switch, or inspect AI providers\n"
+        "  poor-cli profile            List or apply execution profiles\n"
+        "  poor-cli trust              Repository trust management\n\n"
+        "Diagnostics:\n"
+        "  poor-cli diag               doctor | status | policy | tools | mcp\n"
+        "  poor-cli cost               Session cost and economy settings\n"
+        "  poor-cli audit              Export or rotate audit logs\n"
+        "  poor-cli context            Compact, preview, or budget context\n"
+        "  poor-cli search             Search the codebase (and search watch)\n\n"
+        "Code review and delivery:\n"
+        "  poor-cli review             Review a file or staged diff\n"
+        "  poor-cli commit             Generate a commit message from staged changes\n"
+        "  poor-cli deploy             poor-cli deploy run | preview | history | validate\n"
+        "  poor-cli workflow           List/inspect AutomationRule slash-command workflows\n"
+        "  poor-cli services           Manage external long-running services\n\n"
+        "Reuse:\n"
+        "  poor-cli skill              list / show / run repo or user skills; alias-* for slash aliases\n\n"
         "Examples:\n"
-        "  poor-cli\n"
         "  poor-cli exec --prompt \"Summarize this repository\" --plan-only\n"
         "  poor-cli task create --title \"Review docs\" --preset review-only --prompt \"Review README\"\n"
         "  poor-cli automation create --name \"Daily QA\" --every-minutes 60 --prompt \"Run QA checklist\"\n"
+        "  poor-cli diag doctor\n"
+        "  poor-cli pr review 123\n"
         "  poor-cli server --stdio\n\n"
         "Notes:\n"
         "  - The Python package provides `poor-cli-server` for Neovim plugin integration.\n"
@@ -802,7 +797,7 @@ def _run_preview_mode(argv: Sequence[str]) -> int:
 def _run_review_pr_mode(argv: Sequence[str]) -> int:
     """Handle 'poor-cli review-pr <number>'."""
     import argparse
-    parser = argparse.ArgumentParser(prog="poor-cli review-pr")
+    parser = argparse.ArgumentParser(prog="poor-cli pr review")
     parser.add_argument("pr_number", type=int, help="PR number to review")
     parser.add_argument("--post", action="store_true", help="Post review as PR comment")
     parser.add_argument("--json", action="store_true")
@@ -1108,7 +1103,7 @@ def _run_task_mode(argv: Sequence[str]) -> int:
 
 
 def _build_skill_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="poor-cli skills")
+    parser = argparse.ArgumentParser(prog="poor-cli skill")
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
     list_parser = subparsers.add_parser("list")
     list_parser.add_argument("--json", action="store_true")
@@ -1144,7 +1139,7 @@ def _run_skills_mode(argv: Sequence[str]) -> int:
 
 
 def _build_commands_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="poor-cli commands")
+    parser = argparse.ArgumentParser(prog="poor-cli skill alias")
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
     list_parser = subparsers.add_parser("list")
     list_parser.add_argument("--json", action="store_true")
@@ -1689,10 +1684,8 @@ def _main() -> None:
         raise SystemExit(_run_agent_mode(argv[1:]))
     if argv and argv[0] == "task":
         raise SystemExit(_run_task_mode(argv[1:]))
-    if argv and argv[0] == "skills":
-        raise SystemExit(_run_skills_mode(argv[1:]))
-    if argv and argv[0] == "commands":
-        raise SystemExit(_run_commands_mode(argv[1:]))
+    if argv and argv[0] == "skill":
+        raise SystemExit(_run_skill_mode(argv[1:]))
     if argv and argv[0] == "automation":
         raise SystemExit(_run_automation_mode(argv[1:]))
     if argv and argv[0] == "checkpoint":
@@ -1711,16 +1704,8 @@ def _main() -> None:
         raise SystemExit(_run_trust_mode(argv[1:]))
     if argv and argv[0] == "provider":
         raise SystemExit(_run_provider_mode(argv[1:]))
-    if argv and argv[0] == "doctor":
-        raise SystemExit(_run_core_info_command("build_doctor_report", argv[1:], "poor-cli doctor"))
-    if argv and argv[0] == "status":
-        raise SystemExit(_run_core_info_command("build_status_view", argv[1:], "poor-cli status"))
-    if argv and argv[0] == "policy":
-        raise SystemExit(_run_core_info_command("get_policy_status", argv[1:], "poor-cli policy"))
-    if argv and argv[0] == "tools":
-        raise SystemExit(_run_core_info_command("get_available_tools", argv[1:], "poor-cli tools"))
-    if argv and argv[0] == "mcp":
-        raise SystemExit(_run_core_info_command("get_mcp_status", argv[1:], "poor-cli mcp"))
+    if argv and argv[0] == "diag":
+        raise SystemExit(_run_diag_mode(argv[1:]))
     if argv and argv[0] == "cost":
         raise SystemExit(_run_cost_mode(argv[1:]))
     if argv and argv[0] == "audit":
@@ -1737,29 +1722,113 @@ def _main() -> None:
         raise SystemExit(_run_review_file_mode(argv[1:]))
     if argv and argv[0] == "commit":
         raise SystemExit(_run_commit_mode(argv[1:]))
-    if argv and argv[0] == "watch":
-        raise SystemExit(_run_watch_mode(argv[1:]))
     if argv and argv[0] == "deploy":
-        raise SystemExit(_run_deploy_mode(argv[1:]))
-    if argv and argv[0] == "preview":
-        raise SystemExit(_run_preview_mode(argv[1:]))
-    if argv and argv[0] == "review-pr":
-        raise SystemExit(_run_review_pr_mode(argv[1:]))
-    if argv and argv[0] == "github-task":
-        raise SystemExit(_run_github_task_mode(argv[1:]))
+        raise SystemExit(_run_deploy_umbrella(argv[1:]))
+    if argv and argv[0] == "pr":
+        raise SystemExit(_run_pr_mode(argv[1:]))
     if argv and argv[0] == "server":
         raise SystemExit(_run_server_mode(argv[1:]))
     if argv and argv[0] == "install":
-        from .installer import show_landing
-        raise SystemExit(show_landing())
-    if argv and argv[0] == "install-info":
+        raise SystemExit(_run_install_mode(argv[1:]))
+    print(_render_root_help())
+    raise SystemExit(0)
+
+
+def _run_diag_mode(argv: Sequence[str]) -> int:
+    """poor-cli diag {doctor|status|policy|tools|mcp} — consolidated diagnostics."""
+    if not argv:
+        print("usage: poor-cli diag {doctor|status|policy|tools|mcp} [options]")
+        return 2
+    verb = argv[0]
+    rest = argv[1:]
+    mapping = {
+        "doctor": ("build_doctor_report", "poor-cli diag doctor"),
+        "status": ("build_status_view", "poor-cli diag status"),
+        "policy": ("get_policy_status", "poor-cli diag policy"),
+        "tools": ("get_available_tools", "poor-cli diag tools"),
+        "mcp": ("get_mcp_status", "poor-cli diag mcp"),
+    }
+    if verb not in mapping:
+        print(f"poor-cli diag: unknown verb '{verb}' (expected: doctor|status|policy|tools|mcp)")
+        return 2
+    fn, prog = mapping[verb]
+    return _run_core_info_command(fn, rest, prog)
+
+
+def _run_pr_mode(argv: Sequence[str]) -> int:
+    """poor-cli pr {review|task} — pull-request workflows.
+
+    `poor-cli pr review <n>`      was `poor-cli review-pr <n>`.
+    `poor-cli pr task <verb...>`  was `poor-cli github-task <verb...>`.
+    """
+    if not argv:
+        print("usage: poor-cli pr {review|task} [options]")
+        return 2
+    verb = argv[0]
+    rest = argv[1:]
+    if verb == "review":
+        return _run_review_pr_mode(rest)
+    if verb == "task":
+        return _run_github_task_mode(rest)
+    print(f"poor-cli pr: unknown verb '{verb}' (expected: review|task)")
+    return 2
+
+
+def _run_install_mode(argv: Sequence[str]) -> int:
+    """poor-cli install [info] — interactive installer, or show install details."""
+    if argv and argv[0] == "info":
         print(f"poor-cli {__version__}")
         print(f"python: {sys.executable}")
         print("surface: neovim plugin (via JSON-RPC server)")
         print("run: poor-cli server --stdio")
-        raise SystemExit(0)
-    print(_render_root_help())
-    raise SystemExit(0)
+        return 0
+    if argv and argv[0] not in {"", "run"}:
+        print(f"poor-cli install: unknown verb '{argv[0]}' (expected: info, or omit for interactive)")
+        return 2
+    from .installer import show_landing
+    return show_landing()
+
+
+def _run_skill_mode(argv: Sequence[str]) -> int:
+    """poor-cli skill {list|show|run|alias-list|alias-show|alias-run} — skills and
+    the slash-command alias registry (formerly 'commands') collapsed onto one noun.
+    """
+    if not argv:
+        return _run_skills_mode(argv)
+    verb = argv[0]
+    rest = argv[1:]
+    alias_map = {
+        "alias-list": ["list", *rest],
+        "alias-show": ["show", *rest],
+        "alias-run": ["run", *rest],
+    }
+    if verb in alias_map:
+        return _run_commands_mode(alias_map[verb])
+    return _run_skills_mode(argv)
+
+
+def _run_deploy_umbrella(argv: Sequence[str]) -> int:
+    """poor-cli deploy {run|preview|targets|validate|history} — collapse the
+    former top-level `deploy`/`preview` into a single noun. Legacy
+    `poor-cli deploy` (with just flags) now requires the `run` verb.
+    """
+    if not argv:
+        print("usage: poor-cli deploy {run|preview|targets|validate|history} [options]")
+        return 2
+    verb = argv[0]
+    rest = argv[1:]
+    if verb == "run":
+        return _run_deploy_mode(rest)
+    if verb == "preview":
+        return _run_preview_mode(rest)
+    if verb == "targets":
+        return _run_deploy_mode(["--list", *rest])
+    if verb == "validate":
+        return _run_deploy_mode(["--validate", *rest])
+    if verb == "history":
+        return _run_deploy_mode(["--history", *rest])
+    print(f"poor-cli deploy: unknown verb '{verb}' (expected: run|preview|targets|validate|history)")
+    return 2
 
 
 def main() -> None:

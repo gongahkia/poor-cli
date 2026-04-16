@@ -208,40 +208,52 @@ function M.open(opts)
     })
 end
 
+local function notify(msg, level) require("poor-cli.notify").notify("[poor-cli] " .. msg, level) end
+
 function M.setup()
-    local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
-    create_command("PoorCLIPromptList", function() M.open() end, { desc = "Browse saved prompts" })
-    create_command("PoorCLIPromptSave", function()
-        vim.ui.input({ prompt = "Prompt name: " }, function(name)
-            if not name or name == "" then return end
-            vim.ui.input({ prompt = "Prompt content: " }, function(content)
-                if not content or content == "" then return end
-                M.save({ name = name, content = content }, function(_, err) vim.schedule(function()
-                    if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
-                    else require("poor-cli.notify").notify("[poor-cli] prompt saved: " .. name, vim.log.levels.INFO) end
+    require("poor-cli.command_spec").install("prompt", {
+        desc = "Manage saved prompts and turn pins",
+        verb_names = { "list", "save", "load", "delete", "pins" },
+        verbs = {
+            list = function() M.open() end,
+            save = function()
+                vim.ui.input({ prompt = "Prompt name: " }, function(name)
+                    if not name or name == "" then return end
+                    vim.ui.input({ prompt = "Prompt content: " }, function(content)
+                        if not content or content == "" then return end
+                        M.save({ name = name, content = content }, function(_, err) vim.schedule(function()
+                            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                            else notify("prompt saved: " .. name, vim.log.levels.INFO) end
+                        end) end)
+                    end)
+                end)
+            end,
+            load = function(fargs)
+                local name = fargs[1]
+                if not name or name == "" then notify("usage: :PoorCLIPrompt load <name>", vim.log.levels.WARN); return end
+                M.load({ name = name }, function(result, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                    local buf = vim.api.nvim_create_buf(false, true)
+                    vim.bo[buf].buftype = "nofile"
+                    vim.bo[buf].bufhidden = "wipe"
+                    vim.bo[buf].filetype = "markdown"
+                    vim.api.nvim_buf_set_name(buf, "[poor-cli prompt " .. name .. "]")
+                    vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split((result or {}).content or "", "\n", { plain = true }))
+                    vim.cmd("botright split")
+                    vim.api.nvim_win_set_buf(0, buf)
                 end) end)
-            end)
-        end)
-    end, { desc = "Save a prompt" })
-    create_command("PoorCLIPromptLoad", function(opts)
-        M.load({ name = opts.args }, function(result, err) vim.schedule(function()
-            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
-            local buf = vim.api.nvim_create_buf(false, true)
-            vim.bo[buf].buftype = "nofile"
-            vim.bo[buf].bufhidden = "wipe"
-            vim.bo[buf].filetype = "markdown"
-            vim.api.nvim_buf_set_name(buf, "[poor-cli prompt " .. opts.args .. "]")
-            vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split((result or {}).content or "", "\n", { plain = true }))
-            vim.cmd("botright split")
-            vim.api.nvim_win_set_buf(0, buf)
-        end) end)
-    end, { nargs = 1, desc = "Load a saved prompt" })
-    create_command("PoorCLIPromptDelete", function(opts)
-        M.delete({ name = opts.args }, function(_, err) vim.schedule(function()
-            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
-            else require("poor-cli.notify").notify("[poor-cli] prompt deleted: " .. opts.args, vim.log.levels.INFO) end
-        end) end)
-    end, { nargs = 1, desc = "Delete a saved prompt" })
+            end,
+            delete = function(fargs)
+                local name = fargs[1]
+                if not name or name == "" then notify("usage: :PoorCLIPrompt delete <name>", vim.log.levels.WARN); return end
+                M.delete({ name = name }, function(_, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                    else notify("prompt deleted: " .. name, vim.log.levels.INFO) end
+                end) end)
+            end,
+            pins = function() require("poor-cli.pins_list").open() end,
+        },
+    })
 end
 
 return M

@@ -240,7 +240,7 @@ local function stop_startup_feedback(state)
                         -- Server hasn't finished init yet; don't alarm the user.
                         return
                     end
-                    require("poor-cli.notify").notify("[poor-cli] Config probe failed: " .. msg .. ". Run :PoorCLIDoctor", vim.log.levels.WARN)
+                    require("poor-cli.notify").notify("[poor-cli] Config probe failed: " .. msg .. ". Run :PoorCLIDiag doctor", vim.log.levels.WARN)
                     return
                 end
                 local probe_elapsed = 0
@@ -469,10 +469,10 @@ function M.capture_initialize_result(result)
         -- renders in the compact title. Subsequent lines are shown in the
         -- expanded toast body.
         local lines = {
-            string.format("%s API key invalid — run :PoorCLIApiKey to fix", provider),
+            string.format("%s API key invalid — run :PoorCLIConfig api-key to fix", provider),
             reason,
             "",
-            "More options: :PoorCLIOnboarding | :PoorCLIApiKeyStatus",
+            "More options: :PoorCLIHelp onboarding | :PoorCLIProvider api-key-status",
         }
         pcall(require("poor-cli.notify").notify, table.concat(lines, "\n"), vim.log.levels.ERROR, {
             title = "poor-cli",
@@ -1411,7 +1411,7 @@ function M.handle_exit(code)
         schedule_restart()
     else
         update_state("error", "Server exited unexpectedly")
-        notify_with_context("Server exited with code " .. code .. hint .. ". Run :PoorCLIDoctor for diagnostics.", vim.log.levels.ERROR)
+        notify_with_context("Server exited with code " .. code .. hint .. ". Run :PoorCLIDiag doctor for diagnostics.", vim.log.levels.ERROR)
     end
 end
 

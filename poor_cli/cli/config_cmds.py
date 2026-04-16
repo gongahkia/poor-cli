@@ -284,8 +284,7 @@ def run_cost_mode(argv: Sequence[str]) -> int:
     sub.add_parser("cache-clear")
     p_budget = sub.add_parser("budget")
     p_budget.add_argument("template", nargs="?", help="quick_question|code_review|deep_refactor|unlimited")
-    sub.add_parser("pressure") # context pressure
-    sub.add_parser("breakdown") # context breakdown
+    # cost pressure + cost breakdown removed — use `poor-cli context pressure|breakdown`.
     p_compare = sub.add_parser("compare")
     p_compare.add_argument("provider", nargs="?")
     p_compare.add_argument("model", nargs="?")
@@ -329,10 +328,6 @@ def run_cost_mode(argv: Sequence[str]) -> int:
                 if template:
                     return core.apply_budget_template(template)
                 return {"templates": list(PoorCLICore.list_budget_templates().keys())}
-            if cmd == "pressure":
-                return core.get_context_pressure()
-            if cmd == "breakdown":
-                return core.get_context_breakdown()
             if cmd == "compare":
                 provider = getattr(args, "provider", None)
                 model = getattr(args, "model", None)

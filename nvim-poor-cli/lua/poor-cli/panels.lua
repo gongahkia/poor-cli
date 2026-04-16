@@ -416,6 +416,29 @@ local function build_automations_panel()
 end
 
 -- ───────────────────────── Registration ─────────────────────────
+-- Return the set of panel objects matching `names`, or all panels if names is empty.
+local function select_panels(names)
+    if not names or #names == 0 then return M.panels end
+    local sel = {}
+    for _, n in ipairs(names) do
+        if M.panels[n] then sel[n] = M.panels[n] end
+    end
+    return sel
+end
+
+local function apply(method, names)
+    for _, p in pairs(select_panels(names)) do
+        pcall(p[method])
+    end
+end
+
+local function panel_name_complete()
+    local out = {}
+    for n, _ in pairs(M.panels) do table.insert(out, n) end
+    table.sort(out)
+    return out
+end
+
 function M.setup()
     M.panels.tasks = build_tasks_panel()
     M.panels.agents = build_agents_panel()
@@ -426,19 +449,20 @@ function M.setup()
     M.panels.sessions = build_sessions_panel()
     M.panels.automations = build_automations_panel()
 
-    local function create_command(name, fn, opts)
-        pcall(vim.api.nvim_del_user_command, name)
-        vim.api.nvim_create_user_command(name, fn, opts or {})
-    end
-
-    create_command("PoorCLITasksPanel",       function() M.panels.tasks.toggle() end,       { desc = "Toggle poor-cli tasks panel" })
-    create_command("PoorCLIAgentsPanel",      function() M.panels.agents.toggle() end,      { desc = "Toggle poor-cli agents panel" })
-    create_command("PoorCLIHistoryPanel",     function() M.panels.history.toggle() end,     { desc = "Toggle poor-cli history panel" })
-    create_command("PoorCLICheckpointsPanel", function() M.panels.checkpoints.toggle() end, { desc = "Toggle poor-cli checkpoints panel" })
-    create_command("PoorCLIQueuePanel",       function() M.panels.queue.toggle() end,       { desc = "Toggle poor-cli queue panel" })
-    create_command("PoorCLIMemoryPanel",      function() M.panels.memory.toggle() end,      { desc = "Toggle poor-cli memory panel" })
-    create_command("PoorCLISessionsPanel",    function() M.panels.sessions.toggle() end,    { desc = "Toggle poor-cli sessions panel" })
-    create_command("PoorCLIAutomationsPanel", function() M.panels.automations.toggle() end, { desc = "Toggle poor-cli automations panel" })
+    require("poor-cli.command_spec").install("panel", {
+        desc = "Open, close, or toggle poor-cli info panels",
+        verb_names = { "open", "close", "toggle" },
+        verbs = {
+            open   = function(fargs) apply("open", fargs) end,
+            close  = function(fargs) apply("close", fargs) end,
+            toggle = function(fargs) apply("toggle", fargs) end,
+        },
+        arg_complete = {
+            open   = panel_name_complete,
+            close  = panel_name_complete,
+            toggle = panel_name_complete,
+        },
+    })
 
     -- live refresh on status changes
     base.subscribe("PoorCLIPanelsRefresh", { "PoorCLIStatusChanged" }, function()
@@ -449,5 +473,9 @@ function M.setup()
         end
     end)
 end
+
+-- Exported for tests and for :checkhealth.
+M._select_panels = select_panels
+M._panel_name_complete = panel_name_complete
 
 return M

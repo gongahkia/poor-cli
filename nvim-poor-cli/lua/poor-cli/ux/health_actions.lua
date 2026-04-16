@@ -24,17 +24,17 @@ function M.install()
         local warn = health.warn or health.report_warn
 
         start("poor-cli actions")
-        info("Run :PoorCLIOnboarding to configure a provider and API key.")
-        info("Run :PoorCLIStart to start the backend server.")
-        info("Run :PoorCLIStatus to inspect current RPC state.")
-        info("Run :PoorCLIPalette (if ux.command_palette enabled) to browse commands.")
-        info("Run :PoorCLIHome (if ux.home_nav enabled) to close aux panels.")
+        info("Run :PoorCLIHelp onboarding to configure a provider and API key.")
+        info("Run :PoorCLIServer start to start the backend server.")
+        info("Run :PoorCLIDiag status to inspect current RPC state.")
+        info("Run :PoorCLIHelp palette (if ux.command_palette enabled) to browse commands.")
+        info("Run :PoorCLIHelp keymaps (if ux.home_nav enabled) to close aux panels.")
         if not any_key() then
-            warn("No API key detected — :PoorCLIOnboarding will guide you through setup.")
+            warn("No API key detected — :PoorCLIHelp onboarding will guide you through setup.")
         end
         local rpc = require("poor-cli.rpc")
         if not rpc.is_running() then
-            warn("Server not running — :PoorCLIStart to start it.")
+            warn("Server not running — :PoorCLIServer start to start it.")
         end
         return ret
     end

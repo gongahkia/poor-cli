@@ -194,19 +194,18 @@ M.defaults = {
 
     -- opt-in UX features (off by default; set true to enable)
     ux = {
-        command_palette = false,        -- :PoorCLIPalette fuzzy-find across all commands
+        command_palette = false,        -- :PoorCLIHelp palette fuzzy-find across all commands
         streaming_indicator = false,    -- virt_text "[streaming... q cancel]" in chat buffer
         auto_onboarding = false,        -- auto-surface onboarding when API key missing
-        panels_bulk = false,            -- :PoorCLIPanels {open|close|toggle} bulk ops
         inline_cycle_hint = false,      -- ghost-text "1/3" candidate counter
         cost_lualine_auto = false,      -- auto-register cost component in lualine
         diff_accept_all = false,        -- gAA accept-all shortcut in diff review
         context_remove_files = false,   -- 'd' in context panel marks file excluded from next send
-        home_nav = false,               -- :PoorCLIHome close aux windows, return to editor
+        home_nav = false,               -- :PoorCLIHelp keymaps / home-nav: close aux windows, return to editor
         provider_cost_preview = false,  -- cost column in provider picker
         inline_status_lualine = false,  -- realtime inline completion status in lualine
         chat_history_search = false,    -- '?' in chat buffer filters turns
-        completion_reason = false,      -- :PoorCLIStatus shows completion-disabled reason
+        completion_reason = false,      -- :PoorCLIDiag status shows completion-disabled reason
         health_actions = false,         -- :checkhealth entries include actionable cmd hints
     },
 }

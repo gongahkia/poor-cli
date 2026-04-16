@@ -19,7 +19,7 @@ function M.check()
     if any_known_key() then return false end
     local notify = require("poor-cli.notify")
     notify.notify(
-        "[poor-cli] no API key detected. Run :PoorCLIOnboarding to configure a provider.",
+        "[poor-cli] no API key detected. Run :PoorCLIHelp onboarding to configure a provider.",
         vim.log.levels.WARN
     )
     return true

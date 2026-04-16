@@ -83,46 +83,63 @@ function M.open_picker()
     end)
 end
 
+local function require_id(fargs, verb)
+    local id = fargs[1]
+    if not id or id == "" then
+        notify("usage: :PoorCLIAgent " .. verb .. " <agent-id>", vim.log.levels.WARN)
+        return nil
+    end
+    return id
+end
+
 function M.setup()
-    local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
-    create_command("PoorCLIAgents", function() M.open_picker() end, { desc = "Browse agents" })
-    create_command("PoorCLIAgentsPicker", function() M.open_picker() end, { desc = "Browse agents (alias)" })
-    create_command("PoorCLIAgentCreate", function()
-        vim.ui.input({ prompt = "Agent name: " }, function(name)
-            if not name or name == "" then return end
-            vim.ui.input({ prompt = "Agent prompt: " }, function(prompt)
-                if not prompt or prompt == "" then return end
-                M.create({ name = name, prompt = prompt }, function(_, err) vim.schedule(function()
+    require("poor-cli.command_spec").install("agent", {
+        desc = "Manage background agents",
+        verb_names = { "list", "create", "start", "cancel", "logs", "result" },
+        verbs = {
+            list = function() M.open_picker() end,
+            create = function()
+                vim.ui.input({ prompt = "Agent name: " }, function(name)
+                    if not name or name == "" then return end
+                    vim.ui.input({ prompt = "Agent prompt: " }, function(prompt)
+                        if not prompt or prompt == "" then return end
+                        M.create({ name = name, prompt = prompt }, function(_, err) vim.schedule(function()
+                            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                            else notify("agent created", vim.log.levels.INFO) end
+                        end) end)
+                    end)
+                end)
+            end,
+            start = function(fargs)
+                local id = require_id(fargs, "start"); if not id then return end
+                M.start({ agentId = id }, function(_, err) vim.schedule(function()
                     if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-                    else notify("agent created", vim.log.levels.INFO) end
+                    else notify("agent started", vim.log.levels.INFO) end
                 end) end)
-            end)
-        end)
-    end, { desc = "Create agent" })
-    create_command("PoorCLIAgentStart", function(opts)
-        M.start({ agentId = opts.args }, function(_, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("agent started", vim.log.levels.INFO) end
-        end) end)
-    end, { nargs = 1, desc = "Start agent" })
-    create_command("PoorCLIAgentCancel", function(opts)
-        M.cancel({ agentId = opts.args }, function(_, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("agent cancelled", vim.log.levels.INFO) end
-        end) end)
-    end, { nargs = 1, desc = "Cancel agent" })
-    create_command("PoorCLIAgentLogs", function(opts)
-        M.get_logs({ agentId = opts.args }, function(result, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-            show_detail("[poor-cli agent logs]", result)
-        end) end)
-    end, { nargs = 1, desc = "Show agent logs" })
-    create_command("PoorCLIAgentResult", function(opts)
-        M.get_result({ agentId = opts.args }, function(result, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-            show_detail("[poor-cli agent result]", result)
-        end) end)
-    end, { nargs = 1, desc = "Show agent result" })
+            end,
+            cancel = function(fargs)
+                local id = require_id(fargs, "cancel"); if not id then return end
+                M.cancel({ agentId = id }, function(_, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                    else notify("agent cancelled", vim.log.levels.INFO) end
+                end) end)
+            end,
+            logs = function(fargs)
+                local id = require_id(fargs, "logs"); if not id then return end
+                M.get_logs({ agentId = id }, function(result, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                    show_detail("[poor-cli agent logs " .. id .. "]", result)
+                end) end)
+            end,
+            result = function(fargs)
+                local id = require_id(fargs, "result"); if not id then return end
+                M.get_result({ agentId = id }, function(result, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                    show_detail("[poor-cli agent result " .. id .. "]", result)
+                end) end)
+            end,
+        },
+    })
 end
 
 return M

@@ -48,10 +48,10 @@ nvim
 
 60-second path:
 
-1. `:PoorCLIStart` — attach to the backend.
-2. `:PoorCLIChat` — open the chat panel; send with `<CR>`.
-3. `:PoorCLIProviders` — switch provider or model.
-4. `:PoorCLICost` — inspect token and cost state.
+1. `:PoorCLIServer start` — attach to the backend.
+2. `:PoorCLIChat toggle` — open the chat panel; send with `<CR>`.
+3. `:PoorCLIProvider list` — switch provider or model.
+4. `:PoorCLICost show` — inspect token and cost state.
 
 Full walkthrough: [docs/quickstart.md](./docs/quickstart.md).
 

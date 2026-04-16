@@ -52,12 +52,25 @@ describe("ux.home", function()
     end)
 end)
 
-describe("ux.panels_bulk", function()
+describe("panels dispatcher", function()
     before_each(fresh)
 
-    it("install registers :PoorCLIPanels", function()
-        require("poor-cli.ux.panels_bulk").install()
-        assert.is_not_nil(vim.api.nvim_get_commands({})["PoorCLIPanels"])
+    it("setup registers :PoorCLIPanel with open/close/toggle verbs", function()
+        require("poor-cli.panels").setup()
+        assert.is_not_nil(vim.api.nvim_get_commands({})["PoorCLIPanel"])
+        local spec = require("poor-cli.command_spec").get("panel")
+        assert.is_not_nil(spec)
+        assert.are.same({ "open", "close", "toggle" }, spec.verb_names)
+    end)
+
+    it("panel name completion lists every registered panel", function()
+        require("poor-cli.panels").setup()
+        local names = require("poor-cli.panels")._panel_name_complete()
+        table.sort(names)
+        assert.are.same(
+            { "agents", "automations", "checkpoints", "history", "memory", "queue", "sessions", "tasks" },
+            names
+        )
     end)
 end)
 
@@ -193,7 +206,7 @@ describe("config ux defaults", function()
         assert.is_not_nil(ux)
         for _, flag in ipairs({
             "command_palette", "streaming_indicator", "auto_onboarding",
-            "panels_bulk", "inline_cycle_hint", "cost_lualine_auto",
+            "inline_cycle_hint", "cost_lualine_auto",
             "diff_accept_all", "context_remove_files",
             "home_nav", "provider_cost_preview", "inline_status_lualine",
             "chat_history_search", "completion_reason", "health_actions",

@@ -164,11 +164,9 @@ function M.switch(branch_id, direction)
     end)
 end
 
-function M.setup()
-    pcall(vim.api.nvim_del_user_command, "PoorCLIBranches")
-    vim.api.nvim_create_user_command("PoorCLIBranches", function()
-        M.open()
-    end, { desc = "Open poor-cli conversation branches" })
-end
+-- setup() intentionally removed: the branches UI is now reached via
+-- `:PoorCLISession branches`. M.open()/M.close()/M.toggle()/M.refresh()/M.switch()
+-- remain as the module API called by the session dispatcher and chat module.
+function M.setup() end
 
 return M

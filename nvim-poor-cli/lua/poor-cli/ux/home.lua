@@ -47,10 +47,9 @@ function M.go_home()
     return closed
 end
 
-function M.install()
-    pcall(vim.api.nvim_del_user_command, "PoorCLIHome")
-    vim.api.nvim_create_user_command("PoorCLIHome", function() M.go_home() end, { desc = "Close poor-cli panels, return to editor" })
-end
+-- install() intentionally removed: reachable via `:PoorCLIHelp home`.
+-- M.go_home() / M.close_all_aux() remain as the module API.
+function M.install() end
 
 M._is_aux = is_aux -- test hook
 

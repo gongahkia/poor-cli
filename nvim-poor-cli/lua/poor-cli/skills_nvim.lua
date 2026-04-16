@@ -63,15 +63,34 @@ function M.open_picker()
 end
 
 function M.setup()
-    local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
-    create_command("PoorCLISkills", function() M.open_picker() end, { desc = "Browse skills" })
-    create_command("PoorCLISkillsPicker", function() M.open_picker() end, { desc = "Browse skills (alias)" })
-    create_command("PoorCLISkillShow", function(opts)
-        M.get({ name = opts.args }, function(result, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-            show_detail("[poor-cli skill " .. opts.args .. "]", result)
-        end) end)
-    end, { nargs = 1, desc = "Show skill details" })
+    local custom = require("poor-cli.custom_commands")
+    require("poor-cli.command_spec").install("skill", {
+        desc = "Browse skills and custom command aliases",
+        verb_names = { "list", "show", "alias-list", "alias-run" },
+        verbs = {
+            list = function() M.open_picker() end,
+            show = function(fargs)
+                local name = fargs[1]
+                if not name or name == "" then notify("usage: :PoorCLISkill show <name>", vim.log.levels.WARN); return end
+                M.get({ name = name }, function(result, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                    show_detail("[poor-cli skill " .. name .. "]", result)
+                end) end)
+            end,
+            ["alias-list"] = function() custom.open_picker() end,
+            ["alias-run"] = function(fargs)
+                if #fargs < 1 then notify("usage: :PoorCLISkill alias-run <name> [args]", vim.log.levels.WARN); return end
+                local name = fargs[1]
+                local cmd_args = #fargs > 1 and table.concat(fargs, " ", 2) or nil
+                local params = { name = name }
+                if cmd_args then params.args = cmd_args end
+                custom.run(params, function(_, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                    else notify("command " .. name .. " executed", vim.log.levels.INFO) end
+                end) end)
+            end,
+        },
+    })
 end
 
 return M

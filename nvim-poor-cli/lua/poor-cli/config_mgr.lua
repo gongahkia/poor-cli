@@ -72,80 +72,85 @@ function M.open_picker()
 end
 
 function M.setup()
-    local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
-    create_command("PoorCLIConfig", function() M.open_picker() end, { desc = "Browse config" })
-    create_command("PoorCLIConfigPicker", function() M.open_picker() end, { desc = "Browse config (alias)" })
-    create_command("PoorCLIConfigSet", function(opts)
-        local args = vim.split(opts.args, " ", { trimempty = true })
-        if #args < 2 then notify("usage: :PoorCLIConfigSet <key> <value>", vim.log.levels.WARN); return end
-        M.set({ key = args[1], value = table.concat(args, " ", 2) }, function(_, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("config set", vim.log.levels.INFO) end
-        end) end)
-    end, { nargs = "+", desc = "Set config option" })
-    create_command("PoorCLIConfigToggle", function(opts)
-        M.toggle({ key = opts.args }, function(_, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
-            else notify("config toggled", vim.log.levels.INFO) end
-        end) end)
-    end, { nargs = 1, desc = "Toggle config option" })
-    create_command("PoorCLIApiKeyStatus", function()
-        M.get_api_key_status({}, function(result, err) vim.schedule(function()
-            if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-            -- backend returns { providers = {<name> = {configured, source, envVar,
-            -- active, persisted, masked}, ...}, keyring = {...} }
-            local providers = (result or {}).providers or (result or {}).keys or {}
-            local lines = { "# api key status", "" }
-            lines[#lines + 1] = string.format("%-14s %-8s %-12s %-10s %s", "provider", "active", "source", "configured", "masked")
-            lines[#lines + 1] = string.rep("-", 60)
-            -- providers is a dict keyed by name; sort for stable output
-            local names = {}
-            if type(providers) == "table" then
-                for name, _ in pairs(providers) do names[#names + 1] = name end
-            end
-            table.sort(names)
-            for _, name in ipairs(names) do
-                local info = providers[name] or {}
-                lines[#lines + 1] = string.format("%-14s %-8s %-12s %-10s %s",
-                    name,
-                    info.active and "yes" or "-",
-                    tostring(info.source or "none"),
-                    info.configured and "yes" or "no",
-                    tostring(info.masked or ""))
-            end
-            if #names == 0 then
-                lines[#lines + 1] = vim.inspect(result)
-            end
-            lines[#lines + 1] = ""
-            lines[#lines + 1] = "lookup order: keyring → environment → config"
-            lines[#lines + 1] = "to purge a stale keyring entry: :PoorCLIApiKeyPurge <provider>"
-            show_lines("[poor-cli api key status]", lines, "markdown")
-        end) end)
-    end, { desc = "Show API key status (with source column)" })
+    -- config_mgr.lua owns the :PoorCLIConfig dispatcher. Additional verbs are
+    -- added by commands.lua's Config cluster (qa-toggle, input-log, chat-trace,
+    -- permission-mode, permissions-show, permissions-set, sandbox,
+    -- context-budget, exec-profile, instructions, rules, picker-backend,
+    -- api-key) via command_spec.extend("config", ...).
+    require("poor-cli.command_spec").install("config", {
+        desc = "Browse and mutate configuration",
+        verb_names = { "list", "set", "toggle" },
+        verbs = {
+            list = function() M.open_picker() end,
+            set = function(fargs)
+                if #fargs < 2 then notify("usage: :PoorCLIConfig set <key> <value>", vim.log.levels.WARN); return end
+                M.set({ key = fargs[1], value = table.concat(fargs, " ", 2) }, function(_, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                    else notify("config set", vim.log.levels.INFO) end
+                end) end)
+            end,
+            toggle = function(fargs)
+                local key = fargs[1]
+                if not key or key == "" then notify("usage: :PoorCLIConfig toggle <key>", vim.log.levels.WARN); return end
+                M.toggle({ key = key }, function(_, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                    else notify("config toggled", vim.log.levels.INFO) end
+                end) end)
+            end,
+        },
+    })
+end
 
-    create_command("PoorCLIApiKeyPurge", function(opts)
-        local provider = (opts.args or ""):match("^%s*(%S+)%s*$")
-        if not provider or provider == "" then
-            notify("usage: :PoorCLIApiKeyPurge <provider> — e.g. openai, anthropic", vim.log.levels.WARN)
-            return
+-- Helpers exposed for the Provider dispatcher's api-key-* verbs. Implemented
+-- here because the underlying RPCs (getApiKeyStatus, purgeApiKey) are already
+-- imported at the top of this file.
+function M.api_key_status_view()
+    M.get_api_key_status({}, function(result, err) vim.schedule(function()
+        if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+        local providers = (result or {}).providers or (result or {}).keys or {}
+        local lines = { "# api key status", "" }
+        lines[#lines + 1] = string.format("%-14s %-8s %-12s %-10s %s", "provider", "active", "source", "configured", "masked")
+        lines[#lines + 1] = string.rep("-", 60)
+        local names = {}
+        if type(providers) == "table" then
+            for name, _ in pairs(providers) do names[#names + 1] = name end
         end
-        local choice = vim.fn.confirm(
-            "Delete stored API key for '" .. provider .. "' from the OS keyring?\n"
-            .. "After purge, the next key lookup falls through to the $" .. provider:upper() .. "_API_KEY env var or config file.",
-            "&Yes\n&No", 2
-        )
-        if choice ~= 1 then
-            notify("purge cancelled", vim.log.levels.INFO)
-            return
+        table.sort(names)
+        for _, name in ipairs(names) do
+            local info = providers[name] or {}
+            lines[#lines + 1] = string.format("%-14s %-8s %-12s %-10s %s",
+                name,
+                info.active and "yes" or "-",
+                tostring(info.source or "none"),
+                info.configured and "yes" or "no",
+                tostring(info.masked or ""))
         end
-        M.purge_api_key({ provider = provider }, function(result, err)
-            vim.schedule(function()
-                if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                local deleted = result and result.keyringDeleted and "keyring entry deleted" or "no keyring entry found"
-                notify(string.format("%s: %s. Config cleared. Re-run :PoorCLIApiKey or restart nvim to pick up env var.", provider, deleted), vim.log.levels.INFO)
-            end)
+        if #names == 0 then lines[#lines + 1] = vim.inspect(result) end
+        lines[#lines + 1] = ""
+        lines[#lines + 1] = "lookup order: keyring → environment → config"
+        lines[#lines + 1] = "to purge a stale entry: :PoorCLIProvider api-key-purge <provider>"
+        show_lines("[poor-cli api key status]", lines, "markdown")
+    end) end)
+end
+
+function M.api_key_purge_flow(provider)
+    if not provider or provider == "" then
+        notify("usage: :PoorCLIProvider api-key-purge <provider> — e.g. openai, anthropic", vim.log.levels.WARN)
+        return
+    end
+    local choice = vim.fn.confirm(
+        "Delete stored API key for '" .. provider .. "' from the OS keyring?\n"
+        .. "After purge, the next key lookup falls through to the $" .. provider:upper() .. "_API_KEY env var or config file.",
+        "&Yes\n&No", 2
+    )
+    if choice ~= 1 then notify("purge cancelled", vim.log.levels.INFO); return end
+    M.purge_api_key({ provider = provider }, function(result, err)
+        vim.schedule(function()
+            if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+            local deleted = result and result.keyringDeleted and "keyring entry deleted" or "no keyring entry found"
+            notify(string.format("%s: %s. Config cleared. Re-run :PoorCLIProvider api-key or restart nvim.", provider, deleted), vim.log.levels.INFO)
         end)
-    end, { nargs = 1, desc = "Delete a provider's API key from the OS keyring" })
+    end)
 end
 
 return M

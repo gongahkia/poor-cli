@@ -164,11 +164,8 @@ M.jump_to_chat = function() end -- legacy no-op
 
 function M.toggle() M.open() end
 
-function M.setup()
-    pcall(vim.api.nvim_del_user_command, "PoorCLIPinsList")
-    vim.api.nvim_create_user_command("PoorCLIPinsList", function() M.toggle() end, {
-        desc = "poor-cli: browse/unpin cross-session turn pins",
-    })
-end
+-- setup() intentionally removed: pins open via `:PoorCLIPrompt pins`. M.open()
+-- and related helpers remain as the module API called by the prompt dispatcher.
+function M.setup() end
 
 return M

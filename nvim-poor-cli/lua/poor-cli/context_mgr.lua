@@ -35,71 +35,78 @@ local function open_float(title, lines)
     return buf
 end
 
+local function notify(msg, level) require("poor-cli.notify").notify("[poor-cli] " .. msg, level) end
+
 function M.setup()
-    local function create_command(name, fn, opts) pcall(vim.api.nvim_del_user_command, name); vim.api.nvim_create_user_command(name, fn, opts or {}) end
-    create_command("PoorCLIContextPreview", function()
-        M.preview({}, function(result, err) vim.schedule(function()
-            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
-            local r = result or {}
-            local lines = {
-                "# context preview", "",
-                "Total tokens: " .. tostring(r.totalTokens or 0),
-                "Budget tokens: " .. tostring(r.budgetTokens or 0),
-                "Truncated: " .. tostring(r.truncated == true),
-                "",
-            }
-            for _, item in ipairs(r.selected or {}) do
-                if type(item) == "table" then
-                    table.insert(lines, "- " .. tostring(item.path or "") .. " [" .. tostring(item.source or "auto") .. "]")
-                end
-            end
-            if type(r.excluded) == "table" and #r.excluded > 0 then
-                table.insert(lines, "")
-                table.insert(lines, "Excluded:")
-                for _, item in ipairs(r.excluded) do
-                    if type(item) == "table" then
-                        table.insert(lines, "- " .. tostring(item.path or "") .. " [" .. tostring(item.excludedReason or "") .. "]")
+    require("poor-cli.command_spec").install("context", {
+        desc = "Inspect and compact the active context",
+        verb_names = { "preview", "compact", "mutation-preview" },
+        verbs = {
+            preview = function()
+                M.preview({}, function(result, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                    local r = result or {}
+                    local lines = {
+                        "# context preview", "",
+                        "Total tokens: " .. tostring(r.totalTokens or 0),
+                        "Budget tokens: " .. tostring(r.budgetTokens or 0),
+                        "Truncated: " .. tostring(r.truncated == true),
+                        "",
+                    }
+                    for _, item in ipairs(r.selected or {}) do
+                        if type(item) == "table" then
+                            table.insert(lines, "- " .. tostring(item.path or "") .. " [" .. tostring(item.source or "auto") .. "]")
+                        end
                     end
-                end
-            end
-            open_float("context preview", lines)
-        end) end)
-    end, { desc = "Preview context" })
-    create_command("PoorCLIContextCompact", function()
-        M.compact({}, function(result, err) vim.schedule(function()
-            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR)
-            else
-                local r = result or {}
-                require("poor-cli.notify").notify("[poor-cli] compacted: " .. tostring(r.removedTokens or 0) .. " tokens freed", vim.log.levels.INFO)
-            end
-        end) end)
-    end, { desc = "Compact context" })
-    create_command("PoorCLIMutationPreview", function()
-        M.preview_mutation({}, function(result, err) vim.schedule(function()
-            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
-            local r = result or {}
-            local lines = {
-                "# mutation preview", "",
-                "Intent: " .. tostring(r.intent or ""),
-                "Files affected: " .. tostring(r.fileCount or 0),
-                "Checkpoint: " .. tostring(r.checkpointId or "none"),
-                "",
-            }
-            for _, f in ipairs(r.files or {}) do
-                if type(f) == "table" then
-                    table.insert(lines, "- " .. tostring(f.path or f) .. " [" .. tostring(f.action or "") .. "]")
-                else
-                    table.insert(lines, "- " .. tostring(f))
-                end
-            end
-            if r.diff and r.diff ~= "" then
-                table.insert(lines, "")
-                table.insert(lines, "Diff:")
-                table.insert(lines, r.diff)
-            end
-            open_float("mutation preview", lines)
-        end) end)
-    end, { desc = "Preview mutation" })
+                    if type(r.excluded) == "table" and #r.excluded > 0 then
+                        table.insert(lines, "")
+                        table.insert(lines, "Excluded:")
+                        for _, item in ipairs(r.excluded) do
+                            if type(item) == "table" then
+                                table.insert(lines, "- " .. tostring(item.path or "") .. " [" .. tostring(item.excludedReason or "") .. "]")
+                            end
+                        end
+                    end
+                    open_float("context preview", lines)
+                end) end)
+            end,
+            compact = function()
+                M.compact({}, function(result, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
+                    else
+                        local r = result or {}
+                        notify("compacted: " .. tostring(r.removedTokens or 0) .. " tokens freed", vim.log.levels.INFO)
+                    end
+                end) end)
+            end,
+            ["mutation-preview"] = function()
+                M.preview_mutation({}, function(result, err) vim.schedule(function()
+                    if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                    local r = result or {}
+                    local lines = {
+                        "# mutation preview", "",
+                        "Intent: " .. tostring(r.intent or ""),
+                        "Files affected: " .. tostring(r.fileCount or 0),
+                        "Checkpoint: " .. tostring(r.checkpointId or "none"),
+                        "",
+                    }
+                    for _, f in ipairs(r.files or {}) do
+                        if type(f) == "table" then
+                            table.insert(lines, "- " .. tostring(f.path or f) .. " [" .. tostring(f.action or "") .. "]")
+                        else
+                            table.insert(lines, "- " .. tostring(f))
+                        end
+                    end
+                    if r.diff and r.diff ~= "" then
+                        table.insert(lines, "")
+                        table.insert(lines, "Diff:")
+                        table.insert(lines, r.diff)
+                    end
+                    open_float("mutation preview", lines)
+                end) end)
+            end,
+        },
+    })
 end
 
 return M
