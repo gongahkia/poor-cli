@@ -46,6 +46,14 @@ LOGOS: dict[str, str] = {
     "git.png":        f"{SI}/git/F05032",
     "aiohttp.png":    f"{SI}/aiohttp/2C5BB4",
     "json.png":       f"{SI}/json/000000",
+    "sqlite.png":     f"{SI}/sqlite/003B57",
+    "gear.png":       f"{SI}/gnuprivacyguard/0093DD",  # generic "service" stand-in
+    "shield.png":     f"{SI}/cloudflare/F38020",       # generic "security/perm" stand-in
+    # Plugin-dep avatars (no simpleicons entry). GitHub org avatars are stable.
+    "snacks.png":     "https://avatars.githubusercontent.com/u/292349?s=240&v=4",      # folke
+    "trouble.png":    "https://avatars.githubusercontent.com/u/292349?s=240&v=4",      # folke
+    "dap.png":        "https://avatars.githubusercontent.com/u/700359?s=240&v=4",      # mfussenegger
+    "neogit.png":     "https://avatars.githubusercontent.com/u/101884448?s=240&v=4",   # NeogitOrg
 }
 
 
@@ -146,17 +154,17 @@ def build() -> None:
 
             with Cluster("nvim-poor-cli (Lua)", graph_attr={"bgcolor": "#f4faff", "style": "rounded"}):
                 lua_runtime = Custom("Lua runtime", logo("lua.png"))
-                chat_mod = Custom("chat.lua\n(chat panel,\nstreaming, tools)", "")
-                rpc_mod = Custom("rpc.lua\n(stdio JSON-RPC,\nstate machine)", "")
-                panels_mod = Custom("panels/*\n(tasks, agents,\ntimeline, diff)", "")
-                inline_mod = Custom("inline.lua\n(ghost-text\ncompletion)", "")
-                mp_mod = Custom("multiplayer_room.lua\n(collab UI)", "")
+                chat_mod = Custom("chat.lua\n(chat panel,\nstreaming, tools)", logo("lua.png"))
+                rpc_mod = Custom("rpc.lua\n(stdio JSON-RPC,\nstate machine)", logo("lua.png"))
+                panels_mod = Custom("panels/*\n(tasks, agents,\ntimeline, diff)", logo("lua.png"))
+                inline_mod = Custom("inline.lua\n(ghost-text\ncompletion)", logo("lua.png"))
+                mp_mod = Custom("multiplayer_room.lua\n(collab UI)", logo("lua.png"))
 
             with Cluster("Required plugins", graph_attr={"bgcolor": "#fffaf2", "style": "rounded"}):
-                snacks = Custom("snacks.nvim\n(notify + pickers)", logo("snacks.png"))
-                trouble = Custom("trouble.nvim\n(diagnostics)", logo("trouble.png"))
-                dap = Custom("nvim-dap\n(breakpoints)", "")
-                neogit = Custom("neogit\n(commit flow)", "")
+                snacks = Custom("snacks.nvim\n(notify + pickers)", logo("neovim.png"))
+                trouble = Custom("trouble.nvim\n(diagnostics)", logo("neovim.png"))
+                dap = Custom("nvim-dap\n(breakpoints)", logo("neovim.png"))
+                neogit = Custom("neogit\n(commit flow)", logo("neovim.png"))
 
         # --------------------------------------------------------------
         # Transport
@@ -168,21 +176,21 @@ def build() -> None:
             py_runtime = Custom("Python", logo("python.png"))
 
             with Cluster("core", graph_attr={"bgcolor": "white", "style": "rounded,dotted"}):
-                core_loop = Custom("agent loop\n(turn lifecycle,\ntool dispatch)", "")
-                handlers = Custom("RPC handlers\n(chat / tools /\nsession / config)", "")
-                tool_reg = Custom("tool registry\n(53 tools: bash,\nread/write, grep…)", "")
+                core_loop = Custom("agent loop\n(turn lifecycle,\ntool dispatch)", logo("python.png"))
+                handlers = Custom("RPC handlers\n(chat / tools /\nsession / config)", logo("python.png"))
+                tool_reg = Custom("tool registry\n(53 tools: bash,\nread/write, grep…)", logo("python.png"))
 
             with Cluster("stateful services", graph_attr={"bgcolor": "white", "style": "rounded,dotted"}):
-                session_mgr = Custom("session +\nhistory manager", "")
-                checkpoint = Custom("checkpoint\nmanager", "")
-                perm = Custom("permission +\naudit + sandbox", "")
-                cost = Custom("cost tracker\n(per-turn + daily)", "")
-                file_cache = Custom("file cache +\nindexer", "")
+                session_mgr = Custom("session +\nhistory manager", logo("python.png"))
+                checkpoint = Custom("checkpoint\nmanager", logo("python.png"))
+                perm = Custom("permission +\naudit + sandbox", logo("shield.png"))
+                cost = Custom("cost tracker\n(per-turn + daily)", logo("python.png"))
+                file_cache = Custom("file cache +\nindexer", logo("python.png"))
 
             with Cluster("multiplayer", graph_attr={"bgcolor": "white", "style": "rounded,dotted"}):
-                mp_host = Custom("signaling host\n(aiohttp /rpc)", "")
+                mp_host = Custom("signaling host\n(aiohttp /rpc)", logo("aiohttp.png"))
                 mp_bridge = Custom("P2P bridge\n(aiortc)", logo("webrtc.png"))
-                mp_session = Custom("session layer\n(roles, queue,\nagenda)", "")
+                mp_session = Custom("session layer\n(roles, queue,\nagenda)", logo("python.png"))
 
         # --------------------------------------------------------------
         # External providers
@@ -196,8 +204,8 @@ def build() -> None:
         # Repo + local state
         with Cluster("local state", graph_attr={"bgcolor": "#f7fbf7", "style": "rounded"}):
             repo = Custom("repo\n(.poor-cli/ per-repo\nconfig + checkpoints)", logo("git.png"))
-            keyring = Custom("OS keyring\n(provider API keys)", "")
-            repo_index = Custom("repo index\n(PageRank,\nsymbols, edges)", "")
+            keyring = Custom("OS keyring\n(provider API keys)", logo("shield.png"))
+            repo_index = Custom("repo index\n(PageRank,\nsymbols, edges)", logo("sqlite.png"))
 
         # --------------------------------------------------------------
         # Remote peer (other laptop)
