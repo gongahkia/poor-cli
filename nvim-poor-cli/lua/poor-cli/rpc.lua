@@ -534,8 +534,9 @@ function M.capture_initialize_result(result)
     if type(key_validity) == "table" and key_validity.status == "invalid" then
         local provider = tostring(key_validity.provider or "?")
         local reason = tostring(key_validity.reason or "server rejected the key")
-        -- first line MUST be self-sufficient: plugin-less terminals only
-        -- show it. Details follow for snacks/nvim-notify users.
+        -- first line MUST be self-sufficient: it's the one snacks.notify
+        -- renders in the compact title. Subsequent lines are shown in the
+        -- expanded toast body.
         local lines = {
             string.format("%s API key invalid — run :PoorCLIApiKey to fix", provider),
             reason,

@@ -133,6 +133,13 @@ require("poor-cli").setup({
         group = "poor-cli",
         snacks = true,
     },
+
+    -- Info-panel surface: "float" (default, centered/sidebar floats via
+    -- snacks) or "vsplit" (legacy right-side vertical split).
+    layout = {
+        panels = "float",
+        scratch = "float",
+    },
     
     -- Default chat provider (nil = auto-detect from environment)
     provider = nil,
@@ -178,7 +185,9 @@ require("poor-cli").setup({
 })
 ```
 
-With `snacks.nvim` installed, non-error poor-cli notifications route through `snacks.notify` using the configured `notifications.group`. Error-level notifications stay on `vim.notify`. The optional `snacks.dashboard` section is registered as `poor-cli`; add it to your Snacks dashboard sections to show session cost and active turns.
+All poor-cli notifications route through `snacks.notify` using the configured `notifications.group`. The `snacks.dashboard` section is registered as `poor-cli`; add it to your Snacks dashboard sections to show session cost and active turns.
+
+Info panels (`:PoorCLITasksPanel`, `:PoorCLIAgentsPanel`, `:PoorCLISessionsPanel`, `:PoorCLIAutomationsPanel`) open as right-side sidebar floats by default, with per-row action keymaps (e.g. `<CR>` detail, `x` cancel, `t` toggle, `h` history, `f` fork). Set `layout = { panels = "vsplit" }` to restore the legacy vertical-split sidebar.
 
 ## 🎮 Usage
 
