@@ -7,7 +7,6 @@ local diagnostics = require("poor-cli.diagnostics")
 local timeline = require("poor-cli.timeline")
 local pickers = require("poor-cli.pickers")
 local mentions = require("poor-cli.mentions")
-local attribution = require("poor-cli.chat_attribution")
 
 local M = {}
 
@@ -125,9 +124,6 @@ M.message_queue = {} -- FIFO queue of { message = string, resolved_msg = string,
 M.stream_meta = nil -- { started_at_ns, input_tokens, output_tokens, estimated_cost, cache_read, cache_creation }
 M.last_non_chat_win = nil
 M.edit_state = nil
-M.typing_presence = { presence = {}, members = {}, localConnectionId = "" }
-M._typing_footer = { buf = nil, win = nil, text = nil }
-M._local_typing = { typing = false, last_true_ms = 0, idle_timer = nil }
 
 M.register_source = mentions.register_source
 
@@ -136,7 +132,6 @@ local function chat_header_lines()
         "# poor-cli Chat",
         "",
         "Use `:PoorCLISend` or press `<CR>` at the bottom to send a message.",
-        "Share: press `S` or run `:PoorCLICollabQuick` to copy a prompter invite.",
         "",
         "---",
         "",
@@ -188,36 +183,7 @@ local function now_ms()
     return uv and uv.now and uv.now() or math.floor(os.clock() * 1000)
 end
 
-local function multiplayer_state()
-    if type(rpc.get_multiplayer_state) ~= "function" then return {} end
-    return rpc.get_multiplayer_state() or {}
-end
-
-local function multiplayer_active()
-    local state = multiplayer_state()
-    return state.enabled == true or trim(state.room) ~= ""
-end
-
-local function local_connection_id()
-    local state = multiplayer_state()
-    return trim(state.local_connection_id or state.localConnectionId)
-end
-
-local function remote_author_prefix(event)
-    if not multiplayer_active() or type(event) ~= "table" then return "" end
-    local author_id = trim(event.authorConnectionId or event.author_connection_id)
-    if author_id == "" then return "" end
-    local local_id = local_connection_id()
-    if local_id ~= "" and author_id == local_id then return "" end
-    if author_id == "local" then return "" end
-    return attribution.format_author(event)
-end
-
-local function message_header(role, event)
-    local prefix = remote_author_prefix(event)
-    if prefix ~= "" then
-        return "## " .. prefix
-    end
+local function message_header(role, _event)
     if role == "user" then
         return "## 👤 You"
     end
@@ -580,7 +546,6 @@ function M.open()
     vim.wo[M.win].signcolumn = "no"
     vim.cmd("normal! G")
     M.setup_buffer_keymaps()
-    M.refresh_typing_presence()
     local ok_pin, turn_pin = pcall(require, "poor-cli.turn_pin")
     if ok_pin then
         pcall(turn_pin.install_keymaps, M.buf)
@@ -588,90 +553,10 @@ function M.open()
     end
 end
 
-local typing_footer_close
-
 function M.close()
     if M.win and vim.api.nvim_win_is_valid(M.win) then
         vim.api.nvim_win_close(M.win, true)
         M.win = nil
-    end
-    if typing_footer_close then typing_footer_close() end
-end
-
-typing_footer_close = function()
-    local footer = M._typing_footer
-    if footer.win and vim.api.nvim_win_is_valid(footer.win) then
-        vim.api.nvim_win_close(footer.win, true)
-    end
-    footer.win = nil
-    if footer.buf and vim.api.nvim_buf_is_valid(footer.buf) then
-        vim.api.nvim_buf_delete(footer.buf, { force = true })
-    end
-    footer.buf = nil
-    footer.text = nil
-    local ip = M._input_popup
-    if ip and ip.win and vim.api.nvim_win_is_valid(ip.win) and M.win and vim.api.nvim_win_is_valid(M.win) then
-        local pos = vim.api.nvim_win_get_position(M.win)
-        pcall(vim.api.nvim_win_set_config, ip.win, { relative = "editor", row = pos[1] + vim.api.nvim_win_get_height(M.win) - 1, col = pos[2] + 1 })
-    end
-end
-
-local function render_typing_footer()
-    local state = multiplayer_state()
-    M.typing_presence.localConnectionId = state.local_connection_id or state.localConnectionId or M.typing_presence.localConnectionId or ""
-    M.typing_presence.members = state.members or M.typing_presence.members or {}
-    local text = attribution.format_typing_footer(M.typing_presence)
-    if not text then
-        typing_footer_close()
-        return
-    end
-    if not M.win or not vim.api.nvim_win_is_valid(M.win) then
-        return
-    end
-    local footer = M._typing_footer
-    if not footer.buf or not vim.api.nvim_buf_is_valid(footer.buf) then
-        footer.buf = vim.api.nvim_create_buf(false, true)
-        vim.bo[footer.buf].buftype = "nofile"
-        vim.bo[footer.buf].bufhidden = "wipe"
-        vim.bo[footer.buf].swapfile = false
-    end
-    if footer.text ~= text then
-        vim.api.nvim_buf_set_lines(footer.buf, 0, -1, false, { " " .. text })
-        footer.text = text
-    end
-    local width = math.max(20, vim.api.nvim_win_get_width(M.win) - 2)
-    local pos = vim.api.nvim_win_get_position(M.win)
-    local row = pos[1] + vim.api.nvim_win_get_height(M.win) - 1
-    local col = pos[2] + 1
-    local ip = M._input_popup
-    if ip and ip.win and vim.api.nvim_win_is_valid(ip.win) then
-        pcall(vim.api.nvim_win_set_config, ip.win, { relative = "editor", row = math.max(0, row - 2), col = col })
-    end
-    if footer.win and vim.api.nvim_win_is_valid(footer.win) then
-        pcall(vim.api.nvim_win_set_config, footer.win, {
-            relative = "editor",
-            width = width,
-            height = 1,
-            row = row,
-            col = col,
-            style = "minimal",
-            focusable = false,
-            zindex = 54,
-        })
-        return
-    end
-    footer.win = vim.api.nvim_open_win(footer.buf, false, {
-        relative = "editor",
-        width = width,
-        height = 1,
-        row = row,
-        col = col,
-        style = "minimal",
-        focusable = false,
-        zindex = 54,
-    })
-    if footer.win and vim.api.nvim_win_is_valid(footer.win) then
-        vim.wo[footer.win].winblend = 10
     end
 end
 
@@ -1435,18 +1320,6 @@ end
 M._spinner_frame = spinner_frame -- test hook
 M._spinner_frames = SPINNER_FRAMES
 
-local function start_remote_stream(data)
-    if is_active_request(data.request_id or "") then return true end
-    local prefix = remote_author_prefix(data)
-    if prefix == "" or trim(data.request_id) == "" then return false end
-    M.open()
-    M.active_stream = { request_id = data.request_id, remote = true }
-    M.streaming_request_id = data.request_id
-    ensure_stream_meta()
-    M._start_streaming_block(data)
-    return true
-end
-
 function M._append_streaming_chunk(chunk)
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
@@ -1660,7 +1533,7 @@ function M.setup_streaming_autocmds()
         pattern = "PoorCLIThinkingChunk",
         callback = function(ev)
             local data = ev.data or {}
-            if not is_active_request(data.request_id or "") and not start_remote_stream(data) then
+            if not is_active_request(data.request_id or "") then
                 return
             end
             if data.chunk and data.chunk ~= "" then
@@ -1694,7 +1567,7 @@ function M.setup_streaming_autocmds()
         pattern = "PoorCLIStreamChunk",
         callback = function(ev)
             local data = ev.data or {}
-            if not is_active_request(data.request_id or "") and not start_remote_stream(data) then
+            if not is_active_request(data.request_id or "") then
                 return
             end
             if data.done then
@@ -1834,49 +1707,6 @@ function M.setup_streaming_autocmds()
                     ),
                     "",
                 })
-            end)
-        end,
-    })
-    vim.api.nvim_create_autocmd("User", {
-        group = group,
-        pattern = "PoorCLIRoomEvent",
-        callback = function(ev)
-            local data = ev.data or {}
-            vim.schedule(function()
-                if data.event_type == "started" then
-                    start_remote_stream(data)
-                end
-                M._handle_room_event(data)
-            end)
-        end,
-    })
-    vim.api.nvim_create_autocmd("User", {
-        group = group,
-        pattern = "PoorCLIMemberTyping",
-        callback = function(ev)
-            local data = ev.data or {}
-            vim.schedule(function()
-                M._handle_member_typing(data)
-            end)
-        end,
-    })
-    vim.api.nvim_create_autocmd("User", {
-        group = group,
-        pattern = "PoorCLIMemberRoleUpdated",
-        callback = function(ev)
-            local data = ev.data or {}
-            vim.schedule(function()
-                M._handle_member_role_update(data)
-            end)
-        end,
-    })
-    vim.api.nvim_create_autocmd("User", {
-        group = group,
-        pattern = "PoorCLISuggestion",
-        callback = function(ev)
-            local data = ev.data or {}
-            vim.schedule(function()
-                M._handle_suggestion(data)
             end)
         end,
     })
@@ -2108,178 +1938,6 @@ function M._handle_plan_request(summary, original_request, steps, prompt_id)
         M.open()
         M.append_system_note("Plan review requested — see floating window (a=approve, r=reject)")
     end
-end
-
-function M._handle_room_event(data)
-    local event_type = data.event_type or ""
-    if event_type == "" then
-        return
-    end
-
-    local notable_events = {
-        member_joined = true,
-        member_pending = true,
-        member_approved = true,
-        member_denied = true,
-        member_removed = true,
-        member_kicked = true,
-        member_left = true,
-        role_handoff = true,
-        lobby_updated = true,
-        preset_updated = true,
-        agenda_added = true,
-        agenda_resolved = true,
-        hand_raised = true,
-        hand_lowered = true,
-        next_driver_selected = true,
-        token_rotated = true,
-        token_revoked = true,
-    }
-    if not notable_events[event_type] then
-        return
-    end
-
-    local room = data.room or ""
-    local summary = string.format(
-        "Room `%s`: %s (%d members, queue %d)",
-        room,
-        event_type:gsub("_", " "),
-        tonumber(data.member_count) or 0,
-        tonumber(data.queue_depth) or 0
-    )
-    require("poor-cli.notify").notify("[poor-cli] " .. summary, vim.log.levels.INFO)
-    if M.buf and vim.api.nvim_buf_is_valid(M.buf) then
-        M.append_system_note(summary)
-    end
-end
-
-function M._handle_member_role_update(data)
-    local connection_id = data.connection_id or ""
-    local role = data.role or ""
-    if connection_id == "" or role == "" then
-        return
-    end
-
-    local summary = string.format("Role update: %s -> %s", connection_id, role)
-    require("poor-cli.notify").notify("[poor-cli] " .. summary, vim.log.levels.INFO)
-    if M.buf and vim.api.nvim_buf_is_valid(M.buf) then
-        M.append_system_note(summary)
-    end
-end
-
-function M._handle_suggestion(data)
-    local sender = data.sender or "teammate"
-    local text = data.text or ""
-    if text == "" then
-        return
-    end
-
-    local summary = string.format("Suggestion from %s: %s", sender, text)
-    require("poor-cli.notify").notify("[poor-cli] " .. summary, vim.log.levels.INFO)
-    M.open()
-    M.append_system_note(summary)
-end
-
-function M._handle_member_typing(data)
-    if type(data) ~= "table" then return end
-    local connection_id = trim(data.connection_id or data.connectionId)
-    if connection_id == "" then return end
-    M.typing_presence.presence = M.typing_presence.presence or {}
-    M.typing_presence.presence[connection_id] = data.typing == true
-    M.typing_presence.members = M.typing_presence.members or {}
-    M.typing_presence.members[connection_id] = {
-        connectionId = connection_id,
-        displayName = data.display_name or data.displayName or connection_id,
-    }
-    render_typing_footer()
-end
-
-function M._apply_presence_snapshot(snapshot)
-    if type(snapshot) ~= "table" then return end
-    local state = multiplayer_state()
-    M.typing_presence = {
-        presence = type(snapshot.presence) == "table" and snapshot.presence or {},
-        members = type(snapshot.members) == "table" and snapshot.members or state.members or {},
-        localConnectionId = state.local_connection_id or state.localConnectionId or "",
-    }
-    render_typing_footer()
-end
-
-function M.refresh_typing_presence()
-    if not multiplayer_active() or type(rpc.request) ~= "function" or (type(rpc.is_running) == "function" and not rpc.is_running()) then
-        return
-    end
-    local state = multiplayer_state()
-    local params = {}
-    if trim(state.room) ~= "" then params.room = state.room end
-    rpc.request("poor-cli/listPresence", params, function(result, _err)
-        vim.schedule(function()
-            M._apply_presence_snapshot(result)
-        end)
-    end)
-end
-
-local function typing_debounce_ms()
-    local multiplayer = config.get("multiplayer") or {}
-    local presence = type(multiplayer) == "table" and multiplayer.typingPresence or {}
-    local configured = type(presence) == "table" and tonumber(presence.debounceMs or presence.debounce_ms) or nil
-    return math.max(250, configured or 250)
-end
-
-local function stop_local_idle_timer()
-    local local_state = M._local_typing
-    if local_state.idle_timer then
-        pcall(function()
-            local_state.idle_timer:stop()
-            local_state.idle_timer:close()
-        end)
-        local_state.idle_timer = nil
-    end
-end
-
-local function send_typing_state(typing, force)
-    if not multiplayer_active() or type(rpc.request) ~= "function" then return end
-    if type(rpc.is_running) == "function" and not rpc.is_running() then return end
-    local local_state = M._local_typing
-    local now = now_ms()
-    if typing then
-        local debounce = typing_debounce_ms()
-        if not force and local_state.typing and (now - (local_state.last_true_ms or 0)) < debounce then
-            return
-        end
-        local_state.last_true_ms = now
-    elseif not local_state.typing and not force then
-        return
-    end
-    local_state.typing = typing == true
-    local mp = multiplayer_state()
-    local params = { typing = typing == true }
-    if trim(mp.room) ~= "" then params.room = mp.room end
-    local id = trim(mp.local_connection_id or mp.localConnectionId)
-    if id ~= "" then params.connectionId = id end
-    rpc.request("poor-cli/setTyping", params, function() end)
-end
-
-local function mark_local_typing()
-    send_typing_state(true, false)
-    stop_local_idle_timer()
-    local uv = vim.uv or vim.loop
-    if uv and uv.new_timer then
-        M._local_typing.idle_timer = uv.new_timer()
-        M._local_typing.idle_timer:start(2000, 0, vim.schedule_wrap(function()
-            send_typing_state(false, true)
-            stop_local_idle_timer()
-        end))
-    else
-        vim.defer_fn(function()
-            send_typing_state(false, true)
-        end, 2000)
-    end
-end
-
-local function clear_local_typing()
-    stop_local_idle_timer()
-    send_typing_state(false, true)
 end
 
 -- Assistant liveness badges. Two surfaces: per-assistant-header virt_text
@@ -2650,10 +2308,6 @@ function M.setup_buffer_keymaps()
         M.open_queue_manager()
     end, { buffer = M.buf, desc = "Open queue manager", nowait = true })
 
-    vim.keymap.set("n", "S", function()
-        vim.cmd("PoorCLICollabQuick")
-    end, { buffer = M.buf, desc = "Share collaboration invite", nowait = true, silent = true })
-
     vim.keymap.set("n", "<CR>", function()
         -- Context-sensitive: expand a truncated tool result if the cursor
         -- is on one, otherwise fall through to the send prompt.
@@ -2696,9 +2350,6 @@ function M.setup_buffer_keymaps()
             vim.keymap.set("n", "<CR>", function()
                 M.prompt_and_send()
             end, { buffer = M.buf, desc = "Send message", nowait = true, silent = true })
-            vim.keymap.set("n", "S", function()
-                vim.cmd("PoorCLICollabQuick")
-            end, { buffer = M.buf, desc = "Share collaboration invite", nowait = true, silent = true })
             vim.keymap.set("n", "<leader>rr", function()
                 M.regenerate_turn()
             end, { buffer = M.buf, desc = "Regenerate assistant turn", nowait = true, silent = true })
@@ -3270,7 +2921,6 @@ function M.prompt_and_send(opts)
     vim.keymap.set("i", "<CR>", function()
         local line = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
         local edit_state = opts.edit_state
-        clear_local_typing()
         input_close()
         vim.cmd("stopinsert")
         if line == "" then
@@ -3297,20 +2947,17 @@ function M.prompt_and_send(opts)
 
     -- cancel
     vim.keymap.set("i", "<Esc>", function()
-        clear_local_typing()
         input_close()
         if opts.edit_state then clear_edit_state() end
         vim.cmd("stopinsert")
     end, { buffer = buf, nowait = true })
 
     vim.keymap.set("n", "<Esc>", function()
-        clear_local_typing()
         input_close()
         if opts.edit_state then clear_edit_state() end
     end, { buffer = buf, nowait = true })
 
     vim.keymap.set("n", "q", function()
-        clear_local_typing()
         input_close()
         if opts.edit_state then clear_edit_state() end
     end, { buffer = buf, nowait = true })
@@ -3337,7 +2984,6 @@ function M.prompt_and_send(opts)
     vim.api.nvim_create_autocmd({ "TextChangedI", "TextChanged" }, {
         buffer = buf,
         callback = function()
-            mark_local_typing()
             vim.schedule(update_completions)
         end,
     })
