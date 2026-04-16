@@ -17,10 +17,18 @@ local function group_name()
 end
 
 local function snacks_notify()
-    local s = require("snacks")
-    if type(s.notify) == "function" then return s.notify end
-    if type(s.notifier) == "table" and type(s.notifier.notify) == "function" then
-        return s.notifier.notify
+    -- snacks is a hard dep enforced in init.lua::setup, but this helper can
+    -- run BEFORE setup (e.g. from the VimEnter "setup() was never called"
+    -- nudge in plugin/poor-cli.lua). If the user hasn't installed snacks
+    -- yet, don't explode here — let the caller fall through to vim.notify
+    -- so the user sees a clean one-liner instead of a stack trace before
+    -- the real "missing required plugins" error from setup().
+    local ok, s = pcall(require, "snacks")
+    if ok and type(s) == "table" then
+        if type(s.notify) == "function" then return s.notify end
+        if type(s.notifier) == "table" and type(s.notifier.notify) == "function" then
+            return s.notifier.notify
+        end
     end
     local global = rawget(_G, "Snacks")
     if type(global) == "table" then
