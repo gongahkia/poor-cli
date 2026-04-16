@@ -152,15 +152,36 @@ end
 -- ───────────────────────── Agents ─────────────────────────
 local function build_agents_panel()
     local panel
+    local width, height = sidebar_dims()
     panel = base.new_panel({
         name = "[poor-cli agents]",
-        width = 70,
+        width = width,
+        height = height,
+        position = "right",
+        keymaps = {
+            ["<CR>"] = function()
+                local id = current_id()
+                if not id or id == "?" then return end
+                rpc.request("poor-cli/getAgentLogs", { agentId = id }, function(r, e) vim.schedule(function()
+                    if e then notify(vim.inspect(e), vim.log.levels.ERROR); return end
+                    show_detail("[poor-cli agent logs " .. id .. "]", r)
+                end) end)
+            end,
+            ["x"] = function()
+                local id = current_id()
+                if not id or id == "?" then return end
+                rpc.request("poor-cli/cancelAgent", { agentId = id }, function(_, e) vim.schedule(function()
+                    if e then notify(vim.inspect(e), vim.log.levels.ERROR)
+                    else notify("agent " .. id .. " cancelled", vim.log.levels.INFO); panel.refresh() end
+                end) end)
+            end,
+        },
         on_refresh = function(render_now)
             render_now()
             fetch("poor-cli/listAgents", {}, "agents", panel)
         end,
         render = function()
-            local lines = { "# poor-cli Agents", "", "Press q to close, r to refresh.", "" }
+            local lines = { "# poor-cli Agents", "", "<CR> logs · x cancel · r refresh · q close", "" }
             local data = (panel._cache or {}).agents
             section(lines, "Background agents")
             if not data then empty(lines, "loading…")
@@ -171,7 +192,8 @@ local function build_agents_panel()
                 else
                     for _, a in ipairs(items) do
                         local prompt = tostring(a.prompt or ""):sub(1, 80)
-                        table.insert(lines, string.format("- [%s] %s", a.status or "?", a.agentId or "?"))
+                        table.insert(lines, string.format("- %s [%s] %s",
+                            icon_for(a.status), a.status or "?", a.agentId or "?"))
                         if prompt ~= "" then
                             table.insert(lines, "    " .. prompt)
                         end
