@@ -155,6 +155,22 @@ M.defaults = {
     -- Disabled by default to reduce terminal noise; enable for debugging.
     verbose_rpc = false,
 
+    -- Per-tool permission allow/deny-list. Complements permission_mode:
+    --   allow = {...} — these tools auto-approve without showing the modal.
+    --   deny  = {...} — these tools auto-reject without showing the modal.
+    -- Entry format:
+    --   "tool_name"            — matches any invocation of that tool
+    --   "tool_name:pattern"    — pattern is a glob (`*` → any). Matches
+    --                             against vim.inspect(args), so e.g.
+    --                             "bash:*pip install*" auto-allows pip
+    --                             installs, "bash:*rm -rf*" auto-denies
+    --                             dangerous deletes.
+    -- deny is checked first; a tool in both lists gets denied.
+    permission = {
+        allow = {},
+        deny = {},
+    },
+
     -- Chat turn tracing:
     --   "off"     — no trace toasts (default)
     --   "basic"   — toast when message sent, when provider returns first

@@ -1855,6 +1855,45 @@ local function perm_ui_close()
     ui.buf = nil
 end
 
+-- Glob-to-Lua-pattern. Escapes magic chars then turns * into .*
+local function _permission_glob_to_pattern(glob)
+    local escaped = (glob or ""):gsub("[%^%$%(%)%%%.%[%]%+%-%?]", "%%%0")
+    escaped = escaped:gsub("%*", ".*")
+    return "^" .. escaped .. "$"
+end
+
+-- Check if a permission entry matches a (tool_name, args) pair.
+-- Entry format: "name" or "name:glob". Glob matches against vim.inspect(args).
+local function _permission_entry_matches(entry, tool_name, args)
+    if type(entry) ~= "string" or entry == "" then return false end
+    local name, glob = entry:match("^([^:]+):(.+)$")
+    if not name then
+        return entry == tool_name
+    end
+    if name ~= tool_name then return false end
+    local haystack = type(args) == "table" and vim.inspect(args) or tostring(args or "")
+    return haystack:find(_permission_glob_to_pattern(glob)) ~= nil
+        or haystack:find(glob:gsub("%*", ".-"), 1, false) ~= nil
+end
+
+local function _permission_verdict(tool_name, tool_args)
+    local cfg = config.get("permission") or {}
+    for _, entry in ipairs(cfg.deny or {}) do
+        if _permission_entry_matches(entry, tool_name, tool_args) then
+            return "deny", entry
+        end
+    end
+    for _, entry in ipairs(cfg.allow or {}) do
+        if _permission_entry_matches(entry, tool_name, tool_args) then
+            return "allow", entry
+        end
+    end
+    return "prompt", nil
+end
+
+M._permission_entry_matches = _permission_entry_matches -- test hook
+M._permission_verdict = _permission_verdict -- test hook
+
 function M._handle_permission_request(data)
     local tool_name = data.tool_name or "tool"
     local tool_args = data.tool_args or {}
@@ -1865,6 +1904,25 @@ function M._handle_permission_request(data)
     local message = data.message or ""
     local capabilities = data.capabilities or {}
     local sandbox_preset = data.sandbox_preset or ""
+
+    -- Config-driven allow/deny-list bypass. deny wins over allow. Any hit
+    -- short-circuits the modal and responds to the server immediately.
+    local verdict, matched_entry = _permission_verdict(tool_name, tool_args)
+    if verdict == "allow" then
+        rpc.notify("poor-cli/permissionRes", { promptId = prompt_id, allowed = true })
+        require("poor-cli.notify").notify(
+            string.format("[poor-cli] auto-approved %s (matched allow entry: %s)", tool_name, matched_entry),
+            vim.log.levels.INFO
+        )
+        return
+    elseif verdict == "deny" then
+        rpc.notify("poor-cli/permissionRes", { promptId = prompt_id, allowed = false })
+        require("poor-cli.notify").notify(
+            string.format("[poor-cli] auto-denied %s (matched deny entry: %s)", tool_name, matched_entry),
+            vim.log.levels.WARN
+        )
+        return
+    end
 
     perm_ui_close()
 
