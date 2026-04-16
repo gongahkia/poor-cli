@@ -260,31 +260,16 @@ local function build_checkpoints_panel()
     }
 end
 
--- ───────────────────────── Queue ─────────────────────────
+-- ─────── Queue (picker — see queue.open_picker) ───────
 local function build_queue_panel()
-    local panel
-    panel = base.new_panel({
-        name = "[poor-cli queue]",
-        width = 60,
-        render = function()
-            local lines = { "# poor-cli Queue", "", "Press q to close, r to refresh.", "" }
-            section(lines, "Queued prompts (local)")
-            local ok, queue_mod = pcall(require, "poor-cli.queue")
-            if ok and queue_mod and queue_mod.list then
-                local items = queue_mod.list() or {}
-                if vim.tbl_isempty(items) then empty(lines, "queue empty")
-                else
-                    for i, q in ipairs(items) do
-                        table.insert(lines, string.format("%d. %s", i, tostring(q):sub(1, 80)))
-                    end
-                end
-            else
-                empty(lines, "queue module unavailable")
-            end
-            return lines
-        end,
-    })
-    return panel
+    return {
+        toggle = function() require("poor-cli.queue").open_picker() end,
+        open = function() require("poor-cli.queue").open_picker() end,
+        close = function() end,
+        refresh = function() end,
+        win = nil,
+        buf = nil,
+    }
 end
 
 -- ───────────────────────── Memory ─────────────────────────
