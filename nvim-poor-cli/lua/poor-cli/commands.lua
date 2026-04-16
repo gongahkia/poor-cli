@@ -1903,32 +1903,69 @@ create_command("PoorCLIApiKey", function()
         "gemini", "openai", "anthropic", "openrouter", "litellm",
         "ollama", "lmstudio", "llama_server", "vllm", "sglang", "hf_tgi", "hf_local",
     }
+    local notify = require("poor-cli.notify")
+
+    local function persist(provider, key)
+        rpc.request("poor-cli/setApiKey", {
+            provider = provider,
+            apiKey = key,
+            persist = true,
+            reloadActiveProvider = true,
+        }, function(_, err)
+            vim.schedule(function()
+                if err then notify.notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+                -- clear the stale "invalid" flag locally so chat/inline unblock
+                -- immediately; the next initialize event will refresh with the
+                -- validator's live check against the new key.
+                if type(rpc.capabilities) == "table" then
+                    rpc.capabilities.apiKeyValidity = nil
+                end
+                notify.notify(
+                    "[poor-cli] API key set for " .. provider .. " — chat + completion unblocked",
+                    vim.log.levels.INFO
+                )
+            end)
+        end)
+    end
+
     vim.ui.select(providers, { prompt = "Provider:" }, function(provider)
         if not provider then return end
         vim.ui.input({ prompt = "API key for " .. provider .. ": " }, function(key)
             if not key or key == "" then return end
-            rpc.request("poor-cli/setApiKey", {
-                provider = provider,
-                apiKey = key,
-                persist = true,
-                reloadActiveProvider = true,
-            }, function(_, err)
+            -- Live-validate against the provider's model-list endpoint BEFORE
+            -- persisting. Keyless local providers (ollama, hf_local, vllm,
+            -- etc.) run a reachability probe inside testApiKey instead.
+            notify.notify("[poor-cli] validating key against " .. provider .. "...", vim.log.levels.INFO)
+            rpc.request("poor-cli/testApiKey", { provider = provider, apiKey = key }, function(result, err)
                 vim.schedule(function()
-                    if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
-                    -- clear the stale "invalid" flag locally so chat/inline unblock
-                    -- immediately; the next initialize event will refresh with the
-                    -- validator's live check against the new key.
-                    if type(rpc.capabilities) == "table" then
-                        rpc.capabilities.apiKeyValidity = nil
+                    if err then
+                        notify.notify(
+                            "[poor-cli] validation failed: " .. rpc.format_error(err)
+                                .. " — key NOT saved. Re-run :PoorCLIApiKey to retry.",
+                            vim.log.levels.ERROR
+                        )
+                        return
                     end
-                    require("poor-cli.notify").notify(
-                        "[poor-cli] API key set for " .. provider .. " — chat + completion unblocked",
-                        vim.log.levels.INFO
-                    )
+                    if result and result.valid then
+                        notify.notify("[poor-cli] ✓ key valid for " .. provider, vim.log.levels.INFO)
+                        persist(provider, key)
+                        return
+                    end
+                    local reason = result and result.error or "unknown error"
+                    vim.ui.select({ "Save anyway", "Discard" }, {
+                        prompt = "Key rejected by " .. provider .. " (" .. reason .. "). Save anyway?",
+                    }, function(choice)
+                        if choice == "Save anyway" then
+                            notify.notify("[poor-cli] saving invalid key on your request", vim.log.levels.WARN)
+                            persist(provider, key)
+                        else
+                            notify.notify("[poor-cli] discarded. Re-run :PoorCLIApiKey to retry.", vim.log.levels.INFO)
+                        end
+                    end)
                 end)
             end)
         end)
     end)
-end, { desc = "Set API key for a provider" })
+end, { desc = "Set API key for a provider (live-validated before save)" })
 
 return M
