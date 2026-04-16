@@ -614,7 +614,7 @@ function M.trigger(opts)
         if manual then
             require("poor-cli.notify").notify(
                 string.format(
-                    "Blocked: API key for %s is invalid.\nFix with :PoorCLIApiKey or :PoorCLIOnboarding.",
+                    "Blocked: API key for %s is invalid.\nFix with :PoorCLIConfig api-key or :PoorCLIHelp onboarding.",
                     provider
                 ),
                 vim.log.levels.ERROR,

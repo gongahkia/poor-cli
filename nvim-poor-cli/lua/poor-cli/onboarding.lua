@@ -110,7 +110,7 @@ local function render_welcome()
         "and gives you inline completions, chat, and agentic coding tools.",
         "",
         "This wizard will configure your essential preferences once.",
-        "You can re-run it anytime with :PoorCLIOnboarding",
+        "You can re-run it anytime with :PoorCLIHelp onboarding",
     })
     vim.list_extend(lines, footer_nav())
     return lines
@@ -542,7 +542,7 @@ local function ensure_server(callback)
             rpc.initialize()
             vim.defer_fn(callback, 300)
         else
-            require("poor-cli.notify").notify("[poor-cli] server failed to start. set API key manually via :PoorCLIConfigSet", vim.log.levels.ERROR)
+            require("poor-cli.notify").notify("[poor-cli] server failed to start. set API key manually via :PoorCLIConfig set", vim.log.levels.ERROR)
             callback()
         end
     end, 500)
@@ -797,13 +797,14 @@ end
 
 function M.setup()
     milestones.setup()
-    pcall(vim.api.nvim_del_user_command, "PoorCLIOnboarding")
-    vim.api.nvim_create_user_command("PoorCLIOnboarding", function(opts) open_arg(opts.args) end, {
-        nargs = "?",
-        complete = function() return { "tour" } end,
-        desc = "Run poor-cli onboarding wizard",
-    })
+    -- :PoorCLIOnboarding command is gone; reach onboarding via
+    -- `:PoorCLIHelp onboarding` (and the `tour` variant via
+    -- `:PoorCLIHelp onboarding-tour`). M.open/M.open_tour/M.export_cheatsheet
+    -- remain as the module API called by the Help dispatcher in commands.lua.
     vim.keymap.set("n", "<leader>po?", M.export_cheatsheet, { desc = "Export poor-cli config cheatsheet" })
 end
+
+-- Exposed to Help dispatcher (commands.lua).
+M._open_arg = open_arg
 
 return M

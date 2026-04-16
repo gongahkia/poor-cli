@@ -6,11 +6,7 @@ from poor_cli.server.handler_deps import *
 
 class ServicesStateMixin:
     def _ensure_service_controls_available(self) -> None:
-        """Disallow service lifecycle controls from nested multiplayer room engines."""
-        if self._embedded_multiplayer_room:
-            raise InvalidParamsError(
-                "Service controls are unavailable inside multiplayer room sessions"
-            )
+        return
 
     def _normalize_service_name(raw_name: Any) -> str:
         """Normalize and validate user-provided service names."""

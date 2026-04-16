@@ -19,14 +19,6 @@ def __getattr__(name: str):
             "StreamingJsonRpcServer": StreamingJsonRpcServer,
         }
         return mapping[name]
-    if name in {"NgrokTunnel", "_run_stdio_bridge"}:
-        from .multiplayer_runtime import NgrokTunnel, _run_stdio_bridge
-
-        mapping = {
-            "NgrokTunnel": NgrokTunnel,
-            "_run_stdio_bridge": _run_stdio_bridge,
-        }
-        return mapping[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
@@ -37,7 +29,6 @@ __all__ = [
     "StdioTransport",
     "PoorCLIServer",
     "StreamingJsonRpcServer",
-    "NgrokTunnel",
     "main",
     "_sanitize_exception_message",
     "_MAX_ERROR_MESSAGE_LEN",

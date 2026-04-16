@@ -71,9 +71,8 @@ function M.open()
     end)
 end
 
-function M.install()
-    pcall(vim.api.nvim_del_user_command, "PoorCLIProviderCompare")
-    vim.api.nvim_create_user_command("PoorCLIProviderCompare", function() M.open() end, { desc = "Compare provider/model costs vs current" })
-end
+-- install() intentionally removed: compare is reachable via
+-- `:PoorCLIProvider compare`. M.open()/M.build_rows remain as the module API.
+function M.install() end
 
 return M

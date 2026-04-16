@@ -5,9 +5,9 @@ local M = {}
 M.min_interval_s = 3600
 M.milestones = {
     { id = "completion_accept_5", event = "completions", threshold = 5, suggestion = "Tip: use <C-Right> to accept one word from an inline completion." },
-    { id = "turns_10_plan", event = "turns", threshold = 10, suggestion = "Tip: try Plan Mode with :PoorCLIPlan before broad edits." },
-    { id = "diff_review_1", event = "diffs_reviewed", threshold = 1, suggestion = "Tip: reopen staged edits with :PoorCLIDiffReview; ga/gr reviews one hunk." },
-    { id = "turns_25_context", event = "turns", threshold = 25, suggestion = "Tip: inspect included files with :PoorCLIContextPanel before long prompts." },
+    { id = "turns_10_plan", event = "turns", threshold = 10, suggestion = "Tip: try Plan Mode with :PoorCLIPlan open before broad edits." },
+    { id = "diff_review_1", event = "diffs_reviewed", threshold = 1, suggestion = "Tip: reopen staged edits with :PoorCLIDiff review; ga/gr reviews one hunk." },
+    { id = "turns_25_context", event = "turns", threshold = 25, suggestion = "Tip: inspect included files with :PoorCLIContext show before long prompts." },
 }
 
 function M.state_path()

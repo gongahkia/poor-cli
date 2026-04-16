@@ -58,14 +58,6 @@ Command count: ~150 `PoorCLI*` user commands.
 - **Policy panel** — `:PoorCLIPolicyPanel`. Sandbox preset + permission rules.
 - **Audit log export** — `:PoorCLIAuditExport`.
 
-## Multiplayer / collaboration
-
-- **Collab invite** — `:PoorCLICollabQuick` (copy) / `:PoorCLICollab join <invite>`.
-- **Room panel** — `:PoorCLIRoom`.
-- **Users panel** — `:PoorCLIUsers`. Members, presence, driver role, typing indicators.
-- **Collaborators panel** — `:PoorCLICollaboratorsPanel` (opt-in `multiplayer_presence`). Persistent room view.
-- **Voting on diffs** — hunks with vote thresholds require quorum; `va`/`vr`/`vc` in diff review.
-
 ## Automation, agents, MCP
 
 - **Automations** — `:PoorCLIAutomations*`. Cron + event + slash triggers.
@@ -98,19 +90,23 @@ Bulk control via `:PoorCLIPanels {open|close|toggle} [names...]` (opt-in `panels
 - **Streaming indicator** — `▶ streaming… press q to cancel` virt_text (opt-in `streaming_indicator`).
 - **Animated thinking spinner** — 10-frame braille spinner cycles at 80 ms while the model reasons.
 
-## Editor integrations (auto-detected)
+## Editor integrations
 
-- **Telescope** — pickers for files/memories/sessions.
-- **snacks.nvim** — dashboard + notifications.
-- **nvim-notify** — notifications.
+Required (poor-cli refuses to load without these):
+
+- **snacks.nvim** — notifications, pickers, and the dashboard tile.
+- **trouble.nvim** — `:Trouble poor-cli` surfaces assistant findings.
+- **nvim-dap** — `<leader>pb` / `<leader>pB` breakpoint + run shortcuts.
+- **neogit** — commit hook for auto-commit.
+
+Optional (feature degrades or silently skips if missing):
+
 - **blink.cmp / nvim-cmp** — completion source.
 - **gitsigns** — AI hunk glyph (`✱`) on modified lines.
-- **neogit** — commit hook for auto-commit.
 - **oil.nvim** — file mentions from oil buffers.
 - **overseer.nvim** — background-task strategy.
-- **trouble.nvim** — poor-cli findings as a trouble source.
-- **nvim-dap** — breakpoint + run shortcuts.
-- **lualine** — all badges above.
+- **lualine** — status-line badges.
+- **nvim-treesitter** — richer context extraction; falls back to built-in `vim.treesitter`.
 
 ## Timeline & debugging
 
@@ -148,7 +144,6 @@ All default `false`. Enable via `require('poor-cli').setup({ ux = { <flag> = tru
 | `cost_lualine_auto` | Auto-register cost component in lualine |
 | `diff_accept_all` | `gAA` accept-all in diff review |
 | `context_remove_files` | `D` drops all non-pinned + budget warning |
-| `multiplayer_presence` | `:PoorCLICollaboratorsPanel` |
 | `home_nav` | `:PoorCLIHome` back-to-editor |
 | `provider_cost_preview` | `:PoorCLIProviderCompare` |
 | `inline_status_lualine` | Real-time inline status refresh |
@@ -173,9 +168,8 @@ Minimal matrix to exercise everything with reasonable coverage. Each row is one 
 9. **Memory expire** — `:PoorCLIMemoryExpire`, toggle items, commit.
 10. **Context** — `:PoorCLIContextPanel`, pin a file, drop another, send a chat turn and confirm the included files match.
 11. **Permissions** — run a tool call requiring approval; verify the approve/deny modal.
-12. **Multiplayer** — terminal A: `:PoorCLICollabQuick`; terminal B: `:PoorCLICollab join <invite>`; both see `:PoorCLIUsers`; pass driver; joiner sends suggestion; both see the event.
-13. **MCP** — register an MCP server in `.poor-cli/mcp.json`; verify tools appear namespaced.
-14. **Panels bulk** — `:PoorCLIPanels open tasks memory`, `:PoorCLIPanels close`.
+12. **MCP** — register an MCP server in `.poor-cli/mcp.json`; verify tools appear namespaced.
+13. **Panels bulk** — `:PoorCLIPanels open tasks memory`, `:PoorCLIPanels close`.
 15. **Home nav** — open multiple panels, `:PoorCLIHome`.
 16. **Strategies** — `:PoorCLIRerankerStrategy cross_encoder` (warns if HF not installed), `:PoorCLIAdaptivePruning on`.
 17. **API key invalidation** — revoke a key externally, restart nvim, verify the error notification short-circuits `:PoorCLIChat`.
@@ -183,4 +177,4 @@ Minimal matrix to exercise everything with reasonable coverage. Each row is one 
 19. **Automation** — define an `AutomationRule` for a cron trigger; verify it runs.
 20. **Checkpoint rewind** — agent edits → rewind to a prior checkpoint → files restored.
 21. **Session fork** — `:PoorCLISessionsFork`, continue with new session, switch back.
-22. **Notify fallback** — uninstall nvim-notify + snacks; confirm errors still render as one-line + `:messages` detail.
+22. **Layout switch** — `require('poor-cli').setup({ layout = { panels = 'vsplit' } })`; confirm `:PoorCLITasksPanel` now opens as a right-side sidebar instead of a float.

@@ -66,13 +66,13 @@ class TestHookEvents(unittest.TestCase):
             "session_start", "user_prompt_submitted", "permission_decision",
             "pre_tool_use", "post_tool_use", "tool_failure",
             "task_started", "task_finished", "automation_started",
-            "automation_finished", "checkpoint_restored", "collaboration_event",
+            "automation_finished", "checkpoint_restored",
             "session_end",
         }
         self.assertEqual(expected, set(HOOK_EVENTS))
 
     def test_event_count(self):
-        self.assertEqual(len(HOOK_EVENTS), 13)
+        self.assertEqual(len(HOOK_EVENTS), 12)
 
 
 class TestPolicyHookManager(unittest.TestCase):

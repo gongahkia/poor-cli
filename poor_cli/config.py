@@ -418,76 +418,6 @@ class SandboxConfig:
 
 
 @dataclass
-class MultiplayerFeaturesConfig:
-    multiPrompter: bool = False
-    typingPresence: bool = False
-    messageAttribution: bool = False
-    diffVoting: bool = False
-
-
-@dataclass
-class MultiplayerTypingPresenceConfig:
-    debounceMs: int = 250
-    broadcastIntervalMs: int = 500
-
-
-@dataclass
-class MultiplayerDiffVotingConfig:
-    threshold: str = "majority"
-    requiredVoters: int = 0
-
-
-@dataclass
-class MultiplayerConfig:
-    """Configuration for owner-authoritative P2P multiplayer."""
-
-    signaling_bind_host: str = "0.0.0.0"
-    signaling_port: int = 8765
-    signaling_path: str = "/rpc"
-    share_host: str = ""
-    invite_ttl_seconds: int = 86400
-    owner_name: str = "host"
-    reconnect_grace_seconds: int = 30
-    ice_servers: List[Dict[str, Any]] = field(
-        default_factory=lambda: [
-            {"urls": ["stun:stun.l.google.com:19302"]},
-        ]
-    )
-    turn_urls: List[str] = field(default_factory=list)
-    turn_username_env: str = "POOR_CLI_TURN_USERNAME"
-    turn_credential_env: str = "POOR_CLI_TURN_CREDENTIAL"
-    turn_realm: str = ""
-    features: MultiplayerFeaturesConfig = field(default_factory=MultiplayerFeaturesConfig)
-    typingPresence: MultiplayerTypingPresenceConfig = field(default_factory=MultiplayerTypingPresenceConfig)
-    diffVoting: MultiplayerDiffVotingConfig = field(default_factory=MultiplayerDiffVotingConfig)
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "MultiplayerConfig":
-        data = data.copy() if isinstance(data, dict) else {}
-        features_data = data.get("features", {})
-        typing_data = data.get("typingPresence", {})
-        diff_voting_data = data.get("diffVoting", {})
-        data["features"] = (
-            MultiplayerFeaturesConfig(**features_data)
-            if isinstance(features_data, dict)
-            else MultiplayerFeaturesConfig()
-        )
-        data["typingPresence"] = (
-            MultiplayerTypingPresenceConfig(**typing_data)
-            if isinstance(typing_data, dict)
-            else MultiplayerTypingPresenceConfig()
-        )
-        data["diffVoting"] = (
-            MultiplayerDiffVotingConfig(**diff_voting_data)
-            if isinstance(diff_voting_data, dict)
-            else MultiplayerDiffVotingConfig()
-        )
-        allowed = {item.name for item in fields(cls)}
-        data = {key: value for key, value in data.items() if key in allowed}
-        return cls(**data)
-
-
-@dataclass
 class TasksConfig:
     """Background task runner settings."""
 
@@ -587,7 +517,6 @@ class Config:
     security: SecurityConfig = field(default_factory=SecurityConfig)
     tools: ToolConfig = field(default_factory=ToolConfig)
     sandbox: SandboxConfig = field(default_factory=SandboxConfig)
-    multiplayer: MultiplayerConfig = field(default_factory=MultiplayerConfig)
     tasks: TasksConfig = field(default_factory=TasksConfig)
     skills: SkillsConfig = field(default_factory=SkillsConfig)
     workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
@@ -630,7 +559,6 @@ class Config:
             "security": self.security.to_dict(),
             "tools": asdict(self.tools),
             "sandbox": asdict(self.sandbox),
-            "multiplayer": asdict(self.multiplayer),
             "tasks": asdict(self.tasks),
             "skills": asdict(self.skills),
             "workflow": asdict(self.workflow),
@@ -668,7 +596,6 @@ class Config:
             security=SecurityConfig.from_dict(data.get("security", {})),
             tools=ToolConfig(**data.get("tools", {})),
             sandbox=SandboxConfig(**data.get("sandbox", {})),
-            multiplayer=MultiplayerConfig.from_dict(data.get("multiplayer", {})),
             tasks=TasksConfig(**data.get("tasks", {})),
             skills=SkillsConfig(**data.get("skills", {})),
             workflow=WorkflowConfig(**data.get("workflow", {})),
@@ -791,7 +718,6 @@ class ConfigManager:
             "security",
             "tools",
             "sandbox",
-            "multiplayer",
             "tasks",
             "skills",
             "workflow",
@@ -1012,21 +938,6 @@ class ConfigManager:
             raise ConfigurationError("audit.max_age_days_live must be non-negative")
         if self.config.audit.archive_chunk_size < 1:
             raise ConfigurationError("audit.archive_chunk_size must be at least 1")
-
-        # Validate multiplayer config
-        if self.config.multiplayer.signaling_port < 1:
-            raise ConfigurationError("multiplayer.signaling_port must be at least 1")
-        if self.config.multiplayer.invite_ttl_seconds < 1:
-            raise ConfigurationError("multiplayer.invite_ttl_seconds must be at least 1")
-        if self.config.multiplayer.reconnect_grace_seconds < 1:
-            raise ConfigurationError("multiplayer.reconnect_grace_seconds must be at least 1")
-        if not self.config.multiplayer.signaling_path.startswith("/"):
-            raise ConfigurationError("multiplayer.signaling_path must start with '/'")
-        threshold = str(self.config.multiplayer.diffVoting.threshold or "").strip().lower()
-        if threshold not in {"majority", "unanimous", "owner_only"}:
-            raise ConfigurationError("multiplayer.diffVoting.threshold must be majority, unanimous, or owner_only")
-        if self.config.multiplayer.diffVoting.requiredVoters < 0:
-            raise ConfigurationError("multiplayer.diffVoting.requiredVoters must be at least 0")
 
         logger.info("Configuration validated successfully")
         return True

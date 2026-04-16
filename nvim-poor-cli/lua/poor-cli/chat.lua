@@ -7,7 +7,6 @@ local diagnostics = require("poor-cli.diagnostics")
 local timeline = require("poor-cli.timeline")
 local pickers = require("poor-cli.pickers")
 local mentions = require("poor-cli.mentions")
-local attribution = require("poor-cli.chat_attribution")
 
 local M = {}
 
@@ -55,6 +54,68 @@ local function highlight_diff_block(buf, first_line, last_line)
 end
 
 M._highlight_diff_block = highlight_diff_block -- exposed for tests
+
+-- Chat-turn tracing. Controlled by config.chat_trace = "off"|"basic"|"verbose".
+-- "basic" surfaces the 3 turn boundaries (sent / first-token / done) as
+-- user-visible toasts; "verbose" adds thinking-start and thinking-end
+-- markers. See the :PoorCLIChatTrace command below for a runtime switch.
+local function _chat_trace_mode()
+    local ok, cfg = pcall(require, "poor-cli.config")
+    if not ok or type(cfg.get) ~= "function" then return "off" end
+    local mode = cfg.get("chat_trace")
+    if mode == "basic" or mode == "verbose" then return mode end
+    return "off"
+end
+
+local function chat_trace(level, msg)
+    local mode = _chat_trace_mode()
+    if mode == "off" then return end
+    if level == "verbose" and mode ~= "verbose" then return end
+    local ok, notify = pcall(require, "poor-cli.notify")
+    if ok then notify.notify("[poor-cli trace] " .. msg, vim.log.levels.INFO, { title = "poor-cli trace" }) end
+end
+
+local function _ms_since(started_ns)
+    if not started_ns or started_ns == 0 or not vim.loop.hrtime then return 0 end
+    return math.floor((vim.loop.hrtime() - started_ns) / 1000000)
+end
+
+-- Does the active provider declare EXTENDED_THINKING? Returns (bool, label)
+-- where label is "<provider>/<model>" for use in the warning. Unknown /
+-- unconfigured providers return (nil, label) so callers can treat "no
+-- initialize yet" separately from "confirmed unsupported".
+local function _provider_supports_thinking()
+    local caps = rpc.get_capabilities() or {}
+    local info = caps.providerInfo or {}
+    local pc = info.capabilities or {}
+    local name = tostring(info.name or "?")
+    local model = tostring(info.model or "?")
+    local label = name .. "/" .. model
+    if next(pc) == nil then return nil, label end
+    return pc.extended_thinking == true, label
+end
+
+-- Fire a "verbose thinking not supported" nudge once per (provider, model).
+-- Resets when the provider/model changes so a :PoorCLISwitchProvider picks
+-- up a thinking-capable model cleanly.
+M._thinking_unsupported_nudge = { key = nil }
+local function _warn_thinking_unsupported_once()
+    local supported, label = _provider_supports_thinking()
+    if supported ~= false then return end
+    if M._thinking_unsupported_nudge.key == label then return end
+    M._thinking_unsupported_nudge.key = label
+    require("poor-cli.notify").notify(
+        "[poor-cli] chat_trace=verbose but " .. label .. " does not emit "
+        .. "chain-of-thought. Basic traces still fire. Switch to a reasoning-capable "
+        .. "model (e.g. :PoorCLIProvider switch anthropic claude-sonnet-4-20250514) for "
+        .. "thinking brackets.",
+        vim.log.levels.WARN,
+        { title = "poor-cli trace" }
+    )
+end
+
+M._provider_supports_thinking = _provider_supports_thinking -- test hook
+
 M.turns = {}
 M.loading_marker = nil
 M.streaming_buf_line = nil
@@ -65,9 +126,6 @@ M.message_queue = {} -- FIFO queue of { message = string, resolved_msg = string,
 M.stream_meta = nil -- { started_at_ns, input_tokens, output_tokens, estimated_cost, cache_read, cache_creation }
 M.last_non_chat_win = nil
 M.edit_state = nil
-M.typing_presence = { presence = {}, members = {}, localConnectionId = "" }
-M._typing_footer = { buf = nil, win = nil, text = nil }
-M._local_typing = { typing = false, last_true_ms = 0, idle_timer = nil }
 
 M.register_source = mentions.register_source
 
@@ -75,8 +133,7 @@ local function chat_header_lines()
     return {
         "# poor-cli Chat",
         "",
-        "Use `:PoorCLISend` or press `<CR>` at the bottom to send a message.",
-        "Share: press `S` or run `:PoorCLICollabQuick` to copy a prompter invite.",
+        "Use `:PoorCLIChat send` or press `<CR>` at the bottom to send a message.",
         "",
         "---",
         "",
@@ -128,36 +185,7 @@ local function now_ms()
     return uv and uv.now and uv.now() or math.floor(os.clock() * 1000)
 end
 
-local function multiplayer_state()
-    if type(rpc.get_multiplayer_state) ~= "function" then return {} end
-    return rpc.get_multiplayer_state() or {}
-end
-
-local function multiplayer_active()
-    local state = multiplayer_state()
-    return state.enabled == true or trim(state.room) ~= ""
-end
-
-local function local_connection_id()
-    local state = multiplayer_state()
-    return trim(state.local_connection_id or state.localConnectionId)
-end
-
-local function remote_author_prefix(event)
-    if not multiplayer_active() or type(event) ~= "table" then return "" end
-    local author_id = trim(event.authorConnectionId or event.author_connection_id)
-    if author_id == "" then return "" end
-    local local_id = local_connection_id()
-    if local_id ~= "" and author_id == local_id then return "" end
-    if author_id == "local" then return "" end
-    return attribution.format_author(event)
-end
-
-local function message_header(role, event)
-    local prefix = remote_author_prefix(event)
-    if prefix ~= "" then
-        return "## " .. prefix
-    end
+local function message_header(role, _event)
     if role == "user" then
         return "## 👤 You"
     end
@@ -500,6 +528,7 @@ function M.open()
         vim.bo[M.buf].filetype = "markdown"
         vim.api.nvim_buf_set_name(M.buf, "[poor-cli chat]")
         vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, chat_header_lines())
+        M._refresh_liveness()
     end
 
     local width = config.get("chat_width")
@@ -519,7 +548,6 @@ function M.open()
     vim.wo[M.win].signcolumn = "no"
     vim.cmd("normal! G")
     M.setup_buffer_keymaps()
-    M.refresh_typing_presence()
     local ok_pin, turn_pin = pcall(require, "poor-cli.turn_pin")
     if ok_pin then
         pcall(turn_pin.install_keymaps, M.buf)
@@ -527,90 +555,10 @@ function M.open()
     end
 end
 
-local typing_footer_close
-
 function M.close()
     if M.win and vim.api.nvim_win_is_valid(M.win) then
         vim.api.nvim_win_close(M.win, true)
         M.win = nil
-    end
-    if typing_footer_close then typing_footer_close() end
-end
-
-typing_footer_close = function()
-    local footer = M._typing_footer
-    if footer.win and vim.api.nvim_win_is_valid(footer.win) then
-        vim.api.nvim_win_close(footer.win, true)
-    end
-    footer.win = nil
-    if footer.buf and vim.api.nvim_buf_is_valid(footer.buf) then
-        vim.api.nvim_buf_delete(footer.buf, { force = true })
-    end
-    footer.buf = nil
-    footer.text = nil
-    local ip = M._input_popup
-    if ip and ip.win and vim.api.nvim_win_is_valid(ip.win) and M.win and vim.api.nvim_win_is_valid(M.win) then
-        local pos = vim.api.nvim_win_get_position(M.win)
-        pcall(vim.api.nvim_win_set_config, ip.win, { relative = "editor", row = pos[1] + vim.api.nvim_win_get_height(M.win) - 1, col = pos[2] + 1 })
-    end
-end
-
-local function render_typing_footer()
-    local state = multiplayer_state()
-    M.typing_presence.localConnectionId = state.local_connection_id or state.localConnectionId or M.typing_presence.localConnectionId or ""
-    M.typing_presence.members = state.members or M.typing_presence.members or {}
-    local text = attribution.format_typing_footer(M.typing_presence)
-    if not text then
-        typing_footer_close()
-        return
-    end
-    if not M.win or not vim.api.nvim_win_is_valid(M.win) then
-        return
-    end
-    local footer = M._typing_footer
-    if not footer.buf or not vim.api.nvim_buf_is_valid(footer.buf) then
-        footer.buf = vim.api.nvim_create_buf(false, true)
-        vim.bo[footer.buf].buftype = "nofile"
-        vim.bo[footer.buf].bufhidden = "wipe"
-        vim.bo[footer.buf].swapfile = false
-    end
-    if footer.text ~= text then
-        vim.api.nvim_buf_set_lines(footer.buf, 0, -1, false, { " " .. text })
-        footer.text = text
-    end
-    local width = math.max(20, vim.api.nvim_win_get_width(M.win) - 2)
-    local pos = vim.api.nvim_win_get_position(M.win)
-    local row = pos[1] + vim.api.nvim_win_get_height(M.win) - 1
-    local col = pos[2] + 1
-    local ip = M._input_popup
-    if ip and ip.win and vim.api.nvim_win_is_valid(ip.win) then
-        pcall(vim.api.nvim_win_set_config, ip.win, { relative = "editor", row = math.max(0, row - 2), col = col })
-    end
-    if footer.win and vim.api.nvim_win_is_valid(footer.win) then
-        pcall(vim.api.nvim_win_set_config, footer.win, {
-            relative = "editor",
-            width = width,
-            height = 1,
-            row = row,
-            col = col,
-            style = "minimal",
-            focusable = false,
-            zindex = 54,
-        })
-        return
-    end
-    footer.win = vim.api.nvim_open_win(footer.buf, false, {
-        relative = "editor",
-        width = width,
-        height = 1,
-        row = row,
-        col = col,
-        style = "minimal",
-        focusable = false,
-        zindex = 54,
-    })
-    if footer.win and vim.api.nvim_win_is_valid(footer.win) then
-        vim.wo[footer.win].winblend = 10
     end
 end
 
@@ -675,6 +623,7 @@ function M.append_message(role, content, turn)
     local line_count = vim.api.nvim_buf_line_count(M.buf)
     vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, lines)
     record_turn_extmark(role, line_count, line_count + #lines, turn, content)
+    if role == "assistant" then M._set_assistant_badge(line_count) end
     local ok_pin, turn_pin = pcall(require, "poor-cli.turn_pin")
     if ok_pin then pcall(turn_pin.render) end
 
@@ -1150,13 +1099,25 @@ local function dispatch_message(prepared, opts)
     }
     if opts.edit_turn_id then params.editTurnId = opts.edit_turn_id end
 
+    do
+        local status = (rpc.get_status and rpc.get_status()) or {}
+        local provider = tostring(status.provider or status.activeProvider or "?")
+        local model = tostring(status.model or status.activeModel or "?")
+        chat_trace("basic", string.format("→ sent to %s/%s · %d chars · %d context file%s",
+            provider, model, #prepared.resolved_msg,
+            #prepared.context_files, #prepared.context_files == 1 and "" or "s"))
+        if _chat_trace_mode() == "verbose" then
+            _warn_thinking_unsupported_once()
+        end
+    end
+    M._thinking_start_traced = false
     local rpc_request_id = rpc.request("poor-cli/chatStreaming", params, function(_result, err)
         vim.schedule(function()
             if not is_active_request(request_id) then
                 return
             end
 
-            M._finalize_streaming_block(request_id)
+            M._finalize_streaming_block(request_id, err)
             if err and err.code ~= -32800 then
                 M.append_message("assistant", "Error: " .. require("poor-cli.rpc").format_error(err))
             end
@@ -1192,6 +1153,18 @@ function M.send(message, opts)
         return
     end
 
+    -- session trace: log a truncated preview of the outgoing message so
+    -- bug reports / :messages captures show what the user actually typed.
+    -- Gated on config.log_user_input; see commands.lua::_log_session.
+    do
+        local ok_cmds, cmds = pcall(require, "poor-cli.commands")
+        if ok_cmds and type(cmds._log_session) == "function" then
+            local preview = tostring(message):gsub("\n", "\\n"):sub(1, 400)
+            cmds._log_session("input",
+                string.format("chat.send (%d chars) %s", #message, preview))
+        end
+    end
+
     if not rpc.is_running() then
         require("poor-cli.notify").notify("[poor-cli] Server not running", vim.log.levels.WARN)
         return
@@ -1206,7 +1179,7 @@ function M.send(message, opts)
         local provider = tostring(validity.provider or "?")
         local reason = tostring(validity.reason or "server rejected the key")
         local lines = {
-            string.format("%s API key invalid — run :PoorCLIApiKey to fix", provider),
+            string.format("%s API key invalid — run :PoorCLIConfig api-key to fix", provider),
             reason,
             "",
             "Send blocked. Rotate the key, then retry.",
@@ -1236,27 +1209,27 @@ function M.send(message, opts)
 end
 
 local function format_thinking_duration(seconds)
+    seconds = math.max(0, math.floor(seconds))
     if seconds < 60 then
         return string.format("%d sec", seconds)
-    elseif seconds < 3600 then
-        local m = math.floor(seconds / 60)
-        local s = seconds % 60
-        if s == 0 then return string.format("%d min", m) end
-        return string.format("%d min %d sec", m, s)
-    else
-        local h = math.floor(seconds / 3600)
-        local m = math.floor((seconds % 3600) / 60)
-        local s = seconds % 60
-        if m == 0 and s == 0 then return string.format("%d hr", h) end
-        if s == 0 then return string.format("%d hr %d min", h, m) end
-        return string.format("%d hr %d min %d sec", h, m, s)
     end
+    local mins = math.floor(seconds / 60) % 60
+    local secs = seconds % 60
+    if seconds < 3600 then
+        return string.format("%d min %d sec", mins, secs)
+    end
+    local hrs = math.floor(seconds / 3600)
+    return string.format("%d hr %d min %d sec", hrs, mins, secs)
 end
 
 -- single-column spinner frames (braille); matches the Claude Code / Codex feel.
 -- change this table to swap spinners — e.g. { "|", "/", "-", "\\" } for pure ASCII.
 local SPINNER_FRAMES = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 local SPINNER_INTERVAL_MS = 80
+-- Flip the streaming placeholder from "Thinking..." to a "no stream for Xs"
+-- warning after this many ms of silence. Chosen well below the backend's
+-- 300s RPC timeout so users see something suspicious much sooner.
+local STALL_THRESHOLD_MS = 15000
 
 local function spinner_frame(tick)
     return SPINNER_FRAMES[(tick % #SPINNER_FRAMES) + 1]
@@ -1294,6 +1267,7 @@ function M._start_streaming_block(event)
     local line_count = vim.api.nvim_buf_line_count(M.buf)
     local initial_line = string.format("%s Thinking (0 sec)...", spinner_frame(0))
     vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, { message_header("assistant", event), "", initial_line, "" })
+    M._set_assistant_badge(line_count)
     if M.stream_meta then
         M.stream_meta.assistant_header_line = line_count
     end
@@ -1305,6 +1279,7 @@ function M._start_streaming_block(event)
 
     -- live-update the placeholder until first chunk arrives or finalize fires
     M._thinking_started_ns = (vim.loop.hrtime and vim.loop.hrtime()) or 0
+    M._last_stream_chunk_ns = M._thinking_started_ns
     M._thinking_tick = 0
     M._stop_thinking_timer()
     if vim.loop.new_timer then
@@ -1319,11 +1294,25 @@ function M._start_streaming_block(event)
             if M._thinking_started_ns > 0 and vim.loop.hrtime then
                 elapsed = math.max(0, math.floor((vim.loop.hrtime() - M._thinking_started_ns) / 1000000000))
             end
+            -- Stall detection: if no chunk has arrived for STALL_THRESHOLD_MS
+            -- (default 15s), flip the placeholder from "Thinking..." to a
+            -- visible "no stream for Xs" warning so the user knows the
+            -- connection may be dead, not just that the model is slow.
+            local silent_ms = 0
+            if vim.loop.hrtime and M._last_stream_chunk_ns and M._last_stream_chunk_ns > 0 then
+                silent_ms = math.max(0, math.floor((vim.loop.hrtime() - M._last_stream_chunk_ns) / 1000000))
+            end
             local ln = M._streaming_placeholder_line
             if ln then
-                local new_text = string.format("%s Thinking (%s)...",
-                    spinner_frame(M._thinking_tick),
-                    format_thinking_duration(elapsed))
+                local new_text
+                if silent_ms >= STALL_THRESHOLD_MS then
+                    new_text = string.format("⚠ no stream for %ds — may be disconnected (check :PoorCLIDiag log-open or :PoorCLIDiag status)",
+                        math.floor(silent_ms / 1000))
+                else
+                    new_text = string.format("%s Thinking (%s)...",
+                        spinner_frame(M._thinking_tick),
+                        format_thinking_duration(elapsed))
+                end
                 pcall(vim.api.nvim_buf_set_lines, M.buf, ln - 1, ln, false, { new_text })
             end
         end))
@@ -1333,18 +1322,6 @@ end
 M._spinner_frame = spinner_frame -- test hook
 M._spinner_frames = SPINNER_FRAMES
 
-local function start_remote_stream(data)
-    if is_active_request(data.request_id or "") then return true end
-    local prefix = remote_author_prefix(data)
-    if prefix == "" or trim(data.request_id) == "" then return false end
-    M.open()
-    M.active_stream = { request_id = data.request_id, remote = true }
-    M.streaming_request_id = data.request_id
-    ensure_stream_meta()
-    M._start_streaming_block(data)
-    return true
-end
-
 function M._append_streaming_chunk(chunk)
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
@@ -1352,9 +1329,18 @@ function M._append_streaming_chunk(chunk)
     if not M.streaming_buf_line or not chunk or chunk == "" then
         return
     end
+    if vim.loop.hrtime then M._last_stream_chunk_ns = vim.loop.hrtime() end
 
     if M._streaming_placeholder_active then
         -- first real chunk: stop timer, remove Thinking placeholder lines
+        local latency_ms = _ms_since(M._thinking_started_ns)
+        chat_trace("basic", string.format("← provider responded · first token +%dms", latency_ms))
+        if M._thinking_start_traced and M._thinking_buffer and M._thinking_buffer ~= "" then
+            chat_trace("verbose", string.format("💭 thinking ended · %d chars across %d line%s",
+                #M._thinking_buffer,
+                select(2, M._thinking_buffer:gsub("\n", "\n")) + 1,
+                M._thinking_buffer:find("\n") and "s" or ""))
+        end
         M._stop_thinking_timer()
         local ln = M.streaming_buf_line
         vim.api.nvim_buf_set_lines(M.buf, ln - 1, ln + 1, false, { "" })
@@ -1437,7 +1423,7 @@ local function format_stream_meta()
     return string.format("⏱ %s | %s | %s%s%s", time_str, tokens_str, cost_str, conf_str, cache_str)
 end
 
-function M._finalize_streaming_block(request_id)
+function M._finalize_streaming_block(request_id, err_info)
     if request_id and not is_active_request(request_id) then
         return
     end
@@ -1489,6 +1475,37 @@ function M._finalize_streaming_block(request_id)
             pattern = "PoorCLITurnEnded",
             data = ended_meta,
         })
+        -- Error handling: -32800 is the cancellation code (user-triggered);
+        -- other errors came from the stream itself. Treat no tokens + short
+        -- duration as a silent error too, since the backend occasionally
+        -- finalizes without producing a chunk (e.g. mid-stream rpc failure).
+        local errored = err_info ~= nil and err_info.code ~= -32800
+        local cancelled = err_info ~= nil and err_info.code == -32800
+        local silent_error = (not errored) and (not cancelled)
+            and (ended_meta.total_tokens or 0) == 0
+            and (ended_meta.duration_s or 0) < 1
+        local status = "ok"
+        local status_detail = ""
+        if errored then
+            status = "error"
+            status_detail = " reason=" .. tostring((err_info.message or err_info.code or "unknown")):gsub("\n", " "):sub(1, 120)
+        elseif cancelled then
+            status = "cancelled"
+        elseif silent_error then
+            status = "error"
+            status_detail = " reason=silent (no chunks, 0 tokens)"
+        end
+        chat_trace("basic", string.format("%s turn %s · %d tokens · $%.4f · %.1fs",
+            status == "ok" and "✓" or "✗",
+            status,
+            ended_meta.total_tokens or 0, ended_meta.cost_usd or 0, ended_meta.duration_s or 0))
+        do
+            local ok_cmds, cmds = pcall(require, "poor-cli.commands")
+            if ok_cmds and type(cmds._log_session) == "function" then
+                cmds._log_session("event", string.format("turn_end status=%s tokens=%d cost=$%.4f dur=%.1fs%s",
+                    status, ended_meta.total_tokens or 0, ended_meta.cost_usd or 0, ended_meta.duration_s or 0, status_detail))
+            end
+        end
     end
     diagnostics.apply_from_text(M.streaming_response_text or "")
     M.streaming_buf_line = nil
@@ -1510,14 +1527,24 @@ function M.setup_streaming_autocmds()
     local group = vim.api.nvim_create_augroup("PoorCLIChatStreaming", { clear = true })
     vim.api.nvim_create_autocmd("User", {
         group = group,
+        pattern = "PoorCLIStatusChanged",
+        callback = function() vim.schedule(M._refresh_liveness) end,
+    })
+    vim.api.nvim_create_autocmd("User", {
+        group = group,
         pattern = "PoorCLIThinkingChunk",
         callback = function(ev)
             local data = ev.data or {}
-            if not is_active_request(data.request_id or "") and not start_remote_stream(data) then
+            if not is_active_request(data.request_id or "") then
                 return
             end
             if data.chunk and data.chunk ~= "" then
+                if vim.loop.hrtime then M._last_stream_chunk_ns = vim.loop.hrtime() end
                 vim.schedule(function()
+                    if not M._thinking_start_traced then
+                        M._thinking_start_traced = true
+                        chat_trace("verbose", "💭 thinking started (chain-of-thought streaming)")
+                    end
                     M._thinking_buffer = M._thinking_buffer .. data.chunk
                     -- Update the streaming block with thinking content
                     if M.streaming_buf_line and M.buf and vim.api.nvim_buf_is_valid(M.buf) then
@@ -1542,7 +1569,7 @@ function M.setup_streaming_autocmds()
         pattern = "PoorCLIStreamChunk",
         callback = function(ev)
             local data = ev.data or {}
-            if not is_active_request(data.request_id or "") and not start_remote_stream(data) then
+            if not is_active_request(data.request_id or "") then
                 return
             end
             if data.done then
@@ -1685,49 +1712,6 @@ function M.setup_streaming_autocmds()
             end)
         end,
     })
-    vim.api.nvim_create_autocmd("User", {
-        group = group,
-        pattern = "PoorCLIRoomEvent",
-        callback = function(ev)
-            local data = ev.data or {}
-            vim.schedule(function()
-                if data.event_type == "started" then
-                    start_remote_stream(data)
-                end
-                M._handle_room_event(data)
-            end)
-        end,
-    })
-    vim.api.nvim_create_autocmd("User", {
-        group = group,
-        pattern = "PoorCLIMemberTyping",
-        callback = function(ev)
-            local data = ev.data or {}
-            vim.schedule(function()
-                M._handle_member_typing(data)
-            end)
-        end,
-    })
-    vim.api.nvim_create_autocmd("User", {
-        group = group,
-        pattern = "PoorCLIMemberRoleUpdated",
-        callback = function(ev)
-            local data = ev.data or {}
-            vim.schedule(function()
-                M._handle_member_role_update(data)
-            end)
-        end,
-    })
-    vim.api.nvim_create_autocmd("User", {
-        group = group,
-        pattern = "PoorCLISuggestion",
-        callback = function(ev)
-            local data = ev.data or {}
-            vim.schedule(function()
-                M._handle_suggestion(data)
-            end)
-        end,
-    })
 end
 
 M._perm_ui = { buf = nil, win = nil }
@@ -1744,6 +1728,45 @@ local function perm_ui_close()
     ui.buf = nil
 end
 
+-- Glob-to-Lua-pattern. Escapes magic chars then turns * into .*
+local function _permission_glob_to_pattern(glob)
+    local escaped = (glob or ""):gsub("[%^%$%(%)%%%.%[%]%+%-%?]", "%%%0")
+    escaped = escaped:gsub("%*", ".*")
+    return "^" .. escaped .. "$"
+end
+
+-- Check if a permission entry matches a (tool_name, args) pair.
+-- Entry format: "name" or "name:glob". Glob matches against vim.inspect(args).
+local function _permission_entry_matches(entry, tool_name, args)
+    if type(entry) ~= "string" or entry == "" then return false end
+    local name, glob = entry:match("^([^:]+):(.+)$")
+    if not name then
+        return entry == tool_name
+    end
+    if name ~= tool_name then return false end
+    local haystack = type(args) == "table" and vim.inspect(args) or tostring(args or "")
+    return haystack:find(_permission_glob_to_pattern(glob)) ~= nil
+        or haystack:find(glob:gsub("%*", ".-"), 1, false) ~= nil
+end
+
+local function _permission_verdict(tool_name, tool_args)
+    local cfg = config.get("permission") or {}
+    for _, entry in ipairs(cfg.deny or {}) do
+        if _permission_entry_matches(entry, tool_name, tool_args) then
+            return "deny", entry
+        end
+    end
+    for _, entry in ipairs(cfg.allow or {}) do
+        if _permission_entry_matches(entry, tool_name, tool_args) then
+            return "allow", entry
+        end
+    end
+    return "prompt", nil
+end
+
+M._permission_entry_matches = _permission_entry_matches -- test hook
+M._permission_verdict = _permission_verdict -- test hook
+
 function M._handle_permission_request(data)
     local tool_name = data.tool_name or "tool"
     local tool_args = data.tool_args or {}
@@ -1754,6 +1777,32 @@ function M._handle_permission_request(data)
     local message = data.message or ""
     local capabilities = data.capabilities or {}
     local sandbox_preset = data.sandbox_preset or ""
+
+    -- Config-driven allow/deny-list bypass. deny wins over allow. Any hit
+    -- short-circuits the modal and responds to the server immediately.
+    local verdict, matched_entry = _permission_verdict(tool_name, tool_args)
+    if verdict == "allow" or verdict == "deny" then
+        local ok_cmds, cmds = pcall(require, "poor-cli.commands")
+        if ok_cmds and type(cmds._log_session) == "function" then
+            cmds._log_session("event", string.format("permission_auto_%s tool=%s matched=%s",
+                verdict, tool_name, tostring(matched_entry)))
+        end
+    end
+    if verdict == "allow" then
+        rpc.notify("poor-cli/permissionRes", { promptId = prompt_id, allowed = true })
+        require("poor-cli.notify").notify(
+            string.format("[poor-cli] auto-approved %s (matched allow entry: %s)", tool_name, matched_entry),
+            vim.log.levels.INFO
+        )
+        return
+    elseif verdict == "deny" then
+        rpc.notify("poor-cli/permissionRes", { promptId = prompt_id, allowed = false })
+        require("poor-cli.notify").notify(
+            string.format("[poor-cli] auto-denied %s (matched deny entry: %s)", tool_name, matched_entry),
+            vim.log.levels.WARN
+        )
+        return
+    end
 
     perm_ui_close()
 
@@ -1859,6 +1908,13 @@ function M._handle_permission_request(data)
             promptId = prompt_id,
             allowed = allowed,
         })
+        do
+            local ok_cmds, cmds = pcall(require, "poor-cli.commands")
+            if ok_cmds and type(cmds._log_session) == "function" then
+                cmds._log_session("event", string.format("permission_%s tool=%s op=%s",
+                    allowed and "approved" or "denied", tool_name, operation))
+            end
+        end
         perm_ui_close()
     end
 
@@ -1886,213 +1942,278 @@ function M._handle_plan_request(summary, original_request, steps, prompt_id)
     end
 end
 
-function M._handle_room_event(data)
-    local event_type = data.event_type or ""
-    if event_type == "" then
-        return
-    end
+-- Assistant liveness badges. Two surfaces: per-assistant-header virt_text
+-- dot, and a sticky virt_text line pinned to line 1. Both read the current
+-- rpc.capabilities.apiKeyValidity + rpc.server_state and refresh on the
+-- PoorCLIStatusChanged autocmd so the dot flips in place when the provider
+-- state changes.
+M.liveness_ns = M.liveness_ns or vim.api.nvim_create_namespace("poor-cli-liveness")
+M._assistant_header_lines = M._assistant_header_lines or {}  -- list of {row, extmark_id}
+M._top_line_extmark = M._top_line_extmark or nil
 
-    local notable_events = {
-        member_joined = true,
-        member_pending = true,
-        member_approved = true,
-        member_denied = true,
-        member_removed = true,
-        member_kicked = true,
-        member_left = true,
-        role_handoff = true,
-        lobby_updated = true,
-        preset_updated = true,
-        agenda_added = true,
-        agenda_resolved = true,
-        hand_raised = true,
-        hand_lowered = true,
-        next_driver_selected = true,
-        token_rotated = true,
-        token_revoked = true,
-    }
-    if not notable_events[event_type] then
-        return
-    end
+local function _compute_liveness()
+    -- specs often stub rpc with only the fields they exercise; fall back
+    -- gracefully when get_capabilities / get_status aren't present on the
+    -- stub rather than crashing render.
+    local caps = (type(rpc.get_capabilities) == "function" and rpc.get_capabilities()) or rpc.capabilities or {}
+    local validity = caps.apiKeyValidity or {}
+    local status = (type(rpc.get_status) == "function" and rpc.get_status()) or {}
+    local state = tostring(status.state or rpc.server_state or "")
 
-    local room = data.room or ""
-    local summary = string.format(
-        "Room `%s`: %s (%d members, queue %d)",
-        room,
-        event_type:gsub("_", " "),
-        tonumber(data.member_count) or 0,
-        tonumber(data.queue_depth) or 0
-    )
-    require("poor-cli.notify").notify("[poor-cli] " .. summary, vim.log.levels.INFO)
-    if M.buf and vim.api.nvim_buf_is_valid(M.buf) then
-        M.append_system_note(summary)
+    if validity.status == "invalid" then
+        local provider = tostring(validity.provider or caps.providerInfo and caps.providerInfo.name or "?")
+        return { icon = "🔴", label = "key invalid (" .. provider .. ")", hl = "ErrorMsg" }
     end
+    if state == "error" then
+        return { icon = "🔴", label = "server error", hl = "ErrorMsg" }
+    end
+    if state == "restarting" or state == "starting" or state == "initializing" then
+        return { icon = "🟡", label = state, hl = "WarningMsg" }
+    end
+    if state == "ready" then
+        return { icon = "🟢", label = "live", hl = "DiagnosticOk" }
+    end
+    if state == "stopped" or state == "" then
+        return { icon = "⏸", label = "no server", hl = "Comment" }
+    end
+    return { icon = "·", label = state, hl = "Comment" }
 end
 
-function M._handle_member_role_update(data)
-    local connection_id = data.connection_id or ""
-    local role = data.role or ""
-    if connection_id == "" or role == "" then
-        return
+function M._set_assistant_badge(row)
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then return end
+    local live = _compute_liveness()
+    local ext = vim.api.nvim_buf_set_extmark(M.buf, M.liveness_ns, row, 0, {
+        virt_text = { { "  " .. live.icon .. " " .. live.label, live.hl } },
+        virt_text_pos = "eol",
+        hl_mode = "combine",
+    })
+    table.insert(M._assistant_header_lines, { row = row, id = ext })
+end
+
+local function _refresh_liveness()
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then return end
+    local live = _compute_liveness()
+    -- refresh top-of-buffer sticky line
+    if M._top_line_extmark then
+        pcall(vim.api.nvim_buf_del_extmark, M.buf, M.liveness_ns, M._top_line_extmark)
     end
-
-    local summary = string.format("Role update: %s -> %s", connection_id, role)
-    require("poor-cli.notify").notify("[poor-cli] " .. summary, vim.log.levels.INFO)
-    if M.buf and vim.api.nvim_buf_is_valid(M.buf) then
-        M.append_system_note(summary)
+    M._top_line_extmark = vim.api.nvim_buf_set_extmark(M.buf, M.liveness_ns, 0, 0, {
+        virt_lines = { { { "poor-cli · " .. live.icon .. " " .. live.label, live.hl } } },
+        virt_lines_above = true,
+    })
+    -- refresh each assistant header virt_text in place
+    local kept = {}
+    for _, entry in ipairs(M._assistant_header_lines) do
+        local pos = vim.api.nvim_buf_get_extmark_by_id(M.buf, M.liveness_ns, entry.id, {})
+        pcall(vim.api.nvim_buf_del_extmark, M.buf, M.liveness_ns, entry.id)
+        if pos and pos[1] then
+            local new_id = vim.api.nvim_buf_set_extmark(M.buf, M.liveness_ns, pos[1], 0, {
+                virt_text = { { "  " .. live.icon .. " " .. live.label, live.hl } },
+                virt_text_pos = "eol",
+                hl_mode = "combine",
+            })
+            table.insert(kept, { row = pos[1], id = new_id })
+        end
     end
+    M._assistant_header_lines = kept
 end
 
-function M._handle_suggestion(data)
-    local sender = data.sender or "teammate"
-    local text = data.text or ""
-    if text == "" then
-        return
-    end
+M._refresh_liveness = _refresh_liveness   -- test hook
+M._compute_liveness = _compute_liveness   -- test hook
 
-    local summary = string.format("Suggestion from %s: %s", sender, text)
-    require("poor-cli.notify").notify("[poor-cli] " .. summary, vim.log.levels.INFO)
-    M.open()
-    M.append_system_note(summary)
+-- Tool-call rendering state. Inline running-indicator + truncated-result
+-- expansion. _pending_tools is a FIFO of in-flight tool calls so _append_tool_result
+-- can locate the matching "⠋ running…" line and replace it in place.
+-- _tool_full_results maps extmark id → full text for <CR>-expand.
+M.tool_ns = M.tool_ns or vim.api.nvim_create_namespace("poor-cli-tool")
+M._pending_tools = M._pending_tools or {}
+M._tool_full_results = M._tool_full_results or {}
+M._tool_spinner_timer = M._tool_spinner_timer or nil
+M._tool_spinner_tick = 0
+
+local function _tool_spinner_frame()
+    local frames = SPINNER_FRAMES or { "|", "/", "-", "\\" }
+    return frames[(M._tool_spinner_tick % #frames) + 1]
 end
 
-function M._handle_member_typing(data)
-    if type(data) ~= "table" then return end
-    local connection_id = trim(data.connection_id or data.connectionId)
-    if connection_id == "" then return end
-    M.typing_presence.presence = M.typing_presence.presence or {}
-    M.typing_presence.presence[connection_id] = data.typing == true
-    M.typing_presence.members = M.typing_presence.members or {}
-    M.typing_presence.members[connection_id] = {
-        connectionId = connection_id,
-        displayName = data.display_name or data.displayName or connection_id,
-    }
-    render_typing_footer()
-end
-
-function M._apply_presence_snapshot(snapshot)
-    if type(snapshot) ~= "table" then return end
-    local state = multiplayer_state()
-    M.typing_presence = {
-        presence = type(snapshot.presence) == "table" and snapshot.presence or {},
-        members = type(snapshot.members) == "table" and snapshot.members or state.members or {},
-        localConnectionId = state.local_connection_id or state.localConnectionId or "",
-    }
-    render_typing_footer()
-end
-
-function M.refresh_typing_presence()
-    if not multiplayer_active() or type(rpc.request) ~= "function" or (type(rpc.is_running) == "function" and not rpc.is_running()) then
-        return
-    end
-    local state = multiplayer_state()
-    local params = {}
-    if trim(state.room) ~= "" then params.room = state.room end
-    rpc.request("poor-cli/listPresence", params, function(result, _err)
-        vim.schedule(function()
-            M._apply_presence_snapshot(result)
-        end)
-    end)
-end
-
-local function typing_debounce_ms()
-    local multiplayer = config.get("multiplayer") or {}
-    local presence = type(multiplayer) == "table" and multiplayer.typingPresence or {}
-    local configured = type(presence) == "table" and tonumber(presence.debounceMs or presence.debounce_ms) or nil
-    return math.max(250, configured or 250)
-end
-
-local function stop_local_idle_timer()
-    local local_state = M._local_typing
-    if local_state.idle_timer then
-        pcall(function()
-            local_state.idle_timer:stop()
-            local_state.idle_timer:close()
-        end)
-        local_state.idle_timer = nil
+local function _update_tool_spinners()
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then return end
+    if #M._pending_tools == 0 then return end
+    M._tool_spinner_tick = M._tool_spinner_tick + 1
+    local frame = _tool_spinner_frame()
+    for _, pending in ipairs(M._pending_tools) do
+        local pos = vim.api.nvim_buf_get_extmark_by_id(M.buf, M.tool_ns, pending.extmark_id, {})
+        if pos and pos[1] then
+            local elapsed_s = math.max(0, math.floor(((vim.loop.hrtime() or 0) - (pending.started_ns or 0)) / 1e9))
+            local line = string.format("%s running %s… (%ds)", frame, pending.name or "tool", elapsed_s)
+            pcall(vim.api.nvim_buf_set_lines, M.buf, pos[1], pos[1] + 1, false, { line })
+        end
     end
 end
 
-local function send_typing_state(typing, force)
-    if not multiplayer_active() or type(rpc.request) ~= "function" then return end
-    if type(rpc.is_running) == "function" and not rpc.is_running() then return end
-    local local_state = M._local_typing
-    local now = now_ms()
-    if typing then
-        local debounce = typing_debounce_ms()
-        if not force and local_state.typing and (now - (local_state.last_true_ms or 0)) < debounce then
+local function _ensure_tool_spinner_timer()
+    if M._tool_spinner_timer or not vim.loop.new_timer then return end
+    M._tool_spinner_timer = vim.loop.new_timer()
+    M._tool_spinner_timer:start(120, 120, vim.schedule_wrap(function()
+        if #M._pending_tools == 0 then
+            if M._tool_spinner_timer then
+                pcall(M._tool_spinner_timer.stop, M._tool_spinner_timer)
+                pcall(M._tool_spinner_timer.close, M._tool_spinner_timer)
+                M._tool_spinner_timer = nil
+            end
             return
         end
-        local_state.last_true_ms = now
-    elseif not local_state.typing and not force then
-        return
-    end
-    local_state.typing = typing == true
-    local mp = multiplayer_state()
-    local params = { typing = typing == true }
-    if trim(mp.room) ~= "" then params.room = mp.room end
-    local id = trim(mp.local_connection_id or mp.localConnectionId)
-    if id ~= "" then params.connectionId = id end
-    rpc.request("poor-cli/setTyping", params, function() end)
-end
-
-local function mark_local_typing()
-    send_typing_state(true, false)
-    stop_local_idle_timer()
-    local uv = vim.uv or vim.loop
-    if uv and uv.new_timer then
-        M._local_typing.idle_timer = uv.new_timer()
-        M._local_typing.idle_timer:start(2000, 0, vim.schedule_wrap(function()
-            send_typing_state(false, true)
-            stop_local_idle_timer()
-        end))
-    else
-        vim.defer_fn(function()
-            send_typing_state(false, true)
-        end, 2000)
-    end
-end
-
-local function clear_local_typing()
-    stop_local_idle_timer()
-    send_typing_state(false, true)
+        _update_tool_spinners()
+    end))
 end
 
 function M._append_tool_call(name, args)
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
     end
+    -- session trace: surface agent tool calls in the unified log
+    do
+        local ok_cmds, cmds = pcall(require, "poor-cli.commands")
+        if ok_cmds and type(cmds._log_session) == "function" then
+            local args_preview = type(args) == "table" and vim.inspect(args) or tostring(args or "")
+            args_preview = tostring(args_preview):gsub("\n", " "):sub(1, 240)
+            cmds._log_session("event", string.format("tool_call %s %s", name or "?", args_preview))
+        end
+    end
     local line_count = vim.api.nvim_buf_line_count(M.buf)
     local args_str = type(args) == "table" and vim.inspect(args) or tostring(args or "")
-    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, {
-        "**🔧 " .. (name or "tool") .. "**",
-        "```",
-        args_str,
-        "```",
-        "",
+    local args_lines = vim.split(args_str, "\n", { plain = true })
+    -- header + args fence + running line + blank; running line is the one
+    -- we'll replace when the result arrives.
+    local initial = string.format("%s running %s… (0s)", _tool_spinner_frame(), name or "tool")
+    local block = { "**🔧 " .. (name or "tool") .. "**", "```" }
+    for _, l in ipairs(args_lines) do table.insert(block, l) end
+    table.insert(block, "```")
+    table.insert(block, initial)
+    table.insert(block, "")
+    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, block)
+    local running_line = line_count + (#block - 2) -- 0-indexed row of the "running..." line
+    local extmark_id = vim.api.nvim_buf_set_extmark(M.buf, M.tool_ns, running_line, 0, {})
+    table.insert(M._pending_tools, {
+        name = name or "tool",
+        extmark_id = extmark_id,
+        started_ns = vim.loop.hrtime and vim.loop.hrtime() or 0,
     })
+    _ensure_tool_spinner_timer()
+end
+
+local function _take_pending_tool(name)
+    -- FIFO match by name; if the backend sends results out of order for
+    -- parallel tool calls with the same name, first-pending wins.
+    for i, p in ipairs(M._pending_tools) do
+        if p.name == name then return table.remove(M._pending_tools, i) end
+    end
+    return M._pending_tools[1] and table.remove(M._pending_tools, 1) or nil
 end
 
 function M._append_tool_result(name, result, original_size, filtered_size)
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
     end
-    local line_count = vim.api.nvim_buf_line_count(M.buf)
-    local result_str = tostring(result or "")
-    if #result_str > 500 then
-        result_str = result_str:sub(1, 500) .. "…"
+    local full_str = tostring(result or "")
+    local truncated = #full_str > 500
+    do
+        local ok_cmds, cmds = pcall(require, "poor-cli.commands")
+        if ok_cmds and type(cmds._log_session) == "function" then
+            cmds._log_session("event", string.format("tool_result %s (%d bytes%s)",
+                name or "?", #full_str, truncated and ", truncated" or ""))
+        end
     end
+    local display_str = truncated and (full_str:sub(1, 500) .. "…") or full_str
     local size_note = ""
     if tonumber(original_size or 0) > 0 and tonumber(filtered_size or 0) > 0 and original_size ~= filtered_size then
         size_note = string.format(" (%.1f KB → %.1f KB)", original_size / 1024, filtered_size / 1024)
     end
-    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, {
-        "**✓ " .. (name or "tool") .. " result" .. size_note .. "**",
-        "```",
-        result_str,
-        "```",
-        "",
-    })
+    local header = "**✓ " .. (name or "tool") .. " result" .. size_note .. "**"
+
+    local pending = _take_pending_tool(name or "tool")
+    local elapsed_suffix = ""
+    if pending and pending.started_ns and vim.loop.hrtime then
+        local ms = math.floor((vim.loop.hrtime() - pending.started_ns) / 1000000)
+        elapsed_suffix = string.format(" · %dms", ms)
+    end
+    local result_lines = { header .. elapsed_suffix, "```", display_str, "```", "" }
+
+    if pending then
+        local pos = vim.api.nvim_buf_get_extmark_by_id(M.buf, M.tool_ns, pending.extmark_id, {})
+        pcall(vim.api.nvim_buf_del_extmark, M.buf, M.tool_ns, pending.extmark_id)
+        if pos and pos[1] then
+            -- replace the single "running…" line with the result block in place
+            pcall(vim.api.nvim_buf_set_lines, M.buf, pos[1], pos[1] + 1, false, result_lines)
+            if truncated then
+                local full_ext = vim.api.nvim_buf_set_extmark(M.buf, M.tool_ns, pos[1], 0, {
+                    virt_text = { { string.format(" [%d chars truncated · <CR> to expand]", #full_str - 500), "Comment" } },
+                    virt_text_pos = "eol",
+                    hl_mode = "combine",
+                })
+                M._tool_full_results[full_ext] = {
+                    full = full_str,
+                    header = header .. elapsed_suffix,
+                    start_row = pos[1],
+                    end_row = pos[1] + #result_lines,
+                }
+            end
+            return
+        end
+    end
+    -- fallback: no pending entry matched (e.g. result without start event) —
+    -- append at end-of-buffer as before, but still mark truncation
+    local line_count = vim.api.nvim_buf_line_count(M.buf)
+    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, result_lines)
+    if truncated then
+        local full_ext = vim.api.nvim_buf_set_extmark(M.buf, M.tool_ns, line_count, 0, {
+            virt_text = { { string.format(" [%d chars truncated · <CR> to expand]", #full_str - 500), "Comment" } },
+            virt_text_pos = "eol",
+            hl_mode = "combine",
+        })
+        M._tool_full_results[full_ext] = {
+            full = full_str,
+            header = header .. elapsed_suffix,
+            start_row = line_count,
+            end_row = line_count + #result_lines,
+        }
+    end
+end
+
+-- Look up a truncated-tool-result extmark at or above the cursor's row.
+-- Returns { extmark_id, entry } or nil.
+function M._tool_result_at_cursor()
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then return nil end
+    local row = (vim.api.nvim_win_get_cursor(0) or { 1, 0 })[1] - 1
+    local marks = vim.api.nvim_buf_get_extmarks(M.buf, M.tool_ns, 0, -1, { details = true })
+    local best
+    for _, m in ipairs(marks) do
+        local id, mrow = m[1], m[2]
+        local entry = M._tool_full_results[id]
+        if entry and mrow <= row and row < entry.end_row then
+            if not best or mrow > best.row then
+                best = { id = id, row = mrow, entry = entry }
+            end
+        end
+    end
+    return best
+end
+
+function M.expand_tool_result_at_cursor()
+    local hit = M._tool_result_at_cursor()
+    if not hit then return false end
+    local entry = hit.entry
+    local new_lines = { entry.header .. " (expanded)", "```" }
+    for _, line in ipairs(vim.split(entry.full, "\n", { plain = true })) do
+        table.insert(new_lines, line)
+    end
+    table.insert(new_lines, "```")
+    table.insert(new_lines, "")
+    vim.bo[M.buf].modifiable = true
+    pcall(vim.api.nvim_buf_set_lines, M.buf, entry.start_row, entry.end_row, false, new_lines)
+    pcall(vim.api.nvim_buf_del_extmark, M.buf, M.tool_ns, hit.id)
+    M._tool_full_results[hit.id] = nil
+    return true
 end
 
 function M._append_tool_stream_chunk(name, chunk)
@@ -2189,13 +2310,12 @@ function M.setup_buffer_keymaps()
         M.open_queue_manager()
     end, { buffer = M.buf, desc = "Open queue manager", nowait = true })
 
-    vim.keymap.set("n", "S", function()
-        vim.cmd("PoorCLICollabQuick")
-    end, { buffer = M.buf, desc = "Share collaboration invite", nowait = true, silent = true })
-
     vim.keymap.set("n", "<CR>", function()
+        -- Context-sensitive: expand a truncated tool result if the cursor
+        -- is on one, otherwise fall through to the send prompt.
+        if M.expand_tool_result_at_cursor() then return end
         M.prompt_and_send()
-    end, { buffer = M.buf, desc = "Send message", nowait = true, silent = true })
+    end, { buffer = M.buf, desc = "Send message (or expand tool result under cursor)", nowait = true, silent = true })
     vim.keymap.set("n", "<leader>rr", function()
         M.regenerate_turn()
     end, { buffer = M.buf, desc = "Regenerate assistant turn", nowait = true, silent = true })
@@ -2232,9 +2352,6 @@ function M.setup_buffer_keymaps()
             vim.keymap.set("n", "<CR>", function()
                 M.prompt_and_send()
             end, { buffer = M.buf, desc = "Send message", nowait = true, silent = true })
-            vim.keymap.set("n", "S", function()
-                vim.cmd("PoorCLICollabQuick")
-            end, { buffer = M.buf, desc = "Share collaboration invite", nowait = true, silent = true })
             vim.keymap.set("n", "<leader>rr", function()
                 M.regenerate_turn()
             end, { buffer = M.buf, desc = "Regenerate assistant turn", nowait = true, silent = true })
@@ -2298,20 +2415,20 @@ local SLASH_HANDLERS = {
     ["/clear"]    = function() M.clear() end,
     ["/cancel"]   = function() M.cancel_active_stream("Cancelled by user.") end,
     ["/queue"]    = function() M.open_queue_manager() end,
-    ["/resume"]   = function() vim.cmd("PoorCLISessionRestore") end,
-    ["/sessions"] = function() vim.cmd("PoorCLISessions") end,
-    ["/save"]     = function() vim.cmd("PoorCLISessionSave") end,
-    ["/status"]   = function() vim.cmd("PoorCLIStatus") end,
-    ["/switch"]   = function() vim.cmd("PoorCLISwitchProvider") end,
-    ["/explain"]  = function() vim.cmd("PoorCLIExplain") end,
-    ["/refactor"] = function() vim.cmd("PoorCLIRefactor") end,
-    ["/test"]     = function() vim.cmd("PoorCLITest") end,
-    ["/doc"]      = function() vim.cmd("PoorCLIDoc") end,
+    ["/resume"]   = function() vim.cmd("PoorCLISession restore") end,
+    ["/sessions"] = function() vim.cmd("PoorCLISession list") end,
+    ["/save"]     = function() vim.cmd("PoorCLISession save") end,
+    ["/status"]   = function() vim.cmd("PoorCLIDiag status") end,
+    ["/switch"]   = function() vim.cmd("PoorCLIProvider switch") end,
+    ["/explain"]  = function() vim.cmd("PoorCLIChat explain") end,
+    ["/refactor"] = function() vim.cmd("PoorCLIChat refactor") end,
+    ["/test"]     = function() vim.cmd("PoorCLIChat test") end,
+    ["/doc"]      = function() vim.cmd("PoorCLIChat doc") end,
     ["/commit"]   = function() vim.cmd("PoorCLICommit") end,
-    ["/fix"]      = function() vim.cmd("PoorCLIFixDiagnostics") end,
-    ["/context"]  = function() vim.cmd("PoorCLIContext") end,
-    ["/rules"]    = function() vim.cmd("PoorCLIRules") end,
-    ["/cost"]     = function() vim.cmd("PoorCLICost") end,
+    ["/fix"]      = function() vim.cmd("PoorCLIDiag fix") end,
+    ["/context"]  = function() vim.cmd("PoorCLIContext show") end,
+    ["/rules"]    = function() vim.cmd("PoorCLIConfig rules") end,
+    ["/cost"]     = function() vim.cmd("PoorCLICost show") end,
     ["/audit-export"] = function(line)
         rpc.request("audit/exportRange", parse_audit_export_args(line), function(result, err)
             vim.schedule(function()
@@ -2327,8 +2444,8 @@ local SLASH_HANDLERS = {
             end)
         end)
     end,
-    ["/doctor"]   = function() vim.cmd("PoorCLIDoctor") end,
-    ["/help"]     = function() vim.cmd("PoorCLIHelp") end,
+    ["/doctor"]   = function() vim.cmd("PoorCLIDiag doctor") end,
+    ["/help"]     = function() vim.cmd("PoorCLIHelp palette") end,
 }
 
 M._input_popup = { buf = nil, win = nil, menu_buf = nil, menu_win = nil }
@@ -2848,7 +2965,6 @@ function M.prompt_and_send(opts)
     vim.keymap.set("i", "<CR>", function()
         local line = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
         local edit_state = opts.edit_state
-        clear_local_typing()
         input_close()
         vim.cmd("stopinsert")
         if line == "" then
@@ -2881,20 +2997,17 @@ function M.prompt_and_send(opts)
 
     -- cancel
     vim.keymap.set("i", "<Esc>", function()
-        clear_local_typing()
         input_close()
         if opts.edit_state then clear_edit_state() end
         vim.cmd("stopinsert")
     end, { buffer = buf, nowait = true })
 
     vim.keymap.set("n", "<Esc>", function()
-        clear_local_typing()
         input_close()
         if opts.edit_state then clear_edit_state() end
     end, { buffer = buf, nowait = true })
 
     vim.keymap.set("n", "q", function()
-        clear_local_typing()
         input_close()
         if opts.edit_state then clear_edit_state() end
     end, { buffer = buf, nowait = true })
@@ -2921,7 +3034,6 @@ function M.prompt_and_send(opts)
     vim.api.nvim_create_autocmd({ "TextChangedI", "TextChanged" }, {
         buffer = buf,
         callback = function()
-            mark_local_typing()
             vim.schedule(update_completions)
         end,
     })
@@ -3000,7 +3112,7 @@ function M.clear()
         vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, {
             "# poor-cli Chat",
             "",
-            "Use `:PoorCLISend` or press `<CR>` at the bottom to send a message.",
+            "Use `:PoorCLIChat send` or press `<CR>` at the bottom to send a message.",
             "",
             "---",
             "",

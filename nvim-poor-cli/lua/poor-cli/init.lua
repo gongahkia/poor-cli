@@ -14,9 +14,9 @@ local EAGER_SETUPS = {
     "tasks", "automations", "agents", "sessions", "memory",
     "checkpoints_ext", "config_mgr", "history_browser",
     "custom_commands", "skills_nvim", "trust", "context_mgr",
-    "cost", "providers", "collab_ext", "deploy_ext",
+    "cost", "providers", "deploy_ext",
     "diagnostics_ext", "onboarding", "prompt_library", "workflow_picker", "pickers",
-    "collab", "multiplayer_room", "users_panel", "panels", "diff_review", "timeline", "branches",
+    "panels", "diff_review", "timeline", "branches",
     "memory_picker", "memory_expire", "pins_list", "strategies",
 }
 
@@ -39,6 +39,7 @@ setmetatable(M, {
 })
 
 M._setup_complete = false
+M._setup_attempted = false
 
 -- Setup function - call this from your Neovim config.
 --
@@ -48,6 +49,42 @@ M._setup_complete = false
 -- effect: `:PoorCLI*` commands + panels are available within one tick of
 -- VimEnter — imperceptible to the user — and nvim startup stays snappy.
 function M.setup(opts)
+    -- Mark attempted BEFORE the hard-dep check can throw, so the VimEnter
+    -- "setup() not called" nudge in plugin/poor-cli.lua doesn't double-fire
+    -- on top of an already-surfaced setup error.
+    M._setup_attempted = true
+    -- Hard dependencies. Each powers a feature that has no alternative
+    -- path inside poor-cli, so missing any of them means a chunk of the
+    -- plugin would silently not work. Fail loudly and list every missing
+    -- one at once, with install snippets, rather than trickling errors.
+    local required = {
+        { module = "snacks",  spec = "folke/snacks.nvim",         why = "notifications + pickers" },
+        { module = "trouble", spec = "folke/trouble.nvim",        why = ":Trouble poor-cli diagnostics" },
+        { module = "dap",     spec = "mfussenegger/nvim-dap",     why = "<leader>pb / <leader>pB breakpoint keymaps" },
+        { module = "neogit",  spec = "NeogitOrg/neogit",          why = "auto-open on commit flow" },
+    }
+    local missing = {}
+    for _, dep in ipairs(required) do
+        if not pcall(require, dep.module) then
+            missing[#missing + 1] = dep
+        end
+    end
+    if #missing > 0 then
+        local lines = { "[poor-cli] missing required plugins:" }
+        for _, dep in ipairs(missing) do
+            table.insert(lines, string.format("  - %s  (%s)", dep.spec, dep.why))
+        end
+        table.insert(lines, "")
+        table.insert(lines, "Install via lazy.nvim:")
+        table.insert(lines, "  dependencies = {")
+        for _, dep in ipairs(missing) do
+            table.insert(lines, string.format("    '%s',", dep.spec))
+        end
+        table.insert(lines, "  }")
+        table.insert(lines, "See nvim-poor-cli/README.md for details.")
+        error(table.concat(lines, "\n"), 0)
+    end
+
     -- config must load first: deferred setups read its values
     local config = require("poor-cli.config")
     config.setup(opts)

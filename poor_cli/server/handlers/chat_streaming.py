@@ -3,25 +3,11 @@ from __future__ import annotations
 
 from poor_cli.server.handler_deps import *
 from poor_cli.server.registry import register
-from poor_cli.multiplayer_attribution import (
-    attribution_explicitly_disabled,
-    current_author_tag,
-)
 
 
 class ChatStreamingHandlersMixin:
-    def _chat_author_fields(self) -> Dict[str, str]:
-        if (
-            not getattr(self, "_embedded_multiplayer_room", False)
-            and attribution_explicitly_disabled(getattr(self, "_client_capabilities", {}))
-        ):
-            return {}
-        return current_author_tag()
-
     def _with_chat_author(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        tagged = dict(params)
-        tagged.update(self._chat_author_fields())
-        return tagged
+        return dict(params)
 
     def _restore_edit_parent(self, params: Dict[str, Any]) -> None:
         turn_id = str(params.get("editTurnId") or params.get("edit_turn_id") or "").strip()

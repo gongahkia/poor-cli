@@ -22,7 +22,6 @@ Python server: poor-cli-server
             +--> policy + sandbox      (poor_cli/sandbox.py, permission_rules.py)
             +--> sessions + history    (poor_cli/session_manager.py, history.py)
             +--> cost telemetry        (poor_cli/economy.py, cost.py)
-            +--> multiplayer           (poor_cli/multiplayer*.py, server/multiplayer_*.py)
 ```
 
 Everything the user sees in Neovim is a thin projection of server state. All business logic, I/O, and persistence live on the Python side. The plugin contains no API keys, no tool dispatch, no cost math.
@@ -37,15 +36,17 @@ Everything the user sees in Neovim is a thin projection of server state. All bus
 - `lua/poor-cli/inline.lua` — ghost-text completion, accept/dismiss/cycle.
 - `lua/poor-cli/diff_review.lua` — staged-edit hunk-by-hunk accept/reject/regen.
 - `lua/poor-cli/timeline.lua` — live tool-call timeline with cancel/retry/dismiss.
-- `lua/poor-cli/panels/*.lua` — scratch-buffer dashboards (cost, savings, policy, watch, etc.).
-- `lua/poor-cli/integrations/*.lua` — runtime-detected optional plugins (trouble, gitsigns, snacks, oil, overseer, neogit, dap).
+- `lua/poor-cli/panels/*.lua` — info dashboards (cost, savings, etc.). Open as snacks floats by default; set `layout = { panels = "vsplit" }` to restore the legacy right-side sidebar.
+- `lua/poor-cli/float_win.lua` — shared floating-window primitive used by every panel, diff review, timeline, and detail view.
+- `lua/poor-cli/pickers.lua` — thin wrapper over `snacks.pick`; every picker in the plugin routes through it.
+- `lua/poor-cli/integrations/*.lua` — plugin bridges. Four are hard-required (trouble, nvim-dap, neogit, snacks — all enforced in `init.lua::setup`); the rest (gitsigns, oil, overseer, cmp, blink, lualine) are optional and skip silently if missing.
 - `lua/poor-cli/turn_pin.lua` — CB2 soft/hard pin toggle + badge render on chat turns (`gp` keymap).
 - `lua/poor-cli/pins_list.lua` — CB2 cross-session pin viewer (`:PoorCLIPinsList`).
 - `lua/poor-cli/memory_picker.lua` — MH8 memory picker sorted by hits / recency / name.
 - `lua/poor-cli/memory_expire.lua` — MH3 end-of-session expiry confirmation dialog.
 - `lua/poor-cli/strategies.lua` — runtime UI for swap-able strategies (MH7 reranker, CB3 adaptive scoring).
 - `lua/poor-cli/ux.lua` + `lua/poor-cli/ux/*.lua` — opt-in UX features (command palette, streaming indicator, home nav, etc.). Off by default; enable via `setup({ ux = { <feature> = true } })`.
-- No hard dependencies beyond Neovim + plenary (test-time only).
+- Hard dependencies: `folke/snacks.nvim`, `folke/trouble.nvim`, `mfussenegger/nvim-dap`, `NeogitOrg/neogit`. `require('poor-cli').setup()` refuses to load without any of them. `plenary.nvim` is required at test time only.
 
 ### Python Server (`poor_cli/`)
 
@@ -64,7 +65,6 @@ Key modules by role:
 | Sandbox + policy | `sandbox.py`, `permission_rules.py`, `permission_engine.py`, `policy_hooks.py`, `trust.py` |
 | Economy | `economy.py`, `cost.py`, `token_counter.py`, `thinking_budget.py`, `token_budget_controller.py`, `adaptive_budget.py`, `budget_retuning.py` |
 | Sessions | `session_manager.py`, `session_store.py`, `history.py`, `history_pruning.py` (CB2 overlay-aware, CB3 adaptive-scored), `run_history.py`, `checkpoint.py`, `turn_pin_overlay.py` (CB2 per-repo soft/hard pin overlay) |
-| Multiplayer | `multiplayer.py`, `multiplayer_invites.py`, `multiplayer_session.py`, `server/multiplayer_{runtime,state}.py` |
 | MCP | `mcp/` (stdio + http transports, multi-server, registry) |
 | RPC layer | `server/runtime.py`, `server/handlers/`, `server/transport.py`, `server/rate_limit.py`, `server/registry.py` |
 | User-facing strategy toggles | `ux_strategies.py` (persists `.poor-cli/strategies.json`; feeds reranker strategy + CB3 adaptive override into consumers) |
@@ -72,7 +72,7 @@ Key modules by role:
 
 ### JSON-RPC Contract
 
-The Lua plugin calls methods by name (e.g. `chat.send`, `diff.list`, `cost.snapshot`). Handlers self-register via decorators in `poor_cli/server/handlers/*.py`. Each handler file maps to a functional area (chat, cost, multiplayer, context, trust, etc.). `server/runtime.py` owns dispatch + transport only; handlers do the work.
+The Lua plugin calls methods by name (e.g. `chat.send`, `diff.list`, `cost.snapshot`). Handlers self-register via decorators in `poor_cli/server/handlers/*.py`. Each handler file maps to a functional area (chat, cost, context, trust, etc.). `server/runtime.py` owns dispatch + transport only; handlers do the work.
 
 Streaming events (tool chunks, cost deltas, timeline updates) flow as server-push notifications via the same channel.
 
@@ -146,10 +146,6 @@ Every provider response carries token counts. `cost.py` maps tokens → USD usin
 
 Savings come from multiple sources: prompt compression (`prompt_compressor.py`), semantic cache hits (`semantic_cache.py`), prefix cache hits (Anthropic), model routing downshifts (`model_router.py`), and per-file diff-of-diff (`context/diff_cache.py`). The Savings Dashboard (`:PoorCLISavings`) aggregates these.
 
-## Multiplayer
-
-Invite-only, owner-authoritative WebRTC DataChannel sessions. `multiplayer.py` hosts the state machine; `multiplayer_invites.py` signs/verifies invites; `server/multiplayer_state.py` owns the collaboration state machine. The Neovim plugin exposes `:PoorCLIChat` Share key, `:PoorCLICollabQuick`, `:PoorCLIRoom`. See [MULTIPLAYER.md](./docs/MULTIPLAYER.md) for protocol.
-
 ## Contributing
 
 ### Starting Points
@@ -190,6 +186,4 @@ Invite-only, owner-authoritative WebRTC DataChannel sessions. `multiplayer.py` h
 - [POOR.md](./POOR.md) — project-level rules loaded alongside AGENTS.md.
 - [docs/MCP.md](./docs/MCP.md) — custom MCP server configuration.
 - [docs/HARNESS_PORTABILITY.md](./docs/HARNESS_PORTABILITY.md) — anti-lock-in stance.
-- [docs/MULTIPLAYER.md](./docs/MULTIPLAYER.md) — real-time collab protocol.
-- [docs/archive/implementation_waves.md](./docs/archive/implementation_waves.md) — 21-phase roadmap, archived (all waves shipped or tracked in TODO.md).
 - [LONGTERM-TODO.md](./LONGTERM-TODO.md) — prioritized remaining work.

@@ -292,8 +292,54 @@ class ProvidersHandlersMixin:
 
         return {"providers": status, "keyring": credential_store.status()}
 
+    async def handle_purge_api_key(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Delete a provider's key from the OS keyring and in-memory config.
+
+        Does not unset the user's shell env var (out of our scope). After a
+        purge the next lookup falls through to the env var / config file,
+        per poor_cli.credentials.CredentialStore.get_with_source.
+
+        Params:
+            provider: Provider name.
+        """
+        config_manager, config = self._ensure_config_loaded()
+        provider = self._normalize_provider_name(str(params.get("provider", "")))
+        if not provider:
+            raise InvalidParamsError("Missing provider")
+        if provider not in config.model.providers:
+            raise InvalidParamsError(f"Unknown provider: {provider}")
+
+        from ...credentials import get_credential_store
+
+        store = get_credential_store()
+        deleted = store.delete(provider)
+        # Scrub in-memory config + config manager too so the next lookup
+        # doesn't resurrect the stale value from memory.
+        config.api_keys.pop(provider, None)
+        config_manager.config.api_keys.pop(provider, None)
+
+        return {
+            "provider": provider,
+            "keyringDeleted": deleted,
+            "configCleared": True,
+        }
+
     async def handle_test_api_key(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate an API key by making a minimal API call (zero tokens)."""
+        """Validate an API key by making a minimal API call (zero tokens).
+
+        Returns three-state result:
+          status = "valid"   — provider returned 200
+          status = "invalid" — provider returned 401/403 (or 400 for Gemini)
+          status = "unknown" — network error, timeout, 429 rate limit, 5xx,
+                                or any other non-conclusive response
+
+        The "valid" key is kept for clients that can't yet read status;
+        it is True ONLY for "valid" so existing callers don't accidentally
+        save on "unknown". Clients that distinguish the three states
+        (e.g. :PoorCLIConfig api-key) should read `status` and treat "unknown" as
+        "save the key but warn that we couldn't confirm it works".
+        """
         provider = self._normalize_provider_name(str(params.get("provider", "")))
         if not provider:
             raise InvalidParamsError("Missing provider")
@@ -301,57 +347,40 @@ class ProvidersHandlersMixin:
         if provider == "ollama":
             base_url = self._ollama_base_url()
             reachable = self._is_ollama_reachable(base_url)
-            return {"valid": reachable, "error": None if reachable else f"Ollama not reachable at {base_url}"}
+            return {
+                "valid": reachable, "status": "valid" if reachable else "unknown",
+                "error": None if reachable else f"Ollama not reachable at {base_url}",
+            }
         if provider == "hf_local":
             from ...providers.provider_factory import ProviderFactory
-            return {
-                "valid": ProviderFactory.is_provider_available("hf_local"),
-                "error": None,
-            }
+            available = ProviderFactory.is_provider_available("hf_local")
+            return {"valid": available, "status": "valid" if available else "unknown", "error": None}
         if provider in {"vllm", "llama_server", "sglang", "hf_tgi", "lmstudio"}:
             _, config = self._ensure_config_loaded()
             provider_cfg = config.model.providers.get(provider)
             base_url = provider_cfg.base_url if provider_cfg else ""
             reachable = self._is_openai_compatible_local_reachable(base_url)
-            return {"valid": reachable, "error": None if reachable else f"{provider} not reachable at {base_url}"}
+            return {
+                "valid": reachable, "status": "valid" if reachable else "unknown",
+                "error": None if reachable else f"{provider} not reachable at {base_url}",
+            }
         if not api_key:
             raise InvalidParamsError("Missing apiKey")
+        # Delegate to the 3-state validator (poor_cli.api_key_validator). It
+        # correctly separates "definitely invalid" (401/403) from "couldn't
+        # verify" (429 rate limit, 5xx, timeout, DNS) so clients don't reject
+        # a perfectly valid key on a transient network hiccup.
         try:
-            valid, error_msg = await self._probe_api_key(provider, api_key)
-            return {"valid": valid, "error": error_msg}
-        except Exception as e:
-            return {"valid": False, "error": str(e)}
-
-    async def _probe_api_key(self, provider: str, api_key: str) -> Tuple[bool, Optional[str]]:
-        """Hit a lightweight model-list endpoint to verify an API key."""
-        import urllib.error
-        if provider == "gemini":
-            url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-            req = Request(url, method="GET")
-        elif provider == "openai":
-            req = Request("https://api.openai.com/v1/models", method="GET")
-            req.add_header("Authorization", f"Bearer {api_key}")
-        elif provider == "anthropic":
-            req = Request("https://api.anthropic.com/v1/models", method="GET")
-            req.add_header("x-api-key", api_key)
-            req.add_header("anthropic-version", "2023-06-01")
-        elif provider == "openrouter":
-            req = Request("https://openrouter.ai/api/v1/models", method="GET")
-            req.add_header("Authorization", f"Bearer {api_key}")
-        else:
-            return False, f"No validation endpoint for provider: {provider}"
-        try:
+            from ...api_key_validator import validate, VALID
             loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(None, lambda: urlopen(req, timeout=30))
-            return (True, None) if response.status == 200 else (False, f"HTTP {response.status}")
-        except urllib.error.HTTPError as e:
-            if e.code == 401:
-                return False, "Invalid API key (401 Unauthorized)"
-            if e.code == 403:
-                return False, "API key forbidden (403)"
-            return False, f"HTTP error {e.code}: {e.reason}"
+            result = await loop.run_in_executor(None, validate, provider, api_key)
+            return {
+                "valid": result.status == VALID,
+                "status": result.status,  # "valid" | "invalid" | "unknown"
+                "error": result.reason or None,
+            }
         except Exception as e:
-            return False, str(e)
+            return {"valid": False, "status": "unknown", "error": str(e)}
 
     async def handle_list_ollama_models(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Discover models available on the local Ollama server."""
@@ -405,6 +434,10 @@ async def _rpc_46(ctx, params):
 @register('poor-cli/testApiKey')
 async def _rpc_47(ctx, params):
     return await ctx.handle_test_api_key(params)
+
+@register('poor-cli/purgeApiKey')
+async def _rpc_48a(ctx, params):
+    return await ctx.handle_purge_api_key(params)
 
 @register('poor-cli/listProviders')
 async def _rpc_48(ctx, params):

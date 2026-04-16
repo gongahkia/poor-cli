@@ -571,30 +571,6 @@
       "category": "Git & Workspace"
     },
     {
-      "command": "/collab",
-      "description": "Start, join, summarize, and manage collaboration sessions",
-      "recommended": false,
-      "category": "Collaboration"
-    },
-    {
-      "command": "/pass",
-      "description": "Hand driver role to the next collaborator",
-      "recommended": false,
-      "category": "Collaboration"
-    },
-    {
-      "command": "/suggest",
-      "description": "Send suggestion to the active driver",
-      "recommended": false,
-      "category": "Collaboration"
-    },
-    {
-      "command": "/leave",
-      "description": "Disconnect from collaboration session",
-      "recommended": false,
-      "category": "Collaboration"
-    },
-    {
       "command": "/cost",
       "description": "Show session token usage and estimated cost",
       "recommended": true,

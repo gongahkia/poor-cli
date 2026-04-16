@@ -35,15 +35,15 @@ M.defaults = {
     completion_model = nil,
     rtk_enabled = true,
 
-    -- Multiplayer remote bridge mode
-    multiplayer = {
-        enabled = false,
-        invite = nil,
-    },
-    
     -- UI options
     chat_width = 60,
     chat_position = "right",  -- "right" or "left"
+    -- Surface layout: "float" (default) opens panels/scratch as floating windows.
+    -- Set to "vsplit" to restore the legacy right-side sidebar behavior.
+    layout = {
+        panels = "float",
+        scratch = "float",
+    },
     notifications = {
         group = "poor-cli",
         snacks = true,
@@ -149,22 +149,63 @@ M.defaults = {
     -- Disabled by default to reduce terminal noise; enable for debugging.
     verbose_rpc = false,
 
+    -- Per-tool permission allow/deny-list. Complements permission_mode:
+    --   allow = {...} — these tools auto-approve without showing the modal.
+    --   deny  = {...} — these tools auto-reject without showing the modal.
+    -- Entry format:
+    --   "tool_name"            — matches any invocation of that tool
+    --   "tool_name:pattern"    — pattern is a glob (`*` → any). Matches
+    --                             against vim.inspect(args), so e.g.
+    --                             "bash:*pip install*" auto-allows pip
+    --                             installs, "bash:*rm -rf*" auto-denies
+    --                             dangerous deletes.
+    -- deny is checked first; a tool in both lists gets denied.
+    permission = {
+        allow = {},
+        deny = {},
+    },
+
+    -- Session trace. When true, every interesting event flows into a
+    -- unified log line format in :messages:
+    --   [poor-cli log HH:MM:SS.mmm] <category> <detail>
+    -- Categories:
+    --   input  — :PoorCLI* command invocations + chat sends
+    --   rpc    — outgoing RPC method names (forwarded from verbose_rpc)
+    --   state  — server state transitions + api-key validity flips
+    --   event  — tool calls, permission decisions, turn boundaries,
+    --             server crashes
+    -- ON by default so bug reports naturally include the trace; turn off
+    -- via :PoorCLIInputLog off if the :messages noise gets in your way.
+    log_user_input = true,
+
+    -- Chat turn tracing:
+    --   "off"     — no trace toasts (default)
+    --   "basic"   — toast when message sent, when provider returns first
+    --               token, and when the turn finishes (tokens + cost + elapsed)
+    --   "verbose" — basic + "💭 thinking started/ended" brackets around
+    --               any chain-of-thought the provider emits.
+    --               Requires a model that reports the EXTENDED_THINKING
+    --               capability (Anthropic Claude with extended thinking,
+    --               OpenAI reasoning-mode models). If the active provider
+    --               doesn't support it, the plugin surfaces a one-time
+    --               notice and the basic traces still fire.
+    -- Toggle at runtime with :PoorCLIChatTrace [off|basic|verbose].
+    chat_trace = "off",
+
     -- opt-in UX features (off by default; set true to enable)
     ux = {
-        command_palette = false,        -- :PoorCLIPalette fuzzy-find across all commands
+        command_palette = false,        -- :PoorCLIHelp palette fuzzy-find across all commands
         streaming_indicator = false,    -- virt_text "[streaming... q cancel]" in chat buffer
         auto_onboarding = false,        -- auto-surface onboarding when API key missing
-        panels_bulk = false,            -- :PoorCLIPanels {open|close|toggle} bulk ops
         inline_cycle_hint = false,      -- ghost-text "1/3" candidate counter
         cost_lualine_auto = false,      -- auto-register cost component in lualine
         diff_accept_all = false,        -- gAA accept-all shortcut in diff review
         context_remove_files = false,   -- 'd' in context panel marks file excluded from next send
-        multiplayer_presence = false,   -- :PoorCLICollaboratorsPanel + chat vote overlay
-        home_nav = false,               -- :PoorCLIHome close aux windows, return to editor
+        home_nav = false,               -- :PoorCLIHelp keymaps / home-nav: close aux windows, return to editor
         provider_cost_preview = false,  -- cost column in provider picker
         inline_status_lualine = false,  -- realtime inline completion status in lualine
         chat_history_search = false,    -- '?' in chat buffer filters turns
-        completion_reason = false,      -- :PoorCLIStatus shows completion-disabled reason
+        completion_reason = false,      -- :PoorCLIDiag status shows completion-disabled reason
         health_actions = false,         -- :checkhealth entries include actionable cmd hints
     },
 }
@@ -215,21 +256,6 @@ function M.get(key)
     return M.config[key]
 end
 
-function M.set_multiplayer_bootstrap(opts)
-    local multiplayer = vim.deepcopy(M.config.multiplayer or {})
-    multiplayer.enabled = opts and opts.enabled == true or false
-    multiplayer.invite = opts and opts.invite or nil
-    M.config.multiplayer = multiplayer
-    return multiplayer
-end
-
-function M.clear_multiplayer_bootstrap()
-    return M.set_multiplayer_bootstrap({
-        enabled = false,
-        invite = nil,
-    })
-end
-
 -- Check if debug mode is enabled
 function M.is_debug()
     return M.config.debug
@@ -256,12 +282,6 @@ end
 function M.sanitized_for_debug()
     local debug_config = vim.deepcopy(M.config)
     debug_config.api_key_env = nil
-    local multiplayer = debug_config.multiplayer
-    if type(multiplayer) == "table" then
-        if multiplayer.invite then
-            multiplayer.invite = "<redacted>"
-        end
-    end
     return debug_config
 end
 

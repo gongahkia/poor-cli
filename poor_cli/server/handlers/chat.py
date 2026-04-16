@@ -229,9 +229,16 @@ class ChatHandlersMixin:
         total time via the validator's own 2s per-request timeout. Returns
         a dict like ``{"provider": "anthropic", "status": "valid", "reason": ""}``
         so the client can decide whether to prompt for re-auth.
+
+        Auto-heal behavior: if the active key (which came from the keyring
+        via the keyring→env→config lookup chain) validates as INVALID, and
+        the provider's env var is set to a DIFFERENT value, we overwrite
+        the keyring with the env value and re-validate once. This fixes
+        the "I exported a fresh key but the stale keyring entry still wins"
+        surprise without changing the lookup precedence.
         """
         try:
-            from poor_cli.api_key_validator import validate
+            from poor_cli.api_key_validator import validate, INVALID
             provider_name = str((provider_info or {}).get("name") or "").strip()
             if not provider_name:
                 return {"provider": "unknown", "status": "unknown", "reason": "no provider"}
@@ -247,10 +254,47 @@ class ChatHandlersMixin:
                 return {"provider": provider_name, "status": "unknown", "reason": "no key configured"}
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(None, validate, provider_name, api_key)
-            return result.to_dict()
+            if result.status != INVALID:
+                return result.to_dict()
+            # Key came up INVALID — try env-var auto-sync before giving up.
+            synced = await loop.run_in_executor(None, self._try_env_keyring_sync, provider_name, api_key)
+            if not synced:
+                return result.to_dict()
+            # Env had a different value and we wrote it to the keyring;
+            # re-probe once to see if the fresh value is valid.
+            retry_info = config_manager.get_api_key_info(provider_name)
+            retry_key = str(retry_info.get("key") or "")
+            if not retry_key or retry_key == api_key:
+                return result.to_dict()
+            retry_result = await loop.run_in_executor(None, validate, provider_name, retry_key)
+            logger.info(
+                "auto-synced %s key from env to keyring after invalid probe; new status=%s",
+                provider_name, retry_result.status,
+            )
+            return retry_result.to_dict()
         except Exception as exc:
             logger.debug("api key validity probe failed: %s", exc)
             return {"provider": "unknown", "status": "unknown", "reason": f"probe error: {exc}"}
+
+    def _try_env_keyring_sync(self, provider_name: str, current_key: str) -> bool:
+        """Overwrite keyring with env-var value if they differ. Returns True
+        if a write happened. Delegates to CredentialStore.sync_env_to_keyring.
+        """
+        try:
+            from ...credentials import get_credential_store
+            _, config = self._ensure_config_loaded()
+            provider_cfg = config.model.providers.get(provider_name)
+            if provider_cfg is None:
+                return False
+            synced = get_credential_store().sync_env_to_keyring(
+                provider_name, provider_cfg.api_key_env_var, current_key,
+            )
+            if synced:
+                config.api_keys[provider_name] = os.environ.get(provider_cfg.api_key_env_var, "")
+            return synced
+        except Exception as exc:
+            logger.debug("env→keyring auto-sync failed: %s", exc)
+            return False
 
     async def handle_shutdown(self, params: Dict[str, Any]) -> None:
         """Shutdown the server."""

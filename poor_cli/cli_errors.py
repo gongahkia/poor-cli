@@ -21,10 +21,6 @@ def _configuration_hint(message: str) -> Optional[str]:
     lowered = message.lower()
     if "no api key found for provider" in lowered:
         return "Set the provider API key in the current shell, or rerun with `--api-key`."
-    if "invalid invite code" in lowered:
-        return "Generate a fresh invite from the host and pass it to `--invite` unchanged."
-    if "bridge mode requires aiohttp" in lowered or "bridge mode requires aiortc" in lowered:
-        return "Install the current package dependencies in this environment and retry."
     return None
 
 

@@ -95,7 +95,7 @@ function M.check()
             warn("Server is running but provider info is unavailable")
         end
     else
-        info("Server is not running. Use :PoorCLIStart to start")
+        info("Server is not running. Use :PoorCLIServer start to start")
     end
 
     if status.last_error_message and status.last_error_message ~= "" then
@@ -110,19 +110,26 @@ function M.check()
     if has_treesitter then
         ok("nvim-treesitter available")
     else
-        info("nvim-treesitter not found. Some features like :PoorCLIDoc may be limited")
+        info("nvim-treesitter not found. Some features like :PoorCLIChat doc may be limited")
     end
 
-    -- notification plugin: soft dep, but strongly recommended because
-    -- error messages render much better with a real toast system
-    local has_snacks = pcall(require, "snacks")
-    local has_notify = pcall(require, "notify")
-    if has_snacks then
-        ok("snacks.nvim available — notifications will render as floating toasts")
-    elseif has_notify then
-        ok("rcarriga/nvim-notify available — notifications will render as floating toasts")
-    else
-        warn("No notification plugin detected. ERROR/WARN messages will fall back to a one-line summary + :messages history. Install rcarriga/nvim-notify or folke/snacks.nvim for multi-line toasts.")
+    -- Hard dependencies. setup() refuses to load without any of these, so
+    -- reaching this branch while one is missing means the user has not yet
+    -- reloaded their config after updating.
+    local required = {
+        { module = "snacks",  spec = "folke/snacks.nvim" },
+        { module = "trouble", spec = "folke/trouble.nvim" },
+        { module = "dap",     spec = "mfussenegger/nvim-dap" },
+        { module = "neogit",  spec = "NeogitOrg/neogit" },
+    }
+    for _, dep in ipairs(required) do
+        if pcall(require, dep.module) then
+            ok(dep.spec .. " available (required)")
+        else
+            local h = vim.health or require("health")
+            (h.error or h.report_error)(dep.spec .. " is a REQUIRED dependency and is not installed. "
+                .. "poor-cli will refuse to load without it.")
+        end
     end
 
     local has_cmp, cmp = pcall(require, "cmp")
@@ -165,7 +172,6 @@ function M.check()
         { mod = "poor-cli.context_mgr", name = "context_mgr" },
         { mod = "poor-cli.cost", name = "cost" },
         { mod = "poor-cli.providers", name = "providers" },
-        { mod = "poor-cli.collab_ext", name = "collab_ext" },
     }
     for _, d in ipairs(domains) do
         local loaded, _ = pcall(require, d.mod)

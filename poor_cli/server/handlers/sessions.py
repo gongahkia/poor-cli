@@ -3,10 +3,6 @@ from __future__ import annotations
 
 from poor_cli.server.handler_deps import *
 from poor_cli.server.registry import register
-from poor_cli.multiplayer_attribution import (
-    attribution_explicitly_disabled,
-    local_author_tag,
-)
 
 
 class SessionsHandlersMixin:
@@ -16,11 +12,8 @@ class SessionsHandlersMixin:
             "content": msg.content,
             "timestamp": msg.timestamp,
         }
-        if (
-            getattr(self, "_embedded_multiplayer_room", False)
-            or not attribution_explicitly_disabled(getattr(self, "_client_capabilities", {}))
-        ):
-            payload["author"] = msg.author or local_author_tag()
+        if msg.author:
+            payload["author"] = msg.author
         return payload
 
     def _get_repo_config(self):

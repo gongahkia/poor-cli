@@ -1,13 +1,14 @@
 -- poor-cli/pins_list.lua
--- CB2 follow-up: :PoorCLIPinsList — cross-session viewer/cleaner for
--- turn pin overlay (.poor-cli/turn_pins.json). Lists every pinned turn
--- (soft or hard), with keymaps to unpin individual rows or clear all.
+-- CB2 follow-up: :PoorCLIPinsList — cross-session viewer/cleaner for the
+-- turn pin overlay (.poor-cli/turn_pins.json). Migrated from a botright
+-- vsplit to pickers.pick with per-row actions (unpin / clear all / jump
+-- to chat). Buffer/render helpers stay intact so existing specs pass.
 
 local M = {}
 
 M.buf = nil
 M.win = nil
-M._rows = {} -- { [line] = { turnId, state } }
+M._rows = {}
 
 local HEADER = {
     "# poor-cli Pinned Turns",
@@ -52,38 +53,32 @@ end
 
 M._render = render
 
+local function notify(msg, level) require("poor-cli.notify").notify("[poor-cli] " .. msg, level) end
+
+local function unpin(turn_id, on_done)
+    local rpc = require("poor-cli.rpc")
+    rpc.request("poor-cli/setTurnPin", { turnId = turn_id, state = vim.NIL }, function(_, err)
+        vim.schedule(function()
+            if err then
+                notify("setTurnPin: " .. rpc.format_error(err), vim.log.levels.ERROR)
+                return
+            end
+            local ok, tp = pcall(require, "poor-cli.turn_pin")
+            if ok then pcall(tp.hydrate) end
+            if on_done then on_done() end
+        end)
+    end)
+end
+
 function M.refresh()
     local rpc = require("poor-cli.rpc")
     rpc.request("poor-cli/listTurnPins", {}, function(result, err)
         vim.schedule(function()
             if err then
-                require("poor-cli.notify").notify("[poor-cli] listTurnPins: " .. rpc.format_error(err), vim.log.levels.ERROR)
+                notify("listTurnPins: " .. rpc.format_error(err), vim.log.levels.ERROR)
                 return
             end
             render((result or {}).pins or {})
-        end)
-    end)
-end
-
-local function row_at_cursor()
-    if not (M.win and vim.api.nvim_win_is_valid(M.win)) then return nil end
-    return M._rows[vim.api.nvim_win_get_cursor(M.win)[1]]
-end
-
-function M.unpin_current()
-    local row = row_at_cursor()
-    if not row then return end
-    local rpc = require("poor-cli.rpc")
-    rpc.request("poor-cli/setTurnPin", { turnId = row.turnId, state = vim.NIL }, function(_, err)
-        vim.schedule(function()
-            if err then
-                require("poor-cli.notify").notify("[poor-cli] setTurnPin: " .. rpc.format_error(err), vim.log.levels.ERROR)
-                return
-            end
-            M.refresh()
-            -- notify chat buffer to re-hydrate badges
-            local ok, tp = pcall(require, "poor-cli.turn_pin")
-            if ok then pcall(tp.hydrate) end
         end)
     end)
 end
@@ -94,7 +89,7 @@ function M.clear_all()
         vim.schedule(function()
             local pins = (result or {}).pins or {}
             if vim.tbl_isempty(pins) then
-                require("poor-cli.notify").notify("[poor-cli] no pins to clear", vim.log.levels.INFO)
+                notify("no pins to clear", vim.log.levels.INFO)
                 return
             end
             local choice = vim.fn.confirm(
@@ -108,10 +103,9 @@ function M.clear_all()
                     vim.schedule(function()
                         pending = pending - 1
                         if pending <= 0 then
-                            M.refresh()
                             local ok, tp = pcall(require, "poor-cli.turn_pin")
                             if ok then pcall(tp.hydrate) end
-                            require("poor-cli.notify").notify("[poor-cli] cleared all pins", vim.log.levels.INFO)
+                            notify("cleared all pins", vim.log.levels.INFO)
                         end
                     end)
                 end)
@@ -120,63 +114,58 @@ function M.clear_all()
     end)
 end
 
-function M.jump_to_chat()
-    local row = row_at_cursor()
-    if not row then return end
+local function jump_to_chat(turn_id)
     local chat = require("poor-cli.chat")
     if not chat.open then return end
     chat.open()
     for _, turn in ipairs(chat.turns or {}) do
-        if tostring(turn.id) == row.turnId and chat.win and vim.api.nvim_win_is_valid(chat.win) then
+        if tostring(turn.id) == turn_id and chat.win and vim.api.nvim_win_is_valid(chat.win) then
             pcall(vim.api.nvim_win_set_cursor, chat.win, { (turn.start_line or 0) + 1, 0 })
             return
         end
     end
-    require("poor-cli.notify").notify("[poor-cli] turn not in current chat buffer", vim.log.levels.WARN)
+    notify("turn not in current chat buffer", vim.log.levels.WARN)
 end
 
-function M.close()
-    if M.win and vim.api.nvim_win_is_valid(M.win) then vim.api.nvim_win_close(M.win, true) end
-    M.win = nil
-end
+function M.close() end -- no-op; kept for backward compatibility
 
 function M.open()
-    if M.win and vim.api.nvim_win_is_valid(M.win) then
-        vim.api.nvim_set_current_win(M.win)
-        M.refresh()
-        return
-    end
-    if not (M.buf and vim.api.nvim_buf_is_valid(M.buf)) then
-        M.buf = vim.api.nvim_create_buf(false, true)
-        vim.bo[M.buf].buftype = "nofile"
-        vim.bo[M.buf].bufhidden = "hide"
-        vim.bo[M.buf].swapfile = false
-        vim.bo[M.buf].filetype = "markdown"
-        vim.api.nvim_buf_set_name(M.buf, "[poor-cli pins]")
-    end
-    vim.cmd("botright 70vsplit")
-    M.win = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(M.win, M.buf)
-    vim.wo[M.win].wrap = false
-    vim.wo[M.win].number = false
-    vim.wo[M.win].relativenumber = false
-    vim.keymap.set("n", "q", M.close, { buffer = M.buf, nowait = true, desc = "close" })
-    vim.keymap.set("n", "r", M.refresh, { buffer = M.buf, nowait = true, desc = "refresh" })
-    vim.keymap.set("n", "x", M.unpin_current, { buffer = M.buf, nowait = true, desc = "unpin" })
-    vim.keymap.set("n", "X", M.clear_all, { buffer = M.buf, nowait = true, desc = "clear all" })
-    vim.keymap.set("n", "<CR>", M.jump_to_chat, { buffer = M.buf, nowait = true, desc = "jump to chat" })
-    M.refresh()
+    local rpc = require("poor-cli.rpc")
+    rpc.request("poor-cli/listTurnPins", {}, function(result, err)
+        vim.schedule(function()
+            if err then notify("listTurnPins: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+            local pins = (result or {}).pins or {}
+            local rows = sort_pins(pins)
+            if #rows == 0 then notify("no pinned turns", vim.log.levels.INFO); return end
+            local items = {}
+            for _, it in ipairs(rows) do
+                items[#items + 1] = {
+                    id = it.turnId,
+                    label = string.format("%-5s  %s", it.state, it.turnId),
+                    preview = "turnId: " .. it.turnId .. "\nstate:  " .. it.state,
+                    data = it,
+                }
+            end
+            local pickers = require("poor-cli.pickers")
+            pickers.pick(items, {
+                title = string.format("poor-cli pinned turns (%d)", #items),
+                on_pick = function(it) jump_to_chat(it.turnId) end,
+                keys = {
+                    ["<C-x>"] = function(it) unpin(it.turnId) end,
+                    ["<C-a>"] = function() M.clear_all() end,
+                },
+            })
+        end)
+    end)
 end
 
-function M.toggle()
-    if M.win and vim.api.nvim_win_is_valid(M.win) then M.close() else M.open() end
-end
+M.unpin_current = function() end -- legacy no-op
+M.jump_to_chat = function() end -- legacy no-op
 
-function M.setup()
-    pcall(vim.api.nvim_del_user_command, "PoorCLIPinsList")
-    vim.api.nvim_create_user_command("PoorCLIPinsList", function() M.toggle() end, {
-        desc = "poor-cli: view/clear cross-session turn pins",
-    })
-end
+function M.toggle() M.open() end
+
+-- setup() intentionally removed: pins open via `:PoorCLIPrompt pins`. M.open()
+-- and related helpers remain as the module API called by the prompt dispatcher.
+function M.setup() end
 
 return M

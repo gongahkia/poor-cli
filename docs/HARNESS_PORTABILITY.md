@@ -64,6 +64,4 @@ Assistants API, Responses API with `store=True`, Anthropic Messages Batch with s
 
 ## See Also
 
-- `docs/archive/phase_20/062_outcome.md` — audience decision (cost-conscious hobbyists) that makes portability a first-class concern.
 - `LONGTERM-TODO.md` section "Memory & Harness — Open Ownership" (MH1–MH9).
-- Post 2 open-harness thesis (`docs/archive/implementation_waves.md` learnings section).

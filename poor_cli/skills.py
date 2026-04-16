@@ -20,7 +20,6 @@ DEFAULT_CLASSIFIER_TASK_TYPES: Tuple[str, ...] = (
     "review",
     "git",
     "deploy",
-    "multiplayer",
 )
 
 
@@ -57,7 +56,6 @@ class InstructionSkillContext:
     sandbox_preset: str = "workspace-write"
     terse_mode: bool = False
     batched_reads: bool = False
-    multiplayer_active: bool = False
     most_used_task_types: Tuple[str, ...] = DEFAULT_CLASSIFIER_TASK_TYPES
 
     def tags(self) -> Tuple[str, ...]:
@@ -70,8 +68,6 @@ class InstructionSkillContext:
             tags.append("terse_mode")
         if self.batched_reads:
             tags.append("batched_reads")
-        if self.multiplayer_active:
-            tags.append("multiplayer")
         return tuple(tags)
 
     def render_vars(self) -> Dict[str, str]:

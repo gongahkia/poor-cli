@@ -157,8 +157,9 @@ end
 
 function M.open_for_commit(message, callback)
     if not enabled() then if callback then callback(false, "disabled") end; return false end
-    local ok, neogit = pcall(require, "neogit")
-    if not ok or type(neogit.open) ~= "function" then
+    -- neogit is a hard dep (see init.lua::setup); the require won't fail.
+    local neogit = require("neogit")
+    if type(neogit.open) ~= "function" then
         if callback then callback(false, "absent") end
         return false
     end

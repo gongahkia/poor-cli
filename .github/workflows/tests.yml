@@ -40,8 +40,9 @@ jobs:
           .venv/bin/poor-cli exec --help
           .venv/bin/poor-cli task --help
           .venv/bin/poor-cli automation --help
-          .venv/bin/poor-cli skills --help
-          .venv/bin/poor-cli commands --help
+          .venv/bin/poor-cli skill --help
+          .venv/bin/poor-cli diag doctor --help
+          .venv/bin/poor-cli pr review --help
           .venv/bin/poor-cli server --help
 
       - name: Install test dependencies

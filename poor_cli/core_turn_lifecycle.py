@@ -1820,7 +1820,6 @@ class TurnLifecycle:
                 "lastRun": last_run,
                 "lastRunDiagnostics": (last_run or {}).get("diagnostics", {}),
             },
-            "collaboration": {},
             "recovery": {
                 "cost": self.get_session_cost_summary(),
                 "lastMutation": last_mutation,

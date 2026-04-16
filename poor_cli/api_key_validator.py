@@ -16,7 +16,7 @@ Design:
   return ``unknown`` — not a concept for them.
 - The handler's response surfaces the result to the Neovim client, which
   can show a notification like "your Anthropic key is invalid — regenerate
-  and run :PoorCLIOnboarding".
+  and run :PoorCLIHelp onboarding".
 
 The probes use plain stdlib urllib to avoid an async dependency during
 startup and to keep the per-provider probe code under ~10 lines each.

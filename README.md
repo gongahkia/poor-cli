@@ -22,8 +22,16 @@ Neovim plugin (lazy.nvim):
 
 ```lua
 { 'gongahkia/poor-cli', dir = '<path>/nvim-poor-cli',
+  dependencies = {
+    'folke/snacks.nvim',       -- REQUIRED: notifications + pickers
+    'folke/trouble.nvim',      -- REQUIRED: :Trouble poor-cli
+    'mfussenegger/nvim-dap',   -- REQUIRED: breakpoint keymaps
+    'NeogitOrg/neogit',        -- REQUIRED: auto-open-on-commit
+  },
   config = function() require('poor-cli').setup({}) end }
 ```
+
+> **Required plugins:** snacks.nvim (notifications + pickers), trouble.nvim (diagnostics list), nvim-dap (breakpoint keymaps), neogit (commit flow). `setup()` lists every missing one and refuses to load until they're installed. See [nvim-poor-cli/README.md](./nvim-poor-cli/README.md#requirements) for the full list + per-plugin rationale.
 
 Or from this checkout:
 
@@ -40,10 +48,10 @@ nvim
 
 60-second path:
 
-1. `:PoorCLIStart` — attach to the backend.
-2. `:PoorCLIChat` — open the chat panel; send with `<CR>`.
-3. `:PoorCLIProviders` — switch provider or model.
-4. `:PoorCLICost` — inspect token and cost state.
+1. `:PoorCLIServer start` — attach to the backend.
+2. `:PoorCLIChat toggle` — open the chat panel; send with `<CR>`.
+3. `:PoorCLIProvider list` — switch provider or model.
+4. `:PoorCLICost show` — inspect token and cost state.
 
 Full walkthrough: [docs/quickstart.md](./docs/quickstart.md).
 
@@ -54,8 +62,8 @@ Full walkthrough: [docs/quickstart.md](./docs/quickstart.md).
 - Provider/model picker and per-repo config.
 - API-key prompt with keyring-backed backend storage.
 - Cost, context-pressure, and savings dashboards.
-- Checkpoint, session, permission, and multiplayer-room flows.
-- Telescope / snacks / blink / lualine / gitsigns / neogit / overseer / trouble integrations.
+- Checkpoint, session, and permission flows.
+- snacks.nvim + trouble.nvim + nvim-dap + neogit (all required), plus optional blink.cmp / nvim-cmp / lualine / gitsigns / overseer / oil integrations.
 - Treesitter-aware context; LSP-aware context.
 - Policy + trust center.
 
@@ -90,7 +98,6 @@ Neovim plugin config: pass options to `require('poor-cli').setup({ ... })` in yo
 - [Providers](./docs/PROVIDERS.md)
 - [MCP](./docs/MCP.md)
 - [Sandbox](./docs/SANDBOX.md)
-- [Multiplayer](./docs/MULTIPLAYER.md)
 - [Automations](./docs/AUTOMATIONS.md)
 - [Economy](./docs/ECONOMY.md)
 - [Neovim plugin](./nvim-poor-cli/README.md)

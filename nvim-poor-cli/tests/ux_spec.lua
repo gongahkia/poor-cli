@@ -42,7 +42,6 @@ describe("ux.home", function()
         local home = require("poor-cli.ux.home")
         assert.is_true(home._is_aux("[poor-cli diff review]"))
         assert.is_true(home._is_aux("[poor-cli context]"))
-        assert.is_true(home._is_aux("[poor-cli collaborators]"))
         assert.is_false(home._is_aux("/tmp/foo.py"))
         assert.is_false(home._is_aux(""))
     end)
@@ -53,12 +52,25 @@ describe("ux.home", function()
     end)
 end)
 
-describe("ux.panels_bulk", function()
+describe("panels dispatcher", function()
     before_each(fresh)
 
-    it("install registers :PoorCLIPanels", function()
-        require("poor-cli.ux.panels_bulk").install()
-        assert.is_not_nil(vim.api.nvim_get_commands({})["PoorCLIPanels"])
+    it("setup registers :PoorCLIPanel with open/close/toggle verbs", function()
+        require("poor-cli.panels").setup()
+        assert.is_not_nil(vim.api.nvim_get_commands({})["PoorCLIPanel"])
+        local spec = require("poor-cli.command_spec").get("panel")
+        assert.is_not_nil(spec)
+        assert.are.same({ "open", "close", "toggle" }, spec.verb_names)
+    end)
+
+    it("panel name completion lists every registered panel", function()
+        require("poor-cli.panels").setup()
+        local names = require("poor-cli.panels")._panel_name_complete()
+        table.sort(names)
+        assert.are.same(
+            { "agents", "automations", "checkpoints", "history", "memory", "queue", "sessions", "tasks" },
+            names
+        )
     end)
 end)
 
@@ -99,26 +111,6 @@ describe("ux.context_remove", function()
         local w = cr._budget_warning({ used = 1500, budget = 1000 })
         assert.is_not_nil(w)
         assert.truthy(w:find("over budget"))
-    end)
-end)
-
-describe("ux.collaborators", function()
-    before_each(fresh)
-
-    it("render_lines shows members", function()
-        local col = require("poor-cli.ux.collaborators")
-        local lines = col._render_lines(
-            { { displayName = "alice", role = "driver", presence = "active" } },
-            { room = "r1", role = "navigator", enabled = true }
-        )
-        assert.truthy(table.concat(lines, "\n"):find("alice"))
-        assert.truthy(table.concat(lines, "\n"):find("driver"))
-    end)
-
-    it("render_lines handles empty members", function()
-        local col = require("poor-cli.ux.collaborators")
-        local lines = col._render_lines({}, {})
-        assert.truthy(table.concat(lines, "\n"):find("no members"))
     end)
 end)
 
@@ -214,8 +206,8 @@ describe("config ux defaults", function()
         assert.is_not_nil(ux)
         for _, flag in ipairs({
             "command_palette", "streaming_indicator", "auto_onboarding",
-            "panels_bulk", "inline_cycle_hint", "cost_lualine_auto",
-            "diff_accept_all", "context_remove_files", "multiplayer_presence",
+            "inline_cycle_hint", "cost_lualine_auto",
+            "diff_accept_all", "context_remove_files",
             "home_nav", "provider_cost_preview", "inline_status_lualine",
             "chat_history_search", "completion_reason", "health_actions",
         }) do

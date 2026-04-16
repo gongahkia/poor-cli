@@ -12,6 +12,16 @@ vim.opt.runtimepath:prepend(root)
 package.path = root .. "/lua/?.lua;" .. root .. "/lua/?/init.lua;" .. root .. "/tests/?.lua;" .. root .. "/?.lua;" .. package.path
 local plenary_dir = os.getenv("PLENARY_DIR") or runtime .. "/site/pack/test/start/plenary.nvim"
 vim.opt.runtimepath:append(plenary_dir)
+for _, plugin in ipairs({
+    { env = "SNACKS_DIR",  name = "snacks.nvim" },
+    { env = "TROUBLE_DIR", name = "trouble.nvim" },
+    { env = "NVIMDAP_DIR", name = "nvim-dap" },
+    { env = "NEOGIT_DIR",  name = "neogit" },
+}) do
+    local dir = os.getenv(plugin.env) or runtime .. "/site/pack/test/start/" .. plugin.name
+    vim.opt.runtimepath:append(dir)
+    package.path = dir .. "/lua/?.lua;" .. dir .. "/lua/?/init.lua;" .. package.path
+end
 vim.cmd("runtime plugin/plenary.vim")
 require("plenary.busted")
 pcall(require, "tests.init")

@@ -187,16 +187,21 @@ function M.open()
         vim.bo[M.buf].filetype = "markdown"
         vim.api.nvim_buf_set_name(M.buf, "[poor-cli cost dashboard]")
     end
-    vim.cmd("botright 88vsplit")
-    M.win = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(M.win, M.buf)
-    vim.wo[M.win].wrap = true
-    vim.wo[M.win].number = false
-    vim.wo[M.win].relativenumber = false
-    vim.keymap.set("n", "q", function()
+    local float_win = require("poor-cli.float_win")
+    M.win = float_win.open(M.buf, {
+        width = math.min(100, vim.o.columns - 4),
+        height = math.min(30, vim.o.lines - 4),
+        position = "center",
+        title = " poor-cli cost dashboard ",
+        close_keys = {},
+        wrap = true,
+    })
+    local function close()
         if M.win and vim.api.nvim_win_is_valid(M.win) then vim.api.nvim_win_close(M.win, true) end
         M.win = nil
-    end, { buffer = M.buf, nowait = true, desc = "Close cost dashboard" })
+    end
+    vim.keymap.set("n", "q", close, { buffer = M.buf, nowait = true, desc = "Close cost dashboard" })
+    vim.keymap.set("n", "<Esc>", close, { buffer = M.buf, nowait = true, desc = "Close cost dashboard" })
     vim.keymap.set("n", "r", M.refresh, { buffer = M.buf, nowait = true, desc = "Refresh cost dashboard" })
     vim.keymap.set("n", "e", M.export_json, { buffer = M.buf, nowait = true, desc = "Export cost dashboard JSON" })
     M.refresh()

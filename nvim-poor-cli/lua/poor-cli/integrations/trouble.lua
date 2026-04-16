@@ -36,8 +36,8 @@ local function get_buf(ctx)
 end
 
 function M.refresh()
-    local ok, trouble = pcall(require, "trouble")
-    if ok and type(trouble.refresh) == "function" then
+    local trouble = require("trouble")
+    if type(trouble.refresh) == "function" then
         pcall(trouble.refresh, M.mode_name)
     end
 end
@@ -64,7 +64,6 @@ M.config = {
             events = {
                 "DiagnosticChanged",
                 "User PoorCLISuggestionsChanged",
-                "User PoorCLISuggestion",
                 "User PoorCLITurnEnded",
             },
             groups = {
@@ -83,7 +82,6 @@ function M.source.setup()
         group = group,
         pattern = {
             "PoorCLISuggestionsChanged",
-            "PoorCLISuggestion",
             "PoorCLITurnEnded",
         },
         callback = M.refresh,
@@ -117,11 +115,7 @@ local function trouble_command_exists()
 end
 
 function M.setup()
-    local ok, trouble = pcall(require, "trouble")
-    if not ok then
-        return false
-    end
-
+    local trouble = require("trouble")
     local configured = trouble_command_exists()
     local defaulted = false
     if configured then

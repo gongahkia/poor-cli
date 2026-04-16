@@ -328,7 +328,6 @@ class ToolDispatcher:
             sandbox_preset=sandbox_preset,
             terse_mode=terse,
             batched_reads=batched,
-            multiplayer_active=bool(getattr(self, "_embedded_multiplayer_room", False)),
         )
 
     def _tool_result_text(self, result: Any) -> str:

@@ -28,13 +28,9 @@ end
 function M.detect(force)
     if M._checked and not force then return M._dap end
     M._checked = true
-    local ok, dap = pcall(require, "dap")
-    if ok and type(dap) == "table" then
-        M._dap = dap
-        return dap
-    end
-    M._dap = nil
-    return nil
+    -- nvim-dap is a hard dep (see init.lua::setup); the require won't fail.
+    M._dap = require("dap")
+    return M._dap
 end
 
 function M.target_under_cursor()

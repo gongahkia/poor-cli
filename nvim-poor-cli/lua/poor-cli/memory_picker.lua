@@ -95,16 +95,9 @@ function M.open()
     end)
 end
 
-function M.setup()
-    pcall(vim.api.nvim_del_user_command, "PoorCLIMemoryPicker")
-    vim.api.nvim_create_user_command("PoorCLIMemoryPicker", function() M.open() end, {
-        desc = "poor-cli: browse memories sorted by hits/recency/name",
-    })
-    pcall(vim.api.nvim_del_user_command, "PoorCLIMemoryPickerSort")
-    vim.api.nvim_create_user_command("PoorCLIMemoryPickerSort", function()
-        local next_mode = M.cycle_sort()
-        require("poor-cli.notify").notify("[poor-cli] memory picker sort: " .. next_mode, vim.log.levels.INFO)
-    end, { desc = "Cycle memory picker sort mode" })
-end
+-- setup() intentionally removed: picker opens via `:PoorCLIMemory list` and sort
+-- cycles via `:PoorCLIMemory sort`. M.open() and M.cycle_sort() remain as the
+-- module API called by the memory dispatcher.
+function M.setup() end
 
 return M

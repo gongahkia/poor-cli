@@ -40,26 +40,6 @@ M.startup_feedback = {
     can_replace = nil,
     last_message = "",
 }
-M.multiplayer_state = {
-    enabled = false,
-    room = "",
-    role = "",
-    ui_role = "",
-    display_name = "",
-    approval_state = "",
-    hand_raised = false,
-    queue_position = 0,
-    local_connection_id = "",
-    member_count = 0,
-    queue_depth = 0,
-    active_connection_id = "",
-    lobby_enabled = false,
-    preset = "",
-    last_event_type = "",
-    members = {},
-    last_suggestion = nil,
-    typing = {},
-}
 local uv = vim.uv or vim.loop
 local spinner_frames = { "-", "\\", "|", "/" }
 local startup_states = {
@@ -75,13 +55,6 @@ local SILENT_METHODS = {
     ["poor-cli/inlineComplete"] = true,
     ["poor-cli/getProviderInfo"] = true, -- lualine polls this
     ["poor-cli/getStatusView"] = true,
-    ["poor-cli/getCollabSummary"] = true,
-    ["poor-cli/listHostMembers"] = true, -- collab panel refresh
-    ["poor-cli/listPresence"] = true,
-    ["poor-cli/listRoomQueue"] = true,
-    ["collab.room"] = true,
-    ["collab.room/members"] = true,
-    ["collab.room/events"] = true,
     ["poor-cli/listTasks"] = true,
     ["poor-cli/listAgents"] = true,
     ["poor-cli/listHistory"] = true,
@@ -267,7 +240,7 @@ local function stop_startup_feedback(state)
                         -- Server hasn't finished init yet; don't alarm the user.
                         return
                     end
-                    require("poor-cli.notify").notify("[poor-cli] Config probe failed: " .. msg .. ". Run :PoorCLIDoctor", vim.log.levels.WARN)
+                    require("poor-cli.notify").notify("[poor-cli] Config probe failed: " .. msg .. ". Run :PoorCLIDiag doctor", vim.log.levels.WARN)
                     return
                 end
                 local probe_elapsed = 0
@@ -317,6 +290,7 @@ local function ensure_startup_feedback()
 end
 
 local function update_state(state, message)
+    local prev = M.server_state
     M.server_state = state
     if message then
         M.last_status_message = message
@@ -326,6 +300,15 @@ local function update_state(state, message)
         render_startup_feedback()
     else
         stop_startup_feedback(state)
+    end
+    -- Session trace: every transition is a breadcrumb for debugging.
+    if prev ~= state then
+        local ok_cmds, cmds = pcall(require, "poor-cli.commands")
+        if ok_cmds and type(cmds._log_session) == "function" then
+            local detail = string.format("server: %s → %s", tostring(prev or "?"), tostring(state))
+            if message and message ~= "" then detail = detail .. "  (" .. message .. ")" end
+            cmds._log_session("state", detail)
+        end
     end
     emit_status_changed()
 end
@@ -375,29 +358,6 @@ local function fail_pending_requests(err)
         end
         clear_pending_request(id)
     end
-end
-
-local function fresh_multiplayer_state()
-    return {
-        enabled = false,
-        room = "",
-        role = "",
-        ui_role = "",
-        display_name = "",
-        approval_state = "",
-        hand_raised = false,
-        queue_position = 0,
-        local_connection_id = "",
-        member_count = 0,
-        queue_depth = 0,
-        active_connection_id = "",
-        lobby_enabled = false,
-        preset = "",
-        last_event_type = "",
-        members = {},
-        last_suggestion = nil,
-        typing = {},
-    }
 end
 
 local function append_stderr_line(line)
@@ -470,7 +430,6 @@ end
 
 function M.reset_session_state()
     M.capabilities = nil
-    M.multiplayer_state = fresh_multiplayer_state()
     M.last_request = nil
 end
 
@@ -484,19 +443,6 @@ function M.client_capabilities()
         reviewFlows = {
             permissionRequests = true,
             planReview = true,
-        },
-        multiplayer = {
-            events = true,
-            roleUpdates = true,
-            suggestions = true,
-            roomPresence = true,
-            memberTyping = true,
-            queueUpdated = true,
-            roomActions = {
-                suggestText = true,
-                passDriver = true,
-                listRoomMembers = true,
-            },
         },
     }
 end
@@ -515,32 +461,18 @@ function M.capture_initialize_result(result)
         M.server_log_path = log_path
     end
 
-    local multiplayer = caps.multiplayer
-    if type(multiplayer) == "table" then
-        M.multiplayer_state.enabled = multiplayer.enabled == true
-        M.multiplayer_state.room = multiplayer.room or ""
-        M.multiplayer_state.role = multiplayer.role or ""
-        M.multiplayer_state.ui_role = multiplayer.uiRole or ""
-        M.multiplayer_state.display_name = multiplayer.displayName or ""
-        M.multiplayer_state.approval_state = multiplayer.approvalState or ""
-        M.multiplayer_state.hand_raised = multiplayer.handRaised == true
-        M.multiplayer_state.queue_position = multiplayer.queuePosition or 0
-        M.multiplayer_state.local_connection_id = multiplayer.connectionId or ""
-        M.multiplayer_state.lobby_enabled = multiplayer.lobbyEnabled == true
-        M.multiplayer_state.preset = multiplayer.preset or ""
-    end
-
     local key_validity = caps.apiKeyValidity
     if type(key_validity) == "table" and key_validity.status == "invalid" then
         local provider = tostring(key_validity.provider or "?")
         local reason = tostring(key_validity.reason or "server rejected the key")
-        -- first line MUST be self-sufficient: plugin-less terminals only
-        -- show it. Details follow for snacks/nvim-notify users.
+        -- first line MUST be self-sufficient: it's the one snacks.notify
+        -- renders in the compact title. Subsequent lines are shown in the
+        -- expanded toast body.
         local lines = {
-            string.format("%s API key invalid — run :PoorCLIApiKey to fix", provider),
+            string.format("%s API key invalid — run :PoorCLIConfig api-key to fix", provider),
             reason,
             "",
-            "More options: :PoorCLIOnboarding | :PoorCLIApiKeyStatus",
+            "More options: :PoorCLIHelp onboarding | :PoorCLIProvider api-key-status",
         }
         pcall(require("poor-cli.notify").notify, table.concat(lines, "\n"), vim.log.levels.ERROR, {
             title = "poor-cli",
@@ -553,10 +485,6 @@ end
 
 function M.get_capabilities()
     return M.capabilities
-end
-
-function M.get_multiplayer_state()
-    return M.multiplayer_state
 end
 
 function M.get_log_path()
@@ -588,7 +516,6 @@ function M.get_status()
         last_stderr_excerpt = M.last_stderr_excerpt,
         restart_attempt = M.restart_attempt,
         provider_info = provider_info,
-        multiplayer = vim.deepcopy(M.multiplayer_state),
         capabilities = M.capabilities,
         status_message = M.last_status_message,
     }
@@ -624,102 +551,7 @@ function M.build_debug_report(extra_sections)
     return table.concat(lines, "\n")
 end
 
-function M.apply_room_event(params)
-    if type(params) ~= "table" then
-        return
-    end
-    M.multiplayer_state.enabled = true
-    M.multiplayer_state.room = params.room or M.multiplayer_state.room or ""
-    M.multiplayer_state.member_count = params.memberCount or 0
-    M.multiplayer_state.queue_depth = params.queueDepth or 0
-    M.multiplayer_state.active_connection_id = params.activeConnectionId or ""
-    M.multiplayer_state.lobby_enabled = params.lobbyEnabled == true
-    M.multiplayer_state.preset = params.preset or ""
-    M.multiplayer_state.last_event_type = params.eventType or ""
-    M.multiplayer_state.members = params.members or {}
-
-    local local_connection_id = M.multiplayer_state.local_connection_id
-    if local_connection_id ~= "" and type(M.multiplayer_state.members) == "table" then
-        for _, member in ipairs(M.multiplayer_state.members) do
-            if type(member) == "table" and member.connectionId == local_connection_id then
-                M.multiplayer_state.role = member.role or M.multiplayer_state.role
-                M.multiplayer_state.ui_role = member.uiRole or M.multiplayer_state.ui_role
-                M.multiplayer_state.display_name = member.displayName or M.multiplayer_state.display_name
-                M.multiplayer_state.approval_state = member.approvalState or M.multiplayer_state.approval_state
-                M.multiplayer_state.hand_raised = member.handRaised == true
-                M.multiplayer_state.queue_position = tonumber(member.queuePosition) or 0
-                break
-            end
-        end
-    end
-    emit_status_changed()
-end
-
-function M.apply_member_role_update(params)
-    if type(params) ~= "table" then
-        return
-    end
-
-    local connection_id = params.connectionId or ""
-    local role = params.role or ""
-    local ui_role = params.uiRole or ""
-    local members = M.multiplayer_state.members
-    if type(members) ~= "table" then
-        members = {}
-        M.multiplayer_state.members = members
-    end
-
-    local updated = false
-    for _, member in ipairs(members) do
-        if type(member) == "table" and member.connectionId == connection_id then
-            member.role = role
-            member.uiRole = ui_role
-            updated = true
-            break
-        end
-    end
-
-    if not updated and connection_id ~= "" then
-        table.insert(members, {
-            connectionId = connection_id,
-            role = role,
-            uiRole = ui_role,
-        })
-    end
-
-    if connection_id ~= "" and connection_id == M.multiplayer_state.local_connection_id then
-        M.multiplayer_state.role = role
-        if ui_role ~= "" then
-            M.multiplayer_state.ui_role = ui_role
-        end
-    end
-    emit_status_changed()
-end
-
 function M.resolve_server_command()
-    local multiplayer = config.get("multiplayer") or {}
-    if type(multiplayer) == "table" and multiplayer.enabled then
-        local invite = multiplayer.invite
-        if not invite or invite == "" then
-            return nil, "multiplayer.enabled requires multiplayer.invite"
-        end
-        -- derive the server binary from the user's configured server_cmd so we
-        -- honour the venv path instead of relying on "poor-cli-server" on PATH
-        local configured = config.get("server_cmd") or "poor-cli-server --stdio"
-        local parts = {}
-        if type(configured) == "string" then
-            for tok in string.gmatch(configured, "%S+") do table.insert(parts, tok) end
-        elseif type(configured) == "table" then
-            for _, tok in ipairs(configured) do table.insert(parts, tok) end
-        end
-        local binary = parts[1] or "poor-cli-server"
-        return {
-            binary,
-            "--bridge",
-            "--invite",
-            invite,
-        }, nil
-    end
     return config.get("server_cmd"), nil
 end
 
@@ -825,17 +657,15 @@ function M.restart(callback)
     return M.initialize(callback)
 end
 
-function M.restart_with_bootstrap(bootstrap, callback)
-    if type(bootstrap) ~= "table" then
-        config.clear_multiplayer_bootstrap()
-    else
-        config.set_multiplayer_bootstrap(bootstrap)
-    end
-    return M.restart(callback)
-end
-
 function M.stop()
     M.manual_stop = true
+    -- Tracks when the user last asked for a stop. M.start() resets the
+    -- global manual_stop flag immediately so the new process can track
+    -- ITS own exit cleanly — but that leaves the OLD process's late
+    -- SIGKILL (after jobstop's async delivery) to falsely look like a
+    -- crash. This timestamp gives handle_exit a grace window to suppress
+    -- code=137 (SIGKILL) exits that arrive within RESTART_GRACE_MS.
+    M._last_manual_stop_ns = (vim.loop.hrtime and vim.loop.hrtime()) or 0
     clear_restart_timer()
 
     if M.job_id then
@@ -1076,20 +906,6 @@ end
 function M.compare_files(file1, file2, timeout_ms)
     return M.request_sync("poor-cli/compareFiles", { file1 = file1, file2 = file2 }, timeout_ms)
 end
--- host server standalone
-function M.start_host_server(opts, callback)
-    return M.request("poor-cli/startHostServer", opts or {}, callback)
-end
-function M.stop_host_server(callback)
-    return M.request("poor-cli/stopHostServer", {}, callback)
-end
-function M.get_host_server_status(timeout_ms)
-    return M.request_sync("poor-cli/getHostServerStatus", {}, timeout_ms)
-end
-
-function M.get_collab_summary(timeout_ms)
-    return M.request_sync("poor-cli/getCollabSummary", {}, timeout_ms)
-end
 
 function M.notify(method, params)
     if not M.job_id then
@@ -1101,68 +917,6 @@ function M.notify(method, params)
         params = params or {},
     }
     M.send_message(message)
-end
-
-function M.start_collab(opts, callback)
-    return M.request("poor-cli/startHostServer", opts or {}, callback)
-end
-
-function M.get_collab_status(callback)
-    return M.request("poor-cli/getHostServerStatus", {}, callback)
-end
-
-function M.leave_collab(callback)
-    return M.restart_with_bootstrap({
-        enabled = false,
-    }, callback)
-end
-
-function M.pass_driver(target, callback)
-    local params = {}
-    if target and target ~= "" then
-        params.connectionId = target
-    end
-    local room = M.multiplayer_state.room or ""
-    if room ~= "" then
-        params.room = room
-    end
-    return M.request("poor-cli/passDriver", params, callback)
-end
-
-function M.suggest_text(text, callback)
-    local params = {
-        text = text,
-    }
-    local room = M.multiplayer_state.room or ""
-    if room ~= "" then
-        params.room = room
-    end
-    return M.request("poor-cli/suggestText", params, callback)
-end
-
-function M.peer_message(text, callback)
-    local params = { text = text }
-    local room = M.multiplayer_state.room or ""
-    if room ~= "" then params.room = room end
-    return M.request("poor-cli/peerMessage", params, callback)
-end
-
-function M.list_joined_room_members(room, callback)
-    local params = {}
-    if room and room ~= "" then
-        params.room = room
-    elseif M.multiplayer_state.room ~= "" then
-        params.room = M.multiplayer_state.room
-    end
-    return M.request("poor-cli/listRoomMembers", params, callback)
-end
-
-function M.list_host_room_members(room, callback)
-    local params = {}
-    if room and room ~= "" then
-        params.room = room
-    end
-    return M.request("poor-cli/listHostMembers", params, callback)
 end
 
 -- deploy
@@ -1566,90 +1320,6 @@ function M.handle_notification(message)
                 authorRole = params.authorRole or "",
             },
         })
-    elseif message.method == "poor-cli/roomEvent" then
-        M.apply_room_event(params)
-        vim.api.nvim_exec_autocmds("User", {
-            pattern = "PoorCLIRoomEvent",
-            data = {
-                room = params.room or "",
-                event_type = params.eventType or "",
-                request_id = params.requestId or "",
-                actor = params.actor or "",
-                queue_depth = params.queueDepth or 0,
-                member_count = params.memberCount or 0,
-                active_connection_id = params.activeConnectionId or "",
-                lobby_enabled = params.lobbyEnabled or false,
-                preset = params.preset or "",
-                members = params.members or {},
-                details = params.details or {},
-                authorConnectionId = params.authorConnectionId or "",
-                authorDisplayName = params.authorDisplayName or "",
-                authorRole = params.authorRole or "",
-            },
-        })
-    elseif message.method == "poor-cli/memberTyping" then
-        local connection_id = params.connectionId or ""
-        M.multiplayer_state.typing = M.multiplayer_state.typing or {}
-        if connection_id ~= "" then
-            M.multiplayer_state.typing[connection_id] = params.typing == true
-        end
-        vim.api.nvim_exec_autocmds("User", {
-            pattern = "PoorCLIMemberTyping",
-            data = {
-                room = params.room or "",
-                connection_id = connection_id,
-                display_name = params.displayName or "",
-                typing = params.typing == true,
-            },
-        })
-    elseif message.method == "poor-cli/peerMessage" then
-        vim.api.nvim_exec_autocmds("User", {
-            pattern = "PoorCLIPeerMessage",
-            data = {
-                room = params.room or "",
-                sender = params.sender or "?",
-                sender_connection_id = params.senderConnectionId or "",
-                text = params.text or "",
-            },
-        })
-    elseif message.method == "poor-cli/memberRoleUpdated" then
-        M.apply_member_role_update(params)
-        vim.api.nvim_exec_autocmds("User", {
-            pattern = "PoorCLIMemberRoleUpdated",
-            data = {
-                room = params.room or "",
-                connection_id = params.connectionId or "",
-                role = params.role or "",
-            },
-        })
-    elseif message.method == "poor-cli/queueUpdated" then
-        vim.api.nvim_exec_autocmds("User", {
-            pattern = "PoorCLIQueueUpdated",
-            data = {
-                room = params.room or params.roomId or "",
-                room_id = params.roomId or params.room or "",
-                snapshot = params.snapshot or {},
-            },
-        })
-    elseif message.method == "poor-cli/collabMemberJoined" or message.method == "poor-cli/collabMemberLeft" then
-        vim.api.nvim_exec_autocmds("User", {
-            pattern = message.method == "poor-cli/collabMemberJoined" and "PoorCLICollabMemberJoined" or "PoorCLICollabMemberLeft",
-            data = params,
-        })
-    elseif message.method == "poor-cli/suggestion" then
-        M.multiplayer_state.last_suggestion = {
-            sender = params.sender or "",
-            text = params.text or "",
-            room = params.room or "",
-        }
-        vim.api.nvim_exec_autocmds("User", {
-            pattern = "PoorCLISuggestion",
-            data = {
-                sender = params.sender or "",
-                text = params.text or "",
-                room = params.room or "",
-            },
-        })
     end
 end
 
@@ -1716,12 +1386,32 @@ function M.handle_exit(code)
         end
     end
 
+    -- SIGKILL (code=137) within 5s of a manual stop is almost certainly
+    -- the OLD process finally exiting after M.stop()+M.start() raced.
+    -- Don't log it as a crash; it's intentional.
+    local RESTART_GRACE_MS = 5000
+    local is_benign_sigkill = false
+    if code == 137 and M._last_manual_stop_ns and M._last_manual_stop_ns > 0 and vim.loop.hrtime then
+        local age_ms = math.floor((vim.loop.hrtime() - M._last_manual_stop_ns) / 1000000)
+        if age_ms < RESTART_GRACE_MS then is_benign_sigkill = true end
+    end
+    if not is_benign_sigkill then
+        local ok_cmds, cmds = pcall(require, "poor-cli.commands")
+        if ok_cmds and type(cmds._log_session) == "function" then
+            cmds._log_session("event", string.format("server_crashed code=%s%s", tostring(code), hint))
+        end
+    end
+    if is_benign_sigkill then
+        M.restart_attempt = 0
+        update_state("stopped", "Stopped (replaced by restart)")
+        return
+    end
     if config.get("auto_restart") then
         require("poor-cli.notify").notify("[poor-cli] Server crashed" .. hint .. " — restarting. Chat context was reset.", vim.log.levels.WARN)
         schedule_restart()
     else
         update_state("error", "Server exited unexpectedly")
-        notify_with_context("Server exited with code " .. code .. hint .. ". Run :PoorCLIDoctor for diagnostics.", vim.log.levels.ERROR)
+        notify_with_context("Server exited with code " .. code .. hint .. ". Run :PoorCLIDiag doctor for diagnostics.", vim.log.levels.ERROR)
     end
 end
 

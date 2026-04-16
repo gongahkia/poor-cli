@@ -261,11 +261,16 @@ function M.open()
     vim.bo[M.buf].swapfile = false
     vim.bo[M.buf].filetype = "poor-cli-timeline"
     vim.api.nvim_buf_set_name(M.buf, "[poor-cli timeline]")
-    vim.cmd("botright vertical split")
-    M.win = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(M.win, M.buf)
-    pcall(vim.api.nvim_win_set_width, M.win, 96)
+    local float_win = require("poor-cli.float_win")
+    M.win = float_win.open(M.buf, {
+        width = math.min(100, vim.o.columns - 4),
+        height = math.max(20, vim.o.lines - 4),
+        position = "center",
+        title = " poor-cli timeline ",
+        close_keys = {},
+    })
     bind(M.buf, "q", M.close)
+    bind(M.buf, "<Esc>", M.close)
     bind(M.buf, "<CR>", M.toggle_expand)
     bind(M.buf, "gc", M.cancel_current)
     bind(M.buf, "gr", M.retry_current)

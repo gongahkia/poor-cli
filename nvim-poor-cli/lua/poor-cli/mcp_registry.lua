@@ -184,14 +184,14 @@ function M.test_tool()
             rpc.mcp_test({ tool = tool, arguments = args }, function(result, err)
                 vim.schedule(function()
                     if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
-                    local buf = vim.api.nvim_create_buf(false, true)
-                    vim.bo[buf].buftype = "nofile"
-                    vim.bo[buf].bufhidden = "wipe"
-                    vim.bo[buf].filetype = "markdown"
-                    vim.api.nvim_buf_set_name(buf, "[poor-cli mcp test]")
-                    vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(tostring((result or {}).result or ""), "\n", { plain = true }))
-                    vim.cmd("botright split")
-                    vim.api.nvim_win_set_buf(0, buf)
+                    local float_win = require("poor-cli.float_win")
+                    local output = tostring((result or {}).result or "")
+                    float_win.open_lines(vim.split(output, "\n", { plain = true }), {
+                        filetype = "markdown",
+                        name = "[poor-cli mcp test]",
+                        title = " mcp test ",
+                        width = 0.7, height = 0.6, position = "center",
+                    })
                 end)
             end)
         end)
@@ -296,13 +296,17 @@ function M.open()
         vim.bo[M.buf].filetype = "poor-cli-mcp"
         vim.api.nvim_buf_set_name(M.buf, "[poor-cli mcp]")
     end
-    vim.cmd("tabnew")
-    M.win = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(M.win, M.buf)
-    vim.wo[M.win].wrap = false
-    vim.wo[M.win].number = false
-    vim.wo[M.win].relativenumber = false
+    local float_win = require("poor-cli.float_win")
+    M.win = float_win.open(M.buf, {
+        width = math.min(120, vim.o.columns - 4),
+        height = math.max(24, vim.o.lines - 4),
+        position = "center",
+        title = " poor-cli mcp ",
+        close_keys = {},
+        wrap = false,
+    })
     vim.keymap.set("n", "q", M.close, { buffer = M.buf, nowait = true, desc = "Close MCP registry" })
+    vim.keymap.set("n", "<Esc>", M.close, { buffer = M.buf, nowait = true, desc = "Close MCP registry" })
     vim.keymap.set("n", "r", M.refresh, { buffer = M.buf, nowait = true, desc = "Refresh MCP registry" })
     vim.keymap.set("n", "t", M.toggle, { buffer = M.buf, nowait = true, desc = "Toggle MCP server" })
     vim.keymap.set("n", "e", M.edit, { buffer = M.buf, nowait = true, desc = "Edit MCP server" })

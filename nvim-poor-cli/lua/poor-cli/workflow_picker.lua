@@ -314,13 +314,21 @@ function M.open(opts)
 end
 
 function M.setup()
-    pcall(vim.api.nvim_del_user_command, "PoorCLIWorkflows")
-    vim.api.nvim_create_user_command("PoorCLIWorkflows", function(opts)
-        M.open({ tags = parse_tags(opts.args) })
-    end, {
-        nargs = "*",
-        desc = "Browse slash-trigger AutomationRule workflows",
-        complete = function() return { "time", "git", "ci", "refactor" } end,
+    local strategies = require("poor-cli.strategies")
+    require("poor-cli.command_spec").install("workflow", {
+        desc = "Browse workflows and reconfigure strategies",
+        verb_names = { "list", "strategies", "reranker", "adaptive-pruning" },
+        verbs = {
+            list = function(fargs) M.open({ tags = fargs }) end,
+            strategies = function() strategies.show() end,
+            reranker = function(fargs) strategies.set_reranker(fargs[1]) end,
+            ["adaptive-pruning"] = function(fargs) strategies.set_adaptive(fargs[1]) end,
+        },
+        arg_complete = {
+            list = function() return { "time", "git", "ci", "refactor" } end,
+            reranker = function() return { "mmr", "cross_encoder", "score_order" } end,
+            ["adaptive-pruning"] = function() return { "auto", "on", "off" } end,
+        },
     })
 end
 

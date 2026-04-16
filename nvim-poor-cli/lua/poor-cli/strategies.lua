@@ -51,9 +51,9 @@ function M.show()
             string.format("- adaptive_tool_scoring: %s", tostring(s.adaptive_tool_scoring)),
             "",
             "commands:",
-            "  :PoorCLIRerankerStrategy [mmr|cross_encoder|score_order]",
-            "  :PoorCLIAdaptivePruning [auto|on|off]",
-            "  :PoorCLIStrategies   (this)",
+            "  :PoorCLIWorkflow reranker [mmr|cross_encoder|score_order]",
+            "  :PoorCLIWorkflow adaptive-pruning [auto|on|off]",
+            "  :PoorCLIWorkflow strategies   (this)",
         }
         require("poor-cli.notify").notify(table.concat(lines, "\n"), vim.log.levels.INFO)
     end)
@@ -94,26 +94,10 @@ function M.set_adaptive(arg)
     end)
 end
 
-function M.setup()
-    pcall(vim.api.nvim_del_user_command, "PoorCLIStrategies")
-    pcall(vim.api.nvim_del_user_command, "PoorCLIRerankerStrategy")
-    pcall(vim.api.nvim_del_user_command, "PoorCLIAdaptivePruning")
-    vim.api.nvim_create_user_command("PoorCLIStrategies", function() M.show() end, {
-        desc = "poor-cli: show current swap-able strategies",
-    })
-    vim.api.nvim_create_user_command("PoorCLIRerankerStrategy", function(opts)
-        M.set_reranker(opts.args)
-    end, {
-        nargs = "?", complete = function() return { "mmr", "cross_encoder", "score_order" } end,
-        desc = "poor-cli: set or cycle memory reranker strategy",
-    })
-    vim.api.nvim_create_user_command("PoorCLIAdaptivePruning", function(opts)
-        M.set_adaptive(opts.args)
-    end, {
-        nargs = "?", complete = function() return { "auto", "on", "off" } end,
-        desc = "poor-cli: set or cycle CB3 adaptive tool scoring",
-    })
-end
+-- setup() intentionally removed: strategies are reached via the workflow
+-- dispatcher (`:PoorCLIWorkflow strategies|reranker|adaptive-pruning`).
+-- M.show(), M.set_reranker(), M.set_adaptive() remain as the module API.
+function M.setup() end
 
 M._cycle_next = cycle_next -- test hook
 

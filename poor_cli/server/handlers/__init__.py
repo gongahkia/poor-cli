@@ -15,7 +15,6 @@ from .tasks import TasksHandlersMixin
 from .automations import AutomationsHandlersMixin
 from .checkpoints import CheckpointsHandlersMixin
 from .services import ServicesHandlersMixin
-from .multiplayer import MultiplayerHandlersMixin
 from .cost import CostHandlersMixin
 from .agents import AgentsHandlersMixin
 from .profiles import ProfilesHandlersMixin
@@ -48,7 +47,6 @@ class HandlerMixin(
     AutomationsHandlersMixin,
     CheckpointsHandlersMixin,
     ServicesHandlersMixin,
-    MultiplayerHandlersMixin,
     CostHandlersMixin,
     AgentsHandlersMixin,
     ProfilesHandlersMixin,

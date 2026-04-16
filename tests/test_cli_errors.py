@@ -2,7 +2,6 @@ import os
 import subprocess
 import sys
 import tempfile
-import textwrap
 import unittest
 from pathlib import Path
 
@@ -47,60 +46,6 @@ class CliErrorRenderingTests(unittest.TestCase):
             self.assertNotIn("Failed to decrypt API key", combined)
             self.assertIn(f"No API key found for provider: {expected_provider}", combined)
             self.assertIn(f"Set `{expected_env}`", combined)
-
-    def test_bridge_invalid_invite_exits_without_traceback(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            home = Path(tmpdir) / "home"
-            stubs = Path(tmpdir) / "stubs"
-            aiortc_package = stubs / "aiortc"
-            home.mkdir(parents=True, exist_ok=True)
-            aiortc_package.mkdir(parents=True, exist_ok=True)
-            (stubs / "aiohttp.py").write_text("class ClientSession: pass\n", encoding="utf-8")
-            (aiortc_package / "__init__.py").write_text(
-                textwrap.dedent(
-                    """
-                    class RTCConfiguration:
-                        def __init__(self, *args, **kwargs):
-                            pass
-
-                    class RTCIceServer:
-                        def __init__(self, *args, **kwargs):
-                            pass
-
-                    class RTCPeerConnection:
-                        def __init__(self, *args, **kwargs):
-                            pass
-
-                    class RTCSessionDescription:
-                        def __init__(self, *args, **kwargs):
-                            pass
-                    """
-                ).strip()
-                + "\n",
-                encoding="utf-8",
-            )
-
-            env = _clean_env(str(home))
-            env["PYTHONPATH"] = (
-                f"{stubs}{os.pathsep}{env['PYTHONPATH']}"
-                if env.get("PYTHONPATH")
-                else str(stubs)
-            )
-
-            result = subprocess.run(
-                [sys.executable, "-m", "poor_cli", "server", "--bridge", "--invite", "invalid"],
-                cwd=Path(__file__).resolve().parent.parent,
-                env=env,
-                capture_output=True,
-                text=True,
-            )
-
-            combined = f"{result.stdout}\n{result.stderr}"
-            self.assertNotEqual(result.returncode, 0)
-            self.assertNotIn("Traceback", combined)
-            self.assertIn("Invalid invite code", combined)
-            self.assertIn("Generate a fresh invite", combined)
-
 
 if __name__ == "__main__":
     unittest.main()

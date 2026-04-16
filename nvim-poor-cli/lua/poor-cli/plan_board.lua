@@ -221,13 +221,17 @@ function M.open()
         vim.bo[M.buf].filetype = "poor-cli-plan"
         vim.api.nvim_buf_set_name(M.buf, "[poor-cli plan board]")
     end
-    vim.cmd("botright 120vsplit")
-    M.win = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(M.win, M.buf)
-    vim.wo[M.win].wrap = false
-    vim.wo[M.win].number = false
-    vim.wo[M.win].relativenumber = false
+    local float_win = require("poor-cli.float_win")
+    M.win = float_win.open(M.buf, {
+        width = math.min(140, vim.o.columns - 4),
+        height = math.max(24, vim.o.lines - 4),
+        position = "center",
+        title = " poor-cli plan board ",
+        close_keys = {},
+        wrap = false,
+    })
     vim.keymap.set("n", "q", M.close, { buffer = M.buf, nowait = true, desc = "Close plan board" })
+    vim.keymap.set("n", "<Esc>", M.close, { buffer = M.buf, nowait = true, desc = "Close plan board" })
     vim.keymap.set("n", "r", M.refresh, { buffer = M.buf, nowait = true, desc = "Refresh plan board" })
     vim.keymap.set("n", "<Tab>", M.advance, { buffer = M.buf, nowait = true, desc = "Advance plan step" })
     vim.keymap.set("n", "<S-Tab>", M.regress, { buffer = M.buf, nowait = true, desc = "Regress plan step" })
