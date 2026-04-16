@@ -209,43 +209,16 @@ local function build_agents_panel()
     return panel
 end
 
--- ───────────────────────── History ─────────────────────────
+-- ─────── History (picker — see history_browser.open_picker) ───────
 local function build_history_panel()
-    local panel
-    panel = base.new_panel({
-        name = "[poor-cli history]",
-        width = 80,
-        on_refresh = function(render_now)
-            render_now()
-            fetch("poor-cli/listHistory", { count = 30 }, "history", panel)
-        end,
-        render = function()
-            local lines = { "# poor-cli History", "", "Press q to close, r to refresh. `:PoorCLIHistorySearch <q>` to search.", "" }
-            local data = (panel._cache or {}).history
-            if data and data.sessionId then
-                table.insert(lines, "Session: `" .. tostring(data.sessionId) .. "`")
-                table.insert(lines, "")
-            end
-            section(lines, "Recent messages")
-            if not data then empty(lines, "loading…")
-            elseif data.error then empty(lines, "error: " .. data.error)
-            else
-                local items = data.messages or {}
-                if vim.tbl_isempty(items) then empty(lines, "no messages")
-                else
-                    for _, m in ipairs(items) do
-                        local content = tostring(m.content or ""):gsub("\n", " "):sub(1, 120)
-                        table.insert(lines, string.format("- **%s** @ %s", m.role or "?", tostring(m.timestamp or "")))
-                        if content ~= "" then
-                            table.insert(lines, "    " .. content)
-                        end
-                    end
-                end
-            end
-            return lines
-        end,
-    })
-    return panel
+    return {
+        toggle = function() require("poor-cli.history_browser").open_picker() end,
+        open = function() require("poor-cli.history_browser").open_picker() end,
+        close = function() end,
+        refresh = function() end,
+        win = nil,
+        buf = nil,
+    }
 end
 
 -- ─────── Checkpoints (picker — see checkpoints_ext.open_picker) ───────
