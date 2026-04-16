@@ -272,41 +272,16 @@ local function build_queue_panel()
     }
 end
 
--- ───────────────────────── Memory ─────────────────────────
+-- ─────── Memory (picker — see memory_picker.open) ───────
 local function build_memory_panel()
-    local panel
-    panel = base.new_panel({
-        name = "[poor-cli memory]",
-        width = 70,
-        on_refresh = function(render_now)
-            render_now()
-            fetch("poor-cli/memoryList", {}, "memory", panel)
-        end,
-        render = function()
-            local lines = { "# poor-cli Memory", "", "Press q to close, r to refresh. `:PoorCLIMemorySave <text>` to add.", "" }
-            local data = (panel._cache or {}).memory
-            section(lines, "Persistent entries")
-            if not data then empty(lines, "loading…")
-            elseif data.error then empty(lines, "error: " .. data.error)
-            else
-                local items = data.memories or {}
-                if vim.tbl_isempty(items) then empty(lines, "no memories")
-                else
-                    for _, m in ipairs(items) do
-                        table.insert(lines, string.format("- [%s] **%s**", m.type or "?", m.name or "?"))
-                        if m.description and m.description ~= "" then
-                            table.insert(lines, "    " .. m.description)
-                        end
-                        if m.filename then
-                            table.insert(lines, "    file: " .. tostring(m.filename))
-                        end
-                    end
-                end
-            end
-            return lines
-        end,
-    })
-    return panel
+    return {
+        toggle = function() require("poor-cli.memory_picker").open() end,
+        open = function() require("poor-cli.memory_picker").open() end,
+        close = function() end,
+        refresh = function() end,
+        win = nil,
+        buf = nil,
+    }
 end
 
 -- ───────────────────────── Sessions ─────────────────────────
