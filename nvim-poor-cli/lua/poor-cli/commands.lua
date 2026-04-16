@@ -480,7 +480,6 @@ function M.setup()
     local chat = require("poor-cli.chat")
     local inline = require("poor-cli.inline")
     local diagnostics = require("poor-cli.diagnostics")
-    local telescope = require("poor-cli.telescope")
 
     create_command("PoorCLIStart", function()
         local status = rpc.get_status()
@@ -559,7 +558,7 @@ function M.setup()
     end, { desc = "Open poor-cli suggestions in trouble.nvim" })
 
     create_command("PoorCLICheckpoints", function()
-        telescope.open_checkpoints_picker()
+        require("poor-cli.checkpoints_ext").open_picker()
     end, { desc = "Browse/restore checkpoints" })
 
     create_command("PoorCLIComplete", function()
@@ -1681,7 +1680,22 @@ end, { desc = "Clear prompt queue" })
 
 -- command palette
 create_command("PoorCLIPalette", function()
-    require("poor-cli.telescope").command_palette()
+    local pickers = require("poor-cli.pickers")
+    local cmds = vim.api.nvim_get_commands({})
+    local entries = {}
+    for name, info in pairs(cmds) do
+        if name:match("^PoorCLI") then
+            table.insert(entries, { name = name, desc = info.definition or info.desc or "" })
+        end
+    end
+    table.sort(entries, function(a, b) return a.name < b.name end)
+    local items = {}
+    for _, entry in ipairs(entries) do
+        local display = entry.name
+        if entry.desc ~= "" then display = display .. "  " .. entry.desc end
+        items[#items + 1] = { id = entry.name, label = display, data = entry.name }
+    end
+    pickers.pick(items, { title = "poor-cli commands", preview = false, on_pick = function(name) vim.cmd(name) end })
 end, { desc = "Open command palette" })
 
 -- plan mode
