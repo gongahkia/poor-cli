@@ -1915,6 +1915,30 @@ create_command("PoorCLIChatTrace", function(opts)
     end
     cfg.config.chat_trace = mode
     notify.notify("[poor-cli] chat_trace = " .. mode, vim.log.levels.INFO)
+    if mode == "verbose" then
+        -- Surface the capability gap at the moment of enabling, not on the
+        -- user's next chat turn. Reset the per-session dedupe so this
+        -- always fires when the user explicitly asks for verbose.
+        local chat = require("poor-cli.chat")
+        if chat._thinking_unsupported_nudge then
+            chat._thinking_unsupported_nudge.key = nil
+        end
+        local supported, label = chat._provider_supports_thinking and chat._provider_supports_thinking()
+        if supported == false then
+            notify.notify(
+                "[poor-cli] heads-up: " .. tostring(label) .. " does not emit chain-of-thought. "
+                .. "Basic traces will fire; thinking brackets will not. "
+                .. "Switch to an EXTENDED_THINKING-capable model to see them.",
+                vim.log.levels.WARN
+            )
+        elseif supported == nil then
+            notify.notify(
+                "[poor-cli] chat_trace=verbose set before provider initialize — "
+                .. "capability will be verified on first turn.",
+                vim.log.levels.INFO
+            )
+        end
+    end
 end, {
     nargs = "?",
     desc = "Toggle chat turn tracing (off|basic|verbose)",

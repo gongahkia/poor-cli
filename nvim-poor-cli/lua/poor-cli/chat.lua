@@ -79,6 +79,42 @@ local function _ms_since(started_ns)
     return math.floor((vim.loop.hrtime() - started_ns) / 1000000)
 end
 
+-- Does the active provider declare EXTENDED_THINKING? Returns (bool, label)
+-- where label is "<provider>/<model>" for use in the warning. Unknown /
+-- unconfigured providers return (nil, label) so callers can treat "no
+-- initialize yet" separately from "confirmed unsupported".
+local function _provider_supports_thinking()
+    local caps = rpc.get_capabilities() or {}
+    local info = caps.providerInfo or {}
+    local pc = info.capabilities or {}
+    local name = tostring(info.name or "?")
+    local model = tostring(info.model or "?")
+    local label = name .. "/" .. model
+    if next(pc) == nil then return nil, label end
+    return pc.extended_thinking == true, label
+end
+
+-- Fire a "verbose thinking not supported" nudge once per (provider, model).
+-- Resets when the provider/model changes so a :PoorCLISwitchProvider picks
+-- up a thinking-capable model cleanly.
+M._thinking_unsupported_nudge = { key = nil }
+local function _warn_thinking_unsupported_once()
+    local supported, label = _provider_supports_thinking()
+    if supported ~= false then return end
+    if M._thinking_unsupported_nudge.key == label then return end
+    M._thinking_unsupported_nudge.key = label
+    require("poor-cli.notify").notify(
+        "[poor-cli] chat_trace=verbose but " .. label .. " does not emit "
+        .. "chain-of-thought. Basic traces still fire. Switch to a reasoning-capable "
+        .. "model (e.g. :PoorCLISwitchProvider anthropic claude-sonnet-4-20250514) for "
+        .. "thinking brackets.",
+        vim.log.levels.WARN,
+        { title = "poor-cli trace" }
+    )
+end
+
+M._provider_supports_thinking = _provider_supports_thinking -- test hook
+
 M.turns = {}
 M.loading_marker = nil
 M.streaming_buf_line = nil
@@ -1181,6 +1217,9 @@ local function dispatch_message(prepared, opts)
         chat_trace("basic", string.format("→ sent to %s/%s · %d chars · %d context file%s",
             provider, model, #prepared.resolved_msg,
             #prepared.context_files, #prepared.context_files == 1 and "" or "s"))
+        if _chat_trace_mode() == "verbose" then
+            _warn_thinking_unsupported_once()
+        end
     end
     M._thinking_start_traced = false
     local rpc_request_id = rpc.request("poor-cli/chatStreaming", params, function(_result, err)

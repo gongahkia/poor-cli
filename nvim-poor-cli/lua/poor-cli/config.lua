@@ -160,7 +160,12 @@ M.defaults = {
     --   "basic"   — toast when message sent, when provider returns first
     --               token, and when the turn finishes (tokens + cost + elapsed)
     --   "verbose" — basic + "💭 thinking started/ended" brackets around
-    --               any chain-of-thought the provider emits
+    --               any chain-of-thought the provider emits.
+    --               Requires a model that reports the EXTENDED_THINKING
+    --               capability (Anthropic Claude with extended thinking,
+    --               OpenAI reasoning-mode models). If the active provider
+    --               doesn't support it, the plugin surfaces a one-time
+    --               notice and the basic traces still fire.
     -- Toggle at runtime with :PoorCLIChatTrace [off|basic|verbose].
     chat_trace = "off",
 
