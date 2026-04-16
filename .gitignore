@@ -36,6 +36,8 @@ ENV/
 # Environment variables
 .env
 .env.local
+secrets.env
+*.secret.env
 
 # OS
 .DS_Store

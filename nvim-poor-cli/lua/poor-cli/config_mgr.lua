@@ -7,6 +7,7 @@ function M.set(params, callback) return rpc.request("poor-cli/setConfig", params
 function M.toggle(params, callback) return rpc.request("poor-cli/toggleConfig", params or {}, callback) end
 function M.set_api_key(params, callback) return rpc.request("poor-cli/setApiKey", params or {}, callback) end
 function M.get_api_key_status(params, callback) return rpc.request("poor-cli/getApiKeyStatus", params or {}, callback) end
+function M.purge_api_key(params, callback) return rpc.request("poor-cli/purgeApiKey", params or {}, callback) end
 
 local function notify(msg, level) require("poor-cli.notify").notify("[poor-cli] " .. msg, level) end
 
@@ -91,15 +92,60 @@ function M.setup()
     create_command("PoorCLIApiKeyStatus", function()
         M.get_api_key_status({}, function(result, err) vim.schedule(function()
             if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-            local keys = (result or {}).keys or {}
+            -- backend returns { providers = {<name> = {configured, source, envVar,
+            -- active, persisted, masked}, ...}, keyring = {...} }
+            local providers = (result or {}).providers or (result or {}).keys or {}
             local lines = { "# api key status", "" }
-            for _, k in ipairs(keys) do
-                table.insert(lines, string.format("%s: %s", tostring(k.provider or "?"), tostring(k.status or "unknown")))
+            lines[#lines + 1] = string.format("%-14s %-8s %-12s %-10s %s", "provider", "active", "source", "configured", "masked")
+            lines[#lines + 1] = string.rep("-", 60)
+            -- providers is a dict keyed by name; sort for stable output
+            local names = {}
+            if type(providers) == "table" then
+                for name, _ in pairs(providers) do names[#names + 1] = name end
             end
-            if #keys == 0 then table.insert(lines, vim.inspect(result)) end
+            table.sort(names)
+            for _, name in ipairs(names) do
+                local info = providers[name] or {}
+                lines[#lines + 1] = string.format("%-14s %-8s %-12s %-10s %s",
+                    name,
+                    info.active and "yes" or "-",
+                    tostring(info.source or "none"),
+                    info.configured and "yes" or "no",
+                    tostring(info.masked or ""))
+            end
+            if #names == 0 then
+                lines[#lines + 1] = vim.inspect(result)
+            end
+            lines[#lines + 1] = ""
+            lines[#lines + 1] = "lookup order: keyring → environment → config"
+            lines[#lines + 1] = "to purge a stale keyring entry: :PoorCLIApiKeyPurge <provider>"
             show_lines("[poor-cli api key status]", lines, "markdown")
         end) end)
-    end, { desc = "Show API key status" })
+    end, { desc = "Show API key status (with source column)" })
+
+    create_command("PoorCLIApiKeyPurge", function(opts)
+        local provider = (opts.args or ""):match("^%s*(%S+)%s*$")
+        if not provider or provider == "" then
+            notify("usage: :PoorCLIApiKeyPurge <provider> — e.g. openai, anthropic", vim.log.levels.WARN)
+            return
+        end
+        local choice = vim.fn.confirm(
+            "Delete stored API key for '" .. provider .. "' from the OS keyring?\n"
+            .. "After purge, the next key lookup falls through to the $" .. provider:upper() .. "_API_KEY env var or config file.",
+            "&Yes\n&No", 2
+        )
+        if choice ~= 1 then
+            notify("purge cancelled", vim.log.levels.INFO)
+            return
+        end
+        M.purge_api_key({ provider = provider }, function(result, err)
+            vim.schedule(function()
+                if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                local deleted = result and result.keyringDeleted and "keyring entry deleted" or "no keyring entry found"
+                notify(string.format("%s: %s. Config cleared. Re-run :PoorCLIApiKey or restart nvim to pick up env var.", provider, deleted), vim.log.levels.INFO)
+            end)
+        end)
+    end, { nargs = 1, desc = "Delete a provider's API key from the OS keyring" })
 end
 
 return M

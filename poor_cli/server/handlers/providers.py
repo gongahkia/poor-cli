@@ -292,6 +292,39 @@ class ProvidersHandlersMixin:
 
         return {"providers": status, "keyring": credential_store.status()}
 
+    async def handle_purge_api_key(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Delete a provider's key from the OS keyring and in-memory config.
+
+        Does not unset the user's shell env var (out of our scope). After a
+        purge the next lookup falls through to the env var / config file,
+        per poor_cli.credentials.CredentialStore.get_with_source.
+
+        Params:
+            provider: Provider name.
+        """
+        config_manager, config = self._ensure_config_loaded()
+        provider = self._normalize_provider_name(str(params.get("provider", "")))
+        if not provider:
+            raise InvalidParamsError("Missing provider")
+        if provider not in config.model.providers:
+            raise InvalidParamsError(f"Unknown provider: {provider}")
+
+        from ...credentials import get_credential_store
+
+        store = get_credential_store()
+        deleted = store.delete(provider)
+        # Scrub in-memory config + config manager too so the next lookup
+        # doesn't resurrect the stale value from memory.
+        config.api_keys.pop(provider, None)
+        config_manager.config.api_keys.pop(provider, None)
+
+        return {
+            "provider": provider,
+            "keyringDeleted": deleted,
+            "configCleared": True,
+        }
+
     async def handle_test_api_key(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Validate an API key by making a minimal API call (zero tokens)."""
         provider = self._normalize_provider_name(str(params.get("provider", "")))
@@ -405,6 +438,10 @@ async def _rpc_46(ctx, params):
 @register('poor-cli/testApiKey')
 async def _rpc_47(ctx, params):
     return await ctx.handle_test_api_key(params)
+
+@register('poor-cli/purgeApiKey')
+async def _rpc_48a(ctx, params):
+    return await ctx.handle_purge_api_key(params)
 
 @register('poor-cli/listProviders')
 async def _rpc_48(ctx, params):

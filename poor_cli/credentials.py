@@ -105,6 +105,43 @@ class CredentialStore:
             return "config"
         raise ValueError(f"unknown credential store: {store}")
 
+    def sync_env_to_keyring(self, provider: str, env_var: str, current_key: str) -> bool:
+        """Overwrite keyring with the env-var value if they differ.
+
+        Used as auto-heal when the active key validates as INVALID: if the
+        user has exported a fresh env var different from the stale keyring
+        entry, write the env value to the keyring so the next lookup picks
+        it up. Returns True if a write happened, False otherwise.
+        """
+        provider = canonical_provider_name(provider)
+        if not env_var:
+            return False
+        env_value = str(self._env.get(env_var, "") or "").strip()
+        if not env_value or env_value == current_key:
+            return False
+        return self.set(provider, env_value, store="keyring") == "keyring"
+
+    def delete(self, provider: str) -> bool:
+        """Remove a provider's credential from the OS keyring.
+
+        Returns True if something was deleted, False if the keyring is
+        unavailable or the provider had no entry. Does not touch env vars
+        or config file — callers that want those scrubbed must do so
+        separately (env belongs to the user's shell; config is managed
+        via ConfigManager).
+        """
+        provider = canonical_provider_name(provider)
+        kr = self._load_keyring()
+        if kr is None:
+            return False
+        try:
+            kr.delete_password(SERVICE_NAME, provider)
+            return True
+        except Exception:
+            # keyring.errors.PasswordDeleteError for "not found" is the
+            # common case; treat it as a benign no-op.
+            return False
+
     def migrate_to_keyring(
         self,
         *,
