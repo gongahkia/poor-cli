@@ -30,10 +30,11 @@
 - Python 3.11+
 - `poor-cli` Python package installed: `python3 -m pip install --upgrade 'poor-cli[all]'` (provides `poor-cli-server`)
 - At least one API key: `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
-- **Recommended:** `rcarriga/nvim-notify` OR `folke/snacks.nvim` for pretty multi-line error toasts (plugin falls back to one-line `:messages` echo if neither is present; `:checkhealth poor-cli` warns when missing).
-- Optional: `telescope.nvim` for `:PoorCLICheckpoints` and picker fallbacks
+- **Required:** [`folke/snacks.nvim`](https://github.com/folke/snacks.nvim) — powers both notifications (`snacks.notify`) and pickers (`snacks.pick`). `require('poor-cli').setup()` will refuse to load without it.
 - Optional: `trouble.nvim` for `:Trouble poor-cli`
 - Optional: `oil.nvim` for `@oil:` chat mentions
+- Optional: `nvim-dap` for breakpoint keymaps at `file:line` references
+- Optional: `gitsigns.nvim` / `neogit.nvim` / `overseer.nvim` for respective integrations
 
 ### Lazy.nvim
 
@@ -42,10 +43,7 @@
     "gongahkia/poor-cli",
     submodules = false,
     dependencies = {
-        -- pick ONE for pretty multi-line error toasts; plugin degrades
-        -- gracefully if neither is present but :checkhealth will warn.
-        "rcarriga/nvim-notify",
-        -- or: "folke/snacks.nvim",
+        "folke/snacks.nvim", -- REQUIRED: notifications + pickers
     },
     config = function()
         require("poor-cli").setup({
@@ -60,6 +58,7 @@
 ```lua
 use {
     "gongahkia/poor-cli",
+    requires = { "folke/snacks.nvim" }, -- REQUIRED
     config = function()
         require("poor-cli").setup({})
     end,

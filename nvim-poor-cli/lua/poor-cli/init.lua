@@ -48,6 +48,20 @@ M._setup_complete = false
 -- effect: `:PoorCLI*` commands + panels are available within one tick of
 -- VimEnter — imperceptible to the user — and nvim startup stays snappy.
 function M.setup(opts)
+    -- snacks.nvim is a hard dependency: it powers both notifications
+    -- (snacks.notify) and pickers (snacks.pick). Fail loudly if missing
+    -- so the user knows exactly which plugin to install, rather than
+    -- silently skipping features.
+    if not pcall(require, "snacks") then
+        error(
+            "[poor-cli] snacks.nvim is required but not installed.\n"
+            .. "Install via lazy.nvim: { 'folke/snacks.nvim' }\n"
+            .. "Or packer:            use 'folke/snacks.nvim'\n"
+            .. "See nvim-poor-cli/README.md for details.",
+            0
+        )
+    end
+
     -- config must load first: deferred setups read its values
     local config = require("poor-cli.config")
     config.setup(opts)

@@ -113,16 +113,17 @@ function M.check()
         info("nvim-treesitter not found. Some features like :PoorCLIDoc may be limited")
     end
 
-    -- notification plugin: soft dep, but strongly recommended because
-    -- error messages render much better with a real toast system
+    -- snacks.nvim is a HARD dependency: it powers notifications and pickers.
+    -- If it's missing, setup() would have already errored out, so reaching
+    -- this branch at all means something went wrong.
     local has_snacks = pcall(require, "snacks")
-    local has_notify = pcall(require, "notify")
     if has_snacks then
-        ok("snacks.nvim available — notifications will render as floating toasts")
-    elseif has_notify then
-        ok("rcarriga/nvim-notify available — notifications will render as floating toasts")
+        ok("snacks.nvim available (required)")
     else
-        warn("No notification plugin detected. ERROR/WARN messages will fall back to a one-line summary + :messages history. Install rcarriga/nvim-notify or folke/snacks.nvim for multi-line toasts.")
+        local h = vim.health or require("health")
+        (h.error or h.report_error)("snacks.nvim is a REQUIRED dependency and is not installed. "
+            .. "Install via your plugin manager ({'folke/snacks.nvim'}). "
+            .. "poor-cli will refuse to load without it.")
     end
 
     local has_cmp, cmp = pcall(require, "cmp")

@@ -22,8 +22,11 @@ Neovim plugin (lazy.nvim):
 
 ```lua
 { 'gongahkia/poor-cli', dir = '<path>/nvim-poor-cli',
+  dependencies = { 'folke/snacks.nvim' }, -- REQUIRED
   config = function() require('poor-cli').setup({}) end }
 ```
+
+> **Required plugin:** [`folke/snacks.nvim`](https://github.com/folke/snacks.nvim) powers poor-cli's notifications and pickers. `setup()` refuses to load without it.
 
 Or from this checkout:
 
