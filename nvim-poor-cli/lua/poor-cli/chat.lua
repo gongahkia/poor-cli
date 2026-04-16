@@ -560,6 +560,7 @@ function M.open()
         vim.bo[M.buf].filetype = "markdown"
         vim.api.nvim_buf_set_name(M.buf, "[poor-cli chat]")
         vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, chat_header_lines())
+        M._refresh_liveness()
     end
 
     local width = config.get("chat_width")
@@ -735,6 +736,7 @@ function M.append_message(role, content, turn)
     local line_count = vim.api.nvim_buf_line_count(M.buf)
     vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, lines)
     record_turn_extmark(role, line_count, line_count + #lines, turn, content)
+    if role == "assistant" then M._set_assistant_badge(line_count) end
     local ok_pin, turn_pin = pcall(require, "poor-cli.turn_pin")
     if ok_pin then pcall(turn_pin.render) end
 
@@ -1362,6 +1364,7 @@ function M._start_streaming_block(event)
     local line_count = vim.api.nvim_buf_line_count(M.buf)
     local initial_line = string.format("%s Thinking (0 sec)...", spinner_frame(0))
     vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, { message_header("assistant", event), "", initial_line, "" })
+    M._set_assistant_badge(line_count)
     if M.stream_meta then
         M.stream_meta.assistant_header_line = line_count
     end
@@ -1586,6 +1589,11 @@ M._thinking_buffer = ""
 
 function M.setup_streaming_autocmds()
     local group = vim.api.nvim_create_augroup("PoorCLIChatStreaming", { clear = true })
+    vim.api.nvim_create_autocmd("User", {
+        group = group,
+        pattern = "PoorCLIStatusChanged",
+        callback = function() vim.schedule(M._refresh_liveness) end,
+    })
     vim.api.nvim_create_autocmd("User", {
         group = group,
         pattern = "PoorCLIThinkingChunk",
@@ -2139,6 +2147,85 @@ local function clear_local_typing()
     stop_local_idle_timer()
     send_typing_state(false, true)
 end
+
+-- Assistant liveness badges. Two surfaces: per-assistant-header virt_text
+-- dot, and a sticky virt_text line pinned to line 1. Both read the current
+-- rpc.capabilities.apiKeyValidity + rpc.server_state and refresh on the
+-- PoorCLIStatusChanged autocmd so the dot flips in place when the provider
+-- state changes.
+M.liveness_ns = M.liveness_ns or vim.api.nvim_create_namespace("poor-cli-liveness")
+M._assistant_header_lines = M._assistant_header_lines or {}  -- list of {row, extmark_id}
+M._top_line_extmark = M._top_line_extmark or nil
+
+local function _compute_liveness()
+    -- specs often stub rpc with only the fields they exercise; fall back
+    -- gracefully when get_capabilities / get_status aren't present on the
+    -- stub rather than crashing render.
+    local caps = (type(rpc.get_capabilities) == "function" and rpc.get_capabilities()) or rpc.capabilities or {}
+    local validity = caps.apiKeyValidity or {}
+    local status = (type(rpc.get_status) == "function" and rpc.get_status()) or {}
+    local state = tostring(status.state or rpc.server_state or "")
+
+    if validity.status == "invalid" then
+        local provider = tostring(validity.provider or caps.providerInfo and caps.providerInfo.name or "?")
+        return { icon = "🔴", label = "key invalid (" .. provider .. ")", hl = "ErrorMsg" }
+    end
+    if state == "error" then
+        return { icon = "🔴", label = "server error", hl = "ErrorMsg" }
+    end
+    if state == "restarting" or state == "starting" or state == "initializing" then
+        return { icon = "🟡", label = state, hl = "WarningMsg" }
+    end
+    if state == "ready" then
+        return { icon = "🟢", label = "live", hl = "DiagnosticOk" }
+    end
+    if state == "stopped" or state == "" then
+        return { icon = "⏸", label = "no server", hl = "Comment" }
+    end
+    return { icon = "·", label = state, hl = "Comment" }
+end
+
+function M._set_assistant_badge(row)
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then return end
+    local live = _compute_liveness()
+    local ext = vim.api.nvim_buf_set_extmark(M.buf, M.liveness_ns, row, 0, {
+        virt_text = { { "  " .. live.icon .. " " .. live.label, live.hl } },
+        virt_text_pos = "eol",
+        hl_mode = "combine",
+    })
+    table.insert(M._assistant_header_lines, { row = row, id = ext })
+end
+
+local function _refresh_liveness()
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then return end
+    local live = _compute_liveness()
+    -- refresh top-of-buffer sticky line
+    if M._top_line_extmark then
+        pcall(vim.api.nvim_buf_del_extmark, M.buf, M.liveness_ns, M._top_line_extmark)
+    end
+    M._top_line_extmark = vim.api.nvim_buf_set_extmark(M.buf, M.liveness_ns, 0, 0, {
+        virt_lines = { { { "poor-cli · " .. live.icon .. " " .. live.label, live.hl } } },
+        virt_lines_above = true,
+    })
+    -- refresh each assistant header virt_text in place
+    local kept = {}
+    for _, entry in ipairs(M._assistant_header_lines) do
+        local pos = vim.api.nvim_buf_get_extmark_by_id(M.buf, M.liveness_ns, entry.id, {})
+        pcall(vim.api.nvim_buf_del_extmark, M.buf, M.liveness_ns, entry.id)
+        if pos and pos[1] then
+            local new_id = vim.api.nvim_buf_set_extmark(M.buf, M.liveness_ns, pos[1], 0, {
+                virt_text = { { "  " .. live.icon .. " " .. live.label, live.hl } },
+                virt_text_pos = "eol",
+                hl_mode = "combine",
+            })
+            table.insert(kept, { row = pos[1], id = new_id })
+        end
+    end
+    M._assistant_header_lines = kept
+end
+
+M._refresh_liveness = _refresh_liveness   -- test hook
+M._compute_liveness = _compute_liveness   -- test hook
 
 -- Tool-call rendering state. Inline running-indicator + truncated-result
 -- expansion. _pending_tools is a FIFO of in-flight tool calls so _append_tool_result
