@@ -248,46 +248,16 @@ local function build_history_panel()
     return panel
 end
 
--- ───────────────────────── Checkpoints ─────────────────────────
+-- ─────── Checkpoints (picker — see checkpoints_ext.open_picker) ───────
 local function build_checkpoints_panel()
-    local panel
-    panel = base.new_panel({
-        name = "[poor-cli checkpoints]",
-        width = 70,
-        on_refresh = function(render_now)
-            render_now()
-            fetch("poor-cli/listCheckpoints", {}, "checkpoints", panel)
-        end,
-        render = function()
-            local lines = { "# poor-cli Checkpoints", "", "Press q to close, r to refresh. `:PoorCLICheckpointPreview <id>` and `Restore` for actions.", "" }
-            local data = (panel._cache or {}).checkpoints
-            section(lines, "Recent")
-            if not data then empty(lines, "loading…")
-            elseif data.error then empty(lines, "error: " .. data.error)
-            elseif data.available == false then
-                empty(lines, "checkpoint system unavailable")
-            else
-                local items = data.checkpoints or {}
-                if vim.tbl_isempty(items) then empty(lines, "no checkpoints")
-                else
-                    for _, cp in ipairs(items) do
-                        local tags = (type(cp.tags) == "table" and #cp.tags > 0) and (" [" .. table.concat(cp.tags, ",") .. "]") or ""
-                        table.insert(lines, string.format("- %s%s", cp.checkpointId or "?", tags))
-                        if cp.description and cp.description ~= "" then
-                            table.insert(lines, "    " .. cp.description)
-                        end
-                        table.insert(lines, string.format("    %s · %d file(s) · %.1f KB", tostring(cp.createdAt or ""), cp.fileCount or 0, (cp.totalSizeBytes or 0) / 1024))
-                    end
-                end
-                if data.storagePath then
-                    table.insert(lines, "")
-                    table.insert(lines, "Storage: `" .. tostring(data.storagePath) .. "`")
-                end
-            end
-            return lines
-        end,
-    })
-    return panel
+    return {
+        toggle = function() require("poor-cli.checkpoints_ext").open_picker() end,
+        open = function() require("poor-cli.checkpoints_ext").open_picker() end,
+        close = function() end,
+        refresh = function() end,
+        win = nil,
+        buf = nil,
+    }
 end
 
 -- ───────────────────────── Queue ─────────────────────────
