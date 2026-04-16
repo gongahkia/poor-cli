@@ -849,6 +849,13 @@ end
 
 function M.stop()
     M.manual_stop = true
+    -- Tracks when the user last asked for a stop. M.start() resets the
+    -- global manual_stop flag immediately so the new process can track
+    -- ITS own exit cleanly — but that leaves the OLD process's late
+    -- SIGKILL (after jobstop's async delivery) to falsely look like a
+    -- crash. This timestamp gives handle_exit a grace window to suppress
+    -- code=137 (SIGKILL) exits that arrive within RESTART_GRACE_MS.
+    M._last_manual_stop_ns = (vim.loop.hrtime and vim.loop.hrtime()) or 0
     clear_restart_timer()
 
     if M.job_id then
@@ -1729,11 +1736,25 @@ function M.handle_exit(code)
         end
     end
 
-    do
+    -- SIGKILL (code=137) within 5s of a manual stop is almost certainly
+    -- the OLD process finally exiting after M.stop()+M.start() raced.
+    -- Don't log it as a crash; it's intentional.
+    local RESTART_GRACE_MS = 5000
+    local is_benign_sigkill = false
+    if code == 137 and M._last_manual_stop_ns and M._last_manual_stop_ns > 0 and vim.loop.hrtime then
+        local age_ms = math.floor((vim.loop.hrtime() - M._last_manual_stop_ns) / 1000000)
+        if age_ms < RESTART_GRACE_MS then is_benign_sigkill = true end
+    end
+    if not is_benign_sigkill then
         local ok_cmds, cmds = pcall(require, "poor-cli.commands")
         if ok_cmds and type(cmds._log_session) == "function" then
             cmds._log_session("event", string.format("server_crashed code=%s%s", tostring(code), hint))
         end
+    end
+    if is_benign_sigkill then
+        M.restart_attempt = 0
+        update_state("stopped", "Stopped (replaced by restart)")
+        return
     end
     if config.get("auto_restart") then
         require("poor-cli.notify").notify("[poor-cli] Server crashed" .. hint .. " — restarting. Chat context was reset.", vim.log.levels.WARN)

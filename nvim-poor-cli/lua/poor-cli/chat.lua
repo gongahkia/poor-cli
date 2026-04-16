@@ -1230,7 +1230,7 @@ local function dispatch_message(prepared, opts)
                 return
             end
 
-            M._finalize_streaming_block(request_id)
+            M._finalize_streaming_block(request_id, err)
             if err and err.code ~= -32800 then
                 M.append_message("assistant", "Error: " .. require("poor-cli.rpc").format_error(err))
             end
@@ -1548,7 +1548,7 @@ local function format_stream_meta()
     return string.format("⏱ %s | %s | %s%s%s", time_str, tokens_str, cost_str, conf_str, cache_str)
 end
 
-function M._finalize_streaming_block(request_id)
+function M._finalize_streaming_block(request_id, err_info)
     if request_id and not is_active_request(request_id) then
         return
     end
@@ -1600,13 +1600,35 @@ function M._finalize_streaming_block(request_id)
             pattern = "PoorCLITurnEnded",
             data = ended_meta,
         })
-        chat_trace("basic", string.format("✓ turn complete · %d tokens · $%.4f · %.1fs",
+        -- Error handling: -32800 is the cancellation code (user-triggered);
+        -- other errors came from the stream itself. Treat no tokens + short
+        -- duration as a silent error too, since the backend occasionally
+        -- finalizes without producing a chunk (e.g. mid-stream rpc failure).
+        local errored = err_info ~= nil and err_info.code ~= -32800
+        local cancelled = err_info ~= nil and err_info.code == -32800
+        local silent_error = (not errored) and (not cancelled)
+            and (ended_meta.total_tokens or 0) == 0
+            and (ended_meta.duration_s or 0) < 1
+        local status = "ok"
+        local status_detail = ""
+        if errored then
+            status = "error"
+            status_detail = " reason=" .. tostring((err_info.message or err_info.code or "unknown")):gsub("\n", " "):sub(1, 120)
+        elseif cancelled then
+            status = "cancelled"
+        elseif silent_error then
+            status = "error"
+            status_detail = " reason=silent (no chunks, 0 tokens)"
+        end
+        chat_trace("basic", string.format("%s turn %s · %d tokens · $%.4f · %.1fs",
+            status == "ok" and "✓" or "✗",
+            status,
             ended_meta.total_tokens or 0, ended_meta.cost_usd or 0, ended_meta.duration_s or 0))
         do
             local ok_cmds, cmds = pcall(require, "poor-cli.commands")
             if ok_cmds and type(cmds._log_session) == "function" then
-                cmds._log_session("event", string.format("turn_end tokens=%d cost=$%.4f dur=%.1fs",
-                    ended_meta.total_tokens or 0, ended_meta.cost_usd or 0, ended_meta.duration_s or 0))
+                cmds._log_session("event", string.format("turn_end status=%s tokens=%d cost=$%.4f dur=%.1fs%s",
+                    status, ended_meta.total_tokens or 0, ended_meta.cost_usd or 0, ended_meta.duration_s or 0, status_detail))
             end
         end
     end
