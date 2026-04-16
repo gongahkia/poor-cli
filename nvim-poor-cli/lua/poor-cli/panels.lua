@@ -433,15 +433,55 @@ end
 -- ───────────────────────── Automations ─────────────────────────
 local function build_automations_panel()
     local panel
+    local width, height = sidebar_dims()
+
+    local function automation_id()
+        local line = vim.api.nvim_get_current_line()
+        return line and line:match("%((%S-)%)$")
+    end
+
     panel = base.new_panel({
         name = "[poor-cli automations]",
-        width = 80,
+        width = width,
+        height = height,
+        position = "right",
+        keymaps = {
+            ["<CR>"] = function()
+                local id = automation_id()
+                if not id then return end
+                rpc.request("poor-cli/runAutomationNow", { automationId = id }, function(_, e) vim.schedule(function()
+                    if e then notify(vim.inspect(e), vim.log.levels.ERROR)
+                    else notify("triggered " .. id, vim.log.levels.INFO); panel.refresh() end
+                end) end)
+            end,
+            ["t"] = function()
+                local id = automation_id()
+                if not id then return end
+                local cache = (panel._cache or {}).automations or {}
+                local enabled = true
+                for _, a in ipairs(cache.automations or {}) do
+                    if tostring(a.automationId) == id then enabled = not a.enabled; break end
+                end
+                rpc.request("poor-cli/setAutomationEnabled", { automationId = id, enabled = enabled }, function(_, e) vim.schedule(function()
+                    if e then notify(vim.inspect(e), vim.log.levels.ERROR)
+                    else notify((enabled and "enabled " or "disabled ") .. id, vim.log.levels.INFO); panel.refresh() end
+                end) end)
+            end,
+            ["h"] = function()
+                local id = automation_id()
+                if not id then return end
+                rpc.request("poor-cli/getAutomationHistory", { automationId = id }, function(r, e) vim.schedule(function()
+                    if e then notify(vim.inspect(e), vim.log.levels.ERROR); return end
+                    show_detail("[poor-cli automation history " .. id .. "]", r)
+                end) end)
+            end,
+        },
         on_refresh = function(render_now)
             render_now()
             fetch("poor-cli/listAutomations", {}, "automations", panel)
         end,
         render = function()
-            local lines = { "# poor-cli Automations", "", "Press q to close, r to refresh. `:PoorCLIAutomationEnable/Disable/Run <id>` for actions.", "" }
+            local lines = { "# poor-cli Automations", "", "<CR> run · t toggle · h history · r refresh · q close", "" }
             local data = (panel._cache or {}).automations
             section(lines, "Scheduled")
             if not data then empty(lines, "loading…")
@@ -451,8 +491,8 @@ local function build_automations_panel()
                 if vim.tbl_isempty(items) then empty(lines, "no automations")
                 else
                     for _, a in ipairs(items) do
-                        local enabled = a.enabled and "on" or "off"
-                        table.insert(lines, string.format("- [%s] **%s** (%s)", enabled, a.name or "?", a.automationId or "?"))
+                        local mark = a.enabled and "●" or "○"
+                        table.insert(lines, string.format("- %s **%s** (%s)", mark, a.name or "?", a.automationId or "?"))
                         if a.scheduleSummary and a.scheduleSummary ~= "" then
                             table.insert(lines, "    schedule: " .. tostring(a.scheduleSummary))
                         end
@@ -460,7 +500,8 @@ local function build_automations_panel()
                             table.insert(lines, "    next run: " .. tostring(a.nextRunAt))
                         end
                         if a.lastRunStatus and a.lastRunStatus ~= "" then
-                            table.insert(lines, string.format("    last run: %s %s", tostring(a.lastRunStatus), tostring(a.lastRunAt or "")))
+                            table.insert(lines, string.format("    last run: %s %s %s",
+                                icon_for(a.lastRunStatus), tostring(a.lastRunStatus), tostring(a.lastRunAt or "")))
                         end
                     end
                 end
