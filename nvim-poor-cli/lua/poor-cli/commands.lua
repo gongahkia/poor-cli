@@ -1988,18 +1988,35 @@ create_command("PoorCLIApiKey", function()
                 vim.schedule(function()
                     if err then
                         notify.notify(
-                            "[poor-cli] validation failed: " .. rpc.format_error(err)
-                                .. " — key NOT saved. Re-run :PoorCLIApiKey to retry.",
-                            vim.log.levels.ERROR
+                            "[poor-cli] validation RPC failed: " .. rpc.format_error(err)
+                                .. " — saving key anyway (couldn't verify). Re-run :PoorCLIApiKey if chat errors later.",
+                            vim.log.levels.WARN
                         )
+                        persist(provider, key)
                         return
                     end
-                    if result and result.valid then
+                    -- Three-state: valid / invalid / unknown. The server
+                    -- returns status so we can distinguish "provably wrong"
+                    -- (401/403 — refuse unless user overrides) from "couldn't
+                    -- verify" (429 / 5xx / timeout / DNS — save optimistically
+                    -- so a transient hiccup doesn't force re-paste).
+                    local status = result and tostring(result.status or "")
+                    local reason = result and result.error or "unknown error"
+                    if status == "valid" or (result and result.valid and status == "") then
                         notify.notify("[poor-cli] ✓ key valid for " .. provider, vim.log.levels.INFO)
                         persist(provider, key)
                         return
                     end
-                    local reason = result and result.error or "unknown error"
+                    if status == "unknown" then
+                        notify.notify(
+                            "[poor-cli] couldn't verify key (" .. reason .. ") — saving anyway. "
+                                .. "Chat will surface a clear error if the key is genuinely bad.",
+                            vim.log.levels.WARN
+                        )
+                        persist(provider, key)
+                        return
+                    end
+                    -- status == "invalid" (or legacy false without status) — confirmed bad
                     vim.ui.select({ "Save anyway", "Discard" }, {
                         prompt = "Key rejected by " .. provider .. " (" .. reason .. "). Save anyway?",
                     }, function(choice)
