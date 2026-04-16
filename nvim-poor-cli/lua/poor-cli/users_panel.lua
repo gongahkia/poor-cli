@@ -367,15 +367,18 @@ function M.open()
         M.refresh()
         return M.buf
     end
-    vim.cmd("botright " .. M.width .. "vsplit")
-    M.win = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(M.win, M.buf)
-    vim.api.nvim_win_set_width(M.win, M.width)
-    vim.wo[M.win].wrap = false
-    vim.wo[M.win].number = false
-    vim.wo[M.win].relativenumber = false
-    vim.wo[M.win].signcolumn = "no"
+    local float_win = require("poor-cli.float_win")
+    M.win = float_win.open(M.buf, {
+        width = M.width,
+        height = math.max(20, vim.o.lines - 4),
+        position = "right",
+        title = " poor-cli users ",
+        close_keys = {},
+        wrap = false,
+        signcolumn = "no",
+    })
     vim.keymap.set("n", "q", M.close, { buffer = M.buf, nowait = true, desc = "Close poor-cli users" })
+    vim.keymap.set("n", "<Esc>", M.close, { buffer = M.buf, nowait = true, desc = "Close poor-cli users" })
     vim.keymap.set("n", "R", M.refresh, { buffer = M.buf, nowait = true, desc = "Refresh poor-cli users" })
     vim.keymap.set("n", "a", function() M.approve() end, { buffer = M.buf, nowait = true, desc = "Approve user" })
     vim.keymap.set("n", "d", function() M.deny() end, { buffer = M.buf, nowait = true, desc = "Deny user" })
