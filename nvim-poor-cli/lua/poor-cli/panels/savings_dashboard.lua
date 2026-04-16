@@ -166,17 +166,22 @@ function M.open()
         vim.bo[M.buf].filetype = "markdown"
         vim.api.nvim_buf_set_name(M.buf, "[poor-cli savings dashboard]")
     end
-    local width = tonumber((config.get("panels") or {}).savings_width) or 88
-    vim.cmd("botright " .. tostring(width) .. "vsplit")
-    M.win = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(M.win, M.buf)
-    vim.wo[M.win].wrap = true
-    vim.wo[M.win].number = false
-    vim.wo[M.win].relativenumber = false
-    vim.keymap.set("n", "q", function()
+    local width = tonumber((config.get("panels") or {}).savings_width) or 100
+    local float_win = require("poor-cli.float_win")
+    M.win = float_win.open(M.buf, {
+        width = math.min(width, vim.o.columns - 4),
+        height = math.min(30, vim.o.lines - 4),
+        position = "center",
+        title = " poor-cli savings dashboard ",
+        close_keys = {},
+        wrap = true,
+    })
+    local function close()
         if M.win and vim.api.nvim_win_is_valid(M.win) then vim.api.nvim_win_close(M.win, true) end
         M.win = nil
-    end, { buffer = M.buf, nowait = true, desc = "Close savings dashboard" })
+    end
+    vim.keymap.set("n", "q", close, { buffer = M.buf, nowait = true, desc = "Close savings dashboard" })
+    vim.keymap.set("n", "<Esc>", close, { buffer = M.buf, nowait = true, desc = "Close savings dashboard" })
     vim.keymap.set("n", "r", M.refresh, { buffer = M.buf, nowait = true, desc = "Refresh savings dashboard" })
     vim.keymap.set("n", "c", M.open_cost, { buffer = M.buf, nowait = true, desc = "Open cost dashboard" })
     M.refresh()
