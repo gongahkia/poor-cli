@@ -1327,6 +1327,10 @@ end
 -- change this table to swap spinners — e.g. { "|", "/", "-", "\\" } for pure ASCII.
 local SPINNER_FRAMES = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 local SPINNER_INTERVAL_MS = 80
+-- Flip the streaming placeholder from "Thinking..." to a "no stream for Xs"
+-- warning after this many ms of silence. Chosen well below the backend's
+-- 300s RPC timeout so users see something suspicious much sooner.
+local STALL_THRESHOLD_MS = 15000
 
 local function spinner_frame(tick)
     return SPINNER_FRAMES[(tick % #SPINNER_FRAMES) + 1]
@@ -1376,6 +1380,7 @@ function M._start_streaming_block(event)
 
     -- live-update the placeholder until first chunk arrives or finalize fires
     M._thinking_started_ns = (vim.loop.hrtime and vim.loop.hrtime()) or 0
+    M._last_stream_chunk_ns = M._thinking_started_ns
     M._thinking_tick = 0
     M._stop_thinking_timer()
     if vim.loop.new_timer then
@@ -1390,11 +1395,25 @@ function M._start_streaming_block(event)
             if M._thinking_started_ns > 0 and vim.loop.hrtime then
                 elapsed = math.max(0, math.floor((vim.loop.hrtime() - M._thinking_started_ns) / 1000000000))
             end
+            -- Stall detection: if no chunk has arrived for STALL_THRESHOLD_MS
+            -- (default 15s), flip the placeholder from "Thinking..." to a
+            -- visible "no stream for Xs" warning so the user knows the
+            -- connection may be dead, not just that the model is slow.
+            local silent_ms = 0
+            if vim.loop.hrtime and M._last_stream_chunk_ns and M._last_stream_chunk_ns > 0 then
+                silent_ms = math.max(0, math.floor((vim.loop.hrtime() - M._last_stream_chunk_ns) / 1000000))
+            end
             local ln = M._streaming_placeholder_line
             if ln then
-                local new_text = string.format("%s Thinking (%s)...",
-                    spinner_frame(M._thinking_tick),
-                    format_thinking_duration(elapsed))
+                local new_text
+                if silent_ms >= STALL_THRESHOLD_MS then
+                    new_text = string.format("⚠ no stream for %ds — may be disconnected (check :PoorCLIOpenLog or :PoorCLIStatus)",
+                        math.floor(silent_ms / 1000))
+                else
+                    new_text = string.format("%s Thinking (%s)...",
+                        spinner_frame(M._thinking_tick),
+                        format_thinking_duration(elapsed))
+                end
                 pcall(vim.api.nvim_buf_set_lines, M.buf, ln - 1, ln, false, { new_text })
             end
         end))
@@ -1423,6 +1442,7 @@ function M._append_streaming_chunk(chunk)
     if not M.streaming_buf_line or not chunk or chunk == "" then
         return
     end
+    if vim.loop.hrtime then M._last_stream_chunk_ns = vim.loop.hrtime() end
 
     if M._streaming_placeholder_active then
         -- first real chunk: stop timer, remove Thinking placeholder lines
@@ -1603,6 +1623,7 @@ function M.setup_streaming_autocmds()
                 return
             end
             if data.chunk and data.chunk ~= "" then
+                if vim.loop.hrtime then M._last_stream_chunk_ns = vim.loop.hrtime() end
                 vim.schedule(function()
                     if not M._thinking_start_traced then
                         M._thinking_start_traced = true
