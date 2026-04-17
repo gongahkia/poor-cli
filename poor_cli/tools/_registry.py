@@ -29,6 +29,12 @@ class ToolSpec:
     exclusive: bool = False
     examples: List[Dict[str, Any]] = field(default_factory=list)
     degraded_fallbacks: List[str] = field(default_factory=list)
+    # Proposal E.1 — in-session memoization. Defaults off; must opt in.
+    cacheable: bool = False
+    cache_ttl_s: float = 60.0
+    # Tool names whose cached results this tool's success should invalidate.
+    # e.g. git.commit invalidates="git.status git.diff git.log hunks.list".
+    invalidates: List[str] = field(default_factory=list)
 
 
 _TOOLS: Dict[str, ToolSpec] = {}
@@ -44,8 +50,27 @@ def register_tool(
     exclusive: bool = False,
     examples: Optional[List[Dict[str, Any]]] = None,
     degraded_fallbacks: Optional[List[str]] = None,
+    cacheable: bool = False,
+    cache_ttl_s: float = 60.0,
+    invalidates: Optional[List[str]] = None,
 ) -> ToolSpec:
-    """Register a Phase-B tool. Called from each tool module at import time."""
+    """Register a Phase-B tool. Called from each tool module at import time.
+
+    Proposal E.1 fields:
+      - ``cacheable``: allow the dispatcher to memoize results keyed on
+        ``sha256(args)``. Default off; exclusive tools silently override
+        to false regardless of the flag (mutations should never cache).
+      - ``cache_ttl_s``: entries live at most this long. Default 60s.
+      - ``invalidates``: on *successful* dispatch of this tool, wipe cache
+        entries for every listed tool name. Use for mutations whose
+        observable effect changes the output of pure read tools (e.g.
+        ``git.commit`` → [``git.status``, ``git.log``]).
+    """
+    if exclusive and cacheable:
+        # Forced invariant: exclusive tools never cache. Silently downgrade
+        # rather than raise so a future tool author's typo doesn't crash
+        # registration during import.
+        cacheable = False
     spec = ToolSpec(
         name=name,
         description=description,
@@ -55,6 +80,9 @@ def register_tool(
         exclusive=exclusive,
         examples=list(examples or []),
         degraded_fallbacks=list(degraded_fallbacks or []),
+        cacheable=cacheable,
+        cache_ttl_s=cache_ttl_s,
+        invalidates=list(invalidates or []),
     )
     _TOOLS[name] = spec
     return spec

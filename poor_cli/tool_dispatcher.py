@@ -313,6 +313,39 @@ async def dispatch_one(
             ),
             rec,
         )
+    # Proposal E.1 — memoization cache lookup. Only cacheable (non-exclusive)
+    # tools participate. Cache hit returns verbatim with metadata.cache_hit.
+    cache = getattr(ctx, "tool_cache", None)
+    if spec.cacheable and cache is not None:
+        hit = cache.get(name, args, ttl_s=spec.cache_ttl_s)
+        if hit is not None:
+            # Clone the metadata so we can stamp cache_hit without mutating
+            # the shared cached instance (which would break subsequent hits).
+            result = ToolResult(
+                content=list(hit.content),
+                is_error=hit.is_error,
+                metadata={
+                    **(hit.metadata or {}),
+                    "cache_hit": True,
+                    "wall_time_ms": 0,
+                },
+            )
+            rec = CallRecord(
+                tool=name,
+                wall_time_ms=0,
+                returncode=1 if result.is_error else 0,
+                retry_attempts=0,
+                is_error=result.is_error,
+            )
+            # Still record into SessionRecorder so meta.call_history shows
+            # cache-hit calls for observability.
+            recorder = getattr(ctx, "session_recorder", None)
+            if recorder is not None:
+                try:
+                    recorder.record(rec, args)
+                except Exception:
+                    logger.debug("session_recorder.record raised", exc_info=True)
+            return result, rec
     effective_policy = policy or DEFAULT_RETRY_POLICY
     t0 = _now_ms()
     # T10: expose a bound call_tool on ctx so handlers can invoke peers
@@ -350,6 +383,20 @@ async def dispatch_one(
             recorder.record(rec, args)
         except Exception:
             logger.debug("session_recorder.record raised", exc_info=True)
+    # Proposal E.1 — cache the (fresh) result + run invalidation chain.
+    # We store only successful calls to avoid caching ToolErrors that might
+    # recover on retry; validation/unknown-tool errors are short-circuited
+    # earlier anyway.
+    if cache is not None and spec.cacheable and not result.is_error:
+        try:
+            cache.put(name, args, result)
+        except Exception:
+            logger.debug("tool_cache.put raised", exc_info=True)
+    if cache is not None and spec.invalidates and not result.is_error:
+        try:
+            cache.invalidate_many(spec.invalidates)
+        except Exception:
+            logger.debug("tool_cache.invalidate_many raised", exc_info=True)
     return result, rec
 
 
