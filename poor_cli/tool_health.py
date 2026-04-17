@@ -34,9 +34,12 @@ class _ToolStats:
     latencies_ms: Deque[int] = field(default_factory=lambda: deque(maxlen=512))
     recent_errors: Deque[Dict[str, Any]] = field(default_factory=lambda: deque(maxlen=5))
     events: Deque[float] = field(default_factory=lambda: deque(maxlen=1024))  # timestamps
+    outcomes: Deque[tuple[float, bool]] = field(default_factory=lambda: deque(maxlen=1024))
 
     def record(self, rec: "CallRecord", *, error_excerpt: Optional[str] = None) -> None:
-        self.events.append(time.time())
+        now = time.time()
+        self.events.append(now)
+        self.outcomes.append((now, bool(rec.is_error)))
         self.latencies_ms.append(rec.wall_time_ms)
         if rec.is_error:
             self.failures += 1
@@ -88,6 +91,30 @@ class ToolHealth:
     def reset(self) -> None:
         with self._lock:
             self._tools.clear()
+
+    def recent_consecutive_failures(self, name: str, *, window_s: float = 60.0) -> int:
+        with self._lock:
+            stats = self._tools.get(name)
+            if stats is None:
+                return 0
+            cutoff = time.time() - max(1.0, window_s)
+            count = 0
+            for at, is_error in reversed(stats.outcomes):
+                if at < cutoff:
+                    break
+                if not is_error:
+                    break
+                count += 1
+            return count
+
+    def is_circuit_open(
+        self,
+        name: str,
+        *,
+        threshold: int = 5,
+        window_s: float = 60.0,
+    ) -> bool:
+        return self.recent_consecutive_failures(name, window_s=window_s) >= max(1, threshold)
 
 
 def _build_snapshot(stats: _ToolStats, *, window_s: float) -> Dict[str, Any]:
@@ -147,3 +174,16 @@ def snapshots(*, window_s: float = 3600.0) -> List[Dict[str, Any]]:
 
 def reset() -> None:
     _SINGLETON.reset()
+
+
+def recent_consecutive_failures(name: str, *, window_s: float = 60.0) -> int:
+    return _SINGLETON.recent_consecutive_failures(name, window_s=window_s)
+
+
+def is_circuit_open(
+    name: str,
+    *,
+    threshold: int = 5,
+    window_s: float = 60.0,
+) -> bool:
+    return _SINGLETON.is_circuit_open(name, threshold=threshold, window_s=window_s)

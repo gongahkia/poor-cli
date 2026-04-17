@@ -182,6 +182,7 @@ register_tool(
     ],
     cacheable=True,
     cache_ttl_s=30.0,
+    circuit_disabled=True,
 )
 
 
@@ -237,6 +238,7 @@ register_tool(
     ],
     cacheable=True,
     cache_ttl_s=30.0,
+    circuit_disabled=True,
 )
 
 
@@ -432,6 +434,7 @@ register_tool(
     handler=handle_log,
     cacheable=True,
     cache_ttl_s=30.0,
+    circuit_disabled=True,
 )
 
 
@@ -499,6 +502,7 @@ register_tool(
     handler=handle_branch_list,
     cacheable=True,
     cache_ttl_s=30.0,
+    circuit_disabled=True,
 )
 register_tool(
     name="git.branch.create",
@@ -581,4 +585,5 @@ register_tool(
     handler=handle_push,
     exclusive=True,
     timeout_s=60.0,
+    max_per_minute=3,
 )

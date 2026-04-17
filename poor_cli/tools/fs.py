@@ -161,6 +161,7 @@ register_tool(
     handler=handle_browse,
     cacheable=True,
     cache_ttl_s=30.0,
+    circuit_disabled=True,
 )
 
 register_tool(
@@ -179,4 +180,5 @@ register_tool(
     handler=handle_glob,
     cacheable=True,
     cache_ttl_s=30.0,
+    circuit_disabled=True,
 )

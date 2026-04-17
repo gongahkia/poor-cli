@@ -407,6 +407,10 @@ class ToolConfig:
     enable_network_tools: bool = True
     backup_before_edit: bool = True
     git_auto_detect: bool = True
+    circuit_breakers: bool = True
+    idempotency: bool = True
+    auto_checkpoint: bool = True
+    rate_limits: bool = True
 
 
 @dataclass

@@ -24,18 +24,22 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import os
 import random
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
 
+from poor_cli import tool_health
+from poor_cli.tool_circuit import get_circuit
 from poor_cli.tool_blocks import TextBlock, ToolResult, wrap_legacy_result
 from poor_cli.tool_errors import (
     PermissionDenied,
-    SchemaValidationError,
     ToolError,
     TransientError,
 )
+from poor_cli.tool_idempotency import get_store as get_idempotency_store
+from poor_cli.tool_rate_limit import get_limiter as get_tool_rate_limiter
 from poor_cli.tool_truncation import DEFAULT_MAX_RESULT_TOKENS, maybe_truncate
 from poor_cli.tools._registry import ToolSpec, get as registry_get
 
@@ -223,34 +227,232 @@ async def _consume_stream(
     )
 
 
+def _tool_features(ctx: Any) -> Any:
+    return getattr(getattr(ctx, "config", None), "tools", None)
+
+
+def _feature_flag(ctx: Any, name: str, default: bool = True) -> bool:
+    features = _tool_features(ctx)
+    if features is None:
+        return default
+    value = getattr(features, name, None)
+    if value is None:
+        return default
+    return bool(value)
+
+
+def _checkpoint_enabled(ctx: Any) -> bool:
+    checkpoint_cfg = getattr(getattr(ctx, "config", None), "checkpoint", None)
+    if checkpoint_cfg is None:
+        return True
+    return bool(getattr(checkpoint_cfg, "enabled", True))
+
+
+def _extract_idempotency_key(spec: ToolSpec, args: Dict[str, Any]) -> Optional[str]:
+    if not spec.exclusive:
+        return None
+    raw = args.get("idempotency_key")
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        key = raw.strip()
+        return key or None
+    return None
+
+
+def _extract_candidate_paths(args: Dict[str, Any]) -> List[str]:
+    out: List[str] = []
+    for key in ("file", "files", "path", "paths", "source", "destination"):
+        value = args.get(key)
+        if isinstance(value, str):
+            path = value.strip()
+            if path:
+                out.append(path)
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, str):
+                    path = item.strip()
+                    if path:
+                        out.append(path)
+    # dedupe, stable order
+    seen = set()
+    ordered: List[str] = []
+    for path in out:
+        if path in seen:
+            continue
+        seen.add(path)
+        ordered.append(path)
+    return ordered
+
+
+def _resolve_paths(ctx: Any, paths: List[str]) -> List[str]:
+    cwd = getattr(ctx, "cwd", None) or os.getcwd()
+    resolved: List[str] = []
+    for path in paths:
+        candidate = path if os.path.isabs(path) else os.path.join(cwd, path)
+        resolved.append(os.path.abspath(candidate))
+    return resolved
+
+
+async def _create_auto_checkpoint(spec: ToolSpec, ctx: Any, args: Dict[str, Any]) -> Optional[str]:
+    if not spec.exclusive or not spec.auto_checkpoint:
+        return None
+    if not _feature_flag(ctx, "auto_checkpoint", True):
+        return None
+    if not _checkpoint_enabled(ctx):
+        return None
+    manager = getattr(ctx, "checkpoint_manager", None)
+    if manager is None:
+        return None
+    candidate_paths = _extract_candidate_paths(args)
+    if not candidate_paths:
+        return None
+    paths = _resolve_paths(ctx, candidate_paths)
+    try:
+        checkpoint = await asyncio.to_thread(
+            manager.create_checkpoint,
+            paths,
+            f"auto before {spec.name}",
+            "auto",
+        )
+    except Exception:
+        logger.debug("auto-checkpoint failed for %s", spec.name, exc_info=True)
+        return None
+    return getattr(checkpoint, "checkpoint_id", None)
+
+
+async def _restore_auto_checkpoint(ctx: Any, checkpoint_id: str) -> Tuple[bool, Optional[str]]:
+    manager = getattr(ctx, "checkpoint_manager", None)
+    if manager is None:
+        return False, "checkpoint manager unavailable"
+    try:
+        await asyncio.to_thread(manager.restore_checkpoint, checkpoint_id)
+        return True, None
+    except Exception as e:  # noqa: BLE001
+        return False, str(e)
+
+
+def _record_session_call(ctx: Any, rec: CallRecord, args: Dict[str, Any]) -> None:
+    recorder = getattr(ctx, "session_recorder", None)
+    if recorder is None:
+        return
+    try:
+        recorder.record(rec, args)
+    except Exception:
+        logger.debug("session_recorder.record raised", exc_info=True)
+
+
+def _error_excerpt(result: ToolResult) -> Optional[str]:
+    if not result.is_error:
+        return None
+    if not result.content:
+        return None
+    first = result.content[0]
+    text = getattr(first, "text", None)
+    if not text:
+        return str(first)[:200]
+    return str(text)[:200]
+
+
+def _record_tool_health(rec: CallRecord, result: ToolResult) -> None:
+    meta = result.metadata or {}
+    if (
+        meta.get("rate_limited")
+        or meta.get("circuit_open")
+        or meta.get("idempotent_replay")
+        or meta.get("cache_hit")
+    ):
+        return
+    try:
+        tool_health.record(rec, error_excerpt=_error_excerpt(result))
+    except Exception:
+        logger.debug("tool_health.record raised", exc_info=True)
+
+
 async def _dispatch_once(spec: ToolSpec, ctx: Any, args: Dict[str, Any]) -> ToolResult:
     """Single attempt. Validates args, calls the handler, handles timeout +
     handler exceptions. Does NOT retry — that's ``_dispatch_with_retry``."""
     bad = _validate_args(spec, args)
     if bad is not None:
         return bad
+    idempotency_key = _extract_idempotency_key(spec, args)
+    idempotency_store = None
+    if idempotency_key and _feature_flag(ctx, "idempotency", True):
+        idempotency_store = get_idempotency_store(ctx, create=True)
+        if idempotency_store is not None:
+            replay = idempotency_store.get(spec.name, idempotency_key)
+            if replay is not None:
+                replay.metadata = {
+                    **(replay.metadata or {}),
+                    "idempotent_replay": True,
+                }
+                return replay
+    if spec.max_per_minute is not None and _feature_flag(ctx, "rate_limits", True):
+        limiter = get_tool_rate_limiter(ctx, create=True)
+        if limiter is not None:
+            allowed, retry_after = limiter.check_and_consume(
+                spec.name, max_per_minute=spec.max_per_minute
+            )
+            if not allowed:
+                return ToolResult.error(
+                    (
+                        f"tool {spec.name!r} rate limited: max {spec.max_per_minute}/min; "
+                        f"retry in {retry_after:.1f}s"
+                    ),
+                    rate_limited=True,
+                    retry_after_s=retry_after,
+                    max_per_minute=spec.max_per_minute,
+                )
+    checkpoint_id = await _create_auto_checkpoint(spec, ctx, args)
+    handler_invoked = False
     try:
+        handler_invoked = True
         returned = spec.handler(ctx=ctx, args=args)
         if inspect.isasyncgen(returned):
             result, _timed_out = await _consume_stream(spec, ctx, returned)
-            return result
-        value, timed_out = await _run_with_timeout(spec, returned)
+        else:
+            value, timed_out = await _run_with_timeout(spec, returned)
+            if timed_out:
+                result = ToolResult(
+                    content=[TextBlock(text=f"tool {spec.name!r} timed out after {spec.timeout_s}s")],
+                    is_error=True,
+                    metadata={"timeout": True, "timeout_s": spec.timeout_s},
+                )
+            else:
+                result = wrap_legacy_result(value)
     except PermissionDenied as e:
-        return ToolResult.error(str(e), permission_denied=True, **e.metadata)
+        result = ToolResult.error(str(e), permission_denied=True, **e.metadata)
     except TransientError:
         raise  # caller's retry loop handles
     except ToolError as e:
-        return ToolResult.error(str(e), **e.metadata)
+        result = ToolResult.error(str(e), **e.metadata)
     except Exception as e:  # noqa: BLE001 — dispatcher firewall
         logger.exception("tool %r raised unhandled exception", spec.name)
-        return ToolResult.error(f"tool raised: {e!r}", handler_exception=True)
-    if timed_out:
-        return ToolResult(
-            content=[TextBlock(text=f"tool {spec.name!r} timed out after {spec.timeout_s}s")],
-            is_error=True,
-            metadata={"timeout": True, "timeout_s": spec.timeout_s},
-        )
-    return wrap_legacy_result(value)
+        result = ToolResult.error(f"tool raised: {e!r}", handler_exception=True)
+
+    if checkpoint_id is not None:
+        result.metadata = {
+            **(result.metadata or {}),
+            "auto_checkpoint_id": checkpoint_id,
+        }
+        if result.is_error and spec.auto_rollback:
+            restored, err = await _restore_auto_checkpoint(ctx, checkpoint_id)
+            result.metadata = {
+                **(result.metadata or {}),
+                "rolled_back": bool(restored),
+            }
+            if err:
+                result.metadata["rollback_error"] = err
+
+    if (
+        idempotency_store is not None
+        and idempotency_key
+        and handler_invoked
+        and not bool((result.metadata or {}).get("timeout"))
+        and not bool((result.metadata or {}).get("handler_exception"))
+    ):
+        idempotency_store.put(spec.name, idempotency_key, result)
+    return result
 
 
 async def _dispatch_with_retry(
@@ -314,6 +516,25 @@ async def dispatch_one(
             ),
             rec,
         )
+    circuit = None
+    if not spec.circuit_disabled and _feature_flag(ctx, "circuit_breakers", True):
+        circuit = get_circuit(ctx, create=True)
+        if circuit is not None:
+            allowed, circuit_meta = circuit.pre_dispatch(name, spec)
+            if not allowed:
+                retry_after = float(circuit_meta.get("retry_after_s", 0.0) or 0.0)
+                result = ToolResult.error(
+                    f"tool {name!r} circuit open; retry in {retry_after:.1f}s",
+                    **circuit_meta,
+                )
+                rec = CallRecord(tool=name, wall_time_ms=0, returncode=1, is_error=True)
+                result.metadata = {
+                    **(result.metadata or {}),
+                    "wall_time_ms": 0,
+                    "retry_attempts": 0,
+                }
+                _record_session_call(ctx, rec, args)
+                return result, rec
     # Proposal E.1 — memoization cache lookup. Only cacheable (non-exclusive)
     # tools participate. Cache hit returns verbatim with metadata.cache_hit.
     cache = getattr(ctx, "tool_cache", None)
@@ -340,12 +561,7 @@ async def dispatch_one(
             )
             # Still record into SessionRecorder so meta.call_history shows
             # cache-hit calls for observability.
-            recorder = getattr(ctx, "session_recorder", None)
-            if recorder is not None:
-                try:
-                    recorder.record(rec, args)
-                except Exception:
-                    logger.debug("session_recorder.record raised", exc_info=True)
+            _record_session_call(ctx, rec, args)
             return result, rec
     effective_policy = policy or DEFAULT_RETRY_POLICY
     t0 = _now_ms()
@@ -384,12 +600,24 @@ async def dispatch_one(
     # introspect the trace without the agent having to keep it in chat.
     # The recorder lives on the unwrapped base ctx; the augmented Bound
     # proxy forwards getattr, so a naive lookup works.
-    recorder = getattr(ctx, "session_recorder", None)
-    if recorder is not None:
+    _record_session_call(ctx, rec, args)
+    _record_tool_health(rec, result)
+    if circuit is not None and not (
+        (result.metadata or {}).get("rate_limited")
+        or (result.metadata or {}).get("idempotent_replay")
+    ):
         try:
-            recorder.record(rec, args)
+            circuit.post_dispatch(name, spec, success=not result.is_error)
+            state = circuit.state(name, spec)
+            result.metadata = {
+                **(result.metadata or {}),
+                "circuit_state": state.get("state"),
+                "circuit_open": bool(state.get("open")),
+            }
+            if float(state.get("retry_after_s", 0.0) or 0.0) > 0:
+                result.metadata["circuit_retry_after_s"] = float(state["retry_after_s"])
         except Exception:
-            logger.debug("session_recorder.record raised", exc_info=True)
+            logger.debug("tool circuit update failed for %s", name, exc_info=True)
     # Proposal E.1 — cache the (fresh) result + run invalidation chain.
     # We store only successful calls to avoid caching ToolErrors that might
     # recover on retry; validation/unknown-tool errors are short-circuited

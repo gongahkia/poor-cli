@@ -85,7 +85,7 @@ end
 -- unconfigured providers return (nil, label) so callers can treat "no
 -- initialize yet" separately from "confirmed unsupported".
 local function _provider_supports_thinking()
-    local caps = rpc.get_capabilities() or {}
+    local caps = (type(rpc.get_capabilities) == "function" and rpc.get_capabilities()) or rpc.capabilities or {}
     local info = caps.providerInfo or {}
     local pc = info.capabilities or {}
     local name = tostring(info.name or "?")
@@ -1173,7 +1173,7 @@ function M.send(message, opts)
     -- short-circuit if we already know the API key is invalid: don't spin
     -- up a "Thinking..." placeholder just to fail once the request hits
     -- the provider. Direct the user at the fix command.
-    local caps = rpc.get_capabilities() or {}
+    local caps = (type(rpc.get_capabilities) == "function" and rpc.get_capabilities()) or rpc.capabilities or {}
     local validity = caps.apiKeyValidity or {}
     if validity.status == "invalid" then
         local provider = tostring(validity.provider or "?")

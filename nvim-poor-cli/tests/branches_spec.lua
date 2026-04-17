@@ -77,14 +77,22 @@ describe("branches panel", function()
         local text = table.concat(lines, "\n")
         assert.truthy(text:find("> assistant: two", 1, true))
         assert.truthy(text:find("... 4 more siblings", 1, true))
-        assert.are.equal(7, panel.active_line)
+        assert.are.equal("turn-3", panel.rows[panel.active_line].branch_id)
     end)
 
     it("switches selected branch and restores chat snapshot", function()
         local buf = panel.open()
         wait()
+        local target_line = nil
+        for line, row in pairs(panel.rows) do
+            if row.branch_id == "turn-2" then
+                target_line = line
+                break
+            end
+        end
+        assert.truthy(target_line)
         vim.api.nvim_win_set_buf(0, buf)
-        vim.api.nvim_win_set_cursor(0, { 6, 0 })
+        vim.api.nvim_win_set_cursor(0, { target_line, 0 })
         vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "x", false)
         wait()
 

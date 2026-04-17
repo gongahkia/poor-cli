@@ -182,6 +182,7 @@ register_tool(
     handler=handle_list,
     cacheable=True,
     cache_ttl_s=30.0,
+    circuit_disabled=True,
 )
 
 register_tool(
@@ -219,6 +220,7 @@ register_tool(
     handler=handle_reset,
     exclusive=True,
     invalidates=["git.status", "git.diff", "hunks.list", "review.changes"],
+    auto_rollback=True,
 )
 
 register_tool(

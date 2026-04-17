@@ -577,7 +577,7 @@ function M.trigger(opts)
     -- short-circuit if the backend told us at init the API key is invalid:
     -- silently mark disabled for auto triggers so we don't hammer 401s on
     -- every keystroke; for manual triggers, surface the fix commands.
-    local caps = rpc.get_capabilities() or {}
+    local caps = (type(rpc.get_capabilities) == "function" and rpc.get_capabilities()) or rpc.capabilities or {}
     local validity = caps.apiKeyValidity or {}
     if validity.status == "invalid" then
         local provider = tostring(validity.provider or "?")

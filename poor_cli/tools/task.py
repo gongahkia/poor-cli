@@ -216,6 +216,7 @@ register_tool(
     },
     handler=handle_run,
     exclusive=True,
+    max_per_minute=10,
 )
 
 register_tool(
@@ -227,6 +228,7 @@ register_tool(
         "additionalProperties": False,
     },
     handler=handle_status,
+    circuit_disabled=True,
 )
 
 register_tool(
@@ -242,6 +244,7 @@ register_tool(
         "additionalProperties": False,
     },
     handler=handle_logs,
+    circuit_disabled=True,
 )
 
 register_tool(
@@ -261,6 +264,7 @@ register_tool(
     description="List in-process managed tasks (overseer has its own view).",
     schema={"type": "object", "properties": {}, "additionalProperties": False},
     handler=handle_list,
+    circuit_disabled=True,
 )
 
 

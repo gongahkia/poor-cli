@@ -214,6 +214,7 @@ register_tool(
     handler=handle_run_target,
     exclusive=True,
     timeout_s=600.0,
+    max_per_minute=2,
 )
 
 register_tool(
@@ -221,6 +222,7 @@ register_tool(
     description="List configured deploy targets (TableBlock of target, cmd, description).",
     schema={"type": "object", "properties": {}, "additionalProperties": False},
     handler=handle_targets,
+    circuit_disabled=True,
 )
 
 register_tool(

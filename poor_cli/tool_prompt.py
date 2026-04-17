@@ -64,7 +64,10 @@ def manifest_markdown(tools: Dict[str, ToolSpec] | None = None) -> str:
             marker = " **(exclusive)**" if spec.exclusive else ""
             # Keep description to first sentence to bound token budget.
             first = spec.description.split(". ", 1)[0].strip().rstrip(".")
-            lines.append(f"- `{spec.name}`{marker}: {first}.")
+            line = f"- `{spec.name}`{marker}: {first}."
+            if spec.exclusive:
+                line += " Reuse `idempotency_key` across retries."
+            lines.append(line)
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 

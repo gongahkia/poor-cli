@@ -74,3 +74,11 @@ def test_reset_clears(health):
     health.record(CallRecord(tool="a", wall_time_ms=1, returncode=0))
     health.reset()
     assert health.tool_names() == []
+
+
+def test_recent_consecutive_failures_counts_tail_only(health):
+    health.record(CallRecord(tool="c", wall_time_ms=1, returncode=1, is_error=True))
+    health.record(CallRecord(tool="c", wall_time_ms=1, returncode=1, is_error=True))
+    health.record(CallRecord(tool="c", wall_time_ms=1, returncode=0, is_error=False))
+    health.record(CallRecord(tool="c", wall_time_ms=1, returncode=1, is_error=True))
+    assert health.recent_consecutive_failures("c", window_s=60.0) == 1

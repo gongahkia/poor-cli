@@ -18,8 +18,10 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional
 
+from poor_cli.tool_circuit import get_circuit
 from poor_cli.tool_blocks import CodeBlock, TableBlock, TextBlock, ToolResult
 from poor_cli.tool_health import snapshot as health_snapshot, snapshots as all_health_snapshots
+from poor_cli.tool_rate_limit import get_limiter as get_tool_rate_limiter
 from poor_cli.tool_prompt_gen import describe_registry_tool
 from poor_cli.tools._registry import ToolSpec, all_tools, get as registry_get, register_tool
 
@@ -205,6 +207,7 @@ register_tool(
             "result_summary": "TableBlock listing paths with first_touched_by tool",
         }
     ],
+    circuit_disabled=True,
 )
 
 
@@ -231,6 +234,39 @@ def _fmt_ms(value: Optional[int]) -> str:
     return f"{value}ms"
 
 
+def _feature_flag(ctx: Any, name: str, default: bool = True) -> bool:
+    tools_cfg = getattr(getattr(ctx, "config", None), "tools", None)
+    if tools_cfg is None:
+        return default
+    value = getattr(tools_cfg, name, None)
+    if value is None:
+        return default
+    return bool(value)
+
+
+def _circuit_state(ctx: Any, spec: Optional[ToolSpec]) -> Dict[str, Any]:
+    if spec is None or spec.circuit_disabled or not _feature_flag(ctx, "circuit_breakers", True):
+        return {"state": "disabled", "open": False, "retry_after_s": 0.0}
+    circuit = get_circuit(ctx, create=False)
+    if circuit is None:
+        return {"state": "closed", "open": False, "retry_after_s": 0.0}
+    return circuit.state(spec.name, spec)
+
+
+def _rate_usage(ctx: Any, spec: Optional[ToolSpec]) -> Optional[Dict[str, float]]:
+    if spec is None or spec.max_per_minute is None or not _feature_flag(ctx, "rate_limits", True):
+        return None
+    limiter = get_tool_rate_limiter(ctx, create=False)
+    if limiter is None:
+        return {
+            "used": 0.0,
+            "max": float(spec.max_per_minute),
+            "remaining": float(spec.max_per_minute),
+            "retry_after_s": 0.0,
+        }
+    return limiter.usage(spec.name, max_per_minute=spec.max_per_minute)
+
+
 async def handle_health(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
     tool = args.get("tool")
     if tool is not None and not isinstance(tool, str):
@@ -247,6 +283,9 @@ async def handle_health(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
             return ToolResult.text(
                 f"no health data for {tool!r} (tool has not been dispatched this session)"
             )
+        spec = registry_get(tool)
+        circuit_state = _circuit_state(ctx, spec)
+        rate_usage = _rate_usage(ctx, spec)
         # Single-tool snapshot → CodeBlock(json-ish) for the agent to parse.
         lines = [
             f"name: {snap['name']}",
@@ -256,15 +295,31 @@ async def handle_health(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
             f"window_total: {snap['window_total']} window_success_rate: {_fmt_pct(snap['window_success_rate'])}",
             f"p50: {_fmt_ms(snap['p50_ms'])}",
             f"p95: {_fmt_ms(snap['p95_ms'])}",
+            (
+                f"circuit: {circuit_state.get('state')} "
+                f"(open={bool(circuit_state.get('open'))}, "
+                f"retry_after_s={float(circuit_state.get('retry_after_s', 0.0) or 0.0):.1f})"
+            ),
         ]
+        if rate_usage is not None:
+            lines.append(
+                "rate_limit: "
+                f"{int(rate_usage['used'])}/{int(rate_usage['max'])} in last 60s "
+                f"(remaining={int(rate_usage['remaining'])}, "
+                f"retry_after_s={float(rate_usage['retry_after_s']):.1f})"
+            )
         if snap["recent_errors"]:
             lines.append("recent_errors:")
             for err in snap["recent_errors"][-5:]:
                 lines.append(f"  - ts={int(err['at'])}, retries={err.get('retry_attempts', 0)},"
                              f" timeout={err.get('timeout', False)}, excerpt={err.get('excerpt', '')!r}")
+        metadata = dict(snap)
+        metadata["circuit"] = circuit_state
+        if rate_usage is not None:
+            metadata["rate_limit"] = rate_usage
         return ToolResult(
             content=[CodeBlock(language="text", code="\n".join(lines))],
-            metadata=snap,
+            metadata=metadata,
         )
 
     # Multi-tool summary
@@ -274,6 +329,13 @@ async def handle_health(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
     snaps.sort(key=lambda s: s["name"])
     rows: List[List[str]] = []
     for snap in snaps:
+        spec = registry_get(snap["name"])
+        circuit_state = _circuit_state(ctx, spec)
+        rate_usage = _rate_usage(ctx, spec)
+        if rate_usage is None:
+            rate_cell = "-"
+        else:
+            rate_cell = f"{int(rate_usage['used'])}/{int(rate_usage['max'])}"
         rows.append([
             snap["name"],
             str(snap["total"]),
@@ -281,12 +343,14 @@ async def handle_health(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
             _fmt_pct(snap["window_success_rate"]),
             _fmt_ms(snap["p50_ms"]),
             _fmt_ms(snap["p95_ms"]),
+            str(circuit_state.get("state", "closed")),
+            rate_cell,
         ])
     return ToolResult(
         content=[
             TextBlock(text=f"{len(snaps)} tool(s) tracked · window={int(window_s)}s"),
             TableBlock(
-                columns=["tool", "total", "success", "win_success", "p50", "p95"],
+                columns=["tool", "total", "success", "win_success", "p50", "p95", "circuit", "rate"],
                 rows=rows,
             ),
         ],
@@ -319,6 +383,7 @@ register_tool(
             "result_summary": "CodeBlock with success_rate, p50/p95, recent errors",
         }
     ],
+    circuit_disabled=True,
 )
 
 
@@ -392,6 +457,7 @@ register_tool(
             "result_summary": "TableBlock of 1 git.status call + timestamp",
         }
     ],
+    circuit_disabled=True,
 )
 
 
@@ -453,6 +519,7 @@ register_tool(
     ],
     cacheable=True,
     cache_ttl_s=300.0,
+    circuit_disabled=True,
 )
 
 
@@ -490,4 +557,5 @@ register_tool(
     ],
     cacheable=True,
     cache_ttl_s=300.0,
+    circuit_disabled=True,
 )

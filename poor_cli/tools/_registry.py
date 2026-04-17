@@ -10,6 +10,7 @@ two systems can evolve independently during the migration.
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
@@ -17,6 +18,22 @@ from poor_cli.tool_blocks import ToolResult
 
 
 ToolHandler = Callable[..., Awaitable[ToolResult]]
+
+_IDEMPOTENCY_KEY_SCHEMA: Dict[str, Any] = {
+    "type": "string",
+    "pattern": "^[A-Za-z0-9_-]{8,64}$",
+    "description": (
+        "Optional deduplication key. Reuse across retries to prevent double execution."
+    ),
+}
+
+
+def _ensure_exclusive_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
+    out = deepcopy(schema) if isinstance(schema, dict) else {}
+    props = out.setdefault("properties", {})
+    if isinstance(props, dict) and "idempotency_key" not in props:
+        props["idempotency_key"] = deepcopy(_IDEMPOTENCY_KEY_SCHEMA)
+    return out
 
 
 @dataclass
@@ -41,6 +58,16 @@ class ToolSpec:
     # the agent will consume wholesale (rare). Lower it for tools that
     # shouldn't balloon (chatty subprocess wrappers).
     max_result_tokens: Optional[int] = None
+    # Proposal F.1 — per-tool circuit breaker tuning.
+    circuit_threshold: int = 5
+    circuit_window_s: float = 60.0
+    circuit_cooldown_s: float = 30.0
+    circuit_disabled: bool = False
+    # Proposal F.3 — auto-checkpoint defaults.
+    auto_checkpoint: bool = True
+    auto_rollback: bool = False
+    # Proposal F.4 — per-tool minute cap.
+    max_per_minute: Optional[int] = None
 
 
 _TOOLS: Dict[str, ToolSpec] = {}
@@ -60,6 +87,13 @@ def register_tool(
     cache_ttl_s: float = 60.0,
     invalidates: Optional[List[str]] = None,
     max_result_tokens: Optional[int] = None,
+    circuit_threshold: int = 5,
+    circuit_window_s: float = 60.0,
+    circuit_cooldown_s: float = 30.0,
+    circuit_disabled: bool = False,
+    auto_checkpoint: bool = True,
+    auto_rollback: bool = False,
+    max_per_minute: Optional[int] = None,
 ) -> ToolSpec:
     """Register a Phase-B tool. Called from each tool module at import time.
 
@@ -78,6 +112,8 @@ def register_tool(
         # rather than raise so a future tool author's typo doesn't crash
         # registration during import.
         cacheable = False
+    if exclusive:
+        schema = _ensure_exclusive_schema(schema)
     spec = ToolSpec(
         name=name,
         description=description,
@@ -91,6 +127,13 @@ def register_tool(
         cache_ttl_s=cache_ttl_s,
         invalidates=list(invalidates or []),
         max_result_tokens=max_result_tokens,
+        circuit_threshold=max(1, int(circuit_threshold)),
+        circuit_window_s=max(1.0, float(circuit_window_s)),
+        circuit_cooldown_s=max(0.1, float(circuit_cooldown_s)),
+        circuit_disabled=bool(circuit_disabled),
+        auto_checkpoint=bool(auto_checkpoint),
+        auto_rollback=bool(auto_rollback),
+        max_per_minute=(None if max_per_minute is None else max(1, int(max_per_minute))),
     )
     _TOOLS[name] = spec
     return spec

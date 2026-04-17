@@ -95,9 +95,16 @@ describe("chat polish", function()
         vim.api.nvim_buf_set_lines(input, 0, -1, false, { "edited" })
         imap(input, "<CR>")()
 
-        assert.are.equal("poor-cli/chatStreaming", calls.requests[1].method)
-        assert.are.equal("u1", calls.requests[1].params.editTurnId)
-        assert.are.equal("edited", calls.requests[1].params.message)
+        local stream_call = nil
+        for _, req in ipairs(calls.requests) do
+            if req.method == "poor-cli/chatStreaming" then
+                stream_call = req
+                break
+            end
+        end
+        assert.truthy(stream_call)
+        assert.are.equal("u1", stream_call.params.editTurnId)
+        assert.are.equal("edited", stream_call.params.message)
         assert.are.equal(1, #chat.history)
         assert.are.equal("edited", chat.history[1].content)
         local text = table.concat(vim.api.nvim_buf_get_lines(chat.buf, 0, -1, false), "\n")
