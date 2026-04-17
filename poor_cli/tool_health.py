@@ -16,9 +16,13 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Deque, Dict, List, Optional
+from typing import Any, Deque, Dict, List, Optional, TYPE_CHECKING
 
-from poor_cli.tool_dispatcher import CallRecord
+if TYPE_CHECKING:
+    # Avoid runtime circular import: tool_dispatcher imports from
+    # poor_cli.tools._registry → poor_cli.tools → poor_cli.tools.meta →
+    # tool_health. CallRecord is only used as a type annotation here.
+    from poor_cli.tool_dispatcher import CallRecord
 
 
 @dataclass
@@ -31,7 +35,7 @@ class _ToolStats:
     recent_errors: Deque[Dict[str, Any]] = field(default_factory=lambda: deque(maxlen=5))
     events: Deque[float] = field(default_factory=lambda: deque(maxlen=1024))  # timestamps
 
-    def record(self, rec: CallRecord, *, error_excerpt: Optional[str] = None) -> None:
+    def record(self, rec: "CallRecord", *, error_excerpt: Optional[str] = None) -> None:
         self.events.append(time.time())
         self.latencies_ms.append(rec.wall_time_ms)
         if rec.is_error:
@@ -56,7 +60,7 @@ class ToolHealth:
         self._tools: Dict[str, _ToolStats] = {}
         self._lock = threading.Lock()
 
-    def record(self, rec: CallRecord, *, error_excerpt: Optional[str] = None) -> None:
+    def record(self, rec: "CallRecord", *, error_excerpt: Optional[str] = None) -> None:
         with self._lock:
             stats = self._tools.get(rec.tool)
             if stats is None:
@@ -128,7 +132,7 @@ def _percentile(sorted_values: List[int], pct: int) -> Optional[int]:
 _SINGLETON = ToolHealth()
 
 
-def record(rec: CallRecord, *, error_excerpt: Optional[str] = None) -> None:
+def record(rec: "CallRecord", *, error_excerpt: Optional[str] = None) -> None:
     """Record a CallRecord into the process-wide health store."""
     _SINGLETON.record(rec, error_excerpt=error_excerpt)
 

@@ -19,6 +19,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from poor_cli.tool_blocks import CodeBlock, TableBlock, TextBlock, ToolResult
+from poor_cli.tool_health import snapshot as health_snapshot, snapshots as all_health_snapshots
 from poor_cli.tool_prompt_gen import describe_registry_tool
 from poor_cli.tools._registry import ToolSpec, all_tools, get as registry_get, register_tool
 
@@ -170,6 +171,109 @@ def _fmt_ts(at: float) -> str:
     if delta < 3600:
         return f"{int(delta // 60)}m{int(delta % 60)}s"
     return f"{int(delta // 3600)}h{int((delta % 3600) // 60)}m"
+
+
+def _fmt_pct(value: Optional[float]) -> str:
+    if value is None:
+        return "-"
+    return f"{value * 100:.0f}%"
+
+
+def _fmt_ms(value: Optional[int]) -> str:
+    if value is None:
+        return "-"
+    return f"{value}ms"
+
+
+async def handle_health(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
+    tool = args.get("tool")
+    if tool is not None and not isinstance(tool, str):
+        return ToolResult.error("tool must be a string")
+    try:
+        window_s = float(args.get("window_s", 3600.0) or 3600.0)
+    except (TypeError, ValueError):
+        return ToolResult.error("window_s must be a number")
+    window_s = max(1.0, min(window_s, 86400.0))
+
+    if tool:
+        snap = health_snapshot(tool, window_s=window_s)
+        if snap is None:
+            return ToolResult.text(
+                f"no health data for {tool!r} (tool has not been dispatched this session)"
+            )
+        # Single-tool snapshot → CodeBlock(json-ish) for the agent to parse.
+        lines = [
+            f"name: {snap['name']}",
+            f"total: {snap['total']} (successes={snap['successes']} failures={snap['failures']})",
+            f"success_rate: {_fmt_pct(snap['success_rate'])}",
+            f"window_s: {int(snap['window_s'])}",
+            f"window_total: {snap['window_total']} window_success_rate: {_fmt_pct(snap['window_success_rate'])}",
+            f"p50: {_fmt_ms(snap['p50_ms'])}",
+            f"p95: {_fmt_ms(snap['p95_ms'])}",
+        ]
+        if snap["recent_errors"]:
+            lines.append("recent_errors:")
+            for err in snap["recent_errors"][-5:]:
+                lines.append(f"  - ts={int(err['at'])}, retries={err.get('retry_attempts', 0)},"
+                             f" timeout={err.get('timeout', False)}, excerpt={err.get('excerpt', '')!r}")
+        return ToolResult(
+            content=[CodeBlock(language="text", code="\n".join(lines))],
+            metadata=snap,
+        )
+
+    # Multi-tool summary
+    snaps = all_health_snapshots(window_s=window_s)
+    if not snaps:
+        return ToolResult.text("no tool-health data this session yet")
+    snaps.sort(key=lambda s: s["name"])
+    rows: List[List[str]] = []
+    for snap in snaps:
+        rows.append([
+            snap["name"],
+            str(snap["total"]),
+            _fmt_pct(snap["success_rate"]),
+            _fmt_pct(snap["window_success_rate"]),
+            _fmt_ms(snap["p50_ms"]),
+            _fmt_ms(snap["p95_ms"]),
+        ])
+    return ToolResult(
+        content=[
+            TextBlock(text=f"{len(snaps)} tool(s) tracked · window={int(window_s)}s"),
+            TableBlock(
+                columns=["tool", "total", "success", "win_success", "p50", "p95"],
+                rows=rows,
+            ),
+        ],
+        metadata={"tools_tracked": len(snaps), "window_s": int(window_s)},
+    )
+
+
+register_tool(
+    name="meta.health",
+    description=(
+        "Return per-tool health: success rate, p50/p95 latency, recent "
+        "errors. Pass ``tool`` for one tool's detailed snapshot; omit for "
+        "a summary table over all tools that have dispatched this session. "
+        "``window_s`` (default 3600) sets the rolling window for the "
+        "windowed success rate."
+    ),
+    schema={
+        "type": "object",
+        "properties": {
+            "tool": {"type": "string"},
+            "window_s": {"type": "number", "minimum": 1, "maximum": 86400, "default": 3600},
+        },
+        "additionalProperties": False,
+    },
+    handler=handle_health,
+    examples=[
+        {
+            "when": "agent notices repeated failures and wants to know if a tool is broken",
+            "args": {"tool": "git.push"},
+            "result_summary": "CodeBlock with success_rate, p50/p95, recent errors",
+        }
+    ],
+)
 
 
 async def handle_call_history(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
