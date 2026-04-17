@@ -71,15 +71,6 @@ ghost_text_hl ~
     Default: "Comment"
     Highlight group for ghost text completions.
 
-                                                        *poor-cli-config.layout*
-layout ~
-    Default: { panels = "float", scratch = "float" }
-    Surface layout for info panels (`:PoorCLIPanel open tasks`,
-    `:PoorCLIPanel open agents`, `:PoorCLIPanel open sessions`,
-    `:PoorCLIPanel open automations`, etc.) and read-only float outputs.
-    Set to `{ panels = "vsplit" }` to restore the legacy right-side
-    vertical-split sidebar instead of floating windows.
-
                                                         *poor-cli-config.trigger_key*
 trigger_key ~
     Default: "<C-Space>"
@@ -94,11 +85,6 @@ accept_key ~
 accept_line_key ~
     Default: "<M-l>"
     Key to accept the next line of ghost text.
-
-                                                        *poor-cli-config.preview_key*
-preview_key ~
-    Default: "<M-?>"
-    Key to open a syntax-highlighted completion preview split.
 
                                                         *poor-cli-config.dismiss_key*
 dismiss_key ~
@@ -214,8 +200,10 @@ For the v5→v6 rename table and sed migration recipes see MIGRATION.md.
 
 :PoorCLIChat {verb} [args]                              *:PoorCLIChat*
     Chat panel and AI code actions (range-aware).
-    Verbs: toggle  send  clear  explain  refactor  test  doc
-           fix-failures  lint  workspace-map  preview
+    Verbs: toggle  send  clear  retry  terse  rich
+           queue  enqueue  queue-clear
+           explain  refactor  test  doc
+           explain-diff  fix-failures
 
 :PoorCLICompletion {verb}                               *:PoorCLICompletion*
     Inline ghost-text completion controls.
@@ -283,7 +271,7 @@ For the v5→v6 rename table and sed migration recipes see MIGRATION.md.
 :PoorCLIConfig {verb} [args]                            *:PoorCLIConfig*
     View and edit runtime configuration.
     Verbs: list  set  toggle  qa-toggle  input-log  chat-trace
-           permission-mode  permissions-show  permissions-set
+           permission-mode  permissions-set
            sandbox  context-budget  exec-profile  instructions
            rules  picker-backend  api-key  diagnostics
 
@@ -346,7 +334,6 @@ Insert mode:
     <Tab>           Accept completion (or normal Tab)
     <C-Right>       Accept next word of completion
     <M-l>           Accept next line of completion
-    <M-?>           Preview full completion in split
     <Esc>           Dismiss completion (or normal Esc)
     <M-CR>          Trigger completion with instruction
 
@@ -405,14 +392,14 @@ Server won't start:
 2. Install if missing: `pip install poor-cli`
 3. Check Python version: `python3 --version` (needs 3.11+)
 4. Open the log with `:PoorCLIDiag log-open`
-5. Capture a report with `:PoorCLIDiag doctor` or `:PoorCLITrust show`
+5. Capture a report with `:PoorCLIDiag doctor` or `:PoorCLITrust center`
 
 No completions:
 1. Verify API key: `echo $GEMINI_API_KEY`
 2. Check status: `:PoorCLIDiag status`
 3. Confirm the current buffer is not blocked by filetype/buftype/manual-only
    completion settings
-4. Inspect provider, sandbox, and rollback posture in `:PoorCLITrust show`
+4. Inspect provider, sandbox, and rollback posture in `:PoorCLITrust center`
 5. If you use nvim-cmp, run `:checkhealth poor-cli`
 6. Open the server log with `:PoorCLIDiag log-open`
 

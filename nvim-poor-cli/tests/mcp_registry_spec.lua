@@ -1,7 +1,7 @@
 local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
 package.path = root .. "/lua/?.lua;" .. root .. "/lua/?/init.lua;" .. package.path
 
-describe("mcp registry", function()
+describe("mcp registry tabs", function()
     local registry
     local calls
 
@@ -45,14 +45,14 @@ describe("mcp registry", function()
         package.loaded["poor-cli.mcp_registry"] = nil
     end)
 
-    it("test_configured_servers_render", function()
-        local lines, _, badges = registry.render_lines({
-            servers = {
-                { name = "github", transport = "stdio", status = "healthy", toolCount = 24 },
-                { name = "fs", transport = "stdio", status = "error", lastError = "command not found" },
-            },
-            registry = { enabled = false, servers = {} },
-        })
+    it("renders configured tab with servers and error badges", function()
+        registry.state.tab = "configured"
+        registry.state.servers = {
+            { name = "github", transport = "stdio", status = "healthy", toolCount = 24 },
+            { name = "fs", transport = "stdio", status = "error", lastError = "command not found" },
+        }
+        registry.state.registry = { enabled = false, servers = {} }
+        local lines, _, badges = registry.render_lines(registry.state)
         local text = table.concat(lines, "\n")
         assert.truthy(text:find("CONFIGURED", 1, true))
         assert.truthy(text:find("github", 1, true))
@@ -62,26 +62,46 @@ describe("mcp registry", function()
         assert.truthy(vim.tbl_count(badges) >= 2)
     end)
 
-    it("test_registry_search_filters", function()
+    it("cycle_tab switches between configured and browse", function()
+        registry.state.tab = "configured"
+        registry.state.registry = { enabled = true, servers = { { name = "@x", description = "y" } } }
+        registry.state.servers = {}
+        registry.open()
+        vim.wait(50, function() return false end, 10)
+        assert.are.equal("configured", registry.state.tab)
+        registry.cycle_tab(1)
+        assert.are.equal("browse", registry.state.tab)
+        registry.cycle_tab(1)
+        assert.are.equal("configured", registry.state.tab)
+    end)
+
+    it("registry_pick fetches and invokes the snacks picker", function()
         registry.state.query = "linear"
         registry.state.page = 1
         registry.state.limit = 20
         registry.registry_pick()
         vim.wait(100, function() return #calls >= 2 end, 10)
-        assert.are.equal("mcp.registry.search", calls[1].method)
-        assert.are.equal("linear", calls[1].params.query)
-        assert.are.equal(20, calls[1].params.offset)
-        assert.are.equal("pick", calls[2].method)
-        assert.truthy(calls[2].items[2].label:find("server-linear", 1, true))
+        local found_search, found_pick
+        for _, call in ipairs(calls) do
+            if call.method == "mcp.registry.search" then found_search = call end
+            if call.method == "pick" then found_pick = call end
+        end
+        assert.truthy(found_search)
+        assert.are.equal("linear", found_search.params.query)
+        assert.truthy(found_pick)
     end)
 
-    it("test_install_prompt_writes_mcp_json", function()
+    it("install_registry_item writes a disabled server", function()
         local old_confirm = vim.fn.confirm
         vim.fn.confirm = function() return 1 end
         registry.install_registry_item({ name = "@modelcontextprotocol/server-linear", command = { "npx", "linear" } })
         vim.fn.confirm = old_confirm
-        assert.are.equal("mcp.edit", calls[1].method)
-        assert.are.equal("@modelcontextprotocol/server-linear", calls[1].params.server.name)
-        assert.are.equal(false, calls[1].params.server.enabled)
+        local found
+        for _, call in ipairs(calls) do
+            if call.method == "mcp.edit" then found = call end
+        end
+        assert.truthy(found)
+        assert.are.equal("@modelcontextprotocol/server-linear", found.params.server.name)
+        assert.are.equal(false, found.params.server.enabled)
     end)
 end)

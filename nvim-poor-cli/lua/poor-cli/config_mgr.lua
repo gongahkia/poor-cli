@@ -74,9 +74,8 @@ end
 function M.setup()
     -- config_mgr.lua owns the :PoorCLIConfig dispatcher. Additional verbs are
     -- added by commands.lua's Config cluster (qa-toggle, input-log, chat-trace,
-    -- permission-mode, permissions-show, permissions-set, sandbox,
-    -- context-budget, exec-profile, instructions, rules, picker-backend,
-    -- api-key) via command_spec.extend("config", ...).
+    -- permission-mode, permissions-set, sandbox, context-budget, exec-profile,
+    -- instructions, rules, picker-backend, api-key) via command_spec.extend.
     require("poor-cli.command_spec").install("config", {
         desc = "Browse and mutate configuration",
         verb_names = { "list", "set", "toggle" },

@@ -38,12 +38,6 @@ M.defaults = {
     -- UI options
     chat_width = 60,
     chat_position = "right",  -- "right" or "left"
-    -- Surface layout: "float" (default) opens panels/scratch as floating windows.
-    -- Set to "vsplit" to restore the legacy right-side sidebar behavior.
-    layout = {
-        panels = "float",
-        scratch = "float",
-    },
     notifications = {
         group = "poor-cli",
         snacks = true,
@@ -125,7 +119,6 @@ M.defaults = {
     -- Keymap for partial word acceptance
     accept_word_key = "<C-Right>", -- accept next word of ghost text
     accept_line_key = "<M-l>", -- accept next line of ghost text
-    preview_key = "<M-?>", -- preview full ghost text in a split
     cycle_next_key = "<M-]>",
     cycle_prev_key = "<M-[>",
 

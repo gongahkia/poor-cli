@@ -1,7 +1,7 @@
 local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
 package.path = root .. "/lua/?.lua;" .. root .. "/lua/?/init.lua;" .. package.path
 
-describe("panel_base mode resolution", function()
+describe("panel_base", function()
     local base
 
     local function close_all_floats()
@@ -24,7 +24,7 @@ describe("panel_base mode resolution", function()
         close_all_floats()
     end)
 
-    it("opens as float by default when no config loaded", function()
+    it("opens as a floating window", function()
         local panel = base.new_panel({
             name = "[poor-cli test]",
             width = 40,
@@ -36,35 +36,6 @@ describe("panel_base mode resolution", function()
         local cfg = vim.api.nvim_win_get_config(panel.win)
         assert.are.equal("editor", cfg.relative)
         panel.close()
-    end)
-
-    it("honors opts.mode = 'vsplit'", function()
-        local panel = base.new_panel({
-            name = "[poor-cli test vsplit]",
-            width = 30,
-            render = function() return { "hello" } end,
-            mode = "vsplit",
-        })
-        panel.open()
-        assert.truthy(panel.win)
-        local cfg = vim.api.nvim_win_get_config(panel.win)
-        assert.are.equal("", cfg.relative) -- non-float
-        panel.close()
-    end)
-
-    it("honors config.layout.panels = 'vsplit'", function()
-        local cfg = require("poor-cli.config")
-        cfg.config.layout = { panels = "vsplit" }
-        local panel = base.new_panel({
-            name = "[poor-cli test cfg-vsplit]",
-            width = 30,
-            render = function() return { "hi" } end,
-        })
-        panel.open()
-        local wcfg = vim.api.nvim_win_get_config(panel.win)
-        assert.are.equal("", wcfg.relative)
-        panel.close()
-        cfg.config.layout = { panels = "float", scratch = "float" }
     end)
 
     it("toggle closes an open panel", function()

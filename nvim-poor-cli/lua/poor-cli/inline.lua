@@ -16,8 +16,6 @@ M.status = {
     request_id = "",
 }
 M._auto_trigger_timer = nil
-M.preview_buf = nil
-M.preview_win = nil
 M.cycle_state = nil
 M.last_cycled_index = 1
 
@@ -218,18 +216,6 @@ function M.is_syntax_region_blocked(bufnr)
     return false
 end
 
-local function set_preview_content()
-    if not M.current_completion or not M.preview_buf or not vim.api.nvim_buf_is_valid(M.preview_buf) then
-        return
-    end
-
-    local comp = M.current_completion
-    local source_buf = comp.bufnr
-    local ft = vim.api.nvim_buf_is_valid(source_buf) and vim.bo[source_buf].filetype or ""
-    vim.bo[M.preview_buf].filetype = ft
-    vim.api.nvim_buf_set_lines(M.preview_buf, 0, -1, false, completion_lines(comp.text))
-end
-
 local function create_inline_request_context(bufnr, line, col)
     cancel_pending_inline_request()
 
@@ -393,18 +379,6 @@ function M.show_ghost_text(text, opts)
 
     local request_id = M.pending_inline_request and M.pending_inline_request.request_id or ""
     set_status("suggesting", "", request_id)
-    set_preview_content()
-end
-
-function M.close_preview_split()
-    if M.preview_win and vim.api.nvim_win_is_valid(M.preview_win) then
-        pcall(vim.api.nvim_win_close, M.preview_win, true)
-    end
-    if M.preview_buf and vim.api.nvim_buf_is_valid(M.preview_buf) then
-        pcall(vim.api.nvim_buf_delete, M.preview_buf, { force = true })
-    end
-    M.preview_win = nil
-    M.preview_buf = nil
 end
 
 function M.clear_ghost_text(opts)
@@ -417,9 +391,6 @@ function M.clear_ghost_text(opts)
     M.current_completion = nil
     if not opts.keep_cycle then
         invalidate_cycle_state()
-    end
-    if not opts.keep_preview then
-        M.close_preview_split()
     end
 end
 
@@ -739,7 +710,7 @@ function M.accept_line()
     end
     local line_text = text:sub(1, first_nl - 1)
     local remaining = text:sub(first_nl + 1)
-    M.clear_ghost_text({ keep_preview = true })
+    M.clear_ghost_text()
     local bufnr = comp.bufnr
     local line = comp.line
     local col = comp.col
@@ -750,7 +721,6 @@ function M.accept_line()
     if remaining ~= "" then
         M.show_ghost_text(remaining)
     else
-        M.close_preview_split()
         set_status("accepted", "", "")
     end
     emit_completion_accepted("line")
@@ -768,7 +738,7 @@ function M.accept_word()
         return M.accept()
     end
     local remaining = text:sub(#word_end + 1)
-    M.clear_ghost_text({ keep_preview = true })
+    M.clear_ghost_text()
     local bufnr = comp.bufnr
     local line = comp.line
     local col = comp.col
@@ -786,34 +756,9 @@ function M.accept_word()
         M.current_completion = { bufnr = bufnr, line = line, col = new_col, text = remaining }
         M.show_ghost_text(remaining)
     else
-        M.close_preview_split()
         set_status("accepted", "", "")
     end
     emit_completion_accepted("word")
-    return true
-end
-
-function M.open_preview_split()
-    if not M.current_completion then
-        return false
-    end
-
-    if M.preview_win and vim.api.nvim_win_is_valid(M.preview_win) then
-        vim.api.nvim_set_current_win(M.preview_win)
-        set_preview_content()
-        return true
-    end
-
-    vim.cmd("botright new")
-    local buf = vim.api.nvim_get_current_buf()
-    M.preview_buf = buf
-    M.preview_win = vim.api.nvim_get_current_win()
-    vim.bo[buf].buftype = "nofile"
-    vim.bo[buf].bufhidden = "wipe"
-    vim.bo[buf].swapfile = false
-    pcall(vim.api.nvim_buf_set_name, buf, "[poor-cli completion preview " .. buf .. "]")
-    set_preview_content()
-    vim.keymap.set("n", "q", M.close_preview_split, { buffer = buf, nowait = true, desc = "Close poor-cli completion preview" })
     return true
 end
 

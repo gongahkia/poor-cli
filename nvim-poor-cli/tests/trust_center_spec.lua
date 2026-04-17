@@ -1,6 +1,30 @@
-describe("trust_center", function()
+describe("trust_center collapsible tree", function()
     local calls
     local trust_center
+
+    local function trust_payload()
+        return {
+            providerName = "ollama",
+            providerModel = "llama",
+            routingMode = "private",
+            sandboxPreset = "workspace-write",
+            permissionMode = "prompt",
+            permissionRules = { session = { { toolName = "bash", behavior = "allow", ruleContent = "ls", file = "/tmp/CLAUDE.md", line = 3 } } },
+            permissionRulesCount = 1,
+            policySummary = { allow = 1, deny = 0, prompt = 0, total = 1 },
+            checkpointing = true,
+            rollbackRetained = 50,
+            auditEnabled = true,
+            auditPath = "/tmp/audit",
+            auditRowCount = 2,
+            auditEvents = {
+                { event_id = "evt-1", timestamp = "2026-01-01T00:00:00Z", operation = "bash", target = "ls" },
+            },
+            privacyPosture = "local",
+            dataLeavesMachine = false,
+            memorySources = { "/repo/AGENTS.md" },
+        }
+    end
 
     before_each(function()
         calls = {}
@@ -8,29 +32,7 @@ describe("trust_center", function()
             request = function(method, params, cb)
                 table.insert(calls, { method = method, params = params })
                 if method == "poor-cli/trustStatus" then
-                    cb({
-                        providerName = "ollama",
-                        providerModel = "llama",
-                        routingMode = "private",
-                        sandboxPreset = "workspace-write",
-                        permissionMode = "prompt",
-                        permissionRules = { session = { { toolName = "bash", behavior = "allow", ruleContent = "ls" } } },
-                        permissionRulesCount = 1,
-                        policySummary = { allow = 1, deny = 0, prompt = 0, total = 1 },
-                        checkpointing = true,
-                        rollbackRetained = 50,
-                        auditEnabled = true,
-                        auditPath = "/tmp/audit",
-                        auditRowCount = 2,
-                        auditEvents = {
-                            { event_id = "evt-1", timestamp = "2026-01-01T00:00:00Z", operation = "bash", target = "ls" },
-                        },
-                        privacyPosture = "local",
-                        dataLeavesMachine = false,
-                        memorySources = { "/repo/AGENTS.md" },
-                    }, nil)
-                elseif method == "permissions/list" then
-                    cb({ rules = { session = { { toolName = "bash", behavior = "deny", ruleContent = "rm" } } } }, nil)
+                    cb(trust_payload(), nil)
                 else
                     cb({ ok = true, path = "/tmp/export.json" }, nil)
                 end
@@ -43,59 +45,51 @@ describe("trust_center", function()
 
     after_each(function()
         for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-            if vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_get_name(buf):match("%[poor-cli trust center%]") then
+            if vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_get_name(buf):match("%[poor%-cli trust center%]") then
                 pcall(vim.api.nvim_buf_delete, buf, { force = true })
             end
+        end
+        for _, win in ipairs(vim.api.nvim_list_wins()) do
+            local ok, cfg = pcall(vim.api.nvim_win_get_config, win)
+            if ok and cfg.relative and cfg.relative ~= "" then pcall(vim.api.nvim_win_close, win, true) end
         end
         package.loaded["poor-cli.rpc"] = nil
         package.loaded["poor-cli.trust_center"] = nil
     end)
 
-    it("opens trust center with policy summary and sections", function()
+    it("renders header, sections, and footer legend", function()
         local buf = trust_center.open()
         local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
-        assert.truthy(text:find("Policy summary: allow=1 deny=0 prompt=0", 1, true))
-        assert.truthy(text:find("## Provider", 1, true))
-        assert.truthy(text:find("## Audit log", 1, true))
+        assert.truthy(text:find("poor%-cli trust"))
+        assert.truthy(text:find("sandbox", 1, true))
+        assert.truthy(text:find("permission", 1, true))
+        assert.truthy(text:find("audit", 1, true))
+        assert.truthy(text:find("privacy", 1, true))
+        assert.truthy(text:find("memory", 1, true))
+        assert.truthy(text:find("rollback", 1, true))
+        assert.truthy(text:find("expand/collapse", 1, true))
         assert.are.equal("poor-cli/trustStatus", calls[1].method)
     end)
 
-    it("dispatches sandbox toggle from mapped action line", function()
+    it("expands sandbox section by default and shows cycle-preset action", function()
         local buf = trust_center.open()
-        local action_line
-        for line, action in pairs(trust_center.buffers[buf].actions) do
-            if action.id == "toggle_sandbox" then action_line = line end
-        end
-        vim.api.nvim_win_set_cursor(0, { action_line, 0 })
-        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "x", false)
-        assert.are.equal("sandbox/toggle", calls[2].method)
-        assert.are.equal("poor-cli/trustStatus", calls[3].method)
-    end)
-
-    it("dispatches permission list and renders detail", function()
-        local buf = trust_center.open()
-        local action_line
-        for line, action in pairs(trust_center.buffers[buf].actions) do
-            if action.id == "view_permissions" then action_line = line end
-        end
-        vim.api.nvim_win_set_cursor(0, { action_line, 0 })
-        assert.truthy(trust_center.invoke_action(buf))
-        assert.are.equal("permissions/list", calls[2].method)
-        assert.are.equal("poor-cli/trustStatus", calls[3].method)
         local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
-        assert.truthy(text:find("Permission rule detail", 1, true))
-        assert.truthy(text:find("deny | session | bash | rm", 1, true))
+        assert.truthy(text:find("%[t%] cycle preset"))
     end)
 
-    it("dispatches audit actions", function()
+    it("expands permission rules when toggled", function()
         local buf = trust_center.open()
-        local ids = {}
-        for line, action in pairs(trust_center.buffers[buf].actions) do ids[action.id] = line end
-        vim.api.nvim_win_set_cursor(0, { ids.rotate_audit, 0 })
-        trust_center.invoke_action(buf)
-        assert.are.equal("audit/rotateNow", calls[2].method)
-        vim.api.nvim_win_set_cursor(0, { ids.export_audit, 0 })
-        trust_center.invoke_action(buf)
-        assert.are.equal("audit/exportRange", calls[4].method)
+        local state = trust_center.buffers[buf]
+        state.expanded["permission.rules"] = true
+        trust_center.redraw(buf)
+        local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
+        assert.truthy(text:find("bash", 1, true))
+        assert.truthy(text:find("allow", 1, true))
+    end)
+
+    it("policy expand shortcut opens with permission section pre-expanded", function()
+        local buf = trust_center.open({ expand = "permission" })
+        local state = trust_center.buffers[buf]
+        assert.is_true(state.expanded.permission == true)
     end)
 end)

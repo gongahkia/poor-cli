@@ -29,7 +29,6 @@ describe("inline polish", function()
             accept_key = "",
             accept_word_key = "",
             accept_line_key = "<M-l>",
-            preview_key = "<M-?>",
             cycle_next_key = "<M-]>",
             cycle_prev_key = "<M-[>",
             dismiss_key = "",
@@ -68,10 +67,9 @@ describe("inline polish", function()
 
     after_each(function()
         if inline then
-            pcall(inline.close_preview_split)
             pcall(inline.clear_ghost_text)
         end
-        for _, lhs in ipairs({ "<M-l>", "<M-?>", "<M-]>", "<M-[>", "<M-CR>", "gc", "<leader>pr", "<leader>pe", "<leader>pv", "<leader>pt" }) do
+        for _, lhs in ipairs({ "<M-l>", "<M-]>", "<M-[>", "<M-CR>", "gc", "<leader>pr", "<leader>pe", "<leader>pv", "<leader>pt" }) do
             pcall(vim.keymap.del, "i", lhs)
             pcall(vim.keymap.del, "n", lhs)
             pcall(vim.keymap.del, "v", lhs)
@@ -101,25 +99,6 @@ describe("inline polish", function()
         assert.are.same({ "unchanged" }, vim.api.nvim_buf_get_lines(0, 0, -1, false))
     end)
 
-    it("test_preview_split_opens_with_same_ft", function()
-        set_source({ "local x = 1" }, "lua", #"local x = 1")
-        inline.show_ghost_text("local y = 2\nreturn y")
-
-        assert.is_true(inline.open_preview_split())
-        assert.truthy(inline.preview_buf and vim.api.nvim_buf_is_valid(inline.preview_buf))
-        assert.are.equal("lua", vim.bo[inline.preview_buf].filetype)
-        assert.are.same({ "local y = 2", "return y" }, vim.api.nvim_buf_get_lines(inline.preview_buf, 0, -1, false))
-
-        local q_map
-        for _, map in ipairs(vim.api.nvim_buf_get_keymap(inline.preview_buf, "n")) do
-            if map.lhs == "q" then q_map = map.callback end
-        end
-        assert.truthy(q_map)
-        local preview_win = inline.preview_win
-        inline.dismiss()
-        assert.is_false(vim.api.nvim_win_is_valid(preview_win))
-    end)
-
     it("test_accept_line_keymap_consumes_one_line_of_ghost_text", function()
         load_keymaps()
         local cb = imap("<M-l>")
@@ -130,19 +109,6 @@ describe("inline polish", function()
         assert.are.equal("", cb())
         assert.are.same({ "before one", "after" }, vim.api.nvim_buf_get_lines(0, 0, -1, false))
         assert.are.equal("two", inline.current_completion.text)
-    end)
-
-    it("test_preview_split_keymap_opens_with_same_ft", function()
-        load_keymaps()
-        local cb = imap("<M-?>")
-        assert.truthy(cb)
-        set_source({ "local x = 1" }, "lua", #"local x = 1")
-        inline.show_ghost_text("local y = 2\nreturn y")
-
-        assert.are.equal("", cb())
-        assert.truthy(inline.preview_buf and vim.api.nvim_buf_is_valid(inline.preview_buf))
-        assert.are.equal("lua", vim.bo[inline.preview_buf].filetype)
-        assert.are.same({ "local y = 2", "return y" }, vim.api.nvim_buf_get_lines(inline.preview_buf, 0, -1, false))
     end)
 
     it("test_cycle_shows_second_candidate", function()
@@ -269,12 +235,10 @@ describe("inline polish", function()
     it("test_inline_keymaps_noop_without_ghost_text", function()
         load_keymaps()
         local accept_cb = imap("<M-l>")
-        local preview_cb = imap("<M-?>")
         set_source({ "unchanged" }, "lua", #"unchanged")
         local win_count = #vim.api.nvim_list_wins()
 
         assert.are.equal("", accept_cb())
-        assert.are.equal("", preview_cb())
         assert.are.same({ "unchanged" }, vim.api.nvim_buf_get_lines(0, 0, -1, false))
         assert.are.equal(win_count, #vim.api.nvim_list_wins())
     end)

@@ -5,7 +5,14 @@ local M = {}
 
 M.buf = nil
 M.win = nil
-M.state = { servers = {}, registry = { enabled = false, servers = {} }, query = "", page = 0, limit = 20 }
+M.state = {
+    tab = "configured",
+    servers = {},
+    registry = { enabled = false, servers = {} },
+    query = "",
+    page = 0,
+    limit = 20,
+}
 M.line_actions = {}
 M.badges = {}
 M.ns = vim.api.nvim_create_namespace("poor-cli_mcp_registry")
@@ -41,46 +48,86 @@ local function server_line(server)
     return string.format("  %-28s %-8s %-10s %s%s", name, transport, status, tools, err)
 end
 
-function M.render_lines(payload)
-    payload = payload or {}
-    local servers = payload.servers or {}
-    local registry = payload.registry or M.state.registry or {}
+local function tab_header(active)
+    local a = active == "configured" and "[CONFIGURED]" or " configured "
+    local b = active == "browse" and "[BROWSE]" or " browse "
+    return a .. "  " .. b
+end
+
+local function configured_footer()
+    return {
+        "t toggle  e edit  x remove  h health  c test-tool",
+        "gt tabs  r refresh  q close",
+    }
+end
+
+local function browse_footer()
+    return {
+        "s search  n next-page  p prev-page  i install",
+        "gt tabs  r refresh  q close",
+    }
+end
+
+local function render_configured(state)
     local lines = {
         "# poor-cli mcp",
-        "keys: r refresh  t toggle  e edit  x remove  h health  c test-tool  s registry-search  n/p page  i install  q close",
+        tab_header("configured"),
         "",
-        "CONFIGURED",
     }
+    local servers = state.servers or {}
     local actions, badges = {}, {}
-    if #servers == 0 then table.insert(lines, "  no MCP servers configured") end
+    if #servers == 0 then
+        table.insert(lines, "  no MCP servers configured")
+    end
     for _, server in ipairs(servers) do
         local status, hl = status_for(server)
         table.insert(lines, server_line(server))
         actions[#lines] = { kind = "server", server = server }
         local start_col = (lines[#lines]:find(status, 1, true) or 1) - 1
         badges[#lines] = { col = start_col, len = #status, hl = hl }
-        table.insert(lines, "    [t] toggle  [e] edit  [x] remove  [h] health-check  [c] test-tool")
-        actions[#lines] = { kind = "server", server = server }
     end
     table.insert(lines, "")
-    table.insert(lines, "REGISTRY")
-    table.insert(lines, "  query: " .. tostring(M.state.query or "") .. "  page: " .. tostring((M.state.page or 0) + 1) .. "  enabled: " .. tostring(registry.enabled == true))
+    for _, line in ipairs(configured_footer()) do table.insert(lines, line) end
+    return lines, actions, badges
+end
+
+local function render_browse(state)
+    local lines = {
+        "# poor-cli mcp",
+        tab_header("browse"),
+        "",
+        "query: " .. tostring(state.query or "") .. "  page: " .. tostring((state.page or 0) + 1),
+        "",
+    }
+    local registry = state.registry or {}
+    local actions = {}
     local results = registry.servers or registry.items or registry.results or {}
     if registry.enabled == false then
         table.insert(lines, "  registry pull disabled")
     elseif #results == 0 then
-        table.insert(lines, "  no registry results")
+        table.insert(lines, "  no registry results (press s to search)")
     else
         for _, item in ipairs(results) do
             local name = item.name or item.id or item.packageName or "unknown"
             table.insert(lines, "  " .. clip(name, 72))
             actions[#lines] = { kind = "registry", item = item }
-            if item.description and item.description ~= "" then table.insert(lines, "    " .. clip(item.description, 90)) end
-            table.insert(lines, "    [i] install")
-            actions[#lines] = { kind = "registry", item = item }
+            if item.description and item.description ~= "" then
+                table.insert(lines, "    " .. clip(item.description, 90))
+                actions[#lines] = { kind = "registry", item = item }
+            end
         end
     end
-    return lines, actions, badges
+    table.insert(lines, "")
+    for _, line in ipairs(browse_footer()) do table.insert(lines, line) end
+    return lines, actions, {}
+end
+
+function M.render_lines(state)
+    state = state or M.state
+    if state.tab == "browse" then
+        return render_browse(state)
+    end
+    return render_configured(state)
 end
 
 local function apply_badges()
@@ -225,30 +272,14 @@ function M.install_registry_item(item)
     mutate("mcp_edit", { server = spec, confirmed = true })
 end
 
-function M.registry_pick()
+function M.registry_fetch()
     local offset = (M.state.page or 0) * (M.state.limit or 20)
     rpc.mcp_registry_search({ query = M.state.query, limit = M.state.limit, offset = offset }, function(result, err)
         vim.schedule(function()
             if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
             M.state.registry = result or { enabled = false, servers = {} }
             M.render()
-            if M.state.registry.enabled == false then require("poor-cli.notify").notify("[poor-cli] MCP registry disabled", vim.log.levels.WARN); return end
-            local items = {}
-            if M.state.page > 0 then table.insert(items, { id = "__prev", label = "< previous page", data = { action = "prev" } }) end
-            for _, item in ipairs(M.state.registry.servers or {}) do
-                local name = item.name or item.id or item.packageName or "unknown"
-                table.insert(items, { id = name, label = tostring(name), preview = registry_preview(item), data = { action = "install", item = item } })
-            end
-            table.insert(items, { id = "__next", label = "> next page", data = { action = "next" } })
-            pickers.pick(items, {
-                title = "MCP registry",
-                on_pick = function(data)
-                    if not data then return end
-                    if data.action == "next" then M.state.page = M.state.page + 1; M.registry_pick(); return end
-                    if data.action == "prev" then M.state.page = math.max(0, M.state.page - 1); M.registry_pick(); return end
-                    if data.action == "install" then M.install_registry_item(data.item) end
-                end,
-            })
+            if M.state.registry.enabled == false then require("poor-cli.notify").notify("[poor-cli] MCP registry disabled", vim.log.levels.WARN) end
         end)
     end)
 end
@@ -258,23 +289,37 @@ function M.search_registry()
         if query == nil then return end
         M.state.query = query
         M.state.page = 0
-        M.registry_pick()
+        M.registry_fetch()
     end)
 end
 
 function M.next_page()
     M.state.page = (M.state.page or 0) + 1
-    M.registry_pick()
+    M.registry_fetch()
 end
 
 function M.prev_page()
     M.state.page = math.max(0, (M.state.page or 0) - 1)
-    M.registry_pick()
+    M.registry_fetch()
 end
 
 function M.install_current()
     local action = current_action()
     if action and action.item then M.install_registry_item(action.item) end
+end
+
+function M.cycle_tab(direction)
+    direction = direction or 1
+    local tabs = { "configured", "browse" }
+    local idx = 1
+    for i, t in ipairs(tabs) do if t == M.state.tab then idx = i; break end end
+    idx = ((idx - 1 + direction) % #tabs) + 1
+    M.state.tab = tabs[idx]
+    if M.state.tab == "browse" and M.state.registry.enabled and (M.state.registry.servers == nil or #M.state.registry.servers == 0) then
+        M.registry_fetch()
+    else
+        M.render()
+    end
 end
 
 function M.close()
@@ -305,20 +350,47 @@ function M.open()
         close_keys = {},
         wrap = false,
     })
-    vim.keymap.set("n", "q", M.close, { buffer = M.buf, nowait = true, desc = "Close MCP registry" })
-    vim.keymap.set("n", "<Esc>", M.close, { buffer = M.buf, nowait = true, desc = "Close MCP registry" })
-    vim.keymap.set("n", "r", M.refresh, { buffer = M.buf, nowait = true, desc = "Refresh MCP registry" })
-    vim.keymap.set("n", "t", M.toggle, { buffer = M.buf, nowait = true, desc = "Toggle MCP server" })
-    vim.keymap.set("n", "e", M.edit, { buffer = M.buf, nowait = true, desc = "Edit MCP server" })
-    vim.keymap.set("n", "x", M.remove, { buffer = M.buf, nowait = true, desc = "Remove MCP server" })
-    vim.keymap.set("n", "h", M.health, { buffer = M.buf, nowait = true, desc = "Health-check MCP server" })
-    vim.keymap.set("n", "c", M.test_tool, { buffer = M.buf, nowait = true, desc = "Test MCP tool call" })
-    vim.keymap.set("n", "s", M.search_registry, { buffer = M.buf, nowait = true, desc = "Search MCP registry" })
-    vim.keymap.set("n", "n", M.next_page, { buffer = M.buf, nowait = true, desc = "Next registry page" })
-    vim.keymap.set("n", "p", M.prev_page, { buffer = M.buf, nowait = true, desc = "Previous registry page" })
-    vim.keymap.set("n", "i", M.install_current, { buffer = M.buf, nowait = true, desc = "Install registry MCP server" })
+    local map = function(lhs, fn, desc)
+        vim.keymap.set("n", lhs, fn, { buffer = M.buf, nowait = true, desc = desc })
+    end
+    map("q", M.close, "Close MCP")
+    map("<Esc>", M.close, "Close MCP")
+    map("r", M.refresh, "Refresh MCP")
+    map("gt", function() M.cycle_tab(1) end, "Next MCP tab")
+    map("gT", function() M.cycle_tab(-1) end, "Prev MCP tab")
+    map("t", M.toggle, "Toggle MCP server")
+    map("e", M.edit, "Edit MCP server")
+    map("x", M.remove, "Remove MCP server")
+    map("h", M.health, "Health-check MCP server")
+    map("c", M.test_tool, "Test MCP tool call")
+    map("s", M.search_registry, "Search MCP registry")
+    map("n", M.next_page, "Next registry page")
+    map("p", M.prev_page, "Prev registry page")
+    map("i", M.install_current, "Install registry MCP server")
     M.refresh()
     return M.buf
+end
+
+-- legacy picker entry for registry_pick (still used by some callers via M.registry_pick)
+function M.registry_pick()
+    rpc.mcp_registry_search({ query = M.state.query, limit = M.state.limit, offset = (M.state.page or 0) * (M.state.limit or 20) }, function(result, err)
+        vim.schedule(function()
+            if err then require("poor-cli.notify").notify("[poor-cli] " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+            M.state.registry = result or { enabled = false, servers = {} }
+            if M.state.registry.enabled == false then require("poor-cli.notify").notify("[poor-cli] MCP registry disabled", vim.log.levels.WARN); return end
+            local items = {}
+            for _, item in ipairs(M.state.registry.servers or {}) do
+                local name = item.name or item.id or item.packageName or "unknown"
+                table.insert(items, { id = name, label = tostring(name), preview = registry_preview(item), data = { action = "install", item = item } })
+            end
+            pickers.pick(items, {
+                title = "MCP registry",
+                on_pick = function(data)
+                    if data and data.action == "install" then M.install_registry_item(data.item) end
+                end,
+            })
+        end)
+    end)
 end
 
 return M

@@ -62,17 +62,6 @@ function M.setup()
         end
     end, { expr = true, desc = "Accept poor-cli completion line" })
 
-    local preview_key = config.get("preview_key")
-    if preview_key == nil then preview_key = "<M-?>" end
-    map_if_unclaimed("i", preview_key, function()
-        if inline.has_completion() then
-            inline.open_preview_split()
-            return ""
-        else
-            return ""
-        end
-    end, { expr = true, desc = "Preview poor-cli completion" })
-
     local cycle_next_key = config.get("cycle_next_key") or "<M-]>"
     map_if_unclaimed("i", cycle_next_key, function()
         if inline.has_completion() then

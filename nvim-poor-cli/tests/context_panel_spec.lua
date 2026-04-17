@@ -1,7 +1,7 @@
 local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
 package.path = root .. "/lua/?.lua;" .. root .. "/lua/?/init.lua;" .. package.path
 
-describe("context panel", function()
+describe("context panel 2-pane", function()
     local calls
     local snapshot
     local panel
@@ -45,39 +45,50 @@ describe("context panel", function()
     end)
 
     after_each(function()
-        if panel and panel.win and vim.api.nvim_win_is_valid(panel.win) then
-            pcall(vim.api.nvim_win_close, panel.win, true)
-        end
-        if panel and panel.buf and vim.api.nvim_buf_is_valid(panel.buf) then
-            pcall(vim.api.nvim_buf_delete, panel.buf, { force = true })
+        pcall(panel.close)
+        for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+            if vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_get_name(buf):match("%[poor%-cli context") then
+                pcall(vim.api.nvim_buf_delete, buf, { force = true })
+            end
         end
         package.loaded["poor-cli.rpc"] = nil
         package.loaded["poor-cli.context_panel"] = nil
     end)
 
-    it("renders badges and filters rows", function()
-        local lines = panel.render_lines(snapshot, "api")
-        local text = table.concat(lines, "\n")
-        assert.truthy(text:find("ContextSnapshot turn=turn%-1", 1, false))
+    it("opens list + preview + filter windows", function()
+        panel.open()
+        wait()
+        assert.truthy(panel.list_win and vim.api.nvim_win_is_valid(panel.list_win))
+        assert.truthy(panel.preview_win and vim.api.nvim_win_is_valid(panel.preview_win))
+        assert.truthy(panel.filter_win and vim.api.nvim_win_is_valid(panel.filter_win))
+        assert.are.equal("context.snapshot", calls[1].method)
+    end)
+
+    it("filter input narrows list rows", function()
+        panel.open()
+        wait()
+        vim.api.nvim_buf_set_lines(panel.filter_buf, 0, -1, false, { "api" })
+        vim.api.nvim_exec_autocmds("TextChanged", { buffer = panel.filter_buf })
+        wait()
+        local text = table.concat(vim.api.nvim_buf_get_lines(panel.list_buf, 0, -1, false), "\n")
         assert.truthy(text:find("/tmp/api.py", 1, true))
-        assert.truthy(text:find("%[pin%]", 1, false))
         assert.is_nil(text:find("/tmp/app.py", 1, true))
     end)
 
-    it("dispatches keymaps to pin and drop rpc", function()
+    it("pin_current calls context.pin with path under cursor", function()
         panel.open()
         wait()
-        vim.api.nvim_set_current_win(panel.win)
-        vim.api.nvim_win_set_cursor(panel.win, { 5, 0 })
-        vim.api.nvim_feedkeys("p", "x", false)
+        local first_row_line
+        for line, _ in pairs(panel.line_rows) do
+            if not first_row_line or line < first_row_line then first_row_line = line end
+        end
+        vim.api.nvim_win_set_cursor(panel.list_win, { first_row_line, 0 })
+        panel.pin_current()
         wait()
-        vim.api.nvim_feedkeys("d", "x", false)
-        wait()
-
-        assert.are.equal("context.snapshot", calls[1].method)
-        assert.are.equal("context.pin", calls[2].method)
-        assert.are.equal("/tmp/app.py", calls[2].params.path)
-        assert.are.equal("context.drop", calls[3].method)
-        assert.are.equal("/tmp/app.py", calls[3].params.path)
+        local found
+        for _, call in ipairs(calls) do
+            if call.method == "context.pin" then found = call end
+        end
+        assert.truthy(found and found.params and found.params.path)
     end)
 end)

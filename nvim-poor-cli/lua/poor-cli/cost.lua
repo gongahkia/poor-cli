@@ -236,7 +236,11 @@ function M.setup()
                     show_lines("[poor-cli cost]", lines, "markdown")
                 end) end)
             end,
-            savings = function() require("poor-cli.panels.savings_dashboard").open() end,
+            savings = function()
+                local panel = require("poor-cli.panels.cost_dashboard")
+                panel.open()
+                vim.schedule(function() panel.jump_to_savings() end)
+            end,
             ["economy-preset"] = function(fargs)
                 local preset = fargs[1]
                 if not preset then notify("usage: :PoorCLICost economy-preset <preset>", vim.log.levels.WARN); return end

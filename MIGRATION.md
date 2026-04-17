@@ -256,6 +256,26 @@ sed -i.bak \
 The full rename table above is the authoritative reference — the sed recipe is
 a starting point, not exhaustive.
 
+## 6.1 removals — UX consolidation
+
+The 6.1 release removes five duplicate read-only scratch pages, one redundant
+inline-completion keymap, and the legacy `vsplit` panel mode. No backward-compat
+aliases. Update any references to:
+
+| Removed (≤ 6.0)                        | Replacement                                |
+|----------------------------------------|--------------------------------------------|
+| `:PoorCLIHelp commands`                | `:PoorCLIHelp palette` (fuzzy)             |
+| `:PoorCLITrust show`                   | `:PoorCLITrust center`                     |
+| `:PoorCLIConfig permissions-show`      | `:PoorCLITrust center` (permission section)|
+| `:PoorCLIChat workspace-map`           | `:PoorCLIContext repo-map` (real float)    |
+| `<M-?>` completion preview split       | `<M-]>`/`<M-[>` cycle + ghost text         |
+| `config.layout.panels = "vsplit"`      | (removed — all panels are floats)          |
+| `config.layout.scratch = "vsplit"`     | (removed — all scratch surfaces are floats)|
+| `config.preview_key`                   | (removed)                                  |
+
+The Python-side `/workspace-map` slash command is unchanged and still works as
+`:PoorCLIChat send /workspace-map` if you need it.
+
 ## Verification after migrating
 
 - Nvim: run `:PoorCLI<Tab>`. You should see ≤29 top-level commands and **no**

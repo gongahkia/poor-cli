@@ -1,7 +1,7 @@
 local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
 package.path = root .. "/lua/?.lua;" .. root .. "/lua/?/init.lua;" .. package.path
 
-describe("plan board", function()
+describe("plan board outline", function()
     local board
     local calls
     local snapshot
@@ -16,7 +16,6 @@ describe("plan board", function()
             planId = "plan-1",
             summary = "summary",
             originalRequest = "request",
-            columns = { "todo", "doing", "blocked", "done" },
             steps = {
                 { id = "s1", description = "read", status = "todo" },
                 { id = "s2", description = "edit", status = "doing" },
@@ -66,29 +65,31 @@ describe("plan board", function()
         package.loaded["poor-cli.plan_board"] = nil
     end)
 
-    it("renders four fixed columns", function()
+    it("renders grouped status sections", function()
         local lines = board.render_lines(snapshot)
         local text = table.concat(lines, "\n")
-        assert.truthy(text:find("Todo", 1, true))
-        assert.truthy(text:find("Doing", 1, true))
-        assert.truthy(text:find("Blocked", 1, true))
-        assert.truthy(text:find("Done", 1, true))
+        assert.truthy(text:find("DOING", 1, true))
+        assert.truthy(text:find("BLOCKED", 1, true))
+        assert.truthy(text:find("TODO", 1, true))
+        assert.truthy(text:find("DONE", 1, true))
+        assert.truthy(text:find("summary", 1, true))
     end)
 
-    it("tab advancement calls RPC for current step", function()
+    it("advance calls RPC for the step under cursor", function()
         board.open()
         wait()
         local target_line
-        for line, cells in pairs(board.line_cells) do
-            if cells[1] and cells[1].step_id == "s1" then target_line = line end
+        for line, id in pairs(board.line_step) do
+            if id == "s1" then target_line = line end
         end
+        assert.truthy(target_line)
         vim.api.nvim_win_set_cursor(board.win, { target_line, 2 })
         board.advance()
         assert.are.equal("plan.advance", calls[#calls].method)
         assert.are.equal("s1", calls[#calls].params.stepId)
     end)
 
-    it("blocked step rendered red via extmark", function()
+    it("blocked section has ErrorMsg highlight", function()
         local buf = board.open()
         wait()
         local marks = vim.api.nvim_buf_get_extmarks(buf, board.ns, 0, -1, { details = true })
@@ -104,8 +105,8 @@ describe("plan board", function()
         board.open()
         wait()
         local target_line
-        for line, cells in pairs(board.line_cells) do
-            if cells[1] and cells[1].step_id == "s1" then target_line = line end
+        for line, id in pairs(board.line_step) do
+            if id == "s1" then target_line = line end
         end
         vim.api.nvim_win_set_cursor(board.win, { target_line, 2 })
         board.toggle_expand()

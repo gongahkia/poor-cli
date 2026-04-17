@@ -234,7 +234,7 @@ See `MIGRATION.md` for the full v5→v6 rename table.
 | Command | Verbs | Description |
 |---------|-------|-------------|
 | `:PoorCLIServer` | `start stop restart cancel status` | Backend server lifecycle |
-| `:PoorCLIChat` | `toggle send clear explain refactor test doc fix-failures lint workspace-map preview` | Chat panel and AI code actions (range-aware) |
+| `:PoorCLIChat` | `toggle send clear retry terse rich queue enqueue queue-clear explain refactor test doc explain-diff fix-failures` | Chat panel and AI code actions (range-aware) |
 | `:PoorCLICompletion` | `trigger accept accept-word accept-line dismiss auto-trigger reason toggle` | Inline ghost-text completion controls |
 | `:PoorCLIHelp` | `palette onboarding keymaps health` | Help surfaces and onboarding |
 | `:PoorCLIPanel` | `open close toggle [name]` | Open/close/toggle named panels (tasks, agents, sessions, automations, memory, cost, history, checkpoints) |
@@ -249,11 +249,11 @@ See `MIGRATION.md` for the full v5→v6 rename table.
 | `:PoorCLIWorkflow` | `list run pick strategy-list strategy-set` | Workflow templates |
 | `:PoorCLIPrompt` | `list open new pin unpin pins` | Prompt library |
 | `:PoorCLIProvider` | `list info switch compare ollama api-key api-key-status api-key-purge` | AI provider management |
-| `:PoorCLIConfig` | `list set toggle qa-toggle input-log chat-trace permission-mode permissions-show permissions-set sandbox context-budget exec-profile instructions rules picker-backend api-key diagnostics` | Runtime configuration |
+| `:PoorCLIConfig` | `list set toggle qa-toggle input-log chat-trace permission-mode permissions-set sandbox context-budget exec-profile instructions rules picker-backend api-key diagnostics` | Runtime configuration |
 | `:PoorCLIProfile` | `list show apply create delete` | Named configuration profiles |
 | `:PoorCLIContext` | `show pressure breakdown` | Context budget and breakdown |
 | `:PoorCLICost` | `show dashboard savings economy-preset history tokens cache-stats budget compare export estimate` | Cost analytics |
-| `:PoorCLITrust` | `show sandbox policy rollback privacy` | Trust center |
+| `:PoorCLITrust` | `center repo untrust-repo` | Trust center |
 | `:PoorCLIDiag` | `doctor status policy mcp mcp-health tools recovery sandbox-status docker-sandbox inline trouble fix debug-copy log-open state-open write-min-init` | Diagnostics and troubleshooting |
 | `:PoorCLIDiff` | `open compare staged` | Diff viewer |
 | `:PoorCLIReview` | `open approve reject comment` | Code review |
@@ -332,14 +332,14 @@ Specs must not start or require a live `poor-cli-server`.
 2. Install if missing: `python3 -m pip install --upgrade 'poor-cli[all]'`
 3. Check Python version: `python3 --version` (needs 3.11+)
 4. Open the managed log with `:PoorCLIDiag log-open`
-5. Capture a full report with `:PoorCLIDiag doctor`, `:PoorCLITrust show`, or `:PoorCLIDiag debug-copy`
+5. Capture a full report with `:PoorCLIDiag doctor`, `:PoorCLITrust center`, or `:PoorCLIDiag debug-copy`
 
 ### No completions appearing
 
 1. Verify API key is set: `echo $GEMINI_API_KEY`
 2. Check server status: `:PoorCLIDiag status`
 3. Check whether completion is disabled for the current buffer/filetype in `:PoorCLIDiag status`
-4. Inspect provider, sandbox, and rollback posture in `:PoorCLITrust show`
+4. Inspect provider, sandbox, and rollback posture in `:PoorCLITrust center`
 5. If you use `nvim-cmp`, run `:checkhealth poor-cli` to confirm the `poor-cli` source is registered
 6. Open the server log with `:PoorCLIDiag log-open`
 

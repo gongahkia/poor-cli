@@ -1,13 +1,29 @@
 local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
 package.path = root .. "/lua/?.lua;" .. root .. "/lua/?/init.lua;" .. package.path
 
-describe("diff_review", function()
+describe("diff_review 2-pane", function()
     local calls
     local diff_review
     local edits
 
     local function wait()
         vim.wait(100, function() return false end, 10)
+    end
+
+    local function hunk_line()
+        if not diff_review.list_buf then return nil end
+        for line, row in pairs(diff_review.rows) do
+            if row.hunk then return line end
+        end
+        return nil
+    end
+
+    local function edit_line()
+        if not diff_review.list_buf then return nil end
+        for line, row in pairs(diff_review.rows) do
+            if row.edit and not row.hunk then return line end
+        end
+        return nil
     end
 
     before_each(function()
@@ -21,13 +37,13 @@ describe("diff_review", function()
                 original = "a\nb\n",
                 proposed = "a\nc\n",
                 hunks = {
-                    { hunkId = "h1", header = "@@ -2,1 +2,1 @@", before = "b\n", after = "c\n", lineStart = 2, status = "pending" },
+                    { hunkId = "h1", header = "@@ -2,1 +2,1 @@", before = "b\n", after = "c\n", lineStart = 2, status = "pending", added = 1, removed = 1 },
                 },
             },
         }
         package.loaded["poor-cli.config"] = {
             get = function(key)
-                if key == "diff_review" then return { layout = "unified", auto_open = true, panel_width = 80 } end
+                if key == "diff_review" then return { auto_open = true, panel_width = 140 } end
                 return nil
             end,
         }
@@ -36,11 +52,14 @@ describe("diff_review", function()
                 table.insert(calls, { method = "diff.list", params = {} })
                 cb({ edits = edits }, nil)
             end,
+            diff_stage = function(params, cb)
+                table.insert(calls, { method = "diff.stage", params = params })
+                cb({ ok = true }, nil)
+            end,
             request = function(method, params, cb)
                 table.insert(calls, { method = method, params = params })
                 if method == "diff.accept" and params.hunkId then
                     edits[1].hunks[1].status = "accepted"
-                    edits[1].status = "accepted"
                 elseif method == "diff.reject" and not params.hunkId then
                     edits = {}
                 end
@@ -53,8 +72,9 @@ describe("diff_review", function()
     end)
 
     after_each(function()
+        pcall(diff_review.close)
         for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-            if vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_get_name(buf):match("%[poor-cli diff") then
+            if vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_get_name(buf):match("%[poor%-cli diff") then
                 pcall(vim.api.nvim_buf_delete, buf, { force = true })
             end
         end
@@ -70,41 +90,50 @@ describe("diff_review", function()
         assert.are.equal("@@ -1,1 +1,1 @@", result.hunks[1].header)
     end)
 
-    it("opens panel on stage event", function()
+    it("opens panel on stage event and renders list", function()
         diff_review.setup()
         vim.api.nvim_exec_autocmds("User", { pattern = "PoorCLIStageEvent", data = edits[1] })
         wait()
-        assert.truthy(diff_review.buf and vim.api.nvim_buf_is_valid(diff_review.buf))
+        assert.truthy(diff_review.list_buf and vim.api.nvim_buf_is_valid(diff_review.list_buf))
+        assert.truthy(diff_review.diff_buf and vim.api.nvim_buf_is_valid(diff_review.diff_buf))
         assert.are.equal("diff.list", calls[1].method)
     end)
 
-    it("ga on a hunk marks it accepted and refreshes", function()
-        local buf = diff_review.open()
-        wait()
-        vim.api.nvim_win_set_buf(0, buf)
-        vim.api.nvim_win_set_cursor(0, { 9, 0 })
-        vim.api.nvim_feedkeys("ga", "x", false)
-        wait()
-        assert.are.equal("diff.accept", calls[2].method)
-        assert.are.equal("h1", calls[2].params.hunkId)
-        assert.are.equal("accepted", edits[1].hunks[1].status)
-    end)
-
-    it("gR on an edit discards it", function()
-        local buf = diff_review.open()
-        wait()
-        vim.api.nvim_win_set_buf(0, buf)
-        vim.api.nvim_win_set_cursor(0, { 5, 0 })
-        vim.api.nvim_feedkeys("gR", "x", false)
-        wait()
-        assert.are.equal("diff.reject", calls[2].method)
-        assert.are.equal(0, #edits)
-    end)
-
-    it("gl toggles layout between unified and side_by_side", function()
+    it("accept_hunk dispatches diff.accept for the focused hunk", function()
         diff_review.open()
         wait()
-        assert.are.equal("side_by_side", diff_review.toggle_layout())
-        assert.are.equal("unified", diff_review.toggle_layout())
+        local line = hunk_line()
+        assert.truthy(line)
+        vim.api.nvim_win_set_cursor(diff_review.list_win, { line, 0 })
+        diff_review.accept_hunk()
+        wait()
+        local found
+        for _, call in ipairs(calls) do
+            if call.method == "diff.accept" and call.params and call.params.hunkId == "h1" then
+                found = true
+            end
+        end
+        assert.is_true(found)
+    end)
+
+    it("reject_edit dispatches diff.reject without hunkId", function()
+        diff_review.open()
+        wait()
+        local line = edit_line()
+        assert.truthy(line)
+        vim.api.nvim_win_set_cursor(diff_review.list_win, { line, 0 })
+        diff_review.reject_edit()
+        wait()
+        local found
+        for _, call in ipairs(calls) do
+            if call.method == "diff.reject" and call.params and not call.params.hunkId then
+                found = true
+            end
+        end
+        assert.is_true(found)
+    end)
+
+    it("toggle_layout is a no-op in v6.1", function()
+        assert.is_nil(diff_review.toggle_layout())
     end)
 end)

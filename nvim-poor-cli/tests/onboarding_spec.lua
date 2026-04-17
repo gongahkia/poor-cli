@@ -65,7 +65,7 @@ describe("onboarding milestones", function()
     end)
 end)
 
-describe("onboarding tour", function()
+describe("onboarding facade", function()
     local dir
     local onboarding
 
@@ -79,11 +79,14 @@ describe("onboarding tour", function()
         }
         package.loaded["poor-cli.rpc"] = {
             is_running = function() return true end,
-            request = function(_, _, cb) cb({}, nil) end,
+            request = function(_, _, cb) if cb then cb({}, nil) end end,
             initialize = function(cb) if cb then cb({}, nil) end end,
             format_error = function(err) return tostring(err) end,
+            start = function() end,
         }
         package.loaded["poor-cli.onboarding_milestones"] = nil
+        package.loaded["poor-cli.onboarding.steps"] = nil
+        package.loaded["poor-cli.onboarding.run"] = nil
         package.loaded["poor-cli.onboarding"] = nil
         onboarding = require("poor-cli.onboarding")
     end)
@@ -92,7 +95,7 @@ describe("onboarding tour", function()
         for _, buf in ipairs(vim.api.nvim_list_bufs()) do
             if vim.api.nvim_buf_is_valid(buf) then
                 local name = vim.api.nvim_buf_get_name(buf)
-                if name:match("%[poor-cli tour") or name:match("%[poor-cli onboarding") then
+                if name:match("%[poor%-cli setup") or name:match("%[poor%-cli config cheatsheet") then
                     pcall(vim.api.nvim_buf_delete, buf, { force = true })
                 end
             end
@@ -101,37 +104,43 @@ describe("onboarding tour", function()
         package.loaded["poor-cli.config"] = nil
         package.loaded["poor-cli.rpc"] = nil
         package.loaded["poor-cli.onboarding_milestones"] = nil
+        package.loaded["poor-cli.onboarding.steps"] = nil
+        package.loaded["poor-cli.onboarding.run"] = nil
         package.loaded["poor-cli.onboarding"] = nil
     end)
 
-    it("progresses only after guided actions", function()
-        onboarding.open_tour()
-        assert.are.equal(1, onboarding.tour.step)
-        assert.is_false(onboarding.tour_next())
-        assert.are.equal(1, onboarding.tour.step)
-
-        for expected = 1, 5 do
-            assert.are.equal(expected, onboarding.tour.step)
-            assert.is_true(onboarding.tour_action())
-            assert.is_true(onboarding.tour_next())
-        end
-
-        local state = require("poor-cli.onboarding_milestones").load_state()
-        assert.is_true(state.tour_completed)
+    it("exposes setup/tour/cheatsheet entry points", function()
+        assert.is_function(onboarding.open)
+        assert.is_function(onboarding.open_tour)
+        assert.is_function(onboarding.cheatsheet_lines)
+        assert.is_function(onboarding.export_cheatsheet)
+        assert.is_function(onboarding._open_arg)
     end)
 
-    it("manual onboarding opens after completion", function()
-        local state = require("poor-cli.onboarding_milestones").load_state()
-        state.completed = true
-        require("poor-cli.onboarding_milestones").save_state(state)
-        onboarding.open()
-        assert.truthy(onboarding.state.buf and vim.api.nvim_buf_is_valid(onboarding.state.buf))
+    it("should_show returns true on a fresh state dir", function()
+        assert.is_true(onboarding.should_show())
+    end)
+
+    it("mark_complete flips the marker and should_show returns false", function()
+        onboarding.mark_complete()
+        assert.is_false(onboarding.should_show())
     end)
 
     it("exports deterministic config cheatsheet", function()
         local lines = onboarding.cheatsheet_lines()
         assert.are.equal("require('poor-cli').setup({", lines[1])
-        assert.truthy(table.concat(lines, "\n"):find("provider = \"openai\"", 1, true))
-        assert.truthy(table.concat(lines, "\n"):find("nested = {", 1, true))
+        local joined = table.concat(lines, "\n")
+        assert.truthy(joined:find("provider = \"openai\"", 1, true))
+        assert.truthy(joined:find("nested = {", 1, true))
+    end)
+
+    it("step chain holds expected step ids", function()
+        local steps = require("poor-cli.onboarding.steps").STEPS
+        local ids = {}
+        for _, s in ipairs(steps) do table.insert(ids, s.id) end
+        assert.truthy(vim.tbl_contains(ids, "welcome"))
+        assert.truthy(vim.tbl_contains(ids, "provider"))
+        assert.truthy(vim.tbl_contains(ids, "api_key"))
+        assert.truthy(vim.tbl_contains(ids, "commit"))
     end)
 end)

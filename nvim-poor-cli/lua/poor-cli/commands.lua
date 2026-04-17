@@ -56,42 +56,17 @@ local function create_command(name, fn, opts)
     vim.api.nvim_create_user_command(name, wrapped, opts or {})
 end
 
-local function resolve_scratch_mode(mode)
-    if mode == "float" or mode == "vsplit" then return mode end
-    local ok, cfg = pcall(require, "poor-cli.config")
-    if ok and cfg and cfg.config and cfg.config.layout and cfg.config.layout.scratch then
-        local m = cfg.config.layout.scratch
-        if m == "float" or m == "vsplit" then return m end
-    end
-    return "float"
-end
-
-local function open_scratch(title, content, filetype, mode)
+local function open_scratch(title, content, filetype)
     local lines = vim.split(content, "\n", { plain = true })
-    mode = resolve_scratch_mode(mode)
-    if mode == "float" then
-        local float_win = require("poor-cli.float_win")
-        local buf = float_win.open_lines(lines, {
-            filetype = filetype or "markdown",
-            name = title,
-            title = " " .. title:gsub("^%[", ""):gsub("%]$", "") .. " ",
-            width = 0.7,
-            height = 0.7,
-            position = "center",
-        })
-        return buf
-    end
-    local buf = vim.api.nvim_create_buf(false, true)
-    vim.bo[buf].buftype = "nofile"
-    vim.bo[buf].bufhidden = "wipe"
-    vim.bo[buf].swapfile = false
-    vim.bo[buf].filetype = filetype or "markdown"
-    vim.api.nvim_buf_set_name(buf, title)
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    vim.cmd("botright split")
-    vim.api.nvim_win_set_buf(0, buf)
-    vim.api.nvim_buf_set_keymap(buf, "n", "q", ":close<CR>", { noremap = true, silent = true })
-    return buf
+    local float_win = require("poor-cli.float_win")
+    return float_win.open_lines(lines, {
+        filetype = filetype or "markdown",
+        name = title,
+        title = " " .. title:gsub("^%[", ""):gsub("%]$", "") .. " ",
+        width = 0.7,
+        height = 0.7,
+        position = "center",
+    })
 end
 
 local function build_status_text()
@@ -144,37 +119,6 @@ local function build_status_text()
     return table.concat(lines, "\n")
 end
 
-local function build_trust_text()
-    local rpc = require("poor-cli.rpc")
-    local payload, err = rpc.get_trust_view(15000)
-    if err or type(payload) ~= "table" then
-        return "Failed to load trust view: " .. rpc.format_error(err)
-    end
-
-    local trust = type(payload.trust) == "table" and payload.trust or {}
-    local provider = type(payload.provider) == "table" and payload.provider or {}
-    local active = type(provider.active) == "table" and provider.active or {}
-    local recovery = type(payload.recovery) == "table" and payload.recovery or {}
-    local last_mutation = type(recovery.lastMutation) == "table" and recovery.lastMutation or {}
-    local lines = {
-        "# poor-cli trust",
-        "",
-        "- Provider: `" .. tostring(active.name or "unknown") .. "/" .. tostring(active.model or "unknown") .. "`",
-        "- Routing mode: `" .. tostring(active.routingMode or "manual") .. "`",
-        "- Sandbox preset: `" .. tostring(trust.sandboxPreset or "") .. "`",
-        "- Privacy posture: `" .. tostring(provider.privacyPosture or "unknown") .. "`",
-        "- Checkpointing: `" .. tostring(trust.checkpointing == true) .. "`",
-        "- Trusted workspace boundary: `" .. tostring(((trust.security or {}).trustedWorkspaceBoundary) == true) .. "`",
-    }
-    if provider.lastError and provider.lastError ~= "" then
-        table.insert(lines, "- Last provider error: " .. tostring(provider.lastError))
-    end
-    if last_mutation.checkpointId and last_mutation.checkpointId ~= "" then
-        table.insert(lines, "- Last checkpoint: `" .. tostring(last_mutation.checkpointId) .. "`")
-    end
-    return table.concat(lines, "\n")
-end
-
 local function parse_audit_export_args(raw)
     local args = vim.split(raw or "", "%s+", { trimempty = true })
     local params = {}
@@ -195,35 +139,6 @@ local function parse_audit_export_args(raw)
         end
     end
     return params
-end
-
-local function build_doctor_text()
-    local rpc = require("poor-cli.rpc")
-    local payload, err = rpc.get_doctor_report(15000)
-    if err or type(payload) ~= "table" then
-        return "Failed to load doctor report: " .. rpc.format_error(err)
-    end
-
-    local summary = type(payload.summary) == "table" and payload.summary or {}
-    local lines = {
-        "# poor-cli doctor",
-        "",
-        "- Overall: `" .. tostring(summary.overall or "unknown") .. "`",
-        "- Ready providers: " .. tostring(summary.readyProviderCount or 0),
-        "- Routing mode: `" .. tostring(summary.routingMode or "manual") .. "`",
-        "- Privacy posture: `" .. tostring(summary.privacyPosture or "unknown") .. "`",
-        "",
-    }
-    for _, check in ipairs(payload.checks or {}) do
-        if type(check) == "table" then
-            table.insert(lines, "## " .. tostring(check.title or "Check"))
-            table.insert(lines, "- Status: `" .. tostring(check.status or "unknown") .. "`")
-            table.insert(lines, "- Message: " .. tostring(check.message or ""))
-            table.insert(lines, "- Action: " .. tostring(check.action or ""))
-            table.insert(lines, "")
-        end
-    end
-    return table.concat(lines, "\n")
 end
 
 local function build_runs_text()
@@ -402,7 +317,7 @@ function M.setup()
             "toggle", "send", "clear", "retry", "terse", "rich",
             "queue", "enqueue", "queue-clear",
             "explain", "refactor", "test", "doc",
-            "explain-diff", "fix-failures", "workspace-map",
+            "explain-diff", "fix-failures",
         },
         verbs = {
             toggle = function() chat.toggle() end,
@@ -460,12 +375,6 @@ function M.setup()
                     if result and result.content then open_scratch("[poor-cli fix-failures]", result.content) end
                 end) end)
             end,
-            ["workspace-map"] = function()
-                rpc.request("poor-cli/chat", { message = "/workspace-map" }, function(result, err) vim.schedule(function()
-                    if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                    if result and result.content then open_scratch("[poor-cli workspace-map]", result.content) end
-                end) end)
-            end,
         },
     })
 
@@ -503,36 +412,9 @@ function M.setup()
 
     -- ───────────────────────── Help ─────────────────────────
     spec.install("help", {
-        desc = "Commands reference, palette, home, onboarding",
-        verb_names = { "commands", "palette", "home", "onboarding" },
+        desc = "Palette, home, onboarding",
+        verb_names = { "palette", "home", "onboarding" },
         verbs = {
-            commands = function()
-                local cmds = vim.api.nvim_get_commands({})
-                local rows = {}
-                for name, info in pairs(cmds) do
-                    if name:sub(1, 7) == "PoorCLI" then
-                        table.insert(rows, { name = name, desc = info.definition or "" })
-                    end
-                end
-                table.sort(rows, function(a, b) return a.name < b.name end)
-                local lines = { "# poor-cli commands", "", "Press `q` to close. Run any command with `:Command verb [args]`.", "" }
-                local width = 0
-                for _, r in ipairs(rows) do if #r.name > width then width = #r.name end end
-                for _, r in ipairs(rows) do table.insert(lines, string.format("  :%-" .. width .. "s  %s", r.name, r.desc)) end
-                local cfg = require("poor-cli.config")
-                table.insert(lines, "")
-                table.insert(lines, "## inline keymaps")
-                table.insert(lines, "")
-                table.insert(lines, string.format("  %s  Trigger inline completion", tostring(cfg.get("trigger_key") or "")))
-                table.insert(lines, string.format("  %s  Accept full completion", tostring(cfg.get("accept_key") or "")))
-                table.insert(lines, string.format("  %s  Accept next word", tostring(cfg.get("accept_word_key") or "")))
-                table.insert(lines, string.format("  %s  Accept next line", tostring(cfg.get("accept_line_key") or "<M-l>")))
-                table.insert(lines, string.format("  %s  Preview full completion", tostring(cfg.get("preview_key") or "<M-?>")))
-                table.insert(lines, string.format("  %s  Dismiss completion", tostring(cfg.get("dismiss_key") or "")))
-                table.insert(lines, "")
-                table.insert(lines, string.format("Total: %d commands", #rows))
-                open_scratch("[poor-cli help]", table.concat(lines, "\n"), "markdown")
-            end,
             palette = function() require("poor-cli.ux.palette").open() end,
             home = function() require("poor-cli.ux.home").go_home() end,
             onboarding = function(fargs) require("poor-cli.onboarding")._open_arg(fargs[1] or "") end,
@@ -648,7 +530,13 @@ function M.setup()
             stats = function()
                 local result, err = rpc.get_index_stats(10000)
                 if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                open_scratch("[poor-cli index stats]", vim.inspect(result or {}), "lua")
+                local r = type(result) == "table" and result or {}
+                local lines = { "# index stats", "" }
+                for k, v in pairs(r) do
+                    table.insert(lines, string.format("- %s: %s", tostring(k), tostring(v)))
+                end
+                if #lines == 2 then table.insert(lines, tostring(result)) end
+                open_scratch("[poor-cli index stats]", table.concat(lines, "\n"), "markdown")
             end,
             embeddings = function()
                 _notify("indexing embeddings...", vim.log.levels.INFO)
@@ -742,9 +630,8 @@ function M.setup()
     -- ───────────────────────── Trust ─────────────────────────
     spec.install("trust", {
         desc = "Trust center and repo trust management",
-        verb_names = { "show", "center", "repo", "untrust-repo" },
+        verb_names = { "center", "repo", "untrust-repo" },
         verbs = {
-            show = function() open_scratch("[poor-cli trust]", build_trust_text(), "markdown") end,
             center = function() require("poor-cli.trust_center").open() end,
             repo = function()
                 rpc.trust_repo({}, function(_, err) vim.schedule(function()
@@ -882,10 +769,20 @@ function M.setup()
                 end) end)
             end,
             status = function(fargs)
-                local name = fargs[1]; if not name then _notify("usage: :PoorCLIService status <name>", vim.log.levels.WARN); return end
+                if not fargs[1] or fargs[1] == "" then
+                    require("poor-cli.panels.diag").open({ expand = "services" })
+                    return
+                end
+                local name = fargs[1]
                 local result, err = rpc.get_service_status(name, 10000)
                 if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                open_scratch("[poor-cli service " .. name .. "]", vim.inspect(result or {}), "lua")
+                local lines = { "# service " .. name, "" }
+                local r = type(result) == "table" and result or {}
+                for k, v in pairs(r) do
+                    table.insert(lines, string.format("- %s: %s", tostring(k), tostring(v)))
+                end
+                if #lines == 2 then table.insert(lines, tostring(result)) end
+                open_scratch("[poor-cli service " .. name .. "]", table.concat(lines, "\n"), "markdown")
             end,
             logs = function(fargs)
                 local name = fargs[1]; if not name then _notify("usage: :PoorCLIService logs <name> [n]", vim.log.levels.WARN); return end
@@ -904,43 +801,19 @@ function M.setup()
     --       write-min-init
     spec.extend("diag", {
         verbs = {
-            status = function() _notify("\n" .. build_status_text(), vim.log.levels.INFO) end,
-            doctor = function() open_scratch("[poor-cli doctor]", build_doctor_text(), "markdown") end,
+            status = function() require("poor-cli.panels.diag").open() end,
+            doctor = function() require("poor-cli.panels.diag").open({ expand = "doctor" }) end,
             mcp = function() require("poor-cli.mcp_registry").open() end,
-            ["mcp-health"] = function()
-                _notify("running MCP health check...", vim.log.levels.INFO)
-                rpc.mcp_health_check(function(result, err) vim.schedule(function()
-                    if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                    open_scratch("[poor-cli mcp health]", vim.inspect(result or {}), "lua")
-                end) end)
-            end,
-            policy = function() require("poor-cli.policy_panel").open() end,
-            tools = function()
-                rpc.request("poor-cli/getTools", {}, function(result, err) vim.schedule(function()
-                    if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                    local tools = (result or {}).tools or result or {}
-                    local lines = { "# available tools", "" }
-                    if type(tools) == "table" then
-                        for _, tool in ipairs(tools) do
-                            local n = type(tool) == "table" and (tool.name or "?") or tostring(tool)
-                            local d = type(tool) == "table" and (tool.description or "") or ""
-                            table.insert(lines, "- `" .. n .. "`: " .. d)
-                        end
-                    end
-                    open_scratch("[poor-cli tools]", table.concat(lines, "\n"), "markdown")
-                end) end)
-            end,
+            ["mcp-health"] = function() require("poor-cli.panels.diag").open({ expand = "mcp" }) end,
+            policy = function() require("poor-cli.trust_center").open({ expand = "permission" }) end,
+            tools = function() require("poor-cli.panels.diag").open({ expand = "tools" }) end,
             inline = function() diagnostics.toggle() end,
             trouble = function()
                 local ok, trouble = pcall(require, "trouble")
                 if ok and type(trouble.open) == "function" then trouble.open("poor-cli") end
             end,
             fix = function() require("poor-cli.lsp").fix_diagnostics() end,
-            ["docker-sandbox"] = function()
-                local result, err = rpc.docker_sandbox_status(10000)
-                if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                open_scratch("[poor-cli docker sandbox]", vim.inspect(result or {}), "lua")
-            end,
+            ["docker-sandbox"] = function() require("poor-cli.panels.diag").open() end,
             ["debug-copy"] = function()
                 local report = rpc.build_debug_report({ { title = "Status", body = build_status_text() } })
                 local copied = copy_to_clipboard(report)
@@ -1015,14 +888,8 @@ function M.setup()
                     end) end)
                 end
             end,
-            instructions = function(fargs)
-                local files = fargs
-                local current = vim.api.nvim_buf_get_name(0)
-                if current ~= "" and #files == 0 then table.insert(files, current) end
-                rpc.request("poor-cli/getInstructionStack", { files = files }, function(result, err) vim.schedule(function()
-                    if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                    open_scratch("[poor-cli instructions]", vim.inspect(result or {}), "lua")
-                end) end)
+            instructions = function()
+                require("poor-cli.panels.diag").open({ expand = "instructions" })
             end,
             rules = function(fargs)
                 local files = fargs
@@ -1067,18 +934,6 @@ function M.setup()
                 end
                 cfg.config.chat_trace = mode
                 _notify("chat_trace = " .. mode, vim.log.levels.INFO)
-            end,
-            ["permissions-show"] = function()
-                local result, err = rpc.get_permissions(10000)
-                if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                local lines = { "# permissions", "" }
-                local r = result or {}
-                table.insert(lines, "**mode**: " .. (r.permissionMode or "unknown"))
-                if r.rules then
-                    table.insert(lines, ""); table.insert(lines, "## rules")
-                    for _, rule in ipairs(r.rules) do table.insert(lines, "- " .. vim.inspect(rule)) end
-                end
-                open_scratch("[poor-cli permissions]", table.concat(lines, "\n"), "markdown")
             end,
             ["permissions-set"] = function(fargs)
                 local mode = fargs[1]
