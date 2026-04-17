@@ -433,6 +433,28 @@ function M.reset_session_state()
     M.last_request = nil
 end
 
+-- Probes each optional plugin by pcall-requiring it. Cheap: pcall(require) is
+-- ~1us per module and we do it once at initialize() time. The backend uses the
+-- resulting map (via handler._client_has_plugin) to pick between plugin-preferred
+-- and CLI-fallback tool paths (Proposal B).
+local OPTIONAL_PLUGINS = {
+    "neogit",
+    "dap",
+    "trouble",
+    "gitsigns",
+    "oil",
+    "overseer",
+    "snacks",
+}
+
+local function detect_plugins()
+    local detected = {}
+    for _, name in ipairs(OPTIONAL_PLUGINS) do
+        detected[name] = pcall(require, name)
+    end
+    return detected
+end
+
 function M.client_capabilities()
     return {
         uiSurface = "neovim",
@@ -444,6 +466,7 @@ function M.client_capabilities()
             permissionRequests = true,
             planReview = true,
         },
+        plugins = detect_plugins(),
     }
 end
 
@@ -1320,7 +1343,22 @@ function M.handle_notification(message)
                 authorRole = params.authorRole or "",
             },
         })
+    else
+        -- Phase B: fall through to dynamically-registered notification handlers.
+        -- Bridge modules (integrations/<name>_bridge.lua) register via
+        -- M.register_notification_handler(method, fn) in their setup().
+        local handler = M._notification_handlers and M._notification_handlers[message.method]
+        if handler then pcall(handler, params) end
     end
+end
+
+-- Dynamic notification dispatch table populated by bridge modules at setup().
+M._notification_handlers = {}
+
+function M.register_notification_handler(method, fn)
+    assert(type(method) == "string" and method ~= "", "method required")
+    assert(type(fn) == "function", "handler required")
+    M._notification_handlers[method] = fn
 end
 
 function M.handle_stderr(data)

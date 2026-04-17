@@ -245,6 +245,43 @@ discovery; the palette (`:PoorCLIHelp palette`) fuzzy-finds across every verb.
 
 > **`:PoorCLIDeploy` was removed** in v6.2. Deploys are an agent tool: say it in chat (`:PoorCLIChat send deploy staging`).
 
+### v6.3 — tools flow through the agent
+
+Every plugin integration (neogit, DAP, Trouble, gitsigns, oil, overseer) is
+now a *tool* the agent calls, not a command the user launches. This means
+poor-cli is an agent that *uses* your plugins rather than a wrapper that
+*exposes* them.
+
+The agent has these tool families (registered in `poor_cli/tools/`):
+
+| Domain | Tools | What it does |
+|---|---|---|
+| `git.*` | `status diff stage unstage commit log branch.{list,create,checkout} push` | Inspect/modify the repo. Prefers neogit for the commit UI; falls back to CLI. |
+| `hunks.*` | `list stage reset ai_mark` | Per-file hunk-level operations. Gitsigns integration marks AI-authored hunks. |
+| `debug.*` | `breakpoint.{set,clear} step continue stack eval` | Drives nvim-dap. |
+| `diagnostics.*` | `emit clear list` | Agent-authored diagnostics surface in `:Trouble poor-cli`. |
+| `fs.*` | `browse glob` | Structured directory listing and glob. Pops oil when available. |
+| `task.*` | `run status logs cancel list` | Run overseer templates or managed subprocesses. |
+| `deploy.*` | `run targets preview.{start,stop,status}` | Replaces the removed `:PoorCLIDeploy`. Reads `.poor-cli/deploy.json`. |
+| `watch.*` | `directives.{list,consume,clear}` | Scans for `@poor-cli: <instruction>` comments; agent acts on them. |
+| `review.*` | `pr changes lint` | Fetch GitHub PR, diff current changes, run linters. |
+
+Each tool has a JSONSchema and a structured `ToolResult` return shape
+(`TextBlock`, `CodeBlock`, `DiffBlock`, `TableBlock`, ...). When a preferred
+plugin is missing the tool falls through to the CLI and sets
+`metadata.degraded = "cli"` on the result. **No tool should hard-fail because
+an optional plugin isn't installed.**
+
+To talk through the agent instead of invoking the plugin directly:
+
+| Instead of | Say in chat |
+|---|---|
+| opening neogit, writing a message, committing | "commit with a conventional message" |
+| stepping through DAP | "set a breakpoint at line 42 of foo.py and run" |
+| running deploy | "deploy staging" |
+| checking pending TODOs | "check @poor-cli directives" |
+| running lint | "lint current changes" |
+
 ### Health Check
 
 Run `:checkhealth poor-cli` to verify:

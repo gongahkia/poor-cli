@@ -128,6 +128,15 @@ function M.setup(opts)
             end
         end
 
+        -- Phase B bridges: backend-originated notifications → plugin side effects.
+        for _, name in ipairs({ "neogit_bridge", "dap_bridge", "trouble_bridge",
+                                "gitsigns_bridge", "oil_bridge", "overseer_bridge" }) do
+            local ok_bridge, bridge = pcall(require, "poor-cli.integrations." .. name)
+            if ok_bridge and type(bridge.setup) == "function" then
+                pcall(bridge.setup)
+            end
+        end
+
         local ok_snacks_dashboard, snacks_dashboard = pcall(require, "poor-cli.snacks_dashboard")
         if ok_snacks_dashboard and type(snacks_dashboard.setup) == "function" then
             snacks_dashboard.setup()
