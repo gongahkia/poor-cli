@@ -15,6 +15,7 @@ Invariants (from PROPOSAL-D-DISCOVERY.md §1):
 
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, List, Optional
 
 from poor_cli.tool_blocks import CodeBlock, TableBlock, TextBlock, ToolResult
@@ -158,6 +159,90 @@ async def handle_list_tools(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
         content=[TextBlock(text=" · ".join(prefix_parts)), table],
         metadata=meta,
     )
+
+
+def _fmt_ts(at: float) -> str:
+    """Relative time like '12s', '3m42s', '1h5m'. Frugal: shorter than
+    absolute timestamps, agent can reason about recency directly."""
+    delta = max(0.0, time.time() - at)
+    if delta < 60:
+        return f"{int(delta)}s"
+    if delta < 3600:
+        return f"{int(delta // 60)}m{int(delta % 60)}s"
+    return f"{int(delta // 3600)}h{int((delta % 3600) // 60)}m"
+
+
+async def handle_call_history(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
+    recorder = getattr(ctx, "session_recorder", None)
+    if recorder is None:
+        return ToolResult.text(
+            "no session_recorder on ctx (this session doesn't record tool calls)"
+        )
+    try:
+        n = int(args.get("n", 20) or 20)
+    except (TypeError, ValueError):
+        return ToolResult.error("n must be an integer")
+    n = max(1, min(n, 500))
+    tool_filter = args.get("tool")
+    if tool_filter is not None and not isinstance(tool_filter, str):
+        return ToolResult.error("tool must be a string")
+    calls = recorder.recent(n=n, tool_filter=tool_filter)
+    if not calls:
+        prefix = "no tool calls this session"
+        if tool_filter:
+            prefix = f"no calls to tool {tool_filter!r} this session"
+        return ToolResult.text(prefix)
+    rows = [
+        [
+            call.tool,
+            call.outcome,
+            str(call.rec.wall_time_ms),
+            str(call.rec.retry_attempts),
+            _fmt_ts(call.at),
+        ]
+        for call in calls
+    ]
+    prefix = f"last {len(calls)} call(s)"
+    if tool_filter:
+        prefix += f" filtered by tool={tool_filter!r}"
+    prefix += f" · session started {_fmt_ts(recorder.started_at)} ago"
+    return ToolResult(
+        content=[
+            TextBlock(text=prefix),
+            TableBlock(columns=["tool", "outcome", "wall_ms", "retries", "ago"], rows=rows),
+        ],
+        metadata={"returned": len(calls), "session_total": len(recorder.records)},
+    )
+
+
+register_tool(
+    name="meta.call_history",
+    description=(
+        "Return the most recent tool-call records from this session: tool, "
+        "outcome (ok/err/timeout/degraded), wall-time ms, retries, relative "
+        "time. Use this to answer 'what did I just do?' without keeping the "
+        "tool trace in chat context. Filter by exact tool name with ``tool``."
+    ),
+    schema={
+        "type": "object",
+        "properties": {
+            "n": {"type": "integer", "minimum": 1, "maximum": 500, "default": 20},
+            "tool": {
+                "type": "string",
+                "description": "Exact tool name. Omit to include all tools.",
+            },
+        },
+        "additionalProperties": False,
+    },
+    handler=handle_call_history,
+    examples=[
+        {
+            "when": "the agent needs to reference a recent git.status without re-running",
+            "args": {"tool": "git.status", "n": 1},
+            "result_summary": "TableBlock of 1 git.status call + timestamp",
+        }
+    ],
+)
 
 
 async def handle_describe_tool(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
