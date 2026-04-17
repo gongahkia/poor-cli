@@ -6,7 +6,7 @@ Claude Code session can pick one up and execute without prior context.
 | Doc | Status | Focus |
 |---|---|---|
 | ~~PROPOSAL-D-DISCOVERY.md~~ | **Delivered** | `meta.*` self-discovery tools — shipped `65c8514`..`9e0c0ff` |
-| [PROPOSAL-E-FRUGALITY.md](./PROPOSAL-E-FRUGALITY.md) | Ready to build | In-session memoization, result truncation, manifest stability, lazy manifest |
+| ~~PROPOSAL-E-FRUGALITY.md~~ | **Delivered** | Memoization, truncation, manifest stability, lazy manifest — shipped `fc2292a`..`9d71dce` |
 | [PROPOSAL-F-ROBUSTNESS.md](./PROPOSAL-F-ROBUSTNESS.md) | Ready to build | Circuit breaker, idempotency keys, auto-checkpoint, per-tool rate limits |
 | [PROPOSAL-G-FUTURES.md](./PROPOSAL-G-FUTURES.md) | Reference | Deferred ideas + rejected anti-patterns + watch list |
 
