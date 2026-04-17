@@ -17,8 +17,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from poor_cli.tool_blocks import TableBlock, TextBlock, ToolResult
-from poor_cli.tools._registry import ToolSpec, all_tools, register_tool
+from poor_cli.tool_blocks import CodeBlock, TableBlock, TextBlock, ToolResult
+from poor_cli.tool_prompt_gen import describe_registry_tool
+from poor_cli.tools._registry import ToolSpec, all_tools, get as registry_get, register_tool
 
 
 # ~4 chars per token rough estimate. We pick a conservative default so
@@ -157,6 +158,65 @@ async def handle_list_tools(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
         content=[TextBlock(text=" · ".join(prefix_parts)), table],
         metadata=meta,
     )
+
+
+async def handle_describe_tool(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
+    name = args.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return ToolResult.error("name is required")
+    spec = registry_get(name.strip())
+    if spec is None:
+        # Provide a helpful nudge: list-tools with a query-matching suggestion.
+        suggestions: List[str] = []
+        needle = name.split(".", 1)[0].lower()
+        for candidate in all_tools():
+            if needle and needle in candidate.lower():
+                suggestions.append(candidate)
+                if len(suggestions) >= 5:
+                    break
+        msg = f"unknown tool {name!r}"
+        if suggestions:
+            msg += f"\nsimilar: {', '.join(sorted(suggestions))}"
+        return ToolResult.error(msg, unknown_tool=True)
+    markdown = describe_registry_tool(spec)
+    return ToolResult(
+        content=[CodeBlock(language="markdown", code=markdown.rstrip())],
+        metadata={
+            "name": spec.name,
+            "exclusive": spec.exclusive,
+            "timeout_s": spec.timeout_s,
+            "has_examples": bool(spec.examples),
+        },
+    )
+
+
+register_tool(
+    name="meta.describe_tool",
+    description=(
+        "Return the full schema + examples for one tool by name. Use this "
+        "when meta.list_tools' one-line summary isn't enough to construct "
+        "a valid call."
+    ),
+    schema={
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": "Exact tool name, e.g. 'git.commit'.",
+            },
+        },
+        "additionalProperties": False,
+    },
+    handler=handle_describe_tool,
+    examples=[
+        {
+            "when": "the agent needs the schema of a rarely-used tool",
+            "args": {"name": "git.push"},
+            "result_summary": "CodeBlock (markdown) with args + examples",
+        }
+    ],
+)
 
 
 register_tool(
