@@ -162,6 +162,52 @@ async def handle_list_tools(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
     )
 
 
+async def handle_what_changed(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
+    recorder = getattr(ctx, "session_recorder", None)
+    if recorder is None:
+        return ToolResult.text(
+            "no session_recorder on ctx (this session doesn't track file changes)"
+        )
+    rows_data = recorder.file_writes()
+    if not rows_data:
+        return ToolResult.text("no files touched by mutating tools this session yet")
+    rows = [[r["path"], r["first_touched_by"], str(r["touches"])] for r in rows_data]
+    return ToolResult(
+        content=[
+            TextBlock(
+                text=f"{len(rows)} file(s) touched by mutating tool calls "
+                "(declared args only — subprocess side effects not tracked)"
+            ),
+            TableBlock(columns=["path", "first_touched_by", "touches"], rows=rows),
+        ],
+        metadata={"files_touched": len(rows), "session_total_calls": len(recorder.records)},
+    )
+
+
+register_tool(
+    name="meta.what_changed",
+    description=(
+        "Return files touched by the agent's mutating tool calls this session "
+        "(git.stage, hunks.stage/reset, fs.write, etc.). Declared-args-only — "
+        "subprocess side effects (task.run, deploy.run) aren't tracked. Use "
+        "this to answer 'what have I changed?' without re-running git.status."
+    ),
+    schema={
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    },
+    handler=handle_what_changed,
+    examples=[
+        {
+            "when": "before drafting a commit message, agent wants to review its own edits",
+            "args": {},
+            "result_summary": "TableBlock listing paths with first_touched_by tool",
+        }
+    ],
+)
+
+
 def _fmt_ts(at: float) -> str:
     """Relative time like '12s', '3m42s', '1h5m'. Frugal: shorter than
     absolute timestamps, agent can reason about recency directly."""
