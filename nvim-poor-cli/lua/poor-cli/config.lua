@@ -125,6 +125,12 @@ M.defaults = {
     -- Health check on setup
     check_health_on_setup = false,
 
+    -- On first entry into a git repo, if .poor-cli/ isn't already in
+    -- .gitignore, pop a small picker asking whether to add it. One-shot
+    -- per repo (decision cached under state_dir/gitignore-nudge-<hash>).
+    -- Set to false to disable the nudge entirely.
+    gitignore_nudge = true,
+
     -- Test file naming patterns per language group
     -- Keys: language group name, Values: pattern string with {base} and {ext} placeholders
     test_file_patterns = {

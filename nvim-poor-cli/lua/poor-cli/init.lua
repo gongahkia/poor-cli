@@ -137,6 +137,10 @@ function M.setup(opts)
             end
         end
 
+        -- First-run .gitignore safety nudge (opt-out via gitignore_nudge=false).
+        local ok_gi, gi = pcall(require, "poor-cli.gitignore_nudge")
+        if ok_gi and type(gi.setup) == "function" then pcall(gi.setup) end
+
         local ok_snacks_dashboard, snacks_dashboard = pcall(require, "poor-cli.snacks_dashboard")
         if ok_snacks_dashboard and type(snacks_dashboard.setup) == "function" then
             snacks_dashboard.setup()
