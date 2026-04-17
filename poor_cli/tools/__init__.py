@@ -20,8 +20,9 @@ from poor_cli.tools import task  # noqa: F401
 from poor_cli.tools import deploy  # noqa: F401
 from poor_cli.tools import watch  # noqa: F401
 from poor_cli.tools import review  # noqa: F401
+from poor_cli.tools import meta  # noqa: F401
 
 __all__ = [
     "_registry", "git", "debug", "diagnostics", "hunks",
-    "fs", "task", "deploy", "watch", "review",
+    "fs", "task", "deploy", "watch", "review", "meta",
 ]
