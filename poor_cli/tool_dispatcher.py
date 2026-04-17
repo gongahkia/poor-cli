@@ -36,6 +36,7 @@ from poor_cli.tool_errors import (
     ToolError,
     TransientError,
 )
+from poor_cli.tool_truncation import DEFAULT_MAX_RESULT_TOKENS, maybe_truncate
 from poor_cli.tools._registry import ToolSpec, get as registry_get
 
 
@@ -352,6 +353,12 @@ async def dispatch_one(
     # without respawning sub-agents. We splice it in non-destructively.
     bound_ctx = _augment_ctx(ctx, _depth)
     result, attempts = await _dispatch_with_retry(spec, bound_ctx, args, effective_policy)
+    # Proposal E.2 — middle-out truncation if the result exceeds the tool's
+    # budget. Applied *before* the cache is populated so cached hits stay
+    # within context budget on every replay.
+    max_tokens = spec.max_result_tokens or DEFAULT_MAX_RESULT_TOKENS
+    if not result.is_error:
+        result = maybe_truncate(result, ctx=bound_ctx, max_result_tokens=max_tokens)
     wall = _now_ms() - t0
     meta = result.metadata or {}
     rec = CallRecord(

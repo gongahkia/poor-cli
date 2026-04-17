@@ -35,6 +35,12 @@ class ToolSpec:
     # Tool names whose cached results this tool's success should invalidate.
     # e.g. git.commit invalidates="git.status git.diff git.log hunks.list".
     invalidates: List[str] = field(default_factory=list)
+    # Proposal E.2 — per-tool override for the result-size truncation
+    # budget. None → dispatcher uses DEFAULT_MAX_RESULT_TOKENS (8000).
+    # Raise it for tools that legitimately produce large structured output
+    # the agent will consume wholesale (rare). Lower it for tools that
+    # shouldn't balloon (chatty subprocess wrappers).
+    max_result_tokens: Optional[int] = None
 
 
 _TOOLS: Dict[str, ToolSpec] = {}
@@ -53,6 +59,7 @@ def register_tool(
     cacheable: bool = False,
     cache_ttl_s: float = 60.0,
     invalidates: Optional[List[str]] = None,
+    max_result_tokens: Optional[int] = None,
 ) -> ToolSpec:
     """Register a Phase-B tool. Called from each tool module at import time.
 
@@ -83,6 +90,7 @@ def register_tool(
         cacheable=cacheable,
         cache_ttl_s=cache_ttl_s,
         invalidates=list(invalidates or []),
+        max_result_tokens=max_result_tokens,
     )
     _TOOLS[name] = spec
     return spec
