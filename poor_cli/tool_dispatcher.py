@@ -339,6 +339,17 @@ async def dispatch_one(
         "wall_time_ms": wall,
         "retry_attempts": attempts,
     }
+    # Proposal D: if the session attached a SessionRecorder to ctx, push
+    # every dispatch into it so meta.call_history + meta.what_changed can
+    # introspect the trace without the agent having to keep it in chat.
+    # The recorder lives on the unwrapped base ctx; the augmented Bound
+    # proxy forwards getattr, so a naive lookup works.
+    recorder = getattr(ctx, "session_recorder", None)
+    if recorder is not None:
+        try:
+            recorder.record(rec, args)
+        except Exception:
+            logger.debug("session_recorder.record raised", exc_info=True)
     return result, rec
 
 
