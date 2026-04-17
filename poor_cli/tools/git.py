@@ -180,6 +180,8 @@ register_tool(
             "result_summary": "branch + table of staged/unstaged/untracked files",
         }
     ],
+    cacheable=True,
+    cache_ttl_s=30.0,
 )
 
 
@@ -233,6 +235,8 @@ register_tool(
             "result_summary": "unified diff of working tree vs HEAD",
         }
     ],
+    cacheable=True,
+    cache_ttl_s=30.0,
 )
 
 
@@ -271,6 +275,8 @@ register_tool(
         "additionalProperties": False,
     },
     handler=handle_stage,
+    exclusive=True,
+    invalidates=["git.status", "git.diff", "hunks.list"],
 )
 
 
@@ -304,6 +310,8 @@ register_tool(
         "additionalProperties": False,
     },
     handler=handle_unstage,
+    exclusive=True,
+    invalidates=["git.status", "git.diff", "hunks.list"],
 )
 
 
@@ -371,6 +379,7 @@ register_tool(
     handler=handle_commit,
     exclusive=True,
     degraded_fallbacks=["cli"],
+    invalidates=["git.status", "git.diff", "git.log", "hunks.list"],
     examples=[
         {
             "when": "user asked for a conventional commit",
@@ -421,6 +430,8 @@ register_tool(
         "additionalProperties": False,
     },
     handler=handle_log,
+    cacheable=True,
+    cache_ttl_s=30.0,
 )
 
 
@@ -486,6 +497,8 @@ register_tool(
     description="List local branches; the current one is marked with `*`.",
     schema={"type": "object", "properties": {}, "additionalProperties": False},
     handler=handle_branch_list,
+    cacheable=True,
+    cache_ttl_s=30.0,
 )
 register_tool(
     name="git.branch.create",
@@ -501,6 +514,7 @@ register_tool(
     },
     handler=handle_branch_create,
     exclusive=True,
+    invalidates=["git.branch.list"],
 )
 register_tool(
     name="git.branch.checkout",
@@ -516,6 +530,7 @@ register_tool(
     },
     handler=handle_branch_checkout,
     exclusive=True,
+    invalidates=["git.branch.list", "git.status", "git.diff", "git.log", "hunks.list"],
 )
 
 

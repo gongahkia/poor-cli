@@ -451,6 +451,8 @@ register_tool(
             "result_summary": "CodeBlock (markdown) with args + examples",
         }
     ],
+    cacheable=True,
+    cache_ttl_s=300.0,
 )
 
 
@@ -486,4 +488,6 @@ register_tool(
             "result_summary": "TableBlock of git.* tools",
         }
     ],
+    cacheable=True,
+    cache_ttl_s=300.0,
 )

@@ -159,6 +159,8 @@ register_tool(
         "additionalProperties": False,
     },
     handler=handle_browse,
+    cacheable=True,
+    cache_ttl_s=30.0,
 )
 
 register_tool(
@@ -175,4 +177,6 @@ register_tool(
         "additionalProperties": False,
     },
     handler=handle_glob,
+    cacheable=True,
+    cache_ttl_s=30.0,
 )

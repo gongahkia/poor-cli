@@ -180,6 +180,8 @@ register_tool(
         "additionalProperties": False,
     },
     handler=handle_list,
+    cacheable=True,
+    cache_ttl_s=30.0,
 )
 
 register_tool(
@@ -198,6 +200,8 @@ register_tool(
         "additionalProperties": False,
     },
     handler=handle_stage,
+    exclusive=True,
+    invalidates=["git.status", "git.diff", "hunks.list"],
 )
 
 register_tool(
@@ -214,6 +218,7 @@ register_tool(
     },
     handler=handle_reset,
     exclusive=True,
+    invalidates=["git.status", "git.diff", "hunks.list", "review.changes"],
 )
 
 register_tool(

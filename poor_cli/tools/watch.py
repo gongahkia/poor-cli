@@ -155,6 +155,8 @@ register_tool(
             "result_summary": "list of file:line directives",
         }
     ],
+    cacheable=True,
+    cache_ttl_s=15.0,
 )
 
 register_tool(
@@ -174,6 +176,7 @@ register_tool(
         "additionalProperties": False,
     },
     handler=handle_directives_consume,
+    invalidates=["watch.directives.list"],
 )
 
 register_tool(

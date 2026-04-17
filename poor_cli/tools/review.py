@@ -158,6 +158,8 @@ register_tool(
     },
     handler=handle_changes,
     timeout_s=60.0,
+    cacheable=True,
+    cache_ttl_s=15.0,
 )
 
 register_tool(
