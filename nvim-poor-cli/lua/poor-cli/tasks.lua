@@ -131,11 +131,11 @@ local function action(method_name, verb, fargs, success_msg)
 end
 
 function M.setup()
-    require("poor-cli.command_spec").install("task", {
-        desc = "Manage durable tasks",
-        verb_names = { "list", "create", "start", "approve", "cancel", "retry", "replay", "show" },
+    -- v6.2: absorbed into :PoorCLIAgent as `task`, `task-create`, etc.
+    local spec = require("poor-cli.command_spec")
+    spec.extend("agent", {
+        verb_prefix = "task-",
         verbs = {
-            list = function() M.open_picker() end,
             create = function()
                 vim.ui.input({ prompt = "Task title: " }, function(title)
                     if not title or title == "" then return end
@@ -161,6 +161,10 @@ function M.setup()
                 end) end)
             end,
         },
+    })
+    -- Bare `task` verb opens the picker.
+    spec.extend("agent", {
+        verbs = { task = function() M.open_picker() end },
     })
 end
 

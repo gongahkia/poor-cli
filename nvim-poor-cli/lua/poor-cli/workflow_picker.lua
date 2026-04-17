@@ -314,21 +314,24 @@ function M.open(opts)
 end
 
 function M.setup()
+    -- v6.2: absorbed into :PoorCLIAgent as `workflow`, `workflow-strategies`, etc.
     local strategies = require("poor-cli.strategies")
-    require("poor-cli.command_spec").install("workflow", {
-        desc = "Browse workflows and reconfigure strategies",
-        verb_names = { "list", "strategies", "reranker", "adaptive-pruning" },
+    local spec = require("poor-cli.command_spec")
+    spec.extend("agent", {
+        verb_prefix = "workflow-",
         verbs = {
-            list = function(fargs) M.open({ tags = fargs }) end,
             strategies = function() strategies.show() end,
             reranker = function(fargs) strategies.set_reranker(fargs[1]) end,
             ["adaptive-pruning"] = function(fargs) strategies.set_adaptive(fargs[1]) end,
         },
         arg_complete = {
-            list = function() return { "time", "git", "ci", "refactor" } end,
             reranker = function() return { "mmr", "cross_encoder", "score_order" } end,
             ["adaptive-pruning"] = function() return { "auto", "on", "off" } end,
         },
+    })
+    -- Bare `workflow` verb.
+    spec.extend("agent", {
+        verbs = { workflow = function(fargs) M.open({ tags = fargs }) end },
     })
 end
 

@@ -225,43 +225,25 @@ This reuses the same enablement rules and completion request shaping as the inli
 | `<leader>pb` | Normal | Toggle nvim-dap breakpoint at a poor-cli `file:line` reference |
 | `<leader>pB` | Normal | Toggle breakpoint and run nvim-dap at a poor-cli `file:line` reference |
 
-### Commands
+### Commands (v6.2)
 
-All commands use strict noun-first form: `:PoorCLI<Noun> <verb> [args]`.
-Tab-completion shows available verbs, then per-verb arguments.
-See `MIGRATION.md` for the full v5→v6 rename table.
+All user interactions are behind **9 top-level commands**. Each takes a verb
+and optional args: `:PoorCLI<Noun> <verb> [args]`. Tab-completion drives
+discovery; the palette (`:PoorCLIHelp palette`) fuzzy-finds across every verb.
 
-| Command | Verbs | Description |
-|---------|-------|-------------|
-| `:PoorCLIServer` | `start stop restart cancel status` | Backend server lifecycle |
-| `:PoorCLIChat` | `toggle send clear retry terse rich queue enqueue queue-clear explain refactor test doc explain-diff fix-failures` | Chat panel and AI code actions (range-aware) |
-| `:PoorCLICompletion` | `trigger accept accept-word accept-line dismiss auto-trigger reason toggle` | Inline ghost-text completion controls |
-| `:PoorCLIHelp` | `palette onboarding keymaps health` | Help surfaces and onboarding |
-| `:PoorCLIPanel` | `open close toggle [name]` | Open/close/toggle named panels (tasks, agents, sessions, automations, memory, cost, history, checkpoints) |
-| `:PoorCLITask` | `list create start approve cancel retry replay show inbox runs` | Durable background tasks |
-| `:PoorCLIAgent` | `list create start cancel logs result` | Background agents |
-| `:PoorCLIAutomation` | `list create enable disable run history replay` | Automation rules |
-| `:PoorCLISession` | `list create switch fork destroy rename save restore branches` | Named sessions and branches |
-| `:PoorCLIMemory` | `list save search delete review review-accept review-reject review-bulk expiring expire expire-run sort` | Persistent memory store |
-| `:PoorCLICheckpoint` | `list save restore delete` | File-state checkpoints |
-| `:PoorCLIHistory` | `list show clear` | Request/response history |
-| `:PoorCLISkill` | `list show run alias-list alias-show alias-run` | Skills and custom command aliases |
-| `:PoorCLIWorkflow` | `list run pick strategy-list strategy-set` | Workflow templates |
-| `:PoorCLIPrompt` | `list open new pin unpin pins` | Prompt library |
-| `:PoorCLIProvider` | `list info switch compare ollama api-key api-key-status api-key-purge` | AI provider management |
-| `:PoorCLIConfig` | `list set toggle qa-toggle input-log chat-trace permission-mode permissions-set sandbox context-budget exec-profile instructions rules picker-backend api-key diagnostics` | Runtime configuration |
-| `:PoorCLIProfile` | `list show apply create delete` | Named configuration profiles |
-| `:PoorCLIContext` | `show pressure breakdown` | Context budget and breakdown |
-| `:PoorCLICost` | `show dashboard savings economy-preset history tokens cache-stats budget compare export estimate` | Cost analytics |
-| `:PoorCLITrust` | `center repo untrust-repo` | Trust center |
-| `:PoorCLIDiag` | `doctor status policy mcp mcp-health tools recovery sandbox-status docker-sandbox inline trouble fix debug-copy log-open state-open write-min-init` | Diagnostics and troubleshooting |
-| `:PoorCLIDiff` | `open compare staged` | Diff viewer |
-| `:PoorCLIReview` | `open approve reject comment` | Code review |
-| `:PoorCLIDeploy` | `run preview targets validate history` | Deployment actions |
-| `:PoorCLISearch` | `open watch` | Semantic search |
-| `:PoorCLIService` | `list start stop restart logs` | Local service management |
-| `:PoorCLIPlan` | `open create export` | Implementation plans |
-| `:PoorCLIAudit` | `open export clear` | Activity audit log |
+| Command | Role | Example verbs |
+|---|---|---|
+| `:PoorCLIChat` | Chat with the agent; inline completion; history; prompts; queue | `toggle send retry explain refactor test doc history prompt completion-accept queue` |
+| `:PoorCLIReview` | Review agent edits; diff panel; timeline; checkpoints; code review | `diff timeline file pr commit lint checkpoint checkpoint-create` |
+| `:PoorCLIContext` | What the agent is told; search; memory; watch; repo-map | `show search memory repo-map memory-save search-index watch` |
+| `:PoorCLIAgent` | Agent runtime: tasks, sessions, plan, skills, workflows, automations, background agents | `runtime plan task session skill workflow automation sub-list` |
+| `:PoorCLICost` | Cost dashboard, audit export | `dashboard show savings estimate audit-export` |
+| `:PoorCLITrust` | Guardrails: permissions, sandbox, profile presets | `center repo profile profile-apply` |
+| `:PoorCLIConfig` | Config, providers, server lifecycle | `set toggle provider server-start permission-mode sandbox` |
+| `:PoorCLIDiag` | Diagnostics, MCP, services, docker sandbox, logs | `status doctor mcp tools service-status log-open` |
+| `:PoorCLIHelp` | Palette, home, onboarding | `palette home onboarding` |
+
+> **`:PoorCLIDeploy` was removed** in v6.2. Deploys are an agent tool: say it in chat (`:PoorCLIChat send deploy staging`).
 
 ### Health Check
 

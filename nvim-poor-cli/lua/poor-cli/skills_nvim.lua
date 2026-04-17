@@ -63,12 +63,12 @@ function M.open_picker()
 end
 
 function M.setup()
+    -- v6.2: absorbed into :PoorCLIAgent as `skill`, `skill-show`, `skill-alias-*`.
     local custom = require("poor-cli.custom_commands")
-    require("poor-cli.command_spec").install("skill", {
-        desc = "Browse skills and custom command aliases",
-        verb_names = { "list", "show", "alias-list", "alias-run" },
+    local spec = require("poor-cli.command_spec")
+    spec.extend("agent", {
+        verb_prefix = "skill-",
         verbs = {
-            list = function() M.open_picker() end,
             show = function(fargs)
                 local name = fargs[1]
                 if not name or name == "" then notify("usage: :PoorCLISkill show <name>", vim.log.levels.WARN); return end
@@ -79,7 +79,7 @@ function M.setup()
             end,
             ["alias-list"] = function() custom.open_picker() end,
             ["alias-run"] = function(fargs)
-                if #fargs < 1 then notify("usage: :PoorCLISkill alias-run <name> [args]", vim.log.levels.WARN); return end
+                if #fargs < 1 then notify("usage: :PoorCLIAgent skill-alias-run <name> [args]", vim.log.levels.WARN); return end
                 local name = fargs[1]
                 local cmd_args = #fargs > 1 and table.concat(fargs, " ", 2) or nil
                 local params = { name = name }
@@ -90,6 +90,10 @@ function M.setup()
                 end) end)
             end,
         },
+    })
+    -- Bare `skill` verb opens the picker.
+    spec.extend("agent", {
+        verbs = { skill = function() M.open_picker() end },
     })
 end
 

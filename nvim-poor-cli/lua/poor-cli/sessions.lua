@@ -64,11 +64,11 @@ local function require_id(fargs, verb)
 end
 
 function M.setup()
-    require("poor-cli.command_spec").install("session", {
-        desc = "Manage conversation sessions",
-        verb_names = { "list", "create", "switch", "fork", "destroy", "rename", "save", "restore", "branches" },
+    -- v6.2: absorbed into :PoorCLIAgent as `session`, `session-create`, etc.
+    local spec = require("poor-cli.command_spec")
+    spec.extend("agent", {
+        verb_prefix = "session-",
         verbs = {
-            list = function() M.open_picker() end,
             create = function()
                 vim.ui.input({ prompt = "Session name: " }, function(name)
                     if not name or name == "" then return end
@@ -122,6 +122,10 @@ function M.setup()
             end,
             branches = function() require("poor-cli.branches").open() end,
         },
+    })
+    -- Bare `session` verb opens the picker.
+    spec.extend("agent", {
+        verbs = { session = function() M.open_picker() end },
     })
 end
 

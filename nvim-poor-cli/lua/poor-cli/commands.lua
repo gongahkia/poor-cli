@@ -280,9 +280,9 @@ function M.setup()
     local spec = require("poor-cli.command_spec")
 
     -- ───────────────────────── Server ─────────────────────────
-    spec.install("server", {
-        desc = "Lifecycle: start, stop, restart, cancel",
-        verb_names = { "start", "stop", "restart", "cancel" },
+    -- v6.2: absorbed into :PoorCLIConfig as `server-start`, etc.
+    spec.extend("config", {
+        verb_prefix = "server-",
         verbs = {
             start = function()
                 local status = rpc.get_status()
@@ -379,9 +379,9 @@ function M.setup()
     })
 
     -- ───────────────────────── Completion ─────────────────────────
-    spec.install("completion", {
-        desc = "Inline completion: trigger, accept, dismiss, toggle",
-        verb_names = { "trigger", "accept", "accept-word", "accept-line", "dismiss", "auto-trigger", "reason", "toggle" },
+    -- v6.2: absorbed into :PoorCLIChat as `completion-*`.
+    spec.extend("chat", {
+        verb_prefix = "completion-",
         verbs = {
             trigger = function() inline.trigger({ manual = true }) end,
             accept = function() inline.accept() end,
@@ -406,7 +406,7 @@ function M.setup()
                 end
             end,
             reason = function() require("poor-cli.ux.completion_reason").report() end,
-            toggle = function() require("poor-cli.ux.completion_reason").toggle_filetype() end,
+            ["filetype-toggle"] = function() require("poor-cli.ux.completion_reason").toggle_filetype() end,
         },
     })
 
@@ -425,20 +425,19 @@ function M.setup()
     })
 
     -- ───────────────────────── Diff ─────────────────────────
-    spec.install("diff", {
-        desc = "Compare files, review staged diff, timeline",
-        verb_names = { "compare", "review", "close", "layout", "timeline", "timeline-cancel" },
+    -- v6.2: absorbed into :PoorCLIReview as `diff`, `diff-compare`, `timeline`, etc.
+    spec.extend("review", {
         verbs = {
-            compare = function(fargs)
-                if #fargs < 2 then _notify("usage: :PoorCLIDiff compare <file1> <file2>", vim.log.levels.WARN); return end
+            ["diff-compare"] = function(fargs)
+                if #fargs < 2 then _notify("usage: :PoorCLIReview diff-compare <file1> <file2>", vim.log.levels.WARN); return end
                 local result, err = rpc.compare_files(fargs[1], fargs[2], 15000)
                 if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
                 local diff_text = type(result) == "table" and (result.diff or vim.inspect(result)) or tostring(result)
                 open_scratch("[poor-cli diff]", diff_text, "diff")
             end,
-            review = function() require("poor-cli.diff_review").open() end,
-            close = function() require("poor-cli.diff_review").close() end,
-            layout = function() require("poor-cli.diff_review").toggle_layout() end,
+            diff = function() require("poor-cli.diff_review").open() end,
+            ["diff-close"] = function() require("poor-cli.diff_review").close() end,
+            ["diff-layout"] = function() require("poor-cli.diff_review").toggle_layout() end,
             timeline = function() require("poor-cli.timeline").toggle() end,
             ["timeline-cancel"] = function() require("poor-cli.timeline").cancel_current() end,
         },
@@ -496,13 +495,13 @@ function M.setup()
     })
 
     -- ───────────────────────── Search ─────────────────────────
-    spec.install("search", {
-        desc = "Semantic search, indexing, watch scan",
-        verb_names = { "run", "index", "stats", "embeddings", "watch", "watch-scan" },
+    -- v6.2: absorbed into :PoorCLIContext as `search`, `search-index`, etc.
+    spec.extend("context", {
+        verb_prefix = "search-",
         verbs = {
             run = function(fargs)
                 local q = table.concat(fargs, " ")
-                if q == "" then _notify("usage: :PoorCLISearch run <query>", vim.log.levels.WARN); return end
+                if q == "" then _notify("usage: :PoorCLIContext search <query>", vim.log.levels.WARN); return end
                 rpc.hybrid_search(q, 20, function(result, err) vim.schedule(function()
                     if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
                     local results = (result or {}).results or result or {}
@@ -558,20 +557,40 @@ function M.setup()
             end,
         },
     })
+    -- Bare `search` verb takes the query directly.
+    spec.extend("context", {
+        verbs = {
+            search = function(fargs)
+                local q = table.concat(fargs, " ")
+                if q == "" then _notify("usage: :PoorCLIContext search <query>", vim.log.levels.WARN); return end
+                rpc.hybrid_search(q, 20, function(result, err) vim.schedule(function()
+                    if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                    local results = (result or {}).results or result or {}
+                    local lines = { "# search: " .. q, "" }
+                    for i, r in ipairs(results) do
+                        local path = r.path or r.file or "?"
+                        local score = r.score and string.format(" (%.2f)", r.score) or ""
+                        table.insert(lines, string.format("%d. `%s`%s", i, path, score))
+                        if r.snippet or r.content then table.insert(lines, "   " .. (r.snippet or r.content):sub(1, 120)) end
+                    end
+                    if #results == 0 then table.insert(lines, "no results") end
+                    open_scratch("[poor-cli search]", table.concat(lines, "\n"))
+                end) end)
+            end,
+        },
+    })
 
     -- ───────────────────────── Plan ─────────────────────────
-    spec.install("plan", {
-        desc = "Plan board",
-        verb_names = { "open" },
-        verbs = { open = function() require("poor-cli.plan_board").open() end },
+    -- v6.2: absorbed into :PoorCLIAgent as `plan`.
+    spec.extend("agent", {
+        verbs = { plan = function() require("poor-cli.plan_board").open() end },
     })
 
     -- ───────────────────────── Audit ─────────────────────────
-    spec.install("audit", {
-        desc = "Audit log export",
-        verb_names = { "export" },
+    -- v6.2: absorbed into :PoorCLICost as `audit-export`.
+    spec.extend("cost", {
         verbs = {
-            export = function(fargs)
+            ["audit-export"] = function(fargs)
                 local raw = table.concat(fargs, " ")
                 rpc.request("audit/exportRange", parse_audit_export_args(raw), function(result, err) vim.schedule(function()
                     if err then _notify("Audit export failed: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
@@ -586,9 +605,9 @@ function M.setup()
     })
 
     -- ───────────────────────── Profile ─────────────────────────
-    spec.install("profile", {
-        desc = "Execution profile management",
-        verb_names = { "list", "apply" },
+    -- v6.2: absorbed into :PoorCLITrust as `profile`, `profile-apply`.
+    spec.extend("trust", {
+        verb_prefix = "profile-",
         verbs = {
             list = function()
                 local result, err = rpc.list_profiles(10000)
@@ -705,53 +724,12 @@ function M.setup()
         },
     })
 
-    -- Deploy: run + preview + preview-start/stop/status
-    spec.extend("deploy", {
-        verbs = {
-            run = function(fargs)
-                local target = fargs[1]
-                rpc.deploy({ target = target }, function(result, err) vim.schedule(function()
-                    if err then _notify("deploy: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
-                    open_scratch("[poor-cli deploy]", type(result) == "table" and vim.inspect(result) or tostring(result), "markdown")
-                end) end)
-            end,
-            preview = function(fargs)
-                local port = fargs[1]
-                local msg = "/preview" .. (port and (" --port " .. port) or "")
-                rpc.request("poor-cli/chat", { message = msg }, function(result, err) vim.schedule(function()
-                    if err then _notify("preview: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
-                    if result and result.content then _notify(result.content, vim.log.levels.INFO) end
-                end) end)
-            end,
-            ["preview-start"] = function(fargs)
-                local port = tonumber(fargs[1]) or nil
-                rpc.request("poor-cli/previewStart", { port = port }, function(result, err) vim.schedule(function()
-                    if err then _notify("preview start: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
-                    local info = result or {}
-                    _notify("preview started" .. (info.url and (": " .. info.url) or ""), vim.log.levels.INFO)
-                end) end)
-            end,
-            ["preview-stop"] = function()
-                rpc.request("poor-cli/previewStop", {}, function(_, err) vim.schedule(function()
-                    if err then _notify(rpc.format_error(err), vim.log.levels.ERROR)
-                    else _notify("preview stopped", vim.log.levels.INFO) end
-                end) end)
-            end,
-            ["preview-status"] = function()
-                local result, err = rpc.request_sync("poor-cli/previewStatus", {}, 5000)
-                if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                local info = result or {}
-                _notify(string.format("preview: %s%s",
-                    tostring(info.running and "running" or "stopped"),
-                    info.url and (" at " .. info.url) or ""), vim.log.levels.INFO)
-            end,
-        },
-    })
+    -- v6.2: :PoorCLIDeploy has been removed. Deploy is now an agent tool; ask
+    -- the agent via chat: `:PoorCLIChat send deploy <target>`. See MIGRATION.md v6.2.
 
-    -- Service: split out the old subcommand mux into verbs.
-    spec.install("service", {
-        desc = "Manage background services",
-        verb_names = { "start", "stop", "status", "logs" },
+    -- Service: v6.2 absorbed into :PoorCLIDiag as `service-*`.
+    spec.extend("diag", {
+        verb_prefix = "service-",
         verbs = {
             start = function(fargs)
                 local name = fargs[1]; if not name then _notify("usage: :PoorCLIService start <name> [cmd...]", vim.log.levels.WARN); return end

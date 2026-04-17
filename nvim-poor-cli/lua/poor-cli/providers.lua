@@ -102,11 +102,11 @@ function M.setup()
         end,
     })
     local cfg_mgr = require("poor-cli.config_mgr")
-    require("poor-cli.command_spec").install("provider", {
-        desc = "Browse, switch, and inspect AI providers",
-        verb_names = { "list", "info", "switch", "compare", "ollama", "api-key-status", "api-key-purge" },
+    local spec = require("poor-cli.command_spec")
+    -- v6.2: absorbed into :PoorCLIConfig as `provider`, `provider-info`, etc.
+    spec.extend("config", {
+        verb_prefix = "provider-",
         verbs = {
-            list = function() M.open_picker() end,
             info = function()
                 M.get_info({}, function(result, err) vim.schedule(function()
                     if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
@@ -122,6 +122,10 @@ function M.setup()
                 cfg_mgr.api_key_purge_flow(provider)
             end,
         },
+    })
+    -- Bare `provider` verb opens the picker.
+    spec.extend("config", {
+        verbs = { provider = function() M.open_picker() end },
     })
 end
 

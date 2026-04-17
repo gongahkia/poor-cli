@@ -14,6 +14,12 @@ local M = {}
 -- this module to depend on every feature module, breaking lazy-loading.
 M._specs = {}
 
+-- Pending extends: if extend() is called on a noun before install(), the
+-- partial is queued here and replayed when install() happens. Fixes the
+-- EAGER_SETUPS ordering hazard in init.lua (commands runs first but extends
+-- nouns that later modules install).
+M._pending_extends = {}
+
 -- register associates a noun key (lowercase, matches :PoorCLI<Noun>) with its
 -- spec table. Called from each noun module.
 --
@@ -133,6 +139,12 @@ function M.install(noun, spec, create_cmd)
         desc = spec.desc,
         complete = M.make_complete(noun),
     })
+    -- Replay any extends that were queued before this install.
+    local queued = M._pending_extends[noun]
+    if queued then
+        M._pending_extends[noun] = nil
+        for _, partial in ipairs(queued) do M.extend(noun, partial) end
+    end
 end
 
 -- Extend an already-registered noun with additional verbs. Used when a noun's
@@ -140,24 +152,53 @@ end
 -- config_mgr.lua and commands.lua). The :PoorCLI<Noun> command must already
 -- have been installed by one module (the "owner") before any other module
 -- calls extend(). New verb_names are appended in order; duplicates overwrite.
+--
+-- opts.verb_prefix (v6.2): string prepended to every verb name in the partial
+-- spec before merging. Lets absorbed nouns register their verbs under a new
+-- noun without name collisions. Example: during v6.2 collapse, history_browser
+-- calls spec.extend("chat", { verb_prefix = "history-", verbs = { list = ... } })
+-- which registers verb "history-list" on the chat noun.
 function M.extend(noun, partial)
-    local spec = M._specs[noun]
-    assert(spec, "cannot extend unregistered noun '" .. noun .. "' — install it first")
     assert(type(partial) == "table", "partial spec required")
+    local spec = M._specs[noun]
+    if not spec then
+        -- Queue for replay at install time. The EAGER_SETUPS ordering in
+        -- init.lua may call extend() before the owning module's install().
+        M._pending_extends[noun] = M._pending_extends[noun] or {}
+        table.insert(M._pending_extends[noun], partial)
+        return
+    end
+    local prefix = partial.verb_prefix or ""
     if partial.verbs then
         for verb, handler in pairs(partial.verbs) do
-            if not spec.verbs[verb] then
-                table.insert(spec.verb_names, verb)
+            local name = prefix .. verb
+            if not spec.verbs[name] then
+                table.insert(spec.verb_names, name)
             end
-            spec.verbs[verb] = handler
+            spec.verbs[name] = handler
+        end
+    end
+    if partial.verb_names then
+        -- Honor an explicit verb_names list when the caller wants to override
+        -- the pairs()-order for completion. Prefixed identically.
+        for _, verb in ipairs(partial.verb_names) do
+            local name = prefix .. verb
+            local seen = false
+            for _, existing in ipairs(spec.verb_names) do
+                if existing == name then seen = true; break end
+            end
+            if not seen then table.insert(spec.verb_names, name) end
         end
     end
     if partial.arg_complete then
         spec.arg_complete = spec.arg_complete or {}
         for verb, fn in pairs(partial.arg_complete) do
-            spec.arg_complete[verb] = fn
+            spec.arg_complete[prefix .. verb] = fn
         end
     end
 end
+
+-- Alias for tests — reads the underlying registry without exposing internals.
+M._registry = M._specs
 
 return M

@@ -118,11 +118,9 @@ describe("picker adapter", function()
         assert.are.same({ "A", "B" }, picked)
     end)
 
-    it("registers PoorCLIPickerBackend command", function()
-        fake_snacks()
-        local picker = load_picker()
-        picker.setup()
-        assert.truthy(vim.api.nvim_get_commands({}).PoorCLIPickerBackend)
-        pcall(vim.api.nvim_del_user_command, "PoorCLIPickerBackend")
+    it("picker backend select lives at :PoorCLIConfig picker-backend in v6.2", function()
+        -- The PoorCLIPickerBackend command was removed; selection is now a
+        -- config verb handled by config_mgr.
+        assert.is_nil(vim.api.nvim_get_commands({}).PoorCLIPickerBackend)
     end)
 end)

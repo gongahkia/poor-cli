@@ -93,12 +93,16 @@ local function require_id(fargs, verb)
 end
 
 function M.setup()
+    -- v6.2: agent is the umbrella noun for tasks/sessions/automations/skills/
+    -- workflow/plan + background agents themselves. This module installs the
+    -- noun; other modules extend it. Agents' own verbs are prefixed `sub-`
+    -- to disambiguate from cluster-peer verbs.
     require("poor-cli.command_spec").install("agent", {
-        desc = "Manage background agents",
-        verb_names = { "list", "create", "start", "cancel", "logs", "result" },
+        desc = "Agent runtime: background agents, tasks, sessions, plan, skills, workflows, automations",
+        verb_names = { "sub-list", "sub-create", "sub-start", "sub-cancel", "sub-logs", "sub-result" },
         verbs = {
-            list = function() M.open_picker() end,
-            create = function()
+            ["sub-list"] = function() M.open_picker() end,
+            ["sub-create"] = function()
                 vim.ui.input({ prompt = "Agent name: " }, function(name)
                     if not name or name == "" then return end
                     vim.ui.input({ prompt = "Agent prompt: " }, function(prompt)
@@ -110,29 +114,29 @@ function M.setup()
                     end)
                 end)
             end,
-            start = function(fargs)
-                local id = require_id(fargs, "start"); if not id then return end
+            ["sub-start"] = function(fargs)
+                local id = require_id(fargs, "sub-start"); if not id then return end
                 M.start({ agentId = id }, function(_, err) vim.schedule(function()
                     if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
                     else notify("agent started", vim.log.levels.INFO) end
                 end) end)
             end,
-            cancel = function(fargs)
-                local id = require_id(fargs, "cancel"); if not id then return end
+            ["sub-cancel"] = function(fargs)
+                local id = require_id(fargs, "sub-cancel"); if not id then return end
                 M.cancel({ agentId = id }, function(_, err) vim.schedule(function()
                     if err then notify(rpc.format_error(err), vim.log.levels.ERROR)
                     else notify("agent cancelled", vim.log.levels.INFO) end
                 end) end)
             end,
-            logs = function(fargs)
-                local id = require_id(fargs, "logs"); if not id then return end
+            ["sub-logs"] = function(fargs)
+                local id = require_id(fargs, "sub-logs"); if not id then return end
                 M.get_logs({ agentId = id }, function(result, err) vim.schedule(function()
                     if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
                     show_detail("[poor-cli agent logs " .. id .. "]", result)
                 end) end)
             end,
-            result = function(fargs)
-                local id = require_id(fargs, "result"); if not id then return end
+            ["sub-result"] = function(fargs)
+                local id = require_id(fargs, "sub-result"); if not id then return end
                 M.get_result({ agentId = id }, function(result, err) vim.schedule(function()
                     if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
                     show_detail("[poor-cli agent result " .. id .. "]", result)

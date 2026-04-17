@@ -188,144 +188,91 @@ diagnostics_enabled ~
 
 COMMANDS                                                *poor-cli-commands*
 
-All commands follow strict noun-first form: `:PoorCLI<Noun> <verb> [args]`.
-Tab-completion shows available verbs after the noun, then per-verb arguments.
-
-For the v5→v6 rename table and sed migration recipes see MIGRATION.md.
-                                                        *poor-cli-migration-v6*
-
-:PoorCLIServer {verb}                                   *:PoorCLIServer*
-    Manage the backend server process.
-    Verbs: start  stop  restart  cancel  status
+All user surfaces are behind 9 top-level commands. Each takes a verb and
+optional args: `:PoorCLI<Noun> <verb> [args]`. Tab-completion lists verbs.
+Legacy v5/v6.0/v6.1 command names were absorbed into these 9; see the table
+below and your prior history/keymaps for any renames you must apply.
 
 :PoorCLIChat {verb} [args]                              *:PoorCLIChat*
-    Chat panel and AI code actions (range-aware).
+    Talk to the agent; inline completion; history; prompts; queue.
     Verbs: toggle  send  clear  retry  terse  rich
            queue  enqueue  queue-clear
-           explain  refactor  test  doc
-           explain-diff  fix-failures
-
-:PoorCLICompletion {verb}                               *:PoorCLICompletion*
-    Inline ghost-text completion controls.
-    Verbs: trigger  accept  accept-word  accept-line  dismiss
-           auto-trigger  reason  toggle
-
-:PoorCLIHelp {verb}                                     *:PoorCLIHelp*
-    Help surfaces and onboarding.
-    Verbs: palette  onboarding  keymaps  health
-
-:PoorCLIPanel {verb} [name]                             *:PoorCLIPanel*
-    Open, close, or toggle any named panel.
-    Verbs: open  close  toggle
-    Names: tasks  agents  sessions  automations  memory  cost
-           history  checkpoints  (Tab to complete)
-
-:PoorCLITask {verb} [args]                              *:PoorCLITask*
-    Manage durable background tasks.
-    Verbs: list  create  start  approve  cancel  retry  replay
-           show  inbox  runs
-
-:PoorCLIAgent {verb} [args]                             *:PoorCLIAgent*
-    Manage background agents.
-    Verbs: list  create  start  cancel  logs  result
-
-:PoorCLIAutomation {verb} [args]                        *:PoorCLIAutomation*
-    Manage automation rules.
-    Verbs: list  create  enable  disable  run  history  replay
-
-:PoorCLISession {verb} [args]                           *:PoorCLISession*
-    Manage named sessions and branches.
-    Verbs: list  create  switch  fork  destroy  rename
-           save  restore  branches
-
-:PoorCLIMemory {verb} [args]                            *:PoorCLIMemory*
-    Browse and manage the persistent memory store.
-    Verbs: list  save  search  delete  review  review-accept
-           review-reject  review-bulk  expiring  expire  expire-run  sort
-
-:PoorCLICheckpoint {verb} [args]                        *:PoorCLICheckpoint*
-    Browse and restore file-state checkpoints.
-    Verbs: list  save  restore  delete
-
-:PoorCLIHistory {verb} [args]                           *:PoorCLIHistory*
-    Browse request/response history.
-    Verbs: list  show  clear
-
-:PoorCLISkill {verb} [args]                             *:PoorCLISkill*
-    Skills and custom command aliases.
-    Verbs: list  show  run  alias-list  alias-show  alias-run
-
-:PoorCLIWorkflow {verb} [args]                          *:PoorCLIWorkflow*
-    Workflow templates and execution strategies.
-    Verbs: list  run  pick  strategy-list  strategy-set
-
-:PoorCLIPrompt {verb} [args]                            *:PoorCLIPrompt*
-    Prompt library and pinned prompts.
-    Verbs: list  open  new  pin  unpin  pins
-
-:PoorCLIProvider {verb} [args]                          *:PoorCLIProvider*
-    AI provider management.
-    Verbs: list  info  switch  compare  ollama
-           api-key  api-key-status  api-key-purge
-
-:PoorCLIConfig {verb} [args]                            *:PoorCLIConfig*
-    View and edit runtime configuration.
-    Verbs: list  set  toggle  qa-toggle  input-log  chat-trace
-           permission-mode  permissions-set
-           sandbox  context-budget  exec-profile  instructions
-           rules  picker-backend  api-key  diagnostics
-
-:PoorCLIProfile {verb} [args]                           *:PoorCLIProfile*
-    Manage named configuration profiles.
-    Verbs: list  show  apply  create  delete
-
-:PoorCLIContext {verb}                                  *:PoorCLIContext*
-    Context budget and breakdown.
-    Verbs: show  pressure  breakdown
-
-:PoorCLICost {verb}                                     *:PoorCLICost*
-    Cost analytics and budgets.
-    Verbs: show  dashboard  savings  economy-preset  history
-           tokens  cache-stats  budget  compare  export  estimate
-
-:PoorCLITrust {verb}                                    *:PoorCLITrust*
-    Provider, sandbox, rollback, policy, and privacy posture.
-    Verbs: show  sandbox  policy  rollback  privacy
-
-:PoorCLIDiag {verb}                                     *:PoorCLIDiag*
-    Diagnostics and troubleshooting.
-    Verbs: doctor  status  policy  mcp  mcp-health  tools
-           recovery  sandbox-status  docker-sandbox  inline
-           trouble  fix  debug-copy  log-open  state-open
-           write-min-init
-
-:PoorCLIDiff {verb} [args]                              *:PoorCLIDiff*
-    Diff viewer.
-    Verbs: open  compare  staged
+           explain  refactor  test  doc  explain-diff  fix-failures
+           history  history-search  history-export
+           prompt  prompt-save  prompt-load  prompt-delete  prompt-pins
+           completion-trigger  completion-accept  completion-accept-word
+           completion-accept-line  completion-dismiss
+           completion-auto-trigger  completion-reason  completion-filetype-toggle
 
 :PoorCLIReview {verb} [args]                            *:PoorCLIReview*
-    Code review actions.
-    Verbs: open  approve  reject  comment
+    Review agent edits: diff panel, timeline, checkpoints, canned code review.
+    Verbs: file  pr  commit  lint
+           diff  diff-compare  diff-close  diff-layout
+           timeline  timeline-cancel
+           checkpoint  checkpoint-create  checkpoint-preview  checkpoint-gc
 
-:PoorCLIDeploy {verb} [args]                            *:PoorCLIDeploy*
-    Deployment actions.
-    Verbs: run  preview  targets  validate  history
+:PoorCLIContext {verb} [args]                           *:PoorCLIContext*
+    What the agent is told: context panel, search, memory, watch, repo-map.
+    Verbs: show  explain  repo-map  compact-strategy
+           search  search-index  search-stats  search-embeddings
+           search-watch  search-watch-scan
+           memory  memory-save  memory-search  memory-delete
+           memory-review  memory-review-accept  memory-review-reject
+           memory-review-bulk  memory-expiring  memory-expire
+           memory-expire-run  memory-sort
 
-:PoorCLISearch {verb} [args]                            *:PoorCLISearch*
-    Semantic search.
-    Verbs: open  watch
+:PoorCLIAgent {verb} [args]                             *:PoorCLIAgent*
+    Agent runtime: tasks, sessions, plan, skills, workflows, automations,
+    background sub-agents.
+    Verbs: runtime  plan
+           panel-open  panel-close  panel-toggle
+           task  task-create  task-start  task-approve  task-cancel
+           task-retry  task-replay  task-show
+           session  session-create  session-switch  session-fork
+           session-destroy  session-rename  session-save  session-restore
+           session-branches
+           skill  skill-show  skill-alias-list  skill-alias-run
+           workflow  workflow-strategies  workflow-reranker
+           workflow-adaptive-pruning
+           automation  automation-create  automation-enable
+           automation-disable  automation-run  automation-history
+           automation-replay
+           sub-list  sub-create  sub-start  sub-cancel  sub-logs  sub-result
 
-:PoorCLIService {verb} [args]                           *:PoorCLIService*
-    Local service management.
-    Verbs: list  start  stop  restart  logs
+:PoorCLICost {verb} [args]                              *:PoorCLICost*
+    Cost dashboard, audit export, token/estimate tooling.
+    Verbs: show  dashboard  savings  economy-preset  history
+           tokens  cache-stats  budget  compare  export  estimate
+           pressure  breakdown  audit-export
 
-:PoorCLIPlan {verb} [args]                              *:PoorCLIPlan*
-    Implementation plan management.
-    Verbs: open  create  export
+:PoorCLITrust {verb} [args]                             *:PoorCLITrust*
+    Guardrails: permissions, sandbox, trust center, preset profiles.
+    Verbs: center  repo  untrust-repo
+           profile  profile-apply
 
-:PoorCLIAudit {verb} [args]                             *:PoorCLIAudit*
-    Activity audit log.
-    Verbs: open  export  clear
+:PoorCLIConfig {verb} [args]                            *:PoorCLIConfig*
+    Runtime config: settings, providers, server lifecycle.
+    Verbs: list  set  toggle  qa-toggle  input-log  chat-trace
+           permission-mode  permissions-set  sandbox
+           context-budget  exec-profile  instructions  rules
+           picker-backend  api-key
+           server-start  server-stop  server-restart  server-cancel
+           provider  provider-info  provider-switch  provider-compare
+           provider-ollama  provider-api-key-status  provider-api-key-purge
+
+:PoorCLIDiag {verb} [args]                              *:PoorCLIDiag*
+    Diagnostics, MCP, services, docker sandbox, logs.
+    Verbs: status  doctor  policy  mcp  mcp-health  tools
+           inline  trouble  fix  docker-sandbox  debug-copy
+           log-open  state-open  write-min-init
+           service-start  service-stop  service-status  service-logs
+
+:PoorCLIHelp {verb}                                     *:PoorCLIHelp*
+    Palette, home nav, onboarding wizard.
+    Verbs: palette  home  onboarding
+
+Removed in v6.2: `:PoorCLIDeploy *`. Deploys are an agent tool; say it in
+chat: `:PoorCLIChat send deploy <target>`.
 
 KEYMAPS                                                 *poor-cli-keymaps*
 

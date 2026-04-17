@@ -60,17 +60,16 @@ function M.open_picker(query)
 end
 
 function M.setup()
-    require("poor-cli.command_spec").install("history", {
-        desc = "Browse and export conversation history",
-        verb_names = { "list", "search", "export" },
+    -- v6.2: absorbed into :PoorCLIChat as `history`, `history-search`, `history-export`.
+    require("poor-cli.command_spec").extend("chat", {
         verbs = {
-            list = function() M.open_picker() end,
-            search = function(fargs)
+            history = function() M.open_picker() end,
+            ["history-search"] = function(fargs)
                 local q = table.concat(fargs, " ")
-                if q == "" then notify("usage: :PoorCLIHistory search <query>", vim.log.levels.WARN); return end
+                if q == "" then notify("usage: :PoorCLIChat history-search <query>", vim.log.levels.WARN); return end
                 M.open_picker(q)
             end,
-            export = function()
+            ["history-export"] = function()
                 M.export({}, function(result, err) vim.schedule(function()
                     if err then notify(rpc.format_error(err), vim.log.levels.ERROR); return end
                     local content = (result or {}).content or (result or {}).markdown or vim.inspect(result)

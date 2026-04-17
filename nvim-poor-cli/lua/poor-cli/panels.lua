@@ -96,9 +96,10 @@ function M.setup()
 
     local spec = require("poor-cli.command_spec")
 
-    spec.install("panel", {
-        desc = "Open, close, or toggle poor-cli info panels",
-        verb_names = { "open", "close", "toggle" },
+    -- v6.2: panel + runtime collapsed into :PoorCLIAgent as `panel-*` / `runtime`.
+    local runtime_tabs = { "tasks", "agents", "sessions", "automations" }
+    spec.extend("agent", {
+        verb_prefix = "panel-",
         verbs = {
             open   = function(fargs) apply("open", fargs) end,
             close  = function(fargs) apply("close", fargs) end,
@@ -110,21 +111,12 @@ function M.setup()
             toggle = panel_name_complete,
         },
     })
-
-    -- :PoorCLIRuntime is the canonical verb form for the tabbed runtime panel;
-    -- :PoorCLIPanel remains as an alias via the runtime_proxy entries above.
-    local runtime_tabs = { "tasks", "agents", "sessions", "automations" }
-    spec.install("runtime", {
-        desc = "Open, close, or toggle the runtime panel (tasks/agents/sessions/automations)",
-        verb_names = { "open", "close", "toggle" },
+    spec.extend("agent", {
         verbs = {
-            open   = function(fargs) require("poor-cli.panels.runtime").open(fargs and fargs[1]) end,
-            close  = function()      require("poor-cli.panels.runtime").close() end,
-            toggle = function(fargs) require("poor-cli.panels.runtime").toggle(fargs and fargs[1]) end,
+            runtime = function(fargs) require("poor-cli.panels.runtime").toggle(fargs and fargs[1]) end,
         },
         arg_complete = {
-            open   = function() return runtime_tabs end,
-            toggle = function() return runtime_tabs end,
+            runtime = function() return runtime_tabs end,
         },
     })
 

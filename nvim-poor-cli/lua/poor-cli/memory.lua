@@ -75,15 +75,11 @@ local function require_arg(fargs, verb, label)
 end
 
 function M.setup()
-    require("poor-cli.command_spec").install("memory", {
-        desc = "Manage memory entries",
-        verb_names = {
-            "list", "save", "search", "delete", "review",
-            "review-accept", "review-reject", "review-bulk",
-            "expiring", "expire", "expire-run", "sort",
-        },
+    -- v6.2: absorbed into :PoorCLIContext as `memory`, `memory-save`, etc.
+    local spec = require("poor-cli.command_spec")
+    spec.extend("context", {
+        verb_prefix = "memory-",
         verbs = {
-            list = function() M.open_picker() end,
             save = function()
                 vim.ui.input({ prompt = "Memory key: " }, function(key)
                     if not key or key == "" then return end
@@ -209,6 +205,10 @@ function M.setup()
             ["review-bulk"] = function() return { "accept", "reject" } end,
             ["expire-run"] = function() return { "dry" } end,
         },
+    })
+    -- Bare `memory` verb opens the picker.
+    spec.extend("context", {
+        verbs = { memory = function() M.open_picker() end },
     })
 end
 

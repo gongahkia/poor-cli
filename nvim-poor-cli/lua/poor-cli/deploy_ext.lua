@@ -18,9 +18,11 @@ end
 local function notify(msg, level) require("poor-cli.notify").notify("[poor-cli] " .. msg, level) end
 
 function M.setup()
-    -- Deploy dispatcher is owned by deploy_ext.lua. commands.lua extends it
-    -- with `run`, `preview`, `preview-start`, `preview-stop`, `preview-status`
-    -- via command_spec.extend("deploy", ...).
+    -- v6.2: :PoorCLIDeploy has been removed outright. Deploy is invoked via the
+    -- agent in v6.3 (see PROPOSALB-TODO.md). This module keeps its RPC helpers
+    -- (M.* functions and the rpc calls they wrap) so backend tools can still
+    -- reach deploy state, but registers no user-facing command.
+    if false then
     require("poor-cli.command_spec").install("deploy", {
         desc = "Deployment targets, validation, history, previews",
         verb_names = { "targets", "validate", "history" },
@@ -66,6 +68,7 @@ function M.setup()
             end,
         },
     })
+    end
 end
 
 return M

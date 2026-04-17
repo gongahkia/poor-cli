@@ -94,11 +94,11 @@ function M.open_picker()
 end
 
 function M.setup()
-    require("poor-cli.command_spec").install("checkpoint", {
-        desc = "Manage filesystem checkpoints",
-        verb_names = { "list", "create", "preview", "gc" },
+    -- v6.2: absorbed into :PoorCLIReview as `checkpoint`, `checkpoint-create`, etc.
+    local spec = require("poor-cli.command_spec")
+    spec.extend("review", {
+        verb_prefix = "checkpoint-",
         verbs = {
-            list = function() M.open_picker() end,
             create = function()
                 vim.ui.input({ prompt = "Checkpoint label: " }, function(label)
                     if not label or label == "" then return end
@@ -123,6 +123,10 @@ function M.setup()
                 end) end)
             end,
         },
+    })
+    -- Bare "checkpoint" verb opens the picker.
+    spec.extend("review", {
+        verbs = { checkpoint = function() M.open_picker() end },
     })
 end
 

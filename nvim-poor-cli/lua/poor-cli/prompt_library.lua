@@ -211,11 +211,10 @@ end
 local function notify(msg, level) require("poor-cli.notify").notify("[poor-cli] " .. msg, level) end
 
 function M.setup()
-    require("poor-cli.command_spec").install("prompt", {
-        desc = "Manage saved prompts and turn pins",
-        verb_names = { "list", "save", "load", "delete", "pins" },
+    -- v6.2: absorbed into :PoorCLIChat as `prompt`, `prompt-save`, `prompt-load`, `prompt-delete`, `prompt-pins`.
+    require("poor-cli.command_spec").extend("chat", {
+        verb_prefix = "prompt-",
         verbs = {
-            list = function() M.open() end,
             save = function()
                 vim.ui.input({ prompt = "Prompt name: " }, function(name)
                     if not name or name == "" then return end
@@ -253,6 +252,10 @@ function M.setup()
             end,
             pins = function() require("poor-cli.pins_list").open() end,
         },
+    })
+    -- Bare "prompt" verb opens the picker (the non-prefixed verb).
+    require("poor-cli.command_spec").extend("chat", {
+        verbs = { prompt = function() M.open() end },
     })
 end
 

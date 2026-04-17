@@ -91,11 +91,11 @@ local function require_id(fargs, verb)
 end
 
 function M.setup()
-    require("poor-cli.command_spec").install("automation", {
-        desc = "Manage scheduled automations",
-        verb_names = { "list", "create", "enable", "disable", "run", "history", "replay" },
+    -- v6.2: absorbed into :PoorCLIAgent as `automation`, `automation-create`, etc.
+    local spec = require("poor-cli.command_spec")
+    spec.extend("agent", {
+        verb_prefix = "automation-",
         verbs = {
-            list = function() M.open_picker() end,
             create = function()
                 vim.ui.input({ prompt = "Automation name: " }, function(name)
                     if not name or name == "" then return end
@@ -147,6 +147,10 @@ function M.setup()
                 end) end)
             end,
         },
+    })
+    -- Bare `automation` verb opens the picker.
+    spec.extend("agent", {
+        verbs = { automation = function() M.open_picker() end },
     })
 end
 
