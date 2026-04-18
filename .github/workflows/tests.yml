@@ -215,6 +215,31 @@ jobs:
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/pip install -e .
 
+      - name: Run startup profile (head)
+        run: .venv/bin/python bench/startup_profile.py --runs 30 --output bench-head.json
+
+      - name: Compare startup profile against base (PR)
+        if: github.event_name == 'pull_request'
+        run: |
+          HEAD_SHA="$(git rev-parse HEAD)"
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          git checkout --detach "$BASE_SHA"
+          .venv/bin/pip install -e .
+          .venv/bin/python bench/startup_profile.py --runs 30 --output bench-base.json
+          git checkout --detach "$HEAD_SHA"
+          .venv/bin/pip install -e .
+          .venv/bin/python bench/perf_compare.py --baseline bench-base.json --candidate bench-head.json
+
+      - name: Upload startup benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: startup-profile-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            bench-head.json
+            bench-base.json
+          if-no-files-found: ignore
+
       - name: Run perf guardrails (PR soft)
         if: github.event_name == 'pull_request'
         env:

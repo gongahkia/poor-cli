@@ -1,4 +1,4 @@
-.PHONY: cli server install installer install-info dev build run test test-unit test-lua lint bench-swe release clean help hooks
+.PHONY: cli server install installer install-info dev build run test test-unit test-lua lint bench-swe bench-startup-profile bench-perf-compare release clean help hooks
 
 PYTHON := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/python,python3)
 PIP := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/pip,pip)
@@ -87,6 +87,12 @@ index: ## build/refresh the semantic search index
 bench-swe: ## run SWE-bench Lite with explicit cost warning
 	@echo "COST WARNING: SWE-bench Lite runs poor-cli over model-backed tasks and can incur API charges plus Docker evaluation cost."
 	@printf "Type RUN SWE BENCH to continue: "; read confirm; if [ "$$confirm" != "RUN SWE BENCH" ]; then echo "aborted"; exit 1; fi; $(PYTHON) bench/swe_bench_lite/run.py --confirm-cost $(ARGS)
+
+bench-startup-profile: ## run startup/quick-quit percentile profile (ARGS='--runs 30 --output bench-head.json')
+	$(PYTHON) bench/startup_profile.py $(ARGS)
+
+bench-perf-compare: ## compare two startup profile jsons (ARGS='--baseline a.json --candidate b.json')
+	$(PYTHON) bench/perf_compare.py $(ARGS)
 
 release: ## build + publish Python release artifacts
 	$(PYTHON) -m build

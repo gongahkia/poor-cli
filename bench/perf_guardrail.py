@@ -35,6 +35,31 @@ def _json_line_from_stdout(stdout: str) -> Dict[str, object]:
     raise RuntimeError(f"missing json payload: {stdout!r}")
 
 
+def _percentile(values: List[float], pct: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(float(v) for v in values)
+    if len(ordered) == 1:
+        return ordered[0]
+    target = max(0.0, min(100.0, float(pct)))
+    idx = (target / 100.0) * (len(ordered) - 1)
+    lo = int(idx)
+    hi = min(lo + 1, len(ordered) - 1)
+    if lo == hi:
+        return ordered[lo]
+    weight = idx - lo
+    return ordered[lo] * (1.0 - weight) + ordered[hi] * weight
+
+
+def _latency_summary(metric: str, values: List[float]) -> Dict[str, float]:
+    return {
+        f"{metric}_mean_ms": statistics.mean(values) if values else 0.0,
+        f"{metric}_p50_ms": _percentile(values, 50.0),
+        f"{metric}_p95_ms": _percentile(values, 95.0),
+        f"{metric}_p99_ms": _percentile(values, 99.0),
+    }
+
+
 def _run_startup_probe(runs: int = 5) -> Dict[str, float]:
     rows: List[Dict[str, object]] = []
     cmd = ["nvim", "--headless", "-u", "NONE", "-n", "-l", str(STARTUP_PROBE)]
@@ -54,10 +79,10 @@ def _run_startup_probe(runs: int = 5) -> Dict[str, float]:
         rows.append(_json_line_from_stdout(proc.stdout))
     setup_return = [float(row.get("setup_return_ms", 0.0) or 0.0) for row in rows]
     setup_complete = [float(row.get("setup_complete_ms", 0.0) or 0.0) for row in rows]
-    return {
-        "setup_return_mean_ms": statistics.mean(setup_return),
-        "setup_complete_mean_ms": statistics.mean(setup_complete),
-    }
+    result = {}
+    result.update(_latency_summary("setup_return", setup_return))
+    result.update(_latency_summary("setup_complete", setup_complete))
+    return result
 
 
 def _run_quick_quit_probe(runs: int = 10) -> Dict[str, float]:
@@ -78,7 +103,7 @@ def _run_quick_quit_probe(runs: int = 10) -> Dict[str, float]:
         durations.append((time.perf_counter() - start) * 1000.0)
         if proc.returncode != 0:
             raise RuntimeError(f"quick quit probe failed: {proc.stderr}\n{proc.stdout}")
-    return {"quick_quit_mean_ms": statistics.mean(durations)}
+    return _latency_summary("quick_quit", durations)
 
 
 def _run_provider_probe_microbench() -> Dict[str, float]:
@@ -209,10 +234,9 @@ def _run_mock_ttft_bench(runs: int = 3) -> Dict[str, float]:
                     os.chdir(cwd)
     finally:
         ProviderFactory.create = original_create  # type: ignore[assignment]
-    return {
-        "mock_ttft_mean_ms": statistics.mean(timings),
-        "mock_ttft_max_ms": max(timings),
-    }
+    result = _latency_summary("mock_ttft", timings)
+    result["mock_ttft_max_ms"] = max(timings)
+    return result
 
 
 def _threshold(name: str, default: float) -> float:
