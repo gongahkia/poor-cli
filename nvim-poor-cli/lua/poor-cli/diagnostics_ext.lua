@@ -19,7 +19,7 @@ local function notify(msg, level) require("poor-cli.notify").notify("[poor-cli] 
 
 function M.setup()
     -- Diag dispatcher is owned by diagnostics_ext.lua. commands.lua extends it
-    -- with `doctor`, `status`, `perf`, `policy`, `mcp`, `mcp-health`, `tools`,
+    -- with `doctor`, `status`, `perf`, `perf-watch`, `policy`, `mcp`, `mcp-health`, `tools`,
     -- `docker-sandbox`, `inline`, `trouble`, `fix`, `debug-copy`, `log-open`,
     -- `state-open`, `write-min-init` via command_spec.extend("diag", ...).
     require("poor-cli.command_spec").install("diag", {

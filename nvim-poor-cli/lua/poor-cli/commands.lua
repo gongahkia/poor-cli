@@ -93,6 +93,8 @@ local function build_status_text()
     local last_preview = type(context.lastPreview) == "table" and context.lastPreview or {}
     local recovery = type(status_view.recovery) == "table" and status_view.recovery or {}
     local last_mutation = type(recovery.lastMutation) == "table" and recovery.lastMutation or {}
+    local client = type(status_view.client) == "table" and status_view.client or {}
+    local exit_budget = type(client.exitBudget) == "table" and client.exitBudget or {}
 
     local lines = {
         "Provider: " .. tostring(active.name or "unknown"),
@@ -104,8 +106,13 @@ local function build_status_text()
         "Context selected: " .. tostring(type(last_preview.selected) == "table" and #last_preview.selected or 0),
         "Context excluded: " .. tostring(type(last_preview.excluded) == "table" and #last_preview.excluded or 0),
         "Context tokens: " .. tostring(last_preview.totalTokens or 0),
+        "Exit budget breaches: " .. tostring(exit_budget.breachCount or 0),
         "Last mutation: " .. tostring(last_mutation.intent or ""),
     }
+    local last_breach_iso = tostring(exit_budget.lastBreachIso or "")
+    if last_breach_iso ~= "" then
+        table.insert(lines, "Last exit breach: " .. last_breach_iso)
+    end
 
     if not enabled and reason ~= "" then
         table.insert(lines, "Completion disabled reason: " .. reason)
@@ -774,7 +781,7 @@ function M.setup()
         },
     })
 
-    -- Diag: status + doctor + perf + mcp + mcp-health + policy + tools + inline +
+    -- Diag: status + doctor + perf + perf-watch + mcp + mcp-health + policy + tools + inline +
     --       trouble + fix + docker-sandbox + debug-copy + log-open + state-open +
     --       write-min-init
     spec.extend("diag", {
@@ -782,6 +789,14 @@ function M.setup()
             status = function() require("poor-cli.panels.diag").open() end,
             doctor = function() require("poor-cli.panels.diag").open({ expand = "doctor" }) end,
             perf = function() require("poor-cli.panels.diag").open({ expand = "perf" }) end,
+            ["perf-watch"] = function(fargs)
+                local interval_ms = tonumber(fargs[1] or "") or 250
+                require("poor-cli.panels.diag").open({
+                    expand = "perf",
+                    perf_watch = true,
+                    perf_watch_interval_ms = interval_ms,
+                })
+            end,
             mcp = function() require("poor-cli.mcp_registry").open() end,
             ["mcp-health"] = function() require("poor-cli.panels.diag").open({ expand = "mcp" }) end,
             policy = function() require("poor-cli.trust_center").open({ expand = "permission" }) end,

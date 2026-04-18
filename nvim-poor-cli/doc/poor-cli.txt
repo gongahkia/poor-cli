@@ -268,7 +268,7 @@ below and your prior history/keymaps for any renames you must apply.
 
 :PoorCLIDiag {verb} [args]                              *:PoorCLIDiag*
     Diagnostics, MCP, services, docker sandbox, logs.
-    Verbs: status  doctor  perf  policy  mcp  mcp-health  tools
+    Verbs: status  doctor  perf  perf-watch  policy  mcp  mcp-health  tools
            inline  trouble  fix  docker-sandbox  debug-copy
            log-open  state-open  write-min-init
            service-start  service-stop  service-status  service-logs

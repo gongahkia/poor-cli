@@ -241,7 +241,7 @@ discovery; the palette (`:PoorCLIHelp palette`) fuzzy-finds across every verb.
 | `:PoorCLICost` | Cost dashboard, audit export | `dashboard show savings estimate audit-export` |
 | `:PoorCLITrust` | Guardrails: permissions, sandbox, profile presets | `center repo profile profile-apply` |
 | `:PoorCLIConfig` | Config, providers, server lifecycle | `set toggle provider server-start permission-mode sandbox` |
-| `:PoorCLIDiag` | Diagnostics, MCP, services, docker sandbox, logs | `status doctor perf mcp tools service-status log-open` |
+| `:PoorCLIDiag` | Diagnostics, MCP, services, docker sandbox, logs | `status doctor perf perf-watch mcp tools service-status log-open` |
 | `:PoorCLIHelp` | Palette, home, onboarding | `palette home onboarding` |
 
 > **`:PoorCLIDeploy` was removed** in v6.2. Deploys are an agent tool: say it in chat (`:PoorCLIChat send deploy staging`).

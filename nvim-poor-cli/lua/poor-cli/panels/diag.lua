@@ -17,6 +17,9 @@ M.cache = {}
 M.expanded = {}
 M.line_action = {}
 M._inflight = {}
+M._perf_watch_timer = nil
+M._perf_watch_active = false
+M._perf_watch_interval_ms = 250
 
 local GLYPH_OK = "✓"
 local GLYPH_WARN = "⚠"
@@ -54,6 +57,45 @@ local function fetch(method, key, params)
             M.render()
         end)
     end)
+end
+
+local function stop_perf_watch()
+    if not M._perf_watch_timer then
+        M._perf_watch_active = false
+        return
+    end
+    local timer = M._perf_watch_timer
+    M._perf_watch_timer = nil
+    M._perf_watch_active = false
+    pcall(function()
+        timer:stop()
+        timer:close()
+    end)
+end
+
+local function start_perf_watch(interval_ms)
+    local uv = vim.uv or vim.loop
+    if not (uv and uv.new_timer) then
+        return false
+    end
+    stop_perf_watch()
+    M._perf_watch_interval_ms = math.max(100, tonumber(interval_ms or 250) or 250)
+    local timer = uv.new_timer()
+    if not timer then
+        return false
+    end
+    M._perf_watch_timer = timer
+    M._perf_watch_active = true
+    timer:start(0, M._perf_watch_interval_ms, vim.schedule_wrap(function()
+        if not (M.buf and vim.api.nvim_buf_is_valid(M.buf) and M.win and vim.api.nvim_win_is_valid(M.win)) then
+            stop_perf_watch()
+            return
+        end
+        if not M._inflight.status_view then
+            fetch("poor-cli/getStatusView", "status_view")
+        end
+    end))
+    return true
 end
 
 -- ──────────────── Summary row builders ────────────────
@@ -128,7 +170,13 @@ local function row_perf()
     local runs = type(data.runs) == "table" and data.runs or {}
     local diag = type(runs.lastRunDiagnostics) == "table" and runs.lastRunDiagnostics or {}
     local spans = type(diag.perfSpans) == "table" and diag.perfSpans or {}
+    local client = type(data.client) == "table" and data.client or {}
+    local exit_budget = type(client.exitBudget) == "table" and client.exitBudget or {}
+    local breaches = tonumber(exit_budget.breachCount or 0) or 0
     if #spans == 0 then
+        if breaches > 0 then
+            return "warn", string.format("no spans · exit breaches %d", breaches)
+        end
         return "info", "no perf spans yet"
     end
     local slowest = 0.0
@@ -136,7 +184,11 @@ local function row_perf()
         local ms = tonumber(type(span) == "table" and span.elapsedMs or 0) or 0
         if ms > slowest then slowest = ms end
     end
-    return "ok", string.format("%d spans · slowest %.1fms", #spans, slowest)
+    local detail = string.format("%d spans · slowest %.1fms", #spans, slowest)
+    if breaches > 0 then
+        return "warn", detail .. string.format(" · exit breaches %d", breaches)
+    end
+    return "ok", detail
 end
 
 -- ──────────────── Drill section renderers ────────────────
@@ -325,6 +377,24 @@ local DRILLS = {
             local last_run = type(runs.lastRun) == "table" and runs.lastRun or {}
             local diag = type(runs.lastRunDiagnostics) == "table" and runs.lastRunDiagnostics or {}
             local spans = type(diag.perfSpans) == "table" and diag.perfSpans or {}
+            local client = type(data.client) == "table" and data.client or {}
+            local exit_budget = type(client.exitBudget) == "table" and client.exitBudget or {}
+            local breaches = tonumber(exit_budget.breachCount or 0) or 0
+            local configured_timeout_ms = tonumber(exit_budget.configuredTimeoutMs or 0) or 0
+            table.insert(lines, string.format(
+                "    exit budget: timeout=%dms breaches=%d",
+                configured_timeout_ms,
+                breaches
+            ))
+            if breaches > 0 then
+                local last_iso = tostring(exit_budget.lastBreachIso or "")
+                local last_timeout = tonumber(exit_budget.lastTimeoutMs or 0) or 0
+                if last_iso ~= "" then
+                    table.insert(lines, string.format("      last breach: %s (timeout=%dms)", last_iso, last_timeout))
+                else
+                    table.insert(lines, string.format("      last breach timeout=%dms", last_timeout))
+                end
+            end
             if #spans == 0 then
                 table.insert(lines, "    no spans in last run diagnostics")
                 return
@@ -398,7 +468,8 @@ function M.render()
         end
     end
     table.insert(lines, "")
-    table.insert(lines, "<CR> drill  r refresh  l log-open  s state-open  c copy-debug  q close")
+    local watch_state = M._perf_watch_active and ("on@" .. tostring(M._perf_watch_interval_ms) .. "ms") or "off"
+    table.insert(lines, "<CR> drill  r refresh  w perf-watch(" .. watch_state .. ")  l log-open  s state-open  c copy-debug  q close")
     vim.bo[M.buf].modifiable = true
     vim.api.nvim_buf_clear_namespace(M.buf, M.ns, 0, -1)
     vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, lines)
@@ -440,16 +511,41 @@ function M.toggle_drill()
     M.render()
 end
 
+function M.toggle_perf_watch(interval_ms)
+    if M._perf_watch_active then
+        stop_perf_watch()
+        M.render()
+        return false
+    end
+    local ok = start_perf_watch(interval_ms or M._perf_watch_interval_ms or 250)
+    if ok then
+        M.expanded.perf = true
+        M.render()
+    end
+    return ok
+end
+
 function M.close()
+    stop_perf_watch()
     if M.win and vim.api.nvim_win_is_valid(M.win) then vim.api.nvim_win_close(M.win, true) end
     M.win = nil
 end
 
 function M.open(opts)
     opts = opts or {}
+    if opts.perf_watch then
+        opts.expand = "perf"
+    end
     if opts.expand then M.expanded[opts.expand] = true end
     if M.win and vim.api.nvim_win_is_valid(M.win) then
         vim.api.nvim_set_current_win(M.win)
+        if opts.perf_watch then
+            if not start_perf_watch(opts.perf_watch_interval_ms or 250) then
+                notify("perf-watch unavailable on this Neovim build", vim.log.levels.WARN)
+            end
+        elseif opts.perf_watch == false then
+            stop_perf_watch()
+        end
         M.refresh()
         return M.buf
     end
@@ -473,6 +569,14 @@ function M.open(opts)
     vim.keymap.set("n", "q", M.close, { buffer = M.buf, nowait = true })
     vim.keymap.set("n", "<Esc>", M.close, { buffer = M.buf, nowait = true })
     vim.keymap.set("n", "r", M.refresh, { buffer = M.buf, nowait = true })
+    vim.keymap.set("n", "w", function()
+        local enabled = M.toggle_perf_watch()
+        if enabled then
+            notify("perf-watch enabled", vim.log.levels.INFO)
+        else
+            notify("perf-watch disabled", vim.log.levels.INFO)
+        end
+    end, { buffer = M.buf, nowait = true })
     vim.keymap.set("n", "<CR>", M.toggle_drill, { buffer = M.buf, nowait = true })
     vim.keymap.set("n", "l", function() vim.cmd("edit " .. vim.fn.fnameescape(rpc.get_log_path())) end, { buffer = M.buf, nowait = true })
     vim.keymap.set("n", "s", function() vim.cmd("edit " .. vim.fn.fnameescape(require("poor-cli.config").get_state_dir())) end, { buffer = M.buf, nowait = true })
@@ -485,6 +589,11 @@ function M.open(opts)
     if opts.expand and M.expanded[opts.expand] then
         for _, drill in ipairs(DRILLS) do
             if drill.id == opts.expand and drill.fetch then drill.fetch(); break end
+        end
+    end
+    if opts.perf_watch then
+        if not start_perf_watch(opts.perf_watch_interval_ms or 250) then
+            notify("perf-watch unavailable on this Neovim build", vim.log.levels.WARN)
         end
     end
     M.refresh()

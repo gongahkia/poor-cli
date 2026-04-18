@@ -23,6 +23,9 @@ M.restart_attempt = 0
 M.restart_timer = nil
 M.exit_force_timer = nil
 M.exit_pending_job_id = nil
+M.exit_budget_breach_count = 0
+M.exit_budget_last_breach_unix = 0
+M.exit_budget_last_timeout_ms = 0
 M.capabilities = nil
 M.server_state = "stopped"
 M.last_error = nil
@@ -376,6 +379,39 @@ local function clear_restart_timer()
     end)
 end
 
+local function exit_budget_timeout_ms()
+    return tonumber(config.get("exit_stop_timeout_ms") or "") or 180
+end
+
+local function exit_budget_snapshot()
+    local last_unix = tonumber(M.exit_budget_last_breach_unix or 0) or 0
+    return {
+        configuredTimeoutMs = exit_budget_timeout_ms(),
+        breachCount = tonumber(M.exit_budget_breach_count or 0) or 0,
+        lastTimeoutMs = tonumber(M.exit_budget_last_timeout_ms or 0) or 0,
+        lastBreachUnix = last_unix > 0 and last_unix or nil,
+        lastBreachIso = last_unix > 0 and os.date("!%Y-%m-%dT%H:%M:%SZ", last_unix) or "",
+    }
+end
+
+local function note_exit_budget_breach(timeout_ms)
+    M.exit_budget_breach_count = (tonumber(M.exit_budget_breach_count or 0) or 0) + 1
+    M.exit_budget_last_breach_unix = os.time()
+    M.exit_budget_last_timeout_ms = tonumber(timeout_ms or 0) or 0
+    invalidate_status_view_cache()
+end
+
+local function enrich_status_view_with_client_metrics(payload)
+    if type(payload) ~= "table" then
+        return payload
+    end
+    local enriched = vim.deepcopy(payload)
+    local client = type(enriched.client) == "table" and enriched.client or {}
+    client.exitBudget = exit_budget_snapshot()
+    enriched.client = client
+    return enriched
+end
+
 local function clear_exit_force_timer()
     if not M.exit_force_timer then
         return
@@ -588,6 +624,7 @@ function M.get_status()
         provider_info = provider_info,
         capabilities = M.capabilities,
         status_message = M.last_status_message,
+        exit_budget = exit_budget_snapshot(),
     }
 end
 
@@ -780,7 +817,7 @@ function M.stop_for_exit(opts)
     stop_startup_feedback("stopped")
     M.pending = {}
     M.pending_meta = {}
-    local timeout_ms = tonumber((type(opts) == "table" and opts.timeout_ms) or "") or 180
+    local timeout_ms = tonumber((type(opts) == "table" and opts.timeout_ms) or "") or exit_budget_timeout_ms()
     local active_job_id = M.job_id
     if active_job_id then
         M.exit_pending_job_id = active_job_id
@@ -795,6 +832,7 @@ function M.stop_for_exit(opts)
                     if M.exit_pending_job_id ~= active_job_id then
                         return
                     end
+                    note_exit_budget_breach(timeout_ms)
                     local pid = tonumber(vim.fn.jobpid(active_job_id) or 0) or 0
                     if pid > 0 and uv and uv.kill then
                         local sigterm = (uv.constants and uv.constants.SIGTERM) or 15
@@ -936,6 +974,7 @@ local function get_status_view_cached(timeout_ms)
     end
     local result, err = M.request_sync("poor-cli/getStatusView", {}, timeout_ms)
     if not err and type(result) == "table" then
+        result = enrich_status_view_with_client_metrics(result)
         M._status_view_cache.value = vim.deepcopy(result)
         M._status_view_cache.at_ms = monotonic_ms()
     end
