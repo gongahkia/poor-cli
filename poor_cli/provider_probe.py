@@ -29,6 +29,20 @@ LOCAL_OPENAI_COMPATIBLE_PROVIDERS = (
 )
 _PROBE_CACHE_FRESH_TTL_SECONDS = 10.0
 _PROBE_CACHE_STALE_TTL_SECONDS = 120.0
+
+
+def _float_env(name: str, default: float) -> float:
+    raw = str(os.environ.get(name, "") or "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+_TCP_CONNECT_TIMEOUT_SECONDS = max(0.05, _float_env("POORCLI_PROVIDER_PROBE_TCP_TIMEOUT_S", 0.35))
+_HTTP_PROBE_TIMEOUT_SECONDS = max(0.10, _float_env("POORCLI_PROVIDER_PROBE_HTTP_TIMEOUT_S", 1.20))
 _probe_cache_at = 0.0
 _probe_cache_signature = ""
 _probe_cache_result: Optional[Dict[str, Dict[str, Any]]] = None
@@ -328,7 +342,7 @@ def _discover_ollama_models(config: Config) -> Dict[str, Any]:
         return {"ready": False, "models": [], "baseUrl": base_url}
 
     try:
-        with urlopen(tags_url, timeout=2.5) as response:
+        with urlopen(tags_url, timeout=_HTTP_PROBE_TIMEOUT_SECONDS) as response:
             payload = json.loads(response.read().decode("utf-8"))
         models = payload.get("models") or []
         names = [
@@ -360,7 +374,7 @@ def _discover_openai_compatible_models(config: Config, provider_name: str) -> Di
         from urllib.request import Request
         request = Request(models_url, headers={"Authorization": f"Bearer {api_key}"})
     try:
-        with urlopen(request, timeout=2.5) as response:
+        with urlopen(request, timeout=_HTTP_PROBE_TIMEOUT_SECONDS) as response:
             payload = json.loads(response.read().decode("utf-8"))
         models = payload.get("data") or []
         names = [
@@ -375,7 +389,7 @@ def _discover_openai_compatible_models(config: Config, provider_name: str) -> Di
 
 def _is_tcp_reachable(host: str, port: int) -> bool:
     try:
-        with socket.create_connection((host, int(port)), timeout=1.5):
+        with socket.create_connection((host, int(port)), timeout=_TCP_CONNECT_TIMEOUT_SECONDS):
             return True
     except OSError:
         return False

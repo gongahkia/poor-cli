@@ -117,6 +117,9 @@ require("poor-cli").setup({
     auto_start = true,
     auto_restart = true,
     exit_stop_timeout_ms = 180,            -- hard stop budget on :wq / VimLeavePre
+    startup_feedback_defer_ms = 450,       -- suppress startup spinner/toast below this latency
+    startup_success_notify = false,        -- show "[ok] initialized" line
+    startup_probe_on_ready = false,        -- run getProviderInfo probe after ready + report config-loaded
     
     -- Keymaps
     trigger_key = "<C-Space>",

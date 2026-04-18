@@ -8,6 +8,7 @@ the Neovim plugin.
 import asyncio
 import hashlib
 import inspect
+import os
 import re
 import threading
 import time
@@ -271,6 +272,7 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
         self._resolved_routing_mode: str = "manual"
         self._provider_readiness_cache: Dict[str, Dict[str, Any]] = {}
         self._provider_probe_task: Optional[asyncio.Task] = None
+        self._provider_probe_timer: Optional[asyncio.TimerHandle] = None
         self._system_refresh_inputs: Optional[Tuple[str, ...]] = None
         self._perf_span_history: List[Dict[str, Any]] = []
         self._active_turn_diagnostics: Optional[Dict[str, Any]] = None
@@ -323,6 +325,9 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
             self.config.model.routing_mode = normalize_routing_mode(
                 getattr(self.config.model, "routing_mode", "manual")
             )
+            seed_provider_readiness = getattr(self, "_seed_provider_readiness_cache", None)
+            if callable(seed_provider_readiness):
+                seed_provider_readiness()
             
             # Get API key
             resolved_api_key = api_key
@@ -646,7 +651,27 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        self._provider_probe_task = loop.create_task(self._probe_provider_readiness_background())
+        timer = getattr(self, "_provider_probe_timer", None)
+        if timer is not None and not timer.cancelled():
+            return
+        delay_ms = 350.0
+        try:
+            delay_ms = max(0.0, float(os.environ.get("POORCLI_PROVIDER_PROBE_DELAY_MS", "350")))
+        except Exception:
+            delay_ms = 350.0
+
+        def _launch_probe() -> None:
+            self._provider_probe_timer = None
+            current = getattr(self, "_provider_probe_task", None)
+            if current is not None and not current.done():
+                return
+            self._provider_probe_task = loop.create_task(self._probe_provider_readiness_background())
+
+        delay_s = delay_ms / 1000.0
+        if delay_s <= 0:
+            loop.call_soon(_launch_probe)
+            return
+        self._provider_probe_timer = loop.call_later(delay_s, _launch_probe)
 
     async def _probe_provider_readiness_background(self) -> None:
         if not self.config or not self._config_manager:
@@ -657,9 +682,9 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
                 None,
                 lambda: probe_providers(
                     self._config_manager, self.config,
-                    allow_stale=False,
-                    background_refresh=False,
-                    force_refresh=True,
+                    allow_stale=True,
+                    background_refresh=True,
+                    force_refresh=False,
                 ),
             )
         except Exception:

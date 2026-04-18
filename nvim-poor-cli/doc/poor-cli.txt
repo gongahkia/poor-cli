@@ -72,6 +72,21 @@ exit_stop_timeout_ms ~
     Hard budget (ms) for backend shutdown during VimLeavePre before
     force-kill fallback.
 
+                                                        *poor-cli-config.startup_feedback_defer_ms*
+startup_feedback_defer_ms ~
+    Default: 450
+    Suppress startup spinner/echo until this many ms have elapsed.
+
+                                                        *poor-cli-config.startup_success_notify*
+startup_success_notify ~
+    Default: false
+    Show the "[ok] initialized" completion line after startup.
+
+                                                        *poor-cli-config.startup_probe_on_ready*
+startup_probe_on_ready ~
+    Default: false
+    Run a post-ready provider/config probe and surface config-loaded status.
+
                                                         *poor-cli-config.ghost_text_hl*
 ghost_text_hl ~
     Default: "Comment"

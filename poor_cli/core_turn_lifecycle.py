@@ -2095,6 +2095,10 @@ class TurnLifecycle:
                 logger.debug("auto-memory on shutdown failed: %s", exc)
         if self._mcp_manager is not None:
             await self._mcp_manager.shutdown()
+        timer = getattr(self, "_provider_probe_timer", None)
+        if timer is not None and not timer.cancelled():
+            timer.cancel()
+        self._provider_probe_timer = None
         # cancel background tasks
         for task in (
             self._repo_graph_task,

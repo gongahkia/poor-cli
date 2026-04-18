@@ -9,16 +9,74 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from .provider_catalog import KEYLESS_LOCAL_PROVIDER_NAMES
 from .providers.capability import ProviderCapability, capability_names
+from .providers.provider_factory import ProviderFactory
 from .provider_probe import (
     normalize_routing_mode,
-    probe_providers,
     resolve_routing_mode,
 )
 
 
 class ProviderInfoMixin:
     """get_provider_info / readiness / routing-mode helpers."""
+
+    def _seed_provider_readiness_cache(self) -> Dict[str, Dict[str, Any]]:
+        if not self.config:
+            return {}
+        providers = getattr(getattr(self.config, "model", None), "providers", {}) or {}
+        seeded: Dict[str, Dict[str, Any]] = {}
+        for provider_name in sorted(providers.keys()):
+            provider_cfg = providers[provider_name]
+            provider_info = ProviderFactory.get_provider_info(provider_name) or {}
+            dependency_available = bool(provider_info.get("available", True))
+            raw_capabilities = provider_info.get("capabilities") or {}
+            if isinstance(raw_capabilities, dict):
+                capabilities = dict(raw_capabilities)
+            else:
+                capabilities = {
+                    str(capability): True
+                    for capability in raw_capabilities
+                }
+            env_var = str(getattr(provider_cfg, "api_key_env_var", "") or "")
+            key_info = (
+                self._config_manager.get_api_key_info(provider_name)
+                if self._config_manager is not None
+                else {}
+            )
+            key_value = str(key_info.get("key") or "")
+            configured = provider_name in KEYLESS_LOCAL_PROVIDER_NAMES or bool(key_value)
+            source = str(
+                key_info.get("source")
+                or ("local" if provider_name in KEYLESS_LOCAL_PROVIDER_NAMES else "none")
+            )
+            status_label = "probe pending"
+            if not dependency_available:
+                status_label = "provider dependency unavailable"
+            elif provider_name in KEYLESS_LOCAL_PROVIDER_NAMES:
+                status_label = "local provider (probe pending)"
+            elif configured:
+                status_label = f"configured ({source})"
+            elif env_var:
+                status_label = f"missing {env_var}"
+            seeded[provider_name] = {
+                "name": provider_name,
+                "available": dependency_available,
+                "ready": False,
+                "configured": configured,
+                "source": source,
+                "statusLabel": status_label,
+                "defaultModel": str(getattr(provider_cfg, "default_model", "") or ""),
+                "models": [],
+                "capabilities": capabilities,
+                "envVar": env_var,
+                "baseUrl": getattr(provider_cfg, "base_url", None),
+            }
+        self._provider_readiness_cache = {
+            name: dict(payload)
+            for name, payload in seeded.items()
+        }
+        return seeded
 
     def get_provider_info(self) -> Dict[str, Any]:
         """Return info about the current provider."""
@@ -53,14 +111,18 @@ class ProviderInfoMixin:
         }
 
     def get_provider_readiness(self) -> Dict[str, Dict[str, Any]]:
-        if not self._config_manager or not self.config:
+        if not self.config:
             return {}
-        provider_status = probe_providers(self._config_manager, self.config)
-        self._provider_readiness_cache = {
+        provider_status = dict(getattr(self, "_provider_readiness_cache", {}) or {})
+        if not provider_status:
+            provider_status = self._seed_provider_readiness_cache()
+        schedule_probe = getattr(self, "_schedule_provider_readiness_probe", None)
+        if callable(schedule_probe):
+            schedule_probe()
+        return {
             name: dict(payload)
             for name, payload in provider_status.items()
         }
-        return provider_status
 
     def get_routing_mode(self) -> str:
         if not self.config:

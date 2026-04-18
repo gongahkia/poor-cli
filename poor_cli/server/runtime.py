@@ -50,6 +50,7 @@ class PoorCLIServer(HandlerMixin):
         self.session_id = f"server-{uuid.uuid4().hex[:8]}"
         set_log_context(session_id=self.session_id)
         self._running = False
+        self._fast_shutdown_requested = False
         self._transport = StdioTransport()
         self._reader: Optional[asyncio.StreamReader] = None
         self._writer: Optional[asyncio.StreamWriter] = None
@@ -274,11 +275,15 @@ class PoorCLIServer(HandlerMixin):
     async def run_stdio(self) -> None:
         self.logger.info("Starting stdio server")
         self._running = True
+        self._fast_shutdown_requested = False
 
         loop = asyncio.get_running_loop()
+        def _request_shutdown() -> None:
+            self._fast_shutdown_requested = True
+            self._running = False
         for sig in (signal.SIGTERM, signal.SIGINT):
             with contextlib.suppress(NotImplementedError):
-                loop.add_signal_handler(sig, lambda: setattr(self, "_running", False))
+                loop.add_signal_handler(sig, _request_shutdown)
 
         try:
             self._track_background_task(asyncio.create_task(self._audit_rotation_loop()))
@@ -315,8 +320,16 @@ class PoorCLIServer(HandlerMixin):
             async with self._get_service_lock():
                 with contextlib.suppress(Exception):
                     await self._shutdown_managed_services_locked()
-            with contextlib.suppress(Exception):
-                await self.core.shutdown()
+            shutdown_timeout_s = 0.35 if self._fast_shutdown_requested else 6.0
+            try:
+                await asyncio.wait_for(self.core.shutdown(), timeout=shutdown_timeout_s)
+            except asyncio.TimeoutError:
+                self.logger.warning(
+                    "Core shutdown exceeded %.2fs during server stop; forcing fast exit",
+                    shutdown_timeout_s,
+                )
+            except Exception:
+                self.logger.debug("Core shutdown failed during server stop", exc_info=True)
             self.logger.info("Stdio server stopped")
 
 

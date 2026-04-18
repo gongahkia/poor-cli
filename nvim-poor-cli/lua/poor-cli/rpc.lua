@@ -166,6 +166,18 @@ local function startup_elapsed_seconds()
     return math.max(0, math.floor((uv.hrtime() - M.startup_feedback.started_ns) / 1000000000))
 end
 
+local function startup_elapsed_ms()
+    if M.startup_feedback.started_ns <= 0 or not uv or not uv.hrtime then
+        return 0
+    end
+    return math.max(0, math.floor((uv.hrtime() - M.startup_feedback.started_ns) / 1000000))
+end
+
+local function startup_feedback_defer_ms()
+    local raw = tonumber(config.get("startup_feedback_defer_ms") or "")
+    return math.max(0, raw or 450)
+end
+
 local function startup_phase_text(state)
     if state == "starting" then
         return "starting server"
@@ -212,6 +224,9 @@ local function render_startup_feedback()
     if not M.startup_feedback.active then
         return
     end
+    if startup_elapsed_ms() < startup_feedback_defer_ms() then
+        return
+    end
 
     local state = M.server_state or "starting"
     local frame = "."
@@ -253,9 +268,13 @@ local function stop_startup_feedback(state)
         end)
     end
 
-    local elapsed = startup_elapsed_seconds()
+    local elapsed_ms = startup_elapsed_ms()
+    local elapsed = math.max(0, math.floor(elapsed_ms / 1000))
     if state == "ready" then
-        echo_startup_line(string.format("[poor-cli] [ok] initialized in %ds", elapsed), false)
+        local startup_success_notify = config.get("startup_success_notify") == true
+        if startup_success_notify and elapsed_ms >= startup_feedback_defer_ms() then
+            echo_startup_line(string.format("[poor-cli] [ok] initialized in %ds", elapsed), false)
+        end
         if M.startup_probe_enabled then
             -- follow-up: probe provider info to confirm config is fully loaded and responsive
             local config_probe_start = (uv and uv.hrtime and uv.hrtime()) or 0
@@ -279,10 +298,12 @@ local function stop_startup_feedback(state)
                     end
                     local provider_name = (result and result.name) or "unknown"
                     if provider_name == "unconfigured" then return end -- soft-init stub, skip
-                    pcall(vim.api.nvim_echo, {{
-                        string.format("[poor-cli] [ok] configuration loaded in %ds ✓ (%s)", probe_elapsed, provider_name),
-                        "MoreMsg",
-                    }}, false, {})
+                    if startup_success_notify then
+                        pcall(vim.api.nvim_echo, {{
+                            string.format("[poor-cli] [ok] configuration loaded in %ds ✓ (%s)", probe_elapsed, provider_name),
+                            "MoreMsg",
+                        }}, false, {})
+                    end
                 end)
             end)
         end
@@ -668,7 +689,10 @@ function M.start(is_restart, opts)
     M.exit_pending_job_id = nil
     clear_exit_force_timer()
     M.startup_feedback_enabled = opts.startup_feedback ~= false
-    M.startup_probe_enabled = opts.startup_probe ~= false
+    M.startup_probe_enabled = (
+        opts.startup_probe == true
+        or (opts.startup_probe == nil and config.get("startup_probe_on_ready") == true)
+    )
     if M.job_id then
         notify_with_context("Server already running", vim.log.levels.WARN)
         return M.job_id
