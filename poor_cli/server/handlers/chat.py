@@ -1,12 +1,8 @@
 # ruff: noqa: F403,F405
 from __future__ import annotations
-
-from poor_cli.server.handler_deps import *
-from poor_cli.server.registry import register
-
-
+from poor_cli.server.chat_handler_deps import *
 class ChatHandlersMixin:
-    def _resolve_core(self, params: Dict[str, Any]) -> PoorCLICore:
+    def _resolve_core(self, params: Dict[str, Any]) -> "PoorCLICore":
         """resolve the PoorCLICore for a request, supporting sessionId."""
         sid = params.get("sessionId")
         return self._session_manager.get_session(sid).core
@@ -142,7 +138,12 @@ class ChatHandlersMixin:
                     fallback_permission_mode=self.permission_mode,
                 )
                 self.permission_mode = permission_mode_from_preset(self._sandbox_preset)
-            await self._sync_provider_tool_visibility()
+            await sync_provider_tool_visibility(
+                core=self.core,
+                initialized=self.initialized,
+                permission_rules=self._permission_rules,
+                logger=self.logger,
+            )
             provider_info = self.core.get_provider_info()
             self._sandbox_preset = self._current_sandbox_preset()
             set_log_context(provider=provider_info.get("name"))
@@ -184,8 +185,8 @@ class ChatHandlersMixin:
                         "planReview": True,
                     },
                     "security": {
-                        "trustedWorkspaceBoundary": self._trusted_workspace_enabled(),
-                        "trustedRoots": [str(root) for root in self._trusted_workspace_roots()],
+                        "trustedWorkspaceBoundary": trusted_workspace_enabled(self.core),
+                        "trustedRoots": [str(root) for root in trusted_workspace_roots(self.core)],
                     },
                     "repoIndex": self.core._repo_graph.get_stats() if self.core._repo_graph else None,
                     "apiKeyValidity": key_validity,
@@ -468,7 +469,6 @@ class ChatHandlersMixin:
         request_id = str(params.get("requestId", "")).strip()
         self.core.cancel_request(request_id)
         return {"success": True, "requestId": request_id}
-
 @register('initialize')
 async def _rpc_0(ctx, params):
     return await ctx.handle_initialize(params)

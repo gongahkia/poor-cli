@@ -1,7 +1,19 @@
 # ruff: noqa: F403,F405
 from __future__ import annotations
 
-from poor_cli.server.handler_deps import *
+import asyncio
+import contextlib
+import os
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from ...automations import AutomationManager, CustomCommandRegistry
+from ...config import PermissionMode
+from ...permission_rules import PermissionRuleEngine
+from ...sandbox import normalize_preset, preset_from_permission_mode, raise_for_denial
+from ...skills import SkillRegistry
+from ...task_manager import TaskManager
+from ..types import ManagedServiceRuntime
 
 
 class CommonHandlersMixin:
