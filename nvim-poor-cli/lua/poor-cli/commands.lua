@@ -381,101 +381,23 @@ function M.setup()
     spec.install("chat", {
         desc = "Open, send, clear, retry, and generate with the chat panel",
         range = true,
-        verb_names = {
-            "toggle", "send", "clear", "retry", "terse", "rich",
-            "queue", "enqueue", "queue-clear",
-            "explain", "refactor", "test", "doc",
-            "explain-diff", "fix-failures",
-        },
-        verbs = {
-            toggle = function() chat.toggle() end,
-            send = function(fargs)
-                local msg = table.concat(fargs, " ")
-                if msg ~= "" then chat.open(); chat.send(msg)
-                else chat.prompt_and_send() end
-            end,
-            clear = function() chat.clear() end,
-            retry = function()
-                local last = chat.get_last_user_message and chat.get_last_user_message()
-                if not last or last == "" then _notify("No previous message to retry", vim.log.levels.WARN); return end
-                chat.open(); chat.send(last)
-            end,
-            terse = function()
-                rpc.request("poor-cli/setConfig", { key = "economy.terse_system_prompt", value = true }, function(_, err) vim.schedule(function()
-                    if err then _notify(rpc.format_error(err), vim.log.levels.ERROR)
-                    else _notify("Terse mode enabled", vim.log.levels.INFO) end
-                end) end)
-            end,
-            rich = function()
-                rpc.request("poor-cli/setConfig", { key = "economy.terse_system_prompt", value = false }, function(_, err) vim.schedule(function()
-                    if err then _notify(rpc.format_error(err), vim.log.levels.ERROR)
-                    else _notify("Rich mode enabled", vim.log.levels.INFO) end
-                end) end)
-            end,
-            queue = function() chat.open_queue_manager() end,
-            enqueue = function(fargs)
-                local queue = require("poor-cli.queue")
-                local msg = table.concat(fargs, " ")
-                if msg ~= "" then queue.enqueue(msg)
-                else
-                    local s = queue.status()
-                    _notify(("queue: %d pending, %s"):format(s.pending, s.processing and "processing" or "idle"), vim.log.levels.INFO)
-                end
-            end,
-            ["queue-clear"] = function() require("poor-cli.queue").clear() end,
-            explain = function(_, opts) M.explain_code(opts.range, opts.line1, opts.line2) end,
-            refactor = function(_, opts) M.refactor_code(opts.range, opts.line1, opts.line2) end,
-            test = function() M.generate_tests() end,
-            doc = function() M.generate_docs() end,
-            ["explain-diff"] = function(fargs)
-                local file = fargs[1]
-                local msg = "/explain-diff" .. (file and (" " .. file) or "")
-                rpc.request("poor-cli/chat", { message = msg }, function(result, err) vim.schedule(function()
-                    if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                    if result and result.content then open_scratch("[poor-cli explain-diff]", result.content) end
-                end) end)
-            end,
-            ["fix-failures"] = function(fargs)
-                local cmd = table.concat(fargs, " ")
-                local msg = "/fix-failures" .. (cmd ~= "" and (" " .. cmd) or "")
-                rpc.request("poor-cli/chat", { message = msg }, function(result, err) vim.schedule(function()
-                    if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                    if result and result.content then open_scratch("[poor-cli fix-failures]", result.content) end
-                end) end)
-            end,
-        },
+        verb_names = {},
+        verbs = {},
     })
 
     local function extend_chat_commands()
-        -- ───────────────────────── Completion ─────────────────────────
-        -- v6.2: absorbed into :PoorCLIChat as `completion-*`.
-        spec.extend("chat", {
-            verb_prefix = "completion-",
-            verbs = {
-                trigger = function() inline.trigger({ manual = true }) end,
-                accept = function() inline.accept() end,
-                ["accept-word"] = function() inline.accept_word() end,
-                ["accept-line"] = function() inline.accept_line() end,
-                dismiss = function() inline.dismiss() end,
-                ["auto-trigger"] = function()
-                    local cfg = require("poor-cli.config")
-                    local current = cfg.get("auto_trigger")
-                    cfg.config.auto_trigger = not current
-                    if cfg.config.auto_trigger then
-                        local augroup = vim.api.nvim_create_augroup("poor-cli-auto-trigger", { clear = true })
-                        vim.api.nvim_create_autocmd("TextChangedI", {
-                            group = augroup,
-                            callback = function() if rpc.is_running() then inline.auto_trigger() end end,
-                        })
-                        _notify("Auto-trigger ON", vim.log.levels.INFO)
-                    else
-                        vim.api.nvim_create_augroup("poor-cli-auto-trigger", { clear = true })
-                        inline.cancel_auto_trigger()
-                        _notify("Auto-trigger OFF", vim.log.levels.INFO)
-                    end
-                end,
-                reason = function() require("poor-cli.ux.completion_reason").report() end,
-                ["filetype-toggle"] = function() require("poor-cli.ux.completion_reason").toggle_filetype() end,
+        require("poor-cli.commands_ext.chat").extend({
+            spec = spec,
+            rpc = rpc,
+            chat = chat,
+            inline = inline,
+            notify = _notify,
+            open_scratch = open_scratch,
+            actions = {
+                explain = M.explain_code,
+                refactor = M.refactor_code,
+                test = M.generate_tests,
+                doc = M.generate_docs,
             },
         })
     end
@@ -495,75 +417,20 @@ function M.setup()
     })
 
     local function extend_review_commands()
-        -- ───────────────────────── Diff ─────────────────────────
-        -- v6.2: absorbed into :PoorCLIReview as `diff`, `diff-compare`, `timeline`, etc.
-        spec.extend("review", {
-            verbs = {
-                ["diff-compare"] = function(fargs)
-                    if #fargs < 2 then _notify("usage: :PoorCLIReview diff-compare <file1> <file2>", vim.log.levels.WARN); return end
-                    local result, err = rpc.compare_files(fargs[1], fargs[2], 15000)
-                    if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                    local diff_text = type(result) == "table" and (result.diff or vim.inspect(result)) or tostring(result)
-                    open_scratch("[poor-cli diff]", diff_text, "diff")
-                end,
-                diff = function() require("poor-cli.diff_review").open() end,
-                ["diff-close"] = function() require("poor-cli.diff_review").close() end,
-                ["diff-layout"] = function() require("poor-cli.diff_review").toggle_layout() end,
-                timeline = function() require("poor-cli.timeline").toggle() end,
-                ["timeline-cancel"] = function() require("poor-cli.timeline").cancel_current() end,
-            },
+        require("poor-cli.commands_ext.review").extend({
+            spec = spec,
+            rpc = rpc,
+            chat = chat,
+            notify = _notify,
+            open_scratch = open_scratch,
         })
     end
 
     -- ───────────────────────── Review ─────────────────────────
     spec.install("review", {
         desc = "Review file, PR, staged diff; commit; lint",
-        verb_names = { "file", "pr", "commit", "lint" },
-        verbs = {
-            file = function(fargs)
-                local target = fargs[1]
-                local prompt = target
-                    and ("Review the file " .. target .. " for issues, improvements, and best practices.")
-                    or "Review the current staged git diff for issues, improvements, and best practices. Use git_diff to inspect changes."
-                chat.open()
-                rpc.request("poor-cli/chat", { message = prompt }, function(result, err) vim.schedule(function()
-                    if err then chat.append_message("assistant", "Error: " .. rpc.format_error(err))
-                    elseif result and result.content then
-                        chat.append_message("user", target and ("Review " .. target) or "Review staged diff")
-                        chat.append_message("assistant", result.content)
-                    end
-                end) end)
-            end,
-            pr = function(fargs)
-                local num = fargs[1]
-                if not num or num == "" then _notify("usage: :PoorCLIReview pr <pr_number>", vim.log.levels.WARN); return end
-                _notify("reviewing PR #" .. num .. "...", vim.log.levels.INFO)
-                rpc.request("poor-cli/chat", { message = "/review-pr " .. num }, function(result, err) vim.schedule(function()
-                    if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                    if result and result.content then open_scratch("[poor-cli PR #" .. num .. " review]", result.content) end
-                end) end)
-            end,
-            commit = function()
-                chat.open()
-                rpc.request("poor-cli/chat", {
-                    message = "Generate a concise, conventional commit message for the currently staged git changes. "
-                        .. "Use git_diff and git_status to inspect the staged changes. Output ONLY the commit message.",
-                }, function(result, err) vim.schedule(function()
-                    if err then chat.append_message("assistant", "Error: " .. rpc.format_error(err))
-                    elseif result and result.content then
-                        chat.append_message("user", "Generate commit message")
-                        chat.append_message("assistant", result.content)
-                        pcall(function() require("poor-cli.integrations.neogit").open_for_commit(result.content) end)
-                    end
-                end) end)
-            end,
-            lint = function()
-                rpc.request("poor-cli/chat", { message = "/lint" }, function(result, err) vim.schedule(function()
-                    if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                    if result and result.content then open_scratch("[poor-cli lint]", result.content) end
-                end) end)
-            end,
-        },
+        verb_names = {},
+        verbs = {},
     })
 
     local function extend_context_commands()
