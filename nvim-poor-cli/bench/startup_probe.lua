@@ -68,9 +68,13 @@ local function run_probe()
     setup_runtime()
 
     local auto_start = env_flag("POORCLI_BENCH_AUTO_START", false)
+    local setup_timing = env_flag("POORCLI_BENCH_SETUP_TIMING", false)
     local wait_setup_ms = env_number("POORCLI_BENCH_SETUP_WAIT_MS", 5000)
     local wait_ready_ms = env_number("POORCLI_BENCH_READY_WAIT_MS", 20000)
     local server_cmd = vim.env.POORCLI_BENCH_SERVER_CMD or "python3 -m poor_cli server --stdio"
+    if setup_timing then
+        vim.env.POORCLI_SETUP_TIMING = "1"
+    end
 
     local t0 = now_ns()
     local poor_cli = require("poor-cli")
@@ -112,6 +116,7 @@ local function run_probe()
     local status = require("poor-cli.rpc").get_status()
     local payload = {
         auto_start = auto_start,
+        setup_timing_enabled = setup_timing,
         setup_done = setup_done,
         ready_done = ready_done,
         server_state = status.state,
@@ -121,6 +126,16 @@ local function run_probe()
         first_tick_ms = first_tick_ready and ns_to_ms(t_first_tick - t_setup_return) or nil,
         ready_ms = auto_start and ns_to_ms(t_ready - t0) or nil,
     }
+    if setup_timing and type(poor_cli.get_setup_timing) == "function" then
+        local rows = poor_cli.get_setup_timing() or {}
+        local timing_map = {}
+        for _, row in ipairs(rows) do
+            if type(row) == "table" and row.name ~= nil and row.ms ~= nil then
+                timing_map[tostring(row.name)] = tonumber(row.ms) or 0
+            end
+        end
+        payload.setup_timing_ms = timing_map
+    end
 
     io.stdout:write(vim.json.encode(payload) .. "\n")
     io.stdout:flush()

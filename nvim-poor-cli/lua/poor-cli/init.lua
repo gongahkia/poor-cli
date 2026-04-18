@@ -33,6 +33,17 @@ local REQUIRED_DEPS = {
     { module = "neogit",  spec = "NeogitOrg/neogit",          why = "auto-open on commit flow" },
 }
 
+local function env_flag(name, default)
+    local value = vim.env[name]
+    if value == nil or value == "" then
+        return default
+    end
+    value = tostring(value):lower()
+    return value == "1" or value == "true" or value == "yes"
+end
+
+local SETUP_TIMING_ENABLED = env_flag("POORCLI_SETUP_TIMING", false)
+
 local function module_on_runtimepath(module_name)
     if module_name == nil or module_name == "" then
         return false
@@ -68,6 +79,7 @@ M._setup_complete = false
 M._setup_attempted = false
 M._deferred_features_ready = false
 M._integrations_ready = false
+M._setup_timing = nil
 
 local function is_exiting()
     local exiting = tonumber(vim.v.exiting or 0)
@@ -118,7 +130,42 @@ function M._ensure_integrations()
     end
 end
 
+function M.get_setup_timing()
+    return vim.deepcopy(M._setup_timing or {})
+end
+
 local function run_setup_actions(actions, done)
+    if not SETUP_TIMING_ENABLED then
+        local idx = 1
+        local function pump_fast()
+            if is_exiting() then
+                return
+            end
+            local slice_start = (uv and uv.hrtime and uv.hrtime()) or 0
+            while idx <= #actions do
+                local action = actions[idx]
+                idx = idx + 1
+                pcall(action)
+                if slice_start > 0 and uv and uv.hrtime then
+                    local elapsed = uv.hrtime() - slice_start
+                    if elapsed >= SETUP_SLICE_BUDGET_NS then
+                        break
+                    end
+                end
+            end
+            if idx <= #actions then
+                vim.schedule(pump_fast)
+                return
+            end
+            if done then
+                done()
+            end
+        end
+        vim.schedule(pump_fast)
+        return
+    end
+
+    local timings = {}
     local idx = 1
     local function pump()
         if is_exiting() then
@@ -126,9 +173,18 @@ local function run_setup_actions(actions, done)
         end
         local slice_start = (uv and uv.hrtime and uv.hrtime()) or 0
         while idx <= #actions do
-            local action = actions[idx]
+            local entry = actions[idx]
             idx = idx + 1
+            local name = type(entry) == "table" and entry.name or ("action:" .. tostring(idx - 1))
+            local action = type(entry) == "table" and entry.fn or entry
+            local action_start = (uv and uv.hrtime) and uv.hrtime() or 0
             pcall(action)
+            if action_start > 0 and uv and uv.hrtime then
+                timings[#timings + 1] = {
+                    name = tostring(name),
+                    ms = (uv.hrtime() - action_start) / 1000000,
+                }
+            end
             if slice_start > 0 and uv and uv.hrtime then
                 local elapsed = uv.hrtime() - slice_start
                 if elapsed >= SETUP_SLICE_BUDGET_NS then
@@ -140,6 +196,14 @@ local function run_setup_actions(actions, done)
             vim.schedule(pump)
             return
         end
+        table.sort(timings, function(a, b)
+            return (tonumber(a.ms) or 0) > (tonumber(b.ms) or 0)
+        end)
+        M._setup_timing = timings
+        pcall(vim.api.nvim_exec_autocmds, "User", {
+            pattern = "PoorCLISetupTiming",
+            data = { timings = vim.deepcopy(timings) },
+        })
         if done then
             done()
         end
@@ -199,12 +263,20 @@ function M.setup(opts)
 
     local function finalize()
         local actions = {}
-        local function enqueue(fn)
-            actions[#actions + 1] = fn
+        local function enqueue(name, fn)
+            if type(name) == "function" then
+                actions[#actions + 1] = name
+                return
+            end
+            if SETUP_TIMING_ENABLED then
+                actions[#actions + 1] = { name = tostring(name), fn = fn }
+            else
+                actions[#actions + 1] = fn
+            end
         end
 
         for _, name in ipairs(EAGER_SETUPS) do
-            enqueue(function()
+            enqueue("setup:" .. name, function()
                 local ok, mod = pcall(require, "poor-cli." .. name)
                 if ok then
                     rawset(M, name, mod)
@@ -215,20 +287,20 @@ function M.setup(opts)
             end)
         end
 
-        enqueue(function()
+        enqueue("setup:lualine", function()
             if pcall(require, "lualine") then
                 require("poor-cli.lualine").setup()
             end
         end)
 
-        enqueue(function()
+        enqueue("setup:gitignore_nudge", function()
             local ok_gi, gi = pcall(require, "poor-cli.gitignore_nudge")
             if ok_gi and type(gi.setup) == "function" then
                 pcall(gi.setup)
             end
         end)
 
-        enqueue(function()
+        enqueue("setup:deferred_hooks", function()
             local group = vim.api.nvim_create_augroup("poor-cli-deferred-features", { clear = true })
             vim.api.nvim_create_autocmd("User", {
                 group = group,
