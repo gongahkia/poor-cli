@@ -205,8 +205,8 @@ end
 
 function M.setup()
     M.setup_hud_autocmds()
-    require("poor-cli.command_spec").install("cost", {
-        desc = "Cost, budget, cache, and context pressure tooling",
+    local spec = require("poor-cli.command_spec")
+    local cost_spec = {
         verb_names = {
             "show", "savings", "economy-preset", "history", "tokens",
             "cache-stats", "budget", "compare", "export",
@@ -363,7 +363,16 @@ function M.setup()
                 end) end)
             end,
         },
-    })
+    }
+    if spec.get("cost") then
+        spec.extend("cost", cost_spec)
+    else
+        spec.install("cost", vim.tbl_deep_extend("force", {
+            desc = "Cost, budget, cache, and context pressure tooling",
+            verb_names = {},
+            verbs = {},
+        }, cost_spec))
+    end
 end
 
 return M

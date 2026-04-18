@@ -101,7 +101,6 @@ function M.setup()
             require("poor-cli.provider_picker").maybe_prompt_hf_latent(info)
         end,
     })
-    local cfg_mgr = require("poor-cli.config_mgr")
     local spec = require("poor-cli.command_spec")
     -- v6.2: absorbed into :PoorCLIConfig as `provider`, `provider-info`, etc.
     spec.extend("config", {
@@ -116,10 +115,12 @@ function M.setup()
             switch = function() require("poor-cli.provider_picker").open() end,
             compare = function() require("poor-cli.ux.provider_cost").open() end,
             ollama = function() M.open_ollama_picker() end,
-            ["api-key-status"] = function() cfg_mgr.api_key_status_view() end,
+            ["api-key-status"] = function()
+                require("poor-cli.config_mgr").api_key_status_view()
+            end,
             ["api-key-purge"] = function(fargs)
                 local provider = (fargs[1] or ""):match("^%s*(%S+)%s*$")
-                cfg_mgr.api_key_purge_flow(provider)
+                require("poor-cli.config_mgr").api_key_purge_flow(provider)
             end,
         },
     })

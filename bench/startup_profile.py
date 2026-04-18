@@ -116,11 +116,12 @@ def _run_quick_quit_probe(runs: int) -> Dict[str, float]:
     return result
 
 
-def _run_quick_quit_stall_probe(runs: int) -> Dict[str, float]:
+def _run_quick_quit_stall_probe(runs: int, ultra_fast: bool = False) -> Dict[str, float]:
     cmd = ["nvim", "--headless", "-u", "NONE", "-n", "-l", str(QUICK_QUIT_STALL_PROBE)]
     durations: List[float] = []
     for _ in range(max(1, runs)):
         env = dict(os.environ)
+        env["POORCLI_BENCH_EXIT_ULTRA_FAST"] = "1" if ultra_fast else "0"
         started = time.perf_counter()
         proc = subprocess.run(
             cmd,
@@ -133,8 +134,9 @@ def _run_quick_quit_stall_probe(runs: int) -> Dict[str, float]:
         durations.append((time.perf_counter() - started) * 1000.0)
         if proc.returncode != 0:
             raise RuntimeError(f"quick quit stall probe failed: {proc.stderr}\n{proc.stdout}")
-    result: Dict[str, float] = {"runs_quick_quit_stall": float(len(durations))}
-    result.update(_summary("quick_quit_stall", durations))
+    metric = "quick_quit_stall_ultrafast" if ultra_fast else "quick_quit_stall"
+    result: Dict[str, float] = {f"runs_{metric}": float(len(durations))}
+    result.update(_summary(metric, durations))
     return result
 
 
@@ -148,6 +150,7 @@ def main() -> int:
     payload.update(_run_startup_probe(args.runs))
     payload.update(_run_quick_quit_probe(args.runs))
     payload.update(_run_quick_quit_stall_probe(args.runs))
+    payload.update(_run_quick_quit_stall_probe(args.runs, ultra_fast=True))
     payload["generated_at_unix"] = float(time.time())
     payload["commit"] = os.environ.get("GITHUB_SHA", "").strip()
 

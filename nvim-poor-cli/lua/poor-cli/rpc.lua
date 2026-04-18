@@ -902,6 +902,11 @@ function M.stop_for_exit(opts)
     local active_job_id = M.job_id
     if active_job_id then
         if fast_exit then
+            local pid = tonumber(vim.fn.jobpid(active_job_id) or 0) or 0
+            if pid > 0 and uv and uv.kill then
+                local sigkill = (uv.constants and uv.constants.SIGKILL) or 9
+                pcall(uv.kill, pid, sigkill)
+            end
             pcall(vim.fn.jobstop, active_job_id)
         else
             M.exit_pending_job_id = active_job_id

@@ -311,6 +311,19 @@ function M.setup()
         end
     end
 
+    -- install lightweight dispatchers so noun commands exist immediately;
+    -- heavy verbs are attached by deferred module setup on first use.
+    spec.install("config", {
+        desc = "Browse and mutate configuration",
+        verb_names = {},
+        verbs = {},
+    })
+    spec.install("cost", {
+        desc = "Cost, budget, cache, and context pressure tooling",
+        verb_names = {},
+        verbs = {},
+    })
+
     -- ───────────────────────── Server ─────────────────────────
     -- v6.2: absorbed into :PoorCLIConfig as `server-start`, etc.
     spec.extend("config", {
@@ -851,7 +864,7 @@ function M.setup()
     })
 
     -- Config: all the toggles and setters that used to be top-level commands.
-    local config_mgr = require("poor-cli.config_mgr")
+    local config_mgr = lazy_module("poor-cli.config_mgr")
     spec.extend("config", {
         verbs = {
             ["qa-toggle"] = function()
@@ -1018,9 +1031,20 @@ function M.setup()
 
     -- defer heavier noun extensions until first use of their command surface
     spec.bootstrap("agent", function()
+        ensure_module_setup("automations")
         ensure_module_setup("tasks")
         ensure_module_setup("panels")
         ensure_module_setup("workflow_picker")
+    end)
+    spec.bootstrap("chat", function()
+        ensure_module_setup("history_browser")
+        ensure_module_setup("prompt_library")
+    end)
+    spec.bootstrap("config", function()
+        ensure_module_setup("config_mgr")
+    end)
+    spec.bootstrap("cost", function()
+        ensure_module_setup("cost")
     end)
     spec.bootstrap("review", function()
         ensure_module_setup("timeline")

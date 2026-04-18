@@ -115,11 +115,12 @@ def _run_quick_quit_probe(runs: int = 10) -> Dict[str, float]:
     return _latency_summary("quick_quit", durations)
 
 
-def _run_quick_quit_stall_probe(runs: int = 5) -> Dict[str, float]:
+def _run_quick_quit_stall_probe(runs: int = 5, ultra_fast: bool = False) -> Dict[str, float]:
     cmd = ["nvim", "--headless", "-u", "NONE", "-n", "-l", str(QUICK_QUIT_STALL_PROBE)]
     durations: List[float] = []
     for _ in range(runs):
         env = dict(os.environ)
+        env["POORCLI_BENCH_EXIT_ULTRA_FAST"] = "1" if ultra_fast else "0"
         started = time.perf_counter()
         proc = subprocess.run(
             cmd,
@@ -132,7 +133,8 @@ def _run_quick_quit_stall_probe(runs: int = 5) -> Dict[str, float]:
         durations.append((time.perf_counter() - started) * 1000.0)
         if proc.returncode != 0:
             raise RuntimeError(f"quick quit stall probe failed: {proc.stderr}\n{proc.stdout}")
-    return _latency_summary("quick_quit_stall", durations)
+    metric = "quick_quit_stall_ultrafast" if ultra_fast else "quick_quit_stall"
+    return _latency_summary(metric, durations)
 
 
 def _run_provider_probe_microbench() -> Dict[str, float]:
@@ -303,6 +305,7 @@ def _checks_from_result(result: Dict[str, float], include_provider_probe_fail: b
     ]
     soft_checks = [
         ("quick_quit_stall_p95_ms", _threshold("POORCLI_PERF_MAX_STALLED_QUIT_P95_MS", 2800.0)),
+        ("quick_quit_stall_ultrafast_p95_ms", _threshold("POORCLI_PERF_MAX_STALLED_QUIT_ULTRAFAST_P95_MS", 450.0)),
         ("provider_probe_cold_ms", _threshold("POORCLI_PERF_MAX_PROVIDER_PROBE_COLD_MS", 500.0)),
         ("provider_probe_repeat_mean_ms", _threshold("POORCLI_PERF_MAX_PROVIDER_PROBE_REPEAT_MS", 2.0)),
     ]
@@ -349,9 +352,17 @@ def main() -> int:
     startup = _run_startup_probe()
     quick_quit = _run_quick_quit_probe()
     quick_quit_stall = _run_quick_quit_stall_probe()
+    quick_quit_stall_ultrafast = _run_quick_quit_stall_probe(ultra_fast=True)
     provider_probe_stats = _run_provider_probe_microbench()
     mock_ttft = _run_mock_ttft_bench()
-    result = {**startup, **quick_quit, **quick_quit_stall, **provider_probe_stats, **mock_ttft}
+    result = {
+        **startup,
+        **quick_quit,
+        **quick_quit_stall,
+        **quick_quit_stall_ultrafast,
+        **provider_probe_stats,
+        **mock_ttft,
+    }
     scenario_rows = [
         {
             "scenario": "normal",
@@ -369,6 +380,8 @@ def main() -> int:
             "scenario": "stalled_exit",
             "quickQuitStallMeanMs": float(result.get("quick_quit_stall_mean_ms", 0.0)),
             "quickQuitStallP95Ms": float(result.get("quick_quit_stall_p95_ms", 0.0)),
+            "quickQuitStallUltraFastMeanMs": float(result.get("quick_quit_stall_ultrafast_mean_ms", 0.0)),
+            "quickQuitStallUltraFastP95Ms": float(result.get("quick_quit_stall_ultrafast_p95_ms", 0.0)),
         },
         {
             "scenario": "slow_startup",

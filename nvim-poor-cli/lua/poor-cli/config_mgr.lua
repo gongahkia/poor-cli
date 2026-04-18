@@ -72,12 +72,8 @@ function M.open_picker()
 end
 
 function M.setup()
-    -- config_mgr.lua owns the :PoorCLIConfig dispatcher. Additional verbs are
-    -- added by commands.lua's Config cluster (qa-toggle, input-log, chat-trace,
-    -- permission-mode, permissions-set, sandbox, context-budget, exec-profile,
-    -- instructions, rules, picker-backend, api-key) via command_spec.extend.
-    require("poor-cli.command_spec").install("config", {
-        desc = "Browse and mutate configuration",
+    local spec = require("poor-cli.command_spec")
+    local base = {
         verb_names = { "list", "set", "toggle" },
         verbs = {
             list = function() M.open_picker() end,
@@ -97,7 +93,16 @@ function M.setup()
                 end) end)
             end,
         },
-    })
+    }
+    if spec.get("config") then
+        spec.extend("config", base)
+    else
+        spec.install("config", vim.tbl_deep_extend("force", {
+            desc = "Browse and mutate configuration",
+            verb_names = {},
+            verbs = {},
+        }, base))
+    end
 end
 
 -- Helpers exposed for the Provider dispatcher's api-key-* verbs. Implemented

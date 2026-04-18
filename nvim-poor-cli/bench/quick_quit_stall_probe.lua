@@ -35,11 +35,14 @@ local bench_dir = vim.fn.fnamemodify(script_path, ":h")
 local stall_server = vim.fs.joinpath(bench_dir, "stall_server.py")
 local wait_ms = tonumber(vim.env.POORCLI_BENCH_QUIT_WAIT_MS or "320") or 320
 local exit_timeout_ms = tonumber(vim.env.POORCLI_BENCH_EXIT_TIMEOUT_MS or "180") or 180
+local ultra_fast_raw = tostring(vim.env.POORCLI_BENCH_EXIT_ULTRA_FAST or "0"):lower()
+local exit_ultra_fast = ultra_fast_raw == "1" or ultra_fast_raw == "true" or ultra_fast_raw == "yes"
 require("poor-cli").setup({
     auto_start = true,
     check_health_on_setup = false,
     log_user_input = false,
     exit_stop_timeout_ms = exit_timeout_ms,
+    exit_ultra_fast = exit_ultra_fast,
     server_cmd = { "python3", stall_server },
     notifications = { group = "poor-cli", snacks = false },
     startup_feedback_defer_ms = 999999,
