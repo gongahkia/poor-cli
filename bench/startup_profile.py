@@ -56,6 +56,7 @@ def _run_startup_probe(runs: int) -> Dict[str, float]:
     cmd = ["nvim", "--headless", "-u", "NONE", "-n", "-l", str(STARTUP_PROBE)]
     setup_return: List[float] = []
     setup_complete: List[float] = []
+    first_tick: List[float] = []
     for _ in range(max(1, runs)):
         env = dict(os.environ)
         env["POORCLI_BENCH_AUTO_START"] = "0"
@@ -72,6 +73,8 @@ def _run_startup_probe(runs: int) -> Dict[str, float]:
         row = _json_line_from_stdout(proc.stdout)
         setup_return.append(float(row.get("setup_return_ms", 0.0) or 0.0))
         setup_complete.append(float(row.get("setup_complete_ms", 0.0) or 0.0))
+        if row.get("first_tick_ms") is not None:
+            first_tick.append(float(row.get("first_tick_ms", 0.0) or 0.0))
 
     warm_setup_return = setup_return[1:] if len(setup_return) > 1 else list(setup_return)
     warm_setup_complete = setup_complete[1:] if len(setup_complete) > 1 else list(setup_complete)
@@ -85,6 +88,7 @@ def _run_startup_probe(runs: int) -> Dict[str, float]:
     result.update(_summary("setup_complete", setup_complete))
     result.update(_summary("warm_setup_return", warm_setup_return))
     result.update(_summary("warm_setup_complete", warm_setup_complete))
+    result.update(_summary("first_tick", first_tick))
     return result
 
 

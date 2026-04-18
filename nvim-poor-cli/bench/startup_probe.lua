@@ -84,6 +84,15 @@ local function run_probe()
         notifications = { group = "poor-cli", snacks = false },
     })
     local t_setup_return = now_ns()
+    local first_tick_done = false
+    local t_first_tick = 0
+    vim.schedule(function()
+        t_first_tick = now_ns()
+        first_tick_done = true
+    end)
+    local first_tick_ready = wait_until(wait_setup_ms, function()
+        return first_tick_done
+    end)
 
     local setup_done = wait_until(wait_setup_ms, function()
         return poor_cli._setup_complete == true
@@ -109,6 +118,7 @@ local function run_probe()
         require_ms = ns_to_ms(t_require - t0),
         setup_return_ms = ns_to_ms(t_setup_return - t0),
         setup_complete_ms = ns_to_ms(t_setup_done - t0),
+        first_tick_ms = first_tick_ready and ns_to_ms(t_first_tick - t_setup_return) or nil,
         ready_ms = auto_start and ns_to_ms(t_ready - t0) or nil,
     }
 

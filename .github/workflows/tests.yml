@@ -273,7 +273,9 @@ jobs:
           summary_path = Path(__import__("os").environ["GITHUB_STEP_SUMMARY"])
           head = json.loads(Path("bench-head.json").read_text(encoding="utf-8")) if Path("bench-head.json").exists() else {}
           compare = json.loads(Path("bench-compare.json").read_text(encoding="utf-8")) if Path("bench-compare.json").exists() else {}
+          guardrail = json.loads(Path("bench-guardrail.json").read_text(encoding="utf-8")) if Path("bench-guardrail.json").exists() else {}
           rows = compare.get("comparisons", []) if isinstance(compare, dict) else []
+          scenario_rows = guardrail.get("scenarioRows", []) if isinstance(guardrail, dict) else []
           with summary_path.open("a", encoding="utf-8") as fh:
               fh.write("### Performance Summary\n\n")
               if rows:
@@ -294,8 +296,26 @@ jobs:
               elif head:
                   fh.write("| Metric | Head (ms) |\n")
                   fh.write("|---|---:|\n")
-                  for metric in ("warm_setup_return_p95_ms", "warm_setup_complete_p95_ms", "quick_quit_mean_ms", "quick_quit_p50_ms"):
+                  for metric in ("first_tick_p95_ms", "warm_setup_return_p95_ms", "warm_setup_complete_p95_ms", "quick_quit_mean_ms", "quick_quit_p50_ms"):
                       fh.write(f"| {metric} | {float(head.get(metric, 0.0)):.2f} |\n")
+              if scenario_rows:
+                  fh.write("\n### Perf Scenarios\n\n")
+                  fh.write("| Scenario | Signal A (ms) | Signal B (ms) |\n")
+                  fh.write("|---|---:|---:|\n")
+                  for row in scenario_rows:
+                      name = str(row.get("scenario", ""))
+                      if name == "normal":
+                          fh.write(
+                              f"| {name} | {float(row.get('setupCompleteMeanMs', 0.0)):.2f} | {float(row.get('quickQuitMeanMs', 0.0)):.2f} |\n"
+                          )
+                      elif name == "backend_unavailable":
+                          fh.write(
+                              f"| {name} | {float(row.get('providerProbeColdMs', 0.0)):.2f} | {float(row.get('providerProbeRepeatMeanMs', 0.0)):.2f} |\n"
+                          )
+                      else:
+                          fh.write(
+                              f"| {name} | {float(row.get('setupCompleteP99Ms', 0.0)):.2f} | {float(row.get('mockTtftP95Ms', 0.0)):.2f} |\n"
+                          )
               fh.write("\n")
           PY
 
@@ -309,29 +329,32 @@ jobs:
             bench-base.json
             bench-compare.json
             bench-trend.jsonl
+            bench-guardrail.json
           if-no-files-found: ignore
 
       - name: Run perf guardrails (PR soft)
         if: github.event_name == 'pull_request'
         env:
+          POORCLI_PERF_MAX_FIRST_TICK_MS: "20"
           POORCLI_PERF_MAX_SETUP_RETURN_MS: "45"
           POORCLI_PERF_MAX_SETUP_COMPLETE_MS: "120"
           POORCLI_PERF_MAX_QUICK_QUIT_MS: "180"
           POORCLI_PERF_MAX_PROVIDER_PROBE_COLD_MS: "700"
           POORCLI_PERF_MAX_PROVIDER_PROBE_REPEAT_MS: "3.5"
           POORCLI_PERF_MAX_MOCK_TTFT_MS: "1800"
-        run: .venv/bin/python bench/perf_guardrail.py
+        run: .venv/bin/python bench/perf_guardrail.py --report-path bench-guardrail.json
 
       - name: Run perf guardrails (main hard)
         if: github.event_name != 'pull_request'
         env:
+          POORCLI_PERF_MAX_FIRST_TICK_MS: "15"
           POORCLI_PERF_MAX_SETUP_RETURN_MS: "30"
           POORCLI_PERF_MAX_SETUP_COMPLETE_MS: "80"
           POORCLI_PERF_MAX_QUICK_QUIT_MS: "120"
           POORCLI_PERF_MAX_PROVIDER_PROBE_COLD_MS: "500"
           POORCLI_PERF_MAX_PROVIDER_PROBE_REPEAT_MS: "2.0"
           POORCLI_PERF_MAX_MOCK_TTFT_MS: "1400"
-        run: .venv/bin/python bench/perf_guardrail.py
+        run: .venv/bin/python bench/perf_guardrail.py --report-path bench-guardrail.json
 
   go-internal-coverage:
     runs-on: ubuntu-latest

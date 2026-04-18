@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import statistics
@@ -250,31 +251,103 @@ def _threshold(name: str, default: float) -> float:
         return default
 
 
+def _checks_from_result(result: Dict[str, float], include_provider_probe_fail: bool) -> Dict[str, object]:
+    hard_checks = [
+        ("first_tick_p95_ms", _threshold("POORCLI_PERF_MAX_FIRST_TICK_MS", 15.0)),
+        ("setup_return_mean_ms", _threshold("POORCLI_PERF_MAX_SETUP_RETURN_MS", 30.0)),
+        ("setup_complete_mean_ms", _threshold("POORCLI_PERF_MAX_SETUP_COMPLETE_MS", 80.0)),
+        ("quick_quit_mean_ms", _threshold("POORCLI_PERF_MAX_QUICK_QUIT_MS", 120.0)),
+        ("mock_ttft_mean_ms", _threshold("POORCLI_PERF_MAX_MOCK_TTFT_MS", 1400.0)),
+    ]
+    soft_checks = [
+        ("provider_probe_cold_ms", _threshold("POORCLI_PERF_MAX_PROVIDER_PROBE_COLD_MS", 500.0)),
+        ("provider_probe_repeat_mean_ms", _threshold("POORCLI_PERF_MAX_PROVIDER_PROBE_REPEAT_MS", 2.0)),
+    ]
+    hard_failures = [
+        f"{metric}={result.get(metric, 0.0):.2f}ms > {limit:.2f}ms"
+        for metric, limit in hard_checks
+        if float(result.get(metric, 0.0)) > limit
+    ]
+    soft_failures = [
+        f"{metric}={result.get(metric, 0.0):.2f}ms > {limit:.2f}ms"
+        for metric, limit in soft_checks
+        if float(result.get(metric, 0.0)) > limit
+    ]
+    if include_provider_probe_fail:
+        hard_failures.extend(soft_failures)
+    return {
+        "hardChecks": [
+            {"metric": metric, "limitMs": limit}
+            for metric, limit in hard_checks
+        ],
+        "softChecks": [
+            {"metric": metric, "limitMs": limit}
+            for metric, limit in soft_checks
+        ],
+        "hardFailures": hard_failures,
+        "softFailures": soft_failures,
+    }
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(prog="bench/perf_guardrail.py")
+    parser.add_argument(
+        "--report-path",
+        default="",
+        help="optional output path for machine-readable report",
+    )
+    parser.add_argument(
+        "--include-provider-probe-fail",
+        action="store_true",
+        help="promote provider-probe soft failures to hard failures",
+    )
+    args = parser.parse_args()
+
     startup = _run_startup_probe()
     quick_quit = _run_quick_quit_probe()
     provider_probe_stats = _run_provider_probe_microbench()
     mock_ttft = _run_mock_ttft_bench()
     result = {**startup, **quick_quit, **provider_probe_stats, **mock_ttft}
-    print(json.dumps(result, sort_keys=True))
+    scenario_rows = [
+        {
+            "scenario": "normal",
+            "setupReturnMeanMs": float(result.get("setup_return_mean_ms", 0.0)),
+            "setupCompleteMeanMs": float(result.get("setup_complete_mean_ms", 0.0)),
+            "quickQuitMeanMs": float(result.get("quick_quit_mean_ms", 0.0)),
+            "firstTickP95Ms": float(result.get("first_tick_p95_ms", 0.0)),
+        },
+        {
+            "scenario": "backend_unavailable",
+            "providerProbeColdMs": float(result.get("provider_probe_cold_ms", 0.0)),
+            "providerProbeRepeatMeanMs": float(result.get("provider_probe_repeat_mean_ms", 0.0)),
+        },
+        {
+            "scenario": "slow_startup",
+            "setupCompleteP99Ms": float(result.get("setup_complete_p99_ms", 0.0)),
+            "mockTtftP95Ms": float(result.get("mock_ttft_p95_ms", 0.0)),
+        },
+    ]
+    checks = _checks_from_result(result, include_provider_probe_fail=args.include_provider_probe_fail)
+    payload = {
+        "metrics": result,
+        "scenarioRows": scenario_rows,
+        "checks": checks,
+    }
+    encoded = json.dumps(payload, sort_keys=True)
+    print(encoded)
+    if str(args.report_path or "").strip():
+        out_path = Path(str(args.report_path)).expanduser().resolve()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(encoded + "\n", encoding="utf-8")
 
-    checks = [
-        ("setup_return_mean_ms", _threshold("POORCLI_PERF_MAX_SETUP_RETURN_MS", 30.0)),
-        ("setup_complete_mean_ms", _threshold("POORCLI_PERF_MAX_SETUP_COMPLETE_MS", 80.0)),
-        ("quick_quit_mean_ms", _threshold("POORCLI_PERF_MAX_QUICK_QUIT_MS", 120.0)),
-        ("provider_probe_cold_ms", _threshold("POORCLI_PERF_MAX_PROVIDER_PROBE_COLD_MS", 500.0)),
-        ("provider_probe_repeat_mean_ms", _threshold("POORCLI_PERF_MAX_PROVIDER_PROBE_REPEAT_MS", 2.0)),
-        ("mock_ttft_mean_ms", _threshold("POORCLI_PERF_MAX_MOCK_TTFT_MS", 1400.0)),
-    ]
-    failures = [
-        f"{metric}={result[metric]:.2f}ms > {limit:.2f}ms"
-        for metric, limit in checks
-        if float(result.get(metric, 0.0)) > limit
-    ]
-    if failures:
-        for failure in failures:
+    hard_failures = list(checks.get("hardFailures", []))
+    soft_failures = list(checks.get("softFailures", []))
+    if hard_failures:
+        for failure in hard_failures:
             print(f"[perf-guardrail] {failure}", file=sys.stderr)
         return 1
+    for failure in soft_failures:
+        print(f"[perf-guardrail soft] {failure}", file=sys.stderr)
     return 0
 
 

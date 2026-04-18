@@ -10,6 +10,8 @@ from typing import Dict, List
 
 
 DEFAULT_METRICS = (
+    "first_tick_mean_ms",
+    "first_tick_p95_ms",
     "warm_setup_return_p95_ms",
     "warm_setup_return_p99_ms",
     "warm_setup_complete_p95_ms",
