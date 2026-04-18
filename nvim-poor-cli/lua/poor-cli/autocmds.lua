@@ -6,16 +6,18 @@ local M = {}
 function M.setup()
     local config = require("poor-cli.config")
     local rpc = require("poor-cli.rpc")
-    local inline = require("poor-cli.inline")
+    local function inline()
+        return require("poor-cli.inline")
+    end
     local augroup = vim.api.nvim_create_augroup("poor-cli", { clear = true })
 
     -- Clear ghost text when leaving insert mode
     vim.api.nvim_create_autocmd("InsertLeave", {
         group = augroup,
         callback = function()
-            inline.cancel_auto_trigger()
-            inline.cancel_active_request()
-            inline.clear_ghost_text()
+            inline().cancel_auto_trigger()
+            inline().cancel_active_request()
+            inline().clear_ghost_text()
         end,
         desc = "Clear poor-cli ghost text on insert leave",
     })
@@ -43,7 +45,7 @@ function M.setup()
             group = augroup,
             callback = function()
                 if rpc.is_running() then
-                    inline.auto_trigger()
+                    inline().auto_trigger()
                 end
             end,
             desc = "Auto-trigger poor-cli completion (debounced)",
@@ -75,7 +77,7 @@ function M.setup()
                     local lsp = require("poor-cli.lsp")
                     local diag_text = lsp.get_cursor_diagnostics()
                     if diag_text == "" then return end
-                    inline.trigger_with_instruction("Fix: " .. diag_text)
+                    inline().trigger_with_instruction("Fix: " .. diag_text)
                 end, 300)
             end,
             desc = "Auto-suggest fix for diagnostics errors",

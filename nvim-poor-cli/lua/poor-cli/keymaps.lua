@@ -24,18 +24,22 @@ end
 
 function M.setup()
     local config = require("poor-cli.config")
-    local inline = require("poor-cli.inline")
-    local chat = require("poor-cli.chat")
+    local function inline()
+        return require("poor-cli.inline")
+    end
+    local function chat()
+        return require("poor-cli.chat")
+    end
     
     -- Trigger completion in insert mode
     safe_map("i", config.get("trigger_key"), function()
-        inline.trigger({ manual = true })
+        inline().trigger({ manual = true })
     end, { desc = "Trigger poor-cli completion" })
     
     -- Accept full completion - only if ghost text is visible, otherwise fallback
     safe_map("i", config.get("accept_key"), function()
-        if inline.has_completion() then
-            inline.accept()
+        if inline().has_completion() then
+            inline().accept()
         else
             return vim.api.nvim_replace_termcodes("<Tab>", true, false, true)
         end
@@ -43,8 +47,8 @@ function M.setup()
 
     -- Accept next word of ghost text
     safe_map("i", config.get("accept_word_key"), function()
-        if inline.has_completion() then
-            inline.accept_word()
+        if inline().has_completion() then
+            inline().accept_word()
             return ""
         else
             return vim.api.nvim_replace_termcodes("<C-Right>", true, false, true)
@@ -54,8 +58,8 @@ function M.setup()
     local accept_line_key = config.get("accept_line_key")
     if accept_line_key == nil then accept_line_key = "<M-l>" end
     map_if_unclaimed("i", accept_line_key, function()
-        if inline.has_completion() then
-            inline.accept_line()
+        if inline().has_completion() then
+            inline().accept_line()
             return ""
         else
             return ""
@@ -64,24 +68,24 @@ function M.setup()
 
     local cycle_next_key = config.get("cycle_next_key") or "<M-]>"
     map_if_unclaimed("i", cycle_next_key, function()
-        if inline.has_completion() then
-            inline.cycle_next()
+        if inline().has_completion() then
+            inline().cycle_next()
         end
         return ""
     end, { expr = true, desc = "Cycle poor-cli completion forward" })
 
     local cycle_prev_key = config.get("cycle_prev_key") or "<M-[>"
     map_if_unclaimed("i", cycle_prev_key, function()
-        if inline.has_completion() then
-            inline.cycle_prev()
+        if inline().has_completion() then
+            inline().cycle_prev()
         end
         return ""
     end, { expr = true, desc = "Cycle poor-cli completion backward" })
 
     -- Dismiss completion
     safe_map("i", config.get("dismiss_key"), function()
-        if inline.has_completion() then
-            inline.dismiss()
+        if inline().has_completion() then
+            inline().dismiss()
             return ""
         else
             return vim.api.nvim_replace_termcodes("<Esc>", true, false, true)
@@ -90,7 +94,7 @@ function M.setup()
     
     -- Toggle chat in normal mode
     safe_map("n", config.get("chat_key"), function()
-        chat.toggle()
+        chat().toggle()
     end, { desc = "Toggle poor-cli chat" })
 
     local checkpoints_key = config.get("checkpoints_key")
@@ -102,14 +106,14 @@ function M.setup()
     
     -- Send selection to chat in visual mode
     safe_map("v", config.get("chat_key"), function()
-        chat.send_with_selection()
+        chat().send_with_selection()
     end, { desc = "Send selection to poor-cli chat" })
     
     -- Additional useful keymaps (not configurable, but standard)
     
     -- Alt+Enter to trigger completion with instruction
     safe_map("i", "<M-CR>", function()
-        inline.trigger_with_instruction()
+        inline().trigger_with_instruction()
     end, { desc = "Trigger poor-cli completion with instruction" })
     
     -- In normal mode: generate completion (skip if gc already mapped, e.g. by Comment.nvim)
@@ -118,7 +122,7 @@ function M.setup()
     safe_map("n", gc_key, function()
         vim.cmd("startinsert")
         vim.defer_fn(function()
-            inline.trigger({ manual = true })
+            inline().trigger({ manual = true })
         end, 50)
     end, { desc = "Generate completion at cursor" })
     

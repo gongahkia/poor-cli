@@ -31,6 +31,37 @@ local uv = vim.uv or vim.loop
 local SETUP_SLICE_BUDGET_NS = 3 * 1000000
 local AUTO_START_DELAY_MS = 120
 
+local function module_on_runtimepath(module_name)
+    if module_name == nil or module_name == "" then
+        return false
+    end
+    if package.loaded[module_name] ~= nil then
+        return true
+    end
+    if package.preload[module_name] ~= nil then
+        return true
+    end
+    if type(package.searchpath) == "function" then
+        local found = package.searchpath(module_name, package.path)
+        if found and found ~= "" then
+            return true
+        end
+    end
+    local mod_path = tostring(module_name):gsub("%.", "/")
+    if #vim.api.nvim_get_runtime_file("lua/" .. mod_path .. ".lua", false) > 0 then
+        return true
+    end
+    if #vim.api.nvim_get_runtime_file("lua/" .. mod_path .. "/init.lua", false) > 0 then
+        return true
+    end
+    return false
+end
+
+local function auto_start_delay_ms(config)
+    local configured = tonumber(config.get("auto_start_delay_ms") or "")
+    return math.max(0, configured or AUTO_START_DELAY_MS)
+end
+
 setmetatable(M, {
     __index = function(tbl, key)
         local ok, mod = pcall(lazy_require, key)
@@ -103,7 +134,7 @@ function M.setup(opts)
     }
     local missing = {}
     for _, dep in ipairs(required) do
-        if not pcall(require, dep.module) then
+        if not module_on_runtimepath(dep.module) then
             missing[#missing + 1] = dep
         end
     end
@@ -134,14 +165,6 @@ function M.setup(opts)
 
     -- rpc loaded early because deferred setups touch it via rpc.request
     rawset(M, "rpc", require("poor-cli.rpc"))
-
-    -- chat/inline register streaming autocmds; must be eager so events
-    -- emitted during deferred init don't get dropped.
-    rawset(M, "chat", require("poor-cli.chat"))
-    rawset(M, "inline", require("poor-cli.inline"))
-    if type(M.chat.setup_streaming_autocmds) == "function" then
-        M.chat.setup_streaming_autocmds()
-    end
 
     local function finalize()
         local actions = {}
@@ -229,7 +252,7 @@ function M.setup(opts)
                     if M.rpc.is_running() then
                         M.rpc.initialize(nil, { validate_api_key = false })
                     end
-                end, AUTO_START_DELAY_MS)
+                end, auto_start_delay_ms(config))
             elseif M.rpc.is_running() then
                 M.rpc.initialize()
             end

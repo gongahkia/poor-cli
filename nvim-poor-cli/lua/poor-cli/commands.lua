@@ -280,10 +280,24 @@ end
 local function _notify(msg, level) require("poor-cli.notify").notify("[poor-cli] " .. msg, level) end
 
 function M.setup()
+    local function lazy_module(name)
+        return setmetatable({}, {
+            __index = function(tbl, key)
+                local mod = require(name)
+                setmetatable(tbl, { __index = mod, __newindex = mod })
+                return mod[key]
+            end,
+            __newindex = function(_, key, value)
+                local mod = require(name)
+                mod[key] = value
+            end,
+        })
+    end
+
     local rpc = require("poor-cli.rpc")
-    local chat = require("poor-cli.chat")
-    local inline = require("poor-cli.inline")
-    local diagnostics = require("poor-cli.diagnostics")
+    local chat = lazy_module("poor-cli.chat")
+    local inline = lazy_module("poor-cli.inline")
+    local diagnostics = lazy_module("poor-cli.diagnostics")
     local spec = require("poor-cli.command_spec")
 
     -- ───────────────────────── Server ─────────────────────────

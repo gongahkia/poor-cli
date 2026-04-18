@@ -115,6 +115,7 @@ require("poor-cli").setup({
     server_cmd = "poor-cli-server --stdio",
     server_log_file = nil,                   -- default: stdpath("state")/poor-cli/server.log
     auto_start = true,
+    auto_start_delay_ms = 120,               -- defer backend spawn until setup path settles
     auto_restart = true,
     exit_stop_timeout_ms = 180,            -- hard stop budget on :wq / VimLeavePre
     startup_feedback_defer_ms = 450,       -- suppress startup spinner/toast below this latency

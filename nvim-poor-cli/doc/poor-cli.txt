@@ -61,6 +61,11 @@ auto_start ~
     Default: true
     Auto-start server when setup() is called.
 
+                                                        *poor-cli-config.auto_start_delay_ms*
+auto_start_delay_ms ~
+    Default: 120
+    Delay (ms) before auto-starting backend after setup() returns.
+
                                                         *poor-cli-config.auto_restart*
 auto_restart ~
     Default: true

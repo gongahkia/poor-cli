@@ -1522,8 +1522,12 @@ function M._finalize_streaming_block(request_id, err_info)
 end
 
 M._thinking_buffer = ""
+M._streaming_autocmds_ready = false
 
 function M.setup_streaming_autocmds()
+    if M._streaming_autocmds_ready then
+        return
+    end
     local group = vim.api.nvim_create_augroup("PoorCLIChatStreaming", { clear = true })
     vim.api.nvim_create_autocmd("User", {
         group = group,
@@ -1712,6 +1716,7 @@ function M.setup_streaming_autocmds()
             end)
         end,
     })
+    M._streaming_autocmds_ready = true
 end
 
 M._perm_ui = { buf = nil, win = nil }
@@ -3326,5 +3331,7 @@ function M.open_queue_manager()
         require("poor-cli.notify").notify("[poor-cli] Queue cleared", vim.log.levels.INFO)
     end, { buffer = buf, nowait = true })
 end
+
+M.setup_streaming_autocmds()
 
 return M

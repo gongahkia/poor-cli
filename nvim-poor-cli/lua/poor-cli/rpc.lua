@@ -551,10 +551,61 @@ local OPTIONAL_PLUGINS = {
     "snacks",
 }
 
+local OPTIONAL_PLUGIN_COMMANDS = {
+    neogit = "Neogit",
+    trouble = "Trouble",
+    gitsigns = "Gitsigns",
+    oil = "Oil",
+    overseer = "OverseerRun",
+}
+
+local function module_on_runtimepath(module_name)
+    if module_name == nil or module_name == "" then
+        return false
+    end
+    if package.loaded[module_name] ~= nil then
+        return true
+    end
+    if package.preload[module_name] ~= nil then
+        return true
+    end
+    if type(package.searchpath) == "function" then
+        local found = package.searchpath(module_name, package.path)
+        if found and found ~= "" then
+            return true
+        end
+    end
+    local mod_path = tostring(module_name):gsub("%.", "/")
+    if #vim.api.nvim_get_runtime_file("lua/" .. mod_path .. ".lua", false) > 0 then
+        return true
+    end
+    if #vim.api.nvim_get_runtime_file("lua/" .. mod_path .. "/init.lua", false) > 0 then
+        return true
+    end
+    return false
+end
+
+local function command_exists(command_name)
+    if command_name == nil or command_name == "" then
+        return false
+    end
+    return vim.fn.exists(":" .. command_name) == 2
+end
+
+local function plugin_available(name)
+    if package.loaded[name] ~= nil then
+        return true
+    end
+    if command_exists(OPTIONAL_PLUGIN_COMMANDS[name]) then
+        return true
+    end
+    return module_on_runtimepath(name)
+end
+
 local function detect_plugins()
     local detected = {}
     for _, name in ipairs(OPTIONAL_PLUGINS) do
-        detected[name] = pcall(require, name)
+        detected[name] = plugin_available(name)
     end
     return detected
 end

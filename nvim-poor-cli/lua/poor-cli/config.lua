@@ -11,6 +11,7 @@ M.defaults = {
     
     -- Auto-start server on setup
     auto_start = true,
+    auto_start_delay_ms = 120, -- Delay before auto-starting backend after setup() returns
     auto_restart = true, -- Restart server automatically after unexpected exits
     exit_stop_timeout_ms = 180, -- Max wait budget before forced kill on VimLeavePre
     startup_feedback_defer_ms = 450, -- Suppress startup spinner/echo if startup finishes before this
