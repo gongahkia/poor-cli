@@ -22,6 +22,16 @@ M._pending_extends = {}
 M._bootstraps = {}
 M._bootstrap_done = {}
 
+local function ensure_deferred_features()
+    local ok, root = pcall(require, "poor-cli")
+    if not ok or type(root) ~= "table" then
+        return
+    end
+    if type(root._ensure_deferred_features) == "function" then
+        pcall(root._ensure_deferred_features)
+    end
+end
+
 -- register associates a noun key (lowercase, matches :PoorCLI<Noun>) with its
 -- spec table. Called from each noun module.
 --
@@ -51,6 +61,7 @@ function M.all() return M._specs end
 -- delegates to arg_complete[verb] for subsequent arguments, or {} otherwise.
 function M.make_complete(noun)
     return function(arg_lead, cmd_line, _)
+        ensure_deferred_features()
         if M._run_bootstrap then
             M._run_bootstrap(noun)
         end
@@ -87,6 +98,7 @@ end
 -- Unknown verbs get a usage notification listing the valid verbs.
 function M.dispatch(noun)
     return function(opts)
+        ensure_deferred_features()
         if M._run_bootstrap then
             M._run_bootstrap(noun)
         end

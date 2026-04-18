@@ -66,10 +66,33 @@ setmetatable(M, {
 
 M._setup_complete = false
 M._setup_attempted = false
+M._deferred_features_ready = false
 
 local function is_exiting()
     local exiting = tonumber(vim.v.exiting or 0)
     return exiting ~= nil and exiting ~= 0
+end
+
+function M._ensure_deferred_features()
+    if M._deferred_features_ready then
+        return
+    end
+    M._deferred_features_ready = true
+
+    local ok_ms, milestones = pcall(require, "poor-cli.onboarding_milestones")
+    if ok_ms and type(milestones.setup) == "function" then
+        pcall(milestones.setup)
+    end
+
+    local ok_snacks_dashboard, snacks_dashboard = pcall(require, "poor-cli.snacks_dashboard")
+    if ok_snacks_dashboard and type(snacks_dashboard.setup) == "function" then
+        pcall(snacks_dashboard.setup)
+    end
+
+    local ok_ux, ux = pcall(require, "poor-cli.ux")
+    if ok_ux and type(ux.setup) == "function" then
+        pcall(ux.setup)
+    end
 end
 
 local function run_setup_actions(actions, done)
@@ -170,13 +193,6 @@ function M.setup(opts)
         end
 
         enqueue(function()
-            local ok_ms, milestones = pcall(require, "poor-cli.onboarding_milestones")
-            if ok_ms and type(milestones.setup) == "function" then
-                pcall(milestones.setup)
-            end
-        end)
-
-        enqueue(function()
             if pcall(require, "lualine") then
                 require("poor-cli.lualine").setup()
             end
@@ -209,17 +225,15 @@ function M.setup(opts)
         end)
 
         enqueue(function()
-            local ok_snacks_dashboard, snacks_dashboard = pcall(require, "poor-cli.snacks_dashboard")
-            if ok_snacks_dashboard and type(snacks_dashboard.setup) == "function" then
-                snacks_dashboard.setup()
-            end
-        end)
-
-        enqueue(function()
-            local ok_ux, ux = pcall(require, "poor-cli.ux")
-            if ok_ux and type(ux.setup) == "function" then
-                pcall(ux.setup)
-            end
+            local group = vim.api.nvim_create_augroup("poor-cli-deferred-features", { clear = true })
+            vim.api.nvim_create_autocmd("User", {
+                group = group,
+                pattern = { "PoorCLIInitialized", "PoorCLITurnEnded", "PoorCLICompletionAccepted" },
+                once = true,
+                callback = function()
+                    pcall(M._ensure_deferred_features)
+                end,
+            })
         end)
 
         run_setup_actions(actions, function()
