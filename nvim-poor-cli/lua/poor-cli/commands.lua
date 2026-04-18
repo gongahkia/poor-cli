@@ -336,6 +336,16 @@ function M.setup()
         verb_names = {},
         verbs = {},
     })
+    spec.install("agent", {
+        desc = "Agent runtime: background agents, tasks, sessions, plan, skills, workflows, automations",
+        verb_names = {},
+        verbs = {},
+    })
+    spec.install("context", {
+        desc = "Inspect and compact the active context",
+        verb_names = {},
+        verbs = {},
+    })
 
     -- ───────────────────────── Server ─────────────────────────
     -- v6.2: absorbed into :PoorCLIConfig as `server-start`, etc.
@@ -1056,6 +1066,7 @@ function M.setup()
 
     -- defer heavier noun extensions until first use of their command surface
     spec.bootstrap("agent", function()
+        ensure_module_setup("agents")
         run_extend_once("agent", extend_agent_commands)
         ensure_module_setup("sessions")
         ensure_module_setup("skills_nvim")
@@ -1070,6 +1081,7 @@ function M.setup()
         ensure_module_setup("prompt_library")
     end)
     spec.bootstrap("context", function()
+        ensure_module_setup("context_mgr")
         run_extend_once("context", extend_context_commands)
         ensure_module_setup("memory")
     end)
