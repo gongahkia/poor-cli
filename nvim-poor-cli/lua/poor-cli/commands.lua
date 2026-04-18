@@ -585,38 +585,12 @@ function M.setup()
     end
 
     local function extend_cost_commands()
-        -- ───────────────────────── Audit ─────────────────────────
-        -- v6.2: absorbed into :PoorCLICost as `audit-export`.
-        spec.extend("cost", {
-            verbs = {
-                ["audit-export"] = function(fargs)
-                    local raw = table.concat(fargs, " ")
-                    rpc.request("audit/exportRange", parse_audit_export_args(raw), function(result, err) vim.schedule(function()
-                        if err then _notify("Audit export failed: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
-                        if type(result) == "table" and result.path then
-                            _notify("Exported " .. tostring(result.count or 0) .. " audit events to " .. tostring(result.path), vim.log.levels.INFO)
-                        elseif type(result) == "table" and result.jsonl then
-                            open_scratch("[poor-cli audit export]", tostring(result.jsonl), "json")
-                        end
-                    end) end)
-                end,
-            },
-        })
-        -- Cost: dashboard + estimate
-        spec.extend("cost", {
-            verbs = {
-                dashboard = function() require("poor-cli.panels.cost_dashboard").open() end,
-                estimate = function(fargs)
-                    local msg = table.concat(fargs, " ")
-                    if msg == "" then msg = "hello" end
-                    local result, err = rpc.estimate_cost({ message = msg }, 10000)
-                    if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                    local r = result or {}
-                    _notify(("estimate: ~%d in / ~%d out tokens, ~$%.4f"):format(
-                        r.estimatedInputTokens or 0, r.estimatedOutputTokens or 0, r.estimatedCostUSD or 0
-                    ), vim.log.levels.INFO)
-                end,
-            },
+        require("poor-cli.commands_ext.cost").extend({
+            spec = spec,
+            rpc = rpc,
+            notify = _notify,
+            open_scratch = open_scratch,
+            parse_audit_export_args = parse_audit_export_args,
         })
     end
 
