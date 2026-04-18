@@ -11,9 +11,7 @@ local M = {}
 -- keymaps, or autocmds that the user expects immediately after :PoorCLI...
 local EAGER_SETUPS = {
     "commands", "keymaps", "autocmds", "cmp",
-    "agents", "sessions", "memory",
-    "checkpoints_ext",
-    "skills_nvim", "context_mgr",
+    "agents", "context_mgr",
 }
 
 -- everything else is loaded on first access. the metatable below caches
