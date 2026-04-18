@@ -81,9 +81,15 @@ def _run_startup_probe(runs: int = 5) -> Dict[str, float]:
         rows.append(_json_line_from_stdout(proc.stdout))
     setup_return = [float(row.get("setup_return_ms", 0.0) or 0.0) for row in rows]
     setup_complete = [float(row.get("setup_complete_ms", 0.0) or 0.0) for row in rows]
+    first_tick = [
+        float(row.get("first_tick_ms", 0.0) or 0.0)
+        for row in rows
+        if row.get("first_tick_ms") is not None
+    ]
     result = {}
     result.update(_latency_summary("setup_return", setup_return))
     result.update(_latency_summary("setup_complete", setup_complete))
+    result.update(_latency_summary("first_tick", first_tick))
     return result
 
 

@@ -322,7 +322,14 @@ class PoorCLIServer(HandlerMixin):
                     await self._shutdown_managed_services_locked()
             shutdown_timeout_s = 0.35 if self._fast_shutdown_requested else 6.0
             try:
-                await asyncio.wait_for(self.core.shutdown(), timeout=shutdown_timeout_s)
+                shutdown_coro = self.core.shutdown(fast=self._fast_shutdown_requested)
+            except TypeError:
+                shutdown_coro = self.core.shutdown()
+            try:
+                await asyncio.wait_for(
+                    shutdown_coro,
+                    timeout=shutdown_timeout_s,
+                )
             except asyncio.TimeoutError:
                 self.logger.warning(
                     "Core shutdown exceeded %.2fs during server stop; forcing fast exit",

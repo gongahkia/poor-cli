@@ -41,6 +41,13 @@ def _float_env(name: str, default: float) -> float:
         return default
 
 
+def _bool_env(name: str, default: bool = False) -> bool:
+    raw = str(os.environ.get(name, "") or "").strip().lower()
+    if not raw:
+        return bool(default)
+    return raw in {"1", "true", "yes", "on", "all"}
+
+
 _TCP_CONNECT_TIMEOUT_SECONDS = max(0.05, _float_env("POORCLI_PROVIDER_PROBE_TCP_TIMEOUT_S", 0.35))
 _HTTP_PROBE_TIMEOUT_SECONDS = max(0.10, _float_env("POORCLI_PROVIDER_PROBE_HTTP_TIMEOUT_S", 1.20))
 _probe_cache_at = 0.0
@@ -285,11 +292,21 @@ def _refresh_probe_cache_async(
 
 def _probe_local_providers(config: Config) -> tuple[Dict[str, Any], Dict[str, Dict[str, Any]]]:
     configured = set(config.model.providers.keys())
-    local_openai_names = [
+    local_openai_all_names = [
         name for name in LOCAL_OPENAI_COMPATIBLE_PROVIDERS
         if name in configured
     ]
-    ollama_enabled = "ollama" in configured
+    active_provider = str(getattr(getattr(config, "model", None), "provider", "") or "")
+    routing_mode = normalize_routing_mode(
+        getattr(getattr(config, "model", None), "routing_mode", "manual")
+    )
+    probe_all_local = _bool_env("POORCLI_PROVIDER_PROBE_ALL_LOCAL", False)
+    local_openai_names = list(local_openai_all_names) if probe_all_local else []
+    if not probe_all_local and active_provider in local_openai_all_names:
+        local_openai_names = [active_provider]
+    ollama_enabled = "ollama" in configured and (
+        probe_all_local or active_provider == "ollama" or routing_mode == "private"
+    )
     total_jobs = len(local_openai_names) + (1 if ollama_enabled else 0)
     if total_jobs <= 0:
         return {"ready": False, "models": []}, {}
@@ -326,7 +343,7 @@ def _probe_local_providers(config: Config) -> tuple[Dict[str, Any], Dict[str, Di
             elif provider_name:
                 local_openai_models[str(provider_name)] = dict(payload or _fallback_openai_payload(str(provider_name)))
 
-    for name in local_openai_names:
+    for name in local_openai_all_names:
         local_openai_models.setdefault(name, _fallback_openai_payload(name))
     return ollama_models, local_openai_models
 

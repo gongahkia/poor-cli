@@ -1888,6 +1888,8 @@ class TurnLifecycle:
             schedule_probe = getattr(self, "_schedule_provider_readiness_probe", None)
             if callable(schedule_probe):
                 schedule_probe()
+        policy_status = self.get_policy_status()
+        mcp_status = self.get_mcp_status()
         recent_runs = self.list_runs(limit=5)
         active_runs = [run for run in recent_runs if run.get("status") == "running"]
         last_run = recent_runs[0] if recent_runs else None
@@ -1917,9 +1919,9 @@ class TurnLifecycle:
             },
             "trust": {
                 "sandboxPreset": getattr(getattr(self.config, "sandbox", None), "default_preset", ""),
-                "policy": self.get_policy_status(),
-                "audit": self.get_policy_status().get("audit", {}),
-                "mcp": self.get_mcp_status(),
+                "policy": policy_status,
+                "audit": policy_status.get("audit", {}),
+                "mcp": mcp_status,
                 "security": trusted_security,
                 "checkpointing": bool(getattr(getattr(self.config, "checkpoint", None), "enabled", False)),
             },
@@ -2059,13 +2061,32 @@ class TurnLifecycle:
             }
         return self._mcp_manager.status()
 
-    async def shutdown(self) -> None:
+    async def shutdown(self, *, fast: bool = False) -> None:
         """Release external resources owned by the core."""
         # flush budget controller logs
         try:
             self._budget_logger.close()
         except Exception:
             pass
+        timer = getattr(self, "_provider_probe_timer", None)
+        if timer is not None and not timer.cancelled():
+            timer.cancel()
+        self._provider_probe_timer = None
+        background_tasks = (
+            self._repo_graph_task,
+            self._pending_llm_compression,
+            self._auto_history_compact_task,
+            getattr(self, "_provider_probe_task", None),
+        )
+        if fast:
+            for task in background_tasks:
+                if task and not task.done():
+                    task.cancel()
+            self._repo_graph_task = None
+            self._pending_llm_compression = None
+            self._auto_history_compact_task = None
+            self._provider_probe_task = None
+            return
         # persist session cost to history
         self._persist_cost_history()
         # emit session_end hook
@@ -2095,17 +2116,8 @@ class TurnLifecycle:
                 logger.debug("auto-memory on shutdown failed: %s", exc)
         if self._mcp_manager is not None:
             await self._mcp_manager.shutdown()
-        timer = getattr(self, "_provider_probe_timer", None)
-        if timer is not None and not timer.cancelled():
-            timer.cancel()
-        self._provider_probe_timer = None
         # cancel background tasks
-        for task in (
-            self._repo_graph_task,
-            self._pending_llm_compression,
-            self._auto_history_compact_task,
-            getattr(self, "_provider_probe_task", None),
-        ):
+        for task in background_tasks:
             if task and not task.done():
                 task.cancel()
                 try:

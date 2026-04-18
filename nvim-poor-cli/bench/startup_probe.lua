@@ -8,7 +8,7 @@ local function now_ns()
 end
 
 local function ns_to_ms(ns)
-    return math.floor((ns or 0) / 1000000)
+    return (ns or 0) / 1000000
 end
 
 local function env_flag(name, default)
