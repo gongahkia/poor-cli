@@ -3,8 +3,8 @@
 -- :PoorCLIDiag mcp-health / docker-sandbox / :PoorCLIService status /
 -- :PoorCLIConfig instructions / :PoorCLISearch stats with one structured panel.
 --
--- Summary block: RPC / Provider / Sandbox / MCP / Tools / Index / Services
--- Drilldown sections (<CR> to expand): Tools · MCP · Instructions · Services · Doctor
+-- Summary block: RPC / Provider / Sandbox / MCP / Tools / Instructions / Perf
+-- Drilldown sections (<CR> to expand): Tools · MCP · Instructions · Services · Doctor · Perf
 
 local rpc = require("poor-cli.rpc")
 
@@ -119,6 +119,24 @@ local function row_instructions()
     if data.error then return "warn", data.error end
     local sources = data.sources or {}
     return "ok", string.format("%d source%s", #sources, #sources == 1 and "" or "s")
+end
+
+local function row_perf()
+    local data = M.cache.status_view
+    if not data then return "info", "loading…" end
+    if data.error then return "warn", data.error end
+    local runs = type(data.runs) == "table" and data.runs or {}
+    local diag = type(runs.lastRunDiagnostics) == "table" and runs.lastRunDiagnostics or {}
+    local spans = type(diag.perfSpans) == "table" and diag.perfSpans or {}
+    if #spans == 0 then
+        return "info", "no perf spans yet"
+    end
+    local slowest = 0.0
+    for _, span in ipairs(spans) do
+        local ms = tonumber(type(span) == "table" and span.elapsedMs or 0) or 0
+        if ms > slowest then slowest = ms end
+    end
+    return "ok", string.format("%d spans · slowest %.1fms", #spans, slowest)
 end
 
 -- ──────────────── Drill section renderers ────────────────
@@ -286,6 +304,61 @@ local DRILLS = {
             end
         end,
     },
+    {
+        id = "perf",
+        title = "Perf spans",
+        summary = function()
+            local data = M.cache.status_view
+            if not data or data.error then return "" end
+            local runs = type(data.runs) == "table" and data.runs or {}
+            local diag = type(runs.lastRunDiagnostics) == "table" and runs.lastRunDiagnostics or {}
+            local spans = type(diag.perfSpans) == "table" and diag.perfSpans or {}
+            return string.format("%d recent span%s", #spans, #spans == 1 and "" or "s")
+        end,
+        fetch = function() fetch("poor-cli/getStatusView", "status_view") end,
+        render = function(lines)
+            local data = M.cache.status_view or {}
+            if data.error then
+                table.insert(lines, "    error: " .. data.error); return
+            end
+            local runs = type(data.runs) == "table" and data.runs or {}
+            local last_run = type(runs.lastRun) == "table" and runs.lastRun or {}
+            local diag = type(runs.lastRunDiagnostics) == "table" and runs.lastRunDiagnostics or {}
+            local spans = type(diag.perfSpans) == "table" and diag.perfSpans or {}
+            if #spans == 0 then
+                table.insert(lines, "    no spans in last run diagnostics")
+                return
+            end
+            if tostring(last_run.runId or "") ~= "" then
+                table.insert(lines, string.format("    run: %s [%s]", tostring(last_run.runId), tostring(last_run.status or "?")))
+            end
+            local sortable = {}
+            for _, span in ipairs(spans) do
+                if type(span) == "table" then
+                    table.insert(sortable, {
+                        name = tostring(span.name or "unknown"),
+                        elapsed_ms = tonumber(span.elapsedMs or 0) or 0,
+                        details = type(span.details) == "table" and span.details or nil,
+                    })
+                end
+            end
+            table.sort(sortable, function(a, b) return a.elapsed_ms > b.elapsed_ms end)
+            for idx = 1, math.min(#sortable, 12) do
+                local span = sortable[idx]
+                table.insert(lines, string.format("    %6.2fms  %s", span.elapsed_ms, clip(span.name, 56)))
+                if span.details then
+                    local detail_parts = {}
+                    for key, value in pairs(span.details) do
+                        table.insert(detail_parts, tostring(key) .. "=" .. tostring(value))
+                    end
+                    table.sort(detail_parts)
+                    if #detail_parts > 0 then
+                        table.insert(lines, "      " .. clip(table.concat(detail_parts, " "), 88))
+                    end
+                end
+            end
+        end,
+    },
 }
 
 function M.render()
@@ -299,6 +372,7 @@ function M.render()
         { "MCP",         row_mcp() },
         { "Tools",       row_tools() },
         { "Instructions",row_instructions() },
+        { "Perf",        row_perf() },
     }
     local badge_marks = {}
     for _, row in ipairs(summary_rows) do
@@ -344,6 +418,7 @@ function M.refresh()
     fetch("poor-cli/getTools", "tools")
     fetch("poor-cli/getInstructionStack", "instructions")
     fetch("poor-cli/listServices", "services")
+    fetch("poor-cli/getStatusView", "status_view")
     M.render()
 end
 

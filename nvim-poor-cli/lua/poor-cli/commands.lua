@@ -774,13 +774,14 @@ function M.setup()
         },
     })
 
-    -- Diag: status + doctor + mcp + mcp-health + policy + tools + inline +
+    -- Diag: status + doctor + perf + mcp + mcp-health + policy + tools + inline +
     --       trouble + fix + docker-sandbox + debug-copy + log-open + state-open +
     --       write-min-init
     spec.extend("diag", {
         verbs = {
             status = function() require("poor-cli.panels.diag").open() end,
             doctor = function() require("poor-cli.panels.diag").open({ expand = "doctor" }) end,
+            perf = function() require("poor-cli.panels.diag").open({ expand = "perf" }) end,
             mcp = function() require("poor-cli.mcp_registry").open() end,
             ["mcp-health"] = function() require("poor-cli.panels.diag").open({ expand = "mcp" }) end,
             policy = function() require("poor-cli.trust_center").open({ expand = "permission" }) end,

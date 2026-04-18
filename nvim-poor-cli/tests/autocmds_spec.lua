@@ -29,8 +29,8 @@ describe("autocmds", function()
         package.loaded["poor-cli.inline"] = nil
     end)
 
-    local function install_stubs(rpc_stub)
-        package.loaded["poor-cli.config"] = { get = function() return false end }
+    local function install_stubs(rpc_stub, config_get)
+        package.loaded["poor-cli.config"] = { get = config_get or function() return false end }
         package.loaded["poor-cli.rpc"] = rpc_stub
         package.loaded["poor-cli.inline"] = {
             cancel_auto_trigger = function() end,
@@ -40,18 +40,27 @@ describe("autocmds", function()
     end
 
     it("uses stop_for_exit when available", function()
-        local calls = { stop_for_exit = 0, stop = 0 }
+        local calls = { stop_for_exit = 0, stop = 0, timeout = nil }
         install_stubs({
             is_running = function() return true end,
-            stop_for_exit = function() calls.stop_for_exit = calls.stop_for_exit + 1 end,
+            stop_for_exit = function(opts)
+                calls.stop_for_exit = calls.stop_for_exit + 1
+                calls.timeout = opts and opts.timeout_ms
+            end,
             stop = function() calls.stop = calls.stop + 1 end,
-        })
+        }, function(key)
+            if key == "exit_stop_timeout_ms" then
+                return 123
+            end
+            return false
+        end)
 
         require("poor-cli.autocmds").setup()
         callbacks["VimLeavePre"]()
 
         assert.are.equal(1, calls.stop_for_exit)
         assert.are.equal(0, calls.stop)
+        assert.are.equal(123, calls.timeout)
     end)
 
     it("falls back to stop when stop_for_exit is unavailable", function()

@@ -26,7 +26,9 @@ function M.setup()
         callback = function()
             if rpc.is_running() then
                 if type(rpc.stop_for_exit) == "function" then
-                    rpc.stop_for_exit()
+                    rpc.stop_for_exit({
+                        timeout_ms = tonumber(config.get("exit_stop_timeout_ms") or "") or 180,
+                    })
                 else
                     rpc.stop()
                 end

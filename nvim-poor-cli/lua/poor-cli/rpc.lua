@@ -21,6 +21,8 @@ M._buf_cursor = 1      -- parse cursor into M.buffer (1-indexed)
 M.manual_stop = false
 M.restart_attempt = 0
 M.restart_timer = nil
+M.exit_force_timer = nil
+M.exit_pending_job_id = nil
 M.capabilities = nil
 M.server_state = "stopped"
 M.last_error = nil
@@ -374,6 +376,18 @@ local function clear_restart_timer()
     end)
 end
 
+local function clear_exit_force_timer()
+    if not M.exit_force_timer then
+        return
+    end
+    local timer = M.exit_force_timer
+    M.exit_force_timer = nil
+    pcall(function()
+        timer:stop()
+        timer:close()
+    end)
+end
+
 local function clear_pending_request(id)
     M.pending[id] = nil
     M.pending_meta[id] = nil
@@ -614,6 +628,8 @@ end
 function M.start(is_restart, opts)
     opts = opts or {}
     M._stopping_for_exit = false
+    M.exit_pending_job_id = nil
+    clear_exit_force_timer()
     M.startup_feedback_enabled = opts.startup_feedback ~= false
     M.startup_probe_enabled = opts.startup_probe ~= false
     if M.job_id then
@@ -721,6 +737,8 @@ function M.restart(callback)
 end
 
 function M.stop()
+    clear_exit_force_timer()
+    M.exit_pending_job_id = nil
     M._stopping_for_exit = false
     M.manual_stop = true
     -- Tracks when the user last asked for a stop. M.start() resets the
@@ -752,7 +770,9 @@ function M.stop()
     end
 end
 
-function M.stop_for_exit()
+function M.stop_for_exit(opts)
+    clear_exit_force_timer()
+    M.exit_pending_job_id = nil
     M._stopping_for_exit = true
     M.manual_stop = true
     clear_restart_timer()
@@ -760,8 +780,33 @@ function M.stop_for_exit()
     stop_startup_feedback("stopped")
     M.pending = {}
     M.pending_meta = {}
-    if M.job_id then
-        pcall(vim.fn.jobstop, M.job_id)
+    local timeout_ms = tonumber((type(opts) == "table" and opts.timeout_ms) or "") or 180
+    local active_job_id = M.job_id
+    if active_job_id then
+        M.exit_pending_job_id = active_job_id
+        pcall(vim.fn.chanclose, active_job_id, "stdin")
+        pcall(vim.fn.jobstop, active_job_id)
+        if timeout_ms > 0 and uv and uv.new_timer then
+            local timer = uv.new_timer()
+            if timer then
+                M.exit_force_timer = timer
+                timer:start(timeout_ms, 0, vim.schedule_wrap(function()
+                    clear_exit_force_timer()
+                    if M.exit_pending_job_id ~= active_job_id then
+                        return
+                    end
+                    local pid = tonumber(vim.fn.jobpid(active_job_id) or 0) or 0
+                    if pid > 0 and uv and uv.kill then
+                        local sigterm = (uv.constants and uv.constants.SIGTERM) or 15
+                        local sigkill = (uv.constants and uv.constants.SIGKILL) or 9
+                        pcall(uv.kill, pid, sigterm)
+                        pcall(uv.kill, pid, sigkill)
+                    end
+                    pcall(vim.fn.jobstop, active_job_id)
+                    M.exit_pending_job_id = nil
+                end))
+            end
+        end
         M.job_id = nil
     end
     M.buffer = ""
@@ -1456,6 +1501,8 @@ function M.handle_stderr(data)
 end
 
 function M.handle_exit(code)
+    clear_exit_force_timer()
+    M.exit_pending_job_id = nil
     if M._stopping_for_exit then
         M._stopping_for_exit = false
         M.manual_stop = false

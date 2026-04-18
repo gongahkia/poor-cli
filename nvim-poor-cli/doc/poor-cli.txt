@@ -66,6 +66,12 @@ auto_restart ~
     Default: true
     Restart the backend automatically after unexpected exits.
 
+                                                        *poor-cli-config.exit_stop_timeout_ms*
+exit_stop_timeout_ms ~
+    Default: 180
+    Hard budget (ms) for backend shutdown during VimLeavePre before
+    force-kill fallback.
+
                                                         *poor-cli-config.ghost_text_hl*
 ghost_text_hl ~
     Default: "Comment"
@@ -262,7 +268,7 @@ below and your prior history/keymaps for any renames you must apply.
 
 :PoorCLIDiag {verb} [args]                              *:PoorCLIDiag*
     Diagnostics, MCP, services, docker sandbox, logs.
-    Verbs: status  doctor  policy  mcp  mcp-health  tools
+    Verbs: status  doctor  perf  policy  mcp  mcp-health  tools
            inline  trouble  fix  docker-sandbox  debug-copy
            log-open  state-open  write-min-init
            service-start  service-stop  service-status  service-logs

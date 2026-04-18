@@ -12,6 +12,7 @@ M.defaults = {
     -- Auto-start server on setup
     auto_start = true,
     auto_restart = true, -- Restart server automatically after unexpected exits
+    exit_stop_timeout_ms = 180, -- Max wait budget before forced kill on VimLeavePre
     restart_backoff_initial = 1000, -- Initial restart delay in ms
     restart_backoff_max = 30000, -- Max restart delay in ms
     restart_backoff_multiplier = 2, -- Backoff multiplier per failure
