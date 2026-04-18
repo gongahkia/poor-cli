@@ -67,6 +67,7 @@ setmetatable(M, {
 M._setup_complete = false
 M._setup_attempted = false
 M._deferred_features_ready = false
+M._integrations_ready = false
 
 local function is_exiting()
     local exiting = tonumber(vim.v.exiting or 0)
@@ -92,6 +93,28 @@ function M._ensure_deferred_features()
     local ok_ux, ux = pcall(require, "poor-cli.ux")
     if ok_ux and type(ux.setup) == "function" then
         pcall(ux.setup)
+    end
+end
+
+function M._ensure_integrations()
+    if M._integrations_ready then
+        return
+    end
+    M._integrations_ready = true
+
+    for _, name in ipairs({ "trouble", "gitsigns", "oil", "overseer", "neogit", "dap" }) do
+        local ok_mod, mod = pcall(require, "poor-cli.integrations." .. name)
+        if ok_mod and type(mod.setup) == "function" then
+            pcall(mod.setup)
+        end
+    end
+
+    for _, name in ipairs({ "neogit_bridge", "dap_bridge", "trouble_bridge",
+                            "gitsigns_bridge", "oil_bridge", "overseer_bridge" }) do
+        local ok_bridge, bridge = pcall(require, "poor-cli.integrations." .. name)
+        if ok_bridge and type(bridge.setup) == "function" then
+            pcall(bridge.setup)
+        end
     end
 end
 
@@ -198,25 +221,6 @@ function M.setup(opts)
             end
         end)
 
-        for _, name in ipairs({ "trouble", "gitsigns", "oil", "overseer", "neogit", "dap" }) do
-            enqueue(function()
-                local ok_mod, mod = pcall(require, "poor-cli.integrations." .. name)
-                if ok_mod and type(mod.setup) == "function" then
-                    pcall(mod.setup)
-                end
-            end)
-        end
-
-        for _, name in ipairs({ "neogit_bridge", "dap_bridge", "trouble_bridge",
-                                "gitsigns_bridge", "oil_bridge", "overseer_bridge" }) do
-            enqueue(function()
-                local ok_bridge, bridge = pcall(require, "poor-cli.integrations." .. name)
-                if ok_bridge and type(bridge.setup) == "function" then
-                    pcall(bridge.setup)
-                end
-            end)
-        end
-
         enqueue(function()
             local ok_gi, gi = pcall(require, "poor-cli.gitignore_nudge")
             if ok_gi and type(gi.setup) == "function" then
@@ -232,6 +236,14 @@ function M.setup(opts)
                 once = true,
                 callback = function()
                     pcall(M._ensure_deferred_features)
+                end,
+            })
+            vim.api.nvim_create_autocmd("User", {
+                group = group,
+                pattern = "PoorCLIInitialized",
+                once = true,
+                callback = function()
+                    pcall(M._ensure_integrations)
                 end,
             })
         end)
