@@ -25,8 +25,11 @@ function M.setup()
         group = augroup,
         callback = function()
             if rpc.is_running() then
-                rpc.request("shutdown", {}, function() end)
-                vim.defer_fn(function() rpc.stop() end, 100)
+                if type(rpc.stop_for_exit) == "function" then
+                    rpc.stop_for_exit()
+                else
+                    rpc.stop()
+                end
             end
         end,
         desc = "Stop poor-cli server on exit",

@@ -160,11 +160,12 @@ class ChatHandlersMixin:
                     logger.debug("emit initialized notification failed: %s", exc)
             asyncio.create_task(_emit_initialized())
 
-            # Validate the API key against the live provider endpoint.
-            # Catches the "key was valid at subprocess spawn but has since
-            # been rotated/revoked" case. Runs in a thread so we don't
-            # block the initialize handler on a slow network.
-            key_validity = await self._validate_api_key_async(provider_info)
+            validate_api_key = params.get("validateApiKey", True)
+            key_validity = await self._validate_api_key_async(provider_info) if validate_api_key else {
+                "provider": str((provider_info or {}).get("name") or "unknown"),
+                "status": "unknown",
+                "reason": "skipped by client",
+            }
 
             return {
                 "capabilities": {

@@ -40,6 +40,9 @@ M.startup_feedback = {
     can_replace = nil,
     last_message = "",
 }
+M.startup_feedback_enabled = true
+M.startup_probe_enabled = true
+M._stopping_for_exit = false
 local uv = vim.uv or vim.loop
 local spinner_frames = { "-", "\\", "|", "/" }
 local startup_states = {
@@ -227,34 +230,36 @@ local function stop_startup_feedback(state)
     local elapsed = startup_elapsed_seconds()
     if state == "ready" then
         echo_startup_line(string.format("[poor-cli] [ok] initialized in %ds", elapsed), false)
-        -- follow-up: probe provider info to confirm config is fully loaded and responsive
-        local config_probe_start = (uv and uv.hrtime and uv.hrtime()) or 0
-        M.request("poor-cli/getProviderInfo", {}, function(result, err)
-            vim.schedule(function()
-                if err then
-                    -- Surface config probe failures so users know the server
-                    -- is running but not fully configured (missing key, bad
-                    -- provider, etc.) instead of silently appearing "ready".
-                    local msg = M.format_error(err)
-                    if msg:find("not initialized", 1, true) then
-                        -- Server hasn't finished init yet; don't alarm the user.
+        if M.startup_probe_enabled then
+            -- follow-up: probe provider info to confirm config is fully loaded and responsive
+            local config_probe_start = (uv and uv.hrtime and uv.hrtime()) or 0
+            M.request("poor-cli/getProviderInfo", {}, function(result, err)
+                vim.schedule(function()
+                    if err then
+                        -- Surface config probe failures so users know the server
+                        -- is running but not fully configured (missing key, bad
+                        -- provider, etc.) instead of silently appearing "ready".
+                        local msg = M.format_error(err)
+                        if msg:find("not initialized", 1, true) then
+                            -- Server hasn't finished init yet; don't alarm the user.
+                            return
+                        end
+                        require("poor-cli.notify").notify("[poor-cli] Config probe failed: " .. msg .. ". Run :PoorCLIDiag doctor", vim.log.levels.WARN)
                         return
                     end
-                    require("poor-cli.notify").notify("[poor-cli] Config probe failed: " .. msg .. ". Run :PoorCLIDiag doctor", vim.log.levels.WARN)
-                    return
-                end
-                local probe_elapsed = 0
-                if config_probe_start > 0 and uv and uv.hrtime then
-                    probe_elapsed = math.max(0, math.floor((uv.hrtime() - config_probe_start) / 1000000000))
-                end
-                local provider_name = (result and result.name) or "unknown"
-                if provider_name == "unconfigured" then return end -- soft-init stub, skip
-                pcall(vim.api.nvim_echo, {{
-                    string.format("[poor-cli] [ok] configuration loaded in %ds ✓ (%s)", probe_elapsed, provider_name),
-                    "MoreMsg",
-                }}, false, {})
+                    local probe_elapsed = 0
+                    if config_probe_start > 0 and uv and uv.hrtime then
+                        probe_elapsed = math.max(0, math.floor((uv.hrtime() - config_probe_start) / 1000000000))
+                    end
+                    local provider_name = (result and result.name) or "unknown"
+                    if provider_name == "unconfigured" then return end -- soft-init stub, skip
+                    pcall(vim.api.nvim_echo, {{
+                        string.format("[poor-cli] [ok] configuration loaded in %ds ✓ (%s)", probe_elapsed, provider_name),
+                        "MoreMsg",
+                    }}, false, {})
+                end)
             end)
-        end)
+        end
     elseif state == "error" then
         echo_startup_line(string.format("[poor-cli] [error] startup failed after %ds", elapsed), true)
     end
@@ -296,8 +301,10 @@ local function update_state(state, message)
         M.last_status_message = message
     end
     if startup_states[state] then
-        ensure_startup_feedback()
-        render_startup_feedback()
+        if M.startup_feedback_enabled then
+            ensure_startup_feedback()
+            render_startup_feedback()
+        end
     else
         stop_startup_feedback(state)
     end
@@ -417,7 +424,11 @@ local function schedule_restart()
         if M.job_id then
             return
         end
-        if M.start(true) then
+        if M.start(true, {
+            startup_feedback = false,
+            startup_probe = false,
+            silent_start = true,
+        }) then
             M.initialize()
         end
     end, delay)
@@ -578,7 +589,11 @@ function M.resolve_server_command()
     return config.get("server_cmd"), nil
 end
 
-function M.start(is_restart)
+function M.start(is_restart, opts)
+    opts = opts or {}
+    M._stopping_for_exit = false
+    M.startup_feedback_enabled = opts.startup_feedback ~= false
+    M.startup_probe_enabled = opts.startup_probe ~= false
     if M.job_id then
         notify_with_context("Server already running", vim.log.levels.WARN)
         return M.job_id
@@ -632,7 +647,9 @@ function M.start(is_restart)
         M.restart_attempt = 0
     end
 
-    notify_with_context("Server started", vim.log.levels.INFO)
+    if opts.silent_start ~= true then
+        notify_with_context("Server started", vim.log.levels.INFO)
+    end
     return M.job_id
 end
 
@@ -651,6 +668,7 @@ function M.initialize(callback, opts)
         provider = (opts and opts.provider) or config.get("provider"),
         model = (opts and opts.model) or config.get("model"),
         streaming = true,
+        validateApiKey = not (opts and opts.validate_api_key == false),
         clientCapabilities = M.client_capabilities(),
     }, function(result, err)
         if err then
@@ -681,6 +699,7 @@ function M.restart(callback)
 end
 
 function M.stop()
+    M._stopping_for_exit = false
     M.manual_stop = true
     -- Tracks when the user last asked for a stop. M.start() resets the
     -- global manual_stop flag immediately so the new process can track
@@ -709,6 +728,25 @@ function M.stop()
         M.manual_stop = false
         update_state("stopped", "Stopped")
     end
+end
+
+function M.stop_for_exit()
+    M._stopping_for_exit = true
+    M.manual_stop = true
+    clear_restart_timer()
+    clear_all_request_timers()
+    stop_startup_feedback("stopped")
+    M.pending = {}
+    M.pending_meta = {}
+    if M.job_id then
+        pcall(vim.fn.jobstop, M.job_id)
+        M.job_id = nil
+    end
+    M.buffer = ""
+    M._buf_parts = {}
+    M._buf_cursor = 1
+    M.restart_attempt = 0
+    M.reset_session_state()
 end
 
 function M.is_running()
@@ -1377,6 +1415,12 @@ function M.handle_stderr(data)
 end
 
 function M.handle_exit(code)
+    if M._stopping_for_exit then
+        M._stopping_for_exit = false
+        M.manual_stop = false
+        M.restart_attempt = 0
+        return
+    end
     local was_manual_stop = M.manual_stop
     local exit_error = build_request_error("Server exited with code " .. tostring(code), {
         exit_code = code,

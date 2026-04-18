@@ -27,6 +27,10 @@ local function lazy_require(name)
     return require("poor-cli." .. name)
 end
 
+local uv = vim.uv or vim.loop
+local SETUP_SLICE_BUDGET_NS = 3 * 1000000
+local AUTO_START_DELAY_MS = 120
+
 setmetatable(M, {
     __index = function(tbl, key)
         local ok, mod = pcall(lazy_require, key)
@@ -40,6 +44,40 @@ setmetatable(M, {
 
 M._setup_complete = false
 M._setup_attempted = false
+
+local function is_exiting()
+    local exiting = tonumber(vim.v.exiting or 0)
+    return exiting ~= nil and exiting ~= 0
+end
+
+local function run_setup_actions(actions, done)
+    local idx = 1
+    local function pump()
+        if is_exiting() then
+            return
+        end
+        local slice_start = (uv and uv.hrtime and uv.hrtime()) or 0
+        while idx <= #actions do
+            local action = actions[idx]
+            idx = idx + 1
+            pcall(action)
+            if slice_start > 0 and uv and uv.hrtime then
+                local elapsed = uv.hrtime() - slice_start
+                if elapsed >= SETUP_SLICE_BUDGET_NS then
+                    break
+                end
+            end
+        end
+        if idx <= #actions then
+            vim.schedule(pump)
+            return
+        end
+        if done then
+            done()
+        end
+    end
+    vim.schedule(pump)
+end
 
 -- Setup function - call this from your Neovim config.
 --
@@ -106,67 +144,100 @@ function M.setup(opts)
     end
 
     local function finalize()
-        for _, name in ipairs(EAGER_SETUPS) do
-            local ok, mod = pcall(require, "poor-cli." .. name)
-            if ok then
-                rawset(M, name, mod)
-                if type(mod.setup) == "function" then
-                    pcall(mod.setup)
-                end
-            end
+        local actions = {}
+        local function enqueue(fn)
+            actions[#actions + 1] = fn
         end
 
-        -- lualine is an optional integration; wire it if the user has it
-        if pcall(require, "lualine") then
-            require("poor-cli.lualine").setup()
+        for _, name in ipairs(EAGER_SETUPS) do
+            enqueue(function()
+                local ok, mod = pcall(require, "poor-cli." .. name)
+                if ok then
+                    rawset(M, name, mod)
+                    if type(mod.setup) == "function" then
+                        pcall(mod.setup)
+                    end
+                end
+            end)
         end
+
+        enqueue(function()
+            if pcall(require, "lualine") then
+                require("poor-cli.lualine").setup()
+            end
+        end)
 
         for _, name in ipairs({ "trouble", "gitsigns", "oil", "overseer", "neogit", "dap" }) do
-            local ok_mod, mod = pcall(require, "poor-cli.integrations." .. name)
-            if ok_mod and type(mod.setup) == "function" then
-                pcall(mod.setup)
-            end
+            enqueue(function()
+                local ok_mod, mod = pcall(require, "poor-cli.integrations." .. name)
+                if ok_mod and type(mod.setup) == "function" then
+                    pcall(mod.setup)
+                end
+            end)
         end
 
-        -- Phase B bridges: backend-originated notifications → plugin side effects.
         for _, name in ipairs({ "neogit_bridge", "dap_bridge", "trouble_bridge",
                                 "gitsigns_bridge", "oil_bridge", "overseer_bridge" }) do
-            local ok_bridge, bridge = pcall(require, "poor-cli.integrations." .. name)
-            if ok_bridge and type(bridge.setup) == "function" then
-                pcall(bridge.setup)
+            enqueue(function()
+                local ok_bridge, bridge = pcall(require, "poor-cli.integrations." .. name)
+                if ok_bridge and type(bridge.setup) == "function" then
+                    pcall(bridge.setup)
+                end
+            end)
+        end
+
+        enqueue(function()
+            local ok_gi, gi = pcall(require, "poor-cli.gitignore_nudge")
+            if ok_gi and type(gi.setup) == "function" then
+                pcall(gi.setup)
             end
-        end
+        end)
 
-        -- First-run .gitignore safety nudge (opt-out via gitignore_nudge=false).
-        local ok_gi, gi = pcall(require, "poor-cli.gitignore_nudge")
-        if ok_gi and type(gi.setup) == "function" then pcall(gi.setup) end
+        enqueue(function()
+            local ok_snacks_dashboard, snacks_dashboard = pcall(require, "poor-cli.snacks_dashboard")
+            if ok_snacks_dashboard and type(snacks_dashboard.setup) == "function" then
+                snacks_dashboard.setup()
+            end
+        end)
 
-        local ok_snacks_dashboard, snacks_dashboard = pcall(require, "poor-cli.snacks_dashboard")
-        if ok_snacks_dashboard and type(snacks_dashboard.setup) == "function" then
-            snacks_dashboard.setup()
-        end
+        enqueue(function()
+            local ok_ux, ux = pcall(require, "poor-cli.ux")
+            if ok_ux and type(ux.setup) == "function" then
+                pcall(ux.setup)
+            end
+        end)
 
-        local ok_ux, ux = pcall(require, "poor-cli.ux")
-        if ok_ux and type(ux.setup) == "function" then
-            pcall(ux.setup)
-        end
+        run_setup_actions(actions, function()
+            M._setup_complete = true
 
-        M._setup_complete = true
+            if config.get("check_health_on_setup") then
+                vim.defer_fn(function() vim.cmd("checkhealth poor-cli") end, 1000)
+            end
 
-        if config.get("check_health_on_setup") then
-            vim.defer_fn(function() vim.cmd("checkhealth poor-cli") end, 1000)
-        end
+            if config.get("auto_start") then
+                vim.defer_fn(function()
+                    if is_exiting() then
+                        return
+                    end
+                    if not M.rpc.is_running() then
+                        M.rpc.start(false, {
+                            startup_feedback = false,
+                            startup_probe = false,
+                            silent_start = true,
+                        })
+                    end
+                    if M.rpc.is_running() then
+                        M.rpc.initialize(nil, { validate_api_key = false })
+                    end
+                end, AUTO_START_DELAY_MS)
+            elseif M.rpc.is_running() then
+                M.rpc.initialize()
+            end
 
-        if config.get("auto_start") then
-            if not M.rpc.is_running() then M.rpc.start() end
-            if M.rpc.is_running() then M.rpc.initialize() end
-        elseif M.rpc.is_running() then
-            M.rpc.initialize()
-        end
-
-        if config.is_debug() then
-            require("poor-cli.notify").notify("[poor-cli] Setup complete", vim.log.levels.DEBUG)
-        end
+            if config.is_debug() then
+                require("poor-cli.notify").notify("[poor-cli] Setup complete", vim.log.levels.DEBUG)
+            end
+        end)
     end
 
     vim.schedule(finalize)
