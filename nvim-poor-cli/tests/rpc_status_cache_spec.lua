@@ -17,6 +17,9 @@ describe("rpc status view cache", function()
                 end
                 return nil
             end,
+            get_server_log_file = function()
+                return "/tmp/poor-cli-rpc-test.log"
+            end,
             is_debug = function()
                 return false
             end,
