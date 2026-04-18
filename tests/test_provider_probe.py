@@ -15,9 +15,11 @@ class _ConfigManagerStub:
 
 
 def _reset_probe_cache() -> None:
-    provider_probe._probe_cache_at = 0.0
-    provider_probe._probe_cache_signature = ""
-    provider_probe._probe_cache_result = None
+    with provider_probe._probe_cache_lock:
+        provider_probe._probe_cache_at = 0.0
+        provider_probe._probe_cache_signature = ""
+        provider_probe._probe_cache_result = None
+        provider_probe._probe_cache_refreshing = False
 
 
 def test_probe_providers_parallelizes_local_probes(monkeypatch):

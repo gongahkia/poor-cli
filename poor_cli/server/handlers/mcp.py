@@ -28,6 +28,15 @@ def _manager(ctx: Any) -> Any:
         return None
 
 
+async def _ensure_manager_ready(ctx: Any) -> None:
+    try:
+        ensure_mcp = getattr(ctx.core, "_ensure_mcp_manager_initialized", None)
+    except Exception:
+        ensure_mcp = None
+    if callable(ensure_mcp):
+        await ensure_mcp()
+
+
 def _status_by_name(ctx: Any) -> dict[str, dict[str, Any]]:
     manager = _manager(ctx)
     if manager is None:
@@ -103,6 +112,7 @@ class McpHandlersMixin:
 
     async def handle_mcp_health(self, params: Dict[str, Any]) -> Dict[str, Any]:
         name = str(params.get("name", "")).strip()
+        await _ensure_manager_ready(self)
         manager = _manager(self)
         if manager is None:
             return {"servers": [], "error": "No MCP servers configured"}
@@ -119,6 +129,7 @@ class McpHandlersMixin:
         args = params.get("arguments", {})
         if not isinstance(args, dict):
             raise InvalidParamsError("arguments must be an object")
+        await _ensure_manager_ready(self)
         manager = _manager(self)
         if manager is None:
             raise InvalidParamsError("No MCP servers configured")

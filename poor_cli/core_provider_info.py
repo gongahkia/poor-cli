@@ -55,16 +55,33 @@ class ProviderInfoMixin:
     def get_provider_readiness(self) -> Dict[str, Dict[str, Any]]:
         if not self._config_manager or not self.config:
             return {}
-        return probe_providers(self._config_manager, self.config)
+        provider_status = probe_providers(self._config_manager, self.config)
+        self._provider_readiness_cache = {
+            name: dict(payload)
+            for name, payload in provider_status.items()
+        }
+        return provider_status
 
     def get_routing_mode(self) -> str:
         if not self.config:
             return normalize_routing_mode(self._resolved_routing_mode)
-        provider_status = self.get_provider_readiness()
-        self._resolved_routing_mode = resolve_routing_mode(
-            getattr(self.config.model, "routing_mode", "manual"),
-            provider_status,
+        configured_mode = normalize_routing_mode(
+            getattr(self.config.model, "routing_mode", "manual")
         )
+        if configured_mode != "manual":
+            self._resolved_routing_mode = configured_mode
+            return self._resolved_routing_mode
+        provider_status = dict(getattr(self, "_provider_readiness_cache", {}) or {})
+        if provider_status:
+            self._resolved_routing_mode = resolve_routing_mode(
+                configured_mode,
+                provider_status,
+            )
+            return self._resolved_routing_mode
+        schedule_probe = getattr(self, "_schedule_provider_readiness_probe", None)
+        if callable(schedule_probe):
+            schedule_probe()
+        self._resolved_routing_mode = configured_mode
         return self._resolved_routing_mode
 
     def set_routing_mode(self, routing_mode: str) -> str:

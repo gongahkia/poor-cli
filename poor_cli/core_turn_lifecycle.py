@@ -1670,6 +1670,25 @@ class TurnLifecycle:
         repo_root = getattr(self, "_repo_root", Path.cwd())
         _sandbox_preset = getattr(self.config.sandbox, "default_preset", "workspace-write")
         _plan = bool(self.config.plan_mode.enabled)
+        git_state_hash = self._git_state_hash(repo_root)
+        memory_index = self._memory_manager.load_index() if self._memory_manager else ""
+        memory_index_hash = hashlib.sha256(
+            str(memory_index or "").encode("utf-8", errors="replace")
+        ).hexdigest()
+        instruction_snapshot_hash = self._instruction_snapshot_hash()
+        refresh_inputs = (
+            git_state_hash,
+            memory_index_hash,
+            instruction_snapshot_hash,
+            str(self.config.model.provider),
+            str(self.config.model.model_name),
+            str(_sandbox_preset),
+            str(_plan),
+            str(terse),
+            str(batched),
+        )
+        if refresh_inputs == getattr(self, "_system_refresh_inputs", None):
+            return False
         core_module = sys.modules.get("poor_cli.core")
         build_instruction = getattr(core_module, "build_tool_calling_system_instruction", build_tool_calling_system_instruction)
         detect_tone = getattr(core_module, "detect_tone_from_user_memories", detect_tone_from_user_memories)
@@ -1681,7 +1700,6 @@ class TurnLifecycle:
             include_gh_tools=getattr(self.config.tools, "enable_git_tools", True),
             include_agent_tools=not _plan,
         )
-        memory_index = self._memory_manager.load_index() if self._memory_manager else ""
         if memory_index:
             new_instruction += (
                 "\n\n## Persistent Memory\n"
@@ -1698,6 +1716,7 @@ class TurnLifecycle:
         except Exception:
             pass
         new_hash = hashlib.sha256(new_instruction.encode("utf-8", errors="replace")).hexdigest()
+        self._system_refresh_inputs = refresh_inputs
         if new_hash == self._system_context_hash:
             return False
         self._git_context_cache = None # git state changed, invalidate
@@ -1709,6 +1728,42 @@ class TurnLifecycle:
             context_contract.invalidate_cache()
         logger.debug("System context refreshed (hash=%s)", new_hash[:12])
         return True
+
+    @staticmethod
+    def _git_state_hash(repo_root: Path) -> str:
+        try:
+            head = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"],
+                cwd=str(repo_root),
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=2,
+            ).strip()
+        except Exception:
+            head = ""
+        try:
+            status = subprocess.check_output(
+                ["git", "status", "--porcelain"],
+                cwd=str(repo_root),
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=2,
+            ).strip()
+        except Exception:
+            status = ""
+        return hashlib.sha256(f"{head}|{status}".encode("utf-8", errors="replace")).hexdigest()
+
+    def _instruction_snapshot_hash(self) -> str:
+        snapshot = getattr(self, "_last_instruction_snapshot", None)
+        if snapshot is None:
+            return ""
+        try:
+            payload = snapshot.to_dict()
+        except Exception:
+            return ""
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, default=str).encode("utf-8", errors="replace")
+        ).hexdigest()
 
     def list_workflow_templates(self) -> List[Dict[str, Any]]:
         if not self.config:
@@ -1765,7 +1820,11 @@ class TurnLifecycle:
 
     def build_status_view(self) -> Dict[str, Any]:
         provider_info = self.get_provider_info() if self._initialized else {}
-        provider_status = self.get_provider_readiness()
+        provider_status = dict(getattr(self, "_provider_readiness_cache", {}) or {})
+        if not provider_status:
+            schedule_probe = getattr(self, "_schedule_provider_readiness_probe", None)
+            if callable(schedule_probe):
+                schedule_probe()
         recent_runs = self.list_runs(limit=5)
         active_runs = [run for run in recent_runs if run.get("status") == "running"]
         last_run = recent_runs[0] if recent_runs else None
@@ -1974,7 +2033,12 @@ class TurnLifecycle:
         if self._mcp_manager is not None:
             await self._mcp_manager.shutdown()
         # cancel background tasks
-        for task in (self._repo_graph_task, self._pending_llm_compression, self._auto_history_compact_task):
+        for task in (
+            self._repo_graph_task,
+            self._pending_llm_compression,
+            self._auto_history_compact_task,
+            getattr(self, "_provider_probe_task", None),
+        ):
             if task and not task.done():
                 task.cancel()
                 try:
@@ -1984,6 +2048,7 @@ class TurnLifecycle:
         self._repo_graph_task = None
         self._pending_llm_compression = None
         self._auto_history_compact_task = None
+        self._provider_probe_task = None
         # close pooled HTTP session in tool registry
         if self.tool_registry and hasattr(self.tool_registry, "close"):
             try:
@@ -2606,6 +2671,7 @@ class TurnLifecycle:
             instruction: New system instruction.
         """
         self._system_instruction = instruction
+        self._system_refresh_inputs = None
         logger.info("System instruction updated")
 
     @staticmethod

@@ -17,6 +17,7 @@ from .audit_log import AuditEventType, AuditLogger
 from .config import ConfigManager, Config
 from .provider_probe import (
     normalize_routing_mode,
+    probe_providers,
     resolve_routing_mode,
 )
 from .provider_catalog import KEYLESS_LOCAL_PROVIDER_NAMES
@@ -143,6 +144,8 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
         self._hook_manager: Optional[PolicyHookManager] = None
         self._audit_logger: Optional[AuditLogger] = None
         self._mcp_manager: Optional[MCPManager] = None
+        self._mcp_initialized: bool = False
+        self._mcp_init_lock: Optional[asyncio.Lock] = None
         self._active_tool_groups: Tuple[str, ...] = tuple()
         self._active_tool_names: set[str] = set()
         self._active_tool_declarations: List[Dict[str, Any]] = []
@@ -265,6 +268,10 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
         self._last_provider_error: str = ""
         self._last_run_id: Optional[str] = None
         self._resolved_routing_mode: str = "manual"
+        self._provider_readiness_cache: Dict[str, Dict[str, Any]] = {}
+        self._provider_probe_task: Optional[asyncio.Task] = None
+        self._system_refresh_inputs: Optional[Tuple[str, ...]] = None
+        self._repo_root: Path = Path.cwd().resolve()
         self._last_compaction_status: Dict[str, Any] = {"state": "idle"}
 
         logger.info("PoorCLICore instance created")
@@ -296,6 +303,7 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
         try:
             logger.info("Initializing PoorCLICore...")
             repo_root = Path.cwd().resolve()
+            self._repo_root = repo_root
             
             # Load configuration
             self._config_manager = ConfigManager(self._config_path)
@@ -393,7 +401,8 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
                     repo_root=repo_root,
                     registry_autodiscover=bool(getattr(registry_cfg, "enabled", False)),
                 )
-                await self._mcp_manager.initialize()
+                self._mcp_initialized = False
+                self._mcp_init_lock = None
             self.tool_registry._core = self  # back-ref for compact/delegate tools
             tool_declarations = await self._resolve_tool_declarations_for_groups([CORE_TOOL_GROUP])
             self._active_tool_groups = (CORE_TOOL_GROUP,)
@@ -531,17 +540,8 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
                         _refresh_repo_graph_bg(self._repo_graph, self.config.repo_index.incremental)
                     )
                 self._context_manager._repo_graph = self._repo_graph
-            provider_status = self.get_provider_readiness()
-            # emit provider probe results
-            ready = [n for n, s in provider_status.items() if s.get("ready")]
-            avail = [n for n, s in provider_status.items() if s.get("available") and not s.get("ready")]
-            self._pending_events.append(CoreEvent(
-                type="progress",
-                data={"phase": "provider_probe", "message": f"providers: {', '.join(ready)} ready" + (f" | {', '.join(avail)} available" if avail else "")},
-            ))
-            self._resolved_routing_mode = resolve_routing_mode(
-                self.config.model.routing_mode,
-                provider_status,
+            self._resolved_routing_mode = normalize_routing_mode(
+                getattr(self.config.model, "routing_mode", "manual")
             )
 
             await self._emit_policy_hooks(
@@ -565,6 +565,7 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
             )
             
             self._initialized = True
+            self._schedule_provider_readiness_probe()
             try:
                 self._gc_overflow_files()
             except Exception:
@@ -608,6 +609,57 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
                 system_instruction=self._system_instruction,
             )
             self._provider_ready = True
+
+    def _schedule_provider_readiness_probe(self) -> None:
+        if not self.config or not self._config_manager:
+            return
+        task = getattr(self, "_provider_probe_task", None)
+        if task is not None and not task.done():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._provider_probe_task = loop.create_task(self._probe_provider_readiness_background())
+
+    async def _probe_provider_readiness_background(self) -> None:
+        if not self.config or not self._config_manager:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            provider_status = await loop.run_in_executor(
+                None,
+                lambda: probe_providers(
+                    self._config_manager, self.config,
+                    allow_stale=False,
+                    background_refresh=False,
+                    force_refresh=True,
+                ),
+            )
+        except Exception:
+            logger.debug("provider readiness background probe failed", exc_info=True)
+            return
+        self._provider_readiness_cache = {
+            name: dict(payload)
+            for name, payload in provider_status.items()
+        }
+        ready = [name for name, status in provider_status.items() if status.get("ready")]
+        avail = [
+            name for name, status in provider_status.items()
+            if status.get("available") and not status.get("ready")
+        ]
+        self._pending_events.append(CoreEvent(
+            type="progress",
+            data={
+                "phase": "provider_probe",
+                "message": f"providers: {', '.join(ready)} ready" + (f" | {', '.join(avail)} available" if avail else ""),
+            },
+        ))
+        if self.config:
+            self._resolved_routing_mode = resolve_routing_mode(
+                getattr(self.config.model, "routing_mode", "manual"),
+                provider_status,
+            )
     
     def cancel_request(self, request_id: str = "") -> None:
         """Signal cancellation of the current agentic loop."""
@@ -651,7 +703,10 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
         resolved_model = model_name or self.config.model.model_name
         if self._resolved_routing_mode != "manual":
             from poor_cli.provider_catalog import select_provider_and_model
-            ready = [p for p, s in (self.get_provider_readiness() or {}).items() if s.get("ready")]
+            provider_status = dict(getattr(self, "_provider_readiness_cache", {}) or {})
+            if not provider_status:
+                self._schedule_provider_readiness_probe()
+            ready = [p for p, s in provider_status.items() if s.get("ready")]
             rp, rm = select_provider_and_model(self._resolved_routing_mode, ready)
             if rp and rm:
                 resolved_provider, resolved_model = rp, rm

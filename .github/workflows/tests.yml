@@ -192,6 +192,32 @@ jobs:
       - name: Run Lua specs
         run: PLENARY_DIR="$PWD/nvim-poor-cli/.test-runtime/site/pack/test/start/plenary.nvim" make test-lua
 
+  performance-guardrails:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Neovim v0.10.0
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: v0.10.0
+
+      - name: Install package
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install -e .
+
+      - name: Run perf guardrails
+        run: .venv/bin/python bench/perf_guardrail.py
+
   go-internal-coverage:
     runs-on: ubuntu-latest
 

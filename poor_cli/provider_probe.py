@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -26,10 +27,13 @@ LOCAL_OPENAI_COMPATIBLE_PROVIDERS = (
     "hf_tgi",
     "lmstudio",
 )
-_PROBE_CACHE_TTL_SECONDS = 2.0
+_PROBE_CACHE_FRESH_TTL_SECONDS = 10.0
+_PROBE_CACHE_STALE_TTL_SECONDS = 120.0
 _probe_cache_at = 0.0
 _probe_cache_signature = ""
 _probe_cache_result: Optional[Dict[str, Dict[str, Any]]] = None
+_probe_cache_refreshing = False
+_probe_cache_lock = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -95,8 +99,11 @@ def resolve_routing_mode(
 def probe_providers(
     config_manager: ConfigManager,
     config: Config,
+    *,
+    allow_stale: bool = True,
+    background_refresh: bool = True,
+    force_refresh: bool = False,
 ) -> Dict[str, Dict[str, Any]]:
-    global _probe_cache_at, _probe_cache_signature, _probe_cache_result
     signature = json.dumps({
         name: {
             "default_model": provider_cfg.default_model,
@@ -106,13 +113,26 @@ def probe_providers(
         for name, provider_cfg in sorted(config.model.providers.items())
     }, sort_keys=True)
     now = time.monotonic()
-    if (
-        _probe_cache_result is not None
-        and _probe_cache_signature == signature
-        and (now - _probe_cache_at) <= _PROBE_CACHE_TTL_SECONDS
-    ):
-        return {name: dict(payload) for name, payload in _probe_cache_result.items()}
+    if not force_refresh:
+        cached = _copy_probe_cache(signature)
+        if cached is not None:
+            age = now - _probe_cache_at
+            if age <= _PROBE_CACHE_FRESH_TTL_SECONDS:
+                return cached
+            if allow_stale and age <= _PROBE_CACHE_STALE_TTL_SECONDS:
+                if background_refresh:
+                    _refresh_probe_cache_async(config_manager, config, signature)
+                return cached
 
+    results = _compute_probe_results(config_manager, config)
+    _store_probe_cache(signature, results, now=now)
+    return {name: dict(payload) for name, payload in results.items()}
+
+
+def _compute_probe_results(
+    config_manager: ConfigManager,
+    config: Config,
+) -> Dict[str, Dict[str, Any]]:
     results: Dict[str, Dict[str, Any]] = {}
     ollama_models, local_openai_models = _probe_local_providers(config)
     ollama_ready = bool(ollama_models.get("ready"))
@@ -187,11 +207,66 @@ def probe_providers(
             env_var=env_var,
             base_url=provider_cfg.base_url,
         ).to_dict()
-
-    _probe_cache_at = now
-    _probe_cache_signature = signature
-    _probe_cache_result = {name: dict(payload) for name, payload in results.items()}
     return results
+
+
+def _copy_probe_cache(signature: str) -> Optional[Dict[str, Dict[str, Any]]]:
+    with _probe_cache_lock:
+        if _probe_cache_result is None or _probe_cache_signature != signature:
+            return None
+        return {
+            name: dict(payload)
+            for name, payload in _probe_cache_result.items()
+        }
+
+
+def _store_probe_cache(
+    signature: str,
+    results: Dict[str, Dict[str, Any]],
+    *,
+    now: Optional[float] = None,
+) -> None:
+    global _probe_cache_at, _probe_cache_signature, _probe_cache_result
+    with _probe_cache_lock:
+        _probe_cache_at = float(now if now is not None else time.monotonic())
+        _probe_cache_signature = signature
+        _probe_cache_result = {
+            name: dict(payload)
+            for name, payload in results.items()
+        }
+
+
+def _refresh_probe_cache_async(
+    config_manager: ConfigManager,
+    config: Config,
+    signature: str,
+) -> None:
+    global _probe_cache_refreshing
+    with _probe_cache_lock:
+        if _probe_cache_refreshing:
+            return
+        _probe_cache_refreshing = True
+
+    def _worker() -> None:
+        global _probe_cache_refreshing
+        try:
+            refreshed = _compute_probe_results(config_manager, config)
+            with _probe_cache_lock:
+                if _probe_cache_signature not in ("", signature):
+                    return
+            _store_probe_cache(signature, refreshed)
+        except Exception:
+            pass
+        finally:
+            with _probe_cache_lock:
+                _probe_cache_refreshing = False
+
+    thread = threading.Thread(
+        target=_worker,
+        name="provider-probe-refresh",
+        daemon=True,
+    )
+    thread.start()
 
 
 def _probe_local_providers(config: Config) -> tuple[Dict[str, Any], Dict[str, Dict[str, Any]]]:

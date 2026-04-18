@@ -73,6 +73,22 @@ def _parse_rtk_reduction_pct(note: str) -> Optional[float]:
 
 
 class ToolDispatcher:
+    async def _ensure_mcp_manager_initialized(self) -> None:
+        manager = getattr(self, "_mcp_manager", None)
+        if manager is None:
+            return
+        if getattr(self, "_mcp_initialized", False):
+            return
+        lock = getattr(self, "_mcp_init_lock", None)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._mcp_init_lock = lock
+        async with lock:
+            if getattr(self, "_mcp_initialized", False):
+                return
+            await manager.initialize()
+            self._mcp_initialized = True
+
     def _mcp_server_names(self) -> List[str]:
         if self._mcp_manager is None or not hasattr(self._mcp_manager, "get_server_names"):
             return []
@@ -92,6 +108,7 @@ class ToolDispatcher:
             ) -> str:
                 if not self._mcp_manager:
                     raise PoorCLIError("MCP manager not initialized")
+                await self._ensure_mcp_manager_initialized()
                 return await self._mcp_manager.execute_tool(_tool_name, kwargs)
 
             self.tool_registry.register_external_tool(
@@ -119,6 +136,7 @@ class ToolDispatcher:
             if group_name.startswith(MCP_GROUP_PREFIX)
         ]
         if self._mcp_manager and mcp_groups:
+            await self._ensure_mcp_manager_initialized()
             mcp_declarations = await self._mcp_manager.load_server_tools(mcp_groups)
             self._register_mcp_tool_declarations(mcp_declarations)
             declarations.extend(mcp_declarations)
@@ -226,6 +244,7 @@ class ToolDispatcher:
             mcp_server_names=self._mcp_server_names(),
         )
         if group_name is None and self._mcp_manager and ":" in name:
+            await self._ensure_mcp_manager_initialized()
             if await self._mcp_manager.ensure_tool_available(name):
                 group_name = f"{MCP_GROUP_PREFIX}{name.split(':', 1)[0]}"
                 declarations = self._mcp_manager.get_tool_declarations()
@@ -1236,6 +1255,7 @@ class ToolDispatcher:
         if self._mcp_manager is not None:
             await self._mcp_manager.shutdown()
             self._mcp_manager = None
+            self._mcp_initialized = False
 
         trunc_cfg = self.config.output_truncation
         self.tool_registry = EnhancedToolRegistry(
@@ -1253,7 +1273,8 @@ class ToolDispatcher:
                 repo_root=Path.cwd(),
                 registry_autodiscover=bool(getattr(registry_cfg, "enabled", False)),
             )
-            await self._mcp_manager.initialize()
+            self._mcp_initialized = False
+            self._mcp_init_lock = None
         await self._activate_tool_groups([CORE_TOOL_GROUP], refresh_provider=False)
         await self.refresh_provider_tools(self._active_tool_declarations)
 

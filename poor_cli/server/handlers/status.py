@@ -257,6 +257,9 @@ class StatusHandlersMixin:
     async def handle_mcp_health_check(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Check health of all registered MCP servers."""
         self._ensure_initialized()
+        ensure_mcp = getattr(self.core, "_ensure_mcp_manager_initialized", None)
+        if callable(ensure_mcp):
+            await ensure_mcp()
         mcp = getattr(self.core, "_mcp_manager", None)
         if mcp is None:
             return {"servers": {}, "error": "No MCP servers configured"}

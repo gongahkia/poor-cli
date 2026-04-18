@@ -79,6 +79,38 @@ class FakeMCPClient:
         self.connected = False
 
 
+class FakeLazyMCPManager:
+    def __init__(self) -> None:
+        self.initialize_calls = 0
+        self.load_server_tools_calls = 0
+        self.ensure_tool_available_calls = 0
+        self._declarations = [{
+            "name": "demo:search",
+            "description": "demo search",
+            "parameters": {"type": "OBJECT", "properties": {}, "required": []},
+        }]
+
+    async def initialize(self) -> None:
+        self.initialize_calls += 1
+
+    def get_server_names(self):
+        return ["demo"]
+
+    async def load_server_tools(self, _server_names):
+        self.load_server_tools_calls += 1
+        return list(self._declarations)
+
+    async def ensure_tool_available(self, _name: str) -> bool:
+        self.ensure_tool_available_calls += 1
+        return True
+
+    def get_tool_declarations(self):
+        return list(self._declarations)
+
+    async def execute_tool(self, _name: str, _kwargs):
+        return "ok"
+
+
 class TestLazyToolAudit(unittest.TestCase):
     def test_audit_counts_builtin_catalog(self) -> None:
         registry = EnhancedToolRegistry(Config())
@@ -105,6 +137,30 @@ class TestLazyToolAudit(unittest.TestCase):
 
 
 class TestLazyToolSelection(unittest.IsolatedAsyncioTestCase):
+    async def test_mcp_manager_initializes_only_on_mcp_tool_resolution(self) -> None:
+        core = object.__new__(PoorCLICore)
+        core.tool_registry = EnhancedToolRegistry(Config())
+        core.provider = None
+        core.config = Config()
+        core._initialized = True
+        core._system_instruction = "sys"
+        core._active_tool_groups = tuple()
+        core._active_tool_names = set()
+        core._active_tool_declarations = []
+        core._mcp_manager = FakeLazyMCPManager()
+        core._mcp_initialized = False
+        core._mcp_init_lock = None
+
+        await core._resolve_tool_declarations_for_groups([CORE_TOOL_GROUP])
+        self.assertEqual(core._mcp_manager.initialize_calls, 0)
+
+        await core._resolve_tool_declarations_for_groups([CORE_TOOL_GROUP, "mcp:demo"])
+        self.assertEqual(core._mcp_manager.initialize_calls, 1)
+        self.assertEqual(core._mcp_manager.load_server_tools_calls, 1)
+
+        await core._resolve_tool_declarations_for_groups([CORE_TOOL_GROUP, "mcp:demo"])
+        self.assertEqual(core._mcp_manager.initialize_calls, 1)
+
     async def test_provider_initialize_is_lazy_and_idempotent(self) -> None:
         core = object.__new__(PoorCLICore)
         core.tool_registry = EnhancedToolRegistry(Config())
