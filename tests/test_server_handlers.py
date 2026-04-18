@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 import poor_cli.server.handlers as server_handlers
-from poor_cli.server.registry import REGISTRY, register
+from poor_cli.server.registry import REGISTRY, ensure_handlers_loaded, register
 from poor_cli.server.runtime import PoorCLIServer
 from poor_cli.server.services_state import ServicesStateMixin
 from poor_cli.server.types import JsonRpcMessage
@@ -233,6 +233,7 @@ def test_registry_registers_unique_methods():
 
 def test_every_known_method_still_reachable():
     assert server_handlers.HandlerMixin is not None
+    ensure_handlers_loaded()
     missing = sorted(set(KNOWN_METHODS) - set(REGISTRY))
     assert missing == []
 

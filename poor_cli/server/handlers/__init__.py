@@ -1,69 +1,75 @@
 from __future__ import annotations
 
+from typing import Any
+
 from poor_cli.server.registry import register, rpc
 from .common import CommonHandlersMixin
-from .tools import ToolsHandlersMixin
-from .status import StatusHandlersMixin
-from .audit import AuditHandlersMixin
-from .chat import ChatHandlersMixin
-from .chat_streaming import ChatStreamingHandlersMixin
-from .config import ConfigHandlersMixin
-from .context import ContextHandlersMixin
-from .providers import ProvidersHandlersMixin
-from .sessions import SessionsHandlersMixin
-from .tasks import TasksHandlersMixin
-from .automations import AutomationsHandlersMixin
-from .checkpoints import CheckpointsHandlersMixin
-from .services import ServicesHandlersMixin
-from .cost import CostHandlersMixin
-from .agents import AgentsHandlersMixin
-from .profiles import ProfilesHandlersMixin
-from .trust import TrustHandlersMixin
-from .memory import MemoryHandlersMixin
-from .deployment import DeploymentHandlersMixin
-from .prompts import PromptsHandlersMixin
-from .misc import MiscHandlersMixin
-from .diff_review import DiffReviewHandlersMixin
-from .timeline import TimelineHandlersMixin
-from .watch import WatchHandlersMixin
-from .plan import PlanHandlersMixin
-from .branches import BranchesHandlersMixin
-from .repo_map import RepoMapHandlersMixin
-from .mcp import McpHandlersMixin
+
+_HANDLER_ORDER: tuple[str, ...] = (
+    "common",
+    "tools",
+    "audit",
+    "status",
+    "chat",
+    "chat_streaming",
+    "config",
+    "context",
+    "providers",
+    "sessions",
+    "tasks",
+    "automations",
+    "checkpoints",
+    "services",
+    "cost",
+    "agents",
+    "profiles",
+    "trust",
+    "memory",
+    "deployment",
+    "prompts",
+    "misc",
+    "diff_review",
+    "timeline",
+    "watch",
+    "plan",
+    "branches",
+    "repo_map",
+    "mcp",
+)
+_HANDLER_RANK = {name: idx for idx, name in enumerate(_HANDLER_ORDER)}
+_MEMBER_RANK: dict[str, int] = {}
 
 
-class HandlerMixin(
-    CommonHandlersMixin,
-    ToolsHandlersMixin,
-    AuditHandlersMixin,
-    StatusHandlersMixin,
-    ChatHandlersMixin,
-    ChatStreamingHandlersMixin,
-    ConfigHandlersMixin,
-    ContextHandlersMixin,
-    ProvidersHandlersMixin,
-    SessionsHandlersMixin,
-    TasksHandlersMixin,
-    AutomationsHandlersMixin,
-    CheckpointsHandlersMixin,
-    ServicesHandlersMixin,
-    CostHandlersMixin,
-    AgentsHandlersMixin,
-    ProfilesHandlersMixin,
-    TrustHandlersMixin,
-    MemoryHandlersMixin,
-    DeploymentHandlersMixin,
-    PromptsHandlersMixin,
-    MiscHandlersMixin,
-    DiffReviewHandlersMixin,
-    TimelineHandlersMixin,
-    WatchHandlersMixin,
-    PlanHandlersMixin,
-    BranchesHandlersMixin,
-    RepoMapHandlersMixin,
-    McpHandlersMixin,
-):
-    pass
+class HandlerMixin(CommonHandlersMixin):
+    def __getattr__(self, name: str) -> Any:
+        from poor_cli.server.registry import ensure_handler_for_attr
+
+        if ensure_handler_for_attr(name):
+            try:
+                return object.__getattribute__(self, name)
+            except AttributeError:
+                pass
+        raise AttributeError(f"{self.__class__.__name__!r} object has no attribute {name!r}")
 
 
-__all__ = ["HandlerMixin", "register", "rpc"]
+def _graft_mixin_class(mixin_cls: type[Any], rank: int) -> None:
+    for name, value in mixin_cls.__dict__.items():
+        if name in {"__module__", "__dict__", "__weakref__", "__doc__"}:
+            continue
+        existing_rank = _MEMBER_RANK.get(name)
+        if existing_rank is not None and existing_rank <= rank:
+            continue
+        setattr(HandlerMixin, name, value)
+        _MEMBER_RANK[name] = rank
+
+
+def graft_mixins_from_module(module_name: str, module: Any) -> None:
+    rank = _HANDLER_RANK.get(module_name, len(_HANDLER_RANK) + 100)
+    for value in module.__dict__.values():
+        if isinstance(value, type) and value.__name__.endswith("HandlersMixin"):
+            _graft_mixin_class(value, rank)
+
+
+_graft_mixin_class(CommonHandlersMixin, _HANDLER_RANK["common"])
+
+__all__ = ["HandlerMixin", "graft_mixins_from_module", "register", "rpc"]

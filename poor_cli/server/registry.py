@@ -1,9 +1,60 @@
 from __future__ import annotations
 
+import ast
+import importlib
+import logging
+import os
+from pathlib import Path
+import time
 from typing import Any, Awaitable, Callable
 
 Handler = Callable[[Any, dict[str, Any]], Awaitable[Any]]
 REGISTRY: dict[str, Handler] = {}
+_HANDLER_DIR = Path(__file__).resolve().parent / "handlers"
+_HANDLER_PACKAGE = "poor_cli.server.handlers"
+_HANDLER_ORDER: tuple[str, ...] = (
+    "common",
+    "tools",
+    "audit",
+    "status",
+    "chat",
+    "chat_streaming",
+    "config",
+    "context",
+    "providers",
+    "sessions",
+    "tasks",
+    "automations",
+    "checkpoints",
+    "services",
+    "cost",
+    "agents",
+    "profiles",
+    "trust",
+    "memory",
+    "deployment",
+    "prompts",
+    "misc",
+    "diff_review",
+    "timeline",
+    "watch",
+    "plan",
+    "branches",
+    "repo_map",
+    "mcp",
+)
+_HANDLER_RANK = {name: idx for idx, name in enumerate(_HANDLER_ORDER)}
+_REGISTER_DECORATORS = {"register", "rpc"}
+_RPC_METHOD_TO_MODULE: dict[str, str] | None = None
+_ATTR_TO_MODULE: dict[str, str] | None = None
+_LOADED_MODULES: set[str] = set()
+_PERF_LOG = os.environ.get("POORCLI_SERVER_PERF_LOG", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+logger = logging.getLogger(__name__)
 
 
 def register(method: str):
@@ -17,3 +68,133 @@ def register(method: str):
 
 
 rpc = register
+
+
+def _module_rank(module_name: str) -> int:
+    stem = module_name.rsplit(".", 1)[-1]
+    return _HANDLER_RANK.get(stem, len(_HANDLER_RANK) + 100)
+
+
+def _register_method_from_decorator(decorator: ast.AST) -> str | None:
+    if not isinstance(decorator, ast.Call):
+        return None
+    if not isinstance(decorator.func, ast.Name):
+        return None
+    if decorator.func.id not in _REGISTER_DECORATORS:
+        return None
+    if not decorator.args:
+        return None
+    first_arg = decorator.args[0]
+    if isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str):
+        return first_arg.value
+    return None
+
+
+def _build_indexes() -> None:
+    global _RPC_METHOD_TO_MODULE, _ATTR_TO_MODULE
+    if _RPC_METHOD_TO_MODULE is not None and _ATTR_TO_MODULE is not None:
+        return
+
+    started = time.perf_counter()
+    rpc_index: dict[str, str] = {}
+    attr_index: dict[str, str] = {}
+    rpc_rank: dict[str, int] = {}
+    attr_rank: dict[str, int] = {}
+
+    for path in sorted(_HANDLER_DIR.glob("*.py")):
+        if path.name.startswith("__"):
+            continue
+        module_name = f"{_HANDLER_PACKAGE}.{path.stem}"
+        rank = _module_rank(module_name)
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except Exception as exc:
+            logger.debug("handler index skip file=%s error=%s", path, exc)
+            continue
+
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for decorator in node.decorator_list:
+                    method_name = _register_method_from_decorator(decorator)
+                    if method_name is None:
+                        continue
+                    existing_rank = rpc_rank.get(method_name)
+                    if existing_rank is None or rank < existing_rank:
+                        rpc_index[method_name] = module_name
+                        rpc_rank[method_name] = rank
+                continue
+
+            if not isinstance(node, ast.ClassDef) or not node.name.endswith("HandlersMixin"):
+                continue
+            for class_node in node.body:
+                if not isinstance(class_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                attr_name = class_node.name
+                existing_rank = attr_rank.get(attr_name)
+                if existing_rank is None or rank < existing_rank:
+                    attr_index[attr_name] = module_name
+                    attr_rank[attr_name] = rank
+
+    _RPC_METHOD_TO_MODULE = rpc_index
+    _ATTR_TO_MODULE = attr_index
+
+    if _PERF_LOG:
+        logger.info(
+            "perf registry_index_build modules=%d methods=%d attrs=%d elapsed_ms=%.2f",
+            len({value for value in rpc_index.values()}),
+            len(rpc_index),
+            len(attr_index),
+            (time.perf_counter() - started) * 1000.0,
+        )
+
+
+def _import_handler_module(module_name: str) -> bool:
+    if module_name in _LOADED_MODULES:
+        return False
+
+    started = time.perf_counter()
+    module = importlib.import_module(module_name)
+    from .handlers import graft_mixins_from_module
+
+    graft_mixins_from_module(module_name.rsplit(".", 1)[-1], module)
+    _LOADED_MODULES.add(module_name)
+
+    if _PERF_LOG:
+        logger.info(
+            "perf handler_module_load module=%s registry_size=%d elapsed_ms=%.2f",
+            module_name,
+            len(REGISTRY),
+            (time.perf_counter() - started) * 1000.0,
+        )
+    return True
+
+
+def ensure_handler_for_method(method: str) -> bool:
+    if method in REGISTRY:
+        return False
+    _build_indexes()
+    module_name = (_RPC_METHOD_TO_MODULE or {}).get(method)
+    if not module_name:
+        return False
+    return _import_handler_module(module_name)
+
+
+def ensure_handler_for_attr(attr_name: str) -> bool:
+    _build_indexes()
+    module_name = (_ATTR_TO_MODULE or {}).get(attr_name)
+    if not module_name:
+        return False
+    return _import_handler_module(module_name)
+
+
+def ensure_handlers_loaded() -> int:
+    _build_indexes()
+    loaded = 0
+    modules = sorted(
+        set((_RPC_METHOD_TO_MODULE or {}).values()),
+        key=lambda module: (_module_rank(module), module),
+    )
+    for module_name in modules:
+        if _import_handler_module(module_name):
+            loaded += 1
+    return loaded

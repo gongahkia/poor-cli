@@ -1,0 +1,32 @@
+from __future__ import annotations
+
+import subprocess
+import sys
+
+
+def _run_python(code: str) -> str:
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    return proc.stdout.strip()
+
+
+def test_runtime_import_keeps_rpc_registry_lazy():
+    stdout = _run_python(
+        "from poor_cli.server.registry import REGISTRY; "
+        "import poor_cli.server.runtime; "
+        "print('initialize' in REGISTRY)"
+    )
+    assert stdout.splitlines()[-1] == "False"
+
+
+def test_ensure_handler_for_method_registers_initialize():
+    stdout = _run_python(
+        "from poor_cli.server.registry import REGISTRY, ensure_handler_for_method; "
+        "loaded = ensure_handler_for_method('initialize'); "
+        "print(str(loaded) + '|' + str('initialize' in REGISTRY))"
+    )
+    assert stdout.splitlines()[-1] == "True|True"

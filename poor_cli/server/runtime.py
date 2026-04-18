@@ -10,15 +10,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import copy
-from functools import partial
+import os
 from pathlib import Path
 import signal
+import time
 import uuid
-from typing import Any, Callable, Dict, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, Optional, Set
 
-from ..audit_log import AuditEventType, AuditSeverity, get_audit_logger
 from ..config import ConfigManager
-from ..core import PoorCLICore
 from ..exceptions import (
     PermissionDeniedError,
     PoorCLIError,
@@ -30,23 +29,48 @@ from ..exceptions import (
 from .error_formatter import _sanitize_exception_message
 from .handlers import HandlerMixin
 from .rate_limit import DEFAULT_RPC_RATE_LIMITS, RateLimitExceeded, RateLimiter
-from .registry import REGISTRY
+from .registry import REGISTRY, ensure_handler_for_method
 from .transport import StdioTransport
 from .types import InvalidParamsError, JsonRpcError, JsonRpcMessage
 
+if TYPE_CHECKING:
+    from ..core import PoorCLICore
+
 logger = setup_logger(__name__)
+_PERF_LOG = os.environ.get("POORCLI_SERVER_PERF_LOG", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+
+
+def get_audit_logger():
+    from ..audit_log import get_audit_logger as _get_audit_logger
+
+    return _get_audit_logger()
 
 
 class PoorCLIServer(HandlerMixin):
     """JSON-RPC server for PoorCLI editor integrations."""
 
     def __init__(self):
+        init_started = time.perf_counter()
         from ..session_manager import SessionManager
 
+        self.logger = setup_logger("poor_cli.server")
+        self._perf_log_enabled = _PERF_LOG
+
+        phase_started = time.perf_counter()
         self._session_manager = SessionManager()
         self._session_manager.create_session(label="default", make_default=True)
         self._session_manager.set_permission_callback(self._server_permission_callback)
-        self.logger = setup_logger("poor_cli.server")
+        if self._perf_log_enabled:
+            self.logger.info(
+                "perf server_init.session_manager_ms=%.2f",
+                (time.perf_counter() - phase_started) * 1000.0,
+            )
+
         self.session_id = f"server-{uuid.uuid4().hex[:8]}"
         set_log_context(session_id=self.session_id)
         self._running = False
@@ -55,13 +79,28 @@ class PoorCLIServer(HandlerMixin):
         self._reader: Optional[asyncio.StreamReader] = None
         self._writer: Optional[asyncio.StreamWriter] = None
         self._background_tasks: Set[asyncio.Task[Any]] = set()
+
+        phase_started = time.perf_counter()
         self._init_handler_state()
+        if self._perf_log_enabled:
+            self.logger.info(
+                "perf server_init.handler_state_ms=%.2f",
+                (time.perf_counter() - phase_started) * 1000.0,
+            )
+
+        phase_started = time.perf_counter()
         rate_limit_policy = self._load_initial_rate_limit_policy()
         self._rate_limiter = RateLimiter(rate_limit_policy)
         self._rate_limit_policy = self._copy_rate_limit_policy(rate_limit_policy)
-        self.handlers: Dict[str, Callable[[Dict[str, Any]], Any]] = {
-            method: partial(handler, self) for method, handler in REGISTRY.items()
-        }
+        if self._perf_log_enabled:
+            self.logger.info(
+                "perf server_init.rate_limit_ms=%.2f",
+                (time.perf_counter() - phase_started) * 1000.0,
+            )
+            self.logger.info(
+                "perf server_init.total_ms=%.2f",
+                (time.perf_counter() - init_started) * 1000.0,
+            )
 
     @property
     def core(self) -> PoorCLICore:
@@ -103,6 +142,15 @@ class PoorCLIServer(HandlerMixin):
                             "error_code": "RATE_LIMITED",
                         },
                     ),
+                )
+
+            load_started = time.perf_counter()
+            loaded = ensure_handler_for_method(message.method)
+            if loaded and self._perf_log_enabled:
+                self.logger.info(
+                    "perf dispatch.handler_lazy_load method=%s elapsed_ms=%.2f",
+                    message.method,
+                    (time.perf_counter() - load_started) * 1000.0,
                 )
 
             handler = REGISTRY.get(message.method)
@@ -206,6 +254,8 @@ class PoorCLIServer(HandlerMixin):
         message: JsonRpcMessage,
         retry_after_s: float,
     ) -> None:
+        from ..audit_log import AuditEventType, AuditSeverity
+
         params = message.params if isinstance(message.params, dict) else {}
         client_id = (
             params.get("clientId")
