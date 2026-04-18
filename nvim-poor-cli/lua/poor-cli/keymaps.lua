@@ -157,6 +157,10 @@ function M.setup()
         require("poor-cli.timeline").toggle()
     end, { desc = "Toggle poor-cli timeline" })
 
+    safe_map("n", "<leader>po?", function()
+        require("poor-cli.onboarding").export_cheatsheet()
+    end, { desc = "Export poor-cli config cheatsheet" })
+
     -- register which-key group label if available
     local ok_wk, wk = pcall(require, "which-key")
     if ok_wk then

@@ -77,6 +77,11 @@ exit_stop_timeout_ms ~
     Hard budget (ms) for backend shutdown during VimLeavePre before
     force-kill fallback.
 
+                                                        *poor-cli-config.exit_ultra_fast*
+exit_ultra_fast ~
+    Default: false
+    When true, VimLeavePre uses immediate backend stop (no graceful wait).
+
                                                         *poor-cli-config.startup_feedback_defer_ms*
 startup_feedback_defer_ms ~
     Default: 450

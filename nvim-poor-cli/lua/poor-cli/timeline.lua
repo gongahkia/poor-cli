@@ -10,6 +10,7 @@ M.buf = nil
 M.win = nil
 M.line_events = {}
 M.widths = { status = 10, duration = 8, tool = 18, args = 52 }
+M._setup_done = false
 
 local glyphs = {
     pending = "*",
@@ -357,6 +358,10 @@ function M.reset(event_id_value)
 end
 
 function M.setup()
+    if M._setup_done then
+        return
+    end
+    M._setup_done = true
     local group = vim.api.nvim_create_augroup("poor-cli-timeline", { clear = true })
     vim.api.nvim_create_autocmd("User", {
         group = group,
@@ -378,5 +383,7 @@ function M.setup()
         end,
     })
 end
+
+M.setup()
 
 return M

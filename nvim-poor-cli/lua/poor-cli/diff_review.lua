@@ -17,6 +17,7 @@ local M = {
     edits = {},
     active_edit = nil,
     active_hunk = nil,
+    _setup_done = false,
 }
 
 local function cfg()
@@ -454,6 +455,10 @@ function M.toggle_layout()
 end
 
 function M.setup()
+    if M._setup_done then
+        return
+    end
+    M._setup_done = true
     local group = vim.api.nvim_create_augroup("poor-cli-diff-review", { clear = true })
     vim.api.nvim_create_autocmd("User", {
         group = group,
@@ -470,5 +475,7 @@ function M.setup()
         end,
     })
 end
+
+M.setup()
 
 return M

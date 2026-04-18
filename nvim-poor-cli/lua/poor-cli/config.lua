@@ -14,6 +14,7 @@ M.defaults = {
     auto_start_delay_ms = 120, -- Delay before auto-starting backend after setup() returns
     auto_restart = true, -- Restart server automatically after unexpected exits
     exit_stop_timeout_ms = 180, -- Max wait budget before forced kill on VimLeavePre
+    exit_ultra_fast = false, -- Skip graceful shutdown on VimLeavePre; stop backend immediately
     startup_feedback_defer_ms = 450, -- Suppress startup spinner/echo if startup finishes before this
     startup_success_notify = false, -- Show "[ok] initialized..." line after startup feedback
     startup_probe_on_ready = false, -- Probe getProviderInfo after ready and surface config-loaded line

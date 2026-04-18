@@ -299,6 +299,17 @@ function M.setup()
     local inline = lazy_module("poor-cli.inline")
     local diagnostics = lazy_module("poor-cli.diagnostics")
     local spec = require("poor-cli.command_spec")
+    local deferred_setups = {}
+    local function ensure_module_setup(name)
+        if deferred_setups[name] then
+            return
+        end
+        deferred_setups[name] = true
+        local ok, mod = pcall(require, "poor-cli." .. name)
+        if ok and type(mod.setup) == "function" then
+            pcall(mod.setup)
+        end
+    end
 
     -- ───────────────────────── Server ─────────────────────────
     -- v6.2: absorbed into :PoorCLIConfig as `server-start`, etc.
@@ -1004,6 +1015,20 @@ function M.setup()
             sandbox = function() return { "read-only", "review-only", "workspace-write", "full-access" } end,
         },
     })
+
+    -- defer heavier noun extensions until first use of their command surface
+    spec.bootstrap("agent", function()
+        ensure_module_setup("tasks")
+        ensure_module_setup("panels")
+        ensure_module_setup("workflow_picker")
+    end)
+    spec.bootstrap("review", function()
+        ensure_module_setup("timeline")
+        ensure_module_setup("diff_review")
+    end)
+    spec.bootstrap("help", function()
+        ensure_module_setup("onboarding")
+    end)
 end
 
 

@@ -11,13 +11,11 @@ local M = {}
 -- keymaps, or autocmds that the user expects immediately after :PoorCLI...
 local EAGER_SETUPS = {
     "commands", "keymaps", "autocmds", "cmp",
-    "tasks", "automations", "agents", "sessions", "memory",
+    "automations", "agents", "sessions", "memory",
     "checkpoints_ext", "config_mgr", "history_browser",
-    "custom_commands", "skills_nvim", "trust", "context_mgr",
+    "skills_nvim", "context_mgr",
     "cost", "providers", "deploy_ext",
-    "diagnostics_ext", "onboarding", "prompt_library", "workflow_picker", "pickers",
-    "panels", "diff_review", "timeline", "branches",
-    "memory_picker", "memory_expire", "pins_list", "strategies",
+    "diagnostics_ext", "prompt_library",
 }
 
 -- everything else is loaded on first access. the metatable below caches
@@ -113,7 +111,7 @@ end
 -- Setup function - call this from your Neovim config.
 --
 -- To minimize startup latency, only the bare minimum loads on the blocking
--- path (config, notify, rpc, chat, inline). Everything else is deferred via
+-- path (config, notify, rpc). Everything else is deferred via
 -- vim.schedule so it runs after init.lua returns to the event loop. Net
 -- effect: `:PoorCLI*` commands + panels are available within one tick of
 -- VimEnter — imperceptible to the user — and nvim startup stays snappy.
@@ -183,6 +181,13 @@ function M.setup(opts)
                 end
             end)
         end
+
+        enqueue(function()
+            local ok_ms, milestones = pcall(require, "poor-cli.onboarding_milestones")
+            if ok_ms and type(milestones.setup) == "function" then
+                pcall(milestones.setup)
+            end
+        end)
 
         enqueue(function()
             if pcall(require, "lualine") then

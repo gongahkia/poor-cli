@@ -28,8 +28,10 @@ function M.setup()
         callback = function()
             if rpc.is_running() then
                 if type(rpc.stop_for_exit) == "function" then
+                    local ultra_fast = config.get("exit_ultra_fast") == true
                     rpc.stop_for_exit({
-                        timeout_ms = tonumber(config.get("exit_stop_timeout_ms") or "") or 180,
+                        fast = ultra_fast,
+                        timeout_ms = ultra_fast and 0 or (tonumber(config.get("exit_stop_timeout_ms") or "") or 180),
                     })
                 else
                     rpc.stop()

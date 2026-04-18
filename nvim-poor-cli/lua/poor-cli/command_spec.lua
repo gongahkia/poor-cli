@@ -19,6 +19,8 @@ M._specs = {}
 -- EAGER_SETUPS ordering hazard in init.lua (commands runs first but extends
 -- nouns that later modules install).
 M._pending_extends = {}
+M._bootstraps = {}
+M._bootstrap_done = {}
 
 -- register associates a noun key (lowercase, matches :PoorCLI<Noun>) with its
 -- spec table. Called from each noun module.
@@ -49,6 +51,9 @@ function M.all() return M._specs end
 -- delegates to arg_complete[verb] for subsequent arguments, or {} otherwise.
 function M.make_complete(noun)
     return function(arg_lead, cmd_line, _)
+        if M._run_bootstrap then
+            M._run_bootstrap(noun)
+        end
         local spec = M._specs[noun]
         if not spec then return {} end
         -- Split cmd_line; first token is the :Command name, rest are args.
@@ -82,6 +87,9 @@ end
 -- Unknown verbs get a usage notification listing the valid verbs.
 function M.dispatch(noun)
     return function(opts)
+        if M._run_bootstrap then
+            M._run_bootstrap(noun)
+        end
         local spec = M._specs[noun]
         if not spec then
             vim.notify(
@@ -102,6 +110,13 @@ function M.dispatch(noun)
         end
         local handler = spec.verbs[verb]
         if not handler then
+            if M._run_bootstrap then
+                M._run_bootstrap(noun, verb)
+                spec = M._specs[noun]
+                handler = spec and spec.verbs and spec.verbs[verb] or nil
+            end
+        end
+        if not handler then
             vim.notify(
                 "[poor-cli] unknown verb '" .. verb .. "' for :PoorCLI" .. _capitalize(noun)
                     .. "; valid: " .. table.concat(spec.verb_names, ", "),
@@ -114,6 +129,28 @@ function M.dispatch(noun)
         for i = 2, #fargs do rest[i - 1] = fargs[i] end
         return handler(rest, opts)
     end
+end
+
+function M.bootstrap(noun, loader)
+    assert(type(noun) == "string" and noun ~= "", "noun key required")
+    assert(type(loader) == "function", "loader function required")
+    M._bootstraps[noun] = M._bootstraps[noun] or {}
+    table.insert(M._bootstraps[noun], loader)
+end
+
+function M._run_bootstrap(noun, verb)
+    local loaders = M._bootstraps[noun]
+    if type(loaders) ~= "table" or #loaders == 0 then
+        return false
+    end
+    if M._bootstrap_done[noun] then
+        return false
+    end
+    M._bootstrap_done[noun] = true
+    for _, loader in ipairs(loaders) do
+        pcall(loader, verb)
+    end
+    return true
 end
 
 -- Capitalize first letter (for usage messages). "task" → "Task".

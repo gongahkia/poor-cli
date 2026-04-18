@@ -27,6 +27,7 @@ M.exit_budget_breach_count = 0
 M.exit_budget_last_breach_unix = 0
 M.exit_budget_last_timeout_ms = 0
 M.capabilities = nil
+M._client_plugins_cache = nil
 M.server_state = "stopped"
 M.last_error = nil
 M.last_error_message = ""
@@ -603,10 +604,14 @@ local function plugin_available(name)
 end
 
 local function detect_plugins()
+    if type(M._client_plugins_cache) == "table" then
+        return vim.deepcopy(M._client_plugins_cache)
+    end
     local detected = {}
     for _, name in ipairs(OPTIONAL_PLUGINS) do
         detected[name] = plugin_available(name)
     end
+    M._client_plugins_cache = vim.deepcopy(detected)
     return detected
 end
 
@@ -892,13 +897,18 @@ function M.stop_for_exit(opts)
     stop_startup_feedback("stopped")
     M.pending = {}
     M.pending_meta = {}
+    local fast_exit = type(opts) == "table" and opts.fast == true
     local timeout_ms = tonumber((type(opts) == "table" and opts.timeout_ms) or "") or exit_budget_timeout_ms()
     local active_job_id = M.job_id
     if active_job_id then
-        M.exit_pending_job_id = active_job_id
-        pcall(vim.fn.chanclose, active_job_id, "stdin")
-        pcall(vim.fn.jobstop, active_job_id)
-        if timeout_ms > 0 and uv and uv.new_timer then
+        if fast_exit then
+            pcall(vim.fn.jobstop, active_job_id)
+        else
+            M.exit_pending_job_id = active_job_id
+            pcall(vim.fn.chanclose, active_job_id, "stdin")
+            pcall(vim.fn.jobstop, active_job_id)
+        end
+        if (not fast_exit) and timeout_ms > 0 and uv and uv.new_timer then
             local timer = uv.new_timer()
             if timer then
                 M.exit_force_timer = timer
