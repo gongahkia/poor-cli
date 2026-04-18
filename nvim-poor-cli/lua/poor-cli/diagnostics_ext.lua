@@ -18,12 +18,8 @@ end
 local function notify(msg, level) require("poor-cli.notify").notify("[poor-cli] " .. msg, level) end
 
 function M.setup()
-    -- Diag dispatcher is owned by diagnostics_ext.lua. commands.lua extends it
-    -- with `doctor`, `status`, `perf`, `perf-watch`, `policy`, `mcp`, `mcp-health`, `tools`,
-    -- `docker-sandbox`, `inline`, `trouble`, `fix`, `debug-copy`, `log-open`,
-    -- `state-open`, `write-min-init` via command_spec.extend("diag", ...).
-    require("poor-cli.command_spec").install("diag", {
-        desc = "Diagnostics, recovery, health checks",
+    local spec = require("poor-cli.command_spec")
+    local diag_spec = {
         verb_names = { "recovery", "sandbox-status" },
         verbs = {
             recovery = function(fargs)
@@ -62,7 +58,16 @@ function M.setup()
                 open_scratch("[poor-cli sandbox status]", table.concat(lines, "\n"))
             end,
         },
-    })
+    }
+    if spec.get("diag") then
+        spec.extend("diag", diag_spec)
+    else
+        spec.install("diag", vim.tbl_deep_extend("force", {
+            desc = "Diagnostics, recovery, health checks",
+            verb_names = {},
+            verbs = {},
+        }, diag_spec))
+    end
 end
 
 return M

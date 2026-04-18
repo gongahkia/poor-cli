@@ -14,8 +14,6 @@ local EAGER_SETUPS = {
     "agents", "sessions", "memory",
     "checkpoints_ext",
     "skills_nvim", "context_mgr",
-    "providers", "deploy_ext",
-    "diagnostics_ext",
 }
 
 -- everything else is loaded on first access. the metatable below caches
@@ -28,6 +26,12 @@ end
 local uv = vim.uv or vim.loop
 local SETUP_SLICE_BUDGET_NS = 3 * 1000000
 local AUTO_START_DELAY_MS = 120
+local REQUIRED_DEPS = {
+    { module = "snacks",  spec = "folke/snacks.nvim",         why = "notifications + pickers" },
+    { module = "trouble", spec = "folke/trouble.nvim",        why = ":Trouble poor-cli diagnostics" },
+    { module = "dap",     spec = "mfussenegger/nvim-dap",     why = "<leader>pb / <leader>pB breakpoint keymaps" },
+    { module = "neogit",  spec = "NeogitOrg/neogit",          why = "auto-open on commit flow" },
+}
 
 local function module_on_runtimepath(module_name)
     if module_name == nil or module_name == "" then
@@ -39,20 +43,9 @@ local function module_on_runtimepath(module_name)
     if package.preload[module_name] ~= nil then
         return true
     end
-    if type(package.searchpath) == "function" then
-        local found = package.searchpath(module_name, package.path)
-        if found and found ~= "" then
-            return true
-        end
-    end
-    local mod_path = tostring(module_name):gsub("%.", "/")
-    if #vim.api.nvim_get_runtime_file("lua/" .. mod_path .. ".lua", false) > 0 then
-        return true
-    end
-    if #vim.api.nvim_get_runtime_file("lua/" .. mod_path .. "/init.lua", false) > 0 then
-        return true
-    end
-    return false
+    if type(package.searchpath) ~= "function" then return false end
+    local found = package.searchpath(module_name, package.path)
+    return found ~= nil and found ~= ""
 end
 
 local function auto_start_delay_ms(config)
@@ -124,14 +117,8 @@ function M.setup(opts)
     -- path inside poor-cli, so missing any of them means a chunk of the
     -- plugin would silently not work. Fail loudly and list every missing
     -- one at once, with install snippets, rather than trickling errors.
-    local required = {
-        { module = "snacks",  spec = "folke/snacks.nvim",         why = "notifications + pickers" },
-        { module = "trouble", spec = "folke/trouble.nvim",        why = ":Trouble poor-cli diagnostics" },
-        { module = "dap",     spec = "mfussenegger/nvim-dap",     why = "<leader>pb / <leader>pB breakpoint keymaps" },
-        { module = "neogit",  spec = "NeogitOrg/neogit",          why = "auto-open on commit flow" },
-    }
     local missing = {}
-    for _, dep in ipairs(required) do
+    for _, dep in ipairs(REQUIRED_DEPS) do
         if not module_on_runtimepath(dep.module) then
             missing[#missing + 1] = dep
         end

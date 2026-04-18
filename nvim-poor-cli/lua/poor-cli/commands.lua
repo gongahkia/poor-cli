@@ -323,6 +323,11 @@ function M.setup()
         verb_names = {},
         verbs = {},
     })
+    spec.install("diag", {
+        desc = "Diagnostics, recovery, health checks",
+        verb_names = {},
+        verbs = {},
+    })
 
     -- ───────────────────────── Server ─────────────────────────
     -- v6.2: absorbed into :PoorCLIConfig as `server-start`, etc.
@@ -1042,9 +1047,13 @@ function M.setup()
     end)
     spec.bootstrap("config", function()
         ensure_module_setup("config_mgr")
+        ensure_module_setup("providers")
     end)
     spec.bootstrap("cost", function()
         ensure_module_setup("cost")
+    end)
+    spec.bootstrap("diag", function()
+        ensure_module_setup("diagnostics_ext")
     end)
     spec.bootstrap("review", function()
         ensure_module_setup("timeline")
