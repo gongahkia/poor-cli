@@ -54,6 +54,7 @@ def _percentile(values: List[float], pct: float) -> float:
 def _latency_summary(metric: str, values: List[float]) -> Dict[str, float]:
     return {
         f"{metric}_mean_ms": statistics.mean(values) if values else 0.0,
+        f"{metric}_std_ms": statistics.stdev(values) if len(values) > 1 else 0.0,
         f"{metric}_p50_ms": _percentile(values, 50.0),
         f"{metric}_p95_ms": _percentile(values, 95.0),
         f"{metric}_p99_ms": _percentile(values, 99.0),

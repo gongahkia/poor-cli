@@ -45,6 +45,7 @@ def _percentile(values: List[float], pct: float) -> float:
 def _summary(name: str, values: List[float]) -> Dict[str, float]:
     return {
         f"{name}_mean_ms": statistics.mean(values) if values else 0.0,
+        f"{name}_std_ms": statistics.stdev(values) if len(values) > 1 else 0.0,
         f"{name}_p50_ms": _percentile(values, 50.0),
         f"{name}_p95_ms": _percentile(values, 95.0),
         f"{name}_p99_ms": _percentile(values, 99.0),

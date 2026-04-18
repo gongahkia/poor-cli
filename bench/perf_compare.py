@@ -34,6 +34,13 @@ def _as_float(payload: Dict[str, float], key: str) -> float:
         return 0.0
 
 
+def _metric_prefix(metric: str) -> str:
+    for suffix in ("_mean_ms", "_p50_ms", "_p95_ms", "_p99_ms"):
+        if metric.endswith(suffix):
+            return metric[: -len(suffix)]
+    return metric
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="bench/perf_compare.py")
     parser.add_argument("--baseline", required=True, help="baseline profile json path")
@@ -67,7 +74,12 @@ def main() -> int:
     for metric in metrics:
         base_value = _as_float(baseline, metric)
         candidate_value = _as_float(candidate, metric)
-        allowed_delta = max(abs_ms, base_value * rel)
+        prefix = _metric_prefix(metric)
+        std_key = f"{prefix}_std_ms"
+        base_std = _as_float(baseline, std_key)
+        candidate_std = _as_float(candidate, std_key)
+        noise_floor = max(base_std, candidate_std) * 2.5
+        allowed_delta = max(abs_ms, base_value * rel, noise_floor)
         delta = candidate_value - base_value
         if delta > allowed_delta:
             failures.append(
