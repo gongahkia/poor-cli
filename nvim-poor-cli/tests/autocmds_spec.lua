@@ -40,12 +40,14 @@ describe("autocmds", function()
     end
 
     it("uses stop_for_exit when available", function()
-        local calls = { stop_for_exit = 0, stop = 0, timeout = nil }
+        local calls = { stop_for_exit = 0, stop = 0, timeout = nil, fast = nil }
         install_stubs({
             is_running = function() return true end,
+            get_status = function() return { state = "ready", initialized = true } end,
             stop_for_exit = function(opts)
                 calls.stop_for_exit = calls.stop_for_exit + 1
                 calls.timeout = opts and opts.timeout_ms
+                calls.fast = opts and opts.fast
             end,
             stop = function() calls.stop = calls.stop + 1 end,
         }, function(key)
@@ -61,6 +63,33 @@ describe("autocmds", function()
         assert.are.equal(1, calls.stop_for_exit)
         assert.are.equal(0, calls.stop)
         assert.are.equal(123, calls.timeout)
+        assert.are.equal(false, calls.fast)
+    end)
+
+    it("uses fast stop_for_exit while backend is not ready", function()
+        local calls = { stop_for_exit = 0, timeout = nil, fast = nil }
+        install_stubs({
+            is_running = function() return true end,
+            get_status = function() return { state = "initializing", initialized = false } end,
+            stop_for_exit = function(opts)
+                calls.stop_for_exit = calls.stop_for_exit + 1
+                calls.timeout = opts and opts.timeout_ms
+                calls.fast = opts and opts.fast
+            end,
+            stop = function() end,
+        }, function(key)
+            if key == "exit_stop_timeout_ms" then
+                return 123
+            end
+            return false
+        end)
+
+        require("poor-cli.autocmds").setup()
+        callbacks["VimLeavePre"]()
+
+        assert.are.equal(1, calls.stop_for_exit)
+        assert.are.equal(0, calls.timeout)
+        assert.are.equal(true, calls.fast)
     end)
 
     it("falls back to stop when stop_for_exit is unavailable", function()

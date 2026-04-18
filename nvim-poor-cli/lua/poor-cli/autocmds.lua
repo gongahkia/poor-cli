@@ -29,6 +29,12 @@ function M.setup()
             if rpc.is_running() then
                 if type(rpc.stop_for_exit) == "function" then
                     local ultra_fast = config.get("exit_ultra_fast") == true
+                    if (not ultra_fast) and type(rpc.get_status) == "function" then
+                        local status = rpc.get_status() or {}
+                        if status.state ~= "ready" or status.initialized ~= true then
+                            ultra_fast = true
+                        end
+                    end
                     rpc.stop_for_exit({
                         fast = ultra_fast,
                         timeout_ms = ultra_fast and 0 or (tonumber(config.get("exit_stop_timeout_ms") or "") or 180),
