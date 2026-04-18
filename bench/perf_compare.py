@@ -62,6 +62,11 @@ def main() -> int:
         default=8.0,
         help="minimum absolute regression threshold in ms",
     )
+    parser.add_argument(
+        "--report-path",
+        default="",
+        help="optional output path for machine-readable comparison report",
+    )
     args = parser.parse_args()
 
     baseline = _load_json(args.baseline)
@@ -71,6 +76,7 @@ def main() -> int:
     abs_ms = max(0.0, float(args.absolute_threshold_ms))
 
     failures: List[str] = []
+    comparisons: List[Dict[str, float | bool | str]] = []
     for metric in metrics:
         base_value = _as_float(baseline, metric)
         candidate_value = _as_float(candidate, metric)
@@ -81,7 +87,18 @@ def main() -> int:
         noise_floor = max(base_std, candidate_std) * 2.5
         allowed_delta = max(abs_ms, base_value * rel, noise_floor)
         delta = candidate_value - base_value
-        if delta > allowed_delta:
+        regressed = delta > allowed_delta
+        comparisons.append(
+            {
+                "metric": metric,
+                "baselineMs": round(base_value, 6),
+                "candidateMs": round(candidate_value, 6),
+                "deltaMs": round(delta, 6),
+                "allowedDeltaMs": round(allowed_delta, 6),
+                "regressed": bool(regressed),
+            }
+        )
+        if regressed:
             failures.append(
                 (
                     f"{metric}: base={base_value:.2f}ms head={candidate_value:.2f}ms "
@@ -89,19 +106,21 @@ def main() -> int:
                 )
             )
 
-    print(
-        json.dumps(
-            {
-                "baseline": str(args.baseline),
-                "candidate": str(args.candidate),
-                "metrics_checked": metrics,
-                "relative_threshold": rel,
-                "absolute_threshold_ms": abs_ms,
-                "regressions": failures,
-            },
-            sort_keys=True,
-        )
-    )
+    report = {
+        "baseline": str(args.baseline),
+        "candidate": str(args.candidate),
+        "metrics_checked": metrics,
+        "relative_threshold": rel,
+        "absolute_threshold_ms": abs_ms,
+        "regressions": failures,
+        "comparisons": comparisons,
+    }
+    encoded = json.dumps(report, sort_keys=True)
+    print(encoded)
+    if str(args.report_path or "").strip():
+        out_path = Path(str(args.report_path)).expanduser().resolve()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(encoded + "\n", encoding="utf-8")
     if failures:
         for line in failures:
             print(f"[perf-compare] {line}")

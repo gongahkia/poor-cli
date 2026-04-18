@@ -228,7 +228,76 @@ jobs:
           .venv/bin/python bench/startup_profile.py --runs 30 --output bench-base.json
           git checkout --detach "$HEAD_SHA"
           .venv/bin/pip install -e .
-          .venv/bin/python bench/perf_compare.py --baseline bench-base.json --candidate bench-head.json
+          .venv/bin/python bench/perf_compare.py --baseline bench-base.json --candidate bench-head.json --report-path bench-compare.json
+
+      - name: Append startup trend history
+        if: always()
+        run: |
+          .venv/bin/python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          trend_path = Path("bench-trend.jsonl")
+          entries = []
+
+          def add_entry(path: str, profile: str) -> None:
+              fp = Path(path)
+              if not fp.exists():
+                  return
+              payload = json.loads(fp.read_text(encoding="utf-8"))
+              entries.append({
+                  "profile": profile,
+                  "event": os.environ.get("GITHUB_EVENT_NAME", ""),
+                  "run_id": os.environ.get("GITHUB_RUN_ID", ""),
+                  "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+                  "sha": os.environ.get("GITHUB_SHA", ""),
+                  "ref": os.environ.get("GITHUB_REF_NAME", ""),
+                  "metrics": payload,
+              })
+
+          add_entry("bench-base.json", "base")
+          add_entry("bench-head.json", "head")
+          with trend_path.open("a", encoding="utf-8") as fh:
+              for row in entries:
+                  fh.write(json.dumps(row, sort_keys=True) + "\n")
+          PY
+
+      - name: Publish perf summary table
+        if: always()
+        run: |
+          .venv/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+
+          summary_path = Path(__import__("os").environ["GITHUB_STEP_SUMMARY"])
+          head = json.loads(Path("bench-head.json").read_text(encoding="utf-8")) if Path("bench-head.json").exists() else {}
+          compare = json.loads(Path("bench-compare.json").read_text(encoding="utf-8")) if Path("bench-compare.json").exists() else {}
+          rows = compare.get("comparisons", []) if isinstance(compare, dict) else []
+          with summary_path.open("a", encoding="utf-8") as fh:
+              fh.write("### Performance Summary\n\n")
+              if rows:
+                  fh.write("| Metric | Base (ms) | Head (ms) | Δ (ms) | Allowed (ms) | Status |\n")
+                  fh.write("|---|---:|---:|---:|---:|---|\n")
+                  for row in rows:
+                      status = "REGRESSION" if row.get("regressed") else "OK"
+                      fh.write(
+                          "| {metric} | {base:.2f} | {head_v:.2f} | {delta:.2f} | {allowed:.2f} | {status} |\n".format(
+                              metric=row.get("metric", ""),
+                              base=float(row.get("baselineMs", 0.0)),
+                              head_v=float(row.get("candidateMs", 0.0)),
+                              delta=float(row.get("deltaMs", 0.0)),
+                              allowed=float(row.get("allowedDeltaMs", 0.0)),
+                              status=status,
+                          )
+                      )
+              elif head:
+                  fh.write("| Metric | Head (ms) |\n")
+                  fh.write("|---|---:|\n")
+                  for metric in ("warm_setup_return_p95_ms", "warm_setup_complete_p95_ms", "quick_quit_mean_ms", "quick_quit_p50_ms"):
+                      fh.write(f"| {metric} | {float(head.get(metric, 0.0)):.2f} |\n")
+              fh.write("\n")
+          PY
 
       - name: Upload startup benchmark artifacts
         if: always()
@@ -238,6 +307,8 @@ jobs:
           path: |
             bench-head.json
             bench-base.json
+            bench-compare.json
+            bench-trend.jsonl
           if-no-files-found: ignore
 
       - name: Run perf guardrails (PR soft)
