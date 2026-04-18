@@ -14,8 +14,8 @@ DEFAULT_METRICS = (
     "warm_setup_return_p99_ms",
     "warm_setup_complete_p95_ms",
     "warm_setup_complete_p99_ms",
-    "quick_quit_p95_ms",
-    "quick_quit_p99_ms",
+    "quick_quit_mean_ms",
+    "quick_quit_p50_ms",
 )
 
 
