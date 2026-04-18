@@ -97,74 +97,87 @@ function M.setup()
         chat().toggle()
     end, { desc = "Toggle poor-cli chat" })
 
-    local checkpoints_key = config.get("checkpoints_key")
-    if checkpoints_key and checkpoints_key ~= "" then
-        safe_map("n", checkpoints_key, function()
-            require("poor-cli.checkpoints_ext").open_picker()
-        end, { desc = "Browse poor-cli checkpoints" })
-    end
-    
     -- Send selection to chat in visual mode
     safe_map("v", config.get("chat_key"), function()
         chat().send_with_selection()
     end, { desc = "Send selection to poor-cli chat" })
-    
-    -- Additional useful keymaps (not configurable, but standard)
-    
-    -- Alt+Enter to trigger completion with instruction
-    safe_map("i", "<M-CR>", function()
-        inline().trigger_with_instruction()
-    end, { desc = "Trigger poor-cli completion with instruction" })
-    
-    -- In normal mode: generate completion (skip if gc already mapped, e.g. by Comment.nvim)
-    local gc_existing = vim.fn.maparg("gc", "n", false, true)
-    local gc_key = (gc_existing and gc_existing.lhs) and "<leader>gc" or "gc"
-    safe_map("n", gc_key, function()
-        vim.cmd("startinsert")
-        vim.defer_fn(function()
-            inline().trigger({ manual = true })
-        end, 50)
-    end, { desc = "Generate completion at cursor" })
-    
-    -- Visual mode refactor
-    safe_map("v", "<leader>pr", function()
-        -- Get visual selection bounds
-        local start_pos = vim.fn.getpos("'<")
-        local end_pos = vim.fn.getpos("'>")
-        vim.cmd(start_pos[2] .. "," .. end_pos[2] .. "PoorCLIChat refactor")
-    end, { desc = "Refactor selection with poor-cli" })
 
-    -- Quick explain
-    safe_map("v", "<leader>pe", function()
-        local start_pos = vim.fn.getpos("'<")
-        local end_pos = vim.fn.getpos("'>")
-        vim.cmd(start_pos[2] .. "," .. end_pos[2] .. "PoorCLIChat explain")
-    end, { desc = "Explain selection with poor-cli" })
+    local aux_maps_installed = false
+    local function install_aux_maps()
+        if aux_maps_installed then
+            return
+        end
+        aux_maps_installed = true
 
-    -- command palette
-    local palette_key = config.get("palette_key")
-    if palette_key and palette_key ~= "" then
-        safe_map("n", palette_key, function()
-            vim.cmd("PoorCLIHelp palette")
-        end, { desc = "poor-cli command palette" })
+        local checkpoints_key = config.get("checkpoints_key")
+        if checkpoints_key and checkpoints_key ~= "" then
+            safe_map("n", checkpoints_key, function()
+                require("poor-cli.checkpoints_ext").open_picker()
+            end, { desc = "Browse poor-cli checkpoints" })
+        end
+
+        safe_map("i", "<M-CR>", function()
+            inline().trigger_with_instruction()
+        end, { desc = "Trigger poor-cli completion with instruction" })
+
+        local gc_existing = vim.fn.maparg("gc", "n", false, true)
+        local gc_key = (gc_existing and gc_existing.lhs) and "<leader>gc" or "gc"
+        safe_map("n", gc_key, function()
+            vim.cmd("startinsert")
+            vim.defer_fn(function()
+                inline().trigger({ manual = true })
+            end, 50)
+        end, { desc = "Generate completion at cursor" })
+
+        safe_map("v", "<leader>pr", function()
+            local start_pos = vim.fn.getpos("'<")
+            local end_pos = vim.fn.getpos("'>")
+            vim.cmd(start_pos[2] .. "," .. end_pos[2] .. "PoorCLIChat refactor")
+        end, { desc = "Refactor selection with poor-cli" })
+
+        safe_map("v", "<leader>pe", function()
+            local start_pos = vim.fn.getpos("'<")
+            local end_pos = vim.fn.getpos("'>")
+            vim.cmd(start_pos[2] .. "," .. end_pos[2] .. "PoorCLIChat explain")
+        end, { desc = "Explain selection with poor-cli" })
+
+        local palette_key = config.get("palette_key")
+        if palette_key and palette_key ~= "" then
+            safe_map("n", palette_key, function()
+                vim.cmd("PoorCLIHelp palette")
+            end, { desc = "poor-cli command palette" })
+        end
+
+        safe_map("n", "<leader>pv", function()
+            require("poor-cli.diff_review").toggle()
+        end, { desc = "Toggle poor-cli diff review" })
+
+        safe_map("n", "<leader>pt", function()
+            require("poor-cli.timeline").toggle()
+        end, { desc = "Toggle poor-cli timeline" })
+
+        safe_map("n", "<leader>po?", function()
+            require("poor-cli.onboarding").export_cheatsheet()
+        end, { desc = "Export poor-cli config cheatsheet" })
+
+        local ok_wk, wk = pcall(require, "which-key")
+        if ok_wk then
+            pcall(wk.add, {{ "<leader>p", group = "poor-cli" }})
+        end
     end
 
-    safe_map("n", "<leader>pv", function()
-        require("poor-cli.diff_review").toggle()
-    end, { desc = "Toggle poor-cli diff review" })
-
-    safe_map("n", "<leader>pt", function()
-        require("poor-cli.timeline").toggle()
-    end, { desc = "Toggle poor-cli timeline" })
-
-    safe_map("n", "<leader>po?", function()
-        require("poor-cli.onboarding").export_cheatsheet()
-    end, { desc = "Export poor-cli config cheatsheet" })
-
-    -- register which-key group label if available
-    local ok_wk, wk = pcall(require, "which-key")
-    if ok_wk then
-        pcall(wk.add, {{ "<leader>p", group = "poor-cli" }})
+    local ok_rpc, rpc = pcall(require, "poor-cli.rpc")
+    local status = (ok_rpc and rpc and rpc.get_status and rpc.get_status()) or {}
+    if status.initialized then
+        install_aux_maps()
+    else
+        local group = vim.api.nvim_create_augroup("poor-cli-keymaps-deferred", { clear = true })
+        vim.api.nvim_create_autocmd("User", {
+            group = group,
+            pattern = "PoorCLIInitialized",
+            once = true,
+            callback = install_aux_maps,
+        })
     end
 end
 

@@ -79,6 +79,7 @@ M._setup_complete = false
 M._setup_attempted = false
 M._deferred_features_ready = false
 M._integrations_ready = false
+M._lualine_ready = false
 M._setup_timing = nil
 
 local function is_exiting()
@@ -127,6 +128,16 @@ function M._ensure_integrations()
         if ok_bridge and type(bridge.setup) == "function" then
             pcall(bridge.setup)
         end
+    end
+end
+
+function M._ensure_lualine()
+    if M._lualine_ready then
+        return
+    end
+    M._lualine_ready = true
+    if pcall(require, "lualine") then
+        require("poor-cli.lualine").setup()
     end
 end
 
@@ -287,12 +298,6 @@ function M.setup(opts)
             end)
         end
 
-        enqueue("setup:lualine", function()
-            if pcall(require, "lualine") then
-                require("poor-cli.lualine").setup()
-            end
-        end)
-
         enqueue("setup:gitignore_nudge", function()
             local ok_gi, gi = pcall(require, "poor-cli.gitignore_nudge")
             if ok_gi and type(gi.setup) == "function" then
@@ -315,6 +320,7 @@ function M.setup(opts)
                 pattern = "PoorCLIInitialized",
                 once = true,
                 callback = function()
+                    pcall(M._ensure_lualine)
                     pcall(M._ensure_integrations)
                 end,
             })

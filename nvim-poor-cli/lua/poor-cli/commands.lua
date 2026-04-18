@@ -300,6 +300,7 @@ function M.setup()
     local diagnostics = lazy_module("poor-cli.diagnostics")
     local spec = require("poor-cli.command_spec")
     local deferred_setups = {}
+    local deferred_extends = {}
     local function ensure_module_setup(name)
         if deferred_setups[name] then
             return
@@ -309,6 +310,13 @@ function M.setup()
         if ok and type(mod.setup) == "function" then
             pcall(mod.setup)
         end
+    end
+    local function run_extend_once(key, fn)
+        if deferred_extends[key] then
+            return
+        end
+        deferred_extends[key] = true
+        fn()
     end
 
     -- install lightweight dispatchers so noun commands exist immediately;
@@ -428,37 +436,39 @@ function M.setup()
         },
     })
 
-    -- ───────────────────────── Completion ─────────────────────────
-    -- v6.2: absorbed into :PoorCLIChat as `completion-*`.
-    spec.extend("chat", {
-        verb_prefix = "completion-",
-        verbs = {
-            trigger = function() inline.trigger({ manual = true }) end,
-            accept = function() inline.accept() end,
-            ["accept-word"] = function() inline.accept_word() end,
-            ["accept-line"] = function() inline.accept_line() end,
-            dismiss = function() inline.dismiss() end,
-            ["auto-trigger"] = function()
-                local cfg = require("poor-cli.config")
-                local current = cfg.get("auto_trigger")
-                cfg.config.auto_trigger = not current
-                if cfg.config.auto_trigger then
-                    local augroup = vim.api.nvim_create_augroup("poor-cli-auto-trigger", { clear = true })
-                    vim.api.nvim_create_autocmd("TextChangedI", {
-                        group = augroup,
-                        callback = function() if rpc.is_running() then inline.auto_trigger() end end,
-                    })
-                    _notify("Auto-trigger ON", vim.log.levels.INFO)
-                else
-                    vim.api.nvim_create_augroup("poor-cli-auto-trigger", { clear = true })
-                    inline.cancel_auto_trigger()
-                    _notify("Auto-trigger OFF", vim.log.levels.INFO)
-                end
-            end,
-            reason = function() require("poor-cli.ux.completion_reason").report() end,
-            ["filetype-toggle"] = function() require("poor-cli.ux.completion_reason").toggle_filetype() end,
-        },
-    })
+    local function extend_chat_commands()
+        -- ───────────────────────── Completion ─────────────────────────
+        -- v6.2: absorbed into :PoorCLIChat as `completion-*`.
+        spec.extend("chat", {
+            verb_prefix = "completion-",
+            verbs = {
+                trigger = function() inline.trigger({ manual = true }) end,
+                accept = function() inline.accept() end,
+                ["accept-word"] = function() inline.accept_word() end,
+                ["accept-line"] = function() inline.accept_line() end,
+                dismiss = function() inline.dismiss() end,
+                ["auto-trigger"] = function()
+                    local cfg = require("poor-cli.config")
+                    local current = cfg.get("auto_trigger")
+                    cfg.config.auto_trigger = not current
+                    if cfg.config.auto_trigger then
+                        local augroup = vim.api.nvim_create_augroup("poor-cli-auto-trigger", { clear = true })
+                        vim.api.nvim_create_autocmd("TextChangedI", {
+                            group = augroup,
+                            callback = function() if rpc.is_running() then inline.auto_trigger() end end,
+                        })
+                        _notify("Auto-trigger ON", vim.log.levels.INFO)
+                    else
+                        vim.api.nvim_create_augroup("poor-cli-auto-trigger", { clear = true })
+                        inline.cancel_auto_trigger()
+                        _notify("Auto-trigger OFF", vim.log.levels.INFO)
+                    end
+                end,
+                reason = function() require("poor-cli.ux.completion_reason").report() end,
+                ["filetype-toggle"] = function() require("poor-cli.ux.completion_reason").toggle_filetype() end,
+            },
+        })
+    end
 
     -- ───────────────────────── Help ─────────────────────────
     spec.install("help", {
@@ -474,24 +484,26 @@ function M.setup()
         },
     })
 
-    -- ───────────────────────── Diff ─────────────────────────
-    -- v6.2: absorbed into :PoorCLIReview as `diff`, `diff-compare`, `timeline`, etc.
-    spec.extend("review", {
-        verbs = {
-            ["diff-compare"] = function(fargs)
-                if #fargs < 2 then _notify("usage: :PoorCLIReview diff-compare <file1> <file2>", vim.log.levels.WARN); return end
-                local result, err = rpc.compare_files(fargs[1], fargs[2], 15000)
-                if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                local diff_text = type(result) == "table" and (result.diff or vim.inspect(result)) or tostring(result)
-                open_scratch("[poor-cli diff]", diff_text, "diff")
-            end,
-            diff = function() require("poor-cli.diff_review").open() end,
-            ["diff-close"] = function() require("poor-cli.diff_review").close() end,
-            ["diff-layout"] = function() require("poor-cli.diff_review").toggle_layout() end,
-            timeline = function() require("poor-cli.timeline").toggle() end,
-            ["timeline-cancel"] = function() require("poor-cli.timeline").cancel_current() end,
-        },
-    })
+    local function extend_review_commands()
+        -- ───────────────────────── Diff ─────────────────────────
+        -- v6.2: absorbed into :PoorCLIReview as `diff`, `diff-compare`, `timeline`, etc.
+        spec.extend("review", {
+            verbs = {
+                ["diff-compare"] = function(fargs)
+                    if #fargs < 2 then _notify("usage: :PoorCLIReview diff-compare <file1> <file2>", vim.log.levels.WARN); return end
+                    local result, err = rpc.compare_files(fargs[1], fargs[2], 15000)
+                    if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                    local diff_text = type(result) == "table" and (result.diff or vim.inspect(result)) or tostring(result)
+                    open_scratch("[poor-cli diff]", diff_text, "diff")
+                end,
+                diff = function() require("poor-cli.diff_review").open() end,
+                ["diff-close"] = function() require("poor-cli.diff_review").close() end,
+                ["diff-layout"] = function() require("poor-cli.diff_review").toggle_layout() end,
+                timeline = function() require("poor-cli.timeline").toggle() end,
+                ["timeline-cancel"] = function() require("poor-cli.timeline").cancel_current() end,
+            },
+        })
+    end
 
     -- ───────────────────────── Review ─────────────────────────
     spec.install("review", {
@@ -544,115 +556,155 @@ function M.setup()
         },
     })
 
-    -- ───────────────────────── Search ─────────────────────────
-    -- v6.2: absorbed into :PoorCLIContext as `search`, `search-index`, etc.
-    spec.extend("context", {
-        verb_prefix = "search-",
-        verbs = {
-            run = function(fargs)
-                local q = table.concat(fargs, " ")
-                if q == "" then _notify("usage: :PoorCLIContext search <query>", vim.log.levels.WARN); return end
-                rpc.hybrid_search(q, 20, function(result, err) vim.schedule(function()
+    local function extend_context_commands()
+        -- ───────────────────────── Search ─────────────────────────
+        -- v6.2: absorbed into :PoorCLIContext as `search`, `search-index`, etc.
+        spec.extend("context", {
+            verb_prefix = "search-",
+            verbs = {
+                run = function(fargs)
+                    local q = table.concat(fargs, " ")
+                    if q == "" then _notify("usage: :PoorCLIContext search <query>", vim.log.levels.WARN); return end
+                    rpc.hybrid_search(q, 20, function(result, err) vim.schedule(function()
+                        if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                        local results = (result or {}).results or result or {}
+                        local lines = { "# search: " .. q, "" }
+                        for i, r in ipairs(results) do
+                            local path = r.path or r.file or "?"
+                            local score = r.score and string.format(" (%.2f)", r.score) or ""
+                            table.insert(lines, string.format("%d. `%s`%s", i, path, score))
+                            if r.snippet or r.content then table.insert(lines, "   " .. (r.snippet or r.content):sub(1, 120)) end
+                        end
+                        if #results == 0 then table.insert(lines, "no results") end
+                        open_scratch("[poor-cli search]", table.concat(lines, "\n"))
+                    end) end)
+                end,
+                index = function()
+                    _notify("indexing codebase...", vim.log.levels.INFO)
+                    rpc.index_codebase(function(result, err) vim.schedule(function()
+                        if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                        local stats = result or {}
+                        _notify(string.format("indexed: %s files, %s chunks",
+                            tostring(stats.total_files or stats.totalFiles or "?"),
+                            tostring(stats.total_chunks or stats.totalChunks or "?")), vim.log.levels.INFO)
+                    end) end)
+                end,
+                stats = function()
+                    local result, err = rpc.get_index_stats(10000)
                     if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                    local results = (result or {}).results or result or {}
-                    local lines = { "# search: " .. q, "" }
-                    for i, r in ipairs(results) do
-                        local path = r.path or r.file or "?"
-                        local score = r.score and string.format(" (%.2f)", r.score) or ""
-                        table.insert(lines, string.format("%d. `%s`%s", i, path, score))
-                        if r.snippet or r.content then table.insert(lines, "   " .. (r.snippet or r.content):sub(1, 120)) end
+                    local r = type(result) == "table" and result or {}
+                    local lines = { "# index stats", "" }
+                    for k, v in pairs(r) do
+                        table.insert(lines, string.format("- %s: %s", tostring(k), tostring(v)))
                     end
-                    if #results == 0 then table.insert(lines, "no results") end
-                    open_scratch("[poor-cli search]", table.concat(lines, "\n"))
-                end) end)
-            end,
-            index = function()
-                _notify("indexing codebase...", vim.log.levels.INFO)
-                rpc.index_codebase(function(result, err) vim.schedule(function()
-                    if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                    local stats = result or {}
-                    _notify(string.format("indexed: %s files, %s chunks",
-                        tostring(stats.total_files or stats.totalFiles or "?"),
-                        tostring(stats.total_chunks or stats.totalChunks or "?")), vim.log.levels.INFO)
-                end) end)
-            end,
-            stats = function()
-                local result, err = rpc.get_index_stats(10000)
-                if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                local r = type(result) == "table" and result or {}
-                local lines = { "# index stats", "" }
-                for k, v in pairs(r) do
-                    table.insert(lines, string.format("- %s: %s", tostring(k), tostring(v)))
-                end
-                if #lines == 2 then table.insert(lines, tostring(result)) end
-                open_scratch("[poor-cli index stats]", table.concat(lines, "\n"), "markdown")
-            end,
-            embeddings = function()
-                _notify("indexing embeddings...", vim.log.levels.INFO)
-                rpc.request("poor-cli/indexEmbeddings", { force = false }, function(result, err) vim.schedule(function()
-                    if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                    _notify("embeddings indexed: " .. vim.inspect(result or {}), vim.log.levels.INFO)
-                end) end)
-            end,
-            watch = function() require("poor-cli.watch_panel").open() end,
-            ["watch-scan"] = function()
-                rpc.watch_scan(function(result, err) vim.schedule(function()
-                    if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                    local items = type(result) == "table" and result or {}
-                    if #items == 0 then _notify("no inline instructions found", vim.log.levels.INFO); return end
-                    local lines = { "# inline instructions found", "" }
-                    for _, item in ipairs(items) do table.insert(lines, "- " .. vim.inspect(item)) end
-                    open_scratch("[poor-cli watch]", table.concat(lines, "\n"), "markdown")
-                end) end)
-            end,
-        },
-    })
-    -- Bare `search` verb takes the query directly.
-    spec.extend("context", {
-        verbs = {
-            search = function(fargs)
-                local q = table.concat(fargs, " ")
-                if q == "" then _notify("usage: :PoorCLIContext search <query>", vim.log.levels.WARN); return end
-                rpc.hybrid_search(q, 20, function(result, err) vim.schedule(function()
-                    if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                    local results = (result or {}).results or result or {}
-                    local lines = { "# search: " .. q, "" }
-                    for i, r in ipairs(results) do
-                        local path = r.path or r.file or "?"
-                        local score = r.score and string.format(" (%.2f)", r.score) or ""
-                        table.insert(lines, string.format("%d. `%s`%s", i, path, score))
-                        if r.snippet or r.content then table.insert(lines, "   " .. (r.snippet or r.content):sub(1, 120)) end
-                    end
-                    if #results == 0 then table.insert(lines, "no results") end
-                    open_scratch("[poor-cli search]", table.concat(lines, "\n"))
-                end) end)
-            end,
-        },
-    })
+                    if #lines == 2 then table.insert(lines, tostring(result)) end
+                    open_scratch("[poor-cli index stats]", table.concat(lines, "\n"), "markdown")
+                end,
+                embeddings = function()
+                    _notify("indexing embeddings...", vim.log.levels.INFO)
+                    rpc.request("poor-cli/indexEmbeddings", { force = false }, function(result, err) vim.schedule(function()
+                        if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                        _notify("embeddings indexed: " .. vim.inspect(result or {}), vim.log.levels.INFO)
+                    end) end)
+                end,
+                watch = function() require("poor-cli.watch_panel").open() end,
+                ["watch-scan"] = function()
+                    rpc.watch_scan(function(result, err) vim.schedule(function()
+                        if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                        local items = type(result) == "table" and result or {}
+                        if #items == 0 then _notify("no inline instructions found", vim.log.levels.INFO); return end
+                        local lines = { "# inline instructions found", "" }
+                        for _, item in ipairs(items) do table.insert(lines, "- " .. vim.inspect(item)) end
+                        open_scratch("[poor-cli watch]", table.concat(lines, "\n"), "markdown")
+                    end) end)
+                end,
+            },
+        })
+        -- Bare `search` verb takes the query directly.
+        spec.extend("context", {
+            verbs = {
+                search = function(fargs)
+                    local q = table.concat(fargs, " ")
+                    if q == "" then _notify("usage: :PoorCLIContext search <query>", vim.log.levels.WARN); return end
+                    rpc.hybrid_search(q, 20, function(result, err) vim.schedule(function()
+                        if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                        local results = (result or {}).results or result or {}
+                        local lines = { "# search: " .. q, "" }
+                        for i, r in ipairs(results) do
+                            local path = r.path or r.file or "?"
+                            local score = r.score and string.format(" (%.2f)", r.score) or ""
+                            table.insert(lines, string.format("%d. `%s`%s", i, path, score))
+                            if r.snippet or r.content then table.insert(lines, "   " .. (r.snippet or r.content):sub(1, 120)) end
+                        end
+                        if #results == 0 then table.insert(lines, "no results") end
+                        open_scratch("[poor-cli search]", table.concat(lines, "\n"))
+                    end) end)
+                end,
+            },
+        })
+        -- Context: show + repo-map + compact-strategy + explain
+        spec.extend("context", {
+            verbs = {
+                show = function() require("poor-cli.context_panel").open() end,
+                ["repo-map"] = function(fargs) require("poor-cli.repo_map").open(tonumber(fargs[1])) end,
+                ["compact-strategy"] = function(fargs)
+                    local strategy = fargs[1] or "compact"
+                    rpc.request("poor-cli/compactContext", { strategy = strategy }, function(result, err) vim.schedule(function()
+                        if err then _notify(rpc.format_error(err), vim.log.levels.ERROR)
+                        else _notify("Context compacted (" .. strategy .. "): " .. vim.inspect(result or {}), vim.log.levels.INFO) end
+                    end) end)
+                end,
+                explain = function() open_scratch("[poor-cli context]", build_context_text(), "markdown") end,
+            },
+            arg_complete = {
+                ["compact-strategy"] = function() return { "auto", "compact", "gentle", "aggressive", "compress", "handoff" } end,
+            },
+        })
+    end
 
-    -- ───────────────────────── Plan ─────────────────────────
-    -- v6.2: absorbed into :PoorCLIAgent as `plan`.
-    spec.extend("agent", {
-        verbs = { plan = function() require("poor-cli.plan_board").open() end },
-    })
+    local function extend_agent_commands()
+        -- ───────────────────────── Plan ─────────────────────────
+        -- v6.2: absorbed into :PoorCLIAgent as `plan`.
+        spec.extend("agent", {
+            verbs = { plan = function() require("poor-cli.plan_board").open() end },
+        })
+    end
 
-    -- ───────────────────────── Audit ─────────────────────────
-    -- v6.2: absorbed into :PoorCLICost as `audit-export`.
-    spec.extend("cost", {
-        verbs = {
-            ["audit-export"] = function(fargs)
-                local raw = table.concat(fargs, " ")
-                rpc.request("audit/exportRange", parse_audit_export_args(raw), function(result, err) vim.schedule(function()
-                    if err then _notify("Audit export failed: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
-                    if type(result) == "table" and result.path then
-                        _notify("Exported " .. tostring(result.count or 0) .. " audit events to " .. tostring(result.path), vim.log.levels.INFO)
-                    elseif type(result) == "table" and result.jsonl then
-                        open_scratch("[poor-cli audit export]", tostring(result.jsonl), "json")
-                    end
-                end) end)
-            end,
-        },
-    })
+    local function extend_cost_commands()
+        -- ───────────────────────── Audit ─────────────────────────
+        -- v6.2: absorbed into :PoorCLICost as `audit-export`.
+        spec.extend("cost", {
+            verbs = {
+                ["audit-export"] = function(fargs)
+                    local raw = table.concat(fargs, " ")
+                    rpc.request("audit/exportRange", parse_audit_export_args(raw), function(result, err) vim.schedule(function()
+                        if err then _notify("Audit export failed: " .. rpc.format_error(err), vim.log.levels.ERROR); return end
+                        if type(result) == "table" and result.path then
+                            _notify("Exported " .. tostring(result.count or 0) .. " audit events to " .. tostring(result.path), vim.log.levels.INFO)
+                        elseif type(result) == "table" and result.jsonl then
+                            open_scratch("[poor-cli audit export]", tostring(result.jsonl), "json")
+                        end
+                    end) end)
+                end,
+            },
+        })
+        -- Cost: dashboard + estimate
+        spec.extend("cost", {
+            verbs = {
+                dashboard = function() require("poor-cli.panels.cost_dashboard").open() end,
+                estimate = function(fargs)
+                    local msg = table.concat(fargs, " ")
+                    if msg == "" then msg = "hello" end
+                    local result, err = rpc.estimate_cost({ message = msg }, 10000)
+                    if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
+                    local r = result or {}
+                    _notify(("estimate: ~%d in / ~%d out tokens, ~$%.4f"):format(
+                        r.estimatedInputTokens or 0, r.estimatedOutputTokens or 0, r.estimatedCostUSD or 0
+                    ), vim.log.levels.INFO)
+                end,
+            },
+        })
+    end
 
     -- ───────────────────────── Profile ─────────────────────────
     -- v6.2: absorbed into :PoorCLITrust as `profile`, `profile-apply`.
@@ -738,45 +790,10 @@ function M.setup()
         },
     })
 
-    -- Context: show + repo-map + compact-strategy + explain
-    spec.extend("context", {
-        verbs = {
-            show = function() require("poor-cli.context_panel").open() end,
-            ["repo-map"] = function(fargs) require("poor-cli.repo_map").open(tonumber(fargs[1])) end,
-            ["compact-strategy"] = function(fargs)
-                local strategy = fargs[1] or "compact"
-                rpc.request("poor-cli/compactContext", { strategy = strategy }, function(result, err) vim.schedule(function()
-                    if err then _notify(rpc.format_error(err), vim.log.levels.ERROR)
-                    else _notify("Context compacted (" .. strategy .. "): " .. vim.inspect(result or {}), vim.log.levels.INFO) end
-                end) end)
-            end,
-            explain = function() open_scratch("[poor-cli context]", build_context_text(), "markdown") end,
-        },
-        arg_complete = {
-            ["compact-strategy"] = function() return { "auto", "compact", "gentle", "aggressive", "compress", "handoff" } end,
-        },
-    })
-
-    -- Cost: dashboard + estimate
-    spec.extend("cost", {
-        verbs = {
-            dashboard = function() require("poor-cli.panels.cost_dashboard").open() end,
-            estimate = function(fargs)
-                local msg = table.concat(fargs, " ")
-                if msg == "" then msg = "hello" end
-                local result, err = rpc.estimate_cost({ message = msg }, 10000)
-                if err then _notify(rpc.format_error(err), vim.log.levels.ERROR); return end
-                local r = result or {}
-                _notify(("estimate: ~%d in / ~%d out tokens, ~$%.4f"):format(
-                    r.estimatedInputTokens or 0, r.estimatedOutputTokens or 0, r.estimatedCostUSD or 0
-                ), vim.log.levels.INFO)
-            end,
-        },
-    })
-
     -- v6.2: :PoorCLIDeploy has been removed. Deploy is now an agent tool; ask
     -- the agent via chat: `:PoorCLIChat send deploy <target>`. See MIGRATION.md v6.2.
 
+    local function extend_diag_commands()
     -- Service: v6.2 absorbed into :PoorCLIDiag as `service-*`.
     spec.extend("diag", {
         verb_prefix = "service-",
@@ -867,9 +884,11 @@ function M.setup()
             end,
         },
     })
+    end
 
     -- Config: all the toggles and setters that used to be top-level commands.
     local config_mgr = lazy_module("poor-cli.config_mgr")
+    local function extend_config_commands()
     spec.extend("config", {
         verbs = {
             ["qa-toggle"] = function()
@@ -1033,29 +1052,39 @@ function M.setup()
             sandbox = function() return { "read-only", "review-only", "workspace-write", "full-access" } end,
         },
     })
+    end
 
     -- defer heavier noun extensions until first use of their command surface
     spec.bootstrap("agent", function()
+        run_extend_once("agent", extend_agent_commands)
         ensure_module_setup("automations")
         ensure_module_setup("tasks")
         ensure_module_setup("panels")
         ensure_module_setup("workflow_picker")
     end)
     spec.bootstrap("chat", function()
+        run_extend_once("chat", extend_chat_commands)
         ensure_module_setup("history_browser")
         ensure_module_setup("prompt_library")
     end)
+    spec.bootstrap("context", function()
+        run_extend_once("context", extend_context_commands)
+    end)
     spec.bootstrap("config", function()
+        run_extend_once("config", extend_config_commands)
         ensure_module_setup("config_mgr")
         ensure_module_setup("providers")
     end)
     spec.bootstrap("cost", function()
+        run_extend_once("cost", extend_cost_commands)
         ensure_module_setup("cost")
     end)
     spec.bootstrap("diag", function()
+        run_extend_once("diag", extend_diag_commands)
         ensure_module_setup("diagnostics_ext")
     end)
     spec.bootstrap("review", function()
+        run_extend_once("review", extend_review_commands)
         ensure_module_setup("timeline")
         ensure_module_setup("diff_review")
     end)
