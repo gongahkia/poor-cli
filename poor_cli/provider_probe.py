@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 from urllib.error import URLError
@@ -17,6 +18,10 @@ from .providers.provider_factory import ProviderFactory
 
 ROUTING_MODES = ("manual", "quality", "speed", "cheap", "private")
 KEYLESS_LOCAL_PROVIDERS = KEYLESS_LOCAL_PROVIDER_NAMES
+_PROBE_CACHE_TTL_SECONDS = 2.0
+_probe_cache_at = 0.0
+_probe_cache_signature = ""
+_probe_cache_result: Optional[Dict[str, Dict[str, Any]]] = None
 
 
 @dataclass(frozen=True)
@@ -83,6 +88,23 @@ def probe_providers(
     config_manager: ConfigManager,
     config: Config,
 ) -> Dict[str, Dict[str, Any]]:
+    global _probe_cache_at, _probe_cache_signature, _probe_cache_result
+    signature = json.dumps({
+        name: {
+            "default_model": provider_cfg.default_model,
+            "base_url": provider_cfg.base_url,
+            "env_var": provider_cfg.api_key_env_var,
+        }
+        for name, provider_cfg in sorted(config.model.providers.items())
+    }, sort_keys=True)
+    now = time.monotonic()
+    if (
+        _probe_cache_result is not None
+        and _probe_cache_signature == signature
+        and (now - _probe_cache_at) <= _PROBE_CACHE_TTL_SECONDS
+    ):
+        return {name: dict(payload) for name, payload in _probe_cache_result.items()}
+
     results: Dict[str, Dict[str, Any]] = {}
     ollama_models = _discover_ollama_models(config)
     ollama_ready = bool(ollama_models.get("ready"))
@@ -162,6 +184,9 @@ def probe_providers(
             base_url=provider_cfg.base_url,
         ).to_dict()
 
+    _probe_cache_at = now
+    _probe_cache_signature = signature
+    _probe_cache_result = {name: dict(payload) for name, payload in results.items()}
     return results
 
 

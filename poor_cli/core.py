@@ -510,33 +510,37 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
             except Exception as e:
                 logger.debug("kv cache init skipped: %s", e)
 
-            # Initialize repo knowledge graph (lazy: index builds in background)
+            # Initialize repo knowledge graph (fully background refresh to keep init snappy)
             if self.config.repo_index.enabled:
                 from .repo_graph import RepoGraph
                 self._repo_graph = RepoGraph(repo_root)
                 if self.config.repo_index.auto_index_on_start:
-                    reindex_mode = self._repo_graph.should_reindex()
-                    if reindex_mode == "skip":
-                        stats = self._repo_graph.get_stats()
-                        dir_count = self._repo_graph._count_directories()
-                        logger.info("Repo index (skipped): %s", stats)
-                        self._pending_events.append(CoreEvent(
-                            type="progress", data={"phase": "repo_index", "message": (
-                                f"repo index up to date: {dir_count} directories, {stats['files']} files, "
-                                f"{stats['symbols']} symbols, {stats['edges']} edges"
-                            )},
-                        ))
-                    else:
-                        async def _build_index_bg(graph, mode, incremental):
-                            loop = asyncio.get_event_loop()
+                    async def _refresh_repo_graph_bg(graph, incremental):
+                        loop = asyncio.get_event_loop()
+                        try:
+                            mode = await loop.run_in_executor(None, graph.should_reindex)
+                            if mode == "skip":
+                                stats = graph.get_stats()
+                                dir_count = graph._count_directories()
+                                logger.info("Repo index (skipped): %s", stats)
+                                self._pending_events.append(CoreEvent(
+                                    type="progress", data={"phase": "repo_index", "message": (
+                                        f"repo index up to date: {dir_count} directories, {stats['files']} files, "
+                                        f"{stats['symbols']} symbols, {stats['edges']} edges"
+                                    )},
+                                ))
+                                return
                             if mode == "full" or not incremental:
                                 stats = await loop.run_in_executor(None, graph.build_index)
                             else:
                                 stats = await loop.run_in_executor(None, graph.incremental_update)
                             logger.info("Repo index (%s): %s", mode, stats)
-                        self._repo_graph_task = asyncio.create_task(
-                            _build_index_bg(self._repo_graph, reindex_mode, self.config.repo_index.incremental)
-                        )
+                        except Exception:
+                            logger.debug("repo graph background refresh failed", exc_info=True)
+
+                    self._repo_graph_task = asyncio.create_task(
+                        _refresh_repo_graph_bg(self._repo_graph, self.config.repo_index.incremental)
+                    )
                 self._context_manager._repo_graph = self._repo_graph
             provider_status = self.get_provider_readiness()
             # emit provider probe results
