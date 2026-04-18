@@ -237,6 +237,34 @@ def test_every_known_method_still_reachable():
     assert missing == []
 
 
+def test_status_view_payload_uses_ttl_cache_and_returns_copy():
+    server = PoorCLIServer()
+
+    class CoreStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def build_status_view(self):
+            self.calls += 1
+            return {
+                "session": {"routingMode": "manual"},
+                "trust": {},
+                "provider": {},
+                "context": {},
+                "runs": {},
+                "recovery": {},
+            }
+
+    core = CoreStub()
+    server.core = core
+    server._status_view_cache_ttl_ms = 1000.0
+    payload = server._status_view_payload()
+    payload["session"]["routingMode"] = "mutated"
+    second = server._status_view_payload()
+    assert core.calls == 1
+    assert second["session"]["routingMode"] == "manual"
+
+
 def test_dispatch_uses_registry_across_handler_families(monkeypatch):
     server = PoorCLIServer.__new__(PoorCLIServer)
     server.logger = logging.getLogger("test.server.dispatch")

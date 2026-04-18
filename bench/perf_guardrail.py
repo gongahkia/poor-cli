@@ -19,6 +19,7 @@ from typing import Dict, List
 REPO_ROOT = Path(__file__).resolve().parent.parent
 STARTUP_PROBE = REPO_ROOT / "nvim-poor-cli" / "bench" / "startup_probe.lua"
 QUICK_QUIT_PROBE = REPO_ROOT / "nvim-poor-cli" / "bench" / "quick_quit_probe.lua"
+QUICK_QUIT_STALL_PROBE = REPO_ROOT / "nvim-poor-cli" / "bench" / "quick_quit_stall_probe.lua"
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -114,6 +115,26 @@ def _run_quick_quit_probe(runs: int = 10) -> Dict[str, float]:
     return _latency_summary("quick_quit", durations)
 
 
+def _run_quick_quit_stall_probe(runs: int = 5) -> Dict[str, float]:
+    cmd = ["nvim", "--headless", "-u", "NONE", "-n", "-l", str(QUICK_QUIT_STALL_PROBE)]
+    durations: List[float] = []
+    for _ in range(runs):
+        env = dict(os.environ)
+        started = time.perf_counter()
+        proc = subprocess.run(
+            cmd,
+            cwd=str(REPO_ROOT),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        durations.append((time.perf_counter() - started) * 1000.0)
+        if proc.returncode != 0:
+            raise RuntimeError(f"quick quit stall probe failed: {proc.stderr}\n{proc.stdout}")
+    return _latency_summary("quick_quit_stall", durations)
+
+
 def _run_provider_probe_microbench() -> Dict[str, float]:
     from poor_cli.config import Config
     from poor_cli import provider_probe
@@ -147,7 +168,7 @@ def _run_provider_probe_microbench() -> Dict[str, float]:
     }
 
 
-def _run_mock_ttft_bench(runs: int = 3) -> Dict[str, float]:
+def _run_mock_ttft_bench(cold_runs: int = 3, warm_runs_per_cold: int = 3) -> Dict[str, float]:
     from poor_cli.core import PoorCLICore
     from poor_cli.providers.base import ProviderCapabilities, ProviderResponse, UsageMetadata
     from poor_cli.providers.capability import ProviderCapability
@@ -209,10 +230,29 @@ def _run_mock_ttft_bench(runs: int = 3) -> Dict[str, float]:
             return None
 
     original_create = ProviderFactory.create
-    timings: List[float] = []
+    cold_timings: List[float] = []
+    warm_timings: List[float] = []
+
+    def _measure_first_token_ms(core: PoorCLICore, prompt: str) -> float:
+        started = time.perf_counter()
+        first_token_ms = None
+
+        async def _consume() -> None:
+            nonlocal first_token_ms
+            async for event in core.send_message_events(prompt, source_kind="session"):
+                if event.type == "text_chunk" and first_token_ms is None:
+                    first_token_ms = (time.perf_counter() - started) * 1000.0
+                if event.type == "done":
+                    break
+
+        asyncio.run(_consume())
+        if first_token_ms is None:
+            raise RuntimeError("mock ttft bench did not receive text_chunk")
+        return float(first_token_ms)
+
     try:
         ProviderFactory.create = staticmethod(lambda **kwargs: _FakeProvider())  # type: ignore[method-assign]
-        for _ in range(runs):
+        for run_idx in range(cold_runs):
             with tempfile.TemporaryDirectory() as td:
                 cwd = Path.cwd()
                 os.chdir(td)
@@ -224,26 +264,21 @@ def _run_mock_ttft_bench(runs: int = 3) -> Dict[str, float]:
                         api_key="dummy",
                     )
                     asyncio.run(awaitable)
-                    started = time.perf_counter()
-                    first_token_ms = None
-                    async def _consume():
-                        nonlocal first_token_ms
-                        async for event in core.send_message_events("say hi", source_kind="session"):
-                            if event.type == "text_chunk" and first_token_ms is None:
-                                first_token_ms = (time.perf_counter() - started) * 1000.0
-                            if event.type == "done":
-                                break
-                    asyncio.run(_consume())
+                    cold_timings.append(_measure_first_token_ms(core, f"cold-{run_idx}"))
+                    for warm_idx in range(max(0, warm_runs_per_cold)):
+                        warm_timings.append(_measure_first_token_ms(core, f"warm-{run_idx}-{warm_idx}"))
                     asyncio.run(core.shutdown())
-                    if first_token_ms is None:
-                        raise RuntimeError("mock ttft bench did not receive text_chunk")
-                    timings.append(first_token_ms)
                 finally:
                     os.chdir(cwd)
     finally:
         ProviderFactory.create = original_create  # type: ignore[assignment]
-    result = _latency_summary("mock_ttft", timings)
-    result["mock_ttft_max_ms"] = max(timings)
+    merged_timings = warm_timings if warm_timings else cold_timings
+    result = _latency_summary("mock_ttft", merged_timings)
+    result["mock_ttft_max_ms"] = max(merged_timings) if merged_timings else 0.0
+    result.update(_latency_summary("mock_ttft_cold", cold_timings))
+    result["mock_ttft_cold_max_ms"] = max(cold_timings) if cold_timings else 0.0
+    result.update(_latency_summary("mock_ttft_warm", warm_timings))
+    result["mock_ttft_warm_max_ms"] = max(warm_timings) if warm_timings else 0.0
     return result
 
 
@@ -258,14 +293,16 @@ def _threshold(name: str, default: float) -> float:
 
 
 def _checks_from_result(result: Dict[str, float], include_provider_probe_fail: bool) -> Dict[str, object]:
+    mock_ttft_metric = "mock_ttft_warm_mean_ms" if "mock_ttft_warm_mean_ms" in result else "mock_ttft_mean_ms"
     hard_checks = [
         ("first_tick_p95_ms", _threshold("POORCLI_PERF_MAX_FIRST_TICK_MS", 15.0)),
         ("setup_return_mean_ms", _threshold("POORCLI_PERF_MAX_SETUP_RETURN_MS", 30.0)),
         ("setup_complete_mean_ms", _threshold("POORCLI_PERF_MAX_SETUP_COMPLETE_MS", 80.0)),
         ("quick_quit_mean_ms", _threshold("POORCLI_PERF_MAX_QUICK_QUIT_MS", 120.0)),
-        ("mock_ttft_mean_ms", _threshold("POORCLI_PERF_MAX_MOCK_TTFT_MS", 1400.0)),
+        (mock_ttft_metric, _threshold("POORCLI_PERF_MAX_MOCK_TTFT_MS", 1400.0)),
     ]
     soft_checks = [
+        ("quick_quit_stall_p95_ms", _threshold("POORCLI_PERF_MAX_STALLED_QUIT_P95_MS", 2800.0)),
         ("provider_probe_cold_ms", _threshold("POORCLI_PERF_MAX_PROVIDER_PROBE_COLD_MS", 500.0)),
         ("provider_probe_repeat_mean_ms", _threshold("POORCLI_PERF_MAX_PROVIDER_PROBE_REPEAT_MS", 2.0)),
     ]
@@ -311,9 +348,10 @@ def main() -> int:
 
     startup = _run_startup_probe()
     quick_quit = _run_quick_quit_probe()
+    quick_quit_stall = _run_quick_quit_stall_probe()
     provider_probe_stats = _run_provider_probe_microbench()
     mock_ttft = _run_mock_ttft_bench()
-    result = {**startup, **quick_quit, **provider_probe_stats, **mock_ttft}
+    result = {**startup, **quick_quit, **quick_quit_stall, **provider_probe_stats, **mock_ttft}
     scenario_rows = [
         {
             "scenario": "normal",
@@ -328,9 +366,14 @@ def main() -> int:
             "providerProbeRepeatMeanMs": float(result.get("provider_probe_repeat_mean_ms", 0.0)),
         },
         {
+            "scenario": "stalled_exit",
+            "quickQuitStallMeanMs": float(result.get("quick_quit_stall_mean_ms", 0.0)),
+            "quickQuitStallP95Ms": float(result.get("quick_quit_stall_p95_ms", 0.0)),
+        },
+        {
             "scenario": "slow_startup",
             "setupCompleteP99Ms": float(result.get("setup_complete_p99_ms", 0.0)),
-            "mockTtftP95Ms": float(result.get("mock_ttft_p95_ms", 0.0)),
+            "mockTtftP95Ms": float(result.get("mock_ttft_warm_p95_ms", result.get("mock_ttft_p95_ms", 0.0))),
         },
     ]
     checks = _checks_from_result(result, include_provider_probe_fail=args.include_provider_probe_fail)

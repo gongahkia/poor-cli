@@ -17,6 +17,7 @@ from typing import Dict, List
 REPO_ROOT = Path(__file__).resolve().parent.parent
 STARTUP_PROBE = REPO_ROOT / "nvim-poor-cli" / "bench" / "startup_probe.lua"
 QUICK_QUIT_PROBE = REPO_ROOT / "nvim-poor-cli" / "bench" / "quick_quit_probe.lua"
+QUICK_QUIT_STALL_PROBE = REPO_ROOT / "nvim-poor-cli" / "bench" / "quick_quit_stall_probe.lua"
 
 
 def _json_line_from_stdout(stdout: str) -> Dict[str, object]:
@@ -115,6 +116,28 @@ def _run_quick_quit_probe(runs: int) -> Dict[str, float]:
     return result
 
 
+def _run_quick_quit_stall_probe(runs: int) -> Dict[str, float]:
+    cmd = ["nvim", "--headless", "-u", "NONE", "-n", "-l", str(QUICK_QUIT_STALL_PROBE)]
+    durations: List[float] = []
+    for _ in range(max(1, runs)):
+        env = dict(os.environ)
+        started = time.perf_counter()
+        proc = subprocess.run(
+            cmd,
+            cwd=str(REPO_ROOT),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        durations.append((time.perf_counter() - started) * 1000.0)
+        if proc.returncode != 0:
+            raise RuntimeError(f"quick quit stall probe failed: {proc.stderr}\n{proc.stdout}")
+    result: Dict[str, float] = {"runs_quick_quit_stall": float(len(durations))}
+    result.update(_summary("quick_quit_stall", durations))
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="bench/startup_profile.py")
     parser.add_argument("--runs", type=int, default=30, help="probe iterations per benchmark")
@@ -124,6 +147,7 @@ def main() -> int:
     payload: Dict[str, float] = {}
     payload.update(_run_startup_probe(args.runs))
     payload.update(_run_quick_quit_probe(args.runs))
+    payload.update(_run_quick_quit_stall_probe(args.runs))
     payload["generated_at_unix"] = float(time.time())
     payload["commit"] = os.environ.get("GITHUB_SHA", "").strip()
 

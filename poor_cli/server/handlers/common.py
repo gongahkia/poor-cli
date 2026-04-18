@@ -25,6 +25,13 @@ class CommonHandlersMixin:
         self._automation_manager: Optional[AutomationManager] = None
         self._sandbox_preset: str = "workspace-write"
         self._permission_rules = PermissionRuleEngine(Path.cwd())
+        self._status_view_cache_payload: Optional[Dict[str, Any]] = None
+        self._status_view_cache_at: float = 0.0
+        try:
+            ttl_ms = float(os.environ.get("POORCLI_STATUS_VIEW_CACHE_TTL_MS", "200"))
+        except ValueError:
+            ttl_ms = 200.0
+        self._status_view_cache_ttl_ms: float = max(0.0, ttl_ms)
 
     def _normalize_client_capabilities(self, raw_capabilities: Any) -> Dict[str, Any]:
         if isinstance(raw_capabilities, dict):

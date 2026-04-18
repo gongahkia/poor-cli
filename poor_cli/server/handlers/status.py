@@ -7,11 +7,15 @@ from poor_cli.server.registry import register
 
 class StatusHandlersMixin:
     def _status_view_payload(self) -> Dict[str, Any]:
+        ttl_ms = float(getattr(self, "_status_view_cache_ttl_ms", 0.0) or 0.0)
+        now = time.monotonic()
+        cached = getattr(self, "_status_view_cache_payload", None)
+        cached_at = float(getattr(self, "_status_view_cache_at", 0.0) or 0.0)
+        if isinstance(cached, dict) and ttl_ms > 0 and (now - cached_at) * 1000.0 <= ttl_ms:
+            return copy.deepcopy(cached)
         payload = self.core.build_status_view()
-        trust = payload.get("trust")
-        if isinstance(trust, dict):
-            trust["mcp"] = self.core.get_mcp_status()
-            trust["audit"] = self.core.get_policy_status().get("audit", {})
+        self._status_view_cache_payload = copy.deepcopy(payload)
+        self._status_view_cache_at = now
         return payload
 
     def _doctor_report_payload(self) -> Dict[str, Any]:

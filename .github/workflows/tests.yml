@@ -296,7 +296,7 @@ jobs:
               elif head:
                   fh.write("| Metric | Head (ms) |\n")
                   fh.write("|---|---:|\n")
-                  for metric in ("first_tick_p95_ms", "warm_setup_return_p95_ms", "warm_setup_complete_p95_ms", "quick_quit_mean_ms", "quick_quit_p50_ms"):
+                  for metric in ("first_tick_p95_ms", "warm_setup_return_p95_ms", "warm_setup_complete_p95_ms", "quick_quit_mean_ms", "quick_quit_p50_ms", "quick_quit_stall_p95_ms"):
                       fh.write(f"| {metric} | {float(head.get(metric, 0.0)):.2f} |\n")
               if scenario_rows:
                   fh.write("\n### Perf Scenarios\n\n")
@@ -311,6 +311,10 @@ jobs:
                       elif name == "backend_unavailable":
                           fh.write(
                               f"| {name} | {float(row.get('providerProbeColdMs', 0.0)):.2f} | {float(row.get('providerProbeRepeatMeanMs', 0.0)):.2f} |\n"
+                          )
+                      elif name == "stalled_exit":
+                          fh.write(
+                              f"| {name} | {float(row.get('quickQuitStallMeanMs', 0.0)):.2f} | {float(row.get('quickQuitStallP95Ms', 0.0)):.2f} |\n"
                           )
                       else:
                           fh.write(
@@ -339,6 +343,7 @@ jobs:
           POORCLI_PERF_MAX_SETUP_RETURN_MS: "45"
           POORCLI_PERF_MAX_SETUP_COMPLETE_MS: "120"
           POORCLI_PERF_MAX_QUICK_QUIT_MS: "180"
+          POORCLI_PERF_MAX_STALLED_QUIT_P95_MS: "3200"
           POORCLI_PERF_MAX_PROVIDER_PROBE_COLD_MS: "700"
           POORCLI_PERF_MAX_PROVIDER_PROBE_REPEAT_MS: "3.5"
           POORCLI_PERF_MAX_MOCK_TTFT_MS: "1800"
@@ -351,6 +356,7 @@ jobs:
           POORCLI_PERF_MAX_SETUP_RETURN_MS: "30"
           POORCLI_PERF_MAX_SETUP_COMPLETE_MS: "80"
           POORCLI_PERF_MAX_QUICK_QUIT_MS: "120"
+          POORCLI_PERF_MAX_STALLED_QUIT_P95_MS: "2800"
           POORCLI_PERF_MAX_PROVIDER_PROBE_COLD_MS: "500"
           POORCLI_PERF_MAX_PROVIDER_PROBE_REPEAT_MS: "2.0"
           POORCLI_PERF_MAX_MOCK_TTFT_MS: "1400"
