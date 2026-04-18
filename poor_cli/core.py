@@ -131,6 +131,8 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
         self._config_manager: Optional[ConfigManager] = None
         self._config_path = config_path
         self._initialized = False
+        self._provider_ready = False
+        self._provider_init_lock: Optional[asyncio.Lock] = None
         self._system_instruction: Optional[str] = None
         self._system_context_hash: Optional[str] = None
         self._approved_write_paths: set = set()
@@ -448,23 +450,10 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
                 (self._system_instruction or "").encode("utf-8", errors="replace")
             ).hexdigest()
 
-            init_tools = (
-                tool_declarations
-                if provider_has_capability(self.provider, ProviderCapability.TOOL_CALLING)
-                else []
-            )
-            if not provider_has_capability(self.provider, ProviderCapability.TOOL_CALLING):
-                logger.info(
-                    "Provider %s/%s does not support function calling; initializing without tools",
-                    self.config.model.provider,
-                    self.config.model.model_name,
-                )
-
-            # Initialize provider with tools and system instruction
-            await self.provider.initialize(
-                tools=init_tools,
-                system_instruction=self._system_instruction
-            )
+            # Lazy provider init: keep startup fast and defer provider session setup
+            # (tool schema translation, remote warmup, etc.) to first model request.
+            self._provider_ready = False
+            self._provider_init_lock = None
 
             # restore forked history if this session was created via fork
             fork_history = getattr(self, "_fork_history", None)
@@ -587,6 +576,38 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
         except Exception as e:
             logger.exception("Failed to initialize PoorCLICore")
             raise ConfigurationError(f"Initialization failed: {e}")
+
+    async def _ensure_provider_ready(
+        self,
+        *,
+        force_reinitialize: bool = False,
+        tool_declarations: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
+        if not self._initialized or not self.provider:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+        if not force_reinitialize and getattr(self, "_provider_ready", False):
+            return
+        if getattr(self, "_provider_init_lock", None) is None:
+            self._provider_init_lock = asyncio.Lock()
+
+        async with self._provider_init_lock:
+            if not force_reinitialize and getattr(self, "_provider_ready", False):
+                return
+            declarations = (
+                list(tool_declarations)
+                if tool_declarations is not None
+                else (
+                    list(getattr(self, "_active_tool_declarations", []) or [])
+                    or self._tool_declarations_for_shipping()
+                )
+            )
+            if not provider_has_capability(self.provider, ProviderCapability.TOOL_CALLING):
+                declarations = []
+            await self.provider.initialize(
+                tools=declarations,
+                system_instruction=self._system_instruction,
+            )
+            self._provider_ready = True
     
     def cancel_request(self, request_id: str = "") -> None:
         """Signal cancellation of the current agentic loop."""

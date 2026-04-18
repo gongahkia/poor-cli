@@ -2589,6 +2589,7 @@ class TurnLifecycle:
 
         # Commit provider + config only after successful initialization.
         self.provider = candidate_provider
+        self._provider_ready = True
         self.config.model.provider = provider_name
         self.config.model.model_name = model_name
         self._user_explicit_model = True

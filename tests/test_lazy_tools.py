@@ -105,6 +105,23 @@ class TestLazyToolAudit(unittest.TestCase):
 
 
 class TestLazyToolSelection(unittest.IsolatedAsyncioTestCase):
+    async def test_provider_initialize_is_lazy_and_idempotent(self) -> None:
+        core = object.__new__(PoorCLICore)
+        core.tool_registry = EnhancedToolRegistry(Config())
+        core.provider = FakeProvider()
+        core.config = Config()
+        core._initialized = True
+        core._system_instruction = "sys"
+        core._provider_ready = False
+        core._provider_init_lock = None
+        core._active_tool_declarations = [{"name": "read_file"}]
+
+        await core._ensure_provider_ready()
+        await core._ensure_provider_ready()
+
+        self.assertEqual(len(core.provider.initialize_calls), 1)
+        self.assertTrue(core._provider_ready)
+
     async def test_prompt_activation_refreshes_provider_with_relevant_tools(self) -> None:
         core = object.__new__(PoorCLICore)
         core.tool_registry = EnhancedToolRegistry(Config())

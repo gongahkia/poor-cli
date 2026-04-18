@@ -140,6 +140,7 @@ class AgentLoop:
         """
         if not self._initialized or not self.provider:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+        await self._ensure_provider_ready()
 
         self._turn_tool_cache.clear() # reset per-turn read-only tool cache
         self._task_input_tokens = 0 # reset per-task counters
@@ -960,6 +961,7 @@ class AgentLoop:
                         f"[Fallback] Switching to {fallback_provider.get_provider_name()}\n", request_id
                     )
                     self.provider = fallback_provider
+                    self._provider_ready = True
                     # Retry with fallback provider (non-recursive, single retry)
                     try:
                         async for chunk in self.provider.send_message_stream(full_message):
@@ -1150,6 +1152,7 @@ class AgentLoop:
         """
         if not self._initialized or not self.provider:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+        await self._ensure_provider_ready()
 
         logger.info(f"Sending message: {message[:100]}...")
         run_state = self._start_run_record(
@@ -1312,6 +1315,7 @@ class AgentLoop:
         """
         if not self._initialized or not self.provider:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+        await self._ensure_provider_ready()
         
         logger.info(f"Sending message (sync): {message[:100]}...")
         run_state = self._start_run_record(
@@ -1541,6 +1545,7 @@ class AgentLoop:
         """
         if not self._initialized or not self.provider:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+        await self._ensure_provider_ready()
 
         cancel_event = self._prepare_cancel_event(request_id)
         logger.info(f"Inline complete for {file_path} ({language})")

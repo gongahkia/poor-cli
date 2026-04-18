@@ -6,6 +6,7 @@ import json
 import os
 import socket
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 from urllib.error import URLError
@@ -18,6 +19,13 @@ from .providers.provider_factory import ProviderFactory
 
 ROUTING_MODES = ("manual", "quality", "speed", "cheap", "private")
 KEYLESS_LOCAL_PROVIDERS = KEYLESS_LOCAL_PROVIDER_NAMES
+LOCAL_OPENAI_COMPATIBLE_PROVIDERS = (
+    "vllm",
+    "llama_server",
+    "sglang",
+    "hf_tgi",
+    "lmstudio",
+)
 _PROBE_CACHE_TTL_SECONDS = 2.0
 _probe_cache_at = 0.0
 _probe_cache_signature = ""
@@ -106,13 +114,9 @@ def probe_providers(
         return {name: dict(payload) for name, payload in _probe_cache_result.items()}
 
     results: Dict[str, Dict[str, Any]] = {}
-    ollama_models = _discover_ollama_models(config)
+    ollama_models, local_openai_models = _probe_local_providers(config)
     ollama_ready = bool(ollama_models.get("ready"))
     ollama_known_models = list(ollama_models.get("models", []))
-    local_openai_models = {
-        name: _discover_openai_compatible_models(config, name)
-        for name in ("vllm", "llama_server", "sglang", "hf_tgi", "lmstudio")
-    }
 
     for provider_name in sorted(config.model.providers.keys()):
         provider_cfg = config.model.providers[provider_name]
@@ -188,6 +192,54 @@ def probe_providers(
     _probe_cache_signature = signature
     _probe_cache_result = {name: dict(payload) for name, payload in results.items()}
     return results
+
+
+def _probe_local_providers(config: Config) -> tuple[Dict[str, Any], Dict[str, Dict[str, Any]]]:
+    configured = set(config.model.providers.keys())
+    local_openai_names = [
+        name for name in LOCAL_OPENAI_COMPATIBLE_PROVIDERS
+        if name in configured
+    ]
+    ollama_enabled = "ollama" in configured
+    total_jobs = len(local_openai_names) + (1 if ollama_enabled else 0)
+    if total_jobs <= 0:
+        return {"ready": False, "models": []}, {}
+
+    ollama_models: Dict[str, Any] = {"ready": False, "models": []}
+    local_openai_models: Dict[str, Dict[str, Any]] = {}
+
+    def _fallback_openai_payload(provider_name: str) -> Dict[str, Any]:
+        provider_cfg = config.model.providers.get(provider_name)
+        return {
+            "ready": False,
+            "models": [],
+            "baseUrl": provider_cfg.base_url if provider_cfg else "",
+        }
+
+    max_workers = max(1, min(total_jobs, 6))
+    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="provider-probe") as executor:
+        futures: Dict[Any, tuple[str, Optional[str]]] = {}
+        if ollama_enabled:
+            futures[executor.submit(_discover_ollama_models, config)] = ("ollama", None)
+        for name in local_openai_names:
+            futures[executor.submit(_discover_openai_compatible_models, config, name)] = ("openai", name)
+
+        for future, (probe_type, provider_name) in futures.items():
+            try:
+                payload = future.result()
+            except Exception:
+                if probe_type == "ollama":
+                    payload = {"ready": False, "models": []}
+                else:
+                    payload = _fallback_openai_payload(str(provider_name or ""))
+            if probe_type == "ollama":
+                ollama_models = dict(payload or {"ready": False, "models": []})
+            elif provider_name:
+                local_openai_models[str(provider_name)] = dict(payload or _fallback_openai_payload(str(provider_name)))
+
+    for name in local_openai_names:
+        local_openai_models.setdefault(name, _fallback_openai_payload(name))
+    return ollama_models, local_openai_models
 
 
 def _discover_ollama_models(config: Config) -> Dict[str, Any]:

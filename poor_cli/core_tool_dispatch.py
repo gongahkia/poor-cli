@@ -1284,10 +1284,12 @@ class ToolDispatcher:
         )
         if not provider_has_capability(self.provider, ProviderCapability.TOOL_CALLING):
             tools = []
+        self._provider_ready = False
         await self.provider.initialize(
             tools=tools,
             system_instruction=self._system_instruction or "",
         )
+        self._provider_ready = True
         if previous_history:
             history_to_restore = [
                 message
