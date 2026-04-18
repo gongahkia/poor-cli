@@ -171,6 +171,10 @@ def _run_mock_ttft_bench(runs: int = 3) -> Dict[str, float]:
         def update_prompt_prefix(self, prefix: str):
             return None
 
+        def switch_model(self, model_name: str):
+            self.model_name = str(model_name or self.model_name)
+            return None
+
     original_create = ProviderFactory.create
     timings: List[float] = []
     try:
