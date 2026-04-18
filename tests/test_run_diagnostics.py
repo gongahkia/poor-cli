@@ -1,5 +1,6 @@
 import asyncio
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -30,6 +31,7 @@ class RunDiagnosticsTests(unittest.TestCase):
                     "completionReasonCode": "complete",
                     "turnTransitions": [{"reasonCode": "run_started", "iterationIndex": 0}],
                     "turnOrchestration": [{"iterationIndex": 0, "callCount": 2}],
+                    "perfSpans": [{"name": "core.initialize.total", "elapsedMs": 12.3}],
                 },
             )
             manager.finish_run(run.run_id, status="completed", summary="ok")
@@ -41,6 +43,7 @@ class RunDiagnosticsTests(unittest.TestCase):
             self.assertEqual(payload[0]["transitionCount"], 1)
             self.assertEqual(payload[0]["turnCount"], 1)
             self.assertEqual(payload[0]["diagnostics"]["turnOrchestration"][0]["callCount"], 2)
+            self.assertEqual(payload[0]["diagnostics"]["perfSpans"][0]["name"], "core.initialize.total")
 
     def test_status_view_exposes_last_run_diagnostics(self):
         core = PoorCLICore()
@@ -56,6 +59,7 @@ class RunDiagnosticsTests(unittest.TestCase):
                     "completionReasonCode": "cost_limit",
                     "turnTransitions": [{"reasonCode": "cost_guardrail_triggered", "iterationIndex": 1}],
                     "turnOrchestration": [{"iterationIndex": 1, "callCount": 1}],
+                    "perfSpans": [{"name": "core._ensure_provider_ready", "elapsedMs": 9.1}],
                 },
             )
             manager.finish_run(run.run_id, status="failed", summary="cost guardrail")
@@ -65,6 +69,32 @@ class RunDiagnosticsTests(unittest.TestCase):
             self.assertIn("lastRunDiagnostics", runs)
             self.assertEqual(runs["lastRunDiagnostics"]["completionReasonCode"], "cost_limit")
             self.assertEqual(runs["lastRunDiagnostics"]["turnTransitions"][0]["reasonCode"], "cost_guardrail_triggered")
+            self.assertEqual(runs["lastRunDiagnostics"]["perfSpans"][0]["name"], "core._ensure_provider_ready")
+
+    def test_record_perf_span_appends_to_active_turn_diagnostics(self):
+        core = PoorCLICore()
+        diagnostics = core._new_run_turn_diagnostics(max_iterations=3)
+        core._active_turn_diagnostics = diagnostics
+
+        core._record_perf_span("core._refresh_system_context", 5.432, details={"updated": True})
+
+        spans = diagnostics["perfSpans"]
+        self.assertTrue(spans)
+        self.assertEqual(spans[-1]["name"], "core._refresh_system_context")
+        self.assertEqual(spans[-1]["details"]["updated"], True)
+
+    def test_new_run_turn_diagnostics_seeds_recent_perf_spans(self):
+        core = PoorCLICore()
+        now = time.time()
+        core._perf_span_history = [
+            {"at": now - 100.0, "name": "stale", "elapsedMs": 1.0},
+            {"at": now - 1.0, "name": "fresh", "elapsedMs": 2.0},
+        ]
+
+        diagnostics = core._new_run_turn_diagnostics(max_iterations=2)
+
+        self.assertEqual(len(diagnostics["perfSpans"]), 1)
+        self.assertEqual(diagnostics["perfSpans"][0]["name"], "fresh")
 
     def test_handle_function_calls_records_turn_orchestration(self):
         async def _exercise():

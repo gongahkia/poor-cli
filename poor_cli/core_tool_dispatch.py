@@ -86,8 +86,14 @@ class ToolDispatcher:
         async with lock:
             if getattr(self, "_mcp_initialized", False):
                 return
+            started = time.monotonic()
             await manager.initialize()
             self._mcp_initialized = True
+            self._record_perf_span(
+                "core._ensure_mcp_manager_initialized",
+                (time.monotonic() - started) * 1000.0,
+                details={"serverCount": len(self._mcp_server_names())},
+            )
 
     def _mcp_server_names(self) -> List[str]:
         if self._mcp_manager is None or not hasattr(self._mcp_manager, "get_server_names"):

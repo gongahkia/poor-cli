@@ -150,6 +150,8 @@ class TestLazyToolSelection(unittest.IsolatedAsyncioTestCase):
         core._mcp_manager = FakeLazyMCPManager()
         core._mcp_initialized = False
         core._mcp_init_lock = None
+        core._perf_span_history = []
+        core._active_turn_diagnostics = None
 
         await core._resolve_tool_declarations_for_groups([CORE_TOOL_GROUP])
         self.assertEqual(core._mcp_manager.initialize_calls, 0)
@@ -160,6 +162,12 @@ class TestLazyToolSelection(unittest.IsolatedAsyncioTestCase):
 
         await core._resolve_tool_declarations_for_groups([CORE_TOOL_GROUP, "mcp:demo"])
         self.assertEqual(core._mcp_manager.initialize_calls, 1)
+        self.assertTrue(
+            any(
+                span.get("name") == "core._ensure_mcp_manager_initialized"
+                for span in core._perf_span_history
+            )
+        )
 
     async def test_provider_initialize_is_lazy_and_idempotent(self) -> None:
         core = object.__new__(PoorCLICore)
@@ -171,12 +179,18 @@ class TestLazyToolSelection(unittest.IsolatedAsyncioTestCase):
         core._provider_ready = False
         core._provider_init_lock = None
         core._active_tool_declarations = [{"name": "read_file"}]
+        core._perf_span_history = []
+        core._active_turn_diagnostics = None
 
         await core._ensure_provider_ready()
         await core._ensure_provider_ready()
 
         self.assertEqual(len(core.provider.initialize_calls), 1)
         self.assertTrue(core._provider_ready)
+        self.assertEqual(
+            sum(1 for span in core._perf_span_history if span.get("name") == "core._ensure_provider_ready"),
+            1,
+        )
 
     async def test_prompt_activation_refreshes_provider_with_relevant_tools(self) -> None:
         core = object.__new__(PoorCLICore)

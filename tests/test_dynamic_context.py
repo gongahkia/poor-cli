@@ -25,6 +25,10 @@ class TestRefreshSystemContext(unittest.TestCase):
         core._memory_manager = MagicMock()
         core._memory_manager.load_index.return_value = ""
         core._memory_manager.list_all.return_value = []
+        core._perf_span_history = []
+        core._active_turn_diagnostics = None
+        core._tone_cache_index_hash = ""
+        core._tone_cache_suffix = ""
         core._repo_root = "/tmp/test"
         core._git_context_cache = None
         core._context_contract = MagicMock()
@@ -53,6 +57,7 @@ class TestRefreshSystemContext(unittest.TestCase):
     def test_content_change_triggers_rebuild(self, mock_build):
         core = self._make_core()
         core._refresh_system_context()
+        core.config.model.model_name = "gpt-5.2"
         self.assertTrue(core._refresh_system_context())
         self.assertEqual(core.provider.update_system_instruction.call_count, 2)
 
@@ -64,3 +69,25 @@ class TestRefreshSystemContext(unittest.TestCase):
         core.provider = None
         core.config = None
         self.assertFalse(core._refresh_system_context())
+
+    def test_tone_suffix_cache_reuses_result_for_same_memory_index(self):
+        core = self._make_core()
+        detector = MagicMock(return_value="\n## Response Tone\nShip fast.\n")
+        core._memory_manager.list_all.return_value = [MagicMock(content="prefer concise outputs")]
+
+        first = core._tone_suffix_for_memory_index("memory-index-a", detector)
+        second = core._tone_suffix_for_memory_index("memory-index-a", detector)
+
+        self.assertEqual(first, second)
+        self.assertEqual(core._memory_manager.list_all.call_count, 1)
+        self.assertEqual(detector.call_count, 1)
+
+    def test_tone_suffix_cache_refreshes_on_memory_index_change(self):
+        core = self._make_core()
+        detector = MagicMock(return_value="")
+
+        core._tone_suffix_for_memory_index("memory-index-a", detector)
+        core._tone_suffix_for_memory_index("memory-index-b", detector)
+
+        self.assertEqual(core._memory_manager.list_all.call_count, 2)
+        self.assertEqual(detector.call_count, 2)

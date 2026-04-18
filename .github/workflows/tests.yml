@@ -215,7 +215,26 @@ jobs:
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/pip install -e .
 
-      - name: Run perf guardrails
+      - name: Run perf guardrails (PR soft)
+        if: github.event_name == 'pull_request'
+        env:
+          POORCLI_PERF_MAX_SETUP_RETURN_MS: "45"
+          POORCLI_PERF_MAX_SETUP_COMPLETE_MS: "120"
+          POORCLI_PERF_MAX_QUICK_QUIT_MS: "180"
+          POORCLI_PERF_MAX_PROVIDER_PROBE_COLD_MS: "700"
+          POORCLI_PERF_MAX_PROVIDER_PROBE_REPEAT_MS: "3.5"
+          POORCLI_PERF_MAX_MOCK_TTFT_MS: "1800"
+        run: .venv/bin/python bench/perf_guardrail.py
+
+      - name: Run perf guardrails (main hard)
+        if: github.event_name != 'pull_request'
+        env:
+          POORCLI_PERF_MAX_SETUP_RETURN_MS: "30"
+          POORCLI_PERF_MAX_SETUP_COMPLETE_MS: "80"
+          POORCLI_PERF_MAX_QUICK_QUIT_MS: "120"
+          POORCLI_PERF_MAX_PROVIDER_PROBE_COLD_MS: "500"
+          POORCLI_PERF_MAX_PROVIDER_PROBE_REPEAT_MS: "2.0"
+          POORCLI_PERF_MAX_MOCK_TTFT_MS: "1400"
         run: .venv/bin/python bench/perf_guardrail.py
 
   go-internal-coverage:

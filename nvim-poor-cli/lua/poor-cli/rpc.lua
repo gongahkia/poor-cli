@@ -43,6 +43,10 @@ M.startup_feedback = {
 M.startup_feedback_enabled = true
 M.startup_probe_enabled = true
 M._stopping_for_exit = false
+M._status_view_cache = {
+    value = nil,
+    at_ms = 0,
+}
 local uv = vim.uv or vim.loop
 local spinner_frames = { "-", "\\", "|", "/" }
 local startup_states = {
@@ -97,6 +101,23 @@ local function emit_status_changed()
         pattern = "PoorCLIStatusChanged",
         data = M.get_status(),
     })
+end
+
+local function monotonic_ms()
+    if uv and uv.hrtime then
+        return math.floor(uv.hrtime() / 1000000)
+    end
+    return math.floor(vim.loop.os_now())
+end
+
+local function status_view_cache_ttl_ms()
+    local ttl = tonumber(config.get("status_view_cache_ttl_ms") or "") or 350
+    return math.max(0, ttl)
+end
+
+local function invalidate_status_view_cache()
+    M._status_view_cache.value = nil
+    M._status_view_cache.at_ms = 0
 end
 
 local function set_last_error(err)
@@ -317,6 +338,7 @@ local function update_state(state, message)
             cmds._log_session("state", detail)
         end
     end
+    invalidate_status_view_cache()
     emit_status_changed()
 end
 
@@ -859,8 +881,24 @@ function M.request_sync(method, params, timeout_ms)
     return result, err
 end
 
+local function get_status_view_cached(timeout_ms)
+    local cache = M._status_view_cache or {}
+    local cached = cache.value
+    local cache_at = tonumber(cache.at_ms or 0) or 0
+    local ttl_ms = status_view_cache_ttl_ms()
+    if type(cached) == "table" and (monotonic_ms() - cache_at) <= ttl_ms then
+        return vim.deepcopy(cached), nil
+    end
+    local result, err = M.request_sync("poor-cli/getStatusView", {}, timeout_ms)
+    if not err and type(result) == "table" then
+        M._status_view_cache.value = vim.deepcopy(result)
+        M._status_view_cache.at_ms = monotonic_ms()
+    end
+    return result, err
+end
+
 function M.get_status_view(timeout_ms)
-    return M.request_sync("poor-cli/getStatusView", {}, timeout_ms)
+    return get_status_view_cached(timeout_ms)
 end
 
 function M.get_trust_view(timeout_ms)
@@ -1051,7 +1089,7 @@ function M.untrust_repo(params, callback) return M.request("poor-cli/untrustRepo
 -- ollama
 function M.list_ollama_models(timeout_ms) return M.request_sync("poor-cli/listOllamaModels", {}, timeout_ms) end
 -- status view
-function M.get_status_view(timeout_ms) return M.request_sync("poor-cli/getStatusView", {}, timeout_ms) end
+function M.get_status_view(timeout_ms) return get_status_view_cached(timeout_ms) end
 
 function M.cancel_request(id, err)
     if not id then
@@ -1185,6 +1223,9 @@ function M.handle_response(message)
         else
             if meta and meta.method then emit_request_feedback(meta.method, "ok") end
             callback(message.result, nil)
+            if not (meta and meta.method == "poor-cli/getStatusView") then
+                invalidate_status_view_cache()
+            end
         end
     end
 

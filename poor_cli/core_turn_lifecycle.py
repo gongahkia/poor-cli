@@ -294,7 +294,56 @@ class TurnLifecycle:
             "turnOrchestration": [],
             "compactionEvents": [],
             "promptLayers": {},
+            "perfSpans": self._recent_perf_spans(limit=32, window_seconds=20.0),
         }
+
+    def _record_perf_span(
+        self,
+        name: str,
+        elapsed_ms: float,
+        *,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        entry = {
+            "at": time.time(),
+            "name": str(name or "").strip() or "unknown",
+            "elapsedMs": round(max(0.0, float(elapsed_ms)), 3),
+        }
+        if details:
+            entry["details"] = dict(details)
+        history = getattr(self, "_perf_span_history", None)
+        if isinstance(history, list):
+            history.append(entry)
+            if len(history) > 256:
+                del history[:-256]
+        active = getattr(self, "_active_turn_diagnostics", None)
+        if isinstance(active, dict):
+            self._append_perf_span(active, entry)
+
+    @staticmethod
+    def _append_perf_span(diagnostics: Dict[str, Any], entry: Dict[str, Any]) -> None:
+        spans = diagnostics.get("perfSpans")
+        if not isinstance(spans, list):
+            spans = []
+            diagnostics["perfSpans"] = spans
+        spans.append(dict(entry))
+        if len(spans) > 128:
+            del spans[:-128]
+
+    def _recent_perf_spans(
+        self,
+        *,
+        limit: int = 32,
+        window_seconds: float = 20.0,
+    ) -> List[Dict[str, Any]]:
+        history = getattr(self, "_perf_span_history", None)
+        if not isinstance(history, list) or not history:
+            return []
+        cutoff = time.time() - max(0.0, float(window_seconds))
+        recent = [entry for entry in history if float(entry.get("at", 0.0)) >= cutoff]
+        if not recent:
+            return []
+        return [dict(entry) for entry in recent[-max(1, int(limit)):]]
 
     def _append_turn_transition(
         self,
@@ -382,12 +431,16 @@ class TurnLifecycle:
         prompt_layers = payload.get("promptLayers")
         if not isinstance(prompt_layers, dict):
             prompt_layers = {}
+        perf_spans = payload.get("perfSpans")
+        if not isinstance(perf_spans, list):
+            perf_spans = []
         return {
             "completionReasonCode": str(payload.get("completionReasonCode", "") or "").strip(),
             "turnTransitions": transitions,
             "turnOrchestration": orchestration,
             "compactionEvents": compaction_events,
             "promptLayers": prompt_layers,
+            "perfSpans": perf_spans,
             "maxIterations": int(payload.get("maxIterations", 0) or 0),
         }
 
@@ -422,6 +475,9 @@ class TurnLifecycle:
             prompt_layers = diagnostics.get("promptLayers")
             if isinstance(prompt_layers, dict):
                 updates["promptLayers"] = dict(prompt_layers)
+            perf_spans = diagnostics.get("perfSpans")
+            if isinstance(perf_spans, list):
+                updates["perfSpans"] = [dict(entry) for entry in perf_spans]
         if completion_reason_code:
             updates["completionReasonCode"] = str(completion_reason_code)
         if extra:
@@ -1665,6 +1721,7 @@ class TurnLifecycle:
         """Rebuild system instruction if git/instruction state changed. Returns True if updated."""
         if not self._initialized or not self.provider or not self.config:
             return False
+        started = time.monotonic()
         terse = resolve_output_verbosity(self.config.economy) == "caveman"
         batched = getattr(self.config.economy, "prefer_batched_reads", False)
         repo_root = getattr(self, "_repo_root", Path.cwd())
@@ -1706,18 +1763,19 @@ class TurnLifecycle:
                 "The following memories were saved in previous sessions.\n\n"
                 f"{memory_index}\n"
             )
-        try:
-            if self._memory_manager:
-                _user_memories = self._memory_manager.list_all(type_filter="user")
-                _user_content = "\n".join(m.content for m in _user_memories)
-                _tone = detect_tone(_user_content)
-                if _tone:
-                    new_instruction += _tone
-        except Exception:
-            pass
+        tone_helper = getattr(self, "_tone_suffix_for_memory_index", None)
+        if callable(tone_helper):
+            tone_suffix = tone_helper(memory_index, detect_tone)
+            if tone_suffix:
+                new_instruction += tone_suffix
         new_hash = hashlib.sha256(new_instruction.encode("utf-8", errors="replace")).hexdigest()
         self._system_refresh_inputs = refresh_inputs
         if new_hash == self._system_context_hash:
+            self._record_perf_span(
+                "core._refresh_system_context",
+                (time.monotonic() - started) * 1000.0,
+                details={"updated": False},
+            )
             return False
         self._git_context_cache = None # git state changed, invalidate
         self._system_instruction = new_instruction
@@ -1726,6 +1784,11 @@ class TurnLifecycle:
         context_contract = getattr(self, "_context_contract", None)
         if context_contract:
             context_contract.invalidate_cache()
+        self._record_perf_span(
+            "core._refresh_system_context",
+            (time.monotonic() - started) * 1000.0,
+            details={"updated": True},
+        )
         logger.debug("System context refreshed (hash=%s)", new_hash[:12])
         return True
 

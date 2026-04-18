@@ -10,6 +10,7 @@ import hashlib
 import inspect
 import re
 import threading
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
@@ -271,6 +272,10 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
         self._provider_readiness_cache: Dict[str, Dict[str, Any]] = {}
         self._provider_probe_task: Optional[asyncio.Task] = None
         self._system_refresh_inputs: Optional[Tuple[str, ...]] = None
+        self._perf_span_history: List[Dict[str, Any]] = []
+        self._active_turn_diagnostics: Optional[Dict[str, Any]] = None
+        self._tone_cache_index_hash: str = ""
+        self._tone_cache_suffix: str = ""
         self._repo_root: Path = Path.cwd().resolve()
         self._last_compaction_status: Dict[str, Any] = {"state": "idle"}
 
@@ -304,6 +309,7 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
             logger.info("Initializing PoorCLICore...")
             repo_root = Path.cwd().resolve()
             self._repo_root = repo_root
+            init_started = time.monotonic()
             
             # Load configuration
             self._config_manager = ConfigManager(self._config_path)
@@ -343,11 +349,17 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
                 extra_kwargs["prompt_caching"] = getattr(self.config.model, "prompt_caching", True)
 
             # Create provider via factory
+            provider_create_started = time.monotonic()
             self.provider = ProviderFactory.create(
                 provider_name=self.config.model.provider,
                 api_key=resolved_api_key or "",
                 model_name=self.config.model.model_name,
                 **extra_kwargs
+            )
+            self._record_perf_span(
+                "core.initialize.provider_factory_create",
+                (time.monotonic() - provider_create_started) * 1000.0,
+                details={"provider": self.config.model.provider},
             )
             logger.info(f"Created {self.config.model.provider} provider")
             
@@ -404,7 +416,13 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
                 self._mcp_initialized = False
                 self._mcp_init_lock = None
             self.tool_registry._core = self  # back-ref for compact/delegate tools
+            tool_decl_started = time.monotonic()
             tool_declarations = await self._resolve_tool_declarations_for_groups([CORE_TOOL_GROUP])
+            self._record_perf_span(
+                "core.initialize.resolve_tool_declarations",
+                (time.monotonic() - tool_decl_started) * 1000.0,
+                details={"count": len(tool_declarations)},
+            )
             self._active_tool_groups = (CORE_TOOL_GROUP,)
             self._active_tool_names = {
                 str(declaration.get("name", "")).strip()
@@ -446,15 +464,9 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
                     f"{memory_index}\n"
                 )
 
-            # adapt tone based on user profile from memory
-            try:
-                _user_memories = self._memory_manager.list_all(type_filter="user")
-                _user_content = "\n".join(m.content for m in _user_memories)
-                _tone = detect_tone_from_user_memories(_user_content)
-                if _tone:
-                    self._system_instruction += _tone
-            except Exception:
-                pass
+            tone_suffix = self._tone_suffix_for_memory_index(memory_index)
+            if tone_suffix:
+                self._system_instruction += tone_suffix
             self._system_context_hash = hashlib.sha256(
                 (self._system_instruction or "").encode("utf-8", errors="replace")
             ).hexdigest()
@@ -570,6 +582,11 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
                 self._gc_overflow_files()
             except Exception:
                 pass
+            self._record_perf_span(
+                "core.initialize.total",
+                (time.monotonic() - init_started) * 1000.0,
+                details={"provider": self.config.model.provider, "model": self.config.model.model_name},
+            )
             logger.info("PoorCLICore initialization complete")
             
         except ConfigurationError:
@@ -604,11 +621,20 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
             )
             if not provider_has_capability(self.provider, ProviderCapability.TOOL_CALLING):
                 declarations = []
+            started = time.monotonic()
             await self.provider.initialize(
                 tools=declarations,
                 system_instruction=self._system_instruction,
             )
             self._provider_ready = True
+            self._record_perf_span(
+                "core._ensure_provider_ready",
+                (time.monotonic() - started) * 1000.0,
+                details={
+                    "force": bool(force_reinitialize),
+                    "toolCount": len(declarations),
+                },
+            )
 
     def _schedule_provider_readiness_probe(self) -> None:
         if not self.config or not self._config_manager:
@@ -660,6 +686,30 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
                 getattr(self.config.model, "routing_mode", "manual"),
                 provider_status,
             )
+
+    def _tone_suffix_for_memory_index(
+        self,
+        memory_index: str,
+        detect_tone_fn: Optional[Callable[[str], str]] = None,
+    ) -> str:
+        if not self._memory_manager:
+            return ""
+        index_hash = hashlib.sha256(
+            str(memory_index or "").encode("utf-8", errors="replace")
+        ).hexdigest()
+        if index_hash == self._tone_cache_index_hash:
+            return self._tone_cache_suffix
+        tone_suffix = ""
+        try:
+            user_memories = self._memory_manager.list_all(type_filter="user")
+            user_content = "\n".join(memory.content for memory in user_memories)
+            detector = detect_tone_fn or detect_tone_from_user_memories
+            tone_suffix = str(detector(user_content) or "")
+        except Exception:
+            tone_suffix = ""
+        self._tone_cache_index_hash = index_hash
+        self._tone_cache_suffix = tone_suffix
+        return tone_suffix
     
     def cancel_request(self, request_id: str = "") -> None:
         """Signal cancellation of the current agentic loop."""

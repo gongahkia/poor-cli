@@ -517,6 +517,7 @@ class AgentLoop:
         except (AttributeError, TypeError) as e:
             logger.warning("auto LLM compaction failed: %s", e)
 
+        self._active_turn_diagnostics = turn_diagnostics
         try:
             accumulated_text = ""
 
@@ -1039,6 +1040,7 @@ class AgentLoop:
             )
             raise PoorCLIError(f"Failed to send message: {e}")
         finally:
+            self._active_turn_diagnostics = None
             self._clear_cancel_event(request_id)
             # always restore per-turn output cap, even on exception
             if _saved_max_output is not None and self.provider:
