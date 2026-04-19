@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402
 """Profile capability-graph guided tool activation vs baseline keyword routing."""
 
 from __future__ import annotations
@@ -6,17 +7,21 @@ from __future__ import annotations
 import argparse
 import json
 import statistics
+import sys
 import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from poor_cli.config import Config
 from poor_cli.enhanced_tools import EnhancedToolRegistry
 from poor_cli.history import TokenCounter
 from poor_cli.tool_capability_graph import ToolCapabilityGraph
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_FIXTURE = REPO_ROOT / "bench" / "fixtures" / "workloads.json"
 
 

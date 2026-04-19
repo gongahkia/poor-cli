@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402
 """Deterministic turn replay regression gate for harness planner decisions."""
 
 from __future__ import annotations
@@ -6,9 +7,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from bench.harness_quality_gate import DEFAULT_FIXTURE, _run_suite
 

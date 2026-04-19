@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402
 """Offline harness-quality gate for orchestration regressions."""
 
 from __future__ import annotations
@@ -7,9 +8,14 @@ import argparse
 import asyncio
 import json
 import statistics
+import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Sequence, Tuple
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from poor_cli.config import Config
 from poor_cli.core import PoorCLICore
@@ -17,7 +23,6 @@ from poor_cli.enhanced_tools import EnhancedToolRegistry
 from poor_cli.providers.base import FunctionCall, ProviderResponse
 from poor_cli.token_counter import get_token_counter
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_FIXTURE = REPO_ROOT / "bench" / "fixtures" / "workloads.json"
 
 
@@ -69,7 +74,7 @@ def _default_scenarios() -> List[Dict[str, Any]]:
         },
         {
             "name": "top_level_listing",
-            "prompt": "list top-level repository files",
+            "prompt": "find top-level repository files",
             "expected_tools": ["list_directory"],
             "calls": [
                 {"name": "list_directory", "arguments": {"path": root}},

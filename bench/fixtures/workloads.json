@@ -52,19 +52,20 @@
         ]
       },
       {
-        "name": "repo_status",
-        "prompt": "show git working tree status",
-        "expected_tools": ["git_status"],
+        "name": "top_level_listing",
+        "prompt": "find top-level repository files",
+        "expected_tools": ["list_directory"],
         "calls": [
-          {"name": "git_status", "arguments": {}}
+          {"name": "list_directory", "arguments": {"path": "."}}
         ]
       },
       {
-        "name": "repo_diff",
-        "prompt": "inspect current git diff",
-        "expected_tools": ["git_diff"],
+        "name": "config_trace",
+        "prompt": "find model and agentic settings in config files",
+        "expected_tools": ["glob_files", "grep_files"],
         "calls": [
-          {"name": "git_diff", "arguments": {}}
+          {"name": "glob_files", "arguments": {"pattern": "*.py", "path": "."}},
+          {"name": "grep_files", "arguments": {"pattern": "agentic", "path": "poor_cli/config.py"}}
         ]
       }
     ]
