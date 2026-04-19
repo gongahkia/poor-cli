@@ -22,5 +22,22 @@
   "tool_schema_cache_profile": {
     "model_names": ["bench-model-a", "bench-model-b", "bench-model-c", "bench-model-d"],
     "dynamic_tool_prefix": "dynamic_tool_"
+  },
+  "tool_capability_graph_profile": {
+    "train_sequences": [
+      {"calls": ["read_file", "git_diff"]},
+      {"calls": ["read_file", "web_search"]},
+      {"calls": ["read_file", "git_diff"]},
+      {"calls": ["read_file", "web_search"]},
+      {"calls": ["read_file", "run_tests"]},
+      {"calls": ["read_file", "git_diff"]},
+      {"calls": ["read_file", "web_search"]}
+    ],
+    "eval_scenarios": [
+      {"prompt": "check this change", "expected_tools": ["git_diff"]},
+      {"prompt": "look this up quickly", "expected_tools": ["web_search"]},
+      {"prompt": "validate this patch", "expected_tools": ["run_tests"]},
+      {"prompt": "investigate what happened", "expected_tools": ["git_diff", "web_search"]}
+    ]
   }
 }

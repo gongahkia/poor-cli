@@ -1,4 +1,4 @@
-.PHONY: cli server install installer install-info dev build run test test-unit test-lua lint bench-swe bench-startup-profile bench-import-time bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
+.PHONY: cli server install installer install-info dev build run test test-unit test-lua lint bench-swe bench-startup-profile bench-import-time bench-tool-capability-graph bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
 
 PYTHON := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/python,python3)
 PIP := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/pip,pip)
@@ -93,6 +93,9 @@ bench-startup-profile: ## run startup/quick-quit percentile profile (ARGS='--run
 
 bench-import-time: ## run entrypoint import/startup profile (ARGS='--runs 5 --output bench-import-head.json')
 	$(PYTHON) bench/import_time_profile.py $(ARGS)
+
+bench-tool-capability-graph: ## profile graph-guided tool activation miss-rate/latency (ARGS='--runs 10 --output bench-tool-capability-graph.json')
+	$(PYTHON) bench/tool_capability_graph_profile.py $(ARGS)
 
 bench-perf-import-compare: ## compare two import-time profile jsons (ARGS='--baseline a.json --candidate b.json')
 	$(PYTHON) bench/perf_import_compare.py $(ARGS)
