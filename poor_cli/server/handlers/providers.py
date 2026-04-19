@@ -83,7 +83,7 @@ class ProvidersHandlersMixin:
             if provider_cfg and provider_cfg.base_url:
                 local_openai_ready[local_name] = self._is_openai_compatible_local_reachable(provider_cfg.base_url)
 
-        for name, cls in ProviderFactory.list_providers().items():
+        for name in ProviderFactory.list_provider_names(include_aliases=True):
             info = ProviderFactory.get_provider_info(name) or {}
             provider_key = self._normalize_provider_name(name)
             if provider_key in seen_provider_keys:

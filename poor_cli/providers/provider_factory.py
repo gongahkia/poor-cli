@@ -215,6 +215,14 @@ class ProviderFactory:
         logger.info(f"Registered custom provider: {name}")
 
     @classmethod
+    def list_provider_names(cls, *, include_aliases: bool = True) -> list[str]:
+        names = set(cls._provider_specs.keys())
+        if include_aliases:
+            names.update(cls._provider_aliases.keys())
+        names.update(cls._providers.keys())
+        return sorted(str(name) for name in names if str(name).strip())
+
+    @classmethod
     def list_providers(cls) -> Dict[str, Type[BaseProvider]]:
         """
         Get all registered providers

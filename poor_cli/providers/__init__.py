@@ -1,47 +1,43 @@
-"""
-AI Model Provider Abstractions
+"""AI provider abstractions with lazy provider-class exports."""
 
-Multi-provider support for AI models including:
-- Gemini (Google)
-- OpenAI (GPT-4, GPT-3.5)
-- Anthropic (Claude)
-- Ollama (Local models)
-"""
+from __future__ import annotations
 
-from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall, UsageMetadata
+from importlib import import_module
+
+from .base import BaseProvider, FunctionCall, ProviderCapabilities, ProviderResponse, UsageMetadata
 from .capability import ProviderCapability
-from .tool_translator import ToolTranslator, ProviderType
 from .provider_factory import ProviderFactory
+from .tool_translator import ProviderType, ToolTranslator
 
-# Provider implementations (imported lazily by factory to avoid missing dependencies)
-from .gemini_provider import GeminiProvider
-from .hf_local_provider import HFLocalProvider
-from .hf_tgi_provider import HFTGIProvider
-from .llama_server_provider import LlamaServerProvider
-from .lmstudio_provider import LMStudioProvider
-from .sglang_provider import SGLangProvider
-from .vllm_provider import VLLMProvider
+_PROVIDER_EXPORTS = {
+    "GeminiProvider": ".gemini_provider",
+    "HFLocalProvider": ".hf_local_provider",
+    "HFTGIProvider": ".hf_tgi_provider",
+    "LlamaServerProvider": ".llama_server_provider",
+    "LMStudioProvider": ".lmstudio_provider",
+    "SGLangProvider": ".sglang_provider",
+    "VLLMProvider": ".vllm_provider",
+}
 
 __all__ = [
-    # Base classes
     "BaseProvider",
     "ProviderCapabilities",
     "ProviderCapability",
     "ProviderResponse",
     "FunctionCall",
     "UsageMetadata",
-
-    # Utilities
     "ToolTranslator",
     "ProviderType",
     "ProviderFactory",
-
-    # Providers (available for direct import)
-    "GeminiProvider",
-    "HFLocalProvider",
-    "HFTGIProvider",
-    "LlamaServerProvider",
-    "LMStudioProvider",
-    "SGLangProvider",
-    "VLLMProvider",
+    *sorted(_PROVIDER_EXPORTS.keys()),
 ]
+
+
+def __getattr__(name: str):
+    module_name = _PROVIDER_EXPORTS.get(name)
+    if module_name is None:
+        raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+    module = import_module(module_name, package=__name__)
+    value = getattr(module, name)
+    globals()[name] = value
+    return value

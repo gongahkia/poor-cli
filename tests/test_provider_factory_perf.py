@@ -32,3 +32,12 @@ def test_list_providers_materializes_registry_on_demand() -> None:
     assert "openai" in providers
     assert "anthropic" in providers
     assert ProviderFactory._providers
+
+
+def test_list_provider_names_avoids_materializing_provider_classes() -> None:
+    _reset_factory_state()
+    names = ProviderFactory.list_provider_names(include_aliases=True)
+    assert "openai" in names
+    assert "anthropic" in names
+    assert "claude" in names
+    assert ProviderFactory._providers == {}

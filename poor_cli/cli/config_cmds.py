@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from ..config import Config, ConfigManager
-from ..core import PoorCLICore
 
 
 def _print_json(payload: Any) -> None:
@@ -19,6 +18,11 @@ def _print_json(payload: Any) -> None:
 def _load_cli_config(config_path_hint: str | None = None) -> Config:
     manager = ConfigManager(config_path=Path(config_path_hint).expanduser() if config_path_hint else None)
     return manager.load() if manager.config_path.exists() else Config()
+
+
+def _core_cls():
+    from ..core import PoorCLICore
+    return PoorCLICore
 
 
 def run_config_mode(argv: Sequence[str]) -> int:
@@ -207,8 +211,7 @@ def run_provider_mode(argv: Sequence[str]) -> int:
     args = parser.parse_args(list(argv))
     if args.subcommand == "list":
         from ..providers.provider_factory import ProviderFactory
-        providers = ProviderFactory.list_providers()
-        payload = [{"name": name} for name in sorted(providers)]
+        payload = [{"name": name} for name in ProviderFactory.list_provider_names(include_aliases=True)]
         if args.json:
             _print_json(payload)
         else:
@@ -217,7 +220,7 @@ def run_provider_mode(argv: Sequence[str]) -> int:
         return 0
     if args.subcommand == "info":
         async def _info():
-            core = PoorCLICore(config_path=Path(args.config).expanduser() if args.config else None)
+            core = _core_cls()(config_path=Path(args.config).expanduser() if args.config else None)
             await core.initialize()
             try:
                 return core.get_provider_info()
@@ -232,7 +235,7 @@ def run_provider_mode(argv: Sequence[str]) -> int:
         return 0
     if args.subcommand == "switch":
         async def _switch():
-            core = PoorCLICore(config_path=Path(args.config).expanduser() if args.config else None)
+            core = _core_cls()(config_path=Path(args.config).expanduser() if args.config else None)
             await core.initialize()
             try:
                 await core.switch_provider(args.name, model_name=args.model)
@@ -255,7 +258,7 @@ def run_core_info_command(method_name: str, argv: Sequence[str], prog: str) -> i
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(list(argv))
     async def _query():
-        core = PoorCLICore(config_path=Path(args.config).expanduser() if args.config else None)
+        core = _core_cls()(config_path=Path(args.config).expanduser() if args.config else None)
         await core.initialize()
         try:
             return getattr(core, method_name)()
@@ -295,15 +298,15 @@ def run_cost_mode(argv: Sequence[str]) -> int:
     cmd = args.subcommand or "summary"
     # history and templates don't need a running core
     if cmd == "history":
-        entries = PoorCLICore.get_cost_history(getattr(args, "limit", 50))
+        entries = _core_cls().get_cost_history(getattr(args, "limit", 50))
         total = sum(e.get("cost_usd", 0) for e in entries)
         _print_json({"entries": entries, "count": len(entries), "total_cost_usd": round(total, 6)})
         return 0
     if cmd == "templates":
-        _print_json(PoorCLICore.list_budget_templates())
+        _print_json(_core_cls().list_budget_templates())
         return 0
     async def _run():
-        core = PoorCLICore(config_path=Path(args.config).expanduser() if getattr(args, "config", None) else None)
+        core = _core_cls()(config_path=Path(args.config).expanduser() if getattr(args, "config", None) else None)
         await core.initialize()
         try:
             if cmd == "summary":
@@ -327,7 +330,7 @@ def run_cost_mode(argv: Sequence[str]) -> int:
                 template = getattr(args, "template", None)
                 if template:
                     return core.apply_budget_template(template)
-                return {"templates": list(PoorCLICore.list_budget_templates().keys())}
+                return {"templates": list(_core_cls().list_budget_templates().keys())}
             if cmd == "compare":
                 provider = getattr(args, "provider", None)
                 model = getattr(args, "model", None)
@@ -360,7 +363,7 @@ def run_context_mode(argv: Sequence[str]) -> int:
     args = parser.parse_args(list(argv))
     cmd = args.subcommand or "preview"
     async def _run():
-        core = PoorCLICore(config_path=Path(args.config).expanduser() if getattr(args, "config", None) else None)
+        core = _core_cls()(config_path=Path(args.config).expanduser() if getattr(args, "config", None) else None)
         await core.initialize()
         try:
             if cmd == "compact":
@@ -421,7 +424,7 @@ def run_services_mode(argv: Sequence[str]) -> int:
         print("usage: poor-cli services [start|stop|status|logs] <name>")
         return 1
     async def _run():
-        core = PoorCLICore(config_path=Path(args.config).expanduser() if getattr(args, "config", None) else None)
+        core = _core_cls()(config_path=Path(args.config).expanduser() if getattr(args, "config", None) else None)
         await core.initialize()
         try:
             if cmd == "start":
