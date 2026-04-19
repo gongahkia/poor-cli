@@ -1,4 +1,4 @@
-.PHONY: cli server install installer install-info dev build run test test-unit test-lua lint bench-swe bench-startup-profile bench-perf-compare release clean help hooks
+.PHONY: cli server install installer install-info dev build run test test-unit test-lua lint bench-swe bench-startup-profile bench-perf-compare bench-status-view bench-context-memo bench-tool-schema release clean help hooks
 
 PYTHON := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/python,python3)
 PIP := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/pip,pip)
@@ -67,7 +67,7 @@ run: cli ## alias for `make cli`
 # ── dev ──────────────────────────────────────────────────────────────
 
 dev: ## install deps + launch CLI
-	$(PIP) install -e . && $(MAKE) cli
+	$(PIP) install -e ".[dev]" && $(MAKE) cli
 
 test: test-unit ## alias for `make test-unit`
 
@@ -93,6 +93,15 @@ bench-startup-profile: ## run startup/quick-quit percentile profile (ARGS='--run
 
 bench-perf-compare: ## compare two startup profile jsons (ARGS='--baseline a.json --candidate b.json')
 	$(PYTHON) bench/perf_compare.py $(ARGS)
+
+bench-status-view: ## profile status-view burst polling (ARGS='--bursts 20 --requests-per-burst 25')
+	$(PYTHON) bench/status_view_burst_profile.py $(ARGS)
+
+bench-context-memo: ## profile context snapshot memo hit-rate (ARGS='--turns 300 --mode bursty --run-len 12')
+	$(PYTHON) bench/context_snapshot_memo_profile.py $(ARGS)
+
+bench-tool-schema: ## profile tool-schema cache hit-rate (ARGS='--turns 1000 --model-switch-every 25')
+	$(PYTHON) bench/tool_schema_cache_profile.py $(ARGS)
 
 release: ## build + publish Python release artifacts
 	$(PYTHON) -m build
