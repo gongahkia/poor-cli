@@ -15,6 +15,7 @@ _HANDLER_DIR = Path(__file__).resolve().parent / "handlers"
 _HANDLER_PACKAGE = "poor_cli.server.handlers"
 _HANDLER_ORDER: tuple[str, ...] = (
     "common",
+    "startup_state",
     "tools",
     "audit",
     "status",

@@ -30,3 +30,14 @@ def test_ensure_handler_for_method_registers_initialize():
         "print(str(loaded) + '|' + str('initialize' in REGISTRY))"
     )
     assert stdout.splitlines()[-1] == "True|True"
+
+
+def test_get_startup_state_prefers_tiny_handler_module():
+    stdout = _run_python(
+        "import poor_cli.server.registry as registry; "
+        "loaded = registry.ensure_handler_for_method('getStartupState'); "
+        "loaded_startup = any(name.endswith('.startup_state') for name in registry._LOADED_MODULES); "
+        "loaded_status = any(name.endswith('.status') for name in registry._LOADED_MODULES); "
+        "print(str(loaded) + '|' + str(loaded_startup) + '|' + str(loaded_status))"
+    )
+    assert stdout.splitlines()[-1] == "True|True|False"

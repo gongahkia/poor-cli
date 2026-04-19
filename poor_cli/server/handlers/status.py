@@ -318,17 +318,6 @@ class StatusHandlersMixin:
         self._ensure_initialized()
         return self.core.get_mcp_status()
 
-    async def handle_get_startup_state(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Return configured provider/model before full backend initialization."""
-        del params
-        from ...config_fast import load_runtime_model_settings
-
-        settings = load_runtime_model_settings()
-        return {
-            "provider": str(settings.get("provider", "openai")),
-            "model": str(settings.get("model", "")),
-        }
-
     async def handle_mcp_health_check(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Check health of all registered MCP servers."""
         self._ensure_initialized()
@@ -393,10 +382,6 @@ class StatusHandlersMixin:
         mgr = ErrorRecoveryManager()
         suggestions = mgr.get_suggestions(Exception(error_text))
         return {"suggestions": [{"title": s.title, "description": s.description, "commands": s.commands, "priority": s.priority} for s in suggestions]}
-
-@register('getStartupState')
-async def _rpc_4(ctx, params):
-    return await ctx.handle_get_startup_state(params)
 
 @register('poor-cli/getInstructionStack')
 async def _rpc_24(ctx, params):

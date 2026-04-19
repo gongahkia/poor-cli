@@ -7,6 +7,7 @@ from .common import CommonHandlersMixin
 
 _HANDLER_ORDER: tuple[str, ...] = (
     "common",
+    "startup_state",
     "tools",
     "audit",
     "status",
