@@ -1904,6 +1904,13 @@ class TurnLifecycle:
             ),
         }
         from .credentials import get_credential_store
+        tool_graph_stats = {}
+        tool_graph = getattr(self, "_tool_capability_graph", None)
+        if tool_graph is not None:
+            try:
+                tool_graph_stats = tool_graph.get_stats()
+            except Exception:
+                tool_graph_stats = {}
 
         return {
             "session": {
@@ -1937,6 +1944,7 @@ class TurnLifecycle:
                 "lastPreview": last_context,
                 "pressure": self.get_context_pressure() if self.provider else {},
                 "compaction": self.get_compaction_status(),
+                "toolGraph": tool_graph_stats,
             },
             "runs": {
                 "recent": recent_runs,

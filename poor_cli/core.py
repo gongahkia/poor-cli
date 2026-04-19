@@ -74,6 +74,7 @@ from .core_agent_loop import AgentLoop as AgentLoop
 from .core_provider_info import ProviderInfoMixin
 from .core_tool_dispatch import ToolDispatcher as ToolDispatcher
 from .core_turn_lifecycle import TurnLifecycle as TurnLifecycle
+from .tool_capability_graph import ToolCapabilityGraph
 
 logger = setup_logger(__name__)
 
@@ -281,6 +282,7 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
         self._tone_cache_suffix: str = ""
         self._repo_root: Path = Path.cwd().resolve()
         self._last_compaction_status: Dict[str, Any] = {"state": "idle"}
+        self._tool_capability_graph: Optional[ToolCapabilityGraph] = None
 
         logger.info("PoorCLICore instance created")
 
@@ -313,6 +315,8 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
             repo_root = Path.cwd().resolve()
             self._repo_root = repo_root
             init_started = time.monotonic()
+            self._tool_capability_graph = ToolCapabilityGraph(base_dir=repo_root / ".poor-cli")
+            self._tool_capability_graph.load()
             
             # Load configuration
             self._config_manager = ConfigManager(self._config_path)
@@ -376,6 +380,7 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
                 checkpoint_manager=self.checkpoint_manager,
                 output_max_chars=trunc_cfg.max_output_chars if trunc_cfg.enabled else 0,
                 output_max_lines=trunc_cfg.max_output_lines if trunc_cfg.enabled else 0,
+                capability_graph=self._tool_capability_graph,
             )
 
             # Initialize fallback manager

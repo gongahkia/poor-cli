@@ -20,6 +20,7 @@ from poor_cli.repo_config import get_repo_config
 from poor_cli.rtk_integration import RTKState, detect_rtk, wrap_shell_command
 from poor_cli.shell_filters import match_command
 from poor_cli.tool_output_filter import SchemaFilterResult, ToolOutputFilter, empty_filter_stats, render_output
+from poor_cli.tool_capability_graph import ToolCapabilityGraph
 
 logger = setup_logger(__name__)
 
@@ -132,6 +133,7 @@ class EnhancedToolRegistry(ToolRegistryAsync):
         diff_preview: Optional[DiffPreview] = None,
         output_max_chars: int = 0,
         output_max_lines: int = 0,
+        capability_graph: Optional[ToolCapabilityGraph] = None,
     ):
         """Initialize enhanced tools
 
@@ -157,6 +159,7 @@ class EnhancedToolRegistry(ToolRegistryAsync):
                 pass
         self.output_filter = ToolOutputFilter(repo_root=Path.cwd())
         self._output_filter_stats = empty_filter_stats()
+        self._capability_graph = capability_graph
 
         # Track if diff/checkpoint should be shown for next operation
         self.show_diff = True
@@ -171,6 +174,10 @@ class EnhancedToolRegistry(ToolRegistryAsync):
     def set_diff_preview(self, diff_preview: DiffPreview):
         """Set diff preview"""
         self.diff_preview = diff_preview
+
+    def set_capability_graph(self, capability_graph: Optional[ToolCapabilityGraph]) -> None:
+        """Set adaptive capability graph."""
+        self._capability_graph = capability_graph
 
     def disable_diff_for_next(self):
         """Disable diff preview for next operation (internal use)"""
@@ -262,15 +269,36 @@ class EnhancedToolRegistry(ToolRegistryAsync):
             if server_name.lower() in text:
                 groups.append(f"{MCP_GROUP_PREFIX}{server_name}")
 
-        return _ordered_unique(groups)
+        groups = _ordered_unique(groups)
+        graph = self._capability_graph
+        if graph is None:
+            return groups
+        available_groups = list(self.tool_groups(mcp_server_names=mcp_server_names).keys())
+        try:
+            suggestions = graph.suggest_followup_groups(
+                seed_groups=groups,
+                available_groups=available_groups,
+                prompt=text,
+                limit=2,
+            )
+        except Exception as error:
+            logger.debug("capability graph group suggestion failed: %s", error)
+            return groups
+        return _ordered_unique([*groups, *suggestions])
 
     def get_tool_declarations_by_names(self, names: Iterable[str]) -> List[Dict[str, Any]]:
-        declarations = [
-            self.tools[name]["declaration"]
-            for name in _ordered_unique(names)
-            if name in self.tools
-        ]
-        return sorted(declarations, key=lambda declaration: declaration.get("name", ""))
+        ordered_names = _ordered_unique(names)
+        graph = self._capability_graph
+        if graph is None:
+            declarations = [self.tools[name]["declaration"] for name in ordered_names if name in self.tools]
+            return sorted(declarations, key=lambda declaration: declaration.get("name", ""))
+        try:
+            ordered_names = graph.rank_tool_names(ordered_names)
+        except Exception as error:
+            logger.debug("capability graph ranking failed: %s", error)
+            declarations = [self.tools[name]["declaration"] for name in ordered_names if name in self.tools]
+            return sorted(declarations, key=lambda declaration: declaration.get("name", ""))
+        return [self.tools[name]["declaration"] for name in ordered_names if name in self.tools]
 
     def get_tool_declarations_for_groups(
         self,

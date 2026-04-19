@@ -278,6 +278,125 @@ class ToolDispatcher:
             logger.debug("Failed to inspect mutation targets for %s: %s", tool_name, error)
             return []
 
+    @staticmethod
+    def _normalize_graph_paths(paths: List[str]) -> List[str]:
+        normalized: List[str] = []
+        seen: set[str] = set()
+        cwd = Path.cwd()
+        for raw_path in paths:
+            text = str(raw_path or "").strip()
+            if not text or "://" in text:
+                continue
+            candidate = Path(text).expanduser()
+            try:
+                resolved = candidate.resolve(strict=False) if candidate.is_absolute() else (cwd / candidate).resolve(strict=False)
+            except Exception:
+                continue
+            key = str(resolved)
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(key)
+        return normalized
+
+    def _tool_graph_argument_paths(self, tool_name: str, tool_args: Dict[str, Any]) -> List[str]:
+        path_keys: Dict[str, Tuple[str, ...]] = {
+            "read_file": ("file_path",),
+            "write_file": ("file_path",),
+            "edit_file": ("file_path",),
+            "delete_file": ("file_path",),
+            "json_yaml_edit": ("file_path",),
+            "list_directory": ("path",),
+            "glob_files": ("path",),
+            "grep_files": ("path",),
+            "diff_files": ("file1", "file2"),
+            "copy_file": ("source", "destination"),
+            "move_file": ("source", "destination"),
+        }
+        candidates: List[str] = list(self._inspect_tool_targets(tool_name, tool_args))
+        for key in path_keys.get(tool_name, ()):
+            value = tool_args.get(key)
+            if isinstance(value, str) and value.strip():
+                candidates.append(value)
+        return self._normalize_graph_paths(candidates)
+
+    def _tool_graph_result_paths(self, tool_name: str, tool_args: Dict[str, Any], result: Any) -> List[str]:
+        candidates = list(self._tool_graph_argument_paths(tool_name, tool_args))
+        try:
+            candidates.extend(self._tool_result_paths(tool_name, tool_args, result))
+        except Exception:
+            pass
+        return self._normalize_graph_paths(candidates)
+
+    def _tool_group_for_graph(self, tool_name: str) -> str:
+        if not isinstance(self.tool_registry, EnhancedToolRegistry):
+            return ""
+        try:
+            group = self.tool_registry.tool_group_for_name(tool_name, mcp_server_names=self._mcp_server_names())
+            return str(group or "")
+        except Exception:
+            return ""
+
+    def _tool_capabilities_for_graph(self, tool_name: str) -> List[str]:
+        if not self.tool_registry or not hasattr(self.tool_registry, "get_tool_capabilities"):
+            return []
+        try:
+            payload = self.tool_registry.get_tool_capabilities(tool_name)
+        except Exception:
+            return []
+        if not isinstance(payload, list):
+            return []
+        return [str(capability) for capability in payload if str(capability).strip()]
+
+    def _observe_tool_graph_start(
+        self,
+        *,
+        request_id: str,
+        call_id: str,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+    ) -> None:
+        graph = getattr(self, "_tool_capability_graph", None)
+        if graph is None:
+            return
+        try:
+            graph.observe_tool_call_start(
+                request_id=request_id,
+                call_id=call_id,
+                tool_name=tool_name,
+                group=self._tool_group_for_graph(tool_name),
+                capabilities=self._tool_capabilities_for_graph(tool_name),
+                consumed_paths=self._tool_graph_argument_paths(tool_name, tool_args),
+            )
+        except Exception as error:
+            logger.debug("capability graph start observe failed for %s: %s", tool_name, error)
+
+    def _observe_tool_graph_result(
+        self,
+        *,
+        request_id: str,
+        call_id: str,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        result: Any,
+        success: bool,
+        started_mono: float,
+    ) -> None:
+        graph = getattr(self, "_tool_capability_graph", None)
+        if graph is None:
+            return
+        try:
+            graph.observe_tool_call_result(
+                request_id=request_id,
+                call_id=call_id,
+                tool_name=tool_name,
+                success=bool(success),
+                latency_ms=max(0.0, (time.monotonic() - started_mono) * 1000.0),
+                produced_paths=self._tool_graph_result_paths(tool_name, tool_args, result),
+            )
+        except Exception as error:
+            logger.debug("capability graph result observe failed for %s: %s", tool_name, error)
+
     def _audit_permission_decision(
         self,
         tool_name: str,
@@ -876,16 +995,24 @@ class ToolDispatcher:
         events: List[CoreEvent] = []
         tool_name = fc.name
         tool_args = fc.arguments
+        call_id = str(fc.id or f"{tool_name}:{time.time_ns()}")
+        started_mono = time.monotonic()
         preview_payload: Optional[Dict[str, Any]] = None
         tool_paths = self._inspect_tool_targets(tool_name, tool_args)
         schema_load_note = await self._ensure_tool_available_for_call(
             tool_name,
             user_request=user_request,
         )
+        self._observe_tool_graph_start(
+            request_id=request_id,
+            call_id=call_id,
+            tool_name=tool_name,
+            tool_args=tool_args,
+        )
 
         events.append(
             CoreEvent.tool_call_start(
-                tool_name, tool_args, fc.id, iteration, max_iterations, paths=tool_paths,
+                tool_name, tool_args, call_id, iteration, max_iterations, paths=tool_paths,
             )
         )
         if schema_load_note:
@@ -898,10 +1025,19 @@ class ToolDispatcher:
             result = "Operation denied by safety policy"
             self._audit_permission_decision(tool_name, tool_args, allowed=False, source="config:auto-deny")
             events.append(CoreEvent.tool_result(
-                tool_name, result, fc.id, iteration, max_iterations,
+                tool_name, result, call_id, iteration, max_iterations,
                 paths=tool_paths, changed=False, message=result,
             ))
-            return events, {"id": fc.id, "name": tool_name, "result": result}
+            self._observe_tool_graph_result(
+                request_id=request_id,
+                call_id=call_id,
+                tool_name=tool_name,
+                tool_args=tool_args,
+                result=result,
+                success=False,
+                started_mono=started_mono,
+            )
+            return events, {"id": call_id, "name": tool_name, "result": result}
 
         # 2. if not auto-approved, check interactive permission callback
         if auto is None and self._permission_callback:
@@ -919,10 +1055,19 @@ class ToolDispatcher:
                     self._audit_permission_decision(tool_name, tool_args, allowed=False, source="interactive", preview=preview_payload)
                     result = "Operation cancelled by user"
                     events.append(CoreEvent.tool_result(
-                        tool_name, result, fc.id, iteration, max_iterations,
+                        tool_name, result, call_id, iteration, max_iterations,
                         diff=(preview_payload or {}).get("diff", ""), paths=tool_paths, changed=False, message=result,
                     ))
-                    return events, {"id": fc.id, "name": tool_name, "result": result}
+                    self._observe_tool_graph_result(
+                        request_id=request_id,
+                        call_id=call_id,
+                        tool_name=tool_name,
+                        tool_args=tool_args,
+                        result=result,
+                        success=False,
+                        started_mono=started_mono,
+                    )
+                    return events, {"id": call_id, "name": tool_name, "result": result}
                 self._audit_permission_decision(tool_name, tool_args, allowed=True, source="interactive", preview=preview_payload)
                 if permission["approvedChunks"] or permission["approvedPaths"]:
                     try:
@@ -933,46 +1078,68 @@ class ToolDispatcher:
                     except Exception as scope_error:
                         result = f"Operation cancelled: {scope_error}"
                         events.append(CoreEvent.tool_result(
-                            tool_name, result, fc.id, iteration, max_iterations,
+                            tool_name, result, call_id, iteration, max_iterations,
                             diff=(preview_payload or {}).get("diff", ""), paths=tool_paths, changed=False, message=str(scope_error),
                         ))
-                        return events, {"id": fc.id, "name": tool_name, "result": result}
+                        self._observe_tool_graph_result(
+                            request_id=request_id,
+                            call_id=call_id,
+                            tool_name=tool_name,
+                            tool_args=tool_args,
+                            result=result,
+                            success=False,
+                            started_mono=started_mono,
+                        )
+                        return events, {"id": call_id, "name": tool_name, "result": result}
             except Exception as e:
                 logger.error(f"Permission callback error: {e}")
                 self._audit_permission_decision(tool_name, tool_args, allowed=False, source="permission-callback-error", preview=preview_payload)
                 result = "Operation denied: permission callback failed"
                 events.append(CoreEvent.tool_result(
-                    tool_name, result, fc.id, iteration, max_iterations,
+                    tool_name, result, call_id, iteration, max_iterations,
                     diff=(preview_payload or {}).get("diff", ""), paths=tool_paths, changed=False, message=str(e),
                 ))
-                return events, {"id": fc.id, "name": tool_name, "result": result}
+                self._observe_tool_graph_result(
+                    request_id=request_id,
+                    call_id=call_id,
+                    tool_name=tool_name,
+                    tool_args=tool_args,
+                    result=result,
+                    success=False,
+                    started_mono=started_mono,
+                )
+                return events, {"id": call_id, "name": tool_name, "result": result}
         elif auto is True:
             self._audit_permission_decision(tool_name, tool_args, allowed=True, source="config:auto-approve")
 
         # 3. execute the tool
+        tool_success = True
         try:
             execution_args = dict(tool_args)
             if tool_name in {"write_file", "edit_file", "apply_patch_unified"}:
                 execution_args["_prompt"] = user_request
                 execution_args["_interactive"] = diff_review_interactive
-                execution_args["_tool_call_id"] = fc.id or f"{tool_name}:{time.time_ns()}"
+                execution_args["_tool_call_id"] = call_id
             if tool_name in {"bash", "run_tests", "process_logs"}:
                 execution_args["_tool_stream_request_id"] = request_id
-                execution_args["_tool_stream_event_id"] = fc.id or f"{tool_name}:{time.time_ns()}"
-                execution_args["_tool_call_id"] = fc.id or execution_args["_tool_stream_event_id"]
+                execution_args["_tool_stream_event_id"] = call_id
+                execution_args["_tool_call_id"] = call_id
             result = await self._execute_tool_internal(tool_name, execution_args)
         except Exception as e:
             result = f"Error: {e}"
+            tool_success = False
             logger.error(f"Tool execution failed: {e}")
+        if isinstance(result, ToolOutcome):
+            tool_success = bool(tool_success and result.ok)
 
         result_text = self._tool_result_text(result)
         raw_result_text = self._tool_result_raw_text(result)
         filter_metadata = self._tool_result_filter_metadata(result)
-        if filter_metadata.get("applied") and fc.id:
+        if filter_metadata.get("applied"):
             if not hasattr(self, "_tool_full_outputs"):
                 self._tool_full_outputs = {}
-            self._tool_full_outputs[fc.id] = {
-                "callId": fc.id,
+            self._tool_full_outputs[call_id] = {
+                "callId": call_id,
                 "toolName": tool_name,
                 "output": raw_result_text,
                 "filter": filter_metadata,
@@ -996,7 +1163,7 @@ class ToolDispatcher:
             result_text = result_text[:per_call_cap] + f"\n[truncated: {omitted} chars omitted]"
 
         events.append(CoreEvent.tool_result(
-            tool_name, result_text, fc.id, iteration, max_iterations,
+            tool_name, result_text, call_id, iteration, max_iterations,
             diff=self._tool_result_diff(result),
             paths=self._tool_result_paths(tool_name, tool_args, result),
             checkpoint_id=self._tool_result_checkpoint_id(result),
@@ -1004,7 +1171,16 @@ class ToolDispatcher:
             message=self._tool_result_message(result),
             filter_metadata=filter_metadata,
         ))
-        return events, {"id": fc.id, "name": tool_name, "result": result_text}
+        self._observe_tool_graph_result(
+            request_id=request_id,
+            call_id=call_id,
+            tool_name=tool_name,
+            tool_args=tool_args,
+            result=result,
+            success=tool_success,
+            started_mono=started_mono,
+        )
+        return events, {"id": call_id, "name": tool_name, "result": result_text}
 
     async def _handle_function_calls_events(
         self,
@@ -1269,6 +1445,7 @@ class ToolDispatcher:
             checkpoint_manager=self.checkpoint_manager,
             output_max_chars=trunc_cfg.max_output_chars if trunc_cfg.enabled else 0,
             output_max_lines=trunc_cfg.max_output_lines if trunc_cfg.enabled else 0,
+            capability_graph=getattr(self, "_tool_capability_graph", None),
         )
         self.tool_registry._core = self
         mcp_servers = self.config.mcp_servers or discover_mcp_config(Path.cwd())
