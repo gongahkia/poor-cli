@@ -1,6 +1,7 @@
 # ruff: noqa: F403,F405
 from __future__ import annotations
 
+from ...config import PermissionMode, parse_permission_mode
 from poor_cli.server.handler_deps import *
 from poor_cli.server.registry import register
 

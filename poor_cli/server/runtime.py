@@ -18,7 +18,6 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any, Dict, Optional, Set
 
-from ..config import ConfigManager
 from ..exceptions import (
     PermissionDeniedError,
     PoorCLIError,
@@ -245,6 +244,8 @@ class PoorCLIServer(HandlerMixin):
             return None
 
     def _load_initial_rate_limit_policy(self) -> Dict[str, Dict[str, Any]]:
+        from ..config import ConfigManager
+
         core = self._maybe_core()
         config_path = getattr(core, "_config_path", None) if core is not None else None
         try:

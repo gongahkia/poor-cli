@@ -158,8 +158,10 @@ class ProvidersHandlersMixin:
             return "*" * len(raw_key)
         return f"{raw_key[:4]}…{raw_key[-4:]}"
 
-    def _ensure_config_loaded(self) -> Tuple[ConfigManager, Config]:
+    def _ensure_config_loaded(self) -> Tuple[Any, Any]:
         """Load config metadata needed for API key/status operations before full init."""
+        from ...config import ConfigManager
+
         maybe_core = getattr(self, "_maybe_core", None)
         core = maybe_core() if callable(maybe_core) else None
         if core is not None and core._config_manager is not None and core.config is not None:

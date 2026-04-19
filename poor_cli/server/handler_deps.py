@@ -24,7 +24,6 @@ import uuid
 
 from ..automations import AutomationManager
 from ..command_validator import CommandRisk, get_command_validator
-from ..config import Config, ConfigManager, PermissionMode, parse_permission_mode
 from ..core import PoorCLICore
 from ..automations import CustomCommandRegistry
 from ..exceptions import (
