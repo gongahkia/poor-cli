@@ -1,15 +1,14 @@
 """tests for poor-cli.session_manager module."""
 
 import unittest
-from unittest.mock import patch, MagicMock, AsyncMock
-from poor_cli.session_manager import SessionManager, SessionState
+from unittest.mock import AsyncMock
+from poor_cli.session_manager import SessionManager
 from poor_cli.exceptions import ValidationError
 
 
 class TestSessionManager(unittest.TestCase):
     def _make_mgr(self, max_sessions=8):
-        with patch("poor_cli.session_manager.PoorCLICore"):
-            return SessionManager(max_sessions=max_sessions)
+        return SessionManager(max_sessions=max_sessions)
 
     def test_create_session(self):
         mgr = self._make_mgr()
@@ -60,7 +59,7 @@ class TestSessionManager(unittest.TestCase):
 
     def test_switch_default(self):
         mgr = self._make_mgr()
-        s1 = mgr.create_session(label="a")
+        mgr.create_session(label="a")
         s2 = mgr.create_session(label="b")
         mgr.switch_default(s2.session_id)
         self.assertEqual(mgr.default_session.session_id, s2.session_id)

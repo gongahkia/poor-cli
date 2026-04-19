@@ -6,9 +6,11 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
-from .core import PoorCLICore
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 from .exceptions import setup_logger, ValidationError
+
+if TYPE_CHECKING:
+    from .core import PoorCLICore
 
 logger = setup_logger(__name__)
 
@@ -19,7 +21,7 @@ MAX_SESSIONS_DEFAULT = 8
 class SessionState:
     """state for a single agent session."""
     session_id: str
-    core: PoorCLICore
+    core: "PoorCLICore"
     label: str = ""
     working_directory: str = ""
     status: str = "active" # active | paused | completed
@@ -80,6 +82,8 @@ class SessionManager:
             raise ValidationError(
                 f"max sessions ({self._max_sessions}) reached; destroy one first"
             )
+        from .core import PoorCLICore
+
         sid = f"sess-{uuid.uuid4().hex[:8]}"
         core = PoorCLICore(config_path=self._config_path)
         if self._permission_callback:
