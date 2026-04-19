@@ -9,47 +9,14 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Optional, Sequence
 
-from .automations import (
-    AutomationManager,
-    migrate_extensions,
-    parse_daily_schedule,
-    parse_weekly_schedule,
-    restore_migration,
-    schedule_interval,
-)
-from .cli import (
-    run_checkpoint_mode,
-    run_history_mode,
-    run_session_mode,
-    run_memory_mode,
-    run_config_mode,
-    run_profile_mode,
-    run_trust_mode,
-    run_provider_mode,
-    run_core_info_command,
-    run_cost_mode,
-    run_search_mode,
-    run_review_file_mode,
-    run_commit_mode,
-    run_context_mode,
-    run_workflow_mode,
-    run_services_mode,
-    run_audit_mode,
-)
-from ._exec_helpers import build_exec_permission_callback
-from .config import Config, ConfigManager, PermissionMode, parse_permission_mode
-from .core import PoorCLICore
 from .cli_errors import run_with_cli_error_handling
-from .automations import CustomCommandRegistry
-from .github_task import create_task_from_context, default_mode_for_context, load_github_context
-from .repo_config import get_repo_config
-from .session_store import SessionStore
-from .sandbox import PRESET_DESCRIPTION, normalize_preset
-from .skills import SkillRegistry
-from .task_manager import APPROVAL_REQUIRED_PRESETS, TaskManager, run_task_worker
 from . import __version__
+
+if TYPE_CHECKING:
+    from .config import Config
+    from .task_manager import TaskManager
 
 
 def _render_root_help() -> str:
@@ -112,7 +79,19 @@ def _run_server_mode(argv: Sequence[str]) -> int:
     return 0
 
 
+def _preset_description() -> dict[str, str]:
+    from .sandbox import PRESET_DESCRIPTION
+    return PRESET_DESCRIPTION
+
+
+def _approval_required_presets() -> set[str]:
+    from .task_manager import APPROVAL_REQUIRED_PRESETS
+    return set(APPROVAL_REQUIRED_PRESETS)
+
+
 def _build_exec_parser() -> argparse.ArgumentParser:
+    from .config import PermissionMode
+
     parser = argparse.ArgumentParser(prog="poor-cli exec")
     parser.add_argument("--prompt", help="Prompt to send to the shared poor-cli core")
     parser.add_argument(
@@ -147,7 +126,7 @@ def _build_exec_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cwd", help="Working directory for this execution")
     parser.add_argument(
         "--sandbox-preset",
-        choices=tuple(PRESET_DESCRIPTION.keys()),
+        choices=tuple(_preset_description().keys()),
         help="Capability sandbox preset for this execution",
     )
     parser.add_argument(
@@ -185,6 +164,9 @@ def _coerce_prompt(args: argparse.Namespace) -> str:
 
 
 def _build_resume_prefix() -> str:
+    from .repo_config import get_repo_config
+    from .session_store import SessionStore
+
     session_store = SessionStore(Path.cwd())
     latest_snapshot = session_store.load_latest()
     if latest_snapshot:
@@ -234,10 +216,16 @@ def _build_resume_prefix() -> str:
     return "\n\n".join(lines)
 
 
-_build_exec_permission_callback = build_exec_permission_callback
+def _build_exec_permission_callback(*args: Any, **kwargs: Any) -> Any:
+    from ._exec_helpers import build_exec_permission_callback
+    return build_exec_permission_callback(*args, **kwargs)
 
 
 async def _run_exec_mode_async(args: argparse.Namespace) -> int:
+    from .config import PermissionMode, parse_permission_mode
+    from .core import PoorCLICore
+    from .sandbox import normalize_preset
+
     if args.cwd:
         os.chdir(Path(args.cwd).expanduser())
 
@@ -369,6 +357,9 @@ def _print_json(payload: Any) -> None:
 
 
 async def _run_skill_async(name: str, request: str) -> int:
+    from .core import PoorCLICore
+    from .skills import SkillRegistry
+
     registry = SkillRegistry(Path.cwd())
     prompt = registry.render_skill_prompt(name, request)
     core = PoorCLICore()
@@ -381,6 +372,9 @@ async def _run_skill_async(name: str, request: str) -> int:
 
 
 async def _run_custom_command_async(name: str, args_text: str) -> int:
+    from .automations import CustomCommandRegistry
+    from .core import PoorCLICore
+
     registry = CustomCommandRegistry(Path.cwd())
     prompt = registry.render_prompt(name, args_text=args_text)
     core = PoorCLICore()
@@ -456,6 +450,8 @@ def _build_execution_metadata_from_args(args: argparse.Namespace) -> dict[str, A
 
 
 def _load_cli_config(config_path_hint: Optional[str] = None) -> Config:
+    from .config import Config, ConfigManager
+
     if config_path_hint:
         hinted_path = Path(config_path_hint).expanduser()
         if not hinted_path.is_absolute():
@@ -477,7 +473,7 @@ def _load_cli_config(config_path_hint: Optional[str] = None) -> Config:
 def _task_default_auto_start(preset: str, config: Config) -> bool:
     tasks_config = getattr(config, "tasks", None)
     if tasks_config is None:
-        return preset not in APPROVAL_REQUIRED_PRESETS
+        return preset not in _approval_required_presets()
 
     if preset in {"read-only", "review-only"}:
         return bool(tasks_config.auto_start_read_only)
@@ -498,7 +494,7 @@ def _resolve_task_create_behavior(
     effective_auto_start = (
         _task_default_auto_start(preset, config) if auto_start is None else bool(auto_start)
     )
-    approval_required = bool(requires_approval or (preset in APPROVAL_REQUIRED_PRESETS and not auto_approve))
+    approval_required = bool(requires_approval or (preset in _approval_required_presets() and not auto_approve))
     if wait:
         if approval_required:
             raise SystemExit(
@@ -546,7 +542,7 @@ def _build_task_parser() -> argparse.ArgumentParser:
     create = subparsers.add_parser("create")
     create.add_argument("--title")
     create.add_argument("--prompt")
-    create.add_argument("--preset", default="workspace-write", choices=tuple(PRESET_DESCRIPTION.keys()))
+    create.add_argument("--preset", default="workspace-write", choices=tuple(_preset_description().keys()))
     create.add_argument("--source", default="manual")
     create.add_argument("--requires-approval", action="store_true")
     create.add_argument(
@@ -914,6 +910,9 @@ def _run_agent_mode(argv: Sequence[str]) -> int:
 
 
 def _run_task_mode(argv: Sequence[str]) -> int:
+    from .sandbox import normalize_preset
+    from .task_manager import TaskManager, run_task_worker
+
     parser = _build_task_parser()
     args = parser.parse_args(list(argv))
     manager = TaskManager(Path.cwd())
@@ -1116,6 +1115,8 @@ def _build_skill_parser() -> argparse.ArgumentParser:
 
 
 def _run_skills_mode(argv: Sequence[str]) -> int:
+    from .skills import SkillRegistry
+
     parser = _build_skill_parser()
     args = parser.parse_args(list(argv))
     registry = SkillRegistry(Path.cwd())
@@ -1152,6 +1153,8 @@ def _build_commands_parser() -> argparse.ArgumentParser:
 
 
 def _run_commands_mode(argv: Sequence[str]) -> int:
+    from .automations import CustomCommandRegistry
+
     parser = _build_commands_parser()
     args = parser.parse_args(list(argv))
     registry = CustomCommandRegistry(Path.cwd())
@@ -1185,7 +1188,7 @@ def _build_automation_parser() -> argparse.ArgumentParser:
     schedule_group.add_argument("--every-minutes", type=int)
     schedule_group.add_argument("--daily")
     schedule_group.add_argument("--weekly")
-    create.add_argument("--preset", default="read-only", choices=tuple(PRESET_DESCRIPTION.keys()))
+    create.add_argument("--preset", default="read-only", choices=tuple(_preset_description().keys()))
     create.add_argument("--requires-approval", action="store_true")
     create.add_argument("--auto-approve", action="store_true")
     create.add_argument("--disabled", action="store_true")
@@ -1265,6 +1268,8 @@ def _coerce_automation_prompt(args: argparse.Namespace) -> str:
 
 
 def _automation_schedule_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    from .automations import parse_daily_schedule, parse_weekly_schedule, schedule_interval
+
     timezone_name = str(getattr(args, "timezone", "") or "").strip() or None
     if args.every_minutes is not None:
         return schedule_interval(args.every_minutes)
@@ -1367,6 +1372,9 @@ def _wait_for_tasks_completion(
 
 
 def _run_automation_mode(argv: Sequence[str]) -> int:
+    from .automations import AutomationManager, migrate_extensions, restore_migration
+    from .sandbox import normalize_preset
+
     parser = _build_automation_parser()
     args = parser.parse_args(list(argv))
 
@@ -1566,6 +1574,9 @@ def _build_github_task_parser() -> argparse.ArgumentParser:
 
 
 def _run_github_task_mode(argv: Sequence[str]) -> int:
+    from .github_task import create_task_from_context, default_mode_for_context, load_github_context
+    from .task_manager import TaskManager
+
     parser = _build_github_task_parser()
     args = parser.parse_args(list(argv))
     manager = TaskManager(Path.cwd())
@@ -1612,59 +1623,88 @@ def _run_github_task_mode(argv: Sequence[str]) -> int:
 
 
 def _run_checkpoint_mode(argv: Sequence[str]) -> int:
+    from .cli import run_checkpoint_mode
     return run_checkpoint_mode(argv)
 
 
 def _run_history_mode(argv: Sequence[str]) -> int:
+    from .cli import run_history_mode
     return run_history_mode(argv)
 
 
 def _run_session_mode(argv: Sequence[str]) -> int:
+    from .cli import run_session_mode
     return run_session_mode(argv)
 
 
 def _run_memory_mode(argv: Sequence[str]) -> int:
+    from .cli import run_memory_mode
     return run_memory_mode(argv)
 
 
 def _run_config_mode(argv: Sequence[str]) -> int:
+    from .cli import run_config_mode
     return run_config_mode(argv)
 
 
 def _run_profile_mode(argv: Sequence[str]) -> int:
+    from .cli import run_profile_mode
     return run_profile_mode(argv)
 
 
 def _run_trust_mode(argv: Sequence[str]) -> int:
+    from .cli import run_trust_mode
     return run_trust_mode(argv)
 
 
 def _run_provider_mode(argv: Sequence[str]) -> int:
+    from .cli import run_provider_mode
     return run_provider_mode(argv)
 
 
 def _run_core_info_command(method_name: str, argv: Sequence[str], prog: str) -> int:
+    from .cli import run_core_info_command
     return run_core_info_command(method_name, argv, prog)
 
 
 def _run_cost_mode(argv: Sequence[str]) -> int:
+    from .cli import run_cost_mode
     return run_cost_mode(argv)
 
 
 def _run_search_mode(argv: Sequence[str]) -> int:
+    from .cli import run_search_mode
     return run_search_mode(argv)
 
 
 def _run_review_file_mode(argv: Sequence[str]) -> int:
+    from .cli import run_review_file_mode
     return run_review_file_mode(argv)
 
 
 def _run_commit_mode(argv: Sequence[str]) -> int:
+    from .cli import run_commit_mode
     return run_commit_mode(argv)
 
 
 def _run_audit_mode(argv: Sequence[str]) -> int:
+    from .cli import run_audit_mode
     return run_audit_mode(argv)
+
+
+def _run_context_mode(argv: Sequence[str]) -> int:
+    from .cli import run_context_mode
+    return run_context_mode(argv)
+
+
+def _run_workflow_mode(argv: Sequence[str]) -> int:
+    from .cli import run_workflow_mode
+    return run_workflow_mode(argv)
+
+
+def _run_services_mode(argv: Sequence[str]) -> int:
+    from .cli import run_services_mode
+    return run_services_mode(argv)
 
 
 def _main() -> None:
@@ -1711,11 +1751,11 @@ def _main() -> None:
     if argv and argv[0] == "audit":
         raise SystemExit(_run_audit_mode(argv[1:]))
     if argv and argv[0] == "context":
-        raise SystemExit(run_context_mode(argv[1:]))
+        raise SystemExit(_run_context_mode(argv[1:]))
     if argv and argv[0] == "workflow":
-        raise SystemExit(run_workflow_mode(argv[1:]))
+        raise SystemExit(_run_workflow_mode(argv[1:]))
     if argv and argv[0] == "services":
-        raise SystemExit(run_services_mode(argv[1:]))
+        raise SystemExit(_run_services_mode(argv[1:]))
     if argv and argv[0] == "search":
         raise SystemExit(_run_search_mode(argv[1:]))
     if argv and argv[0] == "review":
