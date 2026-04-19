@@ -76,6 +76,8 @@ def _default_model_for_provider(provider_name: str) -> str:
     provider = str(provider_name or "").strip().lower()
     if provider == "claude":
         provider = "anthropic"
+    if not provider or provider == "openai":
+        return "gpt-5.1"
     models = _default_models()
     return str(models.get(provider) or models.get("openai") or "gpt-5.1")
 

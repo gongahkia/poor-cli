@@ -65,3 +65,19 @@ def test_load_runtime_model_settings_applies_trusted_repo_override(monkeypatch, 
         "model": "gemini-2.5-flash",
         "routingMode": "speed",
     }
+
+
+def test_load_runtime_model_settings_openai_default_without_catalog(monkeypatch, tmp_path: Path) -> None:
+    global_cfg = tmp_path / "config.yaml"
+    global_cfg.write_text(
+        yaml.safe_dump({"model": {"provider": "openai"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config_fast, "_MODEL_DEFAULT_CACHE", None)
+    monkeypatch.setattr(config_fast, "_PROVIDER_CATALOG_PATH", tmp_path / "missing-provider-catalog.json")
+    monkeypatch.setattr(config_fast, "_DEFAULT_CONFIG_PATH", global_cfg)
+    monkeypatch.setattr(config_fast, "_TRUSTED_REPOS_PATH", tmp_path / "missing-trust.json")
+    monkeypatch.chdir(tmp_path)
+    settings = config_fast.load_runtime_model_settings()
+    assert settings["provider"] == "openai"
+    assert settings["model"] == "gpt-5.1"
