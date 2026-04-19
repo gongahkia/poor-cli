@@ -194,6 +194,12 @@ jobs:
 
   performance-guardrails:
     runs-on: ubuntu-latest
+    env:
+      PYTHONHASHSEED: "0"
+      TZ: "UTC"
+      LANG: "C.UTF-8"
+      LC_ALL: "C.UTF-8"
+      POORCLI_PERF_PIN_CPU: "0"
 
     steps:
       - uses: actions/checkout@v4
@@ -215,8 +221,11 @@ jobs:
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/pip install -e .
 
+      - name: Best-effort pin perf host
+        run: bench/pin_perf_host.sh
+
       - name: Run startup profile (head)
-        run: .venv/bin/python bench/startup_profile.py --runs 30 --output bench-head.json
+        run: bench/run_pinned.sh .venv/bin/python bench/startup_profile.py --runs 30 --output bench-head.json
 
       - name: Compare startup profile against base (PR)
         if: github.event_name == 'pull_request'
@@ -225,10 +234,21 @@ jobs:
           BASE_SHA="${{ github.event.pull_request.base.sha }}"
           git checkout --detach "$BASE_SHA"
           .venv/bin/pip install -e .
-          .venv/bin/python bench/startup_profile.py --runs 30 --output bench-base.json
+          bench/run_pinned.sh .venv/bin/python bench/startup_profile.py --runs 30 --output bench-base.json
           git checkout --detach "$HEAD_SHA"
           .venv/bin/pip install -e .
-          .venv/bin/python bench/perf_compare.py --baseline bench-base.json --candidate bench-head.json --report-path bench-compare.json
+          .venv/bin/python bench/perf_compare.py --baseline bench-base.json --candidate bench-head.json --report-path bench-compare.json || true
+
+      - name: Gate quick-quit regressions (PR)
+        if: github.event_name == 'pull_request'
+        run: |
+          .venv/bin/python bench/perf_compare.py \
+            --baseline bench-base.json \
+            --candidate bench-head.json \
+            --metrics quick_quit_mean_ms,quick_quit_p50_ms,quick_quit_stall_p95_ms,quick_quit_stall_ultrafast_p95_ms \
+            --relative-threshold 0.10 \
+            --absolute-threshold-ms 5 \
+            --report-path bench-compare-quick-quit.json
 
       - name: Append startup trend history
         if: always()
@@ -273,8 +293,10 @@ jobs:
           summary_path = Path(__import__("os").environ["GITHUB_STEP_SUMMARY"])
           head = json.loads(Path("bench-head.json").read_text(encoding="utf-8")) if Path("bench-head.json").exists() else {}
           compare = json.loads(Path("bench-compare.json").read_text(encoding="utf-8")) if Path("bench-compare.json").exists() else {}
+          quick_quit_compare = json.loads(Path("bench-compare-quick-quit.json").read_text(encoding="utf-8")) if Path("bench-compare-quick-quit.json").exists() else {}
           guardrail = json.loads(Path("bench-guardrail.json").read_text(encoding="utf-8")) if Path("bench-guardrail.json").exists() else {}
           rows = compare.get("comparisons", []) if isinstance(compare, dict) else []
+          quick_quit_rows = quick_quit_compare.get("comparisons", []) if isinstance(quick_quit_compare, dict) else []
           scenario_rows = guardrail.get("scenarioRows", []) if isinstance(guardrail, dict) else []
           with summary_path.open("a", encoding="utf-8") as fh:
               fh.write("### Performance Summary\n\n")
@@ -298,6 +320,22 @@ jobs:
                   fh.write("|---|---:|\n")
                   for metric in ("first_tick_p95_ms", "warm_setup_return_p95_ms", "warm_setup_complete_p95_ms", "quick_quit_mean_ms", "quick_quit_p50_ms", "quick_quit_stall_p95_ms"):
                       fh.write(f"| {metric} | {float(head.get(metric, 0.0)):.2f} |\n")
+              if quick_quit_rows:
+                  fh.write("\n### Quick-Quit Gate\n\n")
+                  fh.write("| Metric | Base (ms) | Head (ms) | Δ (ms) | Allowed (ms) | Status |\n")
+                  fh.write("|---|---:|---:|---:|---:|---|\n")
+                  for row in quick_quit_rows:
+                      status = "REGRESSION" if row.get("regressed") else "OK"
+                      fh.write(
+                          "| {metric} | {base:.2f} | {head_v:.2f} | {delta:.2f} | {allowed:.2f} | {status} |\n".format(
+                              metric=row.get("metric", ""),
+                              base=float(row.get("baselineMs", 0.0)),
+                              head_v=float(row.get("candidateMs", 0.0)),
+                              delta=float(row.get("deltaMs", 0.0)),
+                              allowed=float(row.get("allowedDeltaMs", 0.0)),
+                              status=status,
+                          )
+                      )
               if scenario_rows:
                   fh.write("\n### Perf Scenarios\n\n")
                   fh.write("| Scenario | Signal A (ms) | Signal B (ms) |\n")
@@ -332,6 +370,7 @@ jobs:
             bench-head.json
             bench-base.json
             bench-compare.json
+            bench-compare-quick-quit.json
             bench-trend.jsonl
             bench-guardrail.json
           if-no-files-found: ignore
