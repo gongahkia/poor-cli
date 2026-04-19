@@ -1,4 +1,4 @@
-.PHONY: cli server install installer install-info dev build run test test-unit test-lua lint bench-swe bench-startup-profile bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-status-view bench-context-memo bench-tool-schema release clean help hooks
+.PHONY: cli server install installer install-info dev build run test test-unit test-lua lint bench-swe bench-startup-profile bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
 
 PYTHON := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/python,python3)
 PIP := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/pip,pip)
@@ -102,6 +102,9 @@ bench-perf-reduce: ## reduce repeated profile jsons to median profile (ARGS='--i
 
 bench-perf-history: ## compute rolling quick-quit median+MAD from trend jsonl (ARGS='--input bench-trend.jsonl --output bench-history-reduced.json')
 	$(PYTHON) bench/perf_history_reduce.py $(ARGS)
+
+bench-provider-probe-breakdown: ## split provider probe cold latency by cache/tcp/http (ARGS='--runs 10')
+	$(PYTHON) bench/provider_probe_breakdown.py $(ARGS)
 
 bench-status-view: ## profile status-view burst polling (ARGS='--bursts 20 --requests-per-burst 25')
 	$(PYTHON) bench/status_view_burst_profile.py $(ARGS)

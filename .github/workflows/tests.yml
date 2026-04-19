@@ -263,6 +263,11 @@ jobs:
             --seed 42 \
             --report-path bench-compare-quick-quit.json
 
+      - name: Run provider probe breakdown
+        if: always()
+        run: |
+          bench/run_pinned.sh .venv/bin/python bench/provider_probe_breakdown.py --runs 6 --output bench-provider-probe-breakdown.json || true
+
       - name: Append startup trend history
         if: always()
         run: |
@@ -316,6 +321,7 @@ jobs:
           compare = json.loads(Path("bench-compare.json").read_text(encoding="utf-8")) if Path("bench-compare.json").exists() else {}
           quick_quit_compare = json.loads(Path("bench-compare-quick-quit.json").read_text(encoding="utf-8")) if Path("bench-compare-quick-quit.json").exists() else {}
           history_reduce = json.loads(Path("bench-history-reduced.json").read_text(encoding="utf-8")) if Path("bench-history-reduced.json").exists() else {}
+          provider_breakdown = json.loads(Path("bench-provider-probe-breakdown.json").read_text(encoding="utf-8")) if Path("bench-provider-probe-breakdown.json").exists() else {}
           guardrail = json.loads(Path("bench-guardrail.json").read_text(encoding="utf-8")) if Path("bench-guardrail.json").exists() else {}
           rows = compare.get("comparisons", []) if isinstance(compare, dict) else []
           quick_quit_rows = quick_quit_compare.get("comparisons", []) if isinstance(quick_quit_compare, dict) else []
@@ -376,6 +382,14 @@ jobs:
                               max_v=float(row.get("max_ms", 0.0)),
                           )
                       )
+              if provider_breakdown:
+                  fh.write("\n### Provider Probe Breakdown\n\n")
+                  fh.write("| Metric | Mean (ms) | P50 (ms) | P95 (ms) |\n")
+                  fh.write("|---|---:|---:|---:|\n")
+                  for prefix in ("probe_total", "cache_load", "tcp_connect", "http_probe"):
+                      fh.write(
+                          f"| {prefix} | {float(provider_breakdown.get(prefix + '_mean_ms', 0.0)):.2f} | {float(provider_breakdown.get(prefix + '_p50_ms', 0.0)):.2f} | {float(provider_breakdown.get(prefix + '_p95_ms', 0.0)):.2f} |\n"
+                      )
               if scenario_rows:
                   fh.write("\n### Perf Scenarios\n\n")
                   fh.write("| Scenario | Signal A (ms) | Signal B (ms) |\n")
@@ -419,6 +433,7 @@ jobs:
             bench-compare-quick-quit.json
             bench-trend.jsonl
             bench-history-reduced.json
+            bench-provider-probe-breakdown.json
             bench-guardrail.json
           if-no-files-found: ignore
 
