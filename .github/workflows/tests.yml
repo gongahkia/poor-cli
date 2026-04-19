@@ -249,6 +249,13 @@ jobs:
             --runs 5 \
             --output bench-import-head.json
 
+      - name: Run CLI command profile (head)
+        run: |
+          .venv/bin/python bench/cli_command_profile.py \
+            --python .venv/bin/python \
+            --runs 5 \
+            --output bench-cli-command-head.json
+
       - name: Run harness quality gate
         run: |
           .venv/bin/python bench/harness_quality_gate.py \
@@ -344,6 +351,10 @@ jobs:
             --python .venv/bin/python \
             --runs 5 \
             --output bench-import-base.json
+          .venv/bin/python bench/cli_command_profile.py \
+            --python .venv/bin/python \
+            --runs 5 \
+            --output bench-cli-command-base.json
           git checkout --detach "$HEAD_SHA"
           .venv/bin/pip install -e .
           .venv/bin/python bench/perf_compare.py --baseline bench-base.json --candidate bench-head.json --report-path bench-compare.json || true
@@ -370,6 +381,16 @@ jobs:
             --relative-threshold 0.20 \
             --absolute-threshold-ms 20 \
             --report-path bench-import-compare.json || true
+
+      - name: Gate CLI command latency against base (PR)
+        if: github.event_name == 'pull_request'
+        run: |
+          .venv/bin/python bench/cli_command_compare.py \
+            --baseline bench-cli-command-base.json \
+            --candidate bench-cli-command-head.json \
+            --relative-threshold 0.30 \
+            --absolute-threshold-ms 60 \
+            --report-path bench-cli-command-compare.json
 
       - name: Append startup trend history
         if: always()
@@ -534,6 +555,8 @@ jobs:
           compare = json.loads(Path("bench-compare.json").read_text(encoding="utf-8")) if Path("bench-compare.json").exists() else {}
           quick_quit_compare = json.loads(Path("bench-compare-quick-quit.json").read_text(encoding="utf-8")) if Path("bench-compare-quick-quit.json").exists() else {}
           import_compare = json.loads(Path("bench-import-compare.json").read_text(encoding="utf-8")) if Path("bench-import-compare.json").exists() else {}
+          cli_command_head = json.loads(Path("bench-cli-command-head.json").read_text(encoding="utf-8")) if Path("bench-cli-command-head.json").exists() else {}
+          cli_command_compare = json.loads(Path("bench-cli-command-compare.json").read_text(encoding="utf-8")) if Path("bench-cli-command-compare.json").exists() else {}
           harness_quality = json.loads(Path("bench-harness-quality.json").read_text(encoding="utf-8")) if Path("bench-harness-quality.json").exists() else {}
           turn_replay = json.loads(Path("bench-turn-replay.json").read_text(encoding="utf-8")) if Path("bench-turn-replay.json").exists() else {}
           router_calibration = json.loads(Path("bench-router-calibration.json").read_text(encoding="utf-8")) if Path("bench-router-calibration.json").exists() else {}
@@ -546,7 +569,9 @@ jobs:
           guardrail = json.loads(Path("bench-guardrail.json").read_text(encoding="utf-8")) if Path("bench-guardrail.json").exists() else {}
           rows = compare.get("comparisons", []) if isinstance(compare, dict) else []
           import_rows = import_compare.get("comparisons", []) if isinstance(import_compare, dict) else []
+          cli_command_rows = cli_command_compare.get("comparisons", []) if isinstance(cli_command_compare, dict) else []
           import_head_rows = import_head.get("scenarios", []) if isinstance(import_head, dict) else []
+          cli_command_head_rows = cli_command_head.get("commands", []) if isinstance(cli_command_head, dict) else []
           quick_quit_rows = quick_quit_compare.get("comparisons", []) if isinstance(quick_quit_compare, dict) else []
           history_rows = history_reduce.get("metrics", []) if isinstance(history_reduce, dict) else []
           harness_rows = harness_quality.get("rows", []) if isinstance(harness_quality, dict) else []
@@ -615,6 +640,31 @@ jobs:
                   for row in import_head_rows:
                       fh.write(
                           f"| {str(row.get('scenario', ''))} | {float(row.get('wall_p50_ms', 0.0)):.2f} | {float(row.get('import_total_p50_ms', 0.0)):.2f} |\n"
+                      )
+              if cli_command_rows:
+                  fh.write("\n### CLI Command Latency Compare\n\n")
+                  fh.write("| Command | Metric | Base (ms) | Head (ms) | Δ (ms) | Allowed (ms) | Status |\n")
+                  fh.write("|---|---|---:|---:|---:|---:|---|\n")
+                  for row in cli_command_rows:
+                      status = "REGRESSION" if row.get("regressed") else "OK"
+                      fh.write(
+                          "| {command} | {metric} | {base:.2f} | {head_v:.2f} | {delta:.2f} | {allowed:.2f} | {status} |\n".format(
+                              command=row.get("command", ""),
+                              metric=row.get("metric", ""),
+                              base=float(row.get("baselineMs", 0.0)),
+                              head_v=float(row.get("candidateMs", 0.0)),
+                              delta=float(row.get("deltaMs", 0.0)),
+                              allowed=float(row.get("allowedDeltaMs", 0.0)),
+                              status=status,
+                          )
+                      )
+              elif cli_command_head_rows:
+                  fh.write("\n### CLI Command Head\n\n")
+                  fh.write("| Command | Wall P50 (ms) | Wall P95 (ms) | Nonzero Exits |\n")
+                  fh.write("|---|---:|---:|---:|\n")
+                  for row in cli_command_head_rows:
+                      fh.write(
+                          f"| {str(row.get('command', ''))} | {float(row.get('wall_p50_ms', 0.0)):.2f} | {float(row.get('wall_p95_ms', 0.0)):.2f} | {int(row.get('nonzero_exit_count', 0) or 0)} |\n"
                       )
               if history_rows:
                   fh.write("\n### Quick-Quit Rolling Median/MAD\n\n")
@@ -774,6 +824,9 @@ jobs:
             bench-import-head.json
             bench-import-base.json
             bench-import-compare.json
+            bench-cli-command-head.json
+            bench-cli-command-base.json
+            bench-cli-command-compare.json
             bench-harness-quality.json
             bench-turn-replay.json
             bench-router-calibration.json
