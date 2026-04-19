@@ -1,4 +1,4 @@
-.PHONY: cli server install installer install-info dev build run test test-unit test-lua lint bench-swe bench-startup-profile bench-perf-compare bench-status-view bench-context-memo bench-tool-schema release clean help hooks
+.PHONY: cli server install installer install-info dev build run test test-unit test-lua lint bench-swe bench-startup-profile bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-status-view bench-context-memo bench-tool-schema release clean help hooks
 
 PYTHON := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/python,python3)
 PIP := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/pip,pip)
@@ -93,6 +93,12 @@ bench-startup-profile: ## run startup/quick-quit percentile profile (ARGS='--run
 
 bench-perf-compare: ## compare two startup profile jsons (ARGS='--baseline a.json --candidate b.json')
 	$(PYTHON) bench/perf_compare.py $(ARGS)
+
+bench-perf-bootstrap: ## bootstrap regression gate over repeated profiles (ARGS='--baseline-list a1.json,a2.json --candidate-list b1.json,b2.json')
+	$(PYTHON) bench/perf_bootstrap_gate.py $(ARGS)
+
+bench-perf-reduce: ## reduce repeated profile jsons to median profile (ARGS='--inputs a.json,b.json --report-path out.json')
+	$(PYTHON) bench/perf_profile_reduce.py $(ARGS)
 
 bench-status-view: ## profile status-view burst polling (ARGS='--bursts 20 --requests-per-burst 25')
 	$(PYTHON) bench/status_view_burst_profile.py $(ARGS)

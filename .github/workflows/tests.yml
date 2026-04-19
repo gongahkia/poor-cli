@@ -224,30 +224,43 @@ jobs:
       - name: Best-effort pin perf host
         run: bench/pin_perf_host.sh
 
-      - name: Run startup profile (head)
-        run: bench/run_pinned.sh .venv/bin/python bench/startup_profile.py --runs 30 --output bench-head.json
+      - name: Run startup profile (head x3 short)
+        run: |
+          for seed in 11 22 33; do
+            bench/run_pinned.sh .venv/bin/python bench/startup_profile.py --runs 10 --seed "$seed" --output "bench-head-$seed.json"
+          done
+          .venv/bin/python bench/perf_profile_reduce.py \
+            --inputs bench-head-11.json,bench-head-22.json,bench-head-33.json \
+            --report-path bench-head.json
 
-      - name: Compare startup profile against base (PR)
+      - name: Build base profiles and compare (PR)
         if: github.event_name == 'pull_request'
         run: |
           HEAD_SHA="$(git rev-parse HEAD)"
           BASE_SHA="${{ github.event.pull_request.base.sha }}"
           git checkout --detach "$BASE_SHA"
           .venv/bin/pip install -e .
-          bench/run_pinned.sh .venv/bin/python bench/startup_profile.py --runs 30 --output bench-base.json
+          for seed in 11 22 33; do
+            bench/run_pinned.sh .venv/bin/python bench/startup_profile.py --runs 10 --seed "$seed" --output "bench-base-$seed.json"
+          done
+          .venv/bin/python bench/perf_profile_reduce.py \
+            --inputs bench-base-11.json,bench-base-22.json,bench-base-33.json \
+            --report-path bench-base.json
           git checkout --detach "$HEAD_SHA"
           .venv/bin/pip install -e .
           .venv/bin/python bench/perf_compare.py --baseline bench-base.json --candidate bench-head.json --report-path bench-compare.json || true
 
-      - name: Gate quick-quit regressions (PR)
+      - name: Gate quick-quit regressions with bootstrap (PR)
         if: github.event_name == 'pull_request'
         run: |
-          .venv/bin/python bench/perf_compare.py \
-            --baseline bench-base.json \
-            --candidate bench-head.json \
+          .venv/bin/python bench/perf_bootstrap_gate.py \
+            --baseline-list bench-base-11.json,bench-base-22.json,bench-base-33.json \
+            --candidate-list bench-head-11.json,bench-head-22.json,bench-head-33.json \
             --metrics quick_quit_mean_ms,quick_quit_p50_ms,quick_quit_stall_p95_ms,quick_quit_stall_ultrafast_p95_ms \
             --relative-threshold 0.10 \
             --absolute-threshold-ms 5 \
+            --bootstrap-samples 12000 \
+            --seed 42 \
             --report-path bench-compare-quick-quit.json
 
       - name: Append startup trend history
@@ -322,16 +335,18 @@ jobs:
                       fh.write(f"| {metric} | {float(head.get(metric, 0.0)):.2f} |\n")
               if quick_quit_rows:
                   fh.write("\n### Quick-Quit Gate\n\n")
-                  fh.write("| Metric | Base (ms) | Head (ms) | Δ (ms) | Allowed (ms) | Status |\n")
-                  fh.write("|---|---:|---:|---:|---:|---|\n")
+                  fh.write("| Metric | Base Mean (ms) | Head Mean (ms) | Δ Mean (ms) | Δ CI Low (ms) | Δ CI High (ms) | Allowed (ms) | Status |\n")
+                  fh.write("|---|---:|---:|---:|---:|---:|---:|---|\n")
                   for row in quick_quit_rows:
                       status = "REGRESSION" if row.get("regressed") else "OK"
                       fh.write(
-                          "| {metric} | {base:.2f} | {head_v:.2f} | {delta:.2f} | {allowed:.2f} | {status} |\n".format(
+                          "| {metric} | {base:.2f} | {head_v:.2f} | {delta:.2f} | {ci_low:.2f} | {ci_high:.2f} | {allowed:.2f} | {status} |\n".format(
                               metric=row.get("metric", ""),
-                              base=float(row.get("baselineMs", 0.0)),
-                              head_v=float(row.get("candidateMs", 0.0)),
-                              delta=float(row.get("deltaMs", 0.0)),
+                              base=float(row.get("baselineMeanMs", 0.0)),
+                              head_v=float(row.get("candidateMeanMs", 0.0)),
+                              delta=float(row.get("deltaMeanMs", 0.0)),
+                              ci_low=float(row.get("deltaCiLowMs", 0.0)),
+                              ci_high=float(row.get("deltaCiHighMs", 0.0)),
                               allowed=float(row.get("allowedDeltaMs", 0.0)),
                               status=status,
                           )
@@ -369,6 +384,12 @@ jobs:
           path: |
             bench-head.json
             bench-base.json
+            bench-head-11.json
+            bench-head-22.json
+            bench-head-33.json
+            bench-base-11.json
+            bench-base-22.json
+            bench-base-33.json
             bench-compare.json
             bench-compare-quick-quit.json
             bench-trend.jsonl
