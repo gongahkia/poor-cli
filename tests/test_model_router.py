@@ -1,14 +1,13 @@
 """Tests for the model routing engine."""
-
-import pytest
 from poor_cli.model_router import (
     TaskComplexity,
     ClassifierContext,
     ModelRouter,
     RouterConfig,
-    RoutingDecision,
+    RouterCalibrationSample,
     classify_complexity,
     detect_low_confidence,
+    recommend_complexity_bias,
     _build_default_routing_table,
     _get_next_tier_model,
 )
@@ -273,3 +272,26 @@ class TestModelRouter:
         self.router.select_model("hi", "gemini", "gemini-2.5-pro")
         self.router.clear_log()
         assert self.router.get_routing_stats()["total_decisions"] == 0
+
+
+class TestRouterCalibration:
+    def test_recommend_complexity_bias_promotes_when_failure_high(self):
+        samples = [
+            RouterCalibrationSample(complexity=TaskComplexity.MODERATE, success=False, user_retried=True, estimated_cost_usd=0.002),
+            RouterCalibrationSample(complexity=TaskComplexity.MODERATE, success=False, user_retried=False, estimated_cost_usd=0.002),
+            RouterCalibrationSample(complexity=TaskComplexity.MODERATE, success=False, user_retried=True, estimated_cost_usd=0.002),
+            RouterCalibrationSample(complexity=TaskComplexity.MODERATE, success=True, user_retried=False, estimated_cost_usd=0.002),
+        ]
+        bias = recommend_complexity_bias(samples, failure_target=0.2, min_samples=4)
+        assert bias[TaskComplexity.MODERATE] == 1
+
+    def test_recommend_complexity_bias_demotes_when_stable_and_expensive(self):
+        samples = [
+            RouterCalibrationSample(complexity=TaskComplexity.SIMPLE, success=True, user_retried=False, estimated_cost_usd=0.03),
+            RouterCalibrationSample(complexity=TaskComplexity.SIMPLE, success=True, user_retried=False, estimated_cost_usd=0.02),
+            RouterCalibrationSample(complexity=TaskComplexity.SIMPLE, success=True, user_retried=False, estimated_cost_usd=0.03),
+            RouterCalibrationSample(complexity=TaskComplexity.SIMPLE, success=True, user_retried=False, estimated_cost_usd=0.02),
+            RouterCalibrationSample(complexity=TaskComplexity.SIMPLE, success=True, user_retried=False, estimated_cost_usd=0.03),
+        ]
+        bias = recommend_complexity_bias(samples, failure_target=0.25, min_samples=5, cost_high_watermark=0.01)
+        assert bias[TaskComplexity.SIMPLE] == -1

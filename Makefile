@@ -1,4 +1,4 @@
-.PHONY: cli server install installer install-info dev build run test test-unit test-lua lint bench-swe bench-startup-profile bench-import-time bench-tool-capability-graph bench-harness-quality bench-turn-replay bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
+.PHONY: cli server install installer install-info dev build run test test-unit test-lua lint bench-swe bench-startup-profile bench-import-time bench-tool-capability-graph bench-harness-quality bench-turn-replay bench-router-calibration bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
 
 PYTHON := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/python,python3)
 PIP := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/pip,pip)
@@ -102,6 +102,9 @@ bench-harness-quality: ## offline harness quality gate (ARGS='--output bench-har
 
 bench-turn-replay: ## deterministic turn replay drift gate (ARGS='--output bench-turn-replay.json')
 	$(PYTHON) bench/turn_replay_regression_gate.py $(ARGS)
+
+bench-router-calibration: ## derive model-router calibration from run history (ARGS='--provider gemini --output bench-router-calibration.json')
+	$(PYTHON) bench/model_router_calibration.py $(ARGS)
 
 bench-perf-import-compare: ## compare two import-time profile jsons (ARGS='--baseline a.json --candidate b.json')
 	$(PYTHON) bench/perf_import_compare.py $(ARGS)

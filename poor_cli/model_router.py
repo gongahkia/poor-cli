@@ -259,6 +259,59 @@ class RouterConfig:
     custom_routing_table: Optional[Dict[str, Dict[str, str]]] = None # provider -> {complexity -> model}
 
 
+@dataclass(frozen=True)
+class RouterCalibrationSample:
+    """Observed routing outcome used for offline router calibration."""
+
+    complexity: TaskComplexity
+    success: bool
+    user_retried: bool = False
+    estimated_cost_usd: float = 0.0
+
+
+def recommend_complexity_bias(
+    samples: List[RouterCalibrationSample],
+    *,
+    failure_target: float = 0.15,
+    min_samples: int = 8,
+    cost_high_watermark: float = 0.01,
+) -> Dict[TaskComplexity, int]:
+    """Recommend per-complexity routing bias from observed outcomes.
+
+    Returns bias map where:
+    - ``1`` = bias one tier more expensive (quality tilt)
+    - ``0`` = no change
+    - ``-1`` = bias one tier cheaper (cost tilt)
+    """
+    bounded_target = max(0.0, min(1.0, float(failure_target)))
+    bounded_min_samples = max(1, int(min_samples))
+    bounded_cost = max(0.0, float(cost_high_watermark))
+
+    groups: Dict[TaskComplexity, List[RouterCalibrationSample]] = {level: [] for level in TaskComplexity}
+    for sample in samples:
+        if isinstance(sample, RouterCalibrationSample):
+            groups[sample.complexity].append(sample)
+
+    recommendations: Dict[TaskComplexity, int] = {}
+    for complexity in TaskComplexity:
+        bucket = groups.get(complexity, [])
+        total = len(bucket)
+        if total < bounded_min_samples:
+            recommendations[complexity] = 0
+            continue
+        failures = sum(1 for row in bucket if (not row.success) or row.user_retried)
+        failure_rate = failures / float(total)
+        avg_cost = sum(max(0.0, float(row.estimated_cost_usd)) for row in bucket) / float(total)
+        if failure_rate > min(1.0, bounded_target + 0.12):
+            recommendations[complexity] = 1
+            continue
+        if failure_rate < max(0.0, bounded_target - 0.08) and avg_cost > bounded_cost:
+            recommendations[complexity] = -1
+            continue
+        recommendations[complexity] = 0
+    return recommendations
+
+
 class ModelRouter:
     """Routes queries to the cheapest capable model."""
 

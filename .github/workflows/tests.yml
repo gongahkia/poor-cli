@@ -272,6 +272,14 @@ jobs:
             --max-latency-delta-ms 400 \
             --max-cost-delta-usd 0.05
 
+      - name: Run model router calibration report
+        run: |
+          .venv/bin/python bench/model_router_calibration.py \
+            --repo-root . \
+            --output bench-router-calibration.json \
+            --min-samples 3 \
+            --max-global-failure-rate 1.0
+
       - name: Build base profiles and compare (PR)
         if: github.event_name == 'pull_request'
         run: |
@@ -422,6 +430,7 @@ jobs:
           import_compare = json.loads(Path("bench-import-compare.json").read_text(encoding="utf-8")) if Path("bench-import-compare.json").exists() else {}
           harness_quality = json.loads(Path("bench-harness-quality.json").read_text(encoding="utf-8")) if Path("bench-harness-quality.json").exists() else {}
           turn_replay = json.loads(Path("bench-turn-replay.json").read_text(encoding="utf-8")) if Path("bench-turn-replay.json").exists() else {}
+          router_calibration = json.loads(Path("bench-router-calibration.json").read_text(encoding="utf-8")) if Path("bench-router-calibration.json").exists() else {}
           history_reduce = json.loads(Path("bench-history-reduced.json").read_text(encoding="utf-8")) if Path("bench-history-reduced.json").exists() else {}
           baseline_meta = json.loads(Path("bench-baseline-meta.json").read_text(encoding="utf-8")) if Path("bench-baseline-meta.json").exists() else {}
           trend_dashboard_md = Path("bench-trend-dashboard.md").read_text(encoding="utf-8") if Path("bench-trend-dashboard.md").exists() else ""
@@ -546,6 +555,21 @@ jobs:
                   fh.write(f"| completionReasonDriftRate | {float(comparison.get('completionReasonDriftRate', 0.0)):.3f} |\n")
                   fh.write(f"| latencyDeltaAbsMs | {float(comparison.get('latencyDeltaAbsMs', 0.0)):.3f} |\n")
                   fh.write(f"| costDeltaAbsUsd | {float(comparison.get('costDeltaAbsUsd', 0.0)):.6f} |\n")
+              if router_calibration:
+                  providers = router_calibration.get("providers", []) if isinstance(router_calibration, dict) else []
+                  fh.write("\n### Model Router Calibration\n\n")
+                  fh.write("| Provider | Samples | Global Failure Rate |\n")
+                  fh.write("|---|---:|---:|\n")
+                  for row in providers:
+                      if not isinstance(row, dict):
+                          continue
+                      fh.write(
+                          "| {provider} | {samples} | {failure:.3f} |\n".format(
+                              provider=str(row.get("provider", "")),
+                              samples=int(row.get("sampleCount", 0) or 0),
+                              failure=float(row.get("globalFailureRate", 0.0) or 0.0),
+                          )
+                      )
               if scenario_rows:
                   fh.write("\n### Perf Scenarios\n\n")
                   fh.write("| Scenario | Signal A (ms) | Signal B (ms) |\n")
@@ -604,6 +628,7 @@ jobs:
             bench-import-compare.json
             bench-harness-quality.json
             bench-turn-replay.json
+            bench-router-calibration.json
             bench-trend-history/bench-trend.jsonl
             bench-history-reduced.json
             bench-trend-dashboard.json
