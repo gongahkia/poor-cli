@@ -288,6 +288,14 @@ jobs:
             --max-budget-delta-ratio 0.8 \
             --output bench-budget-retuning.json
 
+      - name: Run harness failure-injection matrix
+        run: |
+          .venv/bin/python bench/harness_failure_matrix.py \
+            --output bench-harness-failure.json \
+            --min-recovery-success-rate 0.8 \
+            --max-stuck-count 0 \
+            --max-mean-recovery-latency-ms 2500
+
       - name: Build base profiles and compare (PR)
         if: github.event_name == 'pull_request'
         run: |
@@ -440,6 +448,7 @@ jobs:
           turn_replay = json.loads(Path("bench-turn-replay.json").read_text(encoding="utf-8")) if Path("bench-turn-replay.json").exists() else {}
           router_calibration = json.loads(Path("bench-router-calibration.json").read_text(encoding="utf-8")) if Path("bench-router-calibration.json").exists() else {}
           budget_retuning = json.loads(Path("bench-budget-retuning.json").read_text(encoding="utf-8")) if Path("bench-budget-retuning.json").exists() else {}
+          harness_failure = json.loads(Path("bench-harness-failure.json").read_text(encoding="utf-8")) if Path("bench-harness-failure.json").exists() else {}
           history_reduce = json.loads(Path("bench-history-reduced.json").read_text(encoding="utf-8")) if Path("bench-history-reduced.json").exists() else {}
           baseline_meta = json.loads(Path("bench-baseline-meta.json").read_text(encoding="utf-8")) if Path("bench-baseline-meta.json").exists() else {}
           trend_dashboard_md = Path("bench-trend-dashboard.md").read_text(encoding="utf-8") if Path("bench-trend-dashboard.md").exists() else ""
@@ -592,6 +601,19 @@ jobs:
                   fh.write(
                       f"| maxBudgetDeltaRatio | {float(budget_retuning.get('maxBudgetDeltaRatio', 0.0) or 0.0):.3f} |\n"
                   )
+              if harness_failure:
+                  fh.write("\n### Harness Failure Matrix\n\n")
+                  fh.write("| Metric | Value |\n")
+                  fh.write("|---|---:|\n")
+                  fh.write(
+                      f"| recoverySuccessRate | {float(harness_failure.get('recoverySuccessRate', 0.0) or 0.0):.3f} |\n"
+                  )
+                  fh.write(
+                      f"| stuckCount | {int(harness_failure.get('stuckCount', 0) or 0)} |\n"
+                  )
+                  fh.write(
+                      f"| meanRecoveryLatencyMs | {float(harness_failure.get('meanRecoveryLatencyMs', 0.0) or 0.0):.3f} |\n"
+                  )
               if scenario_rows:
                   fh.write("\n### Perf Scenarios\n\n")
                   fh.write("| Scenario | Signal A (ms) | Signal B (ms) |\n")
@@ -652,6 +674,7 @@ jobs:
             bench-turn-replay.json
             bench-router-calibration.json
             bench-budget-retuning.json
+            bench-harness-failure.json
             bench-trend-history/bench-trend.jsonl
             bench-history-reduced.json
             bench-trend-dashboard.json
