@@ -9,6 +9,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.error import URLError
 from urllib.parse import urlparse
@@ -50,6 +51,10 @@ def _bool_env(name: str, default: bool = False) -> bool:
 
 _TCP_CONNECT_TIMEOUT_SECONDS = max(0.05, _float_env("POORCLI_PROVIDER_PROBE_TCP_TIMEOUT_S", 0.35))
 _HTTP_PROBE_TIMEOUT_SECONDS = max(0.10, _float_env("POORCLI_PROVIDER_PROBE_HTTP_TIMEOUT_S", 1.20))
+_PROBE_CACHE_PERSIST_TTL_SECONDS = max(
+    _PROBE_CACHE_STALE_TTL_SECONDS,
+    _float_env("POORCLI_PROVIDER_PROBE_PERSIST_TTL_S", 900.0),
+)
 _probe_cache_at = 0.0
 _probe_cache_signature = ""
 _probe_cache_result: Optional[Dict[str, Dict[str, Any]]] = None
@@ -136,6 +141,8 @@ def probe_providers(
     now = time.monotonic()
     if not force_refresh:
         cached = _copy_probe_cache(signature)
+        if cached is None:
+            cached = _load_probe_cache_from_disk(signature)
         if cached is not None:
             age = now - _probe_cache_at
             if age <= _PROBE_CACHE_FRESH_TTL_SECONDS:
@@ -255,6 +262,75 @@ def _store_probe_cache(
             name: dict(payload)
             for name, payload in results.items()
         }
+    _persist_probe_cache_to_disk(signature, results)
+
+
+def _probe_cache_path() -> Path:
+    raw = str(os.environ.get("POORCLI_PROVIDER_PROBE_CACHE_PATH", "") or "").strip()
+    if raw:
+        return Path(raw).expanduser()
+    return Path.home() / ".poor-cli" / "cache" / "provider_probe_cache.json"
+
+
+def _persist_probe_cache_to_disk(
+    signature: str,
+    results: Dict[str, Dict[str, Any]],
+) -> None:
+    path = _probe_cache_path()
+    payload = {
+        "signature": signature,
+        "cached_at_unix": time.time(),
+        "results": {
+            name: dict(entry)
+            for name, entry in (results or {}).items()
+        },
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        tmp_path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+        tmp_path.replace(path)
+    except Exception:
+        return
+
+
+def _load_probe_cache_from_disk(signature: str) -> Optional[Dict[str, Dict[str, Any]]]:
+    path = _probe_cache_path()
+    try:
+        if not path.exists():
+            return None
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    if str(payload.get("signature", "") or "") != signature:
+        return None
+    cached_at_unix = float(payload.get("cached_at_unix", 0.0) or 0.0)
+    if cached_at_unix <= 0:
+        return None
+    age_seconds = max(0.0, time.time() - cached_at_unix)
+    if age_seconds > _PROBE_CACHE_PERSIST_TTL_SECONDS:
+        return None
+    raw_results = payload.get("results")
+    if not isinstance(raw_results, dict):
+        return None
+    results = {
+        str(name): dict(entry)
+        for name, entry in raw_results.items()
+        if isinstance(entry, dict)
+    }
+    if not results:
+        return None
+    _store_probe_cache(
+        signature,
+        results,
+        now=max(0.0, time.monotonic() - age_seconds),
+    )
+    return {
+        name: dict(entry)
+        for name, entry in results.items()
+    }
 
 
 def _refresh_probe_cache_async(
