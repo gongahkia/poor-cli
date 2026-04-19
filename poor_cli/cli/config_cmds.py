@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 from pathlib import Path
 from typing import Any, Sequence
@@ -194,65 +193,10 @@ def run_trust_mode(argv: Sequence[str]) -> int:
         return 0
     raise SystemExit(f"Unknown trust subcommand: {cmd}")
 
-
-def run_provider_mode(argv: Sequence[str]) -> int:
-    parser = argparse.ArgumentParser(prog="poor-cli provider")
-    sub = parser.add_subparsers(dest="subcommand", required=True)
-    p_list = sub.add_parser("list")
-    p_list.add_argument("--json", action="store_true")
-    p_info = sub.add_parser("info")
-    p_info.add_argument("--config", help="config file path")
-    p_info.add_argument("--json", action="store_true")
-    p_switch = sub.add_parser("switch")
-    p_switch.add_argument("name")
-    p_switch.add_argument("model", nargs="?")
-    p_switch.add_argument("--config", help="config file path")
-    p_switch.add_argument("--json", action="store_true")
-    args = parser.parse_args(list(argv))
-    if args.subcommand == "list":
-        from ..providers.provider_factory import ProviderFactory
-        payload = [{"name": name} for name in ProviderFactory.list_provider_names(include_aliases=True)]
-        if args.json:
-            _print_json(payload)
-        else:
-            for p in payload:
-                print(f"  {p['name']}")
-        return 0
-    if args.subcommand == "info":
-        async def _info():
-            core = _core_cls()(config_path=Path(args.config).expanduser() if args.config else None)
-            await core.initialize()
-            try:
-                return core.get_provider_info()
-            finally:
-                await core.shutdown()
-        info = asyncio.run(_info())
-        if args.json:
-            _print_json(info)
-        else:
-            for k, v in info.items():
-                print(f"  {k}: {v}")
-        return 0
-    if args.subcommand == "switch":
-        async def _switch():
-            core = _core_cls()(config_path=Path(args.config).expanduser() if args.config else None)
-            await core.initialize()
-            try:
-                await core.switch_provider(args.name, model_name=args.model)
-                return core.get_provider_info()
-            finally:
-                await core.shutdown()
-        info = asyncio.run(_switch())
-        if args.json:
-            _print_json(info)
-        else:
-            print(f"Switched to {info.get('name', args.name)} / {info.get('model', args.model or 'default')}")
-        return 0
-    raise SystemExit(f"Unknown provider subcommand: {args.subcommand}")
-
-
 def run_core_info_command(method_name: str, argv: Sequence[str], prog: str) -> int:
     """Generic handler for core info queries (doctor, status, policy, tools, mcp, cost)."""
+    import asyncio
+
     parser = argparse.ArgumentParser(prog=prog)
     parser.add_argument("--config", help="config file path")
     parser.add_argument("--json", action="store_true")
@@ -282,6 +226,8 @@ def run_core_info_command(method_name: str, argv: Sequence[str], prog: str) -> i
 
 
 def run_cost_mode(argv: Sequence[str]) -> int:
+    import asyncio
+
     parser = argparse.ArgumentParser(prog="poor-cli cost")
     sub = parser.add_subparsers(dest="subcommand")
     sub.add_parser("summary")
@@ -355,6 +301,8 @@ def run_cost_mode(argv: Sequence[str]) -> int:
 
 
 def run_context_mode(argv: Sequence[str]) -> int:
+    import asyncio
+
     parser = argparse.ArgumentParser(prog="poor-cli context")
     sub = parser.add_subparsers(dest="subcommand")
     p_compact = sub.add_parser("compact")
@@ -414,6 +362,8 @@ def run_workflow_mode(argv: Sequence[str]) -> int:
 
 
 def run_services_mode(argv: Sequence[str]) -> int:
+    import asyncio
+
     parser = argparse.ArgumentParser(prog="poor-cli services")
     sub = parser.add_subparsers(dest="subcommand")
     p_start = sub.add_parser("start")
@@ -453,6 +403,8 @@ def run_services_mode(argv: Sequence[str]) -> int:
 
 
 def run_search_mode(argv: Sequence[str]) -> int:
+    import asyncio
+
     parser = argparse.ArgumentParser(prog="poor-cli search")
     parser.add_argument("query", nargs="?")
     parser.add_argument("--mode", choices=("semantic", "hybrid"), default="hybrid")
