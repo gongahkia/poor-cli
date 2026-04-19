@@ -296,6 +296,14 @@ jobs:
                   fh.write(json.dumps(row, sort_keys=True) + "\n")
           PY
 
+      - name: Reduce quick-quit history
+        if: always()
+        run: |
+          .venv/bin/python bench/perf_history_reduce.py \
+            --input bench-trend.jsonl \
+            --window 40 \
+            --output bench-history-reduced.json
+
       - name: Publish perf summary table
         if: always()
         run: |
@@ -307,9 +315,11 @@ jobs:
           head = json.loads(Path("bench-head.json").read_text(encoding="utf-8")) if Path("bench-head.json").exists() else {}
           compare = json.loads(Path("bench-compare.json").read_text(encoding="utf-8")) if Path("bench-compare.json").exists() else {}
           quick_quit_compare = json.loads(Path("bench-compare-quick-quit.json").read_text(encoding="utf-8")) if Path("bench-compare-quick-quit.json").exists() else {}
+          history_reduce = json.loads(Path("bench-history-reduced.json").read_text(encoding="utf-8")) if Path("bench-history-reduced.json").exists() else {}
           guardrail = json.loads(Path("bench-guardrail.json").read_text(encoding="utf-8")) if Path("bench-guardrail.json").exists() else {}
           rows = compare.get("comparisons", []) if isinstance(compare, dict) else []
           quick_quit_rows = quick_quit_compare.get("comparisons", []) if isinstance(quick_quit_compare, dict) else []
+          history_rows = history_reduce.get("metrics", []) if isinstance(history_reduce, dict) else []
           scenario_rows = guardrail.get("scenarioRows", []) if isinstance(guardrail, dict) else []
           with summary_path.open("a", encoding="utf-8") as fh:
               fh.write("### Performance Summary\n\n")
@@ -349,6 +359,21 @@ jobs:
                               ci_high=float(row.get("deltaCiHighMs", 0.0)),
                               allowed=float(row.get("allowedDeltaMs", 0.0)),
                               status=status,
+                          )
+                      )
+              if history_rows:
+                  fh.write("\n### Quick-Quit Rolling Median/MAD\n\n")
+                  fh.write("| Metric | Count | Median (ms) | MAD (ms) | Min (ms) | Max (ms) |\n")
+                  fh.write("|---|---:|---:|---:|---:|---:|\n")
+                  for row in history_rows:
+                      fh.write(
+                          "| {metric} | {count} | {median:.2f} | {mad:.2f} | {min_v:.2f} | {max_v:.2f} |\n".format(
+                              metric=row.get("metric", ""),
+                              count=int(row.get("count", 0)),
+                              median=float(row.get("median_ms", 0.0)),
+                              mad=float(row.get("mad_ms", 0.0)),
+                              min_v=float(row.get("min_ms", 0.0)),
+                              max_v=float(row.get("max_ms", 0.0)),
                           )
                       )
               if scenario_rows:
@@ -393,6 +418,7 @@ jobs:
             bench-compare.json
             bench-compare-quick-quit.json
             bench-trend.jsonl
+            bench-history-reduced.json
             bench-guardrail.json
           if-no-files-found: ignore
 
