@@ -1,4 +1,4 @@
-.PHONY: cli server install installer install-info dev build run test test-unit test-lua lint bench-swe bench-startup-profile bench-import-time bench-tool-capability-graph bench-harness-quality bench-turn-replay bench-router-calibration bench-budget-retuning bench-harness-failure bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
+.PHONY: cli server install installer install-info dev build run test test-unit test-lua lint bench-swe bench-startup-profile bench-import-time bench-tool-capability-graph bench-harness-quality bench-turn-replay bench-router-calibration bench-budget-retuning bench-harness-failure bench-harness-burnin bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
 
 PYTHON := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/python,python3)
 PIP := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/pip,pip)
@@ -111,6 +111,9 @@ bench-budget-retuning: ## run token-budget retuning gate from budget logs (ARGS=
 
 bench-harness-failure: ## failure-injection matrix for harness recovery (ARGS='--output bench-harness-failure.json')
 	$(PYTHON) bench/harness_failure_matrix.py $(ARGS)
+
+bench-harness-burnin: ## summarize 14-day gate burn-in history (ARGS='--output-json bench-harness-burnin.json --output-markdown bench-harness-burnin.md')
+	$(PYTHON) bench/harness_gate_burnin.py $(ARGS)
 
 bench-perf-import-compare: ## compare two import-time profile jsons (ARGS='--baseline a.json --candidate b.json')
 	$(PYTHON) bench/perf_import_compare.py $(ARGS)

@@ -407,6 +407,96 @@ jobs:
           trend_path.write_text("\n".join(existing[-max_rows:]) + ("\n" if existing else ""), encoding="utf-8")
           PY
 
+      - name: Append harness gate history
+        if: always()
+        run: |
+          .venv/bin/python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          history_path = Path("bench-trend-history") / "harness-gates-history.jsonl"
+          history_path.parent.mkdir(parents=True, exist_ok=True)
+          existing = history_path.read_text(encoding="utf-8").splitlines() if history_path.exists() else []
+          at = datetime.now(timezone.utc).isoformat()
+          common = {
+              "at": at,
+              "event": os.environ.get("GITHUB_EVENT_NAME", ""),
+              "run_id": os.environ.get("GITHUB_RUN_ID", ""),
+              "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+              "sha": os.environ.get("GITHUB_SHA", ""),
+              "ref": os.environ.get("GITHUB_REF_NAME", ""),
+          }
+
+          def add_gate(path: str, gate: str, metrics: dict) -> None:
+              existing.append(json.dumps({**common, "gate": gate, "metrics": metrics}, sort_keys=True))
+
+          if Path("bench-harness-quality.json").exists():
+              payload = json.loads(Path("bench-harness-quality.json").read_text(encoding="utf-8"))
+              add_gate(
+                  "bench-harness-quality.json",
+                  "harness_quality",
+                  {
+                      "taskSuccessRate": float(payload.get("taskSuccessRate", 0.0) or 0.0),
+                      "avgToolCalls": float(payload.get("avgToolCalls", 0.0) or 0.0),
+                      "avgToolPrecision": float(payload.get("avgToolPrecision", 0.0) or 0.0),
+                      "avgToolRecall": float(payload.get("avgToolRecall", 0.0) or 0.0),
+                      "avgExtraCalls": float(payload.get("avgExtraCalls", 0.0) or 0.0),
+                      "p95TurnLatencyMs": float(payload.get("p95TurnLatencyMs", 0.0) or 0.0),
+                      "estimatedCostUsdTotal": float(payload.get("estimatedCostUsdTotal", 0.0) or 0.0),
+                  },
+              )
+          if Path("bench-turn-replay.json").exists():
+              payload = json.loads(Path("bench-turn-replay.json").read_text(encoding="utf-8"))
+              comparison = payload.get("comparison", {}) if isinstance(payload, dict) else {}
+              add_gate(
+                  "bench-turn-replay.json",
+                  "turn_replay",
+                  {
+                      "decisionDriftRate": float(comparison.get("decisionDriftRate", 0.0) or 0.0),
+                      "completionReasonDriftRate": float(comparison.get("completionReasonDriftRate", 0.0) or 0.0),
+                      "latencyDeltaAbsMs": float(comparison.get("latencyDeltaAbsMs", 0.0) or 0.0),
+                      "costDeltaAbsUsd": float(comparison.get("costDeltaAbsUsd", 0.0) or 0.0),
+                  },
+              )
+          if Path("bench-harness-failure.json").exists():
+              payload = json.loads(Path("bench-harness-failure.json").read_text(encoding="utf-8"))
+              add_gate(
+                  "bench-harness-failure.json",
+                  "failure_matrix",
+                  {
+                      "recoverySuccessRate": float(payload.get("recoverySuccessRate", 0.0) or 0.0),
+                      "stuckCount": float(payload.get("stuckCount", 0.0) or 0.0),
+                      "meanRecoveryLatencyMs": float(payload.get("meanRecoveryLatencyMs", 0.0) or 0.0),
+                  },
+              )
+          if Path("bench-budget-retuning.json").exists():
+              payload = json.loads(Path("bench-budget-retuning.json").read_text(encoding="utf-8"))
+              retuning = payload.get("retuning", {}) if isinstance(payload, dict) else {}
+              add_gate(
+                  "bench-budget-retuning.json",
+                  "budget_retuning",
+                  {
+                      "maxBudgetDeltaRatio": float(payload.get("maxBudgetDeltaRatio", 0.0) or 0.0),
+                      "savingsPct": float(retuning.get("savings_pct", 0.0) or 0.0),
+                  },
+              )
+
+          max_rows = 2000
+          history_path.write_text("\n".join(existing[-max_rows:]) + ("\n" if existing else ""), encoding="utf-8")
+          PY
+
+      - name: Build harness gate burn-in report
+        if: always()
+        run: |
+          .venv/bin/python bench/harness_gate_burnin.py \
+            --input bench-trend-history/harness-gates-history.jsonl \
+            --window-days 14 \
+            --min-samples-per-metric 10 \
+            --output-json bench-harness-burnin.json \
+            --output-markdown bench-harness-burnin.md
+
       - name: Reduce quick-quit history
         if: always()
         run: |
@@ -449,6 +539,7 @@ jobs:
           router_calibration = json.loads(Path("bench-router-calibration.json").read_text(encoding="utf-8")) if Path("bench-router-calibration.json").exists() else {}
           budget_retuning = json.loads(Path("bench-budget-retuning.json").read_text(encoding="utf-8")) if Path("bench-budget-retuning.json").exists() else {}
           harness_failure = json.loads(Path("bench-harness-failure.json").read_text(encoding="utf-8")) if Path("bench-harness-failure.json").exists() else {}
+          harness_burnin = json.loads(Path("bench-harness-burnin.json").read_text(encoding="utf-8")) if Path("bench-harness-burnin.json").exists() else {}
           history_reduce = json.loads(Path("bench-history-reduced.json").read_text(encoding="utf-8")) if Path("bench-history-reduced.json").exists() else {}
           baseline_meta = json.loads(Path("bench-baseline-meta.json").read_text(encoding="utf-8")) if Path("bench-baseline-meta.json").exists() else {}
           trend_dashboard_md = Path("bench-trend-dashboard.md").read_text(encoding="utf-8") if Path("bench-trend-dashboard.md").exists() else ""
@@ -614,6 +705,19 @@ jobs:
                   fh.write(
                       f"| meanRecoveryLatencyMs | {float(harness_failure.get('meanRecoveryLatencyMs', 0.0) or 0.0):.3f} |\n"
                   )
+              if harness_burnin:
+                  fh.write("\n### Harness Burn-in\n\n")
+                  fh.write("| Metric | Value |\n")
+                  fh.write("|---|---:|\n")
+                  fh.write(
+                      f"| readyToTighten | {'yes' if bool(harness_burnin.get('readyToTighten')) else 'no'} |\n"
+                  )
+                  fh.write(
+                      f"| windowSpanDays | {float(harness_burnin.get('windowSpanDays', 0.0) or 0.0):.2f} |\n"
+                  )
+                  fh.write(
+                      f"| windowRows | {int(harness_burnin.get('windowRows', 0) or 0)} |\n"
+                  )
               if scenario_rows:
                   fh.write("\n### Perf Scenarios\n\n")
                   fh.write("| Scenario | Signal A (ms) | Signal B (ms) |\n")
@@ -675,7 +779,10 @@ jobs:
             bench-router-calibration.json
             bench-budget-retuning.json
             bench-harness-failure.json
+            bench-harness-burnin.json
+            bench-harness-burnin.md
             bench-trend-history/bench-trend.jsonl
+            bench-trend-history/harness-gates-history.jsonl
             bench-history-reduced.json
             bench-trend-dashboard.json
             bench-trend-dashboard.md
