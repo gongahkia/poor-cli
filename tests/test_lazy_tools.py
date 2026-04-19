@@ -232,6 +232,45 @@ class TestLazyToolSelection(unittest.IsolatedAsyncioTestCase):
         self.assertIn("web_search", core._active_tool_names)
 
 
+class TestToolSchemaMaterializationCache(unittest.TestCase):
+    def test_shipping_declarations_cache_reuses_and_invalidates(self) -> None:
+        class _CountingRegistry:
+            def __init__(self) -> None:
+                self.calls = 0
+                self.tools = {"read_file": object(), "write_file": object()}
+
+            def get_tool_declarations(self):
+                self.calls += 1
+                return [
+                    {
+                        "name": "read_file",
+                        "description": "read",
+                        "parameters": {"type": "OBJECT", "properties": {}, "required": []},
+                    }
+                ]
+
+        core = object.__new__(PoorCLICore)
+        core.tool_registry = _CountingRegistry()
+        core.config = Config()
+        core._mcp_manager = None
+        core._tool_schema_materialization_cache = {}
+
+        first = core._tool_declarations_for_shipping()
+        second = core._tool_declarations_for_shipping()
+        self.assertEqual(core.tool_registry.calls, 1)
+        self.assertEqual(first[0]["name"], "read_file")
+        self.assertEqual(second[0]["name"], "read_file")
+        self.assertIsNot(first, second)
+
+        core.config.model.model_name = "gpt-5.4"
+        core._tool_declarations_for_shipping()
+        self.assertEqual(core.tool_registry.calls, 2)
+
+        core.tool_registry.tools["edit_file"] = object()
+        core._tool_declarations_for_shipping()
+        self.assertEqual(core.tool_registry.calls, 3)
+
+
 class TestLazyMCPTools(unittest.IsolatedAsyncioTestCase):
     async def test_mcp_health_check_does_not_force_schema_load(self) -> None:
         with tempfile.TemporaryDirectory() as td:

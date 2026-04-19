@@ -1626,12 +1626,51 @@ class ToolDispatcher:
         mode = "all"
         if self.config is not None:
             mode = str(getattr(self.config.model, "tool_schema_mode", "all") or "all")
+        provider_name = ""
+        model_name = ""
+        if self.config is not None and getattr(self.config, "model", None) is not None:
+            provider_name = str(getattr(self.config.model, "provider", "") or "")
+            model_name = str(getattr(self.config.model, "model_name", "") or "")
+        tool_count = 0
+        try:
+            tool_count = len(getattr(self.tool_registry, "tools", {}) or {})
+        except Exception:
+            tool_count = 0
+        cache_key = hashlib.sha256(
+            json.dumps(
+                {
+                    "mode": mode,
+                    "provider": provider_name,
+                    "model": model_name,
+                    "registryId": id(self.tool_registry),
+                    "toolCount": tool_count,
+                    "mcpServers": self._mcp_server_names(),
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8", errors="replace")
+        ).hexdigest()
+        cache = getattr(self, "_tool_schema_materialization_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._tool_schema_materialization_cache = cache
+        cached = cache.get(cache_key)
+        if isinstance(cached, list):
+            return [dict(declaration) for declaration in cached]
         if mode == "core" and isinstance(self.tool_registry, EnhancedToolRegistry):
-            return self.tool_registry.get_tool_declarations_for_groups(
+            declarations = self.tool_registry.get_tool_declarations_for_groups(
                 (CORE_TOOL_GROUP,),
                 mcp_server_names=self._mcp_server_names(),
             )
-        return self.tool_registry.get_tool_declarations()
+        else:
+            declarations = self.tool_registry.get_tool_declarations()
+        cached_payload = [dict(declaration) for declaration in declarations]
+        cache[cache_key] = cached_payload
+        if len(cache) > 8:
+            oldest_key = next(iter(cache))
+            if oldest_key != cache_key:
+                cache.pop(oldest_key, None)
+        return [dict(declaration) for declaration in cached_payload]
 
 
     async def preview_mutation(

@@ -273,6 +273,7 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
         self._provider_readiness_cache: Dict[str, Dict[str, Any]] = {}
         self._provider_probe_task: Optional[asyncio.Task] = None
         self._provider_probe_timer: Optional[asyncio.TimerHandle] = None
+        self._tool_schema_materialization_cache: Dict[str, List[Dict[str, Any]]] = {}
         self._system_refresh_inputs: Optional[Tuple[str, ...]] = None
         self._perf_span_history: List[Dict[str, Any]] = []
         self._active_turn_diagnostics: Optional[Dict[str, Any]] = None
