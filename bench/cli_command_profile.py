@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 
-DEFAULT_COMMANDS = "--version;--help;provider list;trust status;config list"
+DEFAULT_COMMANDS = "--version;--help;provider list;provider info --json;trust status;config list"
 
 
 def _percentile(values: List[float], pct: float) -> float:

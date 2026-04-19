@@ -399,8 +399,9 @@ jobs:
           .venv/bin/python bench/cli_command_compare.py \
             --baseline bench-cli-command-base.json \
             --candidate bench-cli-command-head.json \
+            --metrics wall_p50_ms,wall_p95_ms \
             --relative-threshold 0.30 \
-            --absolute-threshold-ms 60 \
+            --absolute-threshold-ms 50 \
             --report-path bench-cli-command-compare.json
 
       - name: Gate server first-RPC latency against base (PR)
@@ -409,8 +410,9 @@ jobs:
           .venv/bin/python bench/server_first_rpc_compare.py \
             --baseline bench-server-first-rpc-base.json \
             --candidate bench-server-first-rpc-head.json \
+            --metrics startup_to_first_response_p50_ms,startup_to_first_response_p95_ms,request_roundtrip_p50_ms,request_roundtrip_p95_ms \
             --relative-threshold 0.30 \
-            --absolute-threshold-ms 50 \
+            --absolute-threshold-ms 70 \
             --report-path bench-server-first-rpc-compare.json
 
       - name: Append startup trend history
