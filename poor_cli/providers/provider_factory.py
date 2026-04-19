@@ -4,9 +4,11 @@ Provider factory for creating AI provider instances
 Supports dynamic provider creation and registration of custom providers.
 """
 
+import importlib
+from importlib.util import find_spec
 from typing import Optional, Dict, Any, Type
 from .base import BaseProvider
-from .capability import ProviderCapability, capability_names
+from .capability import ProviderCapability, capability_names, capabilities_for_provider
 from ..exceptions import ConfigurationError, setup_logger
 
 logger = setup_logger(__name__)
@@ -15,107 +17,108 @@ logger = setup_logger(__name__)
 class ProviderFactory:
     """Factory for creating AI provider instances"""
 
-    # Registry of available providers
-    # Will be populated lazily to avoid import errors if dependencies are missing
+    # Loaded provider classes (built-ins + custom registrations).
     _providers: Dict[str, Type[BaseProvider]] = {}
-    _initialized = False
+    _initialized = False  # compatibility flag: "built-in registry preloaded"
+    _load_errors: Dict[str, str] = {}
+
+    _provider_specs: Dict[str, tuple[str, str]] = {
+        "gemini": (".gemini_provider", "GeminiProvider"),
+        "openai": (".openai_provider", "OpenAIProvider"),
+        "anthropic": (".anthropic_provider", "AnthropicProvider"),
+        "ollama": (".ollama_provider", "OllamaProvider"),
+        "hf_local": (".hf_local_provider", "HFLocalProvider"),
+        "vllm": (".vllm_provider", "VLLMProvider"),
+        "llama_server": (".llama_server_provider", "LlamaServerProvider"),
+        "sglang": (".sglang_provider", "SGLangProvider"),
+        "hf_tgi": (".hf_tgi_provider", "HFTGIProvider"),
+        "lmstudio": (".lmstudio_provider", "LMStudioProvider"),
+        "openrouter": (".openrouter_provider", "OpenRouterProvider"),
+        "litellm": (".litellm_provider", "LiteLLMProvider"),
+    }
+    _provider_aliases: Dict[str, str] = {
+        "claude": "anthropic",
+    }
+    _provider_deps: Dict[str, tuple[str, ...]] = {
+        "gemini": ("google", "google.genai"),
+        "openai": ("openai",),
+        "anthropic": ("anthropic",),
+        "ollama": ("aiohttp",),
+        "hf_local": ("torch", "transformers"),
+        "vllm": ("openai",),
+        "llama_server": ("openai",),
+        "sglang": ("openai",),
+        "hf_tgi": ("openai",),
+        "lmstudio": ("openai",),
+        "openrouter": ("openai",),
+        "litellm": ("litellm",),
+    }
+
+    @classmethod
+    def _normalize_name(cls, provider_name: str) -> str:
+        lowered = str(provider_name or "").strip().lower()
+        return cls._provider_aliases.get(lowered, lowered)
+
+    @classmethod
+    def _dependency_available(cls, provider_name: str) -> bool:
+        canonical = cls._normalize_name(provider_name)
+        deps = cls._provider_deps.get(canonical)
+        if not deps:
+            return True
+        for module_name in deps:
+            try:
+                if find_spec(module_name) is None:
+                    return False
+            except Exception:
+                return False
+        return True
+
+    @classmethod
+    def _load_provider_class(cls, provider_name: str) -> Optional[Type[BaseProvider]]:
+        requested = str(provider_name or "").strip().lower()
+        if requested in cls._providers:
+            return cls._providers[requested]
+
+        canonical = cls._normalize_name(requested)
+        if canonical in cls._providers:
+            provider_class = cls._providers[canonical]
+            cls._providers[requested] = provider_class
+            return provider_class
+
+        spec = cls._provider_specs.get(canonical)
+        if spec is None:
+            return None
+        module_name, class_name = spec
+        try:
+            module = importlib.import_module(module_name, package=__package__)
+            provider_class = getattr(module, class_name)
+        except ImportError as error:
+            cls._load_errors[canonical] = str(error)
+            logger.warning(f"{canonical} provider not available: {error}")
+            return None
+        except Exception as error:
+            cls._load_errors[canonical] = str(error)
+            logger.warning(f"{canonical} provider not available: {error}")
+            return None
+        if not isinstance(provider_class, type) or not issubclass(provider_class, BaseProvider):
+            cls._load_errors[canonical] = f"{class_name} is not a BaseProvider subtype"
+            logger.warning(f"{canonical} provider not available: invalid provider class")
+            return None
+
+        cls._providers[canonical] = provider_class
+        for alias, target in cls._provider_aliases.items():
+            if target == canonical:
+                cls._providers[alias] = provider_class
+        if requested not in cls._providers:
+            cls._providers[requested] = provider_class
+        return provider_class
 
     @classmethod
     def _initialize_providers(cls):
-        """
-        Initialize provider registry
-
-        This is done lazily to avoid import errors for optional dependencies
-        """
         if cls._initialized:
             return
-
-        # Try to import each provider, but don't fail if dependencies are missing
-        try:
-            from .gemini_provider import GeminiProvider
-            cls._providers["gemini"] = GeminiProvider
-            logger.debug("Registered Gemini provider")
-        except ImportError as e:
-            logger.warning(f"Gemini provider not available: {e}")
-
-        try:
-            from .openai_provider import OpenAIProvider
-            cls._providers["openai"] = OpenAIProvider
-            logger.debug("Registered OpenAI provider")
-        except ImportError as e:
-            logger.warning(f"OpenAI provider not available: {e}")
-
-        try:
-            from .anthropic_provider import AnthropicProvider
-            cls._providers["anthropic"] = AnthropicProvider
-            cls._providers["claude"] = AnthropicProvider  # Alias
-            logger.debug("Registered Anthropic provider")
-        except ImportError as e:
-            logger.warning(f"Anthropic provider not available: {e}")
-
-        try:
-            from .ollama_provider import OllamaProvider
-            cls._providers["ollama"] = OllamaProvider
-            logger.debug("Registered Ollama provider")
-        except ImportError as e:
-            logger.warning(f"Ollama provider not available: {e}")
-
-        try:
-            from .hf_local_provider import HFLocalProvider
-            cls._providers["hf_local"] = HFLocalProvider
-            logger.debug("Registered HF local provider")
-        except ImportError as e:
-            logger.warning(f"HF local provider not available: {e}")
-
-        try:
-            from .vllm_provider import VLLMProvider
-            cls._providers["vllm"] = VLLMProvider
-            logger.debug("Registered vLLM provider")
-        except ImportError as e:
-            logger.warning(f"vLLM provider not available: {e}")
-
-        try:
-            from .llama_server_provider import LlamaServerProvider
-            cls._providers["llama_server"] = LlamaServerProvider
-            logger.debug("Registered llama-server provider")
-        except ImportError as e:
-            logger.warning(f"llama-server provider not available: {e}")
-
-        try:
-            from .sglang_provider import SGLangProvider
-            cls._providers["sglang"] = SGLangProvider
-            logger.debug("Registered SGLang provider")
-        except ImportError as e:
-            logger.warning(f"SGLang provider not available: {e}")
-
-        try:
-            from .hf_tgi_provider import HFTGIProvider
-            cls._providers["hf_tgi"] = HFTGIProvider
-            logger.debug("Registered HF TGI provider")
-        except ImportError as e:
-            logger.warning(f"HF TGI provider not available: {e}")
-
-        try:
-            from .lmstudio_provider import LMStudioProvider
-            cls._providers["lmstudio"] = LMStudioProvider
-            logger.debug("Registered LM Studio provider")
-        except ImportError as e:
-            logger.warning(f"LM Studio provider not available: {e}")
-
-        try:
-            from .openrouter_provider import OpenRouterProvider
-            cls._providers["openrouter"] = OpenRouterProvider
-            logger.debug("Registered OpenRouter provider")
-        except ImportError as e:
-            logger.warning(f"OpenRouter provider not available: {e}")
-
-        try:
-            from .litellm_provider import LiteLLMProvider
-            cls._providers["litellm"] = LiteLLMProvider
-            logger.debug("Registered LiteLLM provider")
-        except ImportError as e:
-            logger.warning(f"LiteLLM provider not available: {e}")
-
+        for provider_name in cls._provider_specs:
+            cls._load_provider_class(provider_name)
         cls._initialized = True
 
     @classmethod
@@ -144,22 +147,22 @@ class ProviderFactory:
         Raises:
             ConfigurationError: If provider is unknown or initialization fails
         """
-        # Initialize provider registry if needed
-        cls._initialize_providers()
-
-        provider_name = provider_name.lower()
-
-        if provider_name not in cls._providers:
-            available = ", ".join(cls._providers.keys())
-            raise ConfigurationError(
-                f"Unknown provider: {provider_name}. "
-                f"Available providers: {available}"
+        requested = str(provider_name or "").strip().lower()
+        provider_class = cls._providers.get(requested)
+        if provider_class is None:
+            provider_class = cls._load_provider_class(requested)
+        if provider_class is None:
+            available = sorted(
+                set(cls._providers.keys()) | set(cls._provider_specs.keys()) | set(cls._provider_aliases.keys())
             )
-
-        provider_class = cls._providers[provider_name]
+            raise ConfigurationError(
+                f"Unknown provider: {requested}. "
+                f"Available providers: {', '.join(available)}"
+            )
+        resolved_name = cls._normalize_name(requested)
 
         try:
-            logger.info(f"Creating {provider_name} provider with model {model_name}")
+            logger.info(f"Creating {resolved_name} provider with model {model_name}")
 
             # Extract common parameters
             max_retries = kwargs.pop("max_retries", 3)
@@ -176,13 +179,13 @@ class ProviderFactory:
                 **kwargs
             )
 
-            logger.info(f"Successfully created {provider_name} provider")
+            logger.info(f"Successfully created {resolved_name} provider")
             return provider
 
         except Exception as e:
-            logger.error(f"Failed to create {provider_name} provider: {e}")
+            logger.error(f"Failed to create {resolved_name} provider: {e}")
             raise ConfigurationError(
-                f"Failed to initialize {provider_name} provider: {str(e)}"
+                f"Failed to initialize {resolved_name} provider: {str(e)}"
             )
 
     @classmethod
@@ -233,8 +236,17 @@ class ProviderFactory:
         Returns:
             True if provider is available, False otherwise
         """
-        cls._initialize_providers()
-        return provider_name.lower() in cls._providers
+        requested = str(provider_name or "").strip().lower()
+        provider_class = cls._providers.get(requested)
+        if provider_class is not None:
+            return bool(getattr(provider_class, "available", True))
+        canonical = cls._normalize_name(requested)
+        provider_class = cls._providers.get(canonical)
+        if provider_class is not None:
+            return bool(getattr(provider_class, "available", True))
+        if canonical in cls._provider_specs:
+            return cls._dependency_available(canonical)
+        return False
 
     @classmethod
     def get_provider_info(cls, provider_name: str) -> Optional[Dict[str, Any]]:
@@ -247,20 +259,31 @@ class ProviderFactory:
         Returns:
             Dictionary with provider information or None if not found
         """
-        cls._initialize_providers()
+        requested = str(provider_name or "").strip().lower()
+        canonical = cls._normalize_name(requested)
 
-        provider_name = provider_name.lower()
-        if provider_name not in cls._providers:
+        provider_class = cls._providers.get(requested)
+        if provider_class is None:
+            provider_class = cls._providers.get(canonical)
+        if provider_class is not None:
+            declared = getattr(provider_class, "capabilities", frozenset({ProviderCapability.NONE}))
+            return {
+                "name": requested,
+                "class": provider_class.__name__,
+                "module": provider_class.__module__,
+                "available": bool(getattr(provider_class, "available", True)),
+                "capabilities": capability_names(declared),
+            }
+
+        spec = cls._provider_specs.get(canonical)
+        if spec is None:
             return None
-
-        provider_class = cls._providers[provider_name]
-
+        module_name, class_name = spec
+        declared = capabilities_for_provider(canonical) or frozenset({ProviderCapability.NONE})
         return {
-            "name": provider_name,
-            "class": provider_class.__name__,
-            "module": provider_class.__module__,
-            "available": bool(getattr(provider_class, "available", True)),
-            "capabilities": capability_names(
-                getattr(provider_class, "capabilities", frozenset({ProviderCapability.NONE}))
-            ),
+            "name": requested,
+            "class": class_name,
+            "module": f"{__package__}{module_name}",
+            "available": cls._dependency_available(canonical),
+            "capabilities": capability_names(declared),
         }
