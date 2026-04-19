@@ -91,7 +91,12 @@ def _build_graph(train_sequences: List[Dict[str, Any]]) -> ToolCapabilityGraph:
         return graph
 
 
-def _evaluate_registry(registry: EnhancedToolRegistry, eval_scenarios: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _evaluate_registry(
+    registry: EnhancedToolRegistry,
+    eval_scenarios: List[Dict[str, Any]],
+    *,
+    schema_token_budget: int = 0,
+) -> Dict[str, Any]:
     misses = 0
     total_expected = 0
     groups_per_prompt: List[int] = []
@@ -104,7 +109,7 @@ def _evaluate_registry(registry: EnhancedToolRegistry, eval_scenarios: List[Dict
         prompt = str(row.get("prompt", "") or "")
         expected_tools = _ordered_unique(row.get("expected_tools", []))
         started = time.perf_counter()
-        groups = registry.required_tool_groups(prompt)
+        groups = registry.required_tool_groups(prompt, schema_token_budget=schema_token_budget)
         declarations = registry.get_tool_declarations_for_groups(groups)
         elapsed_ms = (time.perf_counter() - started) * 1000.0
         active_names = {
@@ -156,16 +161,29 @@ def _run(args: argparse.Namespace) -> Dict[str, Any]:
     if not isinstance(eval_scenarios, list) or not eval_scenarios:
         eval_scenarios = _default_eval_scenarios()
 
+    schema_token_budget = max(0, int(getattr(args, "schema_budget", 0) or 0))
     runs = max(1, int(args.runs))
     baseline_runs: List[Dict[str, Any]] = []
     graph_runs: List[Dict[str, Any]] = []
     for _ in range(runs):
         baseline_registry = EnhancedToolRegistry(Config())
-        baseline_runs.append(_evaluate_registry(baseline_registry, eval_scenarios))
+        baseline_runs.append(
+            _evaluate_registry(
+                baseline_registry,
+                eval_scenarios,
+                schema_token_budget=schema_token_budget,
+            )
+        )
 
         graph = _build_graph(train_sequences)
         graph_registry = EnhancedToolRegistry(Config(), capability_graph=graph)
-        graph_runs.append(_evaluate_registry(graph_registry, eval_scenarios))
+        graph_runs.append(
+            _evaluate_registry(
+                graph_registry,
+                eval_scenarios,
+                schema_token_budget=schema_token_budget,
+            )
+        )
 
     def _mean_metric(payloads: List[Dict[str, Any]], key: str) -> float:
         values = [float(item.get(key, 0.0) or 0.0) for item in payloads]
@@ -182,6 +200,7 @@ def _run(args: argparse.Namespace) -> Dict[str, Any]:
 
     return {
         "runs": runs,
+        "schemaTokenBudget": schema_token_budget,
         "baseline": baseline_summary,
         "graphGuided": graph_summary,
         "comparison": {
@@ -201,6 +220,7 @@ def _run(args: argparse.Namespace) -> Dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(prog="bench/tool_capability_graph_profile.py")
     parser.add_argument("--runs", type=int, default=10)
+    parser.add_argument("--schema-budget", type=int, default=0)
     parser.add_argument("--fixture", type=str, default=str(DEFAULT_FIXTURE))
     parser.add_argument("--output", type=str, default="")
     args = parser.parse_args()

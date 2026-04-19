@@ -121,6 +121,35 @@ def test_registry_uses_graph_for_group_suggestions(tmp_path):
     assert "network" in with_graph
 
 
+def test_registry_caps_graph_suggestions_by_schema_budget(tmp_path):
+    graph = ToolCapabilityGraph(base_dir=tmp_path)
+    for idx in range(10):
+        request_id = f"b{idx}"
+        graph.observe_tool_call_start(request_id=request_id, call_id=f"{request_id}-1", tool_name="read_file", group="core")
+        graph.observe_tool_call_result(
+            request_id=request_id,
+            call_id=f"{request_id}-1",
+            tool_name="read_file",
+            success=True,
+            latency_ms=12.0,
+        )
+        graph.observe_tool_call_start(request_id=request_id, call_id=f"{request_id}-2", tool_name="web_search", group="network")
+        graph.observe_tool_call_result(
+            request_id=request_id,
+            call_id=f"{request_id}-2",
+            tool_name="web_search",
+            success=True,
+            latency_ms=80.0,
+        )
+
+    guided = EnhancedToolRegistry(Config(), capability_graph=graph)
+    core_budget = guided._schema_tokens_for_groups(["core"])
+    constrained = guided.required_tool_groups("check this request", schema_token_budget=core_budget)
+    unconstrained = guided.required_tool_groups("check this request", schema_token_budget=core_budget + 100000)
+    assert constrained == ["core"]
+    assert "network" in unconstrained
+
+
 @pytest.mark.asyncio
 async def test_execute_single_call_events_records_graph_file_flow(tmp_path):
     graph = ToolCapabilityGraph(base_dir=tmp_path)

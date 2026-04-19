@@ -194,10 +194,17 @@ class ToolDispatcher:
     ) -> None:
         if not isinstance(self.tool_registry, EnhancedToolRegistry):
             return
+        schema_budget = 0
+        if self.config is not None:
+            try:
+                schema_budget = int(getattr(self.config.agentic, "max_tool_schema_tokens", 0) or 0)
+            except (TypeError, ValueError):
+                schema_budget = 0
         groups = self.tool_registry.required_tool_groups(
             prompt,
             context_files=context_files,
             pinned_context_files=pinned_context_files,
+            schema_token_budget=schema_budget,
             mcp_server_names=self._mcp_server_names(),
         )
         changed = await self._activate_tool_groups(

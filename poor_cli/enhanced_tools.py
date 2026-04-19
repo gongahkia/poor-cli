@@ -224,6 +224,7 @@ class EnhancedToolRegistry(ToolRegistryAsync):
         *,
         context_files: Optional[Sequence[str]] = None,
         pinned_context_files: Optional[Sequence[str]] = None,
+        schema_token_budget: int = 0,
         mcp_server_names: Optional[Iterable[str]] = None,
     ) -> List[str]:
         text = str(prompt or "").strip().lower()
@@ -284,7 +285,41 @@ class EnhancedToolRegistry(ToolRegistryAsync):
         except Exception as error:
             logger.debug("capability graph group suggestion failed: %s", error)
             return groups
-        return _ordered_unique([*groups, *suggestions])
+        budget = max(0, int(schema_token_budget or 0))
+        if budget <= 0:
+            return _ordered_unique([*groups, *suggestions])
+        token_cache: Dict[str, int] = {}
+
+        def _tokens(candidate_groups: Sequence[str]) -> int:
+            key = "|".join(_ordered_unique(candidate_groups))
+            cached = token_cache.get(key)
+            if cached is not None:
+                return cached
+            value = self._schema_tokens_for_groups(candidate_groups, mcp_server_names=mcp_server_names)
+            token_cache[key] = value
+            return value
+
+        constrained = list(groups)
+        if _tokens(constrained) >= budget:
+            return constrained
+        for suggestion in suggestions:
+            candidate = _ordered_unique([*constrained, suggestion])
+            if _tokens(candidate) <= budget:
+                constrained = candidate
+        return constrained
+
+    def _schema_tokens_for_groups(
+        self,
+        groups: Sequence[str],
+        *,
+        mcp_server_names: Optional[Iterable[str]] = None,
+    ) -> int:
+        declarations = self.get_tool_declarations_for_groups(
+            groups,
+            mcp_server_names=mcp_server_names,
+        )
+        payload = _stable_declarations_payload(declarations)
+        return TokenCounter.estimate_tokens(payload)
 
     def get_tool_declarations_by_names(self, names: Iterable[str]) -> List[Dict[str, Any]]:
         ordered_names = _ordered_unique(names)

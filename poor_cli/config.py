@@ -293,6 +293,7 @@ class AgenticConfig:
     """Configuration for agentic loop behavior"""
     max_iterations: int = 25 # max tool-call round-trips per request
     max_parallel_tool_calls: int = 6  # cap for concurrent read-only tool calls
+    max_tool_schema_tokens: int = 0  # cap schema tokens for prompt-level tool activation (0 = unlimited)
     max_tool_result_chars_per_turn: int = 60000  # cap tool-result payload per turn
     overflow_threshold_chars: int = 30000  # single result overflow to temp file
     overflow_dir: str = ".poor-cli/overflow"  # relative to repo root
@@ -922,6 +923,10 @@ class ConfigManager:
             raise ConfigurationError("agentic.max_parallel_tool_calls must be at least 1")
         if self.config.agentic.max_parallel_tool_calls > 32:
             raise ConfigurationError("agentic.max_parallel_tool_calls must be at most 32")
+        if self.config.agentic.max_tool_schema_tokens < 0:
+            raise ConfigurationError("agentic.max_tool_schema_tokens must be non-negative")
+        if self.config.agentic.max_tool_schema_tokens > 500000:
+            raise ConfigurationError("agentic.max_tool_schema_tokens must be at most 500000")
         if self.config.agentic.max_tool_result_chars_per_turn < 1000:
             raise ConfigurationError("agentic.max_tool_result_chars_per_turn must be at least 1000")
         if self.config.agentic.max_tool_result_chars_per_turn > 500000:
