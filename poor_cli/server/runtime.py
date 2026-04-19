@@ -56,14 +56,11 @@ class PoorCLIServer(HandlerMixin):
 
     def __init__(self):
         init_started = time.perf_counter()
-        from ..session_manager import SessionManager
-
         self.logger = setup_logger("poor_cli.server")
         self._perf_log_enabled = _PERF_LOG
 
         phase_started = time.perf_counter()
-        self._session_manager = SessionManager()
-        self._session_manager.set_permission_callback(self._server_permission_callback)
+        self._session_manager = None
         self._default_session_lock = threading.Lock()
         if self._perf_log_enabled:
             self.logger.info(
@@ -89,7 +86,7 @@ class PoorCLIServer(HandlerMixin):
             )
 
         phase_started = time.perf_counter()
-        rate_limit_policy = self._load_initial_rate_limit_policy()
+        rate_limit_policy = self._copy_rate_limit_policy(DEFAULT_RPC_RATE_LIMITS)
         self._rate_limiter = RateLimiter(rate_limit_policy)
         self._rate_limit_policy = self._copy_rate_limit_policy(rate_limit_policy)
         if self._perf_log_enabled:
@@ -99,8 +96,25 @@ class PoorCLIServer(HandlerMixin):
             )
             self.logger.info(
                 "perf server_init.total_ms=%.2f",
-                (time.perf_counter() - init_started) * 1000.0,
-            )
+                    (time.perf_counter() - init_started) * 1000.0,
+                )
+
+    def _ensure_session_manager(self):
+        manager = getattr(self, "_session_manager", None)
+        if manager is not None:
+            return manager
+        lock = getattr(self, "_default_session_lock", None)
+        if lock is None:
+            return None
+        with lock:
+            manager = getattr(self, "_session_manager", None)
+            if manager is None:
+                from ..session_manager import SessionManager
+
+                manager = SessionManager()
+                manager.set_permission_callback(self._server_permission_callback)
+                self._session_manager = manager
+        return manager
 
     @property
     def core(self) -> PoorCLICore:
@@ -116,7 +130,7 @@ class PoorCLIServer(HandlerMixin):
         session.core = value
 
     def _ensure_default_session(self) -> None:
-        manager = getattr(self, "_session_manager", None)
+        manager = self._ensure_session_manager()
         if manager is None:
             return
         if not hasattr(manager, "default_session") or not hasattr(manager, "create_session"):
@@ -337,7 +351,8 @@ class PoorCLIServer(HandlerMixin):
         while self._running:
             await asyncio.sleep(interval_seconds)
             try:
-                audit_logger = getattr(self.core, "_audit_logger", None)
+                core = self._maybe_core()
+                audit_logger = getattr(core, "_audit_logger", None) if core is not None else None
                 if audit_logger is None:
                     from ..audit_log import AuditLogger
 
@@ -396,23 +411,25 @@ class PoorCLIServer(HandlerMixin):
             async with self._get_service_lock():
                 with contextlib.suppress(Exception):
                     await self._shutdown_managed_services_locked()
-            shutdown_timeout_s = 0.35 if self._fast_shutdown_requested else 6.0
-            try:
-                shutdown_coro = self.core.shutdown(fast=self._fast_shutdown_requested)
-            except TypeError:
-                shutdown_coro = self.core.shutdown()
-            try:
-                await asyncio.wait_for(
-                    shutdown_coro,
-                    timeout=shutdown_timeout_s,
-                )
-            except asyncio.TimeoutError:
-                self.logger.warning(
-                    "Core shutdown exceeded %.2fs during server stop; forcing fast exit",
-                    shutdown_timeout_s,
-                )
-            except Exception:
-                self.logger.debug("Core shutdown failed during server stop", exc_info=True)
+            core = self._maybe_core()
+            if core is not None:
+                shutdown_timeout_s = 0.35 if self._fast_shutdown_requested else 6.0
+                try:
+                    shutdown_coro = core.shutdown(fast=self._fast_shutdown_requested)
+                except TypeError:
+                    shutdown_coro = core.shutdown()
+                try:
+                    await asyncio.wait_for(
+                        shutdown_coro,
+                        timeout=shutdown_timeout_s,
+                    )
+                except asyncio.TimeoutError:
+                    self.logger.warning(
+                        "Core shutdown exceeded %.2fs during server stop; forcing fast exit",
+                        shutdown_timeout_s,
+                    )
+                except Exception:
+                    self.logger.debug("Core shutdown failed during server stop", exc_info=True)
             self.logger.info("Stdio server stopped")
 
 
