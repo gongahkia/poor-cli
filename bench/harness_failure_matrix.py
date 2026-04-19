@@ -10,7 +10,7 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
@@ -50,6 +50,23 @@ def _default_scenarios() -> List[Dict[str, Any]]:
             "calls": [{"name": "bash", "arguments": {"command": "sleep 2", "timeout": 1}}],
             "expectHandledError": True,
             "expectedKeywords": ["timeout", "timed out", "error"],
+        },
+        {
+            "name": "cancellation_race_injected",
+            "prompt": "simulate cancellation while tool is running",
+            "calls": [{"name": "read_file", "arguments": {"file_path": "README.md", "start_line": 1, "end_line": 40}}],
+            "expectHandledError": True,
+            "expectedKeywords": ["cancelled", "cancel"],
+            "injectHangMs": 1200,
+            "cancelAfterMs": 80,
+        },
+        {
+            "name": "mcp_timeout_injected",
+            "prompt": "simulate mcp timeout on tool call",
+            "calls": [{"name": "read_file", "arguments": {"file_path": "README.md", "start_line": 1, "end_line": 30}}],
+            "expectHandledError": True,
+            "expectedKeywords": ["mcp request timed out", "timeout"],
+            "injectMcpTimeout": True,
         },
     ]
 
@@ -114,6 +131,42 @@ async def _run_one(core: PoorCLICore, scenario: Dict[str, Any], idx: int, *, max
     core._permission_callback = _permission
     if bool(scenario.get("cancelBeforeRun")):
         core.cancel_request(request_id)
+    cancel_after_ms = max(0, int(scenario.get("cancelAfterMs", 0) or 0))
+    inject_hang_ms = max(0, int(scenario.get("injectHangMs", 0) or 0))
+    inject_mcp_timeout = bool(scenario.get("injectMcpTimeout", False))
+    original_execute = core._execute_single_call_events
+    cancel_task: Optional[asyncio.Task] = None
+
+    async def _cancel_later() -> None:
+        await asyncio.sleep(float(cancel_after_ms) / 1000.0)
+        core.cancel_request(request_id)
+
+    async def _execute_injected(function_call: FunctionCall, *args, **kwargs):
+        if inject_mcp_timeout:
+            return [], {
+                "id": function_call.id,
+                "name": function_call.name,
+                "result": "Error: MCP request timed out after 2.0 seconds",
+            }
+        if inject_hang_ms > 0:
+            remaining_ms = inject_hang_ms
+            step_ms = 50
+            while remaining_ms > 0:
+                await asyncio.sleep(min(step_ms, remaining_ms) / 1000.0)
+                remaining_ms -= step_ms
+                cancel_event = core._cancel_events.get(request_id)
+                if cancel_event and cancel_event.is_set():
+                    return [], {
+                        "id": function_call.id,
+                        "name": function_call.name,
+                        "result": "Error: Request cancelled during tool execution",
+                    }
+        return await original_execute(function_call, *args, **kwargs)
+
+    if inject_mcp_timeout or inject_hang_ms > 0:
+        core._execute_single_call_events = _execute_injected
+    if cancel_after_ms > 0:
+        cancel_task = asyncio.create_task(_cancel_later())
 
     started = time.perf_counter()
     try:
@@ -136,6 +189,14 @@ async def _run_one(core: PoorCLICore, scenario: Dict[str, Any], idx: int, *, max
             "stuck": elapsed_ms > max_scenario_ms,
         }
     finally:
+        core._execute_single_call_events = original_execute
+        if cancel_task is not None:
+            if not cancel_task.done():
+                cancel_task.cancel()
+                try:
+                    await cancel_task
+                except asyncio.CancelledError:
+                    pass
         core._permission_callback = None
         core._clear_cancel_event(request_id)
 

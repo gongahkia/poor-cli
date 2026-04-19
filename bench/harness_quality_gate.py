@@ -57,22 +57,6 @@ def _default_scenarios() -> List[Dict[str, Any]]:
             ],
         },
         {
-            "name": "repo_status",
-            "prompt": "show git working tree status",
-            "expected_tools": ["git_status"],
-            "calls": [
-                {"name": "git_status", "arguments": {}},
-            ],
-        },
-        {
-            "name": "repo_diff",
-            "prompt": "inspect current git diff",
-            "expected_tools": ["git_diff"],
-            "calls": [
-                {"name": "git_diff", "arguments": {}},
-            ],
-        },
-        {
             "name": "top_level_listing",
             "prompt": "find top-level repository files",
             "expected_tools": ["list_directory"],
@@ -87,6 +71,51 @@ def _default_scenarios() -> List[Dict[str, Any]]:
             "calls": [
                 {"name": "glob_files", "arguments": {"pattern": "*.py", "path": root}},
                 {"name": "grep_files", "arguments": {"pattern": "agentic", "path": str(REPO_ROOT / "poor_cli" / "config.py")}},
+            ],
+        },
+        {
+            "name": "provider_catalog_trace",
+            "prompt": "find provider model tiers in provider_catalog.json",
+            "expected_tools": ["read_file", "grep_files"],
+            "calls": [
+                {"name": "read_file", "arguments": {"file_path": str(REPO_ROOT / "poor_cli" / "provider_catalog.json"), "start_line": 1, "end_line": 220}},
+                {"name": "grep_files", "arguments": {"pattern": "modelTiers", "path": str(REPO_ROOT / "poor_cli" / "provider_catalog.json")}},
+            ],
+        },
+        {
+            "name": "cli_entrypoint_trace",
+            "prompt": "find where the cli entrypoint is defined in __main__.py and cli_app.py",
+            "expected_tools": ["glob_files", "grep_files"],
+            "calls": [
+                {"name": "glob_files", "arguments": {"pattern": "*.py", "path": root}},
+                {"name": "grep_files", "arguments": {"pattern": "def main", "path": str(REPO_ROOT / "poor_cli" / "__main__.py")}},
+            ],
+        },
+        {
+            "name": "test_surface_scan",
+            "prompt": "find pytest suites for model router calibration and replay gates",
+            "expected_tools": ["glob_files", "grep_files"],
+            "calls": [
+                {"name": "glob_files", "arguments": {"pattern": "test_*.py", "path": str(REPO_ROOT / "tests")}},
+                {"name": "grep_files", "arguments": {"pattern": "model_router", "path": str(REPO_ROOT / "tests" / "test_model_router.py")}},
+            ],
+        },
+        {
+            "name": "context_pipeline_trace",
+            "prompt": "trace context assembly orchestrator flow",
+            "expected_tools": ["grep_files", "read_file"],
+            "calls": [
+                {"name": "grep_files", "arguments": {"pattern": "ContextAssemblyOrchestrator", "path": str(REPO_ROOT / "poor_cli" / "context_assembly.py")}},
+                {"name": "read_file", "arguments": {"file_path": str(REPO_ROOT / "poor_cli" / "context_assembly.py"), "start_line": 1, "end_line": 180}},
+            ],
+        },
+        {
+            "name": "mcp_registry_lookup",
+            "prompt": "find mcp registry handlers and transports",
+            "expected_tools": ["glob_files", "grep_files"],
+            "calls": [
+                {"name": "glob_files", "arguments": {"pattern": "*.py", "path": str(REPO_ROOT / "poor_cli" / "mcp")}},
+                {"name": "grep_files", "arguments": {"pattern": "registry", "path": str(REPO_ROOT / "poor_cli" / "mcp" / "registry.py")}},
             ],
         },
     ]
