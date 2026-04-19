@@ -1,0 +1,26 @@
+{
+  "startup_profile": {
+    "probe_order": [
+      "startup",
+      "quick_quit",
+      "quick_quit_stall",
+      "quick_quit_stall_ultrafast"
+    ],
+    "env": {
+      "POORCLI_BENCH_AUTO_START": "0"
+    }
+  },
+  "status_view_burst_profile": {
+    "requests_per_burst_sequence": [25],
+    "stale_age_padding_ms": 500.0
+  },
+  "context_snapshot_memo_profile": {
+    "stable_prompt": "profile context memo behavior",
+    "alternating_prompts": ["alpha prompt", "beta prompt"],
+    "bursty_prompts": ["run-bucket-a", "run-bucket-b", "run-bucket-c", "run-bucket-d"]
+  },
+  "tool_schema_cache_profile": {
+    "model_names": ["bench-model-a", "bench-model-b", "bench-model-c", "bench-model-d"],
+    "dynamic_tool_prefix": "dynamic_tool_"
+  }
+}

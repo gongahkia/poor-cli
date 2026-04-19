@@ -18,6 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 STARTUP_PROBE = REPO_ROOT / "nvim-poor-cli" / "bench" / "startup_probe.lua"
 QUICK_QUIT_PROBE = REPO_ROOT / "nvim-poor-cli" / "bench" / "quick_quit_probe.lua"
 QUICK_QUIT_STALL_PROBE = REPO_ROOT / "nvim-poor-cli" / "bench" / "quick_quit_stall_probe.lua"
+DEFAULT_FIXTURE = REPO_ROOT / "bench" / "fixtures" / "workloads.json"
 
 
 def _json_line_from_stdout(stdout: str) -> Dict[str, object]:
@@ -53,14 +54,35 @@ def _summary(name: str, values: List[float]) -> Dict[str, float]:
     }
 
 
-def _run_startup_probe(runs: int) -> Dict[str, float]:
+def _load_startup_fixture(path: str) -> Dict[str, object]:
+    fixture_path = Path(path).expanduser().resolve()
+    if not fixture_path.exists():
+        return {}
+    payload = json.loads(fixture_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return {}
+    startup_payload = payload.get("startup_profile", {})
+    return startup_payload if isinstance(startup_payload, dict) else {}
+
+
+def _probe_env(extra_env: Dict[str, str], seed: int, run_idx: int, *, ultra_fast: bool | None = None) -> Dict[str, str]:
+    env = dict(os.environ)
+    for key, value in extra_env.items():
+        env[str(key)] = str(value)
+    env["POORCLI_BENCH_SEED"] = str(seed)
+    env["POORCLI_BENCH_RUN_INDEX"] = str(run_idx)
+    if ultra_fast is not None:
+        env["POORCLI_BENCH_EXIT_ULTRA_FAST"] = "1" if ultra_fast else "0"
+    return env
+
+
+def _run_startup_probe(runs: int, *, startup_env: Dict[str, str], seed: int) -> Dict[str, float]:
     cmd = ["nvim", "--headless", "-u", "NONE", "-n", "-l", str(STARTUP_PROBE)]
     setup_return: List[float] = []
     setup_complete: List[float] = []
     first_tick: List[float] = []
-    for _ in range(max(1, runs)):
-        env = dict(os.environ)
-        env["POORCLI_BENCH_AUTO_START"] = "0"
+    for idx in range(max(1, runs)):
+        env = _probe_env(startup_env, seed, idx)
         proc = subprocess.run(
             cmd,
             cwd=str(REPO_ROOT),
@@ -93,12 +115,11 @@ def _run_startup_probe(runs: int) -> Dict[str, float]:
     return result
 
 
-def _run_quick_quit_probe(runs: int) -> Dict[str, float]:
+def _run_quick_quit_probe(runs: int, *, startup_env: Dict[str, str], seed: int) -> Dict[str, float]:
     cmd = ["nvim", "--headless", "-u", "NONE", "-n", "-l", str(QUICK_QUIT_PROBE)]
     durations: List[float] = []
-    for _ in range(max(1, runs)):
-        env = dict(os.environ)
-        env["POORCLI_BENCH_AUTO_START"] = "0"
+    for idx in range(max(1, runs)):
+        env = _probe_env(startup_env, seed, idx)
         started = time.perf_counter()
         proc = subprocess.run(
             cmd,
@@ -116,12 +137,17 @@ def _run_quick_quit_probe(runs: int) -> Dict[str, float]:
     return result
 
 
-def _run_quick_quit_stall_probe(runs: int, ultra_fast: bool = False) -> Dict[str, float]:
+def _run_quick_quit_stall_probe(
+    runs: int,
+    *,
+    startup_env: Dict[str, str],
+    seed: int,
+    ultra_fast: bool = False,
+) -> Dict[str, float]:
     cmd = ["nvim", "--headless", "-u", "NONE", "-n", "-l", str(QUICK_QUIT_STALL_PROBE)]
     durations: List[float] = []
-    for _ in range(max(1, runs)):
-        env = dict(os.environ)
-        env["POORCLI_BENCH_EXIT_ULTRA_FAST"] = "1" if ultra_fast else "0"
+    for idx in range(max(1, runs)):
+        env = _probe_env(startup_env, seed, idx, ultra_fast=ultra_fast)
         started = time.perf_counter()
         proc = subprocess.run(
             cmd,
@@ -144,15 +170,47 @@ def main() -> int:
     parser = argparse.ArgumentParser(prog="bench/startup_profile.py")
     parser.add_argument("--runs", type=int, default=30, help="probe iterations per benchmark")
     parser.add_argument("--output", type=str, default="", help="optional output json path")
+    parser.add_argument("--seed", type=int, default=0, help="deterministic seed for benchmark env")
+    parser.add_argument("--fixture", type=str, default=str(DEFAULT_FIXTURE), help="workload fixture json path")
     args = parser.parse_args()
 
+    fixture = _load_startup_fixture(args.fixture)
+    fixture_env_raw = fixture.get("env", {}) if isinstance(fixture, dict) else {}
+    startup_env: Dict[str, str] = {}
+    if isinstance(fixture_env_raw, dict):
+        startup_env = {str(key): str(value) for key, value in fixture_env_raw.items()}
+    probe_order = fixture.get("probe_order", []) if isinstance(fixture, dict) else []
+    if not isinstance(probe_order, list) or not probe_order:
+        probe_order = ["startup", "quick_quit", "quick_quit_stall", "quick_quit_stall_ultrafast"]
+
     payload: Dict[str, float] = {}
-    payload.update(_run_startup_probe(args.runs))
-    payload.update(_run_quick_quit_probe(args.runs))
-    payload.update(_run_quick_quit_stall_probe(args.runs))
-    payload.update(_run_quick_quit_stall_probe(args.runs, ultra_fast=True))
+    for step in probe_order:
+        name = str(step).strip().lower()
+        if name == "startup":
+            payload.update(_run_startup_probe(args.runs, startup_env=startup_env, seed=int(args.seed)))
+        elif name == "quick_quit":
+            payload.update(_run_quick_quit_probe(args.runs, startup_env=startup_env, seed=int(args.seed)))
+        elif name == "quick_quit_stall":
+            payload.update(
+                _run_quick_quit_stall_probe(
+                    args.runs,
+                    startup_env=startup_env,
+                    seed=int(args.seed),
+                    ultra_fast=False,
+                )
+            )
+        elif name == "quick_quit_stall_ultrafast":
+            payload.update(
+                _run_quick_quit_stall_probe(
+                    args.runs,
+                    startup_env=startup_env,
+                    seed=int(args.seed),
+                    ultra_fast=True,
+                )
+            )
     payload["generated_at_unix"] = float(time.time())
     payload["commit"] = os.environ.get("GITHUB_SHA", "").strip()
+    payload["seed"] = int(args.seed)
 
     body = json.dumps(payload, sort_keys=True)
     print(body)

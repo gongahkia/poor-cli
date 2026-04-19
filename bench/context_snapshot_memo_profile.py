@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import random
 import statistics
 import time
 from dataclasses import dataclass
@@ -13,6 +14,9 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from poor_cli.context_assembly import ContextAssemblyOrchestrator
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_FIXTURE = REPO_ROOT / "bench" / "fixtures" / "workloads.json"
 
 
 @dataclass
@@ -53,16 +57,52 @@ class _CoreStub:
         return ""
 
 
-def _prompt_for_turn(idx: int, mode: str, run_len: int) -> str:
+def _load_fixture(path: str) -> Dict[str, Any]:
+    fixture_path = Path(path).expanduser().resolve()
+    if not fixture_path.exists():
+        return {}
+    payload = json.loads(fixture_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return {}
+    scoped = payload.get("context_snapshot_memo_profile", {})
+    return scoped if isinstance(scoped, dict) else {}
+
+
+def _prompt_for_turn(
+    idx: int,
+    mode: str,
+    run_len: int,
+    *,
+    fixture: Dict[str, Any],
+    bursty_offset: int,
+) -> str:
+    stable_prompt = str(fixture.get("stable_prompt", "profile context memo behavior") or "profile context memo behavior")
+    alternating_prompts = fixture.get("alternating_prompts", ["alpha prompt", "beta prompt"])
+    if not isinstance(alternating_prompts, list) or not alternating_prompts:
+        alternating_prompts = ["alpha prompt", "beta prompt"]
+    alternating_prompts = [str(item) for item in alternating_prompts if str(item).strip()]
+    if not alternating_prompts:
+        alternating_prompts = ["alpha prompt", "beta prompt"]
+    bursty_prompts = fixture.get("bursty_prompts", [])
+    if not isinstance(bursty_prompts, list) or not bursty_prompts:
+        bursty_prompts = ["run-bucket-a", "run-bucket-b", "run-bucket-c"]
+    bursty_prompts = [str(item) for item in bursty_prompts if str(item).strip()]
+    if not bursty_prompts:
+        bursty_prompts = ["run-bucket-a", "run-bucket-b", "run-bucket-c"]
     if mode == "stable":
-        return "profile context memo behavior"
+        return stable_prompt
     if mode == "alternating":
-        return "alpha prompt" if idx % 2 == 0 else "beta prompt"
+        return alternating_prompts[idx % len(alternating_prompts)]
     bucket = idx // max(1, run_len)
-    return f"run-bucket-{bucket}"
+    return bursty_prompts[(bucket + bursty_offset) % len(bursty_prompts)]
 
 
 async def _run(args: argparse.Namespace) -> Dict[str, Any]:
+    fixture = _load_fixture(args.fixture)
+    rng = random.Random(int(args.seed))
+    bursty_prompts = fixture.get("bursty_prompts", []) if isinstance(fixture, dict) else []
+    bursty_len = len(bursty_prompts) if isinstance(bursty_prompts, list) and bursty_prompts else 4
+    bursty_offset = rng.randrange(max(1, bursty_len))
     core = _CoreStub()
     orchestrator = ContextAssemblyOrchestrator(core)
     assemble_calls = 0
@@ -90,7 +130,13 @@ async def _run(args: argparse.Namespace) -> Dict[str, Any]:
     latencies: List[float] = []
     turns = max(1, int(args.turns))
     for idx in range(turns):
-        prompt = _prompt_for_turn(idx, args.mode, args.run_len)
+        prompt = _prompt_for_turn(
+            idx,
+            args.mode,
+            args.run_len,
+            fixture=fixture,
+            bursty_offset=bursty_offset,
+        )
         started = time.perf_counter()
         await orchestrator.assemble(prompt=prompt, activate_tools=False)
         latencies.append((time.perf_counter() - started) * 1000.0)
@@ -98,6 +144,7 @@ async def _run(args: argparse.Namespace) -> Dict[str, Any]:
     misses = assemble_calls
     hits = max(0, turns - misses)
     return {
+        "seed": int(args.seed),
         "mode": str(args.mode),
         "turns": int(turns),
         "run_len": int(args.run_len),
@@ -115,6 +162,8 @@ def main() -> int:
     parser.add_argument("--turns", type=int, default=300)
     parser.add_argument("--mode", choices=("stable", "alternating", "bursty"), default="bursty")
     parser.add_argument("--run-len", type=int, default=12)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--fixture", type=str, default=str(DEFAULT_FIXTURE))
     parser.add_argument("--output", type=str, default="")
     args = parser.parse_args()
     payload = asyncio.run(_run(args))

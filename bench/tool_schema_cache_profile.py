@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import statistics
 import time
 from pathlib import Path
@@ -12,6 +13,9 @@ from typing import Any, Dict, List
 
 from poor_cli.config import Config
 from poor_cli.core import PoorCLICore
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_FIXTURE = REPO_ROOT / "bench" / "fixtures" / "workloads.json"
 
 
 class _CountingRegistry:
@@ -31,7 +35,28 @@ class _CountingRegistry:
         ]
 
 
+def _load_fixture(path: str) -> Dict[str, Any]:
+    fixture_path = Path(path).expanduser().resolve()
+    if not fixture_path.exists():
+        return {}
+    payload = json.loads(fixture_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return {}
+    scoped = payload.get("tool_schema_cache_profile", {})
+    return scoped if isinstance(scoped, dict) else {}
+
+
 def _run(args: argparse.Namespace) -> Dict[str, Any]:
+    fixture = _load_fixture(args.fixture)
+    rng = random.Random(int(args.seed))
+    model_names = fixture.get("model_names", []) if isinstance(fixture, dict) else []
+    if not isinstance(model_names, list) or not model_names:
+        model_names = ["bench-model-a", "bench-model-b", "bench-model-c", "bench-model-d"]
+    model_names = [str(item) for item in model_names if str(item).strip()]
+    if not model_names:
+        model_names = ["bench-model-a", "bench-model-b", "bench-model-c", "bench-model-d"]
+    tool_prefix = str(fixture.get("dynamic_tool_prefix", "dynamic_tool_")) if isinstance(fixture, dict) else "dynamic_tool_"
+    model_cursor = rng.randrange(len(model_names))
     core = object.__new__(PoorCLICore)
     core.config = Config()
     core.tool_registry = _CountingRegistry(base_tools=max(2, int(args.base_tools)))
@@ -45,9 +70,10 @@ def _run(args: argparse.Namespace) -> Dict[str, Any]:
     declarations_count = 0
     for idx in range(turns):
         if model_switch_every and idx > 0 and idx % model_switch_every == 0:
-            core.config.model.model_name = f"bench-model-{idx}"
+            model_cursor = (model_cursor + 1) % len(model_names)
+            core.config.model.model_name = model_names[model_cursor]
         if tool_mutate_every and idx > 0 and idx % tool_mutate_every == 0:
-            key = f"dynamic_tool_{idx}"
+            key = f"{tool_prefix}{idx}"
             if key in core.tool_registry.tools:
                 core.tool_registry.tools.pop(key, None)
             else:
@@ -60,6 +86,7 @@ def _run(args: argparse.Namespace) -> Dict[str, Any]:
     misses = int(core.tool_registry.calls)
     hits = max(0, turns - misses)
     return {
+        "seed": int(args.seed),
         "turns": int(turns),
         "base_tools": int(args.base_tools),
         "model_switch_every": int(model_switch_every),
@@ -80,6 +107,8 @@ def main() -> int:
     parser.add_argument("--base-tools", type=int, default=12)
     parser.add_argument("--model-switch-every", type=int, default=0)
     parser.add_argument("--tool-mutate-every", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--fixture", type=str, default=str(DEFAULT_FIXTURE))
     parser.add_argument("--output", type=str, default="")
     args = parser.parse_args()
     payload = _run(args)
