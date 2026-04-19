@@ -1,16 +1,23 @@
-"""PoorCLI JSON-RPC Server package."""
+"""Backward-compatible server exports with lazy runtime imports."""
 
-from .types import JsonRpcMessage, JsonRpcError, InvalidParamsError, ManagedServiceRuntime
-from .error_formatter import _sanitize_exception_message, _MAX_ERROR_MESSAGE_LEN
-from .transport import StdioTransport
+from __future__ import annotations
+
+from typing import Any
+
+__all__ = [
+    "PoorCLIServer",
+    "StreamingJsonRpcServer",
+    "main",
+]
+
 
 def main() -> None:
-    from .cli import main as _main
+    from .cli import main as cli_main
 
-    _main()
+    cli_main()
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     if name in {"PoorCLIServer", "StreamingJsonRpcServer"}:
         from .runtime import PoorCLIServer, StreamingJsonRpcServer
 
@@ -19,17 +26,4 @@ def __getattr__(name: str):
             "StreamingJsonRpcServer": StreamingJsonRpcServer,
         }
         return mapping[name]
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-__all__ = [
-    "JsonRpcMessage",
-    "JsonRpcError",
-    "InvalidParamsError",
-    "ManagedServiceRuntime",
-    "StdioTransport",
-    "PoorCLIServer",
-    "StreamingJsonRpcServer",
-    "main",
-    "_sanitize_exception_message",
-    "_MAX_ERROR_MESSAGE_LEN",
-]
+    raise AttributeError(name)

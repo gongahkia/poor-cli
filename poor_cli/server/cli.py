@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import List
 
 from ..cli_errors import run_with_cli_error_handling
-from .runtime import PoorCLIServer
 
 
 def _main() -> None:
@@ -40,6 +39,8 @@ def _main() -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=handlers,
     )
+
+    from .runtime import PoorCLIServer
 
     server = PoorCLIServer()
     asyncio.run(server.run_stdio())

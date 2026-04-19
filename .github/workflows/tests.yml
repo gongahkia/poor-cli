@@ -242,6 +242,13 @@ jobs:
             --inputs bench-head-11.json,bench-head-22.json,bench-head-33.json \
             --report-path bench-head.json
 
+      - name: Run import-time profile (head)
+        run: |
+          .venv/bin/python bench/import_time_profile.py \
+            --python .venv/bin/python \
+            --runs 5 \
+            --output bench-import-head.json
+
       - name: Build base profiles and compare (PR)
         if: github.event_name == 'pull_request'
         run: |
@@ -286,6 +293,10 @@ jobs:
           .venv/bin/python bench/perf_profile_reduce.py \
             --inputs bench-base-11.json,bench-base-22.json,bench-base-33.json \
             --report-path bench-base.json
+          .venv/bin/python bench/import_time_profile.py \
+            --python .venv/bin/python \
+            --runs 5 \
+            --output bench-import-base.json
           git checkout --detach "$HEAD_SHA"
           .venv/bin/pip install -e .
           .venv/bin/python bench/perf_compare.py --baseline bench-base.json --candidate bench-head.json --report-path bench-compare.json || true
@@ -302,6 +313,16 @@ jobs:
             --bootstrap-samples 12000 \
             --seed 42 \
             --report-path bench-compare-quick-quit.json
+
+      - name: Compare import-time profile against base (PR)
+        if: github.event_name == 'pull_request'
+        run: |
+          .venv/bin/python bench/perf_import_compare.py \
+            --baseline bench-import-base.json \
+            --candidate bench-import-head.json \
+            --relative-threshold 0.20 \
+            --absolute-threshold-ms 20 \
+            --report-path bench-import-compare.json || true
 
       - name: Append startup trend history
         if: always()
@@ -372,13 +393,17 @@ jobs:
 
           summary_path = Path(__import__("os").environ["GITHUB_STEP_SUMMARY"])
           head = json.loads(Path("bench-head.json").read_text(encoding="utf-8")) if Path("bench-head.json").exists() else {}
+          import_head = json.loads(Path("bench-import-head.json").read_text(encoding="utf-8")) if Path("bench-import-head.json").exists() else {}
           compare = json.loads(Path("bench-compare.json").read_text(encoding="utf-8")) if Path("bench-compare.json").exists() else {}
           quick_quit_compare = json.loads(Path("bench-compare-quick-quit.json").read_text(encoding="utf-8")) if Path("bench-compare-quick-quit.json").exists() else {}
+          import_compare = json.loads(Path("bench-import-compare.json").read_text(encoding="utf-8")) if Path("bench-import-compare.json").exists() else {}
           history_reduce = json.loads(Path("bench-history-reduced.json").read_text(encoding="utf-8")) if Path("bench-history-reduced.json").exists() else {}
           baseline_meta = json.loads(Path("bench-baseline-meta.json").read_text(encoding="utf-8")) if Path("bench-baseline-meta.json").exists() else {}
           trend_dashboard_md = Path("bench-trend-dashboard.md").read_text(encoding="utf-8") if Path("bench-trend-dashboard.md").exists() else ""
           guardrail = json.loads(Path("bench-guardrail.json").read_text(encoding="utf-8")) if Path("bench-guardrail.json").exists() else {}
           rows = compare.get("comparisons", []) if isinstance(compare, dict) else []
+          import_rows = import_compare.get("comparisons", []) if isinstance(import_compare, dict) else []
+          import_head_rows = import_head.get("scenarios", []) if isinstance(import_head, dict) else []
           quick_quit_rows = quick_quit_compare.get("comparisons", []) if isinstance(quick_quit_compare, dict) else []
           history_rows = history_reduce.get("metrics", []) if isinstance(history_reduce, dict) else []
           scenario_rows = guardrail.get("scenarioRows", []) if isinstance(guardrail, dict) else []
@@ -421,6 +446,31 @@ jobs:
                               allowed=float(row.get("allowedDeltaMs", 0.0)),
                               status=status,
                           )
+                      )
+              if import_rows:
+                  fh.write("\n### Import-Time Compare\n\n")
+                  fh.write("| Scenario | Metric | Base (ms) | Head (ms) | Δ (ms) | Allowed (ms) | Status |\n")
+                  fh.write("|---|---|---:|---:|---:|---:|---|\n")
+                  for row in import_rows:
+                      status = "REGRESSION" if row.get("regressed") else "OK"
+                      fh.write(
+                          "| {scenario} | {metric} | {base:.2f} | {head_v:.2f} | {delta:.2f} | {allowed:.2f} | {status} |\n".format(
+                              scenario=row.get("scenario", ""),
+                              metric=row.get("metric", ""),
+                              base=float(row.get("baselineMs", 0.0)),
+                              head_v=float(row.get("candidateMs", 0.0)),
+                              delta=float(row.get("deltaMs", 0.0)),
+                              allowed=float(row.get("allowedDeltaMs", 0.0)),
+                              status=status,
+                          )
+                      )
+              elif import_head_rows:
+                  fh.write("\n### Import-Time Head\n\n")
+                  fh.write("| Scenario | Wall P50 (ms) | Import Total P50 (ms) |\n")
+                  fh.write("|---|---:|---:|\n")
+                  for row in import_head_rows:
+                      fh.write(
+                          f"| {str(row.get('scenario', ''))} | {float(row.get('wall_p50_ms', 0.0)):.2f} | {float(row.get('import_total_p50_ms', 0.0)):.2f} |\n"
                       )
               if history_rows:
                   fh.write("\n### Quick-Quit Rolling Median/MAD\n\n")
@@ -490,6 +540,9 @@ jobs:
             bench-base-33.json
             bench-compare.json
             bench-compare-quick-quit.json
+            bench-import-head.json
+            bench-import-base.json
+            bench-import-compare.json
             bench-trend-history/bench-trend.jsonl
             bench-history-reduced.json
             bench-trend-dashboard.json
