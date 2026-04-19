@@ -249,6 +249,15 @@ jobs:
             --runs 5 \
             --output bench-import-head.json
 
+      - name: Run harness quality gate
+        run: |
+          .venv/bin/python bench/harness_quality_gate.py \
+            --output bench-harness-quality.json \
+            --min-success-rate 1.0 \
+            --max-avg-tool-calls 3.0 \
+            --max-p95-turn-latency-ms 1200 \
+            --max-total-cost-usd 0.05
+
       - name: Build base profiles and compare (PR)
         if: github.event_name == 'pull_request'
         run: |
@@ -397,6 +406,7 @@ jobs:
           compare = json.loads(Path("bench-compare.json").read_text(encoding="utf-8")) if Path("bench-compare.json").exists() else {}
           quick_quit_compare = json.loads(Path("bench-compare-quick-quit.json").read_text(encoding="utf-8")) if Path("bench-compare-quick-quit.json").exists() else {}
           import_compare = json.loads(Path("bench-import-compare.json").read_text(encoding="utf-8")) if Path("bench-import-compare.json").exists() else {}
+          harness_quality = json.loads(Path("bench-harness-quality.json").read_text(encoding="utf-8")) if Path("bench-harness-quality.json").exists() else {}
           history_reduce = json.loads(Path("bench-history-reduced.json").read_text(encoding="utf-8")) if Path("bench-history-reduced.json").exists() else {}
           baseline_meta = json.loads(Path("bench-baseline-meta.json").read_text(encoding="utf-8")) if Path("bench-baseline-meta.json").exists() else {}
           trend_dashboard_md = Path("bench-trend-dashboard.md").read_text(encoding="utf-8") if Path("bench-trend-dashboard.md").exists() else ""
@@ -406,6 +416,7 @@ jobs:
           import_head_rows = import_head.get("scenarios", []) if isinstance(import_head, dict) else []
           quick_quit_rows = quick_quit_compare.get("comparisons", []) if isinstance(quick_quit_compare, dict) else []
           history_rows = history_reduce.get("metrics", []) if isinstance(history_reduce, dict) else []
+          harness_rows = harness_quality.get("rows", []) if isinstance(harness_quality, dict) else []
           scenario_rows = guardrail.get("scenarioRows", []) if isinstance(guardrail, dict) else []
           with summary_path.open("a", encoding="utf-8") as fh:
               fh.write("### Performance Summary\n\n")
@@ -487,6 +498,27 @@ jobs:
                               max_v=float(row.get("max_ms", 0.0)),
                           )
                       )
+              if harness_quality:
+                  fh.write("\n### Harness Quality Gate\n\n")
+                  fh.write("| Metric | Value |\n")
+                  fh.write("|---|---:|\n")
+                  fh.write(f"| taskSuccessRate | {float(harness_quality.get('taskSuccessRate', 0.0)):.3f} |\n")
+                  fh.write(f"| avgToolCalls | {float(harness_quality.get('avgToolCalls', 0.0)):.3f} |\n")
+                  fh.write(f"| p95TurnLatencyMs | {float(harness_quality.get('p95TurnLatencyMs', 0.0)):.3f} |\n")
+                  fh.write(f"| estimatedCostUsdTotal | {float(harness_quality.get('estimatedCostUsdTotal', 0.0)):.6f} |\n")
+                  if harness_rows:
+                      fh.write("\n| Scenario | Success | Tool Calls | Latency (ms) | Cost (USD) |\n")
+                      fh.write("|---|---|---:|---:|---:|\n")
+                      for row in harness_rows:
+                          fh.write(
+                              "| {name} | {success} | {calls} | {latency:.3f} | {cost:.6f} |\n".format(
+                                  name=str(row.get("name", "")),
+                                  success="yes" if bool(row.get("success", False)) else "no",
+                                  calls=int(row.get("toolCalls", 0) or 0),
+                                  latency=float(row.get("latencyMs", 0.0) or 0.0),
+                                  cost=float(row.get("estimatedCostUsd", 0.0) or 0.0),
+                              )
+                          )
               if scenario_rows:
                   fh.write("\n### Perf Scenarios\n\n")
                   fh.write("| Scenario | Signal A (ms) | Signal B (ms) |\n")
@@ -543,6 +575,7 @@ jobs:
             bench-import-head.json
             bench-import-base.json
             bench-import-compare.json
+            bench-harness-quality.json
             bench-trend-history/bench-trend.jsonl
             bench-history-reduced.json
             bench-trend-dashboard.json

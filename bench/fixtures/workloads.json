@@ -39,5 +39,34 @@
       {"prompt": "validate this patch", "expected_tools": ["run_tests"]},
       {"prompt": "investigate what happened", "expected_tools": ["git_diff", "web_search"]}
     ]
+  },
+  "harness_quality_gate": {
+    "scenarios": [
+      {
+        "name": "readme_trace",
+        "prompt": "find and summarize how poor-cli architecture works in README",
+        "expected_tools": ["read_file", "grep_files"],
+        "calls": [
+          {"name": "read_file", "arguments": {"file_path": "README.md", "start_line": 1, "end_line": 200}},
+          {"name": "grep_files", "arguments": {"pattern": "Architecture", "path": "README.md"}}
+        ]
+      },
+      {
+        "name": "repo_status",
+        "prompt": "show git working tree status",
+        "expected_tools": ["git_status"],
+        "calls": [
+          {"name": "git_status", "arguments": {}}
+        ]
+      },
+      {
+        "name": "repo_diff",
+        "prompt": "inspect current git diff",
+        "expected_tools": ["git_diff"],
+        "calls": [
+          {"name": "git_diff", "arguments": {}}
+        ]
+      }
+    ]
   }
 }
