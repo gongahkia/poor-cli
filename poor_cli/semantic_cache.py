@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -70,7 +71,6 @@ class SemanticCache:
         embedding_provider: Optional[EmbeddingProvider] = None,
     ):
         self.db_path = db_path or (Path.home() / ".poor-cli" / "cache" / "semantic_cache.db")
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.threshold = similarity_threshold
         self.ttl = ttl_seconds
         self.max_entries = max_entries
@@ -80,44 +80,85 @@ class SemanticCache:
         self._init_db()
 
     def _init_db(self) -> None:
-        try:
-            self._db = sqlite3.connect(str(self.db_path), check_same_thread=False)
-            self._db.execute("PRAGMA journal_mode=WAL")
-            self._db.execute("PRAGMA synchronous=NORMAL")
-            self._db.execute("""
-                CREATE TABLE IF NOT EXISTS semantic_cache (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    query TEXT NOT NULL,
-                    query_hash TEXT NOT NULL,
-                    context_hash TEXT NOT NULL,
-                    response TEXT NOT NULL,
-                    embedding TEXT NOT NULL,
-                    model_name TEXT DEFAULT '',
-                    created_at REAL NOT NULL,
-                    last_hit_at REAL,
-                    hit_count INTEGER DEFAULT 0,
-                    response_tokens_est INTEGER DEFAULT 0
-                )
-            """)
-            self._db.execute("""
-                CREATE INDEX IF NOT EXISTS idx_context_hash
-                ON semantic_cache(context_hash)
-            """)
-            self._db.execute("""
-                CREATE INDEX IF NOT EXISTS idx_created_at
-                ON semantic_cache(created_at)
-            """)
-            self._db.execute("""
-                CREATE TABLE IF NOT EXISTS semantic_cache_meta (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL
-                )
-            """)
-            self._db.commit()
-            self._migrate_schema()
-        except Exception as e:
-            logger.error("semantic cache db init failed: %s", e)
-            self._db = None
+        primary = Path(self.db_path)
+        fallback = Path(tempfile.gettempdir()) / "poor-cli" / "cache" / "semantic_cache.db"
+        candidates = [primary]
+        if fallback != primary:
+            candidates.append(fallback)
+        last_error: Optional[Exception] = None
+        for idx, candidate in enumerate(candidates):
+            conn: Optional[sqlite3.Connection] = None
+            try:
+                candidate.parent.mkdir(parents=True, exist_ok=True)
+                conn = sqlite3.connect(str(candidate), check_same_thread=False)
+                self._apply_pragmas(conn)
+                self._create_schema(conn)
+                self._db = conn
+                self.db_path = candidate
+                if idx > 0:
+                    logger.warning("semantic cache db falling back to %s", candidate)
+                self._migrate_schema()
+                return
+            except Exception as e:
+                last_error = e
+                try:
+                    if conn is not None:
+                        conn.close()
+                except Exception:
+                    pass
+                continue
+        if last_error is not None:
+            logger.error("semantic cache db init failed: %s", last_error)
+        self._db = None
+
+    @staticmethod
+    def _apply_pragmas(conn: sqlite3.Connection) -> None:
+        pragma_statements = (
+            "PRAGMA journal_mode=WAL",
+            "PRAGMA synchronous=NORMAL",
+            "PRAGMA temp_store=MEMORY",
+            "PRAGMA cache_size=-20000",
+            "PRAGMA mmap_size=268435456",
+            "PRAGMA busy_timeout=5000",
+        )
+        for statement in pragma_statements:
+            try:
+                conn.execute(statement)
+            except Exception:
+                continue
+
+    @staticmethod
+    def _create_schema(conn: sqlite3.Connection) -> None:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS semantic_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                query TEXT NOT NULL,
+                query_hash TEXT NOT NULL,
+                context_hash TEXT NOT NULL,
+                response TEXT NOT NULL,
+                embedding TEXT NOT NULL,
+                model_name TEXT DEFAULT '',
+                created_at REAL NOT NULL,
+                last_hit_at REAL,
+                hit_count INTEGER DEFAULT 0,
+                response_tokens_est INTEGER DEFAULT 0
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_context_hash
+            ON semantic_cache(context_hash)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_created_at
+            ON semantic_cache(created_at)
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS semantic_cache_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
+        conn.commit()
 
     def _migrate_schema(self) -> None:
         """Wipe entries from earlier cache-key schemas so weak keys can't leak."""
