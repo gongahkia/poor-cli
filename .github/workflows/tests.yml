@@ -253,10 +253,24 @@ jobs:
         run: |
           .venv/bin/python bench/harness_quality_gate.py \
             --output bench-harness-quality.json \
+            --mode autonomous \
             --min-success-rate 1.0 \
             --max-avg-tool-calls 3.0 \
+            --min-avg-tool-precision 0.8 \
+            --min-avg-tool-recall 1.0 \
+            --max-avg-extra-calls 1.0 \
             --max-p95-turn-latency-ms 1200 \
             --max-total-cost-usd 0.05
+
+      - name: Run deterministic turn replay gate
+        run: |
+          .venv/bin/python bench/turn_replay_regression_gate.py \
+            --mode autonomous \
+            --output bench-turn-replay.json \
+            --max-decision-drift-rate 0.0 \
+            --max-completion-reason-drift-rate 0.0 \
+            --max-latency-delta-ms 400 \
+            --max-cost-delta-usd 0.05
 
       - name: Build base profiles and compare (PR)
         if: github.event_name == 'pull_request'
@@ -407,6 +421,7 @@ jobs:
           quick_quit_compare = json.loads(Path("bench-compare-quick-quit.json").read_text(encoding="utf-8")) if Path("bench-compare-quick-quit.json").exists() else {}
           import_compare = json.loads(Path("bench-import-compare.json").read_text(encoding="utf-8")) if Path("bench-import-compare.json").exists() else {}
           harness_quality = json.loads(Path("bench-harness-quality.json").read_text(encoding="utf-8")) if Path("bench-harness-quality.json").exists() else {}
+          turn_replay = json.loads(Path("bench-turn-replay.json").read_text(encoding="utf-8")) if Path("bench-turn-replay.json").exists() else {}
           history_reduce = json.loads(Path("bench-history-reduced.json").read_text(encoding="utf-8")) if Path("bench-history-reduced.json").exists() else {}
           baseline_meta = json.loads(Path("bench-baseline-meta.json").read_text(encoding="utf-8")) if Path("bench-baseline-meta.json").exists() else {}
           trend_dashboard_md = Path("bench-trend-dashboard.md").read_text(encoding="utf-8") if Path("bench-trend-dashboard.md").exists() else ""
@@ -504,6 +519,9 @@ jobs:
                   fh.write("|---|---:|\n")
                   fh.write(f"| taskSuccessRate | {float(harness_quality.get('taskSuccessRate', 0.0)):.3f} |\n")
                   fh.write(f"| avgToolCalls | {float(harness_quality.get('avgToolCalls', 0.0)):.3f} |\n")
+                  fh.write(f"| avgToolPrecision | {float(harness_quality.get('avgToolPrecision', 0.0)):.3f} |\n")
+                  fh.write(f"| avgToolRecall | {float(harness_quality.get('avgToolRecall', 0.0)):.3f} |\n")
+                  fh.write(f"| avgExtraCalls | {float(harness_quality.get('avgExtraCalls', 0.0)):.3f} |\n")
                   fh.write(f"| p95TurnLatencyMs | {float(harness_quality.get('p95TurnLatencyMs', 0.0)):.3f} |\n")
                   fh.write(f"| estimatedCostUsdTotal | {float(harness_quality.get('estimatedCostUsdTotal', 0.0)):.6f} |\n")
                   if harness_rows:
@@ -519,6 +537,15 @@ jobs:
                                   cost=float(row.get("estimatedCostUsd", 0.0) or 0.0),
                               )
                           )
+              if turn_replay:
+                  comparison = turn_replay.get("comparison", {}) if isinstance(turn_replay, dict) else {}
+                  fh.write("\n### Turn Replay Drift Gate\n\n")
+                  fh.write("| Metric | Value |\n")
+                  fh.write("|---|---:|\n")
+                  fh.write(f"| decisionDriftRate | {float(comparison.get('decisionDriftRate', 0.0)):.3f} |\n")
+                  fh.write(f"| completionReasonDriftRate | {float(comparison.get('completionReasonDriftRate', 0.0)):.3f} |\n")
+                  fh.write(f"| latencyDeltaAbsMs | {float(comparison.get('latencyDeltaAbsMs', 0.0)):.3f} |\n")
+                  fh.write(f"| costDeltaAbsUsd | {float(comparison.get('costDeltaAbsUsd', 0.0)):.6f} |\n")
               if scenario_rows:
                   fh.write("\n### Perf Scenarios\n\n")
                   fh.write("| Scenario | Signal A (ms) | Signal B (ms) |\n")
@@ -576,6 +603,7 @@ jobs:
             bench-import-base.json
             bench-import-compare.json
             bench-harness-quality.json
+            bench-turn-replay.json
             bench-trend-history/bench-trend.jsonl
             bench-history-reduced.json
             bench-trend-dashboard.json

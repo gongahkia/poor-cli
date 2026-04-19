@@ -1,4 +1,4 @@
-.PHONY: cli server install installer install-info dev build run test test-unit test-lua lint bench-swe bench-startup-profile bench-import-time bench-tool-capability-graph bench-harness-quality bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
+.PHONY: cli server install installer install-info dev build run test test-unit test-lua lint bench-swe bench-startup-profile bench-import-time bench-tool-capability-graph bench-harness-quality bench-turn-replay bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
 
 PYTHON := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/python,python3)
 PIP := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/pip,pip)
@@ -99,6 +99,9 @@ bench-tool-capability-graph: ## profile graph-guided tool activation miss-rate/l
 
 bench-harness-quality: ## offline harness quality gate (ARGS='--output bench-harness-quality.json')
 	$(PYTHON) bench/harness_quality_gate.py $(ARGS)
+
+bench-turn-replay: ## deterministic turn replay drift gate (ARGS='--output bench-turn-replay.json')
+	$(PYTHON) bench/turn_replay_regression_gate.py $(ARGS)
 
 bench-perf-import-compare: ## compare two import-time profile jsons (ARGS='--baseline a.json --candidate b.json')
 	$(PYTHON) bench/perf_import_compare.py $(ARGS)
