@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402
 """provider probe cold-path breakdown: cache load vs tcp connect vs http probe."""
 
 from __future__ import annotations
@@ -7,10 +8,15 @@ import argparse
 import json
 import os
 import statistics
+import sys
 import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, List
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from poor_cli import provider_probe
 from poor_cli.config import Config
