@@ -160,11 +160,28 @@ class ProvidersHandlersMixin:
 
     def _ensure_config_loaded(self) -> Tuple[ConfigManager, Config]:
         """Load config metadata needed for API key/status operations before full init."""
-        if self.core._config_manager is None:
-            self.core._config_manager = ConfigManager(self.core._config_path)
-        if self.core.config is None:
-            self.core.config = self.core._config_manager.load()
-        return self.core._config_manager, self.core.config
+        maybe_core = getattr(self, "_maybe_core", None)
+        core = maybe_core() if callable(maybe_core) else None
+        if core is not None and core._config_manager is not None and core.config is not None:
+            return core._config_manager, core.config
+
+        cached_manager = getattr(self, "_config_manager_cache", None)
+        if cached_manager is None:
+            config_path = getattr(core, "_config_path", None) if core is not None else None
+            cached_manager = ConfigManager(config_path)
+            self._config_manager_cache = cached_manager
+
+        cached_config = getattr(self, "_config_cache", None)
+        if cached_config is None:
+            cached_config = cached_manager.load()
+            self._config_cache = cached_config
+
+        if core is not None:
+            if core._config_manager is None:
+                core._config_manager = cached_manager
+            if core.config is None:
+                core.config = cached_config
+        return cached_manager, cached_config
 
     async def handle_set_api_key(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """

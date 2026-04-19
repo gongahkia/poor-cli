@@ -267,6 +267,22 @@ def test_status_view_payload_uses_ttl_cache_and_returns_copy():
     assert second["session"]["routingMode"] == "manual"
 
 
+def test_server_default_session_is_lazy_until_core_access():
+    server = PoorCLIServer()
+    assert server._session_manager.default_session is None
+    _ = server.core
+    assert server._session_manager.default_session is not None
+
+
+def test_get_startup_state_does_not_force_core_session_creation():
+    server = PoorCLIServer()
+    assert server._session_manager.default_session is None
+    payload = asyncio.run(server.handle_get_startup_state({}))
+    assert isinstance(payload.get("provider"), str)
+    assert isinstance(payload.get("model"), str)
+    assert server._session_manager.default_session is None
+
+
 def test_get_status_view_returns_stale_then_coalesces_refresh():
     server = PoorCLIServer()
     server.initialized = True

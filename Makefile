@@ -1,4 +1,4 @@
-.PHONY: cli server install installer install-info dev build run test test-unit test-lua lint bench-swe bench-startup-profile bench-import-time bench-cli-command-profile bench-cli-command-compare bench-tool-capability-graph bench-harness-quality bench-turn-replay bench-router-calibration bench-budget-retuning bench-harness-failure bench-harness-burnin bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
+.PHONY: cli server install installer install-info dev build run test test-unit test-lua lint bench-swe bench-startup-profile bench-import-time bench-cli-command-profile bench-cli-command-compare bench-server-first-rpc-profile bench-server-first-rpc-compare bench-tool-capability-graph bench-harness-quality bench-turn-replay bench-router-calibration bench-budget-retuning bench-harness-failure bench-harness-burnin bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
 
 PYTHON := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/python,python3)
 PIP := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/pip,pip)
@@ -99,6 +99,12 @@ bench-cli-command-profile: ## profile cold CLI command latency (ARGS='--runs 5 -
 
 bench-cli-command-compare: ## compare two CLI command profiles (ARGS='--baseline a.json --candidate b.json')
 	$(PYTHON) bench/cli_command_compare.py $(ARGS)
+
+bench-server-first-rpc-profile: ## profile stdio server startup-to-first-rpc latency (ARGS='--runs 5 --output bench-server-first-rpc-head.json')
+	$(PYTHON) bench/server_first_rpc_profile.py $(ARGS)
+
+bench-server-first-rpc-compare: ## compare two stdio server first-rpc profiles (ARGS='--baseline a.json --candidate b.json')
+	$(PYTHON) bench/server_first_rpc_compare.py $(ARGS)
 
 bench-tool-capability-graph: ## profile graph-guided tool activation miss-rate/latency (ARGS='--runs 10 --output bench-tool-capability-graph.json')
 	$(PYTHON) bench/tool_capability_graph_profile.py $(ARGS)

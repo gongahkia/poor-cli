@@ -13,6 +13,7 @@ import copy
 import os
 from pathlib import Path
 import signal
+import threading
 import time
 import uuid
 from typing import TYPE_CHECKING, Any, Dict, Optional, Set
@@ -63,8 +64,8 @@ class PoorCLIServer(HandlerMixin):
 
         phase_started = time.perf_counter()
         self._session_manager = SessionManager()
-        self._session_manager.create_session(label="default", make_default=True)
         self._session_manager.set_permission_callback(self._server_permission_callback)
+        self._default_session_lock = threading.Lock()
         if self._perf_log_enabled:
             self.logger.info(
                 "perf server_init.session_manager_ms=%.2f",
@@ -105,13 +106,37 @@ class PoorCLIServer(HandlerMixin):
     @property
     def core(self) -> PoorCLICore:
         """backward-compat: returns the default session's core."""
+        self._ensure_default_session()
         return self._session_manager.get_session().core
 
     @core.setter
     def core(self, value: PoorCLICore) -> None:
         """backward-compat setter — replaces core in default session."""
+        self._ensure_default_session()
         session = self._session_manager.get_session()
         session.core = value
+
+    def _ensure_default_session(self) -> None:
+        manager = getattr(self, "_session_manager", None)
+        if manager is None:
+            return
+        if not hasattr(manager, "default_session") or not hasattr(manager, "create_session"):
+            return
+        if manager.default_session is not None:
+            return
+        lock = getattr(self, "_default_session_lock", None)
+        if lock is None:
+            return
+        with lock:
+            if manager.default_session is not None:
+                return
+            started = time.perf_counter()
+            manager.create_session(label="default", make_default=True)
+            if getattr(self, "_perf_log_enabled", False):
+                self.logger.info(
+                    "perf server_init.default_session_ms=%.2f",
+                    (time.perf_counter() - started) * 1000.0,
+                )
 
     async def dispatch(self, message: JsonRpcMessage) -> JsonRpcMessage:
         """Dispatch a JSON-RPC message to a registered handler."""
