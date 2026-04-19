@@ -41,3 +41,17 @@ def test_get_startup_state_prefers_tiny_handler_module():
         "print(str(loaded) + '|' + str(loaded_startup) + '|' + str(loaded_status))"
     )
     assert stdout.splitlines()[-1] == "True|True|False"
+
+
+def test_runtime_fast_path_get_startup_state_skips_handler_registry_load():
+    stdout = _run_python(
+        "import asyncio; "
+        "import poor_cli.server.registry as registry; "
+        "from poor_cli.server.runtime import PoorCLIServer; "
+        "from poor_cli.server.types import JsonRpcMessage; "
+        "server = PoorCLIServer(); "
+        "response = asyncio.run(server.dispatch(JsonRpcMessage(id=1, method='getStartupState', params={}))); "
+        "loaded_startup = any(name.endswith('.startup_state') for name in registry._LOADED_MODULES); "
+        "print(str(isinstance(response.result, dict)) + '|' + str('getStartupState' in registry.REGISTRY) + '|' + str(loaded_startup))"
+    )
+    assert stdout.splitlines()[-1] == "True|False|False"

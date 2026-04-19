@@ -151,6 +151,13 @@ class PoorCLIServer(HandlerMixin):
                     (time.perf_counter() - started) * 1000.0,
                 )
 
+    async def _dispatch_fast_path(self, message: JsonRpcMessage) -> JsonRpcMessage | None:
+        if message.method == "getStartupState":
+            from .startup_probe import get_startup_state_payload
+
+            return JsonRpcMessage(id=message.id, result=get_startup_state_payload())
+        return None
+
     async def dispatch(self, message: JsonRpcMessage) -> JsonRpcMessage:
         """Dispatch a JSON-RPC message to a registered handler."""
         with log_context(request_id=message.id):
@@ -181,6 +188,10 @@ class PoorCLIServer(HandlerMixin):
                         },
                     ),
                 )
+
+            fast_response = await self._dispatch_fast_path(message)
+            if fast_response is not None:
+                return fast_response
 
             load_started = time.perf_counter()
             loaded = ensure_handler_for_method(message.method)
