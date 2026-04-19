@@ -246,8 +246,39 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           HEAD_SHA="$(git rev-parse HEAD)"
-          BASE_SHA="${{ github.event.pull_request.base.sha }}"
-          git checkout --detach "$BASE_SHA"
+          EVENT_BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          BASE_REF="${{ github.event.pull_request.base.ref }}"
+          git fetch --no-tags --depth=200 origin "$BASE_REF"
+          MERGE_BASE_SHA="$(git merge-base "$HEAD_SHA" "origin/$BASE_REF" || true)"
+          if [ -z "$MERGE_BASE_SHA" ]; then
+            git fetch --no-tags --depth=1000 origin "$BASE_REF"
+            MERGE_BASE_SHA="$(git merge-base "$HEAD_SHA" "origin/$BASE_REF" || true)"
+          fi
+          SELECTED_BASE_SHA="$EVENT_BASE_SHA"
+          if [ -n "$MERGE_BASE_SHA" ]; then
+            SELECTED_BASE_SHA="$MERGE_BASE_SHA"
+          fi
+          HEAD_SHA="$HEAD_SHA" EVENT_BASE_SHA="$EVENT_BASE_SHA" BASE_REF="$BASE_REF" MERGE_BASE_SHA="$MERGE_BASE_SHA" SELECTED_BASE_SHA="$SELECTED_BASE_SHA" .venv/bin/python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          Path("bench-baseline-meta.json").write_text(
+              json.dumps(
+                  {
+                      "head_sha": os.environ.get("HEAD_SHA", ""),
+                      "event_base_sha": os.environ.get("EVENT_BASE_SHA", ""),
+                      "base_ref": os.environ.get("BASE_REF", ""),
+                      "merge_base_sha": os.environ.get("MERGE_BASE_SHA", ""),
+                      "selected_base_sha": os.environ.get("SELECTED_BASE_SHA", ""),
+                  },
+                  sort_keys=True,
+              )
+              + "\n",
+              encoding="utf-8",
+          )
+          PY
+          git checkout --detach "$SELECTED_BASE_SHA"
           .venv/bin/pip install -e .
           for seed in 11 22 33; do
             bench/run_pinned.sh .venv/bin/python bench/startup_profile.py --runs 10 --seed "$seed" --output "bench-base-$seed.json"
@@ -349,6 +380,7 @@ jobs:
           compare = json.loads(Path("bench-compare.json").read_text(encoding="utf-8")) if Path("bench-compare.json").exists() else {}
           quick_quit_compare = json.loads(Path("bench-compare-quick-quit.json").read_text(encoding="utf-8")) if Path("bench-compare-quick-quit.json").exists() else {}
           history_reduce = json.loads(Path("bench-history-reduced.json").read_text(encoding="utf-8")) if Path("bench-history-reduced.json").exists() else {}
+          baseline_meta = json.loads(Path("bench-baseline-meta.json").read_text(encoding="utf-8")) if Path("bench-baseline-meta.json").exists() else {}
           trend_dashboard_md = Path("bench-trend-dashboard.md").read_text(encoding="utf-8") if Path("bench-trend-dashboard.md").exists() else ""
           provider_breakdown = json.loads(Path("bench-provider-probe-breakdown.json").read_text(encoding="utf-8")) if Path("bench-provider-probe-breakdown.json").exists() else {}
           guardrail = json.loads(Path("bench-guardrail.json").read_text(encoding="utf-8")) if Path("bench-guardrail.json").exists() else {}
@@ -444,6 +476,14 @@ jobs:
               if trend_dashboard_md:
                   fh.write("\n### Trend Dashboard\n\n")
                   fh.write(trend_dashboard_md + "\n")
+              if baseline_meta:
+                  fh.write("\n### Baseline Selection\n\n")
+                  fh.write("| Field | Value |\n")
+                  fh.write("|---|---|\n")
+                  fh.write(f"| base_ref | {baseline_meta.get('base_ref', '')} |\n")
+                  fh.write(f"| event_base_sha | {baseline_meta.get('event_base_sha', '')} |\n")
+                  fh.write(f"| merge_base_sha | {baseline_meta.get('merge_base_sha', '')} |\n")
+                  fh.write(f"| selected_base_sha | {baseline_meta.get('selected_base_sha', '')} |\n")
               fh.write("\n")
           PY
 
@@ -468,6 +508,7 @@ jobs:
             bench-history-reduced.json
             bench-trend-dashboard.json
             bench-trend-dashboard.md
+            bench-baseline-meta.json
             bench-provider-probe-breakdown.json
             bench-guardrail.json
           if-no-files-found: ignore
