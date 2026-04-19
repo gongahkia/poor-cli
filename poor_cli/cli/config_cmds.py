@@ -257,9 +257,18 @@ def run_core_info_command(method_name: str, argv: Sequence[str], prog: str) -> i
     parser.add_argument("--config", help="config file path")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(list(argv))
+    minimal_methods = {
+        "build_doctor_report",
+        "build_status_view",
+        "get_policy_status",
+        "get_available_tools",
+        "get_mcp_status",
+    }
+    minimal_init = method_name in minimal_methods
+
     async def _query():
         core = _core_cls()(config_path=Path(args.config).expanduser() if args.config else None)
-        await core.initialize()
+        await core.initialize(minimal=minimal_init)
         try:
             return getattr(core, method_name)()
         finally:

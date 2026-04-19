@@ -296,7 +296,9 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
         self,
         provider_name: Optional[str] = None,
         model_name: Optional[str] = None,
-        api_key: Optional[str] = None
+        api_key: Optional[str] = None,
+        *,
+        minimal: bool = False,
     ) -> None:
         """
         Initialize the core engine with provider and tools.
@@ -306,6 +308,8 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
                           If None, uses config default.
             model_name: Model to use. If None, uses config default.
             api_key: API key. If None, uses environment variable.
+            minimal: Skip provider initialization and API key checks; only
+                     initialize local runtime surfaces for diagnostics/introspection.
         
         Raises:
             ConfigurationError: If initialization fails.
@@ -334,44 +338,48 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
             if callable(seed_provider_readiness):
                 seed_provider_readiness()
             
-            # Get API key
-            resolved_api_key = api_key
-            if not resolved_api_key:
-                resolved_api_key = self._config_manager.get_api_key(
+            self.provider = None
+            if not minimal:
+                # Get API key
+                resolved_api_key = api_key
+                if not resolved_api_key:
+                    resolved_api_key = self._config_manager.get_api_key(
+                        self.config.model.provider
+                    )
+
+                if not resolved_api_key and self.config.model.provider not in KEYLESS_LOCAL_PROVIDER_NAMES:
+                    raise MissingAPIKeyError(
+                        f"No API key found for provider: {self.config.model.provider}. "
+                        f"Set environment variable: "
+                        f"{self.config.model.providers[self.config.model.provider].api_key_env_var}"
+                    )
+
+                # Get provider config for additional settings
+                provider_config = self._config_manager.get_provider_config(
                     self.config.model.provider
                 )
-            
-            if not resolved_api_key and self.config.model.provider not in KEYLESS_LOCAL_PROVIDER_NAMES:
-                raise MissingAPIKeyError(
-                    f"No API key found for provider: {self.config.model.provider}. "
-                    f"Set environment variable: "
-                    f"{self.config.model.providers[self.config.model.provider].api_key_env_var}"
-                )
-            
-            # Get provider config for additional settings
-            provider_config = self._config_manager.get_provider_config(
-                self.config.model.provider
-            )
-            extra_kwargs = {}
-            if provider_config and provider_config.base_url:
-                extra_kwargs["base_url"] = provider_config.base_url
-            if self.config.model.provider in ("anthropic", "claude"):
-                extra_kwargs["prompt_caching"] = getattr(self.config.model, "prompt_caching", True)
+                extra_kwargs = {}
+                if provider_config and provider_config.base_url:
+                    extra_kwargs["base_url"] = provider_config.base_url
+                if self.config.model.provider in ("anthropic", "claude"):
+                    extra_kwargs["prompt_caching"] = getattr(self.config.model, "prompt_caching", True)
 
-            # Create provider via factory
-            provider_create_started = time.monotonic()
-            self.provider = ProviderFactory.create(
-                provider_name=self.config.model.provider,
-                api_key=resolved_api_key or "",
-                model_name=self.config.model.model_name,
-                **extra_kwargs
-            )
-            self._record_perf_span(
-                "core.initialize.provider_factory_create",
-                (time.monotonic() - provider_create_started) * 1000.0,
-                details={"provider": self.config.model.provider},
-            )
-            logger.info(f"Created {self.config.model.provider} provider")
+                # Create provider via factory
+                provider_create_started = time.monotonic()
+                self.provider = ProviderFactory.create(
+                    provider_name=self.config.model.provider,
+                    api_key=resolved_api_key or "",
+                    model_name=self.config.model.model_name,
+                    **extra_kwargs
+                )
+                self._record_perf_span(
+                    "core.initialize.provider_factory_create",
+                    (time.monotonic() - provider_create_started) * 1000.0,
+                    details={"provider": self.config.model.provider},
+                )
+                logger.info(f"Created {self.config.model.provider} provider")
+            else:
+                logger.info("Skipping provider bootstrap (minimal init mode)")
             
             # Initialize tool registry with output truncation config
             trunc_cfg = self.config.output_truncation
@@ -596,7 +604,11 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
             self._record_perf_span(
                 "core.initialize.total",
                 (time.monotonic() - init_started) * 1000.0,
-                details={"provider": self.config.model.provider, "model": self.config.model.model_name},
+                details={
+                    "provider": self.config.model.provider,
+                    "model": self.config.model.model_name,
+                    "minimal": bool(minimal),
+                },
             )
             logger.info("PoorCLICore initialization complete")
             
