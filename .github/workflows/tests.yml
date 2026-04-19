@@ -303,11 +303,6 @@ jobs:
             --seed 42 \
             --report-path bench-compare-quick-quit.json
 
-      - name: Run provider probe breakdown
-        if: always()
-        run: |
-          bench/run_pinned.sh .venv/bin/python bench/provider_probe_breakdown.py --runs 6 --output bench-provider-probe-breakdown.json || true
-
       - name: Append startup trend history
         if: always()
         run: |
@@ -382,7 +377,6 @@ jobs:
           history_reduce = json.loads(Path("bench-history-reduced.json").read_text(encoding="utf-8")) if Path("bench-history-reduced.json").exists() else {}
           baseline_meta = json.loads(Path("bench-baseline-meta.json").read_text(encoding="utf-8")) if Path("bench-baseline-meta.json").exists() else {}
           trend_dashboard_md = Path("bench-trend-dashboard.md").read_text(encoding="utf-8") if Path("bench-trend-dashboard.md").exists() else ""
-          provider_breakdown = json.loads(Path("bench-provider-probe-breakdown.json").read_text(encoding="utf-8")) if Path("bench-provider-probe-breakdown.json").exists() else {}
           guardrail = json.loads(Path("bench-guardrail.json").read_text(encoding="utf-8")) if Path("bench-guardrail.json").exists() else {}
           rows = compare.get("comparisons", []) if isinstance(compare, dict) else []
           quick_quit_rows = quick_quit_compare.get("comparisons", []) if isinstance(quick_quit_compare, dict) else []
@@ -443,14 +437,6 @@ jobs:
                               max_v=float(row.get("max_ms", 0.0)),
                           )
                       )
-              if provider_breakdown:
-                  fh.write("\n### Provider Probe Breakdown\n\n")
-                  fh.write("| Metric | Mean (ms) | P50 (ms) | P95 (ms) |\n")
-                  fh.write("|---|---:|---:|---:|\n")
-                  for prefix in ("probe_total", "cache_load", "tcp_connect", "http_probe"):
-                      fh.write(
-                          f"| {prefix} | {float(provider_breakdown.get(prefix + '_mean_ms', 0.0)):.2f} | {float(provider_breakdown.get(prefix + '_p50_ms', 0.0)):.2f} | {float(provider_breakdown.get(prefix + '_p95_ms', 0.0)):.2f} |\n"
-                      )
               if scenario_rows:
                   fh.write("\n### Perf Scenarios\n\n")
                   fh.write("| Scenario | Signal A (ms) | Signal B (ms) |\n")
@@ -509,7 +495,6 @@ jobs:
             bench-trend-dashboard.json
             bench-trend-dashboard.md
             bench-baseline-meta.json
-            bench-provider-probe-breakdown.json
             bench-guardrail.json
           if-no-files-found: ignore
 
@@ -538,6 +523,93 @@ jobs:
           POORCLI_PERF_MAX_PROVIDER_PROBE_REPEAT_MS: "2.0"
           POORCLI_PERF_MAX_MOCK_TTFT_MS: "1400"
         run: .venv/bin/python bench/perf_guardrail.py --report-path bench-guardrail.json
+
+  provider-probe-guardrails:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONHASHSEED: "0"
+      TZ: "UTC"
+      LANG: "C.UTF-8"
+      LC_ALL: "C.UTF-8"
+      POORCLI_PERF_PIN_CPU: "0"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install -e .
+
+      - name: Warm and pin host for provider probe
+        run: bench/pin_perf_host.sh
+
+      - name: Run isolated provider probe repeats
+        if: always()
+        run: |
+          for run in 1 2 3; do
+            bench/pin_perf_host.sh
+            bench/run_pinned.sh .venv/bin/python bench/provider_probe_breakdown.py --runs 4 --output "bench-provider-probe-$run.json" || true
+          done
+          .venv/bin/python - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          paths = sorted(str(path) for path in Path(".").glob("bench-provider-probe-*.json"))
+          if paths:
+              subprocess.check_call(
+                  [
+                      ".venv/bin/python",
+                      "bench/perf_profile_reduce.py",
+                      "--inputs",
+                      ",".join(paths),
+                      "--report-path",
+                      "bench-provider-probe-breakdown.json",
+                  ]
+              )
+          PY
+
+      - name: Publish provider probe summary
+        if: always()
+        run: |
+          .venv/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+
+          summary_path = Path(__import__("os").environ["GITHUB_STEP_SUMMARY"])
+          reduced = json.loads(Path("bench-provider-probe-breakdown.json").read_text(encoding="utf-8")) if Path("bench-provider-probe-breakdown.json").exists() else {}
+          with summary_path.open("a", encoding="utf-8") as fh:
+              fh.write("### Provider Probe Isolated Summary\n\n")
+              if not reduced:
+                  fh.write("No provider probe data collected.\n\n")
+              else:
+                  fh.write("| Metric | Mean (ms) | P50 (ms) | P95 (ms) |\n")
+                  fh.write("|---|---:|---:|---:|\n")
+                  for prefix in ("probe_total", "cache_load", "tcp_connect", "http_probe"):
+                      fh.write(
+                          f"| {prefix} | {float(reduced.get(prefix + '_mean_ms', 0.0)):.2f} | {float(reduced.get(prefix + '_p50_ms', 0.0)):.2f} | {float(reduced.get(prefix + '_p95_ms', 0.0)):.2f} |\n"
+                      )
+                  fh.write("\n")
+          PY
+
+      - name: Upload provider probe artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: provider-probe-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          path: |
+            bench-provider-probe-1.json
+            bench-provider-probe-2.json
+            bench-provider-probe-3.json
+            bench-provider-probe-breakdown.json
+          if-no-files-found: ignore
 
   go-internal-coverage:
     runs-on: ubuntu-latest
