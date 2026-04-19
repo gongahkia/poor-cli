@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -72,9 +74,18 @@ class ContextAssemblyOrchestrator:
         core._tiered_compactor = self.tiered_compactor
         core._block_cache = self.block_cache
         self._last_invalidation_reason = ""
+        self._snapshot_memo_key = ""
+        self._snapshot_memo_snapshot: Optional[ContextSnapshot] = None
+        self._snapshot_memo_created_at = 0.0
+        self._snapshot_memo_file_fingerprints: Tuple[Tuple[str, int, int], ...] = tuple()
+        self._snapshot_memo_ttl_seconds = self._memo_ttl_seconds()
 
     def invalidate(self, reason: str) -> None:
         self._last_invalidation_reason = str(reason or "")
+        self._snapshot_memo_key = ""
+        self._snapshot_memo_snapshot = None
+        self._snapshot_memo_created_at = 0.0
+        self._snapshot_memo_file_fingerprints = tuple()
 
     async def assemble(
         self,
@@ -97,6 +108,15 @@ class ContextAssemblyOrchestrator:
             activate_tools=activate_tools,
         )
         provider_name, model_name, budget = self._resolve_provider_model_budget()
+        memo_key = self._snapshot_memo_hash(
+            request=request,
+            provider_name=provider_name,
+            model_name=model_name,
+            budget=budget,
+        )
+        memo_snapshot = self._memoized_snapshot(memo_key)
+        if memo_snapshot is not None:
+            return memo_snapshot
         message, context_result, referenced_files, rules = await self._assemble_user_message(request)
         if request.activate_tools:
             await self._activate_tools(request)
@@ -133,7 +153,7 @@ class ContextAssemblyOrchestrator:
             provider_name=provider_name,
             model_name=model_name,
         )
-        return ContextSnapshot(
+        snapshot = ContextSnapshot(
             system_prompt=self._system_prompt(),
             rules=rules,
             files=files,
@@ -149,6 +169,8 @@ class ContextAssemblyOrchestrator:
             user_prompt=request.prompt,
             turn_id=request.turn_id,
         )
+        self._store_memoized_snapshot(memo_key, snapshot)
+        return snapshot
 
     def _normalize_turn_input(
         self,
@@ -737,3 +759,122 @@ class ContextAssemblyOrchestrator:
     @staticmethod
     def _stable_json(value: Any) -> str:
         return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+
+    @staticmethod
+    def _memo_ttl_seconds() -> float:
+        raw = str(os.environ.get("POORCLI_CONTEXT_SNAPSHOT_MEMO_TTL_S", "") or "").strip()
+        if not raw:
+            return 5.0
+        try:
+            return max(0.0, float(raw))
+        except ValueError:
+            return 5.0
+
+    def _snapshot_memo_hash(
+        self,
+        *,
+        request: TurnInput,
+        provider_name: str,
+        model_name: str,
+        budget: int,
+    ) -> str:
+        core = self._core
+        history_sig = ""
+        try:
+            provider = getattr(core, "provider", None)
+            if provider is not None and hasattr(provider, "get_history"):
+                history = provider.get_history()
+                history_sig = hashlib.sha256(
+                    self._stable_json(history).encode("utf-8", errors="replace")
+                ).hexdigest()
+        except Exception:
+            history_sig = ""
+        instruction_hash = ""
+        instruction_hash_fn = getattr(core, "_instruction_snapshot_hash", None)
+        if callable(instruction_hash_fn):
+            try:
+                instruction_hash = str(instruction_hash_fn() or "")
+            except Exception:
+                instruction_hash = ""
+        dropped = sorted(
+            str(path)
+            for path in (getattr(core, "_context_dropped_files", set()) or set())
+            if str(path or "").strip()
+        )
+        payload = {
+            "prompt": request.prompt,
+            "turnId": request.turn_id,
+            "contextFiles": list(request.context_files),
+            "pinnedContextFiles": list(request.pinned_context_files),
+            "contextBudgetTokens": request.context_budget_tokens,
+            "activateTools": bool(request.activate_tools),
+            "provider": provider_name,
+            "model": model_name,
+            "budget": int(budget),
+            "historySig": history_sig,
+            "systemHash": str(getattr(core, "_system_context_hash", "") or ""),
+            "instructionHash": instruction_hash,
+            "activeGroups": list(getattr(core, "_active_tool_groups", tuple()) or tuple()),
+            "activeToolNames": sorted(str(name) for name in (getattr(core, "_active_tool_names", set()) or set())),
+            "droppedFiles": dropped,
+            "invalidateReason": self._last_invalidation_reason,
+        }
+        return hashlib.sha256(
+            self._stable_json(payload).encode("utf-8", errors="replace")
+        ).hexdigest()
+
+    def _memoized_snapshot(self, memo_key: str) -> Optional[ContextSnapshot]:
+        if not memo_key or memo_key != self._snapshot_memo_key:
+            return None
+        snapshot = self._snapshot_memo_snapshot
+        if snapshot is None:
+            return None
+        if self._snapshot_memo_ttl_seconds <= 0:
+            return None
+        age = time.monotonic() - float(self._snapshot_memo_created_at or 0.0)
+        if age > self._snapshot_memo_ttl_seconds:
+            return None
+        if not self._fingerprints_match(self._snapshot_memo_file_fingerprints):
+            return None
+        return snapshot
+
+    def _store_memoized_snapshot(self, memo_key: str, snapshot: ContextSnapshot) -> None:
+        self._snapshot_memo_key = memo_key
+        self._snapshot_memo_snapshot = snapshot
+        self._snapshot_memo_created_at = time.monotonic()
+        self._snapshot_memo_file_fingerprints = self._snapshot_file_fingerprints(snapshot)
+
+    @staticmethod
+    def _snapshot_file_fingerprints(snapshot: ContextSnapshot) -> Tuple[Tuple[str, int, int], ...]:
+        fingerprints: List[Tuple[str, int, int]] = []
+        for item in snapshot.files:
+            raw_path = str(getattr(item, "path", "") or "").strip()
+            if not raw_path:
+                continue
+            try:
+                path = Path(raw_path).expanduser().resolve()
+            except Exception:
+                path = Path(raw_path)
+            try:
+                stat = path.stat()
+                fingerprints.append((str(path), int(stat.st_mtime_ns), int(stat.st_size)))
+            except OSError:
+                fingerprints.append((str(path), -1, -1))
+        return tuple(fingerprints)
+
+    @staticmethod
+    def _fingerprints_match(
+        fingerprints: Sequence[Tuple[str, int, int]],
+    ) -> bool:
+        for raw_path, expected_mtime_ns, expected_size in fingerprints:
+            path = Path(raw_path)
+            try:
+                stat = path.stat()
+                current_mtime_ns = int(stat.st_mtime_ns)
+                current_size = int(stat.st_size)
+            except OSError:
+                current_mtime_ns = -1
+                current_size = -1
+            if current_mtime_ns != int(expected_mtime_ns) or current_size != int(expected_size):
+                return False
+        return True
