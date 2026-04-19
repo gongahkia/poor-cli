@@ -1004,6 +1004,8 @@ class ToolDispatcher:
                 execution_args["_tool_stream_request_id"] = request_id
                 execution_args["_tool_stream_event_id"] = call_id
                 execution_args["_tool_call_id"] = call_id
+            if tool_name == "delegate_task":
+                execution_args["_request_id"] = request_id
             result = await self._execute_tool_internal(tool_name, execution_args)
         except Exception as e:
             result = f"Error: {e}"

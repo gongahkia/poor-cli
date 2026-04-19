@@ -42,6 +42,15 @@ class TestAgenticConfigDefaults(unittest.TestCase):
         cfg = AgenticConfig()
         self.assertAlmostEqual(cfg.sub_agent_timeout, 120.0)
 
+    def test_sub_agent_token_budgets(self):
+        cfg = AgenticConfig()
+        self.assertEqual(cfg.sub_agent_max_input_tokens, 40000)
+        self.assertEqual(cfg.sub_agent_max_output_tokens, 12000)
+
+    def test_sub_agent_cost_budget(self):
+        cfg = AgenticConfig()
+        self.assertAlmostEqual(cfg.sub_agent_max_cost_usd, 0.50)
+
     def test_architect_mode_default_false(self):
         cfg = AgenticConfig()
         self.assertFalse(cfg.architect_mode)

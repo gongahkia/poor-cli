@@ -314,6 +314,9 @@ class AgenticConfig:
     sub_agent_max_depth: int = 2  # max sub-agent recursion depth
     sub_agent_max_iterations: int = 10  # max iterations per sub-agent
     sub_agent_timeout: float = 120.0  # sub-agent timeout in seconds
+    sub_agent_max_input_tokens: int = 40000  # hard cap per sub-agent run (0 = unlimited)
+    sub_agent_max_output_tokens: int = 12000  # hard cap per sub-agent run (0 = unlimited)
+    sub_agent_max_cost_usd: float = 0.50  # hard cap per sub-agent run (0 = unlimited)
     auto_lint: bool = True  # run lint after file mutations and feed errors back to LLM
     auto_lint_timeout: int = 30  # lint command timeout in seconds
     architect_mode: bool = False  # dual-model: expensive for reasoning, cheap for editing
@@ -931,6 +934,12 @@ class ConfigManager:
             raise ConfigurationError("agentic.max_tool_result_chars_per_turn must be at least 1000")
         if self.config.agentic.max_tool_result_chars_per_turn > 500000:
             raise ConfigurationError("agentic.max_tool_result_chars_per_turn must be at most 500000")
+        if self.config.agentic.sub_agent_max_input_tokens < 0:
+            raise ConfigurationError("agentic.sub_agent_max_input_tokens must be non-negative")
+        if self.config.agentic.sub_agent_max_output_tokens < 0:
+            raise ConfigurationError("agentic.sub_agent_max_output_tokens must be non-negative")
+        if self.config.agentic.sub_agent_max_cost_usd < 0:
+            raise ConfigurationError("agentic.sub_agent_max_cost_usd must be non-negative")
 
         # Validate security config
         if self.config.security.max_file_size_mb < 1:
