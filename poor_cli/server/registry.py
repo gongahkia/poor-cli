@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import importlib
+import json
 import logging
 import os
 from pathlib import Path
@@ -48,6 +49,7 @@ _REGISTER_DECORATORS = {"register", "rpc"}
 _RPC_METHOD_TO_MODULE: dict[str, str] | None = None
 _ATTR_TO_MODULE: dict[str, str] | None = None
 _LOADED_MODULES: set[str] = set()
+_REGISTRY_CACHE_VERSION = 1
 _PERF_LOG = os.environ.get("POORCLI_SERVER_PERF_LOG", "").strip().lower() in {
     "1",
     "true",
@@ -90,12 +92,98 @@ def _register_method_from_decorator(decorator: ast.AST) -> str | None:
     return None
 
 
+def _registry_cache_path() -> Path:
+    raw = os.environ.get("POORCLI_SERVER_REGISTRY_CACHE_PATH", "").strip()
+    if raw:
+        return Path(raw).expanduser().resolve()
+    return (Path.home() / ".poor-cli" / "cache" / "server-registry-index-v1.json").resolve()
+
+
+def _handler_signature() -> dict[str, Any]:
+    files: list[dict[str, Any]] = []
+    for path in sorted(_HANDLER_DIR.glob("*.py")):
+        if path.name.startswith("__"):
+            continue
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        files.append(
+            {
+                "name": path.name,
+                "size": int(stat.st_size),
+                "mtimeNs": int(stat.st_mtime_ns),
+            }
+        )
+    return {
+        "version": _REGISTRY_CACHE_VERSION,
+        "handlerPackage": _HANDLER_PACKAGE,
+        "handlerOrder": list(_HANDLER_ORDER),
+        "files": files,
+    }
+
+
+def _load_cached_indexes(signature: dict[str, Any]) -> tuple[dict[str, str], dict[str, str]] | None:
+    path = _registry_cache_path()
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("signature") != signature:
+        return None
+    rpc_index = payload.get("rpcIndex")
+    attr_index = payload.get("attrIndex")
+    if not isinstance(rpc_index, dict) or not isinstance(attr_index, dict):
+        return None
+    try:
+        rpc_clean = {str(key): str(value) for key, value in rpc_index.items()}
+        attr_clean = {str(key): str(value) for key, value in attr_index.items()}
+    except Exception:
+        return None
+    return rpc_clean, attr_clean
+
+
+def _store_cached_indexes(
+    signature: dict[str, Any],
+    rpc_index: dict[str, str],
+    attr_index: dict[str, str],
+) -> None:
+    path = _registry_cache_path()
+    payload = {
+        "signature": signature,
+        "rpcIndex": rpc_index,
+        "attrIndex": attr_index,
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+    except Exception:
+        return
+
+
 def _build_indexes() -> None:
     global _RPC_METHOD_TO_MODULE, _ATTR_TO_MODULE
     if _RPC_METHOD_TO_MODULE is not None and _ATTR_TO_MODULE is not None:
         return
 
     started = time.perf_counter()
+    signature = _handler_signature()
+    cached = _load_cached_indexes(signature)
+    if cached is not None:
+        _RPC_METHOD_TO_MODULE, _ATTR_TO_MODULE = cached
+        if _PERF_LOG:
+            logger.info(
+                "perf registry_index_cache_hit methods=%d attrs=%d elapsed_ms=%.2f",
+                len(_RPC_METHOD_TO_MODULE),
+                len(_ATTR_TO_MODULE),
+                (time.perf_counter() - started) * 1000.0,
+            )
+        return
+
     rpc_index: dict[str, str] = {}
     attr_index: dict[str, str] = {}
     rpc_rank: dict[str, int] = {}
@@ -137,6 +225,7 @@ def _build_indexes() -> None:
 
     _RPC_METHOD_TO_MODULE = rpc_index
     _ATTR_TO_MODULE = attr_index
+    _store_cached_indexes(signature, rpc_index, attr_index)
 
     if _PERF_LOG:
         logger.info(
