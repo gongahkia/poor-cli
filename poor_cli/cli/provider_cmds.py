@@ -16,6 +16,24 @@ def _core_cls():
     return PoorCLICore
 
 
+def _provider_info_fast(config_path_hint: str | None = None) -> dict[str, Any]:
+    from pathlib import Path
+
+    from ..config import Config, ConfigManager
+    from ..provider_probe import normalize_routing_mode
+
+    manager = ConfigManager(config_path=Path(config_path_hint).expanduser() if config_path_hint else None)
+    config = manager.load() if manager.config_path.exists() else Config()
+    return {
+        "name": str(config.model.provider),
+        "model": str(config.model.model_name),
+        "routingMode": normalize_routing_mode(getattr(config.model, "routing_mode", "manual")),
+        "initialized": False,
+        "capabilities": {},
+        "supported_clients": ["cli", "neovim"],
+    }
+
+
 def run_provider_mode(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="poor-cli provider")
     sub = parser.add_subparsers(dest="subcommand", required=True)
@@ -41,18 +59,7 @@ def run_provider_mode(argv: Sequence[str]) -> int:
                 print(f"  {provider['name']}")
         return 0
     if args.subcommand == "info":
-        import asyncio
-        from pathlib import Path
-
-        async def _info() -> dict[str, Any]:
-            core = _core_cls()(config_path=Path(args.config).expanduser() if args.config else None)
-            await core.initialize()
-            try:
-                return core.get_provider_info()
-            finally:
-                await core.shutdown()
-
-        info = asyncio.run(_info())
+        info = _provider_info_fast(args.config)
         if args.json:
             _print_json(info)
         else:
