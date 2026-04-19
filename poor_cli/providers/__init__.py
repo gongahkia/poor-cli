@@ -1,15 +1,19 @@
-"""AI provider abstractions with lazy provider-class exports."""
+"""AI provider abstractions with fully lazy exports."""
 
 from __future__ import annotations
 
 from importlib import import_module
 
-from .base import BaseProvider, FunctionCall, ProviderCapabilities, ProviderResponse, UsageMetadata
-from .capability import ProviderCapability
-from .provider_factory import ProviderFactory
-from .tool_translator import ProviderType, ToolTranslator
-
-_PROVIDER_EXPORTS = {
+_EXPORT_MAP = {
+    "BaseProvider": ".base",
+    "FunctionCall": ".base",
+    "ProviderCapabilities": ".base",
+    "ProviderResponse": ".base",
+    "UsageMetadata": ".base",
+    "ProviderCapability": ".capability",
+    "ProviderFactory": ".provider_factory",
+    "ProviderType": ".tool_translator",
+    "ToolTranslator": ".tool_translator",
     "GeminiProvider": ".gemini_provider",
     "HFLocalProvider": ".hf_local_provider",
     "HFTGIProvider": ".hf_tgi_provider",
@@ -19,22 +23,11 @@ _PROVIDER_EXPORTS = {
     "VLLMProvider": ".vllm_provider",
 }
 
-__all__ = [
-    "BaseProvider",
-    "ProviderCapabilities",
-    "ProviderCapability",
-    "ProviderResponse",
-    "FunctionCall",
-    "UsageMetadata",
-    "ToolTranslator",
-    "ProviderType",
-    "ProviderFactory",
-    *sorted(_PROVIDER_EXPORTS.keys()),
-]
+__all__ = sorted(_EXPORT_MAP.keys())
 
 
 def __getattr__(name: str):
-    module_name = _PROVIDER_EXPORTS.get(name)
+    module_name = _EXPORT_MAP.get(name)
     if module_name is None:
         raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
     module = import_module(module_name, package=__name__)

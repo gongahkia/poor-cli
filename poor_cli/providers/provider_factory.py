@@ -6,19 +6,21 @@ Supports dynamic provider creation and registration of custom providers.
 
 import importlib
 from importlib.util import find_spec
-from typing import Optional, Dict, Any, Type
-from .base import BaseProvider
+from typing import TYPE_CHECKING, Optional, Dict, Any, Type
 from .capability import ProviderCapability, capability_names, capabilities_for_provider
 from ..exceptions import ConfigurationError, setup_logger
 
 logger = setup_logger(__name__)
+
+if TYPE_CHECKING:
+    from .base import BaseProvider
 
 
 class ProviderFactory:
     """Factory for creating AI provider instances"""
 
     # Loaded provider classes (built-ins + custom registrations).
-    _providers: Dict[str, Type[BaseProvider]] = {}
+    _providers: Dict[str, Type[Any]] = {}
     _initialized = False  # compatibility flag: "built-in registry preloaded"
     _load_errors: Dict[str, str] = {}
 
@@ -74,7 +76,7 @@ class ProviderFactory:
         return True
 
     @classmethod
-    def _load_provider_class(cls, provider_name: str) -> Optional[Type[BaseProvider]]:
+    def _load_provider_class(cls, provider_name: str) -> Optional[Type[Any]]:
         requested = str(provider_name or "").strip().lower()
         if requested in cls._providers:
             return cls._providers[requested]
@@ -100,7 +102,12 @@ class ProviderFactory:
             cls._load_errors[canonical] = str(error)
             logger.warning(f"{canonical} provider not available: {error}")
             return None
-        if not isinstance(provider_class, type) or not issubclass(provider_class, BaseProvider):
+        if not isinstance(provider_class, type):
+            cls._load_errors[canonical] = f"{class_name} is not a class"
+            logger.warning(f"{canonical} provider not available: invalid provider class")
+            return None
+        from .base import BaseProvider as _BaseProvider
+        if not issubclass(provider_class, _BaseProvider):
             cls._load_errors[canonical] = f"{class_name} is not a BaseProvider subtype"
             logger.warning(f"{canonical} provider not available: invalid provider class")
             return None
@@ -128,7 +135,7 @@ class ProviderFactory:
         api_key: str,
         model_name: str,
         **kwargs
-    ) -> BaseProvider:
+    ) -> "BaseProvider":
         """
         Create a provider instance
 
@@ -189,7 +196,7 @@ class ProviderFactory:
             )
 
     @classmethod
-    def register_provider(cls, name: str, provider_class: Type[BaseProvider]):
+    def register_provider(cls, name: str, provider_class: Type[Any]):
         """
         Register a custom provider (for plugins/extensions)
 
@@ -202,7 +209,8 @@ class ProviderFactory:
         Raises:
             ValueError: If provider_class doesn't inherit from BaseProvider
         """
-        if not issubclass(provider_class, BaseProvider):
+        from .base import BaseProvider as _BaseProvider
+        if not issubclass(provider_class, _BaseProvider):
             raise ValueError(
                 f"{provider_class.__name__} must inherit from BaseProvider"
             )
@@ -223,7 +231,7 @@ class ProviderFactory:
         return sorted(str(name) for name in names if str(name).strip())
 
     @classmethod
-    def list_providers(cls) -> Dict[str, Type[BaseProvider]]:
+    def list_providers(cls) -> Dict[str, Type[Any]]:
         """
         Get all registered providers
 
