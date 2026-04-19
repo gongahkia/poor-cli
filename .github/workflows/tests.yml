@@ -256,12 +256,17 @@ jobs:
             --runs 5 \
             --output bench-cli-command-head.json
 
-      - name: Run server first-RPC profile (head)
+      - name: Run server first-RPC profile (head x3 pinned cold)
         run: |
-          .venv/bin/python bench/server_first_rpc_profile.py \
-            --python .venv/bin/python \
-            --runs 5 \
-            --output bench-server-first-rpc-head.json
+          for run in 11 22 33; do
+            bench/run_pinned.sh env POORCLI_SERVER_REGISTRY_CACHE_PATH=/dev/null/registry-index.json .venv/bin/python bench/server_first_rpc_profile.py \
+              --python .venv/bin/python \
+              --runs 5 \
+              --output "bench-server-first-rpc-head-$run.json"
+          done
+          .venv/bin/python bench/perf_profile_reduce.py \
+            --inputs bench-server-first-rpc-head-11.json,bench-server-first-rpc-head-22.json,bench-server-first-rpc-head-33.json \
+            --report-path bench-server-first-rpc-head.json
 
       - name: Run harness quality gate
         run: |
@@ -362,10 +367,15 @@ jobs:
             --python .venv/bin/python \
             --runs 5 \
             --output bench-cli-command-base.json
-          .venv/bin/python bench/server_first_rpc_profile.py \
-            --python .venv/bin/python \
-            --runs 5 \
-            --output bench-server-first-rpc-base.json
+          for run in 11 22 33; do
+            bench/run_pinned.sh env POORCLI_SERVER_REGISTRY_CACHE_PATH=/dev/null/registry-index.json .venv/bin/python bench/server_first_rpc_profile.py \
+              --python .venv/bin/python \
+              --runs 5 \
+              --output "bench-server-first-rpc-base-$run.json"
+          done
+          .venv/bin/python bench/perf_profile_reduce.py \
+            --inputs bench-server-first-rpc-base-11.json,bench-server-first-rpc-base-22.json,bench-server-first-rpc-base-33.json \
+            --report-path bench-server-first-rpc-base.json
           git checkout --detach "$HEAD_SHA"
           .venv/bin/pip install -e .
           .venv/bin/python bench/perf_compare.py --baseline bench-base.json --candidate bench-head.json --report-path bench-compare.json || true
@@ -411,8 +421,10 @@ jobs:
             --baseline bench-server-first-rpc-base.json \
             --candidate bench-server-first-rpc-head.json \
             --metrics startup_to_first_response_p50_ms,startup_to_first_response_p95_ms,request_roundtrip_p50_ms,request_roundtrip_p95_ms \
-            --relative-threshold 0.30 \
-            --absolute-threshold-ms 70 \
+            --relative-threshold 0.20 \
+            --absolute-threshold-ms 40 \
+            --metric-relative-thresholds startup_to_first_response_p50_ms=0.15,startup_to_first_response_p95_ms=0.25,request_roundtrip_p50_ms=0.15,request_roundtrip_p95_ms=0.25 \
+            --metric-absolute-threshold-ms startup_to_first_response_p50_ms=30,startup_to_first_response_p95_ms=55,request_roundtrip_p50_ms=30,request_roundtrip_p95_ms=55 \
             --report-path bench-server-first-rpc-compare.json
 
       - name: Append startup trend history
@@ -878,7 +890,13 @@ jobs:
             bench-cli-command-base.json
             bench-cli-command-compare.json
             bench-server-first-rpc-head.json
+            bench-server-first-rpc-head-11.json
+            bench-server-first-rpc-head-22.json
+            bench-server-first-rpc-head-33.json
             bench-server-first-rpc-base.json
+            bench-server-first-rpc-base-11.json
+            bench-server-first-rpc-base-22.json
+            bench-server-first-rpc-base-33.json
             bench-server-first-rpc-compare.json
             bench-harness-quality.json
             bench-turn-replay.json

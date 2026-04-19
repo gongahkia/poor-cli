@@ -108,3 +108,52 @@ def test_server_first_rpc_compare_detects_regression(tmp_path: Path) -> None:
         check=False,
     )
     assert bad.returncode == 1, bad.stdout
+
+
+def test_server_first_rpc_compare_supports_metric_specific_thresholds(tmp_path: Path) -> None:
+    baseline = tmp_path / "base.json"
+    candidate = tmp_path / "head.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "startup_to_first_response_p50_ms": 100.0,
+                "request_roundtrip_p95_ms": 100.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    candidate.write_text(
+        json.dumps(
+            {
+                "startup_to_first_response_p50_ms": 140.0,
+                "request_roundtrip_p95_ms": 160.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "bench" / "server_first_rpc_compare.py"),
+            "--baseline",
+            str(baseline),
+            "--candidate",
+            str(candidate),
+            "--metrics",
+            "startup_to_first_response_p50_ms,request_roundtrip_p95_ms",
+            "--relative-threshold",
+            "0.10",
+            "--absolute-threshold-ms",
+            "20",
+            "--metric-relative-thresholds",
+            "startup_to_first_response_p50_ms=0.50,request_roundtrip_p95_ms=0.30",
+            "--metric-absolute-threshold-ms",
+            "startup_to_first_response_p50_ms=45,request_roundtrip_p95_ms=70",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr or proc.stdout

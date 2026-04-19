@@ -22,6 +22,22 @@ def _load_json(path: str) -> Dict[str, Any]:
     return payload
 
 
+def _parse_metric_thresholds(raw: str) -> Dict[str, float]:
+    output: Dict[str, float] = {}
+    for item in str(raw or "").split(","):
+        part = item.strip()
+        if not part:
+            continue
+        if "=" not in part:
+            raise RuntimeError(f"invalid metric threshold entry: {part!r}")
+        metric, value = part.split("=", 1)
+        name = metric.strip()
+        if not name:
+            raise RuntimeError(f"invalid metric threshold entry: {part!r}")
+        output[name] = max(0.0, float(value.strip() or "0"))
+    return output
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="bench/server_first_rpc_compare.py")
     parser.add_argument("--baseline", required=True, help="baseline first-rpc profile json")
@@ -29,6 +45,16 @@ def main() -> int:
     parser.add_argument("--metrics", default=",".join(DEFAULT_METRICS), help="comma-separated metrics to compare")
     parser.add_argument("--relative-threshold", type=float, default=0.30)
     parser.add_argument("--absolute-threshold-ms", type=float, default=50.0)
+    parser.add_argument(
+        "--metric-relative-thresholds",
+        default="",
+        help="optional comma list metric=value overrides for relative thresholds",
+    )
+    parser.add_argument(
+        "--metric-absolute-threshold-ms",
+        default="",
+        help="optional comma list metric=value overrides for absolute thresholds (ms)",
+    )
     parser.add_argument("--report-path", default="", help="optional output path")
     args = parser.parse_args()
 
@@ -37,6 +63,8 @@ def main() -> int:
     metrics = [item.strip() for item in str(args.metrics or "").split(",") if item.strip()]
     rel = max(0.0, float(args.relative_threshold))
     abs_ms = max(0.0, float(args.absolute_threshold_ms))
+    per_metric_rel = _parse_metric_thresholds(args.metric_relative_thresholds)
+    per_metric_abs = _parse_metric_thresholds(args.metric_absolute_threshold_ms)
 
     failures: List[str] = []
     comparisons: List[Dict[str, Any]] = []
@@ -44,7 +72,9 @@ def main() -> int:
         base_value = float(baseline.get(metric, 0.0) or 0.0)
         head_value = float(candidate.get(metric, 0.0) or 0.0)
         delta = head_value - base_value
-        allowed = max(abs_ms, base_value * rel)
+        metric_rel = float(per_metric_rel.get(metric, rel))
+        metric_abs = float(per_metric_abs.get(metric, abs_ms))
+        allowed = max(metric_abs, base_value * metric_rel)
         regressed = delta > allowed
         comparisons.append(
             {
@@ -53,6 +83,8 @@ def main() -> int:
                 "candidateMs": round(head_value, 6),
                 "deltaMs": round(delta, 6),
                 "allowedDeltaMs": round(allowed, 6),
+                "relativeThreshold": round(metric_rel, 6),
+                "absoluteThresholdMs": round(metric_abs, 6),
                 "regressed": bool(regressed),
             }
         )
@@ -68,6 +100,8 @@ def main() -> int:
         "metrics_checked": metrics,
         "relative_threshold": rel,
         "absolute_threshold_ms": abs_ms,
+        "metric_relative_thresholds": per_metric_rel,
+        "metric_absolute_threshold_ms": per_metric_abs,
         "comparisons": comparisons,
         "regressions": failures,
     }
