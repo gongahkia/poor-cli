@@ -1,4 +1,4 @@
-.PHONY: cli server install installer install-info dev build run test test-unit test-lua lint bench-swe bench-startup-profile bench-import-time bench-cli-command-profile bench-cli-command-compare bench-server-first-rpc-profile bench-server-first-rpc-compare bench-tool-capability-graph bench-harness-quality bench-turn-replay bench-router-calibration bench-budget-retuning bench-harness-failure bench-harness-burnin bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
+.PHONY: cli server install installer install-info dev build build-server-registry-index run test test-unit test-lua lint bench-swe bench-startup-profile bench-import-time bench-cli-command-profile bench-cli-command-compare bench-server-first-rpc-profile bench-server-first-rpc-compare bench-tool-capability-graph bench-harness-quality bench-turn-replay bench-router-calibration bench-budget-retuning bench-harness-failure bench-harness-burnin bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
 
 PYTHON := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/python,python3)
 PIP := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/pip,pip)
@@ -60,7 +60,11 @@ install: ## install the Python package in dev mode
 	$(PIP) install -e ".[dev]"
 
 build: ## build the Python package (wheel + sdist)
+	$(PYTHON) bench/build_server_registry_index.py
 	$(PYTHON) -m build
+
+build-server-registry-index: ## regenerate committed static server registry index
+	$(PYTHON) bench/build_server_registry_index.py
 
 run: cli ## alias for `make cli`
 

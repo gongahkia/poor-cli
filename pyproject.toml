@@ -87,6 +87,7 @@ include = ["poor_cli*"]
 
 [tool.setuptools.package-data]
 poor_cli = ["*.json", "skills/*.md"]
+"poor_cli.server" = ["*.json"]
 
 [tool.setuptools.dynamic]
 version = {attr = "poor_cli.__version__"}
