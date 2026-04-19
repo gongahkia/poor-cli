@@ -221,6 +221,15 @@ jobs:
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/pip install -e .
 
+      - name: Restore perf trend cache
+        if: always()
+        uses: actions/cache/restore@v4
+        with:
+          path: bench-trend-history
+          key: perf-trend-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            perf-trend-${{ github.ref_name }}-
+
       - name: Best-effort pin perf host
         run: bench/pin_perf_host.sh
 
@@ -276,7 +285,8 @@ jobs:
           import os
           from pathlib import Path
 
-          trend_path = Path("bench-trend.jsonl")
+          trend_path = Path("bench-trend-history") / "bench-trend.jsonl"
+          trend_path.parent.mkdir(parents=True, exist_ok=True)
           entries = []
 
           def add_entry(path: str, profile: str) -> None:
@@ -296,18 +306,36 @@ jobs:
 
           add_entry("bench-base.json", "base")
           add_entry("bench-head.json", "head")
-          with trend_path.open("a", encoding="utf-8") as fh:
-              for row in entries:
-                  fh.write(json.dumps(row, sort_keys=True) + "\n")
+          existing = trend_path.read_text(encoding="utf-8").splitlines() if trend_path.exists() else []
+          for row in entries:
+              existing.append(json.dumps(row, sort_keys=True))
+          max_rows = 600
+          trend_path.write_text("\n".join(existing[-max_rows:]) + ("\n" if existing else ""), encoding="utf-8")
           PY
 
       - name: Reduce quick-quit history
         if: always()
         run: |
           .venv/bin/python bench/perf_history_reduce.py \
-            --input bench-trend.jsonl \
+            --input bench-trend-history/bench-trend.jsonl \
             --window 40 \
             --output bench-history-reduced.json
+
+      - name: Build perf trend dashboard
+        if: always()
+        run: |
+          .venv/bin/python bench/perf_trend_dashboard.py \
+            --input bench-trend-history/bench-trend.jsonl \
+            --window 40 \
+            --output-json bench-trend-dashboard.json \
+            --output-markdown bench-trend-dashboard.md
+
+      - name: Save perf trend cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: bench-trend-history
+          key: perf-trend-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Publish perf summary table
         if: always()
@@ -321,6 +349,7 @@ jobs:
           compare = json.loads(Path("bench-compare.json").read_text(encoding="utf-8")) if Path("bench-compare.json").exists() else {}
           quick_quit_compare = json.loads(Path("bench-compare-quick-quit.json").read_text(encoding="utf-8")) if Path("bench-compare-quick-quit.json").exists() else {}
           history_reduce = json.loads(Path("bench-history-reduced.json").read_text(encoding="utf-8")) if Path("bench-history-reduced.json").exists() else {}
+          trend_dashboard_md = Path("bench-trend-dashboard.md").read_text(encoding="utf-8") if Path("bench-trend-dashboard.md").exists() else ""
           provider_breakdown = json.loads(Path("bench-provider-probe-breakdown.json").read_text(encoding="utf-8")) if Path("bench-provider-probe-breakdown.json").exists() else {}
           guardrail = json.loads(Path("bench-guardrail.json").read_text(encoding="utf-8")) if Path("bench-guardrail.json").exists() else {}
           rows = compare.get("comparisons", []) if isinstance(compare, dict) else []
@@ -412,6 +441,9 @@ jobs:
                           fh.write(
                               f"| {name} | {float(row.get('setupCompleteP99Ms', 0.0)):.2f} | {float(row.get('mockTtftP95Ms', 0.0)):.2f} |\n"
                           )
+              if trend_dashboard_md:
+                  fh.write("\n### Trend Dashboard\n\n")
+                  fh.write(trend_dashboard_md + "\n")
               fh.write("\n")
           PY
 
@@ -420,6 +452,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: startup-profile-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
           path: |
             bench-head.json
             bench-base.json
@@ -431,8 +464,10 @@ jobs:
             bench-base-33.json
             bench-compare.json
             bench-compare-quick-quit.json
-            bench-trend.jsonl
+            bench-trend-history/bench-trend.jsonl
             bench-history-reduced.json
+            bench-trend-dashboard.json
+            bench-trend-dashboard.md
             bench-provider-probe-breakdown.json
             bench-guardrail.json
           if-no-files-found: ignore
