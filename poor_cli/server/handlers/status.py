@@ -315,10 +315,12 @@ class StatusHandlersMixin:
     async def handle_get_startup_state(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return configured provider/model before full backend initialization."""
         del params
-        _, config = self._ensure_config_loaded()
+        from ...config_fast import load_runtime_model_settings
+
+        settings = load_runtime_model_settings()
         return {
-            "provider": str(config.model.provider),
-            "model": str(config.model.model_name),
+            "provider": str(settings.get("provider", "openai")),
+            "model": str(settings.get("model", "")),
         }
 
     async def handle_mcp_health_check(self, params: Dict[str, Any]) -> Dict[str, Any]:

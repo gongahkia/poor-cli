@@ -17,17 +17,13 @@ def _core_cls():
 
 
 def _provider_info_fast(config_path_hint: str | None = None) -> dict[str, Any]:
-    from pathlib import Path
+    from ..config_fast import load_runtime_model_settings
 
-    from ..config import Config, ConfigManager
-    from ..provider_probe import normalize_routing_mode
-
-    manager = ConfigManager(config_path=Path(config_path_hint).expanduser() if config_path_hint else None)
-    config = manager.load() if manager.config_path.exists() else Config()
+    settings = load_runtime_model_settings(config_path_hint)
     return {
-        "name": str(config.model.provider),
-        "model": str(config.model.model_name),
-        "routingMode": normalize_routing_mode(getattr(config.model, "routing_mode", "manual")),
+        "name": str(settings.get("provider", "openai")),
+        "model": str(settings.get("model", "")),
+        "routingMode": str(settings.get("routingMode", "manual")),
         "initialized": False,
         "capabilities": {},
         "supported_clients": ["cli", "neovim"],
