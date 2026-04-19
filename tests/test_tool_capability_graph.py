@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -9,8 +10,12 @@ from poor_cli.core import PoorCLICore
 from poor_cli.enhanced_tools import EnhancedToolRegistry
 from poor_cli.providers.base import FunctionCall
 from poor_cli.tool_capability_graph import (
+    EDGE_STALE_TTL_SECONDS,
+    GRAPH_DECAY_HALF_LIFE_SECONDS,
     GRAPH_FILENAME,
+    NODE_STALE_TTL_SECONDS,
     PERSIST_EVERY_N_UPDATES,
+    SUGGEST_MIN_TRANSITIONS,
     ToolCapabilityGraph,
 )
 
@@ -55,6 +60,35 @@ def test_rank_tool_names_prefers_successful_low_latency(tmp_path):
     assert ranked[0] == "read_file"
 
 
+def test_rank_tool_names_deprioritizes_stale_nodes(tmp_path):
+    if NODE_STALE_TTL_SECONDS <= 0:
+        pytest.skip("node ttl disabled")
+    graph = ToolCapabilityGraph(base_dir=tmp_path)
+    for idx in range(10):
+        call_id = f"old-{idx}"
+        graph.observe_tool_call_start(request_id="old", call_id=call_id, tool_name="legacy_tool", group="core")
+        graph.observe_tool_call_result(
+            request_id="old",
+            call_id=call_id,
+            tool_name="legacy_tool",
+            success=True,
+            latency_ms=12.0,
+        )
+    graph.observe_tool_call_start(request_id="fresh", call_id="fresh-1", tool_name="fresh_tool", group="core")
+    graph.observe_tool_call_result(
+        request_id="fresh",
+        call_id="fresh-1",
+        tool_name="fresh_tool",
+        success=True,
+        latency_ms=20.0,
+    )
+    stale_seen = (datetime.now(timezone.utc) - timedelta(seconds=NODE_STALE_TTL_SECONDS + 60)).isoformat()
+    with graph._lock:  # use direct state edit for deterministic stale timestamp
+        graph._payload["nodes"]["legacy_tool"]["last_seen"] = stale_seen
+    ranked = graph.rank_tool_names(["legacy_tool", "fresh_tool"])
+    assert ranked[0] == "fresh_tool"
+
+
 def test_suggest_followup_groups_from_transitions(tmp_path):
     graph = ToolCapabilityGraph(base_dir=tmp_path)
     for idx in range(12):
@@ -90,6 +124,111 @@ def test_suggest_followup_groups_from_transitions(tmp_path):
     )
     assert suggestions
     assert suggestions[0] == "search"
+
+
+def test_suggest_followup_groups_respects_min_transition_threshold(tmp_path):
+    if SUGGEST_MIN_TRANSITIONS <= 1:
+        pytest.skip("min transition threshold disabled")
+    graph = ToolCapabilityGraph(base_dir=tmp_path)
+    for idx in range(SUGGEST_MIN_TRANSITIONS - 1):
+        request_id = f"m{idx}"
+        graph.observe_tool_call_start(request_id=request_id, call_id=f"{request_id}-1", tool_name="read_file", group="core")
+        graph.observe_tool_call_result(
+            request_id=request_id,
+            call_id=f"{request_id}-1",
+            tool_name="read_file",
+            success=True,
+            latency_ms=10.0,
+        )
+        graph.observe_tool_call_start(request_id=request_id, call_id=f"{request_id}-2", tool_name="web_search", group="network")
+        graph.observe_tool_call_result(
+            request_id=request_id,
+            call_id=f"{request_id}-2",
+            tool_name="web_search",
+            success=True,
+            latency_ms=30.0,
+        )
+    suggestions = graph.suggest_followup_groups(
+        seed_groups=["core"],
+        available_groups=["core", "network"],
+        prompt="check",
+        limit=2,
+    )
+    assert "network" not in suggestions
+
+
+def test_suggest_followup_groups_ignores_stale_edges(tmp_path):
+    if EDGE_STALE_TTL_SECONDS <= 0:
+        pytest.skip("edge ttl disabled")
+    graph = ToolCapabilityGraph(base_dir=tmp_path)
+    for idx in range(max(2, SUGGEST_MIN_TRANSITIONS)):
+        request_id = f"s{idx}"
+        graph.observe_tool_call_start(request_id=request_id, call_id=f"{request_id}-1", tool_name="read_file", group="core")
+        graph.observe_tool_call_result(
+            request_id=request_id,
+            call_id=f"{request_id}-1",
+            tool_name="read_file",
+            success=True,
+            latency_ms=10.0,
+        )
+        graph.observe_tool_call_start(request_id=request_id, call_id=f"{request_id}-2", tool_name="grep_files", group="search")
+        graph.observe_tool_call_result(
+            request_id=request_id,
+            call_id=f"{request_id}-2",
+            tool_name="grep_files",
+            success=True,
+            latency_ms=22.0,
+        )
+    stale_seen = (datetime.now(timezone.utc) - timedelta(seconds=EDGE_STALE_TTL_SECONDS + 60)).isoformat()
+    with graph._lock:  # use direct state edit for deterministic stale timestamp
+        graph._payload["group_edges"]["core\x1fsearch"]["last_seen"] = stale_seen
+    suggestions = graph.suggest_followup_groups(
+        seed_groups=["core"],
+        available_groups=["core", "search"],
+        prompt="check",
+        limit=2,
+    )
+    assert "search" not in suggestions
+
+
+def test_suggest_followup_groups_prefers_recent_edges(tmp_path):
+    if GRAPH_DECAY_HALF_LIFE_SECONDS <= 0 or EDGE_STALE_TTL_SECONDS <= 0:
+        pytest.skip("decay or ttl disabled")
+    graph = ToolCapabilityGraph(base_dir=tmp_path)
+    old_age_seconds = min(max(3600, GRAPH_DECAY_HALF_LIFE_SECONDS * 2), max(3600, EDGE_STALE_TTL_SECONDS - 60))
+    if old_age_seconds <= 0:
+        pytest.skip("insufficient ttl for decay test")
+    old_seen = (datetime.now(timezone.utc) - timedelta(seconds=old_age_seconds)).isoformat()
+    fresh_seen = datetime.now(timezone.utc).isoformat()
+    with graph._lock:  # directly shape deterministic edge data
+        graph._payload["group_edges"] = {
+            "core\x1fsearch": {
+                "src": "core",
+                "dst": "search",
+                "transitions": max(12, SUGGEST_MIN_TRANSITIONS),
+                "success": max(12, SUGGEST_MIN_TRANSITIONS),
+                "failure": 0,
+                "total_latency_ms": 110.0,
+                "last_seen": old_seen,
+            },
+            "core\x1fquality": {
+                "src": "core",
+                "dst": "quality",
+                "transitions": max(12, SUGGEST_MIN_TRANSITIONS),
+                "success": max(12, SUGGEST_MIN_TRANSITIONS),
+                "failure": 0,
+                "total_latency_ms": 110.0,
+                "last_seen": fresh_seen,
+            },
+        }
+    suggestions = graph.suggest_followup_groups(
+        seed_groups=["core"],
+        available_groups=["core", "search", "quality"],
+        prompt="check",
+        limit=2,
+    )
+    assert suggestions
+    assert suggestions[0] == "quality"
 
 
 def test_registry_uses_graph_for_group_suggestions(tmp_path):

@@ -10,7 +10,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 
 from .exceptions import setup_logger
 
@@ -20,6 +20,12 @@ GRAPH_FILENAME = "tool_capability_graph.json"
 PERSIST_EVERY_N_UPDATES = 25
 MAX_REQUEST_STATES = 256
 MAX_PRODUCED_PATHS_PER_REQUEST = 200
+EDGE_STALE_TTL_SECONDS = int(os.environ.get("POORCLI_TOOL_GRAPH_EDGE_TTL_SECONDS", str(45 * 24 * 3600)))
+NODE_STALE_TTL_SECONDS = int(os.environ.get("POORCLI_TOOL_GRAPH_NODE_TTL_SECONDS", str(60 * 24 * 3600)))
+GRAPH_DECAY_HALF_LIFE_SECONDS = int(os.environ.get("POORCLI_TOOL_GRAPH_DECAY_HALF_LIFE_SECONDS", str(14 * 24 * 3600)))
+SUGGEST_MIN_TRANSITIONS = int(os.environ.get("POORCLI_TOOL_GRAPH_SUGGEST_MIN_TRANSITIONS", "2"))
+SUGGEST_MIN_CONFIDENCE = float(os.environ.get("POORCLI_TOOL_GRAPH_SUGGEST_MIN_CONFIDENCE", "0.12"))
+SUGGEST_MIN_SCORE = float(os.environ.get("POORCLI_TOOL_GRAPH_SUGGEST_MIN_SCORE", "0.03"))
 
 
 def _iso_now() -> str:
@@ -49,6 +55,37 @@ def _ordered_unique(values: Iterable[str]) -> List[str]:
     return ordered
 
 
+def _epoch_seconds(timestamp: str) -> float:
+    text = str(timestamp or "").strip()
+    if not text:
+        return 0.0
+    try:
+        return datetime.fromisoformat(text).timestamp()
+    except Exception:
+        return 0.0
+
+
+def _decay_multiplier(last_seen: str, *, now: Optional[float] = None) -> float:
+    if GRAPH_DECAY_HALF_LIFE_SECONDS <= 0:
+        return 1.0
+    seen_ts = _epoch_seconds(last_seen)
+    if seen_ts <= 0:
+        return 1.0
+    current = float(now if now is not None else time.time())
+    age = max(0.0, current - seen_ts)
+    return max(0.05, min(1.0, 0.5 ** (age / float(GRAPH_DECAY_HALF_LIFE_SECONDS))))
+
+
+def _is_stale(last_seen: str, *, ttl_seconds: int, now: Optional[float] = None) -> bool:
+    if ttl_seconds <= 0:
+        return False
+    seen_ts = _epoch_seconds(last_seen)
+    if seen_ts <= 0:
+        return False
+    current = float(now if now is not None else time.time())
+    return (current - seen_ts) > float(ttl_seconds)
+
+
 class ToolCapabilityGraph:
     """Thread-safe capability graph persisted to .poor-cli."""
 
@@ -58,6 +95,7 @@ class ToolCapabilityGraph:
         self._lock = threading.Lock()
         self._loaded = False
         self._updates_since_persist = 0
+        self._updates_since_prune = 0
         self._payload: Dict[str, Any] = {
             "version": 1,
             "updated_at": "",
@@ -88,12 +126,17 @@ class ToolCapabilityGraph:
                 if isinstance(payload.get("group_edges"), dict)
                 else {}
             )
+            self._prune_stale_locked(now_ts=time.time())
 
     def _ensure_loaded(self) -> None:
         if not self._loaded:
             self.load()
 
     def _touch_locked(self) -> bool:
+        self._updates_since_prune += 1
+        if self._updates_since_prune >= PERSIST_EVERY_N_UPDATES:
+            self._updates_since_prune = 0
+            self._prune_stale_locked(now_ts=time.time())
         self._payload["updated_at"] = _iso_now()
         self._updates_since_persist += 1
         if self._updates_since_persist >= PERSIST_EVERY_N_UPDATES:
@@ -136,6 +179,36 @@ class ToolCapabilityGraph:
         keys = list(self._request_state.keys())
         for request_id in keys[: len(keys) - MAX_REQUEST_STATES]:
             self._request_state.pop(request_id, None)
+
+    def _prune_stale_locked(self, *, now_ts: Optional[float] = None) -> None:
+        now = float(now_ts if now_ts is not None else time.time())
+        nodes = self._payload.get("nodes", {})
+        if isinstance(nodes, dict):
+            for tool_name in list(nodes.keys()):
+                node = nodes.get(tool_name)
+                if not isinstance(node, dict):
+                    nodes.pop(tool_name, None)
+                    continue
+                if _is_stale(str(node.get("last_seen", "") or ""), ttl_seconds=NODE_STALE_TTL_SECONDS, now=now):
+                    nodes.pop(tool_name, None)
+        edges = self._payload.get("edges", {})
+        if isinstance(edges, dict):
+            for edge_key in list(edges.keys()):
+                edge = edges.get(edge_key)
+                if not isinstance(edge, dict):
+                    edges.pop(edge_key, None)
+                    continue
+                if _is_stale(str(edge.get("last_seen", "") or ""), ttl_seconds=EDGE_STALE_TTL_SECONDS, now=now):
+                    edges.pop(edge_key, None)
+        group_edges = self._payload.get("group_edges", {})
+        if isinstance(group_edges, dict):
+            for edge_key in list(group_edges.keys()):
+                edge = group_edges.get(edge_key)
+                if not isinstance(edge, dict):
+                    group_edges.pop(edge_key, None)
+                    continue
+                if _is_stale(str(edge.get("last_seen", "") or ""), ttl_seconds=EDGE_STALE_TTL_SECONDS, now=now):
+                    group_edges.pop(edge_key, None)
 
     def _node(self, tool_name: str) -> Dict[str, Any]:
         nodes = self._payload["nodes"]
@@ -347,7 +420,9 @@ class ToolCapabilityGraph:
             self.persist()
 
     @staticmethod
-    def _node_score(node: Dict[str, Any]) -> float:
+    def _node_score(node: Dict[str, Any], *, now_ts: float) -> float:
+        if _is_stale(str(node.get("last_seen", "") or ""), ttl_seconds=NODE_STALE_TTL_SECONDS, now=now_ts):
+            return -1.0
         calls = max(0, int(node.get("calls", 0) or 0))
         success = max(0, int(node.get("success", 0) or 0))
         failure = max(0, int(node.get("failure", 0) or 0))
@@ -356,17 +431,21 @@ class ToolCapabilityGraph:
         success_rate = (success + 1.0) / (success + failure + 2.0)
         usage_bonus = min(1.0, math.log1p(calls) / 5.0)
         latency_penalty = min(1.0, avg_latency / 2500.0)
-        return (success_rate * 0.65) + (usage_bonus * 0.30) - (latency_penalty * 0.25)
+        recency = _decay_multiplier(str(node.get("last_seen", "") or ""), now=now_ts)
+        base = (success_rate * 0.65) + (usage_bonus * 0.30) - (latency_penalty * 0.25)
+        return base * (0.65 + (0.35 * recency))
 
     def rank_tool_names(self, tool_names: Sequence[str]) -> List[str]:
         self._ensure_loaded()
         names = _ordered_unique(tool_names)
+        now_ts = time.time()
         with self._lock:
+            self._prune_stale_locked(now_ts=now_ts)
             nodes = self._payload.get("nodes", {})
             scored = []
             for name in names:
                 node = nodes.get(name, {}) if isinstance(nodes, dict) else {}
-                score = self._node_score(node if isinstance(node, dict) else {})
+                score = self._node_score(node if isinstance(node, dict) else {}, now_ts=now_ts)
                 scored.append((name, score))
         return [name for name, _score in sorted(scored, key=lambda item: (-item[1], item[0]))]
 
@@ -385,7 +464,9 @@ class ToolCapabilityGraph:
             return []
         candidates: Dict[str, float] = {}
         prompt_text = str(prompt or "").lower()
+        now_ts = time.time()
         with self._lock:
+            self._prune_stale_locked(now_ts=now_ts)
             group_edges = self._payload.get("group_edges", {})
             for seed in seeds:
                 outgoing: List[Dict[str, Any]] = []
@@ -394,9 +475,18 @@ class ToolCapabilityGraph:
                         continue
                     if str(edge.get("src", "")) != seed:
                         continue
+                    if _is_stale(str(edge.get("last_seen", "") or ""), ttl_seconds=EDGE_STALE_TTL_SECONDS, now=now_ts):
+                        continue
+                    transitions = max(0, int(edge.get("transitions", 0) or 0))
+                    if transitions < max(1, SUGGEST_MIN_TRANSITIONS):
+                        continue
                     outgoing.append(edge)
-                total = sum(max(0, int(edge.get("transitions", 0) or 0)) for edge in outgoing)
-                if total <= 0:
+                total = sum(
+                    max(0, int(edge.get("transitions", 0) or 0))
+                    * _decay_multiplier(str(edge.get("last_seen", "") or ""), now=now_ts)
+                    for edge in outgoing
+                )
+                if total <= 0.0:
                     continue
                 for edge in outgoing:
                     dst = str(edge.get("dst", "") or "")
@@ -406,11 +496,17 @@ class ToolCapabilityGraph:
                     success = max(0, int(edge.get("success", 0) or 0))
                     failure = max(0, int(edge.get("failure", 0) or 0))
                     success_rate = (success + 1.0) / (success + failure + 2.0)
-                    transition_prob = transitions / max(1, total)
-                    confidence = min(1.0, transitions / 12.0)
+                    decay = _decay_multiplier(str(edge.get("last_seen", "") or ""), now=now_ts)
+                    weighted_transitions = transitions * decay
+                    transition_prob = weighted_transitions / max(1.0, total)
+                    confidence = min(1.0, transitions / 12.0) * decay
+                    if confidence < max(0.0, SUGGEST_MIN_CONFIDENCE):
+                        continue
                     score = transition_prob * success_rate * (0.5 + 0.5 * confidence)
                     if dst in prompt_text:
                         score += 0.10
+                    if score < max(0.0, SUGGEST_MIN_SCORE):
+                        continue
                     candidates[dst] = max(candidates.get(dst, 0.0), score)
         ranked = sorted(candidates.items(), key=lambda item: (-item[1], item[0]))
         return [name for name, _ in ranked[: max(0, int(limit))]]
