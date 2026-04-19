@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from pathlib import Path
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -264,6 +265,57 @@ def test_status_view_payload_uses_ttl_cache_and_returns_copy():
     second = server._status_view_payload()
     assert core.calls == 1
     assert second["session"]["routingMode"] == "manual"
+
+
+def test_get_status_view_returns_stale_then_coalesces_refresh():
+    server = PoorCLIServer()
+    server.initialized = True
+
+    class CoreStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def build_status_view(self):
+            self.calls += 1
+            time.sleep(0.05)
+            return {
+                "session": {"routingMode": f"fresh-{self.calls}"},
+                "trust": {},
+                "provider": {},
+                "context": {},
+                "runs": {},
+                "recovery": {},
+            }
+
+    core = CoreStub()
+    server.core = core
+    server._status_view_cache_ttl_ms = 250.0
+    server._status_view_cache_payload = {
+        "session": {"routingMode": "stale"},
+        "trust": {},
+        "provider": {},
+        "context": {},
+        "runs": {},
+        "recovery": {},
+    }
+    server._status_view_cache_at = time.monotonic() - 1.0
+
+    async def _run():
+        started = time.perf_counter()
+        first = await server.handle_get_status_view({})
+        second = await server.handle_get_status_view({})
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        await asyncio.sleep(0.12)
+        third = await server.handle_get_status_view({})
+        return first, second, third, elapsed_ms
+
+    first, second, third, elapsed_ms = asyncio.run(_run())
+
+    assert first["session"]["routingMode"] == "stale"
+    assert second["session"]["routingMode"] == "stale"
+    assert elapsed_ms < 35.0
+    assert third["session"]["routingMode"] == "fresh-1"
+    assert core.calls == 1
 
 
 def test_dispatch_uses_registry_across_handler_families(monkeypatch):

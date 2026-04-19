@@ -18,6 +18,69 @@ class StatusHandlersMixin:
         self._status_view_cache_at = now
         return payload
 
+    async def _refresh_status_view_cache(self) -> Dict[str, Any]:
+        loop = asyncio.get_running_loop()
+        payload = await loop.run_in_executor(None, self.core.build_status_view)
+        self._status_view_cache_payload = copy.deepcopy(payload)
+        self._status_view_cache_at = time.monotonic()
+        return payload
+
+    def _ensure_status_view_refresh_lock(self) -> asyncio.Lock:
+        lock = getattr(self, "_status_view_refresh_lock", None)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._status_view_refresh_lock = lock
+        return lock
+
+    def _spawn_status_view_refresh(self) -> asyncio.Task[Any]:
+        task = asyncio.create_task(self._refresh_status_view_cache())
+        self._status_view_refresh_task = self._track_background_task(task)
+
+        def _clear_refresh(done_task: asyncio.Task[Any]) -> None:
+            if getattr(self, "_status_view_refresh_task", None) is done_task:
+                self._status_view_refresh_task = None
+
+        task.add_done_callback(_clear_refresh)
+        return task
+
+    async def _status_view_payload_async(self, *, allow_stale: bool = True) -> Dict[str, Any]:
+        ttl_ms = float(getattr(self, "_status_view_cache_ttl_ms", 0.0) or 0.0)
+        now = time.monotonic()
+        cached = getattr(self, "_status_view_cache_payload", None)
+        cached_at = float(getattr(self, "_status_view_cache_at", 0.0) or 0.0)
+        if isinstance(cached, dict) and ttl_ms > 0 and (now - cached_at) * 1000.0 <= ttl_ms:
+            return copy.deepcopy(cached)
+
+        inflight = getattr(self, "_status_view_refresh_task", None)
+        if inflight is not None and inflight.done():
+            self._status_view_refresh_task = None
+            inflight = None
+
+        if isinstance(cached, dict) and allow_stale:
+            if inflight is None:
+                self._spawn_status_view_refresh()
+            return copy.deepcopy(cached)
+
+        lock = self._ensure_status_view_refresh_lock()
+        async with lock:
+            now = time.monotonic()
+            cached = getattr(self, "_status_view_cache_payload", None)
+            cached_at = float(getattr(self, "_status_view_cache_at", 0.0) or 0.0)
+            if isinstance(cached, dict) and ttl_ms > 0 and (now - cached_at) * 1000.0 <= ttl_ms:
+                return copy.deepcopy(cached)
+            inflight = getattr(self, "_status_view_refresh_task", None)
+            if inflight is None or inflight.done():
+                inflight = self._spawn_status_view_refresh()
+
+        try:
+            payload = await inflight
+            return copy.deepcopy(payload)
+        except Exception:
+            cached = getattr(self, "_status_view_cache_payload", None)
+            if isinstance(cached, dict):
+                return copy.deepcopy(cached)
+            raise
+
     def _doctor_report_payload(self) -> Dict[str, Any]:
         payload = self.core.build_doctor_report()
         payload["statusView"] = self._status_view_payload()
@@ -169,13 +232,13 @@ class StatusHandlersMixin:
         """Return the canonical session status payload shared across clients."""
         del params
         self._ensure_initialized()
-        return self._status_view_payload()
+        return await self._status_view_payload_async(allow_stale=True)
 
     async def handle_get_trust_view(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return the trust-center payload shared across clients."""
         del params
         self._ensure_initialized()
-        payload = self._status_view_payload()
+        payload = await self._status_view_payload_async(allow_stale=True)
         payload["view"] = "trust"
         return payload
 

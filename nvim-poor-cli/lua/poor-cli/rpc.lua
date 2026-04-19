@@ -52,9 +52,12 @@ M._stopping_for_exit = false
 M._status_view_cache = {
     value = nil,
     at_ms = 0,
+    refreshing = false,
+    request_id = nil,
 }
 local uv = vim.uv or vim.loop
 local spinner_frames = { "-", "\\", "|", "/" }
+local enrich_status_view_with_client_metrics
 local startup_states = {
     starting = true,
     initializing = true,
@@ -124,6 +127,37 @@ end
 local function invalidate_status_view_cache()
     M._status_view_cache.value = nil
     M._status_view_cache.at_ms = 0
+    M._status_view_cache.refreshing = false
+    M._status_view_cache.request_id = nil
+end
+
+local function refresh_status_view_cache_async()
+    if M._status_view_cache.refreshing then
+        return
+    end
+    if not M.job_id then
+        return
+    end
+    M._status_view_cache.refreshing = true
+    local request_id = M.request("poor-cli/getStatusView", {}, function(result, err)
+        if M._status_view_cache.request_id ~= request_id then
+            return
+        end
+        M._status_view_cache.request_id = nil
+        M._status_view_cache.refreshing = false
+        if not err and type(result) == "table" then
+            result = enrich_status_view_with_client_metrics(result)
+            M._status_view_cache.value = vim.deepcopy(result)
+            M._status_view_cache.at_ms = monotonic_ms()
+            emit_status_changed()
+        end
+    end)
+    if not request_id then
+        M._status_view_cache.refreshing = false
+        M._status_view_cache.request_id = nil
+        return
+    end
+    M._status_view_cache.request_id = request_id
 end
 
 local function set_last_error(err)
@@ -423,7 +457,7 @@ local function note_exit_budget_breach(timeout_ms)
     invalidate_status_view_cache()
 end
 
-local function enrich_status_view_with_client_metrics(payload)
+enrich_status_view_with_client_metrics = function(payload)
     if type(payload) ~= "table" then
         return payload
     end
@@ -1062,11 +1096,28 @@ local function get_status_view_cached(timeout_ms)
     if type(cached) == "table" and (monotonic_ms() - cache_at) <= ttl_ms then
         return vim.deepcopy(cached), nil
     end
+    if type(cached) == "table" then
+        refresh_status_view_cache_async()
+        return vim.deepcopy(cached), nil
+    end
+    if cache.refreshing == true and cache.request_id then
+        local effective_timeout = timeout_ms or config.get("request_timeout") or 15000
+        vim.wait(effective_timeout, function()
+            local state = M._status_view_cache or {}
+            return type(state.value) == "table" or state.refreshing ~= true
+        end, 20)
+        local refreshed = M._status_view_cache or {}
+        if type(refreshed.value) == "table" then
+            return vim.deepcopy(refreshed.value), nil
+        end
+    end
     local result, err = M.request_sync("poor-cli/getStatusView", {}, timeout_ms)
     if not err and type(result) == "table" then
         result = enrich_status_view_with_client_metrics(result)
         M._status_view_cache.value = vim.deepcopy(result)
         M._status_view_cache.at_ms = monotonic_ms()
+        M._status_view_cache.refreshing = false
+        M._status_view_cache.request_id = nil
     end
     return result, err
 end

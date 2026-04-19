@@ -39,6 +39,8 @@ class CommonHandlersMixin:
         self._permission_rules = PermissionRuleEngine(Path.cwd())
         self._status_view_cache_payload: Optional[Dict[str, Any]] = None
         self._status_view_cache_at: float = 0.0
+        self._status_view_refresh_task: Optional[asyncio.Task[Any]] = None
+        self._status_view_refresh_lock: Optional[asyncio.Lock] = None
         try:
             ttl_ms = float(os.environ.get("POORCLI_STATUS_VIEW_CACHE_TTL_MS", "200"))
         except ValueError:
