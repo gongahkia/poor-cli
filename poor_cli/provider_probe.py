@@ -7,7 +7,7 @@ import os
 import socket
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -50,10 +50,19 @@ def _bool_env(name: str, default: bool = False) -> bool:
 
 
 _TCP_CONNECT_TIMEOUT_SECONDS = max(0.05, _float_env("POORCLI_PROVIDER_PROBE_TCP_TIMEOUT_S", 0.35))
-_HTTP_PROBE_TIMEOUT_SECONDS = max(0.10, _float_env("POORCLI_PROVIDER_PROBE_HTTP_TIMEOUT_S", 1.20))
+_HTTP_PROBE_TIMEOUT_SECONDS = max(0.10, _float_env("POORCLI_PROVIDER_PROBE_HTTP_TIMEOUT_S", 0.55))
+_PROBE_STAGE_TIMEOUT_SECONDS = max(
+    _HTTP_PROBE_TIMEOUT_SECONDS,
+    _float_env("POORCLI_PROVIDER_PROBE_STAGE_TIMEOUT_S", _HTTP_PROBE_TIMEOUT_SECONDS + 0.20),
+)
+_PROBE_KEY_LOOKUP_TIMEOUT_SECONDS = max(0.05, _float_env("POORCLI_PROVIDER_PROBE_KEY_TIMEOUT_S", 0.20))
 _PROBE_CACHE_PERSIST_TTL_SECONDS = max(
     _PROBE_CACHE_STALE_TTL_SECONDS,
     _float_env("POORCLI_PROVIDER_PROBE_PERSIST_TTL_S", 900.0),
+)
+_PROBE_CACHE_MAX_RETURN_AGE_SECONDS = max(
+    _PROBE_CACHE_STALE_TTL_SECONDS,
+    _float_env("POORCLI_PROVIDER_PROBE_MAX_RETURN_AGE_S", _PROBE_CACHE_PERSIST_TTL_SECONDS),
 )
 _probe_cache_at = 0.0
 _probe_cache_signature = ""
@@ -151,6 +160,10 @@ def probe_providers(
                 if background_refresh:
                     _refresh_probe_cache_async(config_manager, config, signature)
                 return cached
+            if allow_stale and age <= _PROBE_CACHE_MAX_RETURN_AGE_SECONDS:
+                if background_refresh:
+                    _refresh_probe_cache_async(config_manager, config, signature)
+                return cached
 
     results = _compute_probe_results(config_manager, config)
     _store_probe_cache(signature, results, now=now)
@@ -162,11 +175,17 @@ def _compute_probe_results(
     config: Config,
 ) -> Dict[str, Dict[str, Any]]:
     results: Dict[str, Dict[str, Any]] = {}
+    provider_names = sorted(config.model.providers.keys())
     ollama_models, local_openai_models = _probe_local_providers(config)
     ollama_ready = bool(ollama_models.get("ready"))
     ollama_known_models = list(ollama_models.get("models", []))
+    key_info_by_provider = _prefetch_remote_key_info(
+        config_manager,
+        config,
+        provider_names,
+    )
 
-    for provider_name in sorted(config.model.providers.keys()):
+    for provider_name in provider_names:
         provider_cfg = config.model.providers[provider_name]
         provider_info = ProviderFactory.get_provider_info(provider_name) or {}
         dependency_available = bool(provider_info.get("available", True))
@@ -210,7 +229,7 @@ def _compute_probe_results(
             known_models = list(probe.get("models", []))
             models = known_models if known_models else common_models_for_provider(provider_name)
         else:
-            key_info = config_manager.get_api_key_info(provider_name)
+            key_info = key_info_by_provider.get(provider_name, {"key": None, "source": "none", "env_var": env_var})
             api_key = key_info.get("key")
             configured = bool(api_key)
             ready = dependency_available and configured
@@ -236,6 +255,56 @@ def _compute_probe_results(
             base_url=provider_cfg.base_url,
         ).to_dict()
     return results
+
+
+def _prefetch_remote_key_info(
+    config_manager: ConfigManager,
+    config: Config,
+    provider_names: List[str],
+) -> Dict[str, Dict[str, Any]]:
+    remote_provider_names = [
+        str(name)
+        for name in provider_names
+        if str(name) not in KEYLESS_LOCAL_PROVIDERS
+    ]
+    if not remote_provider_names:
+        return {}
+
+    fallback_by_provider: Dict[str, Dict[str, Any]] = {}
+    for provider_name in remote_provider_names:
+        provider_cfg = config.model.providers.get(provider_name)
+        env_var = provider_cfg.api_key_env_var if provider_cfg else ""
+        fallback_by_provider[provider_name] = {"key": None, "source": "none", "env_var": env_var}
+
+    payload_by_provider: Dict[str, Dict[str, Any]] = {}
+
+    def _worker() -> None:
+        for provider_name in remote_provider_names:
+            fallback = fallback_by_provider.get(provider_name, {"key": None, "source": "none", "env_var": ""})
+            try:
+                raw = config_manager.get_api_key_info(provider_name)
+            except Exception:
+                payload_by_provider[provider_name] = dict(fallback)
+                continue
+            if not isinstance(raw, dict):
+                payload_by_provider[provider_name] = dict(fallback)
+                continue
+            key = raw.get("key")
+            source = str(raw.get("source") or fallback.get("source") or "none")
+            env_var = str(raw.get("env_var") or fallback.get("env_var") or "")
+            payload_by_provider[provider_name] = {
+                "key": str(key).strip() if key else None,
+                "source": source,
+                "env_var": env_var,
+            }
+
+    worker = threading.Thread(target=_worker, name="provider-key-prefetch", daemon=True)
+    worker.start()
+    worker.join(_PROBE_KEY_LOOKUP_TIMEOUT_SECONDS)
+
+    for provider_name, fallback in fallback_by_provider.items():
+        payload_by_provider.setdefault(provider_name, dict(fallback))
+    return payload_by_provider
 
 
 def _copy_probe_cache(signature: str) -> Optional[Dict[str, Dict[str, Any]]]:
@@ -399,25 +468,36 @@ def _probe_local_providers(config: Config) -> tuple[Dict[str, Any], Dict[str, Di
         }
 
     max_workers = max(1, min(total_jobs, 6))
-    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="provider-probe") as executor:
-        futures: Dict[Any, tuple[str, Optional[str]]] = {}
-        if ollama_enabled:
-            futures[executor.submit(_discover_ollama_models, config)] = ("ollama", None)
-        for name in local_openai_names:
-            futures[executor.submit(_discover_openai_compatible_models, config, name)] = ("openai", name)
+    executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="provider-probe")
+    futures: Dict[Any, tuple[str, Optional[str]]] = {}
+    if ollama_enabled:
+        futures[executor.submit(_discover_ollama_models, config)] = ("ollama", None)
+    for name in local_openai_names:
+        futures[executor.submit(_discover_openai_compatible_models, config, name)] = ("openai", name)
 
-        for future, (probe_type, provider_name) in futures.items():
-            try:
-                payload = future.result()
-            except Exception:
-                if probe_type == "ollama":
-                    payload = {"ready": False, "models": []}
-                else:
-                    payload = _fallback_openai_payload(str(provider_name or ""))
+    done, not_done = wait(set(futures.keys()), timeout=_PROBE_STAGE_TIMEOUT_SECONDS)
+    for future in done:
+        probe_type, provider_name = futures[future]
+        try:
+            payload = future.result()
+        except Exception:
             if probe_type == "ollama":
-                ollama_models = dict(payload or {"ready": False, "models": []})
-            elif provider_name:
-                local_openai_models[str(provider_name)] = dict(payload or _fallback_openai_payload(str(provider_name)))
+                payload = {"ready": False, "models": []}
+            else:
+                payload = _fallback_openai_payload(str(provider_name or ""))
+        if probe_type == "ollama":
+            ollama_models = dict(payload or {"ready": False, "models": []})
+        elif provider_name:
+            local_openai_models[str(provider_name)] = dict(payload or _fallback_openai_payload(str(provider_name)))
+
+    for future in not_done:
+        probe_type, provider_name = futures[future]
+        future.cancel()
+        if probe_type == "ollama":
+            ollama_models = {"ready": False, "models": []}
+        elif provider_name:
+            local_openai_models[str(provider_name)] = _fallback_openai_payload(str(provider_name))
+    executor.shutdown(wait=False, cancel_futures=True)
 
     for name in local_openai_all_names:
         local_openai_models.setdefault(name, _fallback_openai_payload(name))

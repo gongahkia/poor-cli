@@ -161,14 +161,59 @@ def test_probe_providers_loads_disk_cache_without_reprobe(monkeypatch, tmp_path)
     assert call_count["ollama"] == 1
     assert call_count["openai_compat"] == len(provider_probe.LOCAL_OPENAI_COMPATIBLE_PROVIDERS)
 
-    _reset_probe_cache()
 
-    provider_probe.probe_providers(
+def test_probe_providers_returns_old_stale_cache_when_allowed(monkeypatch):
+    config = Config()
+    manager = _ConfigManagerStub()
+    _reset_probe_cache()
+    signature = provider_probe.json.dumps({
+        name: {
+            "default_model": provider_cfg.default_model,
+            "base_url": provider_cfg.base_url,
+            "env_var": provider_cfg.api_key_env_var,
+        }
+        for name, provider_cfg in sorted(config.model.providers.items())
+    }, sort_keys=True)
+    cached = {"openai": {"ready": False, "configured": False}}
+    old_age = provider_probe._PROBE_CACHE_STALE_TTL_SECONDS + 5.0
+    provider_probe._store_probe_cache(signature, cached, now=max(0.0, time.monotonic() - old_age))
+
+    monkeypatch.setattr(
+        provider_probe,
+        "_compute_probe_results",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected fresh recompute")),
+    )
+
+    payload = provider_probe.probe_providers(
         manager,
         config,
         allow_stale=True,
         background_refresh=False,
         force_refresh=False,
     )
-    assert call_count["ollama"] == 1
-    assert call_count["openai_compat"] == len(provider_probe.LOCAL_OPENAI_COMPATIBLE_PROVIDERS)
+    assert payload["openai"]["ready"] is False
+
+
+def test_probe_providers_key_lookup_stage_timeout(monkeypatch):
+    config = Config()
+    _reset_probe_cache()
+    monkeypatch.setenv("POORCLI_PROVIDER_PROBE_ALL_LOCAL", "0")
+
+    class _SlowConfigManager:
+        def get_api_key_info(self, _provider_name: str):
+            time.sleep(0.35)
+            return {"key": None, "source": "none"}
+
+    monkeypatch.setattr(provider_probe, "_PROBE_KEY_LOOKUP_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(provider_probe, "_PROBE_STAGE_TIMEOUT_SECONDS", 0.05)
+
+    started = time.perf_counter()
+    provider_probe.probe_providers(
+        _SlowConfigManager(),
+        config,
+        allow_stale=False,
+        background_refresh=False,
+        force_refresh=True,
+    )
+    elapsed = time.perf_counter() - started
+    assert elapsed < 0.40
