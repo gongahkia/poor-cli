@@ -27,6 +27,7 @@ from .economy import (
     resolve_output_verbosity,
 )
 from .skills import InstructionSkillContext, SkillLoadPlan
+from .permission_engine import PermissionEngineMixin
 from .exceptions import (
     PoorCLIError,
     setup_logger,
@@ -277,13 +278,7 @@ class ToolDispatcher:
         )
 
     def _inspect_tool_targets(self, tool_name: str, tool_args: Dict[str, Any]) -> List[str]:
-        if not self.tool_registry:
-            return []
-        try:
-            return self.tool_registry.inspect_mutation_targets(tool_name, tool_args)
-        except Exception as error:
-            logger.debug("Failed to inspect mutation targets for %s: %s", tool_name, error)
-            return []
+        return PermissionEngineMixin._inspect_tool_targets(self, tool_name, tool_args)
 
     @staticmethod
     def _normalize_graph_paths(paths: List[str]) -> List[str]:
@@ -413,18 +408,13 @@ class ToolDispatcher:
         source: str,
         preview: Optional[Dict[str, Any]] = None,
     ) -> None:
-        self._log_audit_event(
-            AuditEventType.PERMISSION_GRANTED if allowed else AuditEventType.PERMISSION_DENIED,
-            operation=f"permission:{tool_name}",
-            target=",".join(self._inspect_tool_targets(tool_name, tool_args)) or None,
-            details={
-                "toolName": tool_name,
-                "toolArgs": self._stringify_tool_arguments(tool_args),
-                "source": source,
-                "previewPaths": (preview or {}).get("paths", []),
-            },
-            severity=AuditSeverity.INFO if allowed else AuditSeverity.WARNING,
-            success=allowed,
+        PermissionEngineMixin._audit_permission_decision(
+            self,
+            tool_name,
+            tool_args,
+            allowed=allowed,
+            source=source,
+            preview=preview,
         )
 
     def _inspect_instruction_snapshot(
@@ -542,39 +532,15 @@ class ToolDispatcher:
         return ""
 
     def _normalize_permission_decision(self, decision: Any) -> Dict[str, Any]:
-        if isinstance(decision, dict):
-            approved_paths = decision.get("approvedPaths")
-            if approved_paths is None:
-                approved_paths = decision.get("approved_paths")
-            if not isinstance(approved_paths, list):
-                approved_paths = []
-            approved_chunks = decision.get("approvedChunks")
-            if approved_chunks is None:
-                approved_chunks = decision.get("approved_chunks")
-            if not isinstance(approved_chunks, list):
-                approved_chunks = []
-            return {
-                "allowed": bool(decision.get("allowed", False)),
-                "approvedPaths": [
-                    str(path)
-                    for path in approved_paths
-                    if isinstance(path, str) and path
-                ],
-                "approvedChunks": [
-                    chunk
-                    for chunk in approved_chunks
-                    if isinstance(chunk, dict)
-                ],
-            }
-        return {"allowed": bool(decision), "approvedPaths": [], "approvedChunks": []}
+        return PermissionEngineMixin._normalize_permission_decision(decision)
 
     def clear_approved_paths(self) -> None:
         """Reset session-scoped path approvals."""
-        self._approved_write_paths.clear()
+        PermissionEngineMixin.clear_approved_paths(self)
 
     def get_approved_paths(self) -> List[str]:
         """Return currently approved write paths."""
-        return sorted(self._approved_write_paths)
+        return PermissionEngineMixin.get_approved_paths(self)
 
     async def _request_permission(
         self,
@@ -582,50 +548,7 @@ class ToolDispatcher:
         tool_args: Dict[str, Any],
         preview: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        if self.config and getattr(self.config.agentic, "path_scoped_approval", True) and tool_name in _MUTATING_TOOLS:
-            target_paths = self._inspect_tool_targets(tool_name, tool_args)
-            resolved = {str(Path(p).resolve()) for p in target_paths if p}
-            if resolved and resolved.issubset(self._approved_write_paths):
-                return {"allowed": True, "approvedPaths": list(resolved), "approvedChunks": []}
-        if not self._permission_callback:
-            decision = {"allowed": True, "approvedPaths": [], "approvedChunks": []}
-            await self._emit_policy_hooks(
-                "permission_decision",
-                {
-                    "toolName": tool_name,
-                    "toolArgs": self._stringify_tool_arguments(tool_args),
-                    "preview": preview or {},
-                    "allowed": True,
-                    "approvedPaths": [],
-                    "approvedChunks": [],
-                    "source": "default-allow",
-                },
-            )
-            return decision
-
-        decision = await self._permission_callback(tool_name, tool_args, preview)
-        normalized = self._normalize_permission_decision(decision)
-        if normalized["allowed"] and self.config and getattr(self.config.agentic, "path_scoped_approval", True):
-            target_paths = self._inspect_tool_targets(tool_name, tool_args)
-            for p in target_paths:
-                if p:
-                    self._approved_write_paths.add(str(Path(p).resolve()))
-            for p in normalized.get("approvedPaths", []):
-                if p:
-                    self._approved_write_paths.add(str(Path(p).resolve()))
-        await self._emit_policy_hooks(
-            "permission_decision",
-            {
-                "toolName": tool_name,
-                "toolArgs": self._stringify_tool_arguments(tool_args),
-                "preview": preview or {},
-                "allowed": normalized["allowed"],
-                "approvedPaths": normalized["approvedPaths"],
-                "approvedChunks": normalized["approvedChunks"],
-                "source": "permission-callback",
-            },
-        )
-        return normalized
+        return await PermissionEngineMixin._request_permission(self, tool_name, tool_args, preview)
 
     async def _apply_permission_scope(
         self,
@@ -634,10 +557,8 @@ class ToolDispatcher:
         approved_paths: List[str],
         approved_chunks: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
-        approved_chunks = approved_chunks or []
-        if (not approved_paths and not approved_chunks) or not self.tool_registry:
-            return tool_args
-        return self.tool_registry.narrow_mutation_arguments(
+        return await PermissionEngineMixin._apply_permission_scope(
+            self,
             tool_name,
             tool_args,
             approved_paths,
@@ -645,52 +566,14 @@ class ToolDispatcher:
         )
 
     def _should_checkpoint_tool(self, tool_name: str, tool_args: Dict[str, Any]) -> bool:
-        if tool_name not in _MUTATING_TOOLS:
-            return False
-        if tool_name == "apply_patch_unified" and bool(tool_args.get("check_only")):
-            return False
-        if tool_name in {"write_file", "edit_file", "apply_patch_unified"}:
-            mode = str(getattr(getattr(self.config, "diff_review", None), "mode", "review") or "review").lower()
-            if os.environ.get("POOR_CLI_DIFF_REVIEW", "").strip().lower() != "auto" and mode == "review":
-                return False
-        return True
+        return PermissionEngineMixin._should_checkpoint_tool(self, tool_name, tool_args)
 
     async def _create_mutation_checkpoint(
         self,
         tool_name: str,
         tool_args: Dict[str, Any],
     ) -> Optional[str]:
-        if not self.checkpoint_manager or not self.tool_registry:
-            return None
-
-        targets = self._inspect_tool_targets(tool_name, tool_args)
-        if not targets:
-            return None
-
-        try:
-            branch = self._current_git_branch()
-            checkpoint = await asyncio.to_thread(
-                self.checkpoint_manager.create_checkpoint,
-                targets,
-                f"Auto checkpoint before {tool_name} [{branch}]",
-                f"pre_{tool_name}",
-                [tool_name, f"branch:{branch}"],
-            )
-            self._log_audit_event(
-                AuditEventType.CHECKPOINT_CREATE,
-                operation=f"checkpoint:{tool_name}",
-                target=",".join(targets),
-                details={
-                    "checkpointId": checkpoint.checkpoint_id,
-                    "toolName": tool_name,
-                    "targets": targets,
-                    "branch": branch,
-                },
-            )
-            return checkpoint.checkpoint_id
-        except Exception as error:
-            logger.warning("Failed to create pre-mutation checkpoint for %s: %s", tool_name, error)
-            return None
+        return await PermissionEngineMixin._create_mutation_checkpoint(self, tool_name, tool_args)
 
     def _turn_cache_key(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         """Stable cache key for per-turn read-only tool result dedup."""
@@ -824,17 +707,7 @@ class ToolDispatcher:
 
     def _check_auto_permission(self, tool_name: str, tool_args: Dict[str, Any]) -> Optional[bool]:
         """Check auto-approve/deny from AgenticConfig. Returns True/False/None."""
-        if not self.config:
-            return None
-        ac = self.config.agentic
-        if tool_name in ac.auto_approve_tools:
-            return True
-        args_str = str(tool_args)
-        for pattern in ac.deny_patterns:
-            if pattern in args_str:
-                logger.warning(f"Deny pattern matched: {pattern}")
-                return False
-        return None # needs interactive permission
+        return PermissionEngineMixin._check_auto_permission(self, tool_name, tool_args)
 
     def _compute_edit_diff(self, tool_name: str, tool_args: Dict[str, Any]) -> str:
         """Compute a unified diff for edit_file tool calls."""

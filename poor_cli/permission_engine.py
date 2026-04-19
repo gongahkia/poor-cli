@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import inspect
+import os
 from collections.abc import Awaitable
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -170,6 +171,10 @@ class PermissionEngineMixin:
             return False
         if tool_name == "apply_patch_unified" and bool(tool_args.get("check_only")):
             return False
+        if tool_name in {"write_file", "edit_file", "apply_patch_unified"}:
+            mode = str(getattr(getattr(self.config, "diff_review", None), "mode", "review") or "review").lower()
+            if os.environ.get("POOR_CLI_DIFF_REVIEW", "").strip().lower() != "auto" and mode == "review":
+                return False
         return True
 
     async def _create_mutation_checkpoint(self, tool_name: str, tool_args: Dict[str, Any]) -> Optional[str]:
@@ -206,9 +211,9 @@ class PermissionEngineMixin:
         if tool_name in auto_approve:
             return True
         deny_patterns = getattr(agentic, "deny_patterns", [])
-        if tool_name == "bash":
-            cmd = str(tool_args.get("command", ""))
-            for pattern in deny_patterns:
-                if pattern in cmd:
-                    return False
+        args_str = str(tool_args)
+        for pattern in deny_patterns:
+            if pattern in args_str:
+                logger.warning("Deny pattern matched: %s", pattern)
+                return False
         return None
