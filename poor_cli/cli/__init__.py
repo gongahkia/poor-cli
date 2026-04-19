@@ -11,7 +11,7 @@ _EXPORT_MAP = {
     "run_memory_mode": "state_cmds",
     "run_config_mode": "config_cmds",
     "run_profile_mode": "config_cmds",
-    "run_trust_mode": "config_cmds",
+    "run_trust_mode": "trust_cmds",
     "run_provider_mode": "config_cmds",
     "run_core_info_command": "config_cmds",
     "run_cost_mode": "config_cmds",
