@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import os
 import sys
@@ -347,6 +346,8 @@ async def _run_exec_mode_async(args: argparse.Namespace) -> int:
 
 
 def _run_exec_mode(argv: Sequence[str]) -> int:
+    import asyncio
+
     parser = _build_exec_parser()
     args = parser.parse_args(list(argv))
     return asyncio.run(_run_exec_mode_async(args))
@@ -670,6 +671,7 @@ def _wait_for_task_completion(manager: TaskManager, task_id: str, *, timeout_sec
 
 def _run_watch_mode(argv: Sequence[str]) -> int:
     """Handle 'poor-cli watch' — monitor files for inline instructions."""
+    import asyncio
     import argparse
     parser = argparse.ArgumentParser(prog="poor-cli watch")
     parser.add_argument("--debounce", type=float, default=2.0, help="Debounce seconds")
@@ -708,6 +710,7 @@ def _run_watch_mode(argv: Sequence[str]) -> int:
 
 def _run_deploy_mode(argv: Sequence[str]) -> int:
     """Handle 'poor-cli deploy'."""
+    import asyncio
     import argparse
     parser = argparse.ArgumentParser(prog="poor-cli deploy")
     parser.add_argument("--target", "-t", help="Deploy target (vercel, netlify, fly, railway, cloudflare)")
@@ -759,6 +762,7 @@ def _run_deploy_mode(argv: Sequence[str]) -> int:
 
 def _run_preview_mode(argv: Sequence[str]) -> int:
     """Handle 'poor-cli preview'."""
+    import asyncio
     import argparse
     parser = argparse.ArgumentParser(prog="poor-cli preview")
     parser.add_argument("--port", type=int, default=3456)
@@ -792,6 +796,7 @@ def _run_preview_mode(argv: Sequence[str]) -> int:
 
 def _run_review_pr_mode(argv: Sequence[str]) -> int:
     """Handle 'poor-cli review-pr <number>'."""
+    import asyncio
     import argparse
     parser = argparse.ArgumentParser(prog="poor-cli pr review")
     parser.add_argument("pr_number", type=int, help="PR number to review")
@@ -813,6 +818,7 @@ def _run_review_pr_mode(argv: Sequence[str]) -> int:
 
 def _run_agent_mode(argv: Sequence[str]) -> int:
     """Handle 'poor-cli agent' subcommands."""
+    import asyncio
     import argparse
     parser = argparse.ArgumentParser(prog="poor-cli agent", description="Background agent management")
     sub = parser.add_subparsers(dest="subcommand")
@@ -910,6 +916,7 @@ def _run_agent_mode(argv: Sequence[str]) -> int:
 
 
 def _run_task_mode(argv: Sequence[str]) -> int:
+    import asyncio
     from .sandbox import normalize_preset
     from .task_manager import TaskManager, run_task_worker
 
@@ -1115,6 +1122,7 @@ def _build_skill_parser() -> argparse.ArgumentParser:
 
 
 def _run_skills_mode(argv: Sequence[str]) -> int:
+    import asyncio
     from .skills import SkillRegistry
 
     parser = _build_skill_parser()
@@ -1153,6 +1161,7 @@ def _build_commands_parser() -> argparse.ArgumentParser:
 
 
 def _run_commands_mode(argv: Sequence[str]) -> int:
+    import asyncio
     from .automations import CustomCommandRegistry
 
     parser = _build_commands_parser()
