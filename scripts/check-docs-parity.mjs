@@ -167,6 +167,8 @@ ensureIncludes("docs/agent-builder-quickstart.md", [
   "npm run diagnostics",
   "npm run test:smoke:templates",
   "docs/troubleshooting.md",
+  "backend-worker-template.py",
+  "queue-consumer-template.py",
 ]);
 
 ensureIncludes("examples/README.md", [
@@ -185,6 +187,8 @@ ensureIncludes("examples/README.md", [
   "failed outcomes",
   "sg_query completed, blocked, unsupported, and failed outcomes",
   "basic-client.py",
+  "backend-worker-template.py",
+  "queue-consumer-template.py",
   "scheduled-monitor-template.ts",
 ]);
 

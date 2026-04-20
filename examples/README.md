@@ -96,6 +96,15 @@ Production templates:
 - `integration/ui-state-template.ts` for frontend state adapters around `sg_query` status contracts.
 - `integration/scheduled-monitor-template.ts` for periodic transport/environment monitoring with escalation tiers.
 - `integration/success-context-ids-template.ts` for validating opt-in `structuredContent.contextIds` on successful tool responses.
+- `integration/backend-worker-template.py` for Python job-runner services that need deterministic `sg_query` status handling.
+- `integration/queue-consumer-template.py` for Python queue consumers with explicit ack/retry/dead-letter routing.
+
+Python template dry-run checks:
+
+```bash
+python3 examples/integration/backend-worker-template.py --dry-run
+python3 examples/integration/queue-consumer-template.py --dry-run
+```
 
 Template smoke checks (CI and local):
 
