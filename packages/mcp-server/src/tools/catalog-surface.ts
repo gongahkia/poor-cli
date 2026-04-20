@@ -442,6 +442,47 @@ const RECIPE_PROMPT_METADATA: Readonly<Record<string, PromptMetadata>> = {
     ],
     buildStarterPrompt: (args) => `Find a residents' network centre near ${args["address"]}`,
   },
+  moe_school_directory_lookup: {
+    args: [
+      {
+        name: "level",
+        description: "Optional school level filter.",
+        kind: "enum",
+        enumValues: ["PRIMARY", "SECONDARY", "JUNIOR COLLEGE"],
+      },
+      {
+        name: "zone",
+        description: "Optional MOE school zone filter.",
+        kind: "enum",
+        enumValues: ["NORTH", "SOUTH", "EAST", "WEST", "CENTRAL"],
+      },
+      { name: "name", description: "Optional exact school name filter.", kind: "string" },
+    ],
+    buildStarterPrompt: (args) => {
+      const level = typeof args["level"] === "string" ? `${args["level"].toLowerCase()} ` : "";
+      const zone = typeof args["zone"] === "string" ? ` in ${args["zone"].toLowerCase()} zone` : "";
+      const name = typeof args["name"] === "string" ? ` named "${args["name"]}"` : "";
+      return `Find MOE ${level}schools${zone}${name}`.trim();
+    },
+  },
+  moh_healthcare_directory_lookup: {
+    args: [
+      {
+        name: "type",
+        description: "Optional healthcare facility type filter.",
+        kind: "enum",
+        enumValues: ["HOSPITAL", "CLINIC"],
+      },
+      { name: "postalCode", description: "Optional Singapore postal code filter.", kind: "string" },
+      { name: "name", description: "Optional exact facility name filter.", kind: "string" },
+    ],
+    buildStarterPrompt: (args) => {
+      const type = typeof args["type"] === "string" ? `${args["type"].toLowerCase()} ` : "";
+      const postalCode = typeof args["postalCode"] === "string" ? ` near postal code ${args["postalCode"]}` : "";
+      const name = typeof args["name"] === "string" ? ` named "${args["name"]}"` : "";
+      return `Find MOH ${type}facilities${postalCode}${name}`.trim();
+    },
+  },
   business_due_diligence: {
     args: [
       { name: "entityName", description: "Entity or company name.", kind: "string", required: true },

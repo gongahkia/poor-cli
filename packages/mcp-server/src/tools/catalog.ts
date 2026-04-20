@@ -1097,6 +1097,38 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
     continuationTools: ["sg_pa_resident_network_centres"],
   },
   {
+    name: "MOE School Directory Lookup",
+    goal: "Run a bounded MOE school directory lookup with optional level, zone, and exact-name filters.",
+    prompt: "Find MOE primary schools in west zone",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Find MOE primary schools in west zone", mode: "execute" },
+    },
+    fallbackTools: ["sg_moe_schools"],
+    notes: [
+      "Designed for deterministic education-directory lookups, not school ranking or placement recommendations.",
+      "The output includes provenance, freshness, and limits metadata for enterprise planning handoffs.",
+    ],
+    requiredInputs: ["optional level, zone, or exact name"],
+    continuationTools: ["sg_moe_schools"],
+  },
+  {
+    name: "MOH Healthcare Directory Lookup",
+    goal: "Run a bounded MOH healthcare directory lookup for hospitals and clinics by type, name, or postal code.",
+    prompt: "Find MOH hospitals near postal code 119077",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Find MOH hospitals near postal code 119077", mode: "execute" },
+    },
+    fallbackTools: ["sg_moh_facilities"],
+    notes: [
+      "Designed for deterministic facility-directory lookups, not triage or medical recommendations.",
+      "The output includes provenance, freshness, and limits metadata for traceable operational use.",
+    ],
+    requiredInputs: ["optional type, postalCode, or exact name"],
+    continuationTools: ["sg_moh_facilities"],
+  },
+  {
     id: "bus_stop_status",
     name: "Bus Stop Status",
     goal: "Get live bus arrival timings and transport context for a specific bus stop.",

@@ -354,6 +354,14 @@ describe("resource catalog parity", () => {
           continuationTools: expect.arrayContaining(["sg_hlb_hotels"]),
         }),
         expect.objectContaining({
+          name: "MOE School Directory Lookup",
+          continuationTools: expect.arrayContaining(["sg_moe_schools"]),
+        }),
+        expect.objectContaining({
+          name: "MOH Healthcare Directory Lookup",
+          continuationTools: expect.arrayContaining(["sg_moh_facilities"]),
+        }),
+        expect.objectContaining({
           id: "bus_stop_status",
           outputShapeVersion: "transport-brief/v2",
         }),
