@@ -13,6 +13,9 @@ use regex::Regex;
 use serde::Serialize;
 use serde_json::{json, Value};
 use tracing::{info, warn};
+use winit::dpi::{PhysicalPosition, PhysicalSize};
+use winit::event::MouseButton;
+use winit::window::Window;
 use wok_app::action_effects::{
     ActionEffects, ClipboardEffect, OverlayEffect, RuntimeEffect, ViewportEffect, WorkspaceEffect,
 };
@@ -76,9 +79,6 @@ use wok_ui::theme::Theme;
 use wok_ui::theme_watcher::ThemeWatcher;
 use wok_ui::vi_mode::{ViModeState, ViPending, ViSubMode};
 use wok_ui::viewport::ViewportRenderer;
-use winit::dpi::{PhysicalPosition, PhysicalSize};
-use winit::event::MouseButton;
-use winit::window::Window;
 
 mod action_parser;
 mod cli_runtime;
@@ -87,6 +87,7 @@ mod jsonrpc_params;
 mod remote_runtime;
 mod render_runtime;
 mod rpc_cli;
+mod setup_ops;
 mod workspace_runtime;
 
 use action_parser::parse_lua_action;
@@ -121,6 +122,12 @@ struct Cli {
 
 #[derive(Subcommand, Debug, Clone)]
 enum CliCommand {
+    /// Initialize managed local Wok files in the config directory.
+    Init {
+        /// Overwrite existing managed files.
+        #[arg(long, default_value_t = false)]
+        overwrite: bool,
+    },
     /// Attach to a running named session.
     Attach {
         /// Session name.
@@ -1991,10 +1998,8 @@ impl WokHandler {
                             .and_then(|path| wok_ui::theme_loader::load_theme(path).ok())
                             .unwrap_or_default()
                     });
-                match wok_ui::theme_loader::apply_theme_overrides(
-                    &mut theme,
-                    &self.theme_overrides,
-                ) {
+                match wok_ui::theme_loader::apply_theme_overrides(&mut theme, &self.theme_overrides)
+                {
                     Ok(()) => {
                         self.apply_theme_to_runtime(theme);
                         self.status_message = Some("applied live theme overrides".to_string());
