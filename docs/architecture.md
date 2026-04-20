@@ -10,13 +10,13 @@ Accepted for the current product shape.
 
 ## Context
 
-This repo is not a general Singapore analyst copilot. It is a tool-first MCP server for agent builders who need reliable, explicit interfaces over 29 official data families.
+This repo is not a general Singapore analyst copilot. It is a tool-first MCP server for agent builders who need reliable, explicit interfaces over 30 official data families.
 
 The product boundary is:
 
 - stable direct `sg_*` tools first
 - additive briefs where composition creates clear user value
-- a bounded preferred interface across 20 routed families
+- a bounded preferred interface across 21 routed families
 - machine-readable catalogs through `sg://apis`, `sg://tools`, `sg://workflows`, `sg://recipes`, `sg://runtime`, `sg://playbooks`, and `sg://benchmarks`
 
 That boundary keeps the repo useful without pretending to solve arbitrary analyst workflows.
@@ -36,7 +36,7 @@ Consequence:
 - new scope is added with honest direct tools first
 - additive briefs are allowed only when they return a bounded artifact, not hidden orchestration
 
-### 2. The repo goes deep on 29 official data families
+### 2. The repo goes deep on 30 official data families
 
 The current families are:
 
@@ -45,6 +45,7 @@ The current families are:
 - OneMap
 - URA
 - LTA DataMall
+- Transit Intelligence
 - NEA
 - HDB
 - CEA
@@ -83,7 +84,7 @@ Consequence:
 
 ### 3. `sg_query` is a bounded usability layer, not a planner
 
-`sg_query` is the bounded preferred interface across 20 routed families.
+`sg_query` is the bounded preferred interface across 21 routed families.
 
 Why:
 

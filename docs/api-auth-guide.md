@@ -1,10 +1,11 @@
 # API Authentication Guide
 
-This repo has 3 authenticated upstreams:
+This repo has 4 authenticated upstreams:
 
 - OneMap
 - URA
 - LTA DataMall
+- Transit Intelligence
 
 The recommended precedence is:
 
@@ -131,6 +132,26 @@ Common failure modes:
 - upstream key rejection: confirm the key is active and not scoped to a different account or environment
 - bus-arrival gaps: a valid key can still return empty arrival coverage if the bus stop code or service number is wrong
 - train-alert or traffic gaps inside `sg_transport_brief`: treat those as partial upstream coverage unless `sg_health_check` also shows LTA as unreachable or unconfigured
+
+## Transit Intelligence
+
+Transit Intelligence uses the same LTA credential surface for live-dependent reads.
+
+Expected key:
+
+- `lta`
+
+Operational notes:
+
+- transit planning, reliability, transfer-risk, and ops decisions consume the same authenticated LTA runtime path
+- policy-audit and replay tools can still run on historical traces without new upstream credentials
+- `sg_health_check` relies on LTA DataMall checks as the shared live dependency signal
+
+Common failure modes:
+
+- missing key: set `SG_API_LTA_KEY` or `sg_key_set { "apiName": "lta", ... }`
+- live-dependent transit outputs degrade to bounded gaps when LTA is unavailable or rate-limited
+- policy replay works but cannot validate live plan deltas without current LTA feed health
 
 ## Workflow Auth Map
 

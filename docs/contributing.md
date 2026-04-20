@@ -2,7 +2,7 @@
 
 ## Scope First
 
-The repo currently prioritizes depth and contract honesty across 29 data families, with `sg_query` acting as a bounded preferred interface and six additive brief tools creating the main user-facing artifacts.
+The repo currently prioritizes depth and contract honesty across 30 official data families, with `sg_query` acting as a bounded preferred interface and seven additive brief tools creating the main user-facing artifacts.
 
 Before adding a new family, ask whether the user goal is better served by:
 
@@ -12,9 +12,10 @@ Before adding a new family, ask whether the user goal is better served by:
 
 ## Current Public Shape
 
-- 54 direct data tools across 29 data families
-- 6 additive brief tools
-- 8 operational helpers
+- 71 direct data tools across 30 data families
+- 7 additive brief tools
+- 14 operational tools
+- 1 health check tool
 - 1 bounded preferred interface, `sg_query`
 
 The direct tools are the stable low-level contract. Additive briefs are allowed only when they remain deterministic and inspectable.

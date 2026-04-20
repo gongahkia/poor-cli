@@ -11,14 +11,12 @@ Use this skill when an agent needs official Singapore public data through MCP wi
 
 ## Surface Snapshot
 
-The repo currently exposes 69 `sg_*` tools total across 29 official data families.
+The repo currently exposes 86 `sg_*` tools total across 30 official data families.
 
-- 54 direct data tools
-- 6 additive brief tools: `sg_business_dossier`, `sg_property_brief`, `sg_macro_brief`, `sg_transport_brief`, `sg_environment_brief`, `sg_civic_brief`
-- 8 operational helpers
-- 1 bounded preferred interface, `sg_query`
+- 71 family and brief/query tools across the 30 API families
+- 15 operational tools (including transit governance, keys, cache, config, and health)
 
-`sg_query` is the bounded preferred interface across 20 routed families. The direct `sg_*` tools remain the stable low-level contract.
+`sg_query` is the bounded preferred interface across 21 routed families. The direct `sg_*` tools remain the stable low-level contract.
 
 ## Positioning
 
@@ -57,6 +55,8 @@ For developer onboarding and operations, pair the catalog resources with:
   Live transport operations brief over LTA bus arrivals, train alerts, and traffic incidents.
 - `sg_environment_brief`
   Live environment brief over NEA forecast, air quality, and rainfall signals.
+- `sg_transit_ops_brief`
+  Transit intelligence brief over health, hotspots, and bounded operations actions with explicit continuation checks.
 - `sg_query`
   Preferred bounded workflow planner and executor for covered families.
 
@@ -107,6 +107,26 @@ Live OneMap calls require valid credentials. There is no silent unauthenticated 
 - `sg_lta_bus_arrivals`
 - `sg_lta_train_alerts`
 - `sg_lta_traffic_incidents`
+- `sg_lta_road_works`
+- `sg_lta_road_openings`
+- `sg_lta_traffic_images`
+
+### Transit Intelligence
+
+- `sg_transit_health`
+- `sg_transit_hotspots`
+- `sg_transit_ops_brief`
+- `sg_transit_ops_pack`
+- `sg_transit_reliability`
+- `sg_transit_transfer_risk`
+- `sg_transit_accessible_route`
+- `sg_transit_plan_objective`
+- `sg_transit_outcomes`
+- `sg_transit_counterfactual`
+- `sg_transit_model_metrics`
+- `sg_transit_policy_audit`
+- `sg_transit_policy_insights`
+- `sg_transit_policy_replay`
 
 ### NEA
 
@@ -393,6 +413,7 @@ sg_datagov_resources { "datasetId": "d_8b84c4ee58e3cfc0ece0d773c8ca6abc" }
 - SingStat Table Drilldown
 - Dataset Collection Browse
 - Transport Status
+- Transit Intelligence Ops
 - Environment Snapshot
 
 ## Authentication

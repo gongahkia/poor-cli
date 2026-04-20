@@ -6,14 +6,12 @@ Official Singapore public data for agents with deterministic contracts.
 
 ## Surface Snapshot
 
-The repo currently exposes 69 `sg_*` tools total across 29 official data families.
+The repo currently exposes 86 `sg_*` tools total across 30 official data families.
 
-- 54 direct data tools
-- 6 additive brief tools: `sg_business_dossier`, `sg_property_brief`, `sg_macro_brief`, `sg_transport_brief`, `sg_environment_brief`, `sg_civic_brief`
-- 8 operational helpers for health, keys, cache, and config
-- 1 bounded preferred interface, `sg_query`
+- 71 family and brief/query tools across the 30 API families
+- 15 operational tools for transit decisioning/governance plus keys, cache, config, and health
 
-`sg_query` is the bounded preferred interface across 20 routed families. It plans or executes bounded deterministic workflows with transparent step metadata. The direct `sg_*` tools remain the stable low-level contract.
+`sg_query` is the bounded preferred interface across 21 routed families. It plans or executes bounded deterministic workflows with transparent step metadata. The direct `sg_*` tools remain the stable low-level contract.
 
 ## Roadmap
 
@@ -49,6 +47,7 @@ If you are evaluating whether the repo is actually useful for developers, start 
 | Property And Regulatory Due Diligence | `sg_property_brief` or `sg_query` | OneMap, URA, HDB, and optional NEA/LTA context are combined with explicit location resolution and workflow limits | OneMap optional, URA key for live planning data, LTA optional | observed-at plus first available market or live-signal timestamps | hidden property scoring or recommendations |
 | Macro Snapshot | `sg_macro_brief` or `sg_query` | MAS values and validated SingStat GDP and CPI table reads are returned as one starter brief with explicit table IDs and scope notes | None | observed-at plus MAS dates and SingStat table metadata | open-ended macro commentary |
 | Transport Status | `sg_transport_brief` or `sg_query` | bus arrivals, train alerts, and traffic incidents are normalized into one operational snapshot | LTA key for live data | observed-at plus next ETA or alert timestamps when available | route planning or delay prediction |
+| Transit Intelligence Ops | `sg_transit_ops_brief` or `sg_query` | transit health, hotspots, and bounded ops actions are surfaced first, with explicit continuation into reliability, transfer-risk, and policy-audited planning | LTA key for live-dependent reads | observed-at plus traceable upstream feed context | full routing or dispatch optimization |
 | Environment Snapshot | `sg_environment_brief` or `sg_query` | forecast, air quality, and rainfall are normalized into one live monitoring snapshot | None | observed-at plus forecast, air-quality, and rainfall timestamps when available | long-range forecasting or severe-weather alerting |
 | Dataset Discovery Fallback | `sg_datagov_search` -> `sg_datagov_resources` -> `sg_datagov_rows` | dataset discovery continues into resource inspection and bounded row reads | None | data.gov.sg metadata timestamps are returned directly by the direct tools | unbounded scraping or arbitrary joins |
 
@@ -60,7 +59,8 @@ If you are evaluating whether the repo is actually useful for developers, start 
 | MAS | 3 | Exchange rates, SORA, banking stats, exact dates, bounded date ranges | None |
 | OneMap | 5 | Geocode, reverse geocode, route, planning-area demographics, coordinate conversion | Email + password |
 | URA | 3 | Property transactions, planning-area lookup, development charges | API key |
-| LTA DataMall | 3 | Bus arrivals, train alerts, traffic incidents | API key |
+| LTA DataMall | 6 | Bus arrivals, train alerts, traffic incidents, road works/openings, traffic images | API key |
+| Transit Intelligence | 14 | Health/hotspots, ops brief + pack, reliability, transfer-risk, accessible route, objective planning, counterfactuals, outcomes, model metrics, policy audit/insights/replay | LTA key for live-dependent reads |
 | NEA | 3 | 2-hour forecast, air quality, rainfall | None |
 | HDB | 2 | Curated resale and rental market reads over official data.gov.sg datasets | None |
 | CEA | 1 | Curated salesperson and estate-agent registry lookup | None |
@@ -94,6 +94,7 @@ Additive brief tools:
 - `sg_transport_brief`
 - `sg_environment_brief`
 - `sg_civic_brief`
+- `sg_transit_ops_brief`
 
 All brief tools return the same bounded envelope:
 

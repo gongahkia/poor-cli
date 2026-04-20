@@ -32,6 +32,11 @@
       "backupOwner": "maintainer:governance"
     },
     {
+      "name": "Transit Intelligence",
+      "primaryOwner": "maintainer:ops-signals",
+      "backupOwner": "maintainer:governance"
+    },
+    {
       "name": "NEA",
       "primaryOwner": "maintainer:data-surface",
       "backupOwner": "maintainer:governance"
@@ -225,6 +230,11 @@
     },
     {
       "name": "Transport Status",
+      "primaryOwner": "maintainer:ops-signals",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "Transit Intelligence Ops",
       "primaryOwner": "maintainer:ops-signals",
       "backupOwner": "maintainer:governance"
     },
