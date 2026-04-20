@@ -32,7 +32,8 @@ use wok_app::remote_control::{
     error_response, result_response, RemoteControlServer, RemoteRequest,
 };
 use wok_app::scripting::{
-    QuickSelectPatternRequest, StatusBarRequest, ThemeRequest, TriggerRequest, WorkflowRequest,
+    QuickSelectPatternRequest, SetupRequest, StatusBarRequest, ThemeRequest, TriggerRequest,
+    WorkflowRequest,
 };
 use wok_app::session::{
     block_from_state, block_to_state, default_session_path, history_entry_from_state,
@@ -2027,6 +2028,9 @@ impl WokHandler {
         for request in effects.status_bar_requests {
             self.apply_status_bar_request(request);
         }
+        for request in effects.setup_requests {
+            self.apply_setup_request(request);
+        }
         self.refresh_plugin_config();
         self.refresh_plugin_snapshot();
     }
@@ -2040,6 +2044,40 @@ impl WokHandler {
             StatusBarRequest::SetRefreshInterval(ms) => {
                 let clamped = ms.clamp(250, 60_000);
                 self.status_bar_refresh_interval = Duration::from_millis(clamped);
+            }
+        }
+        self.needs_redraw = true;
+    }
+
+    fn apply_setup_request(&mut self, request: SetupRequest) {
+        let result: Result<String, Box<dyn Error>> = match request {
+            SetupRequest::Init { overwrite } => setup_ops::run_init(overwrite)
+                .map(|_| "Setup: init completed".to_string())
+                .map_err(|error| error.into()),
+            SetupRequest::Doctor { json } => setup_ops::run_doctor(json)
+                .map(|_| "Setup: doctor completed".to_string())
+                .map_err(|error| error.into()),
+            SetupRequest::Reset { scope, yes } => parse_reset_scope_value(&scope)
+                .ok_or_else(|| format!("unsupported reset scope '{scope}'").into())
+                .and_then(|scope| setup_ops::run_reset(scope, yes).map_err(|error| error.into()))
+                .map(|_| "Setup: reset completed".to_string()),
+            SetupRequest::ShellInstall { shell, overwrite } => {
+                setup_ops::run_shell_install(shell.as_deref(), overwrite)
+                    .map(|_| "Setup: shell install completed".to_string())
+                    .map_err(|error| error.into())
+            }
+            SetupRequest::ShellRollback { shell, yes } => {
+                setup_ops::run_shell_rollback(shell.as_deref(), yes)
+                    .map(|_| "Setup: shell rollback completed".to_string())
+                    .map_err(|error| error.into())
+            }
+        };
+
+        match result {
+            Ok(message) => self.status_message = Some(message),
+            Err(error) => {
+                warn!("failed to apply setup request: {error}");
+                self.status_message = Some(format!("Setup request failed: {error}"));
             }
         }
         self.needs_redraw = true;
@@ -5321,6 +5359,15 @@ fn failure_trend_panel_lines(
             )
         })
         .collect()
+}
+
+fn parse_reset_scope_value(value: &str) -> Option<setup_ops::ResetScope> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "managed" => Some(setup_ops::ResetScope::Managed),
+        "state" => Some(setup_ops::ResetScope::State),
+        "all" => Some(setup_ops::ResetScope::All),
+        _ => None,
+    }
 }
 
 fn format_replay_age(elapsed: Duration) -> String {

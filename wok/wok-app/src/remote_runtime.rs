@@ -117,6 +117,11 @@ impl WokHandler {
             "wok.notify" => self.remote_notify(&request.params),
             "wok.get_failure_summary" => self.remote_get_failure_summary(&request.params),
             "wok.get_failure_trends" => self.remote_get_failure_trends(&request.params),
+            "wok.setup.init" => self.remote_setup_init(&request.params),
+            "wok.setup.doctor" => self.remote_setup_doctor(&request.params),
+            "wok.setup.reset" => self.remote_setup_reset(&request.params),
+            "wok.setup.shell_install" => self.remote_setup_shell_install(&request.params),
+            "wok.setup.shell_rollback" => self.remote_setup_shell_rollback(&request.params),
             _ => Err(RpcError::method_not_found(format!(
                 "unknown method '{}'",
                 request.method
@@ -372,5 +377,69 @@ impl WokHandler {
                 })
                 .collect(),
         ))
+    }
+
+    fn remote_setup_init(&mut self, params: &Value) -> Result<Value, RpcError> {
+        let overwrite =
+            jsonrpc_params::jsonrpc_optional_bool_param(params, 0, "overwrite").unwrap_or(false);
+        setup_ops::run_init(overwrite)
+            .map_err(|error| RpcError::server_error(format!("setup init failed: {error}")))?;
+        Ok(json!({
+            "ok": true,
+            "overwrite": overwrite,
+        }))
+    }
+
+    fn remote_setup_doctor(&mut self, params: &Value) -> Result<Value, RpcError> {
+        let json = jsonrpc_params::jsonrpc_optional_bool_param(params, 0, "json").unwrap_or(true);
+        setup_ops::run_doctor(json)
+            .map_err(|error| RpcError::server_error(format!("setup doctor failed: {error}")))?;
+        Ok(json!({
+            "ok": true,
+            "json": json,
+        }))
+    }
+
+    fn remote_setup_reset(&mut self, params: &Value) -> Result<Value, RpcError> {
+        let scope = jsonrpc_params::jsonrpc_optional_string_param(params, 0, "scope")
+            .unwrap_or_else(|| "managed".to_string());
+        let yes = jsonrpc_params::jsonrpc_optional_bool_param(params, 1, "yes").unwrap_or(false);
+        let scope_value = parse_reset_scope_value(&scope).ok_or_else(|| {
+            RpcError::invalid_params(format!("unsupported reset scope '{scope}'"))
+        })?;
+        setup_ops::run_reset(scope_value, yes)
+            .map_err(|error| RpcError::server_error(format!("setup reset failed: {error}")))?;
+        Ok(json!({
+            "ok": true,
+            "scope": scope.to_ascii_lowercase(),
+            "yes": yes,
+        }))
+    }
+
+    fn remote_setup_shell_install(&mut self, params: &Value) -> Result<Value, RpcError> {
+        let shell = jsonrpc_params::jsonrpc_optional_string_param(params, 0, "shell");
+        let overwrite =
+            jsonrpc_params::jsonrpc_optional_bool_param(params, 1, "overwrite").unwrap_or(false);
+        setup_ops::run_shell_install(shell.as_deref(), overwrite).map_err(|error| {
+            RpcError::server_error(format!("setup shell install failed: {error}"))
+        })?;
+        Ok(json!({
+            "ok": true,
+            "shell": shell,
+            "overwrite": overwrite,
+        }))
+    }
+
+    fn remote_setup_shell_rollback(&mut self, params: &Value) -> Result<Value, RpcError> {
+        let shell = jsonrpc_params::jsonrpc_optional_string_param(params, 0, "shell");
+        let yes = jsonrpc_params::jsonrpc_optional_bool_param(params, 1, "yes").unwrap_or(false);
+        setup_ops::run_shell_rollback(shell.as_deref(), yes).map_err(|error| {
+            RpcError::server_error(format!("setup shell rollback failed: {error}"))
+        })?;
+        Ok(json!({
+            "ok": true,
+            "shell": shell,
+            "yes": yes,
+        }))
     }
 }

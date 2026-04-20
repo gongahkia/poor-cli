@@ -113,6 +113,20 @@ pub(crate) fn jsonrpc_optional_u64_param(params: &Value, index: usize, key: &str
         })
 }
 
+/// Read one optional boolean parameter from array or object forms.
+pub(crate) fn jsonrpc_optional_bool_param(params: &Value, index: usize, key: &str) -> Option<bool> {
+    params
+        .as_array()
+        .and_then(|items| items.get(index))
+        .and_then(Value::as_bool)
+        .or_else(|| {
+            params
+                .as_object()
+                .and_then(|items| items.get(key))
+                .and_then(Value::as_bool)
+        })
+}
+
 /// Read one optional value parameter from array or object forms.
 pub(crate) fn jsonrpc_optional_value_param(
     params: &Value,
@@ -249,6 +263,18 @@ mod tests {
         assert_eq!(
             jsonrpc_optional_u64_param(&json!({"bucket_ms": 60000}), 0, "bucket_ms"),
             Some(60000)
+        );
+    }
+
+    #[test]
+    fn test_jsonrpc_optional_bool_param_supports_object_and_array() {
+        assert_eq!(
+            jsonrpc_optional_bool_param(&json!([true, false]), 1, "yes"),
+            Some(false)
+        );
+        assert_eq!(
+            jsonrpc_optional_bool_param(&json!({"overwrite": true}), 0, "overwrite"),
+            Some(true)
         );
     }
 

@@ -9,8 +9,8 @@ use tracing::warn;
 use crate::app::WokApp;
 use crate::keybindings::{Action, Context, KeyCombo};
 use crate::scripting::{
-    LuaRuntime, QuickSelectPatternRequest, StatusBarRequest, ThemeRequest, TriggerRequest,
-    WorkflowRequest,
+    LuaRuntime, QuickSelectPatternRequest, SetupRequest, StatusBarRequest, ThemeRequest,
+    TriggerRequest, WorkflowRequest,
 };
 
 /// Queued side effects emitted by plugins.
@@ -32,6 +32,8 @@ pub struct PluginEffects {
     pub workflow_requests: Vec<WorkflowRequest>,
     /// Status bar customization requests requested by plugins.
     pub status_bar_requests: Vec<StatusBarRequest>,
+    /// Setup lifecycle requests requested by plugins.
+    pub setup_requests: Vec<SetupRequest>,
 }
 
 /// Thin runtime wrapper that isolates the scripting engine from app orchestration.
@@ -140,6 +142,7 @@ impl PluginHost {
             quick_select_pattern_requests: self.runtime.take_quick_select_pattern_requests(),
             workflow_requests: self.runtime.take_workflow_requests(),
             status_bar_requests: self.runtime.take_status_bar_requests(),
+            setup_requests: self.runtime.take_setup_requests(),
         }
     }
 }

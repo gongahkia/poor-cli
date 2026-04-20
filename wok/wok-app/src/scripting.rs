@@ -92,6 +92,42 @@ pub enum StatusBarRequest {
     SetRefreshInterval(u64),
 }
 
+/// Local setup lifecycle work requested by Lua.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SetupRequest {
+    /// Run `wok init`.
+    Init {
+        /// Overwrite existing managed files.
+        overwrite: bool,
+    },
+    /// Run `wok doctor`.
+    Doctor {
+        /// Whether to request JSON output mode.
+        json: bool,
+    },
+    /// Run `wok reset`.
+    Reset {
+        /// Reset scope string: managed, state, or all.
+        scope: String,
+        /// Destructive confirmation.
+        yes: bool,
+    },
+    /// Run `wok shell install`.
+    ShellInstall {
+        /// Optional shell target.
+        shell: Option<String>,
+        /// Overwrite managed integration files first.
+        overwrite: bool,
+    },
+    /// Run `wok shell rollback`.
+    ShellRollback {
+        /// Optional shell target.
+        shell: Option<String>,
+        /// Destructive confirmation.
+        yes: bool,
+    },
+}
+
 /// Shared state for Lua callbacks to write to.
 #[derive(Default, Clone)]
 pub struct LuaState {
@@ -117,6 +153,8 @@ pub struct LuaState {
     pub workflows: Arc<Mutex<Vec<Workflow>>>,
     /// Pending status bar customization requests requested by Lua.
     pub status_bar_requests: Arc<Mutex<Vec<StatusBarRequest>>>,
+    /// Pending setup lifecycle requests requested by Lua.
+    pub setup_requests: Arc<Mutex<Vec<SetupRequest>>>,
     /// Named commands registered from Lua as action aliases.
     pub commands: Arc<Mutex<HashMap<String, String>>>,
     /// Latest runtime snapshot exposed to plugin callbacks.
@@ -482,6 +520,100 @@ impl LuaRuntime {
         status_bar_table.set("set_refresh_interval", set_interval_fn)?;
         wok.set("status_bar", status_bar_table)?;
 
+        // wok.setup.{init,doctor,reset,shell_install,shell_rollback}
+        let setup_table = self.lua.create_table()?;
+
+        let setup_state = self.state.setup_requests.clone();
+        let setup_init_fn = self.lua.create_function(move |_, options: Option<Table>| {
+            let overwrite = options
+                .as_ref()
+                .and_then(|table| table.get::<Option<bool>>("overwrite").ok())
+                .flatten()
+                .unwrap_or(false);
+            setup_state
+                .lock()
+                .unwrap()
+                .push(SetupRequest::Init { overwrite });
+            Ok(())
+        })?;
+        setup_table.set("init", setup_init_fn)?;
+
+        let setup_state = self.state.setup_requests.clone();
+        let setup_doctor_fn = self.lua.create_function(move |_, options: Option<Table>| {
+            let json = options
+                .as_ref()
+                .and_then(|table| table.get::<Option<bool>>("json").ok())
+                .flatten()
+                .unwrap_or(true);
+            setup_state
+                .lock()
+                .unwrap()
+                .push(SetupRequest::Doctor { json });
+            Ok(())
+        })?;
+        setup_table.set("doctor", setup_doctor_fn)?;
+
+        let setup_state = self.state.setup_requests.clone();
+        let setup_reset_fn = self.lua.create_function(move |_, options: Option<Table>| {
+            let scope = options
+                .as_ref()
+                .and_then(|table| table.get::<Option<String>>("scope").ok())
+                .flatten()
+                .unwrap_or_else(|| "managed".to_string());
+            let yes = options
+                .as_ref()
+                .and_then(|table| table.get::<Option<bool>>("yes").ok())
+                .flatten()
+                .unwrap_or(false);
+            setup_state
+                .lock()
+                .unwrap()
+                .push(SetupRequest::Reset { scope, yes });
+            Ok(())
+        })?;
+        setup_table.set("reset", setup_reset_fn)?;
+
+        let setup_state = self.state.setup_requests.clone();
+        let setup_shell_install_fn =
+            self.lua.create_function(move |_, options: Option<Table>| {
+                let shell = options
+                    .as_ref()
+                    .and_then(|table| table.get::<Option<String>>("shell").ok())
+                    .flatten();
+                let overwrite = options
+                    .as_ref()
+                    .and_then(|table| table.get::<Option<bool>>("overwrite").ok())
+                    .flatten()
+                    .unwrap_or(false);
+                setup_state
+                    .lock()
+                    .unwrap()
+                    .push(SetupRequest::ShellInstall { shell, overwrite });
+                Ok(())
+            })?;
+        setup_table.set("shell_install", setup_shell_install_fn)?;
+
+        let setup_state = self.state.setup_requests.clone();
+        let setup_shell_rollback_fn =
+            self.lua.create_function(move |_, options: Option<Table>| {
+                let shell = options
+                    .as_ref()
+                    .and_then(|table| table.get::<Option<String>>("shell").ok())
+                    .flatten();
+                let yes = options
+                    .as_ref()
+                    .and_then(|table| table.get::<Option<bool>>("yes").ok())
+                    .flatten()
+                    .unwrap_or(false);
+                setup_state
+                    .lock()
+                    .unwrap()
+                    .push(SetupRequest::ShellRollback { shell, yes });
+                Ok(())
+            })?;
+        setup_table.set("shell_rollback", setup_shell_rollback_fn)?;
+        wok.set("setup", setup_table)?;
+
         // wok.set_timeout(ms, callback)
         let timers = self.timers.clone();
         let cancelled_timers = self.cancelled_timers.clone();
@@ -747,6 +879,11 @@ impl LuaRuntime {
         std::mem::take(&mut *self.state.status_bar_requests.lock().unwrap())
     }
 
+    /// Drain pending setup lifecycle requests queued from Lua.
+    pub fn take_setup_requests(&self) -> Vec<SetupRequest> {
+        std::mem::take(&mut *self.state.setup_requests.lock().unwrap())
+    }
+
     /// Resolve a named command alias registered from Lua to an action string.
     pub fn resolve_command_action(&self, name: &str) -> Option<String> {
         self.state.commands.lock().unwrap().get(name).cloned()
@@ -934,6 +1071,49 @@ mod tests {
         assert!(matches!(requests[0], StatusBarRequest::SetRight(_)));
         assert!(matches!(requests[1], StatusBarRequest::SetLeft(_)));
         assert_eq!(requests[2], StatusBarRequest::SetRefreshInterval(2500));
+    }
+
+    #[test]
+    fn test_setup_requests_are_queued() {
+        let mut runtime = LuaRuntime::new().expect("lua runtime");
+        runtime.init(&std::env::temp_dir()).expect("lua init");
+        runtime
+            .exec(
+                r#"
+                wok.setup.init({ overwrite = true })
+                wok.setup.doctor({ json = true })
+                wok.setup.reset({ scope = "all", yes = true })
+                wok.setup.shell_install({ shell = "zsh", overwrite = true })
+                wok.setup.shell_rollback({ shell = "zsh", yes = true })
+            "#,
+            )
+            .expect("setup requests should queue");
+
+        let requests = runtime.take_setup_requests();
+        assert_eq!(requests.len(), 5);
+        assert_eq!(requests[0], SetupRequest::Init { overwrite: true });
+        assert_eq!(requests[1], SetupRequest::Doctor { json: true });
+        assert_eq!(
+            requests[2],
+            SetupRequest::Reset {
+                scope: "all".to_string(),
+                yes: true,
+            }
+        );
+        assert_eq!(
+            requests[3],
+            SetupRequest::ShellInstall {
+                shell: Some("zsh".to_string()),
+                overwrite: true,
+            }
+        );
+        assert_eq!(
+            requests[4],
+            SetupRequest::ShellRollback {
+                shell: Some("zsh".to_string()),
+                yes: true,
+            }
+        );
     }
 
     #[test]
