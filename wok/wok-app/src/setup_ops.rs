@@ -109,6 +109,13 @@ struct ShellInstallRecord {
     created_new: bool,
 }
 
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub(crate) enum ResetScope {
+    Managed,
+    State,
+    All,
+}
+
 pub(crate) fn run_init(overwrite: bool) -> Result<(), Box<dyn Error>> {
     let config_dir = WokConfig::config_dir();
     let stats = init_at(&config_dir, overwrite)?;
@@ -167,12 +174,12 @@ pub(crate) fn run_doctor(as_json: bool) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub(crate) fn run_reset(all: bool, yes: bool) -> Result<(), Box<dyn Error>> {
+pub(crate) fn run_reset(scope: ResetScope, yes: bool) -> Result<(), Box<dyn Error>> {
     if !yes {
         return Err("reset is destructive; re-run with `wok reset --yes`".into());
     }
     let config_dir = WokConfig::config_dir();
-    let stats = reset_at(&config_dir, all)?;
+    let stats = reset_at(&config_dir, scope)?;
     println!("Reset Wok managed files at {}", config_dir.display());
     for path in &stats.removed {
         println!("removed {}", path.display());
@@ -572,31 +579,39 @@ struct ResetStats {
     missing: Vec<PathBuf>,
 }
 
-fn reset_at(config_dir: &Path, all: bool) -> io::Result<ResetStats> {
+fn reset_at(config_dir: &Path, scope: ResetScope) -> io::Result<ResetStats> {
     let mut stats = ResetStats::default();
-    let mut remove_targets = vec![
-        config_dir.join("config.toml"),
-        config_dir.join("init.lua"),
-        config_dir.join(FIRST_RUN_MARKER_FILE),
-        config_dir.join("shell").join("bash.sh"),
-        config_dir.join("shell").join("zsh.zsh"),
-        config_dir.join("shell").join("fish.fish"),
-    ];
-    if all {
-        remove_targets.push(config_dir.join("session.json"));
-        remove_targets.push(config_dir.join("sessions"));
-        remove_targets.push(config_dir.join("themes"));
-        remove_targets.push(config_dir.join("workflows"));
+    let mut remove_targets = Vec::new();
+    if matches!(scope, ResetScope::Managed | ResetScope::All) {
+        remove_targets.extend([
+            config_dir.join("config.toml"),
+            config_dir.join("init.lua"),
+            config_dir.join(FIRST_RUN_MARKER_FILE),
+            config_dir.join("shell").join("bash.sh"),
+            config_dir.join("shell").join("zsh.zsh"),
+            config_dir.join("shell").join("fish.fish"),
+            config_dir.join("shell").join(SHELL_INSTALL_STATE_FILE),
+        ]);
+    }
+    if matches!(scope, ResetScope::State | ResetScope::All) {
+        remove_targets.extend([
+            config_dir.join("session.json"),
+            config_dir.join("sessions"),
+            config_dir.join("themes"),
+            config_dir.join("workflows"),
+        ]);
     }
 
     for path in remove_targets {
         remove_path(path, &mut stats)?;
     }
 
-    // Attempt to clean up empty shell dir after script removals.
-    let shell_dir = config_dir.join("shell");
-    if shell_dir.exists() && shell_dir.read_dir()?.next().is_none() {
-        remove_path(shell_dir, &mut stats)?;
+    // Attempt to clean up empty shell dir after managed file removals.
+    if matches!(scope, ResetScope::Managed | ResetScope::All) {
+        let shell_dir = config_dir.join("shell");
+        if shell_dir.exists() && shell_dir.read_dir()?.next().is_none() {
+            remove_path(shell_dir, &mut stats)?;
+        }
     }
 
     Ok(stats)
@@ -811,7 +826,7 @@ mod tests {
         let dir = unique_temp_dir();
         init_at(&dir, false).expect("init should succeed");
 
-        let stats = reset_at(&dir, false).expect("reset should succeed");
+        let stats = reset_at(&dir, ResetScope::Managed).expect("reset should succeed");
         assert!(stats
             .removed
             .iter()
@@ -832,7 +847,7 @@ mod tests {
         fs::write(dir.join("sessions").join("demo.json"), "{}")
             .expect("session snapshot should be created");
 
-        let _stats = reset_at(&dir, true).expect("reset should succeed");
+        let _stats = reset_at(&dir, ResetScope::All).expect("reset should succeed");
         assert!(!dir.join("session.json").exists());
         assert!(!dir.join("sessions").exists());
         assert!(!dir.join("themes").exists());

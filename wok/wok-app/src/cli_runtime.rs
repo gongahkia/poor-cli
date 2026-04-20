@@ -25,8 +25,8 @@ pub(crate) fn dispatch_cli_command(cli: &Cli) -> Result<CliAction, Box<dyn Error
             setup_ops::run_doctor(json)?;
             Ok(CliAction::ExitOk)
         }
-        Some(CliCommand::Reset { all, yes }) => {
-            setup_ops::run_reset(all, yes)?;
+        Some(CliCommand::Reset { scope, yes }) => {
+            setup_ops::run_reset(scope, yes)?;
             Ok(CliAction::ExitOk)
         }
         Some(CliCommand::Shell { command }) => {

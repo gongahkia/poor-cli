@@ -136,9 +136,9 @@ enum CliCommand {
     },
     /// Reset managed local Wok files in the config directory.
     Reset {
-        /// Also remove session/workflow/theme state directories.
-        #[arg(long, default_value_t = false)]
-        all: bool,
+        /// Reset scope: managed, state, or all.
+        #[arg(long, value_enum, default_value_t = setup_ops::ResetScope::Managed)]
+        scope: setup_ops::ResetScope,
         /// Confirm reset without interactive prompt.
         #[arg(long, default_value_t = false)]
         yes: bool,
