@@ -15,11 +15,16 @@ ROOT_DIR="$(git rev-parse --show-toplevel)"
 cd "$ROOT_DIR"
 
 HEAD_SHA="$(git rev-parse HEAD)"
+if ORIGINAL_BRANCH="$(git symbolic-ref --quiet --short HEAD 2>/dev/null)"; then
+  ORIGINAL_REF="$ORIGINAL_BRANCH"
+else
+  ORIGINAL_REF="$HEAD_SHA"
+fi
 OUTPUT_DIR="$ROOT_DIR/.perf-gate"
 mkdir -p "$OUTPUT_DIR"
 
 cleanup() {
-  git checkout --quiet "$HEAD_SHA" || true
+  git checkout --quiet "$ORIGINAL_REF" || true
 }
 trap cleanup EXIT
 
