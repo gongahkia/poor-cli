@@ -20,6 +20,7 @@ from seuss.commands.memory_cmd import (
     run_memory_import,
     run_memory_list,
 )
+from seuss.commands.persona_cmd import run_persona_build, run_persona_show
 from seuss.config import DEFAULT_CONFIG_PATH, ConfigError
 
 
@@ -114,6 +115,18 @@ def build_parser() -> argparse.ArgumentParser:
     eval_parser.add_argument("--seed", type=int, default=None)
     eval_parser.add_argument("--output", default=None)
     eval_parser.add_argument("--summary", action="store_true")
+    eval_parser.add_argument("--fail-on-thresholds", action="store_true")
+
+    persona_parser = sub.add_parser("persona", help="Build and inspect persona profile")
+    persona_sub = persona_parser.add_subparsers(dest="persona_command", required=True)
+
+    persona_build_parser = persona_sub.add_parser("build", help="Build persona profile")
+    _add_config_arg(persona_build_parser)
+    persona_build_parser.add_argument("--output", default=None)
+
+    persona_show_parser = persona_sub.add_parser("show", help="Show persona profile")
+    _add_config_arg(persona_show_parser)
+    persona_show_parser.add_argument("--input", default=None)
 
     return parser
 
@@ -186,7 +199,21 @@ def main(argv: list[str] | None = None) -> int:
                 seed=args.seed,
                 output_path=Path(args.output).resolve() if args.output else None,
                 summary=args.summary,
+                fail_on_thresholds=args.fail_on_thresholds,
             )
+
+        if args.command == "persona":
+            config_path = Path(args.config).resolve()
+            if args.persona_command == "build":
+                return run_persona_build(
+                    config_path=config_path,
+                    output_path=Path(args.output).resolve() if args.output else None,
+                )
+            if args.persona_command == "show":
+                return run_persona_show(
+                    config_path=config_path,
+                    input_path=Path(args.input).resolve() if args.input else None,
+                )
 
         parser.error("Unknown command")
         return 2
