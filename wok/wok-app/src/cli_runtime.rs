@@ -21,6 +21,10 @@ pub(crate) fn dispatch_cli_command(cli: &Cli) -> Result<CliAction, Box<dyn Error
             setup_ops::run_init(overwrite)?;
             Ok(CliAction::ExitOk)
         }
+        Some(CliCommand::Doctor) => {
+            setup_ops::run_doctor()?;
+            Ok(CliAction::ExitOk)
+        }
         Some(CliCommand::Rpc {
             method,
             params,

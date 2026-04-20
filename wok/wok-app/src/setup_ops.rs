@@ -36,12 +36,59 @@ struct InitStats {
     skipped: Vec<PathBuf>,
 }
 
+enum CheckStatus {
+    Ok,
+    Warn,
+    Fail,
+}
+
+struct DoctorCheck {
+    label: String,
+    status: CheckStatus,
+    detail: String,
+}
+
 pub(crate) fn run_init(overwrite: bool) -> Result<(), Box<dyn Error>> {
     let config_dir = WokConfig::config_dir();
     let stats = init_at(&config_dir, overwrite)?;
     println!("Initialized Wok managed files at {}", config_dir.display());
     print_stats(&stats);
     println!("Run `wok doctor` to verify setup.");
+    Ok(())
+}
+
+pub(crate) fn run_doctor() -> Result<(), Box<dyn Error>> {
+    let config_dir = WokConfig::config_dir();
+    let checks = doctor_checks_at(&config_dir);
+
+    println!("Wok doctor");
+    println!("config_dir: {}", config_dir.display());
+
+    let mut ok_count = 0usize;
+    let mut warn_count = 0usize;
+    let mut fail_count = 0usize;
+    for check in checks {
+        let status = match check.status {
+            CheckStatus::Ok => {
+                ok_count += 1;
+                "ok"
+            }
+            CheckStatus::Warn => {
+                warn_count += 1;
+                "warn"
+            }
+            CheckStatus::Fail => {
+                fail_count += 1;
+                "fail"
+            }
+        };
+        println!("[{status}] {}: {}", check.label, check.detail);
+    }
+
+    println!("summary: {ok_count} ok, {warn_count} warning, {fail_count} failed");
+    if fail_count > 0 {
+        return Err("doctor found failing checks".into());
+    }
     Ok(())
 }
 
@@ -55,6 +102,93 @@ fn print_stats(stats: &InitStats) {
     for path in &stats.skipped {
         println!("kept    {}", path.display());
     }
+}
+
+fn doctor_checks_at(config_dir: &Path) -> Vec<DoctorCheck> {
+    let mut checks = Vec::new();
+    let config_exists = config_dir.exists();
+    checks.push(DoctorCheck {
+        label: "config_dir".to_string(),
+        status: if config_exists {
+            CheckStatus::Ok
+        } else {
+            CheckStatus::Warn
+        },
+        detail: if config_exists {
+            "exists".to_string()
+        } else {
+            "missing (run `wok init`)".to_string()
+        },
+    });
+
+    let config_path = config_dir.join("config.toml");
+    if !config_path.exists() {
+        checks.push(DoctorCheck {
+            label: "config.toml".to_string(),
+            status: CheckStatus::Warn,
+            detail: "missing".to_string(),
+        });
+    } else {
+        match fs::read_to_string(&config_path) {
+            Ok(content) => match toml::from_str::<toml::Value>(&content) {
+                Ok(_) => checks.push(DoctorCheck {
+                    label: "config.toml".to_string(),
+                    status: CheckStatus::Ok,
+                    detail: "parseable".to_string(),
+                }),
+                Err(error) => checks.push(DoctorCheck {
+                    label: "config.toml".to_string(),
+                    status: CheckStatus::Fail,
+                    detail: format!("invalid TOML: {error}"),
+                }),
+            },
+            Err(error) => checks.push(DoctorCheck {
+                label: "config.toml".to_string(),
+                status: CheckStatus::Fail,
+                detail: format!("not readable: {error}"),
+            }),
+        }
+    }
+
+    let init_lua_path = config_dir.join("init.lua");
+    checks.push(DoctorCheck {
+        label: "init.lua".to_string(),
+        status: if init_lua_path.exists() {
+            CheckStatus::Ok
+        } else {
+            CheckStatus::Warn
+        },
+        detail: if init_lua_path.exists() {
+            "present".to_string()
+        } else {
+            "missing".to_string()
+        },
+    });
+
+    for name in ["bash.sh", "zsh.zsh", "fish.fish"] {
+        let path = config_dir.join("shell").join(name);
+        checks.push(DoctorCheck {
+            label: format!("shell/{name}"),
+            status: if path.exists() {
+                CheckStatus::Ok
+            } else {
+                CheckStatus::Warn
+            },
+            detail: if path.exists() {
+                "present".to_string()
+            } else {
+                "missing".to_string()
+            },
+        });
+    }
+
+    checks.push(DoctorCheck {
+        label: "default_shell".to_string(),
+        status: CheckStatus::Ok,
+        detail: WokConfig::load().shell.to_string(),
+    });
+
+    checks
 }
 
 fn init_at(config_dir: &Path, overwrite: bool) -> io::Result<InitStats> {
@@ -189,6 +323,32 @@ mod tests {
             .skipped
             .iter()
             .any(|path| path.ends_with("config.toml")));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_doctor_warns_when_not_initialized() {
+        let dir = unique_temp_dir();
+        let checks = doctor_checks_at(&dir);
+
+        assert!(checks.iter().any(|check| {
+            matches!(check.status, CheckStatus::Warn) && check.label == "config_dir"
+        }));
+    }
+
+    #[test]
+    fn test_doctor_reports_ok_after_init() {
+        let dir = unique_temp_dir();
+        init_at(&dir, false).expect("init should succeed");
+
+        let checks = doctor_checks_at(&dir);
+        assert!(checks.iter().any(|check| {
+            matches!(check.status, CheckStatus::Ok) && check.label == "config.toml"
+        }));
+        assert!(checks.iter().any(|check| {
+            matches!(check.status, CheckStatus::Ok) && check.label == "shell/bash.sh"
+        }));
 
         let _ = fs::remove_dir_all(dir);
     }

@@ -128,6 +128,8 @@ enum CliCommand {
         #[arg(long, default_value_t = false)]
         overwrite: bool,
     },
+    /// Run local diagnostics for config and shell integration state.
+    Doctor,
     /// Attach to a running named session.
     Attach {
         /// Session name.
