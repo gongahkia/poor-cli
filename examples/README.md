@@ -95,6 +95,7 @@ Production templates:
 - `integration/backend-worker-template.ts` for queue or job-runner style execution with explicit blocked/unsupported/failed branching.
 - `integration/ui-state-template.ts` for frontend state adapters around `sg_query` status contracts.
 - `integration/scheduled-monitor-template.ts` for periodic transport/environment monitoring with escalation tiers.
+- `integration/success-context-ids-template.ts` for validating opt-in `structuredContent.contextIds` on successful tool responses.
 
 Template smoke checks (CI and local):
 
