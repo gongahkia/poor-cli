@@ -14,6 +14,8 @@ describe("classifyIntent", () => {
     ["Environment snapshot of Singapore right now", "environment_brief"],
     ["Walk from 049178 to 048616", "route_plan"],
     ["Find a community club near 560123", "civic_discovery"],
+    ["Find MOE primary schools in west zone", "direct_tool"],
+    ["Find MOH hospitals near postal code 119077", "direct_tool"],
     ["Find dataset about population", "dataset_discovery"],
   ])("routes '%s' to workflow '%s'", (query, expectedWorkflow) => {
     const result = classifyIntent(query);
@@ -36,6 +38,20 @@ describe("classifyIntent", () => {
   it("extracts planning area for property query", () => {
     const result = classifyIntent("Property due diligence for Bedok");
     expect(result.extractedParams["planningArea"]).toBe("Bedok");
+  });
+
+  it("extracts school lookup filters for MOE directory prompts", () => {
+    const result = classifyIntent("Find MOE primary schools in west zone");
+    expect(result.tool).toBe("sg_moe_schools");
+    expect(result.extractedParams["level"]).toBe("PRIMARY");
+    expect(result.extractedParams["zone"]).toBe("WEST");
+  });
+
+  it("extracts healthcare lookup filters for MOH directory prompts", () => {
+    const result = classifyIntent("Find MOH hospitals near postal code 119077");
+    expect(result.tool).toBe("sg_moh_facilities");
+    expect(result.extractedParams["type"]).toBe("HOSPITAL");
+    expect(result.extractedParams["postalCode"]).toBe("119077");
   });
 
   // confidence sanity

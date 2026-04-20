@@ -169,6 +169,32 @@ export const classifyIntent = (query: string): IntentResult => {
   const category = extractSingStatCategory(query);
   if (category !== null) params["category"] = category;
 
+  if (/\bprimary\b/i.test(lower)) {
+    params["level"] = "PRIMARY";
+  } else if (/\bsecondary\b/i.test(lower)) {
+    params["level"] = "SECONDARY";
+  } else if (/\bjunior\s+college\b|\bjc\b/i.test(lower)) {
+    params["level"] = "JUNIOR COLLEGE";
+  }
+
+  if (/\bwest\s+zone\b|\bwest\b/i.test(lower)) {
+    params["zone"] = "WEST";
+  } else if (/\beast\s+zone\b|\beast\b/i.test(lower)) {
+    params["zone"] = "EAST";
+  } else if (/\bnorth\s+zone\b|\bnorth\b/i.test(lower)) {
+    params["zone"] = "NORTH";
+  } else if (/\bsouth\s+zone\b|\bsouth\b/i.test(lower)) {
+    params["zone"] = "SOUTH";
+  } else if (/\bcentral\s+zone\b|\bcentral\b/i.test(lower)) {
+    params["zone"] = "CENTRAL";
+  }
+
+  if (/\bhospitals?\b/i.test(lower)) {
+    params["type"] = "HOSPITAL";
+  } else if (/\bclinics?\b|\bpolyclinics?\b/i.test(lower)) {
+    params["type"] = "CLINIC";
+  }
+
   const collection = extractCollection(query);
   if (collection !== null) params["collection"] = collection;
 
@@ -404,6 +430,24 @@ export const classifyIntent = (query: string): IntentResult => {
       ...buildIntentResult("civic", "civic_discovery", 0.88, params, civicTool),
       apis: Array.from(new Set(["onemap", getApiForTool(civicTool)])),
     };
+  }
+
+  if (
+    aliasedTool === "sg_moe_schools"
+    || /moe\s+school|school\s+directory|school\s+lookup|primary\s+school|secondary\s+school|junior\s+college/i.test(lower)
+  ) {
+    return buildIntentResult("civic", "direct_tool", 0.87, params, "sg_moe_schools");
+  }
+
+  if (
+    aliasedTool === "sg_moh_facilities"
+    || (
+      /\bmoh\b/i.test(lower)
+      && /\bhospitals?\b|\bclinics?\b|\bpolyclinics?\b|healthcare\s+facilit/i.test(lower)
+    )
+    || /hospital\s+directory|clinic\s+directory|healthcare\s+directory/i.test(lower)
+  ) {
+    return buildIntentResult("civic", "direct_tool", 0.87, params, "sg_moh_facilities");
   }
 
   if (aliasedTool?.includes("lta") || /bus\s*arrival|train\s*alert|traffic\s*incident/i.test(lower)) {
@@ -688,6 +732,24 @@ export const resolveToolInput = (
           ...(params["flatType"] !== undefined ? { flatType: params["flatType"] } : {}),
           ...(params["startMonth"] !== undefined ? { startMonth: params["startMonth"] } : {}),
           ...(params["endMonth"] !== undefined ? { endMonth: params["endMonth"] } : {}),
+        },
+      };
+    case "sg_moe_schools":
+      return {
+        tool,
+        input: {
+          ...(params["level"] !== undefined ? { level: params["level"] } : {}),
+          ...(params["zone"] !== undefined ? { zone: params["zone"] } : {}),
+          ...(params["name"] !== undefined ? { name: params["name"] } : {}),
+        },
+      };
+    case "sg_moh_facilities":
+      return {
+        tool,
+        input: {
+          ...(params["type"] !== undefined ? { type: params["type"] } : {}),
+          ...(params["name"] !== undefined ? { name: params["name"] } : {}),
+          ...(params["postalCode"] !== undefined ? { postalCode: params["postalCode"] } : {}),
         },
       };
     case "sg_singstat_table":

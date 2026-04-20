@@ -92,6 +92,14 @@ vi.mock("../../apis/msf/client.js", () => ({
   getMsfSocialServiceOffices: vi.fn(),
 }));
 
+vi.mock("../../apis/moe/client.js", () => ({
+  getSchools: vi.fn(),
+}));
+
+vi.mock("../../apis/moh/client.js", () => ({
+  getHealthcareFacilities: vi.fn(),
+}));
+
 import { query as masQuery } from "../../apis/mas/client.js";
 import { geocode, getPopulationData, getRoute } from "../../apis/onemap/client.js";
 import { searchDatasets as singstatSearch } from "../../apis/singstat/client.js";
@@ -121,6 +129,8 @@ import {
   getMsfSocialServiceOffices,
   getMsfStudentCareServices,
 } from "../../apis/msf/client.js";
+import { getSchools } from "../../apis/moe/client.js";
+import { getHealthcareFacilities } from "../../apis/moh/client.js";
 import { queryToolDefinitions } from "../query-tool.js";
 
 const runQuery = async (input: Readonly<Record<string, unknown>>) => {
@@ -164,6 +174,8 @@ describe("sg_query workflows", () => {
     vi.mocked(getMsfFamilyServices).mockReset();
     vi.mocked(getMsfStudentCareServices).mockReset();
     vi.mocked(getMsfSocialServiceOffices).mockReset();
+    vi.mocked(getSchools).mockReset();
+    vi.mocked(getHealthcareFacilities).mockReset();
   });
 
   it("returns a macro workflow plan without executing steps", async () => {
@@ -394,6 +406,68 @@ describe("sg_query workflows", () => {
       workflow: "direct_tool",
       toolsUsed: ["sg_singstat_browse"],
     });
+  });
+
+  it("executes direct MOE school directory lookups through sg_query", async () => {
+    vi.mocked(getSchools).mockResolvedValue([
+      {
+        name: "West Grove Primary School",
+        level: "PRIMARY",
+        zone: "WEST",
+        address: "1 WEST ROAD",
+        postalCode: "640001",
+        telephone: "61234567",
+        nature: "Government",
+        type: "Co-Ed",
+        url: "https://example.edu.sg",
+      },
+    ] as never);
+
+    const result = await runQuery({
+      query: "Find MOE primary schools in west zone",
+      mode: "execute",
+      format: "json",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "direct_tool",
+      toolsUsed: ["sg_moe_schools"],
+    });
+    expect(vi.mocked(getSchools)).toHaveBeenCalledWith(
+      expect.objectContaining({ level: "PRIMARY", zone: "WEST" }),
+    );
+  });
+
+  it("executes direct MOH healthcare directory lookups through sg_query", async () => {
+    vi.mocked(getHealthcareFacilities).mockResolvedValue([
+      {
+        name: "Singapore General Hospital",
+        code: "HCI001",
+        type: "HOSPITAL",
+        street: "Outram Road",
+        block: "1",
+        postalCode: "169608",
+        telephone: "62223333",
+      },
+    ] as never);
+
+    const result = await runQuery({
+      query: "Find MOH hospitals near postal code 119077",
+      mode: "execute",
+      format: "json",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "direct_tool",
+      toolsUsed: ["sg_moh_facilities"],
+    });
+    expect(vi.mocked(getHealthcareFacilities)).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "HOSPITAL", postalCode: "119077" }),
+    );
   });
 
   it("routes broad transport status queries to the transport brief", async () => {
