@@ -101,6 +101,8 @@ Expected behavior:
 - Print fragment counts by provenance label.
 - Print train/eval split counts.
 - Print top repeated phrases.
+- Print training queue summary and recent queue items.
+- Print recent saved generation runs.
 - Print redaction summary if available.
 
 Example:
@@ -110,6 +112,8 @@ seuss inspect
 seuss inspect corpus
 seuss inspect source notes
 seuss inspect phrases --limit 25
+seuss inspect queue --limit 20
+seuss inspect runs --limit 20
 ```
 
 ### `seuss generate`
@@ -209,6 +213,7 @@ seuss eval
 seuss eval --suite phase1
 seuss eval --seed 42
 seuss eval --output .seuss/evals/phase1.json
+seuss eval --summary
 ```
 
 ## Default Config
@@ -294,6 +299,8 @@ generation:
     character_order: 5
     word_order: 3
     phrase_order: 2
+    sentence_order: 1
+    motif_order: 2
     anti_copy_ngram: 12
     backoff: true
 
@@ -301,6 +308,11 @@ evaluation:
   exact_copy_ngram: 12
   heldout_required: true
   report_path: ./.seuss/evals
+  thresholds:
+    persona_match_min: 0.15
+    exact_copy_rate_max: 0.05
+    repetition_score_max: 0.6
+    privacy_leak_count_max: 0
 ```
 
 ## Data Records

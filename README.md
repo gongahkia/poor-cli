@@ -20,11 +20,13 @@ seuss init
 seuss ingest
 seuss inspect
 seuss generate --prompt "I think"
-seuss eval
+seuss eval --summary
+make compile
+make test
+make smoke
 ```
 
 ## Notes
 
 - Phase 1 is intentionally CLI-first and architecture-first.
 - LoRA and neural weight adaptation are scheduled for later phases.
-

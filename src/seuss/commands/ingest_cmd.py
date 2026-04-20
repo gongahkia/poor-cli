@@ -77,19 +77,33 @@ def _iter_directory_source(source: dict, config_path: Path) -> Iterable[dict]:
             }
 
 
-def _iter_jsonl_source(source: dict, config_path: Path) -> Iterable[dict]:
+def _iter_jsonl_source_with_stats(
+    source: dict,
+    config_path: Path,
+    stats: dict[str, int],
+) -> Iterable[dict]:
     source_path = resolve_path(source["path"], config_path)
     if not source_path.exists():
+        stats["missing_source_path"] += 1
         return
     text_field = source.get("text_field", "text")
     with source_path.open("r", encoding="utf-8") as handle:
         for line in handle:
             line = line.strip()
             if not line:
+                stats["empty_rows"] += 1
                 continue
-            row = json.loads(line)
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                stats["invalid_json_rows"] += 1
+                continue
+            if not isinstance(row, dict):
+                stats["non_object_rows"] += 1
+                continue
             text = str(row.get(text_field, "")).strip()
             if not text:
+                stats["missing_text_rows"] += 1
                 continue
             yield {
                 "source_path": str(source_path),
@@ -98,13 +112,17 @@ def _iter_jsonl_source(source: dict, config_path: Path) -> Iterable[dict]:
             }
 
 
-def _iter_source_records(source: dict, config_path: Path) -> Iterable[dict]:
+def _iter_source_records(
+    source: dict,
+    config_path: Path,
+    stats: dict[str, int],
+) -> Iterable[dict]:
     src_type = source.get("type")
     if src_type == "directory":
         yield from _iter_directory_source(source, config_path)
         return
     if src_type == "jsonl":
-        yield from _iter_jsonl_source(source, config_path)
+        yield from _iter_jsonl_source_with_stats(source, config_path, stats)
         return
     raise ValueError(f"Unsupported source type: {src_type}")
 
@@ -130,7 +148,12 @@ def run_ingest(
     fragments_path = workspace / "corpus" / "fragments.jsonl"
     existing = [] if rebuild else read_jsonl(fragments_path)
     existing_keys = {
-        (row.get("segment_type"), row.get("normalized_text"), row.get("source"))
+        (
+            row.get("segment_type"),
+            row.get("normalized_text"),
+            row.get("source"),
+            row.get("source_path"),
+        )
         for row in existing
     }
 
@@ -152,12 +175,30 @@ def run_ingest(
     created: list[dict] = []
     skipped_duplicates = 0
     redaction_totals = {"emails": 0, "phone_numbers": 0, "urls": 0, "custom_patterns": 0}
+    per_source_stats: dict[str, dict[str, int]] = {}
 
     for source in enabled_sources:
         provenance = source.get("provenance", "human_original")
         validate_provenance(provenance)
+        stats = {
+            "records_seen": 0,
+            "created_fragments": 0,
+            "duplicates_skipped": 0,
+            "filtered_by_length": 0,
+            "invalid_json_rows": 0,
+            "non_object_rows": 0,
+            "missing_text_rows": 0,
+            "empty_rows": 0,
+            "missing_source_path": 0,
+            "redacted_emails": 0,
+            "redacted_phone_numbers": 0,
+            "redacted_urls": 0,
+            "redacted_custom_patterns": 0,
+        }
+        per_source_stats[source["name"]] = stats
 
-        for source_record in _iter_source_records(source, config_path):
+        for source_record in _iter_source_records(source, config_path, stats):
+            stats["records_seen"] += 1
             raw_text = source_record["text"]
             normalized = _normalize(raw_text)
             if not normalized:
@@ -165,18 +206,27 @@ def run_ingest(
             redacted, redaction_counts = _redact(normalized, redact_cfg)
             for key, value in redaction_counts.items():
                 redaction_totals[key] += value
+                stats[f"redacted_{key}"] += value
 
             segmented = _segment_text(redacted, segmentation)
             for segment_type, entries in segmented.items():
                 for entry in entries:
                     normalized_entry = _normalize(entry)
                     if len(normalized_entry) < min_chars or len(normalized_entry) > max_chars:
+                        stats["filtered_by_length"] += 1
                         continue
-                    dedupe_key = (segment_type, normalized_entry, source["name"])
+                    dedupe_key = (
+                        segment_type,
+                        normalized_entry,
+                        source["name"],
+                        source_record["source_path"],
+                    )
                     if dedupe_key in existing_keys:
                         skipped_duplicates += 1
+                        stats["duplicates_skipped"] += 1
                         continue
                     existing_keys.add(dedupe_key)
+                    stats["created_fragments"] += 1
                     created.append(
                         {
                             "id": f"frag_{uuid.uuid4().hex[:12]}",
@@ -197,6 +247,8 @@ def run_ingest(
         print(f"Would create fragments: {len(created)}")
         print(f"Skipped duplicates: {skipped_duplicates}")
         print(f"Redactions: {redaction_totals}")
+        for source_name, stats in per_source_stats.items():
+            print(f"source={source_name} stats={stats}")
         return 0
 
     if rebuild:
@@ -207,4 +259,6 @@ def run_ingest(
     print(f"Fragments written: {len(created)}")
     print(f"Skipped duplicates: {skipped_duplicates}")
     print(f"Redactions: {redaction_totals}")
+    for source_name, stats in per_source_stats.items():
+        print(f"source={source_name} stats={stats}")
     return 0
