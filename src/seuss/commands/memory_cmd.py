@@ -6,12 +6,14 @@ from pathlib import Path
 
 from seuss.config import load_config, resolve_workspace
 from seuss.jsonl_store import append_jsonl, read_jsonl, write_jsonl
+from seuss.pathing import resolve_approved_training_path, resolve_training_queue_path
 from seuss.utils import now_iso, shorten
 
 
 def _queue_or_approve_training_examples(
     workspace: Path,
     config: dict,
+    config_path: Path,
     memories: list[dict],
 ) -> None:
     live_training_cfg = config.get("adaptation", {}).get("live_training_data", {})
@@ -20,8 +22,8 @@ def _queue_or_approve_training_examples(
 
     require_approval = live_training_cfg.get("require_explicit_approval", True)
 
-    queue_path = workspace / "training_queue.jsonl"
-    approved_path = workspace / "approved_training.jsonl"
+    queue_path = resolve_training_queue_path(config, config_path, workspace)
+    approved_path = resolve_approved_training_path(workspace)
 
     if require_approval:
         queue_records = []
@@ -85,7 +87,7 @@ def run_memory_add(config_path: Path, text: str, kind: str) -> int:
     }
 
     append_jsonl(workspace / "memory" / "memories.jsonl", [record])
-    _queue_or_approve_training_examples(workspace, config, [record])
+    _queue_or_approve_training_examples(workspace, config, config_path, [record])
 
     print(f"Memory added: {record['id']}")
     return 0
@@ -119,7 +121,7 @@ def run_memory_import(config_path: Path, import_path: Path, text_field: str) -> 
             )
 
     append_jsonl(workspace / "memory" / "memories.jsonl", imported)
-    _queue_or_approve_training_examples(workspace, config, imported)
+    _queue_or_approve_training_examples(workspace, config, config_path, imported)
 
     print(f"Imported memory records: {len(imported)}")
     return 0

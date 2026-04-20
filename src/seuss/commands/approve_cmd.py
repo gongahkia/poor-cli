@@ -4,13 +4,17 @@ from pathlib import Path
 
 from seuss.config import load_config, resolve_workspace
 from seuss.jsonl_store import append_jsonl, read_jsonl, write_jsonl
+from seuss.pathing import resolve_approved_training_path, resolve_training_queue_path
 from seuss.utils import now_iso, shorten
 
 
 def _load_paths(config_path: Path) -> tuple[Path, Path]:
     config = load_config(config_path)
     workspace = resolve_workspace(config, config_path)
-    return workspace / "training_queue.jsonl", workspace / "approved_training.jsonl"
+    return (
+        resolve_training_queue_path(config, config_path, workspace),
+        resolve_approved_training_path(workspace),
+    )
 
 
 def run_approve_list(config_path: Path, include_all: bool) -> int:

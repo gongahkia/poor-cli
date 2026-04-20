@@ -6,6 +6,7 @@ from pathlib import Path
 
 from seuss.config import load_config, resolve_workspace
 from seuss.jsonl_store import read_jsonl
+from seuss.pathing import resolve_training_queue_path
 from seuss.utils import shorten
 
 
@@ -15,7 +16,7 @@ def _top_phrases(fragments: list[dict], limit: int) -> list[tuple[str, int]]:
     return [(phrase, n) for phrase, n in counts.most_common(limit) if phrase]
 
 
-def _summary(fragments: list[dict], memories: list[dict], queue: list[dict]) -> int:
+def _summary(fragments: list[dict], memories: list[dict], queue: list[dict], ingest_stats: dict | None) -> int:
     print(f"Corpus fragments: {len(fragments)}")
     print(f"Memory records: {len(memories)}")
     print(f"Training queue records: {len(queue)}")
@@ -35,6 +36,14 @@ def _summary(fragments: list[dict], memories: list[dict], queue: list[dict]) -> 
     print("Fragments by split:")
     for key, value in sorted(by_split.items()):
         print(f"  {key}: {value}")
+
+    if ingest_stats:
+        redactions = ingest_stats.get("redaction_totals", {})
+        print("Redaction summary (last ingest):")
+        print(f"  emails={redactions.get('emails', 0)}")
+        print(f"  phone_numbers={redactions.get('phone_numbers', 0)}")
+        print(f"  urls={redactions.get('urls', 0)}")
+        print(f"  custom_patterns={redactions.get('custom_patterns', 0)}")
 
     return 0
 
@@ -76,10 +85,15 @@ def run_inspect(config_path: Path, mode: str | None, source: str | None, limit: 
 
     fragments = read_jsonl(workspace / "corpus" / "fragments.jsonl")
     memories = read_jsonl(workspace / "memory" / "memories.jsonl")
-    queue = read_jsonl(workspace / "training_queue.jsonl")
+    queue_path = resolve_training_queue_path(config, config_path, workspace)
+    queue = read_jsonl(queue_path)
+    stats_path = workspace / "corpus" / "ingest_stats.json"
+    ingest_stats = None
+    if stats_path.exists():
+        ingest_stats = json.loads(stats_path.read_text(encoding="utf-8"))
 
     if mode is None:
-        return _summary(fragments, memories, queue)
+        return _summary(fragments, memories, queue, ingest_stats)
 
     if mode == "corpus":
         print(f"Corpus fragments: {len(fragments)}")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -99,6 +100,7 @@ def _iter_jsonl_source_with_stats(
         stats["missing_source_path"] += 1
         return
     text_field = source.get("text_field", "text")
+    timestamp_field = source.get("timestamp_field")
     with source_path.open("r", encoding="utf-8") as handle:
         for line in handle:
             line = line.strip()
@@ -117,10 +119,16 @@ def _iter_jsonl_source_with_stats(
             if not text:
                 stats["missing_text_rows"] += 1
                 continue
+            event_timestamp = None
+            if timestamp_field:
+                raw_ts = row.get(timestamp_field)
+                if raw_ts is not None:
+                    event_timestamp = str(raw_ts)
             yield {
                 "source_path": str(source_path),
                 "text": text,
                 "metadata": row,
+                "event_timestamp": event_timestamp,
             }
 
 
@@ -181,6 +189,52 @@ def _split_label(normalized_text: str, split_cfg: dict) -> str:
     bucket = int(digest[:8], 16) % 10000
     threshold = int(train_ratio * 10000)
     return "train" if bucket < threshold else "eval"
+
+
+def _parse_time(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _assign_splits(records: list[dict], split_cfg: dict) -> None:
+    strategy = str(split_cfg.get("strategy", "time")).lower()
+    train_ratio = float(split_cfg.get("train_ratio", 0.8))
+
+    if strategy != "time":
+        for row in records:
+            row["split"] = _split_label(row.get("normalized_text", ""), split_cfg)
+        return
+
+    with_time: list[dict] = []
+    without_time: list[dict] = []
+    for row in records:
+        parsed = _parse_time(row.get("event_timestamp"))
+        if parsed is None:
+            without_time.append(row)
+            continue
+        row["_parsed_event_time"] = parsed
+        with_time.append(row)
+
+    with_time.sort(key=lambda row: row["_parsed_event_time"])
+    cutoff = int(len(with_time) * train_ratio)
+    for idx, row in enumerate(with_time):
+        row["split"] = "train" if idx < cutoff else "eval"
+        row.pop("_parsed_event_time", None)
+
+    for row in without_time:
+        row["split"] = _split_label(row.get("normalized_text", ""), split_cfg)
 
 
 def run_ingest(
@@ -290,11 +344,13 @@ def run_ingest(
                             "text": entry,
                             "normalized_text": normalized_entry,
                             "segment_type": segment_type,
-                            "split": _split_label(normalized_entry, split_cfg),
+                            "event_timestamp": source_record.get("event_timestamp"),
                             "created_at": now_iso(),
                             "metadata": source_record.get("metadata", {}),
                         }
                     )
+
+    _assign_splits(created, split_cfg)
 
     if dry_run:
         print("Dry run complete.")
@@ -315,4 +371,15 @@ def run_ingest(
     print(f"Redactions: {redaction_totals}")
     for source_name, stats in per_source_stats.items():
         print(f"source={source_name} stats={stats}")
+
+    stats_payload = {
+        "run_at": now_iso(),
+        "redaction_totals": redaction_totals,
+        "per_source_stats": per_source_stats,
+        "fragments_written": len(created),
+        "skipped_duplicates": skipped_duplicates,
+    }
+    stats_path = workspace / "corpus" / "ingest_stats.json"
+    stats_path.parent.mkdir(parents=True, exist_ok=True)
+    stats_path.write_text(json.dumps(stats_payload, indent=2, ensure_ascii=True), encoding="utf-8")
     return 0

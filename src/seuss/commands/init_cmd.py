@@ -4,6 +4,7 @@ from pathlib import Path
 
 from seuss.config import load_config, resolve_workspace, write_default_config
 from seuss.jsonl_store import touch_jsonl
+from seuss.pathing import resolve_training_queue_path
 
 
 def ensure_workspace_layout(workspace: Path) -> None:
@@ -24,6 +25,7 @@ def run_init(config_path: Path, force: bool) -> int:
     workspace = resolve_workspace(config, config_path)
 
     ensure_workspace_layout(workspace)
+    touch_jsonl(resolve_training_queue_path(config, config_path, workspace))
 
     print(f"Initialized config: {config_path}")
     print(f"Workspace: {workspace}")

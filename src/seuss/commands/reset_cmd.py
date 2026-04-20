@@ -5,7 +5,8 @@ from pathlib import Path
 
 from seuss.config import load_config, resolve_workspace
 from seuss.commands.init_cmd import ensure_workspace_layout
-from seuss.jsonl_store import write_jsonl
+from seuss.jsonl_store import touch_jsonl, write_jsonl
+from seuss.pathing import resolve_training_queue_path
 
 
 def _clear_json_files(path: Path) -> int:
@@ -31,6 +32,7 @@ def run_reset_corpus(
     config = load_config(config_path)
     workspace = resolve_workspace(config, config_path)
     ensure_workspace_layout(workspace)
+    touch_jsonl(resolve_training_queue_path(config, config_path, workspace))
 
     fragments_path = workspace / "corpus" / "fragments.jsonl"
     write_jsonl(fragments_path, [])
@@ -64,6 +66,7 @@ def run_reset_workspace(config_path: Path, yes: bool) -> int:
         shutil.rmtree(workspace)
 
     ensure_workspace_layout(workspace)
+    touch_jsonl(resolve_training_queue_path(config, config_path, workspace))
     print("Workspace reset complete.")
     print(f"workspace={workspace}")
     return 0

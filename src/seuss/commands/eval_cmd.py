@@ -39,6 +39,30 @@ def _privacy_leak_count(outputs: list[str]) -> int:
     return count
 
 
+def _is_human_provenance(label: str | None) -> bool:
+    if not label:
+        return False
+    return label in {"human_original", "human_edited", "conversation_live", "memory_summary"}
+
+
+def _provenance_metrics(rows: list[dict]) -> dict[str, float | int]:
+    if not rows:
+        return {
+            "human_ratio": 0.0,
+            "ai_count": 0,
+            "synthetic_count": 0,
+        }
+    labels = [str(row.get("provenance", "")) for row in rows]
+    human_count = sum(1 for label in labels if _is_human_provenance(label))
+    ai_count = sum(1 for label in labels if label.startswith("ai_"))
+    synthetic_count = sum(1 for label in labels if label.startswith("synthetic_"))
+    return {
+        "human_ratio": round(human_count / len(rows), 6),
+        "ai_count": ai_count,
+        "synthetic_count": synthetic_count,
+    }
+
+
 def run_eval(
     config_path: Path,
     suite: str,
@@ -128,6 +152,10 @@ def run_eval(
             "privacy_leak_count": privacy_leak_count,
             "num_samples": len(outputs),
         },
+        "provenance_checks": {
+            "train": _provenance_metrics(train_fragments),
+            "eval": _provenance_metrics(eval_fragments),
+        },
         "samples": [
             {"prompt": prompt, "output": output}
             for prompt, output in zip(prompts[:10], outputs[:10])
@@ -182,6 +210,12 @@ def run_eval(
     print(f"exact_copy_rate={report['metrics']['exact_copy_rate']:.4f}")
     print(f"repetition_score={report['metrics']['repetition_score']:.4f}")
     print(f"privacy_leak_count={report['metrics']['privacy_leak_count']}")
+    print(
+        "train_human_ratio="
+        f"{report['provenance_checks']['train']['human_ratio']:.4f} "
+        f"train_ai_count={report['provenance_checks']['train']['ai_count']} "
+        f"train_synthetic_count={report['provenance_checks']['train']['synthetic_count']}"
+    )
     if summary:
         print(f"overall_pass={report['overall_pass']}")
         for name, check in checks.items():
