@@ -1,9 +1,10 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const root = resolve(import.meta.dirname, "..");
 const catalogPath = resolve(root, "packages/mcp-server/dist/tools/catalog.js");
+const opsTaxonomyPath = resolve(root, "packages/mcp-server/dist/ops-taxonomy.js");
 const ownershipPath = resolve(root, "docs/ownership-matrix.json");
 
 const requireFile = (filePath) => {
@@ -24,6 +25,7 @@ const ensureIncludes = (filePath, snippets) => {
 const readJson = (filePath) => JSON.parse(readFileSync(filePath, "utf8"));
 
 requireFile(catalogPath);
+requireFile(opsTaxonomyPath);
 requireFile(ownershipPath);
 requireFile(resolve(root, "docs/governance-checklist.md"));
 requireFile(resolve(root, "docs/deprecation-policy.md"));
@@ -31,7 +33,101 @@ requireFile(resolve(root, "docs/quarterly-product-health-template.md"));
 requireFile(resolve(root, "docs/release.md"));
 
 const { API_CATALOG, WORKFLOW_CATALOG } = await import(pathToFileURL(catalogPath).href);
+const { OPS_TAXONOMY_CATALOG } = await import(pathToFileURL(opsTaxonomyPath).href);
 const matrix = readJson(ownershipPath);
+
+const walkFiles = (dirPath) => {
+  const files = [];
+  for (const entry of readdirSync(dirPath, { withFileTypes: true })) {
+    const entryPath = resolve(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === "__tests__" || entry.name === "fixtures" || entry.name === "mock-server") {
+        continue;
+      }
+      files.push(...walkFiles(entryPath));
+      continue;
+    }
+    if (entry.isFile() && entry.name.endsWith(".ts")) {
+      files.push(entryPath);
+    }
+  }
+  return files;
+};
+
+const extractApiErrorCodes = (text) => {
+  const emitted = new Set();
+  const apiErrorPattern = /new ApiError\s*\(\s*\{([\s\S]*?)\}\s*\)/g;
+
+  for (const match of text.matchAll(apiErrorPattern)) {
+    const block = match[1] ?? "";
+    const explicitCode = /code\s*:\s*"([A-Z0-9_]+)"/.exec(block)?.[1];
+    if (explicitCode !== undefined) {
+      emitted.add(explicitCode);
+      continue;
+    }
+
+    const statusLiteral = /statusCode\s*:\s*(\d{3})/.exec(block)?.[1];
+    if (statusLiteral !== undefined) {
+      const numericStatus = Number.parseInt(statusLiteral, 10);
+      if (numericStatus === 429) emitted.add("HTTP_429");
+      else if (numericStatus >= 500) emitted.add("HTTP_5XX");
+      else if (numericStatus >= 400) emitted.add("HTTP_4XX");
+      continue;
+    }
+
+    if (/statusCode\s*:/.test(block)) {
+      emitted.add("HTTP_4XX");
+      emitted.add("HTTP_5XX");
+    }
+  }
+
+  return emitted;
+};
+
+const extractManualStructuredErrorCodes = (text) => {
+  const emitted = new Set();
+  const errorObjectPattern = /structuredContent\s*:\s*\{[\s\S]*?error\s*:\s*\{([\s\S]*?)\}\s*,?\s*\}/g;
+  for (const match of text.matchAll(errorObjectPattern)) {
+    const block = match[1] ?? "";
+    const code = /code\s*:\s*"([A-Z0-9_]+)"/.exec(block)?.[1];
+    if (code !== undefined) {
+      emitted.add(code);
+    }
+  }
+  return emitted;
+};
+
+const collectEmittedToolErrorCodes = () => {
+  const emitted = new Set([
+    "VALIDATION_ERROR",
+    "INTERNAL_ERROR",
+    "TOOL_RESULT_ERROR",
+    "WORKFLOW_DEPENDENCY_ERROR",
+  ]);
+
+  const scanRoots = [
+    resolve(root, "packages/shared/src/http-client.ts"),
+    resolve(root, "packages/mcp-server/src/router/planner.ts"),
+    resolve(root, "packages/mcp-server/src/tools/query/rendering.ts"),
+    resolve(root, "packages/mcp-server/src/tools/transit-intelligence-tools.ts"),
+    resolve(root, "packages/mcp-server/src/apis"),
+  ];
+
+  for (const scanRoot of scanRoots) {
+    const candidates = statSync(scanRoot).isDirectory() ? walkFiles(scanRoot) : [scanRoot];
+    for (const filePath of candidates) {
+      const text = readFileSync(filePath, "utf8");
+      for (const code of extractApiErrorCodes(text)) {
+        emitted.add(code);
+      }
+      for (const code of extractManualStructuredErrorCodes(text)) {
+        emitted.add(code);
+      }
+    }
+  }
+
+  return emitted;
+};
 
 if (!Array.isArray(matrix.apiFamilies) || !Array.isArray(matrix.workflows)) {
   throw new Error("docs/ownership-matrix.json must define apiFamilies[] and workflows[] arrays.");
@@ -88,6 +184,21 @@ ensureIncludes(resolve(root, "docs/release.md"), [
   "node ./scripts/check-governance.mjs",
 ]);
 
+if (!Array.isArray(OPS_TAXONOMY_CATALOG.errorCodes)) {
+  throw new Error("OPS_TAXONOMY_CATALOG.errorCodes must be present.");
+}
+
+const taxonomyCodes = new Set(
+  OPS_TAXONOMY_CATALOG.errorCodes
+    .map((entry) => entry?.code)
+    .filter((code) => typeof code === "string"),
+);
+const emittedErrorCodes = collectEmittedToolErrorCodes();
+const missingTaxonomy = [...emittedErrorCodes].filter((code) => !taxonomyCodes.has(code)).sort();
+if (missingTaxonomy.length > 0) {
+  throw new Error(`Ops taxonomy is missing emitted tool-error code(s): ${missingTaxonomy.join(", ")}`);
+}
+
 process.stdout.write(
-  `Governance policy OK: ${API_CATALOG.length} API families and ${WORKFLOW_CATALOG.length} workflows have explicit owners.\n`,
+  `Governance policy OK: ${API_CATALOG.length} API families, ${WORKFLOW_CATALOG.length} workflows, and ${emittedErrorCodes.size} emitted error codes have explicit governance coverage.\n`,
 );
