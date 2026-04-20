@@ -39,6 +39,20 @@ npm install
 npm run verify
 ```
 
+### Governance Checklist
+
+Before tagging, run the explicit governance policy check (this is also part of `npm run verify`):
+
+```bash
+node ./scripts/check-governance.mjs
+```
+
+Confirm:
+
+- `docs/ownership-matrix.json` covers every API family and workflow in the built catalog.
+- `docs/governance-checklist.md` and `docs/deprecation-policy.md` are current.
+- quarterly reporting template and known-issues notes are current for the release window.
+
 6. Run the live validation pass:
 
 ```bash

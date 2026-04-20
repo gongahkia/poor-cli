@@ -1,0 +1,254 @@
+{
+  "schemaVersion": "1.0",
+  "generatedAt": "2026-04-20T07:11:12.339Z",
+  "ownerPolicy": {
+    "rule": "Every API family and workflow must have a primary owner role and backup owner role.",
+    "escalationChannel": "maintainers@sg-apis"
+  },
+  "apiFamilies": [
+    {
+      "name": "SingStat",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "MAS",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "OneMap",
+      "primaryOwner": "maintainer:runtime-reliability",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "URA",
+      "primaryOwner": "maintainer:runtime-reliability",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "LTA DataMall",
+      "primaryOwner": "maintainer:runtime-reliability",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "NEA",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "HDB",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "CEA",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "BCA",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "BOA",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "ACRA",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "PA",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "Sport Singapore",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "ECDA",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "MSF Family Services",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "MSF Student Care Services",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "MSF Social Service Offices",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "GeBIZ",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "Hawker Centres",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "MOE Schools",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "MOH Healthcare",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "HSA",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "SFA",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "NParks",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "PUB",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "MOM",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "STB",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "HLB",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "data.gov.sg",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    }
+  ],
+  "workflows": [
+    {
+      "name": "Macro Snapshot",
+      "primaryOwner": "maintainer:workflow-platform",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "Demographic Profile",
+      "primaryOwner": "maintainer:workflow-platform",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "Civic Discovery",
+      "primaryOwner": "maintainer:workflow-platform",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "Property And Regulatory Due Diligence",
+      "primaryOwner": "maintainer:diligence",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "Property Counterparty Diligence",
+      "primaryOwner": "maintainer:diligence",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "Business Registry Diligence",
+      "primaryOwner": "maintainer:diligence",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "Architecture Firm Diligence",
+      "primaryOwner": "maintainer:diligence",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "Healthcare Supplier Diligence",
+      "primaryOwner": "maintainer:diligence",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "Hotel Operator Lookup",
+      "primaryOwner": "maintainer:workflow-platform",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "Sector Scoped Business Diligence",
+      "primaryOwner": "maintainer:diligence",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "Dataset Discovery Fallback",
+      "primaryOwner": "maintainer:workflow-platform",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "Route Planning",
+      "primaryOwner": "maintainer:workflow-platform",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "SingStat Table Drilldown",
+      "primaryOwner": "maintainer:workflow-platform",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "Dataset Collection Browse",
+      "primaryOwner": "maintainer:workflow-platform",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "Transport Status",
+      "primaryOwner": "maintainer:ops-signals",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "Environment Snapshot",
+      "primaryOwner": "maintainer:ops-signals",
+      "backupOwner": "maintainer:governance"
+    }
+  ],
+  "playbooks": [
+    {
+      "name": "Relocation And Neighbourhood Brief",
+      "primaryOwner": "maintainer:adoption",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "Business Opportunity Scan",
+      "primaryOwner": "maintainer:adoption",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "Social Support Navigator",
+      "primaryOwner": "maintainer:adoption",
+      "backupOwner": "maintainer:governance"
+    }
+  ]
+}

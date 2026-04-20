@@ -13,6 +13,7 @@
     "test": "vitest run",
     "lint": "eslint packages/*/src/**/*.ts",
     "verify": "node ./scripts/verify.mjs",
+    "governance:check": "node ./scripts/check-governance.mjs",
     "diagnostics": "node ./scripts/dev-diagnostics.mjs",
     "ecosystem:snapshot": "node ./scripts/generate-ecosystem-snapshot.mjs",
     "benchmarks:snapshot": "node ./scripts/generate-benchmark-snapshot.mjs",

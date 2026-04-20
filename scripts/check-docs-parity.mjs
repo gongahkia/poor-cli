@@ -57,6 +57,7 @@ ensureIncludes(readmeTarget, [
   "docs/market-conventions-audit.md",
   "docs/compatibility-matrix.md",
   "docs/known-issues.md",
+  "docs/governance-checklist.md",
   "docs/troubleshooting.md",
   "npm run diagnostics",
   "Route Planning",
@@ -196,6 +197,11 @@ ensureIncludes("docs/known-issues.md", [
   "OneMap auth",
   "ecosystem:snapshot",
   "Triage Rules",
+]);
+
+ensureIncludes("docs/governance-checklist.md", [
+  "No new API family without a documented use case, maintainer owner, and test plan.",
+  "No release without passing verify, smoke, and policy checks.",
 ]);
 
 ensureIncludes("docs/contributing.md", [
