@@ -129,7 +129,11 @@ enum CliCommand {
         overwrite: bool,
     },
     /// Run local diagnostics for config and shell integration state.
-    Doctor,
+    Doctor {
+        /// Emit machine-readable JSON.
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
     /// Reset managed local Wok files in the config directory.
     Reset {
         /// Also remove session/workflow/theme state directories.

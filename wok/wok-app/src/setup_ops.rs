@@ -41,15 +41,40 @@ struct InitStats {
     skipped: Vec<PathBuf>,
 }
 
+#[derive(Clone, Copy)]
 enum CheckStatus {
     Ok,
     Warn,
     Fail,
 }
 
+impl CheckStatus {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Warn => "warn",
+            Self::Fail => "fail",
+        }
+    }
+}
+
 struct DoctorCheck {
     label: String,
     status: CheckStatus,
+    detail: String,
+}
+
+#[derive(serde::Serialize)]
+struct DoctorSummary {
+    ok: usize,
+    warn: usize,
+    fail: usize,
+}
+
+#[derive(serde::Serialize)]
+struct DoctorCheckView {
+    label: String,
+    status: String,
     detail: String,
 }
 
@@ -100,36 +125,43 @@ pub(crate) fn ensure_first_run_bootstrap() -> Result<Option<String>, Box<dyn Err
     Ok(result)
 }
 
-pub(crate) fn run_doctor() -> Result<(), Box<dyn Error>> {
+pub(crate) fn run_doctor(as_json: bool) -> Result<(), Box<dyn Error>> {
     let config_dir = WokConfig::config_dir();
     let checks = doctor_checks_at(&config_dir);
+    let summary = doctor_summary(&checks);
 
-    println!("Wok doctor");
-    println!("config_dir: {}", config_dir.display());
-
-    let mut ok_count = 0usize;
-    let mut warn_count = 0usize;
-    let mut fail_count = 0usize;
-    for check in checks {
-        let status = match check.status {
-            CheckStatus::Ok => {
-                ok_count += 1;
-                "ok"
-            }
-            CheckStatus::Warn => {
-                warn_count += 1;
-                "warn"
-            }
-            CheckStatus::Fail => {
-                fail_count += 1;
-                "fail"
-            }
-        };
-        println!("[{status}] {}: {}", check.label, check.detail);
+    if as_json {
+        let output = serde_json::json!({
+            "config_dir": config_dir,
+            "checks": checks
+                .iter()
+                .map(|check| DoctorCheckView {
+                    label: check.label.clone(),
+                    status: check.status.as_str().to_string(),
+                    detail: check.detail.clone(),
+                })
+                .collect::<Vec<_>>(),
+            "summary": summary,
+        });
+        println!("{}", serde_json::to_string_pretty(&output)?);
+    } else {
+        println!("Wok doctor");
+        println!("config_dir: {}", config_dir.display());
+        for check in &checks {
+            println!(
+                "[{}] {}: {}",
+                check.status.as_str(),
+                check.label,
+                check.detail
+            );
+        }
+        println!(
+            "summary: {} ok, {} warning, {} failed",
+            summary.ok, summary.warn, summary.fail
+        );
     }
 
-    println!("summary: {ok_count} ok, {warn_count} warning, {fail_count} failed");
-    if fail_count > 0 {
+    if summary.fail > 0 {
         return Err("doctor found failing checks".into());
     }
     Ok(())
@@ -516,6 +548,22 @@ fn doctor_checks_at(config_dir: &Path) -> Vec<DoctorCheck> {
     });
 
     checks
+}
+
+fn doctor_summary(checks: &[DoctorCheck]) -> DoctorSummary {
+    let mut summary = DoctorSummary {
+        ok: 0,
+        warn: 0,
+        fail: 0,
+    };
+    for check in checks {
+        match check.status {
+            CheckStatus::Ok => summary.ok += 1,
+            CheckStatus::Warn => summary.warn += 1,
+            CheckStatus::Fail => summary.fail += 1,
+        }
+    }
+    summary
 }
 
 #[derive(Default)]

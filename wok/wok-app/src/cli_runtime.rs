@@ -21,8 +21,8 @@ pub(crate) fn dispatch_cli_command(cli: &Cli) -> Result<CliAction, Box<dyn Error
             setup_ops::run_init(overwrite)?;
             Ok(CliAction::ExitOk)
         }
-        Some(CliCommand::Doctor) => {
-            setup_ops::run_doctor()?;
+        Some(CliCommand::Doctor { json }) => {
+            setup_ops::run_doctor(json)?;
             Ok(CliAction::ExitOk)
         }
         Some(CliCommand::Reset { all, yes }) => {
