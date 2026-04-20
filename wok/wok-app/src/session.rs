@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+use std::{io::Write, time::SystemTime};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -195,11 +196,52 @@ fn default_failure_trend_bucket_ms() -> u64 {
 /// Save a session state to a JSON file.
 pub fn save_session(state: &WorkspaceSessionState, path: &Path) -> Result<(), SessionError> {
     let json = serde_json::to_string_pretty(state)?;
+    write_atomic(path, json.as_bytes())?;
+    Ok(())
+}
+
+fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), std::io::Error> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(path, json)?;
-    Ok(())
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let unique = SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let tmp_path = parent.join(format!(
+        ".{}.tmp-{}-{unique}",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("wok-session"),
+        std::process::id()
+    ));
+
+    let persist_result = (|| -> Result<(), std::io::Error> {
+        let mut file = std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&tmp_path)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        #[cfg(windows)]
+        if path.exists() {
+            let _ = std::fs::remove_file(path);
+        }
+        std::fs::rename(&tmp_path, path)?;
+        #[cfg(unix)]
+        {
+            if let Ok(dir) = std::fs::File::open(parent) {
+                let _ = dir.sync_all();
+            }
+        }
+        Ok(())
+    })();
+
+    if persist_result.is_err() {
+        let _ = std::fs::remove_file(&tmp_path);
+    }
+    persist_result
 }
 
 /// Load a session state from a JSON file.
@@ -545,5 +587,41 @@ mod tests {
         let restored = history_entry_from_state(&state);
 
         assert_eq!(restored, entry);
+    }
+
+    #[test]
+    fn test_save_session_cleans_up_atomic_temp_file() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be after epoch")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("wok-session-atomic-{unique}"));
+        std::fs::create_dir_all(&dir).expect("temp dir should exist");
+        let path = dir.join("session.json");
+
+        let state = WorkspaceSessionState {
+            tabs: Vec::new(),
+            panes: Vec::new(),
+            active_tab: 0,
+            window_size: (800, 600),
+            window_position: (0, 0),
+            show_failure_trends_panel: false,
+            failure_trend_bucket_ms: default_failure_trend_bucket_ms(),
+        };
+        save_session(&state, &path).expect("session should save");
+        assert!(path.exists(), "session file should be persisted");
+
+        let leftovers = std::fs::read_dir(&dir)
+            .expect("temp dir should be readable")
+            .flatten()
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .filter(|name| name.contains(".session.json.tmp-"))
+            .collect::<Vec<_>>();
+        assert!(
+            leftovers.is_empty(),
+            "atomic temp file should not remain after save"
+        );
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
