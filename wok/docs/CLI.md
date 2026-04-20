@@ -79,3 +79,22 @@ Restore shell startup files from the most recent `wok shell install`.
 ```bash
 wok shell rollback --yes
 ```
+
+## `wok rpc`
+
+Send a single JSON-RPC request to a running Wok remote-control socket.
+
+```bash
+wok rpc wok.get_panes --socket /tmp/wok.sock
+wok rpc wok.get_failure_trends --params '[0, 3600000, 24]' --socket /tmp/wok.sock
+wok rpc wok.setup.init --params '{"overwrite":true}' --socket /tmp/wok.sock
+```
+
+Flags:
+
+- `--params`: JSON array/object payload (`null` by default)
+- `--socket`: explicit socket path (falls back to `$WOK_SOCKET`)
+- `--id`: explicit JSON-RPC id value (defaults to `1`)
+- `--notify`: send as notification (no id, no response expected)
+
+See [REMOTE_RPC.md](REMOTE_RPC.md) for supported method contracts.

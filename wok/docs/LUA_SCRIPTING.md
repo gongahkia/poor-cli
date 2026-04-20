@@ -54,15 +54,15 @@ wok.bind_key("terminal", "ctrl+shift+r", "restore_demo")
 
 ### Built-in Action Strings
 
-- `new_tab`, `close_tab`, `next_tab`, `prev_tab`
-- `split_vertical`, `split_horizontal`, `close_split`
-- `focus_left`, `focus_right`, `focus_up`, `focus_down`
-- `search_global`, `toggle_search`
-- `command_palette`, `palette`
-- `block_prev`, `block_next`, `block_copy`, `block_collapse`
-- `zoom_in`, `zoom_out`, `zoom_reset`
-- `clear_screen`, `send_eof`
-- `save_session:<name>`, `load_session:<name>`
+- Tabs: `new_tab`, `close_tab`, `next_tab`, `prev_tab`
+- Pane layout: `split_vertical`, `split_horizontal`, `close_split`
+- Pane focus/resize: `focus_left`, `focus_right`, `focus_up`, `focus_down`, `resize_split_left`, `resize_split_right`, `resize_split_up`, `resize_split_down`
+- Search and palette: `search_global`, `toggle_search`, `command_palette`, `palette`, `command_search`
+- Block navigation/actions: `block_prev`, `block_next`, `block_copy`, `block_copy_command`, `block_copy_output`, `block_collapse`, `block_toggle_bookmark`, `block_prev_bookmark`, `block_next_bookmark`, `block_find`, `block_filter`, `block_diff`, `block_rerun`
+- Runtime tools: `quick_select`, `quick_select_block`, `toggle_failure_trends_panel`, `toggle_broadcast`
+- Floating panes/layout: `new_floating_pane`, `toggle_floating_pane`, `close_floating_pane`, `next_layout`, `prev_layout`
+- Input and terminal: `toggle_input_position`, `zoom_in`, `zoom_out`, `zoom_reset`, `clear_screen`, `send_eof`
+- Session snapshots: `save_session:<name>`, `load_session:<name>`
 
 Aliases also accepted:
 
@@ -70,6 +70,9 @@ Aliases also accepted:
 - `search`
 - `copy_block`
 - `collapse_block`
+- `diff_block`
+- `failure_trends`
+- `history_search`
 
 ### `wok.on(event, callback)`
 
@@ -151,6 +154,26 @@ Publish a status message. Wok logs it and mirrors the latest message into the st
 ```lua
 wok.notify("Snapshot restored")
 ```
+
+### `wok.setup.*(...)`
+
+Queue local setup lifecycle operations from Lua. These APIs are synchronous in intent (same behavior as CLI setup commands) but are executed through the runtime setup queue.
+
+```lua
+wok.setup.init({ overwrite = true })
+wok.setup.doctor({ json = true })
+wok.setup.reset({ scope = "managed", yes = true })
+wok.setup.shell_install({ shell = "zsh", overwrite = false })
+wok.setup.shell_rollback({ shell = "zsh", yes = true })
+```
+
+Supported methods and options:
+
+- `wok.setup.init({ overwrite = <bool> })`
+- `wok.setup.doctor({ json = <bool> })`
+- `wok.setup.reset({ scope = "managed"|"state"|"all", yes = <bool> })`
+- `wok.setup.shell_install({ shell = "auto"|"bash"|"zsh"|"fish", overwrite = <bool> })`
+- `wok.setup.shell_rollback({ shell = "bash"|"zsh"|"fish", yes = <bool> })`
 
 ### `wok.theme.set(table)`
 
