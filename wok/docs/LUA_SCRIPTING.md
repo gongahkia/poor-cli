@@ -59,7 +59,7 @@ wok.bind_key("terminal", "ctrl+shift+r", "restore_demo")
 - Pane focus/resize: `focus_left`, `focus_right`, `focus_up`, `focus_down`, `resize_split_left`, `resize_split_right`, `resize_split_up`, `resize_split_down`
 - Search and palette: `search_global`, `toggle_search`, `command_palette`, `palette`, `command_search`
 - Block navigation/actions: `block_prev`, `block_next`, `block_copy`, `block_copy_command`, `block_copy_output`, `block_collapse`, `block_toggle_bookmark`, `block_prev_bookmark`, `block_next_bookmark`, `block_prev_failed`, `block_next_failed`, `block_find`, `block_filter`, `block_diff`, `block_rerun`, `block_rerun_in_split`, `block_save_workflow`, `block_export_markdown`, `block_export_json`
-- Runtime tools: `quick_select`, `quick_select_block`, `toggle_failure_trends_panel`, `toggle_broadcast`
+- Runtime tools: `quick_select`, `quick_select_block`, `toggle_failure_trends_panel`, `toggle_workspace_insights_panel`, `toggle_broadcast`
 - Floating panes/layout: `new_floating_pane`, `toggle_floating_pane`, `close_floating_pane`, `next_layout`, `prev_layout`
 - Input and terminal: `toggle_input_position`, `zoom_in`, `zoom_out`, `zoom_reset`, `clear_screen`, `send_eof`
 - Session snapshots: `save_session:<name>`, `load_session:<name>`
@@ -78,6 +78,7 @@ Aliases also accepted:
 - `save_block_workflow`
 - `export_block_markdown`
 - `export_block_json`
+- `workspace_insights`
 - `history_search`
 
 ### `wok.on(event, callback)`

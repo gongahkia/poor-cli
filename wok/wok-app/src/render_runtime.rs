@@ -1750,6 +1750,111 @@ pub(crate) fn render_failure_trends_overlay(
     }
 }
 
+pub(crate) fn render_workspace_insights_overlay(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    theme: &Theme,
+    viewport: Rect,
+    rows: &[String],
+    surface_opacity: f32,
+) {
+    let width = (viewport.w * 0.7).clamp(420.0, 880.0);
+    let max_rows = 10usize;
+    let visible_rows = rows.len().min(max_rows).max(1);
+    let height = font.metrics.cell_height * (visible_rows as f32 + 2.0) + 14.0;
+    let x = viewport.x + 12.0;
+    let y = viewport.y + 12.0;
+
+    render.batch.push_bg_quad(
+        x,
+        y,
+        width,
+        height,
+        with_opacity(
+            [
+                theme.tab_bar_bg.r,
+                theme.tab_bar_bg.g,
+                theme.tab_bar_bg.b,
+                0.96,
+            ],
+            surface_opacity,
+        ),
+    );
+    render.batch.push_bg_quad(
+        x,
+        y,
+        width,
+        1.0,
+        with_opacity(
+            [
+                theme.highlight_current_match.r,
+                theme.highlight_current_match.g,
+                theme.highlight_current_match.b,
+                0.85,
+            ],
+            surface_opacity,
+        ),
+    );
+
+    push_text(
+        render,
+        font,
+        x + 10.0,
+        y + 6.0,
+        "Workspace Insights",
+        with_opacity(
+            [
+                theme.foreground.r,
+                theme.foreground.g,
+                theme.foreground.b,
+                theme.foreground.a,
+            ],
+            surface_opacity,
+        ),
+    );
+
+    let max_chars = ((width - 24.0) / font.metrics.cell_width).floor().max(8.0) as usize;
+    if rows.is_empty() {
+        push_text(
+            render,
+            font,
+            x + 10.0,
+            y + 6.0 + font.metrics.cell_height,
+            "No workspace insights available",
+            with_opacity(
+                [
+                    theme.status_bar_text.r,
+                    theme.status_bar_text.g,
+                    theme.status_bar_text.b,
+                    theme.status_bar_text.a,
+                ],
+                surface_opacity,
+            ),
+        );
+        return;
+    }
+
+    for (index, row) in rows.iter().take(max_rows).enumerate() {
+        let row_y = y + 6.0 + (index as f32 + 1.0) * font.metrics.cell_height;
+        push_text(
+            render,
+            font,
+            x + 10.0,
+            row_y,
+            &truncate_overlay_text(row, max_chars),
+            with_opacity(
+                [
+                    theme.status_bar_text.r,
+                    theme.status_bar_text.g,
+                    theme.status_bar_text.b,
+                    theme.status_bar_text.a,
+                ],
+                surface_opacity,
+            ),
+        );
+    }
+}
+
 pub(crate) fn truncate_overlay_text(text: &str, max_chars: usize) -> String {
     let mut truncated = text.chars().take(max_chars).collect::<String>();
     if text.chars().count() > max_chars && max_chars > 3 {

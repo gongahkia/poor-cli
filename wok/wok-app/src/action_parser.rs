@@ -118,6 +118,9 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         "toggle_failure_trends_panel" | "failure_trends_panel" | "failure_trends" => {
             Some(Action::ToggleFailureTrendsPanel)
         }
+        "toggle_workspace_insights_panel" | "workspace_insights_panel" | "workspace_insights" => {
+            Some(Action::ToggleWorkspaceInsightsPanel)
+        }
         "zoom_in" => Some(Action::ZoomIn),
         "zoom_out" => Some(Action::ZoomOut),
         "zoom_reset" => Some(Action::ZoomReset),
@@ -232,6 +235,10 @@ mod tests {
         assert_eq!(
             parse_lua_action("failure_trends"),
             Some(Action::ToggleFailureTrendsPanel)
+        );
+        assert_eq!(
+            parse_lua_action("workspace_insights"),
+            Some(Action::ToggleWorkspaceInsightsPanel)
         );
     }
 }

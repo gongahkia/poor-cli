@@ -387,6 +387,11 @@ impl WokApp {
                     OverlayEffect::ToggleFailureTrendsPanel,
                 ));
             }
+            Action::ToggleWorkspaceInsightsPanel => {
+                effects.push(RuntimeEffect::Overlay(
+                    OverlayEffect::ToggleWorkspaceInsightsPanel,
+                ));
+            }
             Action::SearchGlobal => {
                 effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenSearch));
             }
@@ -688,6 +693,19 @@ mod tests {
             effects.effects,
             vec![RuntimeEffect::Overlay(
                 OverlayEffect::ToggleFailureTrendsPanel
+            )]
+        );
+    }
+
+    #[test]
+    fn test_workspace_insights_action_emits_overlay_toggle() {
+        let mut app = WokApp::new(WokConfig::default());
+        let effects = app.handle_action(&Action::ToggleWorkspaceInsightsPanel);
+
+        assert_eq!(
+            effects.effects,
+            vec![RuntimeEffect::Overlay(
+                OverlayEffect::ToggleWorkspaceInsightsPanel
             )]
         );
     }

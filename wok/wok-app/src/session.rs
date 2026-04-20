@@ -180,6 +180,9 @@ pub struct WorkspaceSessionState {
     /// Whether the failure trends panel is visible.
     #[serde(default)]
     pub show_failure_trends_panel: bool,
+    /// Whether the workspace insights panel is visible.
+    #[serde(default)]
+    pub show_workspace_insights_panel: bool,
     /// Bucket size in milliseconds used by the failure trends panel.
     #[serde(default = "default_failure_trend_bucket_ms")]
     pub failure_trend_bucket_ms: u64,
@@ -465,6 +468,7 @@ mod tests {
             window_size: (1280, 800),
             window_position: (32, 48),
             show_failure_trends_panel: true,
+            show_workspace_insights_panel: true,
             failure_trend_bucket_ms: 120_000,
         };
 
@@ -477,6 +481,7 @@ mod tests {
         assert_eq!(loaded.panes[0].shell, "zsh");
         assert_eq!(loaded.window_size, (1280, 800));
         assert!(loaded.show_failure_trends_panel);
+        assert!(loaded.show_workspace_insights_panel);
         assert_eq!(loaded.failure_trend_bucket_ms, 120_000);
         assert_eq!(loaded.panes[0].buffer_lines.len(), 2);
         assert_eq!(loaded.panes[0].blocks.len(), 1);
@@ -565,6 +570,7 @@ mod tests {
 
         assert!(!loaded.panes[0].blocks[0].is_bookmarked);
         assert!(!loaded.show_failure_trends_panel);
+        assert!(!loaded.show_workspace_insights_panel);
         assert_eq!(
             loaded.failure_trend_bucket_ms,
             default_failure_trend_bucket_ms()
@@ -606,6 +612,7 @@ mod tests {
             window_size: (800, 600),
             window_position: (0, 0),
             show_failure_trends_panel: false,
+            show_workspace_insights_panel: false,
             failure_trend_bucket_ms: default_failure_trend_bucket_ms(),
         };
         save_session(&state, &path).expect("session should save");

@@ -471,6 +471,7 @@ struct WokHandler {
     daemon_pane_by_local: HashMap<PaneId, u64>,
     status_message: Option<String>,
     show_failure_trends_panel: bool,
+    show_workspace_insights_panel: bool,
     failure_trend_bucket_ms: u64,
     status_bar_state: StatusBarState,
     status_bar_refresh_interval: Duration,
@@ -555,6 +556,7 @@ impl WokHandler {
             daemon_pane_by_local: HashMap::new(),
             status_message: None,
             show_failure_trends_panel: false,
+            show_workspace_insights_panel: false,
             failure_trend_bucket_ms: DEFAULT_FAILURE_TREND_BUCKET_MS,
             status_bar_state: StatusBarState::default(),
             status_bar_refresh_interval: Duration::from_secs(5),
@@ -957,6 +959,7 @@ impl WokHandler {
             window_size,
             window_position,
             show_failure_trends_panel: self.show_failure_trends_panel,
+            show_workspace_insights_panel: self.show_workspace_insights_panel,
             failure_trend_bucket_ms: self.failure_trend_bucket_ms,
         }
     }
@@ -969,6 +972,7 @@ impl WokHandler {
             window_size,
             window_position,
             show_failure_trends_panel,
+            show_workspace_insights_panel,
             failure_trend_bucket_ms,
         } = session;
 
@@ -1001,6 +1005,7 @@ impl WokHandler {
             .collect();
         self.workspace = WorkspaceState::from_tabs(tabs, active_tab);
         self.show_failure_trends_panel = show_failure_trends_panel;
+        self.show_workspace_insights_panel = show_workspace_insights_panel;
         self.failure_trend_bucket_ms = failure_trend_bucket_ms.max(60_000);
         self.panes.clear();
         if let Some(window) = &self.window {
@@ -1042,6 +1047,7 @@ impl WokHandler {
         let background_image = self.background.image.clone();
         let background_loaded = background_image.is_some();
         let show_failure_trends_panel = self.show_failure_trends_panel;
+        let show_workspace_insights_panel = self.show_workspace_insights_panel;
         let failure_trend_bucket_ms = self.failure_trend_bucket_ms;
         let debug_overlay_lines = if self.config.debug_overlay {
             Some(self.debug_overlay_lines())
@@ -1543,6 +1549,22 @@ impl WokHandler {
                     pane.ui_rects.viewport,
                     &rows,
                     failure_trend_bucket_ms,
+                    window_opacity,
+                );
+            }
+
+            if focused && show_workspace_insights_panel {
+                let rows = workspace_insight_panel_lines(
+                    &pane.pane_history,
+                    &pane.app.block_manager.blocks,
+                    10,
+                );
+                render_workspace_insights_overlay(
+                    render,
+                    &mut self.font,
+                    theme,
+                    pane.ui_rects.viewport,
+                    &rows,
                     window_opacity,
                 );
             }
@@ -2979,6 +3001,7 @@ impl WokHandler {
                         | Action::BlockExportMarkdown
                         | Action::BlockExportJson
                         | Action::ToggleFailureTrendsPanel
+                        | Action::ToggleWorkspaceInsightsPanel
                         | Action::SearchGlobal
                         | Action::CommandPalette
                         | Action::CommandSearch
@@ -3258,10 +3281,25 @@ impl WokHandler {
             }
             OverlayEffect::ToggleFailureTrendsPanel => {
                 self.show_failure_trends_panel = !self.show_failure_trends_panel;
+                if self.show_failure_trends_panel {
+                    self.show_workspace_insights_panel = false;
+                }
                 self.status_message = Some(if self.show_failure_trends_panel {
                     "Opened failure trends panel".to_string()
                 } else {
                     "Closed failure trends panel".to_string()
+                });
+                self.needs_redraw = true;
+            }
+            OverlayEffect::ToggleWorkspaceInsightsPanel => {
+                self.show_workspace_insights_panel = !self.show_workspace_insights_panel;
+                if self.show_workspace_insights_panel {
+                    self.show_failure_trends_panel = false;
+                }
+                self.status_message = Some(if self.show_workspace_insights_panel {
+                    "Opened workspace insights panel".to_string()
+                } else {
+                    "Closed workspace insights panel".to_string()
                 });
                 self.needs_redraw = true;
             }
@@ -5740,6 +5778,113 @@ fn failure_trend_panel_lines(
         .collect()
 }
 
+fn workspace_insight_panel_lines(
+    entries: &[HistoryEntry],
+    blocks: &[Block],
+    limit: usize,
+) -> Vec<String> {
+    let commands = entries
+        .iter()
+        .filter(|entry| !entry.command.trim().is_empty())
+        .collect::<Vec<_>>();
+    if commands.is_empty() {
+        return vec!["No command history for this pane yet".to_string()];
+    }
+
+    let total = commands.len();
+    let failures = commands
+        .iter()
+        .filter(|entry| entry.exit_code.unwrap_or(0) != 0)
+        .count();
+    let failure_rate = (failures as f64 / total as f64) * 100.0;
+
+    let durations = commands
+        .iter()
+        .filter_map(|entry| entry.duration_ms)
+        .collect::<Vec<_>>();
+    let avg_duration = if durations.is_empty() {
+        "unknown".to_string()
+    } else {
+        format!(
+            "{}ms",
+            durations.iter().sum::<u64>() / durations.len() as u64
+        )
+    };
+
+    let mut by_command_count = HashMap::<String, usize>::new();
+    let mut by_command_duration = HashMap::<String, (u64, usize)>::new();
+    for entry in &commands {
+        let command = entry.command.trim();
+        if command.is_empty() {
+            continue;
+        }
+        *by_command_count.entry(command.to_string()).or_insert(0) += 1;
+        if let Some(duration_ms) = entry.duration_ms {
+            let bucket = by_command_duration
+                .entry(command.to_string())
+                .or_insert((0, 0));
+            bucket.0 += duration_ms;
+            bucket.1 += 1;
+        }
+    }
+
+    let mut repeated = by_command_count.into_iter().collect::<Vec<_>>();
+    repeated.sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(&right.0)));
+    let repeated = repeated
+        .into_iter()
+        .take(3)
+        .map(|(command, count)| format!("{command} ({count})"))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let mut slowest = by_command_duration
+        .into_iter()
+        .filter_map(|(command, (sum, count))| (count > 0).then(|| (command, sum / count as u64)))
+        .collect::<Vec<_>>();
+    slowest.sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(&right.0)));
+    let slowest = slowest
+        .into_iter()
+        .take(3)
+        .map(|(command, avg)| format!("{command} ({avg}ms)"))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let block_count = blocks.len();
+    let bookmarked = blocks.iter().filter(|block| block.is_bookmarked).count();
+    let open_blocks = blocks
+        .iter()
+        .filter(|block| block.exit_code.is_none())
+        .count();
+    let failure_summary = summarize_failures(entries, limit)
+        .into_iter()
+        .take(3)
+        .map(|entry| format!("{} ({})", entry.command, entry.count))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    vec![
+        format!(
+            "Commands: {total} | Failures: {failures} ({failure_rate:.1}%) | Avg duration: {avg_duration}"
+        ),
+        format!("Blocks: {block_count} | Running: {open_blocks} | Bookmarked: {bookmarked}"),
+        if repeated.is_empty() {
+            "Most repeated: n/a".to_string()
+        } else {
+            format!("Most repeated: {repeated}")
+        },
+        if slowest.is_empty() {
+            "Slowest avg commands: n/a".to_string()
+        } else {
+            format!("Slowest avg commands: {slowest}")
+        },
+        if failure_summary.is_empty() {
+            "Failure hot spots: n/a".to_string()
+        } else {
+            format!("Failure hot spots: {failure_summary}")
+        },
+    ]
+}
+
 fn workflow_name_from_command(command: &str) -> String {
     let slug = command
         .chars()
@@ -6005,6 +6150,7 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::BlockExportMarkdown => "block_export_markdown".to_string(),
         Action::BlockExportJson => "block_export_json".to_string(),
         Action::ToggleFailureTrendsPanel => "toggle_failure_trends_panel".to_string(),
+        Action::ToggleWorkspaceInsightsPanel => "toggle_workspace_insights_panel".to_string(),
         Action::SearchGlobal => "search_global".to_string(),
         Action::EnterViMode => "enter_vi_mode".to_string(),
         Action::CommandPalette => "command_palette".to_string(),
@@ -6067,6 +6213,7 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::BlockExportMarkdown,
         Action::BlockExportJson,
         Action::ToggleFailureTrendsPanel,
+        Action::ToggleWorkspaceInsightsPanel,
         Action::BlockPrevFailed,
         Action::BlockNextFailed,
         Action::BlockPrev,
@@ -6166,6 +6313,7 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::BlockExportMarkdown => "Export selected block metadata and output as Markdown",
         Action::BlockExportJson => "Export selected block metadata and output as JSON",
         Action::ToggleFailureTrendsPanel => "Open failure trends analytics panel",
+        Action::ToggleWorkspaceInsightsPanel => "Open workspace command insights panel",
         Action::SearchGlobal => "Search text across the workspace",
         Action::EnterViMode => "Enable vi-style navigation mode",
         Action::CommandPalette => "Open action/workflow palette (`>` filters actions)",

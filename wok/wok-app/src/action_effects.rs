@@ -158,6 +158,8 @@ pub enum OverlayEffect {
     },
     /// Toggle the failure-trends overlay panel.
     ToggleFailureTrendsPanel,
+    /// Toggle the workspace insights overlay panel.
+    ToggleWorkspaceInsightsPanel,
     /// Close the active block query overlay.
     CloseBlockQuery,
 }

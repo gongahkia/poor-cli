@@ -97,6 +97,8 @@ pub enum Action {
     BlockExportJson,
     /// Toggle the failure-trends panel for the active pane.
     ToggleFailureTrendsPanel,
+    /// Toggle the workspace insights panel for the active pane.
+    ToggleWorkspaceInsightsPanel,
     /// Global terminal search.
     SearchGlobal,
     /// Enter vi navigation mode.
@@ -458,6 +460,13 @@ impl Default for KeybindingConfig {
             },
             Action::ToggleFailureTrendsPanel,
         );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('i'),
+                modifiers: pma,
+            },
+            Action::ToggleWorkspaceInsightsPanel,
+        );
 
         // Search
         bindings.insert(
@@ -737,6 +746,19 @@ mod tests {
         assert_eq!(
             config.resolve(&combo, &Context::Terminal),
             Some(&Action::ToggleFailureTrendsPanel)
+        );
+    }
+
+    #[test]
+    fn test_workspace_insights_panel_binding_exists() {
+        let config = KeybindingConfig::default();
+        let combo = KeyCombo {
+            key: KeyAction::Char('i'),
+            modifiers: platform_mod_alt(),
+        };
+        assert_eq!(
+            config.resolve(&combo, &Context::Terminal),
+            Some(&Action::ToggleWorkspaceInsightsPanel)
         );
     }
 
