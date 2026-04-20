@@ -60,6 +60,7 @@ More detail:
 - [docs/LUA_SCRIPTING.md](docs/LUA_SCRIPTING.md)
 - [docs/CLI.md](docs/CLI.md)
 - [docs/REMOTE_RPC.md](docs/REMOTE_RPC.md)
+- [docs/RELEASE_HARDENING.md](docs/RELEASE_HARDENING.md)
 
 ## Demo Flow
 

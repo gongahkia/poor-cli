@@ -81,6 +81,32 @@ jobs:
       - name: Create checksums
         run: sha256sum wok-* > checksums.sha256
 
+      - name: Verify checksums coverage
+        run: |
+          artifact_count=$(find . -maxdepth 1 -type f -name 'wok-*' ! -name 'checksums.sha256' | wc -l | tr -d ' ')
+          checksum_count=$(wc -l < checksums.sha256 | tr -d ' ')
+          test "$artifact_count" -eq "$checksum_count"
+          sha256sum -c checksums.sha256
+
+      - name: Smoke test packaged artifacts
+        run: |
+          set -euo pipefail
+          for tarball in wok-*.tar.gz; do
+            if [[ "$tarball" == *"-app.tar.gz" ]]; then
+              tar tzf "$tarball" | grep -Eq '^Wok\.app/?'
+            else
+              tar tzf "$tarball" | grep -Eq '(^|/)wok$'
+            fi
+          done
+
+          for zip in wok-*.zip; do
+            unzip -l "$zip" | grep -Eq 'wok\.exe$'
+          done
+
+          for deb in dist/linux/*.deb; do
+            dpkg-deb --info "$deb" >/dev/null
+          done
+
       - uses: softprops/action-gh-release@v2
         with:
           files: |
