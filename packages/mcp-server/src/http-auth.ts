@@ -161,7 +161,7 @@ export class HttpAuthController {
   readonly #jwksUri: string | undefined;
   readonly #clockSkewSec: number;
   #resourceServerUrl: URL;
-  #jwksResolver?: ReturnType<typeof createRemoteJWKSet>;
+  #jwksResolver: ReturnType<typeof createRemoteJWKSet> | undefined;
 
   constructor(options: HttpAuthOptions) {
     this.mode = options.mode;
