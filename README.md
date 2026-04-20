@@ -15,6 +15,15 @@ The repo currently exposes 69 `sg_*` tools total across 29 official data familie
 
 `sg_query` is the bounded preferred interface across 20 routed families. It plans or executes bounded deterministic workflows with transparent step metadata. The direct `sg_*` tools remain the stable low-level contract.
 
+## Roadmap
+
+- [MASTER-ROADMAP.md](./MASTER-ROADMAP.md)
+- [PHASE1.md](./PHASE1.md)
+- [PHASE2.md](./PHASE2.md)
+- [PHASE3.md](./PHASE3.md)
+- [PHASE4.md](./PHASE4.md)
+- [PHASE5.md](./PHASE5.md)
+
 ## Why This Exists
 
 This repo is for agent builders who want one honest MCP server for Singapore public data instead of stitching together SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, BOA, ACRA, PA, Sport Singapore, ECDA, MSF Family Services, MSF Student Care Services, MSF Social Service Offices, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, HSA, SFA, NParks, PUB, MOM, STB, HLB, and data.gov.sg manually.
