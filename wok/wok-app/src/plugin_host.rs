@@ -1,8 +1,12 @@
 //! Plugin host: runtime wrapper around the Lua scripting surface.
 
+use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::{mpsc, Mutex};
+use std::thread;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::warn;
 
@@ -39,17 +43,29 @@ pub struct PluginEffects {
 /// Thin runtime wrapper that isolates the scripting engine from app orchestration.
 pub struct PluginHost {
     runtime: LuaRuntime,
+    external_bridge: Option<ExternalPluginBridge>,
 }
 
 impl PluginHost {
     /// Create and initialize the plugin host from the configured directory.
-    pub fn new(config_dir: &Path) -> Option<Self> {
+    pub fn new(config_dir: &Path, external_command: Option<&str>) -> Option<Self> {
         let mut runtime = LuaRuntime::new().ok()?;
         if let Err(error) = runtime.init(config_dir) {
             warn!("failed to initialize Lua runtime: {error}");
             runtime.push_notification(format!("init.lua error: {error}"));
         }
-        Some(Self { runtime })
+        let external_bridge = external_command
+            .and_then(|command| ExternalPluginBridge::spawn(command).ok())
+            .or_else(|| {
+                if let Some(command) = external_command {
+                    warn!("failed to initialize external plugin bridge: {command}");
+                }
+                None
+            });
+        Some(Self {
+            runtime,
+            external_bridge,
+        })
     }
 
     /// Update the read-only config table exposed to plugins.
@@ -58,6 +74,9 @@ impl PluginHost {
             warn!("failed to update plugin config table: {error}");
             self.runtime
                 .push_notification(format!("plugin config sync failed: {error}"));
+        }
+        if let Some(bridge) = &self.external_bridge {
+            bridge.send_event("wok.config", values);
         }
     }
 
@@ -110,6 +129,9 @@ impl PluginHost {
             self.runtime
                 .push_notification(format!("plugin hook '{hook}' failed: {error}"));
         }
+        if let Some(bridge) = &self.external_bridge {
+            bridge.send_hook(hook, payload);
+        }
     }
 
     /// Execute due plugin timers with a per-frame callback cap.
@@ -123,17 +145,20 @@ impl PluginHost {
 
     /// Return whether any listener exists for a given hook.
     pub fn has_hook_listener(&self, hook: &str) -> bool {
-        self.runtime.hook_listener_count(hook) > 0
+        self.runtime.hook_listener_count(hook) > 0 || self.external_bridge.is_some()
     }
 
     /// Update the latest runtime snapshot visible to plugin accessors.
     pub fn update_snapshot(&self, snapshot: Value) {
-        self.runtime.set_runtime_snapshot(snapshot);
+        self.runtime.set_runtime_snapshot(snapshot.clone());
+        if let Some(bridge) = &self.external_bridge {
+            bridge.send_event("wok.snapshot", &snapshot);
+        }
     }
 
     /// Drain queued plugin side effects.
     pub fn drain_effects(&self) -> PluginEffects {
-        PluginEffects {
+        let mut effects = PluginEffects {
             notifications: self.runtime.take_notifications(),
             exec_requests: self.runtime.take_exec_requests(),
             action_requests: self.runtime.take_action_requests(),
@@ -143,7 +168,134 @@ impl PluginHost {
             workflow_requests: self.runtime.take_workflow_requests(),
             status_bar_requests: self.runtime.take_status_bar_requests(),
             setup_requests: self.runtime.take_setup_requests(),
+        };
+        if let Some(bridge) = &self.external_bridge {
+            bridge.extend_effects(&mut effects);
         }
+        effects
+    }
+}
+
+struct ExternalPluginBridge {
+    _child: Mutex<Child>,
+    stdin: Mutex<ChildStdin>,
+    rx: Mutex<mpsc::Receiver<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum ExternalPluginMessage {
+    Notify { message: String },
+    Exec { command: String },
+    Action { action: String },
+}
+
+impl ExternalPluginBridge {
+    fn spawn(command_line: &str) -> Result<Self, String> {
+        let mut command = shell_command(command_line);
+        let mut child = command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| error.to_string())?;
+
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "missing plugin bridge stdin".to_string())?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "missing plugin bridge stdout".to_string())?;
+
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let reader = BufReader::new(stdout);
+            for line in reader.lines() {
+                let Ok(line) = line else {
+                    break;
+                };
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+
+        Ok(Self {
+            _child: Mutex::new(child),
+            stdin: Mutex::new(stdin),
+            rx: Mutex::new(rx),
+        })
+    }
+
+    fn send_hook<T: Serialize + ?Sized>(&self, hook: &str, payload: &T) {
+        let body = serde_json::json!({
+            "kind": "hook",
+            "hook": hook,
+            "payload": payload,
+        });
+        self.send_line(&body);
+    }
+
+    fn send_event<T: Serialize + ?Sized>(&self, event: &str, payload: &T) {
+        let body = serde_json::json!({
+            "kind": "event",
+            "event": event,
+            "payload": payload,
+        });
+        self.send_line(&body);
+    }
+
+    fn send_line(&self, payload: &Value) {
+        let Ok(line) = serde_json::to_string(payload) else {
+            return;
+        };
+        let Ok(mut stdin) = self.stdin.lock() else {
+            return;
+        };
+        if stdin.write_all(line.as_bytes()).is_err() {
+            return;
+        }
+        if stdin.write_all(b"\n").is_err() {
+            return;
+        }
+        let _ = stdin.flush();
+    }
+
+    fn extend_effects(&self, effects: &mut PluginEffects) {
+        let Ok(rx) = self.rx.lock() else {
+            return;
+        };
+        for line in rx.try_iter() {
+            match serde_json::from_str::<ExternalPluginMessage>(&line) {
+                Ok(ExternalPluginMessage::Notify { message }) => {
+                    effects.notifications.push(message)
+                }
+                Ok(ExternalPluginMessage::Exec { command }) => effects.exec_requests.push(command),
+                Ok(ExternalPluginMessage::Action { action }) => {
+                    effects.action_requests.push(action)
+                }
+                Err(error) => effects
+                    .notifications
+                    .push(format!("external plugin bridge parse error: {error}")),
+            }
+        }
+    }
+}
+
+fn shell_command(command_line: &str) -> Command {
+    #[cfg(windows)]
+    {
+        let mut command = Command::new("cmd");
+        command.arg("/C").arg(command_line);
+        command
+    }
+    #[cfg(not(windows))]
+    {
+        let mut command = Command::new("sh");
+        command.arg("-lc").arg(command_line);
+        command
     }
 }
 
@@ -206,7 +358,7 @@ mod tests {
         std::fs::write(config_dir.join("init.lua"), "this is not valid lua !!!")
             .expect("invalid init.lua should be written");
 
-        let host = PluginHost::new(&config_dir).expect("plugin host should still initialize");
+        let host = PluginHost::new(&config_dir, None).expect("plugin host should still initialize");
         let effects = host.drain_effects();
 
         std::fs::remove_file(config_dir.join("init.lua")).ok();

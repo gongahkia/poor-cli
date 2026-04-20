@@ -30,6 +30,7 @@ copy_on_select = false
 confirm_close_with_running_process = true
 restore_session = true
 theme_path = "~/.config/wok/themes/catppuccin.toml"
+external_plugin_command = "node ~/.config/wok/plugins/bridge.js"
 ```
 
 ## Options
@@ -53,6 +54,7 @@ theme_path = "~/.config/wok/themes/catppuccin.toml"
 | `debug_overlay` | boolean | `false` | Active | Shows a small internal overlay with redraw timing, atlas occupancy, scrollback depth, and approximate session memory |
 | `theme_path` | string | none | Active | Path to a custom theme TOML file |
 | `background_image` | string | none | Active | Loads a background image from config or theme and renders it behind the workspace chrome and panes |
+| `external_plugin_command` | string | none | Active | Optional out-of-process plugin bridge command; receives hook/event JSON lines on stdin and can emit typed effects (`notify`, `exec`, `action`) on stdout |
 
 ## Session Files
 

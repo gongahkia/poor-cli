@@ -62,6 +62,7 @@ More detail:
 - [docs/REMOTE_RPC.md](docs/REMOTE_RPC.md)
 - [docs/RELEASE_HARDENING.md](docs/RELEASE_HARDENING.md)
 - [docs/PERFORMANCE_BENCHMARKS.md](docs/PERFORMANCE_BENCHMARKS.md)
+- [docs/PLUGIN_BRIDGE.md](docs/PLUGIN_BRIDGE.md)
 
 ## Demo Flow
 

@@ -83,6 +83,8 @@ pub struct WokConfig {
     pub window_opacity: f32,
     /// Background image path.
     pub background_image: Option<PathBuf>,
+    /// Optional out-of-process plugin bridge command.
+    pub external_plugin_command: Option<String>,
     /// Copy text to clipboard on selection.
     pub copy_on_select: bool,
     /// Ask before closing with running processes.
@@ -122,6 +124,7 @@ struct ConfigToml {
     status_bar_visible: Option<bool>,
     window_opacity: Option<f32>,
     background_image: Option<String>,
+    external_plugin_command: Option<String>,
     copy_on_select: Option<bool>,
     confirm_close_with_running_process: Option<bool>,
     restore_session: Option<bool>,
@@ -177,6 +180,7 @@ impl Default for WokConfig {
             status_bar_visible: true,
             window_opacity: 1.0,
             background_image: None,
+            external_plugin_command: None,
             copy_on_select: false,
             confirm_close_with_running_process: true,
             restore_session: false,
@@ -260,6 +264,12 @@ impl WokConfig {
         }
         if let Some(p) = toml_config.background_image {
             config.background_image = Some(PathBuf::from(p));
+        }
+        if let Some(command) = toml_config.external_plugin_command {
+            let trimmed = command.trim();
+            if !trimmed.is_empty() {
+                config.external_plugin_command = Some(trimmed.to_string());
+            }
         }
         if let Some(c) = toml_config.copy_on_select {
             config.copy_on_select = c;

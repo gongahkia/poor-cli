@@ -496,7 +496,10 @@ impl WokHandler {
     fn new(config: WokConfig) -> Self {
         let font = FontSystem::new(&config.font_family, config.font_size);
         let (workspace, _) = WorkspaceState::new("Wok");
-        let plugins = PluginHost::new(&WokConfig::config_dir());
+        let plugins = PluginHost::new(
+            &WokConfig::config_dir(),
+            config.external_plugin_command.as_deref(),
+        );
         let trigger_engine = trigger_engine_from_config(&config);
         let pattern_registry = PatternRegistry::new();
         let mut workflow_store = WorkflowStore::new();
