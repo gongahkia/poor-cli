@@ -198,11 +198,46 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
   {
     name: "LTA DataMall",
     description: "Land Transport Authority live transport data for bus arrivals, train alerts, and traffic incidents.",
-    tools: ["sg_lta_bus_arrivals", "sg_lta_train_alerts", "sg_lta_traffic_incidents"],
+    tools: [
+      "sg_lta_bus_arrivals",
+      "sg_lta_train_alerts",
+      "sg_lta_traffic_incidents",
+      "sg_lta_road_works",
+      "sg_lta_road_openings",
+      "sg_lta_traffic_images",
+    ],
     authRequired: true,
     rateLimit: "20 tokens, 2/sec refill",
     positioning: "Primary transport-status surface for live operational checks.",
     preferredInterface: "sg_query",
+  },
+  {
+    name: "Transit Intelligence",
+    description: "Additive transit decision surface built over live LTA and traffic-image context for health scoring, hotspot triage, reliability, and policy-aware planning.",
+    tools: [
+      "sg_transit_health",
+      "sg_transit_hotspots",
+      "sg_transit_ops_brief",
+      "sg_transit_pack",
+      "sg_transit_reliability",
+      "sg_transit_transfer_risk",
+      "sg_transit_accessible_route",
+      "sg_transit_objective_plan",
+      "sg_transit_counterfactual_simulate",
+      "sg_transit_outcome_record",
+      "sg_transit_model_metrics",
+      "sg_transit_policy_audit",
+      "sg_transit_policy_insights",
+      "sg_transit_policy_replay",
+    ],
+    authRequired: true,
+    rateLimit: "20 tokens, 2/sec refill via LTA-dependent feeds",
+    positioning: "First-party transit-intelligence skill family in the same hierarchy as other SG additive and direct surfaces.",
+    preferredInterface: "sg_query",
+    scopeNotes: [
+      "Operational scores and recommendations are deterministic heuristics over bounded public-feed signals.",
+      "Use sg_transit_ops_brief for artifact-first adoption, then drop to direct transit primitives as needed.",
+    ],
   },
   {
     name: "NEA",
@@ -787,6 +822,30 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     ],
   },
   {
+    id: "transit_intelligence_ops",
+    name: "Transit Intelligence Ops",
+    intent: "Build a bounded transit-operations brief, then continue into reliability, transfer-risk, and policy-aware objective planning when stop-level identifiers are available.",
+    entrypoints: [
+      { tool: "sg_query", input: { query: "Transit ops brief for Singapore right now", mode: "execute" } },
+      { tool: "sg_transit_ops_brief", input: {} },
+      { tool: "sg_transit_pack", input: {} },
+      { tool: "sg_transit_reliability", input: { originStopId: "83139", destinationStopId: "76059", horizonMinutes: 45 } },
+      { tool: "sg_transit_transfer_risk", input: { fromServiceNo: "851", toServiceNo: "72", transferStopId: "83139" } },
+      { tool: "sg_transit_objective_plan", input: { objective: "balanced", stopIds: ["83139", "76059"] } },
+    ],
+    requiredInputs: ["optional stopIds for targeted monitoring; required stop/service IDs for reliability or transfer-risk reads"],
+    authPrerequisites: LTA_AUTH_NOTES,
+    fallbackTools: ["sg_transit_ops_brief", "sg_transit_pack", "sg_transit_health", "sg_transit_hotspots", "sg_lta_bus_arrivals"],
+    continuationTools: ["sg_transit_reliability", "sg_transit_transfer_risk", "sg_transit_objective_plan", "sg_transit_policy_audit"],
+    continuationHints: [
+      "Start from sg_transit_ops_brief for adoption-friendly summaries, then switch to decision primitives once identifiers are known.",
+    ],
+    outputShapeVersion: "transit-intelligence/v1",
+    outputShapeNotes: [
+      "sg_transit_ops_brief returns a BriefArtifact-compatible record with provenance, limits, and nextChecks.",
+    ],
+  },
+  {
     id: "environment_snapshot",
     name: "Environment Snapshot",
     intent: "Build a live environment monitoring brief and optionally drill into forecast, air quality, and rainfall detail.",
@@ -1149,6 +1208,30 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
     outputShapeVersion: "transport-brief/v2",
     outputShapeNotes: [
       "The transport brief's analyst view now lives in records.status, coverage, signals, network, optional stop, followups, and raw.",
+    ],
+  },
+  {
+    id: "transit_ops_brief",
+    name: "Transit Ops Brief",
+    goal: "Generate a bounded transit operations brief first, then optionally continue into reliability and policy-aware planning.",
+    prompt: "Transit ops brief for Singapore right now",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Transit ops brief for Singapore right now", mode: "execute" },
+    },
+    fallbackTools: ["sg_transit_ops_brief", "sg_transit_pack", "sg_transit_health", "sg_transit_hotspots"],
+    notes: [
+      "Use this as the adoption-first path when callers need one compact transit artifact with explicit evidence and limits.",
+      "Escalate to sg_transit_reliability or sg_transit_transfer_risk only when you have concrete stop and service identifiers.",
+    ],
+    authPrerequisites: LTA_AUTH_NOTES,
+    continuationTools: ["sg_transit_reliability", "sg_transit_transfer_risk", "sg_transit_objective_plan", "sg_transit_policy_audit"],
+    continuationHints: [
+      "Use sg_transit_objective_plan for guardrailed decision generation; keep sg_transit_policy_audit in the loop for governance traces.",
+    ],
+    outputShapeVersion: "transit-intelligence/v1",
+    outputShapeNotes: [
+      "The brief artifact payload is exposed at structuredContent.record with provenance and nextChecks.",
     ],
   },
   {
@@ -1533,6 +1616,37 @@ export const PLAYBOOK_CATALOG: readonly PlaybookCatalogEntry[] = [
     notes: [
       "Use exact quoted names when you want a direct lookup instead of a proximity search.",
       "Keep blocked and unsupported outcomes visible so the caller can ask for the missing location signal.",
+    ],
+  },
+  {
+    id: "transit_operations_governance",
+    name: "Transit Operations And Governance",
+    persona: "mobility-ops, transit analytics, or service-quality agent",
+    jobsToBeDone: [
+      "Start with an additive transit brief before drilling into direct reliability and transfer-risk reads.",
+      "Generate bounded objective plans with explicit policy guardrails and auditable trace outputs.",
+      "Close the loop with outcome records, model metrics, and policy replay before changing production behavior.",
+    ],
+    recommendedResources: ["sg://workflows", "sg://recipes", "sg://runtime"],
+    primaryWorkflows: ["Transit Intelligence Ops", "Transport Status"],
+    starterPrompts: [
+      "Transit ops brief for Singapore right now",
+      "Transit reliability from stop 83139 to stop 76059",
+      "Transit objective plan with objective balanced and stopIds 83139, 76059",
+    ],
+    directTools: [
+      "sg_transit_ops_brief",
+      "sg_transit_pack",
+      "sg_transit_health",
+      "sg_transit_hotspots",
+      "sg_transit_reliability",
+      "sg_transit_transfer_risk",
+      "sg_transit_objective_plan",
+      "sg_transit_policy_audit",
+    ],
+    notes: [
+      "Treat this as a bounded operational-decision layer, not a full route-planning or dispatching engine.",
+      "Use the direct LTA tools alongside transit tools when you need raw source evidence for escalations.",
     ],
   },
 ];

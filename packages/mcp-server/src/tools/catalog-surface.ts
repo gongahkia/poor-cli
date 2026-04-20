@@ -510,6 +510,24 @@ const RECIPE_PROMPT_METADATA: Readonly<Record<string, PromptMetadata>> = {
     ],
     buildStarterPrompt: (args) => `Hotel operator lookup for ${renderBusinessLookupTarget(args)}`,
   },
+  transit_ops_brief: {
+    args: [
+      { name: "scopeKey", description: "Optional deterministic scope key used for repeat monitoring runs.", kind: "string" },
+      { name: "stopIds", description: "Optional comma-separated stop IDs for targeted transit monitoring.", kind: "string" },
+      {
+        name: "outputFormat",
+        description: `Preferred output format. One of ${listToSentence(outputFormatEnum)}.`,
+        kind: "enum",
+        enumValues: outputFormatEnum,
+        completionSource: "outputFormat",
+      },
+    ],
+    buildStarterPrompt: (args) => {
+      const scopeKey = typeof args["scopeKey"] === "string" ? ` with scope key ${args["scopeKey"]}` : "";
+      const stopIds = typeof args["stopIds"] === "string" ? ` for stop IDs ${args["stopIds"]}` : "";
+      return `Transit ops brief for Singapore right now${scopeKey}${stopIds}.${renderOptionalOutputFormatHint(args)}`.trim();
+    },
+  },
 };
 
 const PLAYBOOK_PROMPT_METADATA: Readonly<Record<string, PromptMetadata>> = {
@@ -594,6 +612,31 @@ const PLAYBOOK_PROMPT_METADATA: Readonly<Record<string, PromptMetadata>> = {
       const target = postalCode ?? address ?? planningArea ?? "the supplied Singapore location";
       const region = renderOptionalRegion(args);
       return `Build a social support navigation brief for ${target}${region}.`.trim();
+    },
+  },
+  transit_operations_governance: {
+    args: [
+      { name: "scopeKey", description: "Optional deterministic scope key for recurring governance runs.", kind: "string" },
+      { name: "stopIds", description: "Optional comma-separated transit stop IDs for targeted analysis.", kind: "string" },
+      {
+        name: "objective",
+        description: "Optional objective mode when transitioning from ops brief to objective planning.",
+        kind: "enum",
+        enumValues: ["balanced", "fastest", "accessibility", "safest"],
+      },
+      {
+        name: "outputFormat",
+        description: `Preferred output format. One of ${listToSentence(outputFormatEnum)}.`,
+        kind: "enum",
+        enumValues: outputFormatEnum,
+        completionSource: "outputFormat",
+      },
+    ],
+    buildStarterPrompt: (args) => {
+      const stopIds = typeof args["stopIds"] === "string" ? ` for stop IDs ${args["stopIds"]}` : "";
+      const objective = typeof args["objective"] === "string" ? ` using objective ${args["objective"]}` : "";
+      const scopeKey = typeof args["scopeKey"] === "string" ? ` with scope key ${args["scopeKey"]}` : "";
+      return `Build a transit operations governance brief${stopIds}${objective}${scopeKey}.${renderOptionalOutputFormatHint(args)}`.trim();
     },
   },
 };

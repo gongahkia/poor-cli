@@ -1418,6 +1418,157 @@ const buildDirectToolPlan = (query: string): QueryPlan => {
     );
   }
 
+  if (
+    resolved.tool === "sg_transit_reliability"
+    && (resolved.input["originStopId"] === undefined || resolved.input["destinationStopId"] === undefined)
+  ) {
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "originStopId",
+          "Provide an origin 5-digit bus stop code for reliability estimation.",
+          "sg_transit_reliability",
+          { originStopId: "83139", destinationStopId: "76059", horizonMinutes: 45 },
+          "Transit reliability from stop 83139 to stop 76059",
+        ),
+        createBlocker(
+          "destinationStopId",
+          "Provide a destination 5-digit bus stop code for reliability estimation.",
+          "sg_transit_reliability",
+          { originStopId: "83139", destinationStopId: "76059", horizonMinutes: 45 },
+          "Transit reliability from stop 83139 to stop 76059",
+        ),
+      ],
+      "sg_query needs both originStopId and destinationStopId for transit reliability reads.",
+      "Call sg_transit_reliability directly with two stop codes, or start with sg_transit_ops_brief for a network-level view.",
+    );
+  }
+
+  if (
+    resolved.tool === "sg_transit_transfer_risk"
+    && (
+      resolved.input["fromServiceNo"] === undefined
+      || resolved.input["toServiceNo"] === undefined
+      || resolved.input["transferStopId"] === undefined
+    )
+  ) {
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "fromServiceNo",
+          "Provide the incoming bus service number for transfer-risk estimation.",
+          "sg_transit_transfer_risk",
+          { fromServiceNo: "851", toServiceNo: "72", transferStopId: "83139" },
+          "Transfer risk from service 851 to 72 at stop 83139",
+        ),
+        createBlocker(
+          "toServiceNo",
+          "Provide the outbound bus service number for transfer-risk estimation.",
+          "sg_transit_transfer_risk",
+          { fromServiceNo: "851", toServiceNo: "72", transferStopId: "83139" },
+          "Transfer risk from service 851 to 72 at stop 83139",
+        ),
+        createBlocker(
+          "transferStopId",
+          "Provide the 5-digit transfer stop code for transfer-risk estimation.",
+          "sg_transit_transfer_risk",
+          { fromServiceNo: "851", toServiceNo: "72", transferStopId: "83139" },
+          "Transfer risk from service 851 to 72 at stop 83139",
+        ),
+      ],
+      "sg_query needs fromServiceNo, toServiceNo, and transferStopId for transfer-risk reads.",
+      "Call sg_transit_transfer_risk directly with both services and a transfer stop code, or use sg_transit_ops_brief for a broader snapshot.",
+    );
+  }
+
+  if (resolved.tool === "sg_transit_objective_plan" && resolved.input["objective"] === undefined) {
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "objective",
+          "Provide one objective: minimize_delay, maximize_accessibility, minimize_transfer_risk, or balanced.",
+          "sg_transit_objective_plan",
+          { objective: "balanced" },
+          "Transit objective plan with objective balanced",
+        ),
+      ],
+      "sg_query needs an objective before it can generate a transit objective plan.",
+      "Call sg_transit_objective_plan with objective set to minimize_delay, maximize_accessibility, minimize_transfer_risk, or balanced.",
+    );
+  }
+
+  if (
+    resolved.tool === "sg_transit_counterfactual_simulate"
+    && (resolved.input["baseRequest"] === undefined || resolved.input["scenarios"] === undefined)
+  ) {
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "baseRequest",
+          "Provide the baseline objective-plan request to simulate against.",
+          "sg_transit_counterfactual_simulate",
+          { baseRequest: { objective: "balanced", stopIds: ["83139", "76059"] }, scenarios: [{ id: "scenario-1", requestPatch: { objective: "minimize_delay" } }] },
+          "Run a transit counterfactual simulation from a balanced baseline",
+        ),
+        createBlocker(
+          "scenarios",
+          "Provide one or more scenario patches to compare with the baseline request.",
+          "sg_transit_counterfactual_simulate",
+          { baseRequest: { objective: "balanced", stopIds: ["83139", "76059"] }, scenarios: [{ id: "scenario-1", requestPatch: { objective: "minimize_delay" } }] },
+          "Run a transit counterfactual simulation from a balanced baseline",
+        ),
+      ],
+      "sg_query needs baseRequest and scenarios for transit counterfactual simulation.",
+      "Call sg_transit_counterfactual_simulate with a baseline request and at least one scenario patch.",
+    );
+  }
+
+  if (resolved.tool === "sg_transit_policy_replay" && resolved.input["traceId"] === undefined) {
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "traceId",
+          "Provide a traceId from sg_transit_policy_audit before replaying a policy trace.",
+          "sg_transit_policy_replay",
+          { traceId: "9cb737f3-d1b4-4b4e-9ec1-2f36e1f67f19" },
+          "Replay transit policy trace 9cb737f3-d1b4-4b4e-9ec1-2f36e1f67f19",
+        ),
+      ],
+      "sg_query needs a traceId for transit policy replay.",
+      "Run sg_transit_policy_audit first to list trace IDs, then call sg_transit_policy_replay with one traceId.",
+    );
+  }
+
   return {
     supported: true,
     workflow: "direct_tool",

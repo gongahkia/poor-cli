@@ -450,13 +450,34 @@ export const classifyIntent = (query: string): IntentResult => {
     return buildIntentResult("civic", "direct_tool", 0.87, params, "sg_moh_facilities");
   }
 
-  if (aliasedTool?.includes("lta") || /bus\s*arrival|train\s*alert|traffic\s*incident/i.test(lower)) {
+  if (
+    aliasedTool?.startsWith("sg_transit_")
+    || /transit\s*(health|hotspots?|ops|brief|pack|reliability|transfer|accessib|objective|counterfactual|policy|model)/i.test(lower)
+  ) {
+    const tool = aliasedTool
+      ?? (/hotspots?/i.test(lower)
+        ? "sg_transit_hotspots"
+        : /health/i.test(lower)
+          ? "sg_transit_health"
+          : /pack/i.test(lower)
+            ? "sg_transit_pack"
+            : "sg_transit_ops_brief");
+    return buildIntentResult("transport", "direct_tool", 0.92, params, tool);
+  }
+
+  if (aliasedTool?.includes("lta") || /bus\s*arrival|train\s*alert|traffic\s*incident|road\s*works|road\s*openings?|traffic\s*(?:camera|image)/i.test(lower)) {
     const tool = aliasedTool
       ?? (/train\s*alert/i.test(lower)
         ? "sg_lta_train_alerts"
         : /traffic\s*incident/i.test(lower)
           ? "sg_lta_traffic_incidents"
-          : "sg_lta_bus_arrivals");
+          : /road\s*works/i.test(lower)
+            ? "sg_lta_road_works"
+            : /road\s*openings?/i.test(lower)
+              ? "sg_lta_road_openings"
+              : /traffic\s*(?:camera|image)/i.test(lower)
+                ? "sg_lta_traffic_images"
+                : "sg_lta_bus_arrivals");
     return buildIntentResult("transport", "direct_tool", 0.92, params, tool);
   }
 

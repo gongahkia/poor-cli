@@ -31,6 +31,7 @@ import { stbToolDefinitions } from "./stb-tools.js";
 import { onemapToolDefinitions } from "./onemap-tools.js";
 import { queryToolDefinitions } from "./query-tool.js";
 import { singstatToolDefinitions } from "./singstat-tools.js";
+import { transitIntelligenceToolDefinitions } from "./transit-intelligence-tools.js";
 import { hydrateToolDefinition } from "./tool-metadata.js";
 import { uraToolDefinitions } from "./ura-tools.js";
 
@@ -61,6 +62,7 @@ const RAW_TOOL_DEFINITIONS = [
   ...pubToolDefinitions,
   ...momToolDefinitions,
   ...stbToolDefinitions,
+  ...transitIntelligenceToolDefinitions,
   ...hlbToolDefinitions,
   ...briefToolDefinitions,
   ...healthCheckToolDefinitions,

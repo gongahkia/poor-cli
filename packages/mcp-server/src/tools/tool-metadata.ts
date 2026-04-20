@@ -26,6 +26,8 @@ const BRIEF_TOOL_NAMES = new Set([
   "sg_macro_brief",
   "sg_transport_brief",
   "sg_environment_brief",
+  "sg_civic_brief",
+  "sg_transit_ops_brief",
 ]);
 
 const DILIGENCE_PROFILE_TOOL_NAMES = new Set([
@@ -38,6 +40,8 @@ const PROPERTY_PROFILE_TOOL_NAMES = new Set([
   "sg_property_brief",
   "sg_transport_brief",
   "sg_environment_brief",
+  "sg_civic_brief",
+  "sg_transit_ops_brief",
 ]);
 
 const DILIGENCE_PROFILE_PREFIXES = [
@@ -73,6 +77,8 @@ const OUTPUT_SCHEMAS: Readonly<Record<string, z.ZodTypeAny>> = {
   sg_macro_brief: BRIEF_ARTIFACT_OUTPUT_SCHEMA,
   sg_transport_brief: BRIEF_ARTIFACT_OUTPUT_SCHEMA,
   sg_environment_brief: BRIEF_ARTIFACT_OUTPUT_SCHEMA,
+  sg_civic_brief: BRIEF_ARTIFACT_OUTPUT_SCHEMA,
+  sg_transit_ops_brief: BRIEF_ARTIFACT_OUTPUT_SCHEMA,
   sg_query: QUERY_OUTPUT_SCHEMA,
 };
 

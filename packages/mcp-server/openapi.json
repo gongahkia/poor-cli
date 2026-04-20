@@ -1826,6 +1826,150 @@
         }
       }
     },
+    "/api/v1/sg_lta_road_openings": {
+      "post": {
+        "summary": "Get live LTA road-opening events with start and end timing context.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_lta_road_works": {
+      "post": {
+        "summary": "Get live LTA road-work events with start and end timing context.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_lta_traffic_images": {
+      "post": {
+        "summary": "Get live Singapore traffic camera image references with camera coordinates.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
     "/api/v1/sg_lta_traffic_incidents": {
       "post": {
         "summary": "Get live LTA traffic incidents with incident type, location, and message.",
@@ -3822,6 +3966,1143 @@
                     ]
                   }
                 },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_transit_accessible_route": {
+      "post": {
+        "summary": "Rank route candidates by accessibility signals for wheelchair, reduced-walk, and elder-friendly modes.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "stopIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "originLat": {
+                    "type": "number"
+                  },
+                  "originLng": {
+                    "type": "number"
+                  },
+                  "destinationLat": {
+                    "type": "number"
+                  },
+                  "destinationLng": {
+                    "type": "number"
+                  },
+                  "mobilityMode": {
+                    "type": "string",
+                    "enum": [
+                      "wheelchair",
+                      "reduced-walk",
+                      "elder-friendly"
+                    ]
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "required": [
+                  "stopIds",
+                  "originLat",
+                  "originLng",
+                  "destinationLat",
+                  "destinationLng",
+                  "mobilityMode"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_transit_counterfactual_simulate": {
+      "post": {
+        "summary": "Run counterfactual transit-plan scenarios against a baseline to compare policy and decision deltas.",
+        "tags": [
+          "operational"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tenantId": {
+                    "type": "string"
+                  },
+                  "baseRequest": {
+                    "type": "object",
+                    "properties": {
+                      "tenantId": {
+                        "type": "string"
+                      },
+                      "objective": {
+                        "type": "string",
+                        "enum": [
+                          "minimize_delay",
+                          "maximize_accessibility",
+                          "minimize_transfer_risk",
+                          "balanced"
+                        ]
+                      },
+                      "scopeKey": {
+                        "type": "string"
+                      },
+                      "stopIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "originStopId": {
+                        "type": "string"
+                      },
+                      "destinationStopId": {
+                        "type": "string"
+                      },
+                      "transferStopId": {
+                        "type": "string"
+                      },
+                      "fromServiceNo": {
+                        "type": "string"
+                      },
+                      "toServiceNo": {
+                        "type": "string"
+                      },
+                      "horizonMinutes": {
+                        "type": "integer"
+                      },
+                      "maxActions": {
+                        "type": "integer"
+                      },
+                      "constraints": {
+                        "type": "object",
+                        "properties": {
+                          "maxWalkMeters": {
+                            "type": "number"
+                          },
+                          "minConfidence": {
+                            "type": "number"
+                          },
+                          "avoidHighRisk": {
+                            "type": "boolean"
+                          },
+                          "mobilityMode": {
+                            "type": "string",
+                            "enum": [
+                              "wheelchair",
+                              "reduced-walk",
+                              "elder-friendly"
+                            ]
+                          }
+                        }
+                      },
+                      "format": {
+                        "type": "string",
+                        "enum": [
+                          "json",
+                          "markdown"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "objective"
+                    ]
+                  },
+                  "scenarios": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "requestPatch": {
+                          "type": "object",
+                          "properties": {
+                            "tenantId": {
+                              "type": "string"
+                            },
+                            "objective": {
+                              "type": "string",
+                              "enum": [
+                                "minimize_delay",
+                                "maximize_accessibility",
+                                "minimize_transfer_risk",
+                                "balanced"
+                              ]
+                            },
+                            "scopeKey": {
+                              "type": "string"
+                            },
+                            "stopIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "originStopId": {
+                              "type": "string"
+                            },
+                            "destinationStopId": {
+                              "type": "string"
+                            },
+                            "transferStopId": {
+                              "type": "string"
+                            },
+                            "fromServiceNo": {
+                              "type": "string"
+                            },
+                            "toServiceNo": {
+                              "type": "string"
+                            },
+                            "horizonMinutes": {
+                              "type": "integer"
+                            },
+                            "maxActions": {
+                              "type": "integer"
+                            },
+                            "constraints": {
+                              "type": "object",
+                              "properties": {
+                                "maxWalkMeters": {
+                                  "type": "number"
+                                },
+                                "minConfidence": {
+                                  "type": "number"
+                                },
+                                "avoidHighRisk": {
+                                  "type": "boolean"
+                                },
+                                "mobilityMode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "wheelchair",
+                                    "reduced-walk",
+                                    "elder-friendly"
+                                  ]
+                                }
+                              }
+                            },
+                            "format": {
+                              "type": "string",
+                              "enum": [
+                                "json",
+                                "markdown"
+                              ]
+                            }
+                          }
+                        },
+                        "constraintsPatch": {
+                          "type": "object",
+                          "properties": {
+                            "maxWalkMeters": {
+                              "type": "number"
+                            },
+                            "minConfidence": {
+                              "type": "number"
+                            },
+                            "avoidHighRisk": {
+                              "type": "boolean"
+                            },
+                            "mobilityMode": {
+                              "type": "string",
+                              "enum": [
+                                "wheelchair",
+                                "reduced-walk",
+                                "elder-friendly"
+                              ]
+                            }
+                          }
+                        },
+                        "maxActions": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "label"
+                      ]
+                    }
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "required": [
+                  "baseRequest",
+                  "scenarios"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_transit_health": {
+      "post": {
+        "summary": "Score watched bus stops and services with deterministic transit-health grades and risk drivers.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "stopIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "includeTrafficImages": {
+                    "type": "boolean"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_transit_hotspots": {
+      "post": {
+        "summary": "Cluster incidents, road events, and traffic camera context into impact-ranked transit hotspots.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "stopIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "includeTrafficImages": {
+                    "type": "boolean"
+                  },
+                  "gridSizeDegrees": {
+                    "type": "number"
+                  },
+                  "impactRadiusMeters": {
+                    "type": "number"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_transit_model_metrics": {
+      "post": {
+        "summary": "Return transit-model quality metrics including prediction, calibration, and recommendation success rates.",
+        "tags": [
+          "operational"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scopeKey": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_transit_objective_plan": {
+      "post": {
+        "summary": "Generate tenant-aware objective transit plans with deterministic policy filtering and explainers.",
+        "tags": [
+          "operational"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tenantId": {
+                    "type": "string"
+                  },
+                  "objective": {
+                    "type": "string",
+                    "enum": [
+                      "minimize_delay",
+                      "maximize_accessibility",
+                      "minimize_transfer_risk",
+                      "balanced"
+                    ]
+                  },
+                  "scopeKey": {
+                    "type": "string"
+                  },
+                  "stopIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "originStopId": {
+                    "type": "string"
+                  },
+                  "destinationStopId": {
+                    "type": "string"
+                  },
+                  "transferStopId": {
+                    "type": "string"
+                  },
+                  "fromServiceNo": {
+                    "type": "string"
+                  },
+                  "toServiceNo": {
+                    "type": "string"
+                  },
+                  "horizonMinutes": {
+                    "type": "integer"
+                  },
+                  "maxActions": {
+                    "type": "integer"
+                  },
+                  "constraints": {
+                    "type": "object",
+                    "properties": {
+                      "maxWalkMeters": {
+                        "type": "number"
+                      },
+                      "minConfidence": {
+                        "type": "number"
+                      },
+                      "avoidHighRisk": {
+                        "type": "boolean"
+                      },
+                      "mobilityMode": {
+                        "type": "string",
+                        "enum": [
+                          "wheelchair",
+                          "reduced-walk",
+                          "elder-friendly"
+                        ]
+                      }
+                    }
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "required": [
+                  "objective"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_transit_ops_brief": {
+      "post": {
+        "summary": "Build a bounded transit-operations brief combining health, hotspots, and trend-aware action priorities.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "stopIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "scopeKey": {
+                    "type": "string"
+                  },
+                  "includeTrafficImages": {
+                    "type": "boolean"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_transit_outcome_record": {
+      "post": {
+        "summary": "Record recommendation outcomes to support transit-model quality and calibration tracking.",
+        "tags": [
+          "operational"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scopeKey": {
+                    "type": "string"
+                  },
+                  "recommendationType": {
+                    "type": "string",
+                    "enum": [
+                      "reliability",
+                      "transfer-risk",
+                      "playbook",
+                      "accessibility"
+                    ]
+                  },
+                  "recommendationId": {
+                    "type": "string"
+                  },
+                  "accepted": {
+                    "type": "boolean"
+                  },
+                  "success": {
+                    "type": "boolean"
+                  },
+                  "confidence": {
+                    "type": "number"
+                  },
+                  "predictedWaitMinutes": {
+                    "type": "number"
+                  },
+                  "actualWaitMinutes": {
+                    "type": "number"
+                  },
+                  "predictedRisk": {
+                    "type": "number"
+                  },
+                  "actualRisk": {
+                    "type": "number"
+                  },
+                  "metadata": {}
+                },
+                "required": [
+                  "recommendationType",
+                  "accepted"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_transit_pack": {
+      "post": {
+        "summary": "Return one transit intelligence payload with snapshot, health, hotspots, and ops briefing.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "stopIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "scopeKey": {
+                    "type": "string"
+                  },
+                  "includeTrafficImages": {
+                    "type": "boolean"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_transit_policy_audit": {
+      "post": {
+        "summary": "List transit policy-audit traces for governance and post-incident review.",
+        "tags": [
+          "operational"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tenantId": {
+                    "type": "string"
+                  },
+                  "scopeKey": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "plan",
+                      "counterfactual-baseline",
+                      "counterfactual-scenario",
+                      "policy-replay"
+                    ]
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_transit_policy_insights": {
+      "post": {
+        "summary": "Aggregate blocking rules and acceptance rates from transit policy-audit traces.",
+        "tags": [
+          "operational"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tenantId": {
+                    "type": "string"
+                  },
+                  "scopeKey": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "plan",
+                      "counterfactual-baseline",
+                      "counterfactual-scenario",
+                      "policy-replay"
+                    ]
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_transit_policy_replay": {
+      "post": {
+        "summary": "Replay a historical transit policy trace with patched constraints before production rollout.",
+        "tags": [
+          "operational"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "traceId": {
+                    "type": "string"
+                  },
+                  "constraintsPatch": {
+                    "type": "object",
+                    "properties": {
+                      "maxWalkMeters": {
+                        "type": "number"
+                      },
+                      "minConfidence": {
+                        "type": "number"
+                      },
+                      "avoidHighRisk": {
+                        "type": "boolean"
+                      },
+                      "mobilityMode": {
+                        "type": "string",
+                        "enum": [
+                          "wheelchair",
+                          "reduced-walk",
+                          "elder-friendly"
+                        ]
+                      }
+                    }
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "required": [
+                  "traceId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_transit_reliability": {
+      "post": {
+        "summary": "Estimate origin-destination transit reliability with ETA bands, volatility, and candidate service plans.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "originStopId": {
+                    "type": "string"
+                  },
+                  "destinationStopId": {
+                    "type": "string"
+                  },
+                  "horizonMinutes": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "required": [
+                  "originStopId",
+                  "destinationStopId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_transit_transfer_risk": {
+      "post": {
+        "summary": "Estimate missed-transfer probability and fallback options for a transfer stop and service pair.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fromServiceNo": {
+                    "type": "string"
+                  },
+                  "toServiceNo": {
+                    "type": "string"
+                  },
+                  "transferStopId": {
+                    "type": "string"
+                  },
+                  "expectedWalkMinutes": {
+                    "type": "number"
+                  },
+                  "minBufferMinutes": {
+                    "type": "number"
+                  },
+                  "fallbackServiceNos": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "required": [
+                  "fromServiceNo",
+                  "toServiceNo",
+                  "transferStopId"
+                ],
                 "additionalProperties": false
               }
             }

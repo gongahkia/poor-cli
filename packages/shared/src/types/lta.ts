@@ -95,3 +95,71 @@ export type LtaNormalizedTrafficIncident = {
   readonly lng: number | null;
   readonly message: string;
 };
+
+export type LtaRoadEvent = {
+  readonly EventID?: string;
+  readonly StartDate?: string;
+  readonly EndDate?: string;
+  readonly Latitude?: number | string;
+  readonly Longitude?: number | string;
+  readonly RoadName?: string;
+  readonly Message?: string;
+};
+
+export type LtaRoadEventsResponse = {
+  readonly value?: readonly LtaRoadEvent[];
+};
+
+export type LtaNormalizedRoadEvent = {
+  readonly id: string;
+  readonly eventType: "road-work" | "road-opening";
+  readonly lat: number | null;
+  readonly lng: number | null;
+  readonly roadName: string | null;
+  readonly message: string;
+  readonly startTime: string | null;
+  readonly endTime: string | null;
+};
+
+export type LtaBusStopRecord = {
+  readonly BusStopCode?: string;
+  readonly Description?: string;
+  readonly RoadName?: string;
+  readonly Latitude?: number | string;
+  readonly Longitude?: number | string;
+};
+
+export type LtaBusStopsResponse = {
+  readonly value?: readonly LtaBusStopRecord[];
+};
+
+export type LtaNormalizedBusStop = {
+  readonly busStopCode: string;
+  readonly description: string | null;
+  readonly roadName: string | null;
+  readonly lat: number | null;
+  readonly lng: number | null;
+};
+
+export type DatagovTrafficImagesResponse = {
+  readonly items?: readonly {
+    readonly timestamp?: string;
+    readonly cameras?: readonly {
+      readonly camera_id?: string;
+      readonly image?: string;
+      readonly timestamp?: string;
+      readonly location?: {
+        readonly latitude?: number;
+        readonly longitude?: number;
+      };
+    }[];
+  }[];
+};
+
+export type LtaNormalizedTrafficCamera = {
+  readonly cameraId: string;
+  readonly imageUrl: string;
+  readonly timestamp: string | null;
+  readonly lat: number | null;
+  readonly lng: number | null;
+};

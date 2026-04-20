@@ -1,5 +1,8 @@
 import {
   LtaBusArrivalsSchema,
+  LtaRoadOpeningsSchema,
+  LtaRoadWorksSchema,
+  LtaTrafficImagesSchema,
   LtaTrainAlertsSchema,
   LtaTrafficIncidentsSchema,
   formatResponse,
@@ -7,7 +10,14 @@ import {
   validateInput,
 } from "@sg-apis/shared";
 import type { OutputFormat, ToolResult } from "@sg-apis/shared";
-import { getBusArrivals, getTrafficIncidents, getTrainAlerts } from "../apis/lta/client.js";
+import {
+  getBusArrivals,
+  getRoadOpenings,
+  getRoadWorks,
+  getTrafficImages,
+  getTrafficIncidents,
+  getTrainAlerts,
+} from "../apis/lta/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 
 const getObservedAt = (): string => new Date().toISOString();
@@ -91,6 +101,51 @@ const getTrafficIncidentsMeta = (
   };
 };
 
+const getRoadEventsMeta = (
+  data: readonly Readonly<Record<string, unknown>>[],
+  eventType: "road-work" | "road-opening",
+): Readonly<Record<string, unknown>> => {
+  const roadNames = Array.from(new Set(
+    data
+      .map((event) => event["roadName"])
+      .filter((name): name is string => typeof name === "string" && name.trim() !== ""),
+  ));
+
+  return {
+    requestedScope: { networkWide: true },
+    resolvedScope: {
+      networkWide: true,
+      eventType,
+      eventCount: data.length,
+      roadNames,
+    },
+    observedAt: getObservedAt(),
+    upstreamTimestamp: null,
+    coverage: eventType === "road-work"
+      ? "Live road-work events across Singapore."
+      : "Live road-opening events across Singapore.",
+  };
+};
+
+const getTrafficImagesMeta = (
+  data: readonly Readonly<Record<string, unknown>>[],
+): Readonly<Record<string, unknown>> => {
+  const latestTimestamp = data
+    .map((camera) => camera["timestamp"])
+    .find((timestamp): timestamp is string => typeof timestamp === "string" && timestamp.trim() !== "");
+
+  return {
+    requestedScope: { networkWide: true },
+    resolvedScope: {
+      networkWide: true,
+      cameraCount: data.length,
+    },
+    observedAt: getObservedAt(),
+    upstreamTimestamp: latestTimestamp ?? null,
+    coverage: "Traffic camera snapshots sourced from data.gov.sg transport feeds.",
+  };
+};
+
 export const handleLtaBusArrivals = async (
   params: Readonly<{ busStopCode: string; serviceNo?: string | undefined; format?: OutputFormat | undefined }>,
 ): Promise<ToolResult> => {
@@ -150,6 +205,51 @@ export const handleLtaTrafficIncidents = async (
   };
 };
 
+export const handleLtaRoadWorks = async (
+  params: Readonly<{ format?: OutputFormat | undefined }>,
+): Promise<ToolResult> => {
+  const data = await getRoadWorks();
+  const format = resolveOutputFormat(params.format);
+  const text = formatResponse(data as unknown as Record<string, unknown>[], format);
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: {
+      records: data,
+      meta: getRoadEventsMeta(data as unknown as readonly Readonly<Record<string, unknown>>[], "road-work"),
+    },
+  };
+};
+
+export const handleLtaRoadOpenings = async (
+  params: Readonly<{ format?: OutputFormat | undefined }>,
+): Promise<ToolResult> => {
+  const data = await getRoadOpenings();
+  const format = resolveOutputFormat(params.format);
+  const text = formatResponse(data as unknown as Record<string, unknown>[], format);
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: {
+      records: data,
+      meta: getRoadEventsMeta(data as unknown as readonly Readonly<Record<string, unknown>>[], "road-opening"),
+    },
+  };
+};
+
+export const handleLtaTrafficImages = async (
+  params: Readonly<{ format?: OutputFormat | undefined }>,
+): Promise<ToolResult> => {
+  const data = await getTrafficImages();
+  const format = resolveOutputFormat(params.format);
+  const text = formatResponse(data as unknown as Record<string, unknown>[], format);
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: {
+      records: data,
+      meta: getTrafficImagesMeta(data as unknown as readonly Readonly<Record<string, unknown>>[]),
+    },
+  };
+};
+
 export const ltaToolDefinitions: readonly RegisteredToolDefinition[] = [
   {
     name: "sg_lta_bus_arrivals",
@@ -174,5 +274,29 @@ export const ltaToolDefinitions: readonly RegisteredToolDefinition[] = [
     inputSchema: LtaTrafficIncidentsSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> =>
       handleLtaTrafficIncidents(validateInput(LtaTrafficIncidentsSchema, input)),
+  },
+  {
+    name: "sg_lta_road_works",
+    description: "Get live LTA road-work events with start and end timing context.",
+    surface: "canonical",
+    inputSchema: LtaRoadWorksSchema.shape,
+    handler: async (input: unknown): Promise<ToolResult> =>
+      handleLtaRoadWorks(validateInput(LtaRoadWorksSchema, input)),
+  },
+  {
+    name: "sg_lta_road_openings",
+    description: "Get live LTA road-opening events with start and end timing context.",
+    surface: "canonical",
+    inputSchema: LtaRoadOpeningsSchema.shape,
+    handler: async (input: unknown): Promise<ToolResult> =>
+      handleLtaRoadOpenings(validateInput(LtaRoadOpeningsSchema, input)),
+  },
+  {
+    name: "sg_lta_traffic_images",
+    description: "Get live Singapore traffic camera image references with camera coordinates.",
+    surface: "canonical",
+    inputSchema: LtaTrafficImagesSchema.shape,
+    handler: async (input: unknown): Promise<ToolResult> =>
+      handleLtaTrafficImages(validateInput(LtaTrafficImagesSchema, input)),
   },
 ];

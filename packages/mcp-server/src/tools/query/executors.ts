@@ -7,6 +7,7 @@ import {
 import { handleBoaArchitects, handleBoaArchitectureFirms } from "../boa-tools.js";
 import {
   handleBusinessDossier,
+  handleCivicBrief,
   handleEnvironmentBrief,
   handleMacroBrief,
   handlePropertyBrief,
@@ -26,7 +27,14 @@ import { handleHawkerCentres } from "../hawker-tools.js";
 import { handleHdbRentalPrices, handleHdbResalePrices } from "../hdb-tools.js";
 import { handleHlbHotels } from "../hlb-tools.js";
 import { handleHsaHealthProductLicensees, handleHsaLicensedPharmacies } from "../hsa-tools.js";
-import { handleLtaBusArrivals, handleLtaTrafficIncidents, handleLtaTrainAlerts } from "../lta-tools.js";
+import {
+  handleLtaBusArrivals,
+  handleLtaRoadOpenings,
+  handleLtaRoadWorks,
+  handleLtaTrafficImages,
+  handleLtaTrafficIncidents,
+  handleLtaTrainAlerts,
+} from "../lta-tools.js";
 import {
   handleMasExchangeRates,
   handleMasFinancialStats,
@@ -61,6 +69,22 @@ import {
 import { handleSportSgFacilities } from "../sportsg-tools.js";
 import { handleStbVisitorStats } from "../stb-tools.js";
 import {
+  handleTransitAccessibleRoute,
+  handleTransitCounterfactualSimulate,
+  handleTransitHealth,
+  handleTransitHotspots,
+  handleTransitModelMetrics,
+  handleTransitObjectivePlan,
+  handleTransitOpsBrief,
+  handleTransitOutcomeRecord,
+  handleTransitPack,
+  handleTransitPolicyAudit,
+  handleTransitPolicyInsights,
+  handleTransitPolicyReplay,
+  handleTransitReliability,
+  handleTransitTransferRisk,
+} from "../transit-intelligence-tools.js";
+import {
   handleUraDevCharges,
   handleUraPlanningArea,
   handleUraPropertyTransactions,
@@ -91,6 +115,8 @@ export const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
     handleTransportBrief(params as Parameters<typeof handleTransportBrief>[0]),
   sg_environment_brief: async (params) =>
     handleEnvironmentBrief(params as Parameters<typeof handleEnvironmentBrief>[0]),
+  sg_civic_brief: async (params) =>
+    handleCivicBrief(params as Parameters<typeof handleCivicBrief>[0]),
   sg_singstat_search: async (params) =>
     handleSingStatSearch(params as Parameters<typeof handleSingStatSearch>[0]),
   sg_singstat_table: async (params) =>
@@ -137,6 +163,40 @@ export const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
     handleLtaTrainAlerts(params as Parameters<typeof handleLtaTrainAlerts>[0]),
   sg_lta_traffic_incidents: async (params) =>
     handleLtaTrafficIncidents(params as Parameters<typeof handleLtaTrafficIncidents>[0]),
+  sg_lta_road_works: async (params) =>
+    handleLtaRoadWorks(params as Parameters<typeof handleLtaRoadWorks>[0]),
+  sg_lta_road_openings: async (params) =>
+    handleLtaRoadOpenings(params as Parameters<typeof handleLtaRoadOpenings>[0]),
+  sg_lta_traffic_images: async (params) =>
+    handleLtaTrafficImages(params as Parameters<typeof handleLtaTrafficImages>[0]),
+  sg_transit_health: async (params) =>
+    handleTransitHealth(params as Parameters<typeof handleTransitHealth>[0]),
+  sg_transit_hotspots: async (params) =>
+    handleTransitHotspots(params as Parameters<typeof handleTransitHotspots>[0]),
+  sg_transit_ops_brief: async (params) =>
+    handleTransitOpsBrief(params as Parameters<typeof handleTransitOpsBrief>[0]),
+  sg_transit_pack: async (params) =>
+    handleTransitPack(params as Parameters<typeof handleTransitPack>[0]),
+  sg_transit_reliability: async (params) =>
+    handleTransitReliability(params as Parameters<typeof handleTransitReliability>[0]),
+  sg_transit_transfer_risk: async (params) =>
+    handleTransitTransferRisk(params as Parameters<typeof handleTransitTransferRisk>[0]),
+  sg_transit_accessible_route: async (params) =>
+    handleTransitAccessibleRoute(params as Parameters<typeof handleTransitAccessibleRoute>[0]),
+  sg_transit_objective_plan: async (params) =>
+    handleTransitObjectivePlan(params as Parameters<typeof handleTransitObjectivePlan>[0]),
+  sg_transit_counterfactual_simulate: async (params) =>
+    handleTransitCounterfactualSimulate(params as Parameters<typeof handleTransitCounterfactualSimulate>[0]),
+  sg_transit_outcome_record: async (params) =>
+    handleTransitOutcomeRecord(params as Parameters<typeof handleTransitOutcomeRecord>[0]),
+  sg_transit_model_metrics: async (params) =>
+    handleTransitModelMetrics(params as Parameters<typeof handleTransitModelMetrics>[0]),
+  sg_transit_policy_audit: async (params) =>
+    handleTransitPolicyAudit(params as Parameters<typeof handleTransitPolicyAudit>[0]),
+  sg_transit_policy_insights: async (params) =>
+    handleTransitPolicyInsights(params as Parameters<typeof handleTransitPolicyInsights>[0]),
+  sg_transit_policy_replay: async (params) =>
+    handleTransitPolicyReplay(params as Parameters<typeof handleTransitPolicyReplay>[0]),
   sg_nea_forecast_2hr: async (params) =>
     handleNeaForecast2Hr(params as Parameters<typeof handleNeaForecast2Hr>[0]),
   sg_nea_air_quality: async (params) =>

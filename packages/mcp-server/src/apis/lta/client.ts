@@ -1,16 +1,23 @@
 import { ApiError, Keystore, httpGet } from "@sg-apis/shared";
 import type {
+  DatagovTrafficImagesResponse,
   LtaBusArrivalResponse,
+  LtaBusStopsResponse,
+  LtaNormalizedBusStop,
   LtaNormalizedBusArrival,
+  LtaNormalizedRoadEvent,
+  LtaNormalizedTrafficCamera,
   LtaNormalizedTrafficIncident,
   LtaNormalizedTrainAlert,
   LtaNormalizedTrainAlertMessage,
+  LtaRoadEventsResponse,
   LtaTrafficIncidentsResponse,
   LtaTrainAlertsResponse,
 } from "@sg-apis/shared";
 import { withCache, buildCacheKey } from "../../middleware/cache-middleware.js";
 
 const BASE_URL = "https://datamall2.mytransport.sg/ltaodataservice";
+const DATA_GOV_TRAFFIC_IMAGES_URL = "https://api.data.gov.sg/v1/transport/traffic-images";
 
 let keystoreInstance: Keystore | null = null;
 
@@ -96,6 +103,49 @@ const normalizeTiming = (
   lng: normalizeNullableNumber(timing.Longitude),
 });
 
+const normalizeRoadEvent = (
+  value: Readonly<{
+    EventID?: string;
+    StartDate?: string;
+    EndDate?: string;
+    Latitude?: number | string;
+    Longitude?: number | string;
+    RoadName?: string;
+    Message?: string;
+  }>,
+  eventType: "road-work" | "road-opening",
+): LtaNormalizedRoadEvent => ({
+  id: value.EventID ?? `${eventType}:${value.RoadName ?? "unknown"}:${value.StartDate ?? "na"}`,
+  eventType,
+  lat: normalizeNullableNumber(value.Latitude),
+  lng: normalizeNullableNumber(value.Longitude),
+  roadName: value.RoadName ?? null,
+  message: value.Message ?? "",
+  startTime: value.StartDate ?? null,
+  endTime: value.EndDate ?? null,
+});
+
+const normalizeBusStop = (
+  value: Readonly<{
+    BusStopCode?: string;
+    Description?: string;
+    RoadName?: string;
+    Latitude?: number | string;
+    Longitude?: number | string;
+  }>,
+): LtaNormalizedBusStop | null => {
+  if (typeof value.BusStopCode !== "string" || value.BusStopCode.trim() === "") {
+    return null;
+  }
+  return {
+    busStopCode: value.BusStopCode,
+    description: value.Description ?? null,
+    roadName: value.RoadName ?? null,
+    lat: normalizeNullableNumber(value.Latitude),
+    lng: normalizeNullableNumber(value.Longitude),
+  };
+};
+
 export const getBusArrivals = async (
   busStopCode: string,
   serviceNo?: string,
@@ -172,4 +222,83 @@ export const getTrafficIncidents = async (): Promise<readonly LtaNormalizedTraff
     }));
   });
   return data;
+};
+
+export const getRoadWorks = async (): Promise<readonly LtaNormalizedRoadEvent[]> => {
+  const cacheKey = buildCacheKey("lta", "road-works", {});
+  const { data } = await withCache(cacheKey, "REALTIME", async () => {
+    const response = await ltaGet<LtaRoadEventsResponse>("RoadWorks");
+    return (response.value ?? []).map((entry) => normalizeRoadEvent(entry, "road-work"));
+  });
+  return data;
+};
+
+export const getRoadOpenings = async (): Promise<readonly LtaNormalizedRoadEvent[]> => {
+  const cacheKey = buildCacheKey("lta", "road-openings", {});
+  const { data } = await withCache(cacheKey, "REALTIME", async () => {
+    const response = await ltaGet<LtaRoadEventsResponse>("RoadOpenings");
+    return (response.value ?? []).map((entry) => normalizeRoadEvent(entry, "road-opening"));
+  });
+  return data;
+};
+
+export const getTrafficImages = async (): Promise<readonly LtaNormalizedTrafficCamera[]> => {
+  const cacheKey = buildCacheKey("datagov", "traffic-images", {});
+  const { data } = await withCache(cacheKey, "REALTIME", async () => {
+    const payload = await httpGet<DatagovTrafficImagesResponse>(DATA_GOV_TRAFFIC_IMAGES_URL, {
+      apiName: "datagov",
+    });
+    const latest = payload.items?.[0];
+    const timestamp = latest?.timestamp ?? null;
+    return (latest?.cameras ?? [])
+      .filter((camera) => typeof camera.camera_id === "string" && typeof camera.image === "string")
+      .map((camera) => ({
+        cameraId: camera.camera_id!,
+        imageUrl: camera.image!,
+        timestamp: camera.timestamp ?? timestamp,
+        lat: normalizeNullableNumber(camera.location?.latitude),
+        lng: normalizeNullableNumber(camera.location?.longitude),
+      }));
+  });
+  return data;
+};
+
+const getAllBusStops = async (): Promise<readonly LtaNormalizedBusStop[]> => {
+  const cacheKey = buildCacheKey("lta", "bus-stops-all", {});
+  const { data } = await withCache(cacheKey, "STATIC", async () => {
+    const records: LtaNormalizedBusStop[] = [];
+    let skip = 0;
+
+    while (true) {
+      const response = await ltaGet<LtaBusStopsResponse>("BusStops", { "$skip": String(skip) });
+      const rows = (response.value ?? [])
+        .map((entry) => normalizeBusStop(entry))
+        .filter((entry): entry is LtaNormalizedBusStop => entry !== null);
+      records.push(...rows);
+      if (rows.length < 500) {
+        break;
+      }
+      skip += 500;
+    }
+
+    return records;
+  });
+  return data;
+};
+
+export const getBusStopLookups = async (
+  busStopCodes: readonly string[],
+): Promise<Readonly<Record<string, LtaNormalizedBusStop>>> => {
+  if (busStopCodes.length === 0) {
+    return {};
+  }
+  const normalizedCodes = new Set(busStopCodes);
+  const all = await getAllBusStops();
+  const result: Record<string, LtaNormalizedBusStop> = {};
+  for (const record of all) {
+    if (normalizedCodes.has(record.busStopCode)) {
+      result[record.busStopCode] = record;
+    }
+  }
+  return result;
 };

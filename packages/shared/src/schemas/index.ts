@@ -240,6 +240,18 @@ export const LtaTrafficIncidentsSchema = z.object({
   format: OutputFormatSchema.optional(),
 }).strict();
 
+export const LtaRoadWorksSchema = z.object({
+  format: OutputFormatSchema.optional(),
+}).strict();
+
+export const LtaRoadOpeningsSchema = z.object({
+  format: OutputFormatSchema.optional(),
+}).strict();
+
+export const LtaTrafficImagesSchema = z.object({
+  format: OutputFormatSchema.optional(),
+}).strict();
+
 export const NeaForecast2HrSchema = z.object({
   area: z.string().min(1).optional(),
   date: z.string().min(1).optional(),
@@ -449,6 +461,147 @@ export const CivicBriefBaseSchema = z.object({
 }).strict();
 
 export const CivicBriefSchema = requireLatLngPair(CivicBriefBaseSchema);
+
+const TransitStopIdsSchema = z.array(z.string().regex(/^\d{5}$/)).max(25);
+const TransitMobilityModeSchema = z.enum(["wheelchair", "reduced-walk", "elder-friendly"]);
+const TransitRecommendationTypeSchema = z.enum([
+  "reliability",
+  "transfer-risk",
+  "playbook",
+  "accessibility",
+]);
+const TransitObjectiveSchema = z.enum([
+  "minimize_delay",
+  "maximize_accessibility",
+  "minimize_transfer_risk",
+  "balanced",
+]);
+
+export const TransitHealthSchema = z.object({
+  stopIds: TransitStopIdsSchema.optional(),
+  includeTrafficImages: z.boolean().optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+export const TransitHotspotsSchema = z.object({
+  stopIds: TransitStopIdsSchema.optional(),
+  includeTrafficImages: z.boolean().optional(),
+  gridSizeDegrees: z.number().positive().max(0.05).optional(),
+  impactRadiusMeters: z.number().positive().max(3000).optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+export const TransitOpsBriefSchema = z.object({
+  stopIds: TransitStopIdsSchema.optional(),
+  scopeKey: z.string().min(1).optional(),
+  includeTrafficImages: z.boolean().optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+export const TransitPackSchema = z.object({
+  stopIds: TransitStopIdsSchema.optional(),
+  scopeKey: z.string().min(1).optional(),
+  includeTrafficImages: z.boolean().optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+export const TransitReliabilitySchema = z.object({
+  originStopId: z.string().regex(/^\d{5}$/),
+  destinationStopId: z.string().regex(/^\d{5}$/),
+  horizonMinutes: z.number().int().positive().max(240).optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+export const TransitTransferRiskSchema = z.object({
+  fromServiceNo: z.string().min(1),
+  toServiceNo: z.string().min(1),
+  transferStopId: z.string().regex(/^\d{5}$/),
+  expectedWalkMinutes: z.number().positive().max(60).optional(),
+  minBufferMinutes: z.number().positive().max(60).optional(),
+  fallbackServiceNos: z.array(z.string().min(1)).max(20).optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+export const TransitAccessibleRouteSchema = z.object({
+  stopIds: TransitStopIdsSchema.min(2),
+  originLat: z.number().min(-90).max(90),
+  originLng: z.number().min(-180).max(180),
+  destinationLat: z.number().min(-90).max(90),
+  destinationLng: z.number().min(-180).max(180),
+  mobilityMode: TransitMobilityModeSchema,
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+export const TransitPlanConstraintsSchema = z.object({
+  maxWalkMeters: z.number().positive().max(5000).optional(),
+  minConfidence: z.number().min(0).max(1).optional(),
+  avoidHighRisk: z.boolean().optional(),
+  mobilityMode: TransitMobilityModeSchema.optional(),
+}).strict();
+
+export const TransitObjectivePlanSchema = z.object({
+  tenantId: z.string().min(1).optional(),
+  objective: TransitObjectiveSchema,
+  scopeKey: z.string().min(1).optional(),
+  stopIds: TransitStopIdsSchema.optional(),
+  originStopId: z.string().regex(/^\d{5}$/).optional(),
+  destinationStopId: z.string().regex(/^\d{5}$/).optional(),
+  transferStopId: z.string().regex(/^\d{5}$/).optional(),
+  fromServiceNo: z.string().min(1).optional(),
+  toServiceNo: z.string().min(1).optional(),
+  horizonMinutes: z.number().int().positive().max(240).optional(),
+  maxActions: z.number().int().positive().max(20).optional(),
+  constraints: TransitPlanConstraintsSchema.optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+export const TransitCounterfactualScenarioSchema = z.object({
+  id: z.string().min(1).optional(),
+  label: z.string().min(1),
+  requestPatch: TransitObjectivePlanSchema.partial().optional(),
+  constraintsPatch: TransitPlanConstraintsSchema.optional(),
+  maxActions: z.number().int().positive().max(20).optional(),
+}).strict();
+
+export const TransitCounterfactualSimulateSchema = z.object({
+  tenantId: z.string().min(1).optional(),
+  baseRequest: TransitObjectivePlanSchema,
+  scenarios: z.array(TransitCounterfactualScenarioSchema).min(1).max(20),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+export const TransitOutcomeRecordSchema = z.object({
+  scopeKey: z.string().min(1).optional(),
+  recommendationType: TransitRecommendationTypeSchema,
+  recommendationId: z.string().min(1).optional(),
+  accepted: z.boolean(),
+  success: z.boolean().optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  predictedWaitMinutes: z.number().min(0).optional(),
+  actualWaitMinutes: z.number().min(0).optional(),
+  predictedRisk: z.number().min(0).max(1).optional(),
+  actualRisk: z.number().min(0).max(1).optional(),
+  metadata: z.record(z.unknown()).optional(),
+}).strict();
+
+export const TransitModelMetricsSchema = z.object({
+  scopeKey: z.string().min(1).optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+export const TransitPolicyAuditSchema = z.object({
+  tenantId: z.string().min(1).optional(),
+  scopeKey: z.string().min(1).optional(),
+  source: z.enum(["plan", "counterfactual-baseline", "counterfactual-scenario", "policy-replay"]).optional(),
+  limit: z.number().int().positive().max(500).optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+export const TransitPolicyReplaySchema = z.object({
+  traceId: z.string().min(1),
+  constraintsPatch: TransitPlanConstraintsSchema.optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
 
 const RiskFlagSchema = z.object({
   code: z.string().min(1),
