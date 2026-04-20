@@ -242,6 +242,112 @@ const buildBusinessLimits = (
   toLimit("PUBLIC_REGISTRY_SCOPE", `This dossier is limited to the selected module set: ${selectedModules.join(", ")}.`),
 ];
 
+const buildMatchRationale = (confidence: readonly MatchConfidence[]): readonly Readonly<Record<string, unknown>>[] => {
+  return confidence.map((entry) => {
+    if (entry.confidence === "exact") {
+      return {
+        source: entry.source,
+        confidence: entry.confidence,
+        matchedOn: entry.matchedOn,
+        rationale: `Exact identifier match${entry.matchedOn === null ? "" : ` on ${entry.matchedOn}`}.`,
+      };
+    }
+    if (entry.confidence === "name-exact") {
+      return {
+        source: entry.source,
+        confidence: entry.confidence,
+        matchedOn: entry.matchedOn,
+        rationale: `Exact normalized name match${entry.matchedOn === null ? "" : ` on ${entry.matchedOn}`}.`,
+      };
+    }
+    if (entry.confidence === "name-fuzzy") {
+      return {
+        source: entry.source,
+        confidence: entry.confidence,
+        matchedOn: entry.matchedOn,
+        rationale: "Bounded fuzzy-name match. Confirm with direct source rows before final decisions.",
+      };
+    }
+    return {
+      source: entry.source,
+      confidence: entry.confidence,
+      matchedOn: entry.matchedOn,
+      rationale: "No source rows matched the supplied identifiers or names.",
+    };
+  });
+};
+
+const resolveDossierConfidence = (confidence: readonly MatchConfidence[]): Readonly<Record<string, unknown>> => {
+  if (confidence.length === 0) {
+    return {
+      level: "low",
+      score: 0,
+      rationale: "No confidence signals were generated because no searchable module had qualifying input.",
+    };
+  }
+
+  const rank = (value: MatchConfidence["confidence"]): number => {
+    if (value === "exact") return 1;
+    if (value === "name-exact") return 0.8;
+    if (value === "name-fuzzy") return 0.5;
+    return 0;
+  };
+
+  const score = confidence.reduce((sum, entry) => sum + rank(entry.confidence), 0) / confidence.length;
+  const roundedScore = Math.round(score * 100) / 100;
+  const level = roundedScore >= 0.8 ? "high" : roundedScore >= 0.5 ? "medium" : "low";
+  return {
+    level,
+    score: roundedScore,
+    rationale: level === "high"
+      ? "Most matched modules resolved via exact identifier or exact-name matches."
+      : level === "medium"
+        ? "Evidence contains mixed exact and fuzzy confidence signals; direct verification is recommended."
+        : "Match confidence is weak or missing across searched modules.",
+  };
+};
+
+const buildDossierHandoffMarkdown = (params: BusinessDossierParams, data: {
+  readonly selectedModules: readonly BusinessDossierModule[];
+  readonly searchedModules: readonly BusinessDossierModule[];
+  readonly matchedModules: readonly BusinessDossierModule[];
+  readonly unmatchedModules: readonly BusinessDossierModule[];
+  readonly riskFlags: readonly RiskFlag[];
+  readonly nextChecks: readonly NextCheck[];
+}): string => {
+  const lines = [
+    "## Due Diligence Handoff",
+    "",
+    `Entity input: ${params.entityName ?? params.uen ?? params.registrationNo ?? "unspecified"}`,
+    `Modules selected: ${data.selectedModules.join(", ") || "none"}`,
+    `Modules searched: ${data.searchedModules.join(", ") || "none"}`,
+    `Modules matched: ${data.matchedModules.join(", ") || "none"}`,
+    `Modules unmatched: ${data.unmatchedModules.join(", ") || "none"}`,
+    "",
+    "### Risk Flags",
+  ];
+
+  if (data.riskFlags.length === 0) {
+    lines.push("- none");
+  } else {
+    for (const flag of data.riskFlags) {
+      lines.push(`- [${flag.severity}] ${flag.code} (${flag.source}): ${flag.message}`);
+    }
+  }
+
+  lines.push("");
+  lines.push("### Recommended Next Checks");
+  if (data.nextChecks.length === 0) {
+    lines.push("- none");
+  } else {
+    data.nextChecks.forEach((check, index) => {
+      lines.push(`${index + 1}. ${check.tool}: ${check.reason}`);
+    });
+  }
+
+  return lines.join("\n");
+};
+
 export const buildBusinessDossierArtifact = async (
   params: BusinessDossierParams,
 ): Promise<BriefArtifact> => {
@@ -526,6 +632,36 @@ export const buildBusinessDossierArtifact = async (
   const primaryLicensee = licensees[0];
   const primaryHotel = hotels[0];
   const primaryTender = tenders[0];
+  const riskFlags = [
+    ...buildBusinessRiskFlags(params, searchedModules, acra, builders, contractors, licensees),
+    ...(searchedModules.size > 0 && matchedModules.size === 0
+      ? [{
+          code: "NO_MODULE_MATCHES",
+          severity: "high" as const,
+          message: "No selected module produced matched evidence for the supplied identifiers.",
+          source: "Resolver",
+        }]
+      : []),
+    ...(matchedModules.size > 0 && unmatchedModules.length > 0
+      ? [{
+          code: "PARTIAL_MODULE_COVERAGE",
+          severity: "medium" as const,
+          message: `Matched ${matchedModules.size} of ${searchedModules.size} searched modules; unmatched modules require follow-up.`,
+          source: "Resolver",
+        }]
+      : []),
+  ] satisfies readonly RiskFlag[];
+  const matchRationale = buildMatchRationale(matchConfidence);
+  const dossierConfidence = resolveDossierConfidence(matchConfidence);
+  const nextChecks = buildBusinessNextChecks(params, selectedModules);
+  const handoffMarkdown = buildDossierHandoffMarkdown(params, {
+    selectedModules,
+    searchedModules: Array.from(searchedModules),
+    matchedModules: Array.from(matchedModules),
+    unmatchedModules,
+    riskFlags,
+    nextChecks,
+  });
 
   return {
     title: "Business Dossier",
@@ -571,6 +707,13 @@ export const buildBusinessDossierArtifact = async (
         matchedModules: Array.from(matchedModules),
         unmatchedModules,
         unsearchedModules,
+      },
+      quality: {
+        dossierConfidence,
+        matchRationale,
+      },
+      handoff: {
+        markdown: handoffMarkdown,
       },
       acra,
       bcaLicensedBuilders: builders,
@@ -649,8 +792,8 @@ export const buildBusinessDossierArtifact = async (
         : []),
     ],
     limits: buildBusinessLimits(selectedModules),
-    riskFlags: buildBusinessRiskFlags(params, searchedModules, acra, builders, contractors, licensees),
+    riskFlags,
     matchConfidence,
-    nextChecks: buildBusinessNextChecks(params, selectedModules),
+    nextChecks,
   };
 };

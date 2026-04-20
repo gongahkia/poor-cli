@@ -150,12 +150,14 @@ describe("brief tools", () => {
     ] as never);
     vi.mocked(getBcaLicensedBuilders).mockResolvedValue([
       {
+        companyName: "ABC CONSTRUCTION PTE LTD",
         classCode: "GB1",
         expiryDate: "2026-12-31",
       },
     ] as never);
     vi.mocked(getBcaRegisteredContractors).mockResolvedValue([
       {
+        companyName: "ABC CONSTRUCTION PTE LTD",
         workhead: "CW01",
         expiryDate: "2026-12-31",
       },
@@ -172,6 +174,12 @@ describe("brief tools", () => {
     expect(payload.provenance).toHaveLength(4);
     expect(payload.freshness).toHaveLength(4);
     expect(payload.limits.length).toBeGreaterThan(0);
+    expect((payload.records["quality"] as Record<string, unknown>)["dossierConfidence"]).toMatchObject({
+      level: "high",
+    });
+    expect((payload.records["handoff"] as Record<string, unknown>)["markdown"]).toEqual(
+      expect.stringContaining("## Due Diligence Handoff"),
+    );
 
     const markdownResult = await handleBusinessDossier({
       entityName: "ABC CONSTRUCTION PTE LTD",
@@ -255,6 +263,30 @@ describe("brief tools", () => {
       expect.arrayContaining([
         expect.objectContaining({ source: "BOA architecture firms", confidence: "name-exact" }),
         expect.objectContaining({ source: "GeBIZ", confidence: "no-match" }),
+      ]),
+    );
+    expect(payload.riskFlags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "PARTIAL_MODULE_COVERAGE", severity: "medium", source: "Resolver" }),
+      ]),
+    );
+  });
+
+  it("adds a high-severity no-module-match risk flag when no selected module returns evidence", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([] as never);
+    vi.mocked(getBcaLicensedBuilders).mockResolvedValue([] as never);
+    vi.mocked(getBcaRegisteredContractors).mockResolvedValue([] as never);
+
+    const jsonResult = await handleBusinessDossier({
+      entityName: "UNKNOWN ENTITY PTE LTD",
+      modules: ["acra", "bca"],
+      format: "json",
+    });
+    const payload = parseBrief(getText(jsonResult));
+
+    expect(payload.riskFlags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "NO_MODULE_MATCHES", severity: "high", source: "Resolver" }),
       ]),
     );
   });
