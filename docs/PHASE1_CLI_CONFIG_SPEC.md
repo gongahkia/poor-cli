@@ -29,6 +29,7 @@ seuss generate
 seuss memory
 seuss approve
 seuss eval
+seuss persona
 ```
 
 ### `seuss init`
@@ -214,6 +215,26 @@ seuss eval --suite phase1
 seuss eval --seed 42
 seuss eval --output .seuss/evals/phase1.json
 seuss eval --summary
+seuss eval --summary --fail-on-thresholds
+```
+
+### `seuss persona`
+
+Builds and inspects a distilled persona profile from train fragments and memory hints.
+
+Expected behavior:
+
+- Produce a baseline persona profile (`voice`, `lexical`, `memory_hints`).
+- Save profile to `.seuss/memory/persona_profile.json` by default.
+- Show a concise summary for terminal inspection.
+
+Example:
+
+```sh
+seuss persona build
+seuss persona build --output .seuss/memory/persona_profile_v2.json
+seuss persona show
+seuss persona show --input .seuss/memory/persona_profile_v2.json
 ```
 
 ## Default Config

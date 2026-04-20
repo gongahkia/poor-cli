@@ -21,6 +21,9 @@ seuss ingest
 seuss inspect
 seuss generate --prompt "I think"
 seuss eval --summary
+seuss eval --summary --fail-on-thresholds
+seuss persona build
+seuss persona show
 make compile
 make test
 make smoke

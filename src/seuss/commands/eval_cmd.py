@@ -45,6 +45,7 @@ def run_eval(
     seed: int | None,
     output_path: Path | None,
     summary: bool = False,
+    fail_on_thresholds: bool = False,
 ) -> int:
     config = load_config(config_path)
     workspace = resolve_workspace(config, config_path)
@@ -190,5 +191,9 @@ def run_eval(
                 f"{check['operator']} threshold={check['threshold']}"
             )
     print(f"Report: {final_output_path}")
+
+    if fail_on_thresholds and not report["overall_pass"]:
+        print("Threshold check failed.")
+        return 1
 
     return 0
