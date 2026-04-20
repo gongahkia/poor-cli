@@ -34,6 +34,8 @@ sg_config_get {}
 SG_APIS_LOG_LEVEL=debug node packages/mcp-server/dist/index.js
 ```
 
+`npm run quick-start` now runs `npm run diagnostics` automatically when smoke fails (disable with `--no-diagnostics-on-fail`).
+
 ## `sg_query` Status Semantics
 
 - `completed`: execution succeeded
@@ -52,12 +54,25 @@ When a call fails:
 
 1. Inspect `error.code`, `error.source`, `error.suggestedAction`, and `error.contextIds.traceId` from structured output.
 2. Check server logs for matching `traceId`, `tool`, `workflow`, or `stepId`.
-3. Confirm auth presence (`SG_API_ONEMAP_*`, `SG_API_URA_KEY`, `SG_API_LTA_KEY`) when source is authenticated.
-4. Re-run the direct tool with exact parameters to isolate planner vs source behavior.
-5. Clear stale cache if needed:
+3. Use local correlation tools when IDs are available:
+
+```text
+sg_trace_lookup {"traceId":"<trace-id>"}
+sg_request_lookup {"requestId":"<request-id>"}
+```
+
+4. Confirm auth presence (`SG_API_ONEMAP_*`, `SG_API_URA_KEY`, `SG_API_LTA_KEY`) when source is authenticated.
+5. Re-run the direct tool with exact parameters to isolate planner vs source behavior.
+6. Clear stale cache if needed:
 
 ```text
 sg_cache_clear {}
+```
+
+For release-week validation drift, run:
+
+```bash
+npm run release:evidence
 ```
 
 ## Logging Conventions Added

@@ -7,6 +7,7 @@ const run = (cmd) => {
 };
 
 const PUBLIC_ONLY = process.argv.includes("--public");
+const AUTO_DIAGNOSTICS = !process.argv.includes("--no-diagnostics-on-fail");
 
 console.log("=== sg-apis-mcp quick start ===\n");
 
@@ -23,12 +24,21 @@ try {
   run(PUBLIC_ONLY ? "npm run test:smoke:public" : "npm run test:smoke:live");
 } catch (error) {
   console.error("quick start failed:", error instanceof Error ? error.message : String(error));
+  if (AUTO_DIAGNOSTICS) {
+    console.error("running diagnostics to capture immediate repo/runtime parity context...");
+    try {
+      run("npm run diagnostics");
+    } catch {
+      console.error("diagnostics failed; inspect logs and run npm run diagnostics manually.");
+    }
+  }
   if (PUBLIC_ONLY) {
     console.error("public smoke failed; run npm run diagnostics to inspect runtime and catalog parity.");
   } else {
     console.error("configure OneMap, URA, and LTA credentials via env vars or the local keystore, then retry.");
     console.error("for no-credential onboarding, run: npm run quick-start -- --public");
   }
+  console.error("if the failure response includes traceId/requestId, use sg_trace_lookup or sg_request_lookup to inspect local audit context.");
   process.exit(1);
 }
 

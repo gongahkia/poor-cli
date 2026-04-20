@@ -164,6 +164,7 @@ for (const workflow of WORKFLOW_CATALOG) {
 }
 
 ensureIncludes(resolve(root, "docs/governance-checklist.md"), [
+  "npm run release:preflight",
   "No new API family without a documented use case, maintainer owner, and test plan.",
   "No release without passing verify, smoke, and policy checks.",
   "KPI dashboard evidence snapshots",
@@ -192,7 +193,9 @@ ensureIncludes(resolve(root, "docs/quarterly-product-health-template.md"), [
 ensureIncludes(resolve(root, "docs/release.md"), [
   "Governance Checklist",
   "node ./scripts/check-governance.mjs",
+  "npm run release:preflight",
   "npm run kpis:dashboard",
+  "npm run release:evidence",
 ]);
 
 if (!Array.isArray(OPS_TAXONOMY_CATALOG.errorCodes)) {

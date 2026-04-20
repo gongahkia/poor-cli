@@ -615,6 +615,8 @@ Useful follow-up commands:
 - `npm run demo:mcp -- transport`
 - `npm run test:smoke:packaging`
 - `npm run test:smoke:registry`
+- `npm run release:preflight`
+- `npm run release:evidence`
 
 Release workflow notes live in [docs/release.md](./docs/release.md).
 

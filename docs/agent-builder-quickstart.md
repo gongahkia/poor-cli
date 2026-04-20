@@ -76,14 +76,14 @@ The runnable reference implementation for this pattern is [`examples/integration
 Before handing the server to an application team:
 
 1. Run `npm run build` and `npm run diagnostics` to validate catalog and resource contracts.
-2. Run `npm run verify` as the full gate.
+2. Run `npm run verify` as the full gate. Use `npm run release:preflight` for release-window evidence generation plus gate enforcement.
 3. Set `SG_APIS_LOG_LEVEL=info` in production and `debug` in staging.
 4. Treat `sg_health_check`, `sg_cache_stats`, and `sg_config_get` as first-line operator tools.
 5. Use [`docs/troubleshooting.md`](./troubleshooting.md) as the standard incident runbook.
 
 ## Live Smoke
 
-- `npm run quick-start` is the credential-gated live quickstart for real OneMap, URA, LTA, data.gov datastore, and official file-download validation.
+- `npm run quick-start` is the credential-gated live quickstart for real OneMap, URA, LTA, data.gov datastore, and official file-download validation. On failure it auto-runs `npm run diagnostics` unless `--no-diagnostics-on-fail` is passed.
 - `npm run test:smoke:live` runs the same live validation flow without the build wrapper.
 - `npm run test:smoke:public` is the credential-free onboarding smoke for public upstreams and no-auth workflows.
 

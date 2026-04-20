@@ -62,6 +62,8 @@ ensureIncludes(readmeTarget, [
   "docs/troubleshooting.md",
   "npm run diagnostics",
   "npm run kpis:dashboard",
+  "npm run release:preflight",
+  "npm run release:evidence",
   "Route Planning",
   "SingStat Table Drilldown",
   "Dataset Collection Browse",
@@ -209,9 +211,21 @@ ensureIncludes("docs/known-issues.md", [
   "Triage Rules",
 ]);
 
+ensureIncludes("docs/release.md", [
+  "npm run release:preflight",
+  "npm run release:evidence",
+]);
+
 ensureIncludes("docs/governance-checklist.md", [
+  "npm run release:preflight",
   "No new API family without a documented use case, maintainer owner, and test plan.",
   "No release without passing verify, smoke, and policy checks.",
+]);
+
+ensureIncludes("docs/troubleshooting.md", [
+  "sg_trace_lookup",
+  "sg_request_lookup",
+  "npm run release:evidence",
 ]);
 
 ensureIncludes("docs/contributing.md", [

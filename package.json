@@ -27,6 +27,8 @@
     "test:smoke:templates": "node ./scripts/smoke-templates.mjs",
     "test:smoke:profiles": "node ./scripts/smoke-profiles.mjs",
     "test:smoke:registry": "node ./scripts/registry-smoke.mjs",
+    "release:evidence": "node ./scripts/check-release-evidence.mjs",
+    "release:preflight": "node ./scripts/release-preflight.mjs",
     "rest-gateway": "node packages/mcp-server/dist/rest-gateway.js",
     "quick-start": "node ./scripts/quick-start.mjs"
   },

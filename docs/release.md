@@ -36,8 +36,10 @@ Repository secrets required by `.github/workflows/publish.yml`:
 
 ```bash
 npm install
-npm run verify
+npm run release:preflight
 ```
+
+`release:preflight` executes verify, fresh benchmark/ecosystem/KPI artifact generation, and release evidence checks in one pass.
 
 ### Governance Checklist
 
@@ -53,12 +55,13 @@ Confirm:
 - `docs/governance-checklist.md` and `docs/deprecation-policy.md` are current.
 - quarterly reporting template and known-issues notes are current for the release window.
 
-Generate release-window evidence artifacts:
+Generate release-window evidence artifacts manually (if not using `release:preflight`):
 
 ```bash
 npm run benchmarks:snapshot
 npm run ecosystem:snapshot
 npm run kpis:dashboard
+npm run release:evidence
 ```
 
 6. Run the live validation pass:

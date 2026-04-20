@@ -4,7 +4,7 @@
 
 Use this checklist before any tagged release.
 
-1. `npm run verify` passes with no skipped policy checks.
+1. `npm run release:preflight` passes with no skipped policy checks.
 2. `node ./scripts/check-governance.mjs` passes.
 3. `docs/ownership-matrix.json` has named owners for every API family and workflow in the built catalog.
 4. No unresolved high-severity vulnerability is accepted for release.
