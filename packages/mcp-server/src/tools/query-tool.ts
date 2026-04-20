@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { QuerySchema, resolveOutputFormat, validateInput } from "@sg-apis/shared";
-import type { OutputFormat, ToolResult } from "@sg-apis/shared";
+import type { ContextIds, OutputFormat, ToolResult } from "@sg-apis/shared";
 import { createLogger } from "@sg-apis/shared";
 import { toToolErrorPayload } from "../middleware/error-handler.js";
 import { planQuery } from "../router/planner.js";
@@ -117,6 +117,7 @@ const executePlan = async (
   plan: Extract<QueryPlan, { supported: true }>,
   format: OutputFormat,
   runLogger: ReturnType<typeof logger.child>,
+  contextIds?: ContextIds,
 ): Promise<{
   readonly status: "completed" | "failed";
   readonly steps: readonly ExecutedQueryStep[];
@@ -144,17 +145,21 @@ const executePlan = async (
         workflow: plan.workflow,
         error,
       });
-      executedSteps.push({
-        id: step.id,
-        purpose: step.purpose,
-        tool: step.tool,
-        status: "failed",
-        input: step.input,
-        ...(step.dependsOn === undefined ? {} : { dependsOn: step.dependsOn }),
-        error: toToolErrorPayload(error, step.tool),
-      });
-      return { status: "failed", steps: executedSteps };
-    }
+        executedSteps.push({
+          id: step.id,
+          purpose: step.purpose,
+          tool: step.tool,
+          status: "failed",
+          input: step.input,
+          ...(step.dependsOn === undefined ? {} : { dependsOn: step.dependsOn }),
+          error: toToolErrorPayload(
+            error,
+            step.tool,
+            contextIds === undefined ? {} : { contextIds },
+          ),
+        });
+        return { status: "failed", steps: executedSteps };
+      }
 
     try {
       const result = await executeQueryStep(step.tool, resolvedInput);
@@ -178,7 +183,9 @@ const executePlan = async (
           ...(step.dependsOn === undefined ? {} : { dependsOn: step.dependsOn }),
           outputText: getTextContent(result),
           ...(result.structuredContent === undefined ? {} : { structuredOutput: result.structuredContent }),
-          error: payload,
+          error: payload.contextIds === undefined && contextIds !== undefined
+            ? { ...payload, contextIds }
+            : payload,
         });
         return { status: "failed", steps: executedSteps };
       }
@@ -206,17 +213,21 @@ const executePlan = async (
         workflow: plan.workflow,
         error,
       });
-      executedSteps.push({
-        id: step.id,
-        purpose: step.purpose,
-        tool: step.tool,
-        status: "failed",
-        input: resolvedInput,
-        ...(step.dependsOn === undefined ? {} : { dependsOn: step.dependsOn }),
-        error: toToolErrorPayload(error, step.tool),
-      });
-      return { status: "failed", steps: executedSteps };
-    }
+        executedSteps.push({
+          id: step.id,
+          purpose: step.purpose,
+          tool: step.tool,
+          status: "failed",
+          input: resolvedInput,
+          ...(step.dependsOn === undefined ? {} : { dependsOn: step.dependsOn }),
+          error: toToolErrorPayload(
+            error,
+            step.tool,
+            contextIds === undefined ? {} : { contextIds },
+          ),
+        });
+        return { status: "failed", steps: executedSteps };
+      }
   }
 
   return { status: "completed", steps: executedSteps };
@@ -387,7 +398,7 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
         };
       }
 
-      const execution = await executePlan(plan, resolvedFormat, queryLogger);
+      const execution = await executePlan(plan, resolvedFormat, queryLogger, contextIds);
       const routingExplanation = buildRoutingExplanation(plan);
       const continuationHints = execution.status === "completed"
         ? buildContinuationHints(plan, execution.steps)

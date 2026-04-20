@@ -4,6 +4,8 @@ Operational guidance for teams deploying sg-apis-mcp in production.
 
 The same runtime contract is also exposed as the machine-readable `sg://runtime` resource for MCP clients that want to cache operational assumptions instead of scraping docs. Adoption-oriented latency, cache-tier, and credibility expectations for the headline workflows are also exposed through `sg://benchmarks`.
 
+Operational error semantics are exposed via `sg://ops-taxonomy` (`schemaVersion: ops-taxonomy/v1`, `errorEnvelope.contractVersion: tool-error/v2`) so alerting and retry policies can be derived from a machine-readable contract.
+
 Run `npm run diagnostics` after every build to validate catalog/resource integrity before deployment.
 
 Remote HTTP deployments support three auth modes:
@@ -175,4 +177,4 @@ The UI resource is additive only. Text-only hosts still receive the same direct 
 
 The current routing payload does not expose exact route geometry from OneMap, so route overlays remain explicitly marked as approximate in both the payload legend and the UI.
 
-Structured JSON logs include request or workflow context fields such as `traceId`, `requestId`, `workflow`, `tool`, and `stepId` where applicable. Set `SG_APIS_LOG_LEVEL=debug` in non-production environments to capture step-level routing and retry behavior.
+Structured JSON logs include request or workflow context fields such as `traceId`, `requestId`, `workflow`, `tool`, and `stepId` where applicable. Structured error payloads now also include `error.contextIds.traceId` and `error.contextIds.requestId` so failed tool calls can be correlated directly with log lines. Set `SG_APIS_LOG_LEVEL=debug` in non-production environments to capture step-level routing and retry behavior.

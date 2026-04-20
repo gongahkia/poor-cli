@@ -467,6 +467,11 @@ export const NextCheckSchema = z.object({
   input: z.record(z.unknown()),
 }).strict();
 
+export const ContextIdsSchema = z.object({
+  traceId: z.string().uuid(),
+  requestId: z.string().uuid(),
+}).strict();
+
 export const ToolErrorPayloadSchema = z.object({
   source: z.string().min(1),
   tool: z.string().min(1),
@@ -476,6 +481,7 @@ export const ToolErrorPayloadSchema = z.object({
   suggestedAction: z.string().min(1).optional(),
   statusCode: z.number().int().optional(),
   details: z.unknown().optional(),
+  contextIds: ContextIdsSchema.optional(),
 }).strict();
 
 export const QueryBlockerSchema = z.object({
@@ -743,10 +749,7 @@ export const QuerySchema = z.object({
   includeContextIds: z.boolean().optional(),
 }).strict();
 
-const QueryContextIdsSchema = z.object({
-  traceId: z.string().uuid(),
-  requestId: z.string().uuid(),
-}).strict();
+const QueryContextIdsSchema = ContextIdsSchema;
 
 export const QueryPlannedResultSchema = z.object({
   status: z.literal("planned"),

@@ -13,6 +13,11 @@ export type ApiErrorInfo = {
   readonly retryable: boolean;
 };
 
+export type ContextIds = {
+  readonly traceId: string;
+  readonly requestId: string;
+};
+
 export type ToolErrorPayload = {
   readonly source: string;
   readonly tool: string;
@@ -22,6 +27,7 @@ export type ToolErrorPayload = {
   readonly suggestedAction?: string;
   readonly statusCode?: number;
   readonly details?: unknown;
+  readonly contextIds?: ContextIds;
 };
 
 export type ToolResult = {
@@ -207,10 +213,7 @@ export type QueryResultSummary = {
   readonly headline: string;
 };
 
-export type QueryContextIds = {
-  readonly traceId: string;
-  readonly requestId: string;
-};
+export type QueryContextIds = ContextIds;
 
 export type QueryPlannedResult = {
   readonly status: "planned";

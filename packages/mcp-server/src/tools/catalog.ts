@@ -1606,6 +1606,12 @@ export const buildBenchmarkCatalog = (
 } as const);
 
 export const OPS_TAXONOMY_CATALOG = {
+  schemaVersion: "ops-taxonomy/v1",
+  generatedAt: "2026-04-20T00:00:00.000Z",
+  errorEnvelope: {
+    contractVersion: "tool-error/v2",
+    contextIds: "traceId/requestId pair is included on structured error payloads for direct tools and workflow failures.",
+  },
   summary: [
     "Machine-readable operations taxonomy for error handling, severity, and retry guidance.",
     "Use this with sg://runtime and sg://benchmarks to build predictable operational behavior.",

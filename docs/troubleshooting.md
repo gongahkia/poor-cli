@@ -48,8 +48,8 @@ Operational rule:
 
 When a call fails:
 
-1. Inspect `error.code`, `error.source`, and `error.suggestedAction` from structured output.
-2. Check server logs for matching `tool`, `workflow`, or `stepId`.
+1. Inspect `error.code`, `error.source`, `error.suggestedAction`, and `error.contextIds.traceId` from structured output.
+2. Check server logs for matching `traceId`, `tool`, `workflow`, or `stepId`.
 3. Confirm auth presence (`SG_API_ONEMAP_*`, `SG_API_URA_KEY`, `SG_API_LTA_KEY`) when source is authenticated.
 4. Re-run the direct tool with exact parameters to isolate planner vs source behavior.
 5. Clear stale cache if needed:

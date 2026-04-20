@@ -391,5 +391,11 @@ describe("resource catalog parity", () => {
         expect.objectContaining({ code: "INTERNAL_ERROR", retryable: false, severity: "high" }),
       ]),
     );
+    expect(OPS_TAXONOMY_CATALOG).toMatchObject({
+      schemaVersion: "ops-taxonomy/v1",
+      errorEnvelope: {
+        contractVersion: "tool-error/v2",
+      },
+    });
   });
 });

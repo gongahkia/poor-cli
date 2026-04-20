@@ -116,6 +116,7 @@ export {
   ConfigGetSchema,
   ConfigSetSchema,
   QuerySchema,
+  ContextIdsSchema,
   ToolErrorPayloadSchema,
   QueryBlockerSchema,
   QueryPlannedStepSchema,
@@ -149,6 +150,7 @@ export { TIMEOUTS, HARD_CAP_TIMEOUT } from "./config/timeouts.js";
 export type {
   ApiResponse,
   ApiErrorInfo,
+  ContextIds,
   BriefArtifact,
   BriefArtifactRecord,
   BriefFreshnessItem,

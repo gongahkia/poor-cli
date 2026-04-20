@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { createLogger, ApiError, ValidationError } from "@sg-apis/shared";
-import type { ToolErrorPayload, ToolResult } from "@sg-apis/shared";
+import type { ContextIds, ToolErrorPayload, ToolResult } from "@sg-apis/shared";
 
 const logger = createLogger("error-handler");
 
@@ -33,6 +34,9 @@ const formatErrorText = (payload: ToolErrorPayload): string => {
   if (payload.suggestedAction !== undefined) {
     lines.push(`Suggested action: ${payload.suggestedAction}`);
   }
+  if (payload.contextIds !== undefined) {
+    lines.push(`Trace ID: ${payload.contextIds.traceId}`);
+  }
 
   return lines.join("\n");
 };
@@ -50,13 +54,28 @@ const logHandledToolError = (payload: ToolErrorPayload): void => {
     retryable: payload.retryable,
     statusCode: payload.statusCode,
     message: payload.message,
+    ...(payload.contextIds === undefined ? {} : payload.contextIds),
     ...(payload.suggestedAction === undefined ? {} : { suggestedAction: payload.suggestedAction }),
   });
 };
 
-export const toToolErrorPayload = (error: unknown, tool: string): ToolErrorPayload => {
+type ToolErrorContext = {
+  readonly contextIds?: ContextIds;
+};
+
+export const toToolErrorPayload = (
+  error: unknown,
+  tool: string,
+  context: ToolErrorContext = {},
+): ToolErrorPayload => {
+  const withContextIds = <T extends ToolErrorPayload>(payload: T): T => {
+    return context.contextIds === undefined
+      ? payload
+      : { ...payload, contextIds: context.contextIds };
+  };
+
   if (error instanceof ValidationError) {
-    return {
+    return withContextIds({
       source: "validation",
       tool,
       code: "VALIDATION_ERROR",
@@ -65,13 +84,13 @@ export const toToolErrorPayload = (error: unknown, tool: string): ToolErrorPaylo
       suggestedAction: "Check the tool input schema and resend valid parameters.",
       statusCode: 400,
       details: error.issues,
-    };
+    });
   }
 
   if (error instanceof ApiError) {
     const credHint = enrichCredentialAction(error.source, error.statusCode);
     const action = credHint ?? error.suggestedAction;
-    return {
+    return withContextIds({
       source: error.source,
       tool: error.tool ?? tool,
       code: error.code,
@@ -80,7 +99,7 @@ export const toToolErrorPayload = (error: unknown, tool: string): ToolErrorPaylo
       ...(action !== undefined ? { suggestedAction: action } : {}),
       statusCode: error.statusCode,
       ...(error.details === undefined ? {} : { details: error.details }),
-    };
+    });
   }
 
   logger.error("unhandled error", {
@@ -88,7 +107,7 @@ export const toToolErrorPayload = (error: unknown, tool: string): ToolErrorPaylo
     error: error instanceof Error ? error.message : String(error),
   });
 
-  return {
+  return withContextIds({
     source: "internal",
     tool,
     code: "INTERNAL_ERROR",
@@ -96,15 +115,20 @@ export const toToolErrorPayload = (error: unknown, tool: string): ToolErrorPaylo
     message: "Internal error. Check server logs.",
     suggestedAction: "Inspect server logs and retry the tool call.",
     statusCode: 500,
-  };
+  });
 };
 
 export const wrapHandler = (tool: string, handler: ToolHandler): ToolHandler => {
   return async (input: unknown): Promise<ToolResult> => {
+    const requestId = randomUUID();
+    const contextIds = {
+      traceId: requestId,
+      requestId,
+    } as const;
     try {
       return await handler(input);
     } catch (error) {
-      const payload = toToolErrorPayload(error, tool);
+      const payload = toToolErrorPayload(error, tool, { contextIds });
       logHandledToolError(payload);
       return {
         isError: true,
