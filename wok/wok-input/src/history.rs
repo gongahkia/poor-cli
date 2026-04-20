@@ -253,31 +253,59 @@ pub fn fuzzy_search_entries(
             .collect();
     }
 
-    let mut matches = entries
-        .iter()
-        .rev()
-        .filter_map(|entry| fuzzy_score(&entry.command, trimmed).map(|score| (entry, score)))
-        .map(|(entry, score)| HistorySearchMatch {
+    if limit == 0 {
+        return Vec::new();
+    }
+
+    let mut matches = Vec::with_capacity(limit);
+    for entry in entries.iter().rev() {
+        let Some(score) = fuzzy_score(&entry.command, trimmed) else {
+            continue;
+        };
+        let candidate = HistorySearchMatch {
             entry: entry.clone(),
             score,
-        })
-        .collect::<Vec<_>>();
+        };
 
-    matches.sort_by(|left, right| {
-        right
-            .score
-            .cmp(&left.score)
-            .then(right.entry.started_at_ms.cmp(&left.entry.started_at_ms))
-            .then(right.entry.completed_at_ms.cmp(&left.entry.completed_at_ms))
-    });
-    matches.truncate(limit);
+        if matches.len() < limit {
+            matches.push(candidate);
+            continue;
+        }
+
+        let Some((worst_index, worst)) = matches
+            .iter()
+            .enumerate()
+            .min_by(|(_, left), (_, right)| compare_history_match(left, right))
+        else {
+            continue;
+        };
+        if compare_history_match(&candidate, worst).is_gt() {
+            matches[worst_index] = candidate;
+        }
+    }
+
+    matches.sort_by(|left, right| compare_history_match(right, left));
     matches
+}
+
+fn compare_history_match(
+    left: &HistorySearchMatch,
+    right: &HistorySearchMatch,
+) -> std::cmp::Ordering {
+    left.score
+        .cmp(&right.score)
+        .then(left.entry.started_at_ms.cmp(&right.entry.started_at_ms))
+        .then(left.entry.completed_at_ms.cmp(&right.entry.completed_at_ms))
 }
 
 /// Score a text candidate against a fuzzy query.
 pub fn fuzzy_score(text: &str, query: &str) -> Option<i64> {
     if query.is_empty() {
         return Some(0);
+    }
+
+    if text.is_ascii() && query.is_ascii() {
+        return fuzzy_score_ascii(text.as_bytes(), query.as_bytes());
     }
 
     let text_lower = text.to_ascii_lowercase();
@@ -324,6 +352,62 @@ pub fn fuzzy_score(text: &str, query: &str) -> Option<i64> {
     }
 
     None
+}
+
+fn fuzzy_score_ascii(text: &[u8], query: &[u8]) -> Option<i64> {
+    if let Some(position) = find_ascii_case_insensitive(text, query) {
+        let prefix_bonus = if position == 0 { 150 } else { 0 };
+        let compact_bonus = 100_i64.saturating_sub(position as i64);
+        let length_bonus = 40_i64.saturating_sub((text.len().saturating_sub(query.len())) as i64);
+        return Some(1_000 + prefix_bonus + compact_bonus + length_bonus);
+    }
+
+    let mut score = 0_i64;
+    let mut query_index = 0;
+    let mut current = query[query_index].to_ascii_lowercase();
+    let mut consecutive = 0_i64;
+    let mut last_match_index = None;
+    let mut previous_char = None;
+
+    for (index, ch) in text.iter().copied().enumerate() {
+        let ch = ch.to_ascii_lowercase();
+        if ch == current {
+            score += 20 + consecutive * 5;
+            if index == 0
+                || previous_char.is_some_and(|value| matches!(value, b' ' | b'/' | b'-' | b'_'))
+            {
+                score += 25;
+            }
+            if let Some(last_index) = last_match_index {
+                score -= (index.saturating_sub(last_index + 1)) as i64;
+            }
+            consecutive += 1;
+            last_match_index = Some(index);
+            query_index += 1;
+            if let Some(next) = query.get(query_index) {
+                current = next.to_ascii_lowercase();
+            } else {
+                return Some(score - text.len() as i64);
+            }
+        } else {
+            consecutive = 0;
+        }
+        previous_char = Some(ch);
+    }
+
+    None
+}
+
+fn find_ascii_case_insensitive(text: &[u8], query: &[u8]) -> Option<usize> {
+    if query.is_empty() {
+        return Some(0);
+    }
+    if query.len() > text.len() {
+        return None;
+    }
+
+    text.windows(query.len())
+        .position(|candidate| candidate.eq_ignore_ascii_case(query))
 }
 
 fn unix_time_ms(time: SystemTime) -> u64 {

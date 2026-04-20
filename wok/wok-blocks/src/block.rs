@@ -112,7 +112,7 @@ impl BlockManager {
                 self.state = BlockBuildState::InPrompt { start_row: *row };
             }
             SemanticEvent::CommandStart { .. } => {
-                if let BlockBuildState::InPrompt { .. } = &self.state {
+                if !matches!(self.state, BlockBuildState::InOutput { .. }) {
                     self.state = BlockBuildState::InCommand {
                         prompt_text: String::new(),
                     };
@@ -128,13 +128,21 @@ impl BlockManager {
                 }
             }
             SemanticEvent::OutputStart { row } => {
-                if let BlockBuildState::InCommand { prompt_text } = &self.state {
+                let prompt_text = if let BlockBuildState::InCommand { prompt_text } = &self.state {
+                    Some(prompt_text.clone())
+                } else if self.pending_command_text.is_some() {
+                    Some(String::new())
+                } else {
+                    None
+                };
+
+                if let Some(prompt_text) = prompt_text {
                     let id = self.next_id;
                     self.next_id += 1;
 
                     let block = Block {
                         id,
-                        prompt_text: prompt_text.clone(),
+                        prompt_text,
                         command_text: self.pending_command_text.take().unwrap_or_default(),
                         output_start_row: *row,
                         output_end_row: *row,
@@ -492,6 +500,42 @@ mod tests {
         });
 
         assert_eq!(mgr.blocks[0].command_text, "cargo test");
+    }
+
+    #[test]
+    fn test_command_start_without_prompt_still_builds_block() {
+        let mut mgr = BlockManager::new();
+        mgr.handle_event(&SemanticEvent::CommandStart { row: 1 });
+        mgr.handle_event(&SemanticEvent::CommandText {
+            row: 1,
+            text: "echo from preexec".to_string(),
+        });
+        mgr.handle_event(&SemanticEvent::OutputStart { row: 2 });
+        mgr.handle_event(&SemanticEvent::CommandEnd {
+            row: 3,
+            exit_code: Some(0),
+        });
+
+        assert_eq!(mgr.len(), 1);
+        assert_eq!(mgr.blocks[0].command_text, "echo from preexec");
+        assert_eq!(mgr.blocks[0].exit_code, Some(0));
+    }
+
+    #[test]
+    fn test_command_text_without_prompt_still_builds_block() {
+        let mut mgr = BlockManager::new();
+        mgr.handle_event(&SemanticEvent::CommandText {
+            row: 1,
+            text: "echo from marker".to_string(),
+        });
+        mgr.handle_event(&SemanticEvent::OutputStart { row: 2 });
+        mgr.handle_event(&SemanticEvent::CommandEnd {
+            row: 3,
+            exit_code: Some(0),
+        });
+
+        assert_eq!(mgr.len(), 1);
+        assert_eq!(mgr.blocks[0].command_text, "echo from marker");
     }
 
     #[test]

@@ -26,10 +26,30 @@ pub struct BlockSearch {
 impl BlockSearch {
     /// Create a new block search on the given output text.
     pub fn new(block_id: u64, query: &str, output_lines: &[String]) -> Self {
+        if query.is_empty() {
+            return Self {
+                query: query.to_string(),
+                matches: Vec::new(),
+                current_match: 0,
+                target_block_id: block_id,
+            };
+        }
+
         let query_lower = query.to_lowercase();
         let mut matches = Vec::new();
 
         for (line_idx, line) in output_lines.iter().enumerate() {
+            if query.is_ascii() && line.is_ascii() {
+                matches.extend(
+                    ascii_case_insensitive_matches(line, query).map(|col_start| SearchMatch {
+                        line: line_idx,
+                        col_start,
+                        col_end: col_start + query.len(),
+                    }),
+                );
+                continue;
+            }
+
             let line_lower = line.to_lowercase();
             let mut start = 0;
             while let Some(pos) = line_lower[start..].find(&query_lower) {
@@ -86,6 +106,28 @@ impl BlockSearch {
     pub fn match_count(&self) -> usize {
         self.matches.len()
     }
+}
+
+fn ascii_case_insensitive_matches<'a>(
+    text: &'a str,
+    query: &'a str,
+) -> impl Iterator<Item = usize> + 'a {
+    let text = text.as_bytes();
+    let query = query.as_bytes();
+    let mut start = 0;
+
+    std::iter::from_fn(move || {
+        if query.is_empty() || start + query.len() > text.len() {
+            return None;
+        }
+
+        let position = text[start..]
+            .windows(query.len())
+            .position(|candidate| candidate.eq_ignore_ascii_case(query))?;
+        let match_start = start + position;
+        start = match_start + query.len();
+        Some(match_start)
+    })
 }
 
 #[cfg(test)]

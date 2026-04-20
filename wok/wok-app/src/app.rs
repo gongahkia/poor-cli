@@ -191,6 +191,9 @@ impl WokApp {
                 self.zoom.zoom_reset();
                 effects.push(RuntimeEffect::Zoom(self.zoom.current_size()));
             }
+            Action::OpenSettings => {
+                effects.push(RuntimeEffect::Status("Opening settings".to_string()));
+            }
             Action::BlockPrev => {
                 self.block_navigator.select_prev(self.block_manager.len());
                 self.sync_active_block();

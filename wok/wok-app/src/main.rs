@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::error::Error;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -24,7 +25,7 @@ use wok_app::block_query::{BlockQueryMode, BlockQueryState, DiffLineEntry, DiffL
 use wok_app::command_search::{CommandSearchScope, CommandSearchState};
 use wok_app::config::{TriggerScopeConfig, WokConfig};
 use wok_app::event_loop::run_event_loop;
-use wok_app::handler::AppHandler;
+use wok_app::handler::{AppHandler, AppMenuAction};
 use wok_app::input::{InputEvent, InputEventType, KeyAction};
 use wok_app::keybindings::Action;
 use wok_app::plugin_host::PluginHost;
@@ -427,6 +428,14 @@ struct FloatingDragState {
     last_y: f64,
 }
 
+#[derive(Clone, Copy)]
+enum TerminalMouseEvent {
+    Press(MouseButton),
+    Release,
+    Motion(Option<MouseButton>),
+    Wheel { horizontal: bool, positive: bool },
+}
+
 #[derive(Default)]
 #[allow(dead_code)]
 struct RuntimeMetrics {
@@ -483,13 +492,16 @@ struct WokHandler {
     render: Option<RenderState>,
     window: Option<Arc<Window>>,
     chrome_rects: ChromeRects,
+    tab_scroll_offset: f32,
     needs_redraw: bool,
+    exit_requested: bool,
     started_at: Instant,
     last_cursor_visible: bool,
     pending_close_confirmation: Option<Instant>,
     redraw_history_ms: VecDeque<f32>,
     theme_overrides: HashMap<String, String>,
     floating_drag: Option<FloatingDragState>,
+    pressed_mouse_button: Option<MouseButton>,
     metrics: RuntimeMetrics,
 }
 
@@ -568,13 +580,16 @@ impl WokHandler {
             render: None,
             window: None,
             chrome_rects: ChromeRects::default(),
+            tab_scroll_offset: 0.0,
             needs_redraw: true,
+            exit_requested: false,
             started_at: Instant::now(),
             last_cursor_visible: true,
             pending_close_confirmation: None,
             redraw_history_ms: VecDeque::with_capacity(60),
             theme_overrides: HashMap::new(),
             floating_drag: None,
+            pressed_mouse_button: None,
             metrics: RuntimeMetrics::default(),
         };
         handler.refresh_plugin_config();
@@ -871,6 +886,93 @@ impl WokHandler {
                 pane.row_cache.resize(rows as usize, cols as usize);
             }
         }
+        self.ensure_active_tab_visible();
+    }
+
+    fn clamp_tab_scroll(&mut self) {
+        let max_scroll = tab_bar_max_scroll(self.chrome_rects.tab_bar, self.workspace.tabs.len());
+        self.tab_scroll_offset = self.tab_scroll_offset.clamp(0.0, max_scroll);
+    }
+
+    fn ensure_active_tab_visible(&mut self) {
+        if !self.config.tab_bar_visible || self.workspace.tabs.is_empty() {
+            self.tab_scroll_offset = 0.0;
+            return;
+        }
+
+        let tab_width = tab_bar_tab_width(self.chrome_rects.tab_bar, self.workspace.tabs.len());
+        if tab_width <= 0.0 {
+            self.tab_scroll_offset = 0.0;
+            return;
+        }
+
+        let active_start = self.workspace.active_tab as f32 * tab_width;
+        let active_end = active_start + tab_width;
+        if active_start < self.tab_scroll_offset {
+            self.tab_scroll_offset = active_start;
+        } else if active_end > self.tab_scroll_offset + self.chrome_rects.tab_bar.w {
+            self.tab_scroll_offset = active_end - self.chrome_rects.tab_bar.w;
+        }
+        self.clamp_tab_scroll();
+    }
+
+    fn tab_at_point(&self, x: f64, y: f64) -> Option<usize> {
+        if !self.config.tab_bar_visible || self.workspace.tabs.is_empty() {
+            return None;
+        }
+        let rect = self.chrome_rects.tab_bar;
+        if x < f64::from(rect.x)
+            || y < f64::from(rect.y)
+            || x > f64::from(rect.x + rect.w)
+            || y > f64::from(rect.y + rect.h)
+        {
+            return None;
+        }
+
+        let tab_width = tab_bar_tab_width(rect, self.workspace.tabs.len());
+        if tab_width <= 0.0 {
+            return None;
+        }
+        let content_x = x as f32 - rect.x + self.tab_scroll_offset;
+        let index = (content_x / tab_width).floor() as usize;
+        (index < self.workspace.tabs.len()).then_some(index)
+    }
+
+    fn scroll_tab_bar(&mut self, delta_x: f64, delta_y: f64) -> bool {
+        if !self.config.tab_bar_visible || self.workspace.tabs.is_empty() {
+            return false;
+        }
+        let delta = if delta_x.abs() > f64::EPSILON {
+            delta_x
+        } else {
+            delta_y
+        };
+        if delta.abs() <= f64::EPSILON {
+            return false;
+        }
+
+        let unit = if delta.abs() < 8.0 { 48.0 } else { 1.0 };
+        self.tab_scroll_offset -= delta as f32 * unit;
+        self.clamp_tab_scroll();
+        self.needs_redraw = true;
+        true
+    }
+
+    fn switch_to_tab_index(&mut self, index: usize) {
+        if index >= self.workspace.tabs.len() || index == self.workspace.active_tab {
+            return;
+        }
+        let search = self.active_search_state();
+        self.workspace.switch_tab(index);
+        if let Some(window) = &self.window {
+            self.sync_workspace_layout(window.inner_size());
+        }
+        if let Some(search) = search {
+            self.install_search_state_on_active_pane(search);
+            self.refresh_global_search();
+        }
+        self.ensure_active_tab_visible();
+        self.needs_redraw = true;
     }
 
     fn snapshot_session(&self) -> WorkspaceSessionState {
@@ -1041,6 +1143,8 @@ impl WokHandler {
             .active_pane()
             .map(|active_pane| self.compose_status_bar_segments(active_pane));
         let workspace_search = self.active_search_state();
+        self.ensure_active_tab_visible();
+        self.clamp_tab_scroll();
         let cursor_shape = self.cursor_shape();
         let cursor_visible = self.cursor_visible();
         let window_opacity = self.config.window_opacity.clamp(0.0, 1.0);
@@ -1054,6 +1158,15 @@ impl WokHandler {
         } else {
             None
         };
+        let command_palette_overlay = self.active_pane().and_then(|pane| {
+            (pane.app.input_mode == InputMode::CommandPalette).then(|| {
+                (
+                    pane.app.theme.clone(),
+                    pane.app.input_editor.render_data(),
+                    pane.app.command_palette.clone(),
+                )
+            })
+        });
         let full_height =
             self.chrome_rects.content.y + self.chrome_rects.content.h + self.chrome_rects.status.h;
         let full_rect = Rect::new(0.0, 0.0, self.chrome_rects.content.w, full_height);
@@ -1071,6 +1184,7 @@ impl WokHandler {
                 &mut self.font,
                 self.chrome_rects.tab_bar,
                 &tab_labels,
+                self.tab_scroll_offset,
                 window_opacity,
             );
         }
@@ -1445,20 +1559,6 @@ impl WokHandler {
                 );
             }
 
-            if focused && pane.app.input_mode == InputMode::CommandPalette {
-                render_command_palette(
-                    render,
-                    &mut self.font,
-                    theme,
-                    pane.ui_rects.viewport,
-                    &pane.app.input_editor.render_data(),
-                    &pane.app.command_palette,
-                    cursor_shape,
-                    cursor_visible,
-                    window_opacity,
-                );
-            }
-
             if focused {
                 if let Some(command_search) = pane.app.command_search.as_ref() {
                     render_command_search(
@@ -1582,6 +1682,20 @@ impl WokHandler {
                     window_opacity,
                 );
             }
+        }
+
+        if let Some((theme, input, palette)) = command_palette_overlay.as_ref() {
+            render_command_palette(
+                render,
+                &mut self.font,
+                theme,
+                self.chrome_rects.content,
+                input,
+                palette,
+                cursor_shape,
+                cursor_visible,
+                window_opacity,
+            );
         }
     }
 
@@ -2959,6 +3073,90 @@ impl WokHandler {
         }
     }
 
+    fn open_settings(&mut self) {
+        match ensure_settings_file() {
+            Ok(path) => match open_path(&path) {
+                Ok(()) => {
+                    self.status_message = Some(format!("Opened settings ({})", path.display()));
+                }
+                Err(error) => {
+                    warn!("failed to open settings '{}': {error}", path.display());
+                    self.status_message = Some(format!("Settings: {}", path.display()));
+                }
+            },
+            Err(error) => {
+                warn!("failed to prepare settings file: {error}");
+                self.status_message = Some(format!("Settings unavailable: {error}"));
+            }
+        }
+    }
+
+    fn reload_configuration(&mut self) {
+        let config = WokConfig::load();
+        self.config = config.clone();
+        self.trigger_engine = trigger_engine_from_config(&config);
+        self.layout_presets = default_layout_presets();
+        self.layout_presets.extend(config.layout_presets.clone());
+        self.layout_index = self
+            .layout_index
+            .min(self.layout_presets.len().saturating_sub(1));
+
+        let theme = config.theme_path.as_ref().and_then(|path| {
+            match wok_ui::theme_loader::load_theme(path) {
+                Ok(mut theme) => {
+                    if let Err(error) = wok_ui::theme_loader::apply_theme_overrides(
+                        &mut theme,
+                        &self.theme_overrides,
+                    ) {
+                        warn!("failed to apply live theme overrides after config reload: {error}");
+                    }
+                    Some(theme)
+                }
+                Err(error) => {
+                    warn!("failed to reload configured theme: {error}");
+                    None
+                }
+            }
+        });
+        self.theme_watcher = config
+            .theme_path
+            .as_ref()
+            .and_then(|path| ThemeWatcher::new(path).ok());
+
+        if let Some(theme) = theme {
+            self.apply_theme_to_runtime(theme);
+        } else {
+            self.font = FontSystem::new(&config.font_family, config.font_size);
+            if let Some(render) = self.render.as_mut() {
+                render.atlas.clear();
+            }
+            for pane in self.panes.values_mut() {
+                pane.app.config = config.clone();
+                pane.app
+                    .input_editor
+                    .set_position(match config.input_position {
+                        wok_app::config::InputPosition::Top => {
+                            wok_input::editor::InputPosition::Top
+                        }
+                        wok_app::config::InputPosition::Bottom => {
+                            wok_input::editor::InputPosition::Bottom
+                        }
+                    });
+                pane.app.zoom = wok_ui::zoom::ZoomManager::new(config.font_size);
+            }
+            self.invalidate_all_row_caches();
+            self.sync_background_renderer(None);
+            if let Some(window) = &self.window {
+                self.sync_workspace_layout(window.inner_size());
+            }
+            self.needs_redraw = true;
+        }
+
+        self.refresh_plugin_config();
+        self.refresh_plugin_snapshot();
+        self.status_message = Some("Reloaded configuration".to_string());
+    }
+
     fn handle_action(&mut self, action: Action) {
         if matches!(action, Action::EnterViMode) {
             self.enter_vi_mode();
@@ -2977,6 +3175,11 @@ impl WokHandler {
         }
         if matches!(action, Action::BlockExportJson) {
             self.export_selected_block_bundle(BlockExportFormat::Json);
+            self.needs_redraw = true;
+            return;
+        }
+        if matches!(action, Action::OpenSettings) {
+            self.open_settings();
             self.needs_redraw = true;
             return;
         }
@@ -4568,6 +4771,82 @@ impl WokHandler {
         Some(CellPos { row, col })
     }
 
+    fn send_terminal_mouse_event(
+        &mut self,
+        event: TerminalMouseEvent,
+        x: f64,
+        y: f64,
+        modifiers: wok_app::input::Modifiers,
+    ) -> bool {
+        if modifiers.shift {
+            return false;
+        }
+        let Some(pane_id) = self.active_pane_id() else {
+            return false;
+        };
+        let Some(cell) = self.pixel_to_cell_in_pane(pane_id, x, y) else {
+            return false;
+        };
+        let Some(pane) = self.panes.get(&pane_id) else {
+            return false;
+        };
+        let state = &pane.terminal.state;
+        let report = match event {
+            TerminalMouseEvent::Press(_) | TerminalMouseEvent::Release => {
+                state.reports_mouse_clicks()
+                    || state.reports_mouse_drag()
+                    || state.reports_mouse_motion()
+            }
+            TerminalMouseEvent::Motion(button) => {
+                state.reports_mouse_motion() || (button.is_some() && state.reports_mouse_drag())
+            }
+            TerminalMouseEvent::Wheel { .. } => state.reports_mouse(),
+        };
+        if !report {
+            return false;
+        }
+
+        let sgr = state.uses_sgr_mouse();
+        let Some(bytes) = encode_terminal_mouse_event(event, cell, modifiers, sgr) else {
+            return false;
+        };
+        self.send_raw_input_to_pty(&bytes);
+        true
+    }
+
+    fn send_alternate_scroll(&mut self, delta_x: f64, delta_y: f64) -> bool {
+        let Some(active_pane) = self.active_pane() else {
+            return false;
+        };
+        if !active_pane.terminal.state.is_alt_screen()
+            || !active_pane.terminal.state.uses_alternate_scroll()
+        {
+            return false;
+        }
+
+        let (sequence, amount) = if delta_x.abs() > delta_y.abs() && delta_x.abs() > f64::EPSILON {
+            if delta_x > 0.0 {
+                (b"\x1b[C".as_slice(), delta_x)
+            } else {
+                (b"\x1b[D".as_slice(), -delta_x)
+            }
+        } else if delta_y.abs() > f64::EPSILON {
+            if delta_y > 0.0 {
+                (b"\x1b[A".as_slice(), delta_y)
+            } else {
+                (b"\x1b[B".as_slice(), -delta_y)
+            }
+        } else {
+            return false;
+        };
+
+        let repetitions = amount.abs().round().clamp(1.0, 8.0) as usize;
+        for _ in 0..repetitions {
+            self.send_raw_input_to_pty(sequence);
+        }
+        true
+    }
+
     fn selection_text(&self) -> Option<String> {
         let active_pane = self.active_pane()?;
         let (start, end) = active_pane.app.selection.selection_range()?;
@@ -4774,6 +5053,9 @@ impl AppHandler for WokHandler {
         if output_line_hooks_enabled {
             self.dispatch_output_line_hooks(output_line_events);
         }
+        if !self.panes.is_empty() && self.panes.values().all(|pane| pane.terminal.exited) {
+            self.exit_requested = true;
+        }
 
         if relayout {
             if let Some(window) = &self.window {
@@ -4841,6 +5123,14 @@ impl AppHandler for WokHandler {
         self.redraw_history_ms
             .push_back(redraw_started.elapsed().as_secs_f32() * 1000.0);
         self.needs_redraw = false;
+    }
+
+    fn should_exit(&mut self) -> bool {
+        if !self.exit_requested {
+            return false;
+        }
+        self.exit_requested = false;
+        self.on_close_requested()
     }
 
     fn on_resize(&mut self, new_size: PhysicalSize<u32>) {
@@ -4931,12 +5221,31 @@ impl AppHandler for WokHandler {
     fn on_mouse_event(&mut self, event: wok_app::input::MouseEvent) {
         match event {
             wok_app::input::MouseEvent::Press {
-                button: MouseButton::Left,
+                button,
                 x,
                 y,
                 modifiers,
             } => {
+                self.pressed_mouse_button = Some(button);
+                if let Some(tab_index) = self.tab_at_point(x, y) {
+                    if button == MouseButton::Left {
+                        self.switch_to_tab_index(tab_index);
+                    }
+                    return;
+                }
                 self.focus_pane_at_point(x, y);
+                if self.send_terminal_mouse_event(
+                    TerminalMouseEvent::Press(button),
+                    x,
+                    y,
+                    modifiers,
+                ) {
+                    self.needs_redraw = true;
+                    return;
+                }
+                if button != MouseButton::Left {
+                    return;
+                }
                 if modifiers.alt && platform_modifier_active(modifiers) {
                     if let Some(pane_id) = self.active_pane_id() {
                         if let Some(floating) = self.workspace.active_floating_pane(pane_id) {
@@ -5003,10 +5312,20 @@ impl AppHandler for WokHandler {
                 }
             }
             wok_app::input::MouseEvent::Release {
-                button: MouseButton::Left,
-                ..
+                button,
+                x,
+                y,
+                modifiers,
             } => {
+                self.pressed_mouse_button = None;
                 self.floating_drag = None;
+                if self.send_terminal_mouse_event(TerminalMouseEvent::Release, x, y, modifiers) {
+                    self.needs_redraw = true;
+                    return;
+                }
+                if button != MouseButton::Left {
+                    return;
+                }
                 let was_selecting = self.active_pane().is_some_and(|pane| {
                     matches!(pane.app.selection.state, SelectionState::Selecting { .. })
                 });
@@ -5022,7 +5341,7 @@ impl AppHandler for WokHandler {
                 }
                 self.needs_redraw = true;
             }
-            wok_app::input::MouseEvent::Move { x, y } => {
+            wok_app::input::MouseEvent::Move { x, y, modifiers } => {
                 if let Some(drag) = self.floating_drag.as_mut() {
                     let dx = (x - drag.last_x) as f32;
                     let dy = (y - drag.last_y) as f32;
@@ -5050,6 +5369,15 @@ impl AppHandler for WokHandler {
                     }
                     return;
                 }
+                if self.send_terminal_mouse_event(
+                    TerminalMouseEvent::Motion(self.pressed_mouse_button),
+                    x,
+                    y,
+                    modifiers,
+                ) {
+                    self.needs_redraw = true;
+                    return;
+                }
                 if self.active_pane().is_some_and(|pane| {
                     matches!(pane.app.selection.state, SelectionState::Selecting { .. })
                 }) {
@@ -5075,15 +5403,60 @@ impl AppHandler for WokHandler {
                     self.needs_redraw = true;
                 }
             }
-            wok_app::input::MouseEvent::Scroll { delta_y, .. } => {
-                if self
-                    .active_pane()
-                    .is_some_and(|pane| pane.terminal.state.is_alt_screen())
+            wok_app::input::MouseEvent::Scroll {
+                x,
+                y,
+                delta_x,
+                delta_y,
+                modifiers,
+            } => {
+                if delta_y.abs() < f64::EPSILON && delta_x.abs() < f64::EPSILON {
+                    return;
+                }
+                if y >= f64::from(self.chrome_rects.tab_bar.y)
+                    && y <= f64::from(self.chrome_rects.tab_bar.y + self.chrome_rects.tab_bar.h)
+                    && x >= f64::from(self.chrome_rects.tab_bar.x)
+                    && x <= f64::from(self.chrome_rects.tab_bar.x + self.chrome_rects.tab_bar.w)
+                    && self.scroll_tab_bar(delta_x, delta_y)
                 {
                     return;
                 }
 
-                if delta_y.abs() < f64::EPSILON {
+                if modifiers.shift || delta_x.abs() > delta_y.abs() {
+                    let horizontal_delta = if delta_x.abs() > f64::EPSILON {
+                        delta_x
+                    } else {
+                        delta_y
+                    };
+                    if self.send_terminal_mouse_event(
+                        TerminalMouseEvent::Wheel {
+                            horizontal: true,
+                            positive: horizontal_delta > 0.0,
+                        },
+                        x,
+                        y,
+                        modifiers,
+                    ) {
+                        self.needs_redraw = true;
+                        return;
+                    }
+                }
+
+                if self.send_terminal_mouse_event(
+                    TerminalMouseEvent::Wheel {
+                        horizontal: false,
+                        positive: delta_y > 0.0,
+                    },
+                    x,
+                    y,
+                    modifiers,
+                ) {
+                    self.needs_redraw = true;
+                    return;
+                }
+
+                if self.send_alternate_scroll(delta_x, delta_y) {
+                    self.needs_redraw = true;
                     return;
                 }
 
@@ -5095,9 +5468,31 @@ impl AppHandler for WokHandler {
                 self.apply_viewport_effect(ViewportEffect::ScrollLines(lines));
                 self.needs_redraw = true;
             }
-            wok_app::input::MouseEvent::Press { .. }
-            | wok_app::input::MouseEvent::Release { .. } => {}
         }
+    }
+
+    fn on_menu_action(&mut self, action: AppMenuAction) -> bool {
+        match action {
+            AppMenuAction::OpenSettings => self.handle_action(Action::OpenSettings),
+            AppMenuAction::ReloadConfiguration => {
+                self.reload_configuration();
+                self.needs_redraw = true;
+            }
+            AppMenuAction::OpenCommandPalette => self.handle_action(Action::CommandPalette),
+            AppMenuAction::NewTab => self.handle_action(Action::NewTab),
+            AppMenuAction::CloseTab => self.handle_action(Action::CloseTab),
+            AppMenuAction::Copy => self.handle_action(Action::Copy),
+            AppMenuAction::Paste => self.handle_action(Action::Paste),
+            AppMenuAction::SelectAll => self.handle_action(Action::SelectAll),
+            AppMenuAction::ZoomIn => self.handle_action(Action::ZoomIn),
+            AppMenuAction::ZoomOut => self.handle_action(Action::ZoomOut),
+            AppMenuAction::ZoomReset => self.handle_action(Action::ZoomReset),
+            AppMenuAction::ToggleInputPosition => self.handle_action(Action::ToggleInputPosition),
+            AppMenuAction::NextTab => self.handle_action(Action::NextTab),
+            AppMenuAction::PrevTab => self.handle_action(Action::PrevTab),
+            AppMenuAction::Quit => return self.on_close_requested(),
+        }
+        false
     }
 
     fn on_focus_change(&mut self, focused: bool) {
@@ -5134,6 +5529,113 @@ impl AppHandler for WokHandler {
         let _ = save_session(&session, &default_session_path());
         info!("wok closing");
         true
+    }
+}
+
+fn encode_terminal_mouse_event(
+    event: TerminalMouseEvent,
+    cell: CellPos,
+    modifiers: wok_app::input::Modifiers,
+    sgr: bool,
+) -> Option<Vec<u8>> {
+    let mut code = match event {
+        TerminalMouseEvent::Press(button) | TerminalMouseEvent::Motion(Some(button)) => {
+            mouse_button_code(button)?
+        }
+        TerminalMouseEvent::Release => 3,
+        TerminalMouseEvent::Motion(None) => 3,
+        TerminalMouseEvent::Wheel {
+            horizontal: false,
+            positive: true,
+        } => 64,
+        TerminalMouseEvent::Wheel {
+            horizontal: false,
+            positive: false,
+        } => 65,
+        TerminalMouseEvent::Wheel {
+            horizontal: true,
+            positive: true,
+        } => 66,
+        TerminalMouseEvent::Wheel {
+            horizontal: true,
+            positive: false,
+        } => 67,
+    };
+    if matches!(event, TerminalMouseEvent::Motion(_)) {
+        code += 32;
+    }
+    if modifiers.shift {
+        code += 4;
+    }
+    if modifiers.alt {
+        code += 8;
+    }
+    if modifiers.ctrl {
+        code += 16;
+    }
+
+    let x = u16::from(cell.col) + 1;
+    let y = u16::from(cell.row) + 1;
+    if sgr {
+        let suffix = if matches!(event, TerminalMouseEvent::Release) {
+            'm'
+        } else {
+            'M'
+        };
+        return Some(format!("\x1b[<{code};{x};{y}{suffix}").into_bytes());
+    }
+
+    let encoded_x = u8::try_from(x + 32).ok()?;
+    let encoded_y = u8::try_from(y + 32).ok()?;
+    let encoded_code = u8::try_from(code + 32).ok()?;
+    Some(vec![0x1b, b'[', b'M', encoded_code, encoded_x, encoded_y])
+}
+
+fn mouse_button_code(button: MouseButton) -> Option<u16> {
+    match button {
+        MouseButton::Left => Some(0),
+        MouseButton::Middle => Some(1),
+        MouseButton::Right => Some(2),
+        _ => None,
+    }
+}
+
+fn ensure_settings_file() -> std::io::Result<PathBuf> {
+    let config_dir = WokConfig::config_dir();
+    std::fs::create_dir_all(&config_dir)?;
+    let path = config_dir.join("config.toml");
+    if !path.exists() {
+        std::fs::write(
+            &path,
+            format!(
+                "# Wok settings\n\nfont_family = {:?}\nfont_size = 24.0\n",
+                "monospace"
+            ),
+        )?;
+    }
+    Ok(path)
+}
+
+fn open_path(path: &Path) -> std::io::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open").arg(path).spawn()?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .args(["/C", "start", ""])
+            .arg(path)
+            .spawn()?;
+        return Ok(());
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open").arg(path).spawn()?;
+        return Ok(());
     }
 }
 
@@ -6171,6 +6673,7 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::ZoomIn => "zoom_in".to_string(),
         Action::ZoomOut => "zoom_out".to_string(),
         Action::ZoomReset => "zoom_reset".to_string(),
+        Action::OpenSettings => "open_settings".to_string(),
         Action::ClearScreen => "clear_screen".to_string(),
         Action::SendEof => "send_eof".to_string(),
         Action::SaveSession(name) => format!("save_session:{name}"),
@@ -6260,6 +6763,7 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::ZoomIn,
         Action::ZoomOut,
         Action::ZoomReset,
+        Action::OpenSettings,
         Action::ClearScreen,
         Action::SendEof,
         Action::Copy,
@@ -6334,6 +6838,7 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::ZoomIn => "Increase terminal font size",
         Action::ZoomOut => "Decrease terminal font size",
         Action::ZoomReset => "Reset terminal font size",
+        Action::OpenSettings => "Open the Wok settings file",
         Action::ClearScreen => "Clear terminal viewport and scrollback",
         Action::SendEof => "Send EOF (Ctrl+D) to the active shell",
         Action::SaveSession(_) => "Persist the current workspace as a named session",
@@ -6504,6 +7009,32 @@ mod tests {
     fn test_action_palette_description_marks_unbound_shortcut() {
         let description = action_palette_description(&Action::CommandPalette, "");
         assert!(description.contains("Shortcut: unbound"));
+    }
+
+    #[test]
+    fn test_sgr_mouse_press_encoding() {
+        let bytes = encode_terminal_mouse_event(
+            TerminalMouseEvent::Press(MouseButton::Left),
+            CellPos { row: 4, col: 2 },
+            wok_app::input::Modifiers::default(),
+            true,
+        )
+        .expect("left press should encode");
+
+        assert_eq!(bytes, b"\x1b[<0;3;5M");
+    }
+
+    #[test]
+    fn test_legacy_mouse_release_encoding() {
+        let bytes = encode_terminal_mouse_event(
+            TerminalMouseEvent::Release,
+            CellPos { row: 0, col: 0 },
+            wok_app::input::Modifiers::default(),
+            false,
+        )
+        .expect("release should encode");
+
+        assert_eq!(bytes, vec![0x1b, b'[', b'M', 35, 33, 33]);
     }
 
     #[test]

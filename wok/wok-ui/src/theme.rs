@@ -167,7 +167,7 @@ impl Default for Theme {
             bracket_match: Color::new(0.478, 0.635, 0.969, 0.4), // blue semi-transparent
             syntax: SyntaxColors::default(),
             font_family: "JetBrains Mono".to_string(),
-            font_size: 14.0,
+            font_size: 24.0,
             opacity: 1.0,
             background_image: None,
         }
@@ -217,7 +217,7 @@ mod tests {
     #[test]
     fn test_default_theme_font_size() {
         let theme = Theme::default();
-        assert!((theme.font_size - 14.0).abs() < f32::EPSILON);
+        assert!((theme.font_size - 24.0).abs() < f32::EPSILON);
     }
 
     #[test]

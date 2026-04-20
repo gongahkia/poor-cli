@@ -13,7 +13,7 @@ const CONFIG_TEMPLATE: &str = r#"# Wok configuration
 # See docs/CONFIGURATION.md for all options.
 shell = "zsh"
 font_family = "JetBrains Mono"
-font_size = 14.0
+font_size = 24.0
 scrollback_lines = 10000
 copy_on_select = false
 restore_session = true

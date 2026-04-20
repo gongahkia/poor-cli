@@ -117,6 +117,8 @@ pub enum MouseEvent {
         x: f64,
         /// Y position in physical pixels.
         y: f64,
+        /// Active modifiers.
+        modifiers: Modifiers,
     },
     /// Mouse moved.
     Move {
@@ -124,13 +126,21 @@ pub enum MouseEvent {
         x: f64,
         /// Y position in physical pixels.
         y: f64,
+        /// Active modifiers.
+        modifiers: Modifiers,
     },
     /// Mouse wheel scrolled.
     Scroll {
+        /// X position in physical pixels.
+        x: f64,
+        /// Y position in physical pixels.
+        y: f64,
         /// Horizontal scroll delta.
         delta_x: f64,
         /// Vertical scroll delta.
         delta_y: f64,
+        /// Active modifiers.
+        modifiers: Modifiers,
     },
 }
 
@@ -193,9 +203,21 @@ pub fn translate_key_event(
         }
     }
 
-    let action = match &event.logical_key {
+    let action = key_action_from_logical_key(&event.logical_key);
+
+    action.map(|action| InputEvent {
+        action,
+        modifiers: mods,
+        is_repeat,
+        event_type,
+    })
+}
+
+fn key_action_from_logical_key(key: &Key) -> Option<KeyAction> {
+    match key {
         Key::Named(named) => match named {
             NamedKey::Enter => Some(KeyAction::Enter),
+            NamedKey::Space => Some(KeyAction::Char(' ')),
             NamedKey::Tab => Some(KeyAction::Tab),
             NamedKey::Backspace => Some(KeyAction::Backspace),
             NamedKey::Delete => Some(KeyAction::Delete),
@@ -231,12 +253,18 @@ pub fn translate_key_event(
             Some(KeyAction::Char(ch))
         }
         _ => None,
-    };
+    }
+}
 
-    action.map(|action| InputEvent {
-        action,
-        modifiers: mods,
-        is_repeat,
-        event_type,
-    })
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn translate_named_space_to_space_character() {
+        assert_eq!(
+            key_action_from_logical_key(&Key::Named(NamedKey::Space)),
+            Some(KeyAction::Char(' '))
+        );
+    }
 }

@@ -17,7 +17,7 @@ wok init
 ```toml
 shell = "zsh"
 font_family = "JetBrains Mono"
-font_size = 14.0
+font_size = 24.0
 input_position = "bottom"
 command_entry_mode = "shell_native"
 scrollback_lines = 10000
@@ -39,7 +39,7 @@ external_plugin_command = "node ~/.config/wok/plugins/bridge.js"
 | --- | --- | --- | --- | --- |
 | `shell` | string | auto-detected | Active | Shell to use: `bash`, `zsh`, `fish`, `powershell`, or `wsl:<distro>` |
 | `font_family` | string | `"JetBrains Mono"` | Active | Selects the font family used for glyph rasterization and cell metric measurement |
-| `font_size` | float | `14.0` | Active | Font size in points |
+| `font_size` | float | `24.0` | Active | Font size in points |
 | `input_position` | string | `"bottom"` | Active | Places the owned input bar above or below the viewport |
 | `command_entry_mode` | string | `"shell_native"` | Active | Chooses prompt-time command entry routing: `shell_native` keeps shell-side editing, `owned_primary` routes idle prompt input into Wok's editor with pane-first history recall and `Ctrl+R` command search |
 | `scrollback_lines` | integer | `10000` | Active | Number of scrollback lines to retain |

@@ -72,6 +72,7 @@ pub(crate) fn render_tab_bar(
     font: &mut FontSystem,
     rect: Rect,
     tabs: &[(bool, String)],
+    scroll_offset: f32,
     surface_opacity: f32,
 ) {
     render.batch.push_bg_quad(
@@ -85,9 +86,12 @@ pub(crate) fn render_tab_bar(
         return;
     }
 
-    let tab_width = (rect.w / tabs.len() as f32).clamp(120.0, 220.0);
+    let tab_width = tab_bar_tab_width(rect, tabs.len());
     for (index, (is_active, label)) in tabs.iter().enumerate() {
-        let x = rect.x + index as f32 * tab_width;
+        let x = rect.x + index as f32 * tab_width - scroll_offset;
+        if x >= rect.x + rect.w || x + tab_width <= rect.x {
+            continue;
+        }
         let background = if *is_active {
             [0.14, 0.16, 0.22, 1.0]
         } else {
@@ -109,6 +113,19 @@ pub(crate) fn render_tab_bar(
             with_opacity([0.75, 0.79, 0.96, 1.0], surface_opacity),
         );
     }
+}
+
+pub(crate) fn tab_bar_tab_width(rect: Rect, tab_count: usize) -> f32 {
+    if tab_count == 0 {
+        0.0
+    } else {
+        (rect.w / tab_count as f32).clamp(120.0, 220.0)
+    }
+}
+
+pub(crate) fn tab_bar_max_scroll(rect: Rect, tab_count: usize) -> f32 {
+    let content_width = tab_bar_tab_width(rect, tab_count) * tab_count as f32;
+    (content_width - rect.w).max(0.0)
 }
 
 pub(crate) fn render_status_bar(
@@ -522,8 +539,12 @@ pub(crate) fn render_command_palette(
     cursor_visible: bool,
     surface_opacity: f32,
 ) {
-    let panel_width = (viewport.w * 0.78).clamp(520.0, 980.0);
-    let panel_height = (viewport.h * 0.72).clamp(220.0, 560.0);
+    let panel_width = (viewport.w * 0.92)
+        .clamp(420.0, 1180.0)
+        .min((viewport.w - 24.0).max(240.0));
+    let panel_height = (viewport.h * 0.78)
+        .clamp(240.0, 640.0)
+        .min((viewport.h - 24.0).max(180.0));
     let rect = Rect::new(
         viewport.x + (viewport.w - panel_width) * 0.5,
         viewport.y + (viewport.h - panel_height) * 0.5,
@@ -568,14 +589,20 @@ pub(crate) fn render_command_palette(
     let padding_y = 10.0;
     let base_x = rect.x + padding_x;
     let base_y = rect.y + padding_y;
+    let inner_width = (rect.w - padding_x * 2.0).max(font.metrics.cell_width);
     let input_line = input.lines.first().cloned().unwrap_or_default();
     let prefix = "Command Palette: ";
+    let help_text = fit_text_to_width(
+        "Run an action, workflow, alias, or recent command",
+        inner_width,
+        font.metrics.cell_width,
+    );
     push_text(
         render,
         font,
         base_x,
         base_y,
-        "Run an action, workflow, alias, or recent command",
+        &help_text,
         with_opacity(
             [
                 theme.status_bar_text.r,
@@ -586,12 +613,17 @@ pub(crate) fn render_command_palette(
             surface_opacity,
         ),
     );
+    let input_text = fit_text_to_width(
+        &format!("{prefix}{input_line}"),
+        inner_width,
+        font.metrics.cell_width,
+    );
     push_text(
         render,
         font,
         base_x,
         base_y + font.metrics.cell_height + 2.0,
-        &format!("{prefix}{input_line}"),
+        &input_text,
         with_opacity(
             [
                 theme.foreground.r,
@@ -603,7 +635,13 @@ pub(crate) fn render_command_palette(
         ),
     );
 
-    let entries_max = 15usize;
+    let row_height = font.metrics.cell_height + 4.0;
+    let list_top = base_y + font.metrics.cell_height * 2.0 + 8.0;
+    let list_bottom = rect.y + rect.h - font.metrics.cell_height - 18.0;
+    let entries_max = ((list_bottom - list_top) / row_height)
+        .floor()
+        .max(4.0)
+        .min(15.0) as usize;
     let available_entries = &palette.filtered;
     let mut start_idx = 0usize;
     if !available_entries.is_empty() {
@@ -614,15 +652,20 @@ pub(crate) fn render_command_palette(
     }
     let end_idx = (start_idx + entries_max).min(available_entries.len());
     let query = palette_query_content(&palette.query);
-    let mut row_y = base_y + font.metrics.cell_height * 2.0 + 8.0;
+    let mut row_y = list_top;
 
     if available_entries.is_empty() {
+        let empty_text = fit_text_to_width(
+            "No matching entries. Press Enter to run raw command input.",
+            inner_width,
+            font.metrics.cell_width,
+        );
         push_text(
             render,
             font,
             base_x,
             row_y,
-            "No matching entries. Press Enter to run raw command input.",
+            &empty_text,
             with_opacity(
                 [
                     theme.status_bar_text.r,
@@ -643,12 +686,20 @@ pub(crate) fn render_command_palette(
                 continue;
             };
             if last_category != Some(entry.category) {
+                if row_y + font.metrics.cell_height > list_bottom {
+                    break;
+                }
+                let category = fit_text_to_width(
+                    palette_category_label(entry.category),
+                    inner_width,
+                    font.metrics.cell_width,
+                );
                 push_text(
                     render,
                     font,
                     base_x,
                     row_y,
-                    palette_category_label(entry.category),
+                    &category,
                     with_opacity(
                         [
                             theme.status_bar_text.r,
@@ -662,6 +713,9 @@ pub(crate) fn render_command_palette(
                 row_y += font.metrics.cell_height + 2.0;
                 last_category = Some(entry.category);
             }
+            if row_y + font.metrics.cell_height > list_bottom {
+                break;
+            }
             if absolute_idx == palette.selected_index {
                 render.batch.push_bg_quad(
                     rect.x + 8.0,
@@ -674,7 +728,17 @@ pub(crate) fn render_command_palette(
                     ),
                 );
             }
+            let label_width = (inner_width * 0.34).clamp(160.0, 320.0);
+            let gap = 16.0;
+            let description_x = base_x + label_width + gap;
+            let description_width = (rect.x + rect.w - padding_x - description_x).max(0.0);
+            let visible_label =
+                fit_text_to_width(&entry.label, label_width, font.metrics.cell_width);
+            let visible_label_cols = visible_label.chars().count();
             for column in palette_highlight_columns(&entry.label, query) {
+                if column >= visible_label_cols {
+                    continue;
+                }
                 render.batch.push_bg_quad(
                     base_x + column as f32 * font.metrics.cell_width,
                     row_y - 1.0,
@@ -696,7 +760,7 @@ pub(crate) fn render_command_palette(
                 font,
                 base_x,
                 row_y,
-                &entry.label,
+                &visible_label,
                 with_opacity(
                     [
                         theme.foreground.r,
@@ -707,12 +771,17 @@ pub(crate) fn render_command_palette(
                     surface_opacity,
                 ),
             );
+            let visible_description = fit_text_to_width(
+                &entry.description,
+                description_width,
+                font.metrics.cell_width,
+            );
             push_text(
                 render,
                 font,
-                base_x + 220.0,
+                description_x,
                 row_y,
-                &entry.description,
+                &visible_description,
                 with_opacity(
                     [
                         theme.status_bar_text.r,
@@ -753,9 +822,12 @@ pub(crate) fn render_command_palette(
 
     if cursor_visible {
         if let Some((cursor_row, cursor_col)) = input.cursors.first().copied() {
+            let max_cursor_col = ((inner_width / font.metrics.cell_width).floor() as usize)
+                .saturating_sub(prefix.chars().count())
+                .min(cursor_col);
             let cursor_x = base_x
                 + prefix.chars().count() as f32 * font.metrics.cell_width
-                + cursor_col as f32 * font.metrics.cell_width;
+                + max_cursor_col as f32 * font.metrics.cell_width;
             let cursor_y = base_y
                 + font.metrics.cell_height
                 + 2.0
@@ -794,6 +866,31 @@ pub(crate) fn palette_query_content(query: &str) -> &str {
         return stripped.trim_start();
     }
     trimmed
+}
+
+fn fit_text_to_width(text: &str, max_width: f32, cell_width: f32) -> String {
+    if max_width <= 0.0 || cell_width <= 0.0 {
+        return String::new();
+    }
+    let max_chars = (max_width / cell_width).floor() as usize;
+    fit_text_to_chars(text, max_chars)
+}
+
+fn fit_text_to_chars(text: &str, max_chars: usize) -> String {
+    let char_count = text.chars().count();
+    if char_count <= max_chars {
+        return text.to_string();
+    }
+    if max_chars == 0 {
+        return String::new();
+    }
+    if max_chars <= 3 {
+        return ".".repeat(max_chars);
+    }
+
+    let mut truncated = text.chars().take(max_chars - 3).collect::<String>();
+    truncated.push_str("...");
+    truncated
 }
 
 pub(crate) fn palette_highlight_columns(label: &str, query: &str) -> Vec<usize> {

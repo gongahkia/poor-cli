@@ -172,6 +172,38 @@ impl TerminalState {
         self.term.mode().contains(term::TermMode::ALT_SCREEN)
     }
 
+    /// Return true when the terminal has enabled click mouse reporting.
+    pub fn reports_mouse_clicks(&self) -> bool {
+        self.term
+            .mode()
+            .contains(term::TermMode::MOUSE_REPORT_CLICK)
+    }
+
+    /// Return true when the terminal has enabled button-drag mouse reporting.
+    pub fn reports_mouse_drag(&self) -> bool {
+        self.term.mode().contains(term::TermMode::MOUSE_DRAG)
+    }
+
+    /// Return true when the terminal has enabled all-motion mouse reporting.
+    pub fn reports_mouse_motion(&self) -> bool {
+        self.term.mode().contains(term::TermMode::MOUSE_MOTION)
+    }
+
+    /// Return true when any xterm mouse reporting mode is enabled.
+    pub fn reports_mouse(&self) -> bool {
+        self.term.mode().intersects(term::TermMode::MOUSE_MODE)
+    }
+
+    /// Return true when SGR mouse encoding is enabled.
+    pub fn uses_sgr_mouse(&self) -> bool {
+        self.term.mode().contains(term::TermMode::SGR_MOUSE)
+    }
+
+    /// Return true when alternate-screen scroll should be sent to the PTY.
+    pub fn uses_alternate_scroll(&self) -> bool {
+        self.term.mode().contains(term::TermMode::ALTERNATE_SCROLL)
+    }
+
     /// Resize the terminal grid.
     pub fn resize(&mut self, cols: usize, rows: usize) {
         let size = TermSize::new(cols, rows);
@@ -415,7 +447,7 @@ pub struct CellRenderData {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CellColor {
     /// A named ANSI color index (0-15 for standard, 256=fg, 257=bg).
-    Named(u8),
+    Named(u16),
     /// An indexed 256-color palette entry.
     Indexed(u8),
     /// A direct RGB color.
@@ -424,7 +456,7 @@ pub enum CellColor {
 
 fn color_to_rgba(color: &Color) -> CellColor {
     match color {
-        Color::Named(named) => CellColor::Named(*named as u8),
+        Color::Named(named) => CellColor::Named(*named as u16),
         Color::Indexed(idx) => CellColor::Indexed(*idx),
         Color::Spec(rgb) => CellColor::Rgb(rgb.r, rgb.g, rgb.b),
     }

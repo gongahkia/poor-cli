@@ -9,7 +9,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::WindowId;
 
 use crate::frame_clock::FrameClock;
-use crate::handler::AppHandler;
+use crate::handler::{AppHandler, AppMenuAction};
 use crate::input::{translate_key_event, MouseEvent};
 use crate::window::{PlatformError, WindowConfig, WokWindow};
 
@@ -35,6 +35,8 @@ pub fn run_event_loop<H: AppHandler + 'static>(
         cursor_position: None,
         frame_clock: FrameClock::new(60),
         initialized: false,
+        #[cfg(target_os = "macos")]
+        mac_menu: None,
     };
 
     event_loop
@@ -52,6 +54,8 @@ struct WinitApp<H: AppHandler> {
     cursor_position: Option<(f64, f64)>,
     frame_clock: FrameClock,
     initialized: bool,
+    #[cfg(target_os = "macos")]
+    mac_menu: Option<muda::Menu>,
 }
 
 impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
@@ -64,6 +68,16 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
         match event_loop.create_window(attrs) {
             Ok(window) => {
                 info!("window created successfully");
+                #[cfg(target_os = "macos")]
+                if self.mac_menu.is_none() {
+                    match create_macos_menu() {
+                        Ok(menu) => {
+                            menu.init_for_nsapp();
+                            self.mac_menu = Some(menu);
+                        }
+                        Err(error) => warn!("failed to initialize macOS app menu: {error}"),
+                    }
+                }
                 let wok_window = WokWindow::from_winit(window);
                 let arc_window = wok_window.window.clone();
                 self.window = Some(wok_window);
@@ -86,12 +100,22 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
             return;
         }
 
+        #[cfg(target_os = "macos")]
+        self.drain_macos_menu_events(event_loop);
+
         let next_frame_at = Instant::now() + self.frame_clock.time_until_next_frame();
         event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(next_frame_at));
 
-        if self.frame_clock.should_render() && self.handler.on_frame_tick() {
-            if let Some(win) = &self.window {
-                win.window.request_redraw();
+        if self.frame_clock.should_render() {
+            let should_redraw = self.handler.on_frame_tick();
+            if self.handler.should_exit() {
+                event_loop.exit();
+                return;
+            }
+            if should_redraw {
+                if let Some(win) = &self.window {
+                    win.window.request_redraw();
+                }
             }
         }
     }
@@ -145,9 +169,16 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor_position = Some((position.x, position.y));
+                let modifiers = crate::input::Modifiers {
+                    ctrl: self.current_modifiers.state().control_key(),
+                    alt: self.current_modifiers.state().alt_key(),
+                    shift: self.current_modifiers.state().shift_key(),
+                    meta: self.current_modifiers.state().super_key(),
+                };
                 self.handler.on_mouse_event(MouseEvent::Move {
                     x: position.x,
                     y: position.y,
+                    modifiers,
                 });
             }
             WindowEvent::MouseInput { state, button, .. } => {
@@ -168,19 +199,33 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
                         });
                     }
                     winit::event::ElementState::Released => {
-                        self.handler
-                            .on_mouse_event(MouseEvent::Release { button, x, y });
+                        self.handler.on_mouse_event(MouseEvent::Release {
+                            button,
+                            x,
+                            y,
+                            modifiers,
+                        });
                     }
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
+                let (x, y) = self.cursor_position.unwrap_or((0.0, 0.0));
                 let (dx, dy) = match delta {
                     winit::event::MouseScrollDelta::LineDelta(x, y) => (f64::from(x), f64::from(y)),
                     winit::event::MouseScrollDelta::PixelDelta(pos) => (pos.x, pos.y),
                 };
+                let modifiers = crate::input::Modifiers {
+                    ctrl: self.current_modifiers.state().control_key(),
+                    alt: self.current_modifiers.state().alt_key(),
+                    shift: self.current_modifiers.state().shift_key(),
+                    meta: self.current_modifiers.state().super_key(),
+                };
                 self.handler.on_mouse_event(MouseEvent::Scroll {
+                    x,
+                    y,
                     delta_x: dx,
                     delta_y: dy,
+                    modifiers,
                 });
             }
             WindowEvent::RedrawRequested => {
@@ -189,4 +234,181 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
             _ => {}
         }
     }
+}
+
+#[cfg(target_os = "macos")]
+impl<H: AppHandler> WinitApp<H> {
+    fn drain_macos_menu_events(&mut self, event_loop: &ActiveEventLoop) {
+        while let Ok(event) = muda::MenuEvent::receiver().try_recv() {
+            let Some(action) = mac_menu_action(event.id.as_ref()) else {
+                continue;
+            };
+            if self.handler.on_menu_action(action) {
+                event_loop.exit();
+                return;
+            }
+            if let Some(win) = &self.window {
+                win.window.request_redraw();
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+const MENU_SETTINGS: &str = "wok.menu.settings";
+#[cfg(target_os = "macos")]
+const MENU_RELOAD_CONFIG: &str = "wok.menu.reload_config";
+#[cfg(target_os = "macos")]
+const MENU_COMMAND_PALETTE: &str = "wok.menu.command_palette";
+#[cfg(target_os = "macos")]
+const MENU_NEW_TAB: &str = "wok.menu.new_tab";
+#[cfg(target_os = "macos")]
+const MENU_CLOSE_TAB: &str = "wok.menu.close_tab";
+#[cfg(target_os = "macos")]
+const MENU_COPY: &str = "wok.menu.copy";
+#[cfg(target_os = "macos")]
+const MENU_PASTE: &str = "wok.menu.paste";
+#[cfg(target_os = "macos")]
+const MENU_SELECT_ALL: &str = "wok.menu.select_all";
+#[cfg(target_os = "macos")]
+const MENU_ZOOM_IN: &str = "wok.menu.zoom_in";
+#[cfg(target_os = "macos")]
+const MENU_ZOOM_OUT: &str = "wok.menu.zoom_out";
+#[cfg(target_os = "macos")]
+const MENU_ZOOM_RESET: &str = "wok.menu.zoom_reset";
+#[cfg(target_os = "macos")]
+const MENU_TOGGLE_INPUT_POSITION: &str = "wok.menu.toggle_input_position";
+#[cfg(target_os = "macos")]
+const MENU_NEXT_TAB: &str = "wok.menu.next_tab";
+#[cfg(target_os = "macos")]
+const MENU_PREV_TAB: &str = "wok.menu.prev_tab";
+#[cfg(target_os = "macos")]
+const MENU_QUIT: &str = "wok.menu.quit";
+
+#[cfg(target_os = "macos")]
+fn mac_menu_action(id: &str) -> Option<AppMenuAction> {
+    match id {
+        MENU_SETTINGS => Some(AppMenuAction::OpenSettings),
+        MENU_RELOAD_CONFIG => Some(AppMenuAction::ReloadConfiguration),
+        MENU_COMMAND_PALETTE => Some(AppMenuAction::OpenCommandPalette),
+        MENU_NEW_TAB => Some(AppMenuAction::NewTab),
+        MENU_CLOSE_TAB => Some(AppMenuAction::CloseTab),
+        MENU_COPY => Some(AppMenuAction::Copy),
+        MENU_PASTE => Some(AppMenuAction::Paste),
+        MENU_SELECT_ALL => Some(AppMenuAction::SelectAll),
+        MENU_ZOOM_IN => Some(AppMenuAction::ZoomIn),
+        MENU_ZOOM_OUT => Some(AppMenuAction::ZoomOut),
+        MENU_ZOOM_RESET => Some(AppMenuAction::ZoomReset),
+        MENU_TOGGLE_INPUT_POSITION => Some(AppMenuAction::ToggleInputPosition),
+        MENU_NEXT_TAB => Some(AppMenuAction::NextTab),
+        MENU_PREV_TAB => Some(AppMenuAction::PrevTab),
+        MENU_QUIT => Some(AppMenuAction::Quit),
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn create_macos_menu() -> muda::Result<muda::Menu> {
+    use muda::{accelerator::Accelerator, Menu, MenuItem, PredefinedMenuItem, Submenu};
+
+    fn accel(value: &str) -> Option<Accelerator> {
+        value.parse().ok()
+    }
+
+    let settings = MenuItem::with_id(MENU_SETTINGS, "Settings...", true, accel("super+Comma"));
+    let reload_config = MenuItem::with_id(
+        MENU_RELOAD_CONFIG,
+        "Reload Configuration",
+        true,
+        accel("super+shift+Comma"),
+    );
+    let quit = MenuItem::with_id(MENU_QUIT, "Quit Wok", true, accel("super+KeyQ"));
+    let app_menu = Submenu::with_items(
+        "Wok",
+        true,
+        &[
+            &PredefinedMenuItem::about(Some("About Wok"), None),
+            &PredefinedMenuItem::separator(),
+            &settings,
+            &reload_config,
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::services(Some("Services")),
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::hide(Some("Hide Wok")),
+            &PredefinedMenuItem::hide_others(Some("Hide Others")),
+            &PredefinedMenuItem::show_all(Some("Show All")),
+            &PredefinedMenuItem::separator(),
+            &quit,
+        ],
+    )?;
+
+    let new_tab = MenuItem::with_id(MENU_NEW_TAB, "New Tab", true, accel("super+KeyT"));
+    let close_tab = MenuItem::with_id(MENU_CLOSE_TAB, "Close Tab", true, accel("super+KeyW"));
+    let file_menu = Submenu::with_items("File", true, &[&new_tab, &close_tab])?;
+
+    let copy = MenuItem::with_id(MENU_COPY, "Copy", true, accel("super+KeyC"));
+    let paste = MenuItem::with_id(MENU_PASTE, "Paste", true, accel("super+KeyV"));
+    let select_all = MenuItem::with_id(MENU_SELECT_ALL, "Select All", true, accel("super+KeyA"));
+    let edit_menu = Submenu::with_items(
+        "Edit",
+        true,
+        &[&copy, &paste, &PredefinedMenuItem::separator(), &select_all],
+    )?;
+
+    let command_palette = MenuItem::with_id(
+        MENU_COMMAND_PALETTE,
+        "Command Palette...",
+        true,
+        accel("super+shift+KeyP"),
+    );
+    let zoom_in = MenuItem::with_id(MENU_ZOOM_IN, "Zoom In", true, accel("super+Equal"));
+    let zoom_out = MenuItem::with_id(MENU_ZOOM_OUT, "Zoom Out", true, accel("super+Minus"));
+    let zoom_reset = MenuItem::with_id(MENU_ZOOM_RESET, "Actual Size", true, accel("super+Digit0"));
+    let toggle_input_position = MenuItem::with_id(
+        MENU_TOGGLE_INPUT_POSITION,
+        "Toggle Input Position",
+        true,
+        None,
+    );
+    let view_menu = Submenu::with_items(
+        "View",
+        true,
+        &[
+            &command_palette,
+            &PredefinedMenuItem::separator(),
+            &zoom_in,
+            &zoom_out,
+            &zoom_reset,
+            &PredefinedMenuItem::separator(),
+            &toggle_input_position,
+        ],
+    )?;
+
+    let next_tab = MenuItem::with_id(
+        MENU_NEXT_TAB,
+        "Next Tab",
+        true,
+        accel("super+shift+BracketRight"),
+    );
+    let prev_tab = MenuItem::with_id(
+        MENU_PREV_TAB,
+        "Previous Tab",
+        true,
+        accel("super+shift+BracketLeft"),
+    );
+    let window_menu = Submenu::with_items(
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(Some("Minimize")),
+            &PredefinedMenuItem::fullscreen(Some("Enter Full Screen")),
+            &PredefinedMenuItem::separator(),
+            &next_tab,
+            &prev_tab,
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::bring_all_to_front(Some("Bring All to Front")),
+        ],
+    )?;
+
+    Menu::with_items(&[&app_menu, &file_menu, &edit_menu, &view_menu, &window_menu])
 }

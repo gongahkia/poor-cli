@@ -131,6 +131,8 @@ pub enum Action {
     ZoomOut,
     /// Reset font size.
     ZoomReset,
+    /// Open the Wok settings file.
+    OpenSettings,
     /// Clear terminal screen.
     ClearScreen,
     /// Send EOF (Ctrl+D).

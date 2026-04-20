@@ -84,23 +84,44 @@ impl GlobalSearch {
         self.matches.clear();
         self.current = 0;
 
+        if query.is_empty() {
+            return;
+        }
+
         let query_lower = query.to_lowercase();
         for line in lines {
+            if query.is_ascii() && line.text.is_ascii() {
+                for col_start in ascii_case_insensitive_matches(&line.text, query) {
+                    let col_start = col_start as u16;
+                    let col_end = col_start + query.len() as u16;
+                    self.matches.push(GlobalMatch {
+                        pane_id: line.pane_id,
+                        tab_id: line.tab_id,
+                        row: line.row,
+                        block_id: line.block_id,
+                        is_command: line.is_command,
+                        col_start,
+                        col_end,
+                    });
+                }
+                continue;
+            }
+
             let text_lower = line.text.to_lowercase();
             let mut start = 0;
             while let Some(pos) = text_lower[start..].find(&query_lower) {
-                let col_start = (start + pos) as u16;
-                let col_end = col_start + query.len() as u16;
+                let col_start = start + pos;
+                let col_end = col_start + query.len();
                 self.matches.push(GlobalMatch {
                     pane_id: line.pane_id,
                     tab_id: line.tab_id,
                     row: line.row,
                     block_id: line.block_id,
                     is_command: line.is_command,
-                    col_start,
-                    col_end,
+                    col_start: col_start as u16,
+                    col_end: col_end as u16,
                 });
-                start += pos + query.len();
+                start = col_end;
             }
         }
     }
@@ -135,6 +156,28 @@ impl GlobalSearch {
             format!("{} of {}", self.current + 1, self.matches.len())
         }
     }
+}
+
+fn ascii_case_insensitive_matches<'a>(
+    text: &'a str,
+    query: &'a str,
+) -> impl Iterator<Item = usize> + 'a {
+    let text = text.as_bytes();
+    let query = query.as_bytes();
+    let mut start = 0;
+
+    std::iter::from_fn(move || {
+        if query.is_empty() || start + query.len() > text.len() {
+            return None;
+        }
+
+        let position = text[start..]
+            .windows(query.len())
+            .position(|candidate| candidate.eq_ignore_ascii_case(query))?;
+        let match_start = start + position;
+        start = match_start + query.len();
+        Some(match_start)
+    })
 }
 
 impl Default for GlobalSearch {
@@ -211,5 +254,21 @@ mod tests {
         search.next_match(); // moves to 1
         search.next_match(); // wraps to 0
         assert_eq!(search.current, 0);
+    }
+
+    #[test]
+    fn test_ascii_case_insensitive_search() {
+        let mut search = GlobalSearch::new();
+        let lines = vec![SearchLine {
+            pane_id: 1,
+            tab_id: 1,
+            row: 0,
+            block_id: None,
+            is_command: false,
+            text: "Error ERROR error".to_string(),
+        }];
+        search.search("error", &lines);
+        assert_eq!(search.matches.len(), 3);
+        assert_eq!(search.matches[1].col_start, 6);
     }
 }

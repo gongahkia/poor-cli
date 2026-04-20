@@ -170,7 +170,7 @@ impl Default for WokConfig {
             shell: wok_terminal::shell::detect_default_shell(),
             theme_path: None,
             font_family: "JetBrains Mono".to_string(),
-            font_size: 14.0,
+            font_size: 24.0,
             input_position: InputPosition::Bottom,
             command_entry_mode: CommandEntryMode::ShellNative,
             scrollback_lines: 10_000,
@@ -427,7 +427,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = WokConfig::default();
-        assert!((config.font_size - 14.0).abs() < f32::EPSILON);
+        assert!((config.font_size - 24.0).abs() < f32::EPSILON);
         assert_eq!(config.scrollback_lines, 10_000);
         assert_eq!(config.cursor_style, CursorStyle::Block);
         assert_eq!(config.input_position, InputPosition::Bottom);
@@ -438,7 +438,7 @@ mod tests {
     fn test_load_with_no_file() {
         let config = WokConfig::load();
         // Should return defaults without error
-        assert!((config.font_size - 14.0).abs() < f32::EPSILON);
+        assert!((config.font_size - 24.0).abs() < f32::EPSILON);
     }
 
     #[test]
