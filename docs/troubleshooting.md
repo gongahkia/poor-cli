@@ -75,6 +75,8 @@ For release-week validation drift, run:
 npm run release:evidence
 ```
 
+If release evidence fails on KPI policy breaches, inspect `artifacts/operations/latest.json` for `alerts` and `overallPolicyStatus`, then adjust thresholds via `SG_APIS_KPI_THRESHOLDS_PATH` or fix forward.
+
 ## Logging Conventions Added
 
 This repo now logs structured JSON entries across:

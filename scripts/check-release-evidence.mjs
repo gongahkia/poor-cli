@@ -14,6 +14,7 @@ const parseArgs = (argv) => {
     kpi: resolve(root, "artifacts/operations/latest.json"),
     maxAgeDays: 30,
     allowSloBreach: false,
+    allowKpiBreach: false,
   };
 
   for (let index = 0; index < argv.length; index++) {
@@ -44,6 +45,10 @@ const parseArgs = (argv) => {
     }
     if (arg === "--allow-slo-breach") {
       parsed.allowSloBreach = true;
+      continue;
+    }
+    if (arg === "--allow-kpi-breach") {
+      parsed.allowKpiBreach = true;
     }
   }
 
@@ -124,6 +129,11 @@ const main = async () => {
   assert(kpi.localSurface?.apiFamilies === API_CATALOG.length, "KPI localSurface.apiFamilies is out of sync with current catalog.");
   assert(kpi.localSurface?.workflows === WORKFLOW_CATALOG.length, "KPI localSurface.workflows is out of sync with current catalog.");
   assert(kpi.localSurface?.recipes === RECIPE_CATALOG.length, "KPI localSurface.recipes is out of sync with current catalog.");
+  assert(typeof kpi.overallPolicyStatus === "string", "KPI dashboard is missing overallPolicyStatus.");
+
+  if (kpi.overallPolicyStatus === "breach" && !args.allowKpiBreach) {
+    fail("KPI dashboard policy status is breach; fix forward or rerun with --allow-kpi-breach for emergency release override.");
+  }
 
   assert(
     ecosystem.localSurface?.toolCount === TOOL_CATALOG.length,
@@ -144,6 +154,8 @@ const main = async () => {
     recipes: RECIPE_CATALOG.length,
     kpiInstallabilityStatus: kpi.kpis?.installability?.status ?? "unknown",
     kpiSloStatus: kpi.kpis?.slo?.overallStatus ?? "unknown",
+    kpiOverallPolicyStatus: kpi.overallPolicyStatus ?? "unknown",
+    kpiAlertCount: Array.isArray(kpi.alerts) ? kpi.alerts.length : 0,
   };
 
   process.stdout.write(`release evidence OK\n${JSON.stringify(summary, null, 2)}\n`);

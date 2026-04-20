@@ -30,6 +30,8 @@ requireFile(ownershipPath);
 requireFile(resolve(root, "docs/governance-checklist.md"));
 requireFile(resolve(root, "docs/deprecation-policy.md"));
 requireFile(resolve(root, "docs/audit-retention-policy.md"));
+requireFile(resolve(root, "docs/kpi-thresholds.md"));
+requireFile(resolve(root, "config/kpi-thresholds.example.json"));
 requireFile(resolve(root, "docs/quarterly-product-health-template.md"));
 requireFile(resolve(root, "docs/release.md"));
 
@@ -183,6 +185,12 @@ ensureIncludes(resolve(root, "docs/audit-retention-policy.md"), [
   "requestId",
 ]);
 
+ensureIncludes(resolve(root, "docs/kpi-thresholds.md"), [
+  "SG_APIS_KPI_THRESHOLDS_PATH",
+  "overallPolicyStatus",
+  "allow-kpi-breach",
+]);
+
 ensureIncludes(resolve(root, "docs/quarterly-product-health-template.md"), [
   "KPI Summary",
   "Reliability And Security",
@@ -196,6 +204,7 @@ ensureIncludes(resolve(root, "docs/release.md"), [
   "npm run release:preflight",
   "npm run kpis:dashboard",
   "npm run release:evidence",
+  "allow-kpi-breach",
 ]);
 
 if (!Array.isArray(OPS_TAXONOMY_CATALOG.errorCodes)) {

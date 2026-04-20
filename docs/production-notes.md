@@ -21,6 +21,7 @@ Relevant env vars:
 - `SG_APIS_TOOLSETS`
 - `SG_APIS_TOOL_PROFILE`
 - `SG_APIS_BENCHMARK_SNAPSHOT_PATH`
+- `SG_APIS_KPI_THRESHOLDS_PATH`
 - `SG_APIS_STATE_DIR`
 - `SG_APIS_ARTIFACT_DB_PATH`
 - `SG_APIS_AUDIT_MAX_ENTRIES`
@@ -57,6 +58,8 @@ The CI workflow uploads both artifacts with retention for longitudinal SLO track
 - `artifacts/operations/history/<timestamp>.json` (history for trend comparisons)
 
 The dashboard consolidates installability, SLO posture, and ecosystem signal availability into one machine-readable artifact.
+
+Set `SG_APIS_KPI_THRESHOLDS_PATH` when you want policy-driven alerting from a custom threshold file. See [kpi-thresholds.md](./kpi-thresholds.md).
 
 Protected-resource metadata is served at `/.well-known/oauth-protected-resource/mcp`.
 

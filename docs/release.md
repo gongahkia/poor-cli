@@ -64,6 +64,8 @@ npm run kpis:dashboard
 npm run release:evidence
 ```
 
+If your release lane uses custom KPI thresholds, set `SG_APIS_KPI_THRESHOLDS_PATH` before generating KPI and evidence artifacts.
+
 6. Run the live validation pass:
 
 ```bash
@@ -137,6 +139,8 @@ CI also publishes KPI dashboard evidence as:
 
 - `artifacts/operations/latest.json`
 - `artifacts/operations/history/<timestamp>.json`
+
+`release:evidence` treats `overallPolicyStatus=breach` as release-blocking by default. Use `--allow-kpi-breach` only for an explicit emergency override.
 
 ## Post-Release Checks
 

@@ -59,6 +59,7 @@ ensureIncludes(readmeTarget, [
   "docs/known-issues.md",
   "docs/governance-checklist.md",
   "docs/audit-retention-policy.md",
+  "docs/kpi-thresholds.md",
   "docs/troubleshooting.md",
   "npm run diagnostics",
   "npm run kpis:dashboard",
@@ -198,6 +199,7 @@ ensureIncludes("docs/production-notes.md", [
   "npm run diagnostics",
   "npm run kpis:dashboard",
   "SG_APIS_AUDIT_RETENTION_SEC",
+  "SG_APIS_KPI_THRESHOLDS_PATH",
 ]);
 
 ensureIncludes("docs/compatibility-matrix.md", [
@@ -218,6 +220,7 @@ ensureIncludes("docs/known-issues.md", [
 ensureIncludes("docs/release.md", [
   "npm run release:preflight",
   "npm run release:evidence",
+  "allow-kpi-breach",
 ]);
 
 ensureIncludes("docs/governance-checklist.md", [
@@ -230,6 +233,20 @@ ensureIncludes("docs/troubleshooting.md", [
   "sg_trace_lookup",
   "sg_request_lookup",
   "npm run release:evidence",
+  "overallPolicyStatus",
+]);
+
+ensureIncludes("docs/kpi-thresholds.md", [
+  "kpi-dashboard/v1",
+  "SG_APIS_KPI_THRESHOLDS_PATH",
+  "overallPolicyStatus",
+  "allow-kpi-breach",
+]);
+
+ensureIncludes("config/kpi-thresholds.example.json", [
+  "\"schemaVersion\": \"kpi-thresholds/v1\"",
+  "\"maxBreachCount\"",
+  "\"minInstallSuccessRatePct\"",
 ]);
 
 ensureIncludes("docs/contributing.md", [
