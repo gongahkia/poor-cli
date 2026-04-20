@@ -92,6 +92,22 @@ pub(crate) fn run_doctor() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+pub(crate) fn run_reset(all: bool, yes: bool) -> Result<(), Box<dyn Error>> {
+    if !yes {
+        return Err("reset is destructive; re-run with `wok reset --yes`".into());
+    }
+    let config_dir = WokConfig::config_dir();
+    let stats = reset_at(&config_dir, all)?;
+    println!("Reset Wok managed files at {}", config_dir.display());
+    for path in &stats.removed {
+        println!("removed {}", path.display());
+    }
+    for path in &stats.missing {
+        println!("absent  {}", path.display());
+    }
+    Ok(())
+}
+
 fn print_stats(stats: &InitStats) {
     for path in &stats.created {
         println!("created {}", path.display());
@@ -189,6 +205,57 @@ fn doctor_checks_at(config_dir: &Path) -> Vec<DoctorCheck> {
     });
 
     checks
+}
+
+#[derive(Default)]
+struct ResetStats {
+    removed: Vec<PathBuf>,
+    missing: Vec<PathBuf>,
+}
+
+fn reset_at(config_dir: &Path, all: bool) -> io::Result<ResetStats> {
+    let mut stats = ResetStats::default();
+    let mut remove_targets = vec![
+        config_dir.join("config.toml"),
+        config_dir.join("init.lua"),
+        config_dir.join("shell").join("bash.sh"),
+        config_dir.join("shell").join("zsh.zsh"),
+        config_dir.join("shell").join("fish.fish"),
+    ];
+    if all {
+        remove_targets.push(config_dir.join("session.json"));
+        remove_targets.push(config_dir.join("sessions"));
+        remove_targets.push(config_dir.join("themes"));
+        remove_targets.push(config_dir.join("workflows"));
+    }
+
+    for path in remove_targets {
+        remove_path(path, &mut stats)?;
+    }
+
+    // Attempt to clean up empty shell dir after script removals.
+    let shell_dir = config_dir.join("shell");
+    if shell_dir.exists() && shell_dir.read_dir()?.next().is_none() {
+        remove_path(shell_dir, &mut stats)?;
+    }
+
+    Ok(stats)
+}
+
+fn remove_path(path: PathBuf, stats: &mut ResetStats) -> io::Result<()> {
+    if !path.exists() {
+        stats.missing.push(path);
+        return Ok(());
+    }
+
+    let metadata = fs::metadata(&path)?;
+    if metadata.is_dir() {
+        fs::remove_dir_all(&path)?;
+    } else {
+        fs::remove_file(&path)?;
+    }
+    stats.removed.push(path);
+    Ok(())
 }
 
 fn init_at(config_dir: &Path, overwrite: bool) -> io::Result<InitStats> {
@@ -349,6 +416,41 @@ mod tests {
         assert!(checks.iter().any(|check| {
             matches!(check.status, CheckStatus::Ok) && check.label == "shell/bash.sh"
         }));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_reset_removes_managed_files() {
+        let dir = unique_temp_dir();
+        init_at(&dir, false).expect("init should succeed");
+
+        let stats = reset_at(&dir, false).expect("reset should succeed");
+        assert!(stats
+            .removed
+            .iter()
+            .any(|path| path.ends_with("config.toml")));
+        assert!(!dir.join("config.toml").exists());
+        assert!(!dir.join("init.lua").exists());
+        assert!(!dir.join("shell").exists());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_reset_all_removes_session_state() {
+        let dir = unique_temp_dir();
+        init_at(&dir, false).expect("init should succeed");
+        fs::write(dir.join("session.json"), "{}").expect("session file should be created");
+        fs::create_dir_all(dir.join("sessions")).expect("sessions dir should be created");
+        fs::write(dir.join("sessions").join("demo.json"), "{}")
+            .expect("session snapshot should be created");
+
+        let _stats = reset_at(&dir, true).expect("reset should succeed");
+        assert!(!dir.join("session.json").exists());
+        assert!(!dir.join("sessions").exists());
+        assert!(!dir.join("themes").exists());
+        assert!(!dir.join("workflows").exists());
 
         let _ = fs::remove_dir_all(dir);
     }

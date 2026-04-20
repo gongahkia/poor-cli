@@ -130,6 +130,15 @@ enum CliCommand {
     },
     /// Run local diagnostics for config and shell integration state.
     Doctor,
+    /// Reset managed local Wok files in the config directory.
+    Reset {
+        /// Also remove session/workflow/theme state directories.
+        #[arg(long, default_value_t = false)]
+        all: bool,
+        /// Confirm reset without interactive prompt.
+        #[arg(long, default_value_t = false)]
+        yes: bool,
+    },
     /// Attach to a running named session.
     Attach {
         /// Session name.

@@ -25,6 +25,10 @@ pub(crate) fn dispatch_cli_command(cli: &Cli) -> Result<CliAction, Box<dyn Error
             setup_ops::run_doctor()?;
             Ok(CliAction::ExitOk)
         }
+        Some(CliCommand::Reset { all, yes }) => {
+            setup_ops::run_reset(all, yes)?;
+            Ok(CliAction::ExitOk)
+        }
         Some(CliCommand::Rpc {
             method,
             params,
