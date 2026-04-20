@@ -28,6 +28,7 @@ end)
 const BASH_SCRIPT: &str = include_str!("../../shell-integration/bash.sh");
 const ZSH_SCRIPT: &str = include_str!("../../shell-integration/zsh.zsh");
 const FISH_SCRIPT: &str = include_str!("../../shell-integration/fish.fish");
+const FIRST_RUN_MARKER_FILE: &str = ".first_run_complete";
 
 #[derive(Default)]
 struct InitStats {
@@ -51,10 +52,17 @@ struct DoctorCheck {
 pub(crate) fn run_init(overwrite: bool) -> Result<(), Box<dyn Error>> {
     let config_dir = WokConfig::config_dir();
     let stats = init_at(&config_dir, overwrite)?;
+    write_first_run_marker(&config_dir)?;
     println!("Initialized Wok managed files at {}", config_dir.display());
     print_stats(&stats);
     println!("Run `wok doctor` to verify setup.");
     Ok(())
+}
+
+pub(crate) fn ensure_first_run_bootstrap() -> Result<Option<String>, Box<dyn Error>> {
+    let config_dir = WokConfig::config_dir();
+    let result = ensure_first_run_bootstrap_at(&config_dir)?;
+    Ok(result)
 }
 
 pub(crate) fn run_doctor() -> Result<(), Box<dyn Error>> {
@@ -181,6 +189,21 @@ fn doctor_checks_at(config_dir: &Path) -> Vec<DoctorCheck> {
         },
     });
 
+    let marker_path = config_dir.join(FIRST_RUN_MARKER_FILE);
+    checks.push(DoctorCheck {
+        label: FIRST_RUN_MARKER_FILE.to_string(),
+        status: if marker_path.exists() {
+            CheckStatus::Ok
+        } else {
+            CheckStatus::Warn
+        },
+        detail: if marker_path.exists() {
+            "present".to_string()
+        } else {
+            "missing".to_string()
+        },
+    });
+
     for name in ["bash.sh", "zsh.zsh", "fish.fish"] {
         let path = config_dir.join("shell").join(name);
         checks.push(DoctorCheck {
@@ -218,6 +241,7 @@ fn reset_at(config_dir: &Path, all: bool) -> io::Result<ResetStats> {
     let mut remove_targets = vec![
         config_dir.join("config.toml"),
         config_dir.join("init.lua"),
+        config_dir.join(FIRST_RUN_MARKER_FILE),
         config_dir.join("shell").join("bash.sh"),
         config_dir.join("shell").join("zsh.zsh"),
         config_dir.join("shell").join("fish.fish"),
@@ -240,6 +264,32 @@ fn reset_at(config_dir: &Path, all: bool) -> io::Result<ResetStats> {
     }
 
     Ok(stats)
+}
+
+fn ensure_first_run_bootstrap_at(config_dir: &Path) -> io::Result<Option<String>> {
+    let marker = config_dir.join(FIRST_RUN_MARKER_FILE);
+    if marker.exists() {
+        return Ok(None);
+    }
+
+    let stats = init_at(config_dir, false)?;
+    write_first_run_marker(config_dir)?;
+
+    let created_count = stats.created.len();
+    let message = if created_count == 0 {
+        "Wok first-run setup complete".to_string()
+    } else {
+        format!("Wok first-run setup complete ({created_count} files)")
+    };
+    Ok(Some(message))
+}
+
+fn write_first_run_marker(config_dir: &Path) -> io::Result<()> {
+    fs::create_dir_all(config_dir)?;
+    fs::write(
+        config_dir.join(FIRST_RUN_MARKER_FILE),
+        "managed by wok init/first-run bootstrap\n",
+    )
 }
 
 fn remove_path(path: PathBuf, stats: &mut ResetStats) -> io::Result<()> {
@@ -453,5 +503,28 @@ mod tests {
         assert!(!dir.join("workflows").exists());
 
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_first_run_bootstrap_creates_marker() {
+        let dir = unique_temp_dir();
+        let message = ensure_first_run_bootstrap_at(&dir).expect("bootstrap should succeed");
+
+        assert!(message.is_some());
+        assert!(dir.join(FIRST_RUN_MARKER_FILE).exists());
+        assert!(dir.join("config.toml").exists());
+        assert!(dir.join("init.lua").exists());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_first_run_bootstrap_is_idempotent_after_marker_exists() {
+        let dir = unique_temp_dir();
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        fs::write(dir.join(FIRST_RUN_MARKER_FILE), "done").expect("marker should be written");
+
+        let message = ensure_first_run_bootstrap_at(&dir).expect("bootstrap should succeed");
+        assert!(message.is_none());
     }
 }

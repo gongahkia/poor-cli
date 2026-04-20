@@ -5017,6 +5017,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         CliAction::ContinueToWindow { attached_session } => attached_session,
     };
 
+    let onboarding_message = match setup_ops::ensure_first_run_bootstrap() {
+        Ok(message) => message,
+        Err(error) => {
+            warn!("failed to run first-run bootstrap: {error}");
+            None
+        }
+    };
+
     let mut config = WokConfig::load();
     if let Some(shell) = cli.shell {
         config.shell = parse_shell_type(&shell);
@@ -5032,9 +5040,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         ..WindowConfig::default()
     };
     let mut handler = WokHandler::new(config);
+    if let Some(message) = onboarding_message {
+        handler.status_message = Some(message);
+    }
     if let Some(session) = attached_session {
         handler.attached_session = Some(session.clone());
-        handler.status_message = Some(format!("Attached session '{session}'"));
+        let attach_message = format!("Attached session '{session}'");
+        handler.status_message = match handler.status_message.take() {
+            Some(existing) => Some(format!("{existing} | {attach_message}")),
+            None => Some(attach_message),
+        };
     }
 
     run_event_loop(window_config, handler)?;
