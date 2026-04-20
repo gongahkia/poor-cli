@@ -2891,6 +2891,10 @@ impl WokHandler {
     }
 
     fn export_selected_block_bundle(&mut self, format: BlockExportFormat) {
+        let Some(pane_id) = self.active_pane_id() else {
+            self.status_message = Some("No active pane for block export".to_string());
+            return;
+        };
         let Some((bundle, serialized)) = self.active_pane().and_then(|pane| {
             let block = pane.app.selected_or_latest_block()?;
             let output = collect_block_output_lines(&pane.terminal, block);
@@ -2902,7 +2906,7 @@ impl WokHandler {
 
             let bundle = BlockExportBundle {
                 generated_at_unix_ms,
-                pane_id: pane.pane_id,
+                pane_id,
                 block_id: block.id,
                 command: block.command_text.clone(),
                 cwd,
