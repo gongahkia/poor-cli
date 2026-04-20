@@ -30,6 +30,8 @@ M.defaults = {
     dismiss_key = "<Esc>",
     trigger_key = "<C-Space>",
     chat_key = "<leader>pc",
+    selection_quick_send = false,
+    selection_max_chars = 12000,
     checkpoints_key = nil,
     palette_key = "<leader>pp",
     

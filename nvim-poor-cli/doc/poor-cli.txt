@@ -127,6 +127,18 @@ chat_key ~
     Default: "<leader>pc"
     Key to toggle chat panel.
 
+                                                        *poor-cli-config.selection_quick_send*
+selection_quick_send ~
+    Default: false
+    If true, visual-send (`<leader>pc` in Visual mode) skips the input prompt
+    and sends immediately with the default question.
+
+                                                        *poor-cli-config.selection_max_chars*
+selection_max_chars ~
+    Default: 12000
+    Max chars allowed in visual-send payload. If selection exceeds this,
+    plugin prompts to trim to max chars before sending.
+
                                                         *poor-cli-config.checkpoints_key*
 checkpoints_key ~
     Default: nil
@@ -320,7 +332,7 @@ Normal mode:
     gc              Start insert and trigger completion
 
 Visual mode:
-    <leader>pc      Send selection to chat
+    <leader>pc      Send selection to chat (prompt unless selection_quick_send)
     <leader>pr      Refactor selection  (:PoorCLIChat refactor)
     <leader>pe      Explain selection   (:PoorCLIChat explain)
 

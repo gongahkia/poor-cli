@@ -16,6 +16,7 @@ M.status = {
     request_id = "",
 }
 M._auto_trigger_timer = nil
+M._auto_trigger_defer = nil
 M.cycle_state = nil
 M.last_cycled_index = 1
 
@@ -440,32 +441,34 @@ function M.build_completion_request(opts)
     local col = opts.col
     local instruction = opts.instruction or ""
     local request_id = opts.request_id or ""
-    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-    local total_lines = #lines
+    local total_lines = vim.api.nvim_buf_line_count(bufnr)
 
     local max_lines_before = tonumber(config.get("completion_max_lines_before")) or 80
     local max_lines_after = tonumber(config.get("completion_max_lines_after")) or 80
     local start_line = math.max(1, line - max_lines_before)
     local end_line = math.min(total_lines, line + max_lines_after)
-
-    local code_before = table.concat(vim.list_slice(lines, start_line, line - 1), "\n")
-    if line <= total_lines then
-        local current_line = lines[line] or ""
-        local current_prefix = current_line:sub(1, col)
-        if code_before ~= "" then
-            code_before = code_before .. "\n" .. current_prefix
-        else
-            code_before = current_prefix
-        end
+    local before_lines = {}
+    if start_line <= (line - 1) then
+        before_lines = vim.api.nvim_buf_get_lines(bufnr, start_line - 1, line - 1, false)
     end
-
+    local current_line = ""
+    if line <= total_lines then
+        current_line = vim.api.nvim_buf_get_lines(bufnr, line - 1, line, false)[1] or ""
+    end
+    local code_before = table.concat(before_lines, "\n")
+    local current_prefix = current_line:sub(1, col)
+    if code_before ~= "" then
+        code_before = code_before .. "\n" .. current_prefix
+    else
+        code_before = current_prefix
+    end
     local code_after = ""
-    if line <= total_lines then
-        local current_line = lines[line] or ""
-        code_after = current_line:sub(col + 1)
-    end
+    code_after = current_line:sub(col + 1)
     if line < end_line then
-        code_after = code_after .. "\n" .. table.concat(vim.list_slice(lines, line + 1, end_line), "\n")
+        local after_lines = vim.api.nvim_buf_get_lines(bufnr, line, end_line, false)
+        if #after_lines > 0 then
+            code_after = code_after .. "\n" .. table.concat(after_lines, "\n")
+        end
     end
 
     local max_chars = tonumber(config.get("completion_max_chars")) or 16000
@@ -764,15 +767,30 @@ end
 
 function M.auto_trigger()
     local delay = config.get("trigger_delay") or 500
-    if M._auto_trigger_timer then
+    local uv = vim.uv or vim.loop
+    if uv and uv.new_timer then
+        if not M._auto_trigger_timer then
+            M._auto_trigger_timer = uv.new_timer()
+        end
         pcall(function()
             M._auto_trigger_timer:stop()
-            M._auto_trigger_timer:close()
         end)
-        M._auto_trigger_timer = nil
+        M._auto_trigger_timer:start(delay, 0, vim.schedule_wrap(function()
+            if rpc.is_running() and not M.has_completion() then
+                M.trigger({ manual = false })
+            end
+        end))
+        return
     end
-    M._auto_trigger_timer = vim.defer_fn(function()
-        M._auto_trigger_timer = nil
+    if M._auto_trigger_defer then
+        pcall(function()
+            M._auto_trigger_defer:stop()
+            M._auto_trigger_defer:close()
+        end)
+        M._auto_trigger_defer = nil
+    end
+    M._auto_trigger_defer = vim.defer_fn(function()
+        M._auto_trigger_defer = nil
         if rpc.is_running() and not M.has_completion() then
             M.trigger({ manual = false })
         end
@@ -783,9 +801,14 @@ function M.cancel_auto_trigger()
     if M._auto_trigger_timer then
         pcall(function()
             M._auto_trigger_timer:stop()
-            M._auto_trigger_timer:close()
         end)
-        M._auto_trigger_timer = nil
+    end
+    if M._auto_trigger_defer then
+        pcall(function()
+            M._auto_trigger_defer:stop()
+            M._auto_trigger_defer:close()
+        end)
+        M._auto_trigger_defer = nil
     end
 end
 

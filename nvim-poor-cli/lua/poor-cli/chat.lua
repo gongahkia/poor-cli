@@ -126,8 +126,13 @@ M.message_queue = {} -- FIFO queue of { message = string, resolved_msg = string,
 M.stream_meta = nil -- { started_at_ns, input_tokens, output_tokens, estimated_cost, cache_read, cache_creation }
 M.last_non_chat_win = nil
 M.edit_state = nil
+M._workspace_scan_cache = {}
+M._slash_commands_cache = { loaded_at_ms = 0, commands = nil }
+M._chat_keymaps_bound_for_buf = nil
 
 M.register_source = mentions.register_source
+local WORKSPACE_SCAN_CACHE_TTL_MS = 3000
+local SLASH_COMMANDS_CACHE_TTL_MS = 10000
 
 local function chat_header_lines()
     return {
@@ -513,6 +518,32 @@ local function scan_workspace_files(root, depth, results)
 
     return results
 end
+
+local function clear_workspace_scan_cache()
+    M._workspace_scan_cache = {}
+end
+
+local function get_workspace_files(cwd)
+    cwd = cwd or vim.fn.getcwd()
+    local cached = M._workspace_scan_cache[cwd]
+    local now = now_ms()
+    if cached and (now - (cached.ts_ms or 0)) <= WORKSPACE_SCAN_CACHE_TTL_MS then
+        return cached.files or {}
+    end
+    local files = scan_workspace_files(cwd, 0, {})
+    M._workspace_scan_cache[cwd] = { files = files, ts_ms = now }
+    return files
+end
+
+local function setup_workspace_scan_cache_invalidation()
+    local group = vim.api.nvim_create_augroup("poor-cli-chat-workspace-cache", { clear = true })
+    vim.api.nvim_create_autocmd({ "DirChanged", "BufWritePost" }, {
+        group = group,
+        callback = clear_workspace_scan_cache,
+    })
+end
+
+setup_workspace_scan_cache_invalidation()
 
 function M.open()
     if M.win and vim.api.nvim_win_is_valid(M.win) then
@@ -990,7 +1021,7 @@ function M._resolve_mentions(message)
 
     resolved = resolved:gsub("@workspace", function()
         local cwd = vim.fn.getcwd()
-        local files = scan_workspace_files(cwd, 0, {})
+        local files = get_workspace_files(cwd)
         if #files == 0 then
             return "@workspace"
         end
@@ -2286,105 +2317,65 @@ function M.get_context_files()
     return files
 end
 
-function M.setup_buffer_keymaps()
-    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
+local function apply_chat_buffer_keymaps(bufnr)
+    if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
         return
     end
-
     vim.keymap.set("n", "q", function()
         if M.active_stream then
             M.cancel_active_stream("Cancelled by user.")
         else
             M.close()
         end
-    end, { buffer = M.buf, desc = "Cancel stream or close chat", nowait = true })
-
+    end, { buffer = bufnr, desc = "Cancel stream or close chat", nowait = true })
     vim.keymap.set("n", "<Esc>", function()
         if M.active_stream then
             M.cancel_active_stream("Cancelled by user.")
         end
-    end, { buffer = M.buf, desc = "Cancel active stream", nowait = true })
-
+    end, { buffer = bufnr, desc = "Cancel active stream", nowait = true })
     vim.keymap.set("n", "<C-c>", function()
         if M.active_stream then
             M.cancel_active_stream("Cancelled by user.")
         end
-    end, { buffer = M.buf, desc = "Cancel active stream", nowait = true })
-
-    vim.keymap.set("n", "Q", function()
-        M.open_queue_manager()
-    end, { buffer = M.buf, desc = "Open queue manager", nowait = true })
-
+    end, { buffer = bufnr, desc = "Cancel active stream", nowait = true })
+    vim.keymap.set("n", "Q", function() M.open_queue_manager() end, { buffer = bufnr, desc = "Open queue manager", nowait = true })
     vim.keymap.set("n", "<CR>", function()
-        -- Context-sensitive: expand a truncated tool result if the cursor
-        -- is on one, otherwise fall through to the send prompt.
         if M.expand_tool_result_at_cursor() then return end
         M.prompt_and_send()
-    end, { buffer = M.buf, desc = "Send message (or expand tool result under cursor)", nowait = true, silent = true })
-    vim.keymap.set("n", "<leader>rr", function()
-        M.regenerate_turn()
-    end, { buffer = M.buf, desc = "Regenerate assistant turn", nowait = true, silent = true })
-    vim.keymap.set("n", "<leader>ee", function()
-        M.edit_resend_turn()
-    end, { buffer = M.buf, desc = "Edit and resend user turn", nowait = true, silent = true })
-    vim.keymap.set("n", "<leader>ex", function()
-        M.pick_export_format()
-    end, { buffer = M.buf, desc = "Export conversation", nowait = true, silent = true })
-    vim.keymap.set("n", "[[", function()
-        M.switch_sibling("prev")
-    end, { buffer = M.buf, desc = "Previous branch sibling", nowait = true, silent = true })
-    vim.keymap.set("n", "]]", function()
-        M.switch_sibling("next")
-    end, { buffer = M.buf, desc = "Next branch sibling", nowait = true, silent = true })
-    vim.keymap.set("n", "yc", function()
-        M.yank_codeblock()
-    end, { buffer = M.buf, desc = "Yank code block", nowait = true, silent = true })
-    vim.keymap.set("n", "<leader>ya", function()
-        M.apply_codeblock()
-    end, { buffer = M.buf, desc = "Apply code block", nowait = true, silent = true })
-    vim.keymap.set("n", "<leader>yl", function()
-        M.open_codeblock_scratch()
-    end, { buffer = M.buf, desc = "Open code block scratch", nowait = true, silent = true })
+    end, { buffer = bufnr, desc = "Send message (or expand tool result under cursor)", nowait = true, silent = true })
+    vim.keymap.set("n", "<leader>rr", function() M.regenerate_turn() end, { buffer = bufnr, desc = "Regenerate assistant turn", nowait = true, silent = true })
+    vim.keymap.set("n", "<leader>ee", function() M.edit_resend_turn() end, { buffer = bufnr, desc = "Edit and resend user turn", nowait = true, silent = true })
+    vim.keymap.set("n", "<leader>ex", function() M.pick_export_format() end, { buffer = bufnr, desc = "Export conversation", nowait = true, silent = true })
+    vim.keymap.set("n", "[[", function() M.switch_sibling("prev") end, { buffer = bufnr, desc = "Previous branch sibling", nowait = true, silent = true })
+    vim.keymap.set("n", "]]", function() M.switch_sibling("next") end, { buffer = bufnr, desc = "Next branch sibling", nowait = true, silent = true })
+    vim.keymap.set("n", "yc", function() M.yank_codeblock() end, { buffer = bufnr, desc = "Yank code block", nowait = true, silent = true })
+    vim.keymap.set("n", "<leader>ya", function() M.apply_codeblock() end, { buffer = bufnr, desc = "Apply code block", nowait = true, silent = true })
+    vim.keymap.set("n", "<leader>yl", function() M.open_codeblock_scratch() end, { buffer = bufnr, desc = "Open code block scratch", nowait = true, silent = true })
     local ok_dap, dap_bridge = pcall(require, "poor-cli.integrations.dap")
     if ok_dap and type(dap_bridge.attach) == "function" then
-        dap_bridge.attach(M.buf)
+        pcall(dap_bridge.attach, bufnr)
     end
+end
 
-    -- re-apply on BufEnter in case a filetype plugin (e.g. vim-markdown) clobbers <CR>
+function M.setup_buffer_keymaps()
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
+        return
+    end
+    apply_chat_buffer_keymaps(M.buf)
+    if M._chat_keymaps_bound_for_buf == M.buf then
+        return
+    end
+    M._chat_keymaps_bound_for_buf = M.buf
+    local bound_buf = M.buf
+    local group = vim.api.nvim_create_augroup("poor-cli-chat-keymaps-" .. tostring(bound_buf), { clear = true })
     vim.api.nvim_create_autocmd("BufEnter", {
-        buffer = M.buf,
+        group = group,
+        buffer = bound_buf,
         callback = function()
-            vim.keymap.set("n", "<CR>", function()
-                M.prompt_and_send()
-            end, { buffer = M.buf, desc = "Send message", nowait = true, silent = true })
-            vim.keymap.set("n", "<leader>rr", function()
-                M.regenerate_turn()
-            end, { buffer = M.buf, desc = "Regenerate assistant turn", nowait = true, silent = true })
-            vim.keymap.set("n", "<leader>ee", function()
-                M.edit_resend_turn()
-            end, { buffer = M.buf, desc = "Edit and resend user turn", nowait = true, silent = true })
-            vim.keymap.set("n", "<leader>ex", function()
-                M.pick_export_format()
-            end, { buffer = M.buf, desc = "Export conversation", nowait = true, silent = true })
-            vim.keymap.set("n", "[[", function()
-                M.switch_sibling("prev")
-            end, { buffer = M.buf, desc = "Previous branch sibling", nowait = true, silent = true })
-            vim.keymap.set("n", "]]", function()
-                M.switch_sibling("next")
-            end, { buffer = M.buf, desc = "Next branch sibling", nowait = true, silent = true })
-            vim.keymap.set("n", "yc", function()
-                M.yank_codeblock()
-            end, { buffer = M.buf, desc = "Yank code block", nowait = true, silent = true })
-            vim.keymap.set("n", "<leader>ya", function()
-                M.apply_codeblock()
-            end, { buffer = M.buf, desc = "Apply code block", nowait = true, silent = true })
-            vim.keymap.set("n", "<leader>yl", function()
-                M.open_codeblock_scratch()
-            end, { buffer = M.buf, desc = "Open code block scratch", nowait = true, silent = true })
-            local ok_buf_dap, buf_dap_bridge = pcall(require, "poor-cli.integrations.dap")
-            if ok_buf_dap and type(buf_dap_bridge.attach) == "function" then
-                buf_dap_bridge.attach(M.buf)
+            if M.buf ~= bound_buf or not vim.api.nvim_buf_is_valid(bound_buf) then
+                return
             end
+            apply_chat_buffer_keymaps(bound_buf)
         end,
     })
 end
@@ -2498,7 +2489,7 @@ local function get_file_completions(prefix)
     end
     -- project files from cwd (scan shallow, cap at 30)
     local cwd = vim.fn.getcwd()
-    local project_files = scan_workspace_files(cwd, 0, {})
+    local project_files = get_workspace_files(cwd)
     for _, abs_path in ipairs(project_files) do
         local rel = vim.fn.fnamemodify(abs_path, ":~:.")
         if not seen[rel] and (prefix == "" or rel:find(prefix, 1, true)) then
@@ -2671,8 +2662,32 @@ local function insert_slash_command(raw, buf, win)
     return true
 end
 
-local function open_slash_picker(buf, win)
+local function with_slash_commands(callback)
+    local cache = M._slash_commands_cache or {}
+    local now = now_ms()
+    if type(cache.commands) == "table" and (now - (cache.loaded_at_ms or 0)) <= SLASH_COMMANDS_CACHE_TTL_MS then
+        callback(cache.commands, nil)
+        return
+    end
     rpc.request("commands.list", {}, function(result, err)
+        if not err and type(result) == "table" then
+            M._slash_commands_cache = {
+                commands = result,
+                loaded_at_ms = now_ms(),
+            }
+            callback(result, nil)
+            return
+        end
+        if type(cache.commands) == "table" then
+            callback(cache.commands, nil)
+            return
+        end
+        callback(nil, err)
+    end)
+end
+
+local function open_slash_picker(buf, win)
+    with_slash_commands(function(result, err)
         vim.schedule(function()
             if err then
                 require("poor-cli.notify").notify("[poor-cli] slash commands failed: " .. rpc.format_error(err), vim.log.levels.WARN)
@@ -3087,28 +3102,141 @@ function M.remove_loading()
     M.loading_marker = nil
 end
 
-function M.send_with_selection()
-    -- use marks instead of mode check (mode may have exited by keymap fire time)
-    local start_line = vim.fn.line("'<")
-    local end_line = vim.fn.line("'>")
-    if start_line == 0 or end_line == 0 or start_line > end_line then
-        require("poor-cli.notify").notify("[poor-cli] Select text first", vim.log.levels.WARN)
+local function capture_visual_selection()
+    local start_pos = vim.fn.getpos("'<")
+    local end_pos = vim.fn.getpos("'>")
+    local start_line = tonumber(start_pos and start_pos[2]) or 0
+    local end_line = tonumber(end_pos and end_pos[2]) or 0
+    if start_line == 0 or end_line == 0 then
+        return nil
+    end
+    local start_col = tonumber(start_pos and start_pos[3]) or 1
+    local end_col = tonumber(end_pos and end_pos[3]) or 1
+    local mode = vim.fn.visualmode() or "v"
+    if mode ~= "v" and mode ~= "V" and mode ~= "\22" then
+        mode = "v"
+    end
+    local forward = start_line < end_line or (start_line == end_line and start_col <= end_col)
+    if not forward then
+        start_line, end_line = end_line, start_line
+        start_col, end_col = end_col, start_col
+        start_pos, end_pos = end_pos, start_pos
+    end
+    local selected_lines = nil
+    if vim.fn.exists("*getregion") == 1 then
+        local ok, region = pcall(vim.fn.getregion, start_pos, end_pos, { type = mode })
+        if ok and type(region) == "table" then
+            selected_lines = region
+        end
+    end
+    if not selected_lines then
+        local lo = math.min(start_line, end_line)
+        local hi = math.max(start_line, end_line)
+        selected_lines = vim.api.nvim_buf_get_lines(0, lo - 1, hi, false)
+    end
+    local selected_text = table.concat(selected_lines or {}, "\n")
+    if selected_text == "" then
+        return nil
+    end
+    return {
+        text = selected_text,
+        start_line = start_line,
+        start_col = start_col,
+        end_line = end_line,
+        end_col = end_col,
+        mode = mode,
+    }
+end
+
+local function selection_metadata(selection)
+    local buf = vim.api.nvim_get_current_buf()
+    local path = vim.api.nvim_buf_get_name(buf)
+    if path == "" then path = "[No Name]" end
+    local filetype = trim(vim.bo[buf].filetype)
+    if filetype == "" then filetype = "text" end
+    local lines = tostring(selection.start_line)
+    if selection.end_line ~= selection.start_line then
+        lines = string.format("%d-%d", selection.start_line, selection.end_line)
+    end
+    local mode = "charwise"
+    if selection.mode == "V" then
+        mode = "linewise"
+    elseif selection.mode == "\22" then
+        mode = "blockwise"
+    end
+    return {
+        path = path,
+        filetype = filetype,
+        lines = lines,
+        start = string.format("%d:%d", selection.start_line, selection.start_col or 1),
+        ["end"] = string.format("%d:%d", selection.end_line, selection.end_col or 1),
+        mode = mode,
+    }
+end
+
+local function build_selection_message(question, selection)
+    local meta = selection_metadata(selection)
+    return table.concat({
+        question,
+        "",
+        "Selection metadata:",
+        "- file: " .. meta.path,
+        "- lines: " .. meta.lines,
+        "- start: " .. meta.start,
+        "- end: " .. meta["end"],
+        "- mode: " .. meta.mode,
+        "- filetype: " .. meta.filetype,
+        "",
+        "```" .. meta.filetype,
+        selection.text,
+        "```",
+    }, "\n")
+end
+
+local function maybe_trim_selection(selection, callback)
+    local max_chars = tonumber(config.get("selection_max_chars")) or 12000
+    if max_chars <= 0 or #selection.text <= max_chars then
+        callback(selection)
         return
     end
-    local lines = vim.api.nvim_buf_get_lines(0, start_line - 1, end_line, false)
-    local selected_text = table.concat(lines, "\n")
-    if not selected_text or selected_text == "" then
+    vim.ui.input({
+        prompt = string.format("Selection is %d chars (max %d). Trim and send? type yes: ", #selection.text, max_chars),
+    }, function(answer)
+        if trim(answer):lower() ~= "yes" then
+            require("poor-cli.notify").notify("[poor-cli] selection send cancelled", vim.log.levels.INFO)
+            callback(nil)
+            return
+        end
+        local trimmed = vim.deepcopy(selection)
+        trimmed.text = selection.text:sub(1, max_chars)
+        callback(trimmed)
+    end)
+end
+
+function M.send_with_selection(opts)
+    opts = opts or {}
+    local selection = capture_visual_selection()
+    if not selection then
+        require("poor-cli.notify").notify("[poor-cli] Select text first", vim.log.levels.WARN)
         return
     end
 
     M.open()
-    vim.ui.input({ prompt = "Ask about selection: " }, function(question)
-        if not question or question == "" then
-            question = "Please explain this code."
+    maybe_trim_selection(selection, function(final_selection)
+        if not final_selection then
+            return
         end
-
-        local message = question .. "\n\n```\n" .. selected_text .. "\n```"
-        M.send(message)
+        local quick_send = opts.quick_send == true or config.get("selection_quick_send") == true
+        local default_question = "Please explain this code."
+        if quick_send then
+            M.send(build_selection_message(default_question, final_selection))
+            return
+        end
+        vim.ui.input({ prompt = "Ask about selection: " }, function(question)
+            local q = trim(question)
+            if q == "" then q = default_question end
+            M.send(build_selection_message(q, final_selection))
+        end)
     end)
 end
 

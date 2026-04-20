@@ -128,6 +128,8 @@ require("poor-cli").setup({
     accept_key = "<Tab>",
     dismiss_key = "<Esc>",
     chat_key = "<leader>pc",
+    selection_quick_send = false,          -- skip "Ask about selection" prompt in visual-send
+    selection_max_chars = 12000,           -- oversized visual sends require confirm + trim
     checkpoints_key = nil,
     
     -- Appearance
@@ -223,7 +225,7 @@ This reuses the same enablement rules and completion request shaping as the inli
 | `<Tab>` | Insert | Accept completion (or normal Tab) |
 | `<Esc>` | Insert | Dismiss completion (or normal Esc) |
 | `<leader>pc` | Normal | Toggle chat panel |
-| `<leader>pc` | Visual | Send selection to chat |
+| `<leader>pc` | Visual | Send selection to chat (prompts unless `selection_quick_send = true`) |
 | `<M-CR>` | Insert | Trigger completion with instruction |
 | `gc` | Normal | Start insert and trigger completion |
 | `<leader>pr` | Visual | Refactor selection |
