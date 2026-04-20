@@ -90,6 +90,36 @@ const formatErrorText = (payload: ToolErrorPayload): string => {
   return lines.join("\n");
 };
 
+const shouldAttachSuccessContextIds = (): boolean => {
+  return process.env["SG_APIS_INCLUDE_SUCCESS_CONTEXT_IDS"] === "1";
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+};
+
+const withOptionalSuccessContextIds = (
+  result: ToolResult,
+  contextIds: ContextIds,
+): ToolResult => {
+  if (!shouldAttachSuccessContextIds() || result.isError === true) {
+    return result;
+  }
+
+  const structured = result.structuredContent;
+  if (isRecord(structured) && isRecord(structured["contextIds"])) {
+    return result;
+  }
+
+  return {
+    ...result,
+    structuredContent: {
+      ...(isRecord(structured) ? structured : {}),
+      contextIds,
+    },
+  };
+};
+
 const logHandledToolError = (payload: ToolErrorPayload): void => {
   const level = payload.code === "VALIDATION_ERROR"
     ? "warn"
@@ -178,7 +208,8 @@ export const wrapHandler = (tool: string, handler: ToolHandler): ToolHandler => 
       requestId,
     } as const;
     try {
-      return await handler(input);
+      const result = await handler(input);
+      return withOptionalSuccessContextIds(result, contextIds);
     } catch (error) {
       const payload = toToolErrorPayload(error, tool, { contextIds });
       logHandledToolError(payload);

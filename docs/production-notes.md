@@ -205,3 +205,5 @@ The UI resource is additive only. Text-only hosts still receive the same direct 
 The current routing payload does not expose exact route geometry from OneMap, so route overlays remain explicitly marked as approximate in both the payload legend and the UI.
 
 Structured JSON logs include request or workflow context fields such as `traceId`, `requestId`, `workflow`, `tool`, and `stepId` where applicable. Structured error payloads now also include `error.contextIds.traceId` and `error.contextIds.requestId` so failed tool calls can be correlated directly with log lines. Set `SG_APIS_LOG_LEVEL=debug` in non-production environments to capture step-level routing and retry behavior.
+
+Set `SG_APIS_INCLUDE_SUCCESS_CONTEXT_IDS=1` when you also need `structuredContent.contextIds` on successful tool responses for end-to-end request correlation.

@@ -61,4 +61,53 @@ describe("error handler tracing", () => {
     expect(payload.severity).toBe("medium");
     expect(payload.suggestedAction).toBe("Respect retry-after guidance or reduce request rate before retrying.");
   });
+
+  it("adds contextIds to successful results when SG_APIS_INCLUDE_SUCCESS_CONTEXT_IDS=1", async () => {
+    const previous = process.env["SG_APIS_INCLUDE_SUCCESS_CONTEXT_IDS"];
+    process.env["SG_APIS_INCLUDE_SUCCESS_CONTEXT_IDS"] = "1";
+    try {
+      const handler = wrapHandler("sg_test_tool", async () => ({
+        content: [{ type: "text", text: "ok" }],
+      }));
+
+      const result = await handler({});
+      const contextIds = result.structuredContent?.["contextIds"] as Record<string, unknown>;
+      expect(typeof contextIds["traceId"]).toBe("string");
+      expect(typeof contextIds["requestId"]).toBe("string");
+      expect(String(contextIds["traceId"])).toMatch(UUID_PATTERN);
+      expect(String(contextIds["requestId"])).toMatch(UUID_PATTERN);
+    } finally {
+      if (previous === undefined) {
+        delete process.env["SG_APIS_INCLUDE_SUCCESS_CONTEXT_IDS"];
+      } else {
+        process.env["SG_APIS_INCLUDE_SUCCESS_CONTEXT_IDS"] = previous;
+      }
+    }
+  });
+
+  it("does not overwrite existing success contextIds", async () => {
+    const previous = process.env["SG_APIS_INCLUDE_SUCCESS_CONTEXT_IDS"];
+    process.env["SG_APIS_INCLUDE_SUCCESS_CONTEXT_IDS"] = "1";
+    try {
+      const existingContextIds = {
+        traceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        requestId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      };
+      const handler = wrapHandler("sg_test_tool", async () => ({
+        content: [{ type: "text", text: "ok" }],
+        structuredContent: {
+          contextIds: existingContextIds,
+        },
+      }));
+
+      const result = await handler({});
+      expect(result.structuredContent?.["contextIds"]).toEqual(existingContextIds);
+    } finally {
+      if (previous === undefined) {
+        delete process.env["SG_APIS_INCLUDE_SUCCESS_CONTEXT_IDS"];
+      } else {
+        process.env["SG_APIS_INCLUDE_SUCCESS_CONTEXT_IDS"] = previous;
+      }
+    }
+  });
 });
