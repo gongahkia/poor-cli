@@ -99,6 +99,20 @@ pub(crate) fn jsonrpc_optional_string_param(
         })
 }
 
+/// Read one optional unsigned integer parameter from array or object forms.
+pub(crate) fn jsonrpc_optional_u64_param(params: &Value, index: usize, key: &str) -> Option<u64> {
+    params
+        .as_array()
+        .and_then(|items| items.get(index))
+        .and_then(Value::as_u64)
+        .or_else(|| {
+            params
+                .as_object()
+                .and_then(|items| items.get(key))
+                .and_then(Value::as_u64)
+        })
+}
+
 /// Read one optional value parameter from array or object forms.
 pub(crate) fn jsonrpc_optional_value_param(
     params: &Value,
@@ -223,6 +237,18 @@ mod tests {
         assert_eq!(
             jsonrpc_optional_value_param(&json!({"params":[1,2,3]}), 0, "params"),
             Some(json!([1, 2, 3]))
+        );
+    }
+
+    #[test]
+    fn test_jsonrpc_optional_u64_param_supports_object_and_array() {
+        assert_eq!(
+            jsonrpc_optional_u64_param(&json!([1, 2, 3]), 1, "limit"),
+            Some(2)
+        );
+        assert_eq!(
+            jsonrpc_optional_u64_param(&json!({"bucket_ms": 60000}), 0, "bucket_ms"),
+            Some(60000)
         );
     }
 

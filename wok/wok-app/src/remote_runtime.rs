@@ -116,6 +116,7 @@ impl WokHandler {
             "wok.set_theme" => self.remote_set_theme(&request.params),
             "wok.notify" => self.remote_notify(&request.params),
             "wok.get_failure_summary" => self.remote_get_failure_summary(&request.params),
+            "wok.get_failure_trends" => self.remote_get_failure_trends(&request.params),
             _ => Err(RpcError::method_not_found(format!(
                 "unknown method '{}'",
                 request.method
@@ -332,6 +333,38 @@ impl WokHandler {
                 .map(|item| {
                     json!({
                         "command": item.command,
+                        "count": item.count,
+                        "last_exit_code": item.last_exit_code,
+                        "last_completed_at_ms": item.last_completed_at_ms,
+                    })
+                })
+                .collect(),
+        ))
+    }
+
+    fn remote_get_failure_trends(&self, params: &Value) -> Result<Value, RpcError> {
+        let pane_id = jsonrpc_params::extract_pane_id(params)?;
+        if !self.panes.contains_key(&pane_id) {
+            return Err(RpcError::server_error(format!("pane {pane_id} not found")));
+        }
+
+        let bucket_ms = jsonrpc_params::jsonrpc_optional_u64_param(params, 1, "bucket_ms")
+            .unwrap_or(DEFAULT_FAILURE_TREND_BUCKET_MS)
+            .max(60_000);
+        let limit = jsonrpc_params::jsonrpc_optional_u64_param(params, 2, "limit")
+            .unwrap_or(24)
+            .clamp(1, 250) as usize;
+
+        let trends = self.failure_trends_for_pane(pane_id, bucket_ms, limit);
+        Ok(Value::Array(
+            trends
+                .into_iter()
+                .map(|item| {
+                    json!({
+                        "command": item.command,
+                        "cwd": item.cwd,
+                        "branch": item.branch,
+                        "bucket_start_ms": item.bucket_start_ms,
                         "count": item.count,
                         "last_exit_code": item.last_exit_code,
                         "last_completed_at_ms": item.last_completed_at_ms,

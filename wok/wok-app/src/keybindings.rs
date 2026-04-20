@@ -83,6 +83,8 @@ pub enum Action {
     BlockDiff,
     /// Re-run the selected block command in the active PTY.
     BlockRerun,
+    /// Toggle the failure-trends panel for the active pane.
+    ToggleFailureTrendsPanel,
     /// Global terminal search.
     SearchGlobal,
     /// Enter vi navigation mode.
@@ -395,6 +397,13 @@ impl Default for KeybindingConfig {
             },
             Action::BlockRerun,
         );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('y'),
+                modifiers: pma,
+            },
+            Action::ToggleFailureTrendsPanel,
+        );
 
         // Search
         bindings.insert(
@@ -661,6 +670,19 @@ mod tests {
         assert_eq!(
             config.resolve(&combo, &Context::Terminal),
             Some(&Action::BlockDiff)
+        );
+    }
+
+    #[test]
+    fn test_failure_trends_panel_binding_exists() {
+        let config = KeybindingConfig::default();
+        let combo = KeyCombo {
+            key: KeyAction::Char('y'),
+            modifiers: platform_mod_alt(),
+        };
+        assert_eq!(
+            config.resolve(&combo, &Context::Terminal),
+            Some(&Action::ToggleFailureTrendsPanel)
         );
     }
 

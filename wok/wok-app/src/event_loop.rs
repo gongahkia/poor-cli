@@ -11,7 +11,7 @@ use winit::window::WindowId;
 use crate::frame_clock::FrameClock;
 use crate::handler::AppHandler;
 use crate::input::{translate_key_event, MouseEvent};
-use crate::window::{PlatformError, WokWindow, WindowConfig};
+use crate::window::{PlatformError, WindowConfig, WokWindow};
 
 /// Runs the event loop with the given app handler.
 ///

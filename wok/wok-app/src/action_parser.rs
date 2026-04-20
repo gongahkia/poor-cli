@@ -101,6 +101,9 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         "block_filter" | "filter_block" => Some(Action::BlockFilter),
         "block_diff" | "diff_block" | "block_compare" => Some(Action::BlockDiff),
         "block_rerun" | "rerun_block" => Some(Action::BlockRerun),
+        "toggle_failure_trends_panel" | "failure_trends_panel" | "failure_trends" => {
+            Some(Action::ToggleFailureTrendsPanel)
+        }
         "zoom_in" => Some(Action::ZoomIn),
         "zoom_out" => Some(Action::ZoomOut),
         "zoom_reset" => Some(Action::ZoomReset),
@@ -188,5 +191,9 @@ mod tests {
     fn test_parse_lua_action_supports_block_diff_aliases() {
         assert_eq!(parse_lua_action("block_diff"), Some(Action::BlockDiff));
         assert_eq!(parse_lua_action("diff_block"), Some(Action::BlockDiff));
+        assert_eq!(
+            parse_lua_action("failure_trends"),
+            Some(Action::ToggleFailureTrendsPanel)
+        );
     }
 }

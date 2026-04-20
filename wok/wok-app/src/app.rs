@@ -319,6 +319,11 @@ impl WokApp {
                     ));
                 }
             }
+            Action::ToggleFailureTrendsPanel => {
+                effects.push(RuntimeEffect::Overlay(
+                    OverlayEffect::ToggleFailureTrendsPanel,
+                ));
+            }
             Action::SearchGlobal => {
                 effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenSearch));
             }
@@ -608,6 +613,19 @@ mod tests {
         assert_eq!(
             effects.effects,
             vec![RuntimeEffect::Overlay(OverlayEffect::OpenCommandSearch)]
+        );
+    }
+
+    #[test]
+    fn test_failure_trends_action_emits_overlay_toggle() {
+        let mut app = WokApp::new(WokConfig::default());
+        let effects = app.handle_action(&Action::ToggleFailureTrendsPanel);
+
+        assert_eq!(
+            effects.effects,
+            vec![RuntimeEffect::Overlay(
+                OverlayEffect::ToggleFailureTrendsPanel
+            )]
         );
     }
 

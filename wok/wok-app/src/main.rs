@@ -352,6 +352,17 @@ struct FailureSummaryEntry {
     last_completed_at_ms: u64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct FailureTrendEntry {
+    command: String,
+    cwd: String,
+    branch: String,
+    bucket_start_ms: u64,
+    count: usize,
+    last_exit_code: i32,
+    last_completed_at_ms: u64,
+}
+
 struct PaneRuntime {
     app: WokApp,
     terminal: Terminal,
@@ -375,6 +386,7 @@ struct PaneRuntime {
 }
 
 const ATTACHED_DAEMON_PANE_ID: u64 = 0;
+const DEFAULT_FAILURE_TREND_BUCKET_MS: u64 = 60 * 60 * 1000;
 
 fn attached_mode_blocks_workspace_effect(effect: &WorkspaceEffect) -> bool {
     matches!(
@@ -446,6 +458,8 @@ struct WokHandler {
     attached_session: Option<String>,
     daemon_pane_by_local: HashMap<PaneId, u64>,
     status_message: Option<String>,
+    show_failure_trends_panel: bool,
+    failure_trend_bucket_ms: u64,
     status_bar_state: StatusBarState,
     status_bar_refresh_interval: Duration,
     last_status_bar_refresh: Instant,
@@ -520,6 +534,8 @@ impl WokHandler {
             attached_session: None,
             daemon_pane_by_local: HashMap::new(),
             status_message: None,
+            show_failure_trends_panel: false,
+            failure_trend_bucket_ms: DEFAULT_FAILURE_TREND_BUCKET_MS,
             status_bar_state: StatusBarState::default(),
             status_bar_refresh_interval: Duration::from_secs(5),
             last_status_bar_refresh: Instant::now(),
@@ -999,6 +1015,8 @@ impl WokHandler {
         let window_opacity = self.config.window_opacity.clamp(0.0, 1.0);
         let background_image = self.background.image.clone();
         let background_loaded = background_image.is_some();
+        let show_failure_trends_panel = self.show_failure_trends_panel;
+        let failure_trend_bucket_ms = self.failure_trend_bucket_ms;
         let debug_overlay_lines = if self.config.debug_overlay {
             Some(self.debug_overlay_lines())
         } else {
@@ -1483,6 +1501,24 @@ impl WokHandler {
                         window_opacity,
                     );
                 }
+            }
+
+            if focused && show_failure_trends_panel {
+                let rows = failure_trend_panel_lines(
+                    &pane.pane_history,
+                    &pane.app.block_manager.blocks,
+                    failure_trend_bucket_ms,
+                    10,
+                );
+                render_failure_trends_overlay(
+                    render,
+                    &mut self.font,
+                    theme,
+                    pane.ui_rects.viewport,
+                    &rows,
+                    failure_trend_bucket_ms,
+                    window_opacity,
+                );
             }
 
             if focused && pane.app.quick_select.active {
@@ -2689,6 +2725,23 @@ impl WokHandler {
         summarize_failures(&pane.pane_history, limit)
     }
 
+    fn failure_trends_for_pane(
+        &self,
+        pane_id: PaneId,
+        bucket_ms: u64,
+        limit: usize,
+    ) -> Vec<FailureTrendEntry> {
+        let Some(pane) = self.panes.get(&pane_id) else {
+            return Vec::new();
+        };
+        summarize_failure_trends(
+            &pane.pane_history,
+            &pane.app.block_manager.blocks,
+            bucket_ms,
+            limit,
+        )
+    }
+
     fn update_failure_status_for_pane(&mut self, pane_id: PaneId, exit_code: Option<i32>) {
         if exit_code.unwrap_or(0) == 0 {
             return;
@@ -2729,6 +2782,7 @@ impl WokHandler {
                         | Action::BlockFilter
                         | Action::BlockDiff
                         | Action::BlockRerun
+                        | Action::ToggleFailureTrendsPanel
                         | Action::SearchGlobal
                         | Action::CommandPalette
                         | Action::CommandSearch
@@ -3005,6 +3059,15 @@ impl WokHandler {
                 if let Some(window) = &self.window {
                     self.sync_workspace_layout(window.inner_size());
                 }
+            }
+            OverlayEffect::ToggleFailureTrendsPanel => {
+                self.show_failure_trends_panel = !self.show_failure_trends_panel;
+                self.status_message = Some(if self.show_failure_trends_panel {
+                    "Opened failure trends panel".to_string()
+                } else {
+                    "Closed failure trends panel".to_string()
+                });
+                self.needs_redraw = true;
             }
             OverlayEffect::CloseBlockQuery => {
                 if let Some(active_pane) = self.active_pane_mut() {
@@ -5128,6 +5191,135 @@ fn summarize_failures(entries: &[HistoryEntry], limit: usize) -> Vec<FailureSumm
     summaries
 }
 
+fn summarize_failure_trends(
+    entries: &[HistoryEntry],
+    blocks: &[Block],
+    bucket_ms: u64,
+    limit: usize,
+) -> Vec<FailureTrendEntry> {
+    let bucket_ms = bucket_ms.max(60_000);
+    let mut branch_by_command_cwd = HashMap::<(String, String), String>::new();
+    for block in blocks.iter().rev() {
+        if block.exit_code.is_none() {
+            continue;
+        }
+        let command = block.command_text.trim();
+        if command.is_empty() {
+            continue;
+        }
+        let cwd = if block.cwd.as_os_str().is_empty() {
+            String::new()
+        } else {
+            block.cwd.display().to_string()
+        };
+        let branch = block
+            .git_branch
+            .as_ref()
+            .filter(|value| !value.trim().is_empty())
+            .cloned()
+            .unwrap_or_else(|| "unknown".to_string());
+        branch_by_command_cwd
+            .entry((command.to_string(), cwd))
+            .or_insert(branch);
+    }
+
+    let mut grouped = HashMap::<(String, String, String, u64), FailureTrendEntry>::new();
+    for entry in entries {
+        let exit_code = entry.exit_code.unwrap_or(0);
+        if exit_code == 0 {
+            continue;
+        }
+        let command = entry.command.trim();
+        if command.is_empty() {
+            continue;
+        }
+        let cwd = entry
+            .cwd
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_default();
+        let branch = branch_by_command_cwd
+            .get(&(command.to_string(), cwd.clone()))
+            .cloned()
+            .unwrap_or_else(|| "unknown".to_string());
+        let timestamp = entry.completed_at_ms.unwrap_or(entry.started_at_ms);
+        let bucket_start_ms = timestamp.saturating_sub(timestamp % bucket_ms);
+
+        grouped
+            .entry((
+                command.to_string(),
+                cwd.clone(),
+                branch.clone(),
+                bucket_start_ms,
+            ))
+            .and_modify(|trend| {
+                trend.count += 1;
+                if timestamp >= trend.last_completed_at_ms {
+                    trend.last_completed_at_ms = timestamp;
+                    trend.last_exit_code = exit_code;
+                }
+            })
+            .or_insert(FailureTrendEntry {
+                command: command.to_string(),
+                cwd,
+                branch,
+                bucket_start_ms,
+                count: 1,
+                last_exit_code: exit_code,
+                last_completed_at_ms: timestamp,
+            });
+    }
+
+    let mut trends = grouped.into_values().collect::<Vec<_>>();
+    trends.sort_by(|left, right| {
+        right
+            .bucket_start_ms
+            .cmp(&left.bucket_start_ms)
+            .then(right.count.cmp(&left.count))
+            .then(right.last_completed_at_ms.cmp(&left.last_completed_at_ms))
+            .then(left.command.cmp(&right.command))
+            .then(left.cwd.cmp(&right.cwd))
+            .then(left.branch.cmp(&right.branch))
+    });
+    trends.truncate(limit);
+    trends
+}
+
+fn format_bucket_label(bucket_start_ms: u64) -> String {
+    let total_minutes = (bucket_start_ms / 1000) / 60;
+    let minute = total_minutes % 60;
+    let hour = (total_minutes / 60) % 24;
+    format!("{hour:02}:{minute:02}")
+}
+
+fn failure_trend_panel_lines(
+    entries: &[HistoryEntry],
+    blocks: &[Block],
+    bucket_ms: u64,
+    limit: usize,
+) -> Vec<String> {
+    summarize_failure_trends(entries, blocks, bucket_ms, limit)
+        .into_iter()
+        .map(|entry| {
+            let bucket = format_bucket_label(entry.bucket_start_ms);
+            let branch = if entry.branch.trim().is_empty() {
+                "unknown".to_string()
+            } else {
+                entry.branch
+            };
+            let cwd = if entry.cwd.trim().is_empty() {
+                "unknown".to_string()
+            } else {
+                entry.cwd
+            };
+            format!(
+                "{}x [{}] {} · {} · {}",
+                entry.count, bucket, entry.command, cwd, branch
+            )
+        })
+        .collect()
+}
+
 fn format_replay_age(elapsed: Duration) -> String {
     let total_seconds = elapsed.as_secs();
     let minutes = total_seconds / 60;
@@ -5223,6 +5415,7 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::BlockFilter => "block_filter".to_string(),
         Action::BlockDiff => "block_diff".to_string(),
         Action::BlockRerun => "block_rerun".to_string(),
+        Action::ToggleFailureTrendsPanel => "toggle_failure_trends_panel".to_string(),
         Action::SearchGlobal => "search_global".to_string(),
         Action::EnterViMode => "enter_vi_mode".to_string(),
         Action::CommandPalette => "command_palette".to_string(),
@@ -5621,5 +5814,85 @@ mod tests {
         assert_eq!(summary[0].count, 2);
         assert_eq!(summary[1].command, "npm run lint");
         assert_eq!(summary[1].count, 1);
+    }
+
+    #[test]
+    fn summarize_failure_trends_groups_by_bucket_cwd_and_branch() {
+        let entries = vec![
+            HistoryEntry {
+                command: "cargo test".to_string(),
+                cwd: Some(PathBuf::from("/repo/a")),
+                source_pane_id: Some(1),
+                started_at_ms: 3_661_000,
+                completed_at_ms: Some(3_662_000),
+                exit_code: Some(101),
+                duration_ms: Some(1000),
+            },
+            HistoryEntry {
+                command: "cargo test".to_string(),
+                cwd: Some(PathBuf::from("/repo/a")),
+                source_pane_id: Some(1),
+                started_at_ms: 3_671_000,
+                completed_at_ms: Some(3_672_000),
+                exit_code: Some(101),
+                duration_ms: Some(1000),
+            },
+            HistoryEntry {
+                command: "npm run lint".to_string(),
+                cwd: Some(PathBuf::from("/repo/b")),
+                source_pane_id: Some(1),
+                started_at_ms: 7_201_000,
+                completed_at_ms: Some(7_202_000),
+                exit_code: Some(2),
+                duration_ms: Some(1000),
+            },
+        ];
+        let blocks = vec![
+            Block {
+                id: 1,
+                prompt_text: String::new(),
+                command_text: "cargo test".to_string(),
+                output_start_row: 0,
+                output_end_row: 0,
+                exit_code: Some(101),
+                start_time: Instant::now(),
+                end_time: Some(Instant::now()),
+                duration: None,
+                is_collapsed: false,
+                scroll_offset: 0,
+                cwd: PathBuf::from("/repo/a"),
+                git_branch: Some("main".to_string()),
+                git_dirty: None,
+                is_bookmarked: false,
+                trigger_highlights: Vec::new(),
+            },
+            Block {
+                id: 2,
+                prompt_text: String::new(),
+                command_text: "npm run lint".to_string(),
+                output_start_row: 0,
+                output_end_row: 0,
+                exit_code: Some(2),
+                start_time: Instant::now(),
+                end_time: Some(Instant::now()),
+                duration: None,
+                is_collapsed: false,
+                scroll_offset: 0,
+                cwd: PathBuf::from("/repo/b"),
+                git_branch: Some("feature/x".to_string()),
+                git_dirty: None,
+                is_bookmarked: false,
+                trigger_highlights: Vec::new(),
+            },
+        ];
+
+        let trends = summarize_failure_trends(&entries, &blocks, 3_600_000, 10);
+        assert_eq!(trends.len(), 2);
+        assert_eq!(trends[0].command, "npm run lint");
+        assert_eq!(trends[0].branch, "feature/x");
+        assert_eq!(trends[0].count, 1);
+        assert_eq!(trends[1].command, "cargo test");
+        assert_eq!(trends[1].branch, "main");
+        assert_eq!(trends[1].count, 2);
     }
 }

@@ -156,6 +156,8 @@ pub enum OverlayEffect {
         /// Target block id for the overlay.
         target_block_id: u64,
     },
+    /// Toggle the failure-trends overlay panel.
+    ToggleFailureTrendsPanel,
     /// Close the active block query overlay.
     CloseBlockQuery,
 }
