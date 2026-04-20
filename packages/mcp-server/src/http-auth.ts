@@ -61,17 +61,25 @@ const splitScopes = (value: unknown): readonly string[] => {
   return [];
 };
 
-const getAuthHeaderToken = (req: IncomingMessage): string | null => {
+type ParsedAuthorizationHeader =
+  | { readonly kind: "missing" }
+  | { readonly kind: "malformed"; readonly reason: string }
+  | { readonly kind: "token"; readonly token: string };
+
+const parseAuthorizationHeader = (req: IncomingMessage): ParsedAuthorizationHeader => {
   const header = toHeaderValue(req.headers.authorization);
   if (header === undefined) {
-    return null;
+    return { kind: "missing" };
   }
 
   const [scheme, token] = header.split(/\s+/, 2);
   if (scheme?.toLowerCase() !== "bearer" || token === undefined || token.trim() === "") {
-    return null;
+    return {
+      kind: "malformed",
+      reason: "Malformed Authorization header. Expected 'Bearer <token>'.",
+    };
   }
-  return token;
+  return { kind: "token", token };
 };
 
 const buildWwwAuthenticateHeader = (
@@ -225,8 +233,8 @@ export class HttpAuthController {
       };
     }
 
-    const token = getAuthHeaderToken(req);
-    if (token === null) {
+    const authHeader = parseAuthorizationHeader(req);
+    if (authHeader.kind === "missing") {
       if (this.mode === "all") {
         return this.buildInvalidTokenFailure("Missing Authorization header");
       }
@@ -235,8 +243,11 @@ export class HttpAuthController {
         enabledToolsets: this.publicToolsets,
       };
     }
+    if (authHeader.kind === "malformed") {
+      return this.buildInvalidTokenFailure(authHeader.reason);
+    }
 
-    const authInfo = await this.verifyAccessToken(token).catch((error) => this.toAuthFailure(error));
+    const authInfo = await this.verifyAccessToken(authHeader.token).catch((error) => this.toAuthFailure(error));
     if ("statusCode" in authInfo) {
       return authInfo;
     }
@@ -256,12 +267,15 @@ export class HttpAuthController {
       return true;
     }
 
-    const token = getAuthHeaderToken(req);
-    if (token === null) {
+    const authHeader = parseAuthorizationHeader(req);
+    if (authHeader.kind === "missing") {
       return this.buildInvalidTokenFailure("Missing Authorization header");
     }
+    if (authHeader.kind === "malformed") {
+      return this.buildInvalidTokenFailure(authHeader.reason);
+    }
 
-    const authInfo = await this.verifyAccessToken(token).catch((error) => this.toAuthFailure(error));
+    const authInfo = await this.verifyAccessToken(authHeader.token).catch((error) => this.toAuthFailure(error));
     if ("statusCode" in authInfo) {
       return authInfo;
     }

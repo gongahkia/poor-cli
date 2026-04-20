@@ -15,6 +15,8 @@ type TestIssuer = {
   readonly audience: string;
   readonly signToken: (options?: {
     readonly scopes?: readonly string[];
+    readonly scpScopes?: readonly string[];
+    readonly includeScopeClaim?: boolean;
     readonly audience?: string;
     readonly issuer?: string;
     readonly expiresAt?: number | string;
@@ -103,9 +105,14 @@ const createOidcIssuer = async (options?: {
     audience,
     signToken: async (tokenOptions) => {
       const scopes = tokenOptions?.scopes ?? [];
-      return new SignJWT({
-        scope: scopes.join(" "),
-      })
+      const payload: Record<string, unknown> = {};
+      if (tokenOptions?.includeScopeClaim !== false) {
+        payload["scope"] = scopes.join(" ");
+      }
+      if (tokenOptions?.scpScopes !== undefined) {
+        payload["scp"] = [...tokenOptions.scpScopes];
+      }
+      return new SignJWT(payload)
         .setProtectedHeader({ alg: "RS256", kid: keyId })
         .setIssuer(tokenOptions?.issuer ?? issuerUrl.href)
         .setAudience(tokenOptions?.audience ?? audience)
@@ -239,6 +246,27 @@ describe("HttpAuthController", () => {
     });
   });
 
+  it("rejects malformed authorization headers in mixed mode instead of silently downgrading", async () => {
+    const issuer = await createOidcIssuer();
+    createdClosers.push(issuer.close);
+
+    const controller = createController({
+      mode: "mixed",
+      issuer: issuer.issuerUrl.href,
+      audience: issuer.audience,
+    });
+
+    const failure = expectAuthFailure(
+      await controller.resolveInitializeSession(createRequest({ authorization: "Basic abc123" })),
+    );
+    expect(failure.statusCode).toBe(401);
+    expect(failure.reason).toBe("invalid_token");
+    expect(failure.payload).toMatchObject({
+      error: "invalid_token",
+      error_description: "Malformed Authorization header. Expected 'Bearer <token>'.",
+    });
+  });
+
   it("returns insufficient_scope when required scopes are missing", async () => {
     const issuer = await createOidcIssuer();
     createdClosers.push(issuer.close);
@@ -257,6 +285,30 @@ describe("HttpAuthController", () => {
     expect(failure.statusCode).toBe(403);
     expect(failure.reason).toBe("insufficient_scope");
     expect(failure.headers["WWW-Authenticate"]).toContain("scope=\"ops:write\"");
+  });
+
+  it("accepts required scopes from the scp claim array", async () => {
+    const issuer = await createOidcIssuer();
+    createdClosers.push(issuer.close);
+
+    const token = await issuer.signToken({
+      includeScopeClaim: false,
+      scpScopes: ["ops:write", "query:read"],
+    });
+    const controller = createController({
+      mode: "mixed",
+      issuer: issuer.issuerUrl.href,
+      audience: issuer.audience,
+      requiredScopes: ["ops:write"],
+    });
+
+    const session = await controller.resolveInitializeSession(createRequest({ authorization: `Bearer ${token}` }));
+    expect("statusCode" in session).toBe(false);
+    if ("statusCode" in session) {
+      return;
+    }
+    expect(session.access).toBe("protected");
+    expect(session.authInfo?.scopes).toContain("ops:write");
   });
 
   it("rejects expired bearer tokens", async () => {
@@ -323,5 +375,33 @@ describe("HttpAuthController", () => {
     expect(failure.statusCode).toBe(401);
     expect(failure.reason).toBe("invalid_token");
     expect(String(failure.payload["error_description"] ?? "")).toContain("OIDC issuer mismatch");
+  });
+
+  it("rejects malformed authorization headers for protected follow-up requests", async () => {
+    const issuer = await createOidcIssuer();
+    createdClosers.push(issuer.close);
+
+    const token = await issuer.signToken({ scopes: ["ops:write"] });
+    const controller = createController({
+      mode: "all",
+      issuer: issuer.issuerUrl.href,
+      audience: issuer.audience,
+      requiredScopes: ["ops:write"],
+    });
+
+    const session = await controller.resolveInitializeSession(createRequest({ authorization: `Bearer ${token}` }));
+    expect("statusCode" in session).toBe(false);
+    if ("statusCode" in session) {
+      return;
+    }
+
+    const followup = await controller.authorizeSessionRequest(createRequest({ authorization: "Bearer" }), session);
+    expect(followup).not.toBe(true);
+    const failure = followup as AuthFailure;
+    expect(failure.statusCode).toBe(401);
+    expect(failure.reason).toBe("invalid_token");
+    expect(failure.payload).toMatchObject({
+      error_description: "Malformed Authorization header. Expected 'Bearer <token>'.",
+    });
   });
 });
