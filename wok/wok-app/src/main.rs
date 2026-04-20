@@ -2865,6 +2865,71 @@ impl WokHandler {
         }
     }
 
+    fn export_selected_block_bundle(&mut self, format: BlockExportFormat) {
+        let Some((bundle, serialized)) = self.active_pane().and_then(|pane| {
+            let block = pane.app.selected_or_latest_block()?;
+            let output = collect_block_output_lines(&pane.terminal, block);
+            let duration_ms = block.duration.map(|duration| duration.as_millis() as u64);
+            let cwd = (!block.cwd.as_os_str().is_empty()).then(|| block.cwd.display().to_string());
+            let generated_at_unix_ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |duration| duration.as_millis() as u64);
+
+            let bundle = BlockExportBundle {
+                generated_at_unix_ms,
+                pane_id: pane.pane_id,
+                block_id: block.id,
+                command: block.command_text.clone(),
+                cwd,
+                git_branch: block.git_branch.clone(),
+                exit_code: block.exit_code,
+                duration_ms,
+                output_start_row: block.output_start_row,
+                output_end_row: block.output_end_row,
+                output_lines: output,
+            };
+            let serialized = match format {
+                BlockExportFormat::Markdown => bundle.to_markdown(),
+                BlockExportFormat::Json => match serde_json::to_string_pretty(&bundle) {
+                    Ok(payload) => payload,
+                    Err(error) => {
+                        warn!("failed to serialize block export JSON: {error}");
+                        return None;
+                    }
+                },
+            };
+            Some((bundle, serialized))
+        }) else {
+            self.status_message = Some("No block available for export".to_string());
+            return;
+        };
+
+        if let Some(active_pane) = self.active_pane_mut() {
+            if let Err(error) = active_pane.app.clipboard.copy(&serialized) {
+                warn!("failed to copy block export to clipboard: {error}");
+            }
+        }
+
+        match persist_block_export(&bundle, &serialized, format) {
+            Ok(path) => {
+                self.status_message = Some(format!(
+                    "Exported block {} as {} ({})",
+                    bundle.block_id,
+                    format.label(),
+                    path.display()
+                ));
+            }
+            Err(error) => {
+                warn!("failed to persist block export: {error}");
+                self.status_message = Some(format!(
+                    "Exported block {} as {} to clipboard only",
+                    bundle.block_id,
+                    format.label()
+                ));
+            }
+        }
+    }
+
     fn handle_action(&mut self, action: Action) {
         if matches!(action, Action::EnterViMode) {
             self.enter_vi_mode();
@@ -2873,6 +2938,16 @@ impl WokHandler {
         }
         if matches!(action, Action::BlockSaveWorkflow) {
             self.save_selected_block_as_workflow();
+            self.needs_redraw = true;
+            return;
+        }
+        if matches!(action, Action::BlockExportMarkdown) {
+            self.export_selected_block_bundle(BlockExportFormat::Markdown);
+            self.needs_redraw = true;
+            return;
+        }
+        if matches!(action, Action::BlockExportJson) {
+            self.export_selected_block_bundle(BlockExportFormat::Json);
             self.needs_redraw = true;
             return;
         }
@@ -2898,6 +2973,8 @@ impl WokHandler {
                         | Action::BlockRerun
                         | Action::BlockRerunInSplit
                         | Action::BlockSaveWorkflow
+                        | Action::BlockExportMarkdown
+                        | Action::BlockExportJson
                         | Action::ToggleFailureTrendsPanel
                         | Action::SearchGlobal
                         | Action::CommandPalette
@@ -5698,6 +5775,100 @@ fn persist_workflow_template(workflow: &Workflow) -> Result<PathBuf, Box<dyn Err
     Ok(path)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BlockExportFormat {
+    Markdown,
+    Json,
+}
+
+impl BlockExportFormat {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Markdown => "markdown",
+            Self::Json => "json",
+        }
+    }
+
+    fn extension(self) -> &'static str {
+        match self {
+            Self::Markdown => "md",
+            Self::Json => "json",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct BlockExportBundle {
+    generated_at_unix_ms: u64,
+    pane_id: PaneId,
+    block_id: u64,
+    command: String,
+    cwd: Option<String>,
+    git_branch: Option<String>,
+    exit_code: Option<i32>,
+    duration_ms: Option<u64>,
+    output_start_row: usize,
+    output_end_row: usize,
+    output_lines: Vec<String>,
+}
+
+impl BlockExportBundle {
+    fn to_markdown(&self) -> String {
+        let cwd = self.cwd.as_deref().unwrap_or("unknown");
+        let branch = self.git_branch.as_deref().unwrap_or("unknown");
+        let exit = self
+            .exit_code
+            .map_or_else(|| "unknown".to_string(), |code| code.to_string());
+        let duration = self
+            .duration_ms
+            .map_or_else(|| "unknown".to_string(), |ms| format!("{ms}ms"));
+        let output = self.output_lines.join("\n");
+        format!(
+            "# Wok Block Export\n\n\
+             - Generated At (unix ms): `{}`\n\
+             - Pane ID: `{}`\n\
+             - Block ID: `{}`\n\
+             - CWD: `{}`\n\
+             - Branch: `{}`\n\
+             - Exit Code: `{}`\n\
+             - Duration: `{}`\n\
+             - Output Rows: `{}..={}`\n\n\
+             ## Command\n\n\
+             ```bash\n{}\n```\n\n\
+             ## Output\n\n\
+             ```text\n{}\n```\n",
+            self.generated_at_unix_ms,
+            self.pane_id,
+            self.block_id,
+            cwd,
+            branch,
+            exit,
+            duration,
+            self.output_start_row,
+            self.output_end_row,
+            self.command,
+            output,
+        )
+    }
+}
+
+fn persist_block_export(
+    bundle: &BlockExportBundle,
+    payload: &str,
+    format: BlockExportFormat,
+) -> Result<PathBuf, Box<dyn Error>> {
+    let exports_dir = WokConfig::config_dir().join("exports");
+    std::fs::create_dir_all(&exports_dir)?;
+    let path = exports_dir.join(format!(
+        "block-{}-{}.{}",
+        bundle.block_id,
+        bundle.generated_at_unix_ms,
+        format.extension()
+    ));
+    std::fs::write(&path, payload)?;
+    Ok(path)
+}
+
 fn remote_rpc_methods() -> &'static [&'static str] {
     &[
         "wok.get_rpc_info",
@@ -5828,6 +5999,8 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::BlockRerun => "block_rerun".to_string(),
         Action::BlockRerunInSplit => "block_rerun_in_split".to_string(),
         Action::BlockSaveWorkflow => "block_save_workflow".to_string(),
+        Action::BlockExportMarkdown => "block_export_markdown".to_string(),
+        Action::BlockExportJson => "block_export_json".to_string(),
         Action::ToggleFailureTrendsPanel => "toggle_failure_trends_panel".to_string(),
         Action::SearchGlobal => "search_global".to_string(),
         Action::EnterViMode => "enter_vi_mode".to_string(),
@@ -5888,6 +6061,8 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::BlockRerun,
         Action::BlockRerunInSplit,
         Action::BlockSaveWorkflow,
+        Action::BlockExportMarkdown,
+        Action::BlockExportJson,
         Action::ToggleFailureTrendsPanel,
         Action::BlockPrevFailed,
         Action::BlockNextFailed,
@@ -5985,6 +6160,8 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::BlockRerun => "Re-run the selected block command",
         Action::BlockRerunInSplit => "Re-run the selected block command in a new split pane",
         Action::BlockSaveWorkflow => "Save selected block command as a reusable workflow",
+        Action::BlockExportMarkdown => "Export selected block metadata and output as Markdown",
+        Action::BlockExportJson => "Export selected block metadata and output as JSON",
         Action::ToggleFailureTrendsPanel => "Open failure trends analytics panel",
         Action::SearchGlobal => "Search text across the workspace",
         Action::EnterViMode => "Enable vi-style navigation mode",

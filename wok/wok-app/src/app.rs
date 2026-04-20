@@ -364,6 +364,24 @@ impl WokApp {
                     effects.push(RuntimeEffect::Status("No block available".to_string()));
                 }
             }
+            Action::BlockExportMarkdown => {
+                if self.selected_or_latest_block_id().is_some() {
+                    effects.push(RuntimeEffect::Status(
+                        "Exporting selected block as Markdown".to_string(),
+                    ));
+                } else {
+                    effects.push(RuntimeEffect::Status("No block available".to_string()));
+                }
+            }
+            Action::BlockExportJson => {
+                if self.selected_or_latest_block_id().is_some() {
+                    effects.push(RuntimeEffect::Status(
+                        "Exporting selected block as JSON".to_string(),
+                    ));
+                } else {
+                    effects.push(RuntimeEffect::Status("No block available".to_string()));
+                }
+            }
             Action::ToggleFailureTrendsPanel => {
                 effects.push(RuntimeEffect::Overlay(
                     OverlayEffect::ToggleFailureTrendsPanel,

@@ -91,6 +91,10 @@ pub enum Action {
     BlockRerunInSplit,
     /// Save the selected block command as a reusable workflow template.
     BlockSaveWorkflow,
+    /// Export selected block metadata + output as Markdown.
+    BlockExportMarkdown,
+    /// Export selected block metadata + output as JSON.
+    BlockExportJson,
     /// Toggle the failure-trends panel for the active pane.
     ToggleFailureTrendsPanel,
     /// Global terminal search.
@@ -435,6 +439,20 @@ impl Default for KeybindingConfig {
         );
         bindings.insert(
             KeyCombo {
+                key: KeyAction::Char('m'),
+                modifiers: Modifiers { shift: true, ..pma },
+            },
+            Action::BlockExportMarkdown,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('j'),
+                modifiers: Modifiers { shift: true, ..pma },
+            },
+            Action::BlockExportJson,
+        );
+        bindings.insert(
+            KeyCombo {
                 key: KeyAction::Char('y'),
                 modifiers: pma,
             },
@@ -767,6 +785,33 @@ mod tests {
         assert_eq!(
             config.resolve(&save_workflow_combo, &Context::Terminal),
             Some(&Action::BlockSaveWorkflow)
+        );
+    }
+
+    #[test]
+    fn test_block_export_bindings_exist() {
+        let config = KeybindingConfig::default();
+        let markdown_combo = KeyCombo {
+            key: KeyAction::Char('m'),
+            modifiers: Modifiers {
+                shift: true,
+                ..platform_mod_alt()
+            },
+        };
+        let json_combo = KeyCombo {
+            key: KeyAction::Char('j'),
+            modifiers: Modifiers {
+                shift: true,
+                ..platform_mod_alt()
+            },
+        };
+        assert_eq!(
+            config.resolve(&markdown_combo, &Context::Terminal),
+            Some(&Action::BlockExportMarkdown)
+        );
+        assert_eq!(
+            config.resolve(&json_combo, &Context::Terminal),
+            Some(&Action::BlockExportJson)
         );
     }
 

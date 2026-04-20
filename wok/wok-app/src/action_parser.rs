@@ -109,6 +109,12 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         "block_save_workflow" | "save_block_workflow" | "block_workflow_save" => {
             Some(Action::BlockSaveWorkflow)
         }
+        "block_export_markdown" | "export_block_markdown" | "block_export_md" => {
+            Some(Action::BlockExportMarkdown)
+        }
+        "block_export_json" | "export_block_json" | "block_export_js" => {
+            Some(Action::BlockExportJson)
+        }
         "toggle_failure_trends_panel" | "failure_trends_panel" | "failure_trends" => {
             Some(Action::ToggleFailureTrendsPanel)
         }
@@ -214,6 +220,14 @@ mod tests {
         assert_eq!(
             parse_lua_action("save_block_workflow"),
             Some(Action::BlockSaveWorkflow)
+        );
+        assert_eq!(
+            parse_lua_action("export_block_markdown"),
+            Some(Action::BlockExportMarkdown)
+        );
+        assert_eq!(
+            parse_lua_action("block_export_json"),
+            Some(Action::BlockExportJson)
         );
         assert_eq!(
             parse_lua_action("failure_trends"),
