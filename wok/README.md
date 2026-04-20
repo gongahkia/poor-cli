@@ -1,6 +1,6 @@
-# Walk
+# Wok
 
-Walk is a local-first workspace terminal for developers who live in build, test, and git loops and want terminal output organized into navigable command blocks instead of one undifferentiated scrollback wall.
+Wok is a local-first workspace terminal for developers who live in build, test, and git loops and want terminal output organized into navigable command blocks instead of one undifferentiated scrollback wall.
 
 The product is intentionally opinionated: no AI, no login, no cloud dependency. The current v1 target is a trustworthy single-window workspace with pane-local terminals, block timelines, search, sessions, and scriptable actions.
 
@@ -15,23 +15,23 @@ The product is intentionally opinionated: no AI, no login, no cloud dependency. 
 | Input bar | Shipped | Bottom bar supports both the action palette and an owned-primary command editor behind `command_entry_mode = "owned_primary"` |
 | Search | Shipped | Workspace-global query with focused-pane overlay, match counts, next/prev navigation, and cross-pane result jumps |
 | Mouse selection | Shipped | Drag selection works; `copy_on_select` is honored |
-| Lua scripting | Shipped | Loads `~/.config/walk/init.lua`, supports keybindings, command aliases, structured hooks, `run_action`, `exec`, `notify`, and runtime state accessors |
-| Theme loading | Shipped | `theme_path` loads at startup, hot reloads on file changes, and can be changed live through `walk.theme.load(...)` / `walk.theme.set(...)` |
+| Lua scripting | Shipped | Loads `~/.config/wok/init.lua`, supports keybindings, command aliases, structured hooks, `run_action`, `exec`, `notify`, and runtime state accessors |
+| Theme loading | Shipped | `theme_path` loads at startup, hot reloads on file changes, and can be changed live through `wok.theme.load(...)` / `wok.theme.set(...)` |
 | Remaining limits | Honest gap | Plugins are still action/hook scoped rather than custom renderers, and the main runtime orchestration still lives in one large entrypoint instead of a fully split module tree |
 
 ## Run Locally
 
 ```bash
-cargo run -p walk
+cargo run -p wok
 ```
 
 Useful variants:
 
 ```bash
-cargo run -p walk -- --shell zsh
-cargo run -p walk -- --shell powershell
-cargo run -p walk -- --shell wsl:Ubuntu
-cargo build --release -p walk
+cargo run -p wok -- --shell zsh
+cargo run -p wok -- --shell powershell
+cargo run -p wok -- --shell wsl:Ubuntu
+cargo build --release -p wok
 ```
 
 Owned-primary input is opt-in for now:
@@ -40,13 +40,13 @@ Owned-primary input is opt-in for now:
 command_entry_mode = "owned_primary"
 ```
 
-In that mode, Walk owns prompt-time editing, `Up` / `Down` performs pane-first history recall, and `Ctrl+R` opens pane-first command history search.
+In that mode, Wok owns prompt-time editing, `Up` / `Down` performs pane-first history recall, and `Ctrl+R` opens pane-first command history search.
 
 Configuration search order:
 
-1. `$WALK_CONFIG`
-2. `~/.config/walk/config.toml`
-3. `~/.walk.toml`
+1. `$WOK_CONFIG`
+2. `~/.config/wok/config.toml`
+3. `~/.wok.toml`
 
 More detail:
 
@@ -57,7 +57,7 @@ More detail:
 
 Use `bash`, `zsh`, or `fish` for the cleanest first-run block demo.
 
-1. Launch Walk.
+1. Launch Wok.
 2. Run `echo hello`, `pwd`, and `false`.
 3. Split the workspace with `Mod+D` or `Mod+Shift+D`.
 4. Use `Mod+Up` / `Mod+Down` to move across blocks in the focused pane.
@@ -70,25 +70,25 @@ Named snapshots are available through Lua action aliases such as `save_session:d
 
 ## Repo Map
 
-- `walk-app`: executable, event loop, workspace orchestration, sessions, scripting
-- `walk-terminal`: PTY lifecycle, shell bootstrap, terminal state, semantic events
-- `walk-blocks`: block state machine, navigation, block metadata
-- `walk-input`: editor buffer and command history
-- `walk-renderer`: wgpu pipeline, glyph atlas, font rasterization
-- `walk-ui`: clipboard, search state, split layout, theme loading
+- `wok-app`: executable, event loop, workspace orchestration, sessions, scripting
+- `wok-terminal`: PTY lifecycle, shell bootstrap, terminal state, semantic events
+- `wok-blocks`: block state machine, navigation, block metadata
+- `wok-input`: editor buffer and command history
+- `wok-renderer`: wgpu pipeline, glyph atlas, font rasterization
+- `wok-ui`: clipboard, search state, split layout, theme loading
 
 ## Interview Notes
 
-Start with: Walk is a crate-split Rust terminal that treats PTY correctness as the foundation and block-oriented command review as the product wedge.
+Start with: Wok is a crate-split Rust terminal that treats PTY correctness as the foundation and block-oriented command review as the product wedge.
 
 Then explain the runtime path:
 
 1. `winit` captures input and drives the frame loop.
-2. `WalkHandler` owns workspace tabs, split panes, sessions, and Lua side effects.
-3. Each pane owns a `WalkApp` state bundle plus a `walk-terminal::Terminal`.
-4. `walk-terminal` emits semantic events from shell markers and cwd/title changes.
-5. `walk-blocks` turns those events into pane-local block records.
-6. `walk-renderer` turns terminal cells, block decorations, search highlights, and chrome into one GPU batch.
+2. `WokHandler` owns workspace tabs, split panes, sessions, and Lua side effects.
+3. Each pane owns a `WokApp` state bundle plus a `wok-terminal::Terminal`.
+4. `wok-terminal` emits semantic events from shell markers and cwd/title changes.
+5. `wok-blocks` turns those events into pane-local block records.
+6. `wok-renderer` turns terminal cells, block decorations, search highlights, and chrome into one GPU batch.
 
 Use these docs when presenting the project:
 

@@ -1,33 +1,33 @@
--- Walk full init.lua example
--- Place at ~/.config/walk/init.lua
+-- Wok full init.lua example
+-- Place at ~/.config/wok/init.lua
 
-walk.theme.set({
+wok.theme.set({
     background = "#1e1e2e",
     foreground = "#cdd6f4",
     cursor = "#f5e0dc",
 })
 
-walk.bind_key("terminal", "ctrl+shift+t", "new_tab")
-walk.bind_key("terminal", "ctrl+shift+w", "close_tab")
-walk.bind_key("terminal", "ctrl+d", "split_vertical")
-walk.bind_key("terminal", "ctrl+shift+d", "split_horizontal")
-walk.bind_key("terminal", "ctrl+f", "search_global")
+wok.bind_key("terminal", "ctrl+shift+t", "new_tab")
+wok.bind_key("terminal", "ctrl+shift+w", "close_tab")
+wok.bind_key("terminal", "ctrl+d", "split_vertical")
+wok.bind_key("terminal", "ctrl+shift+d", "split_horizontal")
+wok.bind_key("terminal", "ctrl+f", "search_global")
 
-walk.register_command("save_work", "save_session:work")
-walk.register_command("load_work", "load_session:work")
-walk.bind_key("terminal", "ctrl+shift+s", "save_work")
-walk.bind_key("terminal", "ctrl+shift+r", "load_work")
+wok.register_command("save_work", "save_session:work")
+wok.register_command("load_work", "load_session:work")
+wok.bind_key("terminal", "ctrl+shift+s", "save_work")
+wok.bind_key("terminal", "ctrl+shift+r", "load_work")
 
-walk.on("app_start", function()
-    walk.notify("Walk started")
+wok.on("app_start", function()
+    wok.notify("Wok started")
 end)
 
-walk.on("block_finished", function(event)
+wok.on("block_finished", function(event)
     if event.exit_code ~= 0 then
-        walk.notify("Command failed: " .. event.command)
+        wok.notify("Command failed: " .. event.command)
     end
 end)
 
-walk.on("cwd_changed", function(event)
-    walk.notify("Working directory changed to " .. event.path)
+wok.on("cwd_changed", function(event)
+    wok.notify("Working directory changed to " .. event.path)
 end)

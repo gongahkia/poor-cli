@@ -1,6 +1,6 @@
-# Walk (Current-State Technical Guide)
+# Wok (Current-State Technical Guide)
 
-Walk is a local-first workspace terminal focused on block-oriented command review for build/test/git workflows.
+Wok is a local-first workspace terminal focused on block-oriented command review for build/test/git workflows.
 
 This file reflects the implemented runtime as of the current repository state.
 
@@ -44,20 +44,20 @@ This file reflects the implemented runtime as of the current repository state.
 ## Run
 
 ```bash
-cargo run -p walk
+cargo run -p wok
 ```
 
 Useful variants:
 
 ```bash
-cargo run -p walk -- --shell zsh
-cargo run -p walk -- --shell powershell
-cargo run -p walk -- --shell wsl:Ubuntu
-cargo run -p walk -- --daemon work
-cargo run -p walk -- attach work
-cargo run -p walk -- list
-cargo run -p walk -- rpc walk.get_panes
-cargo run -p walk -- rpc walk.run_action --params '["SplitVertical", {"index": 2}]'
+cargo run -p wok -- --shell zsh
+cargo run -p wok -- --shell powershell
+cargo run -p wok -- --shell wsl:Ubuntu
+cargo run -p wok -- --daemon work
+cargo run -p wok -- attach work
+cargo run -p wok -- list
+cargo run -p wok -- rpc wok.get_panes
+cargo run -p wok -- rpc wok.run_action --params '["SplitVertical", {"index": 2}]'
 ```
 
 ## Key Runtime Surfaces
@@ -79,16 +79,16 @@ cargo run -p walk -- rpc walk.run_action --params '["SplitVertical", {"index": 2
 
 ## Daemon Mode
 
-Walk supports a background daemon that owns terminal state independently of the GUI.
+Wok supports a background daemon that owns terminal state independently of the GUI.
 
 ### Lifecycle
 
 ```bash
-walk --daemon <name>       # start a named daemon session
-walk attach <name>         # attach a GUI window to a running daemon
-walk detach <name>         # detach the current client from a daemon
-walk list                  # list running daemon sessions
-walk kill <name>           # terminate a daemon session
+wok --daemon <name>       # start a named daemon session
+wok attach <name>         # attach a GUI window to a running daemon
+wok detach <name>         # detach the current client from a daemon
+wok list                  # list running daemon sessions
+wok kill <name>           # terminate a daemon session
 ```
 
 ### Multi-Pane Support
@@ -104,44 +104,44 @@ IPC messages for pane lifecycle:
 ### RPC from CLI
 
 ```bash
-walk rpc <method> --params '{...}'
+wok rpc <method> --params '{...}'
 ```
 
 Connects to the daemon's Unix socket (or TCP port on Windows) and sends a JSON-RPC request.
 
 ## Remote Control
 
-Walk exposes a JSON-RPC 2.0 server over a Unix domain socket (Linux/macOS) or TCP loopback (Windows).
+Wok exposes a JSON-RPC 2.0 server over a Unix domain socket (Linux/macOS) or TCP loopback (Windows).
 
-The socket path is exported as `WALK_SOCKET` in spawned shell environments. On Windows, a port file is written to a temp-dir path and the port number is available in `WALK_SOCKET`.
+The socket path is exported as `WOK_SOCKET` in spawned shell environments. On Windows, a port file is written to a temp-dir path and the port number is available in `WOK_SOCKET`.
 
 ### Available Methods
 
 | Method | Description |
 | --- | --- |
-| `walk.get_panes` | List all panes with ids and dimensions |
-| `walk.send_text` | Send text/keystrokes to a pane |
-| `walk.run_action` | Execute a named workspace action |
-| `walk.get_blocks` | Retrieve block timeline for a pane |
-| `walk.get_text` | Read terminal text content |
-| `walk.create_pane` | Create a new pane (split) |
-| `walk.close_pane` | Close a pane by id |
-| `walk.set_theme` | Apply a theme at runtime |
-| `walk.notify` | Push a status notification |
+| `wok.get_panes` | List all panes with ids and dimensions |
+| `wok.send_text` | Send text/keystrokes to a pane |
+| `wok.run_action` | Execute a named workspace action |
+| `wok.get_blocks` | Retrieve block timeline for a pane |
+| `wok.get_text` | Read terminal text content |
+| `wok.create_pane` | Create a new pane (split) |
+| `wok.close_pane` | Close a pane by id |
+| `wok.set_theme` | Apply a theme at runtime |
+| `wok.notify` | Push a status notification |
 
 ### Example
 
 ```bash
-echo '{"jsonrpc":"2.0","method":"walk.get_panes","id":1}' \
-  | socat - UNIX-CONNECT:"$WALK_SOCKET"
+echo '{"jsonrpc":"2.0","method":"wok.get_panes","id":1}' \
+  | socat - UNIX-CONNECT:"$WOK_SOCKET"
 ```
 
 Built-in client shortcut:
 
 ```bash
-walk rpc walk.get_panes
-walk rpc walk.send_text --params '{"pane_id":1,"text":"ls\n"}'
-walk rpc walk.run_action --params '["save_session", {"name":"manual"}]'
+wok rpc wok.get_panes
+wok rpc wok.send_text --params '{"pane_id":1,"text":"ls\n"}'
+wok rpc wok.run_action --params '["save_session", {"name":"manual"}]'
 ```
 
 ### Error Code Semantics
@@ -154,7 +154,7 @@ walk rpc walk.run_action --params '["save_session", {"name":"manual"}]'
 
 ## Current Constraints
 
-- Runtime orchestration is partially concentrated in `walk-app/src/main.rs` (large extractions done to `workspace_runtime`, `render_runtime`, `cli_runtime`).
+- Runtime orchestration is partially concentrated in `wok-app/src/main.rs` (large extractions done to `workspace_runtime`, `render_runtime`, `cli_runtime`).
 - Attached-session sync follows per-pane transcript updates mapped by daemon pane id.
 - Remote control on non-Unix platforms uses TCP loopback rather than named pipes.
 - Plugins are action/hook scoped (no custom render pipeline ownership).
@@ -170,7 +170,7 @@ cargo clippy --all-targets -- -D warnings
 
 ## Repo Map
 
-- `walk-app`: runtime orchestration, event loop integration, session/daemon/remote/scripting
+- `wok-app`: runtime orchestration, event loop integration, session/daemon/remote/scripting
   - `workspace_runtime`: workspace effect handlers (tab/split/focus/layout/session actions)
   - `render_runtime`: rendering orchestration helpers (status bar, overlays, replay, quad batching)
   - `cli_runtime`: CLI dispatch and session bootstrap
@@ -179,8 +179,8 @@ cargo clippy --all-targets -- -D warnings
   - `ipc`: IPC protocol and framing (length-prefixed JSON, `ClientMessage`/`ServerMessage`)
   - `jsonrpc_params`: typed parameter extraction and `RpcError` with standard codes
   - `remote_control`: platform-specific JSON-RPC server (Unix socket / Windows TCP loopback)
-- `walk-terminal`: PTY lifecycle, shell bootstrap, semantic parsing, replay snapshots
-- `walk-renderer`: GPU context, batching, glyph atlas, inline image support
-- `walk-input`: editor buffer, completion/history/workflows
-- `walk-ui`: layout/search/selection/theme/status/quick-select/replay overlay helpers
-- `walk-blocks`: block state machine, navigation, block search, trigger engine
+- `wok-terminal`: PTY lifecycle, shell bootstrap, semantic parsing, replay snapshots
+- `wok-renderer`: GPU context, batching, glyph atlas, inline image support
+- `wok-input`: editor buffer, completion/history/workflows
+- `wok-ui`: layout/search/selection/theme/status/quick-select/replay overlay helpers
+- `wok-blocks`: block state machine, navigation, block search, trigger engine

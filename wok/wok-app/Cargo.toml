@@ -1,0 +1,31 @@
+[package]
+name = "wok"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Wok terminal emulator"
+default-run = "wok"
+
+[lib]
+name = "wok_app"
+path = "src/lib.rs"
+
+[dependencies]
+wok-renderer = { path = "../wok-renderer" }
+wok-terminal = { path = "../wok-terminal" }
+wok-blocks = { path = "../wok-blocks" }
+wok-input = { path = "../wok-input" }
+wok-ui = { path = "../wok-ui" }
+winit = "0.30"
+wgpu = "24"
+pollster = "0.4"
+clap = { version = "4", features = ["derive"] }
+mlua = { version = "0.10", features = ["lua54", "serialize", "vendored"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+regex = "1"

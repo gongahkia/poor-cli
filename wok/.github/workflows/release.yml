@@ -40,33 +40,33 @@ jobs:
         if: matrix.ext == 'tar.gz'
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../walk-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.ext }} walk
+          tar czf ../../../wok-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.ext }} wok
           cd ../../..
 
       - name: Package (macOS app bundle)
         if: contains(matrix.target, 'apple-darwin')
         run: |
-          WALK_SKIP_BUILD=1 packaging/macos/bundle.sh Walk.app ${{ matrix.target }}
-          tar czf walk-${{ github.ref_name }}-${{ matrix.target }}-app.tar.gz Walk.app
+          WOK_SKIP_BUILD=1 packaging/macos/bundle.sh Wok.app ${{ matrix.target }}
+          tar czf wok-${{ github.ref_name }}-${{ matrix.target }}-app.tar.gz Wok.app
 
       - name: Package (.deb)
         if: matrix.target == 'x86_64-unknown-linux-gnu'
         run: |
-          WALK_SKIP_BUILD=1 WALK_TARGET=${{ matrix.target }} packaging/linux/build_deb.sh dist/linux
+          WOK_SKIP_BUILD=1 WOK_TARGET=${{ matrix.target }} packaging/linux/build_deb.sh dist/linux
 
       - name: Package (Windows)
         if: matrix.ext == 'zip'
         shell: pwsh
         run: |
-          Compress-Archive -Path target/${{ matrix.target }}/release/walk.exe -DestinationPath walk-${{ env.GITHUB_REF_NAME }}-${{ matrix.target }}.${{ matrix.ext }}
+          Compress-Archive -Path target/${{ matrix.target }}/release/wok.exe -DestinationPath wok-${{ env.GITHUB_REF_NAME }}-${{ matrix.target }}.${{ matrix.ext }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: walk-${{ matrix.target }}
+          name: wok-${{ matrix.target }}
           path: |
-            walk-*.${{ matrix.ext }}
-            walk-*-app.tar.gz
+            wok-*.${{ matrix.ext }}
+            wok-*-app.tar.gz
             dist/linux/*.deb
 
   release:
@@ -79,11 +79,11 @@ jobs:
           merge-multiple: true
 
       - name: Create checksums
-        run: sha256sum walk-* > checksums.sha256
+        run: sha256sum wok-* > checksums.sha256
 
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            walk-*
+            wok-*
             checksums.sha256
           generate_release_notes: true

@@ -1,10 +1,10 @@
-# Walk Configuration Reference
+# Wok Configuration Reference
 
-Walk is configured via a TOML file located at one of:
+Wok is configured via a TOML file located at one of:
 
-1. `$WALK_CONFIG`
-2. `~/.config/walk/config.toml`
-3. `~/.walk.toml`
+1. `$WOK_CONFIG`
+2. `~/.config/wok/config.toml`
+3. `~/.wok.toml`
 
 ## Full Example
 
@@ -23,7 +23,7 @@ window_opacity = 1.0
 copy_on_select = false
 confirm_close_with_running_process = true
 restore_session = true
-theme_path = "~/.config/walk/themes/catppuccin.toml"
+theme_path = "~/.config/wok/themes/catppuccin.toml"
 ```
 
 ## Options
@@ -34,7 +34,7 @@ theme_path = "~/.config/walk/themes/catppuccin.toml"
 | `font_family` | string | `"JetBrains Mono"` | Active | Selects the font family used for glyph rasterization and cell metric measurement |
 | `font_size` | float | `14.0` | Active | Font size in points |
 | `input_position` | string | `"bottom"` | Active | Places the owned input bar above or below the viewport |
-| `command_entry_mode` | string | `"shell_native"` | Active | Chooses prompt-time command entry routing: `shell_native` keeps shell-side editing, `owned_primary` routes idle prompt input into Walk's editor with pane-first history recall and `Ctrl+R` command search |
+| `command_entry_mode` | string | `"shell_native"` | Active | Chooses prompt-time command entry routing: `shell_native` keeps shell-side editing, `owned_primary` routes idle prompt input into Wok's editor with pane-first history recall and `Ctrl+R` command search |
 | `scrollback_lines` | integer | `10000` | Active | Number of scrollback lines to retain |
 | `cursor_style` | string | `"block"` | Active | Chooses the cursor shape for both the terminal viewport and owned input bar: `block`, `bar`, or `underline` |
 | `cursor_blink` | boolean | `true` | Active | Enables the timed cursor blink cadence for the viewport and input bar |
@@ -50,8 +50,8 @@ theme_path = "~/.config/walk/themes/catppuccin.toml"
 
 ## Session Files
 
-- Autosave path: `~/.config/walk/session.json`
-- Named snapshots: `~/.config/walk/sessions/<name>.json`
+- Autosave path: `~/.config/wok/session.json`
+- Named snapshots: `~/.config/wok/sessions/<name>.json`
 
 The default manual snapshot keybindings are:
 

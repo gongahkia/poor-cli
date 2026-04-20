@@ -3424,94 +3424,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "walk"
-version = "0.1.0"
-dependencies = [
- "clap",
- "mlua",
- "pollster",
- "regex",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "toml",
- "tracing",
- "tracing-subscriber",
- "walk-blocks",
- "walk-input",
- "walk-renderer",
- "walk-terminal",
- "walk-ui",
- "wgpu",
- "winit",
-]
-
-[[package]]
-name = "walk-blocks"
-version = "0.1.0"
-dependencies = [
- "regex",
- "thiserror 2.0.18",
- "tracing",
- "walk-terminal",
-]
-
-[[package]]
-name = "walk-input"
-version = "0.1.0"
-dependencies = [
- "serde",
- "thiserror 2.0.18",
- "toml",
- "tracing",
- "walk-terminal",
-]
-
-[[package]]
-name = "walk-renderer"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "cosmic-text",
- "image",
- "thiserror 2.0.18",
- "tracing",
- "unicode-width 0.2.2",
- "wgpu",
-]
-
-[[package]]
-name = "walk-terminal"
-version = "0.1.0"
-dependencies = [
- "alacritty_terminal",
- "base64",
- "crossbeam-channel",
- "image",
- "portable-pty",
- "tempfile",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "walk-ui"
-version = "0.1.0"
-dependencies = [
- "arboard",
- "image",
- "notify",
- "regex",
- "serde",
- "thiserror 2.0.18",
- "toml",
- "tracing",
- "walk-blocks",
- "walk-renderer",
- "walk-terminal",
-]
-
-[[package]]
 name = "walkdir"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4339,6 +4251,94 @@ name = "wit-bindgen"
 version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7249219f66ced02969388cf2bb044a09756a083d0fab1e566056b04d9fbcaa5"
+
+[[package]]
+name = "wok"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "mlua",
+ "pollster",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "wgpu",
+ "winit",
+ "wok-blocks",
+ "wok-input",
+ "wok-renderer",
+ "wok-terminal",
+ "wok-ui",
+]
+
+[[package]]
+name = "wok-blocks"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "thiserror 2.0.18",
+ "tracing",
+ "wok-terminal",
+]
+
+[[package]]
+name = "wok-input"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror 2.0.18",
+ "toml",
+ "tracing",
+ "wok-terminal",
+]
+
+[[package]]
+name = "wok-renderer"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "cosmic-text",
+ "image",
+ "thiserror 2.0.18",
+ "tracing",
+ "unicode-width 0.2.2",
+ "wgpu",
+]
+
+[[package]]
+name = "wok-terminal"
+version = "0.1.0"
+dependencies = [
+ "alacritty_terminal",
+ "base64",
+ "crossbeam-channel",
+ "image",
+ "portable-pty",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "wok-ui"
+version = "0.1.0"
+dependencies = [
+ "arboard",
+ "image",
+ "notify",
+ "regex",
+ "serde",
+ "thiserror 2.0.18",
+ "toml",
+ "tracing",
+ "wok-blocks",
+ "wok-renderer",
+ "wok-terminal",
+]
 
 [[package]]
 name = "x11-dl"

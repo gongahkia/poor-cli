@@ -1,6 +1,6 @@
-# Walk Rust Style Guide
+# Wok Rust Style Guide
 
-Code style conventions for the Walk terminal emulator. All contributors (human and automated) must follow these patterns.
+Code style conventions for the Wok terminal emulator. All contributors (human and automated) must follow these patterns.
 
 ---
 
@@ -14,7 +14,7 @@ Code style conventions for the Walk terminal emulator. All contributors (human a
 Example `lib.rs`:
 
 ```rust
-//! Walk Renderer: GPU-accelerated text rendering pipeline.
+//! Wok Renderer: GPU-accelerated text rendering pipeline.
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 #![warn(clippy::pedantic)]
@@ -59,11 +59,11 @@ use thiserror::Error;
 use tracing::{debug, info, instrument, warn};
 
 // 3. Workspace crates
-use walk_renderer::GpuContext;
-use walk_terminal::Terminal;
+use wok_renderer::GpuContext;
+use wok_terminal::Terminal;
 
 // 4. Crate-internal modules
-use crate::config::WalkConfig;
+use crate::config::WokConfig;
 use crate::keybindings::Action;
 ```
 
@@ -78,7 +78,7 @@ For crates with self-contained errors (no external error wrapping):
 ```rust
 use thiserror::Error;
 
-/// Errors that can occur in the walk-input crate.
+/// Errors that can occur in the wok-input crate.
 #[derive(Debug, Error)]
 pub enum InputError {
     /// Cursor index exceeds the number of active cursors.
@@ -110,7 +110,7 @@ For crates that interact with external systems:
 ```rust
 use thiserror::Error;
 
-/// Errors that can occur in the walk-terminal crate.
+/// Errors that can occur in the wok-terminal crate.
 #[derive(Debug, Error)]
 pub enum TerminalError {
     /// Failed to create the PTY.
@@ -139,7 +139,7 @@ pub enum TerminalError {
 
 ### Pattern 3: Application-Level Aggregating Error
 
-For `walk-app` which composes errors from all subsystems:
+For `wok-app` which composes errors from all subsystems:
 
 ```rust
 use thiserror::Error;
@@ -149,11 +149,11 @@ use thiserror::Error;
 pub enum AppError {
     /// Terminal subsystem error.
     #[error("terminal error: {0}")]
-    Terminal(#[from] walk_terminal::TerminalError),
+    Terminal(#[from] wok_terminal::TerminalError),
 
     /// Renderer subsystem error.
     #[error("renderer error: {0}")]
-    Renderer(#[from] walk_renderer::RenderError),
+    Renderer(#[from] wok_renderer::RenderError),
 
     /// Configuration error.
     #[error("config error: {0}")]
@@ -390,8 +390,8 @@ mod tests {
 ### Integration Tests
 
 ```rust
-// walk-terminal/tests/pty_integration.rs
-use walk_terminal::{Terminal, TerminalConfig};
+// wok-terminal/tests/pty_integration.rs
+use wok_terminal::{Terminal, TerminalConfig};
 use std::time::{Duration, Instant};
 
 #[test]
@@ -399,20 +399,20 @@ fn test_pty_echo_output() {
     let config = TerminalConfig::default();
     let mut terminal = Terminal::new(&config).expect("failed to create terminal");
 
-    terminal.send_input(b"echo WALK_TEST_MARKER\n");
+    terminal.send_input(b"echo WOK_TEST_MARKER\n");
 
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut found = false;
     while Instant::now() < deadline {
         terminal.process_pty_output();
-        if grid_contains_text(terminal.grid(), "WALK_TEST_MARKER") {
+        if grid_contains_text(terminal.grid(), "WOK_TEST_MARKER") {
             found = true;
             break;
         }
         std::thread::sleep(Duration::from_millis(10));
     }
 
-    assert!(found, "WALK_TEST_MARKER not found in terminal grid within 5s");
+    assert!(found, "WOK_TEST_MARKER not found in terminal grid within 5s");
 }
 ```
 
@@ -446,8 +446,8 @@ Per-crate additions if needed:
 
 | Crate | Additional Allow | Rationale |
 |---|---|---|
-| `walk-renderer` | `clippy::similar_names` | Shader parameter names (`u`, `v`, `x`, `y`) |
-| `walk-app` | `clippy::too_many_lines` | The `handle_action` match block |
+| `wok-renderer` | `clippy::similar_names` | Shader parameter names (`u`, `v`, `x`, `y`) |
+| `wok-app` | `clippy::too_many_lines` | The `handle_action` match block |
 
 Never globally suppress: `clippy::unwrap_used`, `clippy::panic`, `clippy::expect_used`. Use these sparingly and document why.
 
@@ -481,7 +481,7 @@ impl GpuContext {
     ///
     /// Returns [`RenderError::AdapterNotFound`] if no suitable GPU adapter is available.
     /// Returns [`RenderError::DeviceCreation`] if the GPU device cannot be created.
-    pub fn new(window: &WalkWindow) -> Result<Self, RenderError> {
+    pub fn new(window: &WokWindow) -> Result<Self, RenderError> {
         // ...
     }
 }

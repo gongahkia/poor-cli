@@ -1,6 +1,6 @@
-# CLAUDE.md — Walk Implementation Guide
+# CLAUDE.md — Wok Implementation Guide
 
-Walk is a Warp-inspired, GPU-accelerated, cross-platform terminal emulator written in Rust (2021 edition, MSRV 1.75+). No AI, no login, no cloud. The key differentiator is **Blocks** — each command-output pair is a navigable, collapsible unit. Rendering uses wgpu, terminal emulation uses alacritty_terminal, PTY management uses portable-pty, font loading uses cosmic-text.
+Wok is a Warp-inspired, GPU-accelerated, cross-platform terminal emulator written in Rust (2021 edition, MSRV 1.75+). No AI, no login, no cloud. The key differentiator is **Blocks** — each command-output pair is a navigable, collapsible unit. Rendering uses wgpu, terminal emulation uses alacritty_terminal, PTY management uses portable-pty, font loading uses cosmic-text.
 
 The full implementation spec lives in `todo.md` — 73 tasks across 19 phases. This file is the single reference for all coding conventions, architecture, and workflow decisions.
 
@@ -9,20 +9,20 @@ The full implementation spec lives in `todo.md` — 73 tasks across 19 phases. T
 ## Workspace Architecture
 
 ```
-walk-app (binary, entry point)
-  ├── walk-renderer  (GPU rendering, glyph atlas, text layout)
-  ├── walk-terminal  (alacritty_terminal wrapper, PTY, shell integration)
-  ├── walk-blocks    (block detection, navigation, search, metadata)
-  ├── walk-input     (gap buffer editor, cursor ops, syntax highlighting, history)
-  └── walk-ui        (layout, tabs, splits, viewport, theme, clipboard, selection, search)
+wok-app (binary, entry point)
+  ├── wok-renderer  (GPU rendering, glyph atlas, text layout)
+  ├── wok-terminal  (alacritty_terminal wrapper, PTY, shell integration)
+  ├── wok-blocks    (block detection, navigation, search, metadata)
+  ├── wok-input     (gap buffer editor, cursor ops, syntax highlighting, history)
+  └── wok-ui        (layout, tabs, splits, viewport, theme, clipboard, selection, search)
 ```
 
-- **walk-app**: Entry point, winit event loop, window management, config loading, keybinding dispatch, Lua scripting, main `WalkApp` struct wiring everything together.
-- **walk-renderer**: wgpu GPU context, glyph atlas (shelf-packing), text shaping/layout (cosmic-text), render pipeline (vertex/fragment shaders), damage tracking, compositor. Leaf crate — no workspace-internal dependencies.
-- **walk-terminal**: Thin wrapper around `alacritty_terminal::Term` + `portable-pty`. Async PTY I/O with crossbeam channels. Shell detection, shell integration scripts (OSC 133 markers), terminal config. Leaf crate — no workspace-internal dependencies.
-- **walk-blocks**: Block data model, `BlockManager` state machine driven by `SemanticEvent`s. Block navigation, collapse/expand, per-block search, git/timing metadata. Depends on walk-terminal (for `SemanticEvent`, grid access).
-- **walk-input**: Gap buffer `InputBuffer`, cursor movement operations, syntax highlighting for shell commands, bracket matching, `InputEditor` coordination, command history with file persistence. Depends on walk-terminal (for `ShellType`).
-- **walk-ui**: Flexbox-inspired layout engine, tab management, split pane binary tree, viewport rendering, tab bar, status bar, theme data model + TOML loader + hot-reload, clipboard (arboard), mouse selection, global search, font zoom, bell, URL detection, mouse reporting, session persistence. Depends on walk-renderer, walk-terminal, walk-blocks.
+- **wok-app**: Entry point, winit event loop, window management, config loading, keybinding dispatch, Lua scripting, main `WokApp` struct wiring everything together.
+- **wok-renderer**: wgpu GPU context, glyph atlas (shelf-packing), text shaping/layout (cosmic-text), render pipeline (vertex/fragment shaders), damage tracking, compositor. Leaf crate — no workspace-internal dependencies.
+- **wok-terminal**: Thin wrapper around `alacritty_terminal::Term` + `portable-pty`. Async PTY I/O with crossbeam channels. Shell detection, shell integration scripts (OSC 133 markers), terminal config. Leaf crate — no workspace-internal dependencies.
+- **wok-blocks**: Block data model, `BlockManager` state machine driven by `SemanticEvent`s. Block navigation, collapse/expand, per-block search, git/timing metadata. Depends on wok-terminal (for `SemanticEvent`, grid access).
+- **wok-input**: Gap buffer `InputBuffer`, cursor movement operations, syntax highlighting for shell commands, bracket matching, `InputEditor` coordination, command history with file persistence. Depends on wok-terminal (for `ShellType`).
+- **wok-ui**: Flexbox-inspired layout engine, tab management, split pane binary tree, viewport rendering, tab bar, status bar, theme data model + TOML loader + hot-reload, clipboard (arboard), mouse selection, global search, font zoom, bell, URL detection, mouse reporting, session persistence. Depends on wok-renderer, wok-terminal, wok-blocks.
 
 ---
 
@@ -36,16 +36,16 @@ cargo build --workspace
 cargo build --workspace --release
 
 # Run the application (debug)
-cargo run -p walk
+cargo run -p wok
 
 # Run all tests
 cargo test --workspace
 
 # Run tests for a specific crate
-cargo test -p walk-input
-cargo test -p walk-blocks
-cargo test -p walk-terminal
-cargo test -p walk-renderer
+cargo test -p wok-input
+cargo test -p wok-blocks
+cargo test -p wok-terminal
+cargo test -p wok-renderer
 
 # Check lints
 cargo clippy --all-targets --all-features -- -D warnings
@@ -60,7 +60,7 @@ cargo fmt
 cargo doc --no-deps --workspace
 
 # Run a specific test
-cargo test -p walk-input test_insert_at_start
+cargo test -p wok-input test_insert_at_start
 ```
 
 ---
@@ -71,11 +71,11 @@ cargo test -p walk-input test_insert_at_start
 
 Prefix types with crate context to avoid ambiguity across crate boundaries:
 
-- `GpuContext` (not `Context`) in walk-renderer
-- `PtyManager` (not `Manager`) in walk-terminal
-- `BlockNavigator` (not `Navigator`) in walk-blocks
-- `InputBuffer` (not `Buffer`) in walk-input
-- `LayoutNode` (not `Node`) in walk-ui
+- `GpuContext` (not `Context`) in wok-renderer
+- `PtyManager` (not `Manager`) in wok-terminal
+- `BlockNavigator` (not `Navigator`) in wok-blocks
+- `InputBuffer` (not `Buffer`) in wok-input
+- `LayoutNode` (not `Node`) in wok-ui
 
 Functions: `snake_case`. Modules: `snake_case`. Constants: `SCREAMING_SNAKE_CASE`. Enum variants: `PascalCase` without repeating the enum name (`PtyEvent::Data`, not `PtyEvent::PtyData`).
 
@@ -84,7 +84,7 @@ Functions: `snake_case`. Modules: `snake_case`. Constants: `SCREAMING_SNAKE_CASE
 Each crate follows this structure:
 
 ```
-walk-<crate>/
+wok-<crate>/
   Cargo.toml
   src/
     lib.rs          # Crate-level attributes + public re-exports only
@@ -97,7 +97,7 @@ walk-<crate>/
 `lib.rs` must contain these crate-level attributes at the top:
 
 ```rust
-//! Walk <crate-name>: <one-line description>.
+//! Wok <crate-name>: <one-line description>.
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]  // or #![allow(unsafe_code)] for crates needing it
 #![warn(clippy::pedantic)]
@@ -139,7 +139,7 @@ Rules:
 - `#[error("...")]` messages start with lowercase (Rust convention).
 - Use `#[source]` for error chaining, not `#[from]` unless the conversion is unambiguous.
 - Every variant must have a doc comment.
-- Library crate functions return `Result<T, CrateSpecificError>`. The binary crate (`walk-app/src/main.rs`) may use `Box<dyn Error>` at the top level only.
+- Library crate functions return `Result<T, CrateSpecificError>`. The binary crate (`wok-app/src/main.rs`) may use `Box<dyn Error>` at the top level only.
 
 ### Public API Documentation
 
@@ -187,8 +187,8 @@ Every crate's `lib.rs` must include:
 ```
 
 Additional per-crate allows if needed:
-- `walk-renderer`: `#![allow(clippy::similar_names)]` for shader parameters.
-- `walk-app`: `#![allow(clippy::too_many_lines)]` for the `handle_action` match.
+- `wok-renderer`: `#![allow(clippy::similar_names)]` for shader parameters.
+- `wok-app`: `#![allow(clippy::too_many_lines)]` for the `handle_action` match.
 
 Use default `rustfmt` settings. Always run `cargo fmt` before committing.
 
@@ -252,7 +252,7 @@ Rules:
 - `skip` large arguments (buffers, hashmaps, GPU types).
 - `fields(...)` for structured context (IDs, dimensions).
 - Log levels: `error!` unrecoverable, `warn!` recoverable, `info!` significant state changes (shell spawned, tab created, theme loaded), `debug!` detailed flow, `trace!` per-frame/high-frequency.
-- Initialize in `main.rs` with `tracing_subscriber`: `warn` in release, `debug` in debug builds, output to `~/.config/walk/walk.log`.
+- Initialize in `main.rs` with `tracing_subscriber`: `warn` in release, `debug` in debug builds, output to `~/.config/wok/wok.log`.
 
 ---
 
@@ -262,7 +262,7 @@ Rules:
 // Workspace default in every crate:
 #![forbid(unsafe_code)]
 
-// Crates needing unsafe (walk-renderer for GPU interop) override per-crate:
+// Crates needing unsafe (wok-renderer for GPU interop) override per-crate:
 #![allow(unsafe_code)]
 ```
 
@@ -278,7 +278,7 @@ let data = unsafe { slice.get_unchecked(0..len) };
 
 ## Concurrency Model
 
-Walk uses OS threads + crossbeam channels. **No async runtime** (no tokio, no async-std).
+Wok uses OS threads + crossbeam channels. **No async runtime** (no tokio, no async-std).
 
 - **PTY reader**: dedicated `std::thread` per terminal, sends `PtyEvent` through `crossbeam_channel::bounded(256)`.
 - **Main thread**: runs winit event loop, processes PTY events via `try_recv()`, drives rendering.
@@ -354,7 +354,7 @@ type(scope): description
 
 **Types**: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`, `style`.
 
-**Scopes** match crate names without the `walk-` prefix: `app`, `renderer`, `terminal`, `blocks`, `input`, `ui`. Cross-cutting: `workspace`.
+**Scopes** match crate names without the `wok-` prefix: `app`, `renderer`, `terminal`, `blocks`, `input`, `ui`. Cross-cutting: `workspace`.
 
 Examples:
 ```
@@ -407,8 +407,8 @@ Work through tasks in dependency order within each phase. Phases can overlap whe
 ### New Crate Setup
 
 ```rust
-// walk-<name>/src/lib.rs
-//! Walk <name>: <description>.
+// wok-<name>/src/lib.rs
+//! Wok <name>: <description>.
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 #![warn(clippy::pedantic)]
@@ -465,11 +465,11 @@ use thiserror::Error;
 use tracing::{debug, info, instrument};
 
 // 3. Workspace crates (alphabetical)
-use walk_renderer::GpuContext;
-use walk_terminal::Terminal;
+use wok_renderer::GpuContext;
+use wok_terminal::Terminal;
 
 // 4. Crate-internal modules (alphabetical)
-use crate::config::WalkConfig;
+use crate::config::WokConfig;
 use crate::keybindings::Action;
 ```
 

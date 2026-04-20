@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Wok
+Comment=GPU-accelerated terminal emulator with Blocks
+Exec=wok
+Icon=wok
+Type=Application
+Categories=System;TerminalEmulator;
+Terminal=false
+StartupNotify=true

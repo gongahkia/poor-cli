@@ -1,0 +1,14 @@
+[package]
+name = "wok-input"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Gap buffer editor, cursor ops, syntax highlighting, and history for Wok terminal"
+
+[dependencies]
+wok-terminal = { path = "../wok-terminal" }
+thiserror = "2"
+tracing = "0.1"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"

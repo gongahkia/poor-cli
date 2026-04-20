@@ -1,11 +1,11 @@
 [workspace]
 members = [
-    "walk-app",
-    "walk-renderer",
-    "walk-terminal",
-    "walk-blocks",
-    "walk-input",
-    "walk-ui",
+    "wok-app",
+    "wok-renderer",
+    "wok-terminal",
+    "wok-blocks",
+    "wok-input",
+    "wok-ui",
 ]
 resolver = "2"
 

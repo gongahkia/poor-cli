@@ -1,8 +1,8 @@
-# Walk Interview Pack
+# Wok Interview Pack
 
 ## One-Minute Framing
 
-Walk is a local-first terminal emulator written as a Rust workspace. The product wedge is block-oriented command review for build, test, and git loops. The engineering spine is PTY correctness, shell bootstrap, scrollback-safe terminal state, and a GPU renderer.
+Wok is a local-first terminal emulator written as a Rust workspace. The product wedge is block-oriented command review for build, test, and git loops. The engineering spine is PTY correctness, shell bootstrap, scrollback-safe terminal state, and a GPU renderer.
 
 The current runtime is a real workspace terminal:
 
@@ -16,23 +16,23 @@ The current runtime is a real workspace terminal:
 
 ### Why the crate split exists
 
-- `walk-app` owns startup, windowing, workspace state, sessions, and scripting.
-- `walk-terminal` isolates PTY lifecycle, shell bootstrap, resize, and terminal emulation.
-- `walk-blocks` turns semantic shell events into product-level command blocks.
-- `walk-renderer` isolates GPU concerns and text rasterization.
-- `walk-input` isolates editor/history behavior for the owned input bar.
-- `walk-ui` holds clipboard, search, split layout, and theme-oriented state.
+- `wok-app` owns startup, windowing, workspace state, sessions, and scripting.
+- `wok-terminal` isolates PTY lifecycle, shell bootstrap, resize, and terminal emulation.
+- `wok-blocks` turns semantic shell events into product-level command blocks.
+- `wok-renderer` isolates GPU concerns and text rasterization.
+- `wok-input` isolates editor/history behavior for the owned input bar.
+- `wok-ui` holds clipboard, search, split layout, and theme-oriented state.
 
 That split keeps the systems boundary, the product boundary, and the rendering boundary explainable.
 
 ### End-to-end flow
 
 1. `winit` produces normalized `InputEvent`s.
-2. `WalkHandler` resolves actions for the focused pane or workspace.
-3. Pane-local `WalkApp` state handles keybindings, command palette state, block navigation, search, clipboard, and zoom.
-4. `walk-terminal` writes to the PTY and drains output on frame ticks.
+2. `WokHandler` resolves actions for the focused pane or workspace.
+3. Pane-local `WokApp` state handles keybindings, command palette state, block navigation, search, clipboard, and zoom.
+4. `wok-terminal` writes to the PTY and drains output on frame ticks.
 5. The terminal parser updates the emulator state and emits `SemanticEvent`s from OSC 133 / OSC 7 markers.
-6. `walk-blocks` turns those events into pane-local block records anchored to absolute scrollback rows.
+6. `wok-blocks` turns those events into pane-local block records anchored to absolute scrollback rows.
 7. The renderer reads visible rows, block decorations, search highlights, the input bar, the search overlay, and workspace chrome, then submits one batched frame.
 
 ## Deliberate Tradeoffs
@@ -49,18 +49,18 @@ That split keeps the systems boundary, the product boundary, and the rendering b
 
 - Search is workspace-global, but the overlay is still rendered in the focused pane.
 - Lua is not a plugin API with custom renderers or arbitrary runtime mutation.
-- Runtime orchestration is still concentrated in `walk-app/src/main.rs`, even though the subsystem boundaries are now coherent.
+- Runtime orchestration is still concentrated in `wok-app/src/main.rs`, even though the subsystem boundaries are now coherent.
 - PowerShell and WSL are supported through explicit bootstrap wrappers with regression coverage, though Bash/Zsh/Fish remain the cleanest first-run demo shells.
 
 ## Questions You Should Expect
 
 ### Why not build on top of Alacritty directly?
 
-Because the project goal is not only terminal emulation. Walk needs a product layer for blocks, pane-local input/search, sessions, and scripting, so it uses `alacritty_terminal` as infrastructure while keeping higher-level UX and product logic separate.
+Because the project goal is not only terminal emulation. Wok needs a product layer for blocks, pane-local input/search, sessions, and scripting, so it uses `alacritty_terminal` as infrastructure while keeping higher-level UX and product logic separate.
 
 ### Why shell bootstrap instead of asking users to edit dotfiles?
 
-Because the product wedge fails if blocks are a setup chore. Walk prepares temporary shell wrappers for Bash, Zsh, Fish, PowerShell, and WSL shells so semantic markers are injected automatically.
+Because the product wedge fails if blocks are a setup chore. Wok prepares temporary shell wrappers for Bash, Zsh, Fish, PowerShell, and WSL shells so semantic markers are injected automatically.
 
 ### Why are blocks anchored to absolute rows instead of visible viewport rows?
 
@@ -68,7 +68,7 @@ Because viewport-relative bookkeeping breaks after scrollback growth, search jum
 
 ### Why does session restore respawn shells instead of reviving them?
 
-Because reviving live PTY state is brittle and platform-specific. Walk restores layout, cwd, shell choice, search query, input draft, transcript text, and block history, then respawns a fresh PTY in the right working directory. That preserves user-facing continuity without pretending a dead shell process can be serialized safely.
+Because reviving live PTY state is brittle and platform-specific. Wok restores layout, cwd, shell choice, search query, input draft, transcript text, and block history, then respawns a fresh PTY in the right working directory. That preserves user-facing continuity without pretending a dead shell process can be serialized safely.
 
 ### What is the weakest part of the current implementation?
 
@@ -82,7 +82,7 @@ The weakest part is not architecture coverage anymore; it is product-fit iterati
 
 ## Demo Checklist
 
-1. Launch `cargo run -p walk -- --shell zsh`.
+1. Launch `cargo run -p wok -- --shell zsh`.
 2. Run `echo hello`, `pwd`, and `false`.
 3. Show block separators and exit-status accents.
 4. Split the workspace and run another command in the second pane.
@@ -97,4 +97,4 @@ The weakest part is not architecture coverage anymore; it is product-fit iterati
 
 If asked whether this is production-ready, the strongest accurate answer is:
 
-Walk is a credible local-first v1 workspace terminal with a differentiated block workflow. The architecture and runtime are coherent enough to defend in an interview. The remaining gap is not conceptual clarity; it is deeper runtime hardening, end-to-end coverage, and shell/platform soak time.
+Wok is a credible local-first v1 workspace terminal with a differentiated block workflow. The architecture and runtime are coherent enough to defend in an interview. The remaining gap is not conceptual clarity; it is deeper runtime hardening, end-to-end coverage, and shell/platform soak time.

@@ -1,22 +1,22 @@
-# Walk Architecture
+# Wok Architecture
 
-Walk is a 6-crate Rust workspace implementing a GPU-accelerated workspace terminal. This document describes the current runtime architecture rather than an aspirational one.
+Wok is a 6-crate Rust workspace implementing a GPU-accelerated workspace terminal. This document describes the current runtime architecture rather than an aspirational one.
 
 ## Crate Graph
 
 ```
-                       walk-app
+                       wok-app
                     /     |     \
                    /      |      \
-             walk-ui   walk-blocks  walk-input
+             wok-ui   wok-blocks  wok-input
                |  \       |            |
                |   \      |            |
-        walk-renderer  walk-terminal --+
+        wok-renderer  wok-terminal --+
 ```
 
-## Module Map (walk-app)
+## Module Map (wok-app)
 
-The `walk-app` binary crate has been decomposed into focused modules:
+The `wok-app` binary crate has been decomposed into focused modules:
 
 | Module | Responsibility |
 | --- | --- |
@@ -29,9 +29,9 @@ The `walk-app` binary crate has been decomposed into focused modules:
 | `ipc.rs` | Length-prefixed JSON framing, `ClientMessage` / `ServerMessage` enums |
 | `remote_control.rs` | Platform-specific JSON-RPC server (Unix socket on unix, TCP loopback on Windows) |
 | `jsonrpc_params.rs` | Typed parameter extraction helpers, `RpcError` with standard codes |
-| `rpc_cli.rs` | `walk rpc` CLI client |
+| `rpc_cli.rs` | `wok rpc` CLI client |
 | `input_codec.rs` | Input encoding helpers |
-| `app.rs` | Core `WalkApp` per-pane state |
+| `app.rs` | Core `WokApp` per-pane state |
 | `workspace.rs` | Workspace/tab/split state |
 | `session.rs` | Session persistence and restore |
 | `config.rs` | TOML config loading |
@@ -48,7 +48,7 @@ The live runtime is an IDE-style workspace:
 - many tabs
 - one split tree per tab
 - one focused pane per tab
-- one `walk-terminal::Terminal` plus one `walk-app::WalkApp` state bundle per pane
+- one `wok-terminal::Terminal` plus one `wok-app::WokApp` state bundle per pane
 
 Each pane owns:
 
@@ -70,10 +70,10 @@ Workspace-level state owns:
 
 ## Data Flow
 
-1. `winit` delivers keyboard, mouse, resize, and frame events into `walk-app`.
-2. `WalkHandler` resolves whether an event is workspace-scoped or focused-pane-scoped.
-3. Focused-pane `WalkApp` state resolves keybindings first, then command-palette/search overlays, then raw PTY fallback.
-4. `walk-terminal` writes to the PTY and drains PTY output during frame ticks.
+1. `winit` delivers keyboard, mouse, resize, and frame events into `wok-app`.
+2. `WokHandler` resolves whether an event is workspace-scoped or focused-pane-scoped.
+3. Focused-pane `WokApp` state resolves keybindings first, then command-palette/search overlays, then raw PTY fallback.
+4. `wok-terminal` writes to the PTY and drains PTY output during frame ticks.
 5. The terminal parser updates the emulator state and emits semantic events for:
    - prompt start
    - command start
@@ -81,14 +81,14 @@ Workspace-level state owns:
    - command end
    - cwd changes
    - title changes
-6. `walk-blocks` converts those semantic events into block records anchored to absolute scrollback rows.
-7. `walk-renderer` draws terminal cells, block accents, search highlights, the input bar, the search overlay, and workspace chrome into one batched frame.
+6. `wok-blocks` converts those semantic events into block records anchored to absolute scrollback rows.
+7. `wok-renderer` draws terminal cells, block accents, search highlights, the input bar, the search overlay, and workspace chrome into one batched frame.
 
 ## Terminal And Block Model
 
-Walk treats scrollback rows as the stable identity for block bookkeeping.
+Wok treats scrollback rows as the stable identity for block bookkeeping.
 
-- `walk-terminal` exposes visible rows and buffer text using absolute row ids.
+- `wok-terminal` exposes visible rows and buffer text using absolute row ids.
 - semantic events carry absolute row anchors
 - block output ranges are stored as absolute rows
 - search, copy, and collapse read from logical buffer snapshots rather than viewport-relative rows
@@ -97,7 +97,7 @@ That keeps block boundaries stable after scrolling, search jumps, and resize ref
 
 ## Daemon Session Architecture
 
-Walk supports headless daemon sessions that own terminal state independently of the GUI window.
+Wok supports headless daemon sessions that own terminal state independently of the GUI window.
 
 ### DaemonSession / DaemonPane
 
@@ -150,7 +150,7 @@ Messages are framed as length-prefixed JSON (4-byte big-endian length + JSON pay
 
 ### Attached-Mode Pane Mapping
 
-When a GUI client attaches to a daemon (`walk attach <name>`), local workspace panes are mapped to daemon pane ids. The attached client:
+When a GUI client attaches to a daemon (`wok attach <name>`), local workspace panes are mapped to daemon pane ids. The attached client:
 
 - Periodically fetches per-pane snapshots from the daemon
 - Applies transcript updates to each mapped local pane
@@ -166,7 +166,7 @@ When a GUI client attaches to a daemon (`walk attach <name>`), local workspace p
 
 ## Sessions
 
-Session persistence lives in `walk-app/src/session.rs`.
+Session persistence lives in `wok-app/src/session.rs`.
 
 What is persisted:
 
@@ -186,17 +186,17 @@ What is intentionally not persisted:
 
 - live PTY process state
 
-Autosave is written to `~/.config/walk/session.json`. Named snapshots live under `~/.config/walk/sessions/`.
+Autosave is written to `~/.config/wok/session.json`. Named snapshots live under `~/.config/wok/sessions/`.
 
 ## Lua Surface
 
-Lua is loaded from `~/.config/walk/init.lua` and is deliberately scoped to the action bus.
+Lua is loaded from `~/.config/wok/init.lua` and is deliberately scoped to the action bus.
 
 Current capabilities:
 
 - bind keys to built-in actions
 - register reusable action aliases
-- trigger built-in actions through `walk.run_action(...)`
+- trigger built-in actions through `wok.run_action(...)`
 - run shell commands in the focused pane
 - receive structured lifecycle hooks
 - inspect app/workspace/pane/session state snapshots
@@ -211,7 +211,7 @@ Current non-goals:
 
 ## Shell Integration
 
-Walk bootstraps shells automatically through temporary wrappers rather than requiring manual dotfile edits.
+Wok bootstraps shells automatically through temporary wrappers rather than requiring manual dotfile edits.
 
 Supported shells:
 
