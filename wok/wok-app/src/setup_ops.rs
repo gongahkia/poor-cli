@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::io;
@@ -95,8 +96,26 @@ impl ShellTarget {
     }
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 struct ShellInstallState {
+    installs: HashMap<String, ShellInstallEntry>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct ShellInstallEntry {
+    installed_at_ms: u64,
+    records: Vec<ShellInstallRecord>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(untagged)]
+enum ShellInstallStateFile {
+    Current(ShellInstallState),
+    Legacy(LegacyShellInstallState),
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct LegacyShellInstallState {
     shell: String,
     installed_at_ms: u64,
     records: Vec<ShellInstallRecord>,
@@ -208,11 +227,18 @@ pub(crate) fn run_shell_install(
     record.target_path = target_path.clone();
     set_executable_if_script(&target_path)?;
 
-    let state = ShellInstallState {
-        shell: shell.as_str().to_string(),
-        installed_at_ms: unix_time_ms_now(),
-        records: vec![record],
-    };
+    let shell_name = shell.as_str().to_string();
+    let mut state = load_shell_install_state(&config_dir)?.unwrap_or_default();
+    let previous = state.installs.insert(
+        shell_name.clone(),
+        ShellInstallEntry {
+            installed_at_ms: unix_time_ms_now(),
+            records: vec![record],
+        },
+    );
+    if let Some(previous) = previous {
+        cleanup_shell_install_entry_backups(&previous);
+    }
     save_shell_install_state(&config_dir, &state)?;
 
     println!(
@@ -220,28 +246,76 @@ pub(crate) fn run_shell_install(
         shell.as_str(),
         target_path.display()
     );
-    println!("Run `wok shell rollback --yes` to restore the previous file.");
+    println!(
+        "Run `wok shell rollback --shell {} --yes` to restore the previous file.",
+        shell.as_str()
+    );
     Ok(())
 }
 
-pub(crate) fn run_shell_rollback(yes: bool) -> Result<(), Box<dyn Error>> {
+pub(crate) fn run_shell_rollback(shell_arg: Option<&str>, yes: bool) -> Result<(), Box<dyn Error>> {
     if !yes {
         return Err("rollback is destructive; re-run with `wok shell rollback --yes`".into());
     }
     let config_dir = WokConfig::config_dir();
-    let state = load_shell_install_state(&config_dir)?
+    let mut state = load_shell_install_state(&config_dir)?
         .ok_or("no shell install state found; nothing to roll back")?;
+    let shell = resolve_shell_rollback_target(shell_arg, &state)?;
+    let entry = state
+        .installs
+        .remove(&shell)
+        .ok_or_else(|| format!("no install state found for shell '{shell}'"))?;
 
-    for record in &state.records {
+    for record in &entry.records {
         rollback_record(record)?;
     }
 
     let state_path = shell_install_state_path(&config_dir);
-    if state_path.exists() {
-        fs::remove_file(&state_path)?;
+    if state.installs.is_empty() {
+        if state_path.exists() {
+            fs::remove_file(&state_path)?;
+        }
+    } else {
+        save_shell_install_state(&config_dir, &state)?;
     }
-    println!("Rolled back shell wiring for {}", state.shell);
+    println!("Rolled back shell wiring for {}", shell);
     Ok(())
+}
+
+fn resolve_shell_rollback_target(
+    shell_arg: Option<&str>,
+    state: &ShellInstallState,
+) -> Result<String, Box<dyn Error>> {
+    if let Some(shell) = shell_arg.map(str::trim).filter(|value| !value.is_empty()) {
+        let parsed = parse_shell_target(shell).ok_or_else(|| {
+            format!("unsupported shell '{shell}'. expected one of: bash, zsh, fish")
+        })?;
+        return Ok(parsed.as_str().to_string());
+    }
+
+    let mut installed = state.installs.keys().cloned().collect::<Vec<_>>();
+    installed.sort();
+    if installed.len() == 1 {
+        return Ok(installed.remove(0));
+    }
+    if installed.is_empty() {
+        return Err("no shell install state found; nothing to roll back".into());
+    }
+    Err(format!(
+        "multiple shell installs found ({}); rerun with `--shell <bash|zsh|fish>`",
+        installed.join(", ")
+    )
+    .into())
+}
+
+fn cleanup_shell_install_entry_backups(entry: &ShellInstallEntry) {
+    for record in &entry.records {
+        if let Some(backup) = &record.backup_path {
+            if backup.exists() {
+                let _ = fs::remove_file(backup);
+            }
+        }
+    }
 }
 
 fn print_stats(stats: &InitStats) {
@@ -420,8 +494,22 @@ fn load_shell_install_state(config_dir: &Path) -> io::Result<Option<ShellInstall
         return Ok(None);
     }
     let content = fs::read_to_string(path)?;
-    let state = serde_json::from_str::<ShellInstallState>(&content)
+    let parsed = serde_json::from_str::<ShellInstallStateFile>(&content)
         .map_err(|error| io::Error::other(format!("failed to parse install state: {error}")))?;
+    let state = match parsed {
+        ShellInstallStateFile::Current(current) => current,
+        ShellInstallStateFile::Legacy(legacy) => {
+            let mut installs = HashMap::new();
+            installs.insert(
+                legacy.shell,
+                ShellInstallEntry {
+                    installed_at_ms: legacy.installed_at_ms,
+                    records: legacy.records,
+                },
+            );
+            ShellInstallState { installs }
+        }
+    };
     Ok(Some(state))
 }
 
@@ -919,5 +1007,64 @@ mod tests {
 
         let restored = fs::read_to_string(&target).expect("target should be readable");
         assert_eq!(restored, "before\n");
+    }
+
+    #[test]
+    fn test_load_shell_install_state_supports_legacy_format() {
+        let dir = unique_temp_dir();
+        fs::create_dir_all(dir.join("shell")).expect("shell dir should be created");
+        fs::write(
+            dir.join("shell").join(SHELL_INSTALL_STATE_FILE),
+            r#"{
+  "shell": "zsh",
+  "installed_at_ms": 123,
+  "records": [
+    {"target_path":"/tmp/.zshrc","backup_path":null,"created_new":false}
+  ]
+}"#,
+        )
+        .expect("legacy state should be written");
+
+        let state = load_shell_install_state(&dir)
+            .expect("state load should succeed")
+            .expect("state should exist");
+        assert!(state.installs.contains_key("zsh"));
+        assert_eq!(state.installs.get("zsh").unwrap().installed_at_ms, 123);
+    }
+
+    #[test]
+    fn test_save_shell_install_state_round_trips_multiple_shells() {
+        let dir = unique_temp_dir();
+        let mut state = ShellInstallState::default();
+        state.installs.insert(
+            "bash".to_string(),
+            ShellInstallEntry {
+                installed_at_ms: 1,
+                records: vec![ShellInstallRecord {
+                    target_path: PathBuf::from("/tmp/.bashrc"),
+                    backup_path: None,
+                    created_new: false,
+                }],
+            },
+        );
+        state.installs.insert(
+            "zsh".to_string(),
+            ShellInstallEntry {
+                installed_at_ms: 2,
+                records: vec![ShellInstallRecord {
+                    target_path: PathBuf::from("/tmp/.zshrc"),
+                    backup_path: Some(PathBuf::from("/tmp/.zshrc.wok.bak")),
+                    created_new: false,
+                }],
+            },
+        );
+
+        save_shell_install_state(&dir, &state).expect("state should save");
+        let loaded = load_shell_install_state(&dir)
+            .expect("state should load")
+            .expect("state should exist");
+        assert_eq!(loaded.installs.len(), 2);
+        assert!(loaded.installs.contains_key("bash"));
+        assert!(loaded.installs.contains_key("zsh"));
     }
 }

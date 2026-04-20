@@ -61,6 +61,15 @@ fn assert_success(output: &Output) {
     );
 }
 
+fn assert_failure(output: &Output) {
+    assert!(
+        !output.status.success(),
+        "command unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[test]
 fn init_doctor_and_reset_managed_lifecycle() {
     let home = unique_home();
@@ -138,4 +147,43 @@ fn shell_install_and_rollback_restore_previous_shell_file() {
     assert_success(&run_wok(&home, &["shell", "rollback", "--yes"]));
     let rolled_back = fs::read_to_string(&zshrc).expect("rolled back zshrc should be readable");
     assert_eq!(rolled_back, "export FOO=BAR\n");
+}
+
+#[test]
+fn shell_rollback_can_target_individual_shell_when_multiple_installs_exist() {
+    let home = unique_home();
+    fs::create_dir_all(&home).expect("temp home should be created");
+    assert_success(&run_wok(&home, &["init"]));
+
+    let bashrc = home.join(".bashrc");
+    let zshrc = home.join(".zshrc");
+    fs::write(&bashrc, "export BASH_ONLY=1\n").expect("seed bashrc should be written");
+    fs::write(&zshrc, "export ZSH_ONLY=1\n").expect("seed zshrc should be written");
+
+    assert_success(&run_wok(&home, &["shell", "install", "--shell", "bash"]));
+    assert_success(&run_wok(&home, &["shell", "install", "--shell", "zsh"]));
+
+    let rollback_without_shell = run_wok(&home, &["shell", "rollback", "--yes"]);
+    assert_failure(&rollback_without_shell);
+
+    assert_success(&run_wok(
+        &home,
+        &["shell", "rollback", "--shell", "zsh", "--yes"],
+    ));
+    let zsh_content = fs::read_to_string(&zshrc).expect("zshrc should be readable");
+    assert_eq!(zsh_content, "export ZSH_ONLY=1\n");
+
+    let bash_content_after_zsh_rollback =
+        fs::read_to_string(&bashrc).expect("bashrc should be readable");
+    assert!(
+        bash_content_after_zsh_rollback.contains("# >>> wok shell integration >>>"),
+        "bash install should still be present after zsh rollback"
+    );
+
+    assert_success(&run_wok(
+        &home,
+        &["shell", "rollback", "--shell", "bash", "--yes"],
+    ));
+    let bash_content = fs::read_to_string(&bashrc).expect("bashrc should be readable");
+    assert_eq!(bash_content, "export BASH_ONLY=1\n");
 }

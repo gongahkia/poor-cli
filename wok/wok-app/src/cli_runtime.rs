@@ -34,8 +34,8 @@ pub(crate) fn dispatch_cli_command(cli: &Cli) -> Result<CliAction, Box<dyn Error
                 ShellCommand::Install { shell, overwrite } => {
                     setup_ops::run_shell_install(shell.as_deref(), overwrite)?;
                 }
-                ShellCommand::Rollback { yes } => {
-                    setup_ops::run_shell_rollback(yes)?;
+                ShellCommand::Rollback { shell, yes } => {
+                    setup_ops::run_shell_rollback(shell.as_deref(), yes)?;
                 }
             }
             Ok(CliAction::ExitOk)

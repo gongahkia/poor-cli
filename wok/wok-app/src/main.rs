@@ -197,6 +197,9 @@ enum ShellCommand {
     },
     /// Roll back the most recent `wok shell install`.
     Rollback {
+        /// Target shell to roll back: bash, zsh, or fish.
+        #[arg(long)]
+        shell: Option<String>,
         /// Confirm rollback without interactive prompt.
         #[arg(long, default_value_t = false)]
         yes: bool,
