@@ -1,0 +1,26 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from seuss.config import load_config, resolve_workspace, write_default_config
+from seuss.jsonl_store import touch_jsonl
+
+
+def run_init(config_path: Path, force: bool) -> int:
+    write_default_config(config_path, force=force)
+    config = load_config(config_path)
+    workspace = resolve_workspace(config, config_path)
+
+    (workspace / "corpus").mkdir(parents=True, exist_ok=True)
+    (workspace / "memory").mkdir(parents=True, exist_ok=True)
+    (workspace / "evals").mkdir(parents=True, exist_ok=True)
+    (workspace / "runs").mkdir(parents=True, exist_ok=True)
+
+    touch_jsonl(workspace / "training_queue.jsonl")
+    touch_jsonl(workspace / "approved_training.jsonl")
+    touch_jsonl(workspace / "corpus" / "fragments.jsonl")
+    touch_jsonl(workspace / "memory" / "memories.jsonl")
+
+    print(f"Initialized config: {config_path}")
+    print(f"Workspace: {workspace}")
+    return 0

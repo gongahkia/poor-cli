@@ -1,0 +1,210 @@
+from __future__ import annotations
+
+import json
+import re
+import uuid
+from pathlib import Path
+from typing import Iterable
+
+from seuss.config import load_config, resolve_path, resolve_workspace
+from seuss.jsonl_store import append_jsonl, read_jsonl, write_jsonl
+from seuss.provenance import validate_provenance
+from seuss.utils import now_iso, stable_hash
+
+EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+PHONE_RE = re.compile(r"\+?\d[\d\-\s()]{7,}\d")
+URL_RE = re.compile(r"https?://\S+")
+SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+PHRASE_SPLIT_RE = re.compile(r"[,;:]+\s*")
+WORD_RE = re.compile(r"\b\w+\b")
+
+
+def _normalize(text: str) -> str:
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"[ \t]+", " ", text)
+    return text.strip()
+
+
+def _redact(text: str, redact_cfg: dict) -> tuple[str, dict[str, int]]:
+    counts = {"emails": 0, "phone_numbers": 0, "urls": 0, "custom_patterns": 0}
+    out = text
+
+    if redact_cfg.get("emails", False):
+        out, counts["emails"] = EMAIL_RE.subn("[REDACTED_EMAIL]", out)
+    if redact_cfg.get("phone_numbers", False):
+        out, counts["phone_numbers"] = PHONE_RE.subn("[REDACTED_PHONE]", out)
+    if redact_cfg.get("urls", False):
+        out, counts["urls"] = URL_RE.subn("[REDACTED_URL]", out)
+
+    patterns = redact_cfg.get("custom_patterns", [])
+    for pattern in patterns:
+        out, n = re.subn(pattern, "[REDACTED_CUSTOM]", out)
+        counts["custom_patterns"] += n
+
+    return out, counts
+
+
+def _segment_text(text: str, segmentation: dict) -> dict[str, list[str]]:
+    result: dict[str, list[str]] = {}
+    if segmentation.get("paragraph", True):
+        result["paragraph"] = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    if segmentation.get("sentence", True):
+        result["sentence"] = [s.strip() for s in SENTENCE_SPLIT_RE.split(text) if s.strip()]
+    if segmentation.get("phrase", True):
+        result["phrase"] = [p.strip() for p in PHRASE_SPLIT_RE.split(text) if p.strip()]
+    if segmentation.get("word", True):
+        result["word"] = WORD_RE.findall(text)
+    if segmentation.get("character", True):
+        result["character"] = [ch for ch in text if ch.strip()]
+    return result
+
+
+def _iter_directory_source(source: dict, config_path: Path) -> Iterable[dict]:
+    source_path = resolve_path(source["path"], config_path)
+    include = source.get("include", ["*.txt", "*.md"])
+    seen: set[Path] = set()
+
+    for pattern in include:
+        for file_path in source_path.rglob(pattern):
+            if not file_path.is_file() or file_path in seen:
+                continue
+            seen.add(file_path)
+            text = file_path.read_text(encoding="utf-8", errors="ignore")
+            yield {
+                "source_path": str(file_path),
+                "text": text,
+                "metadata": {},
+            }
+
+
+def _iter_jsonl_source(source: dict, config_path: Path) -> Iterable[dict]:
+    source_path = resolve_path(source["path"], config_path)
+    if not source_path.exists():
+        return
+    text_field = source.get("text_field", "text")
+    with source_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            text = str(row.get(text_field, "")).strip()
+            if not text:
+                continue
+            yield {
+                "source_path": str(source_path),
+                "text": text,
+                "metadata": row,
+            }
+
+
+def _iter_source_records(source: dict, config_path: Path) -> Iterable[dict]:
+    src_type = source.get("type")
+    if src_type == "directory":
+        yield from _iter_directory_source(source, config_path)
+        return
+    if src_type == "jsonl":
+        yield from _iter_jsonl_source(source, config_path)
+        return
+    raise ValueError(f"Unsupported source type: {src_type}")
+
+
+def _split_label(normalized_text: str, split_cfg: dict) -> str:
+    train_ratio = float(split_cfg.get("train_ratio", 0.8))
+    seed = int(split_cfg.get("seed", 42))
+    digest = stable_hash([seed, normalized_text])
+    bucket = int(digest[:8], 16) % 10000
+    threshold = int(train_ratio * 10000)
+    return "train" if bucket < threshold else "eval"
+
+
+def run_ingest(
+    config_path: Path,
+    source_name: str | None,
+    dry_run: bool,
+    rebuild: bool,
+) -> int:
+    config = load_config(config_path)
+    workspace = resolve_workspace(config, config_path)
+
+    fragments_path = workspace / "corpus" / "fragments.jsonl"
+    existing = [] if rebuild else read_jsonl(fragments_path)
+    existing_keys = {
+        (row.get("segment_type"), row.get("normalized_text"), row.get("source"))
+        for row in existing
+    }
+
+    sources = config.get("sources", [])
+    enabled_sources = [src for src in sources if src.get("enabled", False)]
+    if source_name:
+        enabled_sources = [src for src in enabled_sources if src.get("name") == source_name]
+
+    if not enabled_sources:
+        print("No enabled sources matched.")
+        return 0
+
+    min_chars = int(config.get("segmentation", {}).get("min_fragment_chars", 3))
+    max_chars = int(config.get("segmentation", {}).get("max_fragment_chars", 2000))
+    redact_cfg = config.get("privacy", {}).get("redact", {})
+    split_cfg = config.get("splits", {})
+    segmentation = config.get("segmentation", {})
+
+    created: list[dict] = []
+    skipped_duplicates = 0
+    redaction_totals = {"emails": 0, "phone_numbers": 0, "urls": 0, "custom_patterns": 0}
+
+    for source in enabled_sources:
+        provenance = source.get("provenance", "human_original")
+        validate_provenance(provenance)
+
+        for source_record in _iter_source_records(source, config_path):
+            raw_text = source_record["text"]
+            normalized = _normalize(raw_text)
+            if not normalized:
+                continue
+            redacted, redaction_counts = _redact(normalized, redact_cfg)
+            for key, value in redaction_counts.items():
+                redaction_totals[key] += value
+
+            segmented = _segment_text(redacted, segmentation)
+            for segment_type, entries in segmented.items():
+                for entry in entries:
+                    normalized_entry = _normalize(entry)
+                    if len(normalized_entry) < min_chars or len(normalized_entry) > max_chars:
+                        continue
+                    dedupe_key = (segment_type, normalized_entry, source["name"])
+                    if dedupe_key in existing_keys:
+                        skipped_duplicates += 1
+                        continue
+                    existing_keys.add(dedupe_key)
+                    created.append(
+                        {
+                            "id": f"frag_{uuid.uuid4().hex[:12]}",
+                            "source": source["name"],
+                            "source_path": source_record["source_path"],
+                            "provenance": provenance,
+                            "text": entry,
+                            "normalized_text": normalized_entry,
+                            "segment_type": segment_type,
+                            "split": _split_label(normalized_entry, split_cfg),
+                            "created_at": now_iso(),
+                            "metadata": source_record.get("metadata", {}),
+                        }
+                    )
+
+    if dry_run:
+        print("Dry run complete.")
+        print(f"Would create fragments: {len(created)}")
+        print(f"Skipped duplicates: {skipped_duplicates}")
+        print(f"Redactions: {redaction_totals}")
+        return 0
+
+    if rebuild:
+        write_jsonl(fragments_path, created)
+    else:
+        append_jsonl(fragments_path, created)
+
+    print(f"Fragments written: {len(created)}")
+    print(f"Skipped duplicates: {skipped_duplicates}")
+    print(f"Redactions: {redaction_totals}")
+    return 0
