@@ -31,6 +31,7 @@ class PersonaProfileTests(unittest.TestCase):
                 run_ingest(
                     config_path=config_path,
                     source_name=None,
+                    direct_path=None,
                     dry_run=False,
                     rebuild=False,
                 ),

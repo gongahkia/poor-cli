@@ -27,7 +27,13 @@ class EvalSummaryTests(unittest.TestCase):
             )
             config_path = root / "seuss.yaml"
             run_init(config_path=config_path, force=False)
-            run_ingest(config_path=config_path, source_name=None, dry_run=False, rebuild=False)
+            run_ingest(
+                config_path=config_path,
+                source_name=None,
+                direct_path=None,
+                dry_run=False,
+                rebuild=False,
+            )
 
             output_path = root / ".seuss" / "evals" / "summary_eval.json"
             with redirect_stdout(io.StringIO()) as stdout:
@@ -59,7 +65,13 @@ class EvalSummaryTests(unittest.TestCase):
             )
             config_path = root / "seuss.yaml"
             run_init(config_path=config_path, force=False)
-            run_ingest(config_path=config_path, source_name=None, dry_run=False, rebuild=False)
+            run_ingest(
+                config_path=config_path,
+                source_name=None,
+                direct_path=None,
+                dry_run=False,
+                rebuild=False,
+            )
 
             cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
             cfg["evaluation"]["thresholds"]["persona_match_min"] = 0.99

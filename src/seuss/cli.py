@@ -43,6 +43,11 @@ def build_parser() -> argparse.ArgumentParser:
     ingest_parser = sub.add_parser("ingest", help="Ingest configured sources")
     _add_config_arg(ingest_parser)
     ingest_parser.add_argument("--source", default=None)
+    ingest_parser.add_argument(
+        "--path",
+        default=None,
+        help="Direct file or directory path to ingest (supports relative paths).",
+    )
     ingest_parser.add_argument("--dry-run", action="store_true")
     ingest_parser.add_argument("--rebuild", action="store_true")
 
@@ -143,6 +148,7 @@ def main(argv: list[str] | None = None) -> int:
             return run_ingest(
                 config_path=Path(args.config).resolve(),
                 source_name=args.source,
+                direct_path=args.path,
                 dry_run=args.dry_run,
                 rebuild=args.rebuild,
             )

@@ -77,6 +77,18 @@ def _iter_directory_source(source: dict, config_path: Path) -> Iterable[dict]:
             }
 
 
+def _iter_single_file_source(source: dict, _config_path: Path) -> Iterable[dict]:
+    file_path = Path(source["path"]).resolve()
+    if not file_path.exists() or not file_path.is_file():
+        return
+    text = file_path.read_text(encoding="utf-8", errors="ignore")
+    yield {
+        "source_path": str(file_path),
+        "text": text,
+        "metadata": {},
+    }
+
+
 def _iter_jsonl_source_with_stats(
     source: dict,
     config_path: Path,
@@ -121,10 +133,45 @@ def _iter_source_records(
     if src_type == "directory":
         yield from _iter_directory_source(source, config_path)
         return
+    if src_type == "single_file":
+        yield from _iter_single_file_source(source, config_path)
+        return
     if src_type == "jsonl":
         yield from _iter_jsonl_source_with_stats(source, config_path, stats)
         return
     raise ValueError(f"Unsupported source type: {src_type}")
+
+
+def _source_from_direct_path(direct_path: Path) -> dict:
+    resolved = direct_path.expanduser().resolve()
+    if not resolved.exists():
+        raise FileNotFoundError(f"Direct ingest path not found: {resolved}")
+
+    # Stable source identity for dedupe behavior and inspect output.
+    source_name = f"path_{abs(hash(str(resolved))) % 10_000_000}"
+
+    if resolved.is_file():
+        if resolved.suffix.lower() not in {".md", ".txt"}:
+            raise ValueError("Direct file ingest currently supports only .md or .txt files")
+        return {
+            "name": source_name,
+            "type": "single_file",
+            "path": str(resolved),
+            "enabled": True,
+            "provenance": "human_original",
+        }
+
+    if resolved.is_dir():
+        return {
+            "name": source_name,
+            "type": "directory",
+            "path": str(resolved),
+            "enabled": True,
+            "include": ["*.md", "*.txt"],
+            "provenance": "human_original",
+        }
+
+    raise ValueError(f"Unsupported direct ingest path: {resolved}")
 
 
 def _split_label(normalized_text: str, split_cfg: dict) -> str:
@@ -139,6 +186,7 @@ def _split_label(normalized_text: str, split_cfg: dict) -> str:
 def run_ingest(
     config_path: Path,
     source_name: str | None,
+    direct_path: str | None,
     dry_run: bool,
     rebuild: bool,
 ) -> int:
@@ -157,10 +205,16 @@ def run_ingest(
         for row in existing
     }
 
-    sources = config.get("sources", [])
-    enabled_sources = [src for src in sources if src.get("enabled", False)]
-    if source_name:
-        enabled_sources = [src for src in enabled_sources if src.get("name") == source_name]
+    if direct_path and source_name:
+        raise ValueError("Use either --source or --path, not both.")
+
+    if direct_path:
+        enabled_sources = [_source_from_direct_path(Path(direct_path))]
+    else:
+        sources = config.get("sources", [])
+        enabled_sources = [src for src in sources if src.get("enabled", False)]
+        if source_name:
+            enabled_sources = [src for src in enabled_sources if src.get("name") == source_name]
 
     if not enabled_sources:
         print("No enabled sources matched.")

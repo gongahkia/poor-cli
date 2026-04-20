@@ -18,6 +18,8 @@ source .venv/bin/activate
 pip install -e .
 seuss init
 seuss ingest
+seuss ingest --path ../some/relative/path/to/file.md
+seuss ingest --path ../some/relative/path/to/docs_dir
 seuss inspect
 seuss generate --prompt "I think"
 seuss eval --summary

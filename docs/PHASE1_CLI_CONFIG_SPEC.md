@@ -82,12 +82,15 @@ Example:
 ```sh
 seuss ingest
 seuss ingest --source notes
+seuss ingest --path ../notes/user_style.md
+seuss ingest --path ../docs_markdown
 seuss ingest --dry-run
 ```
 
 Useful flags:
 
 - `--source <name>`: ingest only one configured source.
+- `--path <relative-or-absolute-path>`: ingest a direct `.md`/`.txt` file or directory without adding it to config.
 - `--dry-run`: show counts without writing.
 - `--rebuild`: rebuild the fragment registry from scratch.
 - `--config <path>`: use a non-default config.

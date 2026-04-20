@@ -46,6 +46,7 @@ class IngestHardeningTests(unittest.TestCase):
                 rc = run_ingest(
                     config_path=config_path,
                     source_name="chat_export",
+                    direct_path=None,
                     dry_run=False,
                     rebuild=True,
                 )
