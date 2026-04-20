@@ -1249,6 +1249,89 @@ export const handlePropertyBrief = async (
     ? { privateAvg: privateAverage, hdbResaleAvg: resaleAverage, delta: Math.round((privateAverage - resaleAverage) * 100) / 100, ratio: Math.round((privateAverage / resaleAverage) * 100) / 100 }
     : null;
   const dealChecklist = buildPropertyDealChecklist(uraRollup, hdbRollup, planningArea, params.propertyType);
+  const geospatialConfidence = (() => {
+    if (planningArea !== null && firstGeocode !== null) {
+      return {
+        level: "high",
+        reason: "Location resolved from both geocode and planning-area lookup.",
+      };
+    }
+    if (planningArea !== null && params.planningArea !== undefined) {
+      return {
+        level: "medium",
+        reason: "Planning area was supplied directly without geocode confirmation.",
+      };
+    }
+    if (planningArea !== null) {
+      return {
+        level: "medium",
+        reason: "Planning area resolved, but geocode signal is partial.",
+      };
+    }
+    return {
+      level: "low",
+      reason: "Planning area could not be resolved from the supplied location input.",
+    };
+  })();
+  const environmentSignals = includeEnvironment
+    ? {
+        forecastRisk: getForecastRisk(primaryForecast?.forecast),
+        airQualityBand: getAirQualityBand(primaryAirQuality?.psi24h),
+        tier: (() => {
+          const levels = [
+            getForecastRisk(primaryForecast?.forecast),
+            getAirQualityBand(primaryAirQuality?.psi24h),
+          ];
+          if (levels.includes("caution")) return "caution";
+          if (levels.includes("watch")) return "watch";
+          if (levels.includes("clear")) return "clear";
+          return "unknown";
+        })(),
+      }
+    : null;
+  const transportSignals = includeTransport
+    ? {
+        trainAlertCount: trainAlerts?.alerts.length ?? 0,
+        trainMessageCount: trainAlerts?.messages.length ?? 0,
+        trafficIncidentCount: trafficIncidents?.length ?? 0,
+        tier: (trainAlerts?.alerts.length ?? 0) + (trainAlerts?.messages.length ?? 0) > 0
+          ? "disrupted"
+          : (trafficIncidents?.length ?? 0) > 0
+            ? "advisory"
+            : trainAlerts === null || trafficIncidents === null
+              ? "unknown"
+              : "clear",
+      }
+    : null;
+  const divergenceWarnings: readonly RiskFlag[] = marketComparison === null
+    ? []
+      : marketComparison.ratio >= 1.8
+      ? [{
+          code: "MARKET_CONTEXT_DIVERGENCE",
+          severity: "medium" as const,
+          message: `Private vs HDB average ratio is ${marketComparison.ratio}, which exceeds the high-divergence threshold of 1.8.`,
+          source: "URA/HDB",
+        }]
+      : marketComparison.ratio <= 0.55
+        ? [{
+            code: "MARKET_CONTEXT_DIVERGENCE",
+            severity: "medium" as const,
+            message: `Private vs HDB average ratio is ${marketComparison.ratio}, which is below the low-divergence threshold of 0.55.`,
+            source: "URA/HDB",
+          }]
+        : [];
+  const propertyRiskFlags: readonly RiskFlag[] = [
+    ...dealChecklist,
+    ...divergenceWarnings,
+    ...(geospatialConfidence.level === "low"
+      ? [{
+          code: "LOW_GEOSPATIAL_CONFIDENCE",
+          severity: "high" as const,
+          message: "Location resolution confidence is low; verify planning-area context before making decisions.",
+          source: "OneMap/URA",
+        }]
+      : []),
+  ];
   const propertyNextChecks = buildPropertyNextChecks(planningArea, firstGeocode?.postal ?? params.postalCode ?? null, firstGeocode?.lat ?? null, firstGeocode?.lng ?? null);
   const locationResolution = {
     requestedPlanningArea: params.planningArea ?? null,
@@ -1260,6 +1343,44 @@ export const handlePropertyBrief = async (
     lat: firstGeocode?.lat ?? null,
     lng: firstGeocode?.lng ?? null,
   };
+  const toFreshnessStatus = (upstreamTimestamp: string | null): "fresh" | "stale" | "unknown" => {
+    if (upstreamTimestamp === null) {
+      return "unknown";
+    }
+    const parsed = Date.parse(upstreamTimestamp);
+    if (!Number.isFinite(parsed)) {
+      return "unknown";
+    }
+    const ageHours = (Date.now() - parsed) / (1000 * 60 * 60);
+    return ageHours > 24 * 90 ? "stale" : "fresh";
+  };
+  const provenanceSummary = [
+    { source: "OneMap", role: "location_resolution", status: firstGeocode === null ? "missing" : "available" },
+    { source: "URA", role: "planning_and_transactions", status: uraTransactions === null ? "missing" : "available" },
+    { source: "HDB", role: "resale_context", status: hdbResale === null ? "missing" : "available" },
+    ...(includeEnvironment
+      ? [
+          { source: "NEA", role: "forecast_context", status: forecast === null ? "missing" : "available" },
+          { source: "NEA", role: "air_quality_context", status: airQuality === null ? "missing" : "available" },
+        ]
+      : []),
+    ...(includeTransport
+      ? [
+          { source: "LTA", role: "train_alert_context", status: trainAlerts === null ? "missing" : "available" },
+          { source: "LTA", role: "traffic_incident_context", status: trafficIncidents === null ? "missing" : "available" },
+        ]
+      : []),
+  ];
+  const freshnessSummary = [
+    { source: "URA transactions", upstreamTimestamp: getFirstTimestamp(uraTransactions, ["contractDate", "date"]), status: toFreshnessStatus(getFirstTimestamp(uraTransactions, ["contractDate", "date"])) },
+    { source: "HDB resale", upstreamTimestamp: getFirstTimestamp(hdbResale, ["month"]), status: toFreshnessStatus(getFirstTimestamp(hdbResale, ["month"])) },
+    ...(includeEnvironment
+      ? [
+          { source: "NEA forecast", upstreamTimestamp: getFirstTimestamp(forecast, ["updatedAt", "validFrom"]), status: toFreshnessStatus(getFirstTimestamp(forecast, ["updatedAt", "validFrom"])) },
+          { source: "NEA air quality", upstreamTimestamp: getFirstTimestamp(airQuality, ["updatedAt"]), status: toFreshnessStatus(getFirstTimestamp(airQuality, ["updatedAt"])) },
+        ]
+      : []),
+  ];
 
   const payload: BriefArtifact = {
     title: "Property Brief",
@@ -1284,6 +1405,9 @@ export const handlePropertyBrief = async (
     ],
     records: {
       locationResolution,
+      confidence: {
+        geospatial: geospatialConfidence,
+      },
       geocode: firstGeocode === null ? [] : [firstGeocode],
       planningArea: planningRecords ?? [],
       uraTransactions: uraTransactions ?? [],
@@ -1291,6 +1415,12 @@ export const handlePropertyBrief = async (
       hdbResale: hdbResale ?? [],
       hdbRollup: hdbRollup ?? {},
       marketComparison: marketComparison ?? {},
+      contextSignals: {
+        transport: transportSignals,
+        environment: environmentSignals,
+      },
+      provenanceSummary,
+      freshnessSummary,
       forecast: forecast ?? [],
       airQuality: airQuality ?? [],
       trainAlerts: trainAlerts?.alerts ?? [],
@@ -1335,7 +1465,7 @@ export const handlePropertyBrief = async (
         : []),
     ],
     limits: buildPropertyLimits(includeTransport, includeEnvironment),
-    riskFlags: dealChecklist,
+    riskFlags: propertyRiskFlags,
     nextChecks: propertyNextChecks,
   };
 

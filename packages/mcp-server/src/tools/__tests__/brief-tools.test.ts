@@ -411,6 +411,20 @@ describe("brief tools", () => {
       resolvedPlanningArea: "Bedok",
       resolvedRegion: "East",
     });
+    expect((payload.records["confidence"] as Record<string, unknown>)["geospatial"]).toMatchObject({
+      level: "medium",
+    });
+    expect((payload.records["contextSignals"] as Record<string, unknown>)).toMatchObject({
+      transport: expect.objectContaining({ tier: "disrupted", trainAlertCount: 1 }),
+      environment: expect.objectContaining({ tier: "clear", forecastRisk: "clear", airQualityBand: "clear" }),
+    });
+    expect(payload.riskFlags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "MARKET_CONTEXT_DIVERGENCE", source: "URA/HDB" }),
+      ]),
+    );
+    expect(payload.records["provenanceSummary"]).toBeDefined();
+    expect(payload.records["freshnessSummary"]).toBeDefined();
     expect(payload.nextChecks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -427,6 +441,28 @@ describe("brief tools", () => {
       format: "markdown",
     });
     expectMarkdownSections(getText(markdownResult));
+  });
+
+  it("flags low geospatial confidence when location resolution fails", async () => {
+    vi.mocked(lookupPlanningArea).mockResolvedValue([] as never);
+
+    const jsonResult = await handlePropertyBrief({
+      postalCode: "999999",
+      includeTransport: false,
+      includeEnvironment: false,
+      format: "json",
+    });
+    const payload = parseBrief(getText(jsonResult));
+
+    expect((payload.records["confidence"] as Record<string, unknown>)["geospatial"]).toMatchObject({
+      level: "low",
+    });
+    expect(payload.riskFlags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "UNRESOLVED_LOCATION", source: "OneMap" }),
+        expect.objectContaining({ code: "LOW_GEOSPATIAL_CONFIDENCE", source: "OneMap/URA" }),
+      ]),
+    );
   });
 
   it("returns the expanded macro brief envelope", async () => {
