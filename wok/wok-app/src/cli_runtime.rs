@@ -44,11 +44,12 @@ pub(crate) fn dispatch_cli_command(cli: &Cli) -> Result<CliAction, Box<dyn Error
             method,
             params,
             socket,
+            token,
             id,
             notify,
         }) => {
             if let Some(response) =
-                rpc_cli::execute_rpc_command(method, params, socket, id, notify)?
+                rpc_cli::execute_rpc_command(method, params, socket, token, id, notify)?
             {
                 println!("{}", serde_json::to_string_pretty(&response)?);
             }

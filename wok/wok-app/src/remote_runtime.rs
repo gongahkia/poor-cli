@@ -105,7 +105,17 @@ impl WokHandler {
 
     fn handle_remote_request(&mut self, request: &RemoteRequest) -> Option<Value> {
         let response_id = request.id.clone();
+        if request.method != "wok.get_rpc_info" && !self.remote_request_authenticated(request) {
+            response_id.as_ref()?;
+            return Some(error_response(
+                response_id,
+                -32001,
+                "unauthorized: missing or invalid RPC auth token",
+            ));
+        }
+
         let result: Result<Value, RpcError> = match request.method.as_str() {
+            "wok.get_rpc_info" => Ok(self.remote_get_rpc_info()),
             "wok.get_panes" => Ok(self.remote_get_panes()),
             "wok.send_text" => self.remote_send_text(&request.params),
             "wok.run_action" => self.remote_run_action(&request.params),
@@ -131,6 +141,25 @@ impl WokHandler {
         Some(match result {
             Ok(payload) => result_response(response_id, payload),
             Err(rpc_err) => error_response(response_id, rpc_err.code, rpc_err.message),
+        })
+    }
+
+    fn remote_request_authenticated(&self, request: &RemoteRequest) -> bool {
+        let Some(expected) = self.remote_rpc_token.as_deref() else {
+            return true;
+        };
+        request
+            .auth_token
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|token| !token.is_empty() && token == expected)
+    }
+
+    fn remote_get_rpc_info(&self) -> Value {
+        json!({
+            "schema_version": REMOTE_RPC_SCHEMA_VERSION,
+            "methods": remote_rpc_methods(),
+            "auth_required": self.remote_rpc_token.is_some(),
         })
     }
 
@@ -441,5 +470,86 @@ impl WokHandler {
             "shell": shell,
             "yes": yes,
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request_with_token(token: Option<&str>) -> RemoteRequest {
+        RemoteRequest {
+            client_id: 1,
+            id: Some(json!(1)),
+            method: "wok.get_panes".to_string(),
+            params: json!([]),
+            auth_token: token.map(ToString::to_string),
+        }
+    }
+
+    #[test]
+    fn remote_request_authentication_is_optional_by_default() {
+        let handler = WokHandler::new(WokConfig::default());
+        assert!(handler.remote_request_authenticated(&request_with_token(None)));
+    }
+
+    #[test]
+    fn remote_request_authentication_rejects_missing_or_invalid_tokens() {
+        let mut handler = WokHandler::new(WokConfig::default());
+        handler.remote_rpc_token = Some("top-secret".to_string());
+
+        assert!(!handler.remote_request_authenticated(&request_with_token(None)));
+        assert!(!handler.remote_request_authenticated(&request_with_token(Some("wrong-token"))));
+        assert!(handler.remote_request_authenticated(&request_with_token(Some("top-secret"))));
+    }
+
+    #[test]
+    fn remote_get_rpc_info_reports_methods_and_auth_requirement() {
+        let mut handler = WokHandler::new(WokConfig::default());
+        handler.remote_rpc_token = Some("secret".to_string());
+
+        let info = handler.remote_get_rpc_info();
+        assert_eq!(info["schema_version"], json!(REMOTE_RPC_SCHEMA_VERSION));
+        assert_eq!(info["auth_required"], json!(true));
+        let methods = info["methods"]
+            .as_array()
+            .expect("methods should be an array");
+        assert!(methods.iter().any(|value| value == "wok.get_rpc_info"));
+        assert!(methods
+            .iter()
+            .any(|value| value == "wok.setup.shell_rollback"));
+    }
+
+    #[test]
+    fn handle_remote_request_rejects_unauthorized_requests() {
+        let mut handler = WokHandler::new(WokConfig::default());
+        handler.remote_rpc_token = Some("secret".to_string());
+
+        let response = handler
+            .handle_remote_request(&request_with_token(None))
+            .expect("id requests should return an error response");
+        assert_eq!(response["error"]["code"], json!(-32001));
+    }
+
+    #[test]
+    fn handle_remote_request_allows_rpc_info_without_token() {
+        let mut handler = WokHandler::new(WokConfig::default());
+        handler.remote_rpc_token = Some("secret".to_string());
+        let request = RemoteRequest {
+            client_id: 1,
+            id: Some(json!(1)),
+            method: "wok.get_rpc_info".to_string(),
+            params: json!([]),
+            auth_token: None,
+        };
+
+        let response = handler
+            .handle_remote_request(&request)
+            .expect("id requests should return a response");
+        assert_eq!(
+            response["result"]["schema_version"],
+            json!(REMOTE_RPC_SCHEMA_VERSION)
+        );
+        assert_eq!(response["result"]["auth_required"], json!(true));
     }
 }

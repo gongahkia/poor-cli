@@ -10,6 +10,7 @@ pub fn execute_rpc_command(
     method: String,
     params: String,
     socket: Option<String>,
+    token: Option<String>,
     id: Option<String>,
     notify: bool,
 ) -> Result<Option<Value>, Box<dyn Error>> {
@@ -28,11 +29,18 @@ pub fn execute_rpc_command(
                 "missing remote-control socket; pass --socket or set WOK_SOCKET",
             )
         })?;
+    let auth_token = token
+        .or_else(|| std::env::var("WOK_RPC_TOKEN").ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
 
     let mut request_map = serde_json::Map::new();
     request_map.insert("jsonrpc".to_string(), Value::String("2.0".to_string()));
     request_map.insert("method".to_string(), Value::String(method));
     request_map.insert("params".to_string(), params_value);
+    if let Some(auth_token) = auth_token {
+        request_map.insert("auth_token".to_string(), Value::String(auth_token));
+    }
 
     if !notify {
         let id_value = id.map_or_else(
@@ -101,6 +109,7 @@ mod tests {
             "wok.get_panes".to_string(),
             "{not json}".to_string(),
             Some("/tmp/not-used.sock".to_string()),
+            None,
             None,
             false,
         )

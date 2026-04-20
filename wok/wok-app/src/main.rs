@@ -176,6 +176,9 @@ enum CliCommand {
         /// Explicit remote-control socket path. Defaults to $WOK_SOCKET.
         #[arg(long)]
         socket: Option<String>,
+        /// Optional remote-control auth token. Defaults to $WOK_RPC_TOKEN.
+        #[arg(long)]
+        token: Option<String>,
         /// Optional JSON-RPC id value. Parsed as JSON, fallback to string.
         #[arg(long)]
         id: Option<String>,
@@ -391,6 +394,10 @@ struct PaneRuntime {
 
 const ATTACHED_DAEMON_PANE_ID: u64 = 0;
 const DEFAULT_FAILURE_TREND_BUCKET_MS: u64 = 60 * 60 * 1000;
+const REMOTE_RPC_SCHEMA_VERSION: &str = "1.0.0";
+const MAX_GLOBAL_SEARCH_LINES: usize = 50_000;
+const MAX_DIFF_INPUT_LINES: usize = 1_200;
+const MAX_DIFF_ENTRIES: usize = 8_000;
 
 fn attached_mode_blocks_workspace_effect(effect: &WorkspaceEffect) -> bool {
     matches!(
@@ -459,6 +466,7 @@ struct WokHandler {
     plugins: Option<PluginHost>,
     remote_control: Option<RemoteControlServer>,
     remote_socket_path: Option<PathBuf>,
+    remote_rpc_token: Option<String>,
     attached_session: Option<String>,
     daemon_pane_by_local: HashMap<PaneId, u64>,
     status_message: Option<String>,
@@ -520,6 +528,10 @@ impl WokHandler {
                 (None, None)
             }
         };
+        let remote_rpc_token = std::env::var("WOK_RPC_TOKEN")
+            .ok()
+            .map(|token| token.trim().to_string())
+            .filter(|token| !token.is_empty());
 
         let handler = Self {
             config,
@@ -535,6 +547,7 @@ impl WokHandler {
             plugins,
             remote_control,
             remote_socket_path,
+            remote_rpc_token,
             attached_session: None,
             daemon_pane_by_local: HashMap::new(),
             status_message: None,
@@ -1717,6 +1730,10 @@ impl WokHandler {
                 *pane_id,
                 tab_id,
             ));
+            if lines.len() >= MAX_GLOBAL_SEARCH_LINES {
+                lines.truncate(MAX_GLOBAL_SEARCH_LINES);
+                break;
+            }
         }
         lines
     }
@@ -5179,7 +5196,44 @@ fn diff_line_entries(
     current: &[String],
     context_lines: usize,
 ) -> Vec<DiffLineEntry> {
-    let operations = diff_line_operations(previous, current);
+    let (previous, previous_skipped) = trim_diff_input(previous);
+    let (current, current_skipped) = trim_diff_input(current);
+    let mut entries = if previous_skipped > 0 || current_skipped > 0 {
+        vec![DiffLineEntry {
+            kind: DiffLineKind::HunkHeader,
+            text: format!(
+                "@@ ... trimmed {previous_skipped} earlier baseline lines and {current_skipped} earlier target lines ... @@"
+            ),
+        }]
+    } else {
+        Vec::new()
+    };
+
+    entries.extend(diff_line_entries_with_offsets(
+        previous,
+        current,
+        context_lines,
+        previous_skipped,
+        current_skipped,
+    ));
+    if entries.len() > MAX_DIFF_ENTRIES {
+        entries.truncate(MAX_DIFF_ENTRIES);
+        entries.push(DiffLineEntry {
+            kind: DiffLineKind::HunkHeader,
+            text: format!("@@ ... diff output truncated to {MAX_DIFF_ENTRIES} lines ... @@"),
+        });
+    }
+    entries
+}
+
+fn diff_line_entries_with_offsets(
+    previous: &[String],
+    current: &[String],
+    context_lines: usize,
+    old_line_offset: usize,
+    new_line_offset: usize,
+) -> Vec<DiffLineEntry> {
+    let operations = diff_line_operations(previous, current, old_line_offset, new_line_offset);
     let changed_indices = operations
         .iter()
         .enumerate()
@@ -5263,17 +5317,34 @@ fn diff_line_entries(
 }
 
 fn diff_line_counts(previous: &[String], current: &[String]) -> (usize, usize) {
-    diff_line_entries(previous, current, 0).into_iter().fold(
-        (0usize, 0usize),
-        |(added, removed), entry| match entry.kind {
-            DiffLineKind::Added => (added + 1, removed),
-            DiffLineKind::Removed => (added, removed + 1),
-            DiffLineKind::Context | DiffLineKind::HunkHeader => (added, removed),
-        },
-    )
+    let (previous, previous_skipped) = trim_diff_input(previous);
+    let (current, current_skipped) = trim_diff_input(current);
+    diff_line_entries_with_offsets(previous, current, 0, previous_skipped, current_skipped)
+        .into_iter()
+        .fold((0usize, 0usize), |(added, removed), entry| {
+            match entry.kind {
+                DiffLineKind::Added => (added + 1, removed),
+                DiffLineKind::Removed => (added, removed + 1),
+                DiffLineKind::Context | DiffLineKind::HunkHeader => (added, removed),
+            }
+        })
 }
 
-fn diff_line_operations(previous: &[String], current: &[String]) -> Vec<DiffOp> {
+fn trim_diff_input(lines: &[String]) -> (&[String], usize) {
+    if lines.len() > MAX_DIFF_INPUT_LINES {
+        let skipped = lines.len().saturating_sub(MAX_DIFF_INPUT_LINES);
+        (&lines[skipped..], skipped)
+    } else {
+        (lines, 0)
+    }
+}
+
+fn diff_line_operations(
+    previous: &[String],
+    current: &[String],
+    old_line_offset: usize,
+    new_line_offset: usize,
+) -> Vec<DiffOp> {
     let previous_len = previous.len();
     let current_len = current.len();
     let mut lcs = vec![0usize; (previous_len + 1) * (current_len + 1)];
@@ -5292,8 +5363,8 @@ fn diff_line_operations(previous: &[String], current: &[String]) -> Vec<DiffOp> 
     let mut operations = Vec::new();
     let mut i = 0usize;
     let mut j = 0usize;
-    let mut old_line = 1usize;
-    let mut new_line = 1usize;
+    let mut old_line = old_line_offset.saturating_add(1);
+    let mut new_line = new_line_offset.saturating_add(1);
 
     while i < previous_len && j < current_len {
         if previous[i] == current[j] {
@@ -5535,6 +5606,28 @@ fn failure_trend_panel_lines(
             )
         })
         .collect()
+}
+
+fn remote_rpc_methods() -> &'static [&'static str] {
+    &[
+        "wok.get_rpc_info",
+        "wok.get_panes",
+        "wok.send_text",
+        "wok.run_action",
+        "wok.get_blocks",
+        "wok.get_text",
+        "wok.create_pane",
+        "wok.close_pane",
+        "wok.set_theme",
+        "wok.notify",
+        "wok.get_failure_summary",
+        "wok.get_failure_trends",
+        "wok.setup.init",
+        "wok.setup.doctor",
+        "wok.setup.reset",
+        "wok.setup.shell_install",
+        "wok.setup.shell_rollback",
+    ]
 }
 
 fn parse_reset_scope_value(value: &str) -> Option<setup_ops::ResetScope> {
@@ -5980,6 +6073,34 @@ mod tests {
     }
 
     #[test]
+    fn test_remote_rpc_schema_file_matches_runtime_method_catalog() {
+        let schema_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("docs")
+            .join("REMOTE_RPC_SCHEMA_V1.json");
+        let schema_text =
+            std::fs::read_to_string(schema_path).expect("rpc schema file should be readable");
+        let schema: serde_json::Value =
+            serde_json::from_str(&schema_text).expect("rpc schema json should parse");
+
+        assert_eq!(schema["schema_version"], json!(REMOTE_RPC_SCHEMA_VERSION));
+        let schema_methods = schema["methods"]
+            .as_object()
+            .expect("schema methods should be an object")
+            .keys()
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>();
+        let runtime_methods = remote_rpc_methods()
+            .iter()
+            .map(|method| (*method).to_string())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            schema_methods, runtime_methods,
+            "schema methods should stay in lock-step with runtime handlers"
+        );
+    }
+
+    #[test]
     fn test_attached_daemon_pane_id_defaults_to_zero() {
         let handler = WokHandler::new(WokConfig::default());
         assert_eq!(handler.attached_daemon_pane_id(1), ATTACHED_DAEMON_PANE_ID);
@@ -6169,6 +6290,32 @@ mod tests {
         assert_eq!(entries[3].text, "add");
         assert_eq!(entries[4].kind, DiffLineKind::Added);
         assert_eq!(entries[4].text, "add");
+    }
+
+    #[test]
+    fn diff_line_entries_prefixes_trim_notice_for_large_inputs() {
+        let previous = (0..(MAX_DIFF_INPUT_LINES + 5))
+            .map(|index| format!("base-{index}"))
+            .collect::<Vec<_>>();
+        let mut current = previous.clone();
+        current[MAX_DIFF_INPUT_LINES + 4] = "changed".to_string();
+
+        let entries = diff_line_entries(&previous, &current, 1);
+        assert_eq!(entries[0].kind, DiffLineKind::HunkHeader);
+        assert!(entries[0].text.contains("trimmed 5 earlier baseline lines"));
+    }
+
+    #[test]
+    fn diff_line_counts_use_trimmed_view_for_large_inputs() {
+        let previous = (0..(MAX_DIFF_INPUT_LINES + 2))
+            .map(|index| format!("base-{index}"))
+            .collect::<Vec<_>>();
+        let mut current = previous.clone();
+        let last_index = current.len().saturating_sub(1);
+        current[last_index] = "different-last-line".to_string();
+
+        let (added, removed) = diff_line_counts(&previous, &current);
+        assert_eq!((added, removed), (1, 1));
     }
 
     #[test]

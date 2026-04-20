@@ -31,7 +31,10 @@ fn unique_socket_path() -> PathBuf {
         .expect("time should be after epoch")
         .as_nanos();
     let counter = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!("wok-rpc-{}-{nanos}-{counter}.sock", std::process::id()))
+    std::env::temp_dir().join(format!(
+        "wok-rpc-{}-{nanos}-{counter}.sock",
+        std::process::id()
+    ))
 }
 
 fn run_wok(home: &Path, args: &[&str]) -> Output {
@@ -47,6 +50,7 @@ fn run_wok(home: &Path, args: &[&str]) -> Output {
     Command::new(bin)
         .args(args)
         .env("HOME", home)
+        .env_remove("WOK_RPC_TOKEN")
         .env(
             "RUSTUP_HOME",
             std::env::var("RUSTUP_HOME").unwrap_or_else(|_| {
@@ -67,6 +71,44 @@ fn run_wok(home: &Path, args: &[&str]) -> Output {
         )
         .output()
         .expect("wok command should execute")
+}
+
+fn run_wok_with_env(home: &Path, args: &[&str], env: &[(&str, &str)]) -> Output {
+    let bin = std::env::var("CARGO_BIN_EXE_wok")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("target")
+                .join("debug")
+                .join("wok")
+        });
+    let mut command = Command::new(bin);
+    command.args(args);
+    command.env("HOME", home);
+    command.env_remove("WOK_RPC_TOKEN");
+    command.env(
+        "RUSTUP_HOME",
+        std::env::var("RUSTUP_HOME").unwrap_or_else(|_| {
+            format!(
+                "{}/.rustup",
+                std::env::var("HOME").expect("parent HOME should be available")
+            )
+        }),
+    );
+    command.env(
+        "CARGO_HOME",
+        std::env::var("CARGO_HOME").unwrap_or_else(|_| {
+            format!(
+                "{}/.cargo",
+                std::env::var("HOME").expect("parent HOME should be available")
+            )
+        }),
+    );
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    command.output().expect("wok command should execute")
 }
 
 fn assert_success(output: &Output) {
@@ -223,6 +265,77 @@ fn rpc_cli_sends_failure_trends_request_and_prints_result() {
         Value::String("cargo test".to_string())
     );
     assert_eq!(response["result"][0]["count"], Value::from(2_u64));
+    server
+        .join()
+        .expect("mock server thread should finish cleanly");
+}
+
+#[test]
+fn rpc_cli_supports_explicit_token_flag() {
+    let home = unique_temp_dir("token-flag");
+    fs::create_dir_all(&home).expect("temp home should be created");
+
+    let socket_path = unique_socket_path();
+    let expected_request = json!({
+        "jsonrpc": "2.0",
+        "method": "wok.get_panes",
+        "params": null,
+        "auth_token": "token-from-flag",
+        "id": 1
+    });
+    let server = spawn_mock_rpc_server(
+        socket_path.clone(),
+        expected_request,
+        Some(json!({"jsonrpc":"2.0","id":1,"result":[] })),
+    );
+
+    let output = run_wok(
+        &home,
+        &[
+            "rpc",
+            "wok.get_panes",
+            "--socket",
+            &socket_path.display().to_string(),
+            "--token",
+            "token-from-flag",
+        ],
+    );
+    assert_success(&output);
+    server
+        .join()
+        .expect("mock server thread should finish cleanly");
+}
+
+#[test]
+fn rpc_cli_reads_token_from_environment() {
+    let home = unique_temp_dir("token-env");
+    fs::create_dir_all(&home).expect("temp home should be created");
+
+    let socket_path = unique_socket_path();
+    let expected_request = json!({
+        "jsonrpc": "2.0",
+        "method": "wok.get_panes",
+        "params": null,
+        "auth_token": "token-from-env",
+        "id": 1
+    });
+    let server = spawn_mock_rpc_server(
+        socket_path.clone(),
+        expected_request,
+        Some(json!({"jsonrpc":"2.0","id":1,"result":[] })),
+    );
+
+    let output = run_wok_with_env(
+        &home,
+        &[
+            "rpc",
+            "wok.get_panes",
+            "--socket",
+            &socket_path.display().to_string(),
+        ],
+        &[("WOK_RPC_TOKEN", "token-from-env")],
+    );
+    assert_success(&output);
     server
         .join()
         .expect("mock server thread should finish cleanly");

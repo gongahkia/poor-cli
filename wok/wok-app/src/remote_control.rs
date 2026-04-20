@@ -20,6 +20,8 @@ pub struct RemoteRequest {
     pub method: String,
     /// JSON-RPC params payload.
     pub params: Value,
+    /// Optional per-request auth token for secured local RPC.
+    pub auth_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -29,6 +31,8 @@ struct RawRequest {
     #[serde(default)]
     params: Value,
     id: Option<Value>,
+    #[serde(default, alias = "auth", alias = "token")]
+    auth_token: Option<String>,
 }
 
 #[cfg(unix)]
@@ -261,6 +265,7 @@ mod imp {
                         id: request.id,
                         method: request.method,
                         params: request.params,
+                        auth_token: request.auth_token,
                     });
                 }
                 Err(error) => {
@@ -496,6 +501,7 @@ mod imp {
                         id: request.id,
                         method: request.method,
                         params: request.params,
+                        auth_token: request.auth_token,
                     });
                 }
                 Err(error) => {
