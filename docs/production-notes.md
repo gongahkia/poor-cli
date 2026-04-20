@@ -44,6 +44,18 @@ Precedence rule: when both are set, `SG_APIS_TOOLSETS` wins and `SG_APIS_TOOL_PR
 
 Protected-resource metadata is served at `/.well-known/oauth-protected-resource/mcp`.
 
+## Secure Default Deployment Pattern
+
+For any non-localhost HTTP deployment, use this baseline:
+
+- `SG_APIS_HTTP_AUTH_MODE=all`
+- `SG_APIS_TOOL_PROFILE=public` (or the narrowest profile needed for the deployment lane)
+- `SG_APIS_OIDC_ISSUER`, `SG_APIS_OIDC_AUDIENCE` explicitly set
+- `SG_APIS_OIDC_REQUIRED_SCOPES` set to at least one write-safe scope for operator surfaces
+- `SG_APIS_REMOTE_BASE_URL` set to the canonical externally reachable MCP URL
+
+Only use `mixed` during staged migration windows where unauthenticated public discovery is explicitly required. Keep `none` constrained to localhost development.
+
 ## Latency Expectations
 
 | API Family | Timeout (ms) | Typical Latency | Notes |

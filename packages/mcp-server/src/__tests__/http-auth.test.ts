@@ -1,0 +1,327 @@
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
+import { exportJWK, generateKeyPair, SignJWT } from "jose";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  derivePublicHttpToolsets,
+  HttpAuthController,
+  type AuthFailure,
+  type HttpAuthMode,
+} from "../http-auth.js";
+import type { ToolSet } from "../tools/tool-definition.js";
+
+type TestIssuer = {
+  readonly issuerUrl: URL;
+  readonly audience: string;
+  readonly signToken: (options?: {
+    readonly scopes?: readonly string[];
+    readonly audience?: string;
+    readonly issuer?: string;
+    readonly expiresAt?: number | string;
+  }) => Promise<string>;
+  readonly close: () => Promise<void>;
+};
+
+const quietLogger = {
+  debug: () => undefined,
+  info: () => undefined,
+  warn: () => undefined,
+  error: () => undefined,
+  child: () => quietLogger,
+};
+
+const fullToolsets = new Set([
+  "public",
+  "briefs",
+  "query",
+  "health",
+  "ops",
+  "diligence",
+  "property",
+] as const satisfies readonly ToolSet[]);
+
+const createdClosers: Array<() => Promise<void>> = [];
+
+const createRequest = (options?: {
+  readonly authorization?: string;
+  readonly host?: string;
+}): IncomingMessage => {
+  return {
+    headers: {
+      ...(options?.authorization === undefined ? {} : { authorization: options.authorization }),
+      ...(options?.host === undefined ? {} : { host: options.host }),
+    },
+  } as IncomingMessage;
+};
+
+const createOidcIssuer = async (options?: {
+  readonly discoveryIssuerOverride?: string;
+}): Promise<TestIssuer> => {
+  const { publicKey, privateKey } = await generateKeyPair("RS256");
+  const jwk = await exportJWK(publicKey);
+  const keyId = "http-auth-test-key";
+
+  const issuerServer = createServer((req: IncomingMessage, res: ServerResponse) => {
+    const address = issuerServer.address() as AddressInfo;
+    const issuerUrl = `http://127.0.0.1:${address.port}`;
+
+    if (req.url === "/.well-known/openid-configuration" || req.url === "/.well-known/oauth-authorization-server") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        issuer: options?.discoveryIssuerOverride ?? issuerUrl,
+        jwks_uri: `${issuerUrl}/jwks`,
+      }));
+      return;
+    }
+
+    if (req.url === "/jwks") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        keys: [{ ...jwk, kid: keyId, alg: "RS256", use: "sig" }],
+      }));
+      return;
+    }
+
+    res.writeHead(404);
+    res.end();
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    issuerServer.once("error", reject);
+    issuerServer.listen(0, "127.0.0.1", () => {
+      issuerServer.off("error", reject);
+      resolve();
+    });
+  });
+
+  const address = issuerServer.address() as AddressInfo;
+  const issuerUrl = new URL(`http://127.0.0.1:${address.port}`);
+  const audience = "sg-apis-http-auth-test";
+
+  return {
+    issuerUrl,
+    audience,
+    signToken: async (tokenOptions) => {
+      const scopes = tokenOptions?.scopes ?? [];
+      return new SignJWT({
+        scope: scopes.join(" "),
+      })
+        .setProtectedHeader({ alg: "RS256", kid: keyId })
+        .setIssuer(tokenOptions?.issuer ?? issuerUrl.href)
+        .setAudience(tokenOptions?.audience ?? audience)
+        .setSubject("test-user")
+        .setIssuedAt()
+        .setExpirationTime(tokenOptions?.expiresAt ?? "2h")
+        .sign(privateKey);
+    },
+    close: async () => {
+      await new Promise<void>((resolve, reject) => {
+        issuerServer.close((error) => {
+          if (error !== undefined && error !== null) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+    },
+  };
+};
+
+const createController = (options: {
+  readonly mode: HttpAuthMode;
+  readonly issuer?: string;
+  readonly audience?: string;
+  readonly requiredScopes?: readonly string[];
+}) => {
+  return new HttpAuthController({
+    mode: options.mode,
+    ...(options.issuer === undefined ? {} : { issuer: options.issuer }),
+    ...(options.audience === undefined ? {} : { audience: options.audience }),
+    requiredScopes: options.requiredScopes ?? [],
+    clockSkewSec: 60,
+    resourceServerUrl: new URL("http://127.0.0.1:3000/mcp"),
+    fullToolsets,
+    publicToolsets: derivePublicHttpToolsets(fullToolsets),
+    logger: quietLogger,
+  });
+};
+
+const expectAuthFailure = (value: Awaited<ReturnType<HttpAuthController["resolveInitializeSession"]>>): AuthFailure => {
+  expect("statusCode" in value).toBe(true);
+  return value as AuthFailure;
+};
+
+afterEach(async () => {
+  while (createdClosers.length > 0) {
+    const close = createdClosers.pop();
+    await close?.();
+  }
+});
+
+describe("HttpAuthController", () => {
+  it("allows full protected access in none mode", async () => {
+    const controller = createController({ mode: "none" });
+
+    const session = await controller.resolveInitializeSession(createRequest());
+    expect("statusCode" in session).toBe(false);
+    if ("statusCode" in session) {
+      return;
+    }
+    expect(session.access).toBe("protected");
+    expect(session.enabledToolsets).toEqual(fullToolsets);
+
+    const followup = await controller.authorizeSessionRequest(createRequest(), session);
+    expect(followup).toBe(true);
+  });
+
+  it("limits mixed mode to the public profile without a token", async () => {
+    const issuer = await createOidcIssuer();
+    createdClosers.push(issuer.close);
+
+    const controller = createController({
+      mode: "mixed",
+      issuer: issuer.issuerUrl.href,
+      audience: issuer.audience,
+    });
+
+    const session = await controller.resolveInitializeSession(createRequest());
+    expect("statusCode" in session).toBe(false);
+    if ("statusCode" in session) {
+      return;
+    }
+    expect(session.access).toBe("public");
+    expect(session.enabledToolsets).toEqual(derivePublicHttpToolsets(fullToolsets));
+
+    const followup = await controller.authorizeSessionRequest(createRequest(), session);
+    expect(followup).toBe(true);
+  });
+
+  it("elevates mixed mode to protected when a valid bearer token is present", async () => {
+    const issuer = await createOidcIssuer();
+    createdClosers.push(issuer.close);
+
+    const token = await issuer.signToken({ scopes: ["ops:write", "query:read"] });
+    const controller = createController({
+      mode: "mixed",
+      issuer: issuer.issuerUrl.href,
+      audience: issuer.audience,
+      requiredScopes: ["ops:write"],
+    });
+
+    const session = await controller.resolveInitializeSession(createRequest({ authorization: `Bearer ${token}` }));
+    expect("statusCode" in session).toBe(false);
+    if ("statusCode" in session) {
+      return;
+    }
+    expect(session.access).toBe("protected");
+    expect(session.enabledToolsets).toEqual(fullToolsets);
+    expect(session.authInfo?.subject).toBe("test-user");
+    expect(session.authInfo?.scopes).toContain("ops:write");
+  });
+
+  it("rejects all mode initialization without an authorization header", async () => {
+    const issuer = await createOidcIssuer();
+    createdClosers.push(issuer.close);
+
+    const controller = createController({
+      mode: "all",
+      issuer: issuer.issuerUrl.href,
+      audience: issuer.audience,
+    });
+
+    const failure = expectAuthFailure(await controller.resolveInitializeSession(createRequest()));
+    expect(failure.statusCode).toBe(401);
+    expect(failure.reason).toBe("invalid_token");
+    expect(failure.payload).toMatchObject({
+      error: "invalid_token",
+      error_description: "Missing Authorization header",
+    });
+  });
+
+  it("returns insufficient_scope when required scopes are missing", async () => {
+    const issuer = await createOidcIssuer();
+    createdClosers.push(issuer.close);
+
+    const token = await issuer.signToken({ scopes: ["ops:read"] });
+    const controller = createController({
+      mode: "mixed",
+      issuer: issuer.issuerUrl.href,
+      audience: issuer.audience,
+      requiredScopes: ["ops:write"],
+    });
+
+    const failure = expectAuthFailure(
+      await controller.resolveInitializeSession(createRequest({ authorization: `Bearer ${token}` })),
+    );
+    expect(failure.statusCode).toBe(403);
+    expect(failure.reason).toBe("insufficient_scope");
+    expect(failure.headers["WWW-Authenticate"]).toContain("scope=\"ops:write\"");
+  });
+
+  it("rejects expired bearer tokens", async () => {
+    const issuer = await createOidcIssuer();
+    createdClosers.push(issuer.close);
+
+    const token = await issuer.signToken({
+      expiresAt: Math.floor(Date.now() / 1000) - 120,
+    });
+    const controller = createController({
+      mode: "mixed",
+      issuer: issuer.issuerUrl.href,
+      audience: issuer.audience,
+    });
+
+    const failure = expectAuthFailure(
+      await controller.resolveInitializeSession(createRequest({ authorization: `Bearer ${token}` })),
+    );
+    expect(failure.statusCode).toBe(401);
+    expect(failure.reason).toBe("invalid_token");
+    expect(failure.payload).toMatchObject({
+      error: "invalid_token",
+      error_description: "Token has expired",
+    });
+  });
+
+  it("rejects tokens with an invalid audience", async () => {
+    const issuer = await createOidcIssuer();
+    createdClosers.push(issuer.close);
+
+    const token = await issuer.signToken({ audience: "another-audience" });
+    const controller = createController({
+      mode: "mixed",
+      issuer: issuer.issuerUrl.href,
+      audience: issuer.audience,
+    });
+
+    const failure = expectAuthFailure(
+      await controller.resolveInitializeSession(createRequest({ authorization: `Bearer ${token}` })),
+    );
+    expect(failure.statusCode).toBe(401);
+    expect(failure.reason).toBe("invalid_token");
+    expect(failure.payload).toMatchObject({
+      error: "invalid_token",
+    });
+  });
+
+  it("rejects initialization when oidc discovery issuer mismatches configured issuer", async () => {
+    const issuer = await createOidcIssuer({
+      discoveryIssuerOverride: "http://127.0.0.1/mismatched-issuer",
+    });
+    createdClosers.push(issuer.close);
+
+    const token = await issuer.signToken();
+    const controller = createController({
+      mode: "mixed",
+      issuer: issuer.issuerUrl.href,
+      audience: issuer.audience,
+    });
+
+    const failure = expectAuthFailure(
+      await controller.resolveInitializeSession(createRequest({ authorization: `Bearer ${token}` })),
+    );
+    expect(failure.statusCode).toBe(401);
+    expect(failure.reason).toBe("invalid_token");
+    expect(String(failure.payload["error_description"] ?? "")).toContain("OIDC issuer mismatch");
+  });
+});
