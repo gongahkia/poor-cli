@@ -217,6 +217,9 @@ mod imp {
     use std::os::unix::fs::PermissionsExt;
     use std::os::unix::net::{UnixListener, UnixStream};
 
+    const IPC_DISCOVERY_TIMEOUT: Duration = Duration::from_millis(250);
+    const IPC_COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
+
     fn runtime_dir() -> PathBuf {
         std::env::var("XDG_RUNTIME_DIR")
             .map(PathBuf::from)
@@ -237,6 +240,88 @@ mod imp {
             session_socket_path(name).display().to_string(),
         );
         env
+    }
+
+    fn is_transient_socket_error(error: &std::io::Error) -> bool {
+        matches!(
+            error.kind(),
+            std::io::ErrorKind::WouldBlock
+                | std::io::ErrorKind::TimedOut
+                | std::io::ErrorKind::Interrupted
+                | std::io::ErrorKind::ConnectionRefused
+                | std::io::ErrorKind::NotFound
+        )
+    }
+
+    fn connect_socket(socket: &Path, timeout: Duration) -> Result<UnixStream, std::io::Error> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            match UnixStream::connect(socket) {
+                Ok(stream) => {
+                    stream.set_read_timeout(Some(timeout))?;
+                    stream.set_write_timeout(Some(timeout))?;
+                    return Ok(stream);
+                }
+                Err(error) if is_transient_socket_error(&error) && Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
+
+    fn request_socket(
+        socket: &Path,
+        message: ClientMessage,
+        timeout: Duration,
+    ) -> Result<ServerMessage, Box<dyn std::error::Error>> {
+        let deadline = Instant::now() + timeout;
+        let mut last_error: Option<std::io::Error> = None;
+
+        while Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let mut stream = match connect_socket(socket, remaining) {
+                Ok(stream) => stream,
+                Err(error) if is_transient_socket_error(&error) => {
+                    last_error = Some(error);
+                    std::thread::sleep(Duration::from_millis(20));
+                    continue;
+                }
+                Err(error) => return Err(Box::new(error)),
+            };
+
+            match write_frame(&mut stream, &message) {
+                Ok(()) => {}
+                Err(error) if is_transient_socket_error(&error) => {
+                    last_error = Some(error);
+                    std::thread::sleep(Duration::from_millis(20));
+                    continue;
+                }
+                Err(error) => return Err(Box::new(error)),
+            }
+
+            match read_frame::<ServerMessage>(&mut stream) {
+                Ok(response) => return Ok(response),
+                Err(error) if is_transient_socket_error(&error) => {
+                    last_error = Some(error);
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Err(error) => return Err(Box::new(error)),
+            }
+        }
+
+        match last_error {
+            Some(error) => Err(Box::new(error)),
+            None => Err("daemon request timed out".into()),
+        }
+    }
+
+    fn request(
+        session: &str,
+        message: ClientMessage,
+    ) -> Result<ServerMessage, Box<dyn std::error::Error>> {
+        let socket = session_socket_path(session);
+        request_socket(&socket, message, IPC_COMMAND_TIMEOUT)
     }
 
     /// Run a daemon loop for one named session.
@@ -260,6 +345,7 @@ mod imp {
             session.process_pty_output();
             match listener.accept() {
                 Ok((mut stream, _)) => {
+                    stream.set_nonblocking(false)?;
                     let response = match read_frame::<ClientMessage>(&mut stream) {
                         Ok(message) => match message {
                             ClientMessage::Attach { .. } => {
@@ -336,15 +422,14 @@ mod imp {
     }
 
     fn query_session_socket(name: &str, socket: &Path) -> Option<SessionSummary> {
-        let mut stream = UnixStream::connect(socket).ok()?;
-        write_frame(
-            &mut stream,
-            &ClientMessage::SessionState {
+        let response = request_socket(
+            socket,
+            ClientMessage::SessionState {
                 session: name.to_string(),
             },
+            IPC_DISCOVERY_TIMEOUT,
         )
         .ok()?;
-        let response: ServerMessage = read_frame(&mut stream).ok()?;
         match response {
             ServerMessage::SessionState {
                 pane_count,
@@ -386,29 +471,26 @@ mod imp {
 
     /// Send a shutdown request to one session.
     pub fn kill_session(name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let socket = session_socket_path(name);
-        let mut stream = UnixStream::connect(&socket)?;
-        write_frame(
-            &mut stream,
-            &ClientMessage::Kill {
+        match request(
+            name,
+            ClientMessage::Kill {
                 session: name.to_string(),
             },
-        )?;
-        let _: ServerMessage = read_frame(&mut stream)?;
-        Ok(())
+        )? {
+            ServerMessage::Ack => Ok(()),
+            ServerMessage::Error { message } => Err(message.into()),
+            _ => Err("unexpected daemon response".into()),
+        }
     }
 
     /// Send an attach request for one session.
     pub fn attach_session(name: &str) -> Result<SessionSummary, Box<dyn std::error::Error>> {
-        let socket = session_socket_path(name);
-        let mut stream = UnixStream::connect(&socket)?;
-        write_frame(
-            &mut stream,
-            &ClientMessage::Attach {
+        let response = request(
+            name,
+            ClientMessage::Attach {
                 session: name.to_string(),
             },
         )?;
-        let response: ServerMessage = read_frame(&mut stream)?;
         match response {
             ServerMessage::SessionState {
                 pane_count,
@@ -428,16 +510,16 @@ mod imp {
 
     /// Send a detach request for one session.
     pub fn detach_session(name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let socket = session_socket_path(name);
-        let mut stream = UnixStream::connect(&socket)?;
-        write_frame(
-            &mut stream,
-            &ClientMessage::Detach {
+        match request(
+            name,
+            ClientMessage::Detach {
                 session: name.to_string(),
             },
-        )?;
-        let _: ServerMessage = read_frame(&mut stream)?;
-        Ok(())
+        )? {
+            ServerMessage::Ack => Ok(()),
+            ServerMessage::Error { message } => Err(message.into()),
+            _ => Err("unexpected daemon response".into()),
+        }
     }
 
     /// Send raw input bytes to a session pane.
@@ -446,16 +528,13 @@ mod imp {
         pane_id: u64,
         data: &[u8],
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let socket = session_socket_path(name);
-        let mut stream = UnixStream::connect(&socket)?;
-        write_frame(
-            &mut stream,
-            &ClientMessage::Input {
+        match request(
+            name,
+            ClientMessage::Input {
                 pane_id,
                 data: data.to_vec(),
             },
-        )?;
-        match read_frame::<ServerMessage>(&mut stream)? {
+        )? {
             ServerMessage::Ack => Ok(()),
             ServerMessage::Error { message } => Err(message.into()),
             _ => Err("unexpected daemon response".into()),
@@ -469,17 +548,14 @@ mod imp {
         cols: u16,
         rows: u16,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let socket = session_socket_path(name);
-        let mut stream = UnixStream::connect(&socket)?;
-        write_frame(
-            &mut stream,
-            &ClientMessage::Resize {
+        match request(
+            name,
+            ClientMessage::Resize {
                 pane_id,
                 cols,
                 rows,
             },
-        )?;
-        match read_frame::<ServerMessage>(&mut stream)? {
+        )? {
             ServerMessage::Ack => Ok(()),
             ServerMessage::Error { message } => Err(message.into()),
             _ => Err("unexpected daemon response".into()),
@@ -488,10 +564,7 @@ mod imp {
 
     /// Fetch a snapshot payload for one session.
     pub fn snapshot_session(name: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-        let socket = session_socket_path(name);
-        let mut stream = UnixStream::connect(&socket)?;
-        write_frame(&mut stream, &ClientMessage::Snapshot)?;
-        match read_frame::<ServerMessage>(&mut stream)? {
+        match request(name, ClientMessage::Snapshot)? {
             ServerMessage::Snapshot { payload } => Ok(payload),
             ServerMessage::Error { message } => Err(message.into()),
             _ => Err("unexpected daemon response".into()),
@@ -500,15 +573,12 @@ mod imp {
 
     /// Create a new pane in a daemon session.
     pub fn create_pane(name: &str, direction: &str) -> Result<u64, Box<dyn std::error::Error>> {
-        let socket = session_socket_path(name);
-        let mut stream = UnixStream::connect(&socket)?;
-        write_frame(
-            &mut stream,
-            &ClientMessage::CreatePane {
+        match request(
+            name,
+            ClientMessage::CreatePane {
                 direction: direction.to_string(),
             },
-        )?;
-        match read_frame::<ServerMessage>(&mut stream)? {
+        )? {
             ServerMessage::PaneCreated { pane_id } => Ok(pane_id),
             ServerMessage::Error { message } => Err(message.into()),
             _ => Err("unexpected daemon response".into()),
@@ -517,10 +587,7 @@ mod imp {
 
     /// Close a pane in a daemon session.
     pub fn close_pane(name: &str, pane_id: u64) -> Result<(), Box<dyn std::error::Error>> {
-        let socket = session_socket_path(name);
-        let mut stream = UnixStream::connect(&socket)?;
-        write_frame(&mut stream, &ClientMessage::ClosePane { pane_id })?;
-        match read_frame::<ServerMessage>(&mut stream)? {
+        match request(name, ClientMessage::ClosePane { pane_id })? {
             ServerMessage::Ack => Ok(()),
             ServerMessage::Error { message } => Err(message.into()),
             _ => Err("unexpected daemon response".into()),
@@ -529,10 +596,7 @@ mod imp {
 
     /// List panes in a daemon session.
     pub fn list_panes(name: &str) -> Result<Vec<PaneInfo>, Box<dyn std::error::Error>> {
-        let socket = session_socket_path(name);
-        let mut stream = UnixStream::connect(&socket)?;
-        write_frame(&mut stream, &ClientMessage::GetPanes)?;
-        match read_frame::<ServerMessage>(&mut stream)? {
+        match request(name, ClientMessage::GetPanes)? {
             ServerMessage::Panes { items } => Ok(items),
             ServerMessage::Error { message } => Err(message.into()),
             _ => Err("unexpected daemon response".into()),
@@ -592,6 +656,7 @@ mod imp {
             session.process_pty_output();
             match listener.accept() {
                 Ok((mut stream, _)) => {
+                    stream.set_nonblocking(false)?;
                     let response = match read_frame::<ClientMessage>(&mut stream) {
                         Ok(message) => match message {
                             ClientMessage::Attach { .. } => {

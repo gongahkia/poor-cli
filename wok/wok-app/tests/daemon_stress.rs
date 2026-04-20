@@ -1,11 +1,24 @@
 //! Stress-oriented local integration tests for daemon runtime.
 #![cfg(unix)]
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn unique_session(prefix: &str) -> String {
-    format!("{prefix}_stress_{}", std::process::id())
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("current time should be after epoch")
+        .as_millis() as u64;
+    let seed = millis & 0xffff;
+    let counter = SESSION_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!(
+        "{prefix}_stress_{}_{seed:x}_{counter:x}",
+        std::process::id()
+    )
 }
 
 fn wait_for_session(name: &str, timeout: Duration) -> bool {
