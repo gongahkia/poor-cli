@@ -146,40 +146,149 @@ def _build_phrase_model(fragments: list[dict], order: int) -> MarkovModel:
     return model
 
 
-def _generate_level(
-    level: str,
+def _build_sentence_model(fragments: list[dict], order: int) -> MarkovModel:
+    model = MarkovModel(order=order)
+    for fragment in fragments:
+        sentences = split_sentences(fragment.get("text", ""))
+        model.train(sentences)
+    return model
+
+
+def _sentence_stem(text: str, width: int = 3) -> str:
+    words = tokenize_words(text.lower())
+    if not words:
+        return ""
+    return " ".join(words[:width])
+
+
+def _build_motif_model(fragments: list[dict], order: int) -> MarkovModel:
+    model = MarkovModel(order=order)
+    for fragment in fragments:
+        motifs = []
+        for sentence in split_sentences(fragment.get("text", "")):
+            stem = _sentence_stem(sentence)
+            if stem:
+                motifs.append(stem)
+        model.train(motifs)
+    return model
+
+
+def _format_sentence(text: str) -> str:
+    text = text.strip()
+    if not text:
+        return ""
+    text = text[0].upper() + text[1:] if len(text) > 1 else text.upper()
+    if text[-1] not in ".!?":
+        text += "."
+    return text
+
+
+def _generate_hybrid_discourse(
     prompt: str,
-    fragments: list[dict],
-    orders: dict[str, int],
+    word_model: MarkovModel,
+    phrase_model: MarkovModel,
+    sentence_model: MarkovModel,
+    motif_model: MarkovModel,
     max_tokens: int,
     temperature: float,
     rng: random.Random,
 ) -> str:
+    target_sentences = max(1, min(8, math.ceil(max_tokens / 18)))
+
+    prompt_sentences = split_sentences(prompt)
+    prompt_motifs = [stem for stem in (_sentence_stem(s) for s in prompt_sentences) if stem]
+
+    sentence_units = sentence_model.generate(
+        prompt_tokens=prompt_sentences,
+        max_tokens=target_sentences,
+        temperature=temperature,
+        rng=rng,
+    )
+    motif_units = motif_model.generate(
+        prompt_tokens=prompt_motifs,
+        max_tokens=target_sentences,
+        temperature=temperature,
+        rng=rng,
+    )
+
+    word_units = word_model.generate(
+        prompt_tokens=tokenize_words(prompt),
+        max_tokens=max_tokens,
+        temperature=temperature,
+        rng=rng,
+    )
+
+    output_sentences: list[str] = []
+    word_cursor = 0
+
+    for idx in range(target_sentences):
+        base_sentence = sentence_units[idx].strip() if idx < len(sentence_units) else ""
+
+        if not base_sentence:
+            chunk = word_units[word_cursor : word_cursor + 12]
+            word_cursor += len(chunk)
+            base_sentence = " ".join(chunk).strip()
+
+        motif = motif_units[idx].strip() if idx < len(motif_units) else ""
+        if motif and not base_sentence.lower().startswith(motif.lower()):
+            base_sentence = f"{motif} {base_sentence}".strip()
+
+        phrase_seed = split_phrases(base_sentence if base_sentence else prompt)
+        phrase_tail = phrase_model.generate(
+            prompt_tokens=phrase_seed,
+            max_tokens=1,
+            temperature=temperature,
+            rng=rng,
+        )
+        if phrase_tail:
+            tail = phrase_tail[0].strip()
+            if tail and tail.lower() not in base_sentence.lower():
+                base_sentence = f"{base_sentence}, {tail}"
+
+        formatted = _format_sentence(base_sentence)
+        if formatted:
+            output_sentences.append(formatted)
+
+    if output_sentences:
+        return " ".join(output_sentences)
+
+    return " ".join(word_units).strip()
+
+
+def _generate_level(
+    level: str,
+    prompt: str,
+    max_tokens: int,
+    temperature: float,
+    rng: random.Random,
+    char_model: MarkovModel,
+    word_model: MarkovModel,
+    phrase_model: MarkovModel,
+    sentence_model: MarkovModel,
+    motif_model: MarkovModel,
+) -> str:
     if level == "character":
-        model = _build_char_model(fragments, orders["character"])
-        output = model.generate(list(prompt), max_tokens, temperature, rng)
+        output = char_model.generate(list(prompt), max_tokens, temperature, rng)
         return "".join(output).strip()
 
     if level == "word":
-        model = _build_word_model(fragments, orders["word"])
-        output = model.generate(tokenize_words(prompt), max_tokens, temperature, rng)
+        output = word_model.generate(tokenize_words(prompt), max_tokens, temperature, rng)
         return " ".join(output).strip()
 
     if level == "phrase":
-        model = _build_phrase_model(fragments, orders["phrase"])
-        output = model.generate(split_phrases(prompt), max_tokens, temperature, rng)
+        output = phrase_model.generate(split_phrases(prompt), max_tokens, temperature, rng)
         return ", ".join(output).strip()
 
-    # Hybrid: word-first body with phrase tail when phrase data exists.
-    word_model = _build_word_model(fragments, orders["word"])
-    phrase_model = _build_phrase_model(fragments, orders["phrase"])
-    body = word_model.generate(tokenize_words(prompt), max_tokens, temperature, rng)
-    tail = phrase_model.generate(split_phrases(prompt), max(2, math.floor(max_tokens / 6)), temperature, rng)
-    body_text = " ".join(body).strip()
-    tail_text = ", ".join(tail).strip()
-    if body_text and tail_text:
-        return f"{body_text}. {tail_text}"
-    return body_text or tail_text
+    return _generate_hybrid_discourse(
+        prompt=prompt,
+        word_model=word_model,
+        phrase_model=phrase_model,
+        sentence_model=sentence_model,
+        motif_model=motif_model,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        rng=rng,
+    )
 
 
 def generate_text(
@@ -191,16 +300,30 @@ def generate_text(
     seed: int,
     anti_copy_ngram: int,
     attempts: int = 3,
+    orders: dict[str, int] | None = None,
 ) -> GenerationResult:
     if not fragments:
         return GenerationResult(output="", level=level, exact_copy_hits=0, repetition_score=0.0)
 
-    rng = random.Random(seed)
-    orders = {
+    order_cfg = {
         "character": 5,
         "word": 3,
         "phrase": 2,
+        "sentence": 1,
+        "motif": 2,
     }
+    if orders:
+        for key, value in orders.items():
+            if key in order_cfg and isinstance(value, int) and value > 0:
+                order_cfg[key] = value
+
+    rng = random.Random(seed)
+
+    char_model = _build_char_model(fragments, order_cfg["character"])
+    word_model = _build_word_model(fragments, order_cfg["word"])
+    phrase_model = _build_phrase_model(fragments, order_cfg["phrase"])
+    sentence_model = _build_sentence_model(fragments, order_cfg["sentence"])
+    motif_model = _build_motif_model(fragments, order_cfg["motif"])
 
     best_output = ""
     best_hits = 10**9
@@ -210,12 +333,16 @@ def generate_text(
         output = _generate_level(
             level=level,
             prompt=prompt,
-            fragments=fragments,
-            orders=orders,
             max_tokens=max_tokens,
             temperature=temperature,
             rng=rng,
+            char_model=char_model,
+            word_model=word_model,
+            phrase_model=phrase_model,
+            sentence_model=sentence_model,
+            motif_model=motif_model,
         ).strip()
+
         hits = exact_copy_hits(output, corpus_texts, anti_copy_ngram)
         if hits < best_hits:
             best_output = output
