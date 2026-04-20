@@ -63,3 +63,27 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo doc --no-deps --workspace
+
+  perf_gate:
+    name: Performance Gate
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run benchmark regression gate
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          REGRESSION_THRESHOLD_PCT: "12"
+          SAMPLE_SIZE: "20"
+          MEASUREMENT_TIME: "2"
+        run: .github/scripts/perf_gate.sh
+      - name: Upload performance gate artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-gate
+          path: .perf-gate/

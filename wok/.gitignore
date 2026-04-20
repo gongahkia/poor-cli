@@ -1,4 +1,5 @@
 /target
+/.perf-gate
 *.swp
 *.swo
 *~
