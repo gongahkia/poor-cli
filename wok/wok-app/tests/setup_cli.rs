@@ -3,14 +3,21 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+static HOME_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn unique_home() -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("time should be after epoch")
         .as_nanos();
-    std::env::temp_dir().join(format!("wok-cli-it-{}-{nanos}", std::process::id()))
+    let counter = HOME_COUNTER.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!(
+        "wok-cli-it-{}-{nanos}-{counter}",
+        std::process::id()
+    ))
 }
 
 fn run_wok(home: &Path, args: &[&str]) -> Output {
@@ -186,4 +193,90 @@ fn shell_rollback_can_target_individual_shell_when_multiple_installs_exist() {
     ));
     let bash_content = fs::read_to_string(&bashrc).expect("bashrc should be readable");
     assert_eq!(bash_content, "export BASH_ONLY=1\n");
+}
+
+#[test]
+fn shell_rollback_succeeds_when_backup_file_is_missing() {
+    let home = unique_home();
+    fs::create_dir_all(&home).expect("temp home should be created");
+    assert_success(&run_wok(&home, &["init"]));
+
+    let zshrc = home.join(".zshrc");
+    fs::write(&zshrc, "export KEEP_ME=1\n").expect("seed zshrc should be written");
+    assert_success(&run_wok(&home, &["shell", "install", "--shell", "zsh"]));
+
+    let backup = PathBuf::from(format!("{}.wok.bak", zshrc.display()));
+    if backup.exists() {
+        fs::remove_file(&backup).expect("backup should be removed");
+    }
+
+    assert_success(&run_wok(
+        &home,
+        &["shell", "rollback", "--shell", "zsh", "--yes"],
+    ));
+    let rolled_back = fs::read_to_string(&zshrc).expect("rolled back zshrc should be readable");
+    assert_eq!(rolled_back, "export KEEP_ME=1\n");
+}
+
+#[test]
+fn shell_rollback_handles_corrupted_marker_block_without_backup() {
+    let home = unique_home();
+    fs::create_dir_all(&home).expect("temp home should be created");
+    assert_success(&run_wok(&home, &["init"]));
+
+    let zshrc = home.join(".zshrc");
+    fs::write(&zshrc, "export KEEP_ME=1\n").expect("seed zshrc should be written");
+    assert_success(&run_wok(&home, &["shell", "install", "--shell", "zsh"]));
+
+    let backup = PathBuf::from(format!("{}.wok.bak", zshrc.display()));
+    if backup.exists() {
+        fs::remove_file(&backup).expect("backup should be removed");
+    }
+
+    let installed = fs::read_to_string(&zshrc).expect("installed zshrc should be readable");
+    let corrupted = installed.replace("# <<< wok shell integration <<<", "");
+    fs::write(&zshrc, corrupted).expect("zshrc should be rewritten with corrupted marker");
+
+    assert_success(&run_wok(
+        &home,
+        &["shell", "rollback", "--shell", "zsh", "--yes"],
+    ));
+    let rolled_back = fs::read_to_string(&zshrc).expect("rolled back zshrc should be readable");
+    assert_eq!(rolled_back, "export KEEP_ME=1\n");
+}
+
+#[test]
+fn shell_rollback_skips_missing_records_in_partial_state() {
+    let home = unique_home();
+    fs::create_dir_all(&home).expect("temp home should be created");
+    assert_success(&run_wok(&home, &["init"]));
+
+    let zshrc = home.join(".zshrc");
+    fs::write(&zshrc, "export KEEP_ME=1\n").expect("seed zshrc should be written");
+    assert_success(&run_wok(&home, &["shell", "install", "--shell", "zsh"]));
+
+    let state_path = config_dir(&home).join("shell").join("install_state.json");
+    let mut state: serde_json::Value =
+        serde_json::from_slice(&fs::read(&state_path).expect("state file should be readable"))
+            .expect("state json should parse");
+    let records = state["installs"]["zsh"]["records"]
+        .as_array_mut()
+        .expect("zsh records should be an array");
+    records.push(serde_json::json!({
+        "target_path": home.join(".does_not_exist").display().to_string(),
+        "backup_path": null,
+        "created_new": false
+    }));
+    fs::write(
+        &state_path,
+        serde_json::to_vec_pretty(&state).expect("state should serialize"),
+    )
+    .expect("state should be updated");
+
+    assert_success(&run_wok(
+        &home,
+        &["shell", "rollback", "--shell", "zsh", "--yes"],
+    ));
+    let rolled_back = fs::read_to_string(&zshrc).expect("rolled back zshrc should be readable");
+    assert_eq!(rolled_back, "export KEEP_ME=1\n");
 }

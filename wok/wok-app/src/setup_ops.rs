@@ -426,18 +426,28 @@ fn backup_path_for(path: &Path) -> PathBuf {
 fn replace_or_append_managed_block(existing: &str, block: &str) -> String {
     let start = existing.find(SHELL_INSTALL_MARKER_START);
     let end = existing.find(SHELL_INSTALL_MARKER_END);
-    if let (Some(start_index), Some(end_index)) = (start, end) {
-        if end_index >= start_index {
+    if let Some(start_index) = start {
+        let mut out = String::new();
+        out.push_str(&existing[..start_index]);
+        out.push_str(block);
+        if let Some(end_index) = end.filter(|index| *index >= start_index) {
             let end_line = end_index + SHELL_INSTALL_MARKER_END.len();
-            let mut out = String::new();
-            out.push_str(&existing[..start_index]);
-            out.push_str(block);
             out.push_str(existing[end_line..].trim_start_matches('\n'));
-            if !out.ends_with('\n') {
-                out.push('\n');
-            }
-            return out;
         }
+        if !out.ends_with('\n') {
+            out.push('\n');
+        }
+        return out;
+    }
+
+    if let Some(end_index) = end {
+        let end_line = end_index + SHELL_INSTALL_MARKER_END.len();
+        let mut out = existing[end_line..].trim_start_matches('\n').to_string();
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str(block);
+        return out;
     }
 
     let mut out = existing.to_string();
@@ -451,15 +461,31 @@ fn replace_or_append_managed_block(existing: &str, block: &str) -> String {
 fn remove_managed_block(existing: &str) -> String {
     let start = existing.find(SHELL_INSTALL_MARKER_START);
     let end = existing.find(SHELL_INSTALL_MARKER_END);
-    if let (Some(start_index), Some(end_index)) = (start, end) {
-        if end_index >= start_index {
+
+    if let Some(start_index) = start {
+        let mut out = String::new();
+        out.push_str(&existing[..start_index]);
+        if let Some(end_index) = end.filter(|index| *index >= start_index) {
             let end_line = end_index + SHELL_INSTALL_MARKER_END.len();
-            let mut out = String::new();
-            out.push_str(&existing[..start_index]);
             out.push_str(existing[end_line..].trim_start_matches('\n'));
-            return out.trim_end().to_string() + "\n";
         }
+        if out.trim().is_empty() {
+            return String::new();
+        }
+        let mut out = out.trim_end().to_string();
+        out.push('\n');
+        return out;
     }
+
+    if let Some(end_index) = end {
+        let end_line = end_index + SHELL_INSTALL_MARKER_END.len();
+        let out = existing[end_line..].trim_start_matches('\n').trim_end();
+        if out.is_empty() {
+            return String::new();
+        }
+        return format!("{out}\n");
+    }
+
     existing.to_string()
 }
 
@@ -978,6 +1004,14 @@ mod tests {
     }
 
     #[test]
+    fn test_replace_or_append_managed_block_handles_missing_end_marker() {
+        let existing = format!("line1\n{SHELL_INSTALL_MARKER_START}\nline2\n");
+        let replaced = replace_or_append_managed_block(&existing, "new-block\n");
+        assert!(replaced.contains("new-block"));
+        assert!(!replaced.contains("line2"));
+    }
+
+    #[test]
     fn test_remove_managed_block_strips_marker_block() {
         let existing = format!(
             "line1\n{SHELL_INSTALL_MARKER_START}\nline2\n{SHELL_INSTALL_MARKER_END}\nline3\n"
@@ -986,6 +1020,13 @@ mod tests {
         assert!(updated.contains("line1"));
         assert!(updated.contains("line3"));
         assert!(!updated.contains(SHELL_INSTALL_MARKER_START));
+    }
+
+    #[test]
+    fn test_remove_managed_block_handles_missing_end_marker() {
+        let existing = format!("line1\n{SHELL_INSTALL_MARKER_START}\nline2\n");
+        let updated = remove_managed_block(&existing);
+        assert_eq!(updated, "line1\n");
     }
 
     #[test]
