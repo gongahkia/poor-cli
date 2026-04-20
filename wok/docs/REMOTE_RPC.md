@@ -4,6 +4,18 @@ Wok exposes a JSON-RPC 2.0 surface over the remote-control socket (`$WOK_SOCKET`
 
 Methods accept either array params (`[value0, value1, ...]`) or object params (`{"key": value}`) where documented.
 
+When `WOK_RPC_TOKEN` is set in the Wok server process environment, all methods except `wok.get_rpc_info` require `auth_token` in the JSON-RPC envelope (or `--token` / `$WOK_RPC_TOKEN` via `wok rpc`).
+
+## RPC Introspection
+
+### `wok.get_rpc_info`
+
+- Params: none
+- Response:
+  - `schema_version` (string)
+  - `methods` (string array)
+  - `auth_required` (bool)
+
 ## Setup Lifecycle Methods
 
 ### `wok.setup.init`
@@ -91,3 +103,7 @@ Failure trends in Lua action routing:
 
 - `wok.run_action("toggle_failure_trends_panel")`
 - Alias: `wok.run_action("failure_trends")`
+
+## Machine-Readable Schema
+
+- [REMOTE_RPC_SCHEMA_V1.json](REMOTE_RPC_SCHEMA_V1.json)

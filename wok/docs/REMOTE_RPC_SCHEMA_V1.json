@@ -1,0 +1,102 @@
+{
+  "schema_version": "1.0.0",
+  "transport": {
+    "protocol": "jsonrpc-2.0",
+    "env_socket": "WOK_SOCKET",
+    "auth_env": "WOK_RPC_TOKEN",
+    "auth_field": "auth_token"
+  },
+  "auth": {
+    "bypass_methods": [
+      "wok.get_rpc_info"
+    ]
+  },
+  "methods": {
+    "wok.get_rpc_info": {},
+    "wok.get_panes": {},
+    "wok.send_text": {
+      "params": [
+        "pane_id:u64",
+        "text:string"
+      ]
+    },
+    "wok.run_action": {
+      "params": [
+        "action_name:string",
+        "params:any?"
+      ]
+    },
+    "wok.get_blocks": {
+      "params": [
+        "pane_id:u64"
+      ]
+    },
+    "wok.get_text": {
+      "params": [
+        "pane_id:u64",
+        "start_row:u64",
+        "end_row:u64"
+      ]
+    },
+    "wok.create_pane": {
+      "params": [
+        "direction:string?"
+      ]
+    },
+    "wok.close_pane": {
+      "params": [
+        "pane_id:u64"
+      ]
+    },
+    "wok.set_theme": {
+      "params": [
+        "theme:string"
+      ]
+    },
+    "wok.notify": {
+      "params": [
+        "message:string"
+      ]
+    },
+    "wok.get_failure_summary": {
+      "params": [
+        "pane_id:u64"
+      ]
+    },
+    "wok.get_failure_trends": {
+      "params": [
+        "pane_id:u64",
+        "bucket_ms:u64?",
+        "limit:u64?"
+      ]
+    },
+    "wok.setup.init": {
+      "params": [
+        "overwrite:bool?"
+      ]
+    },
+    "wok.setup.doctor": {
+      "params": [
+        "json:bool?"
+      ]
+    },
+    "wok.setup.reset": {
+      "params": [
+        "scope:string?",
+        "yes:bool?"
+      ]
+    },
+    "wok.setup.shell_install": {
+      "params": [
+        "shell:string?",
+        "overwrite:bool?"
+      ]
+    },
+    "wok.setup.shell_rollback": {
+      "params": [
+        "shell:string?",
+        "yes:bool?"
+      ]
+    }
+  }
+}
