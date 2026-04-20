@@ -34,7 +34,10 @@ cargo run -p wok -- --shell wsl:Ubuntu
 cargo build --release -p wok
 cargo run -p wok -- init
 cargo run -p wok -- doctor
-cargo run -p wok -- reset --yes
+cargo run -p wok -- doctor --json
+cargo run -p wok -- reset --scope managed --yes
+cargo run -p wok -- shell install --shell zsh
+cargo run -p wok -- shell rollback --yes
 ```
 
 Owned-primary input is opt-in for now:

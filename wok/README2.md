@@ -60,7 +60,10 @@ cargo run -p wok -- rpc wok.get_panes
 cargo run -p wok -- rpc wok.run_action --params '["SplitVertical", {"index": 2}]'
 cargo run -p wok -- init
 cargo run -p wok -- doctor
-cargo run -p wok -- reset --yes
+cargo run -p wok -- doctor --json
+cargo run -p wok -- reset --scope managed --yes
+cargo run -p wok -- shell install --shell zsh
+cargo run -p wok -- shell rollback --yes
 ```
 
 ## Key Runtime Surfaces
@@ -131,6 +134,7 @@ The socket path is exported as `WOK_SOCKET` in spawned shell environments. On Wi
 | `wok.close_pane` | Close a pane by id |
 | `wok.set_theme` | Apply a theme at runtime |
 | `wok.notify` | Push a status notification |
+| `wok.get_failure_summary` | Summarize recent failed commands for a pane |
 
 ### Example
 

@@ -21,6 +21,7 @@ Run local diagnostics for config and shell integration state.
 
 ```bash
 wok doctor
+wok doctor --json
 ```
 
 The doctor checks:
@@ -36,19 +37,45 @@ The doctor checks:
 Reset managed files created by init/first-run bootstrap.
 
 ```bash
-wok reset --yes
+wok reset --scope managed --yes
 ```
 
-Optional full state cleanup:
+State-only cleanup:
 
 ```bash
-wok reset --all --yes
+wok reset --scope state --yes
 ```
 
-`--all` also removes:
+Full cleanup:
+
+```bash
+wok reset --scope all --yes
+```
+
+`state` and `all` remove:
 
 - `session.json`
 - `sessions/`
 - `themes/`
 - `workflows/`
 
+## `wok shell install`
+
+Wire shell startup files to source Wok-managed integration scripts.
+
+```bash
+wok shell install --shell zsh
+wok shell install --shell fish
+wok shell install --shell bash
+wok shell install --shell auto
+```
+
+`install` creates a backup of the target startup file (`*.wok.bak`) and stores rollback metadata under `~/.config/wok/shell/install_state.json`.
+
+## `wok shell rollback`
+
+Restore shell startup files from the most recent `wok shell install`.
+
+```bash
+wok shell rollback --yes
+```
