@@ -34,7 +34,11 @@ const inferHttpTaxonomy = (code: string, statusCode?: number): OpsTaxonomyEntry 
     return null;
   }
 
-  const numericStatus = Number.parseInt(matched[1], 10);
+  const statusFragment = matched[1];
+  if (statusFragment === undefined) {
+    return null;
+  }
+  const numericStatus = Number.parseInt(statusFragment, 10);
   if (numericStatus === 429) {
     return OPS_TAXONOMY_BY_CODE.get("HTTP_429") ?? null;
   }
