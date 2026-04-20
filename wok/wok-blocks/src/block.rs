@@ -319,6 +319,53 @@ impl BlockManager {
             None => bookmarks.last().copied(),
         }
     }
+
+    /// Return the next failed block id, wrapping when needed.
+    pub fn next_failed(&self, current_block_id: Option<u64>) -> Option<u64> {
+        let failed = self
+            .blocks
+            .iter()
+            .filter(|block| block.exit_code.is_some_and(|code| code != 0))
+            .map(|block| block.id)
+            .collect::<Vec<_>>();
+        if failed.is_empty() {
+            return None;
+        }
+
+        let current_index = current_block_id.and_then(|block_id| {
+            failed
+                .iter()
+                .position(|candidate_id| *candidate_id == block_id)
+        });
+        match current_index {
+            Some(index) => Some(failed[(index + 1) % failed.len()]),
+            None => failed.first().copied(),
+        }
+    }
+
+    /// Return the previous failed block id, wrapping when needed.
+    pub fn prev_failed(&self, current_block_id: Option<u64>) -> Option<u64> {
+        let failed = self
+            .blocks
+            .iter()
+            .filter(|block| block.exit_code.is_some_and(|code| code != 0))
+            .map(|block| block.id)
+            .collect::<Vec<_>>();
+        if failed.is_empty() {
+            return None;
+        }
+
+        let current_index = current_block_id.and_then(|block_id| {
+            failed
+                .iter()
+                .position(|candidate_id| *candidate_id == block_id)
+        });
+        match current_index {
+            Some(0) => failed.last().copied(),
+            Some(index) => Some(failed[index - 1]),
+            None => failed.last().copied(),
+        }
+    }
 }
 
 impl Default for BlockManager {
@@ -402,6 +449,31 @@ mod tests {
         assert_eq!(mgr.toggle_bookmark(Some(3)), Some(true));
         assert_eq!(mgr.next_bookmark(Some(3)), Some(1));
         assert_eq!(mgr.prev_bookmark(Some(1)), Some(3));
+    }
+
+    #[test]
+    fn test_failed_navigation_wraps() {
+        let mut mgr = BlockManager::new();
+        for (i, exit_code) in [Some(0), Some(1), Some(2), Some(0), Some(1)]
+            .into_iter()
+            .enumerate()
+        {
+            let base = i * 4;
+            mgr.handle_event(&SemanticEvent::PromptStart { row: base });
+            mgr.handle_event(&SemanticEvent::CommandStart { row: base + 1 });
+            mgr.handle_event(&SemanticEvent::OutputStart { row: base + 2 });
+            mgr.handle_event(&SemanticEvent::CommandEnd {
+                row: base + 3,
+                exit_code,
+            });
+        }
+
+        assert_eq!(mgr.next_failed(Some(2)), Some(3));
+        assert_eq!(mgr.next_failed(Some(5)), Some(2));
+        assert_eq!(mgr.prev_failed(Some(2)), Some(5));
+        assert_eq!(mgr.prev_failed(Some(5)), Some(3));
+        assert_eq!(mgr.next_failed(None), Some(2));
+        assert_eq!(mgr.prev_failed(None), Some(5));
     }
 
     #[test]

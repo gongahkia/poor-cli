@@ -262,6 +262,26 @@ impl WokApp {
                     effects.push(RuntimeEffect::Status("No bookmarked blocks".to_string()));
                 }
             }
+            Action::BlockPrevFailed => {
+                if let Some(block_id) = self
+                    .block_manager
+                    .prev_failed(self.selected_or_latest_block_id())
+                {
+                    self.select_block(block_id);
+                } else {
+                    effects.push(RuntimeEffect::Status("No failed blocks".to_string()));
+                }
+            }
+            Action::BlockNextFailed => {
+                if let Some(block_id) = self
+                    .block_manager
+                    .next_failed(self.selected_or_latest_block_id())
+                {
+                    self.select_block(block_id);
+                } else {
+                    effects.push(RuntimeEffect::Status("No failed blocks".to_string()));
+                }
+            }
             Action::BlockFind => {
                 if let Some(block_id) = self.selected_or_latest_block_id() {
                     self.select_block(block_id);
@@ -702,5 +722,28 @@ mod tests {
                 target_block_id: 1,
             })]
         );
+    }
+
+    #[test]
+    fn test_failed_block_navigation_selects_failed_blocks() {
+        let mut app = WokApp::new(WokConfig::default());
+        for (row, code) in [(0, Some(0)), (10, Some(1)), (20, Some(2))] {
+            app.handle_semantic_event(&SemanticEvent::PromptStart { row });
+            app.handle_semantic_event(&SemanticEvent::CommandStart { row: row + 1 });
+            app.handle_semantic_event(&SemanticEvent::OutputStart { row: row + 2 });
+            app.handle_semantic_event(&SemanticEvent::CommandEnd {
+                row: row + 3,
+                exit_code: code,
+            });
+        }
+
+        let _ = app.handle_action(&Action::BlockNextFailed);
+        assert_eq!(app.selected_or_latest_block_id(), Some(2));
+
+        let _ = app.handle_action(&Action::BlockNextFailed);
+        assert_eq!(app.selected_or_latest_block_id(), Some(3));
+
+        let _ = app.handle_action(&Action::BlockPrevFailed);
+        assert_eq!(app.selected_or_latest_block_id(), Some(2));
     }
 }

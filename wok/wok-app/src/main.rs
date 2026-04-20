@@ -2842,6 +2842,8 @@ impl WokHandler {
                         | Action::BlockToggleBookmark
                         | Action::BlockPrevBookmark
                         | Action::BlockNextBookmark
+                        | Action::BlockPrevFailed
+                        | Action::BlockNextFailed
                         | Action::BlockFind
                         | Action::BlockFilter
                         | Action::BlockDiff
@@ -5730,6 +5732,8 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::BlockToggleBookmark => "block_toggle_bookmark".to_string(),
         Action::BlockPrevBookmark => "block_prev_bookmark".to_string(),
         Action::BlockNextBookmark => "block_next_bookmark".to_string(),
+        Action::BlockPrevFailed => "block_prev_failed".to_string(),
+        Action::BlockNextFailed => "block_next_failed".to_string(),
         Action::BlockFind => "block_find".to_string(),
         Action::BlockFilter => "block_filter".to_string(),
         Action::BlockDiff => "block_diff".to_string(),
@@ -5793,6 +5797,8 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::BlockDiff,
         Action::BlockRerun,
         Action::ToggleFailureTrendsPanel,
+        Action::BlockPrevFailed,
+        Action::BlockNextFailed,
         Action::BlockPrev,
         Action::BlockNext,
         Action::BlockToggleBookmark,
@@ -5879,6 +5885,8 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::BlockToggleBookmark => "Toggle a bookmark on the selected block",
         Action::BlockPrevBookmark => "Jump to the previous bookmarked block",
         Action::BlockNextBookmark => "Jump to the next bookmarked block",
+        Action::BlockPrevFailed => "Jump to the previous failed command block",
+        Action::BlockNextFailed => "Jump to the next failed command block",
         Action::BlockFind => "Search within selected block output",
         Action::BlockFilter => "Filter selected block output by query",
         Action::BlockDiff => "Compare selected block output with prior runs",

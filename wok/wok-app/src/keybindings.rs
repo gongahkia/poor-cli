@@ -75,6 +75,10 @@ pub enum Action {
     BlockPrevBookmark,
     /// Move to the next bookmarked block.
     BlockNextBookmark,
+    /// Move to the previous failed block.
+    BlockPrevFailed,
+    /// Move to the next failed block.
+    BlockNextFailed,
     /// Search within the selected block output.
     BlockFind,
     /// Filter the selected block output down to matching lines.
@@ -385,6 +389,20 @@ impl Default for KeybindingConfig {
         );
         bindings.insert(
             KeyCombo {
+                key: KeyAction::Char('['),
+                modifiers: pma,
+            },
+            Action::BlockPrevFailed,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char(']'),
+                modifiers: pma,
+            },
+            Action::BlockNextFailed,
+        );
+        bindings.insert(
+            KeyCombo {
                 key: KeyAction::Char('d'),
                 modifiers: pma,
             },
@@ -683,6 +701,27 @@ mod tests {
         assert_eq!(
             config.resolve(&combo, &Context::Terminal),
             Some(&Action::ToggleFailureTrendsPanel)
+        );
+    }
+
+    #[test]
+    fn test_failed_block_navigation_bindings_exist() {
+        let config = KeybindingConfig::default();
+        let prev_combo = KeyCombo {
+            key: KeyAction::Char('['),
+            modifiers: platform_mod_alt(),
+        };
+        let next_combo = KeyCombo {
+            key: KeyAction::Char(']'),
+            modifiers: platform_mod_alt(),
+        };
+        assert_eq!(
+            config.resolve(&prev_combo, &Context::Terminal),
+            Some(&Action::BlockPrevFailed)
+        );
+        assert_eq!(
+            config.resolve(&next_combo, &Context::Terminal),
+            Some(&Action::BlockNextFailed)
         );
     }
 

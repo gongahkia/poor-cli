@@ -95,6 +95,8 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         "block_toggle_bookmark" | "toggle_block_bookmark" => Some(Action::BlockToggleBookmark),
         "block_prev_bookmark" => Some(Action::BlockPrevBookmark),
         "block_next_bookmark" => Some(Action::BlockNextBookmark),
+        "block_prev_failed" | "prev_failed_block" | "failure_prev" => Some(Action::BlockPrevFailed),
+        "block_next_failed" | "next_failed_block" | "failure_next" => Some(Action::BlockNextFailed),
         "block_find" | "block_search" | "search_in_block" | "find_in_block" => {
             Some(Action::BlockFind)
         }
@@ -191,6 +193,14 @@ mod tests {
     fn test_parse_lua_action_supports_block_diff_aliases() {
         assert_eq!(parse_lua_action("block_diff"), Some(Action::BlockDiff));
         assert_eq!(parse_lua_action("diff_block"), Some(Action::BlockDiff));
+        assert_eq!(
+            parse_lua_action("block_prev_failed"),
+            Some(Action::BlockPrevFailed)
+        );
+        assert_eq!(
+            parse_lua_action("next_failed_block"),
+            Some(Action::BlockNextFailed)
+        );
         assert_eq!(
             parse_lua_action("failure_trends"),
             Some(Action::ToggleFailureTrendsPanel)
