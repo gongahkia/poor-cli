@@ -24,3 +24,5 @@ dist/
 # Seuss runtime workspace and local corpora
 .seuss/
 data/
+
+seuss.yaml
