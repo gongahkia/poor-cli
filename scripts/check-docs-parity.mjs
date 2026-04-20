@@ -55,6 +55,8 @@ ensureIncludes(readmeTarget, [
   "docs/product-audit.md",
   "docs/agent-builder-quickstart.md",
   "docs/market-conventions-audit.md",
+  "docs/compatibility-matrix.md",
+  "docs/known-issues.md",
   "docs/troubleshooting.md",
   "npm run diagnostics",
   "Route Planning",
@@ -176,6 +178,21 @@ ensureIncludes("docs/production-notes.md", [
   "sg://runtime",
   "sg://benchmarks",
   "npm run diagnostics",
+]);
+
+ensureIncludes("docs/compatibility-matrix.md", [
+  "tier-1",
+  "tier-2",
+  "streamable HTTP",
+  "test:smoke:remote",
+  "test:smoke:container",
+]);
+
+ensureIncludes("docs/known-issues.md", [
+  "KI-001",
+  "OneMap auth",
+  "ecosystem:snapshot",
+  "Triage Rules",
 ]);
 
 ensureIncludes("docs/contributing.md", [
