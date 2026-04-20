@@ -617,6 +617,7 @@ Useful follow-up commands:
 - `npm run test:smoke:registry`
 - `npm run release:preflight`
 - `npm run release:evidence`
+- `npm run quarterly:report`
 
 Release workflow notes live in [docs/release.md](./docs/release.md).
 

@@ -65,6 +65,7 @@ ensureIncludes(readmeTarget, [
   "npm run kpis:dashboard",
   "npm run release:preflight",
   "npm run release:evidence",
+  "npm run quarterly:report",
   "Route Planning",
   "SingStat Table Drilldown",
   "Dataset Collection Browse",
@@ -221,6 +222,7 @@ ensureIncludes("docs/release.md", [
   "npm run release:preflight",
   "npm run release:evidence",
   "allow-kpi-breach",
+  "npm run quarterly:report",
 ]);
 
 ensureIncludes("docs/governance-checklist.md", [
@@ -241,6 +243,12 @@ ensureIncludes("docs/kpi-thresholds.md", [
   "SG_APIS_KPI_THRESHOLDS_PATH",
   "overallPolicyStatus",
   "allow-kpi-breach",
+]);
+
+ensureIncludes("docs/quarterly-product-health-template.md", [
+  "npm run quarterly:report",
+  "KPI Summary",
+  "Reliability And Security",
 ]);
 
 ensureIncludes("config/kpi-thresholds.example.json", [

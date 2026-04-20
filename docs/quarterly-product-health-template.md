@@ -1,5 +1,11 @@
 # Quarterly Product Health Report Template
 
+Generate a first draft from current evidence artifacts:
+
+```bash
+npm run quarterly:report
+```
+
 ## Quarter
 
 - Reporting window: `<YYYY-Q#>`

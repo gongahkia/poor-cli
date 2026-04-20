@@ -204,6 +204,7 @@ ensureIncludes(resolve(root, "docs/release.md"), [
   "npm run release:preflight",
   "npm run kpis:dashboard",
   "npm run release:evidence",
+  "npm run quarterly:report",
   "allow-kpi-breach",
 ]);
 

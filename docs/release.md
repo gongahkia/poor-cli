@@ -66,6 +66,12 @@ npm run release:evidence
 
 If your release lane uses custom KPI thresholds, set `SG_APIS_KPI_THRESHOLDS_PATH` before generating KPI and evidence artifacts.
 
+For quarterly governance updates, generate a report draft from the latest artifacts:
+
+```bash
+npm run quarterly:report
+```
+
 6. Run the live validation pass:
 
 ```bash

@@ -29,6 +29,7 @@
     "test:smoke:registry": "node ./scripts/registry-smoke.mjs",
     "release:evidence": "node ./scripts/check-release-evidence.mjs",
     "release:preflight": "node ./scripts/release-preflight.mjs",
+    "quarterly:report": "node ./scripts/generate-quarterly-report.mjs",
     "rest-gateway": "node packages/mcp-server/dist/rest-gateway.js",
     "quick-start": "node ./scripts/quick-start.mjs"
   },
