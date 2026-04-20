@@ -58,6 +58,7 @@ ensureIncludes(readmeTarget, [
   "docs/compatibility-matrix.md",
   "docs/known-issues.md",
   "docs/governance-checklist.md",
+  "docs/audit-retention-policy.md",
   "docs/troubleshooting.md",
   "npm run diagnostics",
   "Route Planning",
@@ -188,6 +189,7 @@ ensureIncludes("docs/production-notes.md", [
   "sg://runtime",
   "sg://benchmarks",
   "npm run diagnostics",
+  "SG_APIS_AUDIT_RETENTION_SEC",
 ]);
 
 ensureIncludes("docs/compatibility-matrix.md", [

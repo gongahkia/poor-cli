@@ -3,6 +3,7 @@ import type { ToolResult } from "@sg-apis/shared";
 import { z } from "zod";
 import {
   getToolInvocationAuditByRequestId,
+  getToolInvocationAuditStats,
   getToolInvocationAuditByTraceId,
   listRecentToolInvocationAudits,
 } from "../middleware/request-audit.js";
@@ -51,6 +52,7 @@ export const handleTraceLookup = async (
       found: true,
       invocation: record as unknown as Record<string, unknown>,
       recent: listRecentToolInvocationAudits(5) as unknown as Record<string, unknown>[],
+      auditStore: getToolInvocationAuditStats() as unknown as Record<string, unknown>,
     },
     format,
   );
@@ -81,6 +83,7 @@ export const handleRequestLookup = async (
       found: true,
       invocation: record as unknown as Record<string, unknown>,
       recent: listRecentToolInvocationAudits(5) as unknown as Record<string, unknown>[],
+      auditStore: getToolInvocationAuditStats() as unknown as Record<string, unknown>,
     },
     format,
   );

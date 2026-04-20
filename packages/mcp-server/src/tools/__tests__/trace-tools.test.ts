@@ -33,6 +33,10 @@ describe("trace lookup tools", () => {
     const invocation = payload["invocation"] as Record<string, unknown>;
     expect(invocation["tool"]).toBe("sg_config_get");
     expect(invocation["status"]).toBe("success");
+    const auditStore = payload["auditStore"] as Record<string, unknown>;
+    expect(auditStore["recordCount"]).toBe(1);
+    expect(typeof auditStore["maxEntries"]).toBe("number");
+    expect(typeof auditStore["retentionSeconds"]).toBe("number");
   });
 
   it("throws REQUEST_NOT_FOUND for missing request IDs", async () => {

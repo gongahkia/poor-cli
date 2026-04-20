@@ -29,6 +29,7 @@ requireFile(opsTaxonomyPath);
 requireFile(ownershipPath);
 requireFile(resolve(root, "docs/governance-checklist.md"));
 requireFile(resolve(root, "docs/deprecation-policy.md"));
+requireFile(resolve(root, "docs/audit-retention-policy.md"));
 requireFile(resolve(root, "docs/quarterly-product-health-template.md"));
 requireFile(resolve(root, "docs/release.md"));
 
@@ -171,6 +172,13 @@ ensureIncludes(resolve(root, "docs/deprecation-policy.md"), [
   "migration path",
   "Deprecation Notice",
   "Migration Mapping Template",
+]);
+
+ensureIncludes(resolve(root, "docs/audit-retention-policy.md"), [
+  "SG_APIS_AUDIT_MAX_ENTRIES",
+  "SG_APIS_AUDIT_RETENTION_SEC",
+  "traceId",
+  "requestId",
 ]);
 
 ensureIncludes(resolve(root, "docs/quarterly-product-health-template.md"), [

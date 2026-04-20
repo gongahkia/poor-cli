@@ -23,6 +23,8 @@ Relevant env vars:
 - `SG_APIS_BENCHMARK_SNAPSHOT_PATH`
 - `SG_APIS_STATE_DIR`
 - `SG_APIS_ARTIFACT_DB_PATH`
+- `SG_APIS_AUDIT_MAX_ENTRIES`
+- `SG_APIS_AUDIT_RETENTION_SEC`
 - `SG_APIS_OIDC_ISSUER`
 - `SG_APIS_OIDC_AUDIENCE`
 - `SG_APIS_OIDC_JWKS_URI`
@@ -207,3 +209,12 @@ The current routing payload does not expose exact route geometry from OneMap, so
 Structured JSON logs include request or workflow context fields such as `traceId`, `requestId`, `workflow`, `tool`, and `stepId` where applicable. Structured error payloads now also include `error.contextIds.traceId` and `error.contextIds.requestId` so failed tool calls can be correlated directly with log lines. Set `SG_APIS_LOG_LEVEL=debug` in non-production environments to capture step-level routing and retry behavior.
 
 Set `SG_APIS_INCLUDE_SUCCESS_CONTEXT_IDS=1` when you also need `structuredContent.contextIds` on successful tool responses for end-to-end request correlation.
+
+## Local Audit Index Retention
+
+The local trace/request audit index used by `sg_trace_lookup` and `sg_request_lookup` is intentionally bounded.
+
+- `SG_APIS_AUDIT_MAX_ENTRIES`: max retained invocation records (default `5000`, min `100`, max `50000`)
+- `SG_APIS_AUDIT_RETENTION_SEC`: max record age in seconds (default `86400`, min `300`, max `2592000`)
+
+Records that exceed either bound are evicted automatically. For policy details, see [audit-retention-policy.md](./audit-retention-policy.md).
