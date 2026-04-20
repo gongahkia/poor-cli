@@ -110,6 +110,7 @@ const collectEmittedToolErrorCodes = () => {
     resolve(root, "packages/mcp-server/src/router/planner.ts"),
     resolve(root, "packages/mcp-server/src/tools/query/rendering.ts"),
     resolve(root, "packages/mcp-server/src/tools/transit-intelligence-tools.ts"),
+    resolve(root, "packages/mcp-server/src/tools/trace-tools.ts"),
     resolve(root, "packages/mcp-server/src/apis"),
   ];
 

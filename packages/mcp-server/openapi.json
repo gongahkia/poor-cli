@@ -3515,6 +3515,58 @@
         }
       }
     },
+    "/api/v1/sg_request_lookup": {
+      "post": {
+        "summary": "Look up a local tool invocation audit record by requestId.",
+        "tags": [
+          "operational"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "requestId": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "required": [
+                  "requestId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
     "/api/v1/sg_sfa_establishments": {
       "post": {
         "summary": "Search SFA licensed food establishments via data.gov.sg.",
@@ -3966,6 +4018,58 @@
                     ]
                   }
                 },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_trace_lookup": {
+      "post": {
+        "summary": "Look up a local tool invocation audit record by traceId.",
+        "tags": [
+          "operational"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "traceId": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "required": [
+                  "traceId"
+                ],
                 "additionalProperties": false
               }
             }

@@ -32,6 +32,7 @@ import { onemapToolDefinitions } from "./onemap-tools.js";
 import { queryToolDefinitions } from "./query-tool.js";
 import { singstatToolDefinitions } from "./singstat-tools.js";
 import { transitIntelligenceToolDefinitions } from "./transit-intelligence-tools.js";
+import { traceToolDefinitions } from "./trace-tools.js";
 import { hydrateToolDefinition } from "./tool-metadata.js";
 import { uraToolDefinitions } from "./ura-tools.js";
 
@@ -69,6 +70,7 @@ const RAW_TOOL_DEFINITIONS = [
   ...cacheToolDefinitions,
   ...keystoreToolDefinitions,
   ...configToolDefinitions,
+  ...traceToolDefinitions,
   ...queryToolDefinitions,
 ] as const satisfies readonly RegisteredToolDefinition[];
 

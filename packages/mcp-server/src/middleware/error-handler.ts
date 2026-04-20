@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createLogger, ApiError, ValidationError } from "@sg-apis/shared";
 import type { ContextIds, ToolErrorPayload, ToolResult } from "@sg-apis/shared";
 import { OPS_TAXONOMY_CATALOG } from "../ops-taxonomy.js";
+import { recordToolInvocationAudit } from "./request-audit.js";
 
 const logger = createLogger("error-handler");
 
@@ -203,16 +204,38 @@ export const toToolErrorPayload = (
 export const wrapHandler = (tool: string, handler: ToolHandler): ToolHandler => {
   return async (input: unknown): Promise<ToolResult> => {
     const requestId = randomUUID();
+    const startedAtIso = new Date().toISOString();
+    const startedAtMs = Date.now();
     const contextIds = {
       traceId: requestId,
       requestId,
     } as const;
     try {
       const result = await handler(input);
-      return withOptionalSuccessContextIds(result, contextIds);
+      const finalized = withOptionalSuccessContextIds(result, contextIds);
+      recordToolInvocationAudit({
+        traceId: contextIds.traceId,
+        requestId: contextIds.requestId,
+        tool,
+        status: "success",
+        startedAt: startedAtIso,
+        finishedAt: new Date().toISOString(),
+        durationMs: Date.now() - startedAtMs,
+      });
+      return finalized;
     } catch (error) {
       const payload = toToolErrorPayload(error, tool, { contextIds });
       logHandledToolError(payload);
+      recordToolInvocationAudit({
+        traceId: contextIds.traceId,
+        requestId: contextIds.requestId,
+        tool,
+        status: "error",
+        startedAt: startedAtIso,
+        finishedAt: new Date().toISOString(),
+        durationMs: Date.now() - startedAtMs,
+        error: payload,
+      });
       return {
         isError: true,
         content: [{ type: "text", text: formatErrorText(payload) }],

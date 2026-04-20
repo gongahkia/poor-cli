@@ -6,10 +6,10 @@ Official Singapore public data for agents with deterministic contracts.
 
 ## Surface Snapshot
 
-The repo currently exposes 86 `sg_*` tools total across 30 official data families.
+The repo currently exposes 88 `sg_*` tools total across 30 official data families.
 
 - 71 family and brief/query tools across the 30 API families
-- 15 operational tools for transit decisioning/governance plus keys, cache, config, and health
+- 17 operational tools for transit decisioning/governance plus keys, cache, config, health, and trace lookup
 
 `sg_query` is the bounded preferred interface across 21 routed families. It plans or executes bounded deterministic workflows with transparent step metadata. The direct `sg_*` tools remain the stable low-level contract.
 

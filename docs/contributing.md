@@ -14,7 +14,7 @@ Before adding a new family, ask whether the user goal is better served by:
 
 - 71 direct data tools across 30 data families
 - 7 additive brief tools
-- 14 operational tools
+- 17 operational tools
 - 1 health check tool
 - 1 bounded preferred interface, `sg_query`
 

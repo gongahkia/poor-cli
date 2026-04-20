@@ -85,6 +85,8 @@ const EXPECTED_TOOL_NAMES = [
   "sg_cache_clear",
   "sg_config_get",
   "sg_config_set",
+  "sg_trace_lookup",
+  "sg_request_lookup",
   "sg_query",
 ];
 

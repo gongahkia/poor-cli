@@ -153,7 +153,13 @@ export const inferToolSets = (name: string): readonly ToolSet[] => {
     toolsets.push("health");
   } else if (BRIEF_TOOL_NAMES.has(name)) {
     toolsets.push("briefs");
-  } else if (name.startsWith("sg_cache_") || name.startsWith("sg_key_") || name.startsWith("sg_config_")) {
+  } else if (
+    name.startsWith("sg_cache_")
+    || name.startsWith("sg_key_")
+    || name.startsWith("sg_config_")
+    || name.startsWith("sg_trace_")
+    || name.startsWith("sg_request_")
+  ) {
     toolsets.push("ops");
   } else {
     toolsets.push("public");

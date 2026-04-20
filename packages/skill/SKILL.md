@@ -11,10 +11,10 @@ Use this skill when an agent needs official Singapore public data through MCP wi
 
 ## Surface Snapshot
 
-The repo currently exposes 86 `sg_*` tools total across 30 official data families.
+The repo currently exposes 88 `sg_*` tools total across 30 official data families.
 
 - 71 family and brief/query tools across the 30 API families
-- 15 operational tools (including transit governance, keys, cache, config, and health)
+- 17 operational tools (including transit governance, keys, cache, config, health, and trace lookup)
 
 `sg_query` is the bounded preferred interface across 21 routed families. The direct `sg_*` tools remain the stable low-level contract.
 
