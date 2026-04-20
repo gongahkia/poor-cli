@@ -103,6 +103,12 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         "block_filter" | "filter_block" => Some(Action::BlockFilter),
         "block_diff" | "diff_block" | "block_compare" => Some(Action::BlockDiff),
         "block_rerun" | "rerun_block" => Some(Action::BlockRerun),
+        "block_rerun_in_split" | "rerun_block_split" | "block_rerun_split" => {
+            Some(Action::BlockRerunInSplit)
+        }
+        "block_save_workflow" | "save_block_workflow" | "block_workflow_save" => {
+            Some(Action::BlockSaveWorkflow)
+        }
         "toggle_failure_trends_panel" | "failure_trends_panel" | "failure_trends" => {
             Some(Action::ToggleFailureTrendsPanel)
         }
@@ -200,6 +206,14 @@ mod tests {
         assert_eq!(
             parse_lua_action("next_failed_block"),
             Some(Action::BlockNextFailed)
+        );
+        assert_eq!(
+            parse_lua_action("rerun_block_split"),
+            Some(Action::BlockRerunInSplit)
+        );
+        assert_eq!(
+            parse_lua_action("save_block_workflow"),
+            Some(Action::BlockSaveWorkflow)
         );
         assert_eq!(
             parse_lua_action("failure_trends"),

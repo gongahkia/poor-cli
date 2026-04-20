@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 use std::error::Error;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
 use regex::Regex;
@@ -48,7 +48,7 @@ use wok_blocks::triggers::{
 };
 use wok_input::editor::EditorAction;
 use wok_input::history::{prefix_matches, CommandHistory, HistoryEntry};
-use wok_input::workflows::WorkflowStore;
+use wok_input::workflows::{Workflow, WorkflowStore};
 use wok_renderer::atlas::GlyphAtlas;
 use wok_renderer::damage::DirtyRegion;
 use wok_renderer::font::FontSystem;
@@ -2822,9 +2822,57 @@ impl WokHandler {
         self.status_message = Some(format!("Recent failures: {summary}"));
     }
 
+    fn save_selected_block_as_workflow(&mut self) {
+        let Some((command, cwd_display)) = self.active_pane().and_then(|pane| {
+            let block = pane.app.selected_or_latest_block()?;
+            if block.exit_code.is_none() || block.command_text.trim().is_empty() {
+                return None;
+            }
+            let cwd = (!block.cwd.as_os_str().is_empty()).then(|| block.cwd.display().to_string());
+            Some((block.command_text.trim().to_string(), cwd))
+        }) else {
+            self.status_message =
+                Some("Select a completed block with command text to save as workflow".to_string());
+            return;
+        };
+
+        let workflow_name = workflow_name_from_command(&command);
+        let description = cwd_display.map_or_else(
+            || "Captured from selected Wok command block".to_string(),
+            |cwd| format!("Captured from selected Wok command block in {cwd}"),
+        );
+        let workflow = Workflow {
+            name: workflow_name.clone(),
+            description,
+            template: command,
+            params: Vec::new(),
+        };
+        self.workflow_store.add(workflow.clone());
+
+        match persist_workflow_template(&workflow) {
+            Ok(path) => {
+                self.status_message = Some(format!(
+                    "Saved workflow '{}' ({})",
+                    workflow.name,
+                    path.display()
+                ));
+            }
+            Err(error) => {
+                warn!("failed to persist workflow '{}': {error}", workflow.name);
+                self.status_message =
+                    Some(format!("Saved workflow '{}' in memory only", workflow.name));
+            }
+        }
+    }
+
     fn handle_action(&mut self, action: Action) {
         if matches!(action, Action::EnterViMode) {
             self.enter_vi_mode();
+            self.needs_redraw = true;
+            return;
+        }
+        if matches!(action, Action::BlockSaveWorkflow) {
+            self.save_selected_block_as_workflow();
             self.needs_redraw = true;
             return;
         }
@@ -2848,6 +2896,8 @@ impl WokHandler {
                         | Action::BlockFilter
                         | Action::BlockDiff
                         | Action::BlockRerun
+                        | Action::BlockRerunInSplit
+                        | Action::BlockSaveWorkflow
                         | Action::ToggleFailureTrendsPanel
                         | Action::SearchGlobal
                         | Action::CommandPalette
@@ -5610,6 +5660,44 @@ fn failure_trend_panel_lines(
         .collect()
 }
 
+fn workflow_name_from_command(command: &str) -> String {
+    let slug = command
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    let slug = slug
+        .trim_matches('_')
+        .split('_')
+        .filter(|segment| !segment.is_empty())
+        .take(4)
+        .collect::<Vec<_>>()
+        .join("_");
+    let slug = if slug.is_empty() {
+        "workflow".to_string()
+    } else {
+        slug
+    };
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs());
+    format!("{slug}_{stamp}")
+}
+
+fn persist_workflow_template(workflow: &Workflow) -> Result<PathBuf, Box<dyn Error>> {
+    let workflows_dir = WokConfig::config_dir().join("workflows");
+    std::fs::create_dir_all(&workflows_dir)?;
+    let path = workflows_dir.join(format!("{}.toml", workflow.name));
+    let payload = toml::to_string_pretty(workflow)?;
+    std::fs::write(&path, payload)?;
+    Ok(path)
+}
+
 fn remote_rpc_methods() -> &'static [&'static str] {
     &[
         "wok.get_rpc_info",
@@ -5738,6 +5826,8 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::BlockFilter => "block_filter".to_string(),
         Action::BlockDiff => "block_diff".to_string(),
         Action::BlockRerun => "block_rerun".to_string(),
+        Action::BlockRerunInSplit => "block_rerun_in_split".to_string(),
+        Action::BlockSaveWorkflow => "block_save_workflow".to_string(),
         Action::ToggleFailureTrendsPanel => "toggle_failure_trends_panel".to_string(),
         Action::SearchGlobal => "search_global".to_string(),
         Action::EnterViMode => "enter_vi_mode".to_string(),
@@ -5796,6 +5886,8 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::BlockFilter,
         Action::BlockDiff,
         Action::BlockRerun,
+        Action::BlockRerunInSplit,
+        Action::BlockSaveWorkflow,
         Action::ToggleFailureTrendsPanel,
         Action::BlockPrevFailed,
         Action::BlockNextFailed,
@@ -5891,6 +5983,8 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::BlockFilter => "Filter selected block output by query",
         Action::BlockDiff => "Compare selected block output with prior runs",
         Action::BlockRerun => "Re-run the selected block command",
+        Action::BlockRerunInSplit => "Re-run the selected block command in a new split pane",
+        Action::BlockSaveWorkflow => "Save selected block command as a reusable workflow",
         Action::ToggleFailureTrendsPanel => "Open failure trends analytics panel",
         Action::SearchGlobal => "Search text across the workspace",
         Action::EnterViMode => "Enable vi-style navigation mode",

@@ -339,6 +339,31 @@ impl WokApp {
                     ));
                 }
             }
+            Action::BlockRerunInSplit => {
+                let Some(block) = self.selected_or_latest_block() else {
+                    effects.push(RuntimeEffect::Status("No block available".to_string()));
+                    return effects;
+                };
+                if block.exit_code.is_none() || block.command_text.trim().is_empty() {
+                    effects.push(RuntimeEffect::Status(
+                        "Only completed blocks with commands can be rerun in split".to_string(),
+                    ));
+                } else {
+                    effects.push(RuntimeEffect::Workspace(WorkspaceEffect::SplitVertical));
+                    effects.push(RuntimeEffect::PtyWrite(
+                        format!("{}\r", block.command_text).into_bytes(),
+                    ));
+                }
+            }
+            Action::BlockSaveWorkflow => {
+                if self.selected_or_latest_block_id().is_some() {
+                    effects.push(RuntimeEffect::Status(
+                        "Saving selected block as workflow".to_string(),
+                    ));
+                } else {
+                    effects.push(RuntimeEffect::Status("No block available".to_string()));
+                }
+            }
             Action::ToggleFailureTrendsPanel => {
                 effects.push(RuntimeEffect::Overlay(
                     OverlayEffect::ToggleFailureTrendsPanel,
@@ -695,6 +720,32 @@ mod tests {
         assert_eq!(
             effects.effects,
             vec![RuntimeEffect::PtyWrite(b"cargo test\r".to_vec())]
+        );
+    }
+
+    #[test]
+    fn test_block_rerun_in_split_emits_split_then_pty_write() {
+        let mut app = WokApp::new(WokConfig::default());
+        app.handle_semantic_event(&SemanticEvent::PromptStart { row: 0 });
+        app.handle_semantic_event(&SemanticEvent::CommandStart { row: 1 });
+        app.handle_semantic_event(&SemanticEvent::CommandText {
+            row: 1,
+            text: "cargo test".to_string(),
+        });
+        app.handle_semantic_event(&SemanticEvent::OutputStart { row: 2 });
+        app.handle_semantic_event(&SemanticEvent::CommandEnd {
+            row: 3,
+            exit_code: Some(0),
+        });
+
+        let effects = app.handle_action(&Action::BlockRerunInSplit);
+
+        assert_eq!(
+            effects.effects,
+            vec![
+                RuntimeEffect::Workspace(WorkspaceEffect::SplitVertical),
+                RuntimeEffect::PtyWrite(b"cargo test\r".to_vec())
+            ]
         );
     }
 

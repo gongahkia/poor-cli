@@ -87,6 +87,10 @@ pub enum Action {
     BlockDiff,
     /// Re-run the selected block command in the active PTY.
     BlockRerun,
+    /// Re-run the selected block command in a new split pane.
+    BlockRerunInSplit,
+    /// Save the selected block command as a reusable workflow template.
+    BlockSaveWorkflow,
     /// Toggle the failure-trends panel for the active pane.
     ToggleFailureTrendsPanel,
     /// Global terminal search.
@@ -417,6 +421,20 @@ impl Default for KeybindingConfig {
         );
         bindings.insert(
             KeyCombo {
+                key: KeyAction::Char('r'),
+                modifiers: Modifiers { shift: true, ..pma },
+            },
+            Action::BlockRerunInSplit,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('w'),
+                modifiers: Modifiers { shift: true, ..pma },
+            },
+            Action::BlockSaveWorkflow,
+        );
+        bindings.insert(
+            KeyCombo {
                 key: KeyAction::Char('y'),
                 modifiers: pma,
             },
@@ -722,6 +740,33 @@ mod tests {
         assert_eq!(
             config.resolve(&next_combo, &Context::Terminal),
             Some(&Action::BlockNextFailed)
+        );
+    }
+
+    #[test]
+    fn test_block_workflow_bindings_exist() {
+        let config = KeybindingConfig::default();
+        let rerun_split_combo = KeyCombo {
+            key: KeyAction::Char('r'),
+            modifiers: Modifiers {
+                shift: true,
+                ..platform_mod_alt()
+            },
+        };
+        let save_workflow_combo = KeyCombo {
+            key: KeyAction::Char('w'),
+            modifiers: Modifiers {
+                shift: true,
+                ..platform_mod_alt()
+            },
+        };
+        assert_eq!(
+            config.resolve(&rerun_split_combo, &Context::Terminal),
+            Some(&Action::BlockRerunInSplit)
+        );
+        assert_eq!(
+            config.resolve(&save_workflow_combo, &Context::Terminal),
+            Some(&Action::BlockSaveWorkflow)
         );
     }
 
