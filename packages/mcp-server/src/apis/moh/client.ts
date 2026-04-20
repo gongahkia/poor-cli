@@ -1,6 +1,6 @@
 import { queryDatastore } from "../datagov/client.js";
 
-const HOSPITALS_RESOURCE_ID = "d_23b6e552fdce728e1e9fa5a5103d0205";
+export const MOH_HEALTHCARE_FACILITIES_RESOURCE_ID = "d_23b6e552fdce728e1e9fa5a5103d0205";
 
 type FacilityRawRecord = {
   readonly hci_name: string;
@@ -36,7 +36,7 @@ export const getHealthcareFacilities = async (
   if (params.type !== undefined) filters["licence_type"] = params.type;
   if (params.name !== undefined) filters["hci_name"] = params.name;
   if (params.postalCode !== undefined) filters["postal_code"] = params.postalCode;
-  const rows = await queryDatastore<FacilityRawRecord>(HOSPITALS_RESOURCE_ID, {
+  const rows = await queryDatastore<FacilityRawRecord>(MOH_HEALTHCARE_FACILITIES_RESOURCE_ID, {
     limit: Math.min(params.limit ?? 50, 200),
     filters,
   });

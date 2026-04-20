@@ -1,7 +1,9 @@
 import { formatResponse, MohFacilitiesSchema, resolveOutputFormat } from "@sg-apis/shared";
 import type { OutputFormat, ToolResult } from "@sg-apis/shared";
-import { getHealthcareFacilities } from "../apis/moh/client.js";
+import { getHealthcareFacilities, MOH_HEALTHCARE_FACILITIES_RESOURCE_ID } from "../apis/moh/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
+
+const MOH_DIRECTORY_SOURCE_URL = "https://data.gov.sg/datasets/d_23b6e552fdce728e1e9fa5a5103d0205/view";
 
 export const handleMohFacilities = async (
   params: Readonly<{
@@ -15,7 +17,30 @@ export const handleMohFacilities = async (
   const data = await getHealthcareFacilities(params);
   const format = resolveOutputFormat(params.format);
   const text = formatResponse(data as unknown as Record<string, unknown>[], format);
-  return { content: [{ type: "text", text }], structuredContent: { records: data } };
+  const observedAt = new Date().toISOString();
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: {
+      records: data,
+      provenance: {
+        source: "data.gov.sg datastore",
+        publisher: "Ministry of Health",
+        dataset: "Healthcare Institutions and Services",
+        resourceId: MOH_HEALTHCARE_FACILITIES_RESOURCE_ID,
+        datasetUrl: MOH_DIRECTORY_SOURCE_URL,
+        license: "Singapore Open Data Licence v1.0",
+      },
+      freshness: {
+        observedAt,
+        sourceTimestamp: null,
+      },
+      limits: {
+        defaultLimit: 50,
+        maxLimit: 200,
+        supportedFilters: ["type", "name", "postalCode"],
+      },
+    },
+  };
 };
 
 export const mohToolDefinitions: readonly RegisteredToolDefinition[] = [

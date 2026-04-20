@@ -93,10 +93,12 @@ vi.mock("../../apis/msf/client.js", () => ({
 }));
 
 vi.mock("../../apis/moe/client.js", () => ({
+  MOE_SCHOOLS_RESOURCE_ID: "d_688b934f82c1059ed0a6993d2a829089",
   getSchools: vi.fn(),
 }));
 
 vi.mock("../../apis/moh/client.js", () => ({
+  MOH_HEALTHCARE_FACILITIES_RESOURCE_ID: "d_23b6e552fdce728e1e9fa5a5103d0205",
   getHealthcareFacilities: vi.fn(),
 }));
 

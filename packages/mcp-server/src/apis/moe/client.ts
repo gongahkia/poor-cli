@@ -1,6 +1,6 @@
 import { queryDatastore } from "../datagov/client.js";
 
-const SCHOOLS_RESOURCE_ID = "d_688b934f82c1059ed0a6993d2a829089";
+export const MOE_SCHOOLS_RESOURCE_ID = "d_688b934f82c1059ed0a6993d2a829089";
 
 type SchoolRawRecord = {
   readonly school_name: string;
@@ -40,7 +40,7 @@ export const getSchools = async (
   if (params.level !== undefined) filters["mainlevel_code"] = params.level.toUpperCase();
   if (params.zone !== undefined) filters["zone_code"] = params.zone.toUpperCase();
   if (params.name !== undefined) filters["school_name"] = params.name;
-  const rows = await queryDatastore<SchoolRawRecord>(SCHOOLS_RESOURCE_ID, {
+  const rows = await queryDatastore<SchoolRawRecord>(MOE_SCHOOLS_RESOURCE_ID, {
     limit: Math.min(params.limit ?? 50, 200),
     filters,
   });
