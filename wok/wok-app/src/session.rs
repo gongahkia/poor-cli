@@ -176,10 +176,20 @@ pub struct WorkspaceSessionState {
     pub window_size: (u32, u32),
     /// Window position.
     pub window_position: (i32, i32),
+    /// Whether the failure trends panel is visible.
+    #[serde(default)]
+    pub show_failure_trends_panel: bool,
+    /// Bucket size in milliseconds used by the failure trends panel.
+    #[serde(default = "default_failure_trend_bucket_ms")]
+    pub failure_trend_bucket_ms: u64,
 }
 
 fn default_follow_output() -> bool {
     true
+}
+
+fn default_failure_trend_bucket_ms() -> u64 {
+    60 * 60 * 1000
 }
 
 /// Save a session state to a JSON file.
@@ -412,6 +422,8 @@ mod tests {
             active_tab: 0,
             window_size: (1280, 800),
             window_position: (32, 48),
+            show_failure_trends_panel: true,
+            failure_trend_bucket_ms: 120_000,
         };
 
         save_session(&state, &path).expect("session should save");
@@ -422,6 +434,8 @@ mod tests {
         assert_eq!(loaded.panes.len(), 1);
         assert_eq!(loaded.panes[0].shell, "zsh");
         assert_eq!(loaded.window_size, (1280, 800));
+        assert!(loaded.show_failure_trends_panel);
+        assert_eq!(loaded.failure_trend_bucket_ms, 120_000);
         assert_eq!(loaded.panes[0].buffer_lines.len(), 2);
         assert_eq!(loaded.panes[0].blocks.len(), 1);
         assert_eq!(loaded.panes[0].command_history.len(), 1);
@@ -508,6 +522,11 @@ mod tests {
             serde_json::from_str(json).expect("session should parse");
 
         assert!(!loaded.panes[0].blocks[0].is_bookmarked);
+        assert!(!loaded.show_failure_trends_panel);
+        assert_eq!(
+            loaded.failure_trend_bucket_ms,
+            default_failure_trend_bucket_ms()
+        );
     }
 
     #[test]

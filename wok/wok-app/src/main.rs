@@ -940,6 +940,8 @@ impl WokHandler {
             active_tab: self.workspace.active_tab,
             window_size,
             window_position,
+            show_failure_trends_panel: self.show_failure_trends_panel,
+            failure_trend_bucket_ms: self.failure_trend_bucket_ms,
         }
     }
 
@@ -950,6 +952,8 @@ impl WokHandler {
             active_tab,
             window_size,
             window_position,
+            show_failure_trends_panel,
+            failure_trend_bucket_ms,
         } = session;
 
         self.pending_pane_restore = panes
@@ -980,6 +984,8 @@ impl WokHandler {
             })
             .collect();
         self.workspace = WorkspaceState::from_tabs(tabs, active_tab);
+        self.show_failure_trends_panel = show_failure_trends_panel;
+        self.failure_trend_bucket_ms = failure_trend_bucket_ms.max(60_000);
         self.panes.clear();
         if let Some(window) = &self.window {
             window.set_outer_position(PhysicalPosition::new(window_position.0, window_position.1));
@@ -4040,22 +4046,46 @@ impl WokHandler {
             return entries;
         };
 
-        let mut action_bindings = HashMap::new();
+        let mut action_bindings = HashMap::<Action, Vec<String>>::new();
         for (combo, action) in &pane.app.keybindings.bindings {
             action_bindings
                 .entry(action.clone())
-                .or_insert_with(|| key_combo_label(combo));
+                .or_default()
+                .push(key_combo_label(combo));
+        }
+        for bindings in action_bindings.values_mut() {
+            bindings.sort();
+            bindings.dedup();
         }
 
-        for (action, keybinding) in action_bindings {
+        let mut inserted_action_ids = HashSet::new();
+        for action in palette_actions_catalog() {
+            let Some(action_id) = action_to_palette_id(&action) else {
+                continue;
+            };
+            inserted_action_ids.insert(action_id.clone());
+            let keybinding = action_bindings
+                .remove(&action)
+                .and_then(|bindings| bindings.first().cloned())
+                .unwrap_or_default();
+            entries.push(PaletteEntry {
+                label: action_display_label(&action),
+                description: action_palette_description(&action, &keybinding),
+                category: PaletteCategory::Action,
+                score: 0.0,
+                action: PaletteAction::BuiltInAction(action_id),
+            });
+        }
+
+        for (action, keybindings) in action_bindings {
             if let Some(action_id) = action_to_palette_id(&action) {
+                if inserted_action_ids.contains(&action_id) {
+                    continue;
+                }
+                let keybinding = keybindings.first().cloned().unwrap_or_default();
                 entries.push(PaletteEntry {
                     label: action_display_label(&action),
-                    description: if keybinding.is_empty() {
-                        "Action".to_string()
-                    } else {
-                        format!("Keybinding: {keybinding}")
-                    },
+                    description: action_palette_description(&action, &keybinding),
                     category: PaletteCategory::Action,
                     score: 0.0,
                     action: PaletteAction::BuiltInAction(action_id),
@@ -5125,57 +5155,107 @@ fn build_block_diff_for_target(
     let target_output = collect_block_output_lines(&pane.terminal, target);
     Some((
         baseline.id,
-        diff_line_entries(&baseline_output, &target_output),
+        diff_line_entries(&baseline_output, &target_output, 2),
     ))
 }
 
-fn diff_line_entries(previous: &[String], current: &[String]) -> Vec<DiffLineEntry> {
-    let mut previous_counts = HashMap::<String, usize>::new();
-    for line in previous {
-        *previous_counts.entry(line.clone()).or_insert(0) += 1;
-    }
-    let mut current_counts = HashMap::<String, usize>::new();
-    for line in current {
-        *current_counts.entry(line.clone()).or_insert(0) += 1;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DiffOpKind {
+    Equal,
+    Add,
+    Remove,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct DiffOp {
+    kind: DiffOpKind,
+    text: String,
+    old_line: usize,
+    new_line: usize,
+}
+
+fn diff_line_entries(
+    previous: &[String],
+    current: &[String],
+    context_lines: usize,
+) -> Vec<DiffLineEntry> {
+    let operations = diff_line_operations(previous, current);
+    let changed_indices = operations
+        .iter()
+        .enumerate()
+        .filter(|(_, operation)| !matches!(operation.kind, DiffOpKind::Equal))
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    if changed_indices.is_empty() {
+        return Vec::new();
     }
 
-    let mut remaining_added = HashMap::<String, usize>::new();
-    for (line, current_count) in &current_counts {
-        let baseline = previous_counts.get(line).copied().unwrap_or(0);
-        if *current_count > baseline {
-            remaining_added.insert(line.clone(), current_count - baseline);
+    let mut changed_ranges = Vec::<(usize, usize)>::new();
+    let mut range_start = changed_indices[0];
+    let mut range_end = changed_indices[0];
+    for index in changed_indices.into_iter().skip(1) {
+        if index == range_end + 1 {
+            range_end = index;
+            continue;
         }
+        changed_ranges.push((range_start, range_end));
+        range_start = index;
+        range_end = index;
     }
+    changed_ranges.push((range_start, range_end));
 
-    let mut remaining_removed = HashMap::<String, usize>::new();
-    for (line, previous_count) in &previous_counts {
-        let latest = current_counts.get(line).copied().unwrap_or(0);
-        if *previous_count > latest {
-            remaining_removed.insert(line.clone(), previous_count - latest);
+    let max_index = operations.len().saturating_sub(1);
+    let mut expanded = changed_ranges
+        .into_iter()
+        .map(|(start, end)| {
+            (
+                start.saturating_sub(context_lines),
+                end.saturating_add(context_lines).min(max_index),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let mut merged = Vec::<(usize, usize)>::new();
+    for range in expanded.drain(..) {
+        if let Some(last) = merged.last_mut() {
+            if range.0 <= last.1 + 1 {
+                last.1 = last.1.max(range.1);
+                continue;
+            }
         }
+        merged.push(range);
     }
 
     let mut entries = Vec::new();
-    for line in current {
-        if let Some(remaining) = remaining_added.get_mut(line) {
-            if *remaining > 0 {
-                entries.push(DiffLineEntry {
-                    kind: DiffLineKind::Added,
-                    text: line.clone(),
-                });
-                *remaining -= 1;
-            }
-        }
-    }
-    for line in previous {
-        if let Some(remaining) = remaining_removed.get_mut(line) {
-            if *remaining > 0 {
-                entries.push(DiffLineEntry {
-                    kind: DiffLineKind::Removed,
-                    text: line.clone(),
-                });
-                *remaining -= 1;
-            }
+    for (start, end) in merged {
+        let old_start = first_old_line_in_range(&operations, start, end)
+            .unwrap_or_else(|| previous.len().saturating_add(1));
+        let new_start = first_new_line_in_range(&operations, start, end)
+            .unwrap_or_else(|| current.len().saturating_add(1));
+        let old_count = operations[start..=end]
+            .iter()
+            .filter(|operation| !matches!(operation.kind, DiffOpKind::Add))
+            .count();
+        let new_count = operations[start..=end]
+            .iter()
+            .filter(|operation| !matches!(operation.kind, DiffOpKind::Remove))
+            .count();
+
+        entries.push(DiffLineEntry {
+            kind: DiffLineKind::HunkHeader,
+            text: format!("@@ -{old_start},{old_count} +{new_start},{new_count} @@"),
+        });
+
+        for operation in &operations[start..=end] {
+            let kind = match operation.kind {
+                DiffOpKind::Equal => DiffLineKind::Context,
+                DiffOpKind::Add => DiffLineKind::Added,
+                DiffOpKind::Remove => DiffLineKind::Removed,
+            };
+            entries.push(DiffLineEntry {
+                kind,
+                text: operation.text.clone(),
+            });
         }
     }
 
@@ -5183,13 +5263,109 @@ fn diff_line_entries(previous: &[String], current: &[String]) -> Vec<DiffLineEnt
 }
 
 fn diff_line_counts(previous: &[String], current: &[String]) -> (usize, usize) {
-    diff_line_entries(previous, current).into_iter().fold(
+    diff_line_entries(previous, current, 0).into_iter().fold(
         (0usize, 0usize),
         |(added, removed), entry| match entry.kind {
             DiffLineKind::Added => (added + 1, removed),
             DiffLineKind::Removed => (added, removed + 1),
+            DiffLineKind::Context | DiffLineKind::HunkHeader => (added, removed),
         },
     )
+}
+
+fn diff_line_operations(previous: &[String], current: &[String]) -> Vec<DiffOp> {
+    let previous_len = previous.len();
+    let current_len = current.len();
+    let mut lcs = vec![0usize; (previous_len + 1) * (current_len + 1)];
+    let index = |i: usize, j: usize| i * (current_len + 1) + j;
+
+    for i in (0..previous_len).rev() {
+        for j in (0..current_len).rev() {
+            lcs[index(i, j)] = if previous[i] == current[j] {
+                lcs[index(i + 1, j + 1)] + 1
+            } else {
+                lcs[index(i + 1, j)].max(lcs[index(i, j + 1)])
+            };
+        }
+    }
+
+    let mut operations = Vec::new();
+    let mut i = 0usize;
+    let mut j = 0usize;
+    let mut old_line = 1usize;
+    let mut new_line = 1usize;
+
+    while i < previous_len && j < current_len {
+        if previous[i] == current[j] {
+            operations.push(DiffOp {
+                kind: DiffOpKind::Equal,
+                text: previous[i].clone(),
+                old_line,
+                new_line,
+            });
+            i += 1;
+            j += 1;
+            old_line += 1;
+            new_line += 1;
+            continue;
+        }
+
+        if lcs[index(i + 1, j)] >= lcs[index(i, j + 1)] {
+            operations.push(DiffOp {
+                kind: DiffOpKind::Remove,
+                text: previous[i].clone(),
+                old_line,
+                new_line: 0,
+            });
+            i += 1;
+            old_line += 1;
+        } else {
+            operations.push(DiffOp {
+                kind: DiffOpKind::Add,
+                text: current[j].clone(),
+                old_line: 0,
+                new_line,
+            });
+            j += 1;
+            new_line += 1;
+        }
+    }
+
+    while i < previous_len {
+        operations.push(DiffOp {
+            kind: DiffOpKind::Remove,
+            text: previous[i].clone(),
+            old_line,
+            new_line: 0,
+        });
+        i += 1;
+        old_line += 1;
+    }
+
+    while j < current_len {
+        operations.push(DiffOp {
+            kind: DiffOpKind::Add,
+            text: current[j].clone(),
+            old_line: 0,
+            new_line,
+        });
+        j += 1;
+        new_line += 1;
+    }
+
+    operations
+}
+
+fn first_old_line_in_range(operations: &[DiffOp], start: usize, end: usize) -> Option<usize> {
+    operations[start..=end]
+        .iter()
+        .find_map(|operation| (operation.old_line > 0).then_some(operation.old_line))
+}
+
+fn first_new_line_in_range(operations: &[DiffOp], start: usize, end: usize) -> Option<usize> {
+    operations[start..=end]
+        .iter()
+        .find_map(|operation| (operation.new_line > 0).then_some(operation.new_line))
 }
 
 fn summarize_failures(entries: &[HistoryEntry], limit: usize) -> Vec<FailureSummaryEntry> {
@@ -5511,6 +5687,139 @@ fn action_display_label(action: &Action) -> String {
     }
 }
 
+fn palette_actions_catalog() -> Vec<Action> {
+    let mut actions = vec![
+        Action::CommandPalette,
+        Action::CommandSearch,
+        Action::SearchGlobal,
+        Action::QuickSelect,
+        Action::QuickSelectBlock,
+        Action::EnterViMode,
+        Action::BlockFind,
+        Action::BlockFilter,
+        Action::BlockDiff,
+        Action::BlockRerun,
+        Action::ToggleFailureTrendsPanel,
+        Action::BlockPrev,
+        Action::BlockNext,
+        Action::BlockToggleBookmark,
+        Action::BlockPrevBookmark,
+        Action::BlockNextBookmark,
+        Action::BlockCopy,
+        Action::BlockCopyCommand,
+        Action::BlockCopyOutput,
+        Action::BlockCollapse,
+        Action::ToggleBroadcast,
+        Action::SplitVertical,
+        Action::SplitHorizontal,
+        Action::CloseSplit,
+        Action::FocusLeft,
+        Action::FocusRight,
+        Action::FocusUp,
+        Action::FocusDown,
+        Action::ResizeSplitLeft,
+        Action::ResizeSplitRight,
+        Action::ResizeSplitUp,
+        Action::ResizeSplitDown,
+        Action::NewFloatingPane,
+        Action::ToggleFloatingPane,
+        Action::CloseFloatingPane,
+        Action::NewTab,
+        Action::CloseTab,
+        Action::NextTab,
+        Action::PrevTab,
+        Action::NextLayout,
+        Action::PrevLayout,
+        Action::ToggleInputPosition,
+        Action::ScrollUp,
+        Action::ScrollDown,
+        Action::ScrollPageUp,
+        Action::ScrollPageDown,
+        Action::ScrollToTop,
+        Action::ScrollToBottom,
+        Action::ZoomIn,
+        Action::ZoomOut,
+        Action::ZoomReset,
+        Action::ClearScreen,
+        Action::SendEof,
+        Action::Copy,
+        Action::Paste,
+        Action::SelectAll,
+    ];
+    actions.extend((1..=9).map(Action::SwitchToTab));
+    actions
+}
+
+fn action_palette_description(action: &Action, keybinding: &str) -> String {
+    let summary = match action {
+        Action::NewTab => "Create a new tab",
+        Action::CloseTab => "Close the active tab",
+        Action::NextTab => "Move focus to the next tab",
+        Action::PrevTab => "Move focus to the previous tab",
+        Action::SwitchToTab(_) => "Jump directly to a numbered tab",
+        Action::SplitVertical => "Split the active pane vertically",
+        Action::SplitHorizontal => "Split the active pane horizontally",
+        Action::CloseSplit => "Close the active split pane",
+        Action::FocusLeft => "Move focus to the pane on the left",
+        Action::FocusRight => "Move focus to the pane on the right",
+        Action::FocusUp => "Move focus to the pane above",
+        Action::FocusDown => "Move focus to the pane below",
+        Action::ResizeSplitLeft => "Grow the active pane to the left",
+        Action::ResizeSplitRight => "Grow the active pane to the right",
+        Action::ResizeSplitUp => "Grow the active pane upward",
+        Action::ResizeSplitDown => "Grow the active pane downward",
+        Action::Copy => "Copy selection to the clipboard",
+        Action::Paste => "Paste clipboard contents",
+        Action::SelectAll => "Select all visible terminal text",
+        Action::ScrollUp => "Scroll terminal view up",
+        Action::ScrollDown => "Scroll terminal view down",
+        Action::ScrollPageUp => "Scroll up by one page",
+        Action::ScrollPageDown => "Scroll down by one page",
+        Action::ScrollToTop => "Jump to the top of scrollback",
+        Action::ScrollToBottom => "Jump to the live prompt",
+        Action::BlockPrev => "Select the previous command block",
+        Action::BlockNext => "Select the next command block",
+        Action::BlockCopy => "Copy command and output for the selected block",
+        Action::BlockCopyCommand => "Copy only the command text of the selected block",
+        Action::BlockCopyOutput => "Copy only output text of the selected block",
+        Action::BlockCollapse => "Collapse or expand selected block output",
+        Action::BlockToggleBookmark => "Toggle a bookmark on the selected block",
+        Action::BlockPrevBookmark => "Jump to the previous bookmarked block",
+        Action::BlockNextBookmark => "Jump to the next bookmarked block",
+        Action::BlockFind => "Search within selected block output",
+        Action::BlockFilter => "Filter selected block output by query",
+        Action::BlockDiff => "Compare selected block output with prior runs",
+        Action::BlockRerun => "Re-run the selected block command",
+        Action::ToggleFailureTrendsPanel => "Open failure trends analytics panel",
+        Action::SearchGlobal => "Search text across the workspace",
+        Action::EnterViMode => "Enable vi-style navigation mode",
+        Action::CommandPalette => "Open action/workflow palette (`>` filters actions)",
+        Action::CommandSearch => "Search pane and global command history",
+        Action::QuickSelect => "Start quick-select labels for visible output",
+        Action::QuickSelectBlock => "Start quick-select labels for selected block",
+        Action::ToggleBroadcast => "Toggle input broadcast across panes",
+        Action::NewFloatingPane => "Create a floating pane",
+        Action::ToggleFloatingPane => "Show or hide floating panes",
+        Action::CloseFloatingPane => "Close focused floating pane",
+        Action::NextLayout => "Cycle to the next layout preset",
+        Action::PrevLayout => "Cycle to the previous layout preset",
+        Action::ToggleInputPosition => "Toggle input bar position",
+        Action::ZoomIn => "Increase terminal font size",
+        Action::ZoomOut => "Decrease terminal font size",
+        Action::ZoomReset => "Reset terminal font size",
+        Action::ClearScreen => "Clear terminal viewport and scrollback",
+        Action::SendEof => "Send EOF (Ctrl+D) to the active shell",
+        Action::SaveSession(_) => "Persist the current workspace as a named session",
+        Action::LoadSession(_) => "Load a previously saved named session",
+    };
+
+    if keybinding.trim().is_empty() {
+        format!("{summary}. Shortcut: unbound")
+    } else {
+        format!("{summary}. Shortcut: {keybinding}")
+    }
+}
+
 fn key_combo_label(combo: &wok_app::keybindings::KeyCombo) -> String {
     let mut parts = Vec::new();
     if combo.modifiers.ctrl {
@@ -5653,6 +5962,21 @@ mod tests {
             Some(Action::LoadSession("demo".to_string()))
         );
         assert_eq!(parse_lua_action("save_session:"), None);
+    }
+
+    #[test]
+    fn test_palette_actions_catalog_prioritizes_discoverability() {
+        let catalog = palette_actions_catalog();
+        assert_eq!(catalog[0], Action::CommandPalette);
+        assert_eq!(catalog[1], Action::CommandSearch);
+        assert_eq!(catalog[2], Action::SearchGlobal);
+        assert_eq!(catalog[3], Action::QuickSelect);
+    }
+
+    #[test]
+    fn test_action_palette_description_marks_unbound_shortcut() {
+        let description = action_palette_description(&Action::CommandPalette, "");
+        assert!(description.contains("Shortcut: unbound"));
     }
 
     #[test]
@@ -5830,18 +6154,21 @@ mod tests {
     }
 
     #[test]
-    fn diff_line_entries_marks_added_then_removed_lines() {
+    fn diff_line_entries_groups_hunks_with_context() {
         let previous = vec!["same".to_string(), "drop".to_string()];
         let current = vec!["same".to_string(), "add".to_string(), "add".to_string()];
-        let entries = diff_line_entries(&previous, &current);
+        let entries = diff_line_entries(&previous, &current, 1);
 
-        assert_eq!(entries.len(), 3);
-        assert_eq!(entries[0].kind, DiffLineKind::Added);
-        assert_eq!(entries[0].text, "add");
-        assert_eq!(entries[1].kind, DiffLineKind::Added);
-        assert_eq!(entries[1].text, "add");
+        assert_eq!(entries[0].kind, DiffLineKind::HunkHeader);
+        assert!(entries[0].text.starts_with("@@ -1,2 +1,3 @@"));
+        assert_eq!(entries[1].kind, DiffLineKind::Context);
+        assert_eq!(entries[1].text, "same");
         assert_eq!(entries[2].kind, DiffLineKind::Removed);
         assert_eq!(entries[2].text, "drop");
+        assert_eq!(entries[3].kind, DiffLineKind::Added);
+        assert_eq!(entries[3].text, "add");
+        assert_eq!(entries[4].kind, DiffLineKind::Added);
+        assert_eq!(entries[4].text, "add");
     }
 
     #[test]

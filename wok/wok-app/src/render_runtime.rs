@@ -1522,8 +1522,30 @@ pub(crate) fn render_block_query_overlay(
                         1.0,
                     ],
                 ),
+                DiffLineKind::Context => (
+                    " ",
+                    [
+                        theme.status_bar_text.r,
+                        theme.status_bar_text.g,
+                        theme.status_bar_text.b,
+                        1.0,
+                    ],
+                ),
+                DiffLineKind::HunkHeader => (
+                    "@",
+                    [
+                        theme.highlight_current_match.r,
+                        theme.highlight_current_match.g,
+                        theme.highlight_current_match.b,
+                        1.0,
+                    ],
+                ),
             };
-            let line_label = format!("{prefix} {}", truncate_overlay_text(&entry.text, max_chars));
+            let line_label = if matches!(entry.kind, DiffLineKind::HunkHeader) {
+                truncate_overlay_text(&entry.text, max_chars)
+            } else {
+                format!("{prefix} {}", truncate_overlay_text(&entry.text, max_chars))
+            };
             push_text(
                 render,
                 font,

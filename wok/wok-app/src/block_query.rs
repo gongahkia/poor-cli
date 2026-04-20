@@ -20,6 +20,10 @@ pub enum DiffLineKind {
     Added,
     /// Line appears only in the previous comparable block output.
     Removed,
+    /// Unchanged line included as hunk context.
+    Context,
+    /// Header describing one diff hunk.
+    HunkHeader,
 }
 
 /// Changed output line rendered in block diff mode.
@@ -91,16 +95,17 @@ impl BlockQueryState {
         self.current_match = 0;
         self.overlay_scroll_offset = 0;
         self.diff_entries = entries;
-        self.matches = self
-            .diff_entries
-            .iter()
-            .enumerate()
-            .map(|(index, entry)| SearchMatch {
+        self.matches.clear();
+        for (index, entry) in self.diff_entries.iter().enumerate() {
+            if !matches!(entry.kind, DiffLineKind::Added | DiffLineKind::Removed) {
+                continue;
+            }
+            self.matches.push(SearchMatch {
                 line: index,
                 col_start: 0,
                 col_end: entry.text.chars().count(),
-            })
-            .collect();
+            });
+        }
     }
 
     /// Advance to the next match, wrapping when needed.
@@ -261,5 +266,35 @@ mod tests {
         assert_eq!(query.diff_entries.len(), 2);
         assert_eq!(query.matches.len(), 2);
         assert_eq!(query.filtered_line_indices(), vec![0, 1]);
+    }
+
+    #[test]
+    fn test_set_diff_entries_only_navigates_changed_lines() {
+        let mut query = BlockQueryState::new(BlockQueryMode::Find, 5);
+        query.set_diff_entries(
+            4,
+            vec![
+                DiffLineEntry {
+                    kind: DiffLineKind::HunkHeader,
+                    text: "@@ -1,2 +1,3 @@".to_string(),
+                },
+                DiffLineEntry {
+                    kind: DiffLineKind::Context,
+                    text: "same".to_string(),
+                },
+                DiffLineEntry {
+                    kind: DiffLineKind::Added,
+                    text: "new".to_string(),
+                },
+                DiffLineEntry {
+                    kind: DiffLineKind::Removed,
+                    text: "old".to_string(),
+                },
+            ],
+        );
+
+        assert_eq!(query.matches.len(), 2);
+        assert_eq!(query.matches[0].line, 2);
+        assert_eq!(query.matches[1].line, 3);
     }
 }
