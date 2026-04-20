@@ -21,6 +21,9 @@ type TestIssuer = {
     readonly issuer?: string;
     readonly expiresAt?: number | string;
   }) => Promise<string>;
+  readonly setDiscoveryAvailability: (available: boolean) => void;
+  readonly setJwksAvailability: (available: boolean) => void;
+  readonly rotateSigningKey: () => Promise<void>;
   readonly close: () => Promise<void>;
 };
 
@@ -58,16 +61,32 @@ const createRequest = (options?: {
 
 const createOidcIssuer = async (options?: {
   readonly discoveryIssuerOverride?: string;
+  readonly discoveryAvailable?: boolean;
+  readonly jwksAvailable?: boolean;
 }): Promise<TestIssuer> => {
-  const { publicKey, privateKey } = await generateKeyPair("RS256");
-  const jwk = await exportJWK(publicKey);
-  const keyId = "http-auth-test-key";
+  let keyVersion = 1;
+  let discoveryAvailable = options?.discoveryAvailable ?? true;
+  let jwksAvailable = options?.jwksAvailable ?? true;
+
+  const createSigningMaterial = async (version: number) => {
+    const keyId = `http-auth-test-key-${version}`;
+    const { publicKey, privateKey } = await generateKeyPair("RS256");
+    const jwk = await exportJWK(publicKey);
+    return { privateKey, keyId, jwk };
+  };
+
+  let currentSigning = await createSigningMaterial(keyVersion);
 
   const issuerServer = createServer((req: IncomingMessage, res: ServerResponse) => {
     const address = issuerServer.address() as AddressInfo;
     const issuerUrl = `http://127.0.0.1:${address.port}`;
 
     if (req.url === "/.well-known/openid-configuration" || req.url === "/.well-known/oauth-authorization-server") {
+      if (!discoveryAvailable) {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "discovery_unavailable" }));
+        return;
+      }
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({
         issuer: options?.discoveryIssuerOverride ?? issuerUrl,
@@ -77,9 +96,14 @@ const createOidcIssuer = async (options?: {
     }
 
     if (req.url === "/jwks") {
+      if (!jwksAvailable) {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "jwks_unavailable" }));
+        return;
+      }
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({
-        keys: [{ ...jwk, kid: keyId, alg: "RS256", use: "sig" }],
+        keys: [{ ...currentSigning.jwk, kid: currentSigning.keyId, alg: "RS256", use: "sig" }],
       }));
       return;
     }
@@ -113,13 +137,23 @@ const createOidcIssuer = async (options?: {
         payload["scp"] = [...tokenOptions.scpScopes];
       }
       return new SignJWT(payload)
-        .setProtectedHeader({ alg: "RS256", kid: keyId })
+        .setProtectedHeader({ alg: "RS256", kid: currentSigning.keyId })
         .setIssuer(tokenOptions?.issuer ?? issuerUrl.href)
         .setAudience(tokenOptions?.audience ?? audience)
         .setSubject("test-user")
         .setIssuedAt()
         .setExpirationTime(tokenOptions?.expiresAt ?? "2h")
-        .sign(privateKey);
+        .sign(currentSigning.privateKey);
+    },
+    setDiscoveryAvailability: (available: boolean) => {
+      discoveryAvailable = available;
+    },
+    setJwksAvailability: (available: boolean) => {
+      jwksAvailable = available;
+    },
+    rotateSigningKey: async () => {
+      keyVersion += 1;
+      currentSigning = await createSigningMaterial(keyVersion);
     },
     close: async () => {
       await new Promise<void>((resolve, reject) => {
@@ -403,5 +437,96 @@ describe("HttpAuthController", () => {
     expect(failure.payload).toMatchObject({
       error_description: "Malformed Authorization header. Expected 'Bearer <token>'.",
     });
+  });
+
+  it("recovers after transient oidc discovery outage without recreating the controller", async () => {
+    const issuer = await createOidcIssuer({ discoveryAvailable: false });
+    createdClosers.push(issuer.close);
+
+    const token = await issuer.signToken({ scopes: ["ops:write"] });
+    const controller = createController({
+      mode: "mixed",
+      issuer: issuer.issuerUrl.href,
+      audience: issuer.audience,
+      requiredScopes: ["ops:write"],
+    });
+
+    const firstFailure = expectAuthFailure(
+      await controller.resolveInitializeSession(createRequest({ authorization: `Bearer ${token}` })),
+    );
+    expect(firstFailure.statusCode).toBe(401);
+    expect(String(firstFailure.payload["error_description"] ?? "")).toContain("Unable to resolve jwks_uri");
+
+    issuer.setDiscoveryAvailability(true);
+
+    const recovered = await controller.resolveInitializeSession(createRequest({ authorization: `Bearer ${token}` }));
+    expect("statusCode" in recovered).toBe(false);
+    if ("statusCode" in recovered) {
+      return;
+    }
+    expect(recovered.access).toBe("protected");
+  });
+
+  it("accepts rotated jwks keys after cache warm-up", async () => {
+    const issuer = await createOidcIssuer();
+    createdClosers.push(issuer.close);
+
+    const controller = createController({
+      mode: "mixed",
+      issuer: issuer.issuerUrl.href,
+      audience: issuer.audience,
+    });
+
+    const tokenV1 = await issuer.signToken({ scopes: ["query:read"] });
+    const initial = await controller.resolveInitializeSession(createRequest({ authorization: `Bearer ${tokenV1}` }));
+    expect("statusCode" in initial).toBe(false);
+    if ("statusCode" in initial) {
+      return;
+    }
+    expect(initial.access).toBe("protected");
+
+    await issuer.rotateSigningKey();
+    const tokenV2 = await issuer.signToken({ scopes: ["query:read"] });
+    const rotated = await controller.resolveInitializeSession(createRequest({ authorization: `Bearer ${tokenV2}` }));
+    expect("statusCode" in rotated).toBe(false);
+    if ("statusCode" in rotated) {
+      return;
+    }
+    expect(rotated.access).toBe("protected");
+  });
+
+  it("recovers from transient jwks endpoint outages after resolver cache refresh", async () => {
+    const issuer = await createOidcIssuer();
+    createdClosers.push(issuer.close);
+
+    const controller = createController({
+      mode: "mixed",
+      issuer: issuer.issuerUrl.href,
+      audience: issuer.audience,
+    });
+
+    const stableToken = await issuer.signToken({ scopes: ["query:read"] });
+    const initial = await controller.resolveInitializeSession(createRequest({ authorization: `Bearer ${stableToken}` }));
+    expect("statusCode" in initial).toBe(false);
+    if ("statusCode" in initial) {
+      return;
+    }
+
+    await issuer.rotateSigningKey();
+    issuer.setJwksAvailability(false);
+    const outageToken = await issuer.signToken({ scopes: ["query:read"] });
+    const outageFailure = expectAuthFailure(
+      await controller.resolveInitializeSession(createRequest({ authorization: `Bearer ${outageToken}` })),
+    );
+    expect(outageFailure.statusCode).toBe(401);
+    expect(outageFailure.reason).toBe("invalid_token");
+
+    issuer.setJwksAvailability(true);
+    const recovered = await controller.resolveInitializeSession(createRequest({ authorization: `Bearer ${outageToken}` }));
+    expect("statusCode" in recovered).toBe(false);
+    if ("statusCode" in recovered) {
+      return;
+    }
+    expect(recovered.access).toBe("protected");
   });
 });

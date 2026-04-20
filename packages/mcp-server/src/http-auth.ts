@@ -304,12 +304,31 @@ export class HttpAuthController {
       throw new Error("OIDC issuer and audience must be configured for protected HTTP auth.");
     }
 
-    const jwks = await this.getJwksResolver();
-    const verification = await jwtVerify(token, jwks, {
-      issuer,
-      audience,
-      clockTolerance: this.#clockSkewSec,
-    });
+    const verifyWithJwks = async () => {
+      const jwks = await this.getJwksResolver();
+      return jwtVerify(token, jwks, {
+        issuer,
+        audience,
+        clockTolerance: this.#clockSkewSec,
+      });
+    };
+
+    const shouldRefreshJwks = (error: unknown): boolean => {
+      return error instanceof joseErrors.JWKSNoMatchingKey
+        || error instanceof joseErrors.JWKSTimeout
+        || error instanceof joseErrors.JWKSInvalid;
+    };
+
+    let verification;
+    try {
+      verification = await verifyWithJwks();
+    } catch (error) {
+      if (!shouldRefreshJwks(error)) {
+        throw error;
+      }
+      this.#jwksResolver = undefined;
+      verification = await verifyWithJwks();
+    }
 
     const scopes = Array.from(new Set([
       ...splitScopes(verification.payload["scope"]),
