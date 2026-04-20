@@ -2,6 +2,8 @@
 
 Use this when `sg_query` or direct `sg_*` tools fail, block, or return unexpected results.
 
+For sustained incidents, SLO breaches, or release-blocking outages, escalate to [incident-playbook.md](./incident-playbook.md).
+
 ## Fast Triage (Under Five Minutes)
 
 1. Build + static diagnostics

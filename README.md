@@ -27,7 +27,7 @@ The value is not hidden magic. The value is:
 - provenance, freshness, and limits surfaced directly in brief artifacts
 - caching, rate limiting, auth handling, packaging, and parity checks already done
 
-If you are evaluating whether the repo is actually useful for developers, start with [docs/product-audit.md](./docs/product-audit.md), [docs/developer-adoption-audit.md](./docs/developer-adoption-audit.md), [docs/agent-builder-quickstart.md](./docs/agent-builder-quickstart.md), [docs/market-conventions-audit.md](./docs/market-conventions-audit.md), and [docs/ecosystem-snapshot.md](./docs/ecosystem-snapshot.md).
+If you are evaluating whether the repo is actually useful for developers, start with [docs/product-audit.md](./docs/product-audit.md), [docs/developer-adoption-audit.md](./docs/developer-adoption-audit.md), [docs/agent-builder-quickstart.md](./docs/agent-builder-quickstart.md), [docs/market-conventions-audit.md](./docs/market-conventions-audit.md), [docs/ecosystem-snapshot.md](./docs/ecosystem-snapshot.md), and [docs/incident-playbook.md](./docs/incident-playbook.md).
 
 ## Capability Matrix
 

@@ -67,7 +67,7 @@ const toBenchmarkSnapshot = (value: unknown): BenchmarkEvidenceSnapshot | null =
     return null;
   }
 
-  if (value["schemaVersion"] !== "1.0") {
+  if (value["schemaVersion"] !== "1.0" && value["schemaVersion"] !== "2.0") {
     return null;
   }
 
@@ -94,7 +94,33 @@ const toBenchmarkSnapshot = (value: unknown): BenchmarkEvidenceSnapshot | null =
     && (entry["status"] === "passed" || entry["status"] === "skipped")
   ));
 
-  return checks ? value as BenchmarkEvidenceSnapshot : null;
+  if (!checks) {
+    return null;
+  }
+
+  if (value["sloMeasurements"] === undefined) {
+    return value as BenchmarkEvidenceSnapshot;
+  }
+
+  if (!Array.isArray(value["sloMeasurements"])) {
+    return null;
+  }
+
+  const measurementsValid = value["sloMeasurements"].every((entry) => (
+    isRecord(entry)
+    && typeof entry["workflow"] === "string"
+    && typeof entry["availabilityPct"] === "number"
+    && typeof entry["latencyP50Ms"] === "number"
+    && typeof entry["latencyP95Ms"] === "number"
+    && typeof entry["freshnessCompletenessPct"] === "number"
+    && typeof entry["measurementWindow"] === "string"
+    && typeof entry["evidence"] === "string"
+    && (entry["status"] === "within_slo" || entry["status"] === "warning" || entry["status"] === "breach")
+    && Array.isArray(entry["notes"])
+    && entry["notes"].every((note) => typeof note === "string")
+  ));
+
+  return measurementsValid ? value as BenchmarkEvidenceSnapshot : null;
 };
 
 const readBenchmarkSnapshotOverride = (): BenchmarkEvidenceSnapshot | null => {

@@ -30,7 +30,7 @@ jobs:
           SG_APIS_LOG_LEVEL: error
 
       - name: Generate benchmark evidence snapshot
-        run: npm run benchmarks:snapshot -- --output artifacts/benchmarks/latest.json
+        run: npm run benchmarks:snapshot -- --output artifacts/benchmarks/latest.json --history-dir artifacts/benchmarks/history
         env:
           SG_APIS_LOG_LEVEL: error
           SG_APIS_REGISTRY_SMOKE_STATUS: skipped
@@ -45,3 +45,11 @@ jobs:
         with:
           name: benchmark-evidence-snapshot
           path: artifacts/benchmarks/latest.json
+          retention-days: 90
+
+      - name: Upload benchmark trend history artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-evidence-history-${{ github.run_id }}
+          path: artifacts/benchmarks/history/
+          retention-days: 90

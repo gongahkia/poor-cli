@@ -256,7 +256,7 @@ describe("resource catalog parity", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "sg-apis-benchmarks-"));
     const snapshotPath = join(tempDir, "snapshot.json");
     const snapshot = {
-      schemaVersion: "1.0",
+      schemaVersion: "2.0",
       generatedAt: "2026-03-30T12:00:00.000Z",
       source: "github-actions",
       commitSha: "abc123",
@@ -266,6 +266,19 @@ describe("resource catalog parity", () => {
           name: "npm run verify",
           status: "passed",
           notes: "verify completed",
+        },
+      ],
+      sloMeasurements: [
+        {
+          workflow: "Business Registry Diligence",
+          availabilityPct: 99.1,
+          latencyP50Ms: 900,
+          latencyP95Ms: 1900,
+          freshnessCompletenessPct: 100,
+          measurementWindow: "rolling-7d",
+          status: "within_slo",
+          evidence: "ci smoke",
+          notes: ["all checks passed"],
         },
       ],
     };

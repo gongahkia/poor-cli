@@ -101,6 +101,13 @@ SG_APIS_REMOTE_URL=https://<public-hostname>/mcp npm run test:smoke:remote
 
 The registry smoke step waits for npm propagation, installs both published packages into a temporary directory, performs an MCP handshake, reads the public workflow and recipe resources, and calls representative live no-auth direct tools and routed workflows. It does not validate credential-gated upstreams; use `npm run test:smoke:live` separately when you need that proof.
 
+CI also publishes benchmark evidence as:
+
+- `artifacts/benchmarks/latest.json`
+- `artifacts/benchmarks/history/<timestamp>.json`
+
+Use these to track SLO trends across releases.
+
 ## Post-Release Checks
 
 After the workflow is green, verify:
