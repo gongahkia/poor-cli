@@ -6,6 +6,12 @@ Wok is configured via a TOML file located at one of:
 2. `~/.config/wok/config.toml`
 3. `~/.wok.toml`
 
+You can scaffold managed defaults with:
+
+```bash
+wok init
+```
+
 ## Full Example
 
 ```toml

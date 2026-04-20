@@ -58,6 +58,9 @@ cargo run -p wok -- attach work
 cargo run -p wok -- list
 cargo run -p wok -- rpc wok.get_panes
 cargo run -p wok -- rpc wok.run_action --params '["SplitVertical", {"index": 2}]'
+cargo run -p wok -- init
+cargo run -p wok -- doctor
+cargo run -p wok -- reset --yes
 ```
 
 ## Key Runtime Surfaces

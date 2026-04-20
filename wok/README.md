@@ -32,6 +32,9 @@ cargo run -p wok -- --shell zsh
 cargo run -p wok -- --shell powershell
 cargo run -p wok -- --shell wsl:Ubuntu
 cargo build --release -p wok
+cargo run -p wok -- init
+cargo run -p wok -- doctor
+cargo run -p wok -- reset --yes
 ```
 
 Owned-primary input is opt-in for now:
@@ -52,6 +55,7 @@ More detail:
 
 - [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
 - [docs/LUA_SCRIPTING.md](docs/LUA_SCRIPTING.md)
+- [docs/CLI.md](docs/CLI.md)
 
 ## Demo Flow
 
