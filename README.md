@@ -22,10 +22,14 @@ seuss ingest --path ../some/relative/path/to/file.md
 seuss ingest --path ../some/relative/path/to/docs_dir
 seuss inspect
 seuss generate --prompt "I think"
+seuss generate --prompt "I think" --use-persona
+seuss generate --prompt "I think" --use-persona --persona-path ./.seuss/memory/persona_profile.json
 seuss eval --summary
 seuss eval --summary --fail-on-thresholds
 seuss persona build
 seuss persona show
+seuss reset corpus --yes
+seuss reset workspace --yes
 make compile
 make test
 make smoke

@@ -21,6 +21,7 @@ from seuss.commands.memory_cmd import (
     run_memory_list,
 )
 from seuss.commands.persona_cmd import run_persona_build, run_persona_show
+from seuss.commands.reset_cmd import run_reset_corpus, run_reset_workspace
 from seuss.config import DEFAULT_CONFIG_PATH, ConfigError
 
 
@@ -74,6 +75,12 @@ def build_parser() -> argparse.ArgumentParser:
     generate_parser.add_argument("--temperature", type=float, default=None)
     generate_parser.add_argument("--seed", type=int, default=None)
     generate_parser.add_argument("--save", action="store_true")
+    generate_parser.add_argument("--use-persona", action="store_true")
+    generate_parser.add_argument(
+        "--persona-path",
+        default=None,
+        help="Optional path to persona profile JSON. Defaults to workspace profile.",
+    )
 
     memory_parser = sub.add_parser("memory", help="Manage memory")
     mem_sub = memory_parser.add_subparsers(dest="memory_command", required=True)
@@ -133,6 +140,19 @@ def build_parser() -> argparse.ArgumentParser:
     _add_config_arg(persona_show_parser)
     persona_show_parser.add_argument("--input", default=None)
 
+    reset_parser = sub.add_parser("reset", help="Reset corpus or workspace state")
+    reset_sub = reset_parser.add_subparsers(dest="reset_command", required=True)
+
+    reset_corpus_parser = reset_sub.add_parser("corpus", help="Clear corpus fragments and derived run/eval artifacts")
+    _add_config_arg(reset_corpus_parser)
+    reset_corpus_parser.add_argument("--yes", action="store_true")
+    reset_corpus_parser.add_argument("--keep-runs", action="store_true")
+    reset_corpus_parser.add_argument("--keep-evals", action="store_true")
+
+    reset_workspace_parser = reset_sub.add_parser("workspace", help="Reinitialize full workspace state")
+    _add_config_arg(reset_workspace_parser)
+    reset_workspace_parser.add_argument("--yes", action="store_true")
+
     return parser
 
 
@@ -170,6 +190,8 @@ def main(argv: list[str] | None = None) -> int:
                 temperature=args.temperature,
                 seed=args.seed,
                 save=args.save,
+                use_persona=args.use_persona,
+                persona_path=args.persona_path,
             )
 
         if args.command == "memory":
@@ -219,6 +241,21 @@ def main(argv: list[str] | None = None) -> int:
                 return run_persona_show(
                     config_path=config_path,
                     input_path=Path(args.input).resolve() if args.input else None,
+                )
+
+        if args.command == "reset":
+            config_path = Path(args.config).resolve()
+            if args.reset_command == "corpus":
+                return run_reset_corpus(
+                    config_path=config_path,
+                    yes=args.yes,
+                    keep_runs=args.keep_runs,
+                    keep_evals=args.keep_evals,
+                )
+            if args.reset_command == "workspace":
+                return run_reset_workspace(
+                    config_path=config_path,
+                    yes=args.yes,
                 )
 
         parser.error("Unknown command")

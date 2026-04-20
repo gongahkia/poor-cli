@@ -9,6 +9,43 @@ from seuss.jsonl_store import read_jsonl
 from seuss.utils import generate_id, now_iso, stable_hash
 
 
+def _load_persona_profile(workspace: Path, persona_path: str | None) -> dict | None:
+    target = Path(persona_path).expanduser().resolve() if persona_path else workspace / "memory" / "persona_profile.json"
+    if not target.exists():
+        return None
+    return json.loads(target.read_text(encoding="utf-8"))
+
+
+def _augment_prompt_with_persona(prompt: str, persona_profile: dict | None) -> str:
+    if not persona_profile:
+        return prompt
+
+    lexical = persona_profile.get("lexical", {})
+    voice = persona_profile.get("voice", {})
+    hints: list[str] = []
+
+    top_phrases = lexical.get("top_phrases", [])
+    top_words = lexical.get("top_words", [])
+    memory_hints = persona_profile.get("memory_hints", [])
+    sentence_bucket = voice.get("sentence_length_bucket")
+
+    if sentence_bucket:
+        hints.append(f"style {sentence_bucket}")
+    if top_phrases:
+        hints.append(" ".join(str(p) for p in top_phrases[:2]))
+    if top_words:
+        hints.append(" ".join(str(w) for w in top_words[:6]))
+    if memory_hints:
+        hints.append(str(memory_hints[0]))
+
+    merged = " ".join(part.strip() for part in hints if str(part).strip())
+    if not merged:
+        return prompt
+    if prompt:
+        return f"{prompt} {merged}".strip()
+    return merged
+
+
 def run_generate(
     config_path: Path,
     prompt: str,
@@ -17,6 +54,8 @@ def run_generate(
     temperature: float | None,
     seed: int | None,
     save: bool,
+    use_persona: bool = False,
+    persona_path: str | None = None,
 ) -> int:
     config = load_config(config_path)
     workspace = resolve_workspace(config, config_path)
@@ -44,9 +83,18 @@ def run_generate(
         "motif": int(jugemu_cfg.get("motif_order", 2)),
     }
 
+    persona_profile = _load_persona_profile(workspace, persona_path) if use_persona else None
+    if use_persona and persona_profile is None:
+        target = persona_path or str(workspace / "memory" / "persona_profile.json")
+        print(f"Persona profile not found: {target}")
+        print("Run 'seuss persona build' first or pass --persona-path.")
+        return 1
+
+    effective_prompt = _augment_prompt_with_persona(prompt, persona_profile)
+
     result = generate_text(
         level=chosen_level,
-        prompt=prompt,
+        prompt=effective_prompt,
         fragments=train_fragments,
         max_tokens=chosen_max_tokens,
         temperature=chosen_temp,
@@ -57,16 +105,21 @@ def run_generate(
 
     print(result.output)
     print(f"level={result.level} exact_copy_hits={result.exact_copy_hits} repetition_score={result.repetition_score:.4f}")
+    if use_persona and persona_profile:
+        print(f"persona_profile_id={persona_profile.get('id', 'unknown')}")
 
     if save:
         run_id = generate_id("run")
         run_record = {
             "id": run_id,
             "prompt": prompt,
+            "effective_prompt": effective_prompt,
             "output": result.output,
             "level": result.level,
             "config_hash": f"sha256:{stable_hash(config)}",
             "seed": chosen_seed,
+            "used_persona": use_persona,
+            "persona_profile_id": persona_profile.get("id") if persona_profile else None,
             "created_at": now_iso(),
             "metrics": {
                 "exact_copy_ngram_hits": result.exact_copy_hits,

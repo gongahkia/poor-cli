@@ -30,6 +30,7 @@ seuss memory
 seuss approve
 seuss eval
 seuss persona
+seuss reset
 ```
 
 ### `seuss init`
@@ -138,6 +139,8 @@ Example:
 seuss generate --prompt "I think"
 seuss generate --level phrase --max-tokens 120
 seuss generate --level hybrid --seed 42
+seuss generate --prompt "I think" --use-persona
+seuss generate --prompt "I think" --use-persona --persona-path ./.seuss/memory/persona_profile.json
 ```
 
 Useful flags:
@@ -148,6 +151,8 @@ Useful flags:
 - `--temperature <n>`: sampling randomness.
 - `--seed <n>`: reproducible generation.
 - `--save`: write generation record to `.seuss/runs/`.
+- `--use-persona`: augment prompt with built persona profile hints.
+- `--persona-path <path>`: override default persona profile location.
 
 Phase 1 generation should be explicit about its limits. It is not expected to be a high-quality chatbot yet.
 
@@ -238,6 +243,24 @@ seuss persona build
 seuss persona build --output .seuss/memory/persona_profile_v2.json
 seuss persona show
 seuss persona show --input .seuss/memory/persona_profile_v2.json
+```
+
+### `seuss reset`
+
+Resets corpus or workspace state for clean experiment restarts.
+
+Expected behavior:
+
+- `seuss reset corpus --yes` clears `fragments.jsonl` and derived run/eval artifacts.
+- `seuss reset workspace --yes` recreates an empty `.seuss` layout.
+- Refuses destructive actions without `--yes`.
+
+Example:
+
+```sh
+seuss reset corpus --yes
+seuss reset corpus --yes --keep-runs --keep-evals
+seuss reset workspace --yes
 ```
 
 ## Default Config
