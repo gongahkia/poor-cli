@@ -85,6 +85,7 @@ Before handing the server to an application team:
 
 - `npm run quick-start` is the credential-gated live quickstart for real OneMap, URA, LTA, data.gov datastore, and official file-download validation.
 - `npm run test:smoke:live` runs the same live validation flow without the build wrapper.
+- `npm run test:smoke:public` is the credential-free onboarding smoke for public upstreams and no-auth workflows.
 
 ## Useful Starter Paths
 

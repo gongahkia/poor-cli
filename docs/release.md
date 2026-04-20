@@ -13,9 +13,13 @@ It also publishes:
 - `ghcr.io/gongahkia/sg-apis-mcp` as the container image
 - `packages/mcp-server/openapi.json` as the checked-in REST artifact
 
-The publish workflow is planned to be tag-driven and will run from `.github/workflows/publish.yml` once implemented. Until then, publishing is manual.
+The publish workflow is tag-driven from `.github/workflows/publish.yml`. It runs on `v*` tags and supports `workflow_dispatch` for controlled manual execution.
 
 ## Before You Tag
+
+Repository secrets required by `.github/workflows/publish.yml`:
+
+- `NPM_TOKEN` with publish access for `@sg-apis/shared` and `sg-apis-mcp`
 
 1. Update `CHANGELOG.md`.
 2. Bump versions in:
@@ -47,9 +51,17 @@ If the build already exists and you only want the smoke flow:
 npm run test:smoke:live
 ```
 
+For local onboarding without credentials, run:
+
+```bash
+npm run test:smoke:public
+```
+
+Do not treat the public smoke pass as release evidence; publish and deploy readiness still requires `npm run test:smoke:live`.
+
 ## Publish Order
 
-When the publish workflow is implemented, it will publish in this order:
+The publish workflow runs in this order:
 
 1. `@sg-apis/shared`
 2. `sg-apis-mcp`
@@ -67,13 +79,11 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-Once implemented, the publish workflow will only run on pushed tags matching `v*`.
+The publish workflow runs automatically on pushed tags matching `v*`. It also supports `workflow_dispatch` for manual release control.
 
-The planned workflow will also expose a manual `workflow_dispatch` deploy path for the Docker VPS bundle. Keep `.env.deploy` on the VPS; the deploy job only syncs `compose.yaml` and `Caddyfile`, then pulls the requested GHCR image tag and runs `docker compose up -d`.
+## What The Publish Workflow Verifies
 
-## What The Publish Workflow Will Verify
-
-Once implemented, the workflow will run:
+The workflow runs:
 
 - `npm ci`
 - `npm run verify`

@@ -9,7 +9,7 @@ Official Singapore public data for agents with deterministic contracts.
 The repo currently exposes 69 `sg_*` tools total across 29 official data families.
 
 - 54 direct data tools
-- 5 additive brief tools: `sg_business_dossier`, `sg_property_brief`, `sg_macro_brief`, `sg_transport_brief`, `sg_environment_brief`
+- 6 additive brief tools: `sg_business_dossier`, `sg_property_brief`, `sg_macro_brief`, `sg_transport_brief`, `sg_environment_brief`, `sg_civic_brief`
 - 8 operational helpers for health, keys, cache, and config
 - 1 bounded preferred interface, `sg_query`
 
@@ -27,7 +27,7 @@ The value is not hidden magic. The value is:
 - provenance, freshness, and limits surfaced directly in brief artifacts
 - caching, rate limiting, auth handling, packaging, and parity checks already done
 
-If you are evaluating whether the repo is actually useful for developers, start with [docs/product-audit.md](./docs/product-audit.md), [docs/developer-adoption-audit.md](./docs/developer-adoption-audit.md), [docs/agent-builder-quickstart.md](./docs/agent-builder-quickstart.md), and [docs/market-conventions-audit.md](./docs/market-conventions-audit.md).
+If you are evaluating whether the repo is actually useful for developers, start with [docs/product-audit.md](./docs/product-audit.md), [docs/developer-adoption-audit.md](./docs/developer-adoption-audit.md), [docs/agent-builder-quickstart.md](./docs/agent-builder-quickstart.md), [docs/market-conventions-audit.md](./docs/market-conventions-audit.md), and [docs/ecosystem-snapshot.md](./docs/ecosystem-snapshot.md).
 
 ## Capability Matrix
 
@@ -84,6 +84,7 @@ Additive brief tools:
 - `sg_macro_brief`
 - `sg_transport_brief`
 - `sg_environment_brief`
+- `sg_civic_brief`
 
 All brief tools return the same bounded envelope:
 
@@ -284,6 +285,18 @@ If you already built the server, run the smoke flow directly:
 
 ```bash
 npm run test:smoke:live
+```
+
+For no-credential onboarding, run the public-only smoke pass:
+
+```bash
+npm run quick-start -- --public
+```
+
+or:
+
+```bash
+npm run test:smoke:public
 ```
 
 The quickstart path checks:
@@ -551,7 +564,8 @@ Supported intents:
 
 Common rejection or block cases:
 
-- unsupported comparisons return an explicit unsupported-workflow response instead of hidden multi-step synthesis
+- comparisons are supported only for two-planning-area prompts and route to bounded side-by-side tool calls
+- unsupported comparisons outside that bounded shape return an explicit unsupported-workflow response instead of hidden multi-step synthesis
 - missing identifiers return a blocked plan with the exact field needed next, such as `busStopCode`, `planningArea`, `datasetId`, `entityName`, or `UEN`
 - unsupported multi-step formats return a direct format error instead of silently flattening the workflow
 - broad prompts outside the bounded catalog return an explicit "could not build a supported workflow" response
@@ -569,6 +583,7 @@ Useful follow-up commands:
 
 - `npm run quick-start`
 - `npm run test:smoke:live`
+- `npm run test:smoke:public`
 - `npm run diagnostics`
 - `npm run demo:mcp -- transport`
 - `npm run test:smoke:packaging`

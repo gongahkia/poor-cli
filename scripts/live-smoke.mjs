@@ -5,6 +5,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 const root = resolve(import.meta.dirname, "..");
 const serverEntry = resolve(root, "packages/mcp-server/dist/index.js");
+const PUBLIC_ONLY = process.argv.includes("--public-only");
 
 const getText = (items) => {
   const text = items.find((item) => typeof item?.text === "string")?.text;
@@ -21,12 +22,16 @@ const getStructuredPayload = (result) => {
   return JSON.parse(getText(result.content));
 };
 
-const getRecordArray = (payload, key = "records") => {
+const getRecordArray = (payload, label, key = "records") => {
   const records = payload?.[key];
-  if (!Array.isArray(records)) {
-    throw new Error(`Expected ${key} to be an array.`);
+  if (Array.isArray(records)) {
+    return records;
   }
-  return records;
+  const previewRecords = payload?.preview?.[key];
+  if (Array.isArray(previewRecords)) {
+    return previewRecords;
+  }
+  throw new Error(`${label} did not expose ${key} as an array in either the primary payload or artifact preview.`);
 };
 
 const getHealthRecord = (records, api) => {
@@ -100,7 +105,7 @@ const ensureQueryCompleted = (label, payload, expectation) => {
 const validateSmokePayload = (label, payload, expectation) => {
   switch (expectation.kind) {
     case "records_non_empty":
-      ensureNonEmpty(label, getRecordArray(payload, expectation.key ?? "records"));
+      ensureNonEmpty(label, getRecordArray(payload, label, expectation.key ?? "records"));
       return;
     case "brief_artifact":
       ensureBriefArtifact(label, payload, expectation);
@@ -154,25 +159,42 @@ const main = async () => {
       throw new Error("sg://runtime does not expose live surface and smoke coverage metadata.");
     }
 
-    process.stdout.write("Checking authenticated upstreams via sg_health_check...\n");
-    const healthPayload = await callToolPayload(client, "sg_health_check", {});
-    const healthRecords = getRecordArray(healthPayload);
+    const releaseBlockingSurfaces = liveSurface.filter((entry) => entry?.releaseBlocking === true);
+    const targetSurfaces = PUBLIC_ONLY
+      ? releaseBlockingSurfaces.filter((entry) => entry?.authRequired !== true)
+      : releaseBlockingSurfaces;
+    const releaseBlockingCases = smokeCases.filter((entry) => entry?.releaseBlocking === true);
+    const targetCases = PUBLIC_ONLY
+      ? releaseBlockingCases.filter((entry) => entry?.authRequired !== true)
+      : releaseBlockingCases;
 
-    for (const surface of liveSurface.filter((entry) => entry?.releaseBlocking === true)) {
+    if (targetSurfaces.length === 0 || targetCases.length === 0) {
+      throw new Error("No matching release-blocking smoke coverage found for selected mode.");
+    }
+
+    process.stdout.write(
+      PUBLIC_ONLY
+        ? "Checking public upstreams via sg_health_check...\n"
+        : "Checking authenticated and public upstreams via sg_health_check...\n",
+    );
+    const healthPayload = await callToolPayload(client, "sg_health_check", {});
+    const healthRecords = getRecordArray(healthPayload, "sg_health_check");
+
+    for (const surface of targetSurfaces) {
       const record = getHealthRecord(healthRecords, surface.api);
       ensureLiveHealth(record);
       process.stdout.write(`- ${surface.api}: ok\n`);
     }
 
-    process.stdout.write("Running live MCP smoke flow...\n");
+    process.stdout.write(PUBLIC_ONLY ? "Running public MCP smoke flow...\n" : "Running live MCP smoke flow...\n");
 
-    for (const smokeCase of smokeCases.filter((entry) => entry?.releaseBlocking === true)) {
+    for (const smokeCase of targetCases) {
       const payload = await callToolPayload(client, smokeCase.tool, smokeCase.arguments ?? {});
       validateSmokePayload(smokeCase.name, payload, smokeCase.expectation ?? {});
       process.stdout.write(`- ${smokeCase.name}: ok\n`);
     }
 
-    process.stdout.write("live smoke test passed\n");
+    process.stdout.write(PUBLIC_ONLY ? "public smoke test passed\n" : "live smoke test passed\n");
   } catch (error) {
     throw new Error(`${error instanceof Error ? error.message : String(error)}${serverLogs()}`);
   } finally {
@@ -182,6 +204,11 @@ const main = async () => {
 
 main().catch((error) => {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.stderr.write("See docs/api-auth-guide.md for credential setup and live health-check behavior.\n");
+  if (PUBLIC_ONLY) {
+    process.stderr.write("See docs/troubleshooting.md for public smoke and diagnostics guidance.\n");
+  } else {
+    process.stderr.write("See docs/api-auth-guide.md for credential setup and live health-check behavior.\n");
+    process.stderr.write("For no-credential onboarding, run: npm run test:smoke:public\n");
+  }
   process.exit(1);
 });

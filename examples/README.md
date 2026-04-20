@@ -70,6 +70,12 @@ Or run just the smoke flow after building:
 npm run test:smoke:live
 ```
 
+For credential-free onboarding:
+
+```bash
+npm run test:smoke:public
+```
+
 ## Integration Example
 
 `integration/basic-client.ts` is the recommended app-integration starting point. It connects once, caches `sg://recipes`, `sg://runtime`, `sg://playbooks`, and `sg://benchmarks`, runs one covered `sg_query` prompt, demonstrates blocked, unsupported, and failed outcomes, and then drops to direct `sg_*` tools when the caller has exact parameters. It is the current reference for sg_query completed, blocked, unsupported, and failed outcomes:

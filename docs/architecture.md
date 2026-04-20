@@ -106,7 +106,7 @@ Consequence:
 - HDB rental checks and URA development-charge lookups can route directly with extracted parameters
 - `sg://playbooks` provides bounded workflow entrypoints for common agent-builder jobs without replacing direct-tool composition
 - `sg://benchmarks` publishes latency, cache, freshness, and adoption expectations so runtime behavior stays inspectable
-- comparisons and arbitrary multi-step synthesis remain out of scope
+- only bounded two-planning-area comparisons are supported; arbitrary multi-step synthesis remains out of scope
 
 ### 4. Additive brief tools must return bounded artifacts
 
@@ -129,7 +129,7 @@ Why:
 
 Consequence:
 
-- `sg_business_dossier`, `sg_property_brief`, `sg_macro_brief`, `sg_transport_brief`, and `sg_environment_brief` are additive
+- `sg_business_dossier`, `sg_property_brief`, `sg_macro_brief`, `sg_transport_brief`, `sg_environment_brief`, and `sg_civic_brief` are additive
 - they do not replace the direct `sg_*` tools
 - they are acceptable because they produce bounded artifacts instead of hidden planning behavior
 

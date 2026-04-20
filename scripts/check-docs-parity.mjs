@@ -60,6 +60,9 @@ ensureIncludes(readmeTarget, [
   "Route Planning",
   "SingStat Table Drilldown",
   "Dataset Collection Browse",
+  "sg_civic_brief",
+  "comparisons are supported only for two-planning-area prompts",
+  "npm run test:smoke:public",
   ...familyNames,
 ]);
 ensureExcludes(readmeTarget, [
@@ -98,6 +101,8 @@ ensureIncludes("docs/architecture.md", [
   "route planning can geocode postal codes before calling `sg_onemap_route`",
   "SingStat table drilldowns can move from browse to table to time-series reads",
   "data.gov collection browsing can continue into metadata, resources, and bounded rows",
+  "only bounded two-planning-area comparisons are supported",
+  "sg_civic_brief",
   ...familyNames,
 ]);
 ensureExcludes("docs/architecture.md", [
@@ -158,6 +163,7 @@ ensureIncludes("examples/README.md", [
   "geospatial-routing.md",
   "npm run quick-start",
   "npm run test:smoke:live",
+  "npm run test:smoke:public",
   "sg://runtime",
   "sg://playbooks",
   "sg://benchmarks",

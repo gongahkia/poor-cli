@@ -318,7 +318,7 @@ The repo now has `sg://benchmarks` and a production-notes doc. The next step is 
 
 ## Priority Order
 
-1. Deepen the five additive brief artifacts, especially property and macro.
+1. Deepen the six additive brief artifacts, especially property and macro.
 2. Improve first-run credibility and live example coverage for the new sector-specific diligence workflows.
 3. Add more integration paths for non-TypeScript application developers.
 4. Make `sg_query` continuation guidance more useful.

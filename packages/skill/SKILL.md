@@ -14,7 +14,7 @@ Use this skill when an agent needs official Singapore public data through MCP wi
 The repo currently exposes 69 `sg_*` tools total across 29 official data families.
 
 - 54 direct data tools
-- 5 additive brief tools: `sg_business_dossier`, `sg_property_brief`, `sg_macro_brief`, `sg_transport_brief`, `sg_environment_brief`
+- 6 additive brief tools: `sg_business_dossier`, `sg_property_brief`, `sg_macro_brief`, `sg_transport_brief`, `sg_environment_brief`, `sg_civic_brief`
 - 8 operational helpers
 - 1 bounded preferred interface, `sg_query`
 

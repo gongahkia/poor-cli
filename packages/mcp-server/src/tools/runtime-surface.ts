@@ -13,6 +13,7 @@ export type SmokeCase = Readonly<{
   id: string;
   name: string;
   layer: "api" | "workflow";
+  authRequired: boolean;
   releaseBlocking: boolean;
   tool: string;
   arguments: Readonly<Record<string, unknown>>;
@@ -98,6 +99,7 @@ export const LIVE_API_SURFACE: readonly LiveSurfaceDefinition[] = [
       id: "api-singstat",
       name: "SingStat table read",
       layer: "api",
+      authRequired: false,
       releaseBlocking: true,
       tool: "sg_singstat_table",
       arguments: {
@@ -137,6 +139,7 @@ export const LIVE_API_SURFACE: readonly LiveSurfaceDefinition[] = [
       id: "api-mas",
       name: "MAS exchange rates",
       layer: "api",
+      authRequired: false,
       releaseBlocking: true,
       tool: "sg_mas_exchange_rates",
       arguments: {
@@ -175,6 +178,7 @@ export const LIVE_API_SURFACE: readonly LiveSurfaceDefinition[] = [
       id: "api-onemap",
       name: "OneMap geocode",
       layer: "api",
+      authRequired: true,
       releaseBlocking: true,
       tool: "sg_onemap_geocode",
       arguments: {
@@ -214,6 +218,7 @@ export const LIVE_API_SURFACE: readonly LiveSurfaceDefinition[] = [
       id: "api-ura",
       name: "URA development charges",
       layer: "api",
+      authRequired: true,
       releaseBlocking: true,
       tool: "sg_ura_dev_charges",
       arguments: {
@@ -251,6 +256,7 @@ export const LIVE_API_SURFACE: readonly LiveSurfaceDefinition[] = [
       id: "api-lta",
       name: "LTA bus arrivals",
       layer: "api",
+      authRequired: true,
       releaseBlocking: true,
       tool: "sg_lta_bus_arrivals",
       arguments: {
@@ -289,6 +295,7 @@ export const LIVE_API_SURFACE: readonly LiveSurfaceDefinition[] = [
       id: "api-datagov-datastore",
       name: "data.gov.sg datastore family",
       layer: "api",
+      authRequired: false,
       releaseBlocking: true,
       tool: "sg_hdb_resale_prices",
       arguments: {
@@ -329,9 +336,11 @@ export const LIVE_API_SURFACE: readonly LiveSurfaceDefinition[] = [
       id: "api-datagov-download",
       name: "data.gov.sg file-download family",
       layer: "api",
+      authRequired: false,
       releaseBlocking: true,
       tool: "sg_boa_architecture_firms",
       arguments: {
+        firmName: "DP ARCHITECTS PTE LTD",
         limit: 1,
         format: "json",
       },
@@ -367,6 +376,7 @@ export const LIVE_API_SURFACE: readonly LiveSurfaceDefinition[] = [
       id: "api-nea",
       name: "NEA forecast",
       layer: "api",
+      authRequired: false,
       releaseBlocking: true,
       tool: "sg_nea_forecast_2hr",
       arguments: {
@@ -384,6 +394,7 @@ export const LIVE_WORKFLOW_SMOKE_CASES: readonly SmokeCase[] = [
     id: "workflow-business",
     name: "Business dossier workflow",
     layer: "workflow",
+    authRequired: false,
     releaseBlocking: true,
     tool: "sg_business_dossier",
     arguments: {
@@ -399,6 +410,7 @@ export const LIVE_WORKFLOW_SMOKE_CASES: readonly SmokeCase[] = [
     id: "workflow-property",
     name: "Property brief workflow",
     layer: "workflow",
+    authRequired: true,
     releaseBlocking: true,
     tool: "sg_property_brief",
     arguments: {
@@ -414,6 +426,7 @@ export const LIVE_WORKFLOW_SMOKE_CASES: readonly SmokeCase[] = [
     id: "workflow-macro",
     name: "Macro brief workflow",
     layer: "workflow",
+    authRequired: false,
     releaseBlocking: true,
     tool: "sg_macro_brief",
     arguments: {
@@ -427,6 +440,7 @@ export const LIVE_WORKFLOW_SMOKE_CASES: readonly SmokeCase[] = [
     id: "workflow-transport",
     name: "Transport brief workflow",
     layer: "workflow",
+    authRequired: true,
     releaseBlocking: true,
     tool: "sg_transport_brief",
     arguments: {
@@ -440,6 +454,7 @@ export const LIVE_WORKFLOW_SMOKE_CASES: readonly SmokeCase[] = [
     id: "workflow-environment",
     name: "Environment brief workflow",
     layer: "workflow",
+    authRequired: false,
     releaseBlocking: true,
     tool: "sg_environment_brief",
     arguments: {
@@ -454,6 +469,7 @@ export const LIVE_WORKFLOW_SMOKE_CASES: readonly SmokeCase[] = [
     id: "workflow-civic",
     name: "Civic discovery flow",
     layer: "workflow",
+    authRequired: true,
     releaseBlocking: true,
     tool: "sg_query",
     arguments: {

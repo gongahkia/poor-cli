@@ -131,6 +131,7 @@ export type RuntimeCatalog = {
       readonly name: string;
       readonly tool: string;
       readonly layer: "api" | "workflow";
+      readonly authRequired: boolean;
       readonly releaseBlocking: boolean;
       readonly arguments: Readonly<Record<string, unknown>>;
       readonly expectation: Readonly<Record<string, unknown>>;
@@ -1358,6 +1359,7 @@ export const RUNTIME_CATALOG: RuntimeCatalog = {
         name: surface.smoke.name,
         tool: surface.smoke.tool,
         layer: surface.smoke.layer,
+        authRequired: surface.smoke.authRequired,
         releaseBlocking: surface.smoke.releaseBlocking,
         arguments: surface.smoke.arguments,
         expectation: surface.smoke.expectation,
@@ -1367,6 +1369,7 @@ export const RUNTIME_CATALOG: RuntimeCatalog = {
         name: caseDef.name,
         tool: caseDef.tool,
         layer: caseDef.layer,
+        authRequired: caseDef.authRequired,
         releaseBlocking: caseDef.releaseBlocking,
         arguments: caseDef.arguments,
         expectation: caseDef.expectation,
