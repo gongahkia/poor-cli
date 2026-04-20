@@ -115,6 +115,7 @@ impl WokHandler {
             "wok.close_pane" => self.remote_close_pane(&request.params),
             "wok.set_theme" => self.remote_set_theme(&request.params),
             "wok.notify" => self.remote_notify(&request.params),
+            "wok.get_failure_summary" => self.remote_get_failure_summary(&request.params),
             _ => Err(RpcError::method_not_found(format!(
                 "unknown method '{}'",
                 request.method
@@ -317,5 +318,26 @@ impl WokHandler {
             "ok": true,
             "message": message
         }))
+    }
+
+    fn remote_get_failure_summary(&self, params: &Value) -> Result<Value, RpcError> {
+        let pane_id = jsonrpc_params::extract_pane_id(params)?;
+        if !self.panes.contains_key(&pane_id) {
+            return Err(RpcError::server_error(format!("pane {pane_id} not found")));
+        }
+        let summary = self.failure_summary_for_pane(pane_id, 10);
+        Ok(Value::Array(
+            summary
+                .into_iter()
+                .map(|item| {
+                    json!({
+                        "command": item.command,
+                        "count": item.count,
+                        "last_exit_code": item.last_exit_code,
+                        "last_completed_at_ms": item.last_completed_at_ms,
+                    })
+                })
+                .collect(),
+        ))
     }
 }

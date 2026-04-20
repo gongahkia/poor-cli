@@ -335,6 +335,21 @@ struct ReplayModeState {
     snapshot_index: usize,
 }
 
+#[derive(Clone)]
+struct PendingRerunDiff {
+    baseline_block_id: u64,
+    command_text: String,
+    baseline_output: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct FailureSummaryEntry {
+    command: String,
+    count: usize,
+    last_exit_code: i32,
+    last_completed_at_ms: u64,
+}
+
 struct PaneRuntime {
     app: WokApp,
     terminal: Terminal,
@@ -354,6 +369,7 @@ struct PaneRuntime {
     daemon_last_synced_row: Option<usize>,
     inline_images: InlineImageStore,
     last_output_line_row: Option<usize>,
+    pending_rerun_diff: Option<PendingRerunDiff>,
 }
 
 const ATTACHED_DAEMON_PANE_ID: u64 = 0;
@@ -731,6 +747,7 @@ impl WokHandler {
                     daemon_last_synced_row: None,
                     inline_images: InlineImageStore::new(),
                     last_output_line_row: None,
+                    pending_rerun_diff: None,
                 };
                 self.panes.insert(pane_id, pane_runtime);
                 self.sync_owned_input_state_for_pane(pane_id);
@@ -2501,6 +2518,8 @@ impl WokHandler {
                     if let Some(entry) = completed_entry {
                         self.global_history.record_completed(entry);
                     }
+                    self.report_pending_rerun_diff(pane_id);
+                    self.update_failure_status_for_pane(pane_id, exit_code);
                     self.evaluate_triggers_for_latest_block(pane_id);
                     let payload = self.block_hook_payload(pane_id, exit_code);
                     self.run_plugin_hook("block_finished", &payload);
@@ -2585,6 +2604,73 @@ impl WokHandler {
         }
     }
 
+    fn prepare_rerun_diff_tracking(&mut self) {
+        let Some(pane) = self.active_pane_mut() else {
+            return;
+        };
+        let Some(block) = pane.app.selected_or_latest_block() else {
+            pane.pending_rerun_diff = None;
+            return;
+        };
+        if block.exit_code.is_none() || block.command_text.trim().is_empty() {
+            pane.pending_rerun_diff = None;
+            return;
+        }
+        pane.pending_rerun_diff = Some(PendingRerunDiff {
+            baseline_block_id: block.id,
+            command_text: block.command_text.trim().to_string(),
+            baseline_output: collect_block_output_lines(&pane.terminal, block),
+        });
+    }
+
+    fn report_pending_rerun_diff(&mut self, pane_id: PaneId) {
+        let Some(pane) = self.panes.get_mut(&pane_id) else {
+            return;
+        };
+        let Some(pending) = pane.pending_rerun_diff.take() else {
+            return;
+        };
+        let Some(new_block) = pane.app.block_manager.blocks.last() else {
+            return;
+        };
+        if new_block.id == pending.baseline_block_id {
+            return;
+        }
+        if new_block.command_text.trim() != pending.command_text {
+            return;
+        }
+
+        let latest_output = collect_block_output_lines(&pane.terminal, new_block);
+        let (added, removed) = diff_line_counts(&pending.baseline_output, &latest_output);
+        self.status_message = Some(format!(
+            "Rerun diff for '{}': +{} -{} lines",
+            pending.command_text, added, removed
+        ));
+    }
+
+    fn failure_summary_for_pane(&self, pane_id: PaneId, limit: usize) -> Vec<FailureSummaryEntry> {
+        let Some(pane) = self.panes.get(&pane_id) else {
+            return Vec::new();
+        };
+        summarize_failures(&pane.pane_history, limit)
+    }
+
+    fn update_failure_status_for_pane(&mut self, pane_id: PaneId, exit_code: Option<i32>) {
+        if exit_code.unwrap_or(0) == 0 {
+            return;
+        }
+        let top = self.failure_summary_for_pane(pane_id, 3);
+        if top.is_empty() {
+            return;
+        }
+        let summary = top
+            .iter()
+            .map(|item| format!("{} ({})", item.command, item.count))
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.status_message = Some(format!("Recent failures: {summary}"));
+    }
+
     fn handle_action(&mut self, action: Action) {
         if matches!(action, Action::EnterViMode) {
             self.enter_vi_mode();
@@ -2614,6 +2700,10 @@ impl WokHandler {
                 )
         }) {
             return;
+        }
+
+        if matches!(action, Action::BlockRerun) {
+            self.prepare_rerun_diff_tracking();
         }
 
         let effects = self
@@ -4828,6 +4918,73 @@ fn trigger_highlight_color_at_cell(
     None
 }
 
+fn diff_line_counts(previous: &[String], current: &[String]) -> (usize, usize) {
+    let mut previous_counts = HashMap::<String, usize>::new();
+    for line in previous {
+        *previous_counts.entry(line.clone()).or_insert(0) += 1;
+    }
+    let mut current_counts = HashMap::<String, usize>::new();
+    for line in current {
+        *current_counts.entry(line.clone()).or_insert(0) += 1;
+    }
+
+    let mut added = 0usize;
+    let mut removed = 0usize;
+    for (line, count) in &current_counts {
+        let baseline = previous_counts.get(line).copied().unwrap_or(0);
+        if *count > baseline {
+            added += count - baseline;
+        }
+    }
+    for (line, count) in &previous_counts {
+        let latest = current_counts.get(line).copied().unwrap_or(0);
+        if *count > latest {
+            removed += count - latest;
+        }
+    }
+    (added, removed)
+}
+
+fn summarize_failures(entries: &[HistoryEntry], limit: usize) -> Vec<FailureSummaryEntry> {
+    let mut grouped = HashMap::<String, FailureSummaryEntry>::new();
+    for entry in entries {
+        let exit_code = entry.exit_code.unwrap_or(0);
+        if exit_code == 0 {
+            continue;
+        }
+        let command = entry.command.trim();
+        if command.is_empty() {
+            continue;
+        }
+        let timestamp = entry.completed_at_ms.unwrap_or(entry.started_at_ms);
+        grouped
+            .entry(command.to_string())
+            .and_modify(|summary| {
+                summary.count += 1;
+                if timestamp >= summary.last_completed_at_ms {
+                    summary.last_completed_at_ms = timestamp;
+                    summary.last_exit_code = exit_code;
+                }
+            })
+            .or_insert(FailureSummaryEntry {
+                command: command.to_string(),
+                count: 1,
+                last_exit_code: exit_code,
+                last_completed_at_ms: timestamp,
+            });
+    }
+
+    let mut summaries = grouped.into_values().collect::<Vec<_>>();
+    summaries.sort_by(|left, right| {
+        right
+            .count
+            .cmp(&left.count)
+            .then(right.last_completed_at_ms.cmp(&left.last_completed_at_ms))
+    });
+    summaries.truncate(limit);
+    summaries
+}
+
 fn format_replay_age(elapsed: Duration) -> String {
     let total_seconds = elapsed.as_secs();
     let minutes = total_seconds / 60;
@@ -5275,5 +5432,35 @@ mod tests {
             daemon_sync_lag_ms: Some(15),
         };
         assert_eq!(m.summary_line(), "frames:1 panes:1 replays:0 sync_lag:15ms");
+    }
+
+    #[test]
+    fn diff_line_counts_reports_added_and_removed_rows() {
+        let previous = vec!["alpha".to_string(), "beta".to_string(), "beta".to_string()];
+        let current = vec!["beta".to_string(), "gamma".to_string(), "gamma".to_string()];
+        let (added, removed) = diff_line_counts(&previous, &current);
+        assert_eq!((added, removed), (2, 2));
+    }
+
+    #[test]
+    fn summarize_failures_groups_by_command() {
+        let mut ok = HistoryEntry::pending("cargo test", None, Some(1));
+        ok.mark_completed(Some(0), None, None);
+
+        let mut fail_one = HistoryEntry::pending("cargo test", None, Some(1));
+        fail_one.mark_completed(Some(101), None, None);
+
+        let mut fail_two = HistoryEntry::pending("npm run lint", None, Some(1));
+        fail_two.mark_completed(Some(2), None, None);
+
+        let mut fail_three = HistoryEntry::pending("cargo test", None, Some(1));
+        fail_three.mark_completed(Some(101), None, None);
+
+        let summary = summarize_failures(&[ok, fail_one, fail_two, fail_three], 5);
+        assert_eq!(summary.len(), 2);
+        assert_eq!(summary[0].command, "cargo test");
+        assert_eq!(summary[0].count, 2);
+        assert_eq!(summary[1].command, "npm run lint");
+        assert_eq!(summary[1].count, 1);
     }
 }
