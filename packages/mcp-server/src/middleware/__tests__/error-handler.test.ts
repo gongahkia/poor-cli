@@ -18,6 +18,8 @@ describe("error handler tracing", () => {
     expect(typeof contextIds["requestId"]).toBe("string");
     expect(String(contextIds["traceId"])).toMatch(UUID_PATTERN);
     expect(String(contextIds["requestId"])).toMatch(UUID_PATTERN);
+    expect(errorPayload["category"]).toBe("client_input");
+    expect(errorPayload["severity"]).toBe("low");
     expect((result.content[0] as { text: string }).text).toContain("Trace ID:");
   });
 
@@ -31,7 +33,7 @@ describe("error handler tracing", () => {
         apiName: "test-api",
         source: "test-source",
         statusCode: 503,
-        code: "UPSTREAM_DOWN",
+        code: "RETRY_EXHAUSTED",
         retryable: true,
         message: "Upstream unavailable",
       }),
@@ -39,5 +41,24 @@ describe("error handler tracing", () => {
       { contextIds },
     );
     expect(payload.contextIds).toEqual(contextIds);
+    expect(payload.category).toBe("upstream_reliability");
+    expect(payload.severity).toBe("high");
+  });
+
+  it("applies HTTP code taxonomy fallback when the upstream error code is HTTP_*", () => {
+    const payload = toToolErrorPayload(
+      new ApiError({
+        apiName: "test-api",
+        source: "test-source",
+        statusCode: 429,
+        code: "HTTP_429",
+        retryable: true,
+        message: "Too many requests",
+      }),
+      "sg_test_tool",
+    );
+    expect(payload.category).toBe("upstream_reliability");
+    expect(payload.severity).toBe("medium");
+    expect(payload.suggestedAction).toBe("Respect retry-after guidance or reduce request rate before retrying.");
   });
 });

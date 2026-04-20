@@ -21,9 +21,12 @@ const getApiKey = (): string => {
   if (key === null) {
     throw new ApiError({
       apiName: "ura",
+      source: "URA",
       statusCode: 401,
+      code: "AUTH_MISSING",
       message: "URA API key not configured. Run sg_key_set.",
       retryable: false,
+      suggestedAction: "Set SG_API_URA_KEY, or run sg_key_set with apiName=ura.",
     });
   }
   return key;

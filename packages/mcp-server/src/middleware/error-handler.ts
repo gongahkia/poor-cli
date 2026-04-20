@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createLogger, ApiError, ValidationError } from "@sg-apis/shared";
 import type { ContextIds, ToolErrorPayload, ToolResult } from "@sg-apis/shared";
+import { OPS_TAXONOMY_CATALOG } from "../ops-taxonomy.js";
 
 const logger = createLogger("error-handler");
 
@@ -21,12 +22,56 @@ const enrichCredentialAction = (source: string, statusCode?: number): string | u
   return undefined;
 };
 
+type OpsTaxonomyEntry = (typeof OPS_TAXONOMY_CATALOG.errorCodes)[number];
+
+const OPS_TAXONOMY_BY_CODE = new Map<string, OpsTaxonomyEntry>(
+  OPS_TAXONOMY_CATALOG.errorCodes.map((entry) => [entry.code, entry]),
+);
+
+const inferHttpTaxonomy = (code: string, statusCode?: number): OpsTaxonomyEntry | null => {
+  const matched = /^HTTP_(\d{3})$/.exec(code);
+  if (matched === null) {
+    return null;
+  }
+
+  const numericStatus = Number.parseInt(matched[1], 10);
+  if (numericStatus === 429) {
+    return OPS_TAXONOMY_BY_CODE.get("HTTP_429") ?? null;
+  }
+
+  if (numericStatus >= 500 || statusCode === 0) {
+    return OPS_TAXONOMY_BY_CODE.get("HTTP_5XX") ?? null;
+  }
+
+  if (numericStatus >= 400) {
+    return OPS_TAXONOMY_BY_CODE.get("HTTP_4XX") ?? null;
+  }
+
+  return null;
+};
+
+const withOpsTaxonomy = <T extends ToolErrorPayload>(payload: T): T => {
+  const matched = OPS_TAXONOMY_BY_CODE.get(payload.code) ?? inferHttpTaxonomy(payload.code, payload.statusCode);
+  if (matched === null || matched === undefined) {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    ...(payload.severity === undefined ? { severity: matched.severity } : {}),
+    ...(payload.category === undefined ? { category: matched.category } : {}),
+    ...(payload.suggestedAction === undefined ? { suggestedAction: matched.suggestedAction } : {}),
+  };
+};
+
 const formatErrorText = (payload: ToolErrorPayload): string => {
   const retryHint = payload.retryable ? "Yes" : "No";
   const lines = [
     `Tool ${payload.tool} failed.`,
     `Source: ${payload.source}`,
     `Code: ${payload.code}`,
+    ...(payload.category === undefined ? [] : [`Category: ${payload.category}`]),
+    ...(payload.severity === undefined ? [] : [`Severity: ${payload.severity}`]),
     `Retryable: ${retryHint}`,
     `Message: ${payload.message}`,
   ];
@@ -51,6 +96,8 @@ const logHandledToolError = (payload: ToolErrorPayload): void => {
     tool: payload.tool,
     source: payload.source,
     code: payload.code,
+    ...(payload.category === undefined ? {} : { category: payload.category }),
+    ...(payload.severity === undefined ? {} : { severity: payload.severity }),
     retryable: payload.retryable,
     statusCode: payload.statusCode,
     message: payload.message,
@@ -68,14 +115,15 @@ export const toToolErrorPayload = (
   tool: string,
   context: ToolErrorContext = {},
 ): ToolErrorPayload => {
-  const withContextIds = <T extends ToolErrorPayload>(payload: T): T => {
-    return context.contextIds === undefined
+  const withContextIdsAndTaxonomy = <T extends ToolErrorPayload>(payload: T): T => {
+    const withContextIds = context.contextIds === undefined
       ? payload
       : { ...payload, contextIds: context.contextIds };
+    return withOpsTaxonomy(withContextIds);
   };
 
   if (error instanceof ValidationError) {
-    return withContextIds({
+    return withContextIdsAndTaxonomy({
       source: "validation",
       tool,
       code: "VALIDATION_ERROR",
@@ -90,7 +138,7 @@ export const toToolErrorPayload = (
   if (error instanceof ApiError) {
     const credHint = enrichCredentialAction(error.source, error.statusCode);
     const action = credHint ?? error.suggestedAction;
-    return withContextIds({
+    return withContextIdsAndTaxonomy({
       source: error.source,
       tool: error.tool ?? tool,
       code: error.code,
@@ -107,7 +155,7 @@ export const toToolErrorPayload = (
     error: error instanceof Error ? error.message : String(error),
   });
 
-  return withContextIds({
+  return withContextIdsAndTaxonomy({
     source: "internal",
     tool,
     code: "INTERNAL_ERROR",

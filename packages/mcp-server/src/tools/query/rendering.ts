@@ -124,6 +124,8 @@ export const getResultErrorPayload = (result: ToolResult, tool: string): ToolErr
     tool,
     code: "TOOL_RESULT_ERROR",
     retryable: false,
+    category: "workflow_execution",
+    severity: "medium",
     message: getTextContent(result) || `${tool} returned an error result.`,
     suggestedAction: `Call ${tool} directly to inspect and correct the failing input.`,
   };

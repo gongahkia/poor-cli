@@ -24,9 +24,12 @@ export const getToken = async (): Promise<string> => {
   if (email === null || password === null) {
     throw new ApiError({
       apiName: "onemap",
+      source: "OneMap",
       statusCode: 401,
+      code: "AUTH_MISSING",
       message: "OneMap credentials not configured. Run sg_key_set.",
       retryable: false,
+      suggestedAction: "Set SG_API_ONEMAP_EMAIL and SG_API_ONEMAP_PASSWORD, or run sg_key_set for onemap_email/onemap_password.",
     });
   }
 

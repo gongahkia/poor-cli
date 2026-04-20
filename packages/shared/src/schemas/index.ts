@@ -630,6 +630,8 @@ export const ToolErrorPayloadSchema = z.object({
   tool: z.string().min(1),
   code: z.string().min(1),
   retryable: z.boolean(),
+  severity: z.enum(["high", "medium", "low"]).optional(),
+  category: z.string().min(1).optional(),
   message: z.string().min(1),
   suggestedAction: z.string().min(1).optional(),
   statusCode: z.number().int().optional(),

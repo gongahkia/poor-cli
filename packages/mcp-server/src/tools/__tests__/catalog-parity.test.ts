@@ -409,6 +409,10 @@ describe("resource catalog parity", () => {
     expect(OPS_TAXONOMY_CATALOG.errorCodes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: "VALIDATION_ERROR", retryable: false, severity: "low" }),
+        expect.objectContaining({ code: "EMPTY_RESULT", retryable: false, severity: "low" }),
+        expect.objectContaining({ code: "TRANSIT_TRACE_NOT_FOUND", retryable: false, severity: "low" }),
+        expect.objectContaining({ code: "HTTP_4XX", retryable: false, severity: "low" }),
+        expect.objectContaining({ code: "HTTP_5XX", retryable: true, severity: "high" }),
         expect.objectContaining({ code: "INTERNAL_ERROR", retryable: false, severity: "high" }),
       ]),
     );

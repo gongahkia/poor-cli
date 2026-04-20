@@ -23,6 +23,8 @@ export type ToolErrorPayload = {
   readonly tool: string;
   readonly code: string;
   readonly retryable: boolean;
+  readonly severity?: "high" | "medium" | "low";
+  readonly category?: string;
   readonly message: string;
   readonly suggestedAction?: string;
   readonly statusCode?: number;

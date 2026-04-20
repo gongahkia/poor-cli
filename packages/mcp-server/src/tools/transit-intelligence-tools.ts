@@ -1887,6 +1887,7 @@ export const handleTransitPolicyInsights = async (
 export const handleTransitPolicyReplay = async (
   params: Readonly<{ traceId: string; constraintsPatch?: Readonly<Record<string, unknown>> | undefined; format?: OutputFormat | undefined }>,
 ): Promise<ToolResult> => {
+  const requestId = randomUUID();
   const record = policyAuditRecords.find((entry) => entry.traceId === params.traceId);
   if (record === undefined) {
     return {
@@ -1898,8 +1899,15 @@ export const handleTransitPolicyReplay = async (
           tool: "sg_transit_policy_replay",
           code: "TRANSIT_TRACE_NOT_FOUND",
           retryable: false,
+          severity: "low",
+          category: "workflow_dependency",
           message: `No policy audit trace found for traceId ${params.traceId}.`,
           suggestedAction: "Call sg_transit_policy_audit first and pass a valid traceId.",
+          statusCode: 404,
+          contextIds: {
+            traceId: requestId,
+            requestId,
+          },
         },
       },
     };
