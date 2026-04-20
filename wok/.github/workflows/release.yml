@@ -5,12 +5,14 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
     name: Build (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       matrix:
         include:
@@ -73,17 +75,42 @@ jobs:
     name: Create Release
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
+          path: release-artifacts
           merge-multiple: true
 
+      - name: Install Syft
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+            | sh -s -- -b /usr/local/bin
+
+      - name: Generate repository SBOM
+        run: |
+          syft dir:. \
+            -o cyclonedx-json=release-artifacts/wok-${{ github.ref_name }}-sbom.cdx.json
+
       - name: Create checksums
-        run: sha256sum wok-* > checksums.sha256
+        run: |
+          set -euo pipefail
+          cd release-artifacts
+          find . -maxdepth 3 -type f \( -name 'wok-*' -o -name '*.deb' \) \
+            ! -name 'checksums.sha256' -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > checksums.sha256
 
       - name: Verify checksums coverage
         run: |
-          artifact_count=$(find . -maxdepth 1 -type f -name 'wok-*' ! -name 'checksums.sha256' | wc -l | tr -d ' ')
+          set -euo pipefail
+          cd release-artifacts
+          artifact_count=$(find . -maxdepth 3 -type f \( -name 'wok-*' -o -name '*.deb' \) ! -name 'checksums.sha256' | wc -l | tr -d ' ')
           checksum_count=$(wc -l < checksums.sha256 | tr -d ' ')
           test "$artifact_count" -eq "$checksum_count"
           sha256sum -c checksums.sha256
@@ -91,6 +118,7 @@ jobs:
       - name: Smoke test packaged artifacts
         run: |
           set -euo pipefail
+          cd release-artifacts
           for tarball in wok-*.tar.gz; do
             if [[ "$tarball" == *"-app.tar.gz" ]]; then
               tar tzf "$tarball" | grep -Eq '^Wok\.app/?'
@@ -107,9 +135,41 @@ jobs:
             dpkg-deb --info "$deb" >/dev/null
           done
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign checksums with keyless Sigstore
+        run: |
+          cosign sign-blob --yes \
+            --output-signature release-artifacts/checksums.sha256.sig \
+            --output-certificate release-artifacts/checksums.sha256.pem \
+            release-artifacts/checksums.sha256
+
+      - name: Verify checksum signature
+        run: |
+          cosign verify-blob \
+            --certificate release-artifacts/checksums.sha256.pem \
+            --signature release-artifacts/checksums.sha256.sig \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity "${{ github.server_url }}/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}" \
+            release-artifacts/checksums.sha256
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            release-artifacts/wok-*
+            release-artifacts/dist/linux/*.deb
+            release-artifacts/checksums.sha256
+            release-artifacts/checksums.sha256.sig
+            release-artifacts/checksums.sha256.pem
+
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            wok-*
-            checksums.sha256
+            release-artifacts/wok-*
+            release-artifacts/dist/linux/*.deb
+            release-artifacts/checksums.sha256
+            release-artifacts/checksums.sha256.sig
+            release-artifacts/checksums.sha256.pem
           generate_release_notes: true
