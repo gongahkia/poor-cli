@@ -4,6 +4,7 @@ use std::io;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use wok_app::config::WokConfig;
 
@@ -29,6 +30,9 @@ const BASH_SCRIPT: &str = include_str!("../../shell-integration/bash.sh");
 const ZSH_SCRIPT: &str = include_str!("../../shell-integration/zsh.zsh");
 const FISH_SCRIPT: &str = include_str!("../../shell-integration/fish.fish");
 const FIRST_RUN_MARKER_FILE: &str = ".first_run_complete";
+const SHELL_INSTALL_MARKER_START: &str = "# >>> wok shell integration >>>";
+const SHELL_INSTALL_MARKER_END: &str = "# <<< wok shell integration <<<";
+const SHELL_INSTALL_STATE_FILE: &str = "install_state.json";
 
 #[derive(Default)]
 struct InitStats {
@@ -47,6 +51,37 @@ struct DoctorCheck {
     label: String,
     status: CheckStatus,
     detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ShellTarget {
+    Bash,
+    Zsh,
+    Fish,
+}
+
+impl ShellTarget {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Bash => "bash",
+            Self::Zsh => "zsh",
+            Self::Fish => "fish",
+        }
+    }
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct ShellInstallState {
+    shell: String,
+    installed_at_ms: u64,
+    records: Vec<ShellInstallRecord>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct ShellInstallRecord {
+    target_path: PathBuf,
+    backup_path: Option<PathBuf>,
+    created_new: bool,
 }
 
 pub(crate) fn run_init(overwrite: bool) -> Result<(), Box<dyn Error>> {
@@ -116,6 +151,60 @@ pub(crate) fn run_reset(all: bool, yes: bool) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+pub(crate) fn run_shell_install(
+    shell_arg: Option<&str>,
+    overwrite: bool,
+) -> Result<(), Box<dyn Error>> {
+    let config_dir = WokConfig::config_dir();
+    init_at(&config_dir, overwrite)?;
+
+    let shell = resolve_shell_target(shell_arg)?;
+    let target_path = shell_startup_path(shell)?;
+    let mut record = prepare_install_target(&target_path)?;
+    let source_script = config_dir.join("shell").join(shell_script_file(shell));
+    let block = integration_block(shell, &source_script);
+    let existing = fs::read_to_string(&target_path).unwrap_or_default();
+    let updated = replace_or_append_managed_block(&existing, &block);
+    fs::write(&target_path, updated)?;
+    record.target_path = target_path.clone();
+    set_executable_if_script(&target_path)?;
+
+    let state = ShellInstallState {
+        shell: shell.as_str().to_string(),
+        installed_at_ms: unix_time_ms_now(),
+        records: vec![record],
+    };
+    save_shell_install_state(&config_dir, &state)?;
+
+    println!(
+        "Installed Wok shell wiring for {} at {}",
+        shell.as_str(),
+        target_path.display()
+    );
+    println!("Run `wok shell rollback --yes` to restore the previous file.");
+    Ok(())
+}
+
+pub(crate) fn run_shell_rollback(yes: bool) -> Result<(), Box<dyn Error>> {
+    if !yes {
+        return Err("rollback is destructive; re-run with `wok shell rollback --yes`".into());
+    }
+    let config_dir = WokConfig::config_dir();
+    let state = load_shell_install_state(&config_dir)?
+        .ok_or("no shell install state found; nothing to roll back")?;
+
+    for record in &state.records {
+        rollback_record(record)?;
+    }
+
+    let state_path = shell_install_state_path(&config_dir);
+    if state_path.exists() {
+        fs::remove_file(&state_path)?;
+    }
+    println!("Rolled back shell wiring for {}", state.shell);
+    Ok(())
+}
+
 fn print_stats(stats: &InitStats) {
     for path in &stats.created {
         println!("created {}", path.display());
@@ -126,6 +215,205 @@ fn print_stats(stats: &InitStats) {
     for path in &stats.skipped {
         println!("kept    {}", path.display());
     }
+}
+
+fn resolve_shell_target(shell_arg: Option<&str>) -> Result<ShellTarget, Box<dyn Error>> {
+    if let Some(shell) = shell_arg.map(str::trim).filter(|value| !value.is_empty()) {
+        if shell.eq_ignore_ascii_case("auto") {
+            return resolve_shell_target(None);
+        }
+        return parse_shell_target(shell).ok_or_else(|| {
+            format!("unsupported shell '{shell}'. expected one of: auto, bash, zsh, fish").into()
+        });
+    }
+
+    let default_shell = WokConfig::load().shell.to_string();
+    if let Some(target) = parse_shell_target(&default_shell) {
+        return Ok(target);
+    }
+    Ok(ShellTarget::Bash)
+}
+
+fn parse_shell_target(value: &str) -> Option<ShellTarget> {
+    match value.to_ascii_lowercase().as_str() {
+        "auto" => None,
+        "bash" => Some(ShellTarget::Bash),
+        "zsh" => Some(ShellTarget::Zsh),
+        "fish" => Some(ShellTarget::Fish),
+        _ => None,
+    }
+}
+
+fn shell_script_file(shell: ShellTarget) -> &'static str {
+    match shell {
+        ShellTarget::Bash => "bash.sh",
+        ShellTarget::Zsh => "zsh.zsh",
+        ShellTarget::Fish => "fish.fish",
+    }
+}
+
+fn shell_startup_path(shell: ShellTarget) -> Result<PathBuf, Box<dyn Error>> {
+    let home = std::env::var("HOME")
+        .map(PathBuf::from)
+        .map_err(|_| "HOME is not set; cannot resolve shell startup file")?;
+    let path = match shell {
+        ShellTarget::Bash => home.join(".bashrc"),
+        ShellTarget::Zsh => home.join(".zshrc"),
+        ShellTarget::Fish => home
+            .join(".config")
+            .join("fish")
+            .join("conf.d")
+            .join("wok.fish"),
+    };
+    Ok(path)
+}
+
+fn integration_block(shell: ShellTarget, source_script: &Path) -> String {
+    match shell {
+        ShellTarget::Fish => format!(
+            "{SHELL_INSTALL_MARKER_START}\nif test -f \"{}\"\n    source \"{}\"\nend\n{SHELL_INSTALL_MARKER_END}\n",
+            source_script.display(),
+            source_script.display()
+        ),
+        ShellTarget::Bash | ShellTarget::Zsh => format!(
+            "{SHELL_INSTALL_MARKER_START}\nif [ -f \"{}\" ]; then\n  source \"{}\"\nfi\n{SHELL_INSTALL_MARKER_END}\n",
+            source_script.display(),
+            source_script.display()
+        ),
+    }
+}
+
+fn prepare_install_target(path: &Path) -> io::Result<ShellInstallRecord> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    if path.exists() {
+        let backup_path = backup_path_for(path);
+        fs::copy(path, &backup_path)?;
+        return Ok(ShellInstallRecord {
+            target_path: path.to_path_buf(),
+            backup_path: Some(backup_path),
+            created_new: false,
+        });
+    }
+    fs::write(path, "")?;
+    Ok(ShellInstallRecord {
+        target_path: path.to_path_buf(),
+        backup_path: None,
+        created_new: true,
+    })
+}
+
+fn backup_path_for(path: &Path) -> PathBuf {
+    let mut backup = path.as_os_str().to_os_string();
+    backup.push(".wok.bak");
+    PathBuf::from(backup)
+}
+
+fn replace_or_append_managed_block(existing: &str, block: &str) -> String {
+    let start = existing.find(SHELL_INSTALL_MARKER_START);
+    let end = existing.find(SHELL_INSTALL_MARKER_END);
+    if let (Some(start_index), Some(end_index)) = (start, end) {
+        if end_index >= start_index {
+            let end_line = end_index + SHELL_INSTALL_MARKER_END.len();
+            let mut out = String::new();
+            out.push_str(&existing[..start_index]);
+            out.push_str(block);
+            out.push_str(existing[end_line..].trim_start_matches('\n'));
+            if !out.ends_with('\n') {
+                out.push('\n');
+            }
+            return out;
+        }
+    }
+
+    let mut out = existing.to_string();
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(block);
+    out
+}
+
+fn remove_managed_block(existing: &str) -> String {
+    let start = existing.find(SHELL_INSTALL_MARKER_START);
+    let end = existing.find(SHELL_INSTALL_MARKER_END);
+    if let (Some(start_index), Some(end_index)) = (start, end) {
+        if end_index >= start_index {
+            let end_line = end_index + SHELL_INSTALL_MARKER_END.len();
+            let mut out = String::new();
+            out.push_str(&existing[..start_index]);
+            out.push_str(existing[end_line..].trim_start_matches('\n'));
+            return out.trim_end().to_string() + "\n";
+        }
+    }
+    existing.to_string()
+}
+
+fn set_executable_if_script(path: &Path) -> io::Result<()> {
+    let ext = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("");
+    if ext == "sh" || ext == "zsh" || ext == "fish" {
+        set_executable(path)?;
+    }
+    Ok(())
+}
+
+fn shell_install_state_path(config_dir: &Path) -> PathBuf {
+    config_dir.join("shell").join(SHELL_INSTALL_STATE_FILE)
+}
+
+fn save_shell_install_state(config_dir: &Path, state: &ShellInstallState) -> io::Result<()> {
+    let path = shell_install_state_path(config_dir);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let payload = serde_json::to_string_pretty(state)
+        .map_err(|error| io::Error::other(format!("failed to serialize state: {error}")))?;
+    fs::write(path, payload)
+}
+
+fn load_shell_install_state(config_dir: &Path) -> io::Result<Option<ShellInstallState>> {
+    let path = shell_install_state_path(config_dir);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content = fs::read_to_string(path)?;
+    let state = serde_json::from_str::<ShellInstallState>(&content)
+        .map_err(|error| io::Error::other(format!("failed to parse install state: {error}")))?;
+    Ok(Some(state))
+}
+
+fn rollback_record(record: &ShellInstallRecord) -> io::Result<()> {
+    if let Some(backup_path) = &record.backup_path {
+        if backup_path.exists() {
+            fs::copy(backup_path, &record.target_path)?;
+            return Ok(());
+        }
+    }
+
+    if !record.target_path.exists() {
+        return Ok(());
+    }
+    let existing = fs::read_to_string(&record.target_path).unwrap_or_default();
+    let updated = remove_managed_block(&existing);
+    if record.created_new && updated.trim().is_empty() {
+        fs::remove_file(&record.target_path)?;
+        return Ok(());
+    }
+    fs::write(&record.target_path, updated)
+}
+
+fn unix_time_ms_now() -> u64 {
+    unix_time_ms(SystemTime::now())
+}
+
+fn unix_time_ms(time: SystemTime) -> u64 {
+    time.duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
 
 fn doctor_checks_at(config_dir: &Path) -> Vec<DoctorCheck> {
@@ -526,5 +814,47 @@ mod tests {
 
         let message = ensure_first_run_bootstrap_at(&dir).expect("bootstrap should succeed");
         assert!(message.is_none());
+    }
+
+    #[test]
+    fn test_replace_or_append_managed_block_replaces_existing_marked_section() {
+        let existing = format!(
+            "export PATH=$PATH\n{SHELL_INSTALL_MARKER_START}\nold\n{SHELL_INSTALL_MARKER_END}\n"
+        );
+        let replaced = replace_or_append_managed_block(&existing, "new-block\n");
+        assert!(replaced.contains("new-block"));
+        assert!(!replaced.contains("\nold\n"));
+    }
+
+    #[test]
+    fn test_remove_managed_block_strips_marker_block() {
+        let existing = format!(
+            "line1\n{SHELL_INSTALL_MARKER_START}\nline2\n{SHELL_INSTALL_MARKER_END}\nline3\n"
+        );
+        let updated = remove_managed_block(&existing);
+        assert!(updated.contains("line1"));
+        assert!(updated.contains("line3"));
+        assert!(!updated.contains(SHELL_INSTALL_MARKER_START));
+    }
+
+    #[test]
+    fn test_rollback_record_restores_backup() {
+        let dir = unique_temp_dir();
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        let target = dir.join(".zshrc");
+        fs::write(&target, "before\n").expect("target should be written");
+        let backup = backup_path_for(&target);
+        fs::copy(&target, &backup).expect("backup should be copied");
+        fs::write(&target, "after\n").expect("target should be updated");
+
+        let record = ShellInstallRecord {
+            target_path: target.clone(),
+            backup_path: Some(backup.clone()),
+            created_new: false,
+        };
+        rollback_record(&record).expect("rollback should succeed");
+
+        let restored = fs::read_to_string(&target).expect("target should be readable");
+        assert_eq!(restored, "before\n");
     }
 }

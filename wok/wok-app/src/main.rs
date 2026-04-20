@@ -139,6 +139,11 @@ enum CliCommand {
         #[arg(long, default_value_t = false)]
         yes: bool,
     },
+    /// Manage shell startup wiring for Wok integration scripts.
+    Shell {
+        #[command(subcommand)]
+        command: ShellCommand,
+    },
     /// Attach to a running named session.
     Attach {
         /// Session name.
@@ -172,6 +177,25 @@ enum CliCommand {
         /// Send as notification (no id, no response expected).
         #[arg(long, default_value_t = false)]
         notify: bool,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+enum ShellCommand {
+    /// Install shell startup wiring with backup support.
+    Install {
+        /// Target shell: auto, bash, zsh, or fish.
+        #[arg(long)]
+        shell: Option<String>,
+        /// Overwrite managed Wok integration scripts before wiring startup files.
+        #[arg(long, default_value_t = false)]
+        overwrite: bool,
+    },
+    /// Roll back the most recent `wok shell install`.
+    Rollback {
+        /// Confirm rollback without interactive prompt.
+        #[arg(long, default_value_t = false)]
+        yes: bool,
     },
 }
 

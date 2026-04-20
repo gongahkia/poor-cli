@@ -29,6 +29,17 @@ pub(crate) fn dispatch_cli_command(cli: &Cli) -> Result<CliAction, Box<dyn Error
             setup_ops::run_reset(all, yes)?;
             Ok(CliAction::ExitOk)
         }
+        Some(CliCommand::Shell { command }) => {
+            match command {
+                ShellCommand::Install { shell, overwrite } => {
+                    setup_ops::run_shell_install(shell.as_deref(), overwrite)?;
+                }
+                ShellCommand::Rollback { yes } => {
+                    setup_ops::run_shell_rollback(yes)?;
+                }
+            }
+            Ok(CliAction::ExitOk)
+        }
         Some(CliCommand::Rpc {
             method,
             params,
