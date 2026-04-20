@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   BriefArtifactSchema,
   BusinessDossierBaseSchema,
@@ -320,6 +320,12 @@ const getFirstTimestamp = (
   return null;
 };
 
+const toSignalId = (namespace: string, parts: readonly (string | number | null | undefined)[]): string => {
+  const key = parts.map((part) => String(part ?? "")).join("|");
+  const digest = createHash("sha1").update(`${namespace}|${key}`).digest("hex").slice(0, 12);
+  return `${namespace}:${digest}`;
+};
+
 const getFirstBusArrivalTimestamp = (value: unknown): string | null => {
   if (!Array.isArray(value)) {
     return null;
@@ -456,6 +462,8 @@ const buildTransportSignals = (
 
   if (params.busStopCode !== undefined) {
     signals.push({
+      signalId: toSignalId("transport-bus", [params.busStopCode, params.serviceNo ?? "all"]),
+      signalClass: "bus_eta",
       source: "bus",
       level: nextArrival === null ? "unknown" : "normal",
       headline: nextArrival === null
@@ -470,6 +478,8 @@ const buildTransportSignals = (
   }
 
   signals.push({
+    signalId: toSignalId("transport-train", [primaryTrainLine ?? "network"]),
+    signalClass: "train_alert",
     source: "train",
     level: counts.trainAlerts + counts.trainMessages > 0 ? "disrupted" : coverage.trainCoverage === "unavailable" ? "unknown" : "normal",
     headline:
@@ -485,6 +495,8 @@ const buildTransportSignals = (
   });
 
   signals.push({
+    signalId: toSignalId("transport-traffic", [primaryIncidentType ?? "all"]),
+    signalClass: "traffic_incident",
     source: "traffic",
     level: counts.trafficSignals > 0 ? "advisory" : coverage.trafficCoverage === "unavailable" ? "unknown" : "normal",
     headline:
@@ -634,7 +646,11 @@ const buildEnvironmentSignals = (
   const signals: Readonly<Record<string, unknown>>[] = [];
 
   if (primaryForecast !== undefined) {
+    const forecastAreaKey = typeof primaryForecast["area"] === "string" ? primaryForecast["area"] : "unknown";
+    const forecastTextKey = typeof primaryForecast["forecast"] === "string" ? primaryForecast["forecast"] : "unknown";
     signals.push({
+      signalId: toSignalId("environment-forecast", [forecastAreaKey, forecastTextKey]),
+      signalClass: "forecast",
       source: "forecast",
       level: thresholds.forecastRisk,
       headline: `Forecast ${String(primaryForecast["forecast"] ?? "")} for ${String(primaryForecast["area"] ?? "the requested area")}.`,
@@ -647,7 +663,10 @@ const buildEnvironmentSignals = (
   }
 
   if (primaryAirQuality !== undefined) {
+    const airRegionKey = typeof primaryAirQuality["region"] === "string" ? primaryAirQuality["region"] : "unknown";
     signals.push({
+      signalId: toSignalId("environment-air-quality", [airRegionKey]),
+      signalClass: "air_quality",
       source: "air_quality",
       level: thresholds.airQualityBand,
       headline: `PSI 24h is ${String(primaryAirQuality["psi24h"] ?? "unknown")} for ${String(primaryAirQuality["region"] ?? "the requested region")}.`,
@@ -659,7 +678,14 @@ const buildEnvironmentSignals = (
   }
 
   if (primaryRainfall !== undefined) {
+    const rainfallStationKey = typeof primaryRainfall["stationId"] === "string"
+      ? primaryRainfall["stationId"]
+      : typeof primaryRainfall["stationName"] === "string"
+        ? primaryRainfall["stationName"]
+        : "unknown";
     signals.push({
+      signalId: toSignalId("environment-rainfall", [rainfallStationKey]),
+      signalClass: "rainfall",
       source: "rainfall",
       level: thresholds.rainfallBand,
       headline: `Rainfall is ${String(primaryRainfall["value"] ?? "unknown")} ${String(primaryRainfall["unit"] ?? "")}`.trim()
@@ -735,6 +761,14 @@ const getTransportPrimaryDriver = (
     return "no current bus ETA available";
   }
   return "no active disruption signals";
+};
+
+const getTransportEscalationTier = (
+  level: "disrupted" | "advisory" | "unknown" | "normal",
+): "tier0_monitor" | "tier1_notify" | "tier2_investigate" => {
+  if (level === "disrupted") return "tier2_investigate";
+  if (level === "advisory" || level === "unknown") return "tier1_notify";
+  return "tier0_monitor";
 };
 
 const buildTrainByLine = (
@@ -832,6 +866,14 @@ const getEnvironmentPrimaryDriver = (
     return "signals unavailable";
   }
   return null;
+};
+
+const getEnvironmentEscalationTier = (
+  level: "caution" | "watch" | "clear" | "unknown",
+): "tier0_monitor" | "tier1_notify" | "tier2_investigate" => {
+  if (level === "caution") return "tier2_investigate";
+  if (level === "watch" || level === "unknown") return "tier1_notify";
+  return "tier0_monitor";
 };
 
 const toProvenance = (
@@ -1733,6 +1775,33 @@ export const handleTransportBrief = async (
     busArrivals as readonly Readonly<Record<string, unknown>>[] | null,
   );
   const primaryDriver = getTransportPrimaryDriver(opsLevel, nextArrival, primaryTrainLine, primaryIncidentType);
+  const escalationTier = getTransportEscalationTier(opsLevel);
+  const statusSignalId = toSignalId("transport-status", [focus, opsLevel, primaryTrainLine, primaryIncidentType]);
+  const actionTemplates = [
+    {
+      signalClass: "train_alert",
+      tier: escalationTier,
+      action: counts.trainSignals > 0
+        ? "Escalate to transport-ops channel and monitor new train-alert updates every 5 minutes."
+        : "Keep passive monitoring on train alerts.",
+    },
+    {
+      signalClass: "traffic_incident",
+      tier: escalationTier,
+      action: counts.trafficSignals > 0
+        ? "Notify field-ops or logistics owners about active traffic incidents."
+        : "No traffic escalation required.",
+    },
+    {
+      signalClass: "bus_eta",
+      tier: escalationTier,
+      action: params.busStopCode !== undefined
+        ? nextArrival === null
+          ? "Re-run stop-level ETA checks and verify stop code or service number."
+          : "Use current ETA as the expected passenger-facing arrival signal."
+        : "No stop-specific bus ETA requested.",
+    },
+  ] as const;
   const trainByLine = buildTrainByLine(
     trainAlerts?.alerts as unknown as readonly Readonly<Record<string, unknown>>[] ?? [],
   );
@@ -1755,7 +1824,9 @@ export const handleTransportBrief = async (
     ],
     records: {
       status: {
+        signalId: statusSignalId,
         level: opsLevel,
+        escalationTier,
         headline: opsHeadline,
         focus,
       },
@@ -1786,6 +1857,11 @@ export const handleTransportBrief = async (
       },
       ...(stop === null ? {} : { stop }),
       followups,
+      actionTemplates,
+      signalIds: {
+        status: statusSignalId,
+        signals: signals.map((signal) => signal["signalId"] ?? null).filter((value): value is string => typeof value === "string"),
+      },
       raw: {
         busArrivals: busArrivals ?? [],
         trainAlerts: trainAlerts?.alerts ?? [],
@@ -1902,6 +1978,37 @@ export const handleEnvironmentBrief = async (
     stationId: focusStationId,
   });
   const primaryDriver = getEnvironmentPrimaryDriver(opsLevel, thresholds);
+  const escalationTier = getEnvironmentEscalationTier(opsLevel);
+  const statusSignalId = toSignalId("environment-status", [focusArea, focusRegion, focusStationId, opsLevel]);
+  const actionTemplates = [
+    {
+      signalClass: "forecast",
+      tier: escalationTier,
+      action: thresholds.forecastRisk === "caution"
+        ? "Escalate weather caution to operations leads and defer exposed outdoor plans."
+        : thresholds.forecastRisk === "watch"
+          ? "Track forecast refresh and keep fallback plan ready."
+          : "No forecast-triggered escalation required.",
+    },
+    {
+      signalClass: "air_quality",
+      tier: escalationTier,
+      action: thresholds.airQualityBand === "caution"
+        ? "Issue poor-air advisory for sensitive groups and extended outdoor exposure."
+        : thresholds.airQualityBand === "watch"
+          ? "Advise moderate-air-quality precautions for prolonged activities."
+          : "No air-quality escalation required.",
+    },
+    {
+      signalClass: "rainfall",
+      tier: escalationTier,
+      action: thresholds.rainfallBand === "caution"
+        ? "Pause rainfall-sensitive operations and monitor station updates closely."
+        : thresholds.rainfallBand === "watch"
+          ? "Prepare rainfall contingency while monitoring short-interval updates."
+          : "No rainfall escalation required.",
+    },
+  ] as const;
   const forecastCoverage = forecast === null
     ? "unavailable"
     : primaryForecast === undefined
@@ -1932,7 +2039,9 @@ export const handleEnvironmentBrief = async (
     ],
     records: {
       status: {
+        signalId: statusSignalId,
         level: opsLevel,
+        escalationTier,
         headline: opsHeadline,
       },
       coverage: {
@@ -1969,6 +2078,11 @@ export const handleEnvironmentBrief = async (
         stationName: focusStation,
       },
       followups,
+      actionTemplates,
+      signalIds: {
+        status: statusSignalId,
+        signals: signals.map((signal) => signal["signalId"] ?? null).filter((value): value is string => typeof value === "string"),
+      },
       raw: {
         forecastRows: forecast ?? [],
         airQualityRows: airQuality ?? [],

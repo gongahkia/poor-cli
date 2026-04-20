@@ -598,6 +598,8 @@ describe("brief tools", () => {
     expect(payload.provenance).toHaveLength(3);
     expect(payload.summary.some((item) => item.label === "Transport status")).toBe(true);
     expect((payload.records["status"] as Record<string, unknown>)["level"]).toBe("disrupted");
+    expect((payload.records["status"] as Record<string, unknown>)["escalationTier"]).toBe("tier2_investigate");
+    expect((payload.records["status"] as Record<string, unknown>)["signalId"]).toEqual(expect.stringContaining("transport-status:"));
     expect((payload.records["coverage"] as Record<string, unknown>)["train"]).toMatchObject({
       status: "alerts_active",
       alertCount: 1,
@@ -606,6 +608,10 @@ describe("brief tools", () => {
     expect(payload.records["signals"]).toBeDefined();
     expect((payload.records["network"] as Record<string, unknown>)["trainByLine"]).toMatchObject({ NSL: 1 });
     expect(payload.records["followups"]).toBeDefined();
+    expect(payload.records["actionTemplates"]).toBeDefined();
+    expect((payload.records["signalIds"] as Record<string, unknown>)["signals"]).toEqual(
+      expect.arrayContaining([expect.stringContaining("transport-train:")]),
+    );
     expect((payload.records["stop"] as Record<string, unknown>)).toMatchObject({
       busStopCode: "83139",
       serviceNo: "851",
@@ -745,6 +751,8 @@ describe("brief tools", () => {
     expect(payload.provenance).toHaveLength(3);
     expect(payload.summary.some((item) => item.label === "Monitoring status")).toBe(true);
     expect((payload.records["status"] as Record<string, unknown>)["level"]).toBe("watch");
+    expect((payload.records["status"] as Record<string, unknown>)["escalationTier"]).toBe("tier1_notify");
+    expect((payload.records["status"] as Record<string, unknown>)["signalId"]).toEqual(expect.stringContaining("environment-status:"));
     expect((payload.records["coverage"] as Record<string, unknown>)["forecast"]).toMatchObject({
       status: "available",
       requestedArea: "Tampines",
@@ -758,6 +766,10 @@ describe("brief tools", () => {
       stationName: "Tampines",
     });
     expect(payload.records["followups"]).toBeDefined();
+    expect(payload.records["actionTemplates"]).toBeDefined();
+    expect((payload.records["signalIds"] as Record<string, unknown>)["signals"]).toEqual(
+      expect.arrayContaining([expect.stringContaining("environment-forecast:")]),
+    );
     expect((payload.records["raw"] as Record<string, unknown>)["forecastRows"]).toBeDefined();
 
     const markdownResult = await handleEnvironmentBrief({
