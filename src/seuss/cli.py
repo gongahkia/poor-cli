@@ -47,7 +47,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     inspect_parser = sub.add_parser("inspect", help="Inspect corpus and memory")
     _add_config_arg(inspect_parser)
-    inspect_parser.add_argument("mode", nargs="?", choices=["corpus", "source", "phrases"], default=None)
+    inspect_parser.add_argument(
+        "mode",
+        nargs="?",
+        choices=["corpus", "source", "phrases", "queue", "runs"],
+        default=None,
+    )
     inspect_parser.add_argument("--source", default=None)
     inspect_parser.add_argument("--limit", type=int, default=25)
 
@@ -108,6 +113,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_parser.add_argument("--suite", default="phase1")
     eval_parser.add_argument("--seed", type=int, default=None)
     eval_parser.add_argument("--output", default=None)
+    eval_parser.add_argument("--summary", action="store_true")
 
     return parser
 
@@ -179,6 +185,7 @@ def main(argv: list[str] | None = None) -> int:
                 suite=args.suite,
                 seed=args.seed,
                 output_path=Path(args.output).resolve() if args.output else None,
+                summary=args.summary,
             )
 
         parser.error("Unknown command")

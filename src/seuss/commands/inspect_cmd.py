@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 from collections import Counter
 from pathlib import Path
 
 from seuss.config import load_config, resolve_workspace
 from seuss.jsonl_store import read_jsonl
+from seuss.utils import shorten
 
 
 def _top_phrases(fragments: list[dict], limit: int) -> list[tuple[str, int]]:
@@ -34,6 +36,37 @@ def _summary(fragments: list[dict], memories: list[dict], queue: list[dict]) -> 
     for key, value in sorted(by_split.items()):
         print(f"  {key}: {value}")
 
+    return 0
+
+
+def _inspect_queue(queue: list[dict], limit: int) -> int:
+    pending = [row for row in queue if row.get("approval_status") == "pending"]
+    approved = [row for row in queue if row.get("approval_status") == "approved"]
+    rejected = [row for row in queue if row.get("approval_status") == "rejected"]
+    print(f"Queue records: {len(queue)}")
+    print(f"  pending: {len(pending)}")
+    print(f"  approved: {len(approved)}")
+    print(f"  rejected: {len(rejected)}")
+    for row in queue[-limit:]:
+        status = row.get("approval_status", "unknown")
+        print(f"{row.get('id')}  {status}  {row.get('source')}  {shorten(row.get('text', ''))}")
+    return 0
+
+
+def _inspect_runs(runs_dir: Path, limit: int) -> int:
+    if not runs_dir.exists():
+        print("Runs directory does not exist.")
+        return 0
+    files = sorted(runs_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    print(f"Run files: {len(files)}")
+    for file_path in files[:limit]:
+        row = json.loads(file_path.read_text(encoding="utf-8"))
+        metrics = row.get("metrics", {})
+        print(
+            f"{row.get('id')}  level={row.get('level')}  "
+            f"copy_hits={metrics.get('exact_copy_ngram_hits', 'n/a')}  "
+            f"repetition={metrics.get('repetition_score', 'n/a')}"
+        )
     return 0
 
 
@@ -70,5 +103,11 @@ def run_inspect(config_path: Path, mode: str | None, source: str | None, limit: 
         for phrase, count in top:
             print(f"{count:>5}  {phrase}")
         return 0
+
+    if mode == "queue":
+        return _inspect_queue(queue, limit=limit)
+
+    if mode == "runs":
+        return _inspect_runs(workspace / "runs", limit=limit)
 
     raise ValueError(f"Unknown inspect mode: {mode}")

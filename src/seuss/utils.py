@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -23,3 +24,9 @@ def shorten(text: str, limit: int = 72) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 3] + "..."
+
+
+def generate_id(prefix: str) -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    suffix = uuid.uuid4().hex[:8]
+    return f"{prefix}_{timestamp}_{suffix}"

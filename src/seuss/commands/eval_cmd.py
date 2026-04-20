@@ -8,7 +8,7 @@ from pathlib import Path
 from seuss.config import load_config, resolve_workspace
 from seuss.jugemu import exact_copy_hits, generate_text, repetition_score, tokenize_words
 from seuss.jsonl_store import read_jsonl
-from seuss.utils import now_iso, stable_hash
+from seuss.utils import generate_id, now_iso, stable_hash
 
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 PHONE_RE = re.compile(r"\+?\d[\d\-\s()]{7,}\d")
@@ -44,6 +44,7 @@ def run_eval(
     suite: str,
     seed: int | None,
     output_path: Path | None,
+    summary: bool = False,
 ) -> int:
     config = load_config(config_path)
     workspace = resolve_workspace(config, config_path)
@@ -70,6 +71,13 @@ def run_eval(
     temperature = float(generation_cfg.get("temperature", 0.8))
     exact_copy_ngram = int(eval_cfg.get("exact_copy_ngram", 12))
     anti_copy_ngram = int(jugemu_cfg.get("anti_copy_ngram", 12))
+    orders = {
+        "character": int(jugemu_cfg.get("character_order", 5)),
+        "word": int(jugemu_cfg.get("word_order", 3)),
+        "phrase": int(jugemu_cfg.get("phrase_order", 2)),
+        "sentence": int(jugemu_cfg.get("sentence_order", 1)),
+        "motif": int(jugemu_cfg.get("motif_order", 2)),
+    }
 
     prompts: list[str] = []
     for row in eval_fragments[: min(50, len(eval_fragments))]:
@@ -94,6 +102,7 @@ def run_eval(
             temperature=temperature,
             seed=chosen_seed + idx,
             anti_copy_ngram=anti_copy_ngram,
+            orders=orders,
         )
         outputs.append(result.output)
         copy_hits_total += exact_copy_hits(result.output, source_texts, exact_copy_ngram)
@@ -105,8 +114,9 @@ def run_eval(
     avg_repetition = sum(repetition_scores) / max(1, len(repetition_scores))
     privacy_leak_count = _privacy_leak_count(outputs)
 
+    eval_id = generate_id("eval")
     report = {
-        "id": f"eval_{now_iso().replace(':', '').replace('-', '')}",
+        "id": eval_id,
         "suite": suite,
         "created_at": now_iso(),
         "config_hash": f"sha256:{stable_hash(config)}",
@@ -122,6 +132,35 @@ def run_eval(
             for prompt, output in zip(prompts[:10], outputs[:10])
         ],
     }
+    thresholds = eval_cfg.get("thresholds", {})
+    checks = {
+        "persona_match_min": {
+            "operator": ">=",
+            "threshold": float(thresholds.get("persona_match_min", 0.15)),
+            "actual": report["metrics"]["persona_match_score"],
+            "passed": report["metrics"]["persona_match_score"] >= float(thresholds.get("persona_match_min", 0.15)),
+        },
+        "exact_copy_rate_max": {
+            "operator": "<=",
+            "threshold": float(thresholds.get("exact_copy_rate_max", 0.05)),
+            "actual": report["metrics"]["exact_copy_rate"],
+            "passed": report["metrics"]["exact_copy_rate"] <= float(thresholds.get("exact_copy_rate_max", 0.05)),
+        },
+        "repetition_score_max": {
+            "operator": "<=",
+            "threshold": float(thresholds.get("repetition_score_max", 0.6)),
+            "actual": report["metrics"]["repetition_score"],
+            "passed": report["metrics"]["repetition_score"] <= float(thresholds.get("repetition_score_max", 0.6)),
+        },
+        "privacy_leak_count_max": {
+            "operator": "<=",
+            "threshold": int(thresholds.get("privacy_leak_count_max", 0)),
+            "actual": report["metrics"]["privacy_leak_count"],
+            "passed": report["metrics"]["privacy_leak_count"] <= int(thresholds.get("privacy_leak_count_max", 0)),
+        },
+    }
+    report["checks"] = checks
+    report["overall_pass"] = all(check["passed"] for check in checks.values())
 
     final_output_path = output_path
     if final_output_path is None:
@@ -129,20 +168,27 @@ def run_eval(
         if not report_dir.is_absolute():
             report_dir = (config_path.parent / report_dir).resolve()
         report_dir.mkdir(parents=True, exist_ok=True)
-        final_output_path = report_dir / f"{report['id']}.json"
+        final_output_path = report_dir / f"{eval_id}.json"
     else:
         final_output_path.parent.mkdir(parents=True, exist_ok=True)
 
     final_output_path.write_text(json.dumps(report, indent=2, ensure_ascii=True), encoding="utf-8")
 
     print(f"suite={suite}")
-    print(
-        "persona_match_score="
-        f"{report['metrics']['persona_match_score']:.4f} "
-        f"exact_copy_rate={report['metrics']['exact_copy_rate']:.4f} "
-        f"repetition_score={report['metrics']['repetition_score']:.4f} "
-        f"privacy_leak_count={report['metrics']['privacy_leak_count']}"
-    )
+    print(f"eval_id={eval_id}")
+    print(f"num_samples={report['metrics']['num_samples']}")
+    print(f"persona_match_score={report['metrics']['persona_match_score']:.4f}")
+    print(f"exact_copy_rate={report['metrics']['exact_copy_rate']:.4f}")
+    print(f"repetition_score={report['metrics']['repetition_score']:.4f}")
+    print(f"privacy_leak_count={report['metrics']['privacy_leak_count']}")
+    if summary:
+        print(f"overall_pass={report['overall_pass']}")
+        for name, check in checks.items():
+            status = "PASS" if check["passed"] else "FAIL"
+            print(
+                f"{status} {name}: actual={check['actual']} "
+                f"{check['operator']} threshold={check['threshold']}"
+            )
     print(f"Report: {final_output_path}")
 
     return 0
