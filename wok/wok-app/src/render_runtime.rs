@@ -1344,12 +1344,15 @@ pub(crate) fn render_block_query_overlay(
     surface_opacity: f32,
 ) {
     let is_filter = matches!(block_query.mode, BlockQueryMode::Filter);
+    let is_diff = matches!(block_query.mode, BlockQueryMode::Diff);
     let width = if is_filter {
         (viewport.w * 0.48).clamp(280.0, 520.0)
+    } else if is_diff {
+        (viewport.w * 0.52).clamp(320.0, 640.0)
     } else {
         (viewport.w * 0.4).clamp(240.0, 420.0)
     };
-    let list_height = if is_filter {
+    let list_height = if is_filter || is_diff {
         (viewport.h * 0.42).clamp(
             font.metrics.cell_height * 4.0,
             font.metrics.cell_height * 12.0,
@@ -1395,8 +1398,17 @@ pub(crate) fn render_block_query_overlay(
     let title = match block_query.mode {
         BlockQueryMode::Find => "Find Block",
         BlockQueryMode::Filter => "Filter Block",
+        BlockQueryMode::Diff => "Diff Block",
     };
-    let header_text = if block_query.query.is_empty() {
+    let header_text = if is_diff {
+        let baseline = block_query
+            .baseline_block_id
+            .map_or_else(|| "?".to_string(), |id| id.to_string());
+        format!(
+            "{} #{} -> #{}",
+            title, baseline, block_query.target_block_id
+        )
+    } else if block_query.query.is_empty() {
         title.to_string()
     } else {
         format!("{title}: {}", block_query.query)
@@ -1434,14 +1446,95 @@ pub(crate) fn render_block_query_overlay(
         ),
     );
 
-    if !is_filter {
+    if !is_filter && !is_diff {
         return;
     }
 
     let lines_y = y + 12.0 + font.metrics.cell_height * 2.0;
     let max_chars = ((width - 24.0) / font.metrics.cell_width).floor().max(8.0) as usize;
     let max_visible_lines = filter_overlay_visible_lines(viewport, font.metrics.cell_height);
-    let current_filtered_line = block_query.current_filtered_line();
+    let current_line = block_query.current_filtered_line();
+
+    if is_diff {
+        if block_query.diff_entries.is_empty() {
+            push_text(
+                render,
+                font,
+                x + 10.0,
+                lines_y,
+                "No changed lines between these blocks",
+                with_opacity(
+                    [
+                        theme.status_bar_text.r,
+                        theme.status_bar_text.g,
+                        theme.status_bar_text.b,
+                        theme.status_bar_text.a,
+                    ],
+                    surface_opacity,
+                ),
+            );
+            return;
+        }
+
+        for (visible_idx, (entry_idx, entry)) in block_query
+            .diff_entries
+            .iter()
+            .enumerate()
+            .skip(block_query.overlay_scroll_offset)
+            .take(max_visible_lines)
+            .enumerate()
+        {
+            let row_y = lines_y + visible_idx as f32 * font.metrics.cell_height;
+            if current_line == Some(entry_idx) {
+                render.batch.push_bg_quad(
+                    x + 8.0,
+                    row_y,
+                    width - 16.0,
+                    font.metrics.cell_height,
+                    with_opacity(
+                        [
+                            theme.highlight_current_match.r,
+                            theme.highlight_current_match.g,
+                            theme.highlight_current_match.b,
+                            0.28,
+                        ],
+                        surface_opacity,
+                    ),
+                );
+            }
+
+            let (prefix, accent) = match entry.kind {
+                DiffLineKind::Added => (
+                    "+",
+                    [
+                        theme.block_success_accent.r,
+                        theme.block_success_accent.g,
+                        theme.block_success_accent.b,
+                        1.0,
+                    ],
+                ),
+                DiffLineKind::Removed => (
+                    "-",
+                    [
+                        theme.block_error_accent.r,
+                        theme.block_error_accent.g,
+                        theme.block_error_accent.b,
+                        1.0,
+                    ],
+                ),
+            };
+            let line_label = format!("{prefix} {}", truncate_overlay_text(&entry.text, max_chars));
+            push_text(
+                render,
+                font,
+                x + 10.0,
+                row_y,
+                &line_label,
+                with_opacity(accent, surface_opacity),
+            );
+        }
+        return;
+    }
 
     if filtered_lines.is_empty() {
         let empty_text = if block_query.query.is_empty() {
@@ -1475,7 +1568,7 @@ pub(crate) fn render_block_query_overlay(
         .enumerate()
     {
         let row_y = lines_y + visible_idx as f32 * font.metrics.cell_height;
-        if current_filtered_line == Some(*line_idx) {
+        if current_line == Some(*line_idx) {
             render.batch.push_bg_quad(
                 x + 8.0,
                 row_y,
@@ -1979,6 +2072,7 @@ pub(crate) fn pane_overlay_signature(
         block_query: block_query.map(|query| BlockQueryOverlaySignature {
             mode: query.mode,
             target_block_id: query.target_block_id,
+            baseline_block_id: query.baseline_block_id,
             query: query.query.clone(),
             current_match: query.current_match,
             overlay_scroll_offset: query.overlay_scroll_offset,
@@ -1992,6 +2086,11 @@ pub(crate) fn pane_overlay_signature(
                         search_match.col_end,
                     )
                 })
+                .collect(),
+            diff_entries: query
+                .diff_entries
+                .iter()
+                .map(|entry| (entry.kind, entry.text.clone()))
                 .collect(),
         }),
     }

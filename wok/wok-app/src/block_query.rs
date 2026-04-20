@@ -9,6 +9,26 @@ pub enum BlockQueryMode {
     Find,
     /// Filter a single block down to matching output lines.
     Filter,
+    /// Compare a block against its previous run and navigate changed lines.
+    Diff,
+}
+
+/// One changed line entry in block diff mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiffLineKind {
+    /// Line appears only in the latest block output.
+    Added,
+    /// Line appears only in the previous comparable block output.
+    Removed,
+}
+
+/// Changed output line rendered in block diff mode.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiffLineEntry {
+    /// Change direction for this line.
+    pub kind: DiffLineKind,
+    /// Full rendered line text.
+    pub text: String,
 }
 
 /// Active block find/filter state for one pane.
@@ -18,10 +38,14 @@ pub struct BlockQueryState {
     pub target_block_id: u64,
     /// The active query mode.
     pub mode: BlockQueryMode,
+    /// Optional baseline block id used for diff mode.
+    pub baseline_block_id: Option<u64>,
     /// The current user-entered query.
     pub query: String,
     /// All matches in block-output-relative coordinates.
     pub matches: Vec<SearchMatch>,
+    /// Changed lines for diff mode.
+    pub diff_entries: Vec<DiffLineEntry>,
     /// Index of the current match.
     pub current_match: usize,
     /// Scroll offset for the filter overlay list.
@@ -34,8 +58,10 @@ impl BlockQueryState {
         Self {
             target_block_id,
             mode,
+            baseline_block_id: None,
             query: String::new(),
             matches: Vec::new(),
+            diff_entries: Vec::new(),
             current_match: 0,
             overlay_scroll_offset: 0,
         }
@@ -46,6 +72,8 @@ impl BlockQueryState {
         self.query = query.to_string();
         self.current_match = 0;
         self.overlay_scroll_offset = 0;
+        self.baseline_block_id = None;
+        self.diff_entries.clear();
 
         if query.is_empty() {
             self.matches.clear();
@@ -53,6 +81,26 @@ impl BlockQueryState {
         }
 
         self.matches = BlockSearch::new(self.target_block_id, query, output_lines).matches;
+    }
+
+    /// Configure the overlay to show navigable line-level diff entries.
+    pub fn set_diff_entries(&mut self, baseline_block_id: u64, entries: Vec<DiffLineEntry>) {
+        self.mode = BlockQueryMode::Diff;
+        self.baseline_block_id = Some(baseline_block_id);
+        self.query.clear();
+        self.current_match = 0;
+        self.overlay_scroll_offset = 0;
+        self.diff_entries = entries;
+        self.matches = self
+            .diff_entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| SearchMatch {
+                line: index,
+                col_start: 0,
+                col_end: entry.text.chars().count(),
+            })
+            .collect();
     }
 
     /// Advance to the next match, wrapping when needed.
@@ -85,7 +133,10 @@ impl BlockQueryState {
     /// Return display text for the current match count.
     pub fn match_count_display(&self) -> String {
         if self.matches.is_empty() {
-            "No matches".to_string()
+            match self.mode {
+                BlockQueryMode::Find | BlockQueryMode::Filter => "No matches".to_string(),
+                BlockQueryMode::Diff => "No changed lines".to_string(),
+            }
         } else {
             format!("{} of {}", self.current_match + 1, self.matches.len())
         }
@@ -93,6 +144,10 @@ impl BlockQueryState {
 
     /// Return the unique matching output line indices in first-match order.
     pub fn filtered_line_indices(&self) -> Vec<usize> {
+        if matches!(self.mode, BlockQueryMode::Diff) {
+            return (0..self.diff_entries.len()).collect();
+        }
+
         let mut lines = Vec::new();
         let mut last_line = None;
 
@@ -182,5 +237,29 @@ mod tests {
         query.ensure_current_line_visible(1);
 
         assert_eq!(query.overlay_scroll_offset, 2);
+    }
+
+    #[test]
+    fn test_set_diff_entries_populates_matches() {
+        let mut query = BlockQueryState::new(BlockQueryMode::Find, 8);
+        query.set_diff_entries(
+            7,
+            vec![
+                DiffLineEntry {
+                    kind: DiffLineKind::Added,
+                    text: "new line".to_string(),
+                },
+                DiffLineEntry {
+                    kind: DiffLineKind::Removed,
+                    text: "old line".to_string(),
+                },
+            ],
+        );
+
+        assert_eq!(query.mode, BlockQueryMode::Diff);
+        assert_eq!(query.baseline_block_id, Some(7));
+        assert_eq!(query.diff_entries.len(), 2);
+        assert_eq!(query.matches.len(), 2);
+        assert_eq!(query.filtered_line_indices(), vec![0, 1]);
     }
 }

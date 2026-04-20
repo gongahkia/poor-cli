@@ -99,6 +99,7 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
             Some(Action::BlockFind)
         }
         "block_filter" | "filter_block" => Some(Action::BlockFilter),
+        "block_diff" | "diff_block" | "block_compare" => Some(Action::BlockDiff),
         "block_rerun" | "rerun_block" => Some(Action::BlockRerun),
         "zoom_in" => Some(Action::ZoomIn),
         "zoom_out" => Some(Action::ZoomOut),
@@ -181,5 +182,11 @@ mod tests {
             parse_remote_action_with_params("switch_to_tab", Some(&json!({"index": 3}))),
             Some(Action::SwitchToTab(3))
         );
+    }
+
+    #[test]
+    fn test_parse_lua_action_supports_block_diff_aliases() {
+        assert_eq!(parse_lua_action("block_diff"), Some(Action::BlockDiff));
+        assert_eq!(parse_lua_action("diff_block"), Some(Action::BlockDiff));
     }
 }

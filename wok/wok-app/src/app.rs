@@ -284,6 +284,26 @@ impl WokApp {
                     effects.push(RuntimeEffect::Status("No block available".to_string()));
                 }
             }
+            Action::BlockDiff => {
+                let Some(block_id) = self.selected_or_latest_block_id() else {
+                    effects.push(RuntimeEffect::Status("No block available".to_string()));
+                    return effects;
+                };
+                let can_diff = self.block_manager.get_block(block_id).is_some_and(|block| {
+                    block.exit_code.is_some() && !block.command_text.trim().is_empty()
+                });
+                if !can_diff {
+                    effects.push(RuntimeEffect::Status(
+                        "Only completed blocks with commands can be diffed".to_string(),
+                    ));
+                } else {
+                    self.select_block(block_id);
+                    effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenBlockQuery {
+                        mode: BlockQueryMode::Diff,
+                        target_block_id: block_id,
+                    }));
+                }
+            }
             Action::BlockRerun => {
                 let Some(block) = self.selected_or_latest_block() else {
                     effects.push(RuntimeEffect::Status("No block available".to_string()));
@@ -637,6 +657,32 @@ mod tests {
         assert_eq!(
             effects.effects,
             vec![RuntimeEffect::PtyWrite(b"cargo test\r".to_vec())]
+        );
+    }
+
+    #[test]
+    fn test_block_diff_targets_selected_or_latest_block() {
+        let mut app = WokApp::new(WokConfig::default());
+        app.handle_semantic_event(&SemanticEvent::PromptStart { row: 0 });
+        app.handle_semantic_event(&SemanticEvent::CommandStart { row: 1 });
+        app.handle_semantic_event(&SemanticEvent::CommandText {
+            row: 1,
+            text: "cargo test".to_string(),
+        });
+        app.handle_semantic_event(&SemanticEvent::OutputStart { row: 2 });
+        app.handle_semantic_event(&SemanticEvent::CommandEnd {
+            row: 3,
+            exit_code: Some(0),
+        });
+
+        let effects = app.handle_action(&Action::BlockDiff);
+
+        assert_eq!(
+            effects.effects,
+            vec![RuntimeEffect::Overlay(OverlayEffect::OpenBlockQuery {
+                mode: BlockQueryMode::Diff,
+                target_block_id: 1,
+            })]
         );
     }
 }

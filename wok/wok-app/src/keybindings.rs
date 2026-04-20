@@ -79,6 +79,8 @@ pub enum Action {
     BlockFind,
     /// Filter the selected block output down to matching lines.
     BlockFilter,
+    /// Show a diff against the previous comparable run of the selected block command.
+    BlockDiff,
     /// Re-run the selected block command in the active PTY.
     BlockRerun,
     /// Global terminal search.
@@ -381,6 +383,13 @@ impl Default for KeybindingConfig {
         );
         bindings.insert(
             KeyCombo {
+                key: KeyAction::Char('d'),
+                modifiers: pma,
+            },
+            Action::BlockDiff,
+        );
+        bindings.insert(
+            KeyCombo {
                 key: KeyAction::Char('r'),
                 modifiers: pma,
             },
@@ -638,6 +647,20 @@ mod tests {
         assert_eq!(
             config.resolve(&combo, &Context::BlockSelected),
             Some(&Action::BlockNextBookmark)
+        );
+    }
+
+    #[test]
+    fn test_block_diff_binding_exists() {
+        let config = KeybindingConfig::default();
+        let combo = KeyCombo {
+            key: KeyAction::Char('d'),
+            modifiers: platform_mod_alt(),
+        };
+
+        assert_eq!(
+            config.resolve(&combo, &Context::Terminal),
+            Some(&Action::BlockDiff)
         );
     }
 

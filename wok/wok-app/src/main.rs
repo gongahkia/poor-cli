@@ -20,7 +20,7 @@ use wok_app::action_effects::{
     ActionEffects, ClipboardEffect, OverlayEffect, RuntimeEffect, ViewportEffect, WorkspaceEffect,
 };
 use wok_app::app::{InputMode, WokApp};
-use wok_app::block_query::{BlockQueryMode, BlockQueryState};
+use wok_app::block_query::{BlockQueryMode, BlockQueryState, DiffLineEntry, DiffLineKind};
 use wok_app::command_search::{CommandSearchScope, CommandSearchState};
 use wok_app::config::{TriggerScopeConfig, WokConfig};
 use wok_app::event_loop::run_event_loop;
@@ -262,10 +262,12 @@ struct PaneOverlaySignature {
 struct BlockQueryOverlaySignature {
     mode: BlockQueryMode,
     target_block_id: u64,
+    baseline_block_id: Option<u64>,
     query: String,
     current_match: usize,
     overlay_scroll_offset: usize,
     matches: Vec<(usize, usize, usize)>,
+    diff_entries: Vec<(DiffLineKind, String)>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -1444,22 +1446,29 @@ impl WokHandler {
                         pane.app.block_query = None;
                         continue;
                     };
-                    let filtered_lines = if matches!(block_query_state.mode, BlockQueryMode::Filter)
-                    {
+                    let filtered_lines = if matches!(
+                        block_query_state.mode,
+                        BlockQueryMode::Filter | BlockQueryMode::Diff
+                    ) {
                         let max_visible_lines = filter_overlay_visible_lines(
                             pane.ui_rects.viewport,
                             self.font.metrics.cell_height,
                         );
                         block_query_state.ensure_current_line_visible(max_visible_lines);
-                        block_query_state
-                            .filtered_line_indices()
-                            .into_iter()
-                            .filter_map(|line_idx| {
-                                let absolute_row = target_block.output_start_row + line_idx;
-                                (absolute_row <= target_block.output_end_row)
-                                    .then(|| (line_idx, pane.terminal.state.row_text(absolute_row)))
-                            })
-                            .collect::<Vec<_>>()
+                        if matches!(block_query_state.mode, BlockQueryMode::Diff) {
+                            Vec::new()
+                        } else {
+                            block_query_state
+                                .filtered_line_indices()
+                                .into_iter()
+                                .filter_map(|line_idx| {
+                                    let absolute_row = target_block.output_start_row + line_idx;
+                                    (absolute_row <= target_block.output_end_row).then(|| {
+                                        (line_idx, pane.terminal.state.row_text(absolute_row))
+                                    })
+                                })
+                                .collect::<Vec<_>>()
+                        }
                     } else {
                         Vec::new()
                     };
@@ -1592,14 +1601,39 @@ impl WokHandler {
     }
 
     fn refresh_block_query_for_pane(&mut self, pane_id: PaneId) {
-        let Some((target_block_id, query)) = self.panes.get(&pane_id).and_then(|pane| {
+        let Some((target_block_id, mode, query)) = self.panes.get(&pane_id).and_then(|pane| {
             pane.app
                 .block_query
                 .as_ref()
-                .map(|state| (state.target_block_id, state.query.clone()))
+                .map(|state| (state.target_block_id, state.mode, state.query.clone()))
         }) else {
             return;
         };
+
+        if matches!(mode, BlockQueryMode::Diff) {
+            let Some((baseline_block_id, entries)) = self
+                .panes
+                .get(&pane_id)
+                .and_then(|pane| build_block_diff_for_target(pane, target_block_id))
+            else {
+                if let Some(pane) = self.panes.get_mut(&pane_id) {
+                    pane.app.block_query = None;
+                }
+                return;
+            };
+
+            if let Some(pane) = self.panes.get_mut(&pane_id) {
+                if let Some(state) = pane.app.block_query.as_mut() {
+                    if state.target_block_id == target_block_id
+                        && matches!(state.mode, BlockQueryMode::Diff)
+                    {
+                        state.set_diff_entries(baseline_block_id, entries);
+                    }
+                }
+            }
+            self.scroll_to_current_block_query_match();
+            return;
+        }
 
         let Some(output_lines) = self.panes.get(&pane_id).and_then(|pane| {
             pane.app
@@ -2693,6 +2727,7 @@ impl WokHandler {
                         | Action::BlockNextBookmark
                         | Action::BlockFind
                         | Action::BlockFilter
+                        | Action::BlockDiff
                         | Action::BlockRerun
                         | Action::SearchGlobal
                         | Action::CommandPalette
@@ -2924,24 +2959,48 @@ impl WokHandler {
                 mode,
                 target_block_id,
             } => {
-                let Some(output_lines) = self.active_pane().and_then(|pane| {
-                    pane.app
-                        .block_manager
-                        .get_block(target_block_id)
-                        .map(|block| collect_block_output_lines(&pane.terminal, block))
+                let Some(mut state) = self.active_pane().and_then(|pane| match mode {
+                    BlockQueryMode::Find | BlockQueryMode::Filter => {
+                        let output_lines = pane
+                            .app
+                            .block_manager
+                            .get_block(target_block_id)
+                            .map(|block| collect_block_output_lines(&pane.terminal, block))?;
+                        let mut state = BlockQueryState::new(mode, target_block_id);
+                        state.search("", &output_lines);
+                        Some(state)
+                    }
+                    BlockQueryMode::Diff => {
+                        let (baseline_block_id, entries) =
+                            build_block_diff_for_target(pane, target_block_id)?;
+                        let mut state = BlockQueryState::new(mode, target_block_id);
+                        state.set_diff_entries(baseline_block_id, entries);
+                        Some(state)
+                    }
                 }) else {
-                    self.status_message = Some("No block available".to_string());
+                    let reason = if matches!(mode, BlockQueryMode::Diff) {
+                        "No previous comparable block found for diff".to_string()
+                    } else {
+                        "No block available".to_string()
+                    };
+                    self.status_message = Some(reason);
                     return;
                 };
+                if matches!(mode, BlockQueryMode::Diff) {
+                    let max_visible_lines = self.active_pane().map_or(0, |pane| {
+                        filter_overlay_visible_lines(
+                            pane.ui_rects.viewport,
+                            self.font.metrics.cell_height,
+                        )
+                    });
+                    state.ensure_current_line_visible(max_visible_lines);
+                }
                 if let Some(active_pane) = self.active_pane_mut() {
                     active_pane.app.close_command_palette();
                     active_pane.app.global_search.deactivate();
                     active_pane.app.command_search = None;
                     active_pane.app.quick_select.dismiss();
-                    active_pane.app.block_query = Some(BlockQueryState::new(mode, target_block_id));
-                    if let Some(block_query) = active_pane.app.block_query.as_mut() {
-                        block_query.search("", &output_lines);
-                    }
+                    active_pane.app.block_query = Some(state);
                 }
                 if let Some(window) = &self.window {
                     self.sync_workspace_layout(window.inner_size());
@@ -3013,6 +3072,7 @@ impl WokHandler {
             let Some(block_query) = active_pane.app.block_query.as_mut() else {
                 return false;
             };
+            let can_edit_query = !matches!(block_query.mode, BlockQueryMode::Diff);
 
             match &event.action {
                 KeyAction::Escape => close_overlay = true,
@@ -3025,13 +3085,19 @@ impl WokHandler {
                     navigated = true;
                 }
                 KeyAction::Backspace
-                    if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+                    if can_edit_query
+                        && !event.modifiers.ctrl
+                        && !event.modifiers.alt
+                        && !event.modifiers.meta =>
                 {
                     block_query.query.pop();
                     query_changed = true;
                 }
                 KeyAction::Char(ch)
-                    if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+                    if can_edit_query
+                        && !event.modifiers.ctrl
+                        && !event.modifiers.alt
+                        && !event.modifiers.meta =>
                 {
                     block_query.query.push(*ch);
                     query_changed = true;
@@ -3965,6 +4031,17 @@ impl WokHandler {
         let Some(block_query) = self.active_block_query_state() else {
             return;
         };
+        if matches!(block_query.mode, BlockQueryMode::Diff) {
+            let max_visible_lines = self.active_pane().map_or(0, |pane| {
+                filter_overlay_visible_lines(pane.ui_rects.viewport, self.font.metrics.cell_height)
+            });
+            if let Some(active_pane) = self.active_pane_mut() {
+                if let Some(state) = active_pane.app.block_query.as_mut() {
+                    state.ensure_current_line_visible(max_visible_lines);
+                }
+            }
+            return;
+        }
         let Some(current_match) = block_query.current_match().cloned() else {
             return;
         };
@@ -4918,7 +4995,37 @@ fn trigger_highlight_color_at_cell(
     None
 }
 
-fn diff_line_counts(previous: &[String], current: &[String]) -> (usize, usize) {
+fn build_block_diff_for_target(
+    pane: &PaneRuntime,
+    target_block_id: u64,
+) -> Option<(u64, Vec<DiffLineEntry>)> {
+    let blocks = &pane.app.block_manager.blocks;
+    let target_index = blocks
+        .iter()
+        .position(|block| block.id == target_block_id)?;
+    let target = blocks.get(target_index)?;
+    if target.exit_code.is_none() {
+        return None;
+    }
+    let command = target.command_text.trim();
+    if command.is_empty() {
+        return None;
+    }
+
+    let baseline = blocks[..target_index]
+        .iter()
+        .rev()
+        .find(|block| block.exit_code.is_some() && block.command_text.trim() == command)?;
+
+    let baseline_output = collect_block_output_lines(&pane.terminal, baseline);
+    let target_output = collect_block_output_lines(&pane.terminal, target);
+    Some((
+        baseline.id,
+        diff_line_entries(&baseline_output, &target_output),
+    ))
+}
+
+fn diff_line_entries(previous: &[String], current: &[String]) -> Vec<DiffLineEntry> {
     let mut previous_counts = HashMap::<String, usize>::new();
     for line in previous {
         *previous_counts.entry(line.clone()).or_insert(0) += 1;
@@ -4928,21 +5035,57 @@ fn diff_line_counts(previous: &[String], current: &[String]) -> (usize, usize) {
         *current_counts.entry(line.clone()).or_insert(0) += 1;
     }
 
-    let mut added = 0usize;
-    let mut removed = 0usize;
-    for (line, count) in &current_counts {
+    let mut remaining_added = HashMap::<String, usize>::new();
+    for (line, current_count) in &current_counts {
         let baseline = previous_counts.get(line).copied().unwrap_or(0);
-        if *count > baseline {
-            added += count - baseline;
+        if *current_count > baseline {
+            remaining_added.insert(line.clone(), current_count - baseline);
         }
     }
-    for (line, count) in &previous_counts {
+
+    let mut remaining_removed = HashMap::<String, usize>::new();
+    for (line, previous_count) in &previous_counts {
         let latest = current_counts.get(line).copied().unwrap_or(0);
-        if *count > latest {
-            removed += count - latest;
+        if *previous_count > latest {
+            remaining_removed.insert(line.clone(), previous_count - latest);
         }
     }
-    (added, removed)
+
+    let mut entries = Vec::new();
+    for line in current {
+        if let Some(remaining) = remaining_added.get_mut(line) {
+            if *remaining > 0 {
+                entries.push(DiffLineEntry {
+                    kind: DiffLineKind::Added,
+                    text: line.clone(),
+                });
+                *remaining -= 1;
+            }
+        }
+    }
+    for line in previous {
+        if let Some(remaining) = remaining_removed.get_mut(line) {
+            if *remaining > 0 {
+                entries.push(DiffLineEntry {
+                    kind: DiffLineKind::Removed,
+                    text: line.clone(),
+                });
+                *remaining -= 1;
+            }
+        }
+    }
+
+    entries
+}
+
+fn diff_line_counts(previous: &[String], current: &[String]) -> (usize, usize) {
+    diff_line_entries(previous, current).into_iter().fold(
+        (0usize, 0usize),
+        |(added, removed), entry| match entry.kind {
+            DiffLineKind::Added => (added + 1, removed),
+            DiffLineKind::Removed => (added, removed + 1),
+        },
+    )
 }
 
 fn summarize_failures(entries: &[HistoryEntry], limit: usize) -> Vec<FailureSummaryEntry> {
@@ -5078,6 +5221,7 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::BlockNextBookmark => "block_next_bookmark".to_string(),
         Action::BlockFind => "block_find".to_string(),
         Action::BlockFilter => "block_filter".to_string(),
+        Action::BlockDiff => "block_diff".to_string(),
         Action::BlockRerun => "block_rerun".to_string(),
         Action::SearchGlobal => "search_global".to_string(),
         Action::EnterViMode => "enter_vi_mode".to_string(),
@@ -5440,6 +5584,21 @@ mod tests {
         let current = vec!["beta".to_string(), "gamma".to_string(), "gamma".to_string()];
         let (added, removed) = diff_line_counts(&previous, &current);
         assert_eq!((added, removed), (2, 2));
+    }
+
+    #[test]
+    fn diff_line_entries_marks_added_then_removed_lines() {
+        let previous = vec!["same".to_string(), "drop".to_string()];
+        let current = vec!["same".to_string(), "add".to_string(), "add".to_string()];
+        let entries = diff_line_entries(&previous, &current);
+
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].kind, DiffLineKind::Added);
+        assert_eq!(entries[0].text, "add");
+        assert_eq!(entries[1].kind, DiffLineKind::Added);
+        assert_eq!(entries[1].text, "add");
+        assert_eq!(entries[2].kind, DiffLineKind::Removed);
+        assert_eq!(entries[2].text, "drop");
     }
 
     #[test]
