@@ -90,4 +90,16 @@ npx tsx examples/integration/basic-client.ts
 python3 examples/integration/basic-client.py
 ```
 
+Production templates:
+
+- `integration/backend-worker-template.ts` for queue or job-runner style execution with explicit blocked/unsupported/failed branching.
+- `integration/ui-state-template.ts` for frontend state adapters around `sg_query` status contracts.
+- `integration/scheduled-monitor-template.ts` for periodic transport/environment monitoring with escalation tiers.
+
+Template smoke checks (CI and local):
+
+```bash
+npm run test:smoke:templates
+```
+
 Use the prompts in the example files below once the live smoke path passes. The repo keeps regression fixtures under internal test paths, not in the public examples surface.

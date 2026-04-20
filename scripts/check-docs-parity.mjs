@@ -154,6 +154,7 @@ ensureIncludes("docs/agent-builder-quickstart.md", [
   "sg_singstat_browse",
   "sg_datagov_browse",
   "npm run diagnostics",
+  "npm run test:smoke:templates",
   "docs/troubleshooting.md",
 ]);
 
@@ -166,12 +167,14 @@ ensureIncludes("examples/README.md", [
   "npm run quick-start",
   "npm run test:smoke:live",
   "npm run test:smoke:public",
+  "npm run test:smoke:templates",
   "sg://runtime",
   "sg://playbooks",
   "sg://benchmarks",
   "failed outcomes",
   "sg_query completed, blocked, unsupported, and failed outcomes",
   "basic-client.py",
+  "scheduled-monitor-template.ts",
 ]);
 
 ensureIncludes("docs/production-notes.md", [
