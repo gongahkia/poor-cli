@@ -611,6 +611,7 @@ Useful follow-up commands:
 - `npm run test:smoke:live`
 - `npm run test:smoke:public`
 - `npm run diagnostics`
+- `npm run kpis:dashboard`
 - `npm run demo:mcp -- transport`
 - `npm run test:smoke:packaging`
 - `npm run test:smoke:registry`

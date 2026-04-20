@@ -40,6 +40,11 @@ jobs:
         env:
           SG_APIS_LOG_LEVEL: error
 
+      - name: Generate KPI dashboard artifact
+        run: npm run kpis:dashboard -- --benchmark artifacts/benchmarks/latest.json --ecosystem artifacts/ecosystem/latest.json --output artifacts/operations/latest.json --history-dir artifacts/operations/history
+        env:
+          SG_APIS_LOG_LEVEL: error
+
       - name: Upload benchmark snapshot artifact
         uses: actions/upload-artifact@v4
         with:
@@ -52,4 +57,18 @@ jobs:
         with:
           name: benchmark-evidence-history-${{ github.run_id }}
           path: artifacts/benchmarks/history/
+          retention-days: 90
+
+      - name: Upload KPI dashboard artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kpi-dashboard-latest
+          path: artifacts/operations/latest.json
+          retention-days: 90
+
+      - name: Upload KPI dashboard history artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kpi-dashboard-history-${{ github.run_id }}
+          path: artifacts/operations/history/
           retention-days: 90

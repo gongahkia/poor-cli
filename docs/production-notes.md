@@ -51,6 +51,13 @@ Precedence rule: when both are set, `SG_APIS_TOOLSETS` wins and `SG_APIS_TOOL_PR
 
 The CI workflow uploads both artifacts with retention for longitudinal SLO tracking.
 
+`npm run kpis:dashboard` writes:
+
+- `artifacts/operations/latest.json` (current KPI dashboard snapshot)
+- `artifacts/operations/history/<timestamp>.json` (history for trend comparisons)
+
+The dashboard consolidates installability, SLO posture, and ecosystem signal availability into one machine-readable artifact.
+
 Protected-resource metadata is served at `/.well-known/oauth-protected-resource/mcp`.
 
 ## Secure Default Deployment Pattern

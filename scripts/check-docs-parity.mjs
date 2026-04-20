@@ -61,6 +61,7 @@ ensureIncludes(readmeTarget, [
   "docs/audit-retention-policy.md",
   "docs/troubleshooting.md",
   "npm run diagnostics",
+  "npm run kpis:dashboard",
   "Route Planning",
   "SingStat Table Drilldown",
   "Dataset Collection Browse",
@@ -189,6 +190,7 @@ ensureIncludes("docs/production-notes.md", [
   "sg://runtime",
   "sg://benchmarks",
   "npm run diagnostics",
+  "npm run kpis:dashboard",
   "SG_APIS_AUDIT_RETENTION_SEC",
 ]);
 

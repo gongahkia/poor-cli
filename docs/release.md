@@ -53,6 +53,14 @@ Confirm:
 - `docs/governance-checklist.md` and `docs/deprecation-policy.md` are current.
 - quarterly reporting template and known-issues notes are current for the release window.
 
+Generate release-window evidence artifacts:
+
+```bash
+npm run benchmarks:snapshot
+npm run ecosystem:snapshot
+npm run kpis:dashboard
+```
+
 6. Run the live validation pass:
 
 ```bash
@@ -121,6 +129,11 @@ CI also publishes benchmark evidence as:
 - `artifacts/benchmarks/history/<timestamp>.json`
 
 Use these to track SLO trends across releases.
+
+CI also publishes KPI dashboard evidence as:
+
+- `artifacts/operations/latest.json`
+- `artifacts/operations/history/<timestamp>.json`
 
 ## Post-Release Checks
 
