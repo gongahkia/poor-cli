@@ -8,7 +8,7 @@ Use the catalog resources before you build prompt routing logic:
 - `sg://tools`: direct tool inventory and schemas
 - `sg://workflows`: bounded workflow entrypoints and examples
 - `sg://recipes`: common prompt shapes mapped to the preferred entrypoint and fallback tools
-- `sg://runtime`: auth dependencies, credential-source rules, timeout/cache policy, health coverage, and `sg_query` status semantics
+- `sg://runtime`: auth dependencies, credential-source rules, toolset profile presets, timeout/cache policy, health coverage, and `sg_query` status semantics
 - `sg://playbooks`: grouped workflow combinations for relocation, diligence, and social-support style agents
 - `sg://benchmarks`: latency, cache-tier, freshness, and credibility expectations for the strongest workflows
 

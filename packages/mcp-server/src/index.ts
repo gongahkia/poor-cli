@@ -8,13 +8,12 @@ import { closeCache } from "./middleware/cache-middleware.js";
 import { createServerInstance } from "./server-factory.js";
 import { artifactStore } from "./tools/artifacts.js";
 import type { ToolSet } from "./tools/tool-definition.js";
+import { resolveEnabledToolsets } from "./tools/toolset-profiles.js";
 
 type TransportMode = "stdio" | "http";
 
 const logger = createLogger("server");
 const SHUTDOWN_TIMEOUT = 5000;
-const ALL_TOOLSETS = ["public", "briefs", "query", "health", "ops", "diligence", "property"] as const satisfies readonly ToolSet[];
-
 const readOption = (name: string): string | undefined => {
   const direct = process.argv.find((arg) => arg.startsWith(`--${name}=`));
   if (direct !== undefined) {
@@ -47,25 +46,13 @@ const parsePort = (): number => {
 };
 
 const parseToolsets = (transportMode: TransportMode): ReadonlySet<ToolSet> => {
-  const configured = readOption("toolsets") ?? process.env["SG_APIS_TOOLSETS"];
-  if (configured === undefined || configured.trim() === "") {
-    return new Set(
-      transportMode === "http"
-        ? (["public", "briefs", "query", "health"] as const)
-        : ALL_TOOLSETS,
-    );
-  }
-
-  const toolsets = configured
-    .split(",")
-    .map((value) => value.trim())
-    .filter((value): value is ToolSet => ALL_TOOLSETS.includes(value as ToolSet));
-
-  if (toolsets.length === 0) {
-    throw new Error(`No valid toolsets found in "${configured}".`);
-  }
-
-  return new Set(toolsets);
+  const configuredToolsets = readOption("toolsets") ?? process.env["SG_APIS_TOOLSETS"];
+  const configuredProfile = readOption("tool-profile") ?? process.env["SG_APIS_TOOL_PROFILE"];
+  return resolveEnabledToolsets({
+    transportMode,
+    ...(configuredToolsets === undefined ? {} : { configuredToolsets }),
+    ...(configuredProfile === undefined ? {} : { configuredProfile }),
+  });
 };
 
 const parseHttpAuthMode = (host: string): HttpAuthMode => {

@@ -28,6 +28,7 @@ const {
   API_CATALOG,
   RECIPE_CATALOG,
   RESOURCE_URIS,
+  RUNTIME_CATALOG,
   TOOL_CATALOG,
   WORKFLOW_CATALOG,
 } = await import(pathToFileURL(catalogDistPath).href);
@@ -69,6 +70,7 @@ for (const recipe of RECIPE_CATALOG) {
 
 const requiredResourceKeys = [
   "apis",
+  "opsTaxonomy",
   "tools",
   "workflows",
   "recipes",
@@ -79,6 +81,14 @@ const requiredResourceKeys = [
 for (const key of requiredResourceKeys) {
   const uri = RESOURCE_URIS[key];
   assert(typeof uri === "string" && uri.startsWith("sg://"), `RESOURCE_URIS.${key} must be an sg:// URI.`);
+}
+
+assert(Array.isArray(RUNTIME_CATALOG.toolsetProfiles), "RUNTIME_CATALOG.toolsetProfiles must be an array.");
+assert(RUNTIME_CATALOG.toolsetProfiles.length >= 4, "RUNTIME_CATALOG.toolsetProfiles must expose all profile presets.");
+for (const profile of RUNTIME_CATALOG.toolsetProfiles) {
+  assert(typeof profile.profile === "string" && profile.profile.length > 0, "toolset profile must include profile name.");
+  assert(typeof profile.intent === "string" && profile.intent.length > 0, `toolset profile ${profile.profile} must include intent.`);
+  assert(Array.isArray(profile.toolsets) && profile.toolsets.length > 0, `toolset profile ${profile.profile} must include toolsets.`);
 }
 
 const summary = {

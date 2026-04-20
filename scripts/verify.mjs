@@ -33,6 +33,7 @@ runNodeScript("server metadata parity", "./scripts/check-server-metadata.mjs");
 runNodeScript("live surface check", "./scripts/check-live-surface.mjs");
 runNodeScript("openapi parity", "./scripts/check-openapi.mjs");
 runNodeScript("docs parity", "./scripts/check-docs-parity.mjs");
+run("profile smoke", ["run", "test:smoke:profiles"], testEnv);
 run("test", ["test"], testEnv);
 
 if (process.env.SG_APIS_SKIP_PACKAGING_SMOKE === "1") {

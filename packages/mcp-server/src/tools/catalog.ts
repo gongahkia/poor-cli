@@ -2,6 +2,7 @@ import type { ToolCatalogEntry } from "./tool-definition.js";
 import { toToolCatalogEntry } from "./tool-definition.js";
 import { ALL_TOOL_DEFINITIONS } from "./tool-set.js";
 import { LIVE_API_SURFACE, LIVE_WORKFLOW_SMOKE_CASES, RELEASE_BLOCKING_COMMANDS } from "./runtime-surface.js";
+import { TOOLSET_PROFILE_CATALOG } from "./toolset-profiles.js";
 
 export type ApiCatalogEntry = {
   readonly name: string;
@@ -65,6 +66,11 @@ export type PlaybookCatalogEntry = {
 };
 
 export type RuntimeCatalog = {
+  readonly toolsetProfiles: readonly {
+    readonly profile: string;
+    readonly intent: string;
+    readonly toolsets: readonly string[];
+  }[];
   readonly liveSurface: readonly {
     readonly api: string;
     readonly classification: string;
@@ -1205,6 +1211,11 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
 ];
 
 export const RUNTIME_CATALOG: RuntimeCatalog = {
+  toolsetProfiles: TOOLSET_PROFILE_CATALOG.map((entry) => ({
+    profile: entry.profile,
+    intent: entry.intent,
+    toolsets: [...entry.toolsets],
+  })),
   liveSurface: LIVE_API_SURFACE.map((surface) => ({
     api: surface.api,
     classification: surface.classification,

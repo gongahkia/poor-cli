@@ -184,6 +184,22 @@ SG_APIS_TOOLSETS=public,briefs,query,health,ops \
 node packages/mcp-server/dist/index.js --transport http
 ```
 
+Or use canonical least-privilege presets:
+
+```bash
+SG_APIS_TOOL_PROFILE=diligence \
+node packages/mcp-server/dist/index.js --transport http
+```
+
+Supported profiles:
+
+- `public` => `public,briefs,query,health`
+- `diligence` => `public,query,health,diligence`
+- `property` => `public,query,health,property`
+- `ops` => `public,query,health,ops`
+
+If both `SG_APIS_TOOLSETS` and `SG_APIS_TOOL_PROFILE` are set, `SG_APIS_TOOLSETS` takes precedence.
+
 HTTP auth modes:
 
 - `none`: local development and localhost-only binds
@@ -334,7 +350,7 @@ Dynamic discovery is also available through resource templates:
 - `sg://workflows/{id}`
 - `sg://recipes/{id}`
 
-Prompt discovery is now exposed directly over MCP as `recipe-*` and `playbook-*` prompts backed by the recipe and playbook catalogs. `sg://recipes` is still the fastest way to see which natural-language prompt shapes already map cleanly to `sg_query` versus direct fallback tools. `sg://runtime` exposes the machine-readable trust layer for auth dependencies, credential-source rules, timeouts, cache tiers, retry policy, health coverage, and the `planned | completed | blocked | unsupported | failed` query contract. `sg://playbooks` groups the strongest workflow combinations by agent job, and `sg://benchmarks` exposes adoption-grade latency, cache-tier, freshness, and credibility expectations for the headline workflows.
+Prompt discovery is now exposed directly over MCP as `recipe-*` and `playbook-*` prompts backed by the recipe and playbook catalogs. `sg://recipes` is still the fastest way to see which natural-language prompt shapes already map cleanly to `sg_query` versus direct fallback tools. `sg://runtime` exposes the machine-readable trust layer for auth dependencies, credential-source rules, toolset profile presets, timeouts, cache tiers, retry policy, health coverage, and the `planned | completed | blocked | unsupported | failed` query contract. `sg://playbooks` groups the strongest workflow combinations by agent job, and `sg://benchmarks` exposes adoption-grade latency, cache-tier, freshness, and credibility expectations for the headline workflows.
 
 Tracked remote registry metadata currently uses the same placeholder hostname used throughout the docs:
 

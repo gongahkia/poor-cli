@@ -1,30 +1,23 @@
 #!/usr/bin/env node
 // REST gateway: exposes sg_* tools as HTTP POST endpoints
 // usage: node packages/mcp-server/dist/rest-gateway.js
-// env: PORT (default 3000), SG_APIS_TOOLSETS (default public,briefs,query,health)
+// env: PORT (default 3000), SG_APIS_TOOLSETS, SG_APIS_TOOL_PROFILE (default public profile)
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { createLogger } from "@sg-apis/shared";
 import { ALL_TOOL_DEFINITIONS } from "./tools/tool-set.js";
 import { isToolEnabled } from "./tools/tool-metadata.js";
-import type { ToolSet } from "./tools/tool-definition.js";
-
 const PORT = Number(process.env["PORT"] ?? 3000);
 const logger = createLogger("rest-gateway");
+import { resolveEnabledToolsets } from "./tools/toolset-profiles.js";
 
-const DEFAULT_TOOLSETS: readonly ToolSet[] = ["public", "briefs", "query", "health"];
-const ALL_TOOLSETS: readonly ToolSet[] = ["public", "briefs", "query", "health", "ops", "diligence", "property"];
-
-const parseToolsets = (): ReadonlySet<ToolSet> => {
-  const configured = process.env["SG_APIS_TOOLSETS"];
-  if (configured === undefined || configured.trim() === "") {
-    return new Set(DEFAULT_TOOLSETS);
-  }
-  const toolsets = configured.split(",").map((v) => v.trim()).filter((v): v is ToolSet => (ALL_TOOLSETS as readonly string[]).includes(v));
-  return toolsets.length > 0 ? new Set(toolsets) : new Set(DEFAULT_TOOLSETS);
-};
-
-const enabledToolsets = parseToolsets();
+const configuredToolsets = process.env["SG_APIS_TOOLSETS"];
+const configuredProfile = process.env["SG_APIS_TOOL_PROFILE"];
+const enabledToolsets = resolveEnabledToolsets({
+  transportMode: "http",
+  ...(configuredToolsets === undefined ? {} : { configuredToolsets }),
+  ...(configuredProfile === undefined ? {} : { configuredProfile }),
+});
 const enabledTools = ALL_TOOL_DEFINITIONS.filter((t) => isToolEnabled(t, enabledToolsets));
 const toolMap = new Map(enabledTools.map((t) => [t.name, t]));
 
