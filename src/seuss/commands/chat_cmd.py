@@ -124,8 +124,20 @@ def run_chat(
             anti_copy_ngram=anti_copy_ngram,
             orders=orders,
         )
+        if not result.output.strip():
+            result = generate_text(
+                level=chosen_level,
+                prompt="",
+                fragments=generation_fragments,
+                max_tokens=chosen_max_tokens,
+                temperature=chosen_temp,
+                seed=base_seed + turn + 1,
+                anti_copy_ngram=anti_copy_ngram,
+                orders=orders,
+            )
 
-        print(f"assistant> {result.output}")
+        assistant_text = result.output.strip() or "..."
+        print(f"assistant> {assistant_text}")
 
         if save:
             run_id = f"run_{now_iso().replace(':', '').replace('-', '')}_{uuid.uuid4().hex[:8]}"
@@ -135,7 +147,7 @@ def run_chat(
                 "turn": turn,
                 "prompt": user_text,
                 "effective_prompt": effective_prompt,
-                "output": result.output,
+                "output": assistant_text,
                 "level": result.level,
                 "config_hash": f"sha256:{stable_hash(config)}",
                 "seed": base_seed + turn,

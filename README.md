@@ -22,6 +22,8 @@ seuss ingest --path ../some/relative/path/to/file.md
 seuss ingest --path ../some/relative/path/to/docs_dir
 seuss inspect
 seuss generate --prompt "I think"
+seuss chat
+seuss chat --use-persona --refresh-persona-every 1
 seuss generate --prompt "I think" --use-persona
 seuss generate --prompt "I think" --use-persona --persona-path ./.seuss/memory/persona_profile.json
 seuss eval --summary
