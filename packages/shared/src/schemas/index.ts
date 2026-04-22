@@ -897,6 +897,32 @@ export const StbVisitorStatsSchema = z.object({
   format: z.enum(["json", "markdown", "csv"]).optional(),
 }).strict();
 
+const GovFeedIdSchema = z.enum([
+  "nea_news_updates",
+  "nea_tender_notices",
+  "nea_upcoming_events",
+  "weather_2hr_forecast",
+  "weather_24hr_forecast",
+  "weather_4day_forecast",
+  "weather_heavy_rain",
+  "sfa_newsroom",
+  "sfa_media_releases",
+  "sfa_food_alerts",
+  "sfa_circulars",
+]);
+
+export const GovFeedCatalogSchema = z.object({
+  family: z.enum(["all", "nea", "weather", "sfa"]).optional(),
+  format: z.enum(["json", "markdown", "csv"]).optional(),
+}).strict();
+
+export const GovFeedItemsSchema = z.object({
+  feedId: GovFeedIdSchema,
+  limit: z.number().int().positive().max(100).optional(),
+  keyword: z.string().min(1).optional(),
+  format: z.enum(["json", "markdown", "csv"]).optional(),
+}).strict();
+
 export const QuerySchema = z.object({
   query: z.string().min(1),
   format: OutputFormatSchema.optional(),

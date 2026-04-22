@@ -2,7 +2,7 @@
 
 ## Scope First
 
-The repo currently prioritizes depth and contract honesty across 30 official data families, with `sg_query` acting as a bounded preferred interface and seven additive brief tools creating the main user-facing artifacts.
+The repo currently prioritizes depth and contract honesty across 31 official data families, with `sg_query` acting as a bounded preferred interface and seven additive brief tools creating the main user-facing artifacts.
 
 Before adding a new family, ask whether the user goal is better served by:
 
@@ -12,7 +12,7 @@ Before adding a new family, ask whether the user goal is better served by:
 
 ## Current Public Shape
 
-- 71 direct data tools across 30 data families
+- 73 direct data tools across 31 data families
 - 7 additive brief tools
 - 17 operational tools
 - 1 health check tool

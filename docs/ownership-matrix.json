@@ -127,6 +127,11 @@
       "backupOwner": "maintainer:governance"
     },
     {
+      "name": "Government RSS Feeds",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
       "name": "NParks",
       "primaryOwner": "maintainer:data-surface",
       "backupOwner": "maintainer:governance"

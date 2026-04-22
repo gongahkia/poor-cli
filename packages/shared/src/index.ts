@@ -123,6 +123,8 @@ export {
   PubWaterLevelsSchema,
   MomLabourStatsSchema,
   StbVisitorStatsSchema,
+  GovFeedCatalogSchema,
+  GovFeedItemsSchema,
   HealthCheckSchema,
   KeySetSchema,
   KeyListSchema,

@@ -10,7 +10,7 @@ Accepted for the current product shape.
 
 ## Context
 
-This repo is not a general Singapore analyst copilot. It is a tool-first MCP server for agent builders who need reliable, explicit interfaces over 30 official data families.
+This repo is not a general Singapore analyst copilot. It is a tool-first MCP server for agent builders who need reliable, explicit interfaces over 31 official data families.
 
 The product boundary is:
 
@@ -36,7 +36,7 @@ Consequence:
 - new scope is added with honest direct tools first
 - additive briefs are allowed only when they return a bounded artifact, not hidden orchestration
 
-### 2. The repo goes deep on 30 official data families
+### 2. The repo goes deep on 31 official data families
 
 The current families are:
 
@@ -64,6 +64,7 @@ The current families are:
 - MOH Healthcare
 - HSA
 - SFA
+- Government RSS Feeds
 - NParks
 - PUB
 - MOM
@@ -73,7 +74,7 @@ The current families are:
 
 Why:
 
-- together they cover macro, finance, location, property, transport, environment, housing, dataset discovery, business diligence, procurement, civic amenities, education, healthcare, food safety, parks, water, labour, and tourism
+- together they cover macro, finance, location, property, transport, environment, housing, dataset discovery, business diligence, procurement, civic amenities, education, healthcare, food safety, official announcements/alerts, parks, water, labour, and tourism
 - HDB, CEA, BCA, BOA, HSA, HLB, ACRA, the civic directories, and the later no-auth families deepen coverage without adding more credential surfaces (all route through data.gov.sg or the same no-auth file-download path)
 - every new upstream multiplies auth, rate-limit, schema, and support cost
 

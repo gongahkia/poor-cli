@@ -12,13 +12,14 @@ describe("trace lookup tools", () => {
   });
 
   it("returns the matching invocation for sg_trace_lookup", async () => {
+    const finishedAt = new Date().toISOString();
     recordToolInvocationAudit({
       traceId: "11111111-1111-4111-8111-111111111111",
       requestId: "22222222-2222-4222-8222-222222222222",
       tool: "sg_config_get",
       status: "success",
-      startedAt: "2026-04-20T08:00:00.000Z",
-      finishedAt: "2026-04-20T08:00:00.010Z",
+      startedAt: finishedAt,
+      finishedAt,
       durationMs: 10,
     });
 

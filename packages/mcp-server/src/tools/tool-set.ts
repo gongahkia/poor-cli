@@ -9,6 +9,7 @@ import { configToolDefinitions } from "./config-tools.js";
 import { datagovToolDefinitions } from "./datagov-tools.js";
 import { ecdaToolDefinitions } from "./ecda-tools.js";
 import { gebizToolDefinitions } from "./gebiz-tools.js";
+import { govFeedToolDefinitions } from "./govfeeds-tools.js";
 import { hawkerToolDefinitions } from "./hawker-tools.js";
 import { healthCheckToolDefinitions } from "./health-check.js";
 import { hdbToolDefinitions } from "./hdb-tools.js";
@@ -54,6 +55,7 @@ const RAW_TOOL_DEFINITIONS = [
   ...boaToolDefinitions,
   ...acraToolDefinitions,
   ...gebizToolDefinitions,
+  ...govFeedToolDefinitions,
   ...hawkerToolDefinitions,
   ...moeToolDefinitions,
   ...mohToolDefinitions,

@@ -6,9 +6,9 @@ Official Singapore public data for agents with deterministic contracts.
 
 ## Surface Snapshot
 
-The repo currently exposes 88 `sg_*` tools total across 30 official data families.
+The repo currently exposes 90 `sg_*` tools total across 31 official data families.
 
-- 71 family and brief/query tools across the 30 API families
+- 73 family and brief/query tools across the 31 API families
 - 17 operational tools for transit decisioning/governance plus keys, cache, config, health, and trace lookup
 
 `sg_query` is the bounded preferred interface across 21 routed families. It plans or executes bounded deterministic workflows with transparent step metadata. The direct `sg_*` tools remain the stable low-level contract.
@@ -24,7 +24,7 @@ The repo currently exposes 88 `sg_*` tools total across 30 official data familie
 
 ## Why This Exists
 
-This repo is for agent builders who want one honest MCP server for Singapore public data instead of stitching together SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, BOA, ACRA, PA, Sport Singapore, ECDA, MSF Family Services, MSF Student Care Services, MSF Social Service Offices, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, HSA, SFA, NParks, PUB, MOM, STB, HLB, and data.gov.sg manually.
+This repo is for agent builders who want one honest MCP server for Singapore public data instead of stitching together SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, BOA, ACRA, PA, Sport Singapore, ECDA, MSF Family Services, MSF Student Care Services, MSF Social Service Offices, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, HSA, SFA, Government RSS Feeds, NParks, PUB, MOM, STB, HLB, and data.gov.sg manually.
 
 The value is not hidden magic. The value is:
 
@@ -79,6 +79,7 @@ If you are evaluating whether the repo is actually useful for developers, start 
 | MOH Healthcare | 1 | Healthcare facility directory (hospitals, clinics) | None |
 | HSA | 2 | Licensed pharmacies plus health-product import, wholesale, and manufacturing licensees | None |
 | SFA | 1 | Licensed food establishment directory | None |
+| Government RSS Feeds | 2 | Official non-data.gov.sg RSS streams from NEA, weather.gov.sg, and SFA (news, tenders, events, forecasts, alerts, circulars) | None |
 | NParks | 1 | Parks and nature reserves directory | None |
 | PUB | 1 | Water level monitoring station readings | None |
 | MOM | 1 | Labour market statistics | None |
@@ -118,6 +119,7 @@ Notes:
 - `sg_datagov_get` is metadata only.
 - `sg_datagov_resources` exposes the current machine-readable resource shape and columns for a dataset.
 - `sg_datagov_rows` performs bounded datastore reads with explicit `filters`, `limit`, `offset`, and `sort`.
+- `sg_gov_feed_items` supports stream-level rollback through `SG_APIS_DISABLED_STREAMS` and family-level rollback through `SG_APIS_DISABLED_FAMILIES`.
 - OneMap now requires valid credentials for live requests. There is no silent unauthenticated fallback.
 - HDB, CEA, BCA, BOA, HSA, HLB, and `sg_acra_entities` are curated tools over official public datasets and do not introduce separate credentials.
 - PA, Sport Singapore, ECDA, and the MSF civic directories stay no-auth by using the same official data.gov.sg download path.

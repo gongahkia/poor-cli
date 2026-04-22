@@ -1217,6 +1217,134 @@
         }
       }
     },
+    "/api/v1/sg_gov_feed_catalog": {
+      "post": {
+        "summary": "List direct non-data.gov.sg official Singapore RSS feeds available in this MCP server.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "family": {
+                    "type": "string",
+                    "enum": [
+                      "all",
+                      "nea",
+                      "weather",
+                      "sfa"
+                    ]
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_gov_feed_items": {
+      "post": {
+        "summary": "Read official RSS feed items (NEA, weather.gov.sg, SFA) with stream-level rollback controls.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "feedId": {
+                    "type": "string",
+                    "enum": [
+                      "nea_news_updates",
+                      "nea_tender_notices",
+                      "nea_upcoming_events",
+                      "weather_2hr_forecast",
+                      "weather_24hr_forecast",
+                      "weather_4day_forecast",
+                      "weather_heavy_rain",
+                      "sfa_newsroom",
+                      "sfa_media_releases",
+                      "sfa_food_alerts",
+                      "sfa_circulars"
+                    ]
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "keyword": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv"
+                    ]
+                  }
+                },
+                "required": [
+                  "feedId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
     "/api/v1/sg_hawker_centres": {
       "post": {
         "summary": "Search hawker centres in Singapore with optional proximity filtering by coordinates and radius.",

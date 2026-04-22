@@ -65,6 +65,8 @@ const FORMAT_CAPABLE_TOOLS = new Set([
   "sg_hsa_licensed_pharmacies",
   "sg_hsa_health_product_licensees",
   "sg_sfa_establishments",
+  "sg_gov_feed_catalog",
+  "sg_gov_feed_items",
   "sg_nparks_parks",
   "sg_pub_water_levels",
   "sg_mom_labour_stats",

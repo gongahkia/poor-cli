@@ -445,6 +445,19 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
     scopeNotes: ["Backed by SFA licensed eating establishment data on data.gov.sg."],
   },
   {
+    name: "Government RSS Feeds",
+    description: "Official non-data.gov.sg RSS feeds from NEA, weather.gov.sg, and SFA for announcements, tenders, events, forecasts, alerts, and circulars.",
+    tools: ["sg_gov_feed_catalog", "sg_gov_feed_items"],
+    authRequired: false,
+    rateLimit: "10 tokens, 1/sec refill",
+    positioning: "Direct official-feed monitoring surface for operational alerts and policy/news intake.",
+    preferredInterface: "sg_gov_feed_items",
+    scopeNotes: [
+      "Supports 11 source streams across NEA, weather.gov.sg, and SFA.",
+      "Rollback controls are first-class: SG_APIS_DISABLED_FAMILIES and SG_APIS_DISABLED_STREAMS.",
+    ],
+  },
+  {
     name: "NParks",
     description: "Singapore parks and nature reserves directory.",
     tools: ["sg_nparks_parks"],

@@ -6,6 +6,7 @@ export const TIMEOUTS: Readonly<Record<string, number>> = {
   lta: 10000, // WHY: live transport endpoints should respond quickly
   nea: 10000, // WHY: realtime environmental endpoints are typically responsive
   datagov: 10000, // WHY: CKAN is generally responsive
+  govfeeds: 10000, // WHY: upstream RSS feeds should respond quickly
 } as const;
 
 export const HARD_CAP_TIMEOUT = 30000; // WHY: no API call should ever take more than 30 seconds
