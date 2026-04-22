@@ -13,9 +13,8 @@ def tok(text: str) -> int:
 
 def collect_files():
     py = sorted(ROOT.glob("poor_cli/**/*.py"))
-    lua = sorted(ROOT.glob("nvim-poor-cli/**/*.lua"))
     tests = sorted(ROOT.glob("tests/test_*.py"))[:10]
-    return py + lua + tests
+    return py + tests
 
 def roundtrip_check_python(original: str, transformed: str) -> dict:
     """Check if key identifiers and structure are preserved."""

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""repeatable startup/exit latency profile with cold/warm percentiles."""
+"""repeatable CLI startup/exit latency profile with cold/warm percentiles."""
 
 from __future__ import annotations
 
@@ -15,9 +15,6 @@ from typing import Dict, List
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-STARTUP_PROBE = REPO_ROOT / "nvim-poor-cli" / "bench" / "startup_probe.lua"
-QUICK_QUIT_PROBE = REPO_ROOT / "nvim-poor-cli" / "bench" / "quick_quit_probe.lua"
-QUICK_QUIT_STALL_PROBE = REPO_ROOT / "nvim-poor-cli" / "bench" / "quick_quit_stall_probe.lua"
 DEFAULT_FIXTURE = REPO_ROOT / "bench" / "fixtures" / "workloads.json"
 
 
@@ -76,13 +73,35 @@ def _probe_env(extra_env: Dict[str, str], seed: int, run_idx: int, *, ultra_fast
     return env
 
 
+def _run_cli_command(cmd: List[str], runs: int, *, startup_env: Dict[str, str], seed: int, metric: str) -> Dict[str, float]:
+    durations: List[float] = []
+    for idx in range(max(1, runs)):
+        env = _probe_env(startup_env, seed, idx)
+        started = time.perf_counter()
+        proc = subprocess.run(
+            cmd,
+            cwd=str(REPO_ROOT),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        durations.append((time.perf_counter() - started) * 1000.0)
+        if proc.returncode != 0:
+            raise RuntimeError(f"{metric} probe failed: {proc.stderr}\n{proc.stdout}")
+    result: Dict[str, float] = {f"runs_{metric}": float(len(durations))}
+    result.update(_summary(metric, durations))
+    return result
+
+
 def _run_startup_probe(runs: int, *, startup_env: Dict[str, str], seed: int) -> Dict[str, float]:
-    cmd = ["nvim", "--headless", "-u", "NONE", "-n", "-l", str(STARTUP_PROBE)]
+    cmd = [sys.executable, "-m", "poor_cli", "help"]
     setup_return: List[float] = []
     setup_complete: List[float] = []
     first_tick: List[float] = []
     for idx in range(max(1, runs)):
         env = _probe_env(startup_env, seed, idx)
+        started = time.perf_counter()
         proc = subprocess.run(
             cmd,
             cwd=str(REPO_ROOT),
@@ -93,11 +112,10 @@ def _run_startup_probe(runs: int, *, startup_env: Dict[str, str], seed: int) -> 
         )
         if proc.returncode != 0:
             raise RuntimeError(f"startup probe failed: {proc.stderr}\n{proc.stdout}")
-        row = _json_line_from_stdout(proc.stdout)
-        setup_return.append(float(row.get("setup_return_ms", 0.0) or 0.0))
-        setup_complete.append(float(row.get("setup_complete_ms", 0.0) or 0.0))
-        if row.get("first_tick_ms") is not None:
-            first_tick.append(float(row.get("first_tick_ms", 0.0) or 0.0))
+        elapsed = (time.perf_counter() - started) * 1000.0
+        setup_return.append(elapsed)
+        setup_complete.append(elapsed)
+        first_tick.append(elapsed)
 
     warm_setup_return = setup_return[1:] if len(setup_return) > 1 else list(setup_return)
     warm_setup_complete = setup_complete[1:] if len(setup_complete) > 1 else list(setup_complete)
@@ -116,25 +134,13 @@ def _run_startup_probe(runs: int, *, startup_env: Dict[str, str], seed: int) -> 
 
 
 def _run_quick_quit_probe(runs: int, *, startup_env: Dict[str, str], seed: int) -> Dict[str, float]:
-    cmd = ["nvim", "--headless", "-u", "NONE", "-n", "-l", str(QUICK_QUIT_PROBE)]
-    durations: List[float] = []
-    for idx in range(max(1, runs)):
-        env = _probe_env(startup_env, seed, idx)
-        started = time.perf_counter()
-        proc = subprocess.run(
-            cmd,
-            cwd=str(REPO_ROOT),
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        durations.append((time.perf_counter() - started) * 1000.0)
-        if proc.returncode != 0:
-            raise RuntimeError(f"quick quit probe failed: {proc.stderr}\n{proc.stdout}")
-    result: Dict[str, float] = {"runs_quick_quit": float(len(durations))}
-    result.update(_summary("quick_quit", durations))
-    return result
+    return _run_cli_command(
+        [sys.executable, "-m", "poor_cli", "--version"],
+        runs,
+        startup_env=startup_env,
+        seed=seed,
+        metric="quick_quit",
+    )
 
 
 def _run_quick_quit_stall_probe(
@@ -144,26 +150,14 @@ def _run_quick_quit_stall_probe(
     seed: int,
     ultra_fast: bool = False,
 ) -> Dict[str, float]:
-    cmd = ["nvim", "--headless", "-u", "NONE", "-n", "-l", str(QUICK_QUIT_STALL_PROBE)]
-    durations: List[float] = []
-    for idx in range(max(1, runs)):
-        env = _probe_env(startup_env, seed, idx, ultra_fast=ultra_fast)
-        started = time.perf_counter()
-        proc = subprocess.run(
-            cmd,
-            cwd=str(REPO_ROOT),
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        durations.append((time.perf_counter() - started) * 1000.0)
-        if proc.returncode != 0:
-            raise RuntimeError(f"quick quit stall probe failed: {proc.stderr}\n{proc.stdout}")
     metric = "quick_quit_stall_ultrafast" if ultra_fast else "quick_quit_stall"
-    result: Dict[str, float] = {f"runs_{metric}": float(len(durations))}
-    result.update(_summary(metric, durations))
-    return result
+    return _run_cli_command(
+        [sys.executable, "-m", "poor_cli", "help"],
+        runs,
+        startup_env=startup_env,
+        seed=seed,
+        metric=metric,
+    )
 
 
 def main() -> int:

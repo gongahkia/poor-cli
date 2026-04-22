@@ -1,9 +1,7 @@
-.PHONY: cli server install installer install-info dev build build-server-registry-index run test test-unit test-lua lint bench-swe bench-startup-profile bench-import-time bench-cli-command-profile bench-cli-command-compare bench-server-first-rpc-profile bench-server-first-rpc-compare bench-tool-capability-graph bench-harness-quality bench-turn-replay bench-router-calibration bench-budget-retuning bench-harness-failure bench-harness-burnin bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
+.PHONY: cli server install installer install-info dev build build-server-registry-index run test test-unit lint bench-swe bench-startup-profile bench-import-time bench-cli-command-profile bench-cli-command-compare bench-server-first-rpc-profile bench-server-first-rpc-compare bench-tool-capability-graph bench-harness-quality bench-turn-replay bench-router-calibration bench-budget-retuning bench-harness-failure bench-harness-burnin bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
 
 PYTHON := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/python,python3)
 PIP := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/pip,pip)
-NVIM_TEST_RUNTIME := $(CURDIR)/nvim-poor-cli/.test-runtime
-PLENARY_DIR ?= $(NVIM_TEST_RUNTIME)/site/pack/test/start/plenary.nvim
 VERSION := $(shell cat VERSION 2>/dev/null || echo dev)
 
 # ── venv guard ──────────────────────────────────────────────────────
@@ -77,10 +75,6 @@ test: test-unit ## alias for `make test-unit`
 
 test-unit: ## run Python tests with coverage
 	$(PYTHON) -m pytest tests/ -x -q --cov=poor_cli --cov-report=term-missing
-
-test-lua: ## run Lua plenary specs
-	@mkdir -p "$(NVIM_TEST_RUNTIME)/data" "$(NVIM_TEST_RUNTIME)/state" "$(NVIM_TEST_RUNTIME)/cache" "$(NVIM_TEST_RUNTIME)/config" "$(NVIM_TEST_RUNTIME)/site/pack/test/start"
-	XDG_DATA_HOME="$(NVIM_TEST_RUNTIME)/data" XDG_STATE_HOME="$(NVIM_TEST_RUNTIME)/state" XDG_CACHE_HOME="$(NVIM_TEST_RUNTIME)/cache" XDG_CONFIG_HOME="$(NVIM_TEST_RUNTIME)/config" PLENARY_DIR="$(PLENARY_DIR)" nvim --headless --noplugin -u nvim-poor-cli/tests/minimal_init.lua -c "PlenaryBustedDirectory nvim-poor-cli/tests/ {minimal_init = 'nvim-poor-cli/tests/minimal_init.lua'}"
 
 lint: ## run linters
 	ruff check poor_cli/
