@@ -1,11 +1,12 @@
 //! Event loop: runs the winit event loop and dispatches events to the AppHandler.
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tracing::{debug, info, warn};
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
 use winit::window::WindowId;
 
 use crate::frame_clock::FrameClock;
@@ -16,6 +17,34 @@ use crate::window::{PlatformError, WindowConfig, WokWindow};
 const IDLE_BACKOFF_TICKS: u32 = 8;
 const IDLE_FRAME_INTERVAL: Duration = Duration::from_millis(100);
 
+#[derive(Clone, Copy)]
+enum WokUserEvent {
+    RuntimeWake,
+}
+
+/// Thread-safe handle that wakes the GUI runtime from background work.
+#[derive(Clone)]
+pub struct RuntimeWaker {
+    proxy: EventLoopProxy<WokUserEvent>,
+}
+
+impl RuntimeWaker {
+    fn new(proxy: EventLoopProxy<WokUserEvent>) -> Self {
+        Self { proxy }
+    }
+
+    /// Wake the event loop as soon as possible.
+    pub fn wake(&self) {
+        let _ = self.proxy.send_event(WokUserEvent::RuntimeWake);
+    }
+
+    /// Build a callback suitable for PTY and background I/O threads.
+    pub fn wake_callback(&self) -> Arc<dyn Fn() + Send + Sync + 'static> {
+        let waker = self.clone();
+        Arc::new(move || waker.wake())
+    }
+}
+
 /// Runs the event loop with the given app handler.
 ///
 /// # Errors
@@ -25,10 +54,14 @@ pub fn run_event_loop<H: AppHandler + 'static>(
     config: WindowConfig,
     handler: H,
 ) -> Result<(), PlatformError> {
-    let event_loop =
-        EventLoop::new().map_err(|e| PlatformError::EventLoopCreation(e.to_string()))?;
+    let event_loop = EventLoop::<WokUserEvent>::with_user_event()
+        .build()
+        .map_err(|e| PlatformError::EventLoopCreation(e.to_string()))?;
 
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+    let runtime_waker = RuntimeWaker::new(event_loop.create_proxy());
+    let mut handler = handler;
+    handler.on_runtime_waker(runtime_waker);
 
     let mut app = WinitApp {
         config,
@@ -70,9 +103,25 @@ impl<H: AppHandler> WinitApp<H> {
             win.window.request_redraw();
         }
     }
+
+    fn pump_handler_tick(&mut self, event_loop: &ActiveEventLoop) {
+        let should_redraw = self.handler.on_frame_tick();
+        if self.handler.should_exit() {
+            event_loop.exit();
+            return;
+        }
+        if should_redraw {
+            self.idle_ticks = 0;
+            if let Some(win) = &self.window {
+                win.window.request_redraw();
+            }
+        } else {
+            self.idle_ticks = self.idle_ticks.saturating_add(1);
+        }
+    }
 }
 
-impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
+impl<H: AppHandler> ApplicationHandler<WokUserEvent> for WinitApp<H> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
             return;
@@ -112,6 +161,17 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
 
     fn new_events(&mut self, _event_loop: &ActiveEventLoop, _cause: StartCause) {}
 
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: WokUserEvent) {
+        match event {
+            WokUserEvent::RuntimeWake => {
+                self.idle_ticks = 0;
+                if self.initialized {
+                    self.pump_handler_tick(event_loop);
+                }
+            }
+        }
+    }
+
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         if !self.initialized {
             event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
@@ -122,19 +182,7 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
         self.drain_macos_menu_events(event_loop);
 
         if self.frame_clock.should_render() {
-            let should_redraw = self.handler.on_frame_tick();
-            if self.handler.should_exit() {
-                event_loop.exit();
-                return;
-            }
-            if should_redraw {
-                self.idle_ticks = 0;
-                if let Some(win) = &self.window {
-                    win.window.request_redraw();
-                }
-            } else {
-                self.idle_ticks = self.idle_ticks.saturating_add(1);
-            }
+            self.pump_handler_tick(event_loop);
         }
 
         let next_frame_delay = if self.idle_ticks >= IDLE_BACKOFF_TICKS {

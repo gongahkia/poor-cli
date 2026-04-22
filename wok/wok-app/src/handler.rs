@@ -5,6 +5,7 @@ use std::sync::Arc;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
+use crate::event_loop::RuntimeWaker;
 use crate::input::{InputEvent, MouseEvent};
 
 /// Native application menu actions routed back into the runtime.
@@ -47,6 +48,9 @@ pub enum AppMenuAction {
 /// All methods have default no-op implementations so handlers can
 /// selectively override only the events they care about.
 pub trait AppHandler {
+    /// Called before the event loop starts so background work can wake the GUI runtime.
+    fn on_runtime_waker(&mut self, _waker: RuntimeWaker) {}
+
     /// Called when the window is first created (provides `Arc<Window>` for GPU surface).
     fn on_init(&mut self, _window: Arc<Window>) {}
 

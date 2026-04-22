@@ -9,7 +9,7 @@ use base64::Engine;
 use thiserror::Error;
 use tracing::{debug, instrument, warn};
 
-use crate::async_io::{PtyEvent, PtyIoHandle};
+use crate::async_io::{PtyEvent, PtyIoHandle, WakeCallback};
 use crate::pty::{PtyError, PtyManager};
 use crate::shell::ShellType;
 use crate::sixel;
@@ -155,9 +155,28 @@ impl Terminal {
         env: HashMap<String, String>,
         cwd: Option<&Path>,
     ) -> Result<Self, TerminalError> {
+        Self::new_with_wake_callback(shell, cols, rows, scrollback, env, cwd, None)
+    }
+
+    /// Create a new terminal session with a runtime wake callback.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TerminalError`] if the PTY cannot be created or the shell
+    /// cannot be spawned.
+    #[instrument(skip(env, wake_callback), fields(%shell, cols, rows))]
+    pub fn new_with_wake_callback(
+        shell: &ShellType,
+        cols: u16,
+        rows: u16,
+        scrollback: usize,
+        env: HashMap<String, String>,
+        cwd: Option<&Path>,
+        wake_callback: Option<WakeCallback>,
+    ) -> Result<Self, TerminalError> {
         let manager = PtyManager::new();
         let spawned = manager.spawn(shell, cols, rows, &env, cwd)?;
-        let pty = PtyIoHandle::new(spawned);
+        let pty = PtyIoHandle::new_with_wake_callback(spawned, wake_callback);
         let state = TerminalState::new(cols as usize, rows as usize, scrollback);
 
         debug!("terminal created");

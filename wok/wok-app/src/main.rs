@@ -23,7 +23,7 @@ use wok_app::app::{InputMode, WokApp};
 use wok_app::block_query::{BlockQueryMode, BlockQueryState, DiffLineEntry, DiffLineKind};
 use wok_app::command_search::{CommandSearchScope, CommandSearchState};
 use wok_app::config::{TriggerScopeConfig, WokConfig};
-use wok_app::event_loop::run_event_loop;
+use wok_app::event_loop::{run_event_loop, RuntimeWaker};
 use wok_app::handler::{AppHandler, AppMenuAction};
 use wok_app::input::{InputEvent, InputEventType, KeyAction};
 use wok_app::keybindings::Action;
@@ -506,6 +506,7 @@ struct WokHandler {
     background: BackgroundRenderer,
     font: FontSystem,
     render: Option<RenderState>,
+    runtime_waker: Option<RuntimeWaker>,
     window: Option<Arc<Window>>,
     chrome_rects: ChromeRects,
     tab_scroll_offset: f32,
@@ -598,6 +599,7 @@ impl WokHandler {
             background,
             font,
             render: None,
+            runtime_waker: None,
             window: None,
             chrome_rects: ChromeRects::default(),
             tab_scroll_offset: 0.0,
@@ -782,13 +784,14 @@ impl WokHandler {
             (!pane_state.cwd.as_os_str().is_empty()).then_some(pane_state.cwd.as_path())
         });
 
-        match Terminal::new(
+        match Terminal::new_with_wake_callback(
             &pane_config.shell,
             cols,
             rows,
             pane_config.scrollback_lines,
             env,
             initial_cwd,
+            self.runtime_waker.as_ref().map(RuntimeWaker::wake_callback),
         ) {
             Ok(mut terminal) => {
                 if let Some(pane_state) = &restore {
@@ -5340,6 +5343,10 @@ impl WokHandler {
 }
 
 impl AppHandler for WokHandler {
+    fn on_runtime_waker(&mut self, waker: RuntimeWaker) {
+        self.runtime_waker = Some(waker);
+    }
+
     fn on_init(&mut self, window: Arc<Window>) {
         let size = window.inner_size();
         self.window = Some(window.clone());

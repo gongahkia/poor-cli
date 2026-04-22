@@ -10,6 +10,9 @@ use tracing::{debug, warn};
 use crate::pty::{PtyError, SpawnedPty};
 use crate::shell_integration::ShellBootstrap;
 
+/// Callback invoked when the PTY reader has queued data for the UI runtime.
+pub type WakeCallback = Arc<dyn Fn() + Send + Sync + 'static>;
+
 /// Events from the PTY reader thread.
 #[derive(Debug)]
 pub enum PtyEvent {
@@ -41,11 +44,20 @@ impl PtyIoHandle {
     /// Spawns a dedicated reader thread that reads up to 64KB at a time
     /// and a dedicated waiter thread that reports the child process exit code.
     pub fn new(spawned: SpawnedPty) -> Self {
+        Self::new_with_wake_callback(spawned, None)
+    }
+
+    /// Create a new async I/O handle and wake the runtime after queued PTY events.
+    pub fn new_with_wake_callback(
+        spawned: SpawnedPty,
+        wake_callback: Option<WakeCallback>,
+    ) -> Self {
         let (tx, rx): (Sender<PtyEvent>, Receiver<PtyEvent>) = bounded(256);
         let writer = Arc::new(Mutex::new(spawned.writer));
         let killer = Arc::new(Mutex::new(spawned.child.clone_killer()));
         let reader_tx = tx.clone();
         let mut reader = spawned.reader;
+        let reader_wake_callback = wake_callback.clone();
 
         let reader_thread = thread::Builder::new()
             .name("pty-reader".to_string())
@@ -62,10 +74,17 @@ impl PtyIoHandle {
                                 debug!("PTY reader: channel disconnected");
                                 break;
                             }
+                            if let Some(wake_callback) = &reader_wake_callback {
+                                wake_callback();
+                            }
                         }
                         Err(e) => {
                             warn!("PTY reader error: {e}");
-                            let _ = reader_tx.send(PtyEvent::Error(e.to_string()));
+                            if reader_tx.send(PtyEvent::Error(e.to_string())).is_ok() {
+                                if let Some(wake_callback) = &reader_wake_callback {
+                                    wake_callback();
+                                }
+                            }
                             break;
                         }
                     }
@@ -79,10 +98,18 @@ impl PtyIoHandle {
             .spawn(move || match child.wait() {
                 Ok(status) => {
                     let code = i32::try_from(status.exit_code()).ok().unwrap_or(i32::MAX);
-                    let _ = tx.send(PtyEvent::Exited(code));
+                    if tx.send(PtyEvent::Exited(code)).is_ok() {
+                        if let Some(wake_callback) = &wake_callback {
+                            wake_callback();
+                        }
+                    }
                 }
                 Err(e) => {
-                    let _ = tx.send(PtyEvent::Error(e.to_string()));
+                    if tx.send(PtyEvent::Error(e.to_string())).is_ok() {
+                        if let Some(wake_callback) = &wake_callback {
+                            wake_callback();
+                        }
+                    }
                 }
             })
             .expect("failed to spawn PTY wait thread");
