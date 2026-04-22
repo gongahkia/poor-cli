@@ -9,14 +9,14 @@ from seuss.jsonl_store import read_jsonl
 from seuss.utils import generate_id, now_iso, stable_hash
 
 
-def _load_persona_profile(workspace: Path, persona_path: str | None) -> dict | None:
+def load_persona_profile(workspace: Path, persona_path: str | None) -> dict | None:
     target = Path(persona_path).expanduser().resolve() if persona_path else workspace / "memory" / "persona_profile.json"
     if not target.exists():
         return None
     return json.loads(target.read_text(encoding="utf-8"))
 
 
-def _augment_prompt_with_persona(prompt: str, persona_profile: dict | None) -> str:
+def augment_prompt_with_persona(prompt: str, persona_profile: dict | None) -> str:
     if not persona_profile:
         return prompt
 
@@ -83,14 +83,14 @@ def run_generate(
         "motif": int(jugemu_cfg.get("motif_order", 2)),
     }
 
-    persona_profile = _load_persona_profile(workspace, persona_path) if use_persona else None
+    persona_profile = load_persona_profile(workspace, persona_path) if use_persona else None
     if use_persona and persona_profile is None:
         target = persona_path or str(workspace / "memory" / "persona_profile.json")
         print(f"Persona profile not found: {target}")
         print("Run 'seuss persona build' first or pass --persona-path.")
         return 1
 
-    effective_prompt = _augment_prompt_with_persona(prompt, persona_profile)
+    effective_prompt = augment_prompt_with_persona(prompt, persona_profile)
 
     result = generate_text(
         level=chosen_level,

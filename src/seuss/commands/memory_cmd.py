@@ -10,7 +10,7 @@ from seuss.pathing import resolve_approved_training_path, resolve_training_queue
 from seuss.utils import now_iso, shorten
 
 
-def _queue_or_approve_training_examples(
+def queue_or_approve_training_examples(
     workspace: Path,
     config: dict,
     config_path: Path,
@@ -87,7 +87,7 @@ def run_memory_add(config_path: Path, text: str, kind: str) -> int:
     }
 
     append_jsonl(workspace / "memory" / "memories.jsonl", [record])
-    _queue_or_approve_training_examples(workspace, config, config_path, [record])
+    queue_or_approve_training_examples(workspace, config, config_path, [record])
 
     print(f"Memory added: {record['id']}")
     return 0
@@ -132,7 +132,7 @@ def run_memory_import(config_path: Path, import_path: Path, text_field: str) -> 
             )
 
     append_jsonl(workspace / "memory" / "memories.jsonl", imported)
-    _queue_or_approve_training_examples(workspace, config, config_path, imported)
+    queue_or_approve_training_examples(workspace, config, config_path, imported)
 
     print(f"Imported memory records: {len(imported)}")
     print(
