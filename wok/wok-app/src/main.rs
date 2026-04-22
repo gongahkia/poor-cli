@@ -60,8 +60,7 @@ use wok_renderer::render_pipeline::TerminalRenderPipeline;
 use wok_terminal::replay::{ReplaySnapshot, ReplayStore};
 use wok_terminal::shell::ShellType;
 use wok_terminal::state::{CellColor, CellRenderData};
-use wok_terminal::terminal::SemanticEvent;
-use wok_terminal::terminal::Terminal;
+use wok_terminal::terminal::{SemanticEvent, Terminal, TerminalDamage};
 use wok_ui::background::BackgroundRenderer;
 use wok_ui::command_palette::{CommandPaletteState, PaletteAction, PaletteCategory, PaletteEntry};
 use wok_ui::layout::Rect;
@@ -1366,8 +1365,29 @@ impl WokHandler {
                 pane.row_cache.dirty.mark_fully_damaged();
             }
 
-            if pane.terminal.is_dirty() || pane.viewport.needs_render() {
+            let terminal_damage = if pane.terminal.is_dirty() {
+                Some(pane.terminal.take_damage())
+            } else {
+                None
+            };
+            if pane.viewport.needs_render() || matches!(terminal_damage, Some(TerminalDamage::Full))
+            {
                 for (row_idx, absolute_row) in visible_rows.iter().copied().enumerate() {
+                    let signature = PaneRowSignature {
+                        absolute_row,
+                        render_row: row_positions.get(row_idx).copied().flatten(),
+                        cells: collect_row_cells(&pane.terminal, absolute_row, total_cols),
+                    };
+                    if pane.row_cache.row_signatures[row_idx].as_ref() != Some(&signature) {
+                        pane.row_cache.row_signatures[row_idx] = Some(signature);
+                        pane.row_cache.dirty.mark_row_dirty(row_idx);
+                    }
+                }
+            } else if let Some(TerminalDamage::Rows(rows)) = terminal_damage {
+                for row_idx in rows {
+                    let Some(absolute_row) = visible_rows.get(row_idx).copied() else {
+                        continue;
+                    };
                     let signature = PaneRowSignature {
                         absolute_row,
                         render_row: row_positions.get(row_idx).copied().flatten(),

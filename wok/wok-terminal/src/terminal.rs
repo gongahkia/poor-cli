@@ -115,6 +115,15 @@ pub enum InlineImageEvent {
     },
 }
 
+/// Terminal damage accumulated since the last render pass.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TerminalDamage {
+    /// The visible terminal viewport should be considered dirty.
+    Full,
+    /// Viewport-relative terminal rows that should be considered dirty.
+    Rows(Vec<usize>),
+}
+
 /// A terminal session connecting PTY I/O to terminal emulation state.
 pub struct Terminal {
     /// Terminal emulation state (alacritty_terminal wrapper).
@@ -125,6 +134,10 @@ pub struct Terminal {
     pub title: String,
     /// Whether the terminal has new output since last render.
     dirty: bool,
+    /// Whether all visible rows should be refreshed.
+    full_damage: bool,
+    /// Viewport-relative rows with pending damage.
+    dirty_visible_rows: Vec<usize>,
     /// Semantic events collected this frame.
     events: Vec<SemanticEvent>,
     /// Number of columns.
@@ -185,6 +198,8 @@ impl Terminal {
             pty,
             title: shell.to_string(),
             dirty: false,
+            full_damage: false,
+            dirty_visible_rows: Vec::new(),
             events: Vec::new(),
             cols,
             rows,
@@ -205,8 +220,11 @@ impl Terminal {
         while count < 64 {
             match self.pty.try_recv() {
                 Some(PtyEvent::Data(bytes)) => {
+                    let before_visible_start = self.state.visible_start_row();
+                    let before_cursor_row = self.state.absolute_cursor_row();
                     self.scan_osc_markers(&bytes);
                     self.state.process_bytes(&bytes);
+                    self.mark_output_damage(before_visible_start, before_cursor_row, &bytes);
                     self.dirty = true;
                     count += 1;
                 }
@@ -214,6 +232,7 @@ impl Terminal {
                     self.exited = true;
                     self.exit_code = Some(code);
                     self.dirty = true;
+                    self.mark_fully_damaged();
                     break;
                 }
                 Some(PtyEvent::Error(e)) => {
@@ -576,6 +595,7 @@ impl Terminal {
         self.rows = rows;
         self.state.resize(cols as usize, rows as usize);
         self.dirty = true;
+        self.mark_fully_damaged();
         Ok(())
     }
 
@@ -595,12 +615,14 @@ impl Terminal {
 
         self.state.process_bytes(&bytes);
         self.dirty = true;
+        self.mark_fully_damaged();
     }
 
     /// Restore the viewport scroll position.
     pub fn restore_display_offset(&mut self, offset: usize) {
         self.state.set_display_offset(offset);
         self.dirty = true;
+        self.mark_fully_damaged();
     }
 
     /// Drain semantic events collected during the most recent PTY processing pass.
@@ -613,9 +635,25 @@ impl Terminal {
         self.dirty
     }
 
+    /// Drain accumulated terminal damage for the next render pass.
+    pub fn take_damage(&mut self) -> TerminalDamage {
+        if self.full_damage {
+            self.full_damage = false;
+            self.dirty_visible_rows.clear();
+            TerminalDamage::Full
+        } else {
+            let mut rows = std::mem::take(&mut self.dirty_visible_rows);
+            rows.sort_unstable();
+            rows.dedup();
+            TerminalDamage::Rows(rows)
+        }
+    }
+
     /// Mark the terminal as clean (after rendering).
     pub fn mark_clean(&mut self) {
         self.dirty = false;
+        self.full_damage = false;
+        self.dirty_visible_rows.clear();
     }
 
     /// Get the current number of columns.
@@ -627,6 +665,82 @@ impl Terminal {
     pub fn rows(&self) -> u16 {
         self.rows
     }
+
+    fn mark_output_damage(
+        &mut self,
+        before_visible_start: AbsoluteRow,
+        before_cursor_row: AbsoluteRow,
+        bytes: &[u8],
+    ) {
+        if bytes_need_full_damage(bytes) || before_visible_start != self.state.visible_start_row() {
+            self.mark_fully_damaged();
+            return;
+        }
+
+        let after_cursor_row = self.state.absolute_cursor_row();
+        let start = before_cursor_row.min(after_cursor_row);
+        let end = before_cursor_row.max(after_cursor_row);
+        if end.saturating_sub(start) >= self.rows as usize {
+            self.mark_fully_damaged();
+            return;
+        }
+
+        for absolute_row in start..=end {
+            self.mark_absolute_row_dirty(absolute_row);
+        }
+    }
+
+    fn mark_fully_damaged(&mut self) {
+        self.full_damage = true;
+        self.dirty_visible_rows.clear();
+    }
+
+    fn mark_absolute_row_dirty(&mut self, absolute_row: AbsoluteRow) {
+        if self.full_damage {
+            return;
+        }
+
+        let visible_start = self.state.visible_start_row();
+        let visible_end = visible_start + self.state.screen_lines();
+        if (visible_start..visible_end).contains(&absolute_row) {
+            self.dirty_visible_rows
+                .push(absolute_row.saturating_sub(visible_start));
+        }
+    }
+}
+
+fn bytes_need_full_damage(bytes: &[u8]) -> bool {
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != 0x1b {
+            i += 1;
+            continue;
+        }
+
+        match bytes.get(i + 1).copied() {
+            Some(b'[') => {
+                if let Some(csi_end) = find_csi_terminator(bytes, i + 2) {
+                    let final_byte = bytes[csi_end];
+                    if final_byte != b'm' && final_byte != b'u' {
+                        return true;
+                    }
+                    i = csi_end + 1;
+                    continue;
+                }
+                return true;
+            }
+            Some(b']') => {
+                if let Some((payload_end, terminator_len)) = find_osc_terminator(bytes, i + 2) {
+                    i = payload_end + terminator_len;
+                    continue;
+                }
+                return true;
+            }
+            Some(_) | None => return true,
+        }
+    }
+
+    false
 }
 
 fn find_osc_terminator(bytes: &[u8], start: usize) -> Option<(usize, usize)> {
@@ -840,6 +954,14 @@ mod tests {
         let st = b"\x1b]8;;https://example.com\x1b\\";
         assert_eq!(find_osc_terminator(bel, 2), Some((24, 1)));
         assert_eq!(find_osc_terminator(st, 2), Some((24, 2)));
+    }
+
+    #[test]
+    fn test_damage_detection_keeps_sgr_incremental() {
+        assert!(!bytes_need_full_damage(b"hello"));
+        assert!(!bytes_need_full_damage(b"\x1b[31mred\x1b[0m"));
+        assert!(bytes_need_full_damage(b"\x1b[2J"));
+        assert!(bytes_need_full_damage(b"\x1b[H"));
     }
 
     #[test]
