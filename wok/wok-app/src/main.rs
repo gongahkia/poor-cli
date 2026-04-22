@@ -5,7 +5,6 @@ use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::error::Error;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -47,7 +46,7 @@ use wok_blocks::block::{Block, OutputLineEvent};
 use wok_blocks::triggers::{
     Trigger, TriggerAction, TriggerEngine, TriggerHighlight, TriggerMatch, TriggerScope,
 };
-use wok_input::editor::EditorAction;
+use wok_input::editor::{EditorAction, EditorKey, InputEditor};
 use wok_input::history::{prefix_matches, CommandHistory, HistoryEntry};
 use wok_input::workflows::{Workflow, WorkflowStore};
 use wok_renderer::atlas::GlyphAtlas;
@@ -371,6 +370,11 @@ struct FailureTrendEntry {
     last_completed_at_ms: u64,
 }
 
+struct SettingsEditorState {
+    path: PathBuf,
+    editor: InputEditor,
+}
+
 struct PaneRuntime {
     app: WokApp,
     terminal: Terminal,
@@ -481,6 +485,7 @@ struct WokHandler {
     status_message: Option<String>,
     show_failure_trends_panel: bool,
     show_workspace_insights_panel: bool,
+    settings_editor: Option<SettingsEditorState>,
     failure_trend_bucket_ms: u64,
     status_bar_state: StatusBarState,
     status_bar_refresh_interval: Duration,
@@ -569,6 +574,7 @@ impl WokHandler {
             status_message: None,
             show_failure_trends_panel: false,
             show_workspace_insights_panel: false,
+            settings_editor: None,
             failure_trend_bucket_ms: DEFAULT_FAILURE_TREND_BUCKET_MS,
             status_bar_state: StatusBarState::default(),
             status_bar_refresh_interval: Duration::from_secs(5),
@@ -1694,6 +1700,22 @@ impl WokHandler {
                 self.chrome_rects.content,
                 input,
                 palette,
+                cursor_shape,
+                cursor_visible,
+                window_opacity,
+            );
+        }
+        if let Some(settings) = self.settings_editor.as_ref() {
+            let theme = self
+                .active_pane()
+                .map_or_else(Theme::default, |pane| pane.app.theme.clone());
+            render_settings_editor(
+                render,
+                &mut self.font,
+                &theme,
+                self.chrome_rects.content,
+                &settings.path,
+                &settings.editor.render_data(),
                 cursor_shape,
                 cursor_visible,
                 window_opacity,
@@ -3101,18 +3123,50 @@ impl WokHandler {
 
     fn open_settings(&mut self) {
         match ensure_settings_file() {
-            Ok(path) => match open_path(&path) {
-                Ok(()) => {
-                    self.status_message = Some(format!("Opened settings ({})", path.display()));
+            Ok(path) => match std::fs::read_to_string(&path) {
+                Ok(content) => {
+                    let mut editor = InputEditor::new(
+                        self.config.shell.clone(),
+                        wok_input::editor::InputPosition::Bottom,
+                    );
+                    editor.buffer.set_text(&content);
+                    editor.is_active = true;
+                    self.settings_editor = Some(SettingsEditorState {
+                        path: path.clone(),
+                        editor,
+                    });
+                    self.status_message = Some(format!(
+                        "Settings buffer opened: {} (save with Mod+S, close with Esc)",
+                        path.display()
+                    ));
                 }
                 Err(error) => {
-                    warn!("failed to open settings '{}': {error}", path.display());
-                    self.status_message = Some(format!("Settings: {}", path.display()));
+                    warn!("failed to read settings '{}': {error}", path.display());
+                    self.status_message = Some(format!("Settings unavailable: {error}"));
                 }
             },
             Err(error) => {
                 warn!("failed to prepare settings file: {error}");
                 self.status_message = Some(format!("Settings unavailable: {error}"));
+            }
+        }
+    }
+
+    fn save_settings_editor(&mut self) {
+        let Some(settings) = self.settings_editor.as_ref() else {
+            return;
+        };
+        let path = settings.path.clone();
+        let content = settings.editor.buffer.text();
+
+        match std::fs::write(&path, content) {
+            Ok(()) => {
+                self.reload_configuration();
+                self.status_message = Some(format!("Saved settings ({})", path.display()));
+            }
+            Err(error) => {
+                warn!("failed to save settings '{}': {error}", path.display());
+                self.status_message = Some(format!("Failed to save settings: {error}"));
             }
         }
     }
