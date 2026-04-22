@@ -6,11 +6,3 @@ repos:
         args: [check, poor_cli/]
       - id: ruff-format
         args: [--check, poor_cli/]
-  - repo: local
-    hooks:
-      - id: lua-syntax
-        name: lua syntax check
-        entry: bash -c 'for f in "$@"; do luac5.4 -p "$f" || exit 1; done' --
-        language: system
-        files: nvim-poor-cli/.*\.lua$
-        exclude: ^nvim-poor-cli/\.test-runtime/

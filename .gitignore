@@ -93,7 +93,6 @@ AGENTS.md
 copilot-instructions.md
 GEMINI.md
 
-nvim.log
 __pycache__/
 *.py[cod]
 *.pyo
@@ -122,3 +121,5 @@ dist/
 data/
 
 seuss.yaml
+
+*.log

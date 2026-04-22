@@ -1,4 +1,4 @@
-name: Go CI
+name: CLI Harness CI
 
 on:
   push:
@@ -7,17 +7,24 @@ on:
     branches: [main]
 
 jobs:
-  go:
+  python:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-python@v5
         with:
-          go-version-file: go.mod
-          cache: true
-      - run: go vet ./...
-      - uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-      - run: make go-build
-      - run: make test-go
+          python-version: "3.12"
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+      - name: Run CLI smoke checks
+        run: |
+          python -m compileall poor_cli
+          poor-cli help
+          poor-cli chat --help
+          poor-cli exec --help
+          poor-cli install info
+      - name: Run focused tests
+        run: |
+          python -m pytest -q tests/test_product_contracts.py tests/test_tool_orchestration.py tests/test_server_handlers.py tests/test_server_rate_limit.py

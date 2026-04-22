@@ -148,50 +148,6 @@ jobs:
       - name: Validate source distribution
         run: twine check dist/*.tar.gz
 
-  lua-syntax:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Lua
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y lua5.4
-
-      - name: Validate Neovim plugin Lua syntax
-        run: |
-          luac5.4 -p nvim-poor-cli/lua/poor-cli/config.lua
-          luac5.4 -p nvim-poor-cli/lua/poor-cli/health.lua
-          luac5.4 -p nvim-poor-cli/lua/poor-cli/rpc.lua
-          luac5.4 -p nvim-poor-cli/lua/poor-cli/commands.lua
-          luac5.4 -p nvim-poor-cli/lua/poor-cli/chat.lua
-
-  lua-tests:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        neovim-version: ["v0.10.0"]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Neovim ${{ matrix.neovim-version }}
-        uses: rhysd/action-setup-vim@v1
-        with:
-          neovim: true
-          version: ${{ matrix.neovim-version }}
-
-      - name: Check out plenary.nvim
-        uses: actions/checkout@v4
-        with:
-          repository: nvim-lua/plenary.nvim
-          path: nvim-poor-cli/.test-runtime/site/pack/test/start/plenary.nvim
-
-      - name: Run Lua specs
-        run: PLENARY_DIR="$PWD/nvim-poor-cli/.test-runtime/site/pack/test/start/plenary.nvim" make test-lua
-
   performance-guardrails:
     runs-on: ubuntu-latest
     env:
@@ -209,11 +165,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Set up Neovim v0.10.0
-        uses: rhysd/action-setup-vim@v1
-        with:
-          neovim: true
-          version: v0.10.0
 
       - name: Install package
         run: |
@@ -1027,39 +978,28 @@ jobs:
             bench-provider-probe-breakdown.json
           if-no-files-found: ignore
 
-  go-internal-coverage:
+  cli-contracts:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
         with:
-          go-version-file: go.mod
+          python-version: "3.12"
 
-      - name: Run Go coverage
-        run: make coverage
+      - name: Install package
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install -e .[dev]
 
-      - name: Run fixture e2e
-        run: make test-e2e
-
-      - name: Upload Go coverage report
-        uses: actions/upload-artifact@v4
-        with:
-          name: go-internal-coverage
-          path: |
-            coverage.out
-            coverage.html
-
-  docker-smoke:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build Docker image
-        run: docker build -t poor-cli-smoke .
-
-      - name: Verify poor-cli entrypoint
-        run: docker run --rm poor-cli-smoke --help
+      - name: Run CLI contract checks
+        run: |
+          .venv/bin/python -m compileall poor_cli
+          .venv/bin/poor-cli help
+          .venv/bin/poor-cli chat --help
+          .venv/bin/poor-cli exec --help
+          .venv/bin/poor-cli install info
+          .venv/bin/python -m pytest -q tests/test_product_contracts.py tests/test_server_rate_limit.py
