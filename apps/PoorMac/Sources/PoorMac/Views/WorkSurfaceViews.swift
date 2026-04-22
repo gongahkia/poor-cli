@@ -80,10 +80,13 @@ struct NativeActionSurface: View {
                                 .font(.headline)
                             ActionGrid(actions: Array(section.actions))
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             ResultAndLogView()
                 .frame(minHeight: 280)
@@ -96,7 +99,7 @@ struct ActionGrid: View {
     let actions: [BackendAction]
 
     private let columns = [
-        GridItem(.adaptive(minimum: 210, maximum: 320), spacing: 12),
+        GridItem(.adaptive(minimum: 240), spacing: 12, alignment: .topLeading),
     ]
 
     var body: some View {
@@ -113,11 +116,14 @@ struct ActionGrid: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
+                    .padding(.vertical, 4)
                     .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
                 }
                 .buttonStyle(.bordered)
+                .controlSize(.large)
                 .disabled(app.isBusy)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
