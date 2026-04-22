@@ -174,6 +174,10 @@ class ChatStreamingHandlersMixin:
                     str(params.get("eventId", "")),
                     int(params.get("chunksProcessed", 0) or 0),
                 )
+        if message.method == "poor-cli/cancelRequest":
+            params = message.params or {}
+            request_id = str(params.get("requestId", "")).strip()
+            self.core.cancel_request(request_id)
 
     async def handle_chat_streaming(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """

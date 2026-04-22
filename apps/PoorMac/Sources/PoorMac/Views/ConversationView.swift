@@ -4,21 +4,27 @@ struct ConversationView: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    ForEach(app.chatTurns) { turn in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(turn.role.capitalized)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text(turn.content)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+        VSplitView {
+            HSplitView {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        ForEach(app.chatTurns) { turn in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(turn.role.capitalized)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(turn.content.isEmpty ? " " : turn.content)
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
                         }
                     }
+                    .padding()
                 }
-                .padding()
+                .frame(minWidth: 520)
+
+                StreamEventsView()
+                    .frame(minWidth: 260, idealWidth: 320)
             }
             Divider()
             VStack(alignment: .leading, spacing: 8) {
@@ -37,6 +43,12 @@ struct ConversationView: View {
                     }
                     .keyboardShortcut(.return, modifiers: [.command])
                     .disabled(app.isBusy)
+                    Button {
+                        Task { await app.cancelActiveRequest() }
+                    } label: {
+                        Label("Cancel", systemImage: "xmark.circle")
+                    }
+                    .disabled(app.activeRequestID == nil)
                 }
                 Divider()
                 TextEditor(text: execBinding)
@@ -63,5 +75,30 @@ struct ConversationView: View {
 
     private var execBinding: Binding<String> {
         Binding(get: { app.execDraft }, set: { app.execDraft = $0 })
+    }
+}
+
+private struct StreamEventsView: View {
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Activity")
+                .font(.headline)
+                .padding(.horizontal)
+                .padding(.top, 8)
+            List(app.streamEvents) { event in
+                VStack(alignment: .leading, spacing: 3) {
+                    Label(event.title, systemImage: event.symbol)
+                        .font(.callout)
+                    if !event.detail.isEmpty {
+                        Text(event.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(3)
+                    }
+                }
+            }
+        }
     }
 }

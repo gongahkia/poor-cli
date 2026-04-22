@@ -25,14 +25,57 @@ struct AppLogLine: Identifiable, Hashable {
 }
 
 struct ChatTurn: Identifiable, Hashable {
-    let id = UUID()
+    let id: UUID
     let role: String
-    let content: String
+    var content: String
+
+    init(id: UUID = UUID(), role: String, content: String) {
+        self.id = id
+        self.role = role
+        self.content = content
+    }
+}
+
+struct StreamEventLine: Identifiable, Hashable {
+    let id = UUID()
+    let title: String
+    let detail: String
+    let symbol: String
+}
+
+struct PendingPermissionReview: Identifiable, Hashable {
+    let id: String
+    let toolName: String
+    let operation: String
+    let message: String
+    let paths: [String]
+    let diff: String
+    let payload: [String: JSONValue]
+}
+
+struct PendingPlanReview: Identifiable, Hashable {
+    let id: String
+    let summary: String
+    let originalRequest: String
+    let steps: [String]
+    let payload: [String: JSONValue]
+}
+
+enum PendingReviewSheet: Identifiable, Hashable {
+    case permission(PendingPermissionReview)
+    case plan(PendingPlanReview)
+
+    var id: String {
+        switch self {
+        case .permission(let review): "permission-\(review.id)"
+        case .plan(let review): "plan-\(review.id)"
+        }
+    }
 }
 
 @MainActor
 @Observable
-final class AppModel {
+final class AppModel: @unchecked Sendable {
     var selectedArea: BackendArea = .dashboard
     var configuration = BackendConfiguration.detected()
     var connectionState: ConnectionState = .stopped
@@ -46,8 +89,12 @@ final class AppModel {
     var discoveredMethods: [String] = []
     var isBusy = false
     var keychainStatus = ""
+    var streamEvents: [StreamEventLine] = []
+    var pendingReviewSheet: PendingReviewSheet?
+    var activeRequestID: String?
 
     private var client: JSONRPCStdioClient
+    @ObservationIgnored private var reviewContinuation: CheckedContinuation<Bool, Never>?
 
     init() {
         let configuration = BackendConfiguration.detected()
@@ -128,15 +175,43 @@ final class AppModel {
         defer { isBusy = false }
         chatDraft = ""
         chatTurns.append(ChatTurn(role: "user", content: text))
+        let assistantID = UUID()
+        chatTurns.append(ChatTurn(id: assistantID, role: "assistant", content: ""))
         do {
             try await ensureBackend()
-            let result = try await client.call(method: "poor-cli/chat", params: ["message": .string(text)])
+            let requestID = "mac-\(UUID().uuidString)"
+            activeRequestID = requestID
+            let result = try await client.call(
+                method: "poor-cli/chatStreaming",
+                params: [
+                    "message": .string(text),
+                    "requestId": .string(requestID),
+                ],
+                onNotification: { [weak self] event in
+                    await self?.handleStreamingNotification(event, assistantID: assistantID)
+                }
+            )
             let content = result.objectValue?["content"]?.stringValue ?? result.prettyPrinted
-            chatTurns.append(ChatTurn(role: "assistant", content: content))
+            replaceChatTurn(id: assistantID, content: content)
             lastResult = result
+            activeRequestID = nil
         } catch {
-            chatTurns.append(ChatTurn(role: "assistant", content: error.localizedDescription))
+            replaceChatTurn(id: assistantID, content: error.localizedDescription)
+            activeRequestID = nil
         }
+    }
+
+    func cancelActiveRequest() async {
+        guard let activeRequestID else { return }
+        do {
+            try await client.notify(method: "poor-cli/cancelRequest", params: [
+                "requestId": .string(activeRequestID),
+            ])
+            appendStreamEvent("Cancelled", activeRequestID, symbol: "xmark.circle")
+        } catch {
+            appendStreamEvent("Cancel failed", error.localizedDescription, symbol: "exclamationmark.triangle")
+        }
+        self.activeRequestID = nil
     }
 
     func runExec() async {
@@ -213,6 +288,12 @@ final class AppModel {
         }
     }
 
+    func resolvePendingReview(allowed: Bool) {
+        pendingReviewSheet = nil
+        reviewContinuation?.resume(returning: allowed)
+        reviewContinuation = nil
+    }
+
     private func ensureBackend() async throws {
         if connectionState != .connected {
             try await connectBackend()
@@ -226,6 +307,114 @@ final class AppModel {
         logs.insert(AppLogLine(title: title, detail: detail), at: 0)
         if logs.count > 200 {
             logs.removeLast(logs.count - 200)
+        }
+    }
+
+    private func appendStreamEvent(_ title: String, _ detail: String, symbol: String) {
+        streamEvents.insert(StreamEventLine(title: title, detail: detail, symbol: symbol), at: 0)
+        if streamEvents.count > 100 {
+            streamEvents.removeLast(streamEvents.count - 100)
+        }
+    }
+
+    private func appendChatTurn(id: UUID, chunk: String) {
+        guard let index = chatTurns.firstIndex(where: { $0.id == id }) else { return }
+        chatTurns[index].content += chunk
+    }
+
+    private func replaceChatTurn(id: UUID, content: String) {
+        guard let index = chatTurns.firstIndex(where: { $0.id == id }) else { return }
+        chatTurns[index].content = content
+    }
+
+    private func handleStreamingNotification(
+        _ event: JSONRPCNotificationEvent,
+        assistantID: UUID
+    ) async -> JSONRPCOutboundNotification? {
+        switch event.method {
+        case "poor-cli/streamChunk":
+            let chunk = event.params["chunk"]?.stringValue ?? ""
+            let done = event.params["done"] == .bool(true)
+            if !chunk.isEmpty {
+                appendChatTurn(id: assistantID, chunk: chunk)
+            }
+            if done {
+                appendStreamEvent("Response complete", event.params["reason"]?.stringValue ?? "complete", symbol: "checkmark.circle")
+            }
+        case "poor-cli/thinkingChunk":
+            appendStreamEvent("Thinking", event.params["chunk"]?.stringValue ?? "", symbol: "brain")
+        case "poor-cli/toolEvent":
+            let toolName = event.params["toolName"]?.stringValue ?? "tool"
+            let eventType = event.params["eventType"]?.stringValue ?? "event"
+            appendStreamEvent(toolName, eventType, symbol: "wrench.and.screwdriver")
+        case "tool.chunk":
+            let toolName = event.params["toolName"]?.stringValue ?? "tool"
+            appendStreamEvent(toolName, event.params["chunk"]?.stringValue ?? "", symbol: "terminal")
+            if let eventID = event.params["eventId"]?.stringValue {
+                let chunkIndex = event.params["chunkIndex"]?.intValue ?? 0
+                return JSONRPCOutboundNotification(method: "poor-cli/toolStreamAck", params: [
+                    "eventId": .string(eventID),
+                    "chunksProcessed": .number(Double(chunkIndex + 1)),
+                ])
+            }
+        case "poor-cli/progress":
+            appendStreamEvent(
+                event.params["phase"]?.stringValue ?? "Progress",
+                event.params["message"]?.stringValue ?? "",
+                symbol: "arrow.clockwise"
+            )
+        case "poor-cli/costUpdate":
+            appendStreamEvent("Cost update", JSONValue.object(event.params).prettyPrinted, symbol: "chart.line.uptrend.xyaxis")
+        case "poor-cli/contextPressure":
+            appendStreamEvent("Context pressure", JSONValue.object(event.params).prettyPrinted, symbol: "text.magnifyingglass")
+        case "poor-cli/economyTurnReport":
+            appendStreamEvent("Economy", JSONValue.object(event.params).prettyPrinted, symbol: "banknote")
+        case "poor-cli/permissionReq":
+            let allowed = await reviewPermission(event.params)
+            return JSONRPCOutboundNotification(method: "poor-cli/permissionRes", params: [
+                "promptId": event.params["promptId"] ?? .string(""),
+                "allowed": .bool(allowed),
+                "approvedPaths": .array([]),
+                "approvedChunks": .array([]),
+            ])
+        case "poor-cli/planReq":
+            let allowed = await reviewPlan(event.params)
+            return JSONRPCOutboundNotification(method: "poor-cli/planRes", params: [
+                "promptId": event.params["promptId"] ?? .string(""),
+                "allowed": .bool(allowed),
+            ])
+        default:
+            appendStreamEvent(event.method, JSONValue.object(event.params).prettyPrinted, symbol: "bell")
+        }
+        return nil
+    }
+
+    private func reviewPermission(_ params: [String: JSONValue]) async -> Bool {
+        await withCheckedContinuation { continuation in
+            reviewContinuation = continuation
+            pendingReviewSheet = .permission(PendingPermissionReview(
+                id: params["promptId"]?.stringValue ?? UUID().uuidString,
+                toolName: params["toolName"]?.stringValue ?? "Tool",
+                operation: params["operation"]?.stringValue ?? "",
+                message: params["message"]?.stringValue ?? "",
+                paths: params["paths"]?.arrayValue?.compactMap(\.stringValue) ?? [],
+                diff: params["diff"]?.stringValue ?? "",
+                payload: params
+            ))
+        }
+    }
+
+    private func reviewPlan(_ params: [String: JSONValue]) async -> Bool {
+        await withCheckedContinuation { continuation in
+            reviewContinuation = continuation
+            let rawSteps = params["steps"]?.arrayValue ?? []
+            pendingReviewSheet = .plan(PendingPlanReview(
+                id: params["promptId"]?.stringValue ?? UUID().uuidString,
+                summary: params["summary"]?.stringValue ?? "",
+                originalRequest: params["originalRequest"]?.stringValue ?? "",
+                steps: rawSteps.map(\.prettyPrinted),
+                payload: params
+            ))
         }
     }
 

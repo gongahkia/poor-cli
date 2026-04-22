@@ -17,10 +17,11 @@ swift test
 
 The app launches `python -m poor_cli.server --stdio` through JSON-RPC Content-Length framing. It defaults to the repo root two levels above this package and prefers `.venv/bin/python` when present.
 Provider API keys can be loaded from or saved to macOS Keychain from Settings when a provider name is set.
+Chat uses `poor-cli/chatStreaming`, renders stream chunks and activity events, and presents permission/plan review as native sheets.
 
 Native UI defaults used:
 
 - `WindowGroup` and `Settings` scene for standard macOS windows/preferences.
 - `NavigationSplitView` for Finder-style sidebar navigation.
-- `Table`, `List`, `Form`, `ToolbarItem`, `TextEditor`, and `SecureField` for standard macOS data, configuration, and input surfaces.
+- `Table`, `List`, `Form`, `ToolbarItem`, `TextEditor`, `SecureField`, and `.sheet(item:)` for standard macOS data, configuration, input, and review surfaces.
 - App state is root-owned and injected through SwiftUI environment.

@@ -76,6 +76,10 @@ enum JSONValue: Codable, Hashable, Sendable {
         if case .array(let value) = self { value } else { nil }
     }
 
+    var intValue: Int? {
+        if case .number(let value) = self { Int(value) } else { nil }
+    }
+
     var prettyPrinted: String {
         guard JSONSerialization.isValidJSONObject(foundationObject),
               let data = try? JSONSerialization.data(

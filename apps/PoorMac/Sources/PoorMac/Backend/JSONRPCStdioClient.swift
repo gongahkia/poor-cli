@@ -121,6 +121,22 @@ private struct JSONRPCRequest: Encodable {
     let params: [String: JSONValue]
 }
 
+private struct JSONRPCNotification: Encodable {
+    let jsonrpc = "2.0"
+    let method: String
+    let params: [String: JSONValue]
+}
+
+struct JSONRPCNotificationEvent: Sendable {
+    let method: String
+    let params: [String: JSONValue]
+}
+
+struct JSONRPCOutboundNotification: Sendable {
+    let method: String
+    let params: [String: JSONValue]
+}
+
 private struct JSONRPCResponse: Decodable {
     let jsonrpc: String?
     let id: Int?
@@ -270,7 +286,7 @@ actor JSONRPCStdioClient {
             return
         }
         do {
-            _ = try await call(method: "shutdown", params: [:], autoStart: false)
+            _ = try await call(method: "shutdown", params: [:], autoStart: false, onNotification: nil)
         } catch {
             // termination below is the fallback path
         }
@@ -278,10 +294,28 @@ actor JSONRPCStdioClient {
     }
 
     func call(method: String, params: [String: JSONValue] = [:]) async throws -> JSONValue {
-        try await call(method: method, params: params, autoStart: true)
+        try await call(method: method, params: params, autoStart: true, onNotification: nil)
     }
 
-    private func call(method: String, params: [String: JSONValue], autoStart: Bool) async throws -> JSONValue {
+    func call(
+        method: String,
+        params: [String: JSONValue] = [:],
+        onNotification: (@Sendable (JSONRPCNotificationEvent) async -> JSONRPCOutboundNotification?)?
+    ) async throws -> JSONValue {
+        try await call(method: method, params: params, autoStart: true, onNotification: onNotification)
+    }
+
+    func notify(method: String, params: [String: JSONValue] = [:]) async throws {
+        try start()
+        try writeNotification(JSONRPCOutboundNotification(method: method, params: params))
+    }
+
+    private func call(
+        method: String,
+        params: [String: JSONValue],
+        autoStart: Bool,
+        onNotification: (@Sendable (JSONRPCNotificationEvent) async -> JSONRPCOutboundNotification?)?
+    ) async throws -> JSONValue {
         if autoStart {
             try start()
         }
@@ -296,7 +330,13 @@ actor JSONRPCStdioClient {
         while true {
             try throwIfExited()
             let response = try readResponse()
-            if response.method != nil, response.id == nil {
+            if let method = response.method, response.id == nil {
+                if let outbound = await onNotification?(JSONRPCNotificationEvent(
+                    method: method,
+                    params: response.params ?? [:]
+                )) {
+                    try writeNotification(outbound)
+                }
                 continue
             }
             guard response.id == id else {
@@ -307,6 +347,13 @@ actor JSONRPCStdioClient {
             }
             return response.result ?? .null
         }
+    }
+
+    private func writeNotification(_ notification: JSONRPCOutboundNotification) throws {
+        let payload = JSONRPCNotification(method: notification.method, params: notification.params)
+        let body = try JSONEncoder().encode(payload)
+        guard let stdin else { throw BackendClientError.processNotRunning }
+        stdin.write(JSONRPCFraming.frame(body))
     }
 
     private func throwIfExited() throws {
