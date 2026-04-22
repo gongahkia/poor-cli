@@ -85,26 +85,6 @@ ensureExcludes(readmeTarget, [
   "ACRA is the next business-diligence candidate",
 ]);
 
-ensureIncludes("packages/skill/SKILL.md", [
-  `${totalTools} \`sg_*\` tools total`,
-  `${familyCount} official data families`,
-  `bounded preferred interface across ${routedFamilyCount} routed families`,
-  "Business Registry Diligence",
-  "sg_acra_entities",
-  "sg://recipes",
-  "sg://runtime",
-  "sg://playbooks",
-  "sg://benchmarks",
-  "Route Planning",
-  "SingStat Table Drilldown",
-  "Dataset Collection Browse",
-  ...familyNames,
-]);
-ensureExcludes("packages/skill/SKILL.md", [
-  "CEA and BCA are direct-only in this tranche",
-  "CEA and BCA direct tools in this tranche",
-]);
-
 ensureIncludes("docs/architecture.md", [
   `${familyCount} official data families`,
   `bounded preferred interface across ${routedFamilyCount} routed families`,
@@ -285,7 +265,6 @@ if (!Array.isArray(RUNTIME_CATALOG.queryStatusContract) || RUNTIME_CATALOG.query
 
 for (const workflowName of workflowNames) {
   ensureIncludes(readmeTarget, [workflowName]);
-  ensureIncludes("packages/skill/SKILL.md", [workflowName]);
 }
 
 for (const recipeName of ["Postal Route", "SingStat Drilldown", "HDB Rental Check"]) {

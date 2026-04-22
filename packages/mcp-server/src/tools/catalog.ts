@@ -233,7 +233,7 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
     ],
     authRequired: true,
     rateLimit: "20 tokens, 2/sec refill via LTA-dependent feeds",
-    positioning: "First-party transit-intelligence skill family in the same hierarchy as other SG additive and direct surfaces.",
+    positioning: "First-party transit-intelligence data family in the same hierarchy as other SG additive and direct surfaces.",
     preferredInterface: "sg_query",
     scopeNotes: [
       "Operational scores and recommendations are deterministic heuristics over bounded public-feed signals.",
