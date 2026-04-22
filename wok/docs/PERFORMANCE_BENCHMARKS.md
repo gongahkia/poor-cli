@@ -9,8 +9,9 @@ Wok now includes a Criterion benchmark harness focused on large-workspace query 
 1. Global output search over `50,000` lines (`GlobalSearch::search`).
 2. Block filter query over `20,000` output lines (`BlockQueryState::search` in `Filter` mode).
 3. Pane + global command-history search over `44,000` entries (`CommandSearchState::search`).
+4. CPU-side quad batch construction for a `240x90` high-DPI viewport-like workload (`QuadBatch` background and glyph emission).
 
-These workloads target the real bottleneck class for interactive terminal UX: repeated search/filter operations on very large workspaces.
+These workloads target the real bottleneck classes for interactive terminal UX: repeated search/filter operations on very large workspaces and CPU-side render preparation for dense Retina-scale terminal grids.
 
 ## Run
 

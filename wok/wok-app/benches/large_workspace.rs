@@ -2,12 +2,16 @@ use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion
 use wok_app::block_query::{BlockQueryMode, BlockQueryState};
 use wok_app::command_search::CommandSearchState;
 use wok_input::history::HistoryEntry;
+use wok_renderer::atlas::AtlasRegion;
+use wok_renderer::pipeline::QuadBatch;
 use wok_ui::search::{GlobalSearch, SearchLine};
 
 const GLOBAL_SEARCH_LINES: usize = 50_000;
 const BLOCK_QUERY_LINES: usize = 20_000;
 const PANE_HISTORY_ENTRIES: usize = 4_000;
 const GLOBAL_HISTORY_ENTRIES: usize = 40_000;
+const RETINA_RENDER_ROWS: usize = 90;
+const RETINA_RENDER_COLS: usize = 240;
 
 fn bench_global_search(c: &mut Criterion) {
     let lines = make_search_lines(GLOBAL_SEARCH_LINES, 16);
@@ -56,6 +60,57 @@ fn bench_command_search(c: &mut Criterion) {
             |mut state| {
                 state.search("cargo test", &pane_entries, &global_entries);
                 black_box(state.results.len());
+            },
+            BatchSize::SmallInput,
+        );
+    });
+    group.finish();
+}
+
+fn bench_retina_quad_batch(c: &mut Criterion) {
+    let region = AtlasRegion {
+        x: 0,
+        y: 0,
+        width: 9,
+        height: 18,
+        u_min: 0.0,
+        v_min: 0.0,
+        u_max: 0.004,
+        v_max: 0.009,
+    };
+    let mut group = c.benchmark_group("large_workspace/retina_quad_batch");
+    group.throughput(Throughput::Elements(
+        (RETINA_RENDER_ROWS * RETINA_RENDER_COLS) as u64,
+    ));
+    group.bench_function("full_viewport_rebuild", |b| {
+        b.iter_batched(
+            || {
+                QuadBatch::with_capacity(
+                    RETINA_RENDER_ROWS * RETINA_RENDER_COLS * 8,
+                    RETINA_RENDER_ROWS * RETINA_RENDER_COLS * 12,
+                )
+            },
+            |mut batch| {
+                for row in 0..RETINA_RENDER_ROWS {
+                    let y = row as f32 * 18.0;
+                    for col in 0..RETINA_RENDER_COLS {
+                        let x = col as f32 * 9.0;
+                        batch.push_bg_quad(x, y, 9.0, 18.0, [0.02, 0.02, 0.025, 1.0]);
+                        if col % 3 != 0 {
+                            batch.push_glyph_quad(
+                                x,
+                                y,
+                                9.0,
+                                18.0,
+                                &region,
+                                [0.86, 0.88, 0.91, 1.0],
+                            );
+                        }
+                    }
+                }
+                black_box(batch.quad_count());
+                black_box(batch.vertices.len());
+                black_box(batch.indices.len());
             },
             BatchSize::SmallInput,
         );
@@ -122,6 +177,7 @@ criterion_group!(
     benches,
     bench_global_search,
     bench_block_query_filter,
-    bench_command_search
+    bench_command_search,
+    bench_retina_quad_batch
 );
 criterion_main!(benches);
