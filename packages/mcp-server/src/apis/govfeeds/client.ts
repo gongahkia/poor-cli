@@ -270,14 +270,32 @@ const toIsoTimestamp = (value: string | null): string | null => {
 
 const parseFeedItems = (xml: string): readonly GovFeedItem[] => {
   const itemMatches = [...xml.matchAll(/<item(?:\s[^>]*)?>[\s\S]*?<\/item>/gi)];
-  return itemMatches.map((match) => {
+  if (itemMatches.length > 0) {
+    return itemMatches.map((match) => {
+      const block = match[0];
+      const publishedAtRaw = extractTagValue(block, "pubDate") ?? extractTagValue(block, "dc:date");
+      return {
+        title: extractTagValue(block, "title"),
+        description: extractTagValue(block, "description"),
+        link: extractTagValue(block, "link"),
+        guid: extractTagValue(block, "guid"),
+        publishedAtRaw,
+        publishedAt: toIsoTimestamp(publishedAtRaw),
+      };
+    });
+  }
+
+  const entryMatches = [...xml.matchAll(/<entry(?:\s[^>]*)?>[\s\S]*?<\/entry>/gi)];
+  return entryMatches.map((match) => {
     const block = match[0];
-    const publishedAtRaw = extractTagValue(block, "pubDate") ?? extractTagValue(block, "dc:date");
+    const publishedAtRaw = extractTagValue(block, "updated") ?? extractTagValue(block, "published");
+    const linkHrefMatch = /<link[^>]*\bhref="([^"]+)"[^>]*\/?>/i.exec(block);
+    const link = linkHrefMatch?.[1] ?? extractTagValue(block, "link");
     return {
       title: extractTagValue(block, "title"),
-      description: extractTagValue(block, "description"),
-      link: extractTagValue(block, "link"),
-      guid: extractTagValue(block, "guid"),
+      description: extractTagValue(block, "summary") ?? extractTagValue(block, "content"),
+      link: link === undefined ? null : link,
+      guid: extractTagValue(block, "id"),
       publishedAtRaw,
       publishedAt: toIsoTimestamp(publishedAtRaw),
     };
