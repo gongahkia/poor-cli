@@ -8,6 +8,7 @@ from poor_cli.cli_app import (
     _extract_inline_api_key,
     _format_chat_blocker,
     _initialize_chat_core,
+    _is_chat_exit_command,
 )
 from poor_cli.exceptions import MissingAPIKeyError
 
@@ -36,6 +37,12 @@ def test_extract_bang_shell_command_accepts_chat_shell_syntax() -> None:
     assert _extract_bang_shell_command("! ls -la") == "ls -la"
     assert _extract_bang_shell_command("!") == ""
     assert _extract_bang_shell_command("hello") is None
+
+
+def test_chat_exit_command_accepts_q_and_exit_forms() -> None:
+    for command in ("/exit", "/quit", "exit", "quit", "q", "/q", ":q"):
+        assert _is_chat_exit_command(command)
+    assert not _is_chat_exit_command("clear")
 
 
 def test_initialize_chat_core_falls_back_to_minimal_on_missing_key() -> None:

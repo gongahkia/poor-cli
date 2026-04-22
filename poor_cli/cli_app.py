@@ -560,6 +560,10 @@ def _extract_bang_shell_command(message: str) -> Optional[str]:
     return stripped[1:].strip()
 
 
+def _is_chat_exit_command(message: str) -> bool:
+    return message.strip().lower() in {"/quit", "/exit", "quit", "exit", "q", "/q", ":q"}
+
+
 def _is_persistent_chat_blocker(error: BaseException) -> bool:
     from .exceptions import ConfigurationError
 
@@ -630,6 +634,7 @@ async def _run_chat_mode_async(args: argparse.Namespace) -> int:
     config_path = Path(args.config).expanduser() if args.config else None
     core = PoorCLICore(config_path=config_path)
     setup_error = await _initialize_chat_core(core, args)
+    fast_shutdown = False
     try:
         _configure_chat_runtime(core, args)
         if args.resume:
@@ -644,12 +649,13 @@ async def _run_chat_mode_async(args: argparse.Namespace) -> int:
             try:
                 message = input("you> ").strip()
             except (EOFError, KeyboardInterrupt):
+                fast_shutdown = True
                 print()
                 return 0
             if not message:
                 continue
-            lowered = message.lower()
-            if lowered in {"/quit", "/exit", "quit", "exit"}:
+            if _is_chat_exit_command(message):
+                fast_shutdown = True
                 return 0
             shell_command = _extract_bang_shell_command(message)
             if shell_command is not None:
@@ -658,6 +664,10 @@ async def _run_chat_mode_async(args: argparse.Namespace) -> int:
                     continue
                 try:
                     print(await core.execute_tool("bash", {"command": shell_command}))
+                except KeyboardInterrupt:
+                    fast_shutdown = True
+                    print()
+                    return 0
                 except (APIError, ConfigurationError, PoorCLIError) as exc:
                     print(_format_chat_blocker(exc))
                 continue
@@ -712,12 +722,19 @@ async def _run_chat_mode_async(args: argparse.Namespace) -> int:
                     print()
                 print(_format_chat_blocker(exc))
                 continue
+            except KeyboardInterrupt:
+                fast_shutdown = True
+                print()
+                return 0
             if wrote_text:
                 print()
             else:
                 print("(no output)")
     finally:
-        await core.shutdown()
+        try:
+            await core.shutdown(fast=fast_shutdown)
+        except KeyboardInterrupt:
+            await core.shutdown(fast=True)
 
 
 def _run_chat_mode(argv: Sequence[str]) -> int:
