@@ -87,3 +87,12 @@ jobs:
         with:
           name: perf-gate
           path: .perf-gate/
+
+  macos_perf_smoke:
+    name: macOS Performance Smoke
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo bench -p wok --bench large_workspace --no-run
