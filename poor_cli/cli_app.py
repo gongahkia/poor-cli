@@ -553,6 +553,13 @@ def _extract_inline_api_key(message: str) -> str:
     return ""
 
 
+def _extract_bang_shell_command(message: str) -> Optional[str]:
+    stripped = message.strip()
+    if not stripped.startswith("!"):
+        return None
+    return stripped[1:].strip()
+
+
 def _is_persistent_chat_blocker(error: BaseException) -> bool:
     from .exceptions import ConfigurationError
 
@@ -630,7 +637,7 @@ async def _run_chat_mode_async(args: argparse.Namespace) -> int:
             if resume_prefix:
                 print(resume_prefix)
         print("\033c", end="")
-        print("poor-cli chat. /help for commands. /quit exits.")
+        print("poor-cli chat. /help for commands. !cmd runs shell. /quit exits.")
         if setup_error is not None:
             print(f"assistant> {_format_chat_blocker(setup_error)}")
         while True:
@@ -644,6 +651,16 @@ async def _run_chat_mode_async(args: argparse.Namespace) -> int:
             lowered = message.lower()
             if lowered in {"/quit", "/exit", "quit", "exit"}:
                 return 0
+            shell_command = _extract_bang_shell_command(message)
+            if shell_command is not None:
+                if not shell_command:
+                    print("usage: !<shell command>")
+                    continue
+                try:
+                    print(await core.execute_tool("bash", {"command": shell_command}))
+                except (APIError, ConfigurationError, PoorCLIError) as exc:
+                    print(_format_chat_blocker(exc))
+                continue
             handled, dispatched_message = await _handle_chat_slash_command(core, args, message)
             if handled:
                 continue
