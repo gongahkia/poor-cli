@@ -2672,6 +2672,7 @@ impl WokHandler {
         if let Some(render) = self.render.as_mut() {
             render.atlas.clear();
         }
+        self.prewarm_glyph_atlas();
         for pane in self.panes.values_mut() {
             pane.app.theme = theme.clone();
             pane.app.config.font_family = theme.font_family.clone();
@@ -2685,6 +2686,12 @@ impl WokHandler {
             self.sync_workspace_layout(window.inner_size());
         }
         self.needs_redraw = true;
+    }
+
+    fn prewarm_glyph_atlas(&mut self) {
+        if let Some(render) = self.render.as_mut() {
+            let _ = prewarm_common_glyphs(render, &mut self.font);
+        }
     }
 
     fn sync_background_renderer(&mut self, theme: Option<&Theme>) {
@@ -3618,6 +3625,7 @@ impl WokHandler {
             if let Some(render) = self.render.as_mut() {
                 render.atlas.clear();
             }
+            self.prewarm_glyph_atlas();
             for pane in self.panes.values_mut() {
                 pane.app.config = config.clone();
                 pane.app
@@ -4741,6 +4749,10 @@ impl WokHandler {
 
         self.font.set_font_size(target_size);
         self.config.font_size = target_size;
+        if let Some(render) = self.render.as_mut() {
+            render.atlas.clear();
+        }
+        self.prewarm_glyph_atlas();
         for pane in self.panes.values_mut() {
             pane.app.zoom.set_current_size(target_size);
             pane.app.config.font_size = target_size;
@@ -5407,6 +5419,7 @@ impl AppHandler for WokHandler {
                     .map(|image| image.pixels.as_ref()),
             );
         }
+        self.prewarm_glyph_atlas();
 
         // Compute grid dimensions
         self.update_grid(size);

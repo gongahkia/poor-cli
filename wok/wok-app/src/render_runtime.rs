@@ -2839,6 +2839,17 @@ pub(crate) fn push_glyph_to_batch(
     push_glyph_impl(pipeline, gpu, atlas, batch, font, x, y, character, color);
 }
 
+pub(crate) fn prewarm_common_glyphs(render: &mut RenderState, font: &mut FontSystem) -> usize {
+    let (pipeline, gpu, atlas) = (&mut render.pipeline, &render.gpu, &mut render.atlas);
+    let mut warmed = 0;
+    for character in common_prewarm_glyphs() {
+        if prewarm_glyph(pipeline, gpu, atlas, font, character) {
+            warmed += 1;
+        }
+    }
+    warmed
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn push_glyph_impl(
     pipeline: &mut TerminalRenderPipeline,
@@ -2888,6 +2899,57 @@ pub(crate) fn push_glyph_impl(
             );
         }
     }
+}
+
+fn prewarm_glyph(
+    pipeline: &mut TerminalRenderPipeline,
+    gpu: &GpuContext,
+    atlas: &mut GlyphAtlas,
+    font: &mut FontSystem,
+    character: char,
+) -> bool {
+    if character == ' ' || character == '\0' {
+        return false;
+    }
+
+    let glyph_key = wok_renderer::atlas::GlyphKey {
+        font_id: 0,
+        glyph_id: character as u32,
+        font_size_tenths: (font.font_size * 10.0) as u32,
+    };
+
+    let Some(glyph) = font.rasterize(character) else {
+        return false;
+    };
+    let Some(allocation) = atlas.get_or_insert_with_status(glyph_key, glyph.width, glyph.height)
+    else {
+        return false;
+    };
+    if allocation.inserted && glyph.width > 0 && glyph.height > 0 {
+        pipeline.upload_glyph(
+            gpu,
+            allocation.region.x,
+            allocation.region.y,
+            glyph.width,
+            glyph.height,
+            &glyph.data,
+        );
+    }
+    allocation.inserted
+}
+
+fn common_prewarm_glyphs() -> impl Iterator<Item = char> {
+    const EXTRA_CODEPOINTS: &[u32] = &[
+        0x2500, 0x2502, 0x250c, 0x2510, 0x2514, 0x2518, 0x251c, 0x2524, 0x252c, 0x2534, 0x253c,
+        0x2580, 0x2584, 0x2588, 0x258c, 0x2590, 0x2591, 0x2592, 0x2593, 0x25cf, 0x25cb, 0x2713,
+        0x2717,
+    ];
+
+    (b'!'..=b'~').map(char::from).chain(
+        EXTRA_CODEPOINTS
+            .iter()
+            .filter_map(|codepoint| char::from_u32(*codepoint)),
+    )
 }
 
 pub(crate) fn collect_search_lines(
