@@ -59,7 +59,14 @@ def test_clear_fires_notification():
     assert log == [("integration.diagnostics.clear", {})]
 
 
-def test_list_not_yet_implemented():
+def test_list_returns_recorded_diagnostics():
     ctx = _ctx()
+    _run(
+        diag_tools.handle_emit(
+            ctx=ctx,
+            args={"items": [{"file": "a.py", "line": 3, "message": "suspicious import"}]},
+        )
+    )
     r = _run(diag_tools.handle_list(ctx=ctx, args={}))
-    assert r.metadata.get("not_implemented") is True
+    assert not r.is_error
+    assert r.metadata["diagnostics"][0]["file"] == "a.py"

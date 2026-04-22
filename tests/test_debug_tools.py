@@ -11,7 +11,7 @@ from poor_cli.tool_blocks import ToolResult
 from poor_cli.tools import debug as debug_tools
 
 
-def _ctx(plugins=None, notify_log=None):
+def _ctx(plugins=None, notify_log=None, request=None):
     plugins = plugins or {}
     notify_log = notify_log if notify_log is not None else []
 
@@ -19,7 +19,10 @@ def _ctx(plugins=None, notify_log=None):
         notify_log.append((method, params))
 
     return SimpleNamespace(
-        cwd="/tmp", has_plugin=lambda name: plugins.get(name, False), notify_client=notify
+        cwd="/tmp",
+        has_plugin=lambda name: plugins.get(name, False),
+        notify_client=notify,
+        request_client=request,
     )
 
 
@@ -64,9 +67,20 @@ def test_step_and_continue_fire_notifications():
     assert methods == ["integration.debug.step", "integration.debug.continue"]
 
 
-def test_eval_and_stack_are_not_yet_implemented():
-    ctx = _ctx(plugins={"debug": True})
+def test_eval_and_stack_use_debug_request_bridge():
+    async def request(method, params):
+        return {"text": f"{method}:{params}"}
+
+    ctx = _ctx(plugins={"debug": True}, request=request)
     r1 = _run(debug_tools.handle_stack(ctx=ctx, args={}))
     r2 = _run(debug_tools.handle_eval(ctx=ctx, args={"expression": "x"}))
-    assert r1.metadata.get("not_implemented") is True
-    assert r2.metadata.get("not_implemented") is True
+    assert not r1.is_error
+    assert not r2.is_error
+    assert "integration.debug.stack" in r1.content[0].text
+    assert "integration.debug.eval" in r2.content[0].text
+
+
+def test_eval_without_request_bridge_returns_error():
+    ctx = _ctx(plugins={"debug": True})
+    r = _run(debug_tools.handle_eval(ctx=ctx, args={"expression": "x"}))
+    assert r.is_error

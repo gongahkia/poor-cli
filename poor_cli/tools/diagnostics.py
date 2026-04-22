@@ -1,7 +1,7 @@
-"""Diagnostics tools (Phase B).
+"""Diagnostics tools.
 
 - ``diagnostics.emit``: the agent records structured findings for files/lines.
-- ``diagnostics.list``: intended for future workspace diagnostics snapshots.
+- ``diagnostics.list``: returns findings recorded during this session.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict, List
 
-from poor_cli.tool_blocks import TextBlock, ToolResult
+from poor_cli.tool_blocks import TableBlock, ToolResult
 from poor_cli.tools._registry import register_tool
 
 
@@ -49,20 +49,43 @@ async def handle_emit(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
         )
     if not cleaned:
         return ToolResult.error("no valid items (need file + message)")
+    existing = getattr(ctx, "diagnostics", None)
+    if not isinstance(existing, list):
+        existing = []
+        try:
+            setattr(ctx, "diagnostics", existing)
+        except Exception:
+            pass
+    existing.extend(cleaned)
     await _notify(ctx, "integration.diagnostics.emit", {"items": cleaned})
     return ToolResult.text(f"recorded {len(cleaned)} diagnostic(s)")
 
 
 async def handle_clear(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
+    existing = getattr(ctx, "diagnostics", None)
+    if isinstance(existing, list):
+        existing.clear()
     await _notify(ctx, "integration.diagnostics.clear", {})
     return ToolResult.text("cleared poor-cli diagnostics")
 
 
 async def handle_list(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
-    # Future CLI/API bridge hook. Stub for now.
+    items = list(getattr(ctx, "diagnostics", []) or [])
+    rows = [
+        [
+            str(item.get("severity") or "info"),
+            str(item.get("file") or ""),
+            str(item.get("line") or 1),
+            str(item.get("message") or ""),
+        ]
+        for item in items
+        if isinstance(item, dict)
+    ]
+    if not rows:
+        return ToolResult.text("no diagnostics recorded", diagnostics=[])
     return ToolResult(
-        content=[TextBlock(text="diagnostics.list is not yet implemented")],
-        metadata={"not_implemented": True},
+        content=[TableBlock(columns=["severity", "file", "line", "message"], rows=rows)],
+        metadata={"diagnostics": items},
     )
 
 
@@ -113,7 +136,7 @@ register_tool(
 
 register_tool(
     name="diagnostics.list",
-    description="Snapshot current workspace diagnostics (not yet implemented).",
+    description="List diagnostics recorded in the current harness session.",
     schema={
         "type": "object",
         "properties": {

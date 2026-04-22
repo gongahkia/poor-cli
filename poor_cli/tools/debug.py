@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict
 
-from poor_cli.tool_blocks import TextBlock, ToolResult
+from poor_cli.tool_blocks import ToolResult
 from poor_cli.tools._registry import register_tool
 
 
@@ -29,6 +29,16 @@ async def _notify(ctx: Any, method: str, params: Dict[str, Any]) -> None:
             await maybe
     except Exception:
         pass
+
+
+async def _request(ctx: Any, method: str, params: Dict[str, Any]) -> Any:
+    fn = getattr(ctx, "request_client", None)
+    if fn is None:
+        return None
+    result = fn(method, params)
+    if asyncio.iscoroutine(result):
+        return await result
+    return result
 
 
 async def handle_set_breakpoint(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
@@ -77,21 +87,32 @@ async def handle_continue(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
 
 
 async def handle_stack(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
-    # read-side debug state needs a request/response bridge. stub for now.
-    return ToolResult(
-        content=[TextBlock(text="debug.stack is not yet implemented")],
-        metadata={"not_implemented": True},
-    )
+    if not _has_debug_bridge(ctx):
+        return ToolResult.error("debug bridge is not available")
+    result = await _request(ctx, "integration.debug.stack", {})
+    if result is None:
+        return ToolResult.error("debug bridge does not support stack requests")
+    return ToolResult.text(_format_debug_payload(result), payload=result)
 
 
 async def handle_eval(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
+    if not _has_debug_bridge(ctx):
+        return ToolResult.error("debug bridge is not available")
     expr = str(args.get("expression") or "")
     if not expr:
         return ToolResult.error("expression is required")
-    return ToolResult(
-        content=[TextBlock(text=f"debug.eval({expr!r}) is not yet implemented")],
-        metadata={"not_implemented": True},
-    )
+    result = await _request(ctx, "integration.debug.eval", {"expression": expr})
+    if result is None:
+        return ToolResult.error("debug bridge does not support eval requests")
+    return ToolResult.text(_format_debug_payload(result), payload=result)
+
+
+def _format_debug_payload(payload: Any) -> str:
+    if isinstance(payload, str):
+        return payload
+    if isinstance(payload, dict) and "text" in payload:
+        return str(payload["text"])
+    return repr(payload)
 
 
 register_tool(
@@ -149,14 +170,14 @@ register_tool(
 
 register_tool(
     name="debug.stack",
-    description="Return current debug stack frames (not yet implemented).",
+    description="Return current debug stack frames through an attached request/response debug bridge.",
     schema={"type": "object", "properties": {}, "additionalProperties": False},
     handler=handle_stack,
 )
 
 register_tool(
     name="debug.eval",
-    description="Evaluate an expression in the active frame (not yet implemented).",
+    description="Evaluate an expression in the active frame through an attached request/response debug bridge.",
     schema={
         "type": "object",
         "required": ["expression"],
