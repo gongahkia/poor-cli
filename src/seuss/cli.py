@@ -9,6 +9,7 @@ from seuss.commands.approve_cmd import (
     run_approve_list,
     run_approve_reject,
 )
+from seuss.commands.chat_cmd import run_chat
 from seuss.commands.eval_cmd import run_eval
 from seuss.commands.generate_cmd import run_generate
 from seuss.commands.ingest_cmd import run_ingest
@@ -81,6 +82,22 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional path to persona profile JSON. Defaults to workspace profile.",
     )
+
+    chat_parser = sub.add_parser("chat", help="Start simple interactive chat loop")
+    _add_config_arg(chat_parser)
+    chat_parser.add_argument(
+        "--level",
+        choices=["character", "word", "phrase", "hybrid"],
+        default=None,
+    )
+    chat_parser.add_argument("--max-tokens", type=int, default=None)
+    chat_parser.add_argument("--temperature", type=float, default=None)
+    chat_parser.add_argument("--seed", type=int, default=None)
+    chat_parser.add_argument("--save", action="store_true")
+    chat_parser.add_argument("--use-persona", action="store_true")
+    chat_parser.add_argument("--persona-path", default=None)
+    chat_parser.add_argument("--refresh-persona-every", type=int, default=3)
+    chat_parser.add_argument("--max-turns", type=int, default=None)
 
     memory_parser = sub.add_parser("memory", help="Manage memory")
     mem_sub = memory_parser.add_subparsers(dest="memory_command", required=True)
@@ -192,6 +209,20 @@ def main(argv: list[str] | None = None) -> int:
                 save=args.save,
                 use_persona=args.use_persona,
                 persona_path=args.persona_path,
+            )
+
+        if args.command == "chat":
+            return run_chat(
+                config_path=Path(args.config).resolve(),
+                level=args.level,
+                max_tokens=args.max_tokens,
+                temperature=args.temperature,
+                seed=args.seed,
+                save=args.save,
+                use_persona=args.use_persona,
+                persona_path=args.persona_path,
+                refresh_persona_every=args.refresh_persona_every,
+                max_turns=args.max_turns,
             )
 
         if args.command == "memory":
