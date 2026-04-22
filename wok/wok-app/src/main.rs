@@ -52,7 +52,7 @@ use wok_input::workflows::{Workflow, WorkflowStore};
 use wok_renderer::atlas::GlyphAtlas;
 use wok_renderer::damage::DirtyRegion;
 use wok_renderer::font::FontSystem;
-use wok_renderer::gpu::GpuContext;
+use wok_renderer::gpu::{native_instance_descriptor, GpuContext};
 use wok_renderer::inline_images::{ImagePlacement, InlineImageStore};
 use wok_renderer::pipeline::CursorShape;
 use wok_renderer::pipeline::QuadBatch;
@@ -5384,7 +5384,7 @@ impl AppHandler for WokHandler {
         self.window = Some(window.clone());
 
         // Initialize wgpu
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let instance = wgpu::Instance::new(&native_instance_descriptor());
         let surface = instance.create_surface(window).expect("create surface");
 
         let gpu = pollster::block_on(GpuContext::new_async(

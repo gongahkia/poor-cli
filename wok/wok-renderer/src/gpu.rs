@@ -31,6 +31,15 @@ pub struct GpuContext {
     adapter_info: wgpu::AdapterInfo,
 }
 
+/// Return the preferred wgpu instance settings for the current platform.
+pub fn native_instance_descriptor() -> wgpu::InstanceDescriptor {
+    wgpu::InstanceDescriptor {
+        backends: preferred_backends(),
+        ..Default::default()
+    }
+    .with_env()
+}
+
 impl GpuContext {
     /// Create a new GPU context for the given window surface.
     ///
@@ -114,4 +123,14 @@ impl GpuContext {
     pub fn adapter_info(&self) -> &wgpu::AdapterInfo {
         &self.adapter_info
     }
+}
+
+#[cfg(target_os = "macos")]
+fn preferred_backends() -> wgpu::Backends {
+    wgpu::Backends::METAL
+}
+
+#[cfg(not(target_os = "macos"))]
+fn preferred_backends() -> wgpu::Backends {
+    wgpu::Backends::all()
 }
