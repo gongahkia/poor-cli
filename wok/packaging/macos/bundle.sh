@@ -45,4 +45,33 @@ if command -v plutil >/dev/null 2>&1; then
     plutil -lint "$OUTPUT_DIR/Contents/Info.plist" >/dev/null
 fi
 
+if [[ -n "${WOK_CODESIGN_IDENTITY:-}" ]]; then
+    CODESIGN_ARGS=(
+        --force
+        --options runtime
+        --timestamp
+        --sign "$WOK_CODESIGN_IDENTITY"
+    )
+    if [[ -n "${WOK_CODESIGN_ENTITLEMENTS:-}" ]]; then
+        CODESIGN_ARGS+=(--entitlements "$WOK_CODESIGN_ENTITLEMENTS")
+    fi
+    codesign "${CODESIGN_ARGS[@]}" "$OUTPUT_DIR"
+    codesign --verify --deep --strict "$OUTPUT_DIR"
+fi
+
+if [[ -n "${WOK_NOTARY_PROFILE:-}" ]]; then
+    if [[ -z "${WOK_CODESIGN_IDENTITY:-}" ]]; then
+        printf 'Error: WOK_NOTARY_PROFILE requires WOK_CODESIGN_IDENTITY\n' >&2
+        exit 1
+    fi
+    NOTARY_ZIP="${OUTPUT_DIR%/}.zip"
+    rm -f "$NOTARY_ZIP"
+    ditto -c -k --keepParent "$OUTPUT_DIR" "$NOTARY_ZIP"
+    xcrun notarytool submit "$NOTARY_ZIP" \
+        --keychain-profile "$WOK_NOTARY_PROFILE" \
+        --wait
+    xcrun stapler staple "$OUTPUT_DIR"
+    spctl --assess --type execute --verbose "$OUTPUT_DIR"
+fi
+
 printf 'Bundled %s\n' "$OUTPUT_DIR"
