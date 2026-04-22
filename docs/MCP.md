@@ -132,11 +132,11 @@ Registry autodiscovery adds servers advertised in your organization/account regi
 ## Verifying Servers
 
 ```sh
-poor-cli chat
-# then run: /mcp-health
+poor-cli diag mcp
+poor-cli server --stdio
 ```
 
-`/mcp-health` reports connection status, tool count, last error, and per-server health.
+`poor-cli diag mcp` reports connection status, tool count, last error, and per-server health.
 
 ## Debugging
 

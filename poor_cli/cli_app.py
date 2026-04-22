@@ -5,13 +5,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shlex
 import sys
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Sequence
 
-from .cli_errors import format_cli_exception, run_with_cli_error_handling
+from .cli_errors import run_with_cli_error_handling
 from . import __version__
 
 if TYPE_CHECKING:
@@ -22,8 +21,7 @@ if TYPE_CHECKING:
 def _render_root_help() -> str:
     return (
         "usage: poor-cli <noun> <verb> [options]\n\n"
-        "Interactive / lifecycle:\n"
-        "  poor-cli chat               Minimal interactive agent loop\n"
+        "Lifecycle:\n"
         "  poor-cli exec               Run one shared-core request headlessly\n"
         "  poor-cli server             Run the JSON-RPC server (automation/API)\n"
         "  poor-cli install            Installer: poor-cli install (run) / poor-cli install info\n"
@@ -58,7 +56,6 @@ def _render_root_help() -> str:
         "Reuse:\n"
         "  poor-cli skill              list / show / run repo or user skills; alias-* for slash aliases\n\n"
         "Examples:\n"
-        "  poor-cli chat\n"
         "  poor-cli exec --prompt \"Summarize this repository\" --plan-only\n"
         "  poor-cli task create --title \"Review docs\" --preset review-only --prompt \"Review README\"\n"
         "  poor-cli automation create --name \"Daily QA\" --every-minutes 60 --prompt \"Run QA checklist\"\n"
@@ -354,395 +351,6 @@ def _run_exec_mode(argv: Sequence[str]) -> int:
     parser = _build_exec_parser()
     args = parser.parse_args(list(argv))
     return asyncio.run(_run_exec_mode_async(args))
-
-
-def _build_chat_parser() -> argparse.ArgumentParser:
-    from .config import PermissionMode
-
-    parser = argparse.ArgumentParser(prog="poor-cli chat")
-    parser.add_argument("--provider")
-    parser.add_argument("--model")
-    parser.add_argument("--api-key")
-    parser.add_argument("--config")
-    parser.add_argument("--cwd")
-    parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--allow-tool", action="append", default=[])
-    parser.add_argument("--deny-tool", action="append", default=[])
-    parser.add_argument("--sandbox-preset", choices=tuple(_preset_description().keys()))
-    parser.add_argument("--permission-mode", choices=tuple(mode.value for mode in PermissionMode))
-    parser.add_argument("--auto-approve", action="store_true")
-    parser.add_argument("--context-file", action="append", default=[])
-    parser.add_argument("--pinned-context-file", action="append", default=[])
-    parser.add_argument("--context-budget-tokens", type=int)
-    parser.add_argument("--verbose-events", action="store_true")
-    return parser
-
-
-def _print_chat_help() -> None:
-    from .command_manifest import load_command_manifest
-
-    manifest = load_command_manifest()
-    recommended = [c for c in manifest.commands if c.recommended]
-    print("commands: /help /quit /exit")
-    if recommended:
-        print("recommended:")
-        for command in recommended:
-            print(f"  {command.command:<18} {command.description}")
-
-
-def _split_chat_slash(message: str) -> tuple[str, str]:
-    raw = message.strip()
-    if not raw.startswith("/"):
-        return "", ""
-    body = raw[1:].strip()
-    if not body:
-        return "", ""
-    try:
-        parts = shlex.split(body)
-    except ValueError:
-        parts = body.split()
-    if not parts:
-        return "", ""
-    command = "/" + parts[0].lower().lstrip("/")
-    rest = body[len(parts[0]):].strip()
-    return command, rest
-
-
-def _print_recent_chat_history(core: Any, *, limit: int = 10) -> None:
-    try:
-        history = core.get_history()
-    except Exception as exc:
-        print(f"history unavailable: {exc}")
-        return
-    if not history:
-        print("history empty")
-        return
-    for entry in history[-max(1, limit):]:
-        role = str(entry.get("role") or "unknown")
-        content = str(entry.get("content") or "").replace("\n", " ")
-        if len(content) > 180:
-            content = content[:177] + "..."
-        print(f"{role}> {content}")
-
-
-async def _handle_chat_slash_command(core: Any, args: argparse.Namespace, message: str) -> tuple[bool, str]:
-    command, rest = _split_chat_slash(message)
-    if not command:
-        return False, message
-    if command in {"/help"}:
-        _print_chat_help()
-        return True, ""
-    if command in {"/clear", "/new-session"}:
-        await core.clear_history()
-        print("history cleared")
-        return True, ""
-    if command == "/clear-output":
-        print("\033c", end="")
-        return True, ""
-    if command == "/history":
-        _print_recent_chat_history(core)
-        return True, ""
-    if command == "/status":
-        _print_json(core.build_status_view())
-        return True, ""
-    if command == "/doctor":
-        _print_json(core.build_doctor_report())
-        return True, ""
-    if command == "/cost":
-        _print_json(core.get_session_cost_summary())
-        return True, ""
-    if command == "/savings":
-        _print_json(core.get_savings_summary(include_history=False))
-        return True, ""
-    if command in {"/provider", "/providers", "/model-info"}:
-        if rest.startswith("switch "):
-            rest = rest[len("switch "):].strip()
-        if rest:
-            parts = shlex.split(rest)
-            provider = parts[0] if parts else ""
-            model = parts[1] if len(parts) > 1 else None
-            await core.switch_provider(provider, model)
-            print(f"provider switched: {provider}{(' ' + model) if model else ''}")
-        else:
-            _print_json(core.get_provider_info())
-        return True, ""
-    if command == "/switch":
-        parts = shlex.split(rest)
-        if not parts:
-            print("usage: /switch <provider> [model]")
-            return True, ""
-        await core.switch_provider(parts[0], parts[1] if len(parts) > 1 else None)
-        print(f"provider switched: {parts[0]}{(' ' + parts[1]) if len(parts) > 1 else ''}")
-        return True, ""
-    if command == "/tools":
-        for tool in core.get_available_tools():
-            name = str(tool.get("name") or tool.get("function", {}).get("name") or "")
-            if name:
-                print(name)
-        return True, ""
-    if command == "/pwd":
-        print(Path.cwd())
-        return True, ""
-    if command == "/read":
-        path = Path(rest).expanduser()
-        if not rest:
-            print("usage: /read <path>")
-            return True, ""
-        if not path.is_absolute():
-            path = Path.cwd() / path
-        print(path.read_text(encoding="utf-8", errors="replace")[:12000])
-        return True, ""
-    if command == "/ls":
-        target = Path(rest or ".").expanduser()
-        if not target.is_absolute():
-            target = Path.cwd() / target
-        for child in sorted(target.iterdir()):
-            print(child.name + ("/" if child.is_dir() else ""))
-        return True, ""
-    if command == "/run":
-        if not rest:
-            print("usage: /run <shell command>")
-            return True, ""
-        result = await core.execute_tool("bash", {"command": rest})
-        print(result)
-        return True, ""
-
-    from .automations import CustomCommandRegistry
-    registry = CustomCommandRegistry(Path.cwd())
-    wrapper_name = command[1:]
-    if registry.get_command(wrapper_name) is not None:
-        return False, registry.render_prompt(wrapper_name, rest)
-
-    from .command_manifest import load_command_manifest
-    known = {spec.command for spec in load_command_manifest().commands}
-    if command in known:
-        return False, f"Run slash command {command} with arguments: {rest}".strip()
-    print(f"unknown command: {command}")
-    return True, ""
-
-
-def _format_chat_blocker(error: BaseException) -> str:
-    rendered = format_cli_exception(error).strip()
-    lowered = rendered.lower()
-    if "api key" in lowered:
-        return (
-            "I can't call the model yet. I need a provider API key first.\n"
-            f"{rendered}\n\n"
-            "Reply `use api key <key>` to use it for this chat session, or set the env var and restart."
-        )
-    return f"I can't call the model yet. I need this fixed first:\n{rendered}"
-
-
-def _extract_inline_api_key(message: str) -> str:
-    stripped = message.strip()
-    lowered = stripped.lower()
-    prefixes = (
-        "use api key ",
-        "set api key ",
-        "api key ",
-        "api key:",
-        "my api key is ",
-    )
-    for prefix in prefixes:
-        if lowered.startswith(prefix):
-            return stripped[len(prefix):].strip().strip("\"'")
-    for marker in ("_API_KEY=", "API_KEY="):
-        idx = stripped.find(marker)
-        if idx >= 0:
-            return stripped[idx + len(marker):].strip().strip("\"'")
-    return ""
-
-
-def _extract_bang_shell_command(message: str) -> Optional[str]:
-    stripped = message.strip()
-    if not stripped.startswith("!"):
-        return None
-    return stripped[1:].strip()
-
-
-def _is_chat_exit_command(message: str) -> bool:
-    return message.strip().lower() in {"/quit", "/exit", "quit", "exit", "q", "/q", ":q"}
-
-
-def _is_persistent_chat_blocker(error: BaseException) -> bool:
-    from .exceptions import ConfigurationError
-
-    if isinstance(error, ConfigurationError):
-        return True
-    lowered = str(error).lower()
-    return any(term in lowered for term in ("api key", "auth", "unauthorized", "forbidden", "not initialized"))
-
-
-async def _initialize_chat_core(core: Any, args: argparse.Namespace, api_key: Optional[str] = None) -> Optional[BaseException]:
-    from .exceptions import ConfigurationError, MissingAPIKeyError
-
-    try:
-        await core.initialize(
-            provider_name=args.provider,
-            model_name=args.model,
-            api_key=api_key or args.api_key,
-        )
-        return None
-    except MissingAPIKeyError as exc:
-        await core.initialize(provider_name=args.provider, model_name=args.model, minimal=True)
-        return exc
-    except ConfigurationError as exc:
-        await core.initialize(provider_name=args.provider, model_name=args.model, minimal=True)
-        return exc
-
-
-def _configure_chat_runtime(core: Any, args: argparse.Namespace) -> tuple[str, str]:
-    from .config import PermissionMode, parse_permission_mode
-    from .sandbox import normalize_preset
-
-    if core.config is not None:
-        if args.permission_mode:
-            core.config.security.permission_mode = parse_permission_mode(args.permission_mode)
-        effective_permission_mode = (
-            args.permission_mode
-            or getattr(core.config.security.permission_mode, "value", str(core.config.security.permission_mode))
-        )
-        effective_sandbox_preset = normalize_preset(
-            args.sandbox_preset or getattr(core.config.sandbox, "default_preset", ""),
-            fallback_permission_mode=effective_permission_mode,
-        )
-        core.config.sandbox.default_preset = effective_sandbox_preset
-    else:
-        effective_permission_mode = args.permission_mode or PermissionMode.DEFAULT.value
-        effective_sandbox_preset = normalize_preset(
-            args.sandbox_preset,
-            fallback_permission_mode=effective_permission_mode,
-        )
-    core.permission_callback = _build_exec_permission_callback(
-        core,
-        set(args.allow_tool or []),
-        set(args.deny_tool or []),
-        plan_only=False,
-        permission_mode=effective_permission_mode,
-        sandbox_preset=effective_sandbox_preset,
-        auto_approve=bool(args.auto_approve),
-    )
-    return effective_permission_mode, effective_sandbox_preset
-
-
-async def _run_chat_mode_async(args: argparse.Namespace) -> int:
-    from .core import PoorCLICore
-    from .exceptions import APIError, ConfigurationError, PoorCLIError
-
-    if args.cwd:
-        os.chdir(Path(args.cwd).expanduser())
-    config_path = Path(args.config).expanduser() if args.config else None
-    core = PoorCLICore(config_path=config_path)
-    setup_error = await _initialize_chat_core(core, args)
-    fast_shutdown = False
-    try:
-        _configure_chat_runtime(core, args)
-        if args.resume:
-            resume_prefix = _build_resume_prefix()
-            if resume_prefix:
-                print(resume_prefix)
-        print("\033c", end="")
-        print("poor-cli chat. /help for commands. !cmd runs shell. /quit exits.")
-        if setup_error is not None:
-            print(f"assistant> {_format_chat_blocker(setup_error)}")
-        while True:
-            try:
-                message = input("you> ").strip()
-            except (EOFError, KeyboardInterrupt):
-                fast_shutdown = True
-                print()
-                return 0
-            if not message:
-                continue
-            if _is_chat_exit_command(message):
-                fast_shutdown = True
-                return 0
-            shell_command = _extract_bang_shell_command(message)
-            if shell_command is not None:
-                if not shell_command:
-                    print("usage: !<shell command>")
-                    continue
-                try:
-                    print(await core.execute_tool("bash", {"command": shell_command}))
-                except KeyboardInterrupt:
-                    fast_shutdown = True
-                    print()
-                    return 0
-                except (APIError, ConfigurationError, PoorCLIError) as exc:
-                    print(_format_chat_blocker(exc))
-                continue
-            handled, dispatched_message = await _handle_chat_slash_command(core, args, message)
-            if handled:
-                continue
-            message = dispatched_message
-            if setup_error is not None:
-                inline_api_key = _extract_inline_api_key(message)
-                if inline_api_key:
-                    setup_error = await _initialize_chat_core(core, args, api_key=inline_api_key)
-                    _configure_chat_runtime(core, args)
-                    if setup_error is None:
-                        print("assistant> Got it. I can call the model now.")
-                    else:
-                        print(f"assistant> {_format_chat_blocker(setup_error)}")
-                    continue
-                print(f"assistant> {_format_chat_blocker(setup_error)}")
-                continue
-            print("assistant> ", end="", flush=True)
-            wrote_text = False
-            try:
-                async for event in core.send_message_events(
-                    message,
-                    context_files=list(args.context_file or []),
-                    pinned_context_files=list(args.pinned_context_file or []),
-                    context_budget_tokens=args.context_budget_tokens,
-                    source_kind="chat",
-                    source_id="cli-chat",
-                    run_metadata={"cliCommand": "chat"},
-                ):
-                    data = event.data or {}
-                    if event.type == "text_chunk":
-                        print(str(data.get("chunk", "")), end="", flush=True)
-                        wrote_text = True
-                    elif event.type == "tool_call_start":
-                        name = str(data.get("name") or data.get("tool") or "tool")
-                        print(f"\ntool> {name}", flush=True)
-                    elif event.type == "tool_result":
-                        name = str(data.get("name") or data.get("tool") or "tool")
-                        status = str(data.get("status") or "done")
-                        print(f"tool< {name} {status}", flush=True)
-                    elif args.verbose_events and event.type == "progress":
-                        msg = str(data.get("message") or "")
-                        if msg:
-                            print(f"\n... {msg}", flush=True)
-                    elif event.type == "done":
-                        break
-            except (APIError, ConfigurationError, PoorCLIError) as exc:
-                setup_error = exc if _is_persistent_chat_blocker(exc) else None
-                if wrote_text:
-                    print()
-                print(_format_chat_blocker(exc))
-                continue
-            except KeyboardInterrupt:
-                fast_shutdown = True
-                print()
-                return 0
-            if wrote_text:
-                print()
-            else:
-                print("(no output)")
-    finally:
-        try:
-            await core.shutdown(fast=fast_shutdown)
-        except KeyboardInterrupt:
-            await core.shutdown(fast=True)
-
-
-def _run_chat_mode(argv: Sequence[str]) -> int:
-    import asyncio
-
-    parser = _build_chat_parser()
-    args = parser.parse_args(list(argv))
-    return asyncio.run(_run_chat_mode_async(args))
 
 
 def _print_json(payload: Any) -> None:
@@ -2119,8 +1727,6 @@ def _main() -> None:
     if argv[0] in {"version", "--version", "-V"}:
         print(__version__)
         raise SystemExit(0)
-    if argv and argv[0] == "chat":
-        raise SystemExit(_run_chat_mode(argv[1:]))
     if argv and argv[0] == "exec":
         raise SystemExit(_run_exec_mode(argv[1:]))
     if argv and argv[0] == "agent":
@@ -2173,8 +1779,9 @@ def _main() -> None:
         raise SystemExit(_run_server_mode(argv[1:]))
     if argv and argv[0] == "install":
         raise SystemExit(_run_install_mode(argv[1:]))
+    print(f"poor-cli: unknown command '{argv[0]}'")
     print(_render_root_help())
-    raise SystemExit(0)
+    raise SystemExit(2)
 
 
 def _run_diag_mode(argv: Sequence[str]) -> int:
@@ -2222,8 +1829,9 @@ def _run_install_mode(argv: Sequence[str]) -> int:
     if argv and argv[0] == "info":
         print(f"poor-cli {__version__}")
         print(f"python: {sys.executable}")
-        print("surface: CLI agent harness")
-        print("run: poor-cli chat")
+        print("surface: headless CLI harness + JSON-RPC backend")
+        print("run: poor-cli exec --prompt \"...\"")
+        print("server: poor-cli server --stdio")
         return 0
     if argv and argv[0] not in {"", "run"}:
         print(f"poor-cli install: unknown verb '{argv[0]}' (expected: info, or omit for interactive)")

@@ -138,7 +138,7 @@ async def handle_list_tools(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
 
     specs = _filter_tools(all_tools(), domain=domain, query=query)
     if not specs:
-        msg = f"no tools match"
+        msg = "no tools match"
         if domain:
             msg += f" domain={domain!r}"
         if query:
@@ -436,7 +436,7 @@ register_tool(
         "Return the most recent tool-call records from this session: tool, "
         "outcome (ok/err/timeout/degraded), wall-time ms, retries, relative "
         "time. Use this to answer 'what did I just do?' without keeping the "
-        "tool trace in chat context. Filter by exact tool name with ``tool``."
+        "tool trace in model context. Filter by exact tool name with ``tool``."
     ),
     schema={
         "type": "object",

@@ -1,6 +1,6 @@
 # Quickstart
 
-Goal: install the package, start the minimal chat harness, run one non-interactive CI-style task, and inspect provider/cost state.
+Goal: install the package, run one non-interactive CI-style task, start the JSON-RPC backend, and inspect provider/cost state.
 
 ## 0:00 - Install
 
@@ -23,29 +23,21 @@ poor-cli provider list
 poor-cli provider info anthropic
 ```
 
-## 1:00 - Chat
-
-```sh
-poor-cli chat --provider anthropic
-```
-
-Inside chat:
-
-```text
-you> /help
-you> summarize this repository in five bullets
-you> /quit
-```
-
-The chat surface is intentionally plain: one prompt, streamed assistant text, terse tool events, no editor dependency.
-
-## 2:00 - CI-style run
+## 1:00 - CI-style run
 
 ```sh
 poor-cli exec --provider anthropic --prompt "review the current diff and run focused tests"
 ```
 
 Use `exec` for CI jobs, pre-merge checks, release checks, and scripted agent runs.
+
+## 2:00 - Start backend for clients
+
+```sh
+poor-cli server --stdio
+```
+
+Use the JSON-RPC server for native apps, editor integrations, and automation clients.
 
 ## 3:00 - Inspect state
 
@@ -59,7 +51,7 @@ Repo-local runtime state lives under `.poor-cli/`.
 
 ## Next
 
-- [COMMANDS.md](./COMMANDS.md) - slash command reference.
+- [COMMANDS.md](./COMMANDS.md) - legacy command manifest and workflow aliases.
 - [SANDBOX.md](./SANDBOX.md) - permissions and CI guardrails.
 - [PROVIDERS.md](./PROVIDERS.md) - provider setup.
 - [MCP.md](./MCP.md) - external tool servers.

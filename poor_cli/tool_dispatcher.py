@@ -28,7 +28,7 @@ import os
 import random
 import time
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Awaitable, Dict, List, Optional, Sequence, Tuple
 
 from poor_cli import tool_health
 from poor_cli.tool_circuit import get_circuit
@@ -88,7 +88,6 @@ def _validate_args(spec: ToolSpec, args: Dict[str, Any]) -> Optional[ToolResult]
     if not schema:
         return None
     try:
-        import jsonschema  # lazy: keep import cost off the cold path
         from jsonschema import Draft202012Validator
     except ImportError:
         # jsonschema is a pyproject dep; a missing install is a developer
@@ -597,7 +596,7 @@ async def dispatch_one(
     }
     # Proposal D: if the session attached a SessionRecorder to ctx, push
     # every dispatch into it so meta.call_history + meta.what_changed can
-    # introspect the trace without the agent having to keep it in chat.
+    # introspect the trace without the agent having to keep it in model context.
     # The recorder lives on the unwrapped base ctx; the augmented Bound
     # proxy forwards getattr, so a naive lookup works.
     _record_session_call(ctx, rec, args)

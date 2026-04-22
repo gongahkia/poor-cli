@@ -40,7 +40,7 @@ python3 -m pip install 'poor-cli[all]'
 
 ## CI run hangs
 
-Use `exec`, not `chat`, in non-interactive jobs:
+Use `exec` in non-interactive jobs:
 
 ```sh
 poor-cli exec --prompt "run focused tests and report failures"
@@ -87,6 +87,6 @@ Checkpoints and audit logs may be useful for rollback.
 python3 -m compileall poor_cli
 python3 -m pytest -q
 python3 -m poor_cli help
-python3 -m poor_cli chat --help
+python3 -m poor_cli exec --help
 python3 -m poor_cli install info
 ```

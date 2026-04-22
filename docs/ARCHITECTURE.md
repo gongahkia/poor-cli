@@ -1,11 +1,11 @@
 # Architecture
 
-poor-cli is a Python CLI agent harness. The main surfaces are `poor-cli chat`, `poor-cli exec`, and `poor-cli-server` JSON-RPC.
+poor-cli is a Python CLI agent harness. The main surfaces are `poor-cli exec` and `poor-cli-server` JSON-RPC.
 
 ## Shape
 
 ```text
-terminal / CI job
+CI job / native client / automation client
   |
   v
 poor_cli.cli_app
@@ -23,7 +23,6 @@ filesystem, shell, git, MCP, diagnostics, tasks
 
 ## Entry Points
 
-- `poor-cli chat`: minimal interactive loop for direct agent work.
 - `poor-cli exec`: non-interactive prompt execution for automation and CI.
 - `poor-cli-server`: JSON-RPC server used by harness clients and tests.
 - `python -m poor_cli`: module entrypoint for local checkout runs.
@@ -49,7 +48,7 @@ The tool registry exposes structured capabilities for:
 - MCP tool routing
 - memory, sessions, checkpoints, and audit state
 
-Tools return structured blocks so `chat`, `exec`, JSON-RPC, and tests consume the same result shape.
+Tools return structured blocks so `exec`, JSON-RPC, and tests consume the same result shape.
 
 ## Safety
 
@@ -80,5 +79,5 @@ Repo-local state is under `.poor-cli/` by default:
 python3 -m compileall poor_cli
 python3 -m pytest -q
 python3 -m poor_cli help
-python3 -m poor_cli chat --help
+python3 -m poor_cli exec --help
 ```

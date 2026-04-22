@@ -26,7 +26,7 @@
         "gpt-5",
         "gpt-5-mini"
       ],
-      "setupHelp": "Use an OpenAI API key if you want GPT models available in `/switch` and the CLI.",
+      "setupHelp": "Use an OpenAI API key if you want GPT models available through provider switching and the CLI.",
       "capabilitySummary": "Streaming, function calling, system instructions, JSON mode, vision on GPT-5/GPT-4.1-class models",
       "modelTiers": {
         "gpt-5.1": { "tier": "quality", "cost_1k_in": 0.001, "cost_1k_out": 0.003, "speed_rank": 3, "context_window": 1000000 },

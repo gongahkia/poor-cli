@@ -7,7 +7,7 @@ calls, along with a coarse-grained view of which files the tools declared
 they touched.
 
 This exists so ``meta.call_history`` and ``meta.what_changed`` (Proposal D)
-can introspect session state without the agent having to keep it in chat
+can introspect session state without the agent having to keep it in model
 context. Two invariants from PROPOSAL-D-DISCOVERY.md §1 apply:
 
   - **Agent-centric.** The recorder only feeds meta.* tools. There's no
@@ -25,7 +25,7 @@ from __future__ import annotations
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Deque, Dict, Iterable, List, Optional, Set
+from typing import Any, Deque, Dict, Iterable, List, Optional
 
 from poor_cli.tool_dispatcher import CallRecord
 

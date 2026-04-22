@@ -4,10 +4,9 @@ poor-cli is now a CLI/CI agent harness. The old editor plugin surface is not par
 
 ## Primary Surfaces
 
-- `poor-cli chat`: minimal interactive chat with streamed text, terse tool events, `/help`, `/quit`, and provider flags.
 - `poor-cli exec`: one-shot prompt execution for CI, scripts, reviews, and release gates.
 - `poor-cli-server`: JSON-RPC transport for automation clients.
-- Slash commands: command manifest covers provider, sandbox, memory, task, review, cost, MCP, and workflow actions.
+- CLI nouns: provider, sandbox, memory, task, review, cost, MCP, workflow, and state actions.
 
 ## Harness Capabilities
 
@@ -23,18 +22,17 @@ poor-cli is now a CLI/CI agent harness. The old editor plugin surface is not par
 - Background tasks: durable runs with retry, replay, and worktree isolation.
 - MCP: stdio and Streamable HTTP servers with allow/deny lists.
 
-## Minimal Chat Principles
+## Product UI Direction
 
-- Plain terminal I/O.
-- No layout state.
-- No editor runtime.
-- Tool calls are visible but compact.
-- Same backend path as CI execution.
+- No built-in terminal chat UI.
+- Native or external clients should use the JSON-RPC backend.
+- `poor-cli exec` remains the scriptable CI path.
+- `poor-cli server` remains the long-running client integration path.
 
 ## Suggested QA Matrix
 
 1. `python3 -m poor_cli help`
-2. `python3 -m poor_cli chat --help`
+2. `python3 -m poor_cli exec --help`
 3. `python3 -m poor_cli install info`
 4. `python3 -m pytest -q tests/test_product_contracts.py`
 5. `python3 -m pytest -q tests/test_tool_orchestration.py`

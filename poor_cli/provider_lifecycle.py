@@ -226,7 +226,9 @@ class ProviderLifecycleService:
                 lines.append(
                     f"[cyan]{entry.display_name} ({posture}):[/cyan] {', '.join(entry.common_models)}"
                 )
-            lines.append("\n[dim]Use /switch to change providers or set DEFAULT_PROVIDER in .env[/dim]")
+            lines.append(
+                "\n[dim]Use poor-cli provider switch to change providers or set DEFAULT_PROVIDER in .env[/dim]"
+            )
             info_text = "\n".join(lines)
             self.console.print(Panel(info_text, title="Model Information", border_style="cyan"))
 
@@ -274,8 +276,8 @@ class ProviderLifecycleService:
             ]
         elif "provider" in error_msg.lower():
             recovery_steps = [
-                "1. Use /providers to see available providers",
-                "2. Use /switch to change providers",
+                "1. Use poor-cli provider list to see available providers",
+                "2. Use poor-cli provider switch to change providers",
                 "3. Check ~/.poor-cli/config.yaml for configuration",
                 "4. Ensure API keys are set in .env file",
             ]

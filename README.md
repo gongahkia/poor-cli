@@ -3,7 +3,7 @@
 [![](https://img.shields.io/badge/tests-passing-brightgreen)](https://github.com/gongahkia/poor-cli/actions/workflows/tests.yml)
 [![](https://img.shields.io/badge/poor-cli_5.0.0-blue)](https://github.com/gongahkia/poor-cli)
 
-CI-focused CLI agent harness for code work. The product surface is a small terminal chat loop, a non-interactive `exec` path for automation, and a JSON-RPC server for harness integrations.
+CI-focused CLI agent harness for code work. The product surface is a non-interactive `exec` path for automation and a JSON-RPC server for harness integrations.
 
 ## Install
 
@@ -18,12 +18,6 @@ Supported Python versions are `3.11`, `3.12`, `3.13`, and `3.14`.
 
 ```sh
 export ANTHROPIC_API_KEY="..."
-poor-cli chat
-```
-
-Minimal CI path:
-
-```sh
 poor-cli exec --prompt "inspect this repo and run focused tests"
 ```
 
@@ -34,12 +28,12 @@ poor-cli help
 poor-cli provider list
 poor-cli install info
 poor-cli diag doctor
-poor-cli chat --provider anthropic
+poor-cli exec --provider anthropic --prompt "summarize this repository"
+poor-cli server --stdio
 ```
 
 ## Product Surface
 
-- `poor-cli chat`: minimal interactive harness with `you>` prompts, streamed assistant text, and slash-style control commands.
 - `poor-cli exec`: one-shot agent run for CI, scripts, and review gates.
 - `poor-cli-server`: JSON-RPC runtime for automation clients.
 - Tools: filesystem, shell, git, diagnostics, tasks, review, deploy, MCP, memory, checkpoints.

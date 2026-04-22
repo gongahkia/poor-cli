@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
@@ -103,9 +102,9 @@ def render_command_reference_markdown() -> str:
     manifest = load_command_manifest()
     grouped = _group_by_category(manifest.commands)
     lines = [
-        "# Slash Command Reference",
+        "# Legacy Command Manifest",
         "",
-        f"poor-cli ships **{len(manifest.commands)} slash commands** across {len(grouped)} categories.",
+        f"poor-cli keeps **{len(manifest.commands)} legacy command aliases** across {len(grouped)} categories for client/workflow compatibility.",
         "",
         "## Categories",
         "",
@@ -127,12 +126,13 @@ def render_command_reference_markdown() -> str:
         "## Conventions",
         "",
         "- ⭐ = recommended starting point for new users.",
-        "- Type `/` in chat to trigger the slash command dispatcher.",
-        "- Custom slash commands defined via AutomationRule (`type: slash`) appear here only after manifest regeneration; see `docs/AUTOMATIONS.md`.",
+        "- The built-in terminal chat UI has been removed.",
+        "- Native/editor clients may still map these aliases onto JSON-RPC actions or AutomationRule workflows.",
+        "- Custom aliases defined via AutomationRule (`type: slash`) appear here only after manifest regeneration; see `docs/AUTOMATIONS.md`.",
         "",
         "## See also",
         "",
-        "- [PROVIDERS.md](./PROVIDERS.md) — `/switch`, `/provider`, `/api-key`",
+        "- [PROVIDERS.md](./PROVIDERS.md) — provider selection and API keys",
         "- [ECONOMY.md](./ECONOMY.md) — `/broke`, `/my-treat`, `/economy`, `/savings`",
         "- [SANDBOX.md](./SANDBOX.md) — `/sandbox`, `/permission-mode`, `/trust`, `/policy`",
         "- [AUTOMATIONS.md](./AUTOMATIONS.md) — `/automation`, `/workflow`, `/skills`",

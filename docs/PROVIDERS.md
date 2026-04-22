@@ -18,7 +18,7 @@ poor-cli supports **11 providers** across cloud and local surfaces. All BYOK —
 | HF TGI | (opt `HF_TGI_API_KEY`) | `tgi` | free | HF Text Generation Inference |
 | LM Studio | (opt `LMSTUDIO_API_KEY`) | `local-model` | free | GUI local runner |
 
-Cost tiers are rough indicators relative to each other; see `/cost compare` in-chat for exact rates.
+Cost tiers are rough indicators relative to each other; see `poor-cli cost compare` for exact rates.
 
 ## Credential Lookup Order
 
@@ -27,7 +27,7 @@ For every provider:
 2. Environment variable.
 3. `.poor-cli/api_keys.json` plaintext (last resort; CI/dev only).
 
-Change keys interactively with `/api-key` or `/env`. Migration from env/plaintext into the keyring is offered on first setup.
+Change keys with `poor-cli provider keys set` or env vars. Migration from env/plaintext into the keyring is offered on first setup.
 
 ## Cloud Providers
 
@@ -154,7 +154,7 @@ Download from https://lmstudio.ai, start a local server in the app, then poor-cl
 
 Three ways:
 
-1. **Command:** `/switch` or `/provider switch` in chat, or `poor-cli provider list` from the shell.
+1. **Command:** `poor-cli provider switch <provider> [model]`, or `poor-cli provider list` from the shell.
 2. **Config:** set `model.provider = "anthropic"` in `.poor-cli/config.yaml`.
 3. **Per-request:** some economy modes re-route automatically (see "Model routing" below).
 
@@ -197,10 +197,10 @@ Legend: ✅ supported, ⚪ not supported in poor-cli today, `opt` requires a fun
 
 ## Troubleshooting
 
-- **Missing provider in `/switch`** — check `~/.poor-cli/api_keys.json` and env vars; run `/api-key status` for the lookup chain.
+- **Missing provider in `provider switch`** — check `~/.poor-cli/api_keys.json` and env vars; run `poor-cli provider keys status` for the lookup chain.
 - **Ollama not detected** — confirm `ollama serve` is running (`curl http://localhost:11434/api/tags`). poor-cli polls on each switch.
 - **Anthropic cache hit rate stays 0%** — the static prefix must be stable across turns. Look for dynamic content (timestamps, random ordering) polluting the system prompt.
-- **Keyring prompt on every request** — macOS gatekeeper can prevent background keyring access. `/api-key migrate` re-prompts with a sticky approval.
+- **Keyring prompt on every request** — macOS gatekeeper can prevent background keyring access. `poor-cli provider keys migrate` re-prompts with a sticky approval.
 
 ## See Also
 

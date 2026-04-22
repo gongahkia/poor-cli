@@ -55,7 +55,7 @@ Useful for "run tests when X changes" or "regenerate docs when Y is touched".
 
 ### `slash`
 
-Custom slash command — invoked by user typing `/<name>` in chat:
+Custom slash command alias — invoked by compatible clients as `/<name>`:
 
 ```json
 {
@@ -64,7 +64,7 @@ Custom slash command — invoked by user typing `/<name>` in chat:
 }
 ```
 
-Then `/deploy-staging` in chat runs the rule's steps. Slash-trigger rules are discoverable through `/workflow`.
+Then `/deploy-staging` runs the rule's steps in compatible clients. Slash-trigger rules are discoverable through the workflow APIs.
 
 ## Step kinds
 
@@ -123,14 +123,14 @@ Mondays 03:00 UTC, run `ThinkingBudgetOptimizer.analyze()` and persist a fresh t
 }
 ```
 
-Then `/standup` in chat fires it.
+Then `/standup` fires it in compatible clients.
 
 ## Run history
 
 Every rule run writes to `.poor-cli/automations.db` with status, timing, output, and any errors. Inspect:
 
-- `/automation history <name>` — recent runs.
-- `/automation replay <name>` — re-execute the last successful run.
+- `poor-cli automation history <name>` — recent runs.
+- `poor-cli automation replay <name>` — re-execute the last successful run.
 
 `history_max` per rule trims the oldest. Default 50; bump if you need a longer trail.
 

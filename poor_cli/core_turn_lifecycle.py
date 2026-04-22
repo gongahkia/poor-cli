@@ -1969,7 +1969,7 @@ class TurnLifecycle:
                 "title": "Provider readiness",
                 "status": "ok" if ready_provider_count else "degraded",
                 "message": f"{ready_provider_count} provider(s) ready",
-                "action": "Run `/setup`, `/api-key status`, or switch to `ollama` private mode.",
+                "action": "Run `poor-cli provider keys status`, or switch to `ollama` private mode.",
             }
         )
         checks.append(
