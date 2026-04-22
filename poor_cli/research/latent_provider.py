@@ -1,12 +1,11 @@
-"""LatentProvider abstraction — uniform interface across in-process + bridged backends.
+"""LatentProvider abstraction for implemented in-process latent backends.
 
-Today there are two distinct ways to do latent-space hand-off:
+Today poor-cli only ships in-process latent hand-off:
 - ``research/latent_communication.py`` — in-process Transformers (HF Local).
-- ``research/latent_bridge.py`` — network bridge to a patched local server (vLLM, ...).
 
 This module unifies them behind one ``LatentProvider`` interface so the agent
-loop, sub_agent.py, parallel_agents.py, and any future caller can use latent
-mode without branching on backend type.
+loop, sub_agent.py, parallel_agents.py, and any future caller can use the
+implemented latent mode without branching on backend type.
 
 Capability surface:
 - ``encode(prompt) -> LatentMessage`` — produce hidden state + KV cache.
@@ -15,10 +14,9 @@ Capability surface:
 
 Backend dispatch:
 - ``InProcessLatentProvider`` wraps a LatentAgent (HF Local).
-- ``BridgeLatentProvider`` wraps a LatentBackend (vLLM, etc.).
 - ``build_latent_provider(config)`` chooses the right one given config.
 
-Both halves are thin glue — the heavy lifting lives in the underlying modules.
+This is thin glue; the heavy lifting lives in the underlying module.
 """
 
 from __future__ import annotations
@@ -91,45 +89,14 @@ class InProcessLatentProvider:
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Bridged implementation (vLLM / SGLang / future)
-# ──────────────────────────────────────────────────────────────────────────
-
-class BridgeLatentProvider:
-    """Wraps a LatentBackend for network-boundary inference servers."""
-
-    def __init__(self, backend: Any):
-        self._backend = backend
-        cfg = getattr(backend, "config", None)
-        self.spec = LatentSpec(
-            backend=str(getattr(backend, "backend_name", "unknown")),
-            model_id=str(getattr(cfg, "model_id", "") or "unknown"),
-            hidden_dim=int(getattr(cfg, "hidden_dim", 0) or 0),
-            dtype=str(getattr(cfg, "dtype", "") or ""),
-            transport="http",
-            extra={"server_version": str(getattr(cfg, "server_version", "") or "")},
-        )
-
-    async def encode(self, prompt: str) -> Any:
-        return await self._backend.encode(prompt)
-
-    async def generate_from_latent(self, latent_msg: Any, *, max_new_tokens: int = 512) -> str:
-        result = await self._backend.generate_from_latent(latent_msg, max_new_tokens=max_new_tokens)
-        return getattr(result, "text", "") or ""
-
-    def compatible_with(self, other: "LatentProvider") -> bool:
-        return _spec_compatible(self.spec, other.spec)
-
-
-# ──────────────────────────────────────────────────────────────────────────
 # Compatibility check
 # ──────────────────────────────────────────────────────────────────────────
 
 def _spec_compatible(a: LatentSpec, b: LatentSpec) -> bool:
     """Two providers are compatible when model + dtype + hidden_dim agree.
 
-    Backend / transport may differ (in-process can pair with bridged on the
-    same model). The actual KV-tensor cross-runtime feasibility is checked at
-    transfer time by latent_bridge.compatibility_check.
+    Backend / transport may differ in future implementations; currently only
+    HF Local in-process transport is supported.
     """
     if a.model_id != b.model_id and a.model_id != "unknown" and b.model_id != "unknown":
         return False
@@ -148,12 +115,10 @@ def build_latent_provider(
     *,
     backend: str,
     agent: Optional[Any] = None,
-    backend_obj: Optional[Any] = None,
 ) -> LatentProvider:
     """Construct the appropriate provider for a given backend.
 
     - ``backend == "hf_local"``: pass ``agent=<LatentAgent>``.
-    - other backends: pass ``backend_obj=<LatentBackend>``.
 
     Raises ValueError when arguments don't match the chosen backend.
     """
@@ -162,6 +127,4 @@ def build_latent_provider(
         if agent is None:
             raise ValueError("hf_local backend requires `agent=<LatentAgent>`")
         return InProcessLatentProvider(agent)
-    if backend_obj is None:
-        raise ValueError(f"backend '{backend}' requires `backend_obj=<LatentBackend>`")
-    return BridgeLatentProvider(backend_obj)
+    raise ValueError(f"latent backend '{backend}' is not implemented")

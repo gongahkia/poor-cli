@@ -20,9 +20,7 @@ from poor_cli.research.latent_pipeline import (
     fall_back_to_text,
 )
 from poor_cli.research.latent_provider import (
-    BridgeLatentProvider,
     InProcessLatentProvider,
-    LatentSpec,
     build_latent_provider,
 )
 
@@ -30,31 +28,6 @@ from poor_cli.research.latent_provider import (
 # ──────────────────────────────────────────────────────────────────────────
 # LatentProvider abstraction
 # ──────────────────────────────────────────────────────────────────────────
-
-class _FakeBackendCfg:
-    def __init__(self, model_id="Qwen/Qwen2.5-7B", hidden_dim=4096, dtype="bfloat16"):
-        self.model_id = model_id
-        self.hidden_dim = hidden_dim
-        self.dtype = dtype
-        self.server_version = "0.1.0"
-
-
-class _FakeBackend:
-    backend_name = "vllm"
-
-    def __init__(self, cfg=None, encode_result="hidden", generate_text="generated text"):
-        self.config = cfg or _FakeBackendCfg()
-        self._encode_result = encode_result
-        self._generate_text = generate_text
-
-    async def encode(self, prompt):
-        return MagicMock(prompt=prompt, hidden=self._encode_result)
-
-    async def generate_from_latent(self, latent_msg, *, max_new_tokens=512):
-        result = MagicMock()
-        result.text = self._generate_text
-        return result
-
 
 class _FakeAgent:
     def __init__(self, model_id="Qwen/Qwen2.5-7B", hidden_dim=4096, dtype="bfloat16"):
@@ -80,25 +53,19 @@ class LatentProviderTests(unittest.TestCase):
         self.assertEqual(provider.spec.transport, "in_process")
         self.assertEqual(provider.spec.hidden_dim, 4096)
 
-    def test_bridge_spec_extracted_from_backend(self):
-        provider = BridgeLatentProvider(_FakeBackend())
-        self.assertEqual(provider.spec.backend, "vllm")
-        self.assertEqual(provider.spec.transport, "http")
-        self.assertEqual(provider.spec.hidden_dim, 4096)
-
     def test_compatible_when_specs_match(self):
         a = InProcessLatentProvider(_FakeAgent(model_id="Qwen/Qwen2.5-7B"))
-        b = BridgeLatentProvider(_FakeBackend(_FakeBackendCfg(model_id="Qwen/Qwen2.5-7B")))
+        b = InProcessLatentProvider(_FakeAgent(model_id="Qwen/Qwen2.5-7B"))
         self.assertTrue(a.compatible_with(b))
 
     def test_incompatible_on_model_mismatch(self):
         a = InProcessLatentProvider(_FakeAgent(model_id="Qwen/Qwen2.5-7B"))
-        b = BridgeLatentProvider(_FakeBackend(_FakeBackendCfg(model_id="other/model")))
+        b = InProcessLatentProvider(_FakeAgent(model_id="other/model"))
         self.assertFalse(a.compatible_with(b))
 
     def test_incompatible_on_hidden_dim_mismatch(self):
         a = InProcessLatentProvider(_FakeAgent(hidden_dim=4096))
-        b = BridgeLatentProvider(_FakeBackend(_FakeBackendCfg(hidden_dim=5120)))
+        b = InProcessLatentProvider(_FakeAgent(hidden_dim=5120))
         self.assertFalse(a.compatible_with(b))
 
     def test_async_encode_decode_roundtrip(self):
@@ -114,11 +81,9 @@ class LatentProviderTests(unittest.TestCase):
         provider = build_latent_provider(backend="hf_local", agent=_FakeAgent())
         self.assertIsInstance(provider, InProcessLatentProvider)
 
-    def test_factory_other_backend_requires_backend_obj(self):
-        with self.assertRaises(ValueError):
+    def test_factory_other_backend_is_not_implemented(self):
+        with self.assertRaisesRegex(ValueError, "not implemented"):
             build_latent_provider(backend="vllm")
-        provider = build_latent_provider(backend="vllm", backend_obj=_FakeBackend())
-        self.assertIsInstance(provider, BridgeLatentProvider)
 
 
 # ──────────────────────────────────────────────────────────────────────────
