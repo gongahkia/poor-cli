@@ -7,7 +7,7 @@ import type { RegisteredToolDefinition } from "./tool-definition.js";
 const GOV_FEED_FAMILY_ID = "government_rss_feeds";
 
 export const handleGovFeedCatalog = async (
-  params: Readonly<{ family?: "all" | "nea" | "weather" | "sfa" | "mpa" | "nhb" | undefined; format?: OutputFormat | undefined }>,
+  params: Readonly<{ family?: "all" | "nea" | "weather" | "sfa" | "mpa" | "nhb" | "ura" | undefined; format?: OutputFormat | undefined }>,
 ): Promise<ToolResult> => {
   assertFamilyEnabled(GOV_FEED_FAMILY_ID, "sg_gov_feed_catalog");
   const records = getGovFeedCatalog(params.family);
@@ -17,7 +17,7 @@ export const handleGovFeedCatalog = async (
     structuredContent: {
       records,
       limits: {
-        families: ["all", "nea", "weather", "sfa", "mpa", "nhb"],
+        families: ["all", "nea", "weather", "sfa", "mpa", "nhb", "ura"],
       },
       rollback: {
         familyId: GOV_FEED_FAMILY_ID,
@@ -45,7 +45,7 @@ export const handleGovFeedItems = async (
         sourceTimestamp: result.records[0]?.publishedAt ?? null,
       },
       provenance: {
-        source: "official-rss",
+        source: "official-feed",
         sourceAgency: result.feed.sourceAgency,
         sourceUrl: result.feed.sourceUrl,
         channelTitle: result.channelTitle,
@@ -69,7 +69,7 @@ export const handleGovFeedItems = async (
 export const govFeedToolDefinitions: readonly RegisteredToolDefinition[] = [
   {
     name: "sg_gov_feed_catalog",
-    description: "List direct non-data.gov.sg official Singapore RSS feeds available in this MCP server (NEA, weather.gov.sg, SFA, MPA, NHB).",
+    description: "List direct non-data.gov.sg official Singapore feeds available in this MCP server (NEA, weather.gov.sg, SFA, MPA, NHB, URA).",
     surface: "canonical",
     inputSchema: GovFeedCatalogSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
@@ -79,7 +79,7 @@ export const govFeedToolDefinitions: readonly RegisteredToolDefinition[] = [
   },
   {
     name: "sg_gov_feed_items",
-    description: "Read official RSS feed items (NEA, weather.gov.sg, SFA, MPA, NHB) with stream-level rollback controls.",
+    description: "Read official feed items (RSS and official listing pages) with stream-level rollback controls.",
     surface: "canonical",
     inputSchema: GovFeedItemsSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {

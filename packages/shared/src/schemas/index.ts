@@ -918,10 +918,15 @@ const GovFeedIdSchema = z.enum([
   "nhb_programmes",
   "nhb_publications",
   "nhb_trails",
+  "ura_media_releases",
+  "ura_speeches",
+  "ura_announcements",
+  "ura_news",
+  "ura_publications",
 ]);
 
 export const GovFeedCatalogSchema = z.object({
-  family: z.enum(["all", "nea", "weather", "sfa", "mpa", "nhb"]).optional(),
+  family: z.enum(["all", "nea", "weather", "sfa", "mpa", "nhb", "ura"]).optional(),
   format: z.enum(["json", "markdown", "csv"]).optional(),
 }).strict();
 

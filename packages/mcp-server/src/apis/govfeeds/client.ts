@@ -1,7 +1,8 @@
 import { ApiError, getTimeout, httpGetText } from "@sg-apis/shared";
 import { buildCacheKey, withCache } from "../../middleware/cache-middleware.js";
 
-export type GovFeedFamily = "nea" | "weather" | "sfa" | "mpa" | "nhb";
+export type GovFeedFamily = "nea" | "weather" | "sfa" | "mpa" | "nhb" | "ura";
+type GovFeedSourceFormat = "rss" | "ura_listing";
 
 export type GovFeedDefinition = Readonly<{
   id: string;
@@ -9,6 +10,7 @@ export type GovFeedDefinition = Readonly<{
   family: GovFeedFamily;
   sourceAgency: string;
   sourceUrl: string;
+  format?: GovFeedSourceFormat;
 }>;
 
 export type GovFeedItem = Readonly<{
@@ -161,6 +163,46 @@ const GOV_FEED_DEFINITIONS: readonly GovFeedDefinition[] = [
     sourceAgency: "National Heritage Board",
     sourceUrl: "https://www.nhb.gov.sg/Custom/Nhb2017/Widget/RSS/NhbRSSHandler.ashx?topic=Trails",
   },
+  {
+    id: "ura_media_releases",
+    title: "URA Media Releases",
+    family: "ura",
+    sourceAgency: "Urban Redevelopment Authority",
+    sourceUrl: "https://www.ura.gov.sg/Corporate/Media-Room/Media-Releases",
+    format: "ura_listing",
+  },
+  {
+    id: "ura_speeches",
+    title: "URA Speeches",
+    family: "ura",
+    sourceAgency: "Urban Redevelopment Authority",
+    sourceUrl: "https://www.ura.gov.sg/Corporate/Media-Room/Speeches",
+    format: "ura_listing",
+  },
+  {
+    id: "ura_announcements",
+    title: "URA Announcements",
+    family: "ura",
+    sourceAgency: "Urban Redevelopment Authority",
+    sourceUrl: "https://www.ura.gov.sg/Corporate/Media-Room/Announcements",
+    format: "ura_listing",
+  },
+  {
+    id: "ura_news",
+    title: "URA News",
+    family: "ura",
+    sourceAgency: "Urban Redevelopment Authority",
+    sourceUrl: "https://www.ura.gov.sg/Corporate/Media-Room/News",
+    format: "ura_listing",
+  },
+  {
+    id: "ura_publications",
+    title: "URA Publications",
+    family: "ura",
+    sourceAgency: "Urban Redevelopment Authority",
+    sourceUrl: "https://www.ura.gov.sg/Corporate/Media-Room/Publications",
+    format: "ura_listing",
+  },
 ] as const;
 
 const GOV_FEED_BY_ID = new Map(GOV_FEED_DEFINITIONS.map((feed) => [feed.id, feed]));
@@ -242,17 +284,64 @@ const parseFeedItems = (xml: string): readonly GovFeedItem[] => {
   });
 };
 
+const parseUraListingItems = (html: string, sourceUrl: string): readonly GovFeedItem[] => {
+  const itemMatches = [...html.matchAll(
+    /<li id="column_2_main_0_rpCircularWithoutColumn_listItems_[^"]*"[\s\S]*?<\/li>/gi,
+  )];
+  return itemMatches
+    .map((match) => {
+      const block = match[0];
+      const dateMatch = /class="date"[^>]*>([\s\S]*?)<\/div>/i.exec(block)
+        ?? /col-md-3[\s\S]*?<div class="text">([\s\S]*?)<\/div>/i.exec(block);
+      const publishedAtRaw = dateMatch === null ? null : normalizeText(dateMatch[1] ?? "");
+      const linkMatch = /<a\s+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i.exec(block);
+      const relativeLink = linkMatch?.[1] ?? null;
+      const title = linkMatch === null ? null : normalizeText(linkMatch[2] ?? "");
+      const link = relativeLink === null || relativeLink.trim() === ""
+        ? null
+        : new URL(relativeLink, sourceUrl).toString();
+      return {
+        title: title === "" ? null : title,
+        description: null,
+        link,
+        guid: link,
+        publishedAtRaw: publishedAtRaw === "" ? null : publishedAtRaw,
+        publishedAt: toIsoTimestamp(publishedAtRaw),
+      } satisfies GovFeedItem;
+    })
+    .filter((record) => record.title !== null || record.link !== null);
+};
+
 const fetchAndParseFeed = async (definition: GovFeedDefinition): Promise<{
   observedAt: string;
   channelTitle: string | null;
   records: readonly GovFeedItem[];
 }> => {
-  const xml = await httpGetText(definition.sourceUrl, {
+  const payload = await httpGetText(definition.sourceUrl, {
     apiName: "govfeeds",
     timeout: getTimeout("govfeeds"),
   });
 
-  if (!/<rss\b/i.test(xml) && !/<feed\b/i.test(xml)) {
+  if (definition.format === "ura_listing") {
+    if (!/rpCircularWithoutColumn_listItems_/i.test(payload)) {
+      throw new ApiError({
+        apiName: "govfeeds",
+        source: definition.sourceAgency,
+        statusCode: 502,
+        code: "UNEXPECTED_FEED_PAGE_FORMAT",
+        retryable: false,
+        message: `${definition.id} did not return the expected URA listing page shape.`,
+        suggestedAction: "Retry later. If this persists, verify whether the URA page structure changed.",
+      });
+    }
+    return {
+      observedAt: new Date().toISOString(),
+      channelTitle: extractTagValue(payload, "title"),
+      records: parseUraListingItems(payload, definition.sourceUrl),
+    };
+  }
+
+  if (!/<rss\b/i.test(payload) && !/<feed\b/i.test(payload)) {
     throw new ApiError({
       apiName: "govfeeds",
       source: definition.sourceAgency,
@@ -264,15 +353,15 @@ const fetchAndParseFeed = async (definition: GovFeedDefinition): Promise<{
     });
   }
 
-  const channelMatch = /<channel(?:\s[^>]*)?>([\s\S]*?)<\/channel>/i.exec(xml);
+  const channelMatch = /<channel(?:\s[^>]*)?>([\s\S]*?)<\/channel>/i.exec(payload);
   const channelTitle = channelMatch === null
-    ? extractTagValue(xml, "title")
+    ? extractTagValue(payload, "title")
     : extractTagValue(channelMatch[1] ?? "", "title");
 
   return {
     observedAt: new Date().toISOString(),
     channelTitle,
-    records: parseFeedItems(xml),
+    records: parseFeedItems(payload),
   };
 };
 

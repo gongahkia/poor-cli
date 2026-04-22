@@ -136,6 +136,15 @@ export const OPS_TAXONOMY_CATALOG = {
       suggestedAction: "Retry later and verify whether the upstream RSS contract changed.",
     },
     {
+      code: "UNEXPECTED_FEED_PAGE_FORMAT",
+      source: "govfeeds",
+      retryable: false,
+      severity: "medium",
+      statusCode: 502,
+      category: "upstream_contract",
+      suggestedAction: "Retry later and verify whether the upstream listing page contract changed.",
+    },
+    {
       code: "EMPTY_RESULT",
       source: "NEA",
       retryable: false,
