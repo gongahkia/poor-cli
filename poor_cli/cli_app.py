@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import sys
 import time
 from pathlib import Path
@@ -389,6 +390,137 @@ def _print_chat_help() -> None:
             print(f"  {command.command:<18} {command.description}")
 
 
+def _split_chat_slash(message: str) -> tuple[str, str]:
+    raw = message.strip()
+    if not raw.startswith("/"):
+        return "", ""
+    body = raw[1:].strip()
+    if not body:
+        return "", ""
+    try:
+        parts = shlex.split(body)
+    except ValueError:
+        parts = body.split()
+    if not parts:
+        return "", ""
+    command = "/" + parts[0].lower().lstrip("/")
+    rest = body[len(parts[0]):].strip()
+    return command, rest
+
+
+def _print_recent_chat_history(core: Any, *, limit: int = 10) -> None:
+    try:
+        history = core.get_history()
+    except Exception as exc:
+        print(f"history unavailable: {exc}")
+        return
+    if not history:
+        print("history empty")
+        return
+    for entry in history[-max(1, limit):]:
+        role = str(entry.get("role") or "unknown")
+        content = str(entry.get("content") or "").replace("\n", " ")
+        if len(content) > 180:
+            content = content[:177] + "..."
+        print(f"{role}> {content}")
+
+
+async def _handle_chat_slash_command(core: Any, args: argparse.Namespace, message: str) -> tuple[bool, str]:
+    command, rest = _split_chat_slash(message)
+    if not command:
+        return False, message
+    if command in {"/help"}:
+        _print_chat_help()
+        return True, ""
+    if command in {"/clear", "/new-session"}:
+        await core.clear_history()
+        print("history cleared")
+        return True, ""
+    if command == "/clear-output":
+        print("\033c", end="")
+        return True, ""
+    if command == "/history":
+        _print_recent_chat_history(core)
+        return True, ""
+    if command == "/status":
+        _print_json(core.build_status_view())
+        return True, ""
+    if command == "/doctor":
+        _print_json(core.build_doctor_report())
+        return True, ""
+    if command == "/cost":
+        _print_json(core.get_session_cost_summary())
+        return True, ""
+    if command == "/savings":
+        _print_json(core.get_savings_summary(include_history=False))
+        return True, ""
+    if command in {"/provider", "/providers", "/model-info"}:
+        if rest.startswith("switch "):
+            rest = rest[len("switch "):].strip()
+        if rest:
+            parts = shlex.split(rest)
+            provider = parts[0] if parts else ""
+            model = parts[1] if len(parts) > 1 else None
+            await core.switch_provider(provider, model)
+            print(f"provider switched: {provider}{(' ' + model) if model else ''}")
+        else:
+            _print_json(core.get_provider_info())
+        return True, ""
+    if command == "/switch":
+        parts = shlex.split(rest)
+        if not parts:
+            print("usage: /switch <provider> [model]")
+            return True, ""
+        await core.switch_provider(parts[0], parts[1] if len(parts) > 1 else None)
+        print(f"provider switched: {parts[0]}{(' ' + parts[1]) if len(parts) > 1 else ''}")
+        return True, ""
+    if command == "/tools":
+        for tool in core.get_available_tools():
+            name = str(tool.get("name") or tool.get("function", {}).get("name") or "")
+            if name:
+                print(name)
+        return True, ""
+    if command == "/pwd":
+        print(Path.cwd())
+        return True, ""
+    if command == "/read":
+        path = Path(rest).expanduser()
+        if not rest:
+            print("usage: /read <path>")
+            return True, ""
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        print(path.read_text(encoding="utf-8", errors="replace")[:12000])
+        return True, ""
+    if command == "/ls":
+        target = Path(rest or ".").expanduser()
+        if not target.is_absolute():
+            target = Path.cwd() / target
+        for child in sorted(target.iterdir()):
+            print(child.name + ("/" if child.is_dir() else ""))
+        return True, ""
+    if command == "/run":
+        if not rest:
+            print("usage: /run <shell command>")
+            return True, ""
+        result = await core.execute_tool("bash", {"command": rest})
+        print(result)
+        return True, ""
+
+    from .automations import CustomCommandRegistry
+    registry = CustomCommandRegistry(Path.cwd())
+    wrapper_name = command[1:]
+    if registry.get_command(wrapper_name) is not None:
+        return False, registry.render_prompt(wrapper_name, rest)
+
+    from .command_manifest import load_command_manifest
+    known = {spec.command for spec in load_command_manifest().commands}
+    if command in known:
+        return False, f"Run slash command {command} with arguments: {rest}".strip()
+    print(f"unknown command: {command}")
+    return True, ""
+
+
 async def _run_chat_mode_async(args: argparse.Namespace) -> int:
     from .config import PermissionMode, parse_permission_mode
     from .core import PoorCLICore
@@ -443,9 +575,10 @@ async def _run_chat_mode_async(args: argparse.Namespace) -> int:
             lowered = message.lower()
             if lowered in {"/quit", "/exit", "quit", "exit"}:
                 return 0
-            if lowered == "/help":
-                _print_chat_help()
+            handled, dispatched_message = await _handle_chat_slash_command(core, args, message)
+            if handled:
                 continue
+            message = dispatched_message
             print("assistant> ", end="", flush=True)
             wrote_text = False
             async for event in core.send_message_events(

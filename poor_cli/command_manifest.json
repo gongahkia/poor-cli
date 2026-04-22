@@ -112,7 +112,7 @@
     },
     {
       "command": "/quit",
-      "description": "Exit the TUI",
+      "description": "Exit the CLI",
       "recommended": true,
       "category": "Core Workflow"
     },

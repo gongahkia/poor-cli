@@ -66,7 +66,7 @@ class ChatHandlersMixin:
                 params.get("clientCapabilities")
             )
 
-            # wire init progress callback to push notifications to TUI.
+            # wire init progress callback to push notifications to CLI.
             # callback may fire from executor thread (during indexing) or main
             # thread (skip path / animation frames), so we stash messages and
             # flush after initialize() returns.
@@ -301,7 +301,7 @@ class ChatHandlersMixin:
         """Shutdown the server."""
         del params
         self.logger.info("Shutdown requested")
-        # Auto-save session on shutdown for TUI restore
+        # Auto-save session on shutdown for CLI restore
         try:
             await self.handle_save_session({})
         except Exception as e:

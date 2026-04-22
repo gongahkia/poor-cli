@@ -68,7 +68,7 @@ poor-cli ships **117 slash commands** across 9 categories.
 | `/onboarding` | Start guided CLI onboarding |
 | `/plan` ⭐ | Generate a plan before executing |
 | `/queue` | Manage prompt queue (add/list/clear/drop) |
-| `/quit` ⭐ | Exit the TUI |
+| `/quit` ⭐ | Exit the CLI |
 | `/retry` | Retry last request |
 | `/runs` | Inspect recent shared run history |
 | `/search` ⭐ | Search transcript, tools, and diffs |
@@ -179,7 +179,7 @@ poor-cli ships **117 slash commands** across 9 categories.
 ## Conventions
 
 - ⭐ = recommended starting point for new users.
-- Type `/` in chat to trigger the slash autocomplete picker (PRD 045).
+- Type `/` in chat to trigger the slash command dispatcher.
 - Custom slash commands defined via AutomationRule (`type: slash`) appear here only after manifest regeneration; see `docs/AUTOMATIONS.md`.
 
 ## See also

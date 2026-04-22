@@ -1,4 +1,4 @@
-"""Shared command manifest for TUI help, completion, and README generation."""
+"""Shared command manifest for CLI help, completion, and README generation."""
 
 from __future__ import annotations
 
