@@ -7,20 +7,47 @@ OUTPUT_DIR="${1:-"$ROOT_DIR/dist/$APP_NAME"}"
 TARGET="${2:-${WOK_TARGET:-}}"
 BINARY_PATH="$ROOT_DIR/target/release/wok"
 PLIST_PATH="$ROOT_DIR/packaging/macos/Info.plist"
+UNIVERSAL=0
 
 if [ ! -f "$PLIST_PATH" ]; then
     printf "Error: Info.plist not found at %s\n" "$PLIST_PATH" >&2
     exit 1
 fi
 
-BUILD_ARGS=(build --release -p wok --manifest-path "$ROOT_DIR/Cargo.toml")
-if [[ -n "$TARGET" ]]; then
-    BUILD_ARGS+=(--target "$TARGET")
-    BINARY_PATH="$ROOT_DIR/target/$TARGET/release/wok"
+if [[ "${WOK_UNIVERSAL:-0}" == "1" || "$TARGET" == "universal2" || "$TARGET" == "universal2-apple-darwin" ]]; then
+    UNIVERSAL=1
+    BINARY_PATH="$ROOT_DIR/target/universal2-apple-darwin/release/wok"
 fi
 
-if [[ "${WOK_SKIP_BUILD:-0}" != "1" ]]; then
-    cargo "${BUILD_ARGS[@]}"
+if [[ "$UNIVERSAL" == "1" ]]; then
+    if ! command -v lipo >/dev/null 2>&1; then
+        printf 'Error: lipo is required to build a universal2 macOS bundle\n' >&2
+        exit 1
+    fi
+
+    if [[ "${WOK_SKIP_BUILD:-0}" != "1" ]]; then
+        cargo build --release -p wok --manifest-path "$ROOT_DIR/Cargo.toml" --target aarch64-apple-darwin
+        cargo build --release -p wok --manifest-path "$ROOT_DIR/Cargo.toml" --target x86_64-apple-darwin
+    fi
+
+    ARM64_BINARY="$ROOT_DIR/target/aarch64-apple-darwin/release/wok"
+    X86_64_BINARY="$ROOT_DIR/target/x86_64-apple-darwin/release/wok"
+    if [[ ! -f "$ARM64_BINARY" || ! -f "$X86_64_BINARY" ]]; then
+        printf 'Error: universal2 bundle requires both %s and %s\n' "$ARM64_BINARY" "$X86_64_BINARY" >&2
+        exit 1
+    fi
+    mkdir -p "$(dirname "$BINARY_PATH")"
+    lipo -create "$ARM64_BINARY" "$X86_64_BINARY" -output "$BINARY_PATH"
+else
+    BUILD_ARGS=(build --release -p wok --manifest-path "$ROOT_DIR/Cargo.toml")
+    if [[ -n "$TARGET" ]]; then
+        BUILD_ARGS+=(--target "$TARGET")
+        BINARY_PATH="$ROOT_DIR/target/$TARGET/release/wok"
+    fi
+
+    if [[ "${WOK_SKIP_BUILD:-0}" != "1" ]]; then
+        cargo "${BUILD_ARGS[@]}"
+    fi
 fi
 
 if [ ! -f "$BINARY_PATH" ]; then
