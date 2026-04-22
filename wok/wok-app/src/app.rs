@@ -315,16 +315,16 @@ impl WokApp {
                 let can_diff = self.block_manager.get_block(block_id).is_some_and(|block| {
                     block.exit_code.is_some() && !block.command_text.trim().is_empty()
                 });
-                if !can_diff {
-                    effects.push(RuntimeEffect::Status(
-                        "Only completed blocks with commands can be diffed".to_string(),
-                    ));
-                } else {
+                if can_diff {
                     self.select_block(block_id);
                     effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenBlockQuery {
                         mode: BlockQueryMode::Diff,
                         target_block_id: block_id,
                     }));
+                } else {
+                    effects.push(RuntimeEffect::Status(
+                        "Only completed blocks with commands can be diffed".to_string(),
+                    ));
                 }
             }
             Action::BlockRerun => {

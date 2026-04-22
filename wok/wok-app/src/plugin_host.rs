@@ -149,10 +149,10 @@ impl PluginHost {
     }
 
     /// Update the latest runtime snapshot visible to plugin accessors.
-    pub fn update_snapshot(&self, snapshot: Value) {
+    pub fn update_snapshot(&self, snapshot: &Value) {
         self.runtime.set_runtime_snapshot(snapshot.clone());
         if let Some(bridge) = &self.external_bridge {
-            bridge.send_event("wok.snapshot", &snapshot);
+            bridge.send_event("wok.snapshot", snapshot);
         }
     }
 
@@ -270,11 +270,11 @@ impl ExternalPluginBridge {
         for line in rx.try_iter() {
             match serde_json::from_str::<ExternalPluginMessage>(&line) {
                 Ok(ExternalPluginMessage::Notify { message }) => {
-                    effects.notifications.push(message)
+                    effects.notifications.push(message);
                 }
                 Ok(ExternalPluginMessage::Exec { command }) => effects.exec_requests.push(command),
                 Ok(ExternalPluginMessage::Action { action }) => {
-                    effects.action_requests.push(action)
+                    effects.action_requests.push(action);
                 }
                 Err(error) => effects
                     .notifications

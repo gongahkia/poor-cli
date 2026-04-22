@@ -2249,7 +2249,7 @@ impl WokHandler {
         let Some(plugins) = &self.plugins else {
             return;
         };
-        plugins.update_snapshot(self.plugin_snapshot());
+        plugins.update_snapshot(&self.plugin_snapshot());
     }
 
     fn refresh_plugin_config(&self) {
@@ -2516,25 +2516,25 @@ impl WokHandler {
 
     fn apply_setup_request(&mut self, request: SetupRequest) {
         let result: Result<String, Box<dyn Error>> = match request {
-            SetupRequest::Init { overwrite } => setup_ops::run_init(overwrite)
-                .map(|_| "Setup: init completed".to_string())
-                .map_err(|error| error.into()),
-            SetupRequest::Doctor { json } => setup_ops::run_doctor(json)
-                .map(|_| "Setup: doctor completed".to_string())
-                .map_err(|error| error.into()),
+            SetupRequest::Init { overwrite } => {
+                setup_ops::run_init(overwrite).map(|_| "Setup: init completed".to_string())
+            }
+            SetupRequest::Doctor { json } => {
+                setup_ops::run_doctor(json).map(|_| "Setup: doctor completed".to_string())
+            }
             SetupRequest::Reset { scope, yes } => parse_reset_scope_value(&scope)
-                .ok_or_else(|| format!("unsupported reset scope '{scope}'").into())
-                .and_then(|scope| setup_ops::run_reset(scope, yes).map_err(|error| error.into()))
+                .ok_or_else(|| -> Box<dyn Error> {
+                    format!("unsupported reset scope '{scope}'").into()
+                })
+                .and_then(|scope| setup_ops::run_reset(scope, yes))
                 .map(|_| "Setup: reset completed".to_string()),
             SetupRequest::ShellInstall { shell, overwrite } => {
                 setup_ops::run_shell_install(shell.as_deref(), overwrite)
                     .map(|_| "Setup: shell install completed".to_string())
-                    .map_err(|error| error.into())
             }
             SetupRequest::ShellRollback { shell, yes } => {
                 setup_ops::run_shell_rollback(shell.as_deref(), yes)
                     .map(|_| "Setup: shell rollback completed".to_string())
-                    .map_err(|error| error.into())
             }
         };
 
@@ -6098,8 +6098,8 @@ fn encode_terminal_mouse_event(
         code += 16;
     }
 
-    let x = u16::from(cell.col) + 1;
-    let y = u16::from(cell.row) + 1;
+    let x = cell.col + 1;
+    let y = cell.row + 1;
     if sgr {
         let suffix = if matches!(event, TerminalMouseEvent::Release) {
             'm'
@@ -6378,9 +6378,7 @@ fn build_block_diff_for_target(
         .iter()
         .position(|block| block.id == target_block_id)?;
     let target = blocks.get(target_index)?;
-    if target.exit_code.is_none() {
-        return None;
-    }
+    target.exit_code?;
     let command = target.command_text.trim();
     if command.is_empty() {
         return None;

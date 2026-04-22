@@ -1,6 +1,7 @@
 use super::*;
 use std::path::Path;
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn compute_chrome_rects(
     size: PhysicalSize<u32>,
     tab_bar_visible: bool,
@@ -900,8 +901,7 @@ pub(crate) fn render_command_palette(
     let list_bottom = rect.y + rect.h - font.metrics.cell_height - 18.0;
     let entries_max = ((list_bottom - list_top) / row_height)
         .floor()
-        .max(4.0)
-        .min(15.0) as usize;
+        .clamp(4.0, 15.0) as usize;
     let available_entries = &palette.filtered;
     let mut start_idx = 0usize;
     if !available_entries.is_empty() {
@@ -3536,6 +3536,7 @@ fn resolve_cell_background_color(
     inline_color.unwrap_or(bg)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn push_background_run(
     batch: &mut QuadBatch,
     viewport: Rect,

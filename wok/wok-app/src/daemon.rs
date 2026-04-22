@@ -272,7 +272,7 @@ mod imp {
 
     fn request_socket(
         socket: &Path,
-        message: ClientMessage,
+        message: &ClientMessage,
         timeout: Duration,
     ) -> Result<ServerMessage, Box<dyn std::error::Error>> {
         let deadline = Instant::now() + timeout;
@@ -318,7 +318,7 @@ mod imp {
 
     fn request(
         session: &str,
-        message: ClientMessage,
+        message: &ClientMessage,
     ) -> Result<ServerMessage, Box<dyn std::error::Error>> {
         let socket = session_socket_path(session);
         request_socket(&socket, message, IPC_COMMAND_TIMEOUT)
@@ -424,7 +424,7 @@ mod imp {
     fn query_session_socket(name: &str, socket: &Path) -> Option<SessionSummary> {
         let response = request_socket(
             socket,
-            ClientMessage::SessionState {
+            &ClientMessage::SessionState {
                 session: name.to_string(),
             },
             IPC_DISCOVERY_TIMEOUT,
@@ -473,7 +473,7 @@ mod imp {
     pub fn kill_session(name: &str) -> Result<(), Box<dyn std::error::Error>> {
         match request(
             name,
-            ClientMessage::Kill {
+            &ClientMessage::Kill {
                 session: name.to_string(),
             },
         )? {
@@ -487,7 +487,7 @@ mod imp {
     pub fn attach_session(name: &str) -> Result<SessionSummary, Box<dyn std::error::Error>> {
         let response = request(
             name,
-            ClientMessage::Attach {
+            &ClientMessage::Attach {
                 session: name.to_string(),
             },
         )?;
@@ -512,7 +512,7 @@ mod imp {
     pub fn detach_session(name: &str) -> Result<(), Box<dyn std::error::Error>> {
         match request(
             name,
-            ClientMessage::Detach {
+            &ClientMessage::Detach {
                 session: name.to_string(),
             },
         )? {
@@ -530,7 +530,7 @@ mod imp {
     ) -> Result<(), Box<dyn std::error::Error>> {
         match request(
             name,
-            ClientMessage::Input {
+            &ClientMessage::Input {
                 pane_id,
                 data: data.to_vec(),
             },
@@ -550,7 +550,7 @@ mod imp {
     ) -> Result<(), Box<dyn std::error::Error>> {
         match request(
             name,
-            ClientMessage::Resize {
+            &ClientMessage::Resize {
                 pane_id,
                 cols,
                 rows,
@@ -564,7 +564,7 @@ mod imp {
 
     /// Fetch a snapshot payload for one session.
     pub fn snapshot_session(name: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-        match request(name, ClientMessage::Snapshot)? {
+        match request(name, &ClientMessage::Snapshot)? {
             ServerMessage::Snapshot { payload } => Ok(payload),
             ServerMessage::Error { message } => Err(message.into()),
             _ => Err("unexpected daemon response".into()),
@@ -575,7 +575,7 @@ mod imp {
     pub fn create_pane(name: &str, direction: &str) -> Result<u64, Box<dyn std::error::Error>> {
         match request(
             name,
-            ClientMessage::CreatePane {
+            &ClientMessage::CreatePane {
                 direction: direction.to_string(),
             },
         )? {
@@ -587,7 +587,7 @@ mod imp {
 
     /// Close a pane in a daemon session.
     pub fn close_pane(name: &str, pane_id: u64) -> Result<(), Box<dyn std::error::Error>> {
-        match request(name, ClientMessage::ClosePane { pane_id })? {
+        match request(name, &ClientMessage::ClosePane { pane_id })? {
             ServerMessage::Ack => Ok(()),
             ServerMessage::Error { message } => Err(message.into()),
             _ => Err("unexpected daemon response".into()),
@@ -596,7 +596,7 @@ mod imp {
 
     /// List panes in a daemon session.
     pub fn list_panes(name: &str) -> Result<Vec<PaneInfo>, Box<dyn std::error::Error>> {
-        match request(name, ClientMessage::GetPanes)? {
+        match request(name, &ClientMessage::GetPanes)? {
             ServerMessage::Panes { items } => Ok(items),
             ServerMessage::Error { message } => Err(message.into()),
             _ => Err("unexpected daemon response".into()),
