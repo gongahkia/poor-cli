@@ -2860,23 +2860,30 @@ pub(crate) fn push_glyph_impl(
         glyph_id: character as u32,
         font_size_tenths: (font.font_size * 10.0) as u32,
     };
+    let baseline = font.metrics.baseline;
 
     if let Some(glyph) = font.rasterize(character) {
         let width = glyph.width;
         let height = glyph.height;
-        let data = glyph.data.clone();
         let offset_x = glyph.offset_x;
         let offset_y = glyph.offset_y;
-        if let Some(region) = atlas.get_or_insert(glyph_key, width, height) {
-            if width > 0 && height > 0 {
-                pipeline.upload_glyph(gpu, region.x, region.y, width, height, &data);
+        if let Some(allocation) = atlas.get_or_insert_with_status(glyph_key, width, height) {
+            if allocation.inserted && width > 0 && height > 0 {
+                pipeline.upload_glyph(
+                    gpu,
+                    allocation.region.x,
+                    allocation.region.y,
+                    width,
+                    height,
+                    &glyph.data,
+                );
             }
             batch.push_glyph_quad(
                 x + offset_x as f32,
-                y + (font.metrics.baseline - offset_y as f32),
+                y + (baseline - offset_y as f32),
                 width as f32,
                 height as f32,
-                &region,
+                &allocation.region,
                 color,
             );
         }

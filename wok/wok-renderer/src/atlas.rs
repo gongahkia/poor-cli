@@ -34,6 +34,15 @@ pub struct GlyphKey {
     pub font_size_tenths: u32,
 }
 
+/// Result of a glyph atlas lookup or insertion.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GlyphAllocation {
+    /// Atlas region for the glyph.
+    pub region: AtlasRegion,
+    /// Whether this lookup inserted a new atlas entry.
+    pub inserted: bool,
+}
+
 /// Shelf-packing glyph atlas for efficient GPU texture caching.
 pub struct GlyphAtlas {
     /// Atlas texture width.
@@ -76,14 +85,30 @@ impl GlyphAtlas {
         glyph_width: u32,
         glyph_height: u32,
     ) -> Option<AtlasRegion> {
+        self.get_or_insert_with_status(key, glyph_width, glyph_height)
+            .map(|allocation| allocation.region)
+    }
+
+    /// Get or insert a glyph and report whether GPU texture upload is needed.
+    pub fn get_or_insert_with_status(
+        &mut self,
+        key: GlyphKey,
+        glyph_width: u32,
+        glyph_height: u32,
+    ) -> Option<GlyphAllocation> {
         if let Some(region) = self.entries.get(&key) {
-            return Some(*region);
+            return Some(GlyphAllocation {
+                region: *region,
+                inserted: false,
+            });
         }
 
-        // Allocate space using shelf-packing
         let region = self.allocate(glyph_width, glyph_height)?;
         self.entries.insert(key, region);
-        Some(region)
+        Some(GlyphAllocation {
+            region,
+            inserted: true,
+        })
     }
 
     /// Allocate a rectangular region using shelf-packing.
@@ -184,6 +209,23 @@ mod tests {
         // Second insert returns same region
         let region2 = atlas.get_or_insert(key, 10, 16).unwrap();
         assert_eq!(region, region2);
+    }
+
+    #[test]
+    fn test_insert_status_only_marks_new_entries() {
+        let mut atlas = GlyphAtlas::new(2_048, 2_048);
+        let key = GlyphKey {
+            font_id: 0,
+            glyph_id: 65,
+            font_size_tenths: 140,
+        };
+
+        let first = atlas.get_or_insert_with_status(key, 10, 16).unwrap();
+        assert!(first.inserted);
+
+        let second = atlas.get_or_insert_with_status(key, 10, 16).unwrap();
+        assert!(!second.inserted);
+        assert_eq!(first.region, second.region);
     }
 
     #[test]
