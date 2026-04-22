@@ -18,6 +18,23 @@ pub struct Vertex {
     pub tex_kind: f32,
 }
 
+/// Compact per-quad instance data consumed by the GPU instanced pipeline.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct QuadInstance {
+    /// Destination rect: x, y, width, height in pixels.
+    pub rect: [f32; 4],
+    /// Texture coordinates: u_min, v_min, u_max, v_max.
+    pub uv_rect: [f32; 4],
+    /// Foreground/tint color.
+    pub fg_color: [f32; 4],
+    /// Background color.
+    pub bg_color: [f32; 4],
+    /// Texture mode: 0 = solid color, 1 = glyph atlas, 2 = background image.
+    pub tex_kind: f32,
+    _padding: [f32; 3],
+}
+
 /// Cursor display shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CursorShape {
@@ -35,6 +52,8 @@ pub struct QuadBatch {
     pub vertices: Vec<Vertex>,
     /// Index data.
     pub indices: Vec<u32>,
+    /// Per-quad instance data for the GPU renderer.
+    pub instances: Vec<QuadInstance>,
 }
 
 impl QuadBatch {
@@ -43,6 +62,7 @@ impl QuadBatch {
         Self {
             vertices: Vec::with_capacity(vertex_capacity),
             indices: Vec::with_capacity(index_capacity),
+            instances: Vec::with_capacity(index_capacity / 6),
         }
     }
 
@@ -53,6 +73,15 @@ impl QuadBatch {
 
     /// Add a background quad for a cell.
     pub fn push_bg_quad(&mut self, x: f32, y: f32, w: f32, h: f32, color: [f32; 4]) {
+        self.instances.push(QuadInstance {
+            rect: [x, y, w, h],
+            uv_rect: [0.0, 0.0, 1.0, 1.0],
+            fg_color: [0.0; 4],
+            bg_color: color,
+            tex_kind: 0.0,
+            _padding: [0.0; 3],
+        });
+
         let base = self.vertices.len() as u32;
         self.vertices.extend_from_slice(&[
             Vertex {
@@ -98,6 +127,15 @@ impl QuadBatch {
         region: &AtlasRegion,
         fg_color: [f32; 4],
     ) {
+        self.instances.push(QuadInstance {
+            rect: [x, y, w, h],
+            uv_rect: [region.u_min, region.v_min, region.u_max, region.v_max],
+            fg_color,
+            bg_color: [0.0; 4],
+            tex_kind: 1.0,
+            _padding: [0.0; 3],
+        });
+
         let base = self.vertices.len() as u32;
         self.vertices.extend_from_slice(&[
             Vertex {
@@ -135,6 +173,15 @@ impl QuadBatch {
 
     /// Add a textured background image quad.
     pub fn push_image_quad(&mut self, x: f32, y: f32, w: f32, h: f32, tint: [f32; 4]) {
+        self.instances.push(QuadInstance {
+            rect: [x, y, w, h],
+            uv_rect: [0.0, 0.0, 1.0, 1.0],
+            fg_color: tint,
+            bg_color: [0.0; 4],
+            tex_kind: 2.0,
+            _padding: [0.0; 3],
+        });
+
         let base = self.vertices.len() as u32;
         self.vertices.extend_from_slice(&[
             Vertex {
@@ -191,6 +238,7 @@ impl QuadBatch {
     pub fn clear(&mut self) {
         self.vertices.clear();
         self.indices.clear();
+        self.instances.clear();
     }
 
     /// Append another batch, offsetting its indices to match the current vertex base.
@@ -199,11 +247,12 @@ impl QuadBatch {
         self.vertices.extend_from_slice(&other.vertices);
         self.indices
             .extend(other.indices.iter().map(|index| index + base));
+        self.instances.extend_from_slice(&other.instances);
     }
 
     /// Return the number of quads in the batch.
     pub fn quad_count(&self) -> usize {
-        self.indices.len() / 6
+        self.instances.len()
     }
 }
 
@@ -223,6 +272,7 @@ mod tests {
         batch.push_bg_quad(0.0, 0.0, 10.0, 20.0, [1.0, 0.0, 0.0, 1.0]);
         assert_eq!(batch.vertices.len(), 4);
         assert_eq!(batch.indices.len(), 6);
+        assert_eq!(batch.instances.len(), 1);
         assert_eq!(batch.quad_count(), 1);
     }
 
@@ -255,6 +305,7 @@ mod tests {
 
         assert_eq!(first.vertices.len(), 8);
         assert_eq!(first.indices, vec![0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
+        assert_eq!(first.instances.len(), 2);
         assert_eq!(first.quad_count(), 2);
     }
 }

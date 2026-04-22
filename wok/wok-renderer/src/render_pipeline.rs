@@ -3,7 +3,7 @@
 use wgpu::util::DeviceExt;
 
 use crate::gpu::GpuContext;
-use crate::pipeline::{QuadBatch, Vertex};
+use crate::pipeline::{QuadBatch, QuadInstance};
 
 const UPLOAD_FRAME_COUNT: usize = 3;
 
@@ -13,6 +13,13 @@ const UPLOAD_FRAME_COUNT: usize = 3;
 struct Uniforms {
     screen_size: [f32; 2],
     _padding: [f32; 2],
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct UnitQuadVertex {
+    position: [f32; 2],
+    tex_coords: [f32; 2],
 }
 
 /// The GPU render pipeline for terminal rendering.
@@ -26,49 +33,31 @@ pub struct TerminalRenderPipeline {
     sampler: wgpu::Sampler,
     background_texture: wgpu::Texture,
     background_view: wgpu::TextureView,
+    unit_quad_buffer: wgpu::Buffer,
     upload_frames: Vec<UploadFrame>,
     upload_frame_index: usize,
 }
 
 struct UploadFrame {
-    vertex_buffer: Option<wgpu::Buffer>,
-    index_buffer: Option<wgpu::Buffer>,
-    vertex_buffer_capacity: u64,
-    index_buffer_capacity: u64,
+    instance_buffer: Option<wgpu::Buffer>,
+    instance_buffer_capacity: u64,
 }
 
 impl UploadFrame {
     fn new() -> Self {
         Self {
-            vertex_buffer: None,
-            index_buffer: None,
-            vertex_buffer_capacity: 0,
-            index_buffer_capacity: 0,
+            instance_buffer: None,
+            instance_buffer_capacity: 0,
         }
     }
 
-    fn ensure_buffers(
-        &mut self,
-        gpu: &GpuContext,
-        vertex_bytes_needed: u64,
-        index_bytes_needed: u64,
-    ) {
-        if self.vertex_buffer_capacity < vertex_bytes_needed {
-            self.vertex_buffer_capacity = grow_buffer_capacity(vertex_bytes_needed);
-            self.vertex_buffer = Some(gpu.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("vertex_buffer"),
-                size: self.vertex_buffer_capacity,
+    fn ensure_buffer(&mut self, gpu: &GpuContext, instance_bytes_needed: u64) {
+        if self.instance_buffer_capacity < instance_bytes_needed {
+            self.instance_buffer_capacity = grow_buffer_capacity(instance_bytes_needed);
+            self.instance_buffer = Some(gpu.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("instance_buffer"),
+                size: self.instance_buffer_capacity,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            }));
-        }
-
-        if self.index_buffer_capacity < index_bytes_needed {
-            self.index_buffer_capacity = grow_buffer_capacity(index_bytes_needed);
-            self.index_buffer = Some(gpu.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("index_buffer"),
-                size: self.index_buffer_capacity,
-                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             }));
         }
@@ -124,6 +113,13 @@ impl TerminalRenderPipeline {
 
         let atlas_view = atlas_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let (background_texture, background_view) = create_background_texture(gpu, None);
+        let unit_quad_buffer = gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("unit_quad_buffer"),
+                contents: bytemuck::cast_slice(&unit_quad_vertices()),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
 
         let sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -219,37 +215,55 @@ impl TerminalRenderPipeline {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<Vertex>() as u64,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &[
-                            wgpu::VertexAttribute {
-                                offset: 0,
-                                shader_location: 0,
-                                format: wgpu::VertexFormat::Float32x2,
-                            },
-                            wgpu::VertexAttribute {
-                                offset: 8,
-                                shader_location: 1,
-                                format: wgpu::VertexFormat::Float32x2,
-                            },
-                            wgpu::VertexAttribute {
-                                offset: 16,
-                                shader_location: 2,
-                                format: wgpu::VertexFormat::Float32x4,
-                            },
-                            wgpu::VertexAttribute {
-                                offset: 32,
-                                shader_location: 3,
-                                format: wgpu::VertexFormat::Float32x4,
-                            },
-                            wgpu::VertexAttribute {
-                                offset: 48,
-                                shader_location: 4,
-                                format: wgpu::VertexFormat::Float32,
-                            },
-                        ],
-                    }],
+                    buffers: &[
+                        wgpu::VertexBufferLayout {
+                            array_stride: std::mem::size_of::<UnitQuadVertex>() as u64,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &[
+                                wgpu::VertexAttribute {
+                                    offset: 0,
+                                    shader_location: 0,
+                                    format: wgpu::VertexFormat::Float32x2,
+                                },
+                                wgpu::VertexAttribute {
+                                    offset: 8,
+                                    shader_location: 1,
+                                    format: wgpu::VertexFormat::Float32x2,
+                                },
+                            ],
+                        },
+                        wgpu::VertexBufferLayout {
+                            array_stride: std::mem::size_of::<QuadInstance>() as u64,
+                            step_mode: wgpu::VertexStepMode::Instance,
+                            attributes: &[
+                                wgpu::VertexAttribute {
+                                    offset: 0,
+                                    shader_location: 2,
+                                    format: wgpu::VertexFormat::Float32x4,
+                                },
+                                wgpu::VertexAttribute {
+                                    offset: 16,
+                                    shader_location: 3,
+                                    format: wgpu::VertexFormat::Float32x4,
+                                },
+                                wgpu::VertexAttribute {
+                                    offset: 32,
+                                    shader_location: 4,
+                                    format: wgpu::VertexFormat::Float32x4,
+                                },
+                                wgpu::VertexAttribute {
+                                    offset: 48,
+                                    shader_location: 5,
+                                    format: wgpu::VertexFormat::Float32x4,
+                                },
+                                wgpu::VertexAttribute {
+                                    offset: 64,
+                                    shader_location: 6,
+                                    format: wgpu::VertexFormat::Float32,
+                                },
+                            ],
+                        },
+                    ],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -282,7 +296,10 @@ impl TerminalRenderPipeline {
             sampler,
             background_texture,
             background_view,
-            upload_frames: (0..UPLOAD_FRAME_COUNT).map(|_| UploadFrame::new()).collect(),
+            unit_quad_buffer,
+            upload_frames: (0..UPLOAD_FRAME_COUNT)
+                .map(|_| UploadFrame::new())
+                .collect(),
             upload_frame_index: 0,
         }
     }
@@ -295,7 +312,7 @@ impl TerminalRenderPipeline {
         batch: &QuadBatch,
         clear_color: [f32; 4],
     ) -> Result<(), wgpu::SurfaceError> {
-        if batch.vertices.is_empty() {
+        if batch.instances.is_empty() {
             // Still need to present a frame with the clear color
             let output = surface.get_current_texture()?;
             let view = output.texture.create_view(&Default::default());
@@ -340,12 +357,9 @@ impl TerminalRenderPipeline {
             }]),
         );
 
-        let vertex_bytes = bytemuck::cast_slice(&batch.vertices);
-        let index_bytes = bytemuck::cast_slice(&batch.indices);
-        let (vertex_buffer, index_buffer) =
-            self.next_upload_buffers(gpu, vertex_bytes.len() as u64, index_bytes.len() as u64);
-        gpu.queue.write_buffer(&vertex_buffer, 0, vertex_bytes);
-        gpu.queue.write_buffer(&index_buffer, 0, index_bytes);
+        let instance_bytes = bytemuck::cast_slice(&batch.instances);
+        let instance_buffer = self.next_instance_buffer(gpu, instance_bytes.len() as u64);
+        gpu.queue.write_buffer(&instance_buffer, 0, instance_bytes);
 
         let output = surface.get_current_texture()?;
         let view = output.texture.create_view(&Default::default());
@@ -376,9 +390,9 @@ impl TerminalRenderPipeline {
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.bind_group, &[]);
-            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-            pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(0..batch.indices.len() as u32, 0, 0..1);
+            pass.set_vertex_buffer(0, self.unit_quad_buffer.slice(..));
+            pass.set_vertex_buffer(1, instance_buffer.slice(..));
+            pass.draw(0..6, 0..batch.instances.len() as u32);
         }
 
         gpu.queue.submit(std::iter::once(encoder.finish()));
@@ -387,27 +401,20 @@ impl TerminalRenderPipeline {
         Ok(())
     }
 
-    fn next_upload_buffers(
+    fn next_instance_buffer(
         &mut self,
         gpu: &GpuContext,
-        vertex_bytes_needed: u64,
-        index_bytes_needed: u64,
-    ) -> (wgpu::Buffer, wgpu::Buffer) {
+        instance_bytes_needed: u64,
+    ) -> wgpu::Buffer {
         let frame_index = self.upload_frame_index;
         self.upload_frame_index = (self.upload_frame_index + 1) % self.upload_frames.len();
         let frame = &mut self.upload_frames[frame_index];
-        frame.ensure_buffers(gpu, vertex_bytes_needed, index_bytes_needed);
-        let vertex_buffer = frame
-            .vertex_buffer
+        frame.ensure_buffer(gpu, instance_bytes_needed);
+        frame
+            .instance_buffer
             .as_ref()
-            .expect("vertex buffer should exist after ensure_buffers")
-            .clone();
-        let index_buffer = frame
-            .index_buffer
-            .as_ref()
-            .expect("index buffer should exist after ensure_buffers")
-            .clone();
-        (vertex_buffer, index_buffer)
+            .expect("instance buffer should exist after ensure_buffer")
+            .clone()
     }
 
     /// Upload glyph bitmap data to the atlas texture.
@@ -475,6 +482,35 @@ impl TerminalRenderPipeline {
 fn grow_buffer_capacity(bytes_needed: u64) -> u64 {
     const MIN_CAPACITY: u64 = 64 * 1024;
     bytes_needed.max(MIN_CAPACITY).next_power_of_two()
+}
+
+fn unit_quad_vertices() -> [UnitQuadVertex; 6] {
+    [
+        UnitQuadVertex {
+            position: [0.0, 0.0],
+            tex_coords: [0.0, 0.0],
+        },
+        UnitQuadVertex {
+            position: [1.0, 0.0],
+            tex_coords: [1.0, 0.0],
+        },
+        UnitQuadVertex {
+            position: [1.0, 1.0],
+            tex_coords: [1.0, 1.0],
+        },
+        UnitQuadVertex {
+            position: [0.0, 0.0],
+            tex_coords: [0.0, 0.0],
+        },
+        UnitQuadVertex {
+            position: [1.0, 1.0],
+            tex_coords: [1.0, 1.0],
+        },
+        UnitQuadVertex {
+            position: [0.0, 1.0],
+            tex_coords: [0.0, 1.0],
+        },
+    ]
 }
 
 fn create_bind_group(
