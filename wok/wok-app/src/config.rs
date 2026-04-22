@@ -187,6 +187,8 @@ pub struct WokConfig {
     pub copy_on_select: bool,
     /// Ask before closing with running processes.
     pub confirm_close_with_running_process: bool,
+    /// Close panes, tabs, or the app when their shell process exits.
+    pub close_on_shell_exit: bool,
     /// Whether to restore sessions on startup.
     pub restore_session: bool,
     /// Whether to show the internal debug overlay.
@@ -232,6 +234,7 @@ struct ConfigToml {
     external_plugin_command: Option<String>,
     copy_on_select: Option<bool>,
     confirm_close_with_running_process: Option<bool>,
+    close_on_shell_exit: Option<bool>,
     restore_session: Option<bool>,
     debug_overlay: Option<bool>,
     recent_keys_visible: Option<bool>,
@@ -298,6 +301,7 @@ impl Default for WokConfig {
             external_plugin_command: None,
             copy_on_select: false,
             confirm_close_with_running_process: true,
+            close_on_shell_exit: true,
             restore_session: false,
             debug_overlay: false,
             recent_keys: RecentKeysConfig {
@@ -428,6 +432,9 @@ impl WokConfig {
         }
         if let Some(c) = toml_config.confirm_close_with_running_process {
             config.confirm_close_with_running_process = c;
+        }
+        if let Some(c) = toml_config.close_on_shell_exit {
+            config.close_on_shell_exit = c;
         }
         if let Some(r) = toml_config.restore_session {
             config.restore_session = r;
@@ -626,6 +633,7 @@ mod tests {
         assert_eq!(config.tab_bar_side, ChromeSide::Top);
         assert_eq!(config.tab_bar_orientation, TabBarOrientation::Horizontal);
         assert_eq!(config.status_bar_side, ChromeSide::Bottom);
+        assert!(config.close_on_shell_exit);
         assert!(config.recent_keys.visible);
         assert_eq!(config.recent_keys.position, OverlayPosition::BottomRight);
     }

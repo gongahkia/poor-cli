@@ -2087,6 +2087,69 @@ impl WokHandler {
         self.panes.values().any(|pane| !pane.terminal.exited)
     }
 
+    fn handle_shell_exit_transitions(&mut self, exited_pane_ids: &[PaneId]) -> bool {
+        if exited_pane_ids.is_empty()
+            || !self.config.close_on_shell_exit
+            || self.attached_session.is_some()
+        {
+            return false;
+        }
+
+        if !self.panes.is_empty() && self.panes.values().all(|pane| pane.terminal.exited) {
+            self.exit_requested = true;
+            return false;
+        }
+
+        let mut relayout = false;
+        let mut seen = HashSet::new();
+        for pane_id in exited_pane_ids.iter().copied() {
+            if !seen.insert(pane_id)
+                || !self
+                    .panes
+                    .get(&pane_id)
+                    .is_some_and(|pane| pane.terminal.exited)
+            {
+                continue;
+            }
+
+            if let Some(removed_pane) = self.workspace.close_pane(pane_id) {
+                self.panes.remove(&removed_pane);
+                relayout = true;
+                continue;
+            }
+
+            let Some(tab_index) = self.workspace.find_tab_index_for_pane(pane_id) else {
+                continue;
+            };
+            let tab_pane_ids = self.workspace.pane_ids_for_tab_index(tab_index);
+            let tab_has_only_exited_panes = !tab_pane_ids.is_empty()
+                && tab_pane_ids.iter().all(|tab_pane_id| {
+                    self.panes
+                        .get(tab_pane_id)
+                        .is_some_and(|pane| pane.terminal.exited)
+                });
+            if !tab_has_only_exited_panes {
+                continue;
+            }
+
+            if let Some(removed_panes) = self.workspace.close_tab(tab_index) {
+                for removed_pane in removed_panes {
+                    self.panes.remove(&removed_pane);
+                }
+                relayout = true;
+            }
+        }
+
+        if self.panes.is_empty() || self.panes.values().all(|pane| pane.terminal.exited) {
+            self.exit_requested = true;
+        } else if relayout {
+            self.status_message = Some("Closed exited shell".to_string());
+            self.needs_redraw = true;
+        }
+
+        relayout
+    }
+
     fn invalidate_all_row_caches(&mut self) {
         for pane in self.panes.values_mut() {
             pane.row_cache.invalidate();
@@ -2127,6 +2190,7 @@ impl WokHandler {
             "status_bar_side": self.config.status_bar_side.as_str(),
             "recent_keys_visible": self.config.recent_keys.visible,
             "recent_keys_position": self.config.recent_keys.position.as_str(),
+            "close_on_shell_exit": self.config.close_on_shell_exit,
             "restore_session": self.config.restore_session,
             "debug_overlay": self.config.debug_overlay,
             "trigger_count": self.trigger_engine.len(),
@@ -5297,10 +5361,15 @@ impl AppHandler for WokHandler {
         let mut relayout = false;
         let output_line_hooks_enabled = self.output_line_hooks_enabled();
         let mut output_line_events = Vec::new();
+        let mut exited_pane_ids = Vec::new();
         for pane_id in pane_ids {
             let mut semantic_events = Vec::new();
             let mut is_dirty = false;
             let mut command_ended = false;
+            let previously_exited = self
+                .panes
+                .get(&pane_id)
+                .is_some_and(|pane| pane.terminal.exited);
             let previous_input_active = self
                 .panes
                 .get(&pane_id)
@@ -5319,6 +5388,13 @@ impl AppHandler for WokHandler {
                 }
                 is_dirty = pane.terminal.is_dirty();
                 is_dirty |= pane.viewport.needs_render();
+            }
+            let now_exited = self
+                .panes
+                .get(&pane_id)
+                .is_some_and(|pane| pane.terminal.exited);
+            if now_exited && !previously_exited {
+                exited_pane_ids.push(pane_id);
             }
             if !semantic_events.is_empty() {
                 command_ended = semantic_events
@@ -5366,6 +5442,7 @@ impl AppHandler for WokHandler {
         if output_line_hooks_enabled {
             self.dispatch_output_line_hooks(output_line_events);
         }
+        relayout |= self.handle_shell_exit_transitions(&exited_pane_ids);
         if !self.panes.is_empty() && self.panes.values().all(|pane| pane.terminal.exited) {
             self.exit_requested = true;
         }
@@ -5954,7 +6031,8 @@ fn ensure_settings_file() -> std::io::Result<PathBuf> {
              tab_bar_side = \"top\"\n\
              status_bar_side = \"bottom\"\n\
              recent_keys_visible = true\n\
-             recent_keys_position = \"bottom_right\"\n",
+             recent_keys_position = \"bottom_right\"\n\
+             close_on_shell_exit = true\n",
         )?;
     }
     Ok(path)

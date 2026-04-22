@@ -26,6 +26,7 @@ recent_keys_max_entries = 8
 recent_keys_timeout_ms = 2000
 recent_keys_opacity = 0.86
 copy_on_select = false
+close_on_shell_exit = true
 restore_session = true
 "#;
 

@@ -38,6 +38,7 @@ recent_keys_timeout_ms = 2000
 recent_keys_opacity = 0.86
 copy_on_select = false
 confirm_close_with_running_process = true
+close_on_shell_exit = true
 restore_session = true
 theme_path = "~/.config/wok/themes/catppuccin.toml"
 external_plugin_command = "node ~/.config/wok/plugins/bridge.js"
@@ -70,6 +71,7 @@ external_plugin_command = "node ~/.config/wok/plugins/bridge.js"
 | `recent_keys_opacity` | float | `0.86` | Active | Recent-key overlay opacity from `0.0` to `1.0` |
 | `copy_on_select` | boolean | `false` | Active | Auto-copy selected text on mouse-up |
 | `confirm_close_with_running_process` | boolean | `true` | Active | Requires a second close request within 2 seconds when panes still have running shell processes |
+| `close_on_shell_exit` | boolean | `true` | Active | Closes the exited pane, closes an all-exited tab when other tabs remain, or exits Wok when the final shell exits |
 | `restore_session` | boolean | `false` | Active | Loads the autosaved workspace session on startup |
 | `debug_overlay` | boolean | `false` | Active | Shows a small internal overlay with redraw timing, atlas occupancy, scrollback depth, and approximate session memory |
 | `theme_path` | string | none | Active | Path to a custom theme TOML file |

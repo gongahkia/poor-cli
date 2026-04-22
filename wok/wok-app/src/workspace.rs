@@ -134,11 +134,19 @@ impl WorkspaceState {
 
     /// Close the active tab and return all pane ids that should be dropped.
     pub fn close_active_tab(&mut self) -> Option<Vec<PaneId>> {
-        if self.tabs.len() <= 1 {
+        self.close_tab(self.active_tab)
+    }
+
+    /// Close a tab by index and return all pane ids that should be dropped.
+    pub fn close_tab(&mut self, index: usize) -> Option<Vec<PaneId>> {
+        if self.tabs.len() <= 1 || index >= self.tabs.len() {
             return None;
         }
 
-        let removed = self.tabs.remove(self.active_tab);
+        let removed = self.tabs.remove(index);
+        if self.active_tab > index {
+            self.active_tab -= 1;
+        }
         if self.active_tab >= self.tabs.len() {
             self.active_tab = self.tabs.len().saturating_sub(1);
         }
@@ -185,25 +193,44 @@ impl WorkspaceState {
 
     /// Close the focused pane in the active tab and return its id.
     pub fn close_active_pane(&mut self) -> Option<PaneId> {
-        let active_tab = self.active_tab_mut()?;
+        let pane_id = self.active_pane_id()?;
+        self.close_pane(pane_id)
+    }
+
+    /// Close a pane anywhere in the workspace and return its id when removed.
+    pub fn close_pane(&mut self, pane_id: PaneId) -> Option<PaneId> {
+        let tab_index = self.find_tab_index_for_pane(pane_id)?;
+        let active_tab = self.tabs.get_mut(tab_index)?;
         if let Some(focused) = active_tab.focused_floating.take() {
-            if let Some(index) = active_tab
-                .floating_panes
-                .iter()
-                .position(|pane| pane.pane_id == focused)
-            {
-                active_tab.floating_panes.remove(index);
-                return Some(focused);
+            if focused != pane_id {
+                active_tab.focused_floating = Some(focused);
             }
         }
+        if let Some(index) = active_tab
+            .floating_panes
+            .iter()
+            .position(|pane| pane.pane_id == pane_id)
+        {
+            active_tab.floating_panes.remove(index);
+            if active_tab.focused_floating == Some(pane_id) {
+                active_tab.focused_floating = None;
+            }
+            return Some(pane_id);
+        }
         let leaf_ids = collect_leaf_ids(&active_tab.split_manager.root);
-        if leaf_ids.len() <= 1 {
+        if leaf_ids.len() <= 1 || !leaf_ids.contains(&pane_id) {
             return None;
         }
 
-        let pane_id = active_tab.split_manager.focused_leaf;
         active_tab.split_manager.close_split(pane_id);
         Some(pane_id)
+    }
+
+    /// Return all pane ids in a tab by index.
+    pub fn pane_ids_for_tab_index(&self, index: usize) -> Vec<PaneId> {
+        self.tabs
+            .get(index)
+            .map_or_else(Vec::new, collect_tab_pane_ids)
     }
 
     /// Resize the focused split in the active tab.
@@ -657,5 +684,27 @@ mod tests {
             .expect("second tab should close");
         assert_eq!(removed, vec![new_pane]);
         assert_eq!(workspace.tabs.len(), 1);
+    }
+
+    #[test]
+    fn test_close_pane_by_id_removes_split_leaf() {
+        let (mut workspace, first_pane) = WorkspaceState::new("Wok");
+        let second_pane = workspace
+            .split_active(SplitDirection::Horizontal)
+            .expect("split should create a pane");
+
+        assert_eq!(workspace.close_pane(second_pane), Some(second_pane));
+        assert_eq!(workspace.active_pane_ids(), vec![first_pane]);
+    }
+
+    #[test]
+    fn test_close_tab_by_index_preserves_active_tab() {
+        let (mut workspace, _) = WorkspaceState::new("Wok");
+        let second_pane = workspace.new_tab("Second");
+        let third_pane = workspace.new_tab("Third");
+
+        assert_eq!(workspace.close_tab(1), Some(vec![second_pane]));
+        assert_eq!(workspace.tabs.len(), 2);
+        assert_eq!(workspace.active_pane_id(), Some(third_pane));
     }
 }
