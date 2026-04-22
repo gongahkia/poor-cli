@@ -4,6 +4,7 @@ import argparse
 import asyncio
 
 from poor_cli.cli_app import (
+    _extract_bang_shell_command,
     _extract_inline_api_key,
     _format_chat_blocker,
     _initialize_chat_core,
@@ -28,6 +29,13 @@ def test_extract_inline_api_key_accepts_conversational_forms() -> None:
     assert _extract_inline_api_key("my api key is 'sk-test'") == "sk-test"
     assert _extract_inline_api_key("OPENAI_API_KEY=sk-test") == "sk-test"
     assert _extract_inline_api_key("hello") == ""
+
+
+def test_extract_bang_shell_command_accepts_chat_shell_syntax() -> None:
+    assert _extract_bang_shell_command("!pwd") == "pwd"
+    assert _extract_bang_shell_command("! ls -la") == "ls -la"
+    assert _extract_bang_shell_command("!") == ""
+    assert _extract_bang_shell_command("hello") is None
 
 
 def test_initialize_chat_core_falls_back_to_minimal_on_missing_key() -> None:
