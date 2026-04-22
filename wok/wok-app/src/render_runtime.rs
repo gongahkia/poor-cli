@@ -3255,6 +3255,19 @@ pub(crate) fn rebuild_visible_row_batch(
 
     let row_y = viewport.y + render_row as f32 * cell_height;
     let row_links = collect_row_links(terminal, absolute_row);
+    push_row_background_runs(
+        batch,
+        theme,
+        terminal,
+        inline_images,
+        absolute_row,
+        total_cols,
+        viewport,
+        cell_width,
+        cell_height,
+        row_y,
+        terminal_surface_alpha,
+    );
     for col_idx in 0..total_cols {
         let cell = terminal.state.cell_at_absolute(absolute_row, col_idx);
         let x = viewport.x + col_idx as f32 * cell_width;
@@ -3283,7 +3296,6 @@ pub(crate) fn rebuild_visible_row_batch(
             ];
         }
 
-        batch.push_bg_quad(x, row_y, cell_width, cell_height, bg);
         if let Some(current_match) =
             search_match_at_cell(global_search, pane_id, absolute_row, col_idx as u16)
         {
@@ -3442,6 +3454,108 @@ pub(crate) fn rebuild_visible_row_batch(
             }
         }
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_row_background_runs(
+    batch: &mut QuadBatch,
+    theme: &Theme,
+    terminal: &Terminal,
+    inline_images: &InlineImageStore,
+    absolute_row: usize,
+    total_cols: usize,
+    viewport: Rect,
+    cell_width: f32,
+    cell_height: f32,
+    row_y: f32,
+    terminal_surface_alpha: f32,
+) {
+    let mut run_start = 0usize;
+    let mut run_color: Option<[f32; 4]> = None;
+
+    for col_idx in 0..total_cols {
+        let cell = terminal.state.cell_at_absolute(absolute_row, col_idx);
+        let color = resolve_cell_background_color(
+            &cell,
+            theme,
+            inline_images.sample_cell_color(absolute_row, col_idx),
+            terminal_surface_alpha,
+        );
+
+        match run_color {
+            Some(current) if current == color => {}
+            Some(current) => {
+                push_background_run(
+                    batch,
+                    viewport,
+                    cell_width,
+                    cell_height,
+                    row_y,
+                    run_start,
+                    col_idx,
+                    current,
+                );
+                run_start = col_idx;
+                run_color = Some(color);
+            }
+            None => {
+                run_start = col_idx;
+                run_color = Some(color);
+            }
+        }
+    }
+
+    if let Some(color) = run_color {
+        push_background_run(
+            batch,
+            viewport,
+            cell_width,
+            cell_height,
+            row_y,
+            run_start,
+            total_cols,
+            color,
+        );
+    }
+}
+
+fn resolve_cell_background_color(
+    cell: &CellRenderData,
+    theme: &Theme,
+    inline_color: Option<[f32; 4]>,
+    terminal_surface_alpha: f32,
+) -> [f32; 4] {
+    let mut bg = resolve_cell_color(&cell.bg, theme, true);
+    let mut fg = resolve_cell_color(&cell.fg, theme, false);
+    if cell.is_inverse {
+        std::mem::swap(&mut bg, &mut fg);
+    }
+    if matches!(cell.bg, CellColor::Named(idx) if idx >= 16) {
+        bg[3] *= terminal_surface_alpha;
+    }
+    inline_color.unwrap_or(bg)
+}
+
+fn push_background_run(
+    batch: &mut QuadBatch,
+    viewport: Rect,
+    cell_width: f32,
+    cell_height: f32,
+    row_y: f32,
+    start_col: usize,
+    end_col: usize,
+    color: [f32; 4],
+) {
+    if end_col <= start_col {
+        return;
+    }
+    batch.push_bg_quad(
+        viewport.x + start_col as f32 * cell_width,
+        row_y,
+        (end_col - start_col) as f32 * cell_width,
+        cell_height,
+        color,
+    );
 }
 
 pub(crate) fn selection_end_col(terminal: &Terminal, end_col: u16) -> usize {
