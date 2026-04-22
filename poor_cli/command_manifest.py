@@ -1,4 +1,4 @@
-"""Shared command manifest for CLI help, completion, and README generation."""
+"""Shared command manifest for CLI help, completion, and docs generation."""
 
 from __future__ import annotations
 
@@ -31,6 +31,10 @@ def manifest_path() -> Path:
 
 def readme_path() -> Path:
     return manifest_path().resolve().parent.parent / "README.md"
+
+
+def commands_doc_path() -> Path:
+    return manifest_path().resolve().parent.parent / "docs" / "COMMANDS.md"
 
 
 def load_command_manifest() -> CommandManifest:
@@ -95,43 +99,82 @@ def render_commands_markdown(*, heading: str = "## Available Commands") -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def sync_readme(path: Path | None = None) -> bool:
-    target = (path or readme_path()).resolve()
+def render_command_reference_markdown() -> str:
+    manifest = load_command_manifest()
+    grouped = _group_by_category(manifest.commands)
+    lines = [
+        "# Slash Command Reference",
+        "",
+        f"poor-cli ships **{len(manifest.commands)} slash commands** across {len(grouped)} categories.",
+        "",
+        "## Categories",
+        "",
+    ]
+    for category, commands in grouped.items():
+        slug = category.lower().replace("&", "").replace(" ", "-")
+        while "--" in slug:
+            slug = slug.replace("--", "-")
+        lines.append(f"- [{category}](#{slug}) ({len(commands)} commands)")
+    lines.append("")
+    for category, commands in grouped.items():
+        lines.extend([f"## {category}", "", "| Command | Description |", "|---|---|"])
+        for command in commands:
+            label = f"`{command.command}` ⭐" if command.recommended else f"`{command.command}`"
+            description = command.description.replace("|", "\\|")
+            lines.append(f"| {label} | {description} |")
+        lines.append("")
+    lines.extend([
+        "## Conventions",
+        "",
+        "- ⭐ = recommended starting point for new users.",
+        "- Type `/` in chat to trigger the slash command dispatcher.",
+        "- Custom slash commands defined via AutomationRule (`type: slash`) appear here only after manifest regeneration; see `docs/AUTOMATIONS.md`.",
+        "",
+        "## See also",
+        "",
+        "- [PROVIDERS.md](./PROVIDERS.md) — `/switch`, `/provider`, `/api-key`",
+        "- [ECONOMY.md](./ECONOMY.md) — `/broke`, `/my-treat`, `/economy`, `/savings`",
+        "- [SANDBOX.md](./SANDBOX.md) — `/sandbox`, `/permission-mode`, `/trust`, `/policy`",
+        "- [AUTOMATIONS.md](./AUTOMATIONS.md) — `/automation`, `/workflow`, `/skills`",
+        "- [AUTO_COMMIT.md](./AUTO_COMMIT.md) — `/commit`",
+    ])
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def sync_command_docs(path: Path | None = None) -> bool:
+    target = (path or commands_doc_path()).resolve()
     original = target.read_text(encoding="utf-8")
-    rendered = render_commands_markdown()
-    pattern = re.compile(r"## Available Commands\n.*?(?=\n## |\Z)", re.DOTALL)
-    updated, count = pattern.subn(rendered.rstrip("\n"), original, count=1)
-    if count != 1:
-        raise ValueError("Could not locate the Available Commands section in README.md")
-    if updated == original:
+    rendered = render_command_reference_markdown()
+    if rendered == original:
         return False
-    target.write_text(updated, encoding="utf-8")
+    target.write_text(rendered, encoding="utf-8")
     return True
+
+
+def sync_readme(path: Path | None = None) -> bool:
+    """Backward-compatible alias; command docs now live in docs/COMMANDS.md."""
+    return sync_command_docs(path)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m poor_cli.command_manifest")
-    parser.add_argument("--write-readme", action="store_true", help="Rewrite README command docs")
-    parser.add_argument("--check", action="store_true", help="Fail if README command docs are stale")
+    parser.add_argument("--write-docs", action="store_true", help="Rewrite docs/COMMANDS.md")
+    parser.add_argument("--write-readme", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--check", action="store_true", help="Fail if docs/COMMANDS.md is stale")
     args = parser.parse_args(argv)
 
-    if args.write_readme:
-        changed = sync_readme()
-        print("README updated" if changed else "README already current")
+    if args.write_docs or args.write_readme:
+        changed = sync_command_docs()
+        print("COMMANDS.md updated" if changed else "COMMANDS.md already current")
         return 0
 
     if args.check:
-        target = readme_path()
-        rendered = render_commands_markdown().rstrip("\n")
+        target = commands_doc_path()
+        rendered = render_command_reference_markdown().rstrip("\n")
         current = target.read_text(encoding="utf-8")
-        pattern = re.compile(r"## Available Commands\n.*?(?=\n## |\Z)", re.DOTALL)
-        match = pattern.search(current)
-        if match is None:
-            raise SystemExit("README is missing the Available Commands section.")
-        actual = match.group(0).rstrip("\n")
-        if actual != rendered:
-            raise SystemExit("README command docs are out of date. Run `python -m poor_cli.command_manifest --write-readme`.")
-        print("README command docs are current")
+        if current.rstrip("\n") != rendered:
+            raise SystemExit("docs/COMMANDS.md is out of date. Run `python -m poor_cli.command_manifest --write-docs`.")
+        print("docs/COMMANDS.md is current")
         return 0
 
     print(render_commands_markdown(heading="**Available Commands**"))
