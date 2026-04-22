@@ -70,6 +70,10 @@ export const DATAGOV_FILE_DOWNLOAD_FAMILIES = [
   "HLB",
 ] as const;
 
+export const GOV_FEED_FAMILIES = [
+  "Government RSS Feeds",
+] as const;
+
 export const LIVE_API_SURFACE: readonly LiveSurfaceDefinition[] = [
   {
     api: "SingStat",
@@ -385,6 +389,46 @@ export const LIVE_API_SURFACE: readonly LiveSurfaceDefinition[] = [
       },
       expectation: { kind: "records_non_empty" },
       notes: ["Exercises the live environment path with a stable planning area."],
+    },
+  },
+  {
+    api: "Government RSS Feeds",
+    classification: "live_public",
+    authRequired: false,
+    envVars: [],
+    keystoreKeys: [],
+    productionUrl: "https://www.mpa.gov.sg/feeds/press-releases",
+    probeMode: "runtime_client",
+    releaseBlocking: true,
+    representativeTool: "sg_gov_feed_items",
+    dependentFamilies: GOV_FEED_FAMILIES,
+    notes: [
+      "This surface aggregates direct official non-data.gov.sg feed contracts from NEA, weather.gov.sg, SFA, MPA, NHB, and URA newsroom listings.",
+      "Feeds are parsed through bounded normalization with stream-level rollback controls.",
+    ],
+    healthNotes: [
+      "Probed through the live govfeeds runtime client on a stable stream with real upstream records.",
+      "Release readiness fails if official feed ingestion can no longer return normalized records.",
+    ],
+    latency: {
+      timeoutMs: 10000,
+      typicalLatency: "1-6s",
+      notes: "Feed and listing-page fetches are usually responsive but can vary with upstream publishing infrastructure.",
+    },
+    smoke: {
+      id: "api-govfeeds",
+      name: "Government feeds stream",
+      layer: "api",
+      authRequired: false,
+      releaseBlocking: true,
+      tool: "sg_gov_feed_items",
+      arguments: {
+        feedId: "mpa_press_releases",
+        limit: 1,
+        format: "json",
+      },
+      expectation: { kind: "records_non_empty" },
+      notes: ["Exercises the live official-feed ingestion path with a high-availability stream."],
     },
   },
 ] as const;

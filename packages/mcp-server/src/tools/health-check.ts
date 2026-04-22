@@ -7,6 +7,7 @@ import { getForecast2Hr } from "../apis/nea/client.js";
 import { geocode } from "../apis/onemap/client.js";
 import { getTableData as getSingStatTableData } from "../apis/singstat/client.js";
 import { getBoaArchitectureFirms } from "../apis/boa/client.js";
+import { getGovFeedItems } from "../apis/govfeeds/client.js";
 import { uraFetch } from "../apis/ura/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 import { LIVE_API_SURFACE } from "./runtime-surface.js";
@@ -165,6 +166,14 @@ export const probeNeaHealth = async (): Promise<HealthProbeResult> => {
   return OK_HEALTH_RESPONSE;
 };
 
+export const probeGovFeedsHealth = async (): Promise<HealthProbeResult> => {
+  const result = await getGovFeedItems({ feedId: "mpa_press_releases", limit: 1 });
+  if (result.records.length === 0) {
+    throw new Error("Government feeds probe returned no rows.");
+  }
+  return OK_HEALTH_RESPONSE;
+};
+
 export const hasOneMapCredentials = (lookup: CredentialLookup): boolean => {
   const email = process.env["SG_API_ONEMAP_EMAIL"] ?? lookup.getKey("onemap_email");
   const password = process.env["SG_API_ONEMAP_PASSWORD"] ?? lookup.getKey("onemap_password");
@@ -190,6 +199,7 @@ const PROBES = {
   "data.gov.sg datastore": probeDatagovDatastoreHealth,
   "data.gov.sg file downloads": probeDatagovFileDownloadHealth,
   "NEA": probeNeaHealth,
+  "Government RSS Feeds": probeGovFeedsHealth,
 } as const;
 
 export const getHealthCheckTargets = (): readonly HealthCheckTarget[] => {

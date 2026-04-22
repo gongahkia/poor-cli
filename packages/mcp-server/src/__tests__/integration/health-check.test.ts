@@ -33,6 +33,22 @@ vi.mock("../../apis/nea/client.js", () => ({
   getForecast2Hr: vi.fn().mockResolvedValue([{ area: "Tampines", forecast: "Fair", updatedAt: "2026-03-28T00:00:00Z" }]),
 }));
 
+vi.mock("../../apis/govfeeds/client.js", () => ({
+  getGovFeedItems: vi.fn().mockResolvedValue({
+    feed: {
+      id: "mpa_press_releases",
+      title: "MPA Press Releases",
+      family: "mpa",
+      sourceAgency: "Maritime and Port Authority of Singapore",
+      sourceUrl: "https://www.mpa.gov.sg/feeds/press-releases",
+    },
+    observedAt: "2026-03-28T00:00:00Z",
+    channelTitle: "Press Releases",
+    records: [{ title: "Sample release", description: null, link: "https://www.mpa.gov.sg/sample", guid: "sample", publishedAtRaw: null, publishedAt: null }],
+    cached: false,
+  }),
+}));
+
 vi.mock("../../apis/singstat/client.js", () => ({
   getTableData: vi.fn().mockResolvedValue({
     rows: [{ period: "2025 4Q", variable: "GDP At Current Market Prices", value: 156000, unit: "million" }],
@@ -57,6 +73,7 @@ vi.mock("../../apis/boa/client.js", () => ({
 import { getBusArrivals } from "../../apis/lta/client.js";
 import { query as queryMas } from "../../apis/mas/client.js";
 import { getForecast2Hr } from "../../apis/nea/client.js";
+import { getGovFeedItems } from "../../apis/govfeeds/client.js";
 import { geocode } from "../../apis/onemap/client.js";
 import { getTableData as getSingStatTableData } from "../../apis/singstat/client.js";
 import { getHdbResalePrices } from "../../apis/hdb/client.js";
@@ -72,6 +89,7 @@ import {
   healthCheckToolDefinitions,
   probeDatagovDatastoreHealth,
   probeDatagovFileDownloadHealth,
+  probeGovFeedsHealth,
   probeLtaHealth,
   probeMasHealth,
   probeNeaHealth,
@@ -168,6 +186,7 @@ describe("Health Check", () => {
     expect(getHealthCheckTargets()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ api: "NEA", authRequired: false }),
+        expect.objectContaining({ api: "Government RSS Feeds", authRequired: false }),
       ]),
     );
   });
@@ -213,6 +232,11 @@ describe("Health Check", () => {
       status: 200,
       statusText: "OK",
     });
+    await expect(probeGovFeedsHealth()).resolves.toEqual({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+    });
 
     expect(vi.mocked(getSingStatTableData)).toHaveBeenCalledWith("M015631", {
       variables: ["GDP At Current Market Prices"],
@@ -224,6 +248,7 @@ describe("Health Check", () => {
     expect(vi.mocked(getHdbResalePrices)).toHaveBeenCalledWith({ town: "Bedok", flatType: "4 ROOM", limit: 1 });
     expect(vi.mocked(getBoaArchitectureFirms)).toHaveBeenCalledWith({ limit: 1 });
     expect(vi.mocked(getForecast2Hr)).toHaveBeenCalledWith("Tampines");
+    expect(vi.mocked(getGovFeedItems)).toHaveBeenCalledWith({ feedId: "mpa_press_releases", limit: 1 });
   });
 
   it("reports mixed credential sources when env and keystore are both present", () => {

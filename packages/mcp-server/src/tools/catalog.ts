@@ -1462,6 +1462,7 @@ export const RUNTIME_CATALOG: RuntimeCatalog = {
     { api: "URA", maxTokens: 5, refillPerSecond: 1, effectiveRate: "~1 req/s sustained" },
     { api: "LTA DataMall", maxTokens: 20, refillPerSecond: 2, effectiveRate: "~2 req/s sustained" },
     { api: "NEA", maxTokens: 20, refillPerSecond: 2, effectiveRate: "~2 req/s sustained" },
+    { api: "Government RSS Feeds", maxTokens: 10, refillPerSecond: 1, effectiveRate: "~1 req/s sustained" },
     { api: "data.gov.sg", maxTokens: 20, refillPerSecond: 3, effectiveRate: "~3 req/s sustained" },
   ],
   retryPolicy: {

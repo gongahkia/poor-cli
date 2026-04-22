@@ -399,7 +399,7 @@ The keystore helpers are still available for local use:
 - `sg_key_set { "apiName": "ura", "key": "..." }`
 - `sg_key_set { "apiName": "lta", "key": "..." }`
 
-`sg_health_check` probes SingStat, MAS, OneMap, URA, LTA DataMall, data.gov.sg, and NEA directly. OneMap, URA, and LTA are checked through the same authenticated runtime path used by the live tools. It returns structured records with `configured`, `credentialSource`, `reachable`, `latencyMs`, and dependency notes. HDB, CEA, BCA, BOA, HSA, HLB, and ACRA are intentionally covered operationally through the shared data.gov.sg path or official file-download path.
+`sg_health_check` probes SingStat, MAS, OneMap, URA, LTA DataMall, data.gov.sg datastore, data.gov.sg file downloads, NEA, and Government RSS Feeds directly. OneMap, URA, and LTA are checked through the same authenticated runtime path used by the live tools. It returns structured records with `configured`, `credentialSource`, `reachable`, `latencyMs`, `representativeTool`, and dependency notes. HDB, CEA, BCA, BOA, HSA, HLB, and ACRA are intentionally covered operationally through the shared data.gov.sg path or official file-download path.
 
 Auth troubleshooting and failure modes live in [docs/api-auth-guide.md](./docs/api-auth-guide.md).
 

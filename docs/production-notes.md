@@ -178,7 +178,7 @@ Override any default via environment variables:
 
 ## Monitoring
 
-Use `sg_health_check` to probe all release-blocking API families. OneMap, URA, and LTA are checked through the same authenticated runtime path used by the live tools. SingStat, MAS, NEA, the shared data.gov.sg datastore path, and the shared data.gov.sg file-download path are also probed through their live runtime clients. Returns per-family: reachable status, latency, auth status, dependency coverage, representative tool, and release-blocking status.
+Use `sg_health_check` to probe all release-blocking API families. OneMap, URA, and LTA are checked through the same authenticated runtime path used by the live tools. SingStat, MAS, NEA, Government RSS Feeds, the shared data.gov.sg datastore path, and the shared data.gov.sg file-download path are also probed through their live runtime clients. Returns per-family: reachable status, latency, auth status, dependency coverage, representative tool, and release-blocking status.
 
 Use `npm run test:smoke:live` when you want the full release-blocking live smoke flow over the MCP server, including representative API and workflow checks.
 
