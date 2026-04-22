@@ -43,6 +43,13 @@ struct StreamEventLine: Identifiable, Hashable {
     let symbol: String
 }
 
+struct DomainRecord: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let detail: String
+}
+
 struct PendingPermissionReview: Identifiable, Hashable {
     let id: String
     let toolName: String
@@ -92,6 +99,8 @@ final class AppModel: @unchecked Sendable {
     var streamEvents: [StreamEventLine] = []
     var pendingReviewSheet: PendingReviewSheet?
     var activeRequestID: String?
+    var domainRecords: [BackendArea: [DomainRecord]] = [:]
+    var selectedDomainRecordID: String?
 
     private var client: JSONRPCStdioClient
     @ObservationIgnored private var reviewContinuation: CheckedContinuation<Bool, Never>?
@@ -165,6 +174,35 @@ final class AppModel: @unchecked Sendable {
             lastResult = .object(["error": .string(error.localizedDescription)])
             appendLog(action.title + " failed", error.localizedDescription)
         }
+    }
+
+    @discardableResult
+    func callBackend(
+        method: String,
+        params: [String: JSONValue] = [:],
+        title: String? = nil
+    ) async -> JSONValue? {
+        guard !isBusy else { return nil }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            try await ensureBackend()
+            let result = try await client.call(method: method, params: params)
+            lastResult = result
+            appendLog(title ?? method, result.prettyPrinted)
+            return result
+        } catch {
+            lastResult = .object(["error": .string(error.localizedDescription)])
+            appendLog((title ?? method) + " failed", error.localizedDescription)
+            return nil
+        }
+    }
+
+    func loadDomain(area: BackendArea, action: BackendAction) async {
+        guard let result = await callBackend(method: action.method, params: action.params, title: action.title) else {
+            return
+        }
+        domainRecords[area] = Self.records(from: result, fallbackTitle: action.title)
     }
 
     func sendChat() async {
@@ -288,6 +326,52 @@ final class AppModel: @unchecked Sendable {
         }
     }
 
+    func setProviderAPIKey() async {
+        let provider = configuration.provider.trimmingCharacters(in: .whitespacesAndNewlines)
+        let apiKey = configuration.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !provider.isEmpty, !apiKey.isEmpty else {
+            keychainStatus = "Provider and API key are required."
+            return
+        }
+        _ = await callBackend(
+            method: "poor-cli/setApiKey",
+            params: [
+                "provider": .string(provider),
+                "apiKey": .string(apiKey),
+                "persist": .bool(true),
+                "reloadActiveProvider": .bool(true),
+            ],
+            title: "Set API key"
+        )
+    }
+
+    func testProviderAPIKey() async {
+        let provider = configuration.provider.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !provider.isEmpty else {
+            keychainStatus = "Provider is required."
+            return
+        }
+        _ = await callBackend(
+            method: "poor-cli/testApiKey",
+            params: [
+                "provider": .string(provider),
+                "apiKey": .string(configuration.apiKey),
+            ],
+            title: "Test API key"
+        )
+    }
+
+    func switchProviderFromSettings() async {
+        let provider = configuration.provider.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !provider.isEmpty else { return }
+        var params: [String: JSONValue] = ["provider": .string(provider)]
+        let model = configuration.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !model.isEmpty {
+            params["model"] = .string(model)
+        }
+        _ = await callBackend(method: "poor-cli/switchProvider", params: params, title: "Switch provider")
+    }
+
     func resolvePendingReview(allowed: Bool) {
         pendingReviewSheet = nil
         reviewContinuation?.resume(returning: allowed)
@@ -327,7 +411,7 @@ final class AppModel: @unchecked Sendable {
         chatTurns[index].content = content
     }
 
-    private func handleStreamingNotification(
+    func handleStreamingNotification(
         _ event: JSONRPCNotificationEvent,
         assistantID: UUID
     ) async -> JSONRPCOutboundNotification? {
@@ -439,5 +523,54 @@ final class AppModel: @unchecked Sendable {
             return []
         }
         return rpcIndex.keys.sorted()
+    }
+
+    private static func records(from value: JSONValue, fallbackTitle: String) -> [DomainRecord] {
+        if let object = value.objectValue {
+            for key in ["edits", "tasks", "automations", "sessions", "history", "checkpoints", "memories", "services", "tools", "providers", "models", "runs", "workflows"] {
+                if let array = object[key]?.arrayValue {
+                    return array.enumerated().map { index, value in
+                        record(from: value, id: "\(key)-\(index)", fallbackTitle: key)
+                    }
+                }
+            }
+            if let providers = object["providers"]?.objectValue {
+                return providers.keys.sorted().map { key in
+                    record(from: providers[key] ?? .object([:]), id: key, fallbackTitle: key)
+                }
+            }
+            if object.keys.count > 1 {
+                return object.keys.sorted().map { key in
+                    record(from: object[key] ?? .null, id: key, fallbackTitle: key)
+                }
+            }
+        }
+        return [record(from: value, id: fallbackTitle, fallbackTitle: fallbackTitle)]
+    }
+
+    private static func record(from value: JSONValue, id: String, fallbackTitle: String) -> DomainRecord {
+        if let object = value.objectValue {
+            let title = firstString(object, keys: ["title", "name", "id", "taskId", "automationId", "sessionId", "path", "provider", "status"]) ?? fallbackTitle
+            let subtitle = firstString(object, keys: ["status", "state", "kind", "source", "method", "summary", "label"]) ?? ""
+            return DomainRecord(
+                id: firstString(object, keys: ["id", "taskId", "automationId", "sessionId", "editId", "checkpointId"]) ?? id,
+                title: title,
+                subtitle: subtitle,
+                detail: value.prettyPrinted
+            )
+        }
+        return DomainRecord(id: id, title: fallbackTitle, subtitle: "", detail: value.prettyPrinted)
+    }
+
+    private static func firstString(_ object: [String: JSONValue], keys: [String]) -> String? {
+        for key in keys {
+            if let string = object[key]?.stringValue, !string.isEmpty {
+                return string
+            }
+            if let number = object[key]?.intValue {
+                return String(number)
+            }
+        }
+        return nil
     }
 }

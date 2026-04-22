@@ -1,4 +1,4 @@
-.PHONY: cli server install installer install-info dev build build-server-registry-index run macos-app macos-test macos-run test test-unit lint bench-swe bench-startup-profile bench-import-time bench-cli-command-profile bench-cli-command-compare bench-server-first-rpc-profile bench-server-first-rpc-compare bench-tool-capability-graph bench-harness-quality bench-turn-replay bench-router-calibration bench-budget-retuning bench-harness-failure bench-harness-burnin bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
+.PHONY: cli server install installer install-info dev build build-server-registry-index run macos-app macos-zip macos-test macos-run test test-unit lint bench-swe bench-startup-profile bench-import-time bench-cli-command-profile bench-cli-command-compare bench-server-first-rpc-profile bench-server-first-rpc-compare bench-tool-capability-graph bench-harness-quality bench-turn-replay bench-router-calibration bench-budget-retuning bench-harness-failure bench-harness-burnin bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
 
 PYTHON := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/python,python3)
 PIP := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/pip,pip)
@@ -66,6 +66,9 @@ build-server-registry-index: ## regenerate committed static server registry inde
 
 macos-app: ## build PoorMac.app into dist/macos
 	./scripts/build_poor_mac_app.sh
+
+macos-zip: macos-app ## build zip archive for PoorMac.app
+	cd dist/macos && ditto -c -k --sequesterRsrc --keepParent PoorMac.app PoorMac-$(VERSION).zip
 
 macos-test: ## run PoorMac Swift tests
 	swift test --package-path apps/PoorMac

@@ -82,13 +82,17 @@ private struct DetailRouter: View {
         case .cost:
             CostSurfaceView()
         case .review:
-            ReviewSurfaceView()
+            DiffReviewView()
+        case .sessions, .context, .tools, .delivery, .memory, .services, .workspace:
+            DomainSurfaceView(
+                area: area,
+                primaryAction: BackendCatalog.primaryAction(for: area),
+                actions: BackendCatalog.actions(for: area)
+            )
         case .rpcConsole:
             RPCConsoleView()
         case .settings:
             SettingsView()
-        default:
-            FeatureSurfaceView(area: area)
         }
     }
 }
