@@ -15,6 +15,7 @@ shell = "zsh"
 font_family = "JetBrains Mono"
 font_size = 24.0
 scrollback_lines = 10000
+tab_bar_orientation = "horizontal"
 copy_on_select = false
 restore_session = true
 "#;

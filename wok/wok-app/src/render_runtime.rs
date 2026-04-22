@@ -3,22 +3,49 @@ use super::*;
 pub(crate) fn compute_chrome_rects(
     size: PhysicalSize<u32>,
     tab_bar_visible: bool,
+    tab_bar_orientation: wok_app::config::TabBarOrientation,
     status_bar_visible: bool,
 ) -> ChromeRects {
     let width = size.width as f32;
     let height = size.height as f32;
-    let tab_bar_height = if tab_bar_visible { 32.0 } else { 0.0 };
     let status_height = if status_bar_visible { 24.0 } else { 0.0 };
+    let available_height = (height - status_height).max(0.0);
 
-    ChromeRects {
-        tab_bar: Rect::new(0.0, 0.0, width, tab_bar_height),
-        content: Rect::new(
-            0.0,
-            tab_bar_height,
-            width,
-            (height - tab_bar_height - status_height).max(0.0),
-        ),
-        status: Rect::new(0.0, (height - status_height).max(0.0), width, status_height),
+    if !tab_bar_visible {
+        return ChromeRects {
+            tab_bar: Rect::new(0.0, 0.0, 0.0, 0.0),
+            content: Rect::new(0.0, 0.0, width, available_height),
+            status: Rect::new(0.0, available_height, width, status_height),
+        };
+    }
+
+    match tab_bar_orientation {
+        wok_app::config::TabBarOrientation::Horizontal => {
+            let tab_bar_height = 32.0;
+            ChromeRects {
+                tab_bar: Rect::new(0.0, 0.0, width, tab_bar_height),
+                content: Rect::new(
+                    0.0,
+                    tab_bar_height,
+                    width,
+                    (available_height - tab_bar_height).max(0.0),
+                ),
+                status: Rect::new(0.0, available_height, width, status_height),
+            }
+        }
+        wok_app::config::TabBarOrientation::Vertical => {
+            let tab_bar_width = 180.0_f32.min(width * 0.35).max(96.0).min(width);
+            ChromeRects {
+                tab_bar: Rect::new(0.0, 0.0, tab_bar_width, available_height),
+                content: Rect::new(
+                    tab_bar_width,
+                    0.0,
+                    (width - tab_bar_width).max(0.0),
+                    available_height,
+                ),
+                status: Rect::new(0.0, available_height, width, status_height),
+            }
+        }
     }
 }
 
@@ -73,6 +100,7 @@ pub(crate) fn render_tab_bar(
     rect: Rect,
     tabs: &[(bool, String)],
     scroll_offset: f32,
+    orientation: wok_app::config::TabBarOrientation,
     surface_opacity: f32,
 ) {
     render.batch.push_bg_quad(
@@ -86,46 +114,185 @@ pub(crate) fn render_tab_bar(
         return;
     }
 
-    let tab_width = tab_bar_tab_width(rect, tabs.len());
-    for (index, (is_active, label)) in tabs.iter().enumerate() {
-        let x = rect.x + index as f32 * tab_width - scroll_offset;
-        if x >= rect.x + rect.w || x + tab_width <= rect.x {
-            continue;
+    match orientation {
+        wok_app::config::TabBarOrientation::Horizontal => {
+            let widths = tab_bar_tab_widths(tabs, font.metrics.cell_width);
+            let mut x = rect.x - scroll_offset;
+            for ((is_active, label), tab_width) in tabs.iter().zip(widths) {
+                render_tab_bar_item(
+                    render,
+                    font,
+                    Rect::new(x, rect.y, tab_width, rect.h),
+                    Rect::new(rect.x, rect.y, rect.w, rect.h),
+                    *is_active,
+                    label,
+                    surface_opacity,
+                );
+                x += tab_width;
+            }
         }
-        let background = if *is_active {
-            [0.14, 0.16, 0.22, 1.0]
-        } else {
-            [0.10, 0.11, 0.15, 1.0]
-        };
-        render.batch.push_bg_quad(
-            x,
-            rect.y,
-            tab_width,
-            rect.h,
-            with_opacity(background, surface_opacity),
-        );
-        push_text(
-            render,
-            font,
-            x + 12.0,
-            rect.y + 8.0,
-            label,
-            with_opacity([0.75, 0.79, 0.96, 1.0], surface_opacity),
-        );
+        wok_app::config::TabBarOrientation::Vertical => {
+            let tab_height = 32.0;
+            let mut y = rect.y - scroll_offset;
+            for (is_active, label) in tabs {
+                render_tab_bar_item(
+                    render,
+                    font,
+                    Rect::new(rect.x, y, rect.w, tab_height),
+                    Rect::new(rect.x, rect.y, rect.w, rect.h),
+                    *is_active,
+                    label,
+                    surface_opacity,
+                );
+                y += tab_height;
+            }
+        }
     }
 }
 
-pub(crate) fn tab_bar_tab_width(rect: Rect, tab_count: usize) -> f32 {
-    if tab_count == 0 {
-        0.0
+fn render_tab_bar_item(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    item_rect: Rect,
+    clip_rect: Rect,
+    is_active: bool,
+    label: &str,
+    surface_opacity: f32,
+) {
+    let visible_left = item_rect.x.max(clip_rect.x);
+    let visible_top = item_rect.y.max(clip_rect.y);
+    let visible_right = (item_rect.x + item_rect.w).min(clip_rect.x + clip_rect.w);
+    let visible_bottom = (item_rect.y + item_rect.h).min(clip_rect.y + clip_rect.h);
+    if visible_right <= visible_left || visible_bottom <= visible_top {
+        return;
+    }
+
+    let background = if is_active {
+        [0.14, 0.16, 0.22, 1.0]
     } else {
-        (rect.w / tab_count as f32).clamp(120.0, 220.0)
+        [0.10, 0.11, 0.15, 1.0]
+    };
+    render.batch.push_bg_quad(
+        visible_left,
+        visible_top,
+        visible_right - visible_left,
+        visible_bottom - visible_top,
+        with_opacity(background, surface_opacity),
+    );
+
+    let text_x = (item_rect.x + TAB_TEXT_PAD_X).max(clip_rect.x + TAB_TEXT_PAD_X);
+    let text_y = item_rect.y + 8.0;
+    let available_width = (visible_right - text_x - TAB_TEXT_PAD_X).max(0.0);
+    let visible_label = fit_text_to_width(label, available_width, font.metrics.cell_width);
+    if visible_label.is_empty() || text_y + font.metrics.cell_height > visible_bottom + 1.0 {
+        return;
+    }
+    push_text(
+        render,
+        font,
+        text_x,
+        text_y,
+        &visible_label,
+        with_opacity([0.75, 0.79, 0.96, 1.0], surface_opacity),
+    );
+}
+
+const TAB_TEXT_PAD_X: f32 = 12.0;
+const TAB_MIN_WIDTH: f32 = 96.0;
+const TAB_MAX_WIDTH: f32 = 420.0;
+const VERTICAL_TAB_HEIGHT: f32 = 32.0;
+
+pub(crate) fn tab_bar_tab_widths(tabs: &[(bool, String)], cell_width: f32) -> Vec<f32> {
+    tabs.iter()
+        .map(|(_, label)| tab_bar_tab_width_for_label(label, cell_width))
+        .collect()
+}
+
+pub(crate) fn tab_bar_tab_width_for_label(label: &str, cell_width: f32) -> f32 {
+    let text_width = label.chars().count() as f32 * cell_width;
+    (text_width + TAB_TEXT_PAD_X * 2.0).clamp(TAB_MIN_WIDTH, TAB_MAX_WIDTH)
+}
+
+pub(crate) fn tab_bar_content_extent(
+    tabs: &[(bool, String)],
+    cell_width: f32,
+    orientation: wok_app::config::TabBarOrientation,
+) -> f32 {
+    match orientation {
+        wok_app::config::TabBarOrientation::Horizontal => {
+            tab_bar_tab_widths(tabs, cell_width).into_iter().sum()
+        }
+        wok_app::config::TabBarOrientation::Vertical => tabs.len() as f32 * VERTICAL_TAB_HEIGHT,
     }
 }
 
-pub(crate) fn tab_bar_max_scroll(rect: Rect, tab_count: usize) -> f32 {
-    let content_width = tab_bar_tab_width(rect, tab_count) * tab_count as f32;
-    (content_width - rect.w).max(0.0)
+pub(crate) fn tab_bar_max_scroll(
+    rect: Rect,
+    tabs: &[(bool, String)],
+    cell_width: f32,
+    orientation: wok_app::config::TabBarOrientation,
+) -> f32 {
+    let viewport_extent = match orientation {
+        wok_app::config::TabBarOrientation::Horizontal => rect.w,
+        wok_app::config::TabBarOrientation::Vertical => rect.h,
+    };
+    (tab_bar_content_extent(tabs, cell_width, orientation) - viewport_extent).max(0.0)
+}
+
+pub(crate) fn tab_bar_tab_range(
+    tabs: &[(bool, String)],
+    index: usize,
+    cell_width: f32,
+    orientation: wok_app::config::TabBarOrientation,
+) -> Option<(f32, f32)> {
+    if index >= tabs.len() {
+        return None;
+    }
+    match orientation {
+        wok_app::config::TabBarOrientation::Horizontal => {
+            let widths = tab_bar_tab_widths(tabs, cell_width);
+            let start = widths.iter().take(index).sum::<f32>();
+            Some((start, start + widths[index]))
+        }
+        wok_app::config::TabBarOrientation::Vertical => {
+            let start = index as f32 * VERTICAL_TAB_HEIGHT;
+            Some((start, start + VERTICAL_TAB_HEIGHT))
+        }
+    }
+}
+
+pub(crate) fn tab_bar_index_at_point(
+    rect: Rect,
+    tabs: &[(bool, String)],
+    scroll_offset: f32,
+    x: f32,
+    y: f32,
+    cell_width: f32,
+    orientation: wok_app::config::TabBarOrientation,
+) -> Option<usize> {
+    if tabs.is_empty() {
+        return None;
+    }
+    match orientation {
+        wok_app::config::TabBarOrientation::Horizontal => {
+            let target = x - rect.x + scroll_offset;
+            let mut cursor = 0.0;
+            for (index, width) in tab_bar_tab_widths(tabs, cell_width).into_iter().enumerate() {
+                if target >= cursor && target < cursor + width {
+                    return Some(index);
+                }
+                cursor += width;
+            }
+        }
+        wok_app::config::TabBarOrientation::Vertical => {
+            let target = y - rect.y + scroll_offset;
+            let index = (target / VERTICAL_TAB_HEIGHT).floor() as usize;
+            if index < tabs.len() {
+                return Some(index);
+            }
+        }
+    }
+    None
 }
 
 pub(crate) fn render_status_bar(
@@ -795,16 +962,26 @@ pub(crate) fn render_command_palette(
             row_y += font.metrics.cell_height + 4.0;
         }
         if available_entries.len() > entries_max {
-            let indicator = format!(
-                "{}-{} of {}",
-                start_idx + 1,
-                end_idx,
-                available_entries.len()
+            let indicator = fit_text_to_width(
+                &format!(
+                    "{}-{} of {}",
+                    start_idx + 1,
+                    end_idx,
+                    available_entries.len()
+                ),
+                inner_width,
+                font.metrics.cell_width,
             );
+            let indicator_x = right_aligned_text_x(
+                rect.x + rect.w - padding_x,
+                &indicator,
+                font.metrics.cell_width,
+            )
+            .max(base_x);
             push_text(
                 render,
                 font,
-                rect.x + rect.w - 130.0,
+                indicator_x,
                 rect.y + rect.h - font.metrics.cell_height - 8.0,
                 &indicator,
                 with_opacity(
@@ -822,8 +999,9 @@ pub(crate) fn render_command_palette(
 
     if cursor_visible {
         if let Some((cursor_row, cursor_col)) = input.cursors.first().copied() {
-            let max_cursor_col = ((inner_width / font.metrics.cell_width).floor() as usize)
-                .saturating_sub(prefix.chars().count())
+            let input_cols = columns_for_width(inner_width, font.metrics.cell_width);
+            let max_cursor_col = input_cols
+                .saturating_sub(prefix.chars().count() + 1)
                 .min(cursor_col);
             let cursor_x = base_x
                 + prefix.chars().count() as f32 * font.metrics.cell_width
@@ -872,8 +1050,15 @@ fn fit_text_to_width(text: &str, max_width: f32, cell_width: f32) -> String {
     if max_width <= 0.0 || cell_width <= 0.0 {
         return String::new();
     }
-    let max_chars = (max_width / cell_width).floor() as usize;
+    let max_chars = columns_for_width(max_width, cell_width);
     fit_text_to_chars(text, max_chars)
+}
+
+fn columns_for_width(max_width: f32, cell_width: f32) -> usize {
+    if max_width <= 0.0 || cell_width <= 0.0 {
+        return 0;
+    }
+    (max_width / cell_width).floor() as usize
 }
 
 fn fit_text_to_chars(text: &str, max_chars: usize) -> String {
@@ -891,6 +1076,85 @@ fn fit_text_to_chars(text: &str, max_chars: usize) -> String {
     let mut truncated = text.chars().take(max_chars - 3).collect::<String>();
     truncated.push_str("...");
     truncated
+}
+
+fn right_aligned_text_x(right_edge: f32, text: &str, cell_width: f32) -> f32 {
+    right_edge - text.chars().count() as f32 * cell_width
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fit_text_to_width_never_exceeds_available_columns() {
+        let fitted = fit_text_to_width("1-15 of 146", 90.0, 10.0);
+
+        assert_eq!(fitted, "1-15 o...");
+        assert!(fitted.chars().count() <= columns_for_width(90.0, 10.0));
+    }
+
+    #[test]
+    fn right_aligned_text_x_keeps_text_inside_right_edge() {
+        let x = right_aligned_text_x(200.0, "1-15 of 146", 10.0);
+
+        assert_eq!(x, 90.0);
+    }
+
+    #[test]
+    fn columns_for_width_rejects_invalid_metrics() {
+        assert_eq!(columns_for_width(100.0, 0.0), 0);
+        assert_eq!(columns_for_width(-1.0, 10.0), 0);
+    }
+
+    #[test]
+    fn tab_bar_width_grows_to_fit_large_font_labels() {
+        let width = tab_bar_tab_width_for_label("Wok  [147x59]", 18.0);
+
+        assert!(width >= 13.0 * 18.0 + TAB_TEXT_PAD_X * 2.0);
+    }
+
+    #[test]
+    fn horizontal_tab_hit_testing_uses_variable_widths() {
+        let tabs = vec![
+            (true, "Wok  [147x59]".to_string()),
+            (false, "Shell".to_string()),
+        ];
+        let rect = Rect::new(0.0, 0.0, 640.0, 32.0);
+        let first_width = tab_bar_tab_width_for_label("Wok  [147x59]", 18.0);
+
+        assert_eq!(
+            tab_bar_index_at_point(
+                rect,
+                &tabs,
+                0.0,
+                first_width + 4.0,
+                12.0,
+                18.0,
+                wok_app::config::TabBarOrientation::Horizontal,
+            ),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn vertical_tab_hit_testing_uses_stacked_rows() {
+        let tabs = vec![(true, "Wok".to_string()), (false, "Shell".to_string())];
+        let rect = Rect::new(0.0, 0.0, 180.0, 300.0);
+
+        assert_eq!(
+            tab_bar_index_at_point(
+                rect,
+                &tabs,
+                0.0,
+                12.0,
+                VERTICAL_TAB_HEIGHT + 4.0,
+                12.0,
+                wok_app::config::TabBarOrientation::Vertical,
+            ),
+            Some(1)
+        );
+    }
 }
 
 pub(crate) fn palette_highlight_columns(label: &str, query: &str) -> Vec<usize> {

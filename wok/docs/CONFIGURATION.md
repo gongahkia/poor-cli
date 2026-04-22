@@ -24,6 +24,7 @@ scrollback_lines = 10000
 cursor_style = "block"
 cursor_blink = true
 tab_bar_visible = true
+tab_bar_orientation = "horizontal"
 status_bar_visible = true
 window_opacity = 1.0
 copy_on_select = false
@@ -46,6 +47,7 @@ external_plugin_command = "node ~/.config/wok/plugins/bridge.js"
 | `cursor_style` | string | `"block"` | Active | Chooses the cursor shape for both the terminal viewport and owned input bar: `block`, `bar`, or `underline` |
 | `cursor_blink` | boolean | `true` | Active | Enables the timed cursor blink cadence for the viewport and input bar |
 | `tab_bar_visible` | boolean | `true` | Active | Shows or hides the workspace tab bar |
+| `tab_bar_orientation` | string | `"horizontal"` | Active | Chooses tab layout: `"horizontal"` renders tabs across the top, `"vertical"` stacks tabs on the left |
 | `status_bar_visible` | boolean | `true` | Active | Shows or hides the status bar |
 | `window_opacity` | float | `1.0` | Active | Applies window/chrome opacity and blends terminal surfaces against the configured background |
 | `copy_on_select` | boolean | `false` | Active | Auto-copy selected text on mouse-up |

@@ -840,6 +840,7 @@ impl WokHandler {
         self.chrome_rects = compute_chrome_rects(
             size,
             self.config.tab_bar_visible,
+            self.config.tab_bar_orientation,
             self.config.status_bar_visible,
         );
         let active_pane_id = self.active_pane_id();
@@ -890,7 +891,13 @@ impl WokHandler {
     }
 
     fn clamp_tab_scroll(&mut self) {
-        let max_scroll = tab_bar_max_scroll(self.chrome_rects.tab_bar, self.workspace.tabs.len());
+        let tab_labels = self.tab_labels_for_render();
+        let max_scroll = tab_bar_max_scroll(
+            self.chrome_rects.tab_bar,
+            &tab_labels,
+            self.font.metrics.cell_width,
+            self.config.tab_bar_orientation,
+        );
         self.tab_scroll_offset = self.tab_scroll_offset.clamp(0.0, max_scroll);
     }
 
@@ -900,18 +907,24 @@ impl WokHandler {
             return;
         }
 
-        let tab_width = tab_bar_tab_width(self.chrome_rects.tab_bar, self.workspace.tabs.len());
-        if tab_width <= 0.0 {
+        let tab_labels = self.tab_labels_for_render();
+        let Some((active_start, active_end)) = tab_bar_tab_range(
+            &tab_labels,
+            self.workspace.active_tab,
+            self.font.metrics.cell_width,
+            self.config.tab_bar_orientation,
+        ) else {
             self.tab_scroll_offset = 0.0;
             return;
-        }
-
-        let active_start = self.workspace.active_tab as f32 * tab_width;
-        let active_end = active_start + tab_width;
+        };
+        let visible_extent = match self.config.tab_bar_orientation {
+            wok_app::config::TabBarOrientation::Horizontal => self.chrome_rects.tab_bar.w,
+            wok_app::config::TabBarOrientation::Vertical => self.chrome_rects.tab_bar.h,
+        };
         if active_start < self.tab_scroll_offset {
             self.tab_scroll_offset = active_start;
-        } else if active_end > self.tab_scroll_offset + self.chrome_rects.tab_bar.w {
-            self.tab_scroll_offset = active_end - self.chrome_rects.tab_bar.w;
+        } else if active_end > self.tab_scroll_offset + visible_extent {
+            self.tab_scroll_offset = active_end - visible_extent;
         }
         self.clamp_tab_scroll();
     }
@@ -929,13 +942,16 @@ impl WokHandler {
             return None;
         }
 
-        let tab_width = tab_bar_tab_width(rect, self.workspace.tabs.len());
-        if tab_width <= 0.0 {
-            return None;
-        }
-        let content_x = x as f32 - rect.x + self.tab_scroll_offset;
-        let index = (content_x / tab_width).floor() as usize;
-        (index < self.workspace.tabs.len()).then_some(index)
+        let tab_labels = self.tab_labels_for_render();
+        tab_bar_index_at_point(
+            rect,
+            &tab_labels,
+            self.tab_scroll_offset,
+            x as f32,
+            y as f32,
+            self.font.metrics.cell_width,
+            self.config.tab_bar_orientation,
+        )
     }
 
     fn scroll_tab_bar(&mut self, delta_x: f64, delta_y: f64) -> bool {
@@ -1122,23 +1138,7 @@ impl WokHandler {
 
     fn build_quads(&mut self) {
         let active_pane_id = self.active_pane_id();
-        let tab_labels: Vec<(bool, String)> = self
-            .workspace
-            .tabs
-            .iter()
-            .enumerate()
-            .map(|(index, tab)| {
-                let label = if index == self.workspace.active_tab {
-                    active_pane_id
-                        .and_then(|pane_id| self.panes.get(&pane_id))
-                        .map(|pane| format!("{}  [{}x{}]", tab.title, pane.cols, pane.rows))
-                        .unwrap_or_else(|| tab.title.clone())
-                } else {
-                    tab.title.clone()
-                };
-                (index == self.workspace.active_tab, label)
-            })
-            .collect();
+        let tab_labels = self.tab_labels_for_render();
         let status_segments = self
             .active_pane()
             .map(|active_pane| self.compose_status_bar_segments(active_pane));
@@ -1167,9 +1167,10 @@ impl WokHandler {
                 )
             })
         });
+        let full_width = self.chrome_rects.content.x + self.chrome_rects.content.w;
         let full_height =
             self.chrome_rects.content.y + self.chrome_rects.content.h + self.chrome_rects.status.h;
-        let full_rect = Rect::new(0.0, 0.0, self.chrome_rects.content.w, full_height);
+        let full_rect = Rect::new(0.0, 0.0, full_width, full_height);
         let Some(render) = self.render.as_mut() else {
             return;
         };
@@ -1185,6 +1186,7 @@ impl WokHandler {
                 self.chrome_rects.tab_bar,
                 &tab_labels,
                 self.tab_scroll_offset,
+                self.config.tab_bar_orientation,
                 window_opacity,
             );
         }
@@ -1699,6 +1701,26 @@ impl WokHandler {
         }
     }
 
+    fn tab_labels_for_render(&self) -> Vec<(bool, String)> {
+        let active_pane_id = self.active_pane_id();
+        self.workspace
+            .tabs
+            .iter()
+            .enumerate()
+            .map(|(index, tab)| {
+                let label = if index == self.workspace.active_tab {
+                    active_pane_id
+                        .and_then(|pane_id| self.panes.get(&pane_id))
+                        .map(|pane| format!("{}  [{}x{}]", tab.title, pane.cols, pane.rows))
+                        .unwrap_or_else(|| tab.title.clone())
+                } else {
+                    tab.title.clone()
+                };
+                (index == self.workspace.active_tab, label)
+            })
+            .collect()
+    }
+
     fn apply_plugin_keybindings(&self, app: &mut WokApp) {
         let Some(plugins) = &self.plugins else {
             return;
@@ -1977,6 +1999,10 @@ impl WokHandler {
             },
             "theme_path": self.config.theme_path.as_ref().map(|path| path.display().to_string()),
             "window_opacity": self.config.window_opacity,
+            "tab_bar_orientation": match self.config.tab_bar_orientation {
+                wok_app::config::TabBarOrientation::Horizontal => "horizontal",
+                wok_app::config::TabBarOrientation::Vertical => "vertical",
+            },
             "restore_session": self.config.restore_session,
             "debug_overlay": self.config.debug_overlay,
             "trigger_count": self.trigger_engine.len(),

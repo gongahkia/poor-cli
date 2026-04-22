@@ -29,6 +29,15 @@ pub enum CommandEntryMode {
     OwnedPrimary,
 }
 
+/// Tab bar layout direction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum TabBarOrientation {
+    /// Render tabs across the top of the window.
+    Horizontal,
+    /// Render tabs stacked along the left side of the window.
+    Vertical,
+}
+
 /// Trigger scope loaded from config.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TriggerScopeConfig {
@@ -77,6 +86,8 @@ pub struct WokConfig {
     pub cursor_blink: bool,
     /// Whether the tab bar is visible.
     pub tab_bar_visible: bool,
+    /// Whether tabs are rendered horizontally or vertically.
+    pub tab_bar_orientation: TabBarOrientation,
     /// Whether the status bar is visible.
     pub status_bar_visible: bool,
     /// Window opacity (0.0 to 1.0).
@@ -121,6 +132,7 @@ struct ConfigToml {
     cursor_style: Option<String>,
     cursor_blink: Option<bool>,
     tab_bar_visible: Option<bool>,
+    tab_bar_orientation: Option<String>,
     status_bar_visible: Option<bool>,
     window_opacity: Option<f32>,
     background_image: Option<String>,
@@ -177,6 +189,7 @@ impl Default for WokConfig {
             cursor_style: CursorStyle::Block,
             cursor_blink: true,
             tab_bar_visible: true,
+            tab_bar_orientation: TabBarOrientation::Horizontal,
             status_bar_visible: true,
             window_opacity: 1.0,
             background_image: None,
@@ -255,6 +268,12 @@ impl WokConfig {
         }
         if let Some(v) = toml_config.tab_bar_visible {
             config.tab_bar_visible = v;
+        }
+        if let Some(orientation) = toml_config.tab_bar_orientation {
+            config.tab_bar_orientation = match orientation.as_str() {
+                "vertical" | "left" => TabBarOrientation::Vertical,
+                _ => TabBarOrientation::Horizontal,
+            };
         }
         if let Some(v) = toml_config.status_bar_visible {
             config.status_bar_visible = v;
@@ -432,6 +451,7 @@ mod tests {
         assert_eq!(config.cursor_style, CursorStyle::Block);
         assert_eq!(config.input_position, InputPosition::Bottom);
         assert_eq!(config.command_entry_mode, CommandEntryMode::ShellNative);
+        assert_eq!(config.tab_bar_orientation, TabBarOrientation::Horizontal);
     }
 
     #[test]
