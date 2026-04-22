@@ -93,6 +93,10 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
                     }
                 }
                 let wok_window = WokWindow::from_winit(window);
+                if let Some(target_fps) = display_target_fps(&wok_window.window) {
+                    self.frame_clock.set_target_fps(target_fps);
+                    info!(target_fps, "frame clock matched display refresh");
+                }
                 let arc_window = wok_window.window.clone();
                 self.window = Some(wok_window);
                 // Notify handler with the Arc<Window> for GPU init
@@ -265,6 +269,19 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
             _ => {}
         }
     }
+}
+
+fn display_target_fps(window: &winit::window::Window) -> Option<u32> {
+    let refresh_millihertz = window
+        .current_monitor()?
+        .video_modes()
+        .map(|mode| mode.refresh_rate_millihertz())
+        .max()?;
+    let refresh_hz = refresh_millihertz as f64 / 1000.0;
+    if refresh_hz <= 0.0 {
+        return None;
+    }
+    Some((refresh_hz.round() as u32).clamp(60, 144))
 }
 
 #[cfg(target_os = "macos")]

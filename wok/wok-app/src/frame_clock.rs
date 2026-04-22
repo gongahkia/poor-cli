@@ -77,6 +77,15 @@ impl FrameClock {
         self.target_fps
     }
 
+    /// Update the target FPS and reset frame pacing state.
+    pub fn set_target_fps(&mut self, target_fps: u32) {
+        let fps = if target_fps == 0 { 60 } else { target_fps };
+        self.target_fps = fps;
+        self.frame_duration = Duration::from_secs_f64(1.0 / f64::from(fps));
+        self.last_frame = Instant::now();
+        self.frame_times.clear();
+    }
+
     /// Return how long until the next frame should render.
     pub fn time_until_next_frame(&self) -> Duration {
         let elapsed = self.last_frame.elapsed();
@@ -93,6 +102,13 @@ mod tests {
     fn test_new_defaults_to_60fps() {
         let clock = FrameClock::new(60);
         assert_eq!(clock.target_fps(), 60);
+    }
+
+    #[test]
+    fn test_set_target_fps_updates_target() {
+        let mut clock = FrameClock::new(60);
+        clock.set_target_fps(120);
+        assert_eq!(clock.target_fps(), 120);
     }
 
     #[test]
