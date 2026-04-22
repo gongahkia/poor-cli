@@ -522,7 +522,14 @@ pub(crate) fn render_debug_overlay(
         return;
     }
 
-    let width = 260.0;
+    let longest = lines
+        .iter()
+        .map(|line| line.chars().count())
+        .max()
+        .unwrap_or(0);
+    let width = (longest as f32 * font.metrics.cell_width + 20.0)
+        .clamp(260.0, 620.0)
+        .min(content_rect.w.max(1.0));
     let height = (lines.len() as f32 * font.metrics.cell_height) + 14.0;
     let x = content_rect.x + 12.0;
     let y = content_rect.y + 12.0;
@@ -543,12 +550,13 @@ pub(crate) fn render_debug_overlay(
     );
 
     for (index, line) in lines.iter().enumerate() {
+        let visible_line = fit_text_to_width(line, width - 20.0, font.metrics.cell_width);
         push_text(
             render,
             font,
             x + 10.0,
             y + 6.0 + index as f32 * font.metrics.cell_height,
-            line,
+            &visible_line,
             with_opacity([0.84, 0.88, 0.95, 1.0], surface_opacity),
         );
     }

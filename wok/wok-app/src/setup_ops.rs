@@ -28,6 +28,7 @@ recent_keys_opacity = 0.86
 copy_on_select = false
 close_on_shell_exit = true
 restore_session = true
+debug_overlay = false
 "#;
 
 const LUA_TEMPLATE: &str = r#"-- Wok init.lua

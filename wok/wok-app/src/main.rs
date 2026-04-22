@@ -85,6 +85,7 @@ mod action_parser;
 mod cli_runtime;
 mod input_codec;
 mod jsonrpc_params;
+mod perf_metrics;
 mod remote_runtime;
 mod render_runtime;
 mod rpc_cli;
@@ -94,6 +95,7 @@ mod workspace_runtime;
 use action_parser::parse_lua_action;
 use cli_runtime::{dispatch_cli_command, parse_shell_type, CliAction};
 use input_codec::{input_event_to_editor_key, input_event_to_pty_bytes};
+use perf_metrics::{format_bytes, percent, SystemMetricsSampler};
 use render_runtime::*;
 
 /// Wok — a GPU-accelerated terminal emulator with Blocks.
@@ -459,6 +461,10 @@ impl RuntimeMetrics {
     fn summary_line(&self) -> String {
         let mut parts = vec![
             format!("frames:{}", self.frame_count),
+            format!(
+                "last_frame:{:.2}ms",
+                self.last_frame_duration_us as f32 / 1000.0
+            ),
             format!("panes:{}", self.pane_count),
             format!("replays:{}", self.replay_snapshot_count),
         ];
@@ -509,6 +515,8 @@ struct WokHandler {
     last_cursor_visible: bool,
     pending_close_confirmation: Option<Instant>,
     redraw_history_ms: VecDeque<f32>,
+    frame_timestamps: VecDeque<Instant>,
+    system_metrics: SystemMetricsSampler,
     theme_overrides: HashMap<String, String>,
     floating_drag: Option<FloatingDragState>,
     pressed_mouse_button: Option<MouseButton>,
@@ -599,6 +607,8 @@ impl WokHandler {
             last_cursor_visible: true,
             pending_close_confirmation: None,
             redraw_history_ms: VecDeque::with_capacity(60),
+            frame_timestamps: VecDeque::with_capacity(120),
+            system_metrics: SystemMetricsSampler::new(Duration::from_secs(2)),
             theme_overrides: HashMap::new(),
             floating_drag: None,
             pressed_mouse_button: None,
@@ -2046,14 +2056,93 @@ impl WokHandler {
             .as_ref()
             .map(|render| (render.atlas.len(), render.atlas.usage_ratio() * 100.0))
             .unwrap_or((0, 0.0));
+        let fps = self.current_fps();
+        let system = self.system_metrics.snapshot();
+        let memory_percent = percent(system.memory_used_bytes, system.memory_total_bytes);
+        let disk_used = system
+            .disk_total_bytes
+            .saturating_sub(system.disk_available_bytes);
+        let disk_percent = percent(disk_used, system.disk_total_bytes);
+        let app_memory = system
+            .app_memory_bytes
+            .map(format_bytes)
+            .unwrap_or_else(|| "n/a".to_string());
+        let app_cpu = system
+            .app_cpu_usage_percent
+            .map(|cpu| format!("{cpu:.1}%"))
+            .unwrap_or_else(|| "n/a".to_string());
+        let app_disk = match (system.app_disk_read_bytes, system.app_disk_written_bytes) {
+            (Some(read), Some(written)) => {
+                format!("r {} w {}", format_bytes(read), format_bytes(written))
+            }
+            _ => "n/a".to_string(),
+        };
+        let battery = system
+            .battery
+            .as_ref()
+            .map(|battery| {
+                let percent = battery
+                    .percent
+                    .map(|percent| format!("{percent:.0}%"))
+                    .unwrap_or_else(|| "n/a".to_string());
+                let state = battery.state.as_deref().unwrap_or("unknown");
+                let remaining = battery.time_remaining.as_deref().unwrap_or("n/a");
+                format!("{percent} {state} {remaining}")
+            })
+            .unwrap_or_else(|| "n/a".to_string());
+        let gpu_line = self.render.as_ref().map_or_else(
+            || "gpu n/a".to_string(),
+            |render| {
+                let info = render.gpu.adapter_info();
+                format!(
+                    "gpu {} {:?} {:?}",
+                    truncate_metric_text(&info.name, 28),
+                    info.backend,
+                    info.device_type
+                )
+            },
+        );
 
-        vec![
-            format!("redraw {:.2} ms", avg_redraw_ms),
+        let mut lines = vec![
+            format!("fps {:.1} redraw {:.2} ms", fps, avg_redraw_ms),
             format!("atlas {} glyphs {:.1}% full", atlas_entries, atlas_usage),
+            format!("cpu sys {:.1}% app {app_cpu}", system.cpu_usage_percent),
+            format!(
+                "mem sys {} / {} ({memory_percent:.1}%) app {app_memory}",
+                format_bytes(system.memory_used_bytes),
+                format_bytes(system.memory_total_bytes)
+            ),
+            format!(
+                "disk sys {} / {} ({disk_percent:.1}%) app {app_disk}",
+                format_bytes(disk_used),
+                format_bytes(system.disk_total_bytes)
+            ),
+            gpu_line,
+            "gpu util n/a (wgpu does not expose cross-platform utilization)".to_string(),
+            format!("battery {battery}"),
             format!("scrollback {} rows", active_scrollback),
             format!("session ~{} KiB", total_session_bytes / 1024),
             self.metrics.summary_line(),
-        ]
+        ];
+        for warning in &system.warnings {
+            lines.push(format!("warn {warning}"));
+        }
+        lines
+    }
+
+    fn current_fps(&self) -> f32 {
+        let Some(first) = self.frame_timestamps.front() else {
+            return 0.0;
+        };
+        let Some(last) = self.frame_timestamps.back() else {
+            return 0.0;
+        };
+        let elapsed = last.duration_since(*first).as_secs_f32();
+        if elapsed <= f32::EPSILON || self.frame_timestamps.len() < 2 {
+            0.0
+        } else {
+            (self.frame_timestamps.len() - 1) as f32 / elapsed
+        }
     }
 
     fn estimated_session_bytes(&self) -> usize {
@@ -5308,6 +5397,10 @@ impl AppHandler for WokHandler {
     }
 
     fn on_frame_tick(&mut self) -> bool {
+        if self.config.debug_overlay {
+            self.system_metrics.maybe_refresh();
+            self.needs_redraw = true;
+        }
         if let Some(plugins) = &self.plugins {
             plugins.pump_timers(64);
         }
@@ -5492,13 +5585,20 @@ impl AppHandler for WokHandler {
             {
                 match e {
                     wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated => {
+                        warn!("GPU surface became invalid ({e:?}); resizing surface");
                         let (w, h) = render.gpu.dimensions();
                         render.gpu.resize(&render.surface, w, h);
                     }
                     wgpu::SurfaceError::OutOfMemory => {
                         warn!("GPU out of memory");
+                        self.exit_requested = true;
                     }
-                    _ => {}
+                    wgpu::SurfaceError::Timeout => {
+                        warn!("GPU frame presentation timed out");
+                    }
+                    wgpu::SurfaceError::Other => {
+                        warn!("GPU surface error: {e:?}");
+                    }
                 }
             }
         }
@@ -5510,8 +5610,14 @@ impl AppHandler for WokHandler {
         if self.redraw_history_ms.len() >= 60 {
             self.redraw_history_ms.pop_front();
         }
+        let redraw_duration = redraw_started.elapsed();
+        self.metrics.last_frame_duration_us = redraw_duration.as_micros() as u64;
         self.redraw_history_ms
-            .push_back(redraw_started.elapsed().as_secs_f32() * 1000.0);
+            .push_back(redraw_duration.as_secs_f32() * 1000.0);
+        self.frame_timestamps.push_back(Instant::now());
+        while self.frame_timestamps.len() > 120 {
+            self.frame_timestamps.pop_front();
+        }
         self.needs_redraw = false;
     }
 
@@ -6032,7 +6138,8 @@ fn ensure_settings_file() -> std::io::Result<PathBuf> {
              status_bar_side = \"bottom\"\n\
              recent_keys_visible = true\n\
              recent_keys_position = \"bottom_right\"\n\
-             close_on_shell_exit = true\n",
+             close_on_shell_exit = true\n\
+             debug_overlay = false\n",
         )?;
     }
     Ok(path)
@@ -7344,6 +7451,16 @@ fn key_action_label(action: &KeyAction) -> String {
     }
 }
 
+fn truncate_metric_text(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+    let keep = max_chars.saturating_sub(3);
+    let mut truncated = text.chars().take(keep).collect::<String>();
+    truncated.push_str("...");
+    truncated
+}
+
 fn platform_modifier_active(modifiers: wok_app::input::Modifiers) -> bool {
     #[cfg(target_os = "macos")]
     {
@@ -7678,7 +7795,10 @@ mod tests {
             replay_snapshot_count: 10,
             daemon_sync_lag_ms: None,
         };
-        assert_eq!(m.summary_line(), "frames:42 panes:2 replays:10");
+        assert_eq!(
+            m.summary_line(),
+            "frames:42 last_frame:0.50ms panes:2 replays:10"
+        );
     }
 
     #[test]
@@ -7690,7 +7810,10 @@ mod tests {
             replay_snapshot_count: 0,
             daemon_sync_lag_ms: Some(15),
         };
-        assert_eq!(m.summary_line(), "frames:1 panes:1 replays:0 sync_lag:15ms");
+        assert_eq!(
+            m.summary_line(),
+            "frames:1 last_frame:0.00ms panes:1 replays:0 sync_lag:15ms"
+        );
     }
 
     #[test]

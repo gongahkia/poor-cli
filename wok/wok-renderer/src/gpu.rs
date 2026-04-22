@@ -27,6 +27,8 @@ pub struct GpuContext {
     surface_config: wgpu::SurfaceConfiguration,
     /// Surface format.
     pub format: wgpu::TextureFormat,
+    /// Adapter metadata for diagnostics.
+    adapter_info: wgpu::AdapterInfo,
 }
 
 impl GpuContext {
@@ -50,7 +52,13 @@ impl GpuContext {
             .await
             .ok_or(GpuError::NoAdapter)?;
 
-        info!("GPU adapter: {:?}", adapter.get_info().name);
+        let adapter_info = adapter.get_info();
+        info!(
+            name = %adapter_info.name,
+            backend = ?adapter_info.backend,
+            device_type = ?adapter_info.device_type,
+            "GPU adapter selected"
+        );
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor::default(), None)
@@ -86,6 +94,7 @@ impl GpuContext {
             queue,
             surface_config: config,
             format,
+            adapter_info,
         })
     }
 
@@ -99,5 +108,10 @@ impl GpuContext {
     /// Get the current surface dimensions.
     pub fn dimensions(&self) -> (u32, u32) {
         (self.surface_config.width, self.surface_config.height)
+    }
+
+    /// Return adapter metadata captured during initialization.
+    pub fn adapter_info(&self) -> &wgpu::AdapterInfo {
+        &self.adapter_info
     }
 }
