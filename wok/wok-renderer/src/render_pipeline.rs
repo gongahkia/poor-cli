@@ -5,6 +5,8 @@ use wgpu::util::DeviceExt;
 use crate::gpu::GpuContext;
 use crate::pipeline::{QuadBatch, Vertex};
 
+const UPLOAD_FRAME_COUNT: usize = 3;
+
 /// Uniform data passed to the shader.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -24,10 +26,53 @@ pub struct TerminalRenderPipeline {
     sampler: wgpu::Sampler,
     background_texture: wgpu::Texture,
     background_view: wgpu::TextureView,
+    upload_frames: Vec<UploadFrame>,
+    upload_frame_index: usize,
+}
+
+struct UploadFrame {
     vertex_buffer: Option<wgpu::Buffer>,
     index_buffer: Option<wgpu::Buffer>,
     vertex_buffer_capacity: u64,
     index_buffer_capacity: u64,
+}
+
+impl UploadFrame {
+    fn new() -> Self {
+        Self {
+            vertex_buffer: None,
+            index_buffer: None,
+            vertex_buffer_capacity: 0,
+            index_buffer_capacity: 0,
+        }
+    }
+
+    fn ensure_buffers(
+        &mut self,
+        gpu: &GpuContext,
+        vertex_bytes_needed: u64,
+        index_bytes_needed: u64,
+    ) {
+        if self.vertex_buffer_capacity < vertex_bytes_needed {
+            self.vertex_buffer_capacity = grow_buffer_capacity(vertex_bytes_needed);
+            self.vertex_buffer = Some(gpu.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("vertex_buffer"),
+                size: self.vertex_buffer_capacity,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }));
+        }
+
+        if self.index_buffer_capacity < index_bytes_needed {
+            self.index_buffer_capacity = grow_buffer_capacity(index_bytes_needed);
+            self.index_buffer = Some(gpu.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("index_buffer"),
+                size: self.index_buffer_capacity,
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }));
+        }
+    }
 }
 
 impl TerminalRenderPipeline {
@@ -237,10 +282,8 @@ impl TerminalRenderPipeline {
             sampler,
             background_texture,
             background_view,
-            vertex_buffer: None,
-            index_buffer: None,
-            vertex_buffer_capacity: 0,
-            index_buffer_capacity: 0,
+            upload_frames: (0..UPLOAD_FRAME_COUNT).map(|_| UploadFrame::new()).collect(),
+            upload_frame_index: 0,
         }
     }
 
@@ -299,17 +342,10 @@ impl TerminalRenderPipeline {
 
         let vertex_bytes = bytemuck::cast_slice(&batch.vertices);
         let index_bytes = bytemuck::cast_slice(&batch.indices);
-        self.ensure_upload_buffers(gpu, vertex_bytes.len() as u64, index_bytes.len() as u64);
-        let vertex_buffer = self
-            .vertex_buffer
-            .as_ref()
-            .expect("vertex buffer should exist after ensure_upload_buffers");
-        let index_buffer = self
-            .index_buffer
-            .as_ref()
-            .expect("index buffer should exist after ensure_upload_buffers");
-        gpu.queue.write_buffer(vertex_buffer, 0, vertex_bytes);
-        gpu.queue.write_buffer(index_buffer, 0, index_bytes);
+        let (vertex_buffer, index_buffer) =
+            self.next_upload_buffers(gpu, vertex_bytes.len() as u64, index_bytes.len() as u64);
+        gpu.queue.write_buffer(&vertex_buffer, 0, vertex_bytes);
+        gpu.queue.write_buffer(&index_buffer, 0, index_bytes);
 
         let output = surface.get_current_texture()?;
         let view = output.texture.create_view(&Default::default());
@@ -351,31 +387,27 @@ impl TerminalRenderPipeline {
         Ok(())
     }
 
-    fn ensure_upload_buffers(
+    fn next_upload_buffers(
         &mut self,
         gpu: &GpuContext,
         vertex_bytes_needed: u64,
         index_bytes_needed: u64,
-    ) {
-        if self.vertex_buffer_capacity < vertex_bytes_needed {
-            self.vertex_buffer_capacity = grow_buffer_capacity(vertex_bytes_needed);
-            self.vertex_buffer = Some(gpu.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("vertex_buffer"),
-                size: self.vertex_buffer_capacity,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            }));
-        }
-
-        if self.index_buffer_capacity < index_bytes_needed {
-            self.index_buffer_capacity = grow_buffer_capacity(index_bytes_needed);
-            self.index_buffer = Some(gpu.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("index_buffer"),
-                size: self.index_buffer_capacity,
-                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            }));
-        }
+    ) -> (wgpu::Buffer, wgpu::Buffer) {
+        let frame_index = self.upload_frame_index;
+        self.upload_frame_index = (self.upload_frame_index + 1) % self.upload_frames.len();
+        let frame = &mut self.upload_frames[frame_index];
+        frame.ensure_buffers(gpu, vertex_bytes_needed, index_bytes_needed);
+        let vertex_buffer = frame
+            .vertex_buffer
+            .as_ref()
+            .expect("vertex buffer should exist after ensure_buffers")
+            .clone();
+        let index_buffer = frame
+            .index_buffer
+            .as_ref()
+            .expect("index buffer should exist after ensure_buffers")
+            .clone();
+        (vertex_buffer, index_buffer)
     }
 
     /// Upload glyph bitmap data to the atlas texture.
