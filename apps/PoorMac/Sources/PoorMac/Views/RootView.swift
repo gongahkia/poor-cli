@@ -45,6 +45,7 @@ struct RootView: View {
                         .environment(app)
                 }
         }
+        .navigationSplitViewStyle(.balanced)
     }
 
     private var selectionBinding: Binding<BackendArea?> {

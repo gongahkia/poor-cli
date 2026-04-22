@@ -4,68 +4,19 @@ struct ConversationView: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {
-        VSplitView {
+        VStack(spacing: 0) {
             HSplitView {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        ForEach(app.chatTurns) { turn in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(turn.role.capitalized)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Text(turn.content.isEmpty ? " " : turn.content)
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-                    }
-                    .padding()
-                }
-                .frame(minWidth: 520)
-
+                ConversationTranscriptView()
+                    .frame(minWidth: 520)
                 StreamEventsView()
-                    .frame(minWidth: 260, idealWidth: 320)
+                    .frame(minWidth: 280, idealWidth: 320)
             }
+            .frame(minHeight: 320)
             Divider()
-            VStack(alignment: .leading, spacing: 8) {
-                TextEditor(text: chatBinding)
-                    .font(.body)
-                    .frame(minHeight: 88, maxHeight: 130)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.secondary.opacity(0.25))
-                    }
-                HStack {
-                    Button {
-                        Task { await app.sendChat() }
-                    } label: {
-                        Label("Send", systemImage: "paperplane.fill")
-                    }
-                    .keyboardShortcut(.return, modifiers: [.command])
-                    .disabled(app.isBusy)
-                    Button {
-                        Task { await app.cancelActiveRequest() }
-                    } label: {
-                        Label("Cancel", systemImage: "xmark.circle")
-                    }
-                    .disabled(app.activeRequestID == nil)
-                }
-                Divider()
-                TextEditor(text: execBinding)
-                    .font(.body)
-                    .frame(minHeight: 54, maxHeight: 90)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.secondary.opacity(0.25))
-                    }
-                Button {
-                    Task { await app.runExec() }
-                } label: {
-                    Label("Run Exec", systemImage: "play.rectangle")
-                }
-                .disabled(app.isBusy)
-            }
-            .padding()
+            ComposerPanel(
+                chatText: chatBinding,
+                execText: execBinding
+            )
         }
     }
 
@@ -75,6 +26,115 @@ struct ConversationView: View {
 
     private var execBinding: Binding<String> {
         Binding(get: { app.execDraft }, set: { app.execDraft = $0 })
+    }
+}
+
+private struct ConversationTranscriptView: View {
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        ScrollView {
+            if app.chatTurns.isEmpty {
+                ContentUnavailableView(
+                    "No Conversation Yet",
+                    systemImage: "bubble.left.and.bubble.right",
+                    description: Text("Enter a prompt below, then press Send.")
+                )
+                .frame(maxWidth: .infinity, minHeight: 280)
+            } else {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    ForEach(app.chatTurns) { turn in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(turn.role.capitalized)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(turn.content.isEmpty ? " " : turn.content)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .padding(10)
+                        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
+                    }
+                }
+                .padding()
+            }
+        }
+    }
+}
+
+private struct ComposerPanel: View {
+    @Environment(AppModel.self) private var app
+    @Binding var chatText: String
+    @Binding var execText: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Message")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                PromptEditor(text: $chatText, placeholder: "Ask poor-cli to inspect, edit, explain, or run something...")
+                    .frame(height: 88)
+                HStack {
+                    Button {
+                        Task { await app.sendChat() }
+                    } label: {
+                        Label("Send", systemImage: "paperplane.fill")
+                    }
+                    .keyboardShortcut(.return, modifiers: [.command])
+                    .disabled(app.isBusy || chatText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button {
+                        Task { await app.cancelActiveRequest() }
+                    } label: {
+                        Label("Cancel", systemImage: "xmark.circle")
+                    }
+                    .disabled(app.activeRequestID == nil)
+                    Spacer()
+                }
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Headless Exec")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                PromptEditor(text: $execText, placeholder: "Run a one-shot backend request...")
+                    .frame(height: 58)
+                Button {
+                    Task { await app.runExec() }
+                } label: {
+                    Label("Run Exec", systemImage: "play.rectangle")
+                }
+                .disabled(app.isBusy || execText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(12)
+        .background(.background)
+    }
+}
+
+private struct PromptEditor: View {
+    @Binding var text: String
+    let placeholder: String
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            TextEditor(text: $text)
+                .font(.body)
+                .scrollContentBackground(.hidden)
+                .padding(6)
+            if text.isEmpty {
+                Text(placeholder)
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 14)
+                    .allowsHitTesting(false)
+            }
+        }
+        .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 6))
+        .overlay {
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.secondary.opacity(0.22))
+        }
     }
 }
 
