@@ -905,14 +905,21 @@ const GovFeedIdSchema = z.enum([
   "weather_24hr_forecast",
   "weather_4day_forecast",
   "weather_heavy_rain",
+  "weather_cap_alert",
   "sfa_newsroom",
   "sfa_media_releases",
   "sfa_food_alerts",
   "sfa_circulars",
+  "mpa_media_releases",
+  "nhb_general",
+  "nhb_exhibitions",
+  "nhb_programmes",
+  "nhb_publications",
+  "nhb_trails",
 ]);
 
 export const GovFeedCatalogSchema = z.object({
-  family: z.enum(["all", "nea", "weather", "sfa"]).optional(),
+  family: z.enum(["all", "nea", "weather", "sfa", "mpa", "nhb"]).optional(),
   format: z.enum(["json", "markdown", "csv"]).optional(),
 }).strict();
 

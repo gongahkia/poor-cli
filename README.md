@@ -79,7 +79,7 @@ If you are evaluating whether the repo is actually useful for developers, start 
 | MOH Healthcare | 1 | Healthcare facility directory (hospitals, clinics) | None |
 | HSA | 2 | Licensed pharmacies plus health-product import, wholesale, and manufacturing licensees | None |
 | SFA | 1 | Licensed food establishment directory | None |
-| Government RSS Feeds | 2 | Official non-data.gov.sg RSS streams from NEA, weather.gov.sg, and SFA (news, tenders, events, forecasts, alerts, circulars) | None |
+| Government RSS Feeds | 2 | Official non-data.gov.sg RSS streams from NEA, weather.gov.sg, SFA, MPA, and NHB (news, tenders, events, forecasts, alerts, circulars, media releases) | None |
 | NParks | 1 | Parks and nature reserves directory | None |
 | PUB | 1 | Water level monitoring station readings | None |
 | MOM | 1 | Labour market statistics | None |
@@ -119,7 +119,7 @@ Notes:
 - `sg_datagov_get` is metadata only.
 - `sg_datagov_resources` exposes the current machine-readable resource shape and columns for a dataset.
 - `sg_datagov_rows` performs bounded datastore reads with explicit `filters`, `limit`, `offset`, and `sort`.
-- `sg_gov_feed_items` supports stream-level rollback through `SG_APIS_DISABLED_STREAMS` and family-level rollback through `SG_APIS_DISABLED_FAMILIES`.
+- `sg_gov_feed_items` supports stream-level rollback through `SG_APIS_DISABLED_STREAMS` and family-level rollback through `SG_APIS_DISABLED_FAMILIES` across 18 streams (NEA, weather.gov.sg including CAP alerts, SFA, MPA, NHB).
 - OneMap now requires valid credentials for live requests. There is no silent unauthenticated fallback.
 - HDB, CEA, BCA, BOA, HSA, HLB, and `sg_acra_entities` are curated tools over official public datasets and do not introduce separate credentials.
 - PA, Sport Singapore, ECDA, and the MSF civic directories stay no-auth by using the same official data.gov.sg download path.

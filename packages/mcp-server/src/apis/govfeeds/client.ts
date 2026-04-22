@@ -1,7 +1,7 @@
 import { ApiError, getTimeout, httpGetText } from "@sg-apis/shared";
 import { buildCacheKey, withCache } from "../../middleware/cache-middleware.js";
 
-export type GovFeedFamily = "nea" | "weather" | "sfa";
+export type GovFeedFamily = "nea" | "weather" | "sfa" | "mpa" | "nhb";
 
 export type GovFeedDefinition = Readonly<{
   id: string;
@@ -71,6 +71,13 @@ const GOV_FEED_DEFINITIONS: readonly GovFeedDefinition[] = [
     sourceUrl: "https://www.weather.gov.sg/files/rss/rssHeavyRain_new.xml",
   },
   {
+    id: "weather_cap_alert",
+    title: "Weather CAP Alerts Feed",
+    family: "weather",
+    sourceAgency: "Meteorological Service Singapore",
+    sourceUrl: "https://www.weather.gov.sg/files/rss/rsscapalert/rsscapalert.xml",
+  },
+  {
     id: "sfa_newsroom",
     title: "SFA Newsroom",
     family: "sfa",
@@ -97,6 +104,48 @@ const GOV_FEED_DEFINITIONS: readonly GovFeedDefinition[] = [
     family: "sfa",
     sourceAgency: "Singapore Food Agency",
     sourceUrl: "https://www.sfa.gov.sg/rss/annual-listing-circulars",
+  },
+  {
+    id: "mpa_media_releases",
+    title: "MPA Media Releases",
+    family: "mpa",
+    sourceAgency: "Maritime and Port Authority of Singapore",
+    sourceUrl: "https://www.mpa.gov.sg/feeds/media-releases",
+  },
+  {
+    id: "nhb_general",
+    title: "NHB General Updates",
+    family: "nhb",
+    sourceAgency: "National Heritage Board",
+    sourceUrl: "https://www.nhb.gov.sg/Custom/Nhb2017/Widget/RSS/NhbRSSHandler.ashx?topic=General",
+  },
+  {
+    id: "nhb_exhibitions",
+    title: "NHB Exhibitions",
+    family: "nhb",
+    sourceAgency: "National Heritage Board",
+    sourceUrl: "https://www.nhb.gov.sg/Custom/Nhb2017/Widget/RSS/NhbRSSHandler.ashx?topic=Exhibitions",
+  },
+  {
+    id: "nhb_programmes",
+    title: "NHB Programmes",
+    family: "nhb",
+    sourceAgency: "National Heritage Board",
+    sourceUrl: "https://www.nhb.gov.sg/Custom/Nhb2017/Widget/RSS/NhbRSSHandler.ashx?topic=Programs",
+  },
+  {
+    id: "nhb_publications",
+    title: "NHB Publications",
+    family: "nhb",
+    sourceAgency: "National Heritage Board",
+    sourceUrl: "https://www.nhb.gov.sg/Custom/Nhb2017/Widget/RSS/NhbRSSHandler.ashx?topic=Publications",
+  },
+  {
+    id: "nhb_trails",
+    title: "NHB Trails",
+    family: "nhb",
+    sourceAgency: "National Heritage Board",
+    sourceUrl: "https://www.nhb.gov.sg/Custom/Nhb2017/Widget/RSS/NhbRSSHandler.ashx?topic=Trails",
   },
 ] as const;
 

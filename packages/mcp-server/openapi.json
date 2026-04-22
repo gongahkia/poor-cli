@@ -1219,7 +1219,7 @@
     },
     "/api/v1/sg_gov_feed_catalog": {
       "post": {
-        "summary": "List direct non-data.gov.sg official Singapore RSS feeds available in this MCP server.",
+        "summary": "List direct non-data.gov.sg official Singapore RSS feeds available in this MCP server (NEA, weather.gov.sg, SFA, MPA, NHB).",
         "tags": [
           "canonical"
         ],
@@ -1236,7 +1236,9 @@
                       "all",
                       "nea",
                       "weather",
-                      "sfa"
+                      "sfa",
+                      "mpa",
+                      "nhb"
                     ]
                   },
                   "format": {
@@ -1275,7 +1277,7 @@
     },
     "/api/v1/sg_gov_feed_items": {
       "post": {
-        "summary": "Read official RSS feed items (NEA, weather.gov.sg, SFA) with stream-level rollback controls.",
+        "summary": "Read official RSS feed items (NEA, weather.gov.sg, SFA, MPA, NHB) with stream-level rollback controls.",
         "tags": [
           "canonical"
         ],
@@ -1296,10 +1298,17 @@
                       "weather_24hr_forecast",
                       "weather_4day_forecast",
                       "weather_heavy_rain",
+                      "weather_cap_alert",
                       "sfa_newsroom",
                       "sfa_media_releases",
                       "sfa_food_alerts",
-                      "sfa_circulars"
+                      "sfa_circulars",
+                      "mpa_media_releases",
+                      "nhb_general",
+                      "nhb_exhibitions",
+                      "nhb_programmes",
+                      "nhb_publications",
+                      "nhb_trails"
                     ]
                   },
                   "limit": {

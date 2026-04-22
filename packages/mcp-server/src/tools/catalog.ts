@@ -446,14 +446,14 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
   },
   {
     name: "Government RSS Feeds",
-    description: "Official non-data.gov.sg RSS feeds from NEA, weather.gov.sg, and SFA for announcements, tenders, events, forecasts, alerts, and circulars.",
+    description: "Official non-data.gov.sg RSS feeds from NEA, weather.gov.sg, SFA, MPA, and NHB for announcements, tenders, events, forecasts, alerts, circulars, and media releases.",
     tools: ["sg_gov_feed_catalog", "sg_gov_feed_items"],
     authRequired: false,
     rateLimit: "10 tokens, 1/sec refill",
     positioning: "Direct official-feed monitoring surface for operational alerts and policy/news intake.",
     preferredInterface: "sg_gov_feed_items",
     scopeNotes: [
-      "Supports 11 source streams across NEA, weather.gov.sg, and SFA.",
+      "Supports 18 source streams across NEA, weather.gov.sg, SFA, MPA, and NHB.",
       "Rollback controls are first-class: SG_APIS_DISABLED_FAMILIES and SG_APIS_DISABLED_STREAMS.",
     ],
   },

@@ -68,7 +68,7 @@ These tool families do not require credentials:
 
 HDB, CEA, BCA, BOA, HSA, HLB, and ACRA are intentionally covered through the shared data.gov.sg path or official file-download path.
 PA, Sport Singapore, ECDA, MSF Family Services, MSF Student Care Services, MSF Social Service Offices, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, SFA, NParks, PUB, MOM, and STB use the same no-auth data.gov.sg access layer or official file-download path.
-Government RSS Feeds use direct official HTTPS RSS endpoints from NEA, weather.gov.sg, and SFA.
+Government RSS Feeds use direct official HTTPS RSS endpoints from NEA, weather.gov.sg, SFA, MPA, and NHB.
 
 ## OneMap
 
