@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Sequence
 
-from .cli_errors import run_with_cli_error_handling
+from .cli_errors import format_cli_exception, run_with_cli_error_handling
 from . import __version__
 
 if TYPE_CHECKING:
@@ -521,49 +521,118 @@ async def _handle_chat_slash_command(core: Any, args: argparse.Namespace, messag
     return True, ""
 
 
-async def _run_chat_mode_async(args: argparse.Namespace) -> int:
+def _format_chat_blocker(error: BaseException) -> str:
+    rendered = format_cli_exception(error).strip()
+    lowered = rendered.lower()
+    if "api key" in lowered:
+        return (
+            "I can't call the model yet. I need a provider API key first.\n"
+            f"{rendered}\n\n"
+            "Reply `use api key <key>` to use it for this chat session, or set the env var and restart."
+        )
+    return f"I can't call the model yet. I need this fixed first:\n{rendered}"
+
+
+def _extract_inline_api_key(message: str) -> str:
+    stripped = message.strip()
+    lowered = stripped.lower()
+    prefixes = (
+        "use api key ",
+        "set api key ",
+        "api key ",
+        "api key:",
+        "my api key is ",
+    )
+    for prefix in prefixes:
+        if lowered.startswith(prefix):
+            return stripped[len(prefix):].strip().strip("\"'")
+    for marker in ("_API_KEY=", "API_KEY="):
+        idx = stripped.find(marker)
+        if idx >= 0:
+            return stripped[idx + len(marker):].strip().strip("\"'")
+    return ""
+
+
+def _is_persistent_chat_blocker(error: BaseException) -> bool:
+    from .exceptions import ConfigurationError
+
+    if isinstance(error, ConfigurationError):
+        return True
+    lowered = str(error).lower()
+    return any(term in lowered for term in ("api key", "auth", "unauthorized", "forbidden", "not initialized"))
+
+
+async def _initialize_chat_core(core: Any, args: argparse.Namespace, api_key: Optional[str] = None) -> Optional[BaseException]:
+    from .exceptions import ConfigurationError, MissingAPIKeyError
+
+    try:
+        await core.initialize(
+            provider_name=args.provider,
+            model_name=args.model,
+            api_key=api_key or args.api_key,
+        )
+        return None
+    except MissingAPIKeyError as exc:
+        await core.initialize(provider_name=args.provider, model_name=args.model, minimal=True)
+        return exc
+    except ConfigurationError as exc:
+        await core.initialize(provider_name=args.provider, model_name=args.model, minimal=True)
+        return exc
+
+
+def _configure_chat_runtime(core: Any, args: argparse.Namespace) -> tuple[str, str]:
     from .config import PermissionMode, parse_permission_mode
-    from .core import PoorCLICore
     from .sandbox import normalize_preset
+
+    if core.config is not None:
+        if args.permission_mode:
+            core.config.security.permission_mode = parse_permission_mode(args.permission_mode)
+        effective_permission_mode = (
+            args.permission_mode
+            or getattr(core.config.security.permission_mode, "value", str(core.config.security.permission_mode))
+        )
+        effective_sandbox_preset = normalize_preset(
+            args.sandbox_preset or getattr(core.config.sandbox, "default_preset", ""),
+            fallback_permission_mode=effective_permission_mode,
+        )
+        core.config.sandbox.default_preset = effective_sandbox_preset
+    else:
+        effective_permission_mode = args.permission_mode or PermissionMode.DEFAULT.value
+        effective_sandbox_preset = normalize_preset(
+            args.sandbox_preset,
+            fallback_permission_mode=effective_permission_mode,
+        )
+    core.permission_callback = _build_exec_permission_callback(
+        core,
+        set(args.allow_tool or []),
+        set(args.deny_tool or []),
+        plan_only=False,
+        permission_mode=effective_permission_mode,
+        sandbox_preset=effective_sandbox_preset,
+        auto_approve=bool(args.auto_approve),
+    )
+    return effective_permission_mode, effective_sandbox_preset
+
+
+async def _run_chat_mode_async(args: argparse.Namespace) -> int:
+    from .core import PoorCLICore
+    from .exceptions import APIError, ConfigurationError, PoorCLIError
 
     if args.cwd:
         os.chdir(Path(args.cwd).expanduser())
     config_path = Path(args.config).expanduser() if args.config else None
     core = PoorCLICore(config_path=config_path)
-    await core.initialize(provider_name=args.provider, model_name=args.model, api_key=args.api_key)
+    setup_error = await _initialize_chat_core(core, args)
     try:
-        if core.config is not None:
-            if args.permission_mode:
-                core.config.security.permission_mode = parse_permission_mode(args.permission_mode)
-            effective_permission_mode = (
-                args.permission_mode
-                or getattr(core.config.security.permission_mode, "value", str(core.config.security.permission_mode))
-            )
-            effective_sandbox_preset = normalize_preset(
-                args.sandbox_preset or getattr(core.config.sandbox, "default_preset", ""),
-                fallback_permission_mode=effective_permission_mode,
-            )
-            core.config.sandbox.default_preset = effective_sandbox_preset
-        else:
-            effective_permission_mode = args.permission_mode or PermissionMode.DEFAULT.value
-            effective_sandbox_preset = normalize_preset(
-                args.sandbox_preset,
-                fallback_permission_mode=effective_permission_mode,
-            )
-        core.permission_callback = _build_exec_permission_callback(
-            core,
-            set(args.allow_tool or []),
-            set(args.deny_tool or []),
-            plan_only=False,
-            permission_mode=effective_permission_mode,
-            sandbox_preset=effective_sandbox_preset,
-            auto_approve=bool(args.auto_approve),
-        )
+        _configure_chat_runtime(core, args)
         if args.resume:
             resume_prefix = _build_resume_prefix()
             if resume_prefix:
                 print(resume_prefix)
+        print("\033c", end="")
         print("poor-cli chat. /help for commands. /quit exits.")
+        if setup_error is not None:
+            print(f"assistant> {_format_chat_blocker(setup_error)}")
         while True:
             try:
                 message = input("you> ").strip()
@@ -579,34 +648,53 @@ async def _run_chat_mode_async(args: argparse.Namespace) -> int:
             if handled:
                 continue
             message = dispatched_message
+            if setup_error is not None:
+                inline_api_key = _extract_inline_api_key(message)
+                if inline_api_key:
+                    setup_error = await _initialize_chat_core(core, args, api_key=inline_api_key)
+                    _configure_chat_runtime(core, args)
+                    if setup_error is None:
+                        print("assistant> Got it. I can call the model now.")
+                    else:
+                        print(f"assistant> {_format_chat_blocker(setup_error)}")
+                    continue
+                print(f"assistant> {_format_chat_blocker(setup_error)}")
+                continue
             print("assistant> ", end="", flush=True)
             wrote_text = False
-            async for event in core.send_message_events(
-                message,
-                context_files=list(args.context_file or []),
-                pinned_context_files=list(args.pinned_context_file or []),
-                context_budget_tokens=args.context_budget_tokens,
-                source_kind="chat",
-                source_id="cli-chat",
-                run_metadata={"cliCommand": "chat"},
-            ):
-                data = event.data or {}
-                if event.type == "text_chunk":
-                    print(str(data.get("chunk", "")), end="", flush=True)
-                    wrote_text = True
-                elif event.type == "tool_call_start":
-                    name = str(data.get("name") or data.get("tool") or "tool")
-                    print(f"\ntool> {name}", flush=True)
-                elif event.type == "tool_result":
-                    name = str(data.get("name") or data.get("tool") or "tool")
-                    status = str(data.get("status") or "done")
-                    print(f"tool< {name} {status}", flush=True)
-                elif args.verbose_events and event.type == "progress":
-                    msg = str(data.get("message") or "")
-                    if msg:
-                        print(f"\n... {msg}", flush=True)
-                elif event.type == "done":
-                    break
+            try:
+                async for event in core.send_message_events(
+                    message,
+                    context_files=list(args.context_file or []),
+                    pinned_context_files=list(args.pinned_context_file or []),
+                    context_budget_tokens=args.context_budget_tokens,
+                    source_kind="chat",
+                    source_id="cli-chat",
+                    run_metadata={"cliCommand": "chat"},
+                ):
+                    data = event.data or {}
+                    if event.type == "text_chunk":
+                        print(str(data.get("chunk", "")), end="", flush=True)
+                        wrote_text = True
+                    elif event.type == "tool_call_start":
+                        name = str(data.get("name") or data.get("tool") or "tool")
+                        print(f"\ntool> {name}", flush=True)
+                    elif event.type == "tool_result":
+                        name = str(data.get("name") or data.get("tool") or "tool")
+                        status = str(data.get("status") or "done")
+                        print(f"tool< {name} {status}", flush=True)
+                    elif args.verbose_events and event.type == "progress":
+                        msg = str(data.get("message") or "")
+                        if msg:
+                            print(f"\n... {msg}", flush=True)
+                    elif event.type == "done":
+                        break
+            except (APIError, ConfigurationError, PoorCLIError) as exc:
+                setup_error = exc if _is_persistent_chat_blocker(exc) else None
+                if wrote_text:
+                    print()
+                print(_format_chat_blocker(exc))
+                continue
             if wrote_text:
                 print()
             else:
