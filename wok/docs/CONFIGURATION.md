@@ -25,8 +25,17 @@ cursor_style = "block"
 cursor_blink = true
 tab_bar_visible = true
 tab_bar_orientation = "horizontal"
+tab_bar_side = "top"
+tab_bar_size = 36.0
 status_bar_visible = true
+status_bar_side = "bottom"
+status_bar_size = 36.0
 window_opacity = 1.0
+recent_keys_visible = true
+recent_keys_position = "bottom_right"
+recent_keys_max_entries = 8
+recent_keys_timeout_ms = 2000
+recent_keys_opacity = 0.86
 copy_on_select = false
 confirm_close_with_running_process = true
 restore_session = true
@@ -47,9 +56,18 @@ external_plugin_command = "node ~/.config/wok/plugins/bridge.js"
 | `cursor_style` | string | `"block"` | Active | Chooses the cursor shape for both the terminal viewport and owned input bar: `block`, `bar`, or `underline` |
 | `cursor_blink` | boolean | `true` | Active | Enables the timed cursor blink cadence for the viewport and input bar |
 | `tab_bar_visible` | boolean | `true` | Active | Shows or hides the workspace tab bar |
-| `tab_bar_orientation` | string | `"horizontal"` | Active | Chooses tab layout: `"horizontal"` renders tabs across the top, `"vertical"` stacks tabs on the left |
+| `tab_bar_orientation` | string | `"horizontal"` | Active | Backward-compatible tab layout option: `"horizontal"` maps to `tab_bar_side = "top"`, `"vertical"` maps to `tab_bar_side = "left"` |
+| `tab_bar_side` | string | `"top"` | Active | Places the tab bar on any edge: `top`, `bottom`, `left`, or `right` |
+| `tab_bar_size` | float | auto | Active | Optional tab bar thickness in physical pixels; defaults to the active font metrics for horizontal tabs and `180.0` for vertical tabs |
 | `status_bar_visible` | boolean | `true` | Active | Shows or hides the status bar |
+| `status_bar_side` | string | `"bottom"` | Active | Places the status bar on any edge: `top`, `bottom`, `left`, or `right`; vertical status bars render segments as a stacked list |
+| `status_bar_size` | float | auto | Active | Optional status bar thickness in physical pixels; defaults to the active font metrics |
 | `window_opacity` | float | `1.0` | Active | Applies window/chrome opacity and blends terminal surfaces against the configured background |
+| `recent_keys_visible` | boolean | `true` | Active | Shows a local in-app recent-key visualizer; keys are not persisted |
+| `recent_keys_position` | string | `"bottom_right"` | Active | Places the recent-key visualizer at `top_left`, `top_right`, `bottom_left`, or `bottom_right` |
+| `recent_keys_max_entries` | integer | `8` | Active | Maximum number of recent key labels shown, capped at 64 |
+| `recent_keys_timeout_ms` | integer | `2000` | Active | Time in milliseconds before a key label expires, clamped to 250..30000 |
+| `recent_keys_opacity` | float | `0.86` | Active | Recent-key overlay opacity from `0.0` to `1.0` |
 | `copy_on_select` | boolean | `false` | Active | Auto-copy selected text on mouse-up |
 | `confirm_close_with_running_process` | boolean | `true` | Active | Requires a second close request within 2 seconds when panes still have running shell processes |
 | `restore_session` | boolean | `false` | Active | Loads the autosaved workspace session on startup |

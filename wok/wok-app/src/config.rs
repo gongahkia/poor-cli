@@ -38,6 +38,85 @@ pub enum TabBarOrientation {
     Vertical,
 }
 
+/// A side of the app chrome where a bar or overlay can be placed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum ChromeSide {
+    /// Top edge.
+    Top,
+    /// Bottom edge.
+    Bottom,
+    /// Left edge.
+    Left,
+    /// Right edge.
+    Right,
+}
+
+impl ChromeSide {
+    /// Return whether this side should use a horizontal layout.
+    pub fn is_horizontal(self) -> bool {
+        matches!(self, Self::Top | Self::Bottom)
+    }
+
+    /// Return the tab orientation implied by this side.
+    pub fn tab_orientation(self) -> TabBarOrientation {
+        if self.is_horizontal() {
+            TabBarOrientation::Horizontal
+        } else {
+            TabBarOrientation::Vertical
+        }
+    }
+
+    /// Return the stable config label for this side.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Top => "top",
+            Self::Bottom => "bottom",
+            Self::Left => "left",
+            Self::Right => "right",
+        }
+    }
+}
+
+/// Position for small floating overlays.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum OverlayPosition {
+    /// Top-left corner of the workspace content area.
+    TopLeft,
+    /// Top-right corner of the workspace content area.
+    TopRight,
+    /// Bottom-left corner of the workspace content area.
+    BottomLeft,
+    /// Bottom-right corner of the workspace content area.
+    BottomRight,
+}
+
+impl OverlayPosition {
+    /// Return the stable config label for this position.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::TopLeft => "top_left",
+            Self::TopRight => "top_right",
+            Self::BottomLeft => "bottom_left",
+            Self::BottomRight => "bottom_right",
+        }
+    }
+}
+
+/// Recent key visualizer configuration.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecentKeysConfig {
+    /// Whether to render recent key presses.
+    pub visible: bool,
+    /// Overlay position.
+    pub position: OverlayPosition,
+    /// Maximum number of recent key labels to retain.
+    pub max_entries: usize,
+    /// How long a key label stays visible.
+    pub timeout_ms: u64,
+    /// Overlay opacity.
+    pub opacity: f32,
+}
+
 /// Trigger scope loaded from config.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TriggerScopeConfig {
@@ -86,10 +165,18 @@ pub struct WokConfig {
     pub cursor_blink: bool,
     /// Whether the tab bar is visible.
     pub tab_bar_visible: bool,
+    /// Side where the tab bar is rendered.
+    pub tab_bar_side: ChromeSide,
     /// Whether tabs are rendered horizontally or vertically.
     pub tab_bar_orientation: TabBarOrientation,
+    /// Optional tab bar thickness in physical pixels.
+    pub tab_bar_size: Option<f32>,
     /// Whether the status bar is visible.
     pub status_bar_visible: bool,
+    /// Side where the status bar is rendered.
+    pub status_bar_side: ChromeSide,
+    /// Optional status bar thickness in physical pixels.
+    pub status_bar_size: Option<f32>,
     /// Window opacity (0.0 to 1.0).
     pub window_opacity: f32,
     /// Background image path.
@@ -104,6 +191,8 @@ pub struct WokConfig {
     pub restore_session: bool,
     /// Whether to show the internal debug overlay.
     pub debug_overlay: bool,
+    /// Recent key visualizer settings.
+    pub recent_keys: RecentKeysConfig,
     /// Regex triggers loaded from config.
     pub triggers: Vec<TriggerConfig>,
     /// Custom layout presets loaded from config.
@@ -132,8 +221,12 @@ struct ConfigToml {
     cursor_style: Option<String>,
     cursor_blink: Option<bool>,
     tab_bar_visible: Option<bool>,
+    tab_bar_side: Option<String>,
     tab_bar_orientation: Option<String>,
+    tab_bar_size: Option<f32>,
     status_bar_visible: Option<bool>,
+    status_bar_side: Option<String>,
+    status_bar_size: Option<f32>,
     window_opacity: Option<f32>,
     background_image: Option<String>,
     external_plugin_command: Option<String>,
@@ -141,6 +234,11 @@ struct ConfigToml {
     confirm_close_with_running_process: Option<bool>,
     restore_session: Option<bool>,
     debug_overlay: Option<bool>,
+    recent_keys_visible: Option<bool>,
+    recent_keys_position: Option<String>,
+    recent_keys_max_entries: Option<usize>,
+    recent_keys_timeout_ms: Option<u64>,
+    recent_keys_opacity: Option<f32>,
     triggers: Option<Vec<TriggerToml>>,
     layouts: Option<Vec<LayoutToml>>,
 }
@@ -189,8 +287,12 @@ impl Default for WokConfig {
             cursor_style: CursorStyle::Block,
             cursor_blink: true,
             tab_bar_visible: true,
+            tab_bar_side: ChromeSide::Top,
             tab_bar_orientation: TabBarOrientation::Horizontal,
+            tab_bar_size: None,
             status_bar_visible: true,
+            status_bar_side: ChromeSide::Bottom,
+            status_bar_size: None,
             window_opacity: 1.0,
             background_image: None,
             external_plugin_command: None,
@@ -198,6 +300,13 @@ impl Default for WokConfig {
             confirm_close_with_running_process: true,
             restore_session: false,
             debug_overlay: false,
+            recent_keys: RecentKeysConfig {
+                visible: true,
+                position: OverlayPosition::BottomRight,
+                max_entries: 8,
+                timeout_ms: 2_000,
+                opacity: 0.86,
+            },
             triggers: Vec::new(),
             layout_presets: Vec::new(),
         }
@@ -270,13 +379,37 @@ impl WokConfig {
             config.tab_bar_visible = v;
         }
         if let Some(orientation) = toml_config.tab_bar_orientation {
-            config.tab_bar_orientation = match orientation.as_str() {
-                "vertical" | "left" => TabBarOrientation::Vertical,
-                _ => TabBarOrientation::Horizontal,
+            config.tab_bar_side = match orientation.trim().to_ascii_lowercase().as_str() {
+                "vertical" | "left" => ChromeSide::Left,
+                "right" => ChromeSide::Right,
+                "bottom" => ChromeSide::Bottom,
+                _ => ChromeSide::Top,
             };
+            config.tab_bar_orientation = config.tab_bar_side.tab_orientation();
+        }
+        if let Some(side) = toml_config.tab_bar_side {
+            if let Some(side) = parse_chrome_side(&side) {
+                config.tab_bar_side = side;
+                config.tab_bar_orientation = side.tab_orientation();
+            }
+        }
+        if let Some(size) = toml_config.tab_bar_size {
+            if size.is_finite() && size > 0.0 {
+                config.tab_bar_size = Some(size);
+            }
         }
         if let Some(v) = toml_config.status_bar_visible {
             config.status_bar_visible = v;
+        }
+        if let Some(side) = toml_config.status_bar_side {
+            if let Some(side) = parse_chrome_side(&side) {
+                config.status_bar_side = side;
+            }
+        }
+        if let Some(size) = toml_config.status_bar_size {
+            if size.is_finite() && size > 0.0 {
+                config.status_bar_size = Some(size);
+            }
         }
         if let Some(o) = toml_config.window_opacity {
             config.window_opacity = o;
@@ -301,6 +434,25 @@ impl WokConfig {
         }
         if let Some(debug_overlay) = toml_config.debug_overlay {
             config.debug_overlay = debug_overlay;
+        }
+        if let Some(visible) = toml_config.recent_keys_visible {
+            config.recent_keys.visible = visible;
+        }
+        if let Some(position) = toml_config.recent_keys_position {
+            if let Some(position) = parse_overlay_position(&position) {
+                config.recent_keys.position = position;
+            }
+        }
+        if let Some(max_entries) = toml_config.recent_keys_max_entries {
+            config.recent_keys.max_entries = max_entries.min(64);
+        }
+        if let Some(timeout_ms) = toml_config.recent_keys_timeout_ms {
+            config.recent_keys.timeout_ms = timeout_ms.clamp(250, 30_000);
+        }
+        if let Some(opacity) = toml_config.recent_keys_opacity {
+            if opacity.is_finite() {
+                config.recent_keys.opacity = opacity.clamp(0.0, 1.0);
+            }
         }
         if let Some(triggers) = toml_config.triggers {
             config.triggers = triggers
@@ -403,6 +555,26 @@ fn parse_shell_config(value: &str, fallback: &ShellType) -> ShellType {
     }
 }
 
+fn parse_chrome_side(value: &str) -> Option<ChromeSide> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "top" => Some(ChromeSide::Top),
+        "bottom" => Some(ChromeSide::Bottom),
+        "left" => Some(ChromeSide::Left),
+        "right" => Some(ChromeSide::Right),
+        _ => None,
+    }
+}
+
+fn parse_overlay_position(value: &str) -> Option<OverlayPosition> {
+    match value.trim().to_ascii_lowercase().replace('-', "_").as_str() {
+        "top_left" | "left_top" => Some(OverlayPosition::TopLeft),
+        "top_right" | "right_top" => Some(OverlayPosition::TopRight),
+        "bottom_left" | "left_bottom" => Some(OverlayPosition::BottomLeft),
+        "bottom_right" | "right_bottom" => Some(OverlayPosition::BottomRight),
+        _ => None,
+    }
+}
+
 fn preset_node_from_toml(node: PresetNodeToml) -> Option<PresetNode> {
     match node {
         PresetNodeToml::Leaf { leaf, weight } => {
@@ -451,7 +623,11 @@ mod tests {
         assert_eq!(config.cursor_style, CursorStyle::Block);
         assert_eq!(config.input_position, InputPosition::Bottom);
         assert_eq!(config.command_entry_mode, CommandEntryMode::ShellNative);
+        assert_eq!(config.tab_bar_side, ChromeSide::Top);
         assert_eq!(config.tab_bar_orientation, TabBarOrientation::Horizontal);
+        assert_eq!(config.status_bar_side, ChromeSide::Bottom);
+        assert!(config.recent_keys.visible);
+        assert_eq!(config.recent_keys.position, OverlayPosition::BottomRight);
     }
 
     #[test]
@@ -477,5 +653,25 @@ mod tests {
     fn test_command_entry_mode_defaults_to_shell_native() {
         let config = WokConfig::default();
         assert_eq!(config.command_entry_mode, CommandEntryMode::ShellNative);
+    }
+
+    #[test]
+    fn test_parse_chrome_side_supports_all_edges() {
+        assert_eq!(parse_chrome_side("top"), Some(ChromeSide::Top));
+        assert_eq!(parse_chrome_side("bottom"), Some(ChromeSide::Bottom));
+        assert_eq!(parse_chrome_side("left"), Some(ChromeSide::Left));
+        assert_eq!(parse_chrome_side("right"), Some(ChromeSide::Right));
+    }
+
+    #[test]
+    fn test_parse_overlay_position_supports_corners() {
+        assert_eq!(
+            parse_overlay_position("bottom-right"),
+            Some(OverlayPosition::BottomRight)
+        );
+        assert_eq!(
+            parse_overlay_position("left_top"),
+            Some(OverlayPosition::TopLeft)
+        );
     }
 }

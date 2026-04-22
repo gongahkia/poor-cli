@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::error::Error;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -440,6 +440,11 @@ enum TerminalMouseEvent {
     Wheel { horizontal: bool, positive: bool },
 }
 
+struct RecentKeyEntry {
+    label: String,
+    at: Instant,
+}
+
 #[derive(Default)]
 #[allow(dead_code)]
 struct RuntimeMetrics {
@@ -507,6 +512,7 @@ struct WokHandler {
     theme_overrides: HashMap<String, String>,
     floating_drag: Option<FloatingDragState>,
     pressed_mouse_button: Option<MouseButton>,
+    recent_keys: VecDeque<RecentKeyEntry>,
     metrics: RuntimeMetrics,
 }
 
@@ -596,6 +602,7 @@ impl WokHandler {
             theme_overrides: HashMap::new(),
             floating_drag: None,
             pressed_mouse_button: None,
+            recent_keys: VecDeque::new(),
             metrics: RuntimeMetrics::default(),
         };
         handler.refresh_plugin_config();
@@ -846,8 +853,12 @@ impl WokHandler {
         self.chrome_rects = compute_chrome_rects(
             size,
             self.config.tab_bar_visible,
-            self.config.tab_bar_orientation,
+            self.config.tab_bar_side,
             self.config.status_bar_visible,
+            self.config.status_bar_side,
+            self.font.metrics.cell_height,
+            self.config.tab_bar_size,
+            self.config.status_bar_size,
         );
         let active_pane_id = self.active_pane_id();
         let pane_rects = self.workspace.active_pane_rects(self.chrome_rects.content);
@@ -902,7 +913,7 @@ impl WokHandler {
             self.chrome_rects.tab_bar,
             &tab_labels,
             self.font.metrics.cell_width,
-            self.config.tab_bar_orientation,
+            self.config.tab_bar_side.tab_orientation(),
         );
         self.tab_scroll_offset = self.tab_scroll_offset.clamp(0.0, max_scroll);
     }
@@ -918,12 +929,12 @@ impl WokHandler {
             &tab_labels,
             self.workspace.active_tab,
             self.font.metrics.cell_width,
-            self.config.tab_bar_orientation,
+            self.config.tab_bar_side.tab_orientation(),
         ) else {
             self.tab_scroll_offset = 0.0;
             return;
         };
-        let visible_extent = match self.config.tab_bar_orientation {
+        let visible_extent = match self.config.tab_bar_side.tab_orientation() {
             wok_app::config::TabBarOrientation::Horizontal => self.chrome_rects.tab_bar.w,
             wok_app::config::TabBarOrientation::Vertical => self.chrome_rects.tab_bar.h,
         };
@@ -956,7 +967,7 @@ impl WokHandler {
             x as f32,
             y as f32,
             self.font.metrics.cell_width,
-            self.config.tab_bar_orientation,
+            self.config.tab_bar_side.tab_orientation(),
         )
     }
 
@@ -1173,6 +1184,28 @@ impl WokHandler {
                 )
             })
         });
+        let settings_editor_overlay = self.settings_editor.as_ref().map(|settings| {
+            (
+                self.active_pane()
+                    .map_or_else(Theme::default, |pane| pane.app.theme.clone()),
+                settings.path.clone(),
+                settings.editor.render_data(),
+            )
+        });
+        let recent_keys_overlay = if self.config.recent_keys.visible {
+            let labels = self.recent_key_labels();
+            (!labels.is_empty()).then(|| {
+                (
+                    self.active_pane()
+                        .map_or_else(Theme::default, |pane| pane.app.theme.clone()),
+                    labels,
+                    self.config.recent_keys.position,
+                    self.config.recent_keys.opacity,
+                )
+            })
+        } else {
+            None
+        };
         let full_width = self.chrome_rects.content.x + self.chrome_rects.content.w;
         let full_height =
             self.chrome_rects.content.y + self.chrome_rects.content.h + self.chrome_rects.status.h;
@@ -1192,7 +1225,7 @@ impl WokHandler {
                 self.chrome_rects.tab_bar,
                 &tab_labels,
                 self.tab_scroll_offset,
-                self.config.tab_bar_orientation,
+                self.config.tab_bar_side.tab_orientation(),
                 window_opacity,
             );
         }
@@ -1705,19 +1738,28 @@ impl WokHandler {
                 window_opacity,
             );
         }
-        if let Some(settings) = self.settings_editor.as_ref() {
-            let theme = self
-                .active_pane()
-                .map_or_else(Theme::default, |pane| pane.app.theme.clone());
+        if let Some((theme, path, input)) = settings_editor_overlay.as_ref() {
             render_settings_editor(
                 render,
                 &mut self.font,
-                &theme,
+                theme,
                 self.chrome_rects.content,
-                &settings.path,
-                &settings.editor.render_data(),
+                path,
+                input,
                 cursor_shape,
                 cursor_visible,
+                window_opacity,
+            );
+        }
+        if let Some((theme, labels, position, opacity)) = recent_keys_overlay.as_ref() {
+            render_recent_keys_overlay(
+                render,
+                &mut self.font,
+                theme,
+                self.chrome_rects.content,
+                labels,
+                *position,
+                *opacity,
                 window_opacity,
             );
         }
@@ -1741,6 +1783,62 @@ impl WokHandler {
                 (index == self.workspace.active_tab, label)
             })
             .collect()
+    }
+
+    fn recent_key_labels(&self) -> Vec<String> {
+        if !self.config.recent_keys.visible {
+            return Vec::new();
+        }
+        self.recent_keys
+            .iter()
+            .map(|entry| entry.label.clone())
+            .collect()
+    }
+
+    fn record_recent_key(&mut self, event: &InputEvent) {
+        if !self.config.recent_keys.visible || event.event_type == InputEventType::Release {
+            return;
+        }
+        let max_entries = self.config.recent_keys.max_entries.min(64);
+        if max_entries == 0 {
+            self.recent_keys.clear();
+            return;
+        }
+        let combo = wok_app::keybindings::KeyCombo {
+            key: event.action.clone(),
+            modifiers: event.modifiers,
+        };
+        self.recent_keys.push_back(RecentKeyEntry {
+            label: key_combo_label(&combo),
+            at: Instant::now(),
+        });
+        while self.recent_keys.len() > max_entries {
+            self.recent_keys.pop_front();
+        }
+        self.needs_redraw = true;
+    }
+
+    fn prune_recent_keys(&mut self) {
+        if self.recent_keys.is_empty() {
+            return;
+        }
+        if !self.config.recent_keys.visible || self.config.recent_keys.max_entries == 0 {
+            self.recent_keys.clear();
+            self.needs_redraw = true;
+            return;
+        }
+        let timeout = Duration::from_millis(self.config.recent_keys.timeout_ms);
+        let before = self.recent_keys.len();
+        while self
+            .recent_keys
+            .front()
+            .is_some_and(|entry| entry.at.elapsed() >= timeout)
+        {
+            self.recent_keys.pop_front();
+        }
+        if self.recent_keys.len() != before {
+            self.needs_redraw = true;
+        }
     }
 
     fn apply_plugin_keybindings(&self, app: &mut WokApp) {
@@ -2021,10 +2119,14 @@ impl WokHandler {
             },
             "theme_path": self.config.theme_path.as_ref().map(|path| path.display().to_string()),
             "window_opacity": self.config.window_opacity,
-            "tab_bar_orientation": match self.config.tab_bar_orientation {
+            "tab_bar_orientation": match self.config.tab_bar_side.tab_orientation() {
                 wok_app::config::TabBarOrientation::Horizontal => "horizontal",
                 wok_app::config::TabBarOrientation::Vertical => "vertical",
             },
+            "tab_bar_side": self.config.tab_bar_side.as_str(),
+            "status_bar_side": self.config.status_bar_side.as_str(),
+            "recent_keys_visible": self.config.recent_keys.visible,
+            "recent_keys_position": self.config.recent_keys.position.as_str(),
             "restore_session": self.config.restore_session,
             "debug_overlay": self.config.debug_overlay,
             "trigger_count": self.trigger_engine.len(),
@@ -3169,6 +3271,136 @@ impl WokHandler {
                 self.status_message = Some(format!("Failed to save settings: {error}"));
             }
         }
+    }
+
+    fn copy_settings_selection_to_clipboard(&mut self) {
+        let selected_text = self
+            .settings_editor
+            .as_ref()
+            .and_then(|settings| selected_editor_text(&settings.editor));
+        if let (Some(text), Some(active_pane)) = (selected_text, self.active_pane_mut()) {
+            let _ = active_pane.app.clipboard.copy(&text);
+        }
+    }
+
+    fn cut_settings_selection_to_clipboard(&mut self) {
+        self.copy_settings_selection_to_clipboard();
+        if let Some(settings) = self.settings_editor.as_mut() {
+            delete_editor_selection(&mut settings.editor);
+        }
+        self.needs_redraw = true;
+    }
+
+    fn paste_into_settings_editor(&mut self) {
+        let pasted = self
+            .active_pane_mut()
+            .and_then(|pane| pane.app.clipboard.paste().ok());
+        if let (Some(text), Some(settings)) = (pasted, self.settings_editor.as_mut()) {
+            replace_editor_selection(&mut settings.editor, &text);
+        }
+        self.needs_redraw = true;
+    }
+
+    fn select_all_settings_editor(&mut self) {
+        if let Some(settings) = self.settings_editor.as_mut() {
+            settings.editor.handle_key(EditorKey::SelectAll);
+        }
+        self.needs_redraw = true;
+    }
+
+    fn handle_settings_editor_input(&mut self, event: &InputEvent) -> bool {
+        if self.settings_editor.is_none() {
+            return false;
+        }
+
+        match event.action {
+            KeyAction::Escape => {
+                self.settings_editor = None;
+                self.status_message = Some("Closed settings buffer".to_string());
+                self.needs_redraw = true;
+                return true;
+            }
+            KeyAction::Char('s') | KeyAction::Char('S')
+                if platform_modifier_active(event.modifiers) =>
+            {
+                self.save_settings_editor();
+                self.needs_redraw = true;
+                return true;
+            }
+            KeyAction::Char('w') | KeyAction::Char('W')
+                if platform_modifier_active(event.modifiers) =>
+            {
+                self.settings_editor = None;
+                self.status_message = Some("Closed settings buffer".to_string());
+                self.needs_redraw = true;
+                return true;
+            }
+            KeyAction::SelectAll => {
+                self.select_all_settings_editor();
+                return true;
+            }
+            KeyAction::Copy => {
+                self.copy_settings_selection_to_clipboard();
+                return true;
+            }
+            KeyAction::Cut => {
+                self.cut_settings_selection_to_clipboard();
+                return true;
+            }
+            KeyAction::Paste => {
+                self.paste_into_settings_editor();
+                return true;
+            }
+            KeyAction::Tab => {
+                if let Some(settings) = self.settings_editor.as_mut() {
+                    replace_editor_selection(&mut settings.editor, "\t");
+                }
+                self.needs_redraw = true;
+                return true;
+            }
+            KeyAction::Enter => {
+                if let Some(settings) = self.settings_editor.as_mut() {
+                    replace_editor_selection(&mut settings.editor, "\n");
+                }
+                self.needs_redraw = true;
+                return true;
+            }
+            KeyAction::Char(ch)
+                if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+            {
+                if let Some(settings) = self.settings_editor.as_mut() {
+                    replace_editor_selection(&mut settings.editor, &ch.to_string());
+                }
+                self.needs_redraw = true;
+                return true;
+            }
+            KeyAction::Backspace | KeyAction::Delete => {
+                let deleted_selection = if let Some(settings) = self.settings_editor.as_mut() {
+                    delete_editor_selection(&mut settings.editor)
+                } else {
+                    false
+                };
+                if deleted_selection {
+                    self.needs_redraw = true;
+                    return true;
+                }
+            }
+            _ => {}
+        }
+
+        let Some(editor_key) = input_event_to_editor_key(event) else {
+            self.needs_redraw = true;
+            return true;
+        };
+        let editor_key = match editor_key {
+            EditorKey::Enter => EditorKey::ShiftEnter,
+            other => other,
+        };
+        if let Some(settings) = self.settings_editor.as_mut() {
+            let _ = settings.editor.handle_key(editor_key);
+        }
+        self.needs_redraw = true;
+        true
     }
 
     fn reload_configuration(&mut self) {
@@ -5018,6 +5250,7 @@ impl AppHandler for WokHandler {
         self.drain_plugin_side_effects();
         self.sync_attached_session_snapshot();
         self.pump_remote_control();
+        self.prune_recent_keys();
 
         if self.last_status_bar_refresh.elapsed() >= self.status_bar_refresh_interval {
             self.last_status_bar_refresh = Instant::now();
@@ -5256,6 +5489,12 @@ impl AppHandler for WokHandler {
         }
 
         if event.event_type != InputEventType::Release {
+            self.record_recent_key(&event);
+
+            if self.handle_settings_editor_input(&event) {
+                return;
+            }
+
             if self.handle_vi_mode_input(&event) {
                 return;
             }
@@ -5552,6 +5791,28 @@ impl AppHandler for WokHandler {
     }
 
     fn on_menu_action(&mut self, action: AppMenuAction) -> bool {
+        if self.settings_editor.is_some() {
+            match action {
+                AppMenuAction::Copy => {
+                    self.copy_settings_selection_to_clipboard();
+                    return false;
+                }
+                AppMenuAction::Paste => {
+                    self.paste_into_settings_editor();
+                    return false;
+                }
+                AppMenuAction::SelectAll => {
+                    self.select_all_settings_editor();
+                    return false;
+                }
+                AppMenuAction::OpenSettings => {
+                    self.handle_action(Action::OpenSettings);
+                    return false;
+                }
+                _ => {}
+            }
+        }
+
         match action {
             AppMenuAction::OpenSettings => self.handle_action(Action::OpenSettings),
             AppMenuAction::ReloadConfiguration => {
@@ -5687,36 +5948,57 @@ fn ensure_settings_file() -> std::io::Result<PathBuf> {
     if !path.exists() {
         std::fs::write(
             &path,
-            format!(
-                "# Wok settings\n\nfont_family = {:?}\nfont_size = 24.0\n",
-                "monospace"
-            ),
+            "# Wok settings\n\n\
+             font_family = \"JetBrains Mono\"\n\
+             font_size = 24.0\n\
+             tab_bar_side = \"top\"\n\
+             status_bar_side = \"bottom\"\n\
+             recent_keys_visible = true\n\
+             recent_keys_position = \"bottom_right\"\n",
         )?;
     }
     Ok(path)
 }
 
-fn open_path(path: &Path) -> std::io::Result<()> {
-    #[cfg(target_os = "macos")]
-    {
-        Command::new("open").arg(path).spawn()?;
-        return Ok(());
+fn editor_selection_range(editor: &InputEditor) -> Option<(usize, usize)> {
+    let cursor = editor.buffer.cursors().first()?;
+    let anchor = cursor.anchor?;
+    if anchor == cursor.position {
+        return None;
     }
+    Some((anchor.min(cursor.position), anchor.max(cursor.position)))
+}
 
-    #[cfg(target_os = "windows")]
-    {
-        Command::new("cmd")
-            .args(["/C", "start", ""])
-            .arg(path)
-            .spawn()?;
-        return Ok(());
-    }
+fn selected_editor_text(editor: &InputEditor) -> Option<String> {
+    let (start, end) = editor_selection_range(editor)?;
+    Some(
+        editor
+            .buffer
+            .text()
+            .chars()
+            .skip(start)
+            .take(end - start)
+            .collect(),
+    )
+}
 
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        Command::new("xdg-open").arg(path).spawn()?;
-        return Ok(());
+fn delete_editor_selection(editor: &mut InputEditor) -> bool {
+    let Some((start, end)) = editor_selection_range(editor) else {
+        return false;
+    };
+    if editor.buffer.delete_range(start, end).is_err() {
+        return false;
     }
+    if let Some(cursor) = editor.buffer.cursors_mut().first_mut() {
+        cursor.position = start;
+        cursor.anchor = None;
+    }
+    true
+}
+
+fn replace_editor_selection(editor: &mut InputEditor, replacement: &str) {
+    let _ = delete_editor_selection(editor);
+    let _ = editor.buffer.insert_at(0, replacement);
 }
 
 fn trigger_engine_from_config(config: &WokConfig) -> TriggerEngine {
@@ -6918,7 +7200,7 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::ZoomIn => "Increase terminal font size",
         Action::ZoomOut => "Decrease terminal font size",
         Action::ZoomReset => "Reset terminal font size",
-        Action::OpenSettings => "Open the Wok settings file",
+        Action::OpenSettings => "Open the Wok settings buffer",
         Action::ClearScreen => "Clear terminal viewport and scrollback",
         Action::SendEof => "Send EOF (Ctrl+D) to the active shell",
         Action::SaveSession(_) => "Persist the current workspace as a named session",

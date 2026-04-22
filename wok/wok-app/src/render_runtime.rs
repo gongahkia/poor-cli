@@ -1,50 +1,83 @@
 use super::*;
+use std::path::Path;
 
 pub(crate) fn compute_chrome_rects(
     size: PhysicalSize<u32>,
     tab_bar_visible: bool,
-    tab_bar_orientation: wok_app::config::TabBarOrientation,
+    tab_bar_side: wok_app::config::ChromeSide,
     status_bar_visible: bool,
+    status_bar_side: wok_app::config::ChromeSide,
+    cell_height: f32,
+    tab_bar_size: Option<f32>,
+    status_bar_size: Option<f32>,
 ) -> ChromeRects {
     let width = size.width as f32;
     let height = size.height as f32;
-    let status_height = if status_bar_visible { 24.0 } else { 0.0 };
-    let available_height = (height - status_height).max(0.0);
+    let chrome_height = chrome_bar_height(cell_height);
+    let tab_thickness = tab_bar_size
+        .unwrap_or_else(|| {
+            if tab_bar_side.is_horizontal() {
+                chrome_height
+            } else {
+                180.0
+            }
+        })
+        .max(1.0);
+    let status_thickness = status_bar_size.unwrap_or(chrome_height).max(1.0);
+    let mut remaining = Rect::new(0.0, 0.0, width, height);
 
-    if !tab_bar_visible {
-        return ChromeRects {
-            tab_bar: Rect::new(0.0, 0.0, 0.0, 0.0),
-            content: Rect::new(0.0, 0.0, width, available_height),
-            status: Rect::new(0.0, available_height, width, status_height),
-        };
+    let tab_bar = if tab_bar_visible {
+        allocate_chrome_side(&mut remaining, tab_bar_side, tab_thickness)
+    } else {
+        Rect::new(0.0, 0.0, 0.0, 0.0)
+    };
+
+    let status = if status_bar_visible {
+        allocate_chrome_side(&mut remaining, status_bar_side, status_thickness)
+    } else {
+        Rect::new(0.0, 0.0, 0.0, 0.0)
+    };
+
+    ChromeRects {
+        tab_bar,
+        content: remaining,
+        status,
     }
+}
 
-    match tab_bar_orientation {
-        wok_app::config::TabBarOrientation::Horizontal => {
-            let tab_bar_height = 32.0;
-            ChromeRects {
-                tab_bar: Rect::new(0.0, 0.0, width, tab_bar_height),
-                content: Rect::new(
-                    0.0,
-                    tab_bar_height,
-                    width,
-                    (available_height - tab_bar_height).max(0.0),
-                ),
-                status: Rect::new(0.0, available_height, width, status_height),
-            }
+pub(crate) fn chrome_bar_height(cell_height: f32) -> f32 {
+    (cell_height + 10.0).ceil().max(32.0)
+}
+
+fn allocate_chrome_side(
+    remaining: &mut Rect,
+    side: wok_app::config::ChromeSide,
+    thickness: f32,
+) -> Rect {
+    match side {
+        wok_app::config::ChromeSide::Top => {
+            let height = thickness.min(remaining.h).max(0.0);
+            let rect = Rect::new(remaining.x, remaining.y, remaining.w, height);
+            remaining.y += height;
+            remaining.h = (remaining.h - height).max(0.0);
+            rect
         }
-        wok_app::config::TabBarOrientation::Vertical => {
-            let tab_bar_width = 180.0_f32.min(width * 0.35).max(96.0).min(width);
-            ChromeRects {
-                tab_bar: Rect::new(0.0, 0.0, tab_bar_width, available_height),
-                content: Rect::new(
-                    tab_bar_width,
-                    0.0,
-                    (width - tab_bar_width).max(0.0),
-                    available_height,
-                ),
-                status: Rect::new(0.0, available_height, width, status_height),
-            }
+        wok_app::config::ChromeSide::Bottom => {
+            let height = thickness.min(remaining.h).max(0.0);
+            remaining.h = (remaining.h - height).max(0.0);
+            Rect::new(remaining.x, remaining.y + remaining.h, remaining.w, height)
+        }
+        wok_app::config::ChromeSide::Left => {
+            let width = thickness.min(remaining.w).max(0.0);
+            let rect = Rect::new(remaining.x, remaining.y, width, remaining.h);
+            remaining.x += width;
+            remaining.w = (remaining.w - width).max(0.0);
+            rect
+        }
+        wok_app::config::ChromeSide::Right => {
+            let width = thickness.min(remaining.w).max(0.0);
+            remaining.w = (remaining.w - width).max(0.0);
+            Rect::new(remaining.x + remaining.w, remaining.y, width, remaining.h)
         }
     }
 }
@@ -181,10 +214,11 @@ fn render_tab_bar_item(
     );
 
     let text_x = (item_rect.x + TAB_TEXT_PAD_X).max(clip_rect.x + TAB_TEXT_PAD_X);
-    let text_y = item_rect.y + 8.0;
+    let text_y =
+        visible_top + ((visible_bottom - visible_top - font.metrics.cell_height) * 0.5).max(0.0);
     let available_width = (visible_right - text_x - TAB_TEXT_PAD_X).max(0.0);
     let visible_label = fit_text_to_width(label, available_width, font.metrics.cell_width);
-    if visible_label.is_empty() || text_y + font.metrics.cell_height > visible_bottom + 1.0 {
+    if visible_label.is_empty() {
         return;
     }
     push_text(
@@ -313,13 +347,19 @@ pub(crate) fn render_status_bar(
         return;
     };
 
+    if rect.h > rect.w {
+        render_vertical_status_bar(render, font, rect, status_segments, surface_opacity);
+        return;
+    }
+
+    let text_y = rect.y + ((rect.h - font.metrics.cell_height) * 0.5).max(0.0);
     let mut left_x = rect.x + 8.0;
     draw_status_segments(
         render,
         font,
         &status_segments.left,
         &mut left_x,
-        rect.y + 4.0,
+        text_y,
         false,
         surface_opacity,
     );
@@ -330,7 +370,7 @@ pub(crate) fn render_status_bar(
         font,
         &status_segments.right,
         &mut right_x,
-        rect.y + 4.0,
+        text_y,
         true,
         surface_opacity,
     );
@@ -347,10 +387,55 @@ pub(crate) fn render_status_bar(
         font,
         &status_segments.center,
         &mut center_x,
-        rect.y + 4.0,
+        text_y,
         false,
         surface_opacity,
     );
+}
+
+fn render_vertical_status_bar(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    rect: Rect,
+    status_segments: &StatusBarSegments,
+    surface_opacity: f32,
+) {
+    let mut y = rect.y + 8.0;
+    let max_width = (rect.w - 12.0).max(font.metrics.cell_width);
+    for segment in status_segments
+        .left
+        .iter()
+        .chain(status_segments.center.iter())
+        .chain(status_segments.right.iter())
+    {
+        if y + font.metrics.cell_height > rect.y + rect.h - 4.0 {
+            break;
+        }
+        if let Some(bg) = segment.bg.as_deref().and_then(parse_hex_rgba) {
+            render.batch.push_bg_quad(
+                rect.x + 4.0,
+                y - 1.0,
+                rect.w - 8.0,
+                font.metrics.cell_height + 2.0,
+                with_opacity(bg, surface_opacity),
+            );
+        }
+        let color = segment
+            .fg
+            .as_deref()
+            .and_then(parse_hex_rgba)
+            .unwrap_or([0.54, 0.58, 0.65, 1.0]);
+        let text = fit_text_to_width(&segment.text, max_width, font.metrics.cell_width);
+        push_text(
+            render,
+            font,
+            rect.x + 6.0,
+            y,
+            &text,
+            with_opacity(color, surface_opacity),
+        );
+        y += font.metrics.cell_height + 4.0;
+    }
 }
 
 pub(crate) fn status_segment_width(font: &FontSystem, segment: &StatusSegment) -> f32 {
@@ -1025,6 +1110,343 @@ pub(crate) fn render_command_palette(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn render_settings_editor(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    theme: &Theme,
+    viewport: Rect,
+    path: &Path,
+    input: &wok_input::editor::InputRenderData,
+    cursor_shape: CursorShape,
+    cursor_visible: bool,
+    surface_opacity: f32,
+) {
+    let panel_width = (viewport.w * 0.9)
+        .clamp(520.0, 1100.0)
+        .min((viewport.w - 24.0).max(260.0));
+    let panel_height = (viewport.h * 0.86)
+        .clamp(320.0, 760.0)
+        .min((viewport.h - 24.0).max(220.0));
+    let rect = Rect::new(
+        viewport.x + (viewport.w - panel_width) * 0.5,
+        viewport.y + (viewport.h - panel_height) * 0.5,
+        panel_width,
+        panel_height,
+    );
+
+    render.batch.push_bg_quad(
+        viewport.x,
+        viewport.y,
+        viewport.w,
+        viewport.h,
+        with_opacity([0.0, 0.0, 0.0, 0.36], surface_opacity),
+    );
+    render.batch.push_bg_quad(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        with_opacity(
+            [theme.input_bg.r, theme.input_bg.g, theme.input_bg.b, 0.99],
+            surface_opacity,
+        ),
+    );
+    render.batch.push_bg_quad(
+        rect.x,
+        rect.y,
+        rect.w,
+        1.0,
+        with_opacity(
+            [
+                theme.highlight_current_match.r,
+                theme.highlight_current_match.g,
+                theme.highlight_current_match.b,
+                0.95,
+            ],
+            surface_opacity,
+        ),
+    );
+
+    let padding_x = 16.0;
+    let padding_y = 12.0;
+    let base_x = rect.x + padding_x;
+    let base_y = rect.y + padding_y;
+    let inner_width = (rect.w - padding_x * 2.0).max(font.metrics.cell_width);
+    let path_text = fit_text_to_width(
+        &path.display().to_string(),
+        inner_width,
+        font.metrics.cell_width,
+    );
+    let help_text = fit_text_to_width(
+        "Esc close  Mod+S save  Enter newline",
+        inner_width,
+        font.metrics.cell_width,
+    );
+
+    push_text(
+        render,
+        font,
+        base_x,
+        base_y,
+        "Settings",
+        with_opacity(
+            [
+                theme.foreground.r,
+                theme.foreground.g,
+                theme.foreground.b,
+                theme.foreground.a,
+            ],
+            surface_opacity,
+        ),
+    );
+    push_text(
+        render,
+        font,
+        base_x,
+        base_y + font.metrics.cell_height,
+        &path_text,
+        with_opacity(
+            [
+                theme.status_bar_text.r,
+                theme.status_bar_text.g,
+                theme.status_bar_text.b,
+                0.9,
+            ],
+            surface_opacity,
+        ),
+    );
+    push_text(
+        render,
+        font,
+        base_x,
+        base_y + font.metrics.cell_height * 2.0,
+        &help_text,
+        with_opacity(
+            [
+                theme.status_bar_text.r,
+                theme.status_bar_text.g,
+                theme.status_bar_text.b,
+                0.82,
+            ],
+            surface_opacity,
+        ),
+    );
+
+    let editor_top = base_y + font.metrics.cell_height * 3.0 + 12.0;
+    let editor_bottom = rect.y + rect.h - 14.0;
+    let editor_height = (editor_bottom - editor_top).max(font.metrics.cell_height);
+    let editor_rect = Rect::new(base_x, editor_top, inner_width, editor_height);
+    render.batch.push_bg_quad(
+        editor_rect.x,
+        editor_rect.y,
+        editor_rect.w,
+        editor_rect.h,
+        with_opacity([0.03, 0.035, 0.05, 0.48], surface_opacity),
+    );
+    render.batch.push_bg_quad(
+        editor_rect.x,
+        editor_rect.y,
+        editor_rect.w,
+        1.0,
+        with_opacity(
+            [
+                theme.block_separator.r,
+                theme.block_separator.g,
+                theme.block_separator.b,
+                0.8,
+            ],
+            surface_opacity,
+        ),
+    );
+
+    let line_count = input.lines.len().max(1);
+    let max_visible_lines = (editor_rect.h / font.metrics.cell_height).floor().max(1.0) as usize;
+    let (cursor_row, cursor_col) = input.cursors.first().copied().unwrap_or_default();
+    let mut start = cursor_row.saturating_sub(max_visible_lines / 2);
+    if start + max_visible_lines > line_count {
+        start = line_count.saturating_sub(max_visible_lines);
+    }
+    let end = (start + max_visible_lines).min(line_count);
+    let gutter_width = 5.0 * font.metrics.cell_width;
+    let text_x = editor_rect.x + gutter_width + 8.0;
+    let text_width = (editor_rect.x + editor_rect.w - text_x - 8.0).max(0.0);
+    let line_number_width = (gutter_width - 8.0).max(font.metrics.cell_width);
+
+    for visible_row in 0..end.saturating_sub(start) {
+        let absolute_row = start + visible_row;
+        let line = input
+            .lines
+            .get(absolute_row)
+            .map_or("", std::string::String::as_str);
+        let row_y = editor_rect.y + visible_row as f32 * font.metrics.cell_height;
+        if absolute_row == cursor_row {
+            render.batch.push_bg_quad(
+                editor_rect.x + 4.0,
+                row_y,
+                editor_rect.w - 8.0,
+                font.metrics.cell_height,
+                with_opacity(
+                    [
+                        theme.selection.r,
+                        theme.selection.g,
+                        theme.selection.b,
+                        0.14,
+                    ],
+                    surface_opacity,
+                ),
+            );
+        }
+
+        let line_number = fit_text_to_width(
+            &format!("{:>4}", absolute_row + 1),
+            line_number_width,
+            font.metrics.cell_width,
+        );
+        let line_number_x = right_aligned_text_x(
+            editor_rect.x + line_number_width,
+            &line_number,
+            font.metrics.cell_width,
+        );
+        push_text(
+            render,
+            font,
+            line_number_x,
+            row_y,
+            &line_number,
+            with_opacity(
+                [
+                    theme.status_bar_text.r,
+                    theme.status_bar_text.g,
+                    theme.status_bar_text.b,
+                    0.58,
+                ],
+                surface_opacity,
+            ),
+        );
+
+        let visible_line = fit_text_to_width(line, text_width, font.metrics.cell_width);
+        push_text(
+            render,
+            font,
+            text_x,
+            row_y,
+            &visible_line,
+            with_opacity(
+                [
+                    theme.foreground.r,
+                    theme.foreground.g,
+                    theme.foreground.b,
+                    theme.foreground.a,
+                ],
+                surface_opacity,
+            ),
+        );
+    }
+
+    if cursor_visible && cursor_row >= start && cursor_row < end {
+        let text_columns = columns_for_width(text_width, font.metrics.cell_width);
+        let cursor_col = cursor_col.min(text_columns.saturating_sub(1));
+        let cursor_x = text_x + cursor_col as f32 * font.metrics.cell_width;
+        let cursor_y = editor_rect.y + (cursor_row - start) as f32 * font.metrics.cell_height;
+        render.batch.push_cursor(
+            cursor_x,
+            cursor_y,
+            font.metrics.cell_width,
+            font.metrics.cell_height,
+            cursor_shape,
+            with_opacity(
+                [theme.cursor.r, theme.cursor.g, theme.cursor.b, 0.95],
+                surface_opacity,
+            ),
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn render_recent_keys_overlay(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    theme: &Theme,
+    viewport: Rect,
+    labels: &[String],
+    position: wok_app::config::OverlayPosition,
+    overlay_opacity: f32,
+    surface_opacity: f32,
+) {
+    if labels.is_empty() || viewport.w <= 0.0 || viewport.h <= 0.0 {
+        return;
+    }
+    let text = labels.join("  ");
+    let max_width = (viewport.w * 0.48).clamp(120.0, 520.0).min(viewport.w);
+    let visible_text = fit_text_to_width(&text, max_width - 20.0, font.metrics.cell_width);
+    if visible_text.is_empty() {
+        return;
+    }
+    let width = (visible_text.chars().count() as f32 * font.metrics.cell_width + 20.0)
+        .min(max_width)
+        .max(80.0);
+    let height = font.metrics.cell_height + 14.0;
+    let margin = 12.0;
+    let x = match position {
+        wok_app::config::OverlayPosition::TopLeft
+        | wok_app::config::OverlayPosition::BottomLeft => viewport.x + margin,
+        wok_app::config::OverlayPosition::TopRight
+        | wok_app::config::OverlayPosition::BottomRight => viewport.x + viewport.w - width - margin,
+    }
+    .clamp(
+        viewport.x,
+        (viewport.x + viewport.w - width).max(viewport.x),
+    );
+    let y = match position {
+        wok_app::config::OverlayPosition::TopLeft | wok_app::config::OverlayPosition::TopRight => {
+            viewport.y + margin
+        }
+        wok_app::config::OverlayPosition::BottomLeft
+        | wok_app::config::OverlayPosition::BottomRight => {
+            viewport.y + viewport.h - height - margin
+        }
+    }
+    .clamp(
+        viewport.y,
+        (viewport.y + viewport.h - height).max(viewport.y),
+    );
+    let alpha = (overlay_opacity * surface_opacity).clamp(0.0, 1.0);
+
+    render.batch.push_bg_quad(
+        x,
+        y,
+        width,
+        height,
+        [theme.input_bg.r, theme.input_bg.g, theme.input_bg.b, alpha],
+    );
+    render.batch.push_bg_quad(
+        x,
+        y,
+        width,
+        1.0,
+        [
+            theme.highlight_current_match.r,
+            theme.highlight_current_match.g,
+            theme.highlight_current_match.b,
+            (0.72 * alpha).clamp(0.0, 1.0),
+        ],
+    );
+    push_text(
+        render,
+        font,
+        x + 10.0,
+        y + ((height - font.metrics.cell_height) * 0.5).max(0.0),
+        &visible_text,
+        [
+            theme.foreground.r,
+            theme.foreground.g,
+            theme.foreground.b,
+            (0.95 * surface_opacity).clamp(0.0, 1.0),
+        ],
+    );
+}
+
 pub(crate) fn palette_category_label(category: PaletteCategory) -> &'static str {
     match category {
         PaletteCategory::Action => "Actions",
@@ -1154,6 +1576,20 @@ mod tests {
             ),
             Some(1)
         );
+    }
+
+    #[test]
+    fn chrome_bar_height_expands_to_fit_large_fonts() {
+        assert_eq!(chrome_bar_height(18.0), 32.0);
+        assert!(chrome_bar_height(36.0) >= 46.0);
+    }
+
+    #[test]
+    fn chrome_bar_height_keeps_room_for_tab_text_padding() {
+        let cell_height = 24.0;
+        let bar_height = chrome_bar_height(cell_height);
+
+        assert!(bar_height >= cell_height);
     }
 }
 

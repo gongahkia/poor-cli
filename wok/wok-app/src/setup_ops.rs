@@ -15,7 +15,16 @@ shell = "zsh"
 font_family = "JetBrains Mono"
 font_size = 24.0
 scrollback_lines = 10000
+input_position = "bottom"
 tab_bar_orientation = "horizontal"
+tab_bar_side = "top"
+status_bar_visible = true
+status_bar_side = "bottom"
+recent_keys_visible = true
+recent_keys_position = "bottom_right"
+recent_keys_max_entries = 8
+recent_keys_timeout_ms = 2000
+recent_keys_opacity = 0.86
 copy_on_select = false
 restore_session = true
 "#;
