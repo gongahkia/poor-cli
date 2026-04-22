@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "poor-cli"
 dynamic = ["version"]
-description = "AI-powered CLI tool with multi-provider support (Gemini, OpenAI, Claude, Ollama)"
+description = "CI-focused CLI agent harness with multi-provider support"
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
 license = "MIT"
 authors = [
     {name = "poor-cli contributors", email = "contributors@poor-cli.dev"}
 ]
-keywords = ["ai", "cli", "gemini", "openai", "claude", "ollama", "coding-assistant", "automation"]
+keywords = ["ai", "cli", "gemini", "openai", "claude", "ollama", "coding-assistant", "automation", "agent-harness", "ci"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",

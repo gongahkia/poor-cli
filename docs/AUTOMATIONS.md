@@ -64,7 +64,7 @@ Custom slash command — invoked by user typing `/<name>` in chat:
 }
 ```
 
-Then `/deploy-staging` in chat runs the rule's steps. Slash-trigger rules are picker-discoverable via `:PoorCLIWorkflows` (PRD 033).
+Then `/deploy-staging` in chat runs the rule's steps. Slash-trigger rules are discoverable through `/workflow`.
 
 ## Step kinds
 
@@ -74,7 +74,7 @@ Then `/deploy-staging` in chat runs the rule's steps. Slash-trigger rules are pi
 | `run-shell` | Subprocess. Respects sandbox preset. |
 | `prompt` | Send a fixed prompt to the active model (handy for "summarize today's commits"). |
 | `tool-call` | Invoke a single tool with fixed arguments. |
-| `notify` | Send a notification (`vim.notify` or snacks if present). |
+| `notify` | Emit a CLI or JSON-RPC notification. |
 
 Each step gets a per-rule timeout (default 60s) and writes to the rule's run history.
 
@@ -131,7 +131,6 @@ Every rule run writes to `.poor-cli/automations.db` with status, timing, output,
 
 - `/automation history <name>` — recent runs.
 - `/automation replay <name>` — re-execute the last successful run.
-- `:PoorCLIRuns` — Neovim panel.
 
 `history_max` per rule trims the oldest. Default 50; bump if you need a longer trail.
 
@@ -147,5 +146,4 @@ Pre-PRD 064, three concepts coexisted: AutomationRule, custom slash commands, an
 
 ## See also
 
-- `nvim-poor-cli/lua/poor-cli/automations.lua` — Neovim integration.
 - `tests/test_automations.py` — round-trip + scheduler tests.

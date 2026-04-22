@@ -154,7 +154,7 @@ Download from https://lmstudio.ai, start a local server in the app, then poor-cl
 
 Three ways:
 
-1. **Command:** `/switch` or press `F2` (or the new `:PoorCLISwitch` picker) — interactive picker with capability icons + per-provider model tiers.
+1. **Command:** `/switch` or `/provider switch` in chat, or `poor-cli provider list` from the shell.
 2. **Config:** set `model.provider = "anthropic"` in `.poor-cli/config.yaml`.
 3. **Per-request:** some economy modes re-route automatically (see "Model routing" below).
 

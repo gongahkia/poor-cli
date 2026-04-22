@@ -1,3 +1,3 @@
   {o,o}    poor-cli
   /)__)    cost-controlled BYOK coding
-  -"-"-    Neovim + local/cloud providers
+  -"-"-    CLI harness + local/cloud providers

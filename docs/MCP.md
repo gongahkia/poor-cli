@@ -131,12 +131,12 @@ Registry autodiscovery adds servers advertised in your organization/account regi
 
 ## Verifying Servers
 
-```
-:PoorCLIMcp            " full-screen server browser
-/mcp-health            " slash command in chat
+```sh
+poor-cli chat
+# then run: /mcp-health
 ```
 
-`:PoorCLIMcp` shows: connection status, tool count, last-error, per-server badges, and lets you toggle/edit/remove/health-check/test-tool a server interactively.
+`/mcp-health` reports connection status, tool count, last error, and per-server health.
 
 ## Debugging
 
@@ -149,9 +149,5 @@ Registry autodiscovery adds servers advertised in your organization/account regi
 
 - Prefer `deny_tools` over `allow_tools` when you want "almost everything, minus these dangerous ones."
 - Prefer `allow_tools` when you want a hard allowlist.
-- The Trust Center (`:PoorCLITrustCenter`) shows which MCP tools are currently allowed, per server.
+- `/trust` shows which MCP tools are currently allowed, per server.
 - Audit logs capture every MCP tool invocation.
-
-## See Also
-
-- [../nvim-poor-cli/README.md](../nvim-poor-cli/README.md) — Neovim plugin's `:PoorCLIMcp` picker

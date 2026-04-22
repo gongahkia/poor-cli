@@ -13,7 +13,7 @@ poor-cli's tools (especially `bash`, `write_file`, `delete_file`, `apply_patch_u
 
 Switch interactively: `/sandbox restrictive` etc. Persists in `~/.poor-cli/config.yaml` under `sandbox.preset`.
 
-The active preset shows on the lualine segment + `/status`.
+The active preset shows in `/status`.
 
 ## What each layer enforces
 
@@ -84,7 +84,7 @@ rules:
       file_path_pattern: "^src/"
 ```
 
-Rules are evaluated by `permission_engine.py`; the Trust Center (`:PoorCLITrustCenter`) and Policy Panel (`:PoorCLIPolicy`) render the active rule set.
+Rules are evaluated by `permission_engine.py`; `/trust` and `/policy` render the active rule set.
 
 ## Auto-approve / deny patterns
 
@@ -103,7 +103,7 @@ Useful for `poor-cli exec` non-interactive runs. Don't use in interactive sessio
 Every sandbox decision (allow + deny) writes a row to `.poor-cli/audit.db`. Inspect with:
 
 - `/audit-export --since 2026-04-01 --to recent.jsonl`
-- The Trust Center buffer.
+- `/trust` and `/policy` output.
 
 Audit logs rotate at 100 MB (configurable in `audit.size_limit_mb`), with monthly archives in `.poor-cli/audit/archive/YYYY-MM.jsonl.gz`.
 

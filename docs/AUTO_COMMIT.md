@@ -51,7 +51,7 @@ Or use poor-cli's `/undo` (restores the last checkpoint, which usually correspon
 ## When NOT to enable
 
 - Dirty working tree with unrelated WIP — auto-commit will happily snapshot your staged changes into an AI commit.
-- Team branches where you want AI edits to remain uncommitted until reviewed — use Diff Review (`:PoorCLIDiffReview`) instead.
+- Team branches where you want AI edits to remain uncommitted until reviewed.
 - Squash-merge workflows — each AI step becomes a commit; pre-PR squash may be desirable.
 
 ## See Also

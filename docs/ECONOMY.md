@@ -41,7 +41,7 @@ Frugal injects a "be terse" directive into the system prompt (Phase 1D). Code bl
 
 ## Reading the savings dashboard
 
-`/savings` opens the Savings Dashboard (`:PoorCLISavings` in Neovim). Sources:
+`/savings` prints the savings dashboard in the active CLI session. Sources:
 
 | Source | What's measured |
 |---|---|

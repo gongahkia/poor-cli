@@ -126,7 +126,7 @@ def test_dispatch_returns_429_equivalent_and_audits(monkeypatch):
             JsonRpcMessage(
                 id=1,
                 method="poor-cli/chatStreaming",
-                params={"clientId": "nvim"},
+                params={"clientId": "cli"},
             ),
         )
         second = await PoorCLIServer.dispatch(
@@ -134,7 +134,7 @@ def test_dispatch_returns_429_equivalent_and_audits(monkeypatch):
             JsonRpcMessage(
                 id=2,
                 method="poor-cli/chatStreaming",
-                params={"clientId": "nvim"},
+                params={"clientId": "cli"},
             ),
         )
         return first, second
@@ -153,4 +153,4 @@ def test_dispatch_returns_429_equivalent_and_audits(monkeypatch):
     assert event["success"] is False
     assert event["operation"] == "rpc.rate_limit.exceeded"
     assert event["details"]["method"] == "poor-cli/chatStreaming"
-    assert event["details"]["client_id"] == "nvim"
+    assert event["details"]["client_id"] == "cli"
