@@ -76,11 +76,15 @@ def run_eval(
 
     fragments = read_jsonl(workspace / "corpus" / "fragments.jsonl")
     train_fragments = [row for row in fragments if row.get("split") == "train"]
-    eval_fragments = [row for row in fragments if row.get("split") == "eval"]
+    eval_fragments = [
+        row
+        for row in fragments
+        if row.get("split") == "eval" and _is_human_provenance(row.get("provenance"))
+    ]
 
     heldout_required = bool(config.get("evaluation", {}).get("heldout_required", True))
     if heldout_required and not eval_fragments:
-        print("Evaluation requires held-out fragments, but none were found.")
+        print("Evaluation requires held-out human-origin fragments, but none were found.")
         return 1
     if not train_fragments:
         print("No train fragments found. Run 'seuss ingest' first.")

@@ -54,6 +54,8 @@ class QueuePathConfigTests(unittest.TestCase):
 
             ex_id = custom_rows[0]["id"]
             self.assertEqual(run_approve_accept(config_path=config_path, record_id=ex_id), 0)
+            queue_after = read_jsonl(custom_queue)
+            self.assertFalse(any(row.get("id") == ex_id for row in queue_after))
             approved_rows = read_jsonl(root / ".seuss" / "approved_training.jsonl")
             self.assertTrue(any(row.get("id") == ex_id for row in approved_rows))
 

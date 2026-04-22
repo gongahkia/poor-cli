@@ -98,14 +98,25 @@ def run_memory_import(config_path: Path, import_path: Path, text_field: str) -> 
     workspace = resolve_workspace(config, config_path)
 
     imported: list[dict] = []
+    invalid_json_rows = 0
+    non_object_rows = 0
+    missing_text_rows = 0
     with import_path.open("r", encoding="utf-8") as handle:
         for line in handle:
             line = line.strip()
             if not line:
                 continue
-            row = json.loads(line)
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                invalid_json_rows += 1
+                continue
+            if not isinstance(row, dict):
+                non_object_rows += 1
+                continue
             text = str(row.get(text_field, "")).strip()
             if not text:
+                missing_text_rows += 1
                 continue
             imported.append(
                 {
@@ -124,6 +135,12 @@ def run_memory_import(config_path: Path, import_path: Path, text_field: str) -> 
     _queue_or_approve_training_examples(workspace, config, config_path, imported)
 
     print(f"Imported memory records: {len(imported)}")
+    print(
+        "Skipped rows: "
+        f"invalid_json_rows={invalid_json_rows} "
+        f"non_object_rows={non_object_rows} "
+        f"missing_text_rows={missing_text_rows}"
+    )
     return 0
 
 

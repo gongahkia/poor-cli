@@ -121,6 +121,29 @@ def exact_copy_hits(text: str, corpus_texts: Iterable[str], n: int) -> int:
     return len(cand_ngrams & corpus_ngrams)
 
 
+def _reduce_copy_overlap(text: str, corpus_texts: Iterable[str], n: int) -> str:
+    if n <= 1:
+        return text.strip()
+    had_terminal_punctuation = any(ch in text for ch in ".!?")
+    words = tokenize_words(text)
+    if len(words) < n:
+        return text.strip()
+
+    trimmed_words = words[:]
+    while len(trimmed_words) >= n:
+        candidate = " ".join(trimmed_words).strip()
+        if exact_copy_hits(candidate, corpus_texts, n) == 0:
+            if had_terminal_punctuation and candidate and candidate[-1] not in ".!?":
+                candidate += "."
+            return candidate
+        trimmed_words.pop()
+
+    fallback = " ".join(trimmed_words).strip()
+    if had_terminal_punctuation and fallback and fallback[-1] not in ".!?":
+        fallback += "."
+    return fallback
+
+
 def _build_char_model(fragments: list[dict], order: int) -> MarkovModel:
     model = MarkovModel(order=order)
     for fragment in fragments:
@@ -342,6 +365,7 @@ def generate_text(
             sentence_model=sentence_model,
             motif_model=motif_model,
         ).strip()
+        output = _reduce_copy_overlap(output, corpus_texts, anti_copy_ngram)
 
         hits = exact_copy_hits(output, corpus_texts, anti_copy_ngram)
         if hits < best_hits:

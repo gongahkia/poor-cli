@@ -38,6 +38,30 @@ class JugemuTests(unittest.TestCase):
         corpus = ["we learned that clear boundaries matter in practice"]
         self.assertGreater(exact_copy_hits(output, corpus, n=3), 0)
 
+    def test_generate_text_reduces_copy_overlap(self) -> None:
+        fragments = [
+            {
+                "text": (
+                    "alpha beta gamma delta epsilon zeta eta theta "
+                    "iota kappa lambda mu"
+                )
+            }
+        ]
+        corpus = [row["text"] for row in fragments]
+
+        result = generate_text(
+            level="word",
+            prompt="alpha beta",
+            fragments=fragments,
+            max_tokens=32,
+            temperature=0.1,
+            seed=7,
+            anti_copy_ngram=4,
+            orders={"word": 2},
+        )
+
+        self.assertEqual(exact_copy_hits(result.output, corpus, n=4), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

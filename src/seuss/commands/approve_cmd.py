@@ -37,18 +37,22 @@ def run_approve_accept(config_path: Path, record_id: str) -> int:
     queue = read_jsonl(queue_path)
 
     moved = []
+    kept = []
     for row in queue:
         if row.get("id") == record_id and row.get("approval_status") == "pending":
-            row["approval_status"] = "approved"
-            row["approved_at"] = now_iso()
-            moved.append(row)
+            approved_row = dict(row)
+            approved_row["approval_status"] = "approved"
+            approved_row["approved_at"] = now_iso()
+            moved.append(approved_row)
+            continue
+        kept.append(row)
 
     if not moved:
         print(f"Pending record not found: {record_id}")
         return 1
 
     append_jsonl(approved_path, moved)
-    write_jsonl(queue_path, queue)
+    write_jsonl(queue_path, kept)
     print(f"Approved record: {record_id}")
     return 0
 
@@ -78,16 +82,17 @@ def run_approve_accept_all(config_path: Path, source: str | None) -> int:
     queue = read_jsonl(queue_path)
 
     moved = []
+    kept = []
     for row in queue:
-        if row.get("approval_status") != "pending":
+        if row.get("approval_status") == "pending" and (not source or row.get("source") == source):
+            approved_row = dict(row)
+            approved_row["approval_status"] = "approved"
+            approved_row["approved_at"] = now_iso()
+            moved.append(approved_row)
             continue
-        if source and row.get("source") != source:
-            continue
-        row["approval_status"] = "approved"
-        row["approved_at"] = now_iso()
-        moved.append(row)
+        kept.append(row)
 
     append_jsonl(approved_path, moved)
-    write_jsonl(queue_path, queue)
+    write_jsonl(queue_path, kept)
     print(f"Approved records: {len(moved)}")
     return 0

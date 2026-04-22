@@ -16,7 +16,24 @@ def _top_phrases(fragments: list[dict], limit: int) -> list[tuple[str, int]]:
     return [(phrase, n) for phrase, n in counts.most_common(limit) if phrase]
 
 
-def _summary(fragments: list[dict], memories: list[dict], queue: list[dict], ingest_stats: dict | None) -> int:
+def _recent_runs(runs_dir: Path, limit: int) -> list[dict]:
+    if not runs_dir.exists():
+        return []
+    files = sorted(runs_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    rows: list[dict] = []
+    for file_path in files[:limit]:
+        rows.append(json.loads(file_path.read_text(encoding="utf-8")))
+    return rows
+
+
+def _summary(
+    fragments: list[dict],
+    memories: list[dict],
+    queue: list[dict],
+    ingest_stats: dict | None,
+    runs_dir: Path,
+    limit: int,
+) -> int:
     print(f"Corpus fragments: {len(fragments)}")
     print(f"Memory records: {len(memories)}")
     print(f"Training queue records: {len(queue)}")
@@ -36,6 +53,43 @@ def _summary(fragments: list[dict], memories: list[dict], queue: list[dict], ing
     print("Fragments by split:")
     for key, value in sorted(by_split.items()):
         print(f"  {key}: {value}")
+
+    top = _top_phrases(fragments, limit=limit)
+    print("Top phrases:")
+    if not top:
+        print("  (none)")
+    else:
+        for phrase, count in top:
+            print(f"  {count:>5}  {shorten(phrase, 96)}")
+
+    pending = [row for row in queue if row.get("approval_status") == "pending"]
+    approved = [row for row in queue if row.get("approval_status") == "approved"]
+    rejected = [row for row in queue if row.get("approval_status") == "rejected"]
+    print("Queue summary:")
+    print(f"  pending={len(pending)} approved={len(approved)} rejected={len(rejected)}")
+    print("Recent queue items:")
+    if not queue:
+        print("  (none)")
+    else:
+        for row in queue[-limit:]:
+            status = row.get("approval_status", "unknown")
+            print(
+                f"  {row.get('id')}  {status}  {row.get('source')}  "
+                f"{shorten(row.get('text', ''), 96)}"
+            )
+
+    print("Recent runs:")
+    recent_runs = _recent_runs(runs_dir, limit=limit)
+    if not recent_runs:
+        print("  (none)")
+    else:
+        for row in recent_runs:
+            metrics = row.get("metrics", {})
+            print(
+                f"  {row.get('id')}  level={row.get('level')}  "
+                f"copy_hits={metrics.get('exact_copy_ngram_hits', 'n/a')}  "
+                f"repetition={metrics.get('repetition_score', 'n/a')}"
+            )
 
     if ingest_stats:
         redactions = ingest_stats.get("redaction_totals", {})
@@ -68,8 +122,7 @@ def _inspect_runs(runs_dir: Path, limit: int) -> int:
         return 0
     files = sorted(runs_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     print(f"Run files: {len(files)}")
-    for file_path in files[:limit]:
-        row = json.loads(file_path.read_text(encoding="utf-8"))
+    for row in _recent_runs(runs_dir, limit=limit):
         metrics = row.get("metrics", {})
         print(
             f"{row.get('id')}  level={row.get('level')}  "
@@ -93,7 +146,14 @@ def run_inspect(config_path: Path, mode: str | None, source: str | None, limit: 
         ingest_stats = json.loads(stats_path.read_text(encoding="utf-8"))
 
     if mode is None:
-        return _summary(fragments, memories, queue, ingest_stats)
+        return _summary(
+            fragments=fragments,
+            memories=memories,
+            queue=queue,
+            ingest_stats=ingest_stats,
+            runs_dir=workspace / "runs",
+            limit=limit,
+        )
 
     if mode == "corpus":
         print(f"Corpus fragments: {len(fragments)}")

@@ -64,6 +64,16 @@ class InspectModesTests(unittest.TestCase):
                 )
             self.assertIn("Run files", runs_stdout.getvalue())
 
+            with redirect_stdout(io.StringIO()) as summary_stdout:
+                self.assertEqual(
+                    run_inspect(config_path=config_path, mode=None, source=None, limit=10),
+                    0,
+                )
+            summary = summary_stdout.getvalue()
+            self.assertIn("Top phrases:", summary)
+            self.assertIn("Queue summary:", summary)
+            self.assertIn("Recent runs:", summary)
+
 
 if __name__ == "__main__":
     unittest.main()

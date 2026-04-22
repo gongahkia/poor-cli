@@ -156,7 +156,7 @@ def _source_from_direct_path(direct_path: Path) -> dict:
         raise FileNotFoundError(f"Direct ingest path not found: {resolved}")
 
     # Stable source identity for dedupe behavior and inspect output.
-    source_name = f"path_{abs(hash(str(resolved))) % 10_000_000}"
+    source_name = f"path_{stable_hash(str(resolved))[:10]}"
 
     if resolved.is_file():
         if resolved.suffix.lower() not in {".md", ".txt"}:
