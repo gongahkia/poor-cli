@@ -453,7 +453,7 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
     positioning: "Direct official-feed monitoring surface for operational alerts and policy/news intake.",
     preferredInterface: "sg_gov_feed_items",
     scopeNotes: [
-      "Supports 18 source streams across NEA, weather.gov.sg, SFA, MPA, and NHB.",
+      "Supports 20 source streams across NEA, weather.gov.sg, SFA, MPA, and NHB.",
       "Rollback controls are first-class: SG_APIS_DISABLED_FAMILIES and SG_APIS_DISABLED_STREAMS.",
     ],
   },

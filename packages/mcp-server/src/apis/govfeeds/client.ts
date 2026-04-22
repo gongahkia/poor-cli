@@ -78,6 +78,13 @@ const GOV_FEED_DEFINITIONS: readonly GovFeedDefinition[] = [
     sourceUrl: "https://www.weather.gov.sg/files/rss/rsscapalert/rsscapalert.xml",
   },
   {
+    id: "weather_portal_updates",
+    title: "Weather Portal Updates Feed",
+    family: "weather",
+    sourceAgency: "Meteorological Service Singapore",
+    sourceUrl: "https://www.weather.gov.sg/feed/",
+  },
+  {
     id: "sfa_newsroom",
     title: "SFA Newsroom",
     family: "sfa",
@@ -111,6 +118,13 @@ const GOV_FEED_DEFINITIONS: readonly GovFeedDefinition[] = [
     family: "mpa",
     sourceAgency: "Maritime and Port Authority of Singapore",
     sourceUrl: "https://www.mpa.gov.sg/feeds/media-releases",
+  },
+  {
+    id: "mpa_press_releases",
+    title: "MPA Press Releases",
+    family: "mpa",
+    sourceAgency: "Maritime and Port Authority of Singapore",
+    sourceUrl: "https://www.mpa.gov.sg/feeds/press-releases",
   },
   {
     id: "nhb_general",

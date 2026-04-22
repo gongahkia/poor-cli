@@ -30,15 +30,21 @@ describe("government RSS feeds client", () => {
   it("returns catalog entries and family filtering", () => {
     const all = getGovFeedCatalog();
     const weather = getGovFeedCatalog("weather");
+    const mpa = getGovFeedCatalog("mpa");
     const nhb = getGovFeedCatalog("nhb");
 
-    expect(all.length).toBe(18);
+    expect(all.length).toBe(20);
     expect(weather.map((entry) => entry.id)).toEqual([
       "weather_2hr_forecast",
       "weather_24hr_forecast",
       "weather_4day_forecast",
       "weather_heavy_rain",
       "weather_cap_alert",
+      "weather_portal_updates",
+    ]);
+    expect(mpa.map((entry) => entry.id)).toEqual([
+      "mpa_media_releases",
+      "mpa_press_releases",
     ]);
     expect(nhb.map((entry) => entry.id)).toEqual([
       "nhb_general",

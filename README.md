@@ -119,7 +119,7 @@ Notes:
 - `sg_datagov_get` is metadata only.
 - `sg_datagov_resources` exposes the current machine-readable resource shape and columns for a dataset.
 - `sg_datagov_rows` performs bounded datastore reads with explicit `filters`, `limit`, `offset`, and `sort`.
-- `sg_gov_feed_items` supports stream-level rollback through `SG_APIS_DISABLED_STREAMS` and family-level rollback through `SG_APIS_DISABLED_FAMILIES` across 18 streams (NEA, weather.gov.sg including CAP alerts, SFA, MPA, NHB).
+- `sg_gov_feed_items` supports stream-level rollback through `SG_APIS_DISABLED_STREAMS` and family-level rollback through `SG_APIS_DISABLED_FAMILIES` across 20 streams (NEA, weather.gov.sg including CAP alerts and portal updates, SFA, MPA, NHB).
 - OneMap now requires valid credentials for live requests. There is no silent unauthenticated fallback.
 - HDB, CEA, BCA, BOA, HSA, HLB, and `sg_acra_entities` are curated tools over official public datasets and do not introduce separate credentials.
 - PA, Sport Singapore, ECDA, and the MSF civic directories stay no-auth by using the same official data.gov.sg download path.
