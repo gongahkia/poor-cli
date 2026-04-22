@@ -7295,24 +7295,28 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
 fn key_combo_label(combo: &wok_app::keybindings::KeyCombo) -> String {
     let mut parts = Vec::new();
     if combo.modifiers.ctrl {
-        parts.push("Ctrl".to_string());
+        parts.push("C".to_string());
     }
     if combo.modifiers.alt {
-        parts.push("Alt".to_string());
+        parts.push("M".to_string());
     }
     if combo.modifiers.shift {
-        parts.push("Shift".to_string());
+        parts.push("^".to_string());
     }
     if combo.modifiers.meta {
         parts.push("Cmd".to_string());
     }
-    parts.push(key_action_label(&combo.key));
-    parts.join("+")
+    let key = key_action_label(&combo.key);
+    if parts.is_empty() {
+        key
+    } else {
+        format!("{}-{key}", parts.join("-"))
+    }
 }
 
 fn key_action_label(action: &KeyAction) -> String {
     match action {
-        KeyAction::Char(ch) => ch.to_ascii_uppercase().to_string(),
+        KeyAction::Char(ch) => ch.to_string(),
         KeyAction::Enter => "Enter".to_string(),
         KeyAction::Tab => "Tab".to_string(),
         KeyAction::Backspace => "Backspace".to_string(),
@@ -7449,6 +7453,24 @@ mod tests {
     fn test_action_palette_description_marks_unbound_shortcut() {
         let description = action_palette_description(&Action::CommandPalette, "");
         assert!(description.contains("Shortcut: unbound"));
+    }
+
+    #[test]
+    fn test_recent_key_label_preserves_character_case() {
+        let lower = wok_app::keybindings::KeyCombo {
+            key: KeyAction::Char('a'),
+            modifiers: wok_app::input::Modifiers::default(),
+        };
+        let upper = wok_app::keybindings::KeyCombo {
+            key: KeyAction::Char('A'),
+            modifiers: wok_app::input::Modifiers {
+                shift: true,
+                ..Default::default()
+            },
+        };
+
+        assert_eq!(key_combo_label(&lower), "a");
+        assert_eq!(key_combo_label(&upper), "^-A");
     }
 
     #[test]

@@ -1377,16 +1377,26 @@ pub(crate) fn render_recent_keys_overlay(
     if labels.is_empty() || viewport.w <= 0.0 || viewport.h <= 0.0 {
         return;
     }
-    let text = labels.join("  ");
-    let max_width = (viewport.w * 0.48).clamp(120.0, 520.0).min(viewport.w);
-    let visible_text = fit_text_to_width(&text, max_width - 20.0, font.metrics.cell_width);
-    if visible_text.is_empty() {
+    let max_width = (viewport.w * 0.28).clamp(88.0, 260.0).min(viewport.w);
+    let text_width = (max_width - 20.0).max(font.metrics.cell_width);
+    let visible_labels = labels
+        .iter()
+        .map(|label| fit_text_to_width(label, text_width, font.metrics.cell_width))
+        .filter(|label| !label.is_empty())
+        .collect::<Vec<_>>();
+    if visible_labels.is_empty() {
         return;
     }
-    let width = (visible_text.chars().count() as f32 * font.metrics.cell_width + 20.0)
+    let longest_label = visible_labels
+        .iter()
+        .map(|label| label.chars().count())
+        .max()
+        .unwrap_or(0);
+    let width = (longest_label as f32 * font.metrics.cell_width + 20.0)
         .min(max_width)
-        .max(80.0);
-    let height = font.metrics.cell_height + 14.0;
+        .max(72.0);
+    let row_height = font.metrics.cell_height + 4.0;
+    let height = row_height * visible_labels.len() as f32 + 10.0;
     let margin = 12.0;
     let x = match position {
         wok_app::config::OverlayPosition::TopLeft
@@ -1432,19 +1442,21 @@ pub(crate) fn render_recent_keys_overlay(
             (0.72 * alpha).clamp(0.0, 1.0),
         ],
     );
-    push_text(
-        render,
-        font,
-        x + 10.0,
-        y + ((height - font.metrics.cell_height) * 0.5).max(0.0),
-        &visible_text,
-        [
-            theme.foreground.r,
-            theme.foreground.g,
-            theme.foreground.b,
-            (0.95 * surface_opacity).clamp(0.0, 1.0),
-        ],
-    );
+    for (index, label) in visible_labels.iter().enumerate() {
+        push_text(
+            render,
+            font,
+            x + 10.0,
+            y + 5.0 + index as f32 * row_height,
+            label,
+            [
+                theme.foreground.r,
+                theme.foreground.g,
+                theme.foreground.b,
+                (0.95 * surface_opacity).clamp(0.0, 1.0),
+            ],
+        );
+    }
 }
 
 pub(crate) fn palette_category_label(category: PaletteCategory) -> &'static str {
