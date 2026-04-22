@@ -108,10 +108,17 @@ struct BackendConfiguration: Equatable, Sendable {
     }
 }
 
-struct JSONRPCErrorPayload: Codable, Error, Sendable {
+struct JSONRPCErrorPayload: Codable, LocalizedError, Sendable {
     let code: Int
     let message: String
     let data: JSONValue?
+
+    var errorDescription: String? {
+        if let data {
+            return "\(message)\n\(data.prettyPrinted)"
+        }
+        return message
+    }
 }
 
 private struct JSONRPCRequest: Encodable {

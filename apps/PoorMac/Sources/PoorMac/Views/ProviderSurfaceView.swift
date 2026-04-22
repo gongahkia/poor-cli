@@ -11,19 +11,35 @@ struct ProviderSurfaceView: View {
 
     var body: some View {
         HSplitView {
-            VStack(spacing: 0) {
-                Table(providers, selection: $selectedProviderID) {
-                    TableColumn("Provider") { provider in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(provider.title)
-                            if !provider.subtitle.isEmpty {
-                                Text(provider.subtitle)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 0) {
+                Group {
+                    if providers.isEmpty {
+                        ContentUnavailableView(
+                            "No Providers Loaded",
+                            systemImage: "cpu",
+                            description: Text("Click Refresh to load provider status from the backend.")
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        Table(providers, selection: $selectedProviderID) {
+                            TableColumn("Provider") { provider in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(provider.title)
+                                    if !provider.subtitle.isEmpty {
+                                        Text(provider.subtitle)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                            TableColumn("ID", value: \.id)
+                        }
+                        .onChange(of: selectedProviderID) { _, value in
+                            if let value {
+                                app.configuration.provider = value
                             }
                         }
                     }
-                    TableColumn("ID", value: \.id)
                 }
                 .onAppear {
                     if providers.isEmpty {
@@ -33,11 +49,6 @@ struct ProviderSurfaceView: View {
                                 action: BackendAction(area: .providers, title: "List Providers", method: "poor-cli/listProviders")
                             )
                         }
-                    }
-                }
-                .onChange(of: selectedProviderID) { _, value in
-                    if let value {
-                        app.configuration.provider = value
                     }
                 }
                 .safeAreaInset(edge: .bottom) {
@@ -64,10 +75,7 @@ struct ProviderSurfaceView: View {
             .frame(minWidth: 360)
 
             Form {
-                Section("Active Launch Overrides") {
-                    LabeledContent("Provider", value: app.configuration.provider.isEmpty ? "Default" : app.configuration.provider)
-                    LabeledContent("Model", value: app.configuration.model.isEmpty ? "Default" : app.configuration.model)
-                    LabeledContent("API key", value: app.configuration.apiKey.isEmpty ? "Environment or backend store" : "Session override")
+                Section("Provider Setup") {
                     TextField("Provider", text: providerBinding)
                     TextField("Model", text: modelBinding)
                     SecureField("API key", text: apiKeyBinding)
@@ -90,13 +98,22 @@ struct ProviderSurfaceView: View {
                 }
 
                 Section("Selected Provider Detail") {
-                    ScrollView {
-                        Text(selectedProviderDetail)
-                            .font(.system(.body, design: .monospaced))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    if let detail = selectedProviderDetail {
+                        ScrollView {
+                            Text(detail)
+                                .font(.system(.body, design: .monospaced))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(minHeight: 180)
+                    } else {
+                        ContentUnavailableView(
+                            "No Provider Selected",
+                            systemImage: "cpu",
+                            description: Text("Refresh providers and select one to inspect readiness.")
+                        )
+                        .frame(minHeight: 180)
                     }
-                    .frame(minHeight: 180)
                 }
             }
             .formStyle(.grouped)
@@ -104,8 +121,8 @@ struct ProviderSurfaceView: View {
         }
     }
 
-    private var selectedProviderDetail: String {
-        providers.first { $0.id == selectedProviderID }?.detail ?? app.lastResult.prettyPrinted
+    private var selectedProviderDetail: String? {
+        providers.first { $0.id == selectedProviderID }?.detail
     }
 
     private var providerBinding: Binding<String> {

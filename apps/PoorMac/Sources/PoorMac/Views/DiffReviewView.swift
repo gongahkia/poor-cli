@@ -15,16 +15,27 @@ struct DiffReviewView: View {
     var body: some View {
         HSplitView {
             VStack(spacing: 0) {
-                Table(records, selection: $selectedEditID) {
-                    TableColumn("Edit") { record in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(record.title)
-                            Text(record.subtitle.isEmpty ? record.id : record.subtitle)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                Group {
+                    if records.isEmpty {
+                        ContentUnavailableView(
+                            "No Pending Edits",
+                            systemImage: "doc.text.magnifyingglass",
+                            description: Text("Click Refresh after the model stages edits.")
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        Table(records, selection: $selectedEditID) {
+                            TableColumn("Edit") { record in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(record.title)
+                                    Text(record.subtitle.isEmpty ? record.id : record.subtitle)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            TableColumn("ID", value: \.id)
                         }
                     }
-                    TableColumn("ID", value: \.id)
                 }
                 .onAppear {
                     if records.isEmpty {
@@ -53,14 +64,23 @@ struct DiffReviewView: View {
             .frame(minWidth: 360)
 
             VStack(alignment: .leading, spacing: 10) {
-                Text(selectedEdit?.title ?? "No Pending Edit")
-                    .font(.headline)
-                ScrollView {
-                    Text(app.lastResult.prettyPrinted)
-                        .font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
+                if selectedEdit == nil {
+                    ContentUnavailableView(
+                        "No Pending Edit",
+                        systemImage: "doc.text.magnifyingglass",
+                        description: Text("Pending edits appear here after tools stage changes.")
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    Text(selectedEdit?.title ?? "Pending Edit")
+                        .font(.headline)
+                    ScrollView {
+                        Text(app.lastResult.prettyPrinted)
+                            .font(.system(.body, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                    }
                 }
                 HStack {
                     Button {

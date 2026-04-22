@@ -149,8 +149,9 @@ final class AppModel: @unchecked Sendable {
             appendLog("Backend initialized", result.prettyPrinted)
             discoveredMethods = Self.loadRegistryMethods(repoRoot: configuration.repoRoot)
         } catch {
-            connectionState = .failed(error.localizedDescription)
-            appendLog("Backend start failed", error.localizedDescription)
+            let message = Self.errorMessage(error)
+            connectionState = .failed(message)
+            appendLog("Backend start failed", message)
             throw error
         }
     }
@@ -171,8 +172,9 @@ final class AppModel: @unchecked Sendable {
             lastResult = result
             appendLog(action.title, result.prettyPrinted)
         } catch {
-            lastResult = .object(["error": .string(error.localizedDescription)])
-            appendLog(action.title + " failed", error.localizedDescription)
+            let message = Self.errorMessage(error)
+            lastResult = .object(["error": .string(message)])
+            appendLog(action.title + " failed", message)
         }
     }
 
@@ -192,8 +194,9 @@ final class AppModel: @unchecked Sendable {
             appendLog(title ?? method, result.prettyPrinted)
             return result
         } catch {
-            lastResult = .object(["error": .string(error.localizedDescription)])
-            appendLog((title ?? method) + " failed", error.localizedDescription)
+            let message = Self.errorMessage(error)
+            lastResult = .object(["error": .string(message)])
+            appendLog((title ?? method) + " failed", message)
             return nil
         }
     }
@@ -234,7 +237,7 @@ final class AppModel: @unchecked Sendable {
             lastResult = result
             activeRequestID = nil
         } catch {
-            replaceChatTurn(id: assistantID, content: error.localizedDescription)
+            replaceChatTurn(id: assistantID, content: Self.errorMessage(error))
             activeRequestID = nil
         }
     }
@@ -247,7 +250,7 @@ final class AppModel: @unchecked Sendable {
             ])
             appendStreamEvent("Cancelled", activeRequestID, symbol: "xmark.circle")
         } catch {
-            appendStreamEvent("Cancel failed", error.localizedDescription, symbol: "exclamationmark.triangle")
+            appendStreamEvent("Cancel failed", Self.errorMessage(error), symbol: "exclamationmark.triangle")
         }
         self.activeRequestID = nil
     }
@@ -267,8 +270,9 @@ final class AppModel: @unchecked Sendable {
             lastResult = result
             appendLog("Exec", result.prettyPrinted)
         } catch {
-            lastResult = .object(["error": .string(error.localizedDescription)])
-            appendLog("Exec failed", error.localizedDescription)
+            let message = Self.errorMessage(error)
+            lastResult = .object(["error": .string(message)])
+            appendLog("Exec failed", message)
         }
     }
 
@@ -285,8 +289,9 @@ final class AppModel: @unchecked Sendable {
             lastResult = result
             appendLog(method, result.prettyPrinted)
         } catch {
-            lastResult = .object(["error": .string(error.localizedDescription)])
-            appendLog(method + " failed", error.localizedDescription)
+            let message = Self.errorMessage(error)
+            lastResult = .object(["error": .string(message)])
+            appendLog(method + " failed", message)
         }
     }
 
@@ -572,5 +577,12 @@ final class AppModel: @unchecked Sendable {
             }
         }
         return nil
+    }
+
+    private static func errorMessage(_ error: Error) -> String {
+        if let rpc = error as? JSONRPCErrorPayload {
+            return rpc.errorDescription ?? rpc.message
+        }
+        return error.localizedDescription
     }
 }

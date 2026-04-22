@@ -18,18 +18,29 @@ struct DomainSurfaceView: View {
     var body: some View {
         HSplitView {
             VStack(spacing: 0) {
-                Table(records, selection: $selectedRecordID) {
-                    TableColumn("Name") { record in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(record.title)
-                            if !record.subtitle.isEmpty {
-                                Text(record.subtitle)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                Group {
+                    if records.isEmpty {
+                        ContentUnavailableView(
+                            "No \(area.title) Loaded",
+                            systemImage: area.symbol,
+                            description: Text("Click Refresh to load this backend domain.")
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        Table(records, selection: $selectedRecordID) {
+                            TableColumn("Name") { record in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(record.title)
+                                    if !record.subtitle.isEmpty {
+                                        Text(record.subtitle)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
                             }
+                            TableColumn("ID", value: \.id)
                         }
                     }
-                    TableColumn("ID", value: \.id)
                 }
                 .onAppear {
                     if records.isEmpty {
@@ -64,14 +75,23 @@ struct DomainSurfaceView: View {
             .frame(minWidth: 360)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text(selectedRecord?.title ?? "No Selection")
-                    .font(.headline)
-                ScrollView {
-                    Text(selectedRecord?.detail ?? app.lastResult.prettyPrinted)
-                        .font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
+                if let selectedRecord {
+                    Text(selectedRecord.title)
+                        .font(.headline)
+                    ScrollView {
+                        Text(selectedRecord.detail)
+                            .font(.system(.body, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                    }
+                } else {
+                    ContentUnavailableView(
+                        "No Selection",
+                        systemImage: area.symbol,
+                        description: Text("Load \(area.title.lowercased()) data, then select a row.")
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
             .padding()
