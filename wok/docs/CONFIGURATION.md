@@ -50,7 +50,7 @@ external_plugin_command = "node ~/.config/wok/plugins/bridge.js"
 | Option | Type | Default | Runtime Status | Description |
 | --- | --- | --- | --- | --- |
 | `shell` | string | auto-detected | Active | Shell to use: `bash`, `zsh`, `fish`, `powershell`, or `wsl:<distro>` |
-| `font_family` | string | `"JetBrains Mono"` | Active | Selects the font family used for glyph rasterization and cell metric measurement |
+| `font_family` | string | `"Menlo"` on macOS, `"JetBrains Mono"` elsewhere | Active | Selects the font family used for glyph rasterization and cell metric measurement |
 | `font_size` | float | `24.0` | Active | Font size in points |
 | `input_position` | string | `"bottom"` | Active | Places the owned input bar above or below the viewport |
 | `command_entry_mode` | string | `"shell_native"` | Active | Chooses prompt-time command entry routing: `shell_native` keeps shell-side editing, `owned_primary` routes idle prompt input into Wok's editor with pane-first history recall and `Ctrl+R` command search |

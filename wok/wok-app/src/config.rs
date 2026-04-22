@@ -282,7 +282,7 @@ impl Default for WokConfig {
         Self {
             shell: wok_terminal::shell::detect_default_shell(),
             theme_path: None,
-            font_family: "JetBrains Mono".to_string(),
+            font_family: default_font_family().to_string(),
             font_size: 24.0,
             input_position: InputPosition::Bottom,
             command_entry_mode: CommandEntryMode::ShellNative,
@@ -314,6 +314,17 @@ impl Default for WokConfig {
             triggers: Vec::new(),
             layout_presets: Vec::new(),
         }
+    }
+}
+
+fn default_font_family() -> &'static str {
+    #[cfg(target_os = "macos")]
+    {
+        "Menlo"
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        "JetBrains Mono"
     }
 }
 
