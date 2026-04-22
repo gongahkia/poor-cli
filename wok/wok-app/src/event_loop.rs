@@ -1,6 +1,6 @@
 //! Event loop: runs the winit event loop and dispatches events to the AppHandler.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use tracing::{debug, info, warn};
 use winit::application::ApplicationHandler;
@@ -12,6 +12,9 @@ use crate::frame_clock::FrameClock;
 use crate::handler::{AppHandler, AppMenuAction};
 use crate::input::{translate_key_event, MouseEvent};
 use crate::window::{PlatformError, WindowConfig, WokWindow};
+
+const IDLE_BACKOFF_TICKS: u32 = 8;
+const IDLE_FRAME_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Runs the event loop with the given app handler.
 ///
@@ -34,6 +37,7 @@ pub fn run_event_loop<H: AppHandler + 'static>(
         current_modifiers: winit::event::Modifiers::default(),
         cursor_position: None,
         frame_clock: FrameClock::new(60),
+        idle_ticks: 0,
         initialized: false,
         #[cfg(target_os = "macos")]
         mac_menu: None,
@@ -53,9 +57,19 @@ struct WinitApp<H: AppHandler> {
     current_modifiers: winit::event::Modifiers,
     cursor_position: Option<(f64, f64)>,
     frame_clock: FrameClock,
+    idle_ticks: u32,
     initialized: bool,
     #[cfg(target_os = "macos")]
     mac_menu: Option<muda::Menu>,
+}
+
+impl<H: AppHandler> WinitApp<H> {
+    fn note_user_activity(&mut self) {
+        self.idle_ticks = 0;
+        if let Some(win) = &self.window {
+            win.window.request_redraw();
+        }
+    }
 }
 
 impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
@@ -103,9 +117,6 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
         #[cfg(target_os = "macos")]
         self.drain_macos_menu_events(event_loop);
 
-        let next_frame_at = Instant::now() + self.frame_clock.time_until_next_frame();
-        event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(next_frame_at));
-
         if self.frame_clock.should_render() {
             let should_redraw = self.handler.on_frame_tick();
             if self.handler.should_exit() {
@@ -113,11 +124,22 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
                 return;
             }
             if should_redraw {
+                self.idle_ticks = 0;
                 if let Some(win) = &self.window {
                     win.window.request_redraw();
                 }
+            } else {
+                self.idle_ticks = self.idle_ticks.saturating_add(1);
             }
         }
+
+        let next_frame_delay = if self.idle_ticks >= IDLE_BACKOFF_TICKS {
+            IDLE_FRAME_INTERVAL
+        } else {
+            self.frame_clock.time_until_next_frame()
+        };
+        let next_frame_at = Instant::now() + next_frame_delay;
+        event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(next_frame_at));
     }
 
     fn window_event(
@@ -134,6 +156,7 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
                 } else if let Some(win) = &self.window {
                     win.window.request_redraw();
                 }
+                self.idle_ticks = 0;
             }
             WindowEvent::Resized(size) => {
                 debug!(?size, "window resized");
@@ -141,6 +164,7 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
                     win.size = size;
                 }
                 self.handler.on_resize(size);
+                self.note_user_activity();
             }
             WindowEvent::Focused(focused) => {
                 debug!(focused, "focus changed");
@@ -148,6 +172,7 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
                     win.is_focused = focused;
                 }
                 self.handler.on_focus_change(focused);
+                self.note_user_activity();
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 debug!(scale_factor, "scale factor changed");
@@ -156,6 +181,7 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
                     win.size = win.window.inner_size();
                     self.handler.on_scale_factor_changed(scale_factor, win.size);
                 }
+                self.note_user_activity();
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.current_modifiers = modifiers;
@@ -165,6 +191,7 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
                     translate_key_event(&event, &self.current_modifiers.state())
                 {
                     self.handler.on_key_event(input_event);
+                    self.note_user_activity();
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
@@ -180,6 +207,7 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
                     y: position.y,
                     modifiers,
                 });
+                self.note_user_activity();
             }
             WindowEvent::MouseInput { state, button, .. } => {
                 let (x, y) = self.cursor_position.unwrap_or((0.0, 0.0));
@@ -197,6 +225,7 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
                             y,
                             modifiers,
                         });
+                        self.note_user_activity();
                     }
                     winit::event::ElementState::Released => {
                         self.handler.on_mouse_event(MouseEvent::Release {
@@ -205,6 +234,7 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
                             y,
                             modifiers,
                         });
+                        self.note_user_activity();
                     }
                 }
             }
@@ -227,6 +257,7 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
                     delta_y: dy,
                     modifiers,
                 });
+                self.note_user_activity();
             }
             WindowEvent::RedrawRequested => {
                 self.handler.on_redraw();
@@ -247,9 +278,7 @@ impl<H: AppHandler> WinitApp<H> {
                 event_loop.exit();
                 return;
             }
-            if let Some(win) = &self.window {
-                win.window.request_redraw();
-            }
+            self.note_user_activity();
         }
     }
 }
