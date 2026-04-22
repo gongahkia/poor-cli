@@ -204,7 +204,6 @@ Legend: ✅ supported, ⚪ not supported in poor-cli today, `opt` requires a fun
 
 ## See Also
 
-- [NORTH_STAR.md](../NORTH_STAR.md) — median_usd_per_completion is the north-star; pick your provider accordingly.
-- [ARCHITECTURE.md](../ARCHITECTURE.md) — provider abstraction + adapter contract.
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — provider abstraction + adapter contract.
 - [HARNESS_PORTABILITY.md](./HARNESS_PORTABILITY.md) — why poor-cli blocks stateful APIs by default.
 - [MCP.md](./MCP.md) — adding MCP servers alongside a provider.

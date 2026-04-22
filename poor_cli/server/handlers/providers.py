@@ -37,7 +37,7 @@ class ProvidersHandlersMixin:
         await self.core.switch_provider(provider, model)
         provider_info = self.core.get_provider_info()
 
-        # push providerChanged so lualine / status UIs update without polling
+        # push providerChanged so CLI/API status consumers update without polling
         async def _emit_provider_changed() -> None:
             try:
                 await self.write_message_stdio(JsonRpcMessage(

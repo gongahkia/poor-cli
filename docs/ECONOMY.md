@@ -81,5 +81,3 @@ Triggered guardrails block further requests with a structured error. Use `/cost`
 
 - [PROVIDERS.md](./PROVIDERS.md) — model tiers per provider drive routing decisions.
 - [HARNESS_PORTABILITY.md](./HARNESS_PORTABILITY.md) — why server-side caching alone isn't enough.
-- [BENCHMARKS.md](./BENCHMARKS.md) — pending pass@1 will publish per-preset cost.
-- `NORTH_STAR.md` — the metric all of this chases.

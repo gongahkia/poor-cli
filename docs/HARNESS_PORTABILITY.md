@@ -61,7 +61,3 @@ Semantic cache (`poor_cli/semantic_cache.py`) is local SQLite. Safe.
 ## What's Not Safe
 
 Assistants API, Responses API with `store=True`, Anthropic Messages Batch with server-side result persistence, any "managed agent" or "hosted session" API. Not shipped; gated by `enforce_portability`.
-
-## See Also
-
-- `LONGTERM-TODO.md` section "Memory & Harness — Open Ownership" (MH1–MH9).

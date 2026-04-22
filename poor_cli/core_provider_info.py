@@ -81,7 +81,7 @@ class ProviderInfoMixin:
     def get_provider_info(self) -> Dict[str, Any]:
         """Return info about the current provider."""
         if not self._initialized or not self.config:
-            # soft-init: minimal stub so lualine/status polling doesn't spam errors
+            # soft-init: minimal response so status polling does not spam errors
             return {"name": "unconfigured", "model": "", "initialized": False, "capabilities": {}}
         if not self.provider:
             return {
