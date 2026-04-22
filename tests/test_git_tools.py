@@ -103,9 +103,9 @@ def test_stage_and_unstage(repo):
     assert "?? new.txt" in st2
 
 
-def test_commit_cli_path_sets_degraded(repo):
+def test_commit_cli_path_commits(repo):
     (repo / "a.txt").write_text("alpha commit change\n")
-    ctx = _ctx(repo, plugins={})  # neogit not available
+    ctx = _ctx(repo, plugins={})  # no commit UI available
     _run_async(git_tools.handle_stage(ctx=ctx, args={"paths": ["a.txt"]}))
     result = _run_async(
         git_tools.handle_commit(
@@ -113,34 +113,29 @@ def test_commit_cli_path_sets_degraded(repo):
         )
     )
     assert not result.is_error
-    assert result.metadata.get("degraded") == "cli"
     log = subprocess.run(
         ["git", "log", "-1", "--format=%s"], cwd=repo, capture_output=True, text=True
     ).stdout.strip()
     assert log == "chore: test commit from poor-cli tool"
 
 
-def test_commit_neogit_path_fires_notification_and_commits(repo):
+def test_commit_ui_path_fires_notification_and_commits(repo):
     (repo / "a.txt").write_text("alpha another change\n")
     notify_log: list = []
-    ctx = _ctx(repo, plugins={"neogit": True}, notify_log=notify_log)
+    ctx = _ctx(repo, plugins={"commit_ui": True}, notify_log=notify_log)
     _run_async(git_tools.handle_stage(ctx=ctx, args={"paths": ["a.txt"]}))
     result = _run_async(
         git_tools.handle_commit(
-            ctx=ctx, args={"message": "feat: with neogit bridge"}
+            ctx=ctx, args={"message": "feat: with commit ui"}
         )
     )
     assert not result.is_error
-    # neogit bridge notification was fired
     methods = [m for m, _ in notify_log]
-    assert "integration.neogit.openCommit" in methods
-    # commit actually made
+    assert "integration.git.openCommit" in methods
     log = subprocess.run(
         ["git", "log", "-1", "--format=%s"], cwd=repo, capture_output=True, text=True
     ).stdout.strip()
-    assert log == "feat: with neogit bridge"
-    # degraded metadata NOT set when neogit is in play
-    assert result.metadata.get("degraded") is None
+    assert log == "feat: with commit ui"
 
 
 def test_log_returns_table(repo):

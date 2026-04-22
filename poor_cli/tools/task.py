@@ -1,18 +1,15 @@
-"""Repo-task runner tools (Phase B).
+"""Repo-task runner tools.
 
-When overseer.nvim is available the agent's ``task.run`` invocation fires
-an overseer template so the user sees the task in their overseer UI. CLI
-fallback spawns a managed subprocess and returns a ``task_id`` that
+``task.run`` spawns a managed subprocess and returns a ``task_id`` that
 ``task.logs`` and ``task.cancel`` address.
 
-Naming note: ``task.*`` refers to *repo build tasks* (test, lint, build,
-package run-scripts). The unrelated Phase-A ``:PoorCLIAgent task-*`` verb
-set addresses long-running agent tasks — a different subsystem.
+Naming note: ``task.*`` refers to repo build tasks (test, lint, build,
+package run-scripts). Long-running agent tasks use the ``poor-cli task`` CLI
+subcommands.
 """
 
 from __future__ import annotations
 
-import asyncio
 import os
 import shlex
 import signal
@@ -35,18 +32,6 @@ _LOCK = threading.Lock()
 
 def _ctx_cwd(ctx: Any) -> str:
     return getattr(ctx, "cwd", None) or os.getcwd()
-
-
-async def _notify(ctx: Any, method: str, params: Dict[str, Any]) -> None:
-    fn = getattr(ctx, "notify_client", None)
-    if fn is None:
-        return
-    try:
-        maybe = fn(method, params)
-        if asyncio.iscoroutine(maybe):
-            await maybe
-    except Exception:
-        pass
 
 
 def _new_task_id() -> str:
@@ -98,32 +83,18 @@ async def handle_run(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
     name = str(args.get("name") or "").strip()
     cmd = args.get("cmd") or args.get("command")
     if not name and not cmd:
-        return ToolResult.error("name (overseer template) or cmd (shell string) is required")
-    if getattr(ctx, "has_plugin", lambda _: False)("overseer") and name:
-        await _notify(
-            ctx,
-            "integration.overseer.runTemplate",
-            {"name": name, "args": args.get("args") or {}},
-        )
-        # Overseer tracks the lifecycle visually; our side returns a metadata
-        # handle so the agent can phrase "running task <name>".
-        return ToolResult(
-            content=[TextBlock(text=f"dispatched overseer template: {name}")],
-            metadata={"overseer_template": name},
-        )
-    # CLI fallback.
+        return ToolResult.error("name or cmd is required")
     if cmd:
         argv = cmd if isinstance(cmd, list) else shlex.split(str(cmd))
     else:
-        # No overseer and only a template name — use `make <name>` as a
-        # best-effort convention so users with Makefile targets still work.
+        # template names map to Makefile targets by convention.
         argv = ["make", name]
     task = _spawn_cli_task(cwd=cwd, argv=argv)
     return ToolResult(
         content=[
             TextBlock(text=f"started task {task['task_id']}: {' '.join(argv)}"),
         ],
-        metadata={"task_id": task["task_id"], "degraded": "cli"},
+        metadata={"task_id": task["task_id"]},
     )
 
 
@@ -183,22 +154,19 @@ async def handle_cancel(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
 
 
 async def handle_list(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
-    # When overseer is available, we forward to its templates; for the CLI
-    # path we list in-process tasks only.
     with _LOCK:
         rows = [[t["task_id"], _task_status(t), " ".join(t["argv"])] for t in _TASKS.values()]
     if not rows:
-        return ToolResult.text("no in-process tasks. When overseer is available, prefer its task pane for templates.")
+        return ToolResult.text("no in-process tasks")
     return ToolResult(content=[TableBlock(columns=["task_id", "status", "cmd"], rows=rows)])
 
 
 register_tool(
     name="task.run",
     description=(
-        "Run a repo task. If overseer.nvim is available and ``name`` matches "
-        "an overseer template, dispatch there. Otherwise run the shell ``cmd`` "
-        "(or ``make <name>`` as a best-effort fallback) as a managed subprocess "
-        "and return a ``task_id`` usable with task.logs and task.cancel."
+        "Run a repo task as a managed subprocess. Use shell ``cmd`` directly, "
+        "or pass ``name`` to run ``make <name>``. Returns a ``task_id`` usable "
+        "with task.logs and task.cancel."
     ),
     schema={
         "type": "object",
@@ -261,7 +229,7 @@ register_tool(
 
 register_tool(
     name="task.list",
-    description="List in-process managed tasks (overseer has its own view).",
+    description="List in-process managed tasks.",
     schema={"type": "object", "properties": {}, "additionalProperties": False},
     handler=handle_list,
     circuit_disabled=True,

@@ -2,7 +2,7 @@
 Inline code completion engine for poor-cli.
 
 Provides fill-in-middle (FIM) completions using the configured provider.
-Designed for low-latency editor integration via JSON-RPC.
+Designed for low-latency CLI and JSON-RPC completion surfaces.
 """
 
 from __future__ import annotations

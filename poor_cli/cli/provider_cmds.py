@@ -26,7 +26,7 @@ def _provider_info_fast(config_path_hint: str | None = None) -> dict[str, Any]:
         "routingMode": str(settings.get("routingMode", "manual")),
         "initialized": False,
         "capabilities": {},
-        "supported_clients": ["cli", "neovim"],
+        "supported_clients": ["cli", "json-rpc"],
     }
 
 

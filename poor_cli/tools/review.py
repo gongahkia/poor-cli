@@ -1,9 +1,7 @@
 """Review tools (Phase B).
 
-The user-facing `:PoorCLIReview <verb>` commands (Phase A §4.2) are
-preserved as chat-prompt seeds; this module backs them with callable tools
-the agent invokes itself when it chooses. Reviewers can also fire these
-directly via chat ("review PR 42") without going through the verb.
+This module backs callable review tools the agent invokes when it chooses.
+Users can also fire them directly via chat ("review PR 42").
 """
 
 from __future__ import annotations

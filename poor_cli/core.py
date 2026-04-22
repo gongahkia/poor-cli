@@ -2,7 +2,7 @@
 PoorCLI Core Engine - Headless AI coding assistant
 
 This module provides a headless engine used by the PoorCLI terminal client and
-the Neovim plugin.
+the CLI harness.
 """
 
 import asyncio
@@ -104,7 +104,7 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
     Headless AI coding assistant engine.
     
     This is the core wrapper layer shared by supported clients:
-    - Neovim plugin (via JSON-RPC server)
+    - JSON-RPC automation client
     
     Attributes:
         provider: The AI provider (Gemini, OpenAI, Claude, Ollama)
@@ -113,7 +113,7 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
         checkpoint_manager: File checkpoint/undo system
         config: Configuration object
     """
-    SUPPORTED_CLIENTS: Tuple[str, ...] = ("cli", "neovim")
+    SUPPORTED_CLIENTS: Tuple[str, ...] = ("cli", "json-rpc")
     
     def __init__(
         self,

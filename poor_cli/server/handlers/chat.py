@@ -148,8 +148,7 @@ class ChatHandlersMixin:
             self._sandbox_preset = self._current_sandbox_preset()
             set_log_context(provider=provider_info.get("name"))
 
-            # push an initialized notification so clients (nvim onboarding,
-            # lualine) don't need to poll. scheduled so the initialize
+            # push an initialized notification so clients don't need to poll. scheduled so the initialize
             # response sends first.
             async def _emit_initialized() -> None:
                 try:
@@ -212,7 +211,7 @@ class ChatHandlersMixin:
         except ConfigurationError as e:
             # Surface configuration errors (wrong provider, unavailable
             # service, bad env, etc.) as structured JSON-RPC errors with
-            # an actionable error_code so the Neovim client can show a
+            # an actionable error_code so clients can show a
             # meaningful message instead of a raw "exit code 143" crash.
             raise ConfigurationError(f"Initialization failed: {e}") from e
         except Exception as e:

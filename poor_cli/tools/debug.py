@@ -1,10 +1,8 @@
-"""Debug tools (Phase B). Drive nvim-dap via the DAP bridge.
+"""Debug tools exposed to the agent harness.
 
-Every write tool sends an RPC notification into the Lua bridge. Read tools
-aren't yet wired because poor-cli doesn't currently request DAP state; the
-agent infers runtime state from log + user narration. Read-tool stubs exist
-so the surface is stable — they return a clear "not yet implemented"
-ToolResult rather than failing silently.
+Write-side tools notify an attached debug bridge when one exists. In plain CLI
+sessions no bridge is assumed, so the tool returns an explicit unavailable
+result instead of pretending a breakpoint was installed.
 """
 
 from __future__ import annotations
@@ -16,9 +14,9 @@ from poor_cli.tool_blocks import TextBlock, ToolResult
 from poor_cli.tools._registry import register_tool
 
 
-def _has_dap(ctx: Any) -> bool:
+def _has_debug_bridge(ctx: Any) -> bool:
     fn = getattr(ctx, "has_plugin", None)
-    return bool(callable(fn) and fn("dap"))
+    return bool(callable(fn) and fn("debug"))
 
 
 async def _notify(ctx: Any, method: str, params: Dict[str, Any]) -> None:
@@ -34,9 +32,9 @@ async def _notify(ctx: Any, method: str, params: Dict[str, Any]) -> None:
 
 
 async def handle_set_breakpoint(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
-    if not _has_dap(ctx):
+    if not _has_debug_bridge(ctx):
         return ToolResult.error(
-            "nvim-dap is not available in this session",
+            "debug bridge is not available in this session",
             degraded="unavailable",
         )
     file = str(args.get("file") or "")
@@ -46,41 +44,40 @@ async def handle_set_breakpoint(*, ctx: Any, args: Dict[str, Any]) -> ToolResult
     payload: Dict[str, Any] = {"file": file, "line": line}
     if args.get("condition"):
         payload["condition"] = str(args["condition"])
-    await _notify(ctx, "integration.dap.setBreakpoint", payload)
+    await _notify(ctx, "integration.debug.setBreakpoint", payload)
     return ToolResult.text(f"breakpoint set at {file}:{line}")
 
 
 async def handle_clear_breakpoint(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
-    if not _has_dap(ctx):
-        return ToolResult.error("nvim-dap is not available")
+    if not _has_debug_bridge(ctx):
+        return ToolResult.error("debug bridge is not available")
     file = str(args.get("file") or "")
     line = int(args.get("line") or 0)
     if not file or line <= 0:
         return ToolResult.error("file and line are required")
-    await _notify(ctx, "integration.dap.clearBreakpoint", {"file": file, "line": line})
+    await _notify(ctx, "integration.debug.clearBreakpoint", {"file": file, "line": line})
     return ToolResult.text(f"breakpoint cleared at {file}:{line}")
 
 
 async def handle_step(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
-    if not _has_dap(ctx):
-        return ToolResult.error("nvim-dap is not available")
+    if not _has_debug_bridge(ctx):
+        return ToolResult.error("debug bridge is not available")
     direction = str(args.get("direction") or "over").lower()
     if direction not in {"over", "in", "out"}:
         return ToolResult.error("direction must be one of: over, in, out")
-    await _notify(ctx, "integration.dap.step", {"direction": direction})
+    await _notify(ctx, "integration.debug.step", {"direction": direction})
     return ToolResult.text(f"step {direction}")
 
 
 async def handle_continue(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
-    if not _has_dap(ctx):
-        return ToolResult.error("nvim-dap is not available")
-    await _notify(ctx, "integration.dap.continue", {})
+    if not _has_debug_bridge(ctx):
+        return ToolResult.error("debug bridge is not available")
+    await _notify(ctx, "integration.debug.continue", {})
     return ToolResult.text("continued")
 
 
 async def handle_stack(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
-    # The read-side of DAP needs a request (not notification) round-trip;
-    # that's Phase C T10 territory. Stub for now.
+    # read-side debug state needs a request/response bridge. stub for now.
     return ToolResult(
         content=[TextBlock(text="debug.stack is not yet implemented")],
         metadata={"not_implemented": True},
@@ -99,7 +96,7 @@ async def handle_eval(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
 
 register_tool(
     name="debug.breakpoint.set",
-    description="Set a breakpoint at file:line via nvim-dap. Optional condition.",
+    description="Set a breakpoint at file:line through an attached debug bridge. Optional condition.",
     schema={
         "type": "object",
         "required": ["file", "line"],
@@ -115,7 +112,7 @@ register_tool(
 
 register_tool(
     name="debug.breakpoint.clear",
-    description="Clear a breakpoint at file:line via nvim-dap.",
+    description="Clear a breakpoint at file:line through an attached debug bridge.",
     schema={
         "type": "object",
         "required": ["file", "line"],
@@ -152,7 +149,7 @@ register_tool(
 
 register_tool(
     name="debug.stack",
-    description="Return the current DAP stack frames (not yet implemented).",
+    description="Return current debug stack frames (not yet implemented).",
     schema={"type": "object", "properties": {}, "additionalProperties": False},
     handler=handle_stack,
 )

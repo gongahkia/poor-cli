@@ -276,7 +276,7 @@ def run_memory_mode(argv: Sequence[str]) -> int:
                 print()
             if payload:
                 print("Use --accept-all or --reject-all to act on the entire pile.")
-                print("Per-entry edits run through Neovim :PoorCLIMemoryReview today.")
+                print("Per-entry edits are handled by `poor-cli memory review`.")
         return 0
     if args.subcommand == "expire":
         from ..memory_forgetting import MemoryForgetter

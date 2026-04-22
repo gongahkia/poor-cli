@@ -2,7 +2,7 @@
 PoorCLI Core Engine - Headless AI coding assistant
 
 This module provides a headless engine used by the PoorCLI terminal client and
-the Neovim plugin.
+the CLI harness.
 """
 
 import asyncio

@@ -356,7 +356,7 @@ class ProvidersHandlersMixin:
         The "valid" key is kept for clients that can't yet read status;
         it is True ONLY for "valid" so existing callers don't accidentally
         save on "unknown". Clients that distinguish the three states
-        (e.g. :PoorCLIConfig api-key) should read `status` and treat "unknown" as
+        (e.g. `poor-cli provider`) should read `status` and treat "unknown" as
         "save the key but warn that we couldn't confirm it works".
         """
         provider = self._normalize_provider_name(str(params.get("provider", "")))

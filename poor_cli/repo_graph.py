@@ -1452,8 +1452,6 @@ class RepoGraph:
         boost = _LANGUAGE_PRIORITY_BOOST.get(language_name, 0.0)
         if relative_path.startswith("poor-cli/"):
             boost += 0.02
-        elif relative_path.startswith("nvim-poor-cli/"):
-            boost += 0.008
         return boost
 
     def _symbol_priority(self, symbol: Dict[str, Any]) -> float:

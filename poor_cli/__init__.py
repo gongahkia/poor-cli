@@ -1,7 +1,7 @@
 """poor-cli package metadata.
 
-Provider-agnostic BYOK AI coding agent for Neovim.
-Python backend serves the Neovim plugin via JSON-RPC.
+Provider-agnostic BYOK CLI agent harness.
+Python backend serves chat, exec, tasks, and JSON-RPC automation.
 """
 
 __version__ = "5.0.0"

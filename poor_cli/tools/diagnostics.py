@@ -1,10 +1,7 @@
 """Diagnostics tools (Phase B).
 
-- ``diagnostics.emit``: the agent pushes findings into the Trouble pane under
-  the poor-cli namespace so the user can browse them as a quickfix-like list.
-- ``diagnostics.list``: intended for the agent to pull the user's current LSP
-  diagnostics. Read round-trip is deferred (Phase C T10); the stub keeps the
-  tool surface stable.
+- ``diagnostics.emit``: the agent records structured findings for files/lines.
+- ``diagnostics.list``: intended for future workspace diagnostics snapshots.
 """
 
 from __future__ import annotations
@@ -52,17 +49,17 @@ async def handle_emit(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
         )
     if not cleaned:
         return ToolResult.error("no valid items (need file + message)")
-    await _notify(ctx, "integration.trouble.emit", {"items": cleaned})
-    return ToolResult.text(f"emitted {len(cleaned)} diagnostic(s) to Trouble")
+    await _notify(ctx, "integration.diagnostics.emit", {"items": cleaned})
+    return ToolResult.text(f"recorded {len(cleaned)} diagnostic(s)")
 
 
 async def handle_clear(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
-    await _notify(ctx, "integration.trouble.clear", {})
+    await _notify(ctx, "integration.diagnostics.clear", {})
     return ToolResult.text("cleared poor-cli diagnostics")
 
 
 async def handle_list(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
-    # Requires a request/response round-trip to Lua. Deferred to Phase C T10.
+    # Future CLI/API bridge hook. Stub for now.
     return ToolResult(
         content=[TextBlock(text="diagnostics.list is not yet implemented")],
         metadata={"not_implemented": True},
@@ -72,9 +69,8 @@ async def handle_list(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
 register_tool(
     name="diagnostics.emit",
     description=(
-        "Push agent-authored findings into the Trouble window under the "
-        "poor-cli namespace. Use this to attach structured feedback to "
-        "specific lines after reviewing a file."
+        "Record agent-authored findings for specific files and lines after "
+        "reviewing code."
     ),
     schema={
         "type": "object",
@@ -110,14 +106,14 @@ register_tool(
 
 register_tool(
     name="diagnostics.clear",
-    description="Clear all poor-cli-authored diagnostics from Trouble.",
+    description="Clear all poor-cli-authored diagnostics.",
     schema={"type": "object", "properties": {}, "additionalProperties": False},
     handler=handle_clear,
 )
 
 register_tool(
     name="diagnostics.list",
-    description="Snapshot the user's current LSP diagnostics (not yet implemented).",
+    description="Snapshot current workspace diagnostics (not yet implemented).",
     schema={
         "type": "object",
         "properties": {

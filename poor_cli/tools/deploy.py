@@ -1,4 +1,4 @@
-"""Deploy tools (Phase B). Replaces the removed ``:PoorCLIDeploy`` verb.
+"""Deploy tools for the CLI agent harness.
 
 Each tool reads the project's deploy config — either ``poor-cli.deploy.yaml``
 or ``.poor-cli/deploy.json`` (the same convention the old rpc.deploy used).
@@ -200,7 +200,7 @@ register_tool(
     description=(
         "Run a named deploy target from .poor-cli/deploy.json. Each target is "
         "a shell command. ``dry_run=true`` echoes the command without "
-        "executing. This tool replaces the removed :PoorCLIDeploy command."
+        "executing."
     ),
     schema={
         "type": "object",

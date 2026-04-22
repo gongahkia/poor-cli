@@ -1,9 +1,7 @@
-"""Git tools (Phase B reference implementation).
+"""Git tools.
 
 These tools let the agent inspect and modify the repository without asking
-the user to run git commands. When neogit is available the commit flow pops
-its UI; otherwise the tools fall through to raw ``git`` CLI — both paths
-return the same structured ``ToolResult`` so the agent doesn't need to care.
+the user to run git commands.
 
 Handler signature::
 
@@ -11,9 +9,7 @@ Handler signature::
 
 ``ctx`` is a duck-typed context object with:
   - ``cwd`` — absolute path of the workdir (defaults to ``os.getcwd()``)
-  - ``has_plugin(name: str) -> bool`` — capability check
-  - ``async notify_client(method, params)`` — optional; fires an RPC
-    notification to the Lua side (bridge invocations)
+  - ``async notify_client(method, params)`` — optional client notification hook
 
 Tests substitute a ``SimpleNamespace`` for ``ctx``; the production dispatcher
 synthesises it from the active session handler.
@@ -328,13 +324,11 @@ async def handle_commit(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
     auto_stage = bool(args.get("auto_stage"))
     amend = bool(args.get("amend"))
 
-    if _ctx_has_plugin(ctx, "neogit"):
-        # Fire-and-forget: ask neogit to open its commit buffer with the prefill.
-        # We still run the commit server-side so the agent's transcript records
-        # the deterministic effect; neogit's UI is cosmetic.
+    if _ctx_has_plugin(ctx, "commit_ui"):
+        # fire-and-forget UI hint for API clients; commit still runs here.
         await _ctx_notify(
             ctx,
-            "integration.neogit.openCommit",
+            "integration.git.openCommit",
             {"message": message},
         )
 
@@ -348,22 +342,18 @@ async def handle_commit(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
         return ToolResult.error(
             f"git commit failed: {result.stderr.strip() or result.stdout.strip()}"
         )
-    metadata: Dict[str, Any] = {}
-    if not _ctx_has_plugin(ctx, "neogit"):
-        metadata["degraded"] = "cli"
     return ToolResult(
         content=[TextBlock(text=result.stdout.strip() or "commit created")],
-        metadata=metadata,
+        metadata={},
     )
 
 
 register_tool(
     name="git.commit",
     description=(
-        "Create a git commit with a given message. If neogit is available the "
-        "commit buffer is opened with the message prefilled (cosmetic — the "
-        "commit runs regardless). Set ``auto_stage=true`` to stage tracked "
-        "modified files before committing, ``amend=true`` to amend HEAD."
+        "Create a git commit with a given message. Set ``auto_stage=true`` to "
+        "stage tracked modified files before committing, ``amend=true`` to "
+        "amend HEAD."
     ),
     schema={
         "type": "object",

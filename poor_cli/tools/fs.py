@@ -1,8 +1,6 @@
-"""Filesystem browse tools (Phase B).
+"""Filesystem browse tools.
 
-``fs.browse`` returns a directory listing as structured data. When oil.nvim
-is available, a notification pops oil's buffer for the same path so the user
-sees what the agent just enumerated. Falls back to pure stdlib otherwise.
+``fs.browse`` returns a directory listing as structured data.
 
 ``fs.glob`` does fast pattern matching respecting .gitignore (via ``git
 ls-files`` when inside a repo; stdlib glob otherwise).
@@ -36,18 +34,6 @@ _SKIP_DIRS = {
 
 def _ctx_cwd(ctx: Any) -> str:
     return getattr(ctx, "cwd", None) or os.getcwd()
-
-
-async def _notify(ctx: Any, method: str, params: Dict[str, Any]) -> None:
-    fn = getattr(ctx, "notify_client", None)
-    if fn is None:
-        return
-    try:
-        maybe = fn(method, params)
-        if asyncio.iscoroutine(maybe):
-            await maybe
-    except Exception:
-        pass
 
 
 def _list_dir(path: str, max_depth: int, skip: set) -> List[Dict[str, Any]]:
@@ -84,9 +70,6 @@ async def handle_browse(*, ctx: Any, args: Dict[str, Any]) -> ToolResult:
     max_depth = int(args.get("max_depth") or 2)
     max_depth = max(1, min(max_depth, 5))
     entries = _list_dir(target, max_depth, _SKIP_DIRS)
-    # oil.nvim UX: pop the directory in the user's oil buffer if available.
-    if getattr(ctx, "has_plugin", lambda _: False)("oil"):
-        await _notify(ctx, "integration.oil.openPath", {"path": target})
     rows = [[e["kind"], e["path"]] for e in entries[:500]]
     blocks: List[Any] = [TextBlock(text=f"{target} ({len(entries)} entries, depth≤{max_depth})")]
     if rows:
@@ -146,9 +129,8 @@ register_tool(
     name="fs.browse",
     description=(
         "List the contents of a directory as structured rows (kind, path). "
-        "When oil.nvim is available the path is also popped in oil's buffer "
-        "for the user. Paths are relative to ``path``. ``max_depth`` clamps "
-        "traversal (1..5, default 2)."
+        "Paths are relative to ``path``. ``max_depth`` clamps traversal "
+        "(1..5, default 2)."
     ),
     schema={
         "type": "object",

@@ -48,7 +48,7 @@ def manifest_markdown(tools: Dict[str, ToolSpec] | None = None) -> str:
         "## Integration tools",
         "",
         (
-            "You have tools that drive the user's Neovim plugins and shell. "
+            "You have tools that drive the user's repository and shell. "
             "Prefer these over asking the user to run commands themselves. "
             "Tools that mutate the repo are marked **(exclusive)** — the "
             "dispatcher serializes them. Every tool returns structured "

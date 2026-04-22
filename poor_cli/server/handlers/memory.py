@@ -125,7 +125,7 @@ class MemoryHandlersMixin:
         """MH3: archive expired memories. dryRun=True returns candidate set only.
 
         Optional ``includeFilenames`` param (list of filenames) restricts the
-        pass to those specific entries — lets the nvim MH3-UX dialog confirm
+        pass to those specific entries so CLI and API callers can confirm
         per-item before archiving.
         """
         from poor_cli.memory import MemoryManager

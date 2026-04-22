@@ -1,4 +1,4 @@
-"""Phase-B tools (Proposal B) — plugin-integration tools for the agent.
+"""Agent tool registry for repository and shell capabilities.
 
 Each submodule registers its tools via ``register_tool`` from
 ``poor_cli.tools._registry``. The registry is consumed by

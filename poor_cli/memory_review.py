@@ -4,9 +4,7 @@ When ``review_mode="prompt"`` is set on ``auto_save_session_memories``, the
 distilled candidates land in ``<memory_dir>/_pending/`` instead of the live
 store. This module exposes the lifecycle: stage, list, accept, reject, edit.
 
-Neovim surface (`:PoorCLIMemoryReview`) is a thin Lua wrapper on top of these
-RPC-friendly functions. CLI equivalent: ``poor-cli memory review``. Both are
-queued as follow-up; backend is what ships here.
+CLI surface: ``poor-cli memory review``. The backend owns the review lifecycle.
 
 Pending files are plain markdown with the same frontmatter shape as live
 memories, so the existing `_parse_frontmatter` reader can consume them.

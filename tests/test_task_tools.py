@@ -66,14 +66,19 @@ def test_run_cli_path_spawns_process(tmp_path):
     assert "hi" in code.code
 
 
-def test_run_overseer_path_fires_notification_only():
-    log = []
-    ctx = _ctx(notify_log=log, plugins={"overseer": True})
-    r = _run(task_tools.handle_run(ctx=ctx, args={"name": "build", "args": {"watch": True}}))
+def test_run_name_uses_make_target(tmp_path):
+    (tmp_path / "Makefile").write_text("build:\n\t@printf built\n", encoding="utf-8")
+    ctx = _ctx(cwd=tmp_path)
+    r = _run(task_tools.handle_run(ctx=ctx, args={"name": "build"}))
     assert not r.is_error
-    assert r.metadata.get("overseer_template") == "build"
-    methods = [m for m, _ in log]
-    assert methods == ["integration.overseer.runTemplate"]
+    task_id = r.metadata["task_id"]
+    for _ in range(50):
+        r2 = _run(task_tools.handle_status(ctx=ctx, args={"task_id": task_id}))
+        if "completed" in r2.content[0].text:
+            break
+        import time; time.sleep(0.1)
+    logs = _run(task_tools.handle_logs(ctx=ctx, args={"task_id": task_id}))
+    assert "built" in logs.content[0].code
 
 
 def test_cancel_unknown_id():

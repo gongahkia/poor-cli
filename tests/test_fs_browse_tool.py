@@ -42,12 +42,11 @@ def test_browse_returns_entries(tmp_path):
     assert "a" in paths and "b.txt" in paths
 
 
-def test_browse_oil_notification_fires_when_available(tmp_path):
+def test_browse_does_not_require_client_ui(tmp_path):
     log = []
-    ctx = _ctx(tmp_path, notify_log=log, plugins={"oil": True})
+    ctx = _ctx(tmp_path, notify_log=log, plugins={"file_ui": True})
     _run(fs_tools.handle_browse(ctx=ctx, args={"path": "."}))
-    methods = [m for m, _ in log]
-    assert methods == ["integration.oil.openPath"]
+    assert log == []
 
 
 def test_browse_rejects_non_dir(tmp_path):

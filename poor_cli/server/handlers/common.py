@@ -66,9 +66,8 @@ class CommonHandlersMixin:
 
     def _client_has_plugin(self, name: str) -> bool:
         """Phase-B capability gate. Tool handlers use this to decide between
-        the preferred plugin path and the CLI fallback. Returns False when
-        the client never reported plugin capabilities at all — the fallback
-        is the safe default since it always works."""
+        optional client-specific capability paths. Returns False when the
+        client never reported capabilities; CLI behavior is the default."""
         return self._client_supports("plugins", name, default=False)
 
     def _current_sandbox_preset(self) -> str:

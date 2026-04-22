@@ -46,7 +46,7 @@ def test_emit_filters_invalid_items_and_fires_notification():
     assert not r.is_error
     assert len(log) == 1
     method, params = log[0]
-    assert method == "integration.trouble.emit"
+    assert method == "integration.diagnostics.emit"
     files = [i["file"] for i in params["items"]]
     assert files == ["a.py", "b.py"]
 
@@ -56,7 +56,7 @@ def test_clear_fires_notification():
     ctx = _ctx(notify_log=log)
     r = _run(diag_tools.handle_clear(ctx=ctx, args={}))
     assert not r.is_error
-    assert log == [("integration.trouble.clear", {})]
+    assert log == [("integration.diagnostics.clear", {})]
 
 
 def test_list_not_yet_implemented():

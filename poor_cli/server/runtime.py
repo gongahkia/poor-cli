@@ -52,7 +52,7 @@ def get_audit_logger():
 
 
 class PoorCLIServer(HandlerMixin):
-    """JSON-RPC server for PoorCLI editor integrations."""
+    """JSON-RPC server for PoorCLI automation clients."""
 
     def __init__(self):
         init_started = time.perf_counter()

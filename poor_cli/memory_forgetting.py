@@ -173,7 +173,7 @@ class MemoryForgetter:
 
         ``include_filenames``: optional whitelist. If provided, only stale entries
         whose filename is in this list are archived; other stale entries are left
-        alone. Used by the nvim MH3-UX dialog to let the user confirm per-item.
+        alone. Used by CLI/API callers to let the user confirm per-item.
         """
         summary = ExpirySummary()
         stale = self.due_for_expiry()

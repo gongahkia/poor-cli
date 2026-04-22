@@ -15,8 +15,8 @@ from ..cli_errors import run_with_cli_error_handling
 
 def _main() -> None:
     """Main entry point for the server."""
-    parser = argparse.ArgumentParser(description="PoorCLI JSON-RPC Server for editor integration")
-    parser.add_argument("--stdio", action="store_true", help="Use stdio transport (for Neovim)")
+    parser = argparse.ArgumentParser(description="PoorCLI JSON-RPC Server for automation clients")
+    parser.add_argument("--stdio", action="store_true", help="Use stdio transport")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
 
     args = parser.parse_args()

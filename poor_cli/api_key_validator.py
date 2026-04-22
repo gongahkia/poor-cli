@@ -14,9 +14,7 @@ Design:
 - Only cloud providers with explicit auth are probed: Anthropic, OpenAI,
   Gemini, OpenRouter. Local providers (ollama, hf_local, vllm, etc.)
   return ``unknown`` — not a concept for them.
-- The handler's response surfaces the result to the Neovim client, which
-  can show a notification like "your Anthropic key is invalid — regenerate
-  and run :PoorCLIHelp onboarding".
+- CLI and JSON-RPC clients can surface this as an actionable setup error.
 
 The probes use plain stdlib urllib to avoid an async dependency during
 startup and to keep the per-provider probe code under ~10 lines each.

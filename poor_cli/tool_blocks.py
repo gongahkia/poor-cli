@@ -105,7 +105,7 @@ class ToolResult:
 
     Metadata conventions:
       - ``metadata["degraded"]``: str — set when the handler took a fallback
-        code path (e.g. raw CLI instead of the preferred plugin integration).
+        code path (e.g. raw CLI instead of a preferred client integration).
       - ``metadata["token_cost"]``: dict — ``{"in": int, "out": int}`` when
         the tool spent tokens internally (used by cost attribution — Proposal C T8).
       - ``metadata["wall_time_ms"]``: int — populated by the dispatcher.
