@@ -1,4 +1,4 @@
-"""poor-cli entry point: JSON-RPC server for Neovim plugin + headless subcommands."""
+"""poor-cli entry point: CLI agent harness, JSON-RPC server, and headless subcommands."""
 
 from __future__ import annotations
 
@@ -22,9 +22,11 @@ def _render_root_help() -> str:
     return (
         "usage: poor-cli <noun> <verb> [options]\n\n"
         "Interactive / lifecycle:\n"
-        "  poor-cli server             Run the JSON-RPC server (for Neovim plugin)\n"
+        "  poor-cli chat               Minimal interactive agent loop\n"
+        "  poor-cli exec               Run one shared-core request headlessly\n"
+        "  poor-cli server             Run the JSON-RPC server (automation/API)\n"
         "  poor-cli install            Installer: poor-cli install (run) / poor-cli install info\n"
-        "  poor-cli exec               Run one shared-core request headlessly\n\n"
+        "\n"
         "Work units:\n"
         "  poor-cli task               Durable background tasks + worktrees\n"
         "  poor-cli agent              Background agents\n"
@@ -55,6 +57,7 @@ def _render_root_help() -> str:
         "Reuse:\n"
         "  poor-cli skill              list / show / run repo or user skills; alias-* for slash aliases\n\n"
         "Examples:\n"
+        "  poor-cli chat\n"
         "  poor-cli exec --prompt \"Summarize this repository\" --plan-only\n"
         "  poor-cli task create --title \"Review docs\" --preset review-only --prompt \"Review README\"\n"
         "  poor-cli automation create --name \"Daily QA\" --every-minutes 60 --prompt \"Run QA checklist\"\n"
@@ -62,7 +65,6 @@ def _render_root_help() -> str:
         "  poor-cli pr review 123\n"
         "  poor-cli server --stdio\n\n"
         "Notes:\n"
-        "  - The Python package provides `poor-cli-server` for Neovim plugin integration.\n"
         "  - Run `poor-cli help` or `poor-cli --help` to show this overview.\n"
     )
 
@@ -351,6 +353,141 @@ def _run_exec_mode(argv: Sequence[str]) -> int:
     parser = _build_exec_parser()
     args = parser.parse_args(list(argv))
     return asyncio.run(_run_exec_mode_async(args))
+
+
+def _build_chat_parser() -> argparse.ArgumentParser:
+    from .config import PermissionMode
+
+    parser = argparse.ArgumentParser(prog="poor-cli chat")
+    parser.add_argument("--provider")
+    parser.add_argument("--model")
+    parser.add_argument("--api-key")
+    parser.add_argument("--config")
+    parser.add_argument("--cwd")
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--allow-tool", action="append", default=[])
+    parser.add_argument("--deny-tool", action="append", default=[])
+    parser.add_argument("--sandbox-preset", choices=tuple(_preset_description().keys()))
+    parser.add_argument("--permission-mode", choices=tuple(mode.value for mode in PermissionMode))
+    parser.add_argument("--auto-approve", action="store_true")
+    parser.add_argument("--context-file", action="append", default=[])
+    parser.add_argument("--pinned-context-file", action="append", default=[])
+    parser.add_argument("--context-budget-tokens", type=int)
+    parser.add_argument("--verbose-events", action="store_true")
+    return parser
+
+
+def _print_chat_help() -> None:
+    from .command_manifest import load_command_manifest
+
+    manifest = load_command_manifest()
+    recommended = [c for c in manifest.commands if c.recommended]
+    print("commands: /help /quit /exit")
+    if recommended:
+        print("recommended:")
+        for command in recommended:
+            print(f"  {command.command:<18} {command.description}")
+
+
+async def _run_chat_mode_async(args: argparse.Namespace) -> int:
+    from .config import PermissionMode, parse_permission_mode
+    from .core import PoorCLICore
+    from .sandbox import normalize_preset
+
+    if args.cwd:
+        os.chdir(Path(args.cwd).expanduser())
+    config_path = Path(args.config).expanduser() if args.config else None
+    core = PoorCLICore(config_path=config_path)
+    await core.initialize(provider_name=args.provider, model_name=args.model, api_key=args.api_key)
+    try:
+        if core.config is not None:
+            if args.permission_mode:
+                core.config.security.permission_mode = parse_permission_mode(args.permission_mode)
+            effective_permission_mode = (
+                args.permission_mode
+                or getattr(core.config.security.permission_mode, "value", str(core.config.security.permission_mode))
+            )
+            effective_sandbox_preset = normalize_preset(
+                args.sandbox_preset or getattr(core.config.sandbox, "default_preset", ""),
+                fallback_permission_mode=effective_permission_mode,
+            )
+            core.config.sandbox.default_preset = effective_sandbox_preset
+        else:
+            effective_permission_mode = args.permission_mode or PermissionMode.DEFAULT.value
+            effective_sandbox_preset = normalize_preset(
+                args.sandbox_preset,
+                fallback_permission_mode=effective_permission_mode,
+            )
+        core.permission_callback = _build_exec_permission_callback(
+            core,
+            set(args.allow_tool or []),
+            set(args.deny_tool or []),
+            plan_only=False,
+            permission_mode=effective_permission_mode,
+            sandbox_preset=effective_sandbox_preset,
+            auto_approve=bool(args.auto_approve),
+        )
+        if args.resume:
+            resume_prefix = _build_resume_prefix()
+            if resume_prefix:
+                print(resume_prefix)
+        print("poor-cli chat. /help for commands. /quit exits.")
+        while True:
+            try:
+                message = input("you> ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return 0
+            if not message:
+                continue
+            lowered = message.lower()
+            if lowered in {"/quit", "/exit", "quit", "exit"}:
+                return 0
+            if lowered == "/help":
+                _print_chat_help()
+                continue
+            print("assistant> ", end="", flush=True)
+            wrote_text = False
+            async for event in core.send_message_events(
+                message,
+                context_files=list(args.context_file or []),
+                pinned_context_files=list(args.pinned_context_file or []),
+                context_budget_tokens=args.context_budget_tokens,
+                source_kind="chat",
+                source_id="cli-chat",
+                run_metadata={"cliCommand": "chat"},
+            ):
+                data = event.data or {}
+                if event.type == "text_chunk":
+                    print(str(data.get("chunk", "")), end="", flush=True)
+                    wrote_text = True
+                elif event.type == "tool_call_start":
+                    name = str(data.get("name") or data.get("tool") or "tool")
+                    print(f"\ntool> {name}", flush=True)
+                elif event.type == "tool_result":
+                    name = str(data.get("name") or data.get("tool") or "tool")
+                    status = str(data.get("status") or "done")
+                    print(f"tool< {name} {status}", flush=True)
+                elif args.verbose_events and event.type == "progress":
+                    msg = str(data.get("message") or "")
+                    if msg:
+                        print(f"\n... {msg}", flush=True)
+                elif event.type == "done":
+                    break
+            if wrote_text:
+                print()
+            else:
+                print("(no output)")
+    finally:
+        await core.shutdown()
+
+
+def _run_chat_mode(argv: Sequence[str]) -> int:
+    import asyncio
+
+    parser = _build_chat_parser()
+    args = parser.parse_args(list(argv))
+    return asyncio.run(_run_chat_mode_async(args))
 
 
 def _print_json(payload: Any) -> None:
@@ -1727,6 +1864,8 @@ def _main() -> None:
     if argv[0] in {"version", "--version", "-V"}:
         print(__version__)
         raise SystemExit(0)
+    if argv and argv[0] == "chat":
+        raise SystemExit(_run_chat_mode(argv[1:]))
     if argv and argv[0] == "exec":
         raise SystemExit(_run_exec_mode(argv[1:]))
     if argv and argv[0] == "agent":
@@ -1828,8 +1967,8 @@ def _run_install_mode(argv: Sequence[str]) -> int:
     if argv and argv[0] == "info":
         print(f"poor-cli {__version__}")
         print(f"python: {sys.executable}")
-        print("surface: neovim plugin (via JSON-RPC server)")
-        print("run: poor-cli server --stdio")
+        print("surface: CLI agent harness")
+        print("run: poor-cli chat")
         return 0
     if argv and argv[0] not in {"", "run"}:
         print(f"poor-cli install: unknown verb '{argv[0]}' (expected: info, or omit for interactive)")
