@@ -447,6 +447,42 @@ struct RecentKeyEntry {
 }
 
 #[derive(Default)]
+struct PhaseMetric {
+    last_us: u64,
+    avg_us: u64,
+    max_us: u64,
+    samples: VecDeque<u64>,
+}
+
+impl PhaseMetric {
+    const SAMPLE_LIMIT: usize = 120;
+
+    fn record(&mut self, duration: Duration) {
+        let duration_us = duration.as_micros() as u64;
+        self.last_us = duration_us;
+        self.samples.push_back(duration_us);
+        while self.samples.len() > Self::SAMPLE_LIMIT {
+            self.samples.pop_front();
+        }
+        let total = self.samples.iter().copied().sum::<u64>();
+        self.avg_us = total / self.samples.len().max(1) as u64;
+        self.max_us = self.samples.iter().copied().max().unwrap_or(0);
+    }
+
+    fn last_ms(&self) -> f32 {
+        self.last_us as f32 / 1000.0
+    }
+
+    fn avg_ms(&self) -> f32 {
+        self.avg_us as f32 / 1000.0
+    }
+
+    fn max_ms(&self) -> f32 {
+        self.max_us as f32 / 1000.0
+    }
+}
+
+#[derive(Default)]
 #[allow(dead_code)]
 struct RuntimeMetrics {
     frame_count: u64,
@@ -454,6 +490,17 @@ struct RuntimeMetrics {
     pane_count: usize,
     replay_snapshot_count: usize,
     daemon_sync_lag_ms: Option<u64>,
+    last_quad_count: usize,
+    frame_tick: PhaseMetric,
+    pty_drain: PhaseMetric,
+    semantic_events: PhaseMetric,
+    replay_capture: PhaseMetric,
+    input_sync: PhaseMetric,
+    output_hooks: PhaseMetric,
+    block_query: PhaseMetric,
+    quad_build: PhaseMetric,
+    gpu_render: PhaseMetric,
+    mark_clean: PhaseMetric,
 }
 
 impl RuntimeMetrics {
@@ -471,6 +518,83 @@ impl RuntimeMetrics {
             parts.push(format!("sync_lag:{}ms", lag));
         }
         parts.join(" ")
+    }
+
+    fn phase_lines(&self) -> Vec<String> {
+        vec![
+            format!(
+                "phase tick last {:.2} avg {:.2} max {:.2} ms",
+                self.frame_tick.last_ms(),
+                self.frame_tick.avg_ms(),
+                self.frame_tick.max_ms()
+            ),
+            format!(
+                "phase pty last {:.2} avg {:.2} max {:.2} ms",
+                self.pty_drain.last_ms(),
+                self.pty_drain.avg_ms(),
+                self.pty_drain.max_ms()
+            ),
+            format!(
+                "phase semantic last {:.2} avg {:.2} max {:.2} ms",
+                self.semantic_events.last_ms(),
+                self.semantic_events.avg_ms(),
+                self.semantic_events.max_ms()
+            ),
+            format!(
+                "phase replay last {:.2} avg {:.2} max {:.2} ms",
+                self.replay_capture.last_ms(),
+                self.replay_capture.avg_ms(),
+                self.replay_capture.max_ms()
+            ),
+            format!(
+                "phase input last {:.2} avg {:.2} max {:.2} ms",
+                self.input_sync.last_ms(),
+                self.input_sync.avg_ms(),
+                self.input_sync.max_ms()
+            ),
+            format!(
+                "phase hooks last {:.2} avg {:.2} max {:.2} ms",
+                self.output_hooks.last_ms(),
+                self.output_hooks.avg_ms(),
+                self.output_hooks.max_ms()
+            ),
+            format!(
+                "phase blockq last {:.2} avg {:.2} max {:.2} ms",
+                self.block_query.last_ms(),
+                self.block_query.avg_ms(),
+                self.block_query.max_ms()
+            ),
+            format!(
+                "phase quads last {:.2} avg {:.2} max {:.2} ms count {}",
+                self.quad_build.last_ms(),
+                self.quad_build.avg_ms(),
+                self.quad_build.max_ms(),
+                self.last_quad_count
+            ),
+            format!(
+                "phase gpu last {:.2} avg {:.2} max {:.2} ms",
+                self.gpu_render.last_ms(),
+                self.gpu_render.avg_ms(),
+                self.gpu_render.max_ms()
+            ),
+            format!(
+                "phase clean last {:.2} avg {:.2} max {:.2} ms",
+                self.mark_clean.last_ms(),
+                self.mark_clean.avg_ms(),
+                self.mark_clean.max_ms()
+            ),
+        ]
+    }
+}
+
+fn measure_phase<T>(enabled: bool, total: &mut Duration, f: impl FnOnce() -> T) -> T {
+    if enabled {
+        let started = Instant::now();
+        let result = f();
+        *total += started.elapsed();
+        result
+    } else {
+        f()
     }
 }
 
@@ -2147,6 +2271,7 @@ impl WokHandler {
             format!("session ~{} KiB", total_session_bytes / 1024),
             self.metrics.summary_line(),
         ];
+        lines.extend(self.metrics.phase_lines());
         for warning in &system.warnings {
             lines.push(format!("warn {warning}"));
         }
@@ -5437,6 +5562,15 @@ impl AppHandler for WokHandler {
     }
 
     fn on_frame_tick(&mut self) -> bool {
+        let collect_phase_metrics = self.config.debug_overlay;
+        let tick_started = collect_phase_metrics.then(Instant::now);
+        let mut pty_drain_duration = Duration::ZERO;
+        let mut semantic_events_duration = Duration::ZERO;
+        let mut replay_capture_duration = Duration::ZERO;
+        let mut input_sync_duration = Duration::ZERO;
+        let mut output_hooks_duration = Duration::ZERO;
+        let mut block_query_duration = Duration::ZERO;
+
         if self.config.debug_overlay {
             self.system_metrics.maybe_refresh();
             self.needs_redraw = true;
@@ -5509,8 +5643,15 @@ impl AppHandler for WokHandler {
                 .map(|pane| pane.app.input_editor.is_active)
                 .unwrap_or(false);
             if let Some(pane) = self.panes.get_mut(&pane_id) {
-                pane.terminal.process_pty_output();
-                semantic_events = pane.terminal.drain_semantic_events();
+                measure_phase(collect_phase_metrics, &mut pty_drain_duration, || {
+                    pane.terminal.process_pty_output();
+                });
+
+                semantic_events =
+                    measure_phase(collect_phase_metrics, &mut semantic_events_duration, || {
+                        pane.terminal.drain_semantic_events()
+                    });
+
                 if pane.terminal.is_dirty() {
                     pane.viewport.on_output(pane_max_scroll(pane));
                 }
@@ -5533,7 +5674,9 @@ impl AppHandler for WokHandler {
                 command_ended = semantic_events
                     .iter()
                     .any(|event| matches!(event, SemanticEvent::CommandEnd { .. }));
-                self.handle_semantic_events(pane_id, semantic_events);
+                measure_phase(collect_phase_metrics, &mut semantic_events_duration, || {
+                    self.handle_semantic_events(pane_id, semantic_events);
+                });
             }
             if command_ended {
                 if let Some(pane) = self.panes.get_mut(&pane_id) {
@@ -5544,16 +5687,24 @@ impl AppHandler for WokHandler {
                 .panes
                 .get(&pane_id)
                 .is_some_and(|pane| pane.pending_replay_block_marker);
-            self.capture_replay_snapshot_for_pane(pane_id, force_marker);
+            measure_phase(collect_phase_metrics, &mut replay_capture_duration, || {
+                self.capture_replay_snapshot_for_pane(pane_id, force_marker);
+            });
+
             if force_marker {
                 if let Some(pane) = self.panes.get_mut(&pane_id) {
                     pane.pending_replay_block_marker = false;
                 }
             }
-            self.sync_owned_input_state_for_pane(pane_id);
+            measure_phase(collect_phase_metrics, &mut input_sync_duration, || {
+                self.sync_owned_input_state_for_pane(pane_id);
+            });
+
             if output_line_hooks_enabled {
-                output_line_events
-                    .extend(self.collect_output_line_events_for_pane(pane_id, command_ended));
+                measure_phase(collect_phase_metrics, &mut output_hooks_duration, || {
+                    output_line_events
+                        .extend(self.collect_output_line_events_for_pane(pane_id, command_ended));
+                });
             }
             let input_active = self
                 .panes
@@ -5567,13 +5718,17 @@ impl AppHandler for WokHandler {
                 .is_some_and(|pane| pane.app.block_query.is_some())
                 && is_dirty
             {
-                self.refresh_block_query_for_pane(pane_id);
+                measure_phase(collect_phase_metrics, &mut block_query_duration, || {
+                    self.refresh_block_query_for_pane(pane_id);
+                });
             }
             self.needs_redraw |= is_dirty;
         }
 
         if output_line_hooks_enabled {
-            self.dispatch_output_line_hooks(output_line_events);
+            measure_phase(collect_phase_metrics, &mut output_hooks_duration, || {
+                self.dispatch_output_line_hooks(output_line_events);
+            });
         }
         relayout |= self.handle_shell_exit_transitions(&exited_pane_ids);
         if !self.panes.is_empty() && self.panes.values().all(|pane| pane.terminal.exited) {
@@ -5590,6 +5745,17 @@ impl AppHandler for WokHandler {
         self.metrics.replay_snapshot_count =
             self.panes.values().map(|p| p.replay_store.len()).sum();
         self.metrics.frame_count += 1;
+        if let Some(tick_started) = tick_started {
+            self.metrics.pty_drain.record(pty_drain_duration);
+            self.metrics
+                .semantic_events
+                .record(semantic_events_duration);
+            self.metrics.replay_capture.record(replay_capture_duration);
+            self.metrics.input_sync.record(input_sync_duration);
+            self.metrics.output_hooks.record(output_hooks_duration);
+            self.metrics.block_query.record(block_query_duration);
+            self.metrics.frame_tick.record(tick_started.elapsed());
+        }
 
         self.needs_redraw
     }
@@ -5599,53 +5765,76 @@ impl AppHandler for WokHandler {
             return;
         }
         let redraw_started = Instant::now();
+        let collect_phase_metrics = self.config.debug_overlay;
 
         // Build vertex data from terminal grid
-        self.build_quads();
+        let mut quad_build_duration = Duration::ZERO;
+        measure_phase(collect_phase_metrics, &mut quad_build_duration, || {
+            self.build_quads();
+        });
+        if collect_phase_metrics {
+            self.metrics.quad_build.record(quad_build_duration);
+            self.metrics.last_quad_count = self
+                .render
+                .as_ref()
+                .map_or(0, |render| render.batch.quad_count());
+        }
 
         // Render
         let clear_theme = self
             .active_pane()
             .map(|pane| pane.app.theme.clone())
             .unwrap_or_default();
-        if let Some(ref mut render) = self.render {
-            let clear = with_opacity(
-                [
-                    clear_theme.background.r,
-                    clear_theme.background.g,
-                    clear_theme.background.b,
-                    clear_theme.background.a,
-                ],
-                self.config.window_opacity.clamp(0.0, 1.0),
-            );
-            if let Err(e) =
-                render
-                    .pipeline
-                    .render_frame(&render.gpu, &render.surface, &render.batch, clear)
-            {
-                match e {
-                    wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated => {
-                        warn!("GPU surface became invalid ({e:?}); resizing surface");
-                        let (w, h) = render.gpu.dimensions();
-                        render.gpu.resize(&render.surface, w, h);
-                    }
-                    wgpu::SurfaceError::OutOfMemory => {
-                        warn!("GPU out of memory");
-                        self.exit_requested = true;
-                    }
-                    wgpu::SurfaceError::Timeout => {
-                        warn!("GPU frame presentation timed out");
-                    }
-                    wgpu::SurfaceError::Other => {
-                        warn!("GPU surface error: {e:?}");
+        let mut gpu_render_duration = Duration::ZERO;
+        measure_phase(collect_phase_metrics, &mut gpu_render_duration, || {
+            if let Some(ref mut render) = self.render {
+                let clear = with_opacity(
+                    [
+                        clear_theme.background.r,
+                        clear_theme.background.g,
+                        clear_theme.background.b,
+                        clear_theme.background.a,
+                    ],
+                    self.config.window_opacity.clamp(0.0, 1.0),
+                );
+                if let Err(e) =
+                    render
+                        .pipeline
+                        .render_frame(&render.gpu, &render.surface, &render.batch, clear)
+                {
+                    match e {
+                        wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated => {
+                            warn!("GPU surface became invalid ({e:?}); resizing surface");
+                            let (w, h) = render.gpu.dimensions();
+                            render.gpu.resize(&render.surface, w, h);
+                        }
+                        wgpu::SurfaceError::OutOfMemory => {
+                            warn!("GPU out of memory");
+                            self.exit_requested = true;
+                        }
+                        wgpu::SurfaceError::Timeout => {
+                            warn!("GPU frame presentation timed out");
+                        }
+                        wgpu::SurfaceError::Other => {
+                            warn!("GPU surface error: {e:?}");
+                        }
                     }
                 }
             }
+        });
+        if collect_phase_metrics {
+            self.metrics.gpu_render.record(gpu_render_duration);
         }
 
-        for pane in self.panes.values_mut() {
-            pane.terminal.mark_clean();
-            pane.viewport.mark_rendered();
+        let mut mark_clean_duration = Duration::ZERO;
+        measure_phase(collect_phase_metrics, &mut mark_clean_duration, || {
+            for pane in self.panes.values_mut() {
+                pane.terminal.mark_clean();
+                pane.viewport.mark_rendered();
+            }
+        });
+        if collect_phase_metrics {
+            self.metrics.mark_clean.record(mark_clean_duration);
         }
         if self.redraw_history_ms.len() >= 60 {
             self.redraw_history_ms.pop_front();
@@ -7832,6 +8021,7 @@ mod tests {
             pane_count: 2,
             replay_snapshot_count: 10,
             daemon_sync_lag_ms: None,
+            ..Default::default()
         };
         assert_eq!(
             m.summary_line(),
@@ -7847,11 +8037,22 @@ mod tests {
             pane_count: 1,
             replay_snapshot_count: 0,
             daemon_sync_lag_ms: Some(15),
+            ..Default::default()
         };
         assert_eq!(
             m.summary_line(),
             "frames:1 last_frame:0.00ms panes:1 replays:0 sync_lag:15ms"
         );
+    }
+
+    #[test]
+    fn phase_metric_records_rolling_summary() {
+        let mut metric = PhaseMetric::default();
+        metric.record(Duration::from_micros(1_000));
+        metric.record(Duration::from_micros(3_000));
+        assert_eq!(metric.last_us, 3_000);
+        assert_eq!(metric.avg_us, 2_000);
+        assert_eq!(metric.max_us, 3_000);
     }
 
     #[test]

@@ -31,6 +31,23 @@ cargo bench -p wok --bench large_workspace --no-run
 2. Compare medians across commits instead of single-run outliers.
 3. Track regressions before changing `MAX_GLOBAL_SEARCH_LINES` or command-history search behavior.
 
+## Runtime Profiling
+
+Set `debug_overlay = true` in your Wok config to inspect live frame timings. The overlay reports rolling last/average/max timings for:
+
+- frame tick orchestration
+- PTY drain
+- semantic event handling
+- replay capture
+- owned-input sync
+- output hooks
+- block-query refresh
+- CPU-side quad construction
+- GPU render submission/presentation
+- terminal clean-up bookkeeping
+
+Use these phase timings before considering a native macOS frontend rewrite. If `quads` or `gpu` dominate, optimize the renderer path first; if text input or event-loop behavior dominates, that is stronger evidence for a native AppKit bridge.
+
 ## PR Regression Gate
 
 CI now runs a pull-request-only performance gate (`perf_gate` job in `.github/workflows/ci.yml`):

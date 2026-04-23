@@ -74,7 +74,7 @@ external_plugin_command = "node ~/.config/wok/plugins/bridge.js"
 | `confirm_close_with_running_process` | boolean | `true` | Active | Requires a second close request within 2 seconds when panes still have running shell processes |
 | `close_on_shell_exit` | boolean | `true` | Active | Closes the exited pane, closes an all-exited tab when other tabs remain, or exits Wok when the final shell exits |
 | `restore_session` | boolean | `false` | Active | Loads the autosaved workspace session on startup |
-| `debug_overlay` | boolean | `false` | Active | Shows a benchmark overlay with FPS, redraw time, CPU, memory, disk, GPU adapter/render diagnostics, battery when available, scrollback, and session memory |
+| `debug_overlay` | boolean | `false` | Active | Shows a benchmark overlay with FPS, redraw time, phase timings, CPU, memory, disk, GPU adapter/render diagnostics, battery when available, scrollback, and session memory |
 | `theme_path` | string | none | Active | Path to a custom theme TOML file |
 | `background_image` | string | none | Active | Loads a background image from config or theme and renders it behind the workspace chrome and panes |
 | `external_plugin_command` | string | none | Active | Optional out-of-process plugin bridge command; receives hook/event JSON lines on stdin and can emit typed effects (`notify`, `exec`, `action`) on stdout |
