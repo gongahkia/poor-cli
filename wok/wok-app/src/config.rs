@@ -102,6 +102,34 @@ impl OverlayPosition {
     }
 }
 
+/// How a background image should be sized inside the window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum BackgroundFit {
+    /// Stretch the image to fill the full background rect.
+    Stretch,
+    /// Preserve aspect ratio and cover the full background rect.
+    Cover,
+    /// Preserve aspect ratio and fit the whole image inside the background rect.
+    Contain,
+    /// Render the image at its intrinsic pixel size or configured size.
+    Center,
+}
+
+/// Anchor point for a background image that does not fill the full rect.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum BackgroundPosition {
+    /// Center of the background rect.
+    Center,
+    /// Top-left corner.
+    TopLeft,
+    /// Top-right corner.
+    TopRight,
+    /// Bottom-left corner.
+    BottomLeft,
+    /// Bottom-right corner.
+    BottomRight,
+}
+
 /// Recent key visualizer configuration.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RecentKeysConfig {
@@ -181,6 +209,24 @@ pub struct WokConfig {
     pub window_opacity: f32,
     /// Background image path.
     pub background_image: Option<PathBuf>,
+    /// Background image opacity.
+    pub background_opacity: f32,
+    /// Background image sizing mode.
+    pub background_fit: BackgroundFit,
+    /// Background image anchor position.
+    pub background_position: BackgroundPosition,
+    /// Optional background image render width in physical pixels.
+    pub background_width: Option<f32>,
+    /// Optional background image render height in physical pixels.
+    pub background_height: Option<f32>,
+    /// Optional terminal pane background opacity override.
+    pub terminal_background_opacity: Option<f32>,
+    /// Split pane border width.
+    pub pane_border_width: f32,
+    /// Focused split pane border width.
+    pub focused_pane_border_width: f32,
+    /// Floating pane title height.
+    pub floating_pane_title_height: f32,
     /// Optional out-of-process plugin bridge command.
     pub external_plugin_command: Option<String>,
     /// Copy text to clipboard on selection.
@@ -233,6 +279,15 @@ struct ConfigToml {
     status_bar_size: Option<f32>,
     window_opacity: Option<f32>,
     background_image: Option<String>,
+    background_opacity: Option<f32>,
+    background_fit: Option<String>,
+    background_position: Option<String>,
+    background_width: Option<f32>,
+    background_height: Option<f32>,
+    terminal_background_opacity: Option<f32>,
+    pane_border_width: Option<f32>,
+    focused_pane_border_width: Option<f32>,
+    floating_pane_title_height: Option<f32>,
     external_plugin_command: Option<String>,
     copy_on_select: Option<bool>,
     confirm_close_with_running_process: Option<bool>,
@@ -301,6 +356,15 @@ impl Default for WokConfig {
             status_bar_size: None,
             window_opacity: 1.0,
             background_image: None,
+            background_opacity: 1.0,
+            background_fit: BackgroundFit::Stretch,
+            background_position: BackgroundPosition::Center,
+            background_width: None,
+            background_height: None,
+            terminal_background_opacity: None,
+            pane_border_width: 1.0,
+            focused_pane_border_width: 2.0,
+            floating_pane_title_height: 18.0,
             external_plugin_command: None,
             copy_on_select: false,
             confirm_close_with_running_process: true,
@@ -431,10 +495,38 @@ impl WokConfig {
             }
         }
         if let Some(o) = toml_config.window_opacity {
-            config.window_opacity = o;
+            config.window_opacity = clamp_unit(o);
         }
         if let Some(p) = toml_config.background_image {
-            config.background_image = Some(PathBuf::from(p));
+            let trimmed = p.trim();
+            config.background_image = (!trimmed.is_empty()).then(|| PathBuf::from(trimmed));
+        }
+        if let Some(opacity) = toml_config.background_opacity {
+            config.background_opacity = clamp_unit(opacity);
+        }
+        if let Some(fit) = toml_config.background_fit {
+            config.background_fit = parse_background_fit(&fit);
+        }
+        if let Some(position) = toml_config.background_position {
+            config.background_position = parse_background_position(&position);
+        }
+        if let Some(width) = toml_config.background_width {
+            config.background_width = finite_positive(width);
+        }
+        if let Some(height) = toml_config.background_height {
+            config.background_height = finite_positive(height);
+        }
+        if let Some(opacity) = toml_config.terminal_background_opacity {
+            config.terminal_background_opacity = Some(clamp_unit(opacity));
+        }
+        if let Some(width) = toml_config.pane_border_width {
+            config.pane_border_width = finite_non_negative(width).unwrap_or(0.0);
+        }
+        if let Some(width) = toml_config.focused_pane_border_width {
+            config.focused_pane_border_width = finite_non_negative(width).unwrap_or(0.0);
+        }
+        if let Some(height) = toml_config.floating_pane_title_height {
+            config.floating_pane_title_height = finite_non_negative(height).unwrap_or(0.0);
         }
         if let Some(command) = toml_config.external_plugin_command {
             let trimmed = command.trim();
