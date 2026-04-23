@@ -554,20 +554,56 @@ describe("brief tools", () => {
     expect(payload.records["kpis"]).toMatchObject({
       currency: "USD",
       interestRate: { metric: "3M SORA", key: "sora_3m", value: 3.2 },
-      banking: { metric: "Total deposits", key: "total_deposits", value: 1000 },
+      banking: { metric: "Total deposits", key: "total_deposits", value: 1000, deltaPercent: 2.04 },
       singstatSeries: {
         gdpTableId: "M015631",
         gdpPeriod: "2025 4Q",
+        gdpDeltaPercent: 1.3,
         cpiYoYTableId: "M213781",
+        cpiYoYDeltaPercent: expect.any(Number),
         cpiIndexTableId: "M213751",
+        cpiIndexDeltaPercent: expect.any(Number),
       },
     });
+    expect(summaryByLabel.get("Banking period delta %")).toBe(2.04);
+    expect(summaryByLabel.get("GDP period delta %")).toBe(1.3);
+    expect(typeof summaryByLabel.get("CPI YoY period delta %")).toBe("number");
+    expect(typeof summaryByLabel.get("CPI index period delta %")).toBe("number");
 
     const markdownResult = await handleMacroBrief({
       currency: "USD",
       format: "markdown",
     });
     expectMarkdownSections(getText(markdownResult));
+  });
+
+  it("fails loud with gaps when MAS interest and banking records lack known metric fields", async () => {
+    vi.mocked(fetchNormalizedMasRecords).mockImplementation(async (dataset) => {
+      if (dataset === MasDataset.EXCHANGE_RATES) {
+        return [{ date: "2026-03-26", usd_sgd: 1.35 }] as never;
+      }
+      if (dataset === MasDataset.INTEREST_RATES_SORA) {
+        return [{ date: "2026-03-26", preliminary: 0, unknown_field: 42 }] as never;
+      }
+      return [{ date: "2026-03-26", preliminary: 0, mystery_metric: 999 }] as never;
+    });
+    vi.mocked(getSingStatTableData).mockResolvedValue({
+      rows: [],
+      metadata: { title: "", frequency: "", source: "", lastUpdated: null },
+      total: 0,
+    } as never);
+
+    const result = await handleMacroBrief({ currency: "USD", format: "json" });
+    const payload = parseBrief(getText(result));
+    const summaryByLabel = new Map(payload.summary.map((item) => [item.label, item.value]));
+    const gapCodes = payload.gaps.map((gap) => gap.code);
+
+    expect(gapCodes).toContain("MAS_SORA_METRIC_UNMAPPED");
+    expect(gapCodes).toContain("MAS_BANKING_METRIC_UNMAPPED");
+    expect(summaryByLabel.get("SORA")).toBeNull();
+    expect(summaryByLabel.get("MAS Banking (unavailable)")).toBeNull();
+    expect(payload.summary.some((item) => item.label.toLowerCase().includes("mystery"))).toBe(false);
+    expect(payload.summary.some((item) => item.label.toLowerCase().includes("unknown"))).toBe(false);
   });
 
   it("returns the expanded transport brief envelope", async () => {

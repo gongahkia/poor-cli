@@ -5,9 +5,11 @@ import { boaToolDefinitions } from "./boa-tools.js";
 import { briefToolDefinitions } from "./brief-tools.js";
 import { cacheToolDefinitions } from "./cache-tools.js";
 import { ceaToolDefinitions } from "./cea-tools.js";
+import { coeToolDefinitions } from "./coe-tools.js";
 import { configToolDefinitions } from "./config-tools.js";
 import { datagovToolDefinitions } from "./datagov-tools.js";
 import { ecdaToolDefinitions } from "./ecda-tools.js";
+import { emaToolDefinitions } from "./ema-tools.js";
 import { gebizToolDefinitions } from "./gebiz-tools.js";
 import { govFeedToolDefinitions } from "./govfeeds-tools.js";
 import { hawkerToolDefinitions } from "./hawker-tools.js";
@@ -15,6 +17,7 @@ import { healthCheckToolDefinitions } from "./health-check.js";
 import { hdbToolDefinitions } from "./hdb-tools.js";
 import { hlbToolDefinitions } from "./hlb-tools.js";
 import { hsaToolDefinitions } from "./hsa-tools.js";
+import { irasToolDefinitions } from "./iras-tools.js";
 import { keystoreToolDefinitions } from "./keystore-tools.js";
 import { ltaToolDefinitions } from "./lta-tools.js";
 import { masToolDefinitions } from "./mas-tools.js";
@@ -27,6 +30,7 @@ import { nparksToolDefinitions } from "./nparks-tools.js";
 import { paToolDefinitions } from "./pa-tools.js";
 import { pubToolDefinitions } from "./pub-tools.js";
 import { sfaToolDefinitions } from "./sfa-tools.js";
+import { spfToolDefinitions } from "./spf-tools.js";
 import { sportsgToolDefinitions } from "./sportsg-tools.js";
 import { stbToolDefinitions } from "./stb-tools.js";
 import { onemapToolDefinitions } from "./onemap-tools.js";
@@ -36,6 +40,7 @@ import { transitIntelligenceToolDefinitions } from "./transit-intelligence-tools
 import { traceToolDefinitions } from "./trace-tools.js";
 import { hydrateToolDefinition } from "./tool-metadata.js";
 import { uraToolDefinitions } from "./ura-tools.js";
+import { visualizeToolDefinitions } from "./visualize-tools.js";
 
 const RAW_TOOL_DEFINITIONS = [
   ...singstatToolDefinitions,
@@ -65,6 +70,11 @@ const RAW_TOOL_DEFINITIONS = [
   ...pubToolDefinitions,
   ...momToolDefinitions,
   ...stbToolDefinitions,
+  ...coeToolDefinitions,
+  ...irasToolDefinitions,
+  ...spfToolDefinitions,
+  ...emaToolDefinitions,
+  ...visualizeToolDefinitions,
   ...transitIntelligenceToolDefinitions,
   ...hlbToolDefinitions,
   ...briefToolDefinitions,

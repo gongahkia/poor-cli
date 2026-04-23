@@ -64,6 +64,10 @@ These tool families do not require credentials:
 - MOM
 - STB
 - HLB
+- COE
+- IRAS
+- SPF
+- EMA
 - data.gov.sg
 
 HDB, CEA, BCA, BOA, HSA, HLB, and ACRA are intentionally covered through the shared data.gov.sg path or official file-download path.

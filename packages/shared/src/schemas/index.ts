@@ -897,6 +897,74 @@ export const StbVisitorStatsSchema = z.object({
   format: z.enum(["json", "markdown", "csv"]).optional(),
 }).strict();
 
+export const LtaCarparkAvailabilitySchema = z.object({
+  carparkId: z.string().min(1).optional(),
+  development: z.string().min(1).optional(),
+  limit: z.number().int().positive().optional(),
+  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+}).strict();
+
+export const LtaTaxiAvailabilitySchema = z.object({
+  limit: z.number().int().positive().optional(),
+  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+}).strict();
+
+export const LtaCoeResultsSchema = z.object({
+  category: z.string().min(1).optional(),
+  biddingNo: z.string().min(1).optional(),
+  limit: z.number().int().positive().optional(),
+  format: z.enum(["json", "markdown", "csv"]).optional(),
+}).strict();
+
+export const IrasTaxCollectionSchema = z.object({
+  financialYear: z.string().min(1).optional(),
+  taxType: z.string().min(1).optional(),
+  limit: z.number().int().positive().optional(),
+  format: z.enum(["json", "markdown", "csv"]).optional(),
+}).strict();
+
+export const SpfCrimeStatsSchema = z.object({
+  offenceCategory: z.string().min(1).optional(),
+  year: z.string().min(1).optional(),
+  limit: z.number().int().positive().optional(),
+  format: z.enum(["json", "markdown", "csv"]).optional(),
+}).strict();
+
+export const EmaElectricityGenerationSchema = z.object({
+  energyType: z.string().min(1).optional(),
+  year: z.string().min(1).optional(),
+  limit: z.number().int().positive().optional(),
+  format: z.enum(["json", "markdown", "csv"]).optional(),
+}).strict();
+
+export const VisualizeInputSchema = z.object({
+  values: z.array(z.number().finite()).min(2).optional(),
+  labels: z.array(z.string()).optional(),
+  tableId: z.string().min(1).optional(),
+  indicator: z.string().min(1).optional(),
+  startYear: z.number().int().optional(),
+  endYear: z.number().int().optional(),
+  width: z.number().int().min(10).max(120).optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+export const VisualizeSchema = VisualizeInputSchema.refine(
+  (data) => data.values !== undefined || (data.tableId !== undefined && data.indicator !== undefined),
+  { message: "Provide either values[] or (tableId + indicator) to visualize." },
+);
+
+export const CrossDatasetSchema = z.object({
+  leftTableId: z.string().min(1),
+  leftIndicator: z.string().min(1),
+  leftLabel: z.string().min(1),
+  rightTableId: z.string().min(1),
+  rightIndicator: z.string().min(1),
+  rightLabel: z.string().min(1),
+  startYear: z.number().int().optional(),
+  endYear: z.number().int().optional(),
+  format: z.enum(["json", "markdown", "csv"]).optional(),
+}).strict();
+
 const GovFeedIdSchema = z.enum([
   "nea_news_updates",
   "nea_tender_notices",

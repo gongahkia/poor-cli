@@ -263,6 +263,108 @@ export const getTrafficImages = async (): Promise<readonly LtaNormalizedTrafficC
   return data;
 };
 
+type LtaCarparkAvailabilityRecord = Readonly<{
+  CarParkID?: string;
+  Area?: string;
+  Development?: string;
+  Location?: string;
+  AvailableLots?: number | string;
+  LotType?: string;
+  Agency?: string;
+}>;
+
+type LtaCarparkAvailabilityResponse = Readonly<{ value?: readonly LtaCarparkAvailabilityRecord[] }>;
+
+export type LtaNormalizedCarpark = {
+  readonly carparkId: string;
+  readonly development: string | null;
+  readonly area: string | null;
+  readonly availableLots: number | null;
+  readonly lotType: string | null;
+  readonly agency: string | null;
+  readonly lat: number | null;
+  readonly lng: number | null;
+};
+
+const parseCarparkLocation = (location: string | undefined): { lat: number | null; lng: number | null } => {
+  if (location === undefined) return { lat: null, lng: null };
+  const parts = location.trim().split(/\s+/);
+  if (parts.length !== 2) return { lat: null, lng: null };
+  return { lat: normalizeNullableNumber(parts[0]), lng: normalizeNullableNumber(parts[1]) };
+};
+
+export const getCarparkAvailability = async (
+  params: Readonly<{ carparkId?: string | undefined; development?: string | undefined; limit?: number | undefined }> = {},
+): Promise<readonly LtaNormalizedCarpark[]> => {
+  const cacheKey = buildCacheKey("lta", "carpark-availability", params);
+  const { data } = await withCache(cacheKey, "REALTIME", async () => {
+    const records: LtaCarparkAvailabilityRecord[] = [];
+    let skip = 0;
+    // LTA returns up to 500 rows per page; iterate until exhausted or cap at 2000.
+    while (skip < 2000) {
+      const response = await ltaGet<LtaCarparkAvailabilityResponse>("CarParkAvailabilityv2", { "$skip": String(skip) });
+      const page = response.value ?? [];
+      records.push(...page);
+      if (page.length < 500) break;
+      skip += 500;
+    }
+    return records;
+  });
+
+  const carparkId = params.carparkId?.trim().toUpperCase();
+  const devNeedle = params.development?.trim().toLowerCase();
+  const filtered = data.filter((row) => {
+    if (carparkId !== undefined && (row.CarParkID ?? "").toUpperCase() !== carparkId) return false;
+    if (devNeedle !== undefined && !(row.Development ?? "").toLowerCase().includes(devNeedle)) return false;
+    return true;
+  });
+  const limited = filtered.slice(0, Math.min(params.limit ?? 200, 500));
+  return limited.map((row) => {
+    const { lat, lng } = parseCarparkLocation(row.Location);
+    return {
+      carparkId: row.CarParkID ?? "",
+      development: row.Development ?? null,
+      area: row.Area ?? null,
+      availableLots: normalizeNullableNumber(row.AvailableLots),
+      lotType: row.LotType ?? null,
+      agency: row.Agency ?? null,
+      lat,
+      lng,
+    };
+  });
+};
+
+type LtaTaxiAvailabilityResponse = Readonly<{
+  value?: readonly Readonly<{ Longitude?: number | string; Latitude?: number | string }>[];
+}>;
+
+export type LtaNormalizedTaxiPosition = {
+  readonly lat: number | null;
+  readonly lng: number | null;
+};
+
+export const getTaxiAvailability = async (
+  params: Readonly<{ limit?: number | undefined }> = {},
+): Promise<readonly LtaNormalizedTaxiPosition[]> => {
+  const cacheKey = buildCacheKey("lta", "taxi-availability", params);
+  const { data } = await withCache(cacheKey, "REALTIME", async () => {
+    const records: LtaNormalizedTaxiPosition[] = [];
+    let skip = 0;
+    const cap = Math.min(params.limit ?? 1000, 5000);
+    while (records.length < cap) {
+      const response = await ltaGet<LtaTaxiAvailabilityResponse>("Taxi-Availability", { "$skip": String(skip) });
+      const page = response.value ?? [];
+      for (const row of page) {
+        records.push({ lat: normalizeNullableNumber(row.Latitude), lng: normalizeNullableNumber(row.Longitude) });
+      }
+      if (page.length < 500) break;
+      skip += 500;
+    }
+    return records.slice(0, cap);
+  });
+  return data;
+};
+
 const getAllBusStops = async (): Promise<readonly LtaNormalizedBusStop[]> => {
   const cacheKey = buildCacheKey("lta", "bus-stops-all", {});
   const { data } = await withCache(cacheKey, "STATIC", async () => {

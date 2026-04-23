@@ -283,24 +283,6 @@ const formatMetricLabel = (key: string): string => {
     .join(" ");
 };
 
-const findFirstNumericField = (
-  record: Readonly<Record<string, unknown>> | undefined,
-): { key: string; value: number } | null => {
-  if (record === undefined) {
-    return null;
-  }
-
-  for (const [key, value] of Object.entries(record)) {
-    if (key === "date" || !isMeaningfulMetricKey(key)) {
-      continue;
-    }
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return { key, value };
-    }
-  }
-  return null;
-};
-
 const getFirstTimestamp = (
   value: unknown,
   fields: readonly string[],
@@ -907,6 +889,19 @@ const medianSorted = (values: readonly number[]): number | null => {
   return sorted.length % 2 === 0 ? Math.round(((sorted[mid - 1]! + sorted[mid]!) / 2) * 100) / 100 : sorted[mid]!;
 };
 
+const quantileSorted = (sorted: readonly number[], q: number): number | null => {
+  if (sorted.length === 0) return null;
+  if (sorted.length === 1) return sorted[0] ?? null;
+  const pos = (sorted.length - 1) * q;
+  const base = Math.floor(pos);
+  const rest = pos - base;
+  const lower = sorted[base];
+  const upper = sorted[base + 1];
+  if (lower === undefined) return null;
+  if (upper === undefined) return lower;
+  return Math.round((lower + rest * (upper - lower)) * 100) / 100;
+};
+
 const computeTransactionRollup = (
   records: readonly Readonly<Record<string, unknown>>[] | null,
   priceField: string,
@@ -916,11 +911,14 @@ const computeTransactionRollup = (
   const prices = records.map((r) => Number(r[priceField])).filter((v) => Number.isFinite(v));
   const dates = records.map((r) => String(r[dateField] ?? "")).filter((d) => d !== "").sort();
   if (prices.length === 0) return null;
+  const sorted = [...prices].sort((a, b) => a - b);
   return {
     count: prices.length,
     median: medianSorted(prices),
-    min: Math.min(...prices),
-    max: Math.max(...prices),
+    p25: quantileSorted(sorted, 0.25),
+    p75: quantileSorted(sorted, 0.75),
+    min: sorted[0] ?? null,
+    max: sorted[sorted.length - 1] ?? null,
     average: Math.round((prices.reduce((s, v) => s + v, 0) / prices.length) * 100) / 100,
     latestMonth: dates[dates.length - 1] ?? null,
   };
@@ -931,6 +929,8 @@ const buildPropertyDealChecklist = (
   hdbRollup: Readonly<Record<string, unknown>> | null,
   planningArea: string | null,
   propertyType: string | undefined,
+  includeEnvironment: boolean,
+  includeTransport: boolean,
 ): readonly RiskFlag[] => {
   const flags: RiskFlag[] = [];
   if (uraRollup !== null) {
@@ -951,6 +951,12 @@ const buildPropertyDealChecklist = (
   }
   if (planningArea === null) {
     flags.push({ code: "UNRESOLVED_LOCATION", severity: "high", message: "Location could not be resolved to a planning area.", source: "OneMap" });
+  }
+  if (!includeEnvironment) {
+    flags.push({ code: "NO_ENVIRONMENT_CONTEXT", severity: "low", message: "Environment context (NEA forecast and air quality) was not included. Enable includeEnvironment for livability signals.", source: "brief-input" });
+  }
+  if (!includeTransport) {
+    flags.push({ code: "NO_TRANSPORT_CONTEXT", severity: "low", message: "Transport context (LTA train and traffic signals) was not included. Enable includeTransport for connectivity signals.", source: "brief-input" });
   }
   return flags;
 };
@@ -998,7 +1004,7 @@ const extractNamedMasMetric = (
     const v = record[key];
     if (typeof v === "number" && Number.isFinite(v) && isMeaningfulMetricKey(key)) return { key, value: v };
   }
-  return findFirstNumericField(record);
+  return null; // fail loud rather than surface an unnamed field as a headline metric
 };
 
 const computeMasDelta = (
@@ -1008,6 +1014,16 @@ const computeMasDelta = (
   if (records === null || records.length < 2) return null;
   const latest = Number(records[0]?.[metricKey]);
   const prev = Number(records[1]?.[metricKey]);
+  if (!Number.isFinite(latest) || !Number.isFinite(prev) || prev === 0) return null;
+  return Math.round(((latest - prev) / Math.abs(prev)) * 10000) / 100;
+};
+
+const computeSingStatDelta = (
+  series: readonly Readonly<Record<string, unknown>>[],
+): number | null => {
+  if (series.length < 2) return null;
+  const latest = Number(series[0]?.["value"]);
+  const prev = Number(series[1]?.["value"]);
   if (!Number.isFinite(latest) || !Number.isFinite(prev) || prev === 0) return null;
   return Math.round(((latest - prev) / Math.abs(prev)) * 10000) / 100;
 };
@@ -1287,10 +1303,27 @@ export const handlePropertyBrief = async (
     hdbResale as readonly Readonly<Record<string, unknown>>[] | null,
     "resalePrice", "month",
   );
+  const uraMedian = uraRollup?.["median"] as number | null ?? null;
+  const hdbMedian = hdbRollup?.["median"] as number | null ?? null;
   const marketComparison = privateAverage !== null && resaleAverage !== null
-    ? { privateAvg: privateAverage, hdbResaleAvg: resaleAverage, delta: Math.round((privateAverage - resaleAverage) * 100) / 100, ratio: Math.round((privateAverage / resaleAverage) * 100) / 100 }
+    ? {
+        privateAvg: privateAverage,
+        hdbResaleAvg: resaleAverage,
+        delta: Math.round((privateAverage - resaleAverage) * 100) / 100,
+        ratio: Math.round((privateAverage / resaleAverage) * 100) / 100,
+        privateMedian: uraMedian,
+        hdbResaleMedian: hdbMedian,
+        medianDelta: uraMedian !== null && hdbMedian !== null
+          ? Math.round((uraMedian - hdbMedian) * 100) / 100
+          : null,
+        medianRatio: uraMedian !== null && hdbMedian !== null && hdbMedian !== 0
+          ? Math.round((uraMedian / hdbMedian) * 100) / 100
+          : null,
+        privateCount: (uraRollup?.["count"] as number | null) ?? null,
+        hdbResaleCount: (hdbRollup?.["count"] as number | null) ?? null,
+      }
     : null;
-  const dealChecklist = buildPropertyDealChecklist(uraRollup, hdbRollup, planningArea, params.propertyType);
+  const dealChecklist = buildPropertyDealChecklist(uraRollup, hdbRollup, planningArea, params.propertyType, includeEnvironment, includeTransport);
   const geospatialConfidence = (() => {
     if (planningArea !== null && firstGeocode !== null) {
       return {
@@ -1608,8 +1641,15 @@ export const handleMacroBrief = async (
     ?? null;
   const soraMetric = extractNamedMasMetric(latestInterest, ["sora", "sora_1m", "sora_3m", "sora_6m", "sor_average"]);
   const bankingMetric = extractNamedMasMetric(latestBanking, ["total_deposits", "total_loans", "total_assets", "dbd_deposit"]);
+  if (latestInterest !== undefined && soraMetric === null) {
+    gaps.push(toGap("MAS_SORA_METRIC_UNMAPPED", "MAS interest-rate record did not expose a known SORA field. No SORA headline metric is returned."));
+  }
+  if (latestBanking !== undefined && bankingMetric === null) {
+    gaps.push(toGap("MAS_BANKING_METRIC_UNMAPPED", "MAS banking record did not expose a known deposits/loans/assets field. No banking headline metric is returned."));
+  }
   const fxDelta = computeMasDelta(exchangeRates, exchangeKey);
   const soraDelta = soraMetric !== null ? computeMasDelta(interestRates, soraMetric.key) : null;
+  const bankingDelta = bankingMetric !== null ? computeMasDelta(financialStats, bankingMetric.key) : null;
   const gdpTableId = gdpTable?.metadata.title === undefined ? null : MACRO_SINGSTAT_TABLES.gdp.tableId;
   const cpiTableId = cpiYoYTable?.metadata.title === undefined ? null : MACRO_SINGSTAT_TABLES.cpiYoY.tableId;
   const cpiIndexTableId = cpiIndexTable?.metadata.title === undefined ? null : MACRO_SINGSTAT_TABLES.cpiIndex.tableId;
@@ -1619,6 +1659,9 @@ export const handleMacroBrief = async (
   const gdpSeries = gdpTable === null ? [] : sliceLatestSingStatMetrics(gdpTable.rows as readonly Readonly<Record<string, unknown>>[], MACRO_SINGSTAT_TABLES.gdp.preferredVariables);
   const cpiYoYSeries = cpiYoYTable === null ? [] : sliceLatestSingStatMetrics(cpiYoYTable.rows as readonly Readonly<Record<string, unknown>>[], MACRO_SINGSTAT_TABLES.cpiYoY.preferredVariables);
   const cpiIndexSeries = cpiIndexTable === null ? [] : sliceLatestSingStatMetrics(cpiIndexTable.rows as readonly Readonly<Record<string, unknown>>[], MACRO_SINGSTAT_TABLES.cpiIndex.preferredVariables);
+  const gdpDelta = computeSingStatDelta(gdpSeries);
+  const cpiYoYDelta = computeSingStatDelta(cpiYoYSeries);
+  const cpiIndexDelta = computeSingStatDelta(cpiIndexSeries);
   const macroNextChecks = buildMacroNextChecks(gdpTableId, cpiTableId);
   const trackedKpis = {
     currency,
@@ -1638,17 +1681,21 @@ export const handleMacroBrief = async (
       metric: bankingMetric === null ? "MAS Banking (unavailable)" : formatMetricLabel(bankingMetric.key),
       key: bankingMetric?.key ?? null,
       value: bankingMetric?.value ?? null,
+      deltaPercent: bankingDelta,
     },
     singstatSeries: {
       gdpTableId,
       gdpPeriod: typeof latestGdp?.["period"] === "string" ? latestGdp["period"] : null,
       gdpValue: typeof latestGdp?.["value"] === "number" ? latestGdp["value"] : latestGdp?.["value"] ?? null,
+      gdpDeltaPercent: gdpDelta,
       cpiYoYTableId: cpiTableId,
       cpiYoYPeriod: typeof latestCpiYoY?.["period"] === "string" ? latestCpiYoY["period"] : null,
       cpiYoYValue: typeof latestCpiYoY?.["value"] === "number" ? latestCpiYoY["value"] : latestCpiYoY?.["value"] ?? null,
+      cpiYoYDeltaPercent: cpiYoYDelta,
       cpiIndexTableId,
       cpiIndexPeriod: typeof latestCpiIndex?.["period"] === "string" ? latestCpiIndex["period"] : null,
       cpiIndexValue: typeof latestCpiIndex?.["value"] === "number" ? latestCpiIndex["value"] : latestCpiIndex?.["value"] ?? null,
+      cpiIndexDeltaPercent: cpiIndexDelta,
     },
   };
 
@@ -1661,13 +1708,17 @@ export const handleMacroBrief = async (
       { label: soraMetric === null ? "SORA" : formatMetricLabel(soraMetric.key), value: soraMetric?.value ?? null, source: "MAS" },
       { label: "SORA period delta %", value: soraDelta, source: "MAS" },
       { label: bankingMetric === null ? "MAS Banking (unavailable)" : formatMetricLabel(bankingMetric.key), value: bankingMetric?.value ?? null, source: "MAS" },
+      { label: "Banking period delta %", value: bankingDelta, source: "MAS" },
       { label: "GDP period", value: typeof latestGdp?.["period"] === "string" ? latestGdp["period"] : null, source: "SingStat" },
       { label: "GDP at current prices", value: typeof latestGdp?.["value"] === "number" || typeof latestGdp?.["value"] === "string" ? latestGdp["value"] : null, source: "SingStat" },
+      { label: "GDP period delta %", value: gdpDelta, source: "SingStat" },
       { label: "GDP table ID", value: gdpTableId, source: "SingStat" },
       { label: "CPI YoY period", value: typeof latestCpiYoY?.["period"] === "string" ? latestCpiYoY["period"] : null, source: "SingStat" },
       { label: "CPI YoY %", value: typeof latestCpiYoY?.["value"] === "number" || typeof latestCpiYoY?.["value"] === "string" ? latestCpiYoY["value"] : null, source: "SingStat" },
+      { label: "CPI YoY period delta %", value: cpiYoYDelta, source: "SingStat" },
       { label: "CPI YoY table ID", value: cpiTableId, source: "SingStat" },
       { label: "CPI index", value: typeof latestCpiIndex?.["value"] === "number" || typeof latestCpiIndex?.["value"] === "string" ? latestCpiIndex["value"] : null, source: "SingStat" },
+      { label: "CPI index period delta %", value: cpiIndexDelta, source: "SingStat" },
       { label: "CPI index table ID", value: cpiIndexTableId, source: "SingStat" },
     ],
     evidence: [
@@ -1847,6 +1898,35 @@ export const handleTransportBrief = async (
           incidentCount: counts.trafficSignals,
         },
       },
+      serviceStatusByMode: {
+        bus: {
+          status: params.busStopCode === undefined
+            ? "not_requested"
+            : busArrivals === null
+              ? "unavailable"
+              : (busArrivals.length === 0 ? "empty" : "healthy"),
+          nextArrival,
+        },
+        train: {
+          status: trainAlerts === null
+            ? "unavailable"
+            : counts.trainAlerts > 0
+              ? "alerts_active"
+              : counts.trainMessages > 0
+                ? "messages_only"
+                : "healthy",
+          alertCount: counts.trainAlerts,
+          messageCount: counts.trainMessages,
+        },
+        traffic: {
+          status: trafficIncidents === null
+            ? "unavailable"
+            : counts.trafficSignals > 0
+              ? "incidents_active"
+              : "healthy",
+          incidentCount: counts.trafficSignals,
+        },
+      },
       signals,
       network: {
         trainAlertCount: counts.trainAlerts,
@@ -1946,6 +2026,21 @@ export const handleEnvironmentBrief = async (
     airQualityBand: getAirQualityBand(primaryAirQuality?.psi24h),
     rainfallBand: getRainfallBand(primaryRainfall?.value),
   } as const;
+  const pm25 = typeof primaryAirQuality?.pm25TwentyFourHourly === "number"
+    ? primaryAirQuality.pm25TwentyFourHourly
+    : (typeof primaryAirQuality?.pm25OneHourly === "number" ? primaryAirQuality.pm25OneHourly : null);
+  const booleanFlags = {
+    rainActive: thresholds.rainfallBand === "watch" || thresholds.rainfallBand === "caution",
+    rainHeavy: thresholds.rainfallBand === "caution",
+    forecastThundery: thresholds.forecastRisk === "caution",
+    psiUnhealthy: thresholds.airQualityBand === "caution",
+    pm25Unhealthy: pm25 !== null && pm25 > 55,
+  } as const;
+  const fallbackChain = [
+    { level: "area", requested: params.area ?? null, resolved: primaryForecast?.area ?? params.area ?? null, source: "NEA forecast" },
+    { level: "region", requested: params.region ?? null, resolved: primaryAirQuality?.region ?? inferredRegion ?? null, source: params.region === undefined && inferredRegion !== null ? "AREA_TO_REGION inferred" : "NEA air-quality direct" },
+    { level: "station", requested: params.stationId ?? null, resolved: primaryRainfall?.stationId ?? params.stationId ?? null, source: "NEA rainfall" },
+  ];
   const opsLevel = getEnvironmentOpsLevel(thresholds);
   const opsHeadline = buildEnvironmentHeadline(opsLevel, focusArea, focusRegion, focusStation);
   const signals = buildEnvironmentSignals(
@@ -2071,6 +2166,8 @@ export const handleEnvironmentBrief = async (
         advisory: thresholdAdvisory.advisory,
         reasons: thresholdAdvisory.reasons,
       },
+      flags: booleanFlags,
+      fallbackChain,
       focus: {
         area: focusArea,
         region: focusRegion,

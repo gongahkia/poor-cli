@@ -1,7 +1,9 @@
 import {
   LtaBusArrivalsSchema,
+  LtaCarparkAvailabilitySchema,
   LtaRoadOpeningsSchema,
   LtaRoadWorksSchema,
+  LtaTaxiAvailabilitySchema,
   LtaTrafficImagesSchema,
   LtaTrainAlertsSchema,
   LtaTrafficIncidentsSchema,
@@ -12,8 +14,10 @@ import {
 import type { OutputFormat, ToolResult } from "@sg-apis/shared";
 import {
   getBusArrivals,
+  getCarparkAvailability,
   getRoadOpenings,
   getRoadWorks,
+  getTaxiAvailability,
   getTrafficImages,
   getTrafficIncidents,
   getTrainAlerts,
@@ -250,6 +254,65 @@ export const handleLtaTrafficImages = async (
   };
 };
 
+const getCarparkMeta = (
+  params: Readonly<{ carparkId?: string | undefined; development?: string | undefined }>,
+  data: readonly Readonly<Record<string, unknown>>[],
+): Readonly<Record<string, unknown>> => {
+  const agencies = Array.from(new Set(
+    data.map((row) => row["agency"]).filter((v): v is string => typeof v === "string" && v.trim() !== ""),
+  ));
+  return {
+    requestedScope: {
+      carparkId: params.carparkId ?? null,
+      development: params.development ?? null,
+    },
+    resolvedScope: { rowCount: data.length, agencies },
+    observedAt: getObservedAt(),
+    upstreamTimestamp: null,
+    coverage: "Live LTA DataMall carpark availability for HDB, URA, and LTA-managed carparks.",
+  };
+};
+
+export const handleLtaCarparkAvailability = async (
+  params: Readonly<{ carparkId?: string | undefined; development?: string | undefined; limit?: number | undefined; format?: OutputFormat | undefined }>,
+): Promise<ToolResult> => {
+  const data = await getCarparkAvailability(params);
+  const format = resolveOutputFormat(params.format);
+  const text = formatResponse(data as unknown as Record<string, unknown>[], format);
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: {
+      records: data,
+      meta: getCarparkMeta(params, data as unknown as readonly Readonly<Record<string, unknown>>[]),
+    },
+  };
+};
+
+const getTaxiMeta = (
+  data: readonly Readonly<Record<string, unknown>>[],
+): Readonly<Record<string, unknown>> => ({
+  requestedScope: { networkWide: true },
+  resolvedScope: { networkWide: true, taxiCount: data.length },
+  observedAt: getObservedAt(),
+  upstreamTimestamp: null,
+  coverage: "Live LTA DataMall available taxi positions across Singapore.",
+});
+
+export const handleLtaTaxiAvailability = async (
+  params: Readonly<{ limit?: number | undefined; format?: OutputFormat | undefined }>,
+): Promise<ToolResult> => {
+  const data = await getTaxiAvailability(params);
+  const format = resolveOutputFormat(params.format);
+  const text = formatResponse(data as unknown as Record<string, unknown>[], format);
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: {
+      records: data,
+      meta: getTaxiMeta(data as unknown as readonly Readonly<Record<string, unknown>>[]),
+    },
+  };
+};
+
 export const ltaToolDefinitions: readonly RegisteredToolDefinition[] = [
   {
     name: "sg_lta_bus_arrivals",
@@ -298,5 +361,21 @@ export const ltaToolDefinitions: readonly RegisteredToolDefinition[] = [
     inputSchema: LtaTrafficImagesSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> =>
       handleLtaTrafficImages(validateInput(LtaTrafficImagesSchema, input)),
+  },
+  {
+    name: "sg_lta_carpark_availability",
+    description: "Get live LTA DataMall carpark availability with optional filters on carpark id or development name.",
+    surface: "canonical",
+    inputSchema: LtaCarparkAvailabilitySchema.shape,
+    handler: async (input: unknown): Promise<ToolResult> =>
+      handleLtaCarparkAvailability(validateInput(LtaCarparkAvailabilitySchema, input)),
+  },
+  {
+    name: "sg_lta_taxi_availability",
+    description: "Get live LTA DataMall available taxi coordinates across Singapore, bounded by an optional limit.",
+    surface: "canonical",
+    inputSchema: LtaTaxiAvailabilitySchema.shape,
+    handler: async (input: unknown): Promise<ToolResult> =>
+      handleLtaTaxiAvailability(validateInput(LtaTaxiAvailabilitySchema, input)),
   },
 ];

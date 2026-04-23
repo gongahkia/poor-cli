@@ -163,6 +163,30 @@ const buildBusinessRiskFlags = (
       });
     }
   }
+  const acraName = typeof primary?.["entityName"] === "string" ? primary["entityName"] as string : null;
+  if (acraName !== null) {
+    const normalize = (s: unknown): string =>
+      typeof s !== "string" ? "" : s.toLowerCase().replace(/[^a-z0-9]+/g, "").trim();
+    const acraCanon = normalize(acraName);
+    const otherNames: ReadonlyArray<{ source: string; name: string }> = [
+      ...builders.map((r) => ({ source: "BCA builder", name: String(r["companyName"] ?? "") })),
+      ...contractors.map((r) => ({ source: "BCA contractor", name: String(r["companyName"] ?? "") })),
+      ...hsaLicensees.map((r) => ({ source: "HSA", name: String(r.companyName ?? "") })),
+    ];
+    for (const other of otherNames) {
+      const otherCanon = normalize(other.name);
+      if (otherCanon === "" || acraCanon === "") continue;
+      if (otherCanon !== acraCanon && !otherCanon.includes(acraCanon) && !acraCanon.includes(otherCanon)) {
+        flags.push({
+          code: "CROSS_SOURCE_NAME_DIVERGENCE",
+          severity: "medium",
+          message: `ACRA entity name "${acraName}" does not match ${other.source} name "${other.name}".`,
+          source: `ACRA/${other.source}`,
+        });
+        break; // one divergence flag is enough
+      }
+    }
+  }
   return flags;
 };
 

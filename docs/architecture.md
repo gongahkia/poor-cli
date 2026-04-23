@@ -10,7 +10,7 @@ Accepted for the current product shape.
 
 ## Context
 
-This repo is not a general Singapore analyst copilot. It is a tool-first MCP server for agent builders who need reliable, explicit interfaces over 31 official data families.
+This repo is not a general Singapore analyst copilot. It is a tool-first MCP server for agent builders who need reliable, explicit interfaces over 35 official data families.
 
 The product boundary is:
 
@@ -36,7 +36,7 @@ Consequence:
 - new scope is added with honest direct tools first
 - additive briefs are allowed only when they return a bounded artifact, not hidden orchestration
 
-### 2. The repo goes deep on 31 official data families
+### 2. The repo goes deep on 35 official data families
 
 The current families are:
 
@@ -70,6 +70,10 @@ The current families are:
 - MOM
 - STB
 - HLB
+- COE
+- IRAS
+- SPF
+- EMA
 - data.gov.sg
 
 Why:

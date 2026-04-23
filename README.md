@@ -6,9 +6,9 @@ Official Singapore public data for agents with deterministic contracts.
 
 ## Surface Snapshot
 
-The repo currently exposes 90 `sg_*` tools total across 31 official data families.
+The repo currently exposes 98 `sg_*` tools total across 35 official data families.
 
-- 73 family and brief/query tools across the 31 API families
+- 81 family, brief/query, and ergonomics tools across the 35 API families
 - 17 operational tools for transit decisioning/governance plus keys, cache, config, health, and trace lookup
 
 `sg_query` is the bounded preferred interface across 21 routed families. It plans or executes bounded deterministic workflows with transparent step metadata. The direct `sg_*` tools remain the stable low-level contract.
@@ -24,7 +24,7 @@ The repo currently exposes 90 `sg_*` tools total across 31 official data familie
 
 ## Why This Exists
 
-This repo is for agent builders who want one honest MCP server for Singapore public data instead of stitching together SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, BOA, ACRA, PA, Sport Singapore, ECDA, MSF Family Services, MSF Student Care Services, MSF Social Service Offices, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, HSA, SFA, Government RSS Feeds, NParks, PUB, MOM, STB, HLB, and data.gov.sg manually.
+This repo is for agent builders who want one honest MCP server for Singapore public data instead of stitching together SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, BOA, ACRA, PA, Sport Singapore, ECDA, MSF Family Services, MSF Student Care Services, MSF Social Service Offices, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, HSA, SFA, Government RSS Feeds, NParks, PUB, MOM, STB, HLB, COE, IRAS, SPF, EMA, and data.gov.sg manually.
 
 The value is not hidden magic. The value is:
 
@@ -59,7 +59,7 @@ If you are evaluating whether the repo is actually useful for developers, start 
 | MAS | 3 | Exchange rates, SORA, banking stats, exact dates, bounded date ranges | None |
 | OneMap | 5 | Geocode, reverse geocode, route, planning-area demographics, coordinate conversion | Email + password |
 | URA | 3 | Property transactions, planning-area lookup, development charges | API key |
-| LTA DataMall | 6 | Bus arrivals, train alerts, traffic incidents, road works/openings, traffic images | API key |
+| LTA DataMall | 8 | Bus arrivals, train alerts, traffic incidents, road works/openings, traffic images, carpark availability, taxi availability | API key |
 | Transit Intelligence | 14 | Health/hotspots, ops brief + pack, reliability, transfer-risk, accessible route, objective planning, counterfactuals, outcomes, model metrics, policy audit/insights/replay | LTA key for live-dependent reads |
 | NEA | 3 | 2-hour forecast, air quality, rainfall | None |
 | HDB | 2 | Curated resale and rental market reads over official data.gov.sg datasets | None |
@@ -85,6 +85,10 @@ If you are evaluating whether the repo is actually useful for developers, start 
 | MOM | 1 | Labour market statistics | None |
 | STB | 1 | Visitor arrival statistics | None |
 | HLB | 1 | Hotel directory with keeper names, room counts, and geospatial location context | None |
+| COE | 1 | Certificate of Entitlement bidding results by vehicle category and bidding exercise | None |
+| IRAS | 1 | Annual tax collection by financial year and tax type | None |
+| SPF | 1 | Annual crime statistics by offence category and year | None |
+| EMA | 1 | Monthly electricity generation by energy product type | None |
 | data.gov.sg | 5 | Dataset search, metadata, resource inspection, bounded row reads, collection browse | None |
 
 Additive brief tools:

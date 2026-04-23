@@ -29,6 +29,78 @@ import {
 const MAP_TOOL_META = withMapUiMetadata(undefined);
 const logger = createLogger("query-tool");
 
+const recipeIdFromName = (name: string): string =>
+  name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+
+const WORKFLOW_TO_RECIPE_NAME: Readonly<Record<string, string>> = {
+  route_planning: "Postal Route",
+  reverse_geocode: "Reverse Geocode",
+  coordinate_conversion: "Coordinate Conversion",
+  singstat_drilldown: "SingStat Drilldown",
+  dataset_discovery: "Dataset Discovery Fallback",
+  macro_brief: "Macro Snapshot",
+  property_brief: "Property Due Diligence",
+  transport_brief: "Transport Status",
+  environment_brief: "Environment Snapshot",
+  business_dossier: "Business Registry Diligence",
+  civic_discovery: "Civic Discovery",
+  hdb_resale: "HDB Resale Check",
+  hdb_rental: "HDB Rental Check",
+  ura_dev_charges: "URA Development Charges",
+  datagov_browse: "Dataset Collection Browse",
+};
+
+const findRecipeIdForWorkflow = (workflow: string | undefined): string | undefined => {
+  if (workflow === undefined) return undefined;
+  const name = WORKFLOW_TO_RECIPE_NAME[workflow];
+  return name === undefined ? undefined : recipeIdFromName(name);
+};
+
+// keyword-to-recipe mapping drives the unsupported->nearest-recipe suggestion.
+// kept inline to avoid a circular import with catalog.ts (which depends on tool-set.ts).
+const RECIPE_KEYWORD_HINTS: ReadonlyArray<{
+  readonly keywords: readonly string[];
+  readonly name: string;
+  readonly prompt: string;
+}> = [
+  { keywords: ["route", "walk", "drive", "from", "to"], name: "Postal Route", prompt: "Walk from 049178 to 048616" },
+  { keywords: ["reverse", "geocode", "coordinate"], name: "Reverse Geocode", prompt: "Reverse geocode 1.2840, 103.8510" },
+  { keywords: ["convert", "svy21", "wgs84"], name: "Coordinate Conversion", prompt: "Convert SVY21 28001 38744 to WGS84" },
+  { keywords: ["singstat", "gdp", "cpi", "time series"], name: "SingStat Drilldown", prompt: "Browse SingStat transport datasets" },
+  { keywords: ["dataset", "data.gov", "browse"], name: "Dataset Discovery Fallback", prompt: "Discover Singapore HDB datasets" },
+  { keywords: ["macro", "inflation", "economy", "sora"], name: "Macro Snapshot", prompt: "Macro snapshot of Singapore" },
+  { keywords: ["property", "transaction", "planning area"], name: "Property Due Diligence", prompt: "Property due diligence for Bedok HDB resale" },
+  { keywords: ["bus", "train", "mrt", "traffic", "transport"], name: "Transport Status", prompt: "Transport status in Singapore right now" },
+  { keywords: ["weather", "rain", "air quality", "psi", "forecast"], name: "Environment Snapshot", prompt: "Environment snapshot of Singapore right now" },
+  { keywords: ["acra", "uen", "business", "dossier", "company"], name: "Business Registry Diligence", prompt: "Registry diligence for UEN 201912345K" },
+  { keywords: ["community club", "childcare", "sports facility", "family service"], name: "Civic Discovery", prompt: "Find a community club near 560123" },
+  { keywords: ["hdb", "resale"], name: "HDB Resale Check", prompt: "Bedok HDB 4-room resale" },
+  { keywords: ["rental"], name: "HDB Rental Check", prompt: "Bedok HDB rental" },
+  { keywords: ["development charge", "ura charge"], name: "URA Development Charges", prompt: "URA development charges for Bedok" },
+];
+
+const findNearestRecipe = (
+  query: string,
+): { id: string; name: string; prompt: string } | undefined => {
+  const lower = query.toLowerCase();
+  let best: { score: number; hint: (typeof RECIPE_KEYWORD_HINTS)[number] } | undefined;
+  for (const hint of RECIPE_KEYWORD_HINTS) {
+    let score = 0;
+    for (const keyword of hint.keywords) {
+      if (lower.includes(keyword)) score += 1;
+    }
+    if (score > 0 && (best === undefined || score > best.score)) {
+      best = { score, hint };
+    }
+  }
+  if (best === undefined) return undefined;
+  return {
+    id: recipeIdFromName(best.hint.name),
+    name: best.hint.name,
+    prompt: best.hint.prompt,
+  };
+};
+
 const buildRoutingExplanation = (
   plan: Readonly<{
     workflow: string;
@@ -339,11 +411,15 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
               reason: plan.reason,
               suggestion: plan.suggestion,
               routingExplanation: buildRoutingExplanation(plan),
+              ...(findRecipeIdForWorkflow(plan.workflow) === undefined
+                ? {}
+                : { recipeId: findRecipeIdForWorkflow(plan.workflow)! }),
               ...(contextIds === undefined ? {} : { contextIds }),
             },
           };
         }
 
+        const nearestRecipe = findNearestRecipe(query);
         return {
           content: [{ type: "text", text: formatQueryIssue("unsupported", plan.reason, plan.suggestion, resolvedFormat) }],
           structuredContent: {
@@ -351,6 +427,7 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
             mode,
             reason: plan.reason,
             suggestion: plan.suggestion,
+            ...(nearestRecipe === undefined ? {} : { nearestRecipe }),
             ...(contextIds === undefined ? {} : { contextIds }),
           },
         };
@@ -455,6 +532,7 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
       const mapPayload = execution.status === "completed"
         ? extractMapPayload(execution.steps)
         : undefined;
+      const recipeId = findRecipeIdForWorkflow(plan.workflow);
       const structuredContent = {
         status: execution.status,
         mode,
@@ -467,6 +545,7 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
         ...(opsMetadata.resultSummary === undefined ? {} : { resultSummary: opsMetadata.resultSummary }),
         ...(opsMetadata.nextActions === undefined ? {} : { nextActions: opsMetadata.nextActions }),
         routingExplanation,
+        ...(recipeId === undefined ? {} : { recipeId }),
         ...(continuationHints.length > 0 ? { continuationHints } : {}),
         ...(execution.status === "failed"
           ? { failedStep: execution.steps.find((step) => step.status === "failed") ?? null }

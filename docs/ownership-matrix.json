@@ -157,6 +157,26 @@
       "backupOwner": "maintainer:governance"
     },
     {
+      "name": "COE",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "IRAS",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "SPF",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "EMA",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
       "name": "data.gov.sg",
       "primaryOwner": "maintainer:data-surface",
       "backupOwner": "maintainer:governance"

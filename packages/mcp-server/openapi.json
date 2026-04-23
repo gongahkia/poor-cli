@@ -762,6 +762,85 @@
         }
       }
     },
+    "/api/v1/sg_cross_dataset": {
+      "post": {
+        "summary": "Bounded two-SingStat-series comparison with joined period table, pairwise Pearson correlation, and sparklines.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "leftTableId": {
+                    "type": "string"
+                  },
+                  "leftIndicator": {
+                    "type": "string"
+                  },
+                  "leftLabel": {
+                    "type": "string"
+                  },
+                  "rightTableId": {
+                    "type": "string"
+                  },
+                  "rightIndicator": {
+                    "type": "string"
+                  },
+                  "rightLabel": {
+                    "type": "string"
+                  },
+                  "startYear": {
+                    "type": "integer"
+                  },
+                  "endYear": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv"
+                    ]
+                  }
+                },
+                "required": [
+                  "leftTableId",
+                  "leftIndicator",
+                  "leftLabel",
+                  "rightTableId",
+                  "rightIndicator",
+                  "rightLabel"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
     "/api/v1/sg_datagov_browse": {
       "post": {
         "summary": "Browse data.gov.sg collections. Call without arguments to see all collections, or provide a collection name to see its datasets.",
@@ -1070,6 +1149,62 @@
                   },
                   "hasVacancy": {
                     "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_ema_electricity_generation": {
+      "post": {
+        "summary": "Get EMA monthly electricity generation records by energy product type and year via data.gov.sg.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "energyType": {
+                    "type": "string"
+                  },
+                  "year": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv"
+                    ]
                   }
                 },
                 "additionalProperties": false
@@ -1782,6 +1917,62 @@
         }
       }
     },
+    "/api/v1/sg_iras_tax_collection": {
+      "post": {
+        "summary": "Get IRAS annual tax collection records by financial year and tax type via data.gov.sg.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "financialYear": {
+                    "type": "string"
+                  },
+                  "taxType": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
     "/api/v1/sg_key_delete": {
       "post": {
         "summary": "Delete a stored API key.",
@@ -1971,6 +2162,119 @@
         }
       }
     },
+    "/api/v1/sg_lta_carpark_availability": {
+      "post": {
+        "summary": "Get live LTA DataMall carpark availability with optional filters on carpark id or development name.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "carparkId": {
+                    "type": "string"
+                  },
+                  "development": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_lta_coe_results": {
+      "post": {
+        "summary": "Get LTA Certificate of Entitlement (COE) bidding results (quota, bids, premium) by vehicle category and bidding exercise.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "category": {
+                    "type": "string"
+                  },
+                  "biddingNo": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
     "/api/v1/sg_lta_road_openings": {
       "post": {
         "summary": "Get live LTA road-opening events with start and end timing context.",
@@ -2032,6 +2336,57 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_lta_taxi_availability": {
+      "post": {
+        "summary": "Get live LTA DataMall available taxi coordinates across Singapore, bounded by an optional limit.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "limit": {
+                    "type": "integer"
+                  },
                   "format": {
                     "type": "string",
                     "enum": [
@@ -4063,6 +4418,62 @@
         }
       }
     },
+    "/api/v1/sg_spf_crime_stats": {
+      "post": {
+        "summary": "Get Singapore Police Force annual crime statistics by offence category and year via data.gov.sg.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "offenceCategory": {
+                    "type": "string"
+                  },
+                  "year": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
     "/api/v1/sg_sportsg_facilities": {
       "post": {
         "summary": "Search Sport Singapore public facilities with optional facility-type, postal-code, or proximity filters.",
@@ -5559,6 +5970,79 @@
                       "markdown",
                       "csv",
                       "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_visualize": {
+      "post": {
+        "summary": "Deterministic ASCII sparkline over a numeric array or a SingStat time series (tableId + indicator).",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "values": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "labels": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "tableId": {
+                    "type": "string"
+                  },
+                  "indicator": {
+                    "type": "string"
+                  },
+                  "startYear": {
+                    "type": "integer"
+                  },
+                  "endYear": {
+                    "type": "integer"
+                  },
+                  "width": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
                     ]
                   }
                 },
