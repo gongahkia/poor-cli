@@ -175,6 +175,13 @@ def run_session_mode(argv: Sequence[str]) -> int:
 def run_state_mode(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="poor-cli state")
     sub = parser.add_subparsers(dest="subcommand", required=True)
+    p_init = sub.add_parser("init", help="create repo-local workspace state")
+    p_init.add_argument("--json", action="store_true")
+    p_info = sub.add_parser("info", help="show repo-local workspace state path")
+    p_info.add_argument("--json", action="store_true")
+    p_remove = sub.add_parser("remove", help="remove repo-local workspace state")
+    p_remove.add_argument("--dry-run", action="store_true")
+    p_remove.add_argument("--json", action="store_true")
     p_export = sub.add_parser("export")
     p_export.add_argument("--output", "-o", required=True)
     p_export.add_argument("--json", action="store_true")
@@ -187,7 +194,48 @@ def run_state_mode(argv: Sequence[str]) -> int:
     p_inspect.add_argument("archive")
     p_inspect.add_argument("--json", action="store_true")
     args = parser.parse_args(list(argv))
-    from ..state_portability import export_state, import_state, inspect_state_archive
+    from ..state_portability import (
+        ensure_repo_state,
+        export_state,
+        import_state,
+        inspect_repo_state,
+        inspect_state_archive,
+        remove_repo_state,
+    )
+    if args.subcommand == "init":
+        result = ensure_repo_state(repo_root=Path.cwd())
+        payload = result.to_dict()
+        if args.json:
+            _print_json(payload)
+        else:
+            print(f"Initialized workspace state at {result.path}")
+        return 0
+    if args.subcommand == "info":
+        result = inspect_repo_state(repo_root=Path.cwd())
+        payload = result.to_dict()
+        if args.json:
+            _print_json(payload)
+        else:
+            status = "exists" if result.exists else "not created"
+            print(f"Workspace state: {status}")
+            print(f"Path: {result.path}")
+            print(f"Files: {result.files}")
+            print(f"Bytes: {result.bytes}")
+            print(f"Remove: {result.removal_command}")
+        return 0
+    if args.subcommand == "remove":
+        result = remove_repo_state(repo_root=Path.cwd(), dry_run=args.dry_run)
+        payload = result.to_dict()
+        payload["dry_run"] = bool(args.dry_run)
+        if args.json:
+            _print_json(payload)
+        else:
+            verb = "Would remove" if args.dry_run else "Removed"
+            if result.exists:
+                print(f"{verb} {result.path} ({result.files} files, {result.bytes} bytes)")
+            else:
+                print(f"No workspace state found at {result.path}")
+        return 0
     if args.subcommand == "export":
         result = export_state(Path(args.output), repo_root=Path.cwd())
         payload = result.to_dict()

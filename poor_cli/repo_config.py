@@ -12,6 +12,7 @@ import json
 import tempfile
 import shutil
 import sqlite3
+import sys
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, Any, Iterator, Optional, List
@@ -213,6 +214,7 @@ class RepoConfig:
     HISTORY_MIGRATION_MARKER_FILE = "history_migration_marker.json"
     PREFERENCES_FILE = "preferences.json"
     PREFERENCES_LOCK_FILE = "preferences.lock"
+    STATE_NOTICE_FILE = "STATE.md"
 
     def __init__(
         self,
@@ -226,7 +228,7 @@ class RepoConfig:
             repo_path: Path to repository (defaults to current directory)
             enable_legacy_history_migration: Import ~/.poor-cli/history.db once when enabled.
         """
-        self.repo_path = repo_path or Path.cwd()
+        self.repo_path = _normalize_repo_path(repo_path)
         self.enable_legacy_history_migration = enable_legacy_history_migration
         self.config_dir = self.repo_path / self.REPO_DIR_NAME
         self.history_file = self.config_dir / self.HISTORY_FILE
@@ -251,6 +253,7 @@ class RepoConfig:
     def _ensure_config_dir(self) -> None:
         """Create .poor-cli directory if it doesn't exist"""
         try:
+            created = not self.config_dir.exists()
             self.config_dir.mkdir(exist_ok=True)
             self.history_backup_dir.mkdir(exist_ok=True)
 
@@ -262,6 +265,28 @@ class RepoConfig:
                     f.write("history.json\n")
                     f.write("# Keep preferences (can be committed)\n")
                     f.write("!preferences.json\n")
+            notice_path = self.config_dir / self.STATE_NOTICE_FILE
+            if not notice_path.exists():
+                notice_path.write_text(
+                    "# poor-cli workspace state\n\n"
+                    "poor-cli created this repo-local folder to store harness state for this workspace.\n\n"
+                    "Typical contents:\n"
+                    "- conversation history\n"
+                    "- checkpoints and audit logs\n"
+                    "- context indexes and run metadata\n"
+                    "- repo-local preferences\n\n"
+                    "Remove it with:\n\n"
+                    "```sh\n"
+                    "poor-cli state remove\n"
+                    "```\n",
+                    encoding="utf-8",
+                )
+            if created:
+                print(
+                    "poor-cli: created workspace state at "
+                    f"{self.config_dir}. Remove with `poor-cli state remove`.",
+                    file=sys.stderr,
+                )
 
             logger.info(f"Repo config directory ensured at {self.config_dir}")
         except Exception as e:
@@ -818,14 +843,27 @@ class RepoConfig:
 _repo_configs: Dict[Path, RepoConfig] = {}
 
 
+def _workspace_root(candidate: Path) -> Path:
+    """Return nearest workspace root to avoid one .poor-cli per nested cwd."""
+    current = candidate
+    if current.is_file():
+        current = current.parent
+    for path in [current, *current.parents]:
+        if (path / ".poor-cli").exists():
+            return path
+        if (path / ".git").exists():
+            return path
+    return current
+
+
 def _normalize_repo_path(repo_path: Optional[Path]) -> Path:
     """Return canonical repository root path used for cache keying."""
     candidate = Path(repo_path) if repo_path is not None else Path.cwd()
     try:
-        return candidate.resolve()
+        return _workspace_root(candidate.resolve())
     except FileNotFoundError:
         # Path.resolve(strict=False) behavior for Python<3.10 compatibility.
-        return candidate.absolute()
+        return _workspace_root(candidate.absolute())
 
 
 def get_repo_config(

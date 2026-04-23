@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import shutil
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -23,6 +24,56 @@ class StateArchiveResult:
         if self.manifest is not None:
             payload["manifest"] = self.manifest
         return payload
+
+
+@dataclass
+class RepoStateInfo:
+    path: str
+    exists: bool
+    files: int
+    bytes: int
+    removal_command: str = "poor-cli state remove"
+
+    def to_dict(self) -> Dict[str, object]:
+        return {
+            "path": self.path,
+            "exists": self.exists,
+            "files": self.files,
+            "bytes": self.bytes,
+            "removal_command": self.removal_command,
+        }
+
+
+def _repo_state_path(repo_root: Optional[Path] = None) -> Path:
+    from .repo_config import _normalize_repo_path
+
+    return _normalize_repo_path(repo_root) / ".poor-cli"
+
+
+def inspect_repo_state(*, repo_root: Optional[Path] = None) -> RepoStateInfo:
+    path = _repo_state_path(repo_root)
+    files = 0
+    total_bytes = 0
+    if path.exists():
+        for child in path.rglob("*"):
+            if child.is_file():
+                files += 1
+                total_bytes += child.stat().st_size
+    return RepoStateInfo(str(path), path.exists(), files, total_bytes)
+
+
+def ensure_repo_state(*, repo_root: Optional[Path] = None) -> RepoStateInfo:
+    from .repo_config import get_repo_config
+
+    get_repo_config(repo_path=repo_root, enable_legacy_history_migration=False)
+    return inspect_repo_state(repo_root=repo_root)
+
+
+def remove_repo_state(*, repo_root: Optional[Path] = None, dry_run: bool = False) -> RepoStateInfo:
+    before = inspect_repo_state(repo_root=repo_root)
+    if before.exists and not dry_run:
+        shutil.rmtree(before.path)
+    return before
 
 
 def _sha256(path: Path) -> str:
@@ -50,8 +101,8 @@ def export_state(
     repo_root: Optional[Path] = None,
 ) -> StateArchiveResult:
     home = Path(home_state or Path.home() / ".poor-cli").resolve()
-    repo = Path(repo_root or Path.cwd()).resolve()
-    repo_state = repo / ".poor-cli"
+    repo_state = _repo_state_path(repo_root)
+    repo = repo_state.parent
     output = Path(output).expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     sources = [
@@ -120,7 +171,7 @@ def import_state(
 ) -> StateArchiveResult:
     archive_path = Path(archive_path).expanduser().resolve()
     home = Path(home_state or Path.home() / ".poor-cli").resolve()
-    repo_state = Path(repo_root or Path.cwd()).resolve() / ".poor-cli"
+    repo_state = _repo_state_path(repo_root)
     files: List[str] = []
     skipped: List[str] = []
     with zipfile.ZipFile(archive_path, "r") as archive:

@@ -35,7 +35,7 @@ def _render_root_help() -> str:
         "  poor-cli session            List, create, fork, or destroy sessions\n"
         "  poor-cli history            Search, list, or export conversation history\n"
         "  poor-cli checkpoint         List, create, preview, or restore checkpoints\n"
-        "  poor-cli state              Export or import portable local harness state\n"
+        "  poor-cli state              Init, inspect, remove, export, or import local harness state\n"
         "  poor-cli memory             List, save, search, or delete memory entries\n\n"
         "Configuration:\n"
         "  poor-cli config             List, get, set, or toggle configuration\n"
