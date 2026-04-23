@@ -7,6 +7,7 @@ import { handleBusinessDossier, handleEnvironmentBrief, handleMacroBrief, handle
 import { handleHdbResalePrices } from "./tools/hdb-tools.js";
 import { handleLtaBusArrivals } from "./tools/lta-tools.js";
 import { handleNeaForecast2Hr } from "./tools/nea-tools.js";
+import { handleVisualize, handleCrossDataset } from "./tools/visualize-tools.js";
 
 const logger = createLogger("sg-data-cli");
 
@@ -176,6 +177,45 @@ const commands: Record<string, (args: string[]) => Promise<void>> = {
     const opts = parseArgs(args);
     printResult(await handleEnvironmentBrief({ area: opts["area"], region: opts["region"], format: "markdown" }));
   },
+  async visualize(args) {
+    const opts = parseArgs(args);
+    if (opts["values"] !== undefined) {
+      const values = opts["values"].split(",").map((v) => Number(v.trim())).filter((v) => Number.isFinite(v));
+      if (values.length < 2) { console.error("usage: sg-data visualize --values 1,2,3,4"); process.exit(1); }
+      printResult(await handleVisualize({ values, format: "markdown" }));
+      return;
+    }
+    if (opts["tableId"] !== undefined && opts["indicator"] !== undefined) {
+      printResult(await handleVisualize({
+        tableId: opts["tableId"],
+        indicator: opts["indicator"],
+        ...(opts["startYear"] ? { startYear: Number(opts["startYear"]) } : {}),
+        ...(opts["endYear"] ? { endYear: Number(opts["endYear"]) } : {}),
+        format: "markdown",
+      }));
+      return;
+    }
+    console.error("usage: sg-data visualize --values 1,2,3  OR  --tableId M015631 --indicator 'GDP At Current Market Prices'");
+    process.exit(1);
+  },
+  async "cross-dataset"(args) {
+    const opts = parseArgs(args);
+    const required = ["leftTableId", "leftIndicator", "leftLabel", "rightTableId", "rightIndicator", "rightLabel"] as const;
+    for (const key of required) {
+      if (!opts[key]) { console.error(`missing required --${key}`); process.exit(1); }
+    }
+    printResult(await handleCrossDataset({
+      leftTableId: opts["leftTableId"]!,
+      leftIndicator: opts["leftIndicator"]!,
+      leftLabel: opts["leftLabel"]!,
+      rightTableId: opts["rightTableId"]!,
+      rightIndicator: opts["rightIndicator"]!,
+      rightLabel: opts["rightLabel"]!,
+      ...(opts["startYear"] ? { startYear: Number(opts["startYear"]) } : {}),
+      ...(opts["endYear"] ? { endYear: Number(opts["endYear"]) } : {}),
+      format: "markdown",
+    }));
+  },
 };
 
 const main = async () => {
@@ -195,7 +235,9 @@ commands:
   business-dossier --uen <u>  business dossier
   macro-brief                 macro snapshot
   transport-brief             transport status
-  environment-brief           environment status`);
+  environment-brief           environment status
+  visualize --values 1,2,3    ASCII sparkline from inline values or --tableId+--indicator
+  cross-dataset               compare two SingStat series by period (Pearson correlation)`);
     process.exit(0);
   }
   const handler = commands[cmd];

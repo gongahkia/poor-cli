@@ -19,6 +19,8 @@ import { hlbToolDefinitions } from "./hlb-tools.js";
 import { hsaToolDefinitions } from "./hsa-tools.js";
 import { irasToolDefinitions } from "./iras-tools.js";
 import { keystoreToolDefinitions } from "./keystore-tools.js";
+import { lawToolDefinitions } from "./law-tools.js";
+import { nlbToolDefinitions } from "./nlb-tools.js";
 import { ltaToolDefinitions } from "./lta-tools.js";
 import { masToolDefinitions } from "./mas-tools.js";
 import { moeToolDefinitions } from "./moe-tools.js";
@@ -75,6 +77,8 @@ const RAW_TOOL_DEFINITIONS = [
   ...spfToolDefinitions,
   ...emaToolDefinitions,
   ...visualizeToolDefinitions,
+  ...nlbToolDefinitions,
+  ...lawToolDefinitions,
   ...transitIntelligenceToolDefinitions,
   ...hlbToolDefinitions,
   ...briefToolDefinitions,

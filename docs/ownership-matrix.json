@@ -177,6 +177,16 @@
       "backupOwner": "maintainer:governance"
     },
     {
+      "name": "NLB",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "SSO Law",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:governance"
+    },
+    {
       "name": "data.gov.sg",
       "primaryOwner": "maintainer:data-surface",
       "backupOwner": "maintainer:governance"

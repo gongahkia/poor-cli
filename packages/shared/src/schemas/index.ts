@@ -953,6 +953,28 @@ export const VisualizeSchema = VisualizeInputSchema.refine(
   { message: "Provide either values[] or (tableId + indicator) to visualize." },
 );
 
+export const NlbLibrariesSchema = z.object({
+  name: z.string().min(1).optional(),
+  region: z.string().min(1).optional(),
+  postalCode: z.string().min(1).optional(),
+  limit: z.number().int().positive().optional(),
+  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+}).strict();
+
+export const HawkerClosuresSchema = z.object({
+  centre: z.string().min(1).optional(),
+  startDate: IsoDateSchema.optional(),
+  endDate: IsoDateSchema.optional(),
+  limit: z.number().int().positive().optional(),
+  format: z.enum(["json", "markdown", "csv"]).optional(),
+}).strict();
+
+export const LawSearchSchema = z.object({
+  query: z.string().min(2),
+  limit: z.number().int().positive().max(50).optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
 export const CrossDatasetSchema = z.object({
   leftTableId: z.string().min(1),
   leftIndicator: z.string().min(1),

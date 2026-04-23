@@ -6,9 +6,9 @@ Official Singapore public data for agents with deterministic contracts.
 
 ## Surface Snapshot
 
-The repo currently exposes 98 `sg_*` tools total across 35 official data families.
+The repo currently exposes 101 `sg_*` tools total across 37 official data families.
 
-- 81 family, brief/query, and ergonomics tools across the 35 API families
+- 84 family, brief/query, and ergonomics tools across the 37 API families
 - 17 operational tools for transit decisioning/governance plus keys, cache, config, health, and trace lookup
 
 `sg_query` is the bounded preferred interface across 21 routed families. It plans or executes bounded deterministic workflows with transparent step metadata. The direct `sg_*` tools remain the stable low-level contract.
@@ -24,7 +24,7 @@ The repo currently exposes 98 `sg_*` tools total across 35 official data familie
 
 ## Why This Exists
 
-This repo is for agent builders who want one honest MCP server for Singapore public data instead of stitching together SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, BOA, ACRA, PA, Sport Singapore, ECDA, MSF Family Services, MSF Student Care Services, MSF Social Service Offices, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, HSA, SFA, Government RSS Feeds, NParks, PUB, MOM, STB, HLB, COE, IRAS, SPF, EMA, and data.gov.sg manually.
+This repo is for agent builders who want one honest MCP server for Singapore public data instead of stitching together SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, BOA, ACRA, PA, Sport Singapore, ECDA, MSF Family Services, MSF Student Care Services, MSF Social Service Offices, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, HSA, SFA, Government RSS Feeds, NParks, PUB, MOM, STB, HLB, COE, IRAS, SPF, EMA, NLB, SSO Law, and data.gov.sg manually.
 
 The value is not hidden magic. The value is:
 
@@ -74,7 +74,7 @@ If you are evaluating whether the repo is actually useful for developers, start 
 | MSF Student Care Services | 1 | Student care discovery with audit-status and SCFA filters | None |
 | MSF Social Service Offices | 1 | Social service office discovery by name, postal code, or proximity | None |
 | GeBIZ | 1 | Government procurement tender awards and contract data | None |
-| Hawker Centres | 1 | Hawker centre directory with locations and stall counts | None |
+| Hawker Centres | 2 | Hawker centre directory with locations, stall counts, and quarterly cleaning/closure windows | None |
 | MOE Schools | 1 | School directory filtered by level, zone, and name | None |
 | MOH Healthcare | 1 | Healthcare facility directory (hospitals, clinics) | None |
 | HSA | 2 | Licensed pharmacies plus health-product import, wholesale, and manufacturing licensees | None |
@@ -89,6 +89,8 @@ If you are evaluating whether the repo is actually useful for developers, start 
 | IRAS | 1 | Annual tax collection by financial year and tax type | None |
 | SPF | 1 | Annual crime statistics by offence category and year | None |
 | EMA | 1 | Monthly electricity generation by energy product type | None |
+| NLB | 1 | National Library Board public library directory by region, name, or postal code | None |
+| SSO Law | 1 | Singapore Statutes Online search over public Acts (research only, not legal advice) | None |
 | data.gov.sg | 5 | Dataset search, metadata, resource inspection, bounded row reads, collection browse | None |
 
 Additive brief tools:

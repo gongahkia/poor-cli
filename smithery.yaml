@@ -1,4 +1,4 @@
 name: sg-apis-mcp
-description: Official Singapore public data MCP server for agents across SingStat, MAS, OneMap, URA, LTA DataMall, Transit Intelligence, NEA, HDB, CEA, BCA, BOA, ACRA, PA, Sport Singapore, ECDA, MSF Family Services, MSF Student Care Services, MSF Social Service Offices, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, HSA, SFA, Government RSS Feeds, NParks, PUB, MOM, STB, HLB, COE, IRAS, SPF, EMA, and data.gov.sg
+description: Official Singapore public data MCP server for agents across SingStat, MAS, OneMap, URA, LTA DataMall, Transit Intelligence, NEA, HDB, CEA, BCA, BOA, ACRA, PA, Sport Singapore, ECDA, MSF Family Services, MSF Student Care Services, MSF Social Service Offices, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, HSA, SFA, Government RSS Feeds, NParks, PUB, MOM, STB, HLB, COE, IRAS, SPF, EMA, NLB, SSO Law, and data.gov.sg
 transport: stdio
 install: npm install && npm run build && node packages/mcp-server/dist/index.js
