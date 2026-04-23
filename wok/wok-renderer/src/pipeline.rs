@@ -173,9 +173,22 @@ impl QuadBatch {
 
     /// Add a textured background image quad.
     pub fn push_image_quad(&mut self, x: f32, y: f32, w: f32, h: f32, tint: [f32; 4]) {
+        self.push_image_quad_with_uv(x, y, w, h, [0.0, 0.0, 1.0, 1.0], tint);
+    }
+
+    /// Add a textured background image quad with custom UV coordinates.
+    pub fn push_image_quad_with_uv(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        uv_rect: [f32; 4],
+        tint: [f32; 4],
+    ) {
         self.instances.push(QuadInstance {
             rect: [x, y, w, h],
-            uv_rect: [0.0, 0.0, 1.0, 1.0],
+            uv_rect,
             fg_color: tint,
             bg_color: [0.0; 4],
             tex_kind: 2.0,
@@ -186,28 +199,28 @@ impl QuadBatch {
         self.vertices.extend_from_slice(&[
             Vertex {
                 position: [x, y],
-                tex_coords: [0.0, 0.0],
+                tex_coords: [uv_rect[0], uv_rect[1]],
                 fg_color: tint,
                 bg_color: [0.0; 4],
                 tex_kind: 2.0,
             },
             Vertex {
                 position: [x + w, y],
-                tex_coords: [1.0, 0.0],
+                tex_coords: [uv_rect[2], uv_rect[1]],
                 fg_color: tint,
                 bg_color: [0.0; 4],
                 tex_kind: 2.0,
             },
             Vertex {
                 position: [x + w, y + h],
-                tex_coords: [1.0, 1.0],
+                tex_coords: [uv_rect[2], uv_rect[3]],
                 fg_color: tint,
                 bg_color: [0.0; 4],
                 tex_kind: 2.0,
             },
             Vertex {
                 position: [x, y + h],
-                tex_coords: [0.0, 1.0],
+                tex_coords: [uv_rect[0], uv_rect[3]],
                 fg_color: tint,
                 bg_color: [0.0; 4],
                 tex_kind: 2.0,
