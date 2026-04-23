@@ -8224,6 +8224,33 @@ mod tests {
     }
 
     #[test]
+    fn test_build_quads_renders_chrome_after_smooth_scrolled_rows() {
+        let source = include_str!("main.rs");
+        let build_quads = source
+            .split("fn build_quads(&mut self)")
+            .nth(1)
+            .expect("build_quads should exist");
+        let smooth_rows = build_quads
+            .find(".append_translated(row_batch, 0.0, smooth_scroll_y)")
+            .expect("smooth-scrolled row append should exist");
+        let tab_bar = build_quads
+            .find("render_tab_bar(")
+            .expect("tab bar rendering should exist");
+        let status_bar = build_quads
+            .find("render_status_bar(")
+            .expect("status bar rendering should exist");
+
+        assert!(
+            smooth_rows < tab_bar,
+            "chrome must render after smooth-scrolled rows so translated terminal content cannot cover the tab bar"
+        );
+        assert!(
+            smooth_rows < status_bar,
+            "chrome must render after smooth-scrolled rows so translated terminal content cannot cover the status bar"
+        );
+    }
+
+    #[test]
     fn test_palette_actions_catalog_prioritizes_discoverability() {
         let catalog = palette_actions_catalog();
         assert_eq!(catalog[0], Action::CommandPalette);
