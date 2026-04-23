@@ -1545,36 +1545,6 @@ impl WokHandler {
                 window_opacity,
             );
         }
-        if self.config.tab_bar_visible {
-            render_tab_bar(
-                render,
-                &mut self.font,
-                self.chrome_rects.tab_bar,
-                &tab_labels,
-                self.tab_scroll_offset,
-                self.config.tab_bar_side.tab_orientation(),
-                window_opacity,
-            );
-        }
-        if self.config.status_bar_visible {
-            render_status_bar(
-                render,
-                &mut self.font,
-                self.chrome_rects.status,
-                status_segments.as_ref(),
-                window_opacity,
-            );
-        }
-        if let Some(lines) = debug_overlay_lines.as_ref() {
-            render_debug_overlay(
-                render,
-                &mut self.font,
-                self.chrome_rects.content,
-                lines,
-                window_opacity,
-            );
-        }
-
         let pane_ids = self.workspace.active_pane_ids();
         for pane_id in pane_ids {
             let focused = active_pane_id == Some(pane_id);
@@ -2103,6 +2073,36 @@ impl WokHandler {
                     window_opacity,
                 );
             }
+        }
+
+        if self.config.tab_bar_visible {
+            render_tab_bar(
+                render,
+                &mut self.font,
+                self.chrome_rects.tab_bar,
+                &tab_labels,
+                self.tab_scroll_offset,
+                self.config.tab_bar_side.tab_orientation(),
+                window_opacity,
+            );
+        }
+        if self.config.status_bar_visible {
+            render_status_bar(
+                render,
+                &mut self.font,
+                self.chrome_rects.status,
+                status_segments.as_ref(),
+                window_opacity,
+            );
+        }
+        if let Some(lines) = debug_overlay_lines.as_ref() {
+            render_debug_overlay(
+                render,
+                &mut self.font,
+                self.chrome_rects.content,
+                lines,
+                window_opacity,
+            );
         }
 
         if let Some((theme, input, palette)) = command_palette_overlay.as_ref() {
