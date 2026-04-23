@@ -32,7 +32,7 @@ enum BackendArea: String, CaseIterable, Identifiable {
         case .context: "Context"
         case .tools: "Tools"
         case .review: "Review"
-        case .cost: "Cost"
+        case .cost: "Usage"
         case .diagnostics: "Diagnostics"
         case .delivery: "Delivery"
         case .memory: "Memory"

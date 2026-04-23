@@ -61,7 +61,7 @@ struct SettingsView: View {
             .formStyle(.grouped)
             .padding()
             .tabItem {
-                Label("Interface", systemImage: "rectangle.sidebar.left")
+                Label("Interface", systemImage: "slider.horizontal.3")
             }
 
             Form {

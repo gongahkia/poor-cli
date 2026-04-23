@@ -62,10 +62,52 @@ private struct ConversationTranscriptView: View {
                         .padding(10)
                         .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
                     }
+                    if !app.streamEvents.isEmpty {
+                        AgentActivityView(events: app.streamEvents)
+                    }
                 }
                 .padding()
             }
         }
+    }
+}
+
+private struct AgentActivityView: View {
+    let events: [StreamEventLine]
+    @State private var expanded = false
+
+    private var visibleEvents: [StreamEventLine] {
+        expanded ? Array(events.prefix(12)) : Array(events.prefix(3))
+    }
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $expanded) {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(visibleEvents) { event in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: event.symbol)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(event.title)
+                                .font(.callout)
+                            if !event.detail.isEmpty {
+                                Text(event.detail)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(expanded ? 6 : 2)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.top, 8)
+        } label: {
+            Label("Agent Activity", systemImage: "sparkles")
+                .font(.headline)
+        }
+        .padding(10)
+        .background(.quaternary.opacity(0.28), in: RoundedRectangle(cornerRadius: 6))
     }
 }
 

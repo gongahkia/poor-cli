@@ -9,7 +9,8 @@ struct RootView: View {
         NavigationShellView(
             areas: visibleAreas,
             selectedArea: selectedArea,
-            selection: selectionBinding
+            selection: selectionBinding,
+            developerMode: developerMode
         )
         .toolbar {
             ToolbarItemGroup {
@@ -89,6 +90,7 @@ private struct NavigationShellView: View {
     let areas: [BackendArea]
     let selectedArea: BackendArea
     let selection: Binding<BackendArea?>
+    let developerMode: Bool
 
     var body: some View {
         NavigationSplitView {
@@ -102,7 +104,7 @@ private struct NavigationShellView: View {
             .navigationTitle("PoorMac")
             .navigationSplitViewColumnWidth(min: 170, ideal: 210, max: 260)
         } detail: {
-            DetailRouter(area: selectedArea)
+            DetailRouter(area: selectedArea, developerMode: developerMode)
                 .navigationTitle(selectedArea.title)
         }
         .navigationSplitViewStyle(.balanced)
@@ -111,6 +113,7 @@ private struct NavigationShellView: View {
 
 private struct DetailRouter: View {
     let area: BackendArea
+    let developerMode: Bool
 
     var body: some View {
         switch area {
@@ -127,10 +130,24 @@ private struct DetailRouter: View {
         case .diagnostics:
             DiagnosticsSurfaceView()
         case .cost:
-            CostSurfaceView()
+            if developerMode {
+                CostSurfaceView()
+            } else {
+                UsageView()
+            }
         case .review:
             DiffReviewView()
-        case .sessions, .context, .tools, .delivery, .memory, .services, .workspace:
+        case .sessions:
+            if developerMode {
+                DomainSurfaceView(
+                    area: area,
+                    primaryAction: BackendCatalog.primaryAction(for: area),
+                    actions: BackendCatalog.actions(for: area)
+                )
+            } else {
+                SessionsView()
+            }
+        case .context, .tools, .delivery, .memory, .services, .workspace:
             DomainSurfaceView(
                 area: area,
                 primaryAction: BackendCatalog.primaryAction(for: area),
