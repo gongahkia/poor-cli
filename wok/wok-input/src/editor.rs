@@ -65,6 +65,22 @@ pub enum EditorKey {
     CtrlD,
     /// Ctrl+U.
     CtrlU,
+    /// Ctrl+A.
+    CtrlA,
+    /// Ctrl+E.
+    CtrlE,
+    /// Ctrl+B.
+    CtrlB,
+    /// Ctrl+F.
+    CtrlF,
+    /// Ctrl+P.
+    CtrlP,
+    /// Ctrl+N.
+    CtrlN,
+    /// Ctrl+K.
+    CtrlK,
+    /// Ctrl+W.
+    CtrlW,
     /// Escape clears the current draft.
     Escape,
     /// Ctrl+A (select all).
@@ -290,6 +306,54 @@ impl InputEditor {
                 self.dismiss_completion_popup();
                 EditorAction::None
             }
+            EditorKey::CtrlA => {
+                cursor_ops::move_line_start(&mut self.buffer, 0, false);
+                self.dismiss_completion_popup();
+                EditorAction::None
+            }
+            EditorKey::CtrlE => {
+                cursor_ops::move_line_end(&mut self.buffer, 0, false);
+                self.dismiss_completion_popup();
+                EditorAction::None
+            }
+            EditorKey::CtrlB => {
+                cursor_ops::move_left(&mut self.buffer, 0, false);
+                self.dismiss_completion_popup();
+                EditorAction::None
+            }
+            EditorKey::CtrlF => {
+                cursor_ops::move_right(&mut self.buffer, 0, false);
+                self.dismiss_completion_popup();
+                EditorAction::None
+            }
+            EditorKey::CtrlP => {
+                if self.completion_popup.is_visible {
+                    self.select_prev_completion();
+                } else {
+                    cursor_ops::move_up(&mut self.buffer, 0, false);
+                }
+                EditorAction::None
+            }
+            EditorKey::CtrlN => {
+                if self.completion_popup.is_visible {
+                    self.select_next_completion();
+                } else {
+                    cursor_ops::move_down(&mut self.buffer, 0, false);
+                }
+                EditorAction::None
+            }
+            EditorKey::CtrlK => {
+                self.kill_to_line_end();
+                self.refresh_parameter_fill_mode();
+                self.dismiss_completion_popup();
+                EditorAction::None
+            }
+            EditorKey::CtrlW => {
+                self.delete_word_left();
+                self.refresh_parameter_fill_mode();
+                self.dismiss_completion_popup();
+                EditorAction::None
+            }
             EditorKey::Escape => {
                 if self.completion_popup.is_visible {
                     self.dismiss_completion_popup();
@@ -401,6 +465,30 @@ impl InputEditor {
         self.completion_popup.items.clear();
         self.completion_popup.selected = 0;
         self.completion_popup.is_visible = false;
+    }
+
+    fn kill_to_line_end(&mut self) {
+        let pos = self.buffer.cursors()[0].position;
+        let text = self.buffer.text();
+        let chars = text.chars().collect::<Vec<_>>();
+        let mut end = pos;
+        while end < chars.len() && chars[end] != '\n' {
+            end += 1;
+        }
+        if end == pos && end < chars.len() && chars[end] == '\n' {
+            end += 1;
+        }
+        let _ = self.buffer.delete_range(pos, end);
+    }
+
+    fn delete_word_left(&mut self) {
+        let end = self.buffer.cursors()[0].position;
+        if end == 0 {
+            return;
+        }
+        cursor_ops::move_word_left(&mut self.buffer, 0, false);
+        let start = self.buffer.cursors()[0].position;
+        let _ = self.buffer.delete_range(start, end);
     }
 
     fn trigger_completions(&mut self) {

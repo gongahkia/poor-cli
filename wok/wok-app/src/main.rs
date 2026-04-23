@@ -4565,10 +4565,18 @@ impl WokHandler {
                         .current_match()
                         .map(|candidate| candidate.entry.command.clone());
                 }
-                KeyAction::ArrowDown => {
+                KeyAction::ArrowDown
+                | KeyAction::Char('n' | 'j')
+                    if matches!(&event.action, KeyAction::ArrowDown)
+                        || event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+                {
                     command_search.next_match();
                 }
-                KeyAction::ArrowUp => {
+                KeyAction::ArrowUp
+                | KeyAction::Char('p' | 'k')
+                    if matches!(&event.action, KeyAction::ArrowUp)
+                        || event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+                {
                     command_search.prev_match();
                 }
                 KeyAction::Backspace
@@ -4635,12 +4643,8 @@ impl WokHandler {
             return false;
         }
 
-        if matches!(event.action, KeyAction::ArrowUp | KeyAction::ArrowDown)
-            && !event.modifiers.ctrl
-            && !event.modifiers.alt
-            && !event.modifiers.meta
-        {
-            let step_up = matches!(event.action, KeyAction::ArrowUp);
+        if owned_input_history_navigation(event).is_some() {
+            let step_up = owned_input_history_navigation(event).unwrap_or(false);
             self.navigate_owned_history(pane_id, step_up);
             if let Some(window) = &self.window {
                 self.sync_workspace_layout(window.inner_size());
@@ -4700,14 +4704,22 @@ impl WokHandler {
                 self.needs_redraw = true;
                 true
             }
-            KeyAction::ArrowDown => {
+            KeyAction::ArrowDown
+            | KeyAction::Char('n' | 'j')
+                if matches!(&event.action, KeyAction::ArrowDown)
+                    || event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+            {
                 if let Some(active_pane) = self.active_pane_mut() {
                     active_pane.app.command_palette.select_next();
                 }
                 self.needs_redraw = true;
                 true
             }
-            KeyAction::ArrowUp => {
+            KeyAction::ArrowUp
+            | KeyAction::Char('p' | 'k')
+                if matches!(&event.action, KeyAction::ArrowUp)
+                    || event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+            {
                 if let Some(active_pane) = self.active_pane_mut() {
                     active_pane.app.command_palette.select_prev();
                 }
@@ -7903,6 +7915,26 @@ fn platform_modifier_active(modifiers: wok_app::input::Modifiers) -> bool {
     #[cfg(not(target_os = "macos"))]
     {
         modifiers.ctrl
+    }
+}
+
+fn owned_input_history_navigation(event: &InputEvent) -> Option<bool> {
+    match &event.action {
+        KeyAction::ArrowUp if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta => {
+            Some(true)
+        }
+        KeyAction::ArrowDown
+            if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+        {
+            Some(false)
+        }
+        KeyAction::Char('p') if event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta => {
+            Some(true)
+        }
+        KeyAction::Char('n') if event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta => {
+            Some(false)
+        }
+        _ => None,
     }
 }
 

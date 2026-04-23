@@ -17,6 +17,30 @@ pub(crate) fn input_event_to_editor_key(event: &InputEvent) -> Option<EditorKey>
         KeyAction::Char('u') if event.modifiers.ctrl && !event.modifiers.alt => {
             Some(EditorKey::CtrlU)
         }
+        KeyAction::Char('a') if event.modifiers.ctrl && !event.modifiers.alt => {
+            Some(EditorKey::CtrlA)
+        }
+        KeyAction::Char('e') if event.modifiers.ctrl && !event.modifiers.alt => {
+            Some(EditorKey::CtrlE)
+        }
+        KeyAction::Char('b') if event.modifiers.ctrl && !event.modifiers.alt => {
+            Some(EditorKey::CtrlB)
+        }
+        KeyAction::Char('f') if event.modifiers.ctrl && !event.modifiers.alt => {
+            Some(EditorKey::CtrlF)
+        }
+        KeyAction::Char('p') if event.modifiers.ctrl && !event.modifiers.alt => {
+            Some(EditorKey::CtrlP)
+        }
+        KeyAction::Char('n') if event.modifiers.ctrl && !event.modifiers.alt => {
+            Some(EditorKey::CtrlN)
+        }
+        KeyAction::Char('k') if event.modifiers.ctrl && !event.modifiers.alt => {
+            Some(EditorKey::CtrlK)
+        }
+        KeyAction::Char('w') if event.modifiers.ctrl && !event.modifiers.alt => {
+            Some(EditorKey::CtrlW)
+        }
         KeyAction::Enter if event.modifiers.shift => Some(EditorKey::ShiftEnter),
         KeyAction::Enter => Some(EditorKey::Enter),
         KeyAction::Backspace => Some(EditorKey::Backspace),
