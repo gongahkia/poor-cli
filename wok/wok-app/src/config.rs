@@ -193,6 +193,8 @@ pub struct WokConfig {
     pub restore_session: bool,
     /// Whether to show the internal debug overlay.
     pub debug_overlay: bool,
+    /// Whether to write command lifecycle telemetry to disk.
+    pub command_telemetry: bool,
     /// Recent key visualizer settings.
     pub recent_keys: RecentKeysConfig,
     /// Regex triggers loaded from config.
@@ -237,6 +239,7 @@ struct ConfigToml {
     close_on_shell_exit: Option<bool>,
     restore_session: Option<bool>,
     debug_overlay: Option<bool>,
+    command_telemetry: Option<bool>,
     recent_keys_visible: Option<bool>,
     recent_keys_position: Option<String>,
     recent_keys_max_entries: Option<usize>,
@@ -304,6 +307,7 @@ impl Default for WokConfig {
             close_on_shell_exit: true,
             restore_session: false,
             debug_overlay: false,
+            command_telemetry: false,
             recent_keys: RecentKeysConfig {
                 visible: true,
                 position: OverlayPosition::BottomRight,
@@ -452,6 +456,9 @@ impl WokConfig {
         }
         if let Some(debug_overlay) = toml_config.debug_overlay {
             config.debug_overlay = debug_overlay;
+        }
+        if let Some(command_telemetry) = toml_config.command_telemetry {
+            config.command_telemetry = command_telemetry;
         }
         if let Some(visible) = toml_config.recent_keys_visible {
             config.recent_keys.visible = visible;

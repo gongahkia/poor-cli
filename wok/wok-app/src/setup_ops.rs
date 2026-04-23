@@ -29,6 +29,7 @@ copy_on_select = false
 close_on_shell_exit = true
 restore_session = true
 debug_overlay = false
+command_telemetry = false
 "#;
 
 const LUA_TEMPLATE: &str = r#"-- Wok init.lua
