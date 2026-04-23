@@ -78,7 +78,7 @@ struct SettingsView: View {
                 Label("Provider", systemImage: "cpu")
             }
         }
-        .frame(width: 620, minHeight: 420)
+        .frame(width: 620, height: 420)
     }
 
     private var repoRootBinding: Binding<String> {
