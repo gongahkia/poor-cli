@@ -7,6 +7,7 @@ use std::error::Error;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -35,7 +36,7 @@ use wok_app::remote_control::{
 };
 use wok_app::scripting::{
     QuickSelectPatternRequest, SetupRequest, StatusBarRequest, ThemeRequest, TriggerRequest,
-    WorkflowRequest,
+    WorkflowRequest, SystemNotificationRequest,
 };
 use wok_app::session::{
     block_from_state, block_to_state, default_session_path, history_entry_from_state,
@@ -696,6 +697,58 @@ fn current_unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_millis() as u64)
+}
+
+#[cfg(target_os = "macos")]
+fn send_system_notification(
+    notification: &SystemNotificationRequest,
+) -> Result<(), Box<dyn Error>> {
+    let title = escape_applescript_text(&notification.title);
+    let message = escape_applescript_text(&notification.message);
+    let subtitle = notification
+        .subtitle
+        .as_ref()
+        .filter(|subtitle| !subtitle.trim().is_empty())
+        .map(|subtitle| format!(" subtitle \"{}\"", escape_applescript_text(subtitle)))
+        .unwrap_or_default();
+    let script = format!("display notification \"{message}\" with title \"{title}\"{subtitle}");
+    let status = Command::new("/usr/bin/osascript")
+        .arg("-e")
+        .arg(script)
+        .status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("osascript exited with status {status}").into())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn escape_applescript_text(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn send_system_notification(
+    notification: &SystemNotificationRequest,
+) -> Result<(), Box<dyn Error>> {
+    let status = Command::new("notify-send")
+        .arg(&notification.title)
+        .arg(&notification.message)
+        .status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("notify-send exited with status {status}").into())
+    }
+}
+
+#[cfg(not(unix))]
+fn send_system_notification(
+    notification: &SystemNotificationRequest,
+) -> Result<(), Box<dyn Error>> {
+    let _ = notification;
+    Ok(())
 }
 
 /// Wok application handler.
@@ -2235,6 +2288,71 @@ impl WokHandler {
         payload
     }
 
+    fn pane_exit_hook_payload(&self, pane_id: PaneId) -> serde_json::Value {
+        let mut payload = self.pane_hook_payload(pane_id);
+        if let Some(object) = payload.as_object_mut() {
+            let exit_code = self.panes.get(&pane_id).and_then(|pane| pane.terminal.exit_code);
+            object.insert("exit_code".to_string(), json!(exit_code));
+        }
+        payload
+    }
+
+    fn tab_done_hook_payload(&self, tab_index: usize) -> serde_json::Value {
+        let tab = self.workspace.tabs.get(tab_index);
+        let pane_ids = self.workspace.pane_ids_for_tab_index(tab_index);
+        let pane_count = pane_ids.len();
+        json!({
+            "tab_index": tab_index,
+            "tab_id": tab.map(|tab| tab.id),
+            "tab_title": tab.map(|tab| tab.title.clone()),
+            "pane_ids": pane_ids,
+            "pane_count": pane_count,
+            "is_active_tab": self.workspace.active_tab == tab_index,
+        })
+    }
+
+    fn dispatch_shell_completion_hooks(&mut self, exited_pane_ids: &[PaneId]) {
+        if exited_pane_ids.is_empty() {
+            return;
+        }
+
+        let mut events = Vec::new();
+        let mut seen_panes = HashSet::new();
+        let mut candidate_tabs = HashSet::new();
+        for pane_id in exited_pane_ids.iter().copied() {
+            if !seen_panes.insert(pane_id)
+                || !self
+                    .panes
+                    .get(&pane_id)
+                    .is_some_and(|pane| pane.terminal.exited)
+            {
+                continue;
+            }
+
+            events.push(("pane_exited", self.pane_exit_hook_payload(pane_id)));
+            if let Some(tab_index) = self.workspace.find_tab_index_for_pane(pane_id) {
+                candidate_tabs.insert(tab_index);
+            }
+        }
+
+        for tab_index in candidate_tabs {
+            let pane_ids = self.workspace.pane_ids_for_tab_index(tab_index);
+            let tab_done = !pane_ids.is_empty()
+                && pane_ids.iter().all(|pane_id| {
+                    self.panes
+                        .get(pane_id)
+                        .is_some_and(|pane| pane.terminal.exited)
+                });
+            if tab_done {
+                events.push(("tab_done", self.tab_done_hook_payload(tab_index)));
+            }
+        }
+
+        for (hook, payload) in events {
+            self.run_plugin_hook(hook, &payload);
+        }
+    }
+
     fn active_search_state(&self) -> Option<wok_ui::search::GlobalSearch> {
         self.active_pane().and_then(|pane| {
             pane.app
@@ -2784,6 +2902,12 @@ impl WokHandler {
         for notification in effects.notifications {
             info!("lua: {notification}");
             self.status_message = Some(notification);
+        }
+        for notification in effects.system_notifications {
+            if let Err(error) = send_system_notification(&notification) {
+                warn!("failed to send system notification: {error}");
+                self.status_message = Some(format!("System notification failed: {error}"));
+            }
         }
         for command in effects.exec_requests {
             let payload = format!("{command}\r");
@@ -5948,6 +6072,7 @@ impl AppHandler for WokHandler {
                 self.dispatch_output_line_hooks(output_line_events);
             });
         }
+        self.dispatch_shell_completion_hooks(&exited_pane_ids);
         relayout |= self.handle_shell_exit_transitions(&exited_pane_ids);
         if !self.panes.is_empty() && self.panes.values().all(|pane| pane.terminal.exited) {
             self.exit_requested = true;

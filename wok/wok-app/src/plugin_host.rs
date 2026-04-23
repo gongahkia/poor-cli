@@ -14,7 +14,7 @@ use crate::app::WokApp;
 use crate::keybindings::{Action, Context, KeyCombo};
 use crate::scripting::{
     LuaRuntime, QuickSelectPatternRequest, SetupRequest, StatusBarRequest, ThemeRequest,
-    TriggerRequest, WorkflowRequest,
+    SystemNotificationRequest, TriggerRequest, WorkflowRequest,
 };
 
 /// Queued side effects emitted by plugins.
@@ -22,6 +22,8 @@ use crate::scripting::{
 pub struct PluginEffects {
     /// Status notifications requested by plugins.
     pub notifications: Vec<String>,
+    /// Native desktop notifications requested by plugins.
+    pub system_notifications: Vec<SystemNotificationRequest>,
     /// Shell commands requested by plugins.
     pub exec_requests: Vec<String>,
     /// Built-in action requests requested by plugins.
@@ -160,6 +162,7 @@ impl PluginHost {
     pub fn drain_effects(&self) -> PluginEffects {
         let mut effects = PluginEffects {
             notifications: self.runtime.take_notifications(),
+            system_notifications: self.runtime.take_system_notifications(),
             exec_requests: self.runtime.take_exec_requests(),
             action_requests: self.runtime.take_action_requests(),
             theme_requests: self.runtime.take_theme_requests(),
@@ -186,6 +189,11 @@ struct ExternalPluginBridge {
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum ExternalPluginMessage {
     Notify { message: String },
+    SystemNotify {
+        title: Option<String>,
+        message: String,
+        subtitle: Option<String>,
+    },
     Exec { command: String },
     Action { action: String },
 }
@@ -272,6 +280,17 @@ impl ExternalPluginBridge {
                 Ok(ExternalPluginMessage::Notify { message }) => {
                     effects.notifications.push(message);
                 }
+                Ok(ExternalPluginMessage::SystemNotify {
+                    title,
+                    message,
+                    subtitle,
+                }) => effects
+                    .system_notifications
+                    .push(SystemNotificationRequest {
+                        title: title.unwrap_or_else(|| "Wok".to_string()),
+                        message,
+                        subtitle,
+                    }),
                 Ok(ExternalPluginMessage::Exec { command }) => effects.exec_requests.push(command),
                 Ok(ExternalPluginMessage::Action { action }) => {
                     effects.action_requests.push(action);

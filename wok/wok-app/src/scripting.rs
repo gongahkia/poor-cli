@@ -128,6 +128,17 @@ pub enum SetupRequest {
     },
 }
 
+/// Native desktop notification requested by Lua.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SystemNotificationRequest {
+    /// Notification title.
+    pub title: String,
+    /// Notification body text.
+    pub message: String,
+    /// Optional secondary title/subtitle text.
+    pub subtitle: Option<String>,
+}
+
 /// Shared state for Lua callbacks to write to.
 #[derive(Default, Clone)]
 pub struct LuaState {
@@ -139,6 +150,8 @@ pub struct LuaState {
     pub theme_requests: Arc<Mutex<Vec<ThemeRequest>>>,
     /// Status messages from Lua.
     pub notifications: Arc<Mutex<Vec<String>>>,
+    /// Native desktop notifications from Lua.
+    pub system_notifications: Arc<Mutex<Vec<SystemNotificationRequest>>>,
     /// Pending shell commands requested by Lua.
     pub exec_requests: Arc<Mutex<Vec<String>>>,
     /// Pending built-in action requests requested by Lua.
@@ -699,6 +712,15 @@ impl LuaRuntime {
         })?;
         wok.set("notify", notify_fn)?;
 
+        // wok.system_notify(message | table) — queue a native desktop notification
+        let system_notify_state = self.state.system_notifications.clone();
+        let system_notify_fn = self.lua.create_function(move |_, value: Value| {
+            let request = parse_system_notification(value)?;
+            system_notify_state.lock().unwrap().push(request);
+            Ok(())
+        })?;
+        wok.set("system_notify", system_notify_fn)?;
+
         let snapshot_state = self.state.runtime_snapshot.clone();
         wok.set(
             "app",
@@ -884,6 +906,11 @@ impl LuaRuntime {
         std::mem::take(&mut *self.state.setup_requests.lock().unwrap())
     }
 
+    /// Drain pending native desktop notification requests queued from Lua.
+    pub fn take_system_notifications(&self) -> Vec<SystemNotificationRequest> {
+        std::mem::take(&mut *self.state.system_notifications.lock().unwrap())
+    }
+
     /// Resolve a named command alias registered from Lua to an action string.
     pub fn resolve_command_action(&self, name: &str) -> Option<String> {
         self.state.commands.lock().unwrap().get(name).cloned()
@@ -949,6 +976,35 @@ fn parse_status_segments(table: &Table) -> LuaResult<Vec<StatusSegment>> {
         .collect::<LuaResult<Vec<_>>>()
 }
 
+fn parse_system_notification(value: Value) -> LuaResult<SystemNotificationRequest> {
+    match value {
+        Value::String(message) => Ok(SystemNotificationRequest {
+            title: "Wok".to_string(),
+            message: message.to_string_lossy().to_string(),
+            subtitle: None,
+        }),
+        Value::Table(table) => {
+            let title = table
+                .get::<Option<String>>("title")?
+                .filter(|title| !title.trim().is_empty())
+                .unwrap_or_else(|| "Wok".to_string());
+            let message = table
+                .get::<Option<String>>("message")?
+                .or(table.get::<Option<String>>("body")?)
+                .ok_or_else(|| mlua::Error::runtime("system_notify table requires message"))?;
+            let subtitle = table.get::<Option<String>>("subtitle")?;
+            Ok(SystemNotificationRequest {
+                title,
+                message,
+                subtitle,
+            })
+        }
+        _ => Err(mlua::Error::runtime(
+            "system_notify expects a string or table",
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -983,6 +1039,32 @@ mod tests {
             .expect("run_action should work");
 
         assert_eq!(runtime.take_action_requests(), vec!["new_tab".to_string()]);
+    }
+
+    #[test]
+    fn test_system_notify_queues_request() {
+        let mut runtime = LuaRuntime::new().expect("lua runtime");
+        runtime.init(&std::env::temp_dir()).expect("lua init");
+        runtime
+            .exec(
+                r#"
+                wok.system_notify({
+                    title = "Agent done",
+                    subtitle = "tab 1",
+                    message = "codex finished"
+                })
+                "#,
+            )
+            .expect("system_notify should work");
+
+        assert_eq!(
+            runtime.take_system_notifications(),
+            vec![SystemNotificationRequest {
+                title: "Agent done".to_string(),
+                message: "codex finished".to_string(),
+                subtitle: Some("tab 1".to_string()),
+            }]
+        );
     }
 
     #[test]
