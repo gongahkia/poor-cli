@@ -875,6 +875,7 @@ def build_tool_registry(self) -> None:
                     "type": {"type": "STRING", "description": "Memory type: user, feedback, project, or reference"},
                     "description": {"type": "STRING", "description": "One-line description used to decide relevance in future sessions"},
                     "content": {"type": "STRING", "description": "Full memory content (markdown)"},
+                    "review_required": {"type": "BOOLEAN", "description": "If true, stage in memory review instead of writing live memory"},
                 },
                 "required": ["name", "type", "description", "content"]
             }

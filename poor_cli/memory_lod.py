@@ -268,7 +268,9 @@ def render_lod_results(results: List[LODMemoryResult]) -> str:
     chunks = []
     for result in results:
         chunks.append(
-            f"## {result.entry.name} [{result.tier}] score={result.lod_score:.2f}\n"
+            f"## {result.entry.name} [{result.tier}] score={result.lod_score:.2f} file={result.entry.filename}\n"
+            f"provenance: source_session={result.entry.source_session_id or '-'} "
+            f"hits={result.entry.hit_count} last_accessed={result.entry.last_accessed_at or '-'}\n"
             f"{result.surface()}"
         )
     return "\n\n---\n\n".join(chunks)

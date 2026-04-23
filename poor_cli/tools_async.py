@@ -3745,7 +3745,14 @@ class ToolRegistryAsync:
 
     # ── memory tool implementations ────────────────────────────────────
 
-    async def memory_save(self, name: str, type: str, description: str, content: str) -> str:
+    async def memory_save(
+        self,
+        name: str,
+        type: str,
+        description: str,
+        content: str,
+        review_required: bool = False,
+    ) -> str:
         try:
             from .memory import MemoryManager, MemoryEntry
             mgr = MemoryManager(repo_root=Path.cwd(), prefer_agent_rules=True)
@@ -3755,6 +3762,10 @@ class ToolRegistryAsync:
                 mgr.update(name, content=content, description=description, type_=type)
                 return f"updated memory: {name}"
             entry = MemoryEntry(name=name, description=description, type=type, content=content)
+            if review_required:
+                from .memory_review import stage_pending_memories
+                paths = stage_pending_memories(mgr, [entry])
+                return f"staged memory for review: {name} ({paths[0].name if paths else entry.filename})"
             mgr.save(entry)
             return f"saved memory: {name} ({type})"
         except Exception as exc:
@@ -3804,7 +3815,13 @@ class ToolRegistryAsync:
             entry = expand_memory(mgr, name)
             if entry is None:
                 return f"memory not found: {name}"
-            return f"## {entry.name} ({entry.type})\n{entry.description}\n\n{entry.content}"
+            return (
+                f"## {entry.name} ({entry.type}) file={entry.filename}\n"
+                f"provenance: source_session={entry.source_session_id or '-'} "
+                f"source_turn={entry.source_turn_id or '-'} hits={entry.hit_count} "
+                f"last_accessed={entry.last_accessed_at or '-'} pinned={entry.pinned}\n"
+                f"{entry.description}\n\n{entry.content}"
+            )
         except Exception as exc:
             return f"error expanding memory: {exc}"
 

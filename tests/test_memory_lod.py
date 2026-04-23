@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from poor_cli.memory import MemoryEntry, MemoryManager
-from poor_cli.memory_lod import expand_memory, promote_memory, search_lod
+from poor_cli.memory_lod import expand_memory, promote_memory, render_lod_results, search_lod
 
 
 class MemoryLODTests(unittest.TestCase):
@@ -31,6 +31,14 @@ class MemoryLODTests(unittest.TestCase):
             promoted = promote_memory(mgr, "decision")
             self.assertIsNotNone(promoted)
             self.assertTrue(promoted.pinned)
+
+    def test_render_includes_provenance_for_agent_protocol(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mgr = self._manager(Path(tmp))
+            results = asyncio.run(search_lod(mgr, "JSONL state", max_results=5))
+            rendered = render_lod_results(results)
+            self.assertIn("file=", rendered)
+            self.assertIn("provenance:", rendered)
 
     def test_profiles_query_modes_and_excludes(self):
         with tempfile.TemporaryDirectory() as tmp:

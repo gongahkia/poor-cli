@@ -1,4 +1,5 @@
 import asyncio
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -44,6 +45,26 @@ class ToolEgressTests(unittest.TestCase):
             result = asyncio.run(registry.list_directory(str(root), result_mode="names_only", max_results=10))
             self.assertIn("a.txt", result)
             self.assertIn("tool_egress", result)
+
+    def test_memory_save_can_stage_for_review(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old_home = os.environ.get("HOME")
+            os.environ["HOME"] = tmp
+            try:
+                registry = ToolRegistryAsync()
+                result = asyncio.run(registry.memory_save(
+                    "review me",
+                    "project",
+                    "needs review",
+                    "content",
+                    review_required=True,
+                ))
+            finally:
+                if old_home is None:
+                    os.environ.pop("HOME", None)
+                else:
+                    os.environ["HOME"] = old_home
+            self.assertIn("staged memory for review", result)
 
 
 if __name__ == "__main__":
