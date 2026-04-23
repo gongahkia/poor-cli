@@ -1784,7 +1784,8 @@ class ToolRegistryAsync:
 
             result = f"Found {len(matches)} files:\n" + "\n".join(matches)
             logger.info(f"Glob search: {pattern} found {len(matches)} files")
-            return result
+            from .tool_egress import with_egress_footer
+            return with_egress_footer(result)
 
         except Exception as e:
             raise ToolExecutionError("glob_files", f"Glob search failed: {str(e)}")
@@ -2271,12 +2272,20 @@ class ToolRegistryAsync:
 
         return b"".join(chunks).decode("utf-8", errors="replace"), truncated
 
-    async def bash(self, command: str, timeout: int = 60) -> str:
+    async def bash(
+        self,
+        command: str,
+        timeout: int = 60,
+        result_mode: str = "full",
+        max_output_bytes: int = 0,
+    ) -> str:
         """Execute bash command asynchronously
 
         Args:
             command: Command to execute
             timeout: Timeout in seconds
+            result_mode: full or summary
+            max_output_bytes: Optional returned byte cap
 
         Returns:
             Command output
@@ -2407,20 +2416,33 @@ class ToolRegistryAsync:
                 )
 
             result = (stdout_text or "(No output)") + truncation_suffix
+            if result_mode == "summary":
+                result = "\n".join(result.splitlines()[:80])
+                result = f"Command: {command}\nexit_code=0\n\n{result}"
+            from .tool_egress import truncate_with_notice, with_egress_footer
+            result = truncate_with_notice(result, int(max_output_bytes or 0))
             logger.info("Bash command completed successfully")
-            return self._filter_bash_output(command, result)
+            return with_egress_footer(self._filter_bash_output(command, result), scanned=len(stdout_bytes) + len(stderr_bytes))
 
         except CommandExecutionError:
             raise
         except Exception as e:
             raise CommandExecutionError(command, f"Failed to execute command: {str(e)}")
 
-    async def list_directory(self, path: Optional[str] = None, show_hidden: bool = False) -> str:
+    async def list_directory(
+        self,
+        path: Optional[str] = None,
+        show_hidden: bool = False,
+        result_mode: str = "full",
+        max_results: int = 200,
+    ) -> str:
         """List directory contents with metadata
 
         Args:
             path: Directory path (defaults to current)
             show_hidden: Show hidden files
+            result_mode: full or names_only
+            max_results: Max entries to return
 
         Returns:
             Directory listing
@@ -2433,26 +2455,34 @@ class ToolRegistryAsync:
 
             if not os.path.isdir(dir_path):
                 raise FileOperationError(f"Not a directory: {dir_path}")
+            max_results = max(1, min(int(max_results or 200), 1000))
+            from .tool_egress import with_egress_footer
 
             # prefer ls for speed and native formatting
             ls_cmd = ["ls", "-lh"]
+            if result_mode == "names_only":
+                ls_cmd = ["ls", "-1"]
             if show_hidden:
                 ls_cmd.append("-a")
             ls_cmd.append(dir_path)
             try:
                 ls_result = await self._run_command_capture(ls_cmd, timeout=10)
                 if ls_result["exit_code"] == 0 and ls_result["stdout"].strip():
-                    result = f"Contents of {dir_path}:\n{ls_result['stdout'].rstrip()}"
+                    lines = ls_result["stdout"].rstrip().splitlines()[:max_results]
+                    result = f"Contents of {dir_path}:\n" + "\n".join(lines)
                     logger.info(f"Listed directory (ls): {dir_path}")
-                    return result
+                    return with_egress_footer(result)
             except Exception:
                 pass # fall through to python fallback
 
             entries = []
-            for entry in os.listdir(dir_path):
+            for entry in os.listdir(dir_path)[:max_results]:
                 if not show_hidden and entry.startswith('.'):
                     continue
                 full_path = os.path.join(dir_path, entry)
+                if result_mode == "names_only":
+                    entries.append(entry + ("/" if os.path.isdir(full_path) else ""))
+                    continue
                 try:
                     stat = os.stat(full_path)
                 except OSError:
@@ -2474,7 +2504,7 @@ class ToolRegistryAsync:
 
             result = f"Contents of {dir_path}:\n" + "\n".join(sorted(entries))
             logger.info(f"Listed directory: {dir_path}")
-            return result
+            return with_egress_footer(result)
 
         except Exception as e:
             raise FileOperationError(f"Failed to list directory: {str(e)}")

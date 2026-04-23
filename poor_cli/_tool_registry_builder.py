@@ -43,6 +43,14 @@ def build_tool_registry(self) -> None:
                         "pages": {
                             "type": "STRING",
                             "description": "Page range for PDF files (e.g., '1-5', '3', '10-20'). Only for .pdf files."
+                        },
+                        "result_mode": {
+                            "type": "STRING",
+                            "description": "Result shape: full (default) or summary"
+                        },
+                        "max_bytes": {
+                            "type": "INTEGER",
+                            "description": "Optional returned byte cap"
                         }
                     },
                     "required": ["file_path"]
@@ -192,6 +200,14 @@ def build_tool_registry(self) -> None:
                         "timeout": {
                             "type": "INTEGER",
                             "description": "Timeout in seconds (default 60)"
+                        },
+                        "result_mode": {
+                            "type": "STRING",
+                            "description": "Result shape: full (default) or summary"
+                        },
+                        "max_output_bytes": {
+                            "type": "INTEGER",
+                            "description": "Optional returned byte cap"
                         }
                     },
                     "required": ["command"]
@@ -213,6 +229,14 @@ def build_tool_registry(self) -> None:
                         "show_hidden": {
                             "type": "BOOLEAN",
                             "description": "Show hidden files (default false)"
+                        },
+                        "result_mode": {
+                            "type": "STRING",
+                            "description": "Result shape: full (default) or names_only"
+                        },
+                        "max_results": {
+                            "type": "INTEGER",
+                            "description": "Max entries to return (default 200)"
                         }
                     },
                     "required": []
