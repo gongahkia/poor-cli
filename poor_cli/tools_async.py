@@ -1558,8 +1558,15 @@ class ToolRegistryAsync:
             },
         )
 
-    async def read_file(self, file_path: str, start_line: Optional[int] = None,
-                       end_line: Optional[int] = None, pages: Optional[str] = None) -> str:
+    async def read_file(
+        self,
+        file_path: str,
+        start_line: Optional[int] = None,
+        end_line: Optional[int] = None,
+        pages: Optional[str] = None,
+        result_mode: str = "full",
+        max_bytes: int = 0,
+    ) -> str:
         """Read file contents asynchronously
 
         Args:
@@ -1567,6 +1574,8 @@ class ToolRegistryAsync:
             start_line: Optional starting line (1-indexed)
             end_line: Optional ending line (1-indexed)
             pages: Optional page range for PDF files (e.g., "1-5")
+            result_mode: full or summary
+            max_bytes: Optional returned byte cap
 
         Returns:
             File contents
@@ -1606,7 +1615,18 @@ class ToolRegistryAsync:
             unicode_warn = self._scan_unicode(content)
             if unicode_warn:
                 content = f"{unicode_warn}\n\n{content}"
-            return content
+            from .tool_egress import truncate_with_notice, with_egress_footer
+            scanned = Path(file_path).stat().st_size
+            if result_mode == "summary":
+                line_count = content.count("\n") + (1 if content else 0)
+                preview = "\n".join(content.splitlines()[:40])
+                content = (
+                    f"File: {file_path}\n"
+                    f"bytes={scanned} lines={line_count}\n\n"
+                    f"{preview}"
+                )
+            content = truncate_with_notice(content, int(max_bytes or 0))
+            return with_egress_footer(content, scanned=scanned)
 
         except (PoorCLIFileNotFoundError, FilePermissionError, PathTraversalError):
             raise
