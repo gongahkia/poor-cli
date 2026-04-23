@@ -93,6 +93,8 @@ Available hooks:
 - `pane_opened`
 - `command_submitted`
 - `block_finished`
+- `pane_exited`
+- `tab_done`
 - `cwd_changed`
 
 ```lua
@@ -115,6 +117,8 @@ Event-specific fields include:
 
 - `command_submitted`: `command`
 - `block_finished`: `block_id`, `command`, `exit_code`, `duration_ms`, `output_start_row`, `output_end_row`
+- `pane_exited`: `exit_code`
+- `tab_done`: `pane_ids`, `pane_count`
 - `cwd_changed`: `path`
 
 Example:
@@ -160,6 +164,20 @@ Publish a status message. Wok logs it and mirrors the latest message into the st
 
 ```lua
 wok.notify("Snapshot restored")
+```
+
+### `wok.system_notify(message | table)`
+
+Queue a native desktop notification. On macOS this uses Notification Center via `osascript`; on Linux it uses `notify-send` when available. `wok.notify(...)` is still the right API for in-app status bar messages.
+
+```lua
+wok.system_notify("Long command finished")
+
+wok.system_notify({
+    title = "Agent finished",
+    subtitle = "review tab",
+    message = "codex completed with exit code 0",
+})
 ```
 
 ### `wok.setup.*(...)`
