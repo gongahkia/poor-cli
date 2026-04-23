@@ -50,6 +50,7 @@ def _render_root_help() -> str:
         "  poor-cli search             Search the codebase (and search watch)\n\n"
         "Code review and delivery:\n"
         "  poor-cli review             Review a file or staged diff\n"
+        "  poor-cli review-loop        Clean-context review loop over current diff\n"
         "  poor-cli commit             Generate a commit message from staged changes\n"
         "  poor-cli deploy             poor-cli deploy run | preview | history | validate\n"
         "  poor-cli workflow           List/inspect AutomationRule slash-command workflows\n"
@@ -1697,6 +1698,11 @@ def _run_review_file_mode(argv: Sequence[str]) -> int:
     return run_review_file_mode(argv)
 
 
+def _run_review_loop_mode(argv: Sequence[str]) -> int:
+    from .cli import run_review_loop_mode
+    return run_review_loop_mode(argv)
+
+
 def _run_commit_mode(argv: Sequence[str]) -> int:
     from .cli import run_commit_mode
     return run_commit_mode(argv)
@@ -1777,6 +1783,8 @@ def _main() -> None:
         raise SystemExit(_run_search_mode(argv[1:]))
     if argv and argv[0] == "review":
         raise SystemExit(_run_review_file_mode(argv[1:]))
+    if argv and argv[0] == "review-loop":
+        raise SystemExit(_run_review_loop_mode(argv[1:]))
     if argv and argv[0] == "commit":
         raise SystemExit(_run_commit_mode(argv[1:]))
     if argv and argv[0] == "deploy":

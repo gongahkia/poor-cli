@@ -21,6 +21,7 @@ _EXPORT_MAP = {
     "run_workflow_mode": "config_cmds",
     "run_services_mode": "config_cmds",
     "run_review_file_mode": "review_cmds",
+    "run_review_loop_mode": "review_cmds",
     "run_commit_mode": "review_cmds",
     "run_audit_mode": "audit",
 }
