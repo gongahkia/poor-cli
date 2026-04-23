@@ -1,4 +1,4 @@
-.PHONY: cli server install installer install-info dev build build-server-registry-index run macos-app macos-zip macos-test macos-run macos-verify test test-unit lint bench-swe bench-startup-profile bench-import-time bench-cli-command-profile bench-cli-command-compare bench-server-first-rpc-profile bench-server-first-rpc-compare bench-tool-capability-graph bench-harness-quality bench-turn-replay bench-router-calibration bench-budget-retuning bench-harness-failure bench-harness-burnin bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
+.PHONY: cli server install installer install-info dev build build-server-registry-index run macos-app macos-zip macos-test macos-run macos-verify test test-unit lint bench-swe bench-startup-profile bench-import-time bench-cli-command-profile bench-cli-command-compare bench-server-first-rpc-profile bench-server-first-rpc-compare bench-tool-capability-graph bench-harness-quality bench-context-memory bench-turn-replay bench-router-calibration bench-budget-retuning bench-harness-failure bench-harness-burnin bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
 
 PYTHON := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/python,python3)
 PIP := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/pip,pip)
@@ -124,6 +124,9 @@ bench-tool-capability-graph: ## profile graph-guided tool activation miss-rate/l
 
 bench-harness-quality: ## offline harness quality gate (ARGS='--output bench-harness-quality.json')
 	$(PYTHON) bench/harness_quality_gate.py $(ARGS)
+
+bench-context-memory: ## offline context/memory/egress gate (ARGS='--output bench-context-memory.json')
+	$(PYTHON) bench/context_memory_gate.py $(ARGS)
 
 bench-turn-replay: ## deterministic turn replay drift gate (ARGS='--output bench-turn-replay.json')
 	$(PYTHON) bench/turn_replay_regression_gate.py $(ARGS)
