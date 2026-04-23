@@ -181,9 +181,13 @@ def run_state_mode(argv: Sequence[str]) -> int:
     p_import = sub.add_parser("import")
     p_import.add_argument("archive")
     p_import.add_argument("--replace", action="store_true", help="overwrite existing local state files")
+    p_import.add_argument("--dry-run", action="store_true", help="show import targets without writing")
     p_import.add_argument("--json", action="store_true")
+    p_inspect = sub.add_parser("inspect")
+    p_inspect.add_argument("archive")
+    p_inspect.add_argument("--json", action="store_true")
     args = parser.parse_args(list(argv))
-    from ..state_portability import export_state, import_state
+    from ..state_portability import export_state, import_state, inspect_state_archive
     if args.subcommand == "export":
         result = export_state(Path(args.output), repo_root=Path.cwd())
         payload = result.to_dict()
@@ -193,14 +197,25 @@ def run_state_mode(argv: Sequence[str]) -> int:
             print(f"Exported {len(result.files)} state files to {result.archive}")
         return 0
     if args.subcommand == "import":
-        result = import_state(Path(args.archive), repo_root=Path.cwd(), replace=args.replace)
+        result = import_state(Path(args.archive), repo_root=Path.cwd(), replace=args.replace, dry_run=args.dry_run)
         payload = result.to_dict()
         if args.json:
             _print_json(payload)
         else:
-            print(f"Imported {len(result.files)} state files from {result.archive}")
+            verb = "Would import" if args.dry_run else "Imported"
+            print(f"{verb} {len(result.files)} state files from {result.archive}")
             if result.skipped:
                 print(f"Skipped {len(result.skipped)} existing/unknown files")
+        return 0
+    if args.subcommand == "inspect":
+        result = inspect_state_archive(Path(args.archive))
+        payload = result.to_dict()
+        if args.json:
+            _print_json(payload)
+        else:
+            print(f"Archive {result.archive}: {len(result.files)} files")
+            if result.skipped:
+                print(f"Skipped {len(result.skipped)} unreadable entries")
         return 0
     raise SystemExit(f"Unknown state subcommand: {args.subcommand}")
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -15,9 +16,21 @@ class StateArchiveResult:
     archive: str
     files: List[str]
     skipped: List[str]
+    manifest: Optional[Dict[str, object]] = None
 
     def to_dict(self) -> Dict[str, object]:
-        return {"archive": self.archive, "files": self.files, "skipped": self.skipped}
+        payload: Dict[str, object] = {"archive": self.archive, "files": self.files, "skipped": self.skipped}
+        if self.manifest is not None:
+            payload["manifest"] = self.manifest
+        return payload
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _iter_existing(paths: Iterable[Path]) -> Iterable[Path]:
@@ -53,15 +66,15 @@ def export_state(
     ]
     files: List[str] = []
     skipped: List[str] = []
-    manifest = {
+    manifest: Dict[str, object] = {
         "schema": "poor-cli-state-archive",
         "version": "1.0",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "home_state": str(home),
         "repo_root": str(repo),
+        "files": {},
     }
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("manifest.json", json.dumps(manifest, indent=2, sort_keys=True))
         for path in _iter_existing(sources):
             try:
                 if path.is_relative_to(home):
@@ -73,9 +86,28 @@ def export_state(
                     continue
                 archive.write(path, arcname.as_posix())
                 files.append(arcname.as_posix())
+                manifest["files"][arcname.as_posix()] = {  # type: ignore[index]
+                    "sha256": _sha256(path),
+                    "bytes": path.stat().st_size,
+                }
             except Exception:
                 skipped.append(str(path))
-    return StateArchiveResult(str(output), files, skipped)
+        archive.writestr("manifest.json", json.dumps(manifest, indent=2, sort_keys=True))
+    return StateArchiveResult(str(output), files, skipped, manifest)
+
+
+def inspect_state_archive(archive_path: Path) -> StateArchiveResult:
+    archive_path = Path(archive_path).expanduser().resolve()
+    files: List[str] = []
+    skipped: List[str] = []
+    manifest: Dict[str, object] = {}
+    with zipfile.ZipFile(archive_path, "r") as archive:
+        try:
+            manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+        except Exception:
+            skipped.append("manifest.json")
+        files = sorted(member.filename for member in archive.infolist() if not member.is_dir())
+    return StateArchiveResult(str(archive_path), files, skipped, manifest)
 
 
 def import_state(
@@ -84,6 +116,7 @@ def import_state(
     home_state: Optional[Path] = None,
     repo_root: Optional[Path] = None,
     replace: bool = False,
+    dry_run: bool = False,
 ) -> StateArchiveResult:
     archive_path = Path(archive_path).expanduser().resolve()
     home = Path(home_state or Path.home() / ".poor-cli").resolve()
@@ -91,6 +124,12 @@ def import_state(
     files: List[str] = []
     skipped: List[str] = []
     with zipfile.ZipFile(archive_path, "r") as archive:
+        manifest: Dict[str, object] = {}
+        try:
+            manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+        except Exception:
+            manifest = {}
+        expected = manifest.get("files", {}) if isinstance(manifest, dict) else {}
         for member in archive.infolist():
             name = member.filename
             if member.is_dir() or name == "manifest.json":
@@ -105,8 +144,24 @@ def import_state(
             if dest.exists() and not replace:
                 skipped.append(name)
                 continue
+            meta = expected.get(name, {}) if isinstance(expected, dict) else {}
+            if isinstance(meta, dict) and meta.get("sha256"):
+                with archive.open(member, "r") as src:
+                    data = src.read()
+                actual = hashlib.sha256(data).hexdigest()
+                if actual != meta.get("sha256"):
+                    skipped.append(f"{name}:checksum-mismatch")
+                    continue
+                if not dry_run:
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(data)
+                files.append(str(dest))
+                continue
+            if dry_run:
+                files.append(str(dest))
+                continue
             dest.parent.mkdir(parents=True, exist_ok=True)
             with archive.open(member, "r") as src:
                 dest.write_bytes(src.read())
             files.append(str(dest))
-    return StateArchiveResult(str(archive_path), files, skipped)
+    return StateArchiveResult(str(archive_path), files, skipped, manifest)
