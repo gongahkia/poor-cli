@@ -292,9 +292,11 @@ impl<H: AppHandler> ApplicationHandler<WokUserEvent> for WinitApp<H> {
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let (x, y) = self.cursor_position.unwrap_or((0.0, 0.0));
-                let (dx, dy) = match delta {
-                    winit::event::MouseScrollDelta::LineDelta(x, y) => (f64::from(x), f64::from(y)),
-                    winit::event::MouseScrollDelta::PixelDelta(pos) => (pos.x, pos.y),
+                let (dx, dy, is_pixel_delta) = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(x, y) => {
+                        (f64::from(x), f64::from(y), false)
+                    }
+                    winit::event::MouseScrollDelta::PixelDelta(pos) => (pos.x, pos.y, true),
                 };
                 let modifiers = crate::input::Modifiers {
                     ctrl: self.current_modifiers.state().control_key(),
@@ -307,6 +309,7 @@ impl<H: AppHandler> ApplicationHandler<WokUserEvent> for WinitApp<H> {
                     y,
                     delta_x: dx,
                     delta_y: dy,
+                    is_pixel_delta,
                     modifiers,
                 });
                 self.note_user_activity();

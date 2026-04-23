@@ -256,11 +256,26 @@ impl QuadBatch {
 
     /// Append another batch, offsetting its indices to match the current vertex base.
     pub fn append(&mut self, other: &Self) {
+        self.append_translated(other, 0.0, 0.0);
+    }
+
+    /// Append another batch with a positional translation.
+    pub fn append_translated(&mut self, other: &Self, dx: f32, dy: f32) {
         let base = self.vertices.len() as u32;
-        self.vertices.extend_from_slice(&other.vertices);
+        self.vertices
+            .extend(other.vertices.iter().copied().map(|mut vertex| {
+                vertex.position[0] += dx;
+                vertex.position[1] += dy;
+                vertex
+            }));
         self.indices
             .extend(other.indices.iter().map(|index| index + base));
-        self.instances.extend_from_slice(&other.instances);
+        self.instances
+            .extend(other.instances.iter().copied().map(|mut instance| {
+                instance.rect[0] += dx;
+                instance.rect[1] += dy;
+                instance
+            }));
     }
 
     /// Return the number of quads in the batch.
@@ -334,6 +349,19 @@ mod tests {
         assert_eq!(first.indices, vec![0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
         assert_eq!(first.instances.len(), 2);
         assert_eq!(first.quad_count(), 2);
+    }
+
+    #[test]
+    fn test_append_translated_offsets_positions_and_instances() {
+        let mut first = QuadBatch::new();
+        let mut second = QuadBatch::new();
+        second.push_bg_quad(10.0, 20.0, 30.0, 40.0, [1.0; 4]);
+
+        first.append_translated(&second, 2.5, -3.5);
+
+        assert_float_array_eq(first.vertices[0].position, [12.5, 16.5]);
+        assert_float_array_eq(first.vertices[1].position, [42.5, 16.5]);
+        assert_float_array_eq(first.instances[0].rect, [12.5, 16.5, 30.0, 40.0]);
     }
 
     fn assert_float_array_eq<const N: usize>(actual: [f32; N], expected: [f32; N]) {

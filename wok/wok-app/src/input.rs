@@ -139,6 +139,8 @@ pub enum MouseEvent {
         delta_x: f64,
         /// Vertical scroll delta.
         delta_y: f64,
+        /// Whether the deltas are physical pixels instead of wheel-line units.
+        is_pixel_delta: bool,
         /// Active modifiers.
         modifiers: Modifiers,
     },

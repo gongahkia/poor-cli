@@ -1532,8 +1532,17 @@ impl WokHandler {
 
             let theme = &pane.app.theme;
             let viewport = pane.ui_rects.viewport;
-            let visible_rows = pane.terminal.state.visible_rows();
+            let mut visible_rows = pane.terminal.state.visible_rows();
             let total_cols = pane.terminal.state.columns();
+            let smooth_scroll_y = pane.viewport.render_translation_rows() * self.font.metrics.cell_height;
+            if smooth_scroll_y < -f32::EPSILON {
+                if let Some(next_row) = visible_rows.last().copied().and_then(|row| {
+                    let next = row + 1;
+                    (next < pane.terminal.state.total_rows()).then_some(next)
+                }) {
+                    visible_rows.push(next_row);
+                }
+            }
             let (cursor_col, _) = pane.terminal.state.cursor_position();
             let cursor_row = pane.terminal.state.absolute_cursor_row();
             let row_positions =
@@ -1698,7 +1707,7 @@ impl WokHandler {
             }
 
             for row_batch in pane.row_cache.row_batches.iter().take(visible_rows.len()) {
-                render.batch.append(row_batch);
+                render.batch.append_translated(row_batch, 0.0, smooth_scroll_y);
             }
 
             let border_color = if self.workspace.broadcast_input {
@@ -1840,7 +1849,7 @@ impl WokHandler {
                             if range_end > range_start {
                                 render.batch.push_bg_quad(
                                     viewport.x + range_start as f32 * cw,
-                                    viewport.y + render_row as f32 * ch,
+                                    viewport.y + render_row as f32 * ch + smooth_scroll_y,
                                     (range_end - range_start) as f32 * cw,
                                     ch,
                                     [
@@ -1859,7 +1868,7 @@ impl WokHandler {
                         if let Some(render_row) = viewport_row_for_abs(vi_mode.cursor_row) {
                             render.batch.push_cursor(
                                 viewport.x + vi_col as f32 * cw,
-                                viewport.y + render_row as f32 * ch,
+                                viewport.y + render_row as f32 * ch + smooth_scroll_y,
                                 cw,
                                 ch,
                                 CursorShape::Block,
@@ -1880,7 +1889,7 @@ impl WokHandler {
                         .and_then(|idx| row_positions.get(idx))
                         .and_then(|row| *row)
                         .unwrap_or_else(|| visible_rows.len().saturating_sub(1));
-                    let cursor_y = viewport.y + cursor_row as f32 * ch;
+                    let cursor_y = viewport.y + cursor_row as f32 * ch + smooth_scroll_y;
                     if cursor_visible {
                         render.batch.push_cursor(
                             cursor_x,
@@ -4140,6 +4149,18 @@ impl WokHandler {
             .set_display_offset(active_pane.viewport.display_offset());
     }
 
+    fn scroll_active_viewport_rows(&mut self, rows: f32) {
+        let Some(active_pane) = self.active_pane_mut() else {
+            return;
+        };
+        let max_scroll = pane_max_scroll(active_pane);
+        active_pane.viewport.handle_scroll(rows, max_scroll);
+        active_pane
+            .terminal
+            .state
+            .set_display_offset(active_pane.viewport.display_offset());
+    }
+
     fn apply_overlay_effect(&mut self, effect: OverlayEffect) {
         match effect {
             OverlayEffect::OpenSearch => {
@@ -6322,6 +6343,7 @@ impl AppHandler for WokHandler {
                 y,
                 delta_x,
                 delta_y,
+                is_pixel_delta,
                 modifiers,
             } => {
                 if delta_y.abs() < f64::EPSILON && delta_x.abs() < f64::EPSILON {
@@ -6374,12 +6396,14 @@ impl AppHandler for WokHandler {
                     return;
                 }
 
-                let lines = if delta_y.abs() < 1.0 {
-                    delta_y.signum() as i32
+                let scroll_rows = if is_pixel_delta {
+                    (delta_y as f32 / self.font.metrics.cell_height.max(1.0)).clamp(-24.0, 24.0)
+                } else if delta_y.abs() < 1.0 {
+                    delta_y as f32
                 } else {
-                    delta_y.round() as i32
+                    delta_y as f32
                 };
-                self.apply_viewport_effect(ViewportEffect::ScrollLines(lines));
+                self.scroll_active_viewport_rows(scroll_rows);
                 self.needs_redraw = true;
             }
         }

@@ -25,6 +25,9 @@ impl ViewportRenderer {
 
     /// Handle a scroll event measured in display-offset rows.
     pub fn handle_scroll(&mut self, delta: f32, max_scroll: f32) {
+        if delta.abs() <= f32::EPSILON {
+            return;
+        }
         self.follow_output = false;
         self.smooth_scroll_target = (self.smooth_scroll_target + delta).clamp(0.0, max_scroll);
         self.needs_render = true;
@@ -82,7 +85,13 @@ impl ViewportRenderer {
 
     /// Return the current integral display offset.
     pub fn display_offset(&self) -> usize {
-        self.scroll_position.round().max(0.0) as usize
+        self.scroll_position.ceil().max(0.0) as usize
+    }
+
+    /// Return the fractional row translation needed for smooth pixel scrolling.
+    pub fn render_translation_rows(&self) -> f32 {
+        let display_offset = self.display_offset() as f32;
+        (self.scroll_position - display_offset).clamp(-1.0, 0.0)
     }
 
     /// Return whether the viewport is following live output.
@@ -158,6 +167,16 @@ mod tests {
         assert!(vp.scroll_position > 0.0);
         assert!(vp.scroll_position < 10.0);
         assert!(!vp.follow_output());
+    }
+
+    #[test]
+    fn test_fractional_display_offset_uses_ceiling_for_smooth_rendering() {
+        let mut vp = ViewportRenderer::new();
+        vp.handle_scroll(2.5, 100.0);
+        vp.scroll_position = 2.5;
+
+        assert_eq!(vp.display_offset(), 3);
+        assert!((vp.render_translation_rows() + 0.5).abs() < f32::EPSILON);
     }
 
     #[test]
