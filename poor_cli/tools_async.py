@@ -113,6 +113,8 @@ DEFAULT_TOOL_CAPABILITIES: Dict[str, List[str]] = {
     "delegate_task": [ToolCapability.PROCESS_EXECUTE.value],
     "memory_save": [],
     "memory_search": [],
+    "memory_expand": [],
+    "memory_promote": [],
     "memory_delete": [],
     "memory_list": [],
     "spawn_parallel_agents": [ToolCapability.PROCESS_EXECUTE.value],
@@ -241,7 +243,7 @@ DEFERRED_TOOL_NAMES: frozenset = frozenset({
     "gh_pr_create", "gh_pr_comment",
     "spawn_parallel_agents", "delegate_task",
     "compact_conversation", "write_todos", "update_todo",
-    "memory_save", "memory_search", "memory_delete", "memory_list",
+    "memory_save", "memory_search", "memory_expand", "memory_promote", "memory_delete", "memory_list",
     "semantic_search", "index_codebase",
     "browser_navigate", "browser_screenshot", "browser_click",
     "browser_type", "browser_evaluate",
@@ -1769,7 +1771,8 @@ class ToolRegistryAsync:
 
     async def grep_files(self, pattern: str, path: Optional[str] = None,
                         file_pattern: str = "*", case_sensitive: bool = True,
-                        context_lines: int = 0) -> str:
+                        context_lines: int = 0, max_results: int = 100,
+                        result_mode: str = "snippets") -> str:
         """Search for pattern in files
 
         Args:
@@ -1778,6 +1781,8 @@ class ToolRegistryAsync:
             file_pattern: Glob pattern to filter files
             case_sensitive: Case sensitivity
             context_lines: Number of context lines before and after each match
+            max_results: Max result lines/files to return
+            result_mode: snippets, paths_only, or counts_only
 
         Returns:
             Search results
@@ -1787,12 +1792,15 @@ class ToolRegistryAsync:
         """
         try:
             search_path = path or os.getcwd()
+            max_results = max(1, min(int(max_results or 100), 500))
+            if result_mode not in {"snippets", "paths_only", "counts_only"}:
+                result_mode = "snippets"
 
             if shutil.which("rg"): # prefer ripgrep when available
-                return await self._grep_ripgrep(pattern, search_path, file_pattern, case_sensitive, context_lines)
+                return await self._grep_ripgrep(pattern, search_path, file_pattern, case_sensitive, context_lines, max_results, result_mode)
             if shutil.which("grep"): # unix grep as intermediate fallback
-                return await self._grep_unix_fallback(pattern, search_path, file_pattern, case_sensitive, context_lines)
-            return await self._grep_python_fallback(pattern, search_path, file_pattern, case_sensitive, context_lines)
+                return await self._grep_unix_fallback(pattern, search_path, file_pattern, case_sensitive, context_lines, max_results, result_mode)
+            return await self._grep_python_fallback(pattern, search_path, file_pattern, case_sensitive, context_lines, max_results, result_mode)
 
         except ToolExecutionError:
             raise
@@ -1801,9 +1809,15 @@ class ToolRegistryAsync:
 
     async def _grep_ripgrep(self, pattern: str, search_path: str,
                             file_pattern: str, case_sensitive: bool,
-                            context_lines: int) -> str:
+                            context_lines: int, max_results: int,
+                            result_mode: str) -> str:
         """ripgrep-based grep implementation"""
-        cmd = ["rg", "--line-number", "--no-heading", "--max-count", "500"]
+        if result_mode == "paths_only":
+            cmd = ["rg", "--files-with-matches"]
+        elif result_mode == "counts_only":
+            cmd = ["rg", "--count-matches"]
+        else:
+            cmd = ["rg", "--line-number", "--no-heading", "--max-count", str(max_results)]
         if context_lines > 0:
             cmd.extend(["-C", str(context_lines)])
         if not case_sensitive:
@@ -1825,16 +1839,19 @@ class ToolRegistryAsync:
         if not stdout:
             return f"No matches found for pattern: {pattern}"
 
-        lines = stdout.split("\n")[:500] # cap result lines
-        output = f"Found {len(lines)} result lines:\n" + "\n".join(lines)
+        lines = stdout.split("\n")[:max_results] # cap result lines
+        output = self._format_grep_output(lines, result_mode)
         logger.info(f"Grep search (rg): {pattern} found {len(lines)} result lines")
         return output
 
     async def _grep_unix_fallback(self, pattern: str, search_path: str,
                                   file_pattern: str, case_sensitive: bool,
-                                  context_lines: int) -> str:
+                                  context_lines: int, max_results: int,
+                                  result_mode: str) -> str:
         """unix grep fallback (faster than pure Python, slower than rg)"""
-        cmd = ["grep", "-rn", "--max-count=500", "-E"]
+        cmd = ["grep", "-rn", f"--max-count={max_results}", "-E"]
+        if result_mode == "paths_only":
+            cmd = ["grep", "-rl", "-E"]
         if context_lines > 0:
             cmd.extend(["-C", str(context_lines)])
         if not case_sensitive:
@@ -1853,18 +1870,19 @@ class ToolRegistryAsync:
             return f"No matches found for pattern: {pattern}"
         if result["exit_code"] not in (0, 1):
             # fall through to python fallback on error
-            return await self._grep_python_fallback(pattern, search_path, file_pattern, case_sensitive, context_lines)
+            return await self._grep_python_fallback(pattern, search_path, file_pattern, case_sensitive, context_lines, max_results, result_mode)
         stdout = result["stdout"].rstrip()
         if not stdout:
             return f"No matches found for pattern: {pattern}"
-        lines = stdout.split("\n")[:500]
-        output = f"Found {len(lines)} result lines:\n" + "\n".join(lines)
+        lines = stdout.split("\n")[:max_results]
+        output = self._format_grep_output(lines, result_mode)
         logger.info(f"Grep search (grep): {pattern} found {len(lines)} result lines")
         return output
 
     async def _grep_python_fallback(self, pattern: str, search_path: str,
                                     file_pattern: str, case_sensitive: bool,
-                                    context_lines: int) -> str:
+                                    context_lines: int, max_results: int,
+                                    result_mode: str) -> str:
         """python re-based grep fallback"""
         flags = 0 if case_sensitive else re.IGNORECASE
         regex = re.compile(pattern, flags)
@@ -1892,28 +1910,40 @@ class ToolRegistryAsync:
                                 ctx_line = all_lines[ctx_idx].rstrip()
                                 results.append(f"{file_path}:{ctx_idx + 1}: {ctx_line}")
                                 result_count += 1
-                                if result_count >= 500:
+                                if result_count >= max_results:
                                     break
                         else:
                             results.append(f"{file_path}:{line_num}: {line.rstrip()}")
                             result_count += 1
 
-                        if result_count >= 500: # raised cap from 100 to 500
+                        if result_count >= max_results:
                             break
 
             except Exception as e:
                 logger.debug(f"Skipping file {file_path}: {e}")
                 continue
 
-            if result_count >= 500:
+            if result_count >= max_results:
                 break
 
         if not results:
             return f"No matches found for pattern: {pattern}"
 
-        result = f"Found {len(results)} matches:\n" + "\n".join(results)
+        result = self._format_grep_output(results, result_mode)
         logger.info(f"Grep search: {pattern} found {len(results)} matches")
         return result
+
+    @staticmethod
+    def _format_grep_output(lines: List[str], result_mode: str) -> str:
+        from .tool_egress import render_egress_footer
+        if result_mode == "paths_only":
+            paths = sorted({line.split(":", 1)[0] for line in lines if line.strip()})
+            body = f"Found {len(paths)} matching files:\n" + "\n".join(paths)
+        elif result_mode == "counts_only":
+            body = f"Found counts for {len(lines)} files:\n" + "\n".join(lines)
+        else:
+            body = f"Found {len(lines)} result lines:\n" + "\n".join(lines)
+        return f"{body}\n{render_egress_footer(body)}"
 
     async def _read_stream_with_limit(
         self,
@@ -3680,11 +3710,15 @@ class ToolRegistryAsync:
         except Exception as exc:
             return f"error saving memory: {exc}"
 
-    async def memory_search(self, query: str, type: str = "", max_results: int = 10) -> str:
+    async def memory_search(self, query: str, type: str = "", max_results: int = 10, mode: str = "lod") -> str:
         try:
             from .memory import MemoryManager
             mgr = MemoryManager()
             mgr.load()
+            if mode == "lod":
+                from .memory_lod import render_lod_results, search_lod
+                results = await search_lod(mgr, query, max_results=max_results)
+                return render_lod_results(results)
             results = mgr.search(query, type_filter=type or None, max_results=max_results)
             if not results:
                 return "no memories found"
@@ -3694,6 +3728,32 @@ class ToolRegistryAsync:
             return "\n---\n".join(lines)
         except Exception as exc:
             return f"error searching memory: {exc}"
+
+    async def memory_expand(self, name: str) -> str:
+        try:
+            from .memory import MemoryManager
+            from .memory_lod import expand_memory
+            mgr = MemoryManager()
+            mgr.load()
+            entry = expand_memory(mgr, name)
+            if entry is None:
+                return f"memory not found: {name}"
+            return f"## {entry.name} ({entry.type})\n{entry.description}\n\n{entry.content}"
+        except Exception as exc:
+            return f"error expanding memory: {exc}"
+
+    async def memory_promote(self, name: str) -> str:
+        try:
+            from .memory import MemoryManager
+            from .memory_lod import promote_memory
+            mgr = MemoryManager()
+            mgr.load()
+            entry = promote_memory(mgr, name)
+            if entry is None:
+                return f"memory not found: {name}"
+            return f"promoted memory: {entry.name}"
+        except Exception as exc:
+            return f"error promoting memory: {exc}"
 
     async def memory_delete(self, name: str) -> str:
         try:

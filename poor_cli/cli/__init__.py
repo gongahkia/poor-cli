@@ -8,6 +8,7 @@ _EXPORT_MAP = {
     "run_checkpoint_mode": "state_cmds",
     "run_history_mode": "state_cmds",
     "run_session_mode": "state_cmds",
+    "run_state_mode": "state_cmds",
     "run_memory_mode": "state_cmds",
     "run_config_mode": "config_cmds",
     "run_profile_mode": "config_cmds",

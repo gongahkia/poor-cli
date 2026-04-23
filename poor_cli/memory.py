@@ -56,6 +56,14 @@ class MemoryEntry:
     # telemetry (MH8)
     hit_count: int = 0
     last_accessed_at: str = ""
+    # LOD/context-substrate metadata
+    headline: str = ""
+    summary: str = ""
+    valid_at: str = ""
+    invalid_at: str = ""
+    supersedes: str = ""
+    confidence: str = ""
+    pinned: bool = False
 
     def __post_init__(self):
         if self.type not in MEMORY_TYPES:
@@ -75,6 +83,10 @@ class MemoryEntry:
             self.last_accessed_at = self.created_at
         if not self.filename:
             self.filename = _slugify(self.name) + ".md"
+        if not self.headline:
+            self.headline = self.description or self.name
+        if not self.summary:
+            self.summary = _first_words(self.content, 80)
 
     def render_file(self) -> str:
         """Render as markdown with YAML frontmatter."""
@@ -99,6 +111,20 @@ class MemoryEntry:
             fields.append(f"hit_count: {self.hit_count}")
         if self.last_accessed_at and self.last_accessed_at != self.created_at:
             fields.append(f"last_accessed_at: {self.last_accessed_at}")
+        if self.headline:
+            fields.append(f"headline: {self.headline}")
+        if self.summary:
+            fields.append(f"summary: {self.summary}")
+        if self.valid_at:
+            fields.append(f"valid_at: {self.valid_at}")
+        if self.invalid_at:
+            fields.append(f"invalid_at: {self.invalid_at}")
+        if self.supersedes:
+            fields.append(f"supersedes: {self.supersedes}")
+        if self.confidence:
+            fields.append(f"confidence: {self.confidence}")
+        if self.pinned:
+            fields.append("pinned: true")
         return "---\n" + "\n".join(fields) + f"\n---\n\n{self.content}\n"
 
     def index_line(self) -> str:
@@ -121,6 +147,13 @@ class MemoryEntry:
             "derivationDepth": self.derivation_depth,
             "hitCount": self.hit_count,
             "lastAccessedAt": self.last_accessed_at,
+            "headline": self.headline,
+            "summary": self.summary,
+            "validAt": self.valid_at,
+            "invalidAt": self.invalid_at,
+            "supersedes": self.supersedes,
+            "confidence": self.confidence,
+            "pinned": self.pinned,
         }
 
     def touch(self) -> None:
@@ -134,6 +167,19 @@ def _slugify(text: str) -> str:
     slug = re.sub(r"[^\w\s-]", "", text.lower().strip())
     slug = re.sub(r"[\s_]+", "_", slug)
     return slug[:80] or "memory"
+
+
+def _first_words(text: str, limit: int) -> str:
+    words = re.sub(r"\s+", " ", text.strip()).split(" ")
+    if not words or words == [""]:
+        return ""
+    if len(words) <= limit:
+        return " ".join(words)
+    return " ".join(words[:limit]).rstrip() + "..."
+
+
+def _bool_value(text: str) -> bool:
+    return str(text).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _parse_frontmatter(text: str) -> tuple[Dict[str, str], str]:
@@ -204,6 +250,13 @@ class MemoryManager:
                     derivation_depth=_int("derivation_depth", 0),
                     hit_count=_int("hit_count", 0),
                     last_accessed_at=meta.get("last_accessed_at", ""),
+                    headline=meta.get("headline", ""),
+                    summary=meta.get("summary", ""),
+                    valid_at=meta.get("valid_at", ""),
+                    invalid_at=meta.get("invalid_at", ""),
+                    supersedes=meta.get("supersedes", ""),
+                    confidence=meta.get("confidence", ""),
+                    pinned=_bool_value(meta.get("pinned", "")),
                 )
                 self._entries[path.name] = entry
             except Exception as exc:

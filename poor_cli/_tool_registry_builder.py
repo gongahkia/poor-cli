@@ -163,6 +163,14 @@ def build_tool_registry(self) -> None:
                         "context_lines": {
                             "type": "INTEGER",
                             "description": "Number of context lines before and after each match"
+                        },
+                        "max_results": {
+                            "type": "INTEGER",
+                            "description": "Maximum result lines/files to return (default 100, max 500)"
+                        },
+                        "result_mode": {
+                            "type": "STRING",
+                            "description": "Result shape: snippets (default), paths_only, or counts_only"
                         }
                     },
                     "required": ["pattern"]
@@ -859,8 +867,37 @@ def build_tool_registry(self) -> None:
                     "query": {"type": "STRING", "description": "Search query"},
                     "type": {"type": "STRING", "description": "Optional filter: user, feedback, project, or reference"},
                     "max_results": {"type": "INTEGER", "description": "Max results to return (default 10)"},
+                    "mode": {"type": "STRING", "description": "Retrieval mode: lod (default mixed full/summary/headline) or full"},
                 },
                 "required": ["query"]
+            }
+        }
+    }
+    self.tools["memory_expand"] = {
+        "function": self.memory_expand,
+        "declaration": {
+            "name": "memory_expand",
+            "description": "Expand a memory returned as headline/summary by memory_search into full content.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "name": {"type": "STRING", "description": "Memory name or filename"},
+                },
+                "required": ["name"]
+            }
+        }
+    }
+    self.tools["memory_promote"] = {
+        "function": self.memory_promote,
+        "declaration": {
+            "name": "memory_promote",
+            "description": "Promote/pin a memory so LOD retrieval keeps it high-resolution.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "name": {"type": "STRING", "description": "Memory name or filename"},
+                },
+                "required": ["name"]
             }
         }
     }

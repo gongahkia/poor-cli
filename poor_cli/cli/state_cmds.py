@@ -172,6 +172,39 @@ def run_session_mode(argv: Sequence[str]) -> int:
     raise SystemExit(f"Unknown session subcommand: {args.subcommand}")
 
 
+def run_state_mode(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(prog="poor-cli state")
+    sub = parser.add_subparsers(dest="subcommand", required=True)
+    p_export = sub.add_parser("export")
+    p_export.add_argument("--output", "-o", required=True)
+    p_export.add_argument("--json", action="store_true")
+    p_import = sub.add_parser("import")
+    p_import.add_argument("archive")
+    p_import.add_argument("--replace", action="store_true", help="overwrite existing local state files")
+    p_import.add_argument("--json", action="store_true")
+    args = parser.parse_args(list(argv))
+    from ..state_portability import export_state, import_state
+    if args.subcommand == "export":
+        result = export_state(Path(args.output), repo_root=Path.cwd())
+        payload = result.to_dict()
+        if args.json:
+            _print_json(payload)
+        else:
+            print(f"Exported {len(result.files)} state files to {result.archive}")
+        return 0
+    if args.subcommand == "import":
+        result = import_state(Path(args.archive), repo_root=Path.cwd(), replace=args.replace)
+        payload = result.to_dict()
+        if args.json:
+            _print_json(payload)
+        else:
+            print(f"Imported {len(result.files)} state files from {result.archive}")
+            if result.skipped:
+                print(f"Skipped {len(result.skipped)} existing/unknown files")
+        return 0
+    raise SystemExit(f"Unknown state subcommand: {args.subcommand}")
+
+
 def run_memory_mode(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="poor-cli memory")
     sub = parser.add_subparsers(dest="subcommand", required=True)
@@ -187,7 +220,15 @@ def run_memory_mode(argv: Sequence[str]) -> int:
     p_search = sub.add_parser("search")
     p_search.add_argument("query")
     p_search.add_argument("--limit", type=int, default=10)
+    p_search.add_argument("--lod", action="store_true", help="return mixed full/summary/headline results")
+    p_search.add_argument("--alpha", type=float, default=0.65, help="LOD semantic-vs-recency weight")
     p_search.add_argument("--json", action="store_true")
+    p_expand = sub.add_parser("expand")
+    p_expand.add_argument("name")
+    p_expand.add_argument("--json", action="store_true")
+    p_promote = sub.add_parser("promote")
+    p_promote.add_argument("name")
+    p_promote.add_argument("--json", action="store_true")
     p_delete = sub.add_parser("delete")
     p_delete.add_argument("name")
     p_delete.add_argument("--json", action="store_true")
@@ -223,6 +264,16 @@ def run_memory_mode(argv: Sequence[str]) -> int:
             print(f"Saved memory entry: {args.name}")
         return 0
     if args.subcommand == "search":
+        if args.lod:
+            import asyncio
+            from ..memory_lod import render_lod_results, search_lod
+            results = asyncio.run(search_lod(mgr, args.query, max_results=args.limit, alpha=args.alpha))
+            payload = [e.to_dict() for e in results]
+            if args.json:
+                _print_json(payload)
+            else:
+                print(render_lod_results(results))
+            return 0
         results = mgr.search(args.query, max_results=args.limit)
         payload = [e.to_dict() for e in results]
         if args.json:
@@ -232,6 +283,26 @@ def run_memory_mode(argv: Sequence[str]) -> int:
                 print("No results found.")
             for e in payload:
                 print(f"  [{e.get('type', '?')}] {e.get('name', '?')}: {e.get('description', '')}")
+        return 0
+    if args.subcommand == "expand":
+        from ..memory_lod import expand_memory
+        entry = expand_memory(mgr, args.name)
+        if entry is None:
+            raise SystemExit(f"Memory entry not found: {args.name}")
+        if args.json:
+            _print_json(entry.to_dict())
+        else:
+            print(f"# {entry.name}\n\n{entry.content}")
+        return 0
+    if args.subcommand == "promote":
+        from ..memory_lod import promote_memory
+        entry = promote_memory(mgr, args.name)
+        if entry is None:
+            raise SystemExit(f"Memory entry not found: {args.name}")
+        if args.json:
+            _print_json(entry.to_dict())
+        else:
+            print(f"Promoted memory entry: {entry.name}")
         return 0
     if args.subcommand == "delete":
         deleted = mgr.delete(args.name)

@@ -35,6 +35,7 @@ def _render_root_help() -> str:
         "  poor-cli session            List, create, fork, or destroy sessions\n"
         "  poor-cli history            Search, list, or export conversation history\n"
         "  poor-cli checkpoint         List, create, preview, or restore checkpoints\n"
+        "  poor-cli state              Export or import portable local harness state\n"
         "  poor-cli memory             List, save, search, or delete memory entries\n\n"
         "Configuration:\n"
         "  poor-cli config             List, get, set, or toggle configuration\n"
@@ -1646,6 +1647,11 @@ def _run_session_mode(argv: Sequence[str]) -> int:
     return run_session_mode(argv)
 
 
+def _run_state_mode(argv: Sequence[str]) -> int:
+    from .cli import run_state_mode
+    return run_state_mode(argv)
+
+
 def _run_memory_mode(argv: Sequence[str]) -> int:
     from .cli import run_memory_mode
     return run_memory_mode(argv)
@@ -1743,6 +1749,8 @@ def _main() -> None:
         raise SystemExit(_run_history_mode(argv[1:]))
     if argv and argv[0] == "session":
         raise SystemExit(_run_session_mode(argv[1:]))
+    if argv and argv[0] == "state":
+        raise SystemExit(_run_state_mode(argv[1:]))
     if argv and argv[0] == "memory":
         raise SystemExit(_run_memory_mode(argv[1:]))
     if argv and argv[0] == "config":

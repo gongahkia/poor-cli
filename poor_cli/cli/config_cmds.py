@@ -312,13 +312,39 @@ def run_context_mode(argv: Sequence[str]) -> int:
         default="auto",
         choices=("auto", "compact", "compress", "handoff", "gentle", "aggressive"),
     )
-    sub.add_parser("preview")
-    sub.add_parser("pressure")
-    sub.add_parser("breakdown")
+    p_preview = sub.add_parser("preview")
+    p_pressure = sub.add_parser("pressure")
+    p_breakdown = sub.add_parser("breakdown")
+    p_init = sub.add_parser("init", help="create file-first context substrate")
+    p_doctor = sub.add_parser("doctor", help="validate context substrate files")
+    p_map = sub.add_parser("map", help="show context substrate file map")
+    p_append = sub.add_parser("append", help="append a record to a context JSONL file")
+    p_append.add_argument("file", choices=("decisions.jsonl", "failures.jsonl", "runs.jsonl"))
+    p_append.add_argument("--record", required=True, help="JSON object to append")
+    for subparser in (p_compact, p_preview, p_pressure, p_breakdown, p_init, p_doctor, p_map, p_append):
+        subparser.add_argument("--json", action="store_true")
     parser.add_argument("--config", help="config file path")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(list(argv))
     cmd = args.subcommand or "preview"
+    if cmd in {"init", "doctor", "map", "append"}:
+        from ..context_substrate import append_jsonl_record, context_map, doctor_context, init_context
+        if cmd == "init":
+            result = init_context(Path.cwd())
+        elif cmd == "doctor":
+            result = doctor_context(Path.cwd())
+        elif cmd == "map":
+            result = context_map(Path.cwd())
+        else:
+            try:
+                record = json.loads(args.record)
+            except json.JSONDecodeError as exc:
+                raise SystemExit(f"--record must be JSON object: {exc}") from exc
+            if not isinstance(record, dict):
+                raise SystemExit("--record must be JSON object")
+            result = append_jsonl_record(args.file, record, repo_root=Path.cwd())
+        _print_json(result)
+        return 0
     async def _run():
         core = _core_cls()(config_path=Path(args.config).expanduser() if getattr(args, "config", None) else None)
         await core.initialize()
