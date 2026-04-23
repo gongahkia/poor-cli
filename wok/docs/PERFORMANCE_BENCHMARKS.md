@@ -48,6 +48,16 @@ Set `debug_overlay = true` in your Wok config to inspect live frame timings. The
 
 Use these phase timings before considering a native macOS frontend rewrite. If `quads` or `gpu` dominate, optimize the renderer path first; if text input or event-loop behavior dominates, that is stronger evidence for a native AppKit bridge.
 
+## Command Telemetry
+
+Set `command_telemetry = true` to write command lifecycle records to:
+
+```bash
+~/.config/wok/command-telemetry.jsonl
+```
+
+Each record is one JSON object. `command_submitted` records the pane, command text, cwd, and timestamp. `command_completed` adds exit code, duration, block id, and output row range. This is intentionally disabled by default because command text can contain secrets.
+
 ## PR Regression Gate
 
 CI now runs a pull-request-only performance gate (`perf_gate` job in `.github/workflows/ci.yml`):

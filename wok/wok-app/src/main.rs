@@ -879,6 +879,22 @@ impl WokHandler {
         self.panes.get_mut(&pane_id)
     }
 
+    fn log_command_submitted(&mut self, pane_id: PaneId, command: &str, cwd: Option<PathBuf>) {
+        if let Some(logger) = self.command_telemetry.as_mut() {
+            logger.log_submitted(pane_id, command, cwd.as_ref());
+        }
+    }
+
+    fn log_command_completed(
+        &mut self,
+        entry: &HistoryEntry,
+        block: Option<&CommandTelemetryBlockSnapshot>,
+    ) {
+        if let Some(logger) = self.command_telemetry.as_mut() {
+            logger.log_completed(entry, block);
+        }
+    }
+
     fn compose_status_bar_segments(&self, pane: &PaneRuntime) -> StatusBarSegments {
         let mut state = self.status_bar_state.clone();
         state.shell = pane.app.config.shell.to_string();
@@ -3304,10 +3320,12 @@ impl WokHandler {
                     relayout = true;
                 }
                 SemanticEvent::CommandText { text, .. } => {
+                    let mut telemetry_submission = None;
                     if let Some(pane) = self.panes.get_mut(&pane_id) {
+                        let trimmed = text.trim().to_string();
                         if let Some(pending) = pane.pending_history.as_mut() {
-                            pending.command = text.trim().to_string();
-                        } else if !text.trim().is_empty() {
+                            pending.command.clone_from(&trimmed);
+                        } else if !trimmed.is_empty() {
                             pane.pending_history = Some(HistoryEntry::pending(
                                 &text,
                                 (!pane.current_cwd.as_os_str().is_empty())
@@ -3315,9 +3333,20 @@ impl WokHandler {
                                 Some(pane_id),
                             ));
                         }
+                        if !trimmed.is_empty() {
+                            telemetry_submission = Some((
+                                trimmed,
+                                (!pane.current_cwd.as_os_str().is_empty())
+                                    .then(|| pane.current_cwd.clone()),
+                            ));
+                        }
+                    }
+                    if let Some((command, cwd)) = telemetry_submission {
+                        self.log_command_submitted(pane_id, &command, cwd);
                     }
                 }
                 SemanticEvent::CommandEnd { exit_code, .. } => {
+                    let mut telemetry_completion = None;
                     let completed_entry = if let Some(pane) = self.panes.get_mut(&pane_id) {
                         let mut entry = pane.pending_history.take().unwrap_or_else(|| {
                             let command = pane
@@ -3346,11 +3375,20 @@ impl WokHandler {
                                     .then(|| pane.current_cwd.clone())
                             });
                         let duration = block.and_then(|candidate| candidate.duration);
+                        let block_snapshot = block.map(|candidate| CommandTelemetryBlockSnapshot {
+                            block_id: candidate.id,
+                            output_start_row: candidate.output_start_row,
+                            output_end_row: candidate.output_end_row,
+                            duration_ms: candidate
+                                .duration
+                                .map(|duration| duration.as_millis() as u64),
+                        });
 
                         entry.mark_completed(exit_code, duration, cwd);
                         if !entry.command.is_empty() {
                             pane.pane_history.push(entry.clone());
                             pane.last_output_line_row = None;
+                            telemetry_completion = Some((entry.clone(), block_snapshot));
                             Some(entry)
                         } else {
                             None
@@ -3361,6 +3399,9 @@ impl WokHandler {
 
                     if let Some(entry) = completed_entry {
                         self.global_history.record_completed(entry);
+                    }
+                    if let Some((entry, block_snapshot)) = telemetry_completion.as_ref() {
+                        self.log_command_completed(entry, block_snapshot.as_ref());
                     }
                     self.report_pending_rerun_diff(pane_id);
                     self.update_failure_status_for_pane(pane_id, exit_code);
