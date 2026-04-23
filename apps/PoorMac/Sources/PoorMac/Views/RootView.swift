@@ -3,22 +3,14 @@ import SwiftUI
 struct RootView: View {
     @Environment(AppModel.self) private var app
     @AppStorage("PoorMac.developerMode") private var developerMode = false
-    @SceneStorage("PoorMac.selectedArea") private var selectedAreaRaw = BackendArea.dashboard.rawValue
+    @SceneStorage("PoorMac.selectedArea") private var selectedAreaRaw = BackendArea.conversation.rawValue
 
     var body: some View {
-        Group {
-            if developerMode {
-                DeveloperShellView(
-                    selectedArea: selectedArea,
-                    selection: selectionBinding
-                )
-            } else {
-                NavigationStack {
-                    ConversationView()
-                        .navigationTitle("Conversation")
-                }
-            }
-        }
+        NavigationShellView(
+            areas: visibleAreas,
+            selectedArea: selectedArea,
+            selection: selectionBinding
+        )
         .toolbar {
             ToolbarItemGroup {
                 StatusBadge(state: app.connectionState)
@@ -64,17 +56,25 @@ struct RootView: View {
             ReviewSheetView(sheet: sheet)
                 .environment(app)
         }
+        .task {
+            await app.startBackendIfNeeded()
+        }
+    }
+
+    private var visibleAreas: [BackendArea] {
+        developerMode ? BackendArea.allCases : [.conversation, .sessions, .cost]
     }
 
     private var selectionBinding: Binding<BackendArea?> {
         Binding(
             get: { selectedArea },
-            set: { selectedAreaRaw = ($0 ?? .dashboard).rawValue }
+            set: { selectedAreaRaw = ($0 ?? .conversation).rawValue }
         )
     }
 
     private var selectedArea: BackendArea {
-        BackendArea(rawValue: selectedAreaRaw) ?? .dashboard
+        let area = BackendArea(rawValue: selectedAreaRaw) ?? .conversation
+        return visibleAreas.contains(area) ? area : .conversation
     }
 
     private var reviewSheetBinding: Binding<PendingReviewSheet?> {
@@ -85,13 +85,14 @@ struct RootView: View {
     }
 }
 
-private struct DeveloperShellView: View {
+private struct NavigationShellView: View {
+    let areas: [BackendArea]
     let selectedArea: BackendArea
     let selection: Binding<BackendArea?>
 
     var body: some View {
         NavigationSplitView {
-            List(BackendArea.allCases, selection: selection) { area in
+            List(areas, selection: selection) { area in
                 Label(area.title, systemImage: area.symbol)
                     .lineLimit(1)
                     .accessibilityIdentifier("PoorMac.Sidebar.\(area.rawValue)")
