@@ -692,6 +692,41 @@ fn parse_overlay_position(value: &str) -> Option<OverlayPosition> {
     }
 }
 
+fn parse_background_fit(value: &str) -> BackgroundFit {
+    match value.trim().to_ascii_lowercase().replace('-', "_").as_str() {
+        "cover" => BackgroundFit::Cover,
+        "contain" | "fit" => BackgroundFit::Contain,
+        "center" | "actual" | "actual_size" => BackgroundFit::Center,
+        _ => BackgroundFit::Stretch,
+    }
+}
+
+fn parse_background_position(value: &str) -> BackgroundPosition {
+    match value.trim().to_ascii_lowercase().replace('-', "_").as_str() {
+        "top_left" | "left_top" => BackgroundPosition::TopLeft,
+        "top_right" | "right_top" => BackgroundPosition::TopRight,
+        "bottom_left" | "left_bottom" => BackgroundPosition::BottomLeft,
+        "bottom_right" | "right_bottom" => BackgroundPosition::BottomRight,
+        _ => BackgroundPosition::Center,
+    }
+}
+
+fn clamp_unit(value: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(0.0, 1.0)
+    } else {
+        1.0
+    }
+}
+
+fn finite_positive(value: f32) -> Option<f32> {
+    (value.is_finite() && value > 0.0).then_some(value)
+}
+
+fn finite_non_negative(value: f32) -> Option<f32> {
+    (value.is_finite() && value >= 0.0).then_some(value)
+}
+
 fn preset_node_from_toml(node: PresetNodeToml) -> Option<PresetNode> {
     match node {
         PresetNodeToml::Leaf { leaf, weight } => {
