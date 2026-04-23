@@ -2,7 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var app
-    @AppStorage("PoorMac.developerMode") private var developerMode = false
+    @AppStorage("PoorMac.showAdvancedSurfaces") private var developerMode = false
 
     var body: some View {
         TabView {
@@ -54,7 +54,7 @@ struct SettingsView: View {
 
             Form {
                 Section("Interface") {
-                    Toggle("Show developer surfaces", isOn: $developerMode)
+                    Toggle("Show advanced surfaces", isOn: $developerMode)
                         .accessibilityIdentifier("PoorMac.Settings.DeveloperMode")
                 }
             }

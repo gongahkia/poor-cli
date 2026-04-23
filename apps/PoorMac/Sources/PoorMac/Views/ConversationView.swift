@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ConversationView: View {
     @Environment(AppModel.self) private var app
-    @AppStorage("PoorMac.developerMode") private var developerMode = false
+    @AppStorage("PoorMac.showAdvancedSurfaces") private var developerMode = false
 
     var body: some View {
         VStack(spacing: 0) {
