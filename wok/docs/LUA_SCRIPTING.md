@@ -180,6 +180,21 @@ wok.system_notify({
 })
 ```
 
+### `wok.add_trigger(name, pattern, actions)` / `wok.remove_trigger(name)`
+
+Register or remove regex triggers at runtime. Triggers run when a command block finishes and can match command text, output, or both depending on their configured scope. Lua-added triggers default to output scope.
+
+```lua
+wok.add_trigger("test failure", "FAILED|panic", {
+    "highlight_red",
+    "system_notify:Command output matched a failure",
+})
+
+wok.remove_trigger("test failure")
+```
+
+Trigger actions include `highlight_<color>`, `notify:<message>`, `system_notify:<message>`, `bookmark`, `open_url`, `copy_match`, and `lua:<hook_name>`.
+
 ### `wok.setup.*(...)`
 
 Queue local setup lifecycle operations from Lua. These APIs are synchronous in intent (same behavior as CLI setup commands) but are executed through the runtime setup queue.
@@ -218,6 +233,7 @@ Load a theme either by explicit path or by name from `~/.config/wok/themes/<name
 
 ```lua
 wok.theme.load("catppuccin")
+wok.theme.load("graph-box-dark")
 wok.theme.load("/absolute/path/to/theme.toml")
 ```
 

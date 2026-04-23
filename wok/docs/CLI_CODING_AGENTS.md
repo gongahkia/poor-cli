@@ -64,7 +64,17 @@ Open the command palette and filter with `@agent:` to select these workflows.
 
 ## Completion Notifications
 
-Use `block_finished` for command-level notifications. This is usually the right hook for CLI agents because it fires when the shell integration detects command completion and includes duration and exit code.
+The generated `wok init` config includes a command-scope trigger for common CLI agents:
+
+```toml
+[[triggers]]
+name = "CLI agent finished"
+pattern = '^\s*(claude|codex|gemini|ada|gh\s+copilot)\b'
+scope = "command"
+actions = ["highlight_cyan", "system_notify:CLI agent command finished"]
+```
+
+Use Lua `block_finished` when you need custom logic beyond regex matching. This hook fires when shell integration detects command completion and includes duration and exit code.
 
 ```lua
 local function starts_with_agent(command)

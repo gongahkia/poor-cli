@@ -3360,6 +3360,7 @@ impl WokHandler {
     ) {
         let mut urls_to_open = Vec::new();
         let mut hook_invocations = Vec::new();
+        let mut system_notifications = Vec::new();
         let mut latest_notification = None;
 
         let Some(pane) = self.panes.get_mut(&pane_id) else {
@@ -3407,6 +3408,30 @@ impl WokHandler {
                         };
                         latest_notification = Some(notification);
                     }
+                    TriggerAction::SystemNotify { title, message } => {
+                        let title = if title.trim().is_empty() {
+                            trigger_match.trigger_name.clone()
+                        } else {
+                            title.trim().to_string()
+                        };
+                        let matched_source = if matches!(trigger_match.scope, TriggerScope::Command)
+                            && !command_text.trim().is_empty()
+                        {
+                            command_text.trim()
+                        } else {
+                            &trigger_match.matched_text
+                        };
+                        let message = if message.trim().is_empty() {
+                            format!("matched '{matched_source}'")
+                        } else {
+                            format!("{message}: {matched_source}")
+                        };
+                        system_notifications.push(SystemNotificationRequest {
+                            title,
+                            message,
+                            subtitle: Some(format!("pane {pane_id}")),
+                        });
+                    }
                     TriggerAction::BookmarkBlock => {
                         block.is_bookmarked = true;
                     }
@@ -3444,6 +3469,11 @@ impl WokHandler {
         }
         for url in urls_to_open {
             wok_ui::links::open_url(&url);
+        }
+        for notification in system_notifications {
+            if let Err(error) = send_system_notification(&notification) {
+                warn!("failed to send trigger notification: {error}");
+            }
         }
         for (hook, payload) in hook_invocations {
             self.run_plugin_hook(&hook, &payload);
@@ -6849,6 +6879,24 @@ fn parse_trigger_action_descriptor(descriptor: &str) -> Option<TriggerAction> {
                     message: String::new(),
                 });
             }
+            if let Some(message) = trimmed.strip_prefix("system_notify:") {
+                return Some(TriggerAction::SystemNotify {
+                    title: String::new(),
+                    message: message.trim().to_string(),
+                });
+            }
+            if let Some(message) = trimmed.strip_prefix("desktop_notify:") {
+                return Some(TriggerAction::SystemNotify {
+                    title: String::new(),
+                    message: message.trim().to_string(),
+                });
+            }
+            if lower == "system_notify" || lower == "desktop_notify" {
+                return Some(TriggerAction::SystemNotify {
+                    title: String::new(),
+                    message: String::new(),
+                });
+            }
             if let Some(hook) = trimmed
                 .strip_prefix("lua_hook:")
                 .or_else(|| trimmed.strip_prefix("lua:"))
@@ -8155,6 +8203,24 @@ mod tests {
             Some(Action::LoadSession("demo".to_string()))
         );
         assert_eq!(parse_lua_action("save_session:"), None);
+    }
+
+    #[test]
+    fn test_parse_trigger_action_supports_system_notify() {
+        assert_eq!(
+            parse_trigger_action_descriptor("system_notify:Homebrew finished"),
+            Some(TriggerAction::SystemNotify {
+                title: String::new(),
+                message: "Homebrew finished".to_string(),
+            })
+        );
+        assert_eq!(
+            parse_trigger_action_descriptor("desktop_notify"),
+            Some(TriggerAction::SystemNotify {
+                title: String::new(),
+                message: String::new(),
+            })
+        );
     }
 
     #[test]

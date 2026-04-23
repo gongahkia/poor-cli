@@ -820,6 +820,36 @@ mod tests {
     }
 
     #[test]
+    fn test_load_command_trigger_with_system_notify_action() {
+        let path =
+            std::env::temp_dir().join(format!("wok-config-trigger-{}.toml", std::process::id()));
+        std::fs::write(
+            &path,
+            r#"
+[[triggers]]
+name = "Homebrew task finished"
+pattern = '^\s*brew\s+(update|upgrade)\b'
+scope = "command"
+actions = ["highlight_blue", "system_notify:Homebrew task finished"]
+"#,
+        )
+        .expect("config should be written");
+
+        let config = WokConfig::load_from(&path).expect("config should load");
+        assert_eq!(config.triggers.len(), 1);
+        assert_eq!(config.triggers[0].scope, TriggerScopeConfig::Command);
+        assert_eq!(
+            config.triggers[0].actions,
+            vec![
+                "highlight_blue".to_string(),
+                "system_notify:Homebrew task finished".to_string()
+            ]
+        );
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
     fn test_parse_chrome_side_supports_all_edges() {
         assert_eq!(parse_chrome_side("top"), Some(ChromeSide::Top));
         assert_eq!(parse_chrome_side("bottom"), Some(ChromeSide::Bottom));

@@ -16,7 +16,7 @@ The product is intentionally opinionated: no AI, no login, no cloud dependency. 
 | Search | Shipped | Workspace-global query with focused-pane overlay, match counts, next/prev navigation, and cross-pane result jumps |
 | Mouse selection | Shipped | Drag selection works; `copy_on_select` is honored |
 | Lua scripting | Shipped | Loads `~/.config/wok/init.lua`, supports keybindings, command aliases, structured hooks, `run_action`, `exec`, `notify`, and runtime state accessors |
-| Theme loading | Shipped | `theme_path` loads at startup, hot reloads on file changes, and can be changed live through `wok.theme.load(...)` / `wok.theme.set(...)` |
+| Theme loading | Shipped | Graph Box Dark is the default; `wok init` seeds editable themes, `theme_path` loads at startup, and themes can be changed live through `wok.theme.load(...)` / `wok.theme.set(...)` |
 | Remaining limits | Honest gap | Plugins are still action/hook scoped rather than custom renderers, and the main runtime orchestration still lives in one large entrypoint instead of a fully split module tree |
 
 ## Run Locally

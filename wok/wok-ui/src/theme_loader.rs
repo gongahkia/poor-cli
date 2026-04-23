@@ -42,9 +42,18 @@ struct ThemeToml {
     tab_bar_bg: Option<String>,
     tab_active_bg: Option<String>,
     tab_inactive_bg: Option<String>,
+    tab_text: Option<String>,
     status_bar_bg: Option<String>,
+    status_bar_text: Option<String>,
     input_bg: Option<String>,
+    input_text: Option<String>,
+    block_separator: Option<String>,
+    block_success_accent: Option<String>,
+    block_error_accent: Option<String>,
+    highlight_match: Option<String>,
+    highlight_current_match: Option<String>,
     hyperlink_color: Option<String>,
+    bracket_match: Option<String>,
 }
 
 /// ANSI color overrides.
@@ -175,14 +184,41 @@ pub fn load_theme(path: &Path) -> Result<Theme, ThemeError> {
     if let Some(c) = toml_theme.tab_inactive_bg {
         theme.tab_inactive_bg = parse_hex_color(&c)?;
     }
+    if let Some(c) = toml_theme.tab_text {
+        theme.tab_text = parse_hex_color(&c)?;
+    }
     if let Some(c) = toml_theme.status_bar_bg {
         theme.status_bar_bg = parse_hex_color(&c)?;
+    }
+    if let Some(c) = toml_theme.status_bar_text {
+        theme.status_bar_text = parse_hex_color(&c)?;
     }
     if let Some(c) = toml_theme.input_bg {
         theme.input_bg = parse_hex_color(&c)?;
     }
+    if let Some(c) = toml_theme.input_text {
+        theme.input_text = parse_hex_color(&c)?;
+    }
+    if let Some(c) = toml_theme.block_separator {
+        theme.block_separator = parse_hex_color(&c)?;
+    }
+    if let Some(c) = toml_theme.block_success_accent {
+        theme.block_success_accent = parse_hex_color(&c)?;
+    }
+    if let Some(c) = toml_theme.block_error_accent {
+        theme.block_error_accent = parse_hex_color(&c)?;
+    }
+    if let Some(c) = toml_theme.highlight_match {
+        theme.highlight_match = parse_hex_color(&c)?;
+    }
+    if let Some(c) = toml_theme.highlight_current_match {
+        theme.highlight_current_match = parse_hex_color(&c)?;
+    }
     if let Some(c) = toml_theme.hyperlink_color {
         theme.hyperlink_color = parse_hex_color(&c)?;
+    }
+    if let Some(c) = toml_theme.bracket_match {
+        theme.bracket_match = parse_hex_color(&c)?;
     }
 
     // Apply ANSI overrides
@@ -352,5 +388,61 @@ mod tests {
         assert_eq!(theme.font_family, "Iosevka");
         assert!((theme.font_size - 16.0).abs() < f32::EPSILON);
         assert!((theme.background.r - (1.0 / 255.0)).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_load_theme_applies_full_chrome_fields() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("wok-theme-loader-{}.toml", std::process::id()));
+        std::fs::write(
+            &path,
+            r##"
+name = "Full Chrome"
+tab_text = "#112233"
+status_bar_text = "#223344"
+input_text = "#334455"
+block_separator = "#445566"
+block_success_accent = "#556677"
+block_error_accent = "#667788"
+highlight_match = "#77889980"
+highlight_current_match = "#8899aa80"
+bracket_match = "#99aabb80"
+"##,
+        )
+        .expect("theme file should be written");
+
+        let theme = load_theme(&path).expect("theme should load");
+        assert_eq!(theme.name, "Full Chrome");
+        assert!((theme.tab_text.r - (0x11 as f32 / 255.0)).abs() < 0.01);
+        assert!((theme.status_bar_text.r - (0x22 as f32 / 255.0)).abs() < 0.01);
+        assert!((theme.input_text.r - (0x33 as f32 / 255.0)).abs() < 0.01);
+        assert!((theme.block_separator.r - (0x44 as f32 / 255.0)).abs() < 0.01);
+        assert!((theme.block_success_accent.r - (0x55 as f32 / 255.0)).abs() < 0.01);
+        assert!((theme.block_error_accent.r - (0x66 as f32 / 255.0)).abs() < 0.01);
+        assert!((theme.highlight_match.a - (0x80 as f32 / 255.0)).abs() < 0.01);
+        assert!((theme.highlight_current_match.r - (0x88 as f32 / 255.0)).abs() < 0.01);
+        assert!((theme.bracket_match.r - (0x99 as f32 / 255.0)).abs() < 0.01);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_checked_in_themes_load() {
+        let themes_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../themes");
+        for name in [
+            "graph-box-dark.toml",
+            "tokyo-night.toml",
+            "catppuccin.toml",
+            "nord.toml",
+            "gruvbox-dark.toml",
+            "solarized-dark.toml",
+            "paper-light.toml",
+        ] {
+            let path = themes_dir.join(name);
+            let theme = load_theme(&path)
+                .unwrap_or_else(|error| panic!("theme {} should load: {error}", path.display()));
+            assert_eq!(theme.ansi_colors.len(), 16);
+            assert!(!theme.name.trim().is_empty());
+        }
     }
 }

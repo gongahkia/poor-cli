@@ -39,6 +39,13 @@ pub enum TriggerAction {
         /// Notification message text.
         message: String,
     },
+    /// Show a native desktop notification.
+    SystemNotify {
+        /// Optional notification title.
+        title: String,
+        /// Notification message text.
+        message: String,
+    },
     /// Bookmark the containing block.
     BookmarkBlock,
     /// Open the matched text as a URL.

@@ -125,17 +125,17 @@ pub struct Theme {
 impl Default for SyntaxColors {
     fn default() -> Self {
         Self {
-            command: Color::rgb(0.478, 0.635, 0.969),  // #7aa2f7
-            argument: Color::rgb(0.753, 0.792, 0.961), // #c0caf5
-            flag: Color::rgb(0.514, 0.580, 0.961),     // #838af6
-            path: Color::rgb(0.451, 0.812, 0.592),     // #73cf97
-            string: Color::rgb(0.631, 0.824, 0.435),   // #a1d26f
-            number: Color::rgb(1.0, 0.612, 0.529),     // #ff9c87
-            pipe: Color::rgb(0.537, 0.576, 0.647),     // #899ba5
-            redirect: Color::rgb(0.537, 0.576, 0.647), // #899ba5
-            variable: Color::rgb(0.965, 0.643, 0.310), // #f6a44e
-            comment: Color::rgb(0.337, 0.373, 0.459),  // #565f75
-            error: Color::rgb(0.969, 0.467, 0.557),    // #f7778e
+            command: Color::rgb(0.478, 0.655, 1.0),    // #7aa7ff
+            argument: Color::rgb(0.843, 0.882, 0.875), // #d7e1df
+            flag: Color::rgb(0.780, 0.573, 0.918),     // #c792ea
+            path: Color::rgb(0.486, 0.969, 0.757),     // #7cf7c1
+            string: Color::rgb(0.627, 0.839, 0.420),   // #a0d66b
+            number: Color::rgb(1.0, 0.722, 0.424),     // #ffb86c
+            pipe: Color::rgb(0.498, 0.584, 0.580),     // #7f9594
+            redirect: Color::rgb(0.498, 0.584, 0.580), // #7f9594
+            variable: Color::rgb(0.941, 0.776, 0.455), // #f0c674
+            comment: Color::rgb(0.255, 0.314, 0.353),  // #41505a
+            error: Color::rgb(1.0, 0.420, 0.478),      // #ff6b7a
         }
     }
 }
@@ -143,28 +143,28 @@ impl Default for SyntaxColors {
 impl Default for Theme {
     fn default() -> Self {
         Self {
-            name: "Wok Dark".to_string(),
-            background: Color::rgb(0.102, 0.106, 0.149), // #1a1b26
-            foreground: Color::rgb(0.753, 0.792, 0.961), // #c0caf5
-            cursor: Color::rgb(0.969, 0.467, 0.557),     // #f7768e
-            vi_cursor_color: Color::rgb(0.956, 0.859, 0.475), // #f4db79
-            selection: Color::new(0.478, 0.635, 0.969, 0.3), // #7aa2f7 semi-transparent
+            name: "Graph Box Dark".to_string(),
+            background: Color::rgb(0.043, 0.059, 0.071), // #0b0f12
+            foreground: Color::rgb(0.843, 0.882, 0.875), // #d7e1df
+            cursor: Color::rgb(0.486, 0.969, 0.757),     // #7cf7c1
+            vi_cursor_color: Color::rgb(0.941, 0.776, 0.455), // #f0c674
+            selection: Color::new(0.184, 0.435, 0.522, 0.36), // #2f6f855c
             ansi_colors: default_ansi_colors(),
-            tab_bar_bg: Color::rgb(0.082, 0.086, 0.125), // #151620
-            tab_active_bg: Color::rgb(0.141, 0.149, 0.200), // #242633
-            tab_inactive_bg: Color::rgb(0.102, 0.106, 0.149), // #1a1b26
-            tab_text: Color::rgb(0.753, 0.792, 0.961),   // #c0caf5
-            status_bar_bg: Color::rgb(0.082, 0.086, 0.125), // #151620
-            status_bar_text: Color::rgb(0.537, 0.576, 0.647), // #899ba5
-            input_bg: Color::rgb(0.122, 0.129, 0.176),   // #1f2130
-            input_text: Color::rgb(0.753, 0.792, 0.961), // #c0caf5
-            block_separator: Color::rgb(0.180, 0.192, 0.259), // #2e3142
-            block_success_accent: Color::rgb(0.451, 0.812, 0.592), // #73cf97
-            block_error_accent: Color::rgb(0.969, 0.467, 0.557), // #f7768e
-            highlight_match: Color::new(0.965, 0.820, 0.310, 0.3), // yellow semi-transparent
-            highlight_current_match: Color::new(1.0, 0.647, 0.0, 0.5), // orange semi-transparent
-            hyperlink_color: Color::rgb(0.45, 0.74, 1.0), // #73bcff
-            bracket_match: Color::new(0.478, 0.635, 0.969, 0.4), // blue semi-transparent
+            tab_bar_bg: Color::rgb(0.031, 0.047, 0.059), // #080c0f
+            tab_active_bg: Color::rgb(0.075, 0.125, 0.153), // #132027
+            tab_inactive_bg: Color::rgb(0.051, 0.078, 0.094), // #0d1418
+            tab_text: Color::rgb(0.843, 0.882, 0.875),   // #d7e1df
+            status_bar_bg: Color::rgb(0.031, 0.047, 0.059), // #080c0f
+            status_bar_text: Color::rgb(0.498, 0.584, 0.580), // #7f9594
+            input_bg: Color::rgb(0.063, 0.094, 0.125),   // #101820
+            input_text: Color::rgb(0.843, 0.882, 0.875), // #d7e1df
+            block_separator: Color::rgb(0.133, 0.192, 0.227), // #22313a
+            block_success_accent: Color::rgb(0.486, 0.969, 0.757), // #7cf7c1
+            block_error_accent: Color::rgb(1.0, 0.420, 0.478), // #ff6b7a
+            highlight_match: Color::new(0.941, 0.776, 0.455, 0.33), // #f0c67455
+            highlight_current_match: Color::new(1.0, 0.722, 0.424, 0.50), // #ffb86c80
+            hyperlink_color: Color::rgb(0.478, 0.655, 1.0), // #7aa7ff
+            bracket_match: Color::new(0.486, 0.969, 0.757, 0.33), // #7cf7c155
             syntax: SyntaxColors::default(),
             font_family: "JetBrains Mono".to_string(),
             font_size: 24.0,
@@ -178,23 +178,23 @@ impl Default for Theme {
 fn default_ansi_colors() -> [Color; 16] {
     [
         // Normal colors
-        Color::rgb(0.082, 0.086, 0.118), // 0 Black   #15161e
-        Color::rgb(0.969, 0.467, 0.557), // 1 Red     #f7768e
-        Color::rgb(0.451, 0.812, 0.592), // 2 Green   #73cf97
-        Color::rgb(0.878, 0.773, 0.463), // 3 Yellow  #e0c576
-        Color::rgb(0.478, 0.635, 0.969), // 4 Blue    #7aa2f7
-        Color::rgb(0.733, 0.506, 0.969), // 5 Magenta #bb81f7
-        Color::rgb(0.478, 0.827, 0.843), // 6 Cyan    #7ad3d7
-        Color::rgb(0.753, 0.792, 0.961), // 7 White   #c0caf5
+        Color::rgb(0.043, 0.059, 0.071), // 0 Black   #0b0f12
+        Color::rgb(1.0, 0.420, 0.478),   // 1 Red     #ff6b7a
+        Color::rgb(0.486, 0.969, 0.757), // 2 Green   #7cf7c1
+        Color::rgb(0.941, 0.776, 0.455), // 3 Yellow  #f0c674
+        Color::rgb(0.478, 0.655, 1.0),   // 4 Blue    #7aa7ff
+        Color::rgb(0.780, 0.573, 0.918), // 5 Magenta #c792ea
+        Color::rgb(0.388, 0.847, 0.847), // 6 Cyan    #63d8d8
+        Color::rgb(0.843, 0.882, 0.875), // 7 White   #d7e1df
         // Bright colors
-        Color::rgb(0.337, 0.373, 0.459), // 8  Bright Black   #565f75
-        Color::rgb(0.969, 0.467, 0.557), // 9  Bright Red     #f7768e
-        Color::rgb(0.451, 0.812, 0.592), // 10 Bright Green   #73cf97
-        Color::rgb(0.878, 0.773, 0.463), // 11 Bright Yellow  #e0c576
-        Color::rgb(0.478, 0.635, 0.969), // 12 Bright Blue    #7aa2f7
-        Color::rgb(0.733, 0.506, 0.969), // 13 Bright Magenta #bb81f7
-        Color::rgb(0.478, 0.827, 0.843), // 14 Bright Cyan    #7ad3d7
-        Color::rgb(0.878, 0.914, 0.992), // 15 Bright White   #e0e9fd
+        Color::rgb(0.255, 0.314, 0.353), // 8  Bright Black   #41505a
+        Color::rgb(1.0, 0.514, 0.569),   // 9  Bright Red     #ff8391
+        Color::rgb(0.604, 1.0, 0.827),   // 10 Bright Green   #9affd3
+        Color::rgb(1.0, 0.859, 0.541),   // 11 Bright Yellow  #ffdb8a
+        Color::rgb(0.612, 0.753, 1.0),   // 12 Bright Blue    #9cc0ff
+        Color::rgb(0.875, 0.686, 1.0),   // 13 Bright Magenta #dfafff
+        Color::rgb(0.533, 0.965, 0.965), // 14 Bright Cyan    #88f6f6
+        Color::rgb(0.949, 0.973, 0.969), // 15 Bright White   #f2f8f7
     ]
 }
 
@@ -218,6 +218,13 @@ mod tests {
     fn test_default_theme_font_size() {
         let theme = Theme::default();
         assert!((theme.font_size - 24.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_default_theme_is_graph_box_dark() {
+        let theme = Theme::default();
+        assert_eq!(theme.name, "Graph Box Dark");
+        assert!((theme.background.r - (11.0 / 255.0)).abs() < 0.01);
     }
 
     #[test]

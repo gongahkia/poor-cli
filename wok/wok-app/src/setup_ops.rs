@@ -41,6 +41,37 @@ close_on_shell_exit = true
 restore_session = true
 debug_overlay = false
 command_telemetry = false
+
+# Built-in themes are written by `wok init` under ~/.config/wok/themes.
+# theme_path = "~/.config/wok/themes/graph-box-dark.toml"
+
+# Command/task completion notifications are powered by regex triggers.
+# This default catches common CLI coding agents and sends a native notification
+# when the command block finishes.
+[[triggers]]
+name = "CLI agent finished"
+pattern = '^\s*(claude|codex|gemini|ada|gh\s+copilot)\b'
+scope = "command"
+actions = ["highlight_cyan", "system_notify:CLI agent command finished"]
+
+# Examples for broader terminal workflows:
+# [[triggers]]
+# name = "Homebrew task finished"
+# pattern = '^\s*brew\s+(update|upgrade|install|cleanup)\b'
+# scope = "command"
+# actions = ["highlight_blue", "system_notify:Homebrew task finished"]
+#
+# [[triggers]]
+# name = "sudo task finished"
+# pattern = '^\s*sudo\b'
+# scope = "command"
+# actions = ["highlight_yellow", "system_notify:Privileged command finished"]
+#
+# [[triggers]]
+# name = "curl finished"
+# pattern = '^\s*curl\b'
+# scope = "command"
+# actions = ["highlight_green", "system_notify:curl request finished"]
 "#;
 
 const LUA_TEMPLATE: &str = r#"-- Wok init.lua
@@ -54,6 +85,13 @@ end)
 const BASH_SCRIPT: &str = include_str!("../../shell-integration/bash.sh");
 const ZSH_SCRIPT: &str = include_str!("../../shell-integration/zsh.zsh");
 const FISH_SCRIPT: &str = include_str!("../../shell-integration/fish.fish");
+const THEME_GRAPH_BOX_DARK: &str = include_str!("../../themes/graph-box-dark.toml");
+const THEME_TOKYO_NIGHT: &str = include_str!("../../themes/tokyo-night.toml");
+const THEME_CATPPUCCIN: &str = include_str!("../../themes/catppuccin.toml");
+const THEME_NORD: &str = include_str!("../../themes/nord.toml");
+const THEME_GRUVBOX_DARK: &str = include_str!("../../themes/gruvbox-dark.toml");
+const THEME_SOLARIZED_DARK: &str = include_str!("../../themes/solarized-dark.toml");
+const THEME_PAPER_LIGHT: &str = include_str!("../../themes/paper-light.toml");
 const FIRST_RUN_MARKER_FILE: &str = ".first_run_complete";
 const SHELL_INSTALL_MARKER_START: &str = "# >>> wok shell integration >>>";
 const SHELL_INSTALL_MARKER_END: &str = "# <<< wok shell integration <<<";
@@ -840,6 +878,23 @@ fn init_at(config_dir: &Path, overwrite: bool) -> io::Result<InitStats> {
         true,
         &mut stats,
     )?;
+    for (name, content) in [
+        ("graph-box-dark.toml", THEME_GRAPH_BOX_DARK),
+        ("tokyo-night.toml", THEME_TOKYO_NIGHT),
+        ("catppuccin.toml", THEME_CATPPUCCIN),
+        ("nord.toml", THEME_NORD),
+        ("gruvbox-dark.toml", THEME_GRUVBOX_DARK),
+        ("solarized-dark.toml", THEME_SOLARIZED_DARK),
+        ("paper-light.toml", THEME_PAPER_LIGHT),
+    ] {
+        write_managed_file(
+            config_dir.join("themes").join(name),
+            content,
+            overwrite,
+            false,
+            &mut stats,
+        )?;
+    }
 
     Ok(stats)
 }
@@ -909,6 +964,9 @@ mod tests {
         assert!(dir.join("shell").join("bash.sh").exists());
         assert!(dir.join("shell").join("zsh.zsh").exists());
         assert!(dir.join("shell").join("fish.fish").exists());
+        assert!(dir.join("themes").join("graph-box-dark.toml").exists());
+        assert!(dir.join("themes").join("catppuccin.toml").exists());
+        assert!(dir.join("themes").join("paper-light.toml").exists());
         assert!(!stats.created.is_empty());
 
         let _ = fs::remove_dir_all(dir);

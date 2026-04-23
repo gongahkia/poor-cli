@@ -52,7 +52,7 @@ close_on_shell_exit = true
 restore_session = true
 debug_overlay = false
 command_telemetry = false
-theme_path = "~/.config/wok/themes/catppuccin.toml"
+theme_path = "~/.config/wok/themes/graph-box-dark.toml"
 external_plugin_command = "node ~/.config/wok/plugins/bridge.js"
 ```
 
@@ -98,7 +98,95 @@ external_plugin_command = "node ~/.config/wok/plugins/bridge.js"
 | `debug_overlay` | boolean | `false` | Active | Shows a benchmark overlay with FPS, redraw time, phase timings, CPU, memory, disk, GPU adapter/render diagnostics, battery when available, scrollback, and session memory |
 | `command_telemetry` | boolean | `false` | Active | Writes opt-in command lifecycle telemetry to `~/.config/wok/command-telemetry.jsonl`; command text is included, so avoid enabling it for secret-bearing workflows |
 | `theme_path` | string | none | Active | Path to a custom theme TOML file |
-| `external_plugin_command` | string | none | Active | Optional out-of-process plugin bridge command; receives hook/event JSON lines on stdin and can emit typed effects (`notify`, `exec`, `action`) on stdout |
+| `external_plugin_command` | string | none | Active | Optional out-of-process plugin bridge command; receives hook/event JSON lines on stdin and can emit typed effects (`notify`, `system_notify`, `exec`, `action`) on stdout |
+
+## Themes
+
+The compiled default is `Graph Box Dark`. Running `wok init` also writes these editable theme files to `~/.config/wok/themes/`:
+
+- `graph-box-dark.toml`
+- `tokyo-night.toml`
+- `catppuccin.toml`
+- `nord.toml`
+- `gruvbox-dark.toml`
+- `solarized-dark.toml`
+- `paper-light.toml`
+
+Load one at startup:
+
+```toml
+theme_path = "~/.config/wok/themes/nord.toml"
+```
+
+Or switch live from Lua:
+
+```lua
+wok.theme.load("gruvbox-dark")
+```
+
+## Command And Output Triggers
+
+Triggers are regex rules that run when a command block finishes. They can match command text, command output, or both.
+
+The default generated config ships with a CLI-agent completion trigger:
+
+```toml
+[[triggers]]
+name = "CLI agent finished"
+pattern = '^\s*(claude|codex|gemini|ada|gh\s+copilot)\b'
+scope = "command"
+actions = ["highlight_cyan", "system_notify:CLI agent command finished"]
+```
+
+Useful general command notifications:
+
+```toml
+[[triggers]]
+name = "Homebrew task finished"
+pattern = '^\s*brew\s+(update|upgrade|install|cleanup)\b'
+scope = "command"
+actions = ["highlight_blue", "system_notify:Homebrew task finished"]
+
+[[triggers]]
+name = "sudo task finished"
+pattern = '^\s*sudo\b'
+scope = "command"
+actions = ["highlight_yellow", "system_notify:Privileged command finished"]
+
+[[triggers]]
+name = "curl finished"
+pattern = '^\s*curl\b'
+scope = "command"
+actions = ["highlight_green", "system_notify:curl request finished"]
+```
+
+Output-driven example:
+
+```toml
+[[triggers]]
+name = "Build error"
+pattern = 'ERROR|FAILED|panic'
+scope = "output"
+actions = ["highlight_red", "bookmark", "system_notify:Build output matched an error"]
+```
+
+Supported trigger scopes:
+
+- `command`: match the command line when the block finishes.
+- `output`: match block output when the block finishes.
+- `both`: match command and output.
+
+Supported action descriptors:
+
+- `highlight`, `highlight_red`, `highlight_green`, `highlight_yellow`, `highlight_blue`, `highlight_magenta`, `highlight_cyan`
+- `notify` or `notify:<message>` for Wok's in-app status message
+- `system_notify` or `system_notify:<message>` for native desktop notifications
+- `bookmark` / `bookmark_block`
+- `open_url`
+- `copy_match`
+- `lua:<hook_name>` / `lua_hook:<hook_name>`
+
+Native macOS and Linux notifications do not expose per-notification color controls, so color is applied inside Wok through trigger highlights. Use one trigger color per workflow class when you want visual grouping in the block timeline.
 
 ## Session Files
 
