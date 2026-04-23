@@ -2,20 +2,27 @@ import SwiftUI
 
 struct ConversationView: View {
     @Environment(AppModel.self) private var app
+    @AppStorage("PoorMac.developerMode") private var developerMode = false
 
     var body: some View {
         VStack(spacing: 0) {
-            HSplitView {
+            if developerMode {
+                HSplitView {
+                    ConversationTranscriptView()
+                        .frame(minWidth: 360)
+                    StreamEventsView()
+                        .frame(minWidth: 220, idealWidth: 280)
+                }
+                .frame(minHeight: 320)
+            } else {
                 ConversationTranscriptView()
-                    .frame(minWidth: 360)
-                StreamEventsView()
-                    .frame(minWidth: 220, idealWidth: 280)
+                    .frame(minHeight: 320)
             }
-            .frame(minHeight: 320)
             Divider()
             ComposerPanel(
                 chatText: chatBinding,
-                execText: execBinding
+                execText: execBinding,
+                showsExec: developerMode
             )
         }
     }
@@ -66,6 +73,7 @@ private struct ComposerPanel: View {
     @Environment(AppModel.self) private var app
     @Binding var chatText: String
     @Binding var execText: String
+    let showsExec: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -98,24 +106,26 @@ private struct ComposerPanel: View {
                     Spacer()
                 }
             }
-            Divider()
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Headless Exec")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                PromptEditor(
-                    text: $execText,
-                    placeholder: "Run a one-shot backend request...",
-                    identifier: "PoorMac.Conversation.ExecEditor"
-                )
-                    .frame(minHeight: 48, idealHeight: 58, maxHeight: 80)
-                Button {
-                    Task { await app.runExec() }
-                } label: {
-                    Label("Run Exec", systemImage: "play.rectangle")
+            if showsExec {
+                Divider()
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Headless Exec")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    PromptEditor(
+                        text: $execText,
+                        placeholder: "Run a one-shot backend request...",
+                        identifier: "PoorMac.Conversation.ExecEditor"
+                    )
+                        .frame(minHeight: 48, idealHeight: 58, maxHeight: 80)
+                    Button {
+                        Task { await app.runExec() }
+                    } label: {
+                        Label("Run Exec", systemImage: "play.rectangle")
+                    }
+                    .accessibilityIdentifier("PoorMac.Conversation.RunExec")
+                    .disabled(app.isBusy || execText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                .accessibilityIdentifier("PoorMac.Conversation.RunExec")
-                .disabled(app.isBusy || execText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(12)

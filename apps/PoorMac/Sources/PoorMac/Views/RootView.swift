@@ -2,63 +2,68 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppModel.self) private var app
+    @AppStorage("PoorMac.developerMode") private var developerMode = false
     @SceneStorage("PoorMac.selectedArea") private var selectedAreaRaw = BackendArea.dashboard.rawValue
 
     var body: some View {
-        NavigationSplitView {
-            List(BackendArea.allCases, selection: selectionBinding) { area in
-                Label(area.title, systemImage: area.symbol)
-                    .lineLimit(1)
-                    .accessibilityIdentifier("PoorMac.Sidebar.\(area.rawValue)")
-                    .tag(area)
+        Group {
+            if developerMode {
+                DeveloperShellView(
+                    selectedArea: selectedArea,
+                    selection: selectionBinding
+                )
+            } else {
+                NavigationStack {
+                    ConversationView()
+                        .navigationTitle("Conversation")
+                }
             }
-            .accessibilityIdentifier("PoorMac.Sidebar")
-            .navigationTitle("PoorMac")
-            .navigationSplitViewColumnWidth(min: 170, ideal: 210, max: 260)
-        } detail: {
-            DetailRouter(area: selectedArea)
-                .navigationTitle(selectedArea.title)
-                .toolbar {
-                    ToolbarItemGroup {
-                        StatusBadge(state: app.connectionState)
-                        if app.isBusy {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                        Button {
-                            Task { await app.startBackend() }
-                        } label: {
-                            Label("Start Backend", systemImage: "play.fill")
-                        }
-                        .labelStyle(.iconOnly)
-                        .help("Start Backend")
-                        .accessibilityIdentifier("PoorMac.Toolbar.StartBackend")
-                        .disabled(app.isBusy)
-                        Button {
-                            Task { await app.stopBackend() }
-                        } label: {
-                            Label("Stop Backend", systemImage: "stop.fill")
-                        }
-                        .labelStyle(.iconOnly)
-                        .help("Stop Backend")
-                        .accessibilityIdentifier("PoorMac.Toolbar.StopBackend")
-                        Button {
-                            Task { await app.cancelActiveRequest() }
-                        } label: {
-                            Label("Cancel Request", systemImage: "xmark.circle")
-                        }
-                        .labelStyle(.iconOnly)
-                        .help("Cancel Request")
-                        .accessibilityIdentifier("PoorMac.Toolbar.CancelRequest")
-                        .disabled(app.activeRequestID == nil)
-                    }
-                }
-                .sheet(item: reviewSheetBinding) { sheet in
-                    ReviewSheetView(sheet: sheet)
-                        .environment(app)
-                }
         }
-        .navigationSplitViewStyle(.balanced)
+        .toolbar {
+            ToolbarItemGroup {
+                StatusBadge(state: app.connectionState)
+                if app.isBusy {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Button {
+                    Task { await app.startBackend() }
+                } label: {
+                    Label("Start Backend", systemImage: "play.fill")
+                }
+                .labelStyle(.iconOnly)
+                .help("Start Backend")
+                .accessibilityIdentifier("PoorMac.Toolbar.StartBackend")
+                .disabled(app.isBusy)
+                Button {
+                    Task { await app.stopBackend() }
+                } label: {
+                    Label("Stop Backend", systemImage: "stop.fill")
+                }
+                .labelStyle(.iconOnly)
+                .help("Stop Backend")
+                .accessibilityIdentifier("PoorMac.Toolbar.StopBackend")
+                Button {
+                    Task { await app.cancelActiveRequest() }
+                } label: {
+                    Label("Cancel Request", systemImage: "xmark.circle")
+                }
+                .labelStyle(.iconOnly)
+                .help("Cancel Request")
+                .accessibilityIdentifier("PoorMac.Toolbar.CancelRequest")
+                .disabled(app.activeRequestID == nil)
+                SettingsLink {
+                    Label("Settings", systemImage: "gearshape")
+                }
+                .labelStyle(.iconOnly)
+                .help("Settings")
+                .accessibilityIdentifier("PoorMac.Toolbar.Settings")
+            }
+        }
+        .sheet(item: reviewSheetBinding) { sheet in
+            ReviewSheetView(sheet: sheet)
+                .environment(app)
+        }
     }
 
     private var selectionBinding: Binding<BackendArea?> {
@@ -77,6 +82,29 @@ struct RootView: View {
             get: { app.pendingReviewSheet },
             set: { app.pendingReviewSheet = $0 }
         )
+    }
+}
+
+private struct DeveloperShellView: View {
+    let selectedArea: BackendArea
+    let selection: Binding<BackendArea?>
+
+    var body: some View {
+        NavigationSplitView {
+            List(BackendArea.allCases, selection: selection) { area in
+                Label(area.title, systemImage: area.symbol)
+                    .lineLimit(1)
+                    .accessibilityIdentifier("PoorMac.Sidebar.\(area.rawValue)")
+                    .tag(area)
+            }
+            .accessibilityIdentifier("PoorMac.Sidebar")
+            .navigationTitle("PoorMac")
+            .navigationSplitViewColumnWidth(min: 170, ideal: 210, max: 260)
+        } detail: {
+            DetailRouter(area: selectedArea)
+                .navigationTitle(selectedArea.title)
+        }
+        .navigationSplitViewStyle(.balanced)
     }
 }
 
