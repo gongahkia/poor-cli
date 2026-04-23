@@ -178,6 +178,23 @@ def _first_words(text: str, limit: int) -> str:
     return " ".join(words[:limit]).rstrip() + "..."
 
 
+def _first_sentence(text: str, max_chars: int = 180) -> str:
+    compact = re.sub(r"\s+", " ", str(text or "").strip())
+    if not compact:
+        return ""
+    match = re.search(r"(.{20,}?[.!?])\s", compact + " ")
+    sentence = match.group(1) if match else compact
+    return sentence[:max_chars].rstrip()
+
+
+def synthesize_lod_surfaces(entry: MemoryEntry) -> None:
+    if not entry.headline or (entry.headline == entry.name and not entry.description):
+        entry.headline = _first_sentence(entry.description or entry.content, 140) or entry.name
+    if not entry.summary:
+        source = entry.content or entry.description
+        entry.summary = _first_words(source, 80)
+
+
 def _bool_value(text: str) -> bool:
     return str(text).strip().lower() in {"1", "true", "yes", "on"}
 
@@ -279,6 +296,7 @@ class MemoryManager:
     def save(self, entry: MemoryEntry) -> MemoryEntry:
         """Save a memory entry to disk and update index."""
         entry.updated_at = datetime.now(timezone.utc).isoformat()
+        synthesize_lod_surfaces(entry)
         if self._prefer_agent_rules and self._repo_root is not None:
             from .agent_rules import append_memory_entry
             if append_memory_entry(self._repo_root, entry.name, entry.content, entry.description) is not None:
@@ -312,8 +330,10 @@ class MemoryManager:
             return None
         if content is not None:
             target.content = content
+            target.summary = _first_words(content, 80)
         if description is not None:
             target.description = description
+            target.headline = _first_sentence(description, 140) or target.name
         if type_ is not None:
             target.type = type_
         return self.save(target)

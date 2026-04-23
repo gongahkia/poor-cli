@@ -222,6 +222,9 @@ def run_memory_mode(argv: Sequence[str]) -> int:
     p_search.add_argument("--limit", type=int, default=10)
     p_search.add_argument("--lod", action="store_true", help="return mixed full/summary/headline results")
     p_search.add_argument("--alpha", type=float, default=0.65, help="LOD semantic-vs-recency weight")
+    p_search.add_argument("--profile", choices=("semantic", "balanced", "recency"), default="")
+    p_search.add_argument("--query-mode", choices=("auto", "recent", "last_week", "never_seen", "ignored"), default="auto")
+    p_search.add_argument("--exclude", action="append", default=[])
     p_search.add_argument("--json", action="store_true")
     p_expand = sub.add_parser("expand")
     p_expand.add_argument("name")
@@ -267,7 +270,15 @@ def run_memory_mode(argv: Sequence[str]) -> int:
         if args.lod:
             import asyncio
             from ..memory_lod import render_lod_results, search_lod
-            results = asyncio.run(search_lod(mgr, args.query, max_results=args.limit, alpha=args.alpha))
+            results = asyncio.run(search_lod(
+                mgr,
+                args.query,
+                max_results=args.limit,
+                alpha=args.alpha,
+                alpha_profile=args.profile,
+                query_mode=args.query_mode,
+                exclude=args.exclude,
+            ))
             payload = [e.to_dict() for e in results]
             if args.json:
                 _print_json(payload)

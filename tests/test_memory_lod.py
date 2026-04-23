@@ -32,6 +32,37 @@ class MemoryLODTests(unittest.TestCase):
             self.assertIsNotNone(promoted)
             self.assertTrue(promoted.pinned)
 
+    def test_profiles_query_modes_and_excludes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mgr = self._manager(Path(tmp))
+            results = asyncio.run(search_lod(
+                mgr,
+                "JSONL pytest",
+                max_results=5,
+                alpha_profile="semantic",
+                exclude=["pytest"],
+            ))
+            self.assertTrue(results)
+            self.assertNotEqual(results[0].entry.name, "old failure")
+            never_seen = asyncio.run(search_lod(mgr, "state", max_results=5, query_mode="never_seen"))
+            self.assertTrue(all(result.entry.hit_count <= 1 for result in never_seen))
+
+    def test_save_synthesizes_lod_surfaces(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mgr = MemoryManager(Path(tmp) / ".poor-cli")
+            mgr.save(MemoryEntry(
+                name="long note",
+                description="",
+                type="project",
+                content="This is the first sentence. " + "detail " * 100,
+                headline="",
+                summary="",
+            ))
+            loaded = mgr.get("long note", record_hit=False)
+            self.assertIsNotNone(loaded)
+            self.assertIn("first sentence", loaded.headline)
+            self.assertTrue(loaded.summary.endswith("..."))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -868,6 +868,9 @@ def build_tool_registry(self) -> None:
                     "type": {"type": "STRING", "description": "Optional filter: user, feedback, project, or reference"},
                     "max_results": {"type": "INTEGER", "description": "Max results to return (default 10)"},
                     "mode": {"type": "STRING", "description": "Retrieval mode: lod (default mixed full/summary/headline) or full"},
+                    "alpha_profile": {"type": "STRING", "description": "LOD profile: semantic, balanced, or recency"},
+                    "query_mode": {"type": "STRING", "description": "LOD query mode: auto, recent, last_week, never_seen, or ignored"},
+                    "exclude": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Terms to penalize/exclude from LOD retrieval"},
                 },
                 "required": ["query"]
             }

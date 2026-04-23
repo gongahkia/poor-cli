@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Iterable, List, Optional
 
 from .memory import MemoryEntry, MemoryManager
 
@@ -18,6 +18,13 @@ class LODConfig:
     decay_lambda: float = 0.03
     max_full: int = 8
     max_summary: int = 32
+
+
+ALPHA_PROFILES = {
+    "semantic": 0.9,
+    "balanced": 0.65,
+    "recency": 0.25,
+}
 
 
 @dataclass
@@ -80,18 +87,107 @@ def tier_for_score(score: float, *, entry: MemoryEntry, cfg: LODConfig) -> str:
     return "headline"
 
 
+def resolve_alpha(alpha: float = 0.65, profile: str = "") -> float:
+    return max(0.0, min(1.0, ALPHA_PROFILES.get(str(profile or "").lower(), alpha)))
+
+
+def _entry_text(entry: MemoryEntry) -> str:
+    return f"{entry.name} {entry.description} {entry.headline} {entry.summary} {entry.content}".lower()
+
+
+def _token_score(query: str, entry: MemoryEntry) -> float:
+    tokens = [token for token in str(query or "").lower().split() if token]
+    if not tokens:
+        return 0.0
+    text = _entry_text(entry)
+    return sum(1.0 for token in tokens if token in text) / len(tokens)
+
+
+def _exclude_penalty(entry: MemoryEntry, exclude: Iterable[str]) -> float:
+    text = _entry_text(entry)
+    penalty = 0.0
+    for term in exclude:
+        term_l = str(term or "").strip().lower()
+        if term_l and term_l in text:
+            penalty += 1.0
+    return min(1.0, penalty)
+
+
+def _dt(entry: MemoryEntry, field: str) -> datetime:
+    raw = getattr(entry, field, "") or entry.updated_at or entry.created_at
+    try:
+        value = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        value = datetime.fromtimestamp(0, timezone.utc)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value
+
+
+def _filtered_entries(manager: MemoryManager, query_mode: str) -> List[MemoryEntry]:
+    entries = list(manager._entries.values())  # type: ignore[reportPrivateUsage]
+    mode = str(query_mode or "auto").lower()
+    now = datetime.now(timezone.utc)
+    if mode in {"recent", "last_week", "from:last-week"}:
+        cutoff = now - timedelta(days=7)
+        entries = [entry for entry in entries if _dt(entry, "updated_at") >= cutoff]
+        return sorted(entries, key=lambda entry: _dt(entry, "updated_at"), reverse=True)
+    if mode in {"never_seen", "unread", "untouched"}:
+        return [entry for entry in entries if entry.hit_count <= 0]
+    if mode in {"ignored", "stale"}:
+        return sorted(entries, key=lambda entry: recency_score(entry))
+    return entries
+
+
 async def search_lod(
     manager: MemoryManager,
     query: str,
     *,
     max_results: int = 100,
     alpha: float = 0.65,
+    alpha_profile: str = "",
+    query_mode: str = "auto",
+    exclude: Optional[List[str]] = None,
     record_hits: bool = True,
 ) -> List[LODMemoryResult]:
     """Return mixed-resolution memory results for a query."""
     if not manager._entries:  # type: ignore[reportPrivateUsage]
         manager.load()
-    cfg = LODConfig(alpha=max(0.0, min(1.0, alpha)))
+    if query.startswith("from:last-week"):
+        query_mode = "last_week"
+        query = query.removeprefix("from:last-week").strip()
+    elif query.startswith("never-seen"):
+        query_mode = "never_seen"
+        query = query.removeprefix("never-seen").strip()
+    cfg = LODConfig(alpha=resolve_alpha(alpha, alpha_profile))
+    excluded = list(exclude or [])
+    candidate_entries = _filtered_entries(manager, query_mode)
+    if query_mode != "auto":
+        scored_entries = sorted(
+            candidate_entries,
+            key=lambda entry: (_token_score(query, entry), recency_score(entry, cfg)),
+            reverse=True,
+        )[:max_results]
+        results = []
+        full_count = 0
+        summary_count = 0
+        for entry in scored_entries:
+            semantic = max(0.0, min(1.0, _token_score(query, entry) - _exclude_penalty(entry, excluded)))
+            recency = recency_score(entry, cfg)
+            score = cfg.alpha * semantic + (1.0 - cfg.alpha) * recency
+            tier = tier_for_score(score, entry=entry, cfg=cfg)
+            if tier == "full":
+                full_count += 1
+                if full_count > cfg.max_full:
+                    tier = "summary"
+            if tier == "summary":
+                summary_count += 1
+                if summary_count > cfg.max_summary:
+                    tier = "headline"
+            results.append(LODMemoryResult(entry, tier, semantic, recency, score))
+        if record_hits:
+            manager._record_retrieval([result.entry for result in results])  # type: ignore[reportPrivateUsage]
+        return results
     semantic_scores: Dict[str, float] = {}
     try:
         from .memory_semantic import semantic_search
@@ -121,8 +217,16 @@ async def search_lod(
     results: List[LODMemoryResult] = []
     full_count = 0
     summary_count = 0
+    entries = sorted(
+        entries,
+        key=lambda entry: (
+            cfg.alpha * max(0.0, min(1.0, semantic_scores.get(entry.filename, 0.0) - _exclude_penalty(entry, excluded)))
+            + (1.0 - cfg.alpha) * recency_score(entry, cfg)
+        ),
+        reverse=True,
+    )
     for entry in entries:
-        semantic = max(0.0, min(1.0, semantic_scores.get(entry.filename, 0.0)))
+        semantic = max(0.0, min(1.0, semantic_scores.get(entry.filename, 0.0) - _exclude_penalty(entry, excluded)))
         recency = recency_score(entry, cfg)
         score = cfg.alpha * semantic + (1.0 - cfg.alpha) * recency
         tier = tier_for_score(score, entry=entry, cfg=cfg)

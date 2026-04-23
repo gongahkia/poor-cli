@@ -3710,14 +3710,30 @@ class ToolRegistryAsync:
         except Exception as exc:
             return f"error saving memory: {exc}"
 
-    async def memory_search(self, query: str, type: str = "", max_results: int = 10, mode: str = "lod") -> str:
+    async def memory_search(
+        self,
+        query: str,
+        type: str = "",
+        max_results: int = 10,
+        mode: str = "lod",
+        alpha_profile: str = "",
+        query_mode: str = "auto",
+        exclude: Optional[List[str]] = None,
+    ) -> str:
         try:
             from .memory import MemoryManager
             mgr = MemoryManager()
             mgr.load()
             if mode == "lod":
                 from .memory_lod import render_lod_results, search_lod
-                results = await search_lod(mgr, query, max_results=max_results)
+                results = await search_lod(
+                    mgr,
+                    query,
+                    max_results=max_results,
+                    alpha_profile=alpha_profile,
+                    query_mode=query_mode,
+                    exclude=exclude or [],
+                )
                 return render_lod_results(results)
             results = mgr.search(query, type_filter=type or None, max_results=max_results)
             if not results:
