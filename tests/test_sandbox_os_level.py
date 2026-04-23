@@ -1,7 +1,7 @@
 """Tests for OS-level sandbox, context compression, sub-agent archetypes, and feedback loop."""
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 
 class TestOSLevelSandbox(unittest.TestCase):
@@ -95,6 +95,14 @@ class TestSubAgentArchetypes(unittest.TestCase):
         cfg = _ARCHETYPE_CONFIGS["review"]
         self.assertNotIn("write_file", cfg.get("allowed_tools", set()))
         self.assertIn("git_diff", cfg["allowed_tools"])
+
+    def test_advisor_archetype_read_only_and_brief(self):
+        from poor_cli.sub_agent import _ARCHETYPE_CONFIGS
+        cfg = _ARCHETYPE_CONFIGS["advisor"]
+        self.assertNotIn("write_file", cfg.get("allowed_tools", set()))
+        self.assertNotIn("edit_file", cfg.get("allowed_tools", set()))
+        self.assertIn("git_diff", cfg["allowed_tools"])
+        self.assertIn("under 8 bullets", cfg["system_prompt"])
 
     def test_all_archetypes_have_system_prompt(self):
         from poor_cli.sub_agent import _ARCHETYPE_CONFIGS

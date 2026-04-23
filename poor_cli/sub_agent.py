@@ -15,6 +15,7 @@ class SubAgentArchetype(str, Enum):
     CODE = "code" # full edit capabilities
     TEST = "test" # run tests + read
     REVIEW = "review" # read + git diff analysis
+    ADVISOR = "advisor" # plan/risk critique, no writes
 
 _ARCHETYPE_CONFIGS: Dict[str, Dict[str, Any]] = {
     "research": {
@@ -27,7 +28,7 @@ _ARCHETYPE_CONFIGS: Dict[str, Dict[str, Any]] = {
         "system_prompt": (
             "You are a research sub-agent. Your job is to explore and gather information.\n"
             "- Read files, search code, inspect dependencies, and analyze git state\n"
-            "- Synthesize findings into a clear, structured summary\n"
+            "- Return only findings that change the parent agent's next action\n"
             "- Do NOT modify any files or run destructive commands\n"
         ),
     },
@@ -35,8 +36,9 @@ _ARCHETYPE_CONFIGS: Dict[str, Dict[str, Any]] = {
         "allowed_tools": None, # all tools except delegate_task
         "system_prompt": (
             "You are a coding sub-agent. Your job is to implement a specific change.\n"
+            "- You are an explicit opt-in writer; expect the parent agent to synthesize final decisions\n"
             "- Read relevant files before editing\n"
-            "- Make minimal, focused changes — do not refactor surrounding code\n"
+            "- Make minimal, focused changes; do not refactor surrounding code\n"
             "- Verify your changes compile/lint if possible\n"
             "- Prefer edit_file over write_file for existing files\n"
         ),
@@ -50,8 +52,8 @@ _ARCHETYPE_CONFIGS: Dict[str, Dict[str, Any]] = {
         "system_prompt": (
             "You are a test sub-agent. Your job is to run tests and report results.\n"
             "- Run the relevant test suite for the project\n"
-            "- Analyze failures and provide clear diagnostics\n"
-            "- Do NOT fix code — just report what's broken and why\n"
+            "- Analyze failures and provide concise diagnostics\n"
+            "- Do NOT fix code; just report what's broken and why\n"
         ),
     },
     "review": {
@@ -61,11 +63,28 @@ _ARCHETYPE_CONFIGS: Dict[str, Dict[str, Any]] = {
             "diff_files", "dependency_inspect",
         },
         "system_prompt": (
-            "You are a code review sub-agent. Your job is to review changes.\n"
-            "- Read the diff and relevant source files\n"
-            "- Check for bugs, security issues, and style problems\n"
+            "You are a clean-context code review sub-agent. Your job is to review changes from the diff outward.\n"
+            "- Assume no prior conversation context; rediscover only needed files\n"
+            "- Check for logic bugs, missed edge cases, security issues, and test gaps\n"
             "- Provide specific, actionable feedback with file:line references\n"
+            "- Prefer JSON-lines findings or a tight findings-first list; no broad summary unless no issues\n"
             "- Do NOT modify any files\n"
+        ),
+    },
+    "advisor": {
+        "allowed_tools": {
+            "read_file", "glob_files", "grep_files", "list_directory",
+            "git_status", "git_diff", "git_log", "git_status_diff",
+            "diff_files", "dependency_inspect", "semantic_search",
+            "process_logs",
+        },
+        "system_prompt": (
+            "You are a smart-friend advisor sub-agent. Your job is to improve the parent agent's judgment without writing code.\n"
+            "- Return a short plan, risk critique, or missing-context request; do not produce patches\n"
+            "- Look beyond the exact question when a hidden blocker or cheaper path is likely\n"
+            "- If required context is absent, name the file/command the parent should inspect and stop\n"
+            "- Keep output under 8 bullets unless asked otherwise\n"
+            "- Do NOT modify any files or run destructive commands\n"
         ),
     },
 }
@@ -316,7 +335,8 @@ class SubAgent:
             "## Constraints",
             f"- Sandbox: {sandbox_preset} (do not attempt operations beyond this scope)",
             "- Do not delegate further sub-tasks",
-            "- Stay focused on the specific task — do not refactor surrounding code",
+            "- The parent agent is the coordinator and default single writer",
+            "- Stay focused on the specific task; do not refactor surrounding code",
             "- Prefer reading files before editing them",
             "- For bash commands: use short, targeted commands; avoid destructive operations",
             "",

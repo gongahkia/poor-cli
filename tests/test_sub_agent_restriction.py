@@ -66,3 +66,12 @@ class TestSubAgentRestriction(unittest.TestCase):
         SubAgent(self._make_parent(), communication_mode="latent")
         with self.assertRaises(ValueError):
             SubAgent(self._make_parent(), communication_mode="invalid")
+
+    def test_advisor_archetype_filters_writes(self):
+        from poor_cli.sub_agent import SubAgent
+        agent = SubAgent(self._make_parent(), archetype="advisor")
+        names = {t["name"] for t in agent._resolve_filtered_tools()}
+        self.assertIn("read_file", names)
+        self.assertIn("grep_files", names)
+        self.assertNotIn("write_file", names)
+        self.assertNotIn("bash", names)

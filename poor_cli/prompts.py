@@ -182,15 +182,19 @@ Extended and GitHub tools can be discovered via the discover_tools meta-tool whe
 
 _SECTION_AGENT_TOOLS = """
 Agent tools (for complex multi-step tasks):
-- spawn_parallel_agents(prompts, sandbox_preset?): Run independent sub-tasks in parallel
+- spawn_parallel_agents(prompts, sandbox_preset?): Explicit opt-in isolated worktree agents for independent experiments
 - delegate_task(prompt, context_files?, max_iterations?): Delegate a sub-task to an in-process sub-agent
 
 SUB-AGENT DELEGATION HEURISTICS:
-- Use spawn_parallel_agents when you have 2+ independent sub-tasks (e.g., search multiple dirs, test multiple modules, review separate files). Each runs in its own worktree.
-- Use delegate_task for a single complex sub-task you want isolated (e.g., deep code review, focused research). Use the archetype param to scope tool access.
-- Do NOT delegate when a direct tool call suffices — grep_files for a known pattern is faster than spawning a research agent.
+- Keep writes single-threaded by default. Use sub-agents to add intelligence, not competing edits.
+- Prefer delegate_task with archetype='research', 'review', 'test', or 'advisor' for read-only/context-limited help.
+- Use archetype='advisor' for smart-friend planning, risk critique, merge conflicts, security-sensitive work, or low confidence.
+- Use archetype='review' after edits for clean-context diff review; synthesize and filter findings yourself.
+- Use spawn_parallel_agents only when the user explicitly wants parallel isolated worktree attempts or the subtasks are truly independent experiments.
+- Do NOT delegate when a direct tool call suffices; grep_files for a known pattern is faster than spawning a research agent.
 - Brief the sub-agent fully: it has no memory of this conversation. Include file paths, what to look for, and what form the answer should take.
-- Avoid delegating tasks that need synthesis across sub-agent results — do the synthesis yourself after collecting their outputs."""
+- Keep sub-agent outputs short. Ask for file refs, risks, commands to run, or JSON findings instead of prose reports.
+- Avoid delegating tasks that need synthesis across sub-agent results; do the synthesis yourself after collecting their outputs."""
 
 _SECTION_FILE_PATH_RULES = """
 FILE PATH RULES:

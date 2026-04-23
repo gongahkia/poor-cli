@@ -813,7 +813,7 @@ def build_tool_registry(self) -> None:
         "function": self.spawn_parallel_agents,
         "declaration": {
             "name": "spawn_parallel_agents",
-            "description": "Spawn multiple isolated background agents running in parallel on separate git worktrees. Each agent works independently on its sub-task.",
+            "description": "Spawn opt-in isolated background agents in separate git worktrees for independent experiments. Prefer delegate_task read-only archetypes for normal multi-agent help; parallel writers can make conflicting implicit decisions.",
             "parameters": {
                 "type": "OBJECT",
                 "properties": {
@@ -912,7 +912,7 @@ def build_tool_registry(self) -> None:
         "function": self.delegate_task,
         "declaration": {
             "name": "delegate_task",
-            "description": "Delegate a sub-task to an in-process sub-agent with its own conversation. Returns the sub-agent's final response.",
+            "description": "Delegate a sub-task to an in-process sub-agent with its own conversation. Best for read-only research, clean-context review, tests, or smart-friend advice while the parent stays the default single writer.",
             "parameters": {
                 "type": "OBJECT",
                 "properties": {
@@ -924,7 +924,7 @@ def build_tool_registry(self) -> None:
                     },
                     "max_iterations": {"type": "INTEGER", "description": "Max tool iterations for sub-agent (default 10)"},
                     "tools": {"type": "STRING", "description": "Comma-separated allowed tools (e.g. 'read_file,grep_files'); use 'none' for toolless latent sub-agents. If omitted, write/exec tools are denied by default."},
-                    "archetype": {"type": "STRING", "description": "Sub-agent archetype: 'generic', 'research' (read-only), 'code' (full edit), 'test' (run tests), 'review' (code review). Overrides tool restrictions with archetype-specific defaults."},
+                    "archetype": {"type": "STRING", "description": "Sub-agent archetype: 'generic', 'research' (read-only), 'code' (explicit opt-in writer), 'test' (run tests), 'review' (clean-context diff review), 'advisor' (smart-friend plan/risk critique). Overrides tool restrictions with archetype-specific defaults."},
                     "communication_mode": {"type": "STRING", "description": "Sub-agent communication mode: text or latent. Latent requires hf_local and research.latent_communication.enabled."}
                 },
                 "required": ["prompt"]

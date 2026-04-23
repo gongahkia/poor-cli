@@ -3652,11 +3652,12 @@ class ToolRegistryAsync:
                     auto_start=True,
                 )
                 agents.append(agent)
-            lines = [f"spawned {len(agents)} parallel agents:"]
+            lines = [f"spawned {len(agents)} isolated parallel agents:"]
             for a in agents:
                 lines.append(f"  - {a.agent_id}: {a.prompt[:60]}... (branch: {a.branch_name})")
             if communication_mode == "latent":
                 lines.append("latent requested; isolated background agents use text fallback")
+            lines.append("note: parallel worktree agents are opt-in writers; synthesize before merging")
             lines.append("\nUse `poor-cli agent list` or `poor-cli agent result <id>` to check progress.")
             return "\n".join(lines)
         except Exception as exc:
