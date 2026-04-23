@@ -711,6 +711,7 @@ struct WokHandler {
     pending_pane_restore: HashMap<PaneId, PaneState>,
     global_history: CommandHistory,
     plugins: Option<PluginHost>,
+    command_telemetry: Option<CommandTelemetryLogger>,
     remote_control: Option<RemoteControlServer>,
     remote_socket_path: Option<PathBuf>,
     remote_rpc_token: Option<String>,
@@ -791,6 +792,17 @@ impl WokHandler {
             .ok()
             .map(|token| token.trim().to_string())
             .filter(|token| !token.is_empty());
+        let command_telemetry = if config.command_telemetry {
+            match CommandTelemetryLogger::new() {
+                Ok(logger) => Some(logger),
+                Err(error) => {
+                    warn!("failed to initialize command telemetry log: {error}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         let handler = Self {
             config,
@@ -804,6 +816,7 @@ impl WokHandler {
             pending_pane_restore: HashMap::new(),
             global_history,
             plugins,
+            command_telemetry,
             remote_control,
             remote_socket_path,
             remote_rpc_token,
