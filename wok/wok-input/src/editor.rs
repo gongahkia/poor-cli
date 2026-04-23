@@ -247,17 +247,17 @@ impl InputEditor {
                 self.dismiss_completion_popup();
                 EditorAction::None
             }
-            EditorKey::Left => {
+            EditorKey::Left | EditorKey::CtrlB => {
                 cursor_ops::move_left(&mut self.buffer, 0, false);
                 self.dismiss_completion_popup();
                 EditorAction::None
             }
-            EditorKey::Right => {
+            EditorKey::Right | EditorKey::CtrlF => {
                 cursor_ops::move_right(&mut self.buffer, 0, false);
                 self.dismiss_completion_popup();
                 EditorAction::None
             }
-            EditorKey::Up => {
+            EditorKey::Up | EditorKey::CtrlP => {
                 if self.completion_popup.is_visible {
                     self.select_prev_completion();
                 } else {
@@ -265,7 +265,7 @@ impl InputEditor {
                 }
                 EditorAction::None
             }
-            EditorKey::Down => {
+            EditorKey::Down | EditorKey::CtrlN => {
                 if self.completion_popup.is_visible {
                     self.select_next_completion();
                 } else {
@@ -283,12 +283,12 @@ impl InputEditor {
                 self.dismiss_completion_popup();
                 EditorAction::None
             }
-            EditorKey::Home => {
+            EditorKey::Home | EditorKey::CtrlA => {
                 cursor_ops::move_line_start(&mut self.buffer, 0, false);
                 self.dismiss_completion_popup();
                 EditorAction::None
             }
-            EditorKey::End => {
+            EditorKey::End | EditorKey::CtrlE => {
                 cursor_ops::move_line_end(&mut self.buffer, 0, false);
                 self.dismiss_completion_popup();
                 EditorAction::None
@@ -304,42 +304,6 @@ impl InputEditor {
                 self.buffer.clear();
                 self.parameter_fill_mode = None;
                 self.dismiss_completion_popup();
-                EditorAction::None
-            }
-            EditorKey::CtrlA => {
-                cursor_ops::move_line_start(&mut self.buffer, 0, false);
-                self.dismiss_completion_popup();
-                EditorAction::None
-            }
-            EditorKey::CtrlE => {
-                cursor_ops::move_line_end(&mut self.buffer, 0, false);
-                self.dismiss_completion_popup();
-                EditorAction::None
-            }
-            EditorKey::CtrlB => {
-                cursor_ops::move_left(&mut self.buffer, 0, false);
-                self.dismiss_completion_popup();
-                EditorAction::None
-            }
-            EditorKey::CtrlF => {
-                cursor_ops::move_right(&mut self.buffer, 0, false);
-                self.dismiss_completion_popup();
-                EditorAction::None
-            }
-            EditorKey::CtrlP => {
-                if self.completion_popup.is_visible {
-                    self.select_prev_completion();
-                } else {
-                    cursor_ops::move_up(&mut self.buffer, 0, false);
-                }
-                EditorAction::None
-            }
-            EditorKey::CtrlN => {
-                if self.completion_popup.is_visible {
-                    self.select_next_completion();
-                } else {
-                    cursor_ops::move_down(&mut self.buffer, 0, false);
-                }
                 EditorAction::None
             }
             EditorKey::CtrlK => {
@@ -734,6 +698,37 @@ mod tests {
     fn test_ctrl_d_on_empty() {
         let mut editor = make_editor();
         assert_eq!(editor.handle_key(EditorKey::CtrlD), EditorAction::SendEof);
+    }
+
+    #[test]
+    fn test_emacs_navigation_keys_move_within_buffer() {
+        let mut editor = make_editor();
+        editor.buffer.set_text("alpha\nbeta");
+
+        editor.handle_key(EditorKey::CtrlA);
+        assert_eq!(editor.buffer.cursors()[0].position, 6);
+        editor.handle_key(EditorKey::CtrlE);
+        assert_eq!(editor.buffer.cursors()[0].position, 10);
+        editor.handle_key(EditorKey::CtrlB);
+        assert_eq!(editor.buffer.cursors()[0].position, 9);
+        editor.handle_key(EditorKey::CtrlF);
+        assert_eq!(editor.buffer.cursors()[0].position, 10);
+        editor.handle_key(EditorKey::CtrlP);
+        assert_eq!(editor.buffer.cursors()[0].position, 4);
+        editor.handle_key(EditorKey::CtrlN);
+        assert_eq!(editor.buffer.cursors()[0].position, 10);
+    }
+
+    #[test]
+    fn test_emacs_kill_and_delete_word() {
+        let mut editor = make_editor();
+        editor.buffer.set_text("echo hello world");
+
+        editor.handle_key(EditorKey::CtrlW);
+        assert_eq!(editor.buffer.text(), "echo hello ");
+        editor.handle_key(EditorKey::CtrlA);
+        editor.handle_key(EditorKey::CtrlK);
+        assert_eq!(editor.buffer.text(), "");
     }
 
     #[test]

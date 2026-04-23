@@ -46,7 +46,7 @@ Owned-primary input is opt-in for now:
 command_entry_mode = "owned_primary"
 ```
 
-In that mode, Wok owns prompt-time editing, `Up` / `Down` performs pane-first history recall, and `Ctrl+R` opens pane-first command history search.
+In that mode, Wok owns prompt-time editing, `Up` / `Down` or `Ctrl+P` / `Ctrl+N` performs pane-first history recall, `Ctrl+A/E/B/F/K/W` uses Emacs-style editing, and `Ctrl+R` opens pane-first command history search. Vi output navigation is available out of the box with `Mod+Shift+V`.
 
 Configuration search order:
 

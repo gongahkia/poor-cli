@@ -1534,7 +1534,8 @@ impl WokHandler {
             let viewport = pane.ui_rects.viewport;
             let mut visible_rows = pane.terminal.state.visible_rows();
             let total_cols = pane.terminal.state.columns();
-            let smooth_scroll_y = pane.viewport.render_translation_rows() * self.font.metrics.cell_height;
+            let smooth_scroll_y =
+                pane.viewport.render_translation_rows() * self.font.metrics.cell_height;
             if smooth_scroll_y < -f32::EPSILON {
                 if let Some(next_row) = visible_rows.last().copied().and_then(|row| {
                     let next = row + 1;
@@ -1707,7 +1708,9 @@ impl WokHandler {
             }
 
             for row_batch in pane.row_cache.row_batches.iter().take(visible_rows.len()) {
-                render.batch.append_translated(row_batch, 0.0, smooth_scroll_y);
+                render
+                    .batch
+                    .append_translated(row_batch, 0.0, smooth_scroll_y);
             }
 
             let border_color = if self.workspace.broadcast_input {
@@ -4565,17 +4568,19 @@ impl WokHandler {
                         .current_match()
                         .map(|candidate| candidate.entry.command.clone());
                 }
-                KeyAction::ArrowDown
-                | KeyAction::Char('n' | 'j')
+                KeyAction::ArrowDown | KeyAction::Char('n' | 'j')
                     if matches!(&event.action, KeyAction::ArrowDown)
-                        || event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+                        || event.modifiers.ctrl
+                            && !event.modifiers.alt
+                            && !event.modifiers.meta =>
                 {
                     command_search.next_match();
                 }
-                KeyAction::ArrowUp
-                | KeyAction::Char('p' | 'k')
+                KeyAction::ArrowUp | KeyAction::Char('p' | 'k')
                     if matches!(&event.action, KeyAction::ArrowUp)
-                        || event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+                        || event.modifiers.ctrl
+                            && !event.modifiers.alt
+                            && !event.modifiers.meta =>
                 {
                     command_search.prev_match();
                 }
@@ -4643,8 +4648,7 @@ impl WokHandler {
             return false;
         }
 
-        if owned_input_history_navigation(event).is_some() {
-            let step_up = owned_input_history_navigation(event).unwrap_or(false);
+        if let Some(step_up) = owned_input_history_navigation(event) {
             self.navigate_owned_history(pane_id, step_up);
             if let Some(window) = &self.window {
                 self.sync_workspace_layout(window.inner_size());
@@ -4704,8 +4708,7 @@ impl WokHandler {
                 self.needs_redraw = true;
                 true
             }
-            KeyAction::ArrowDown
-            | KeyAction::Char('n' | 'j')
+            KeyAction::ArrowDown | KeyAction::Char('n' | 'j')
                 if matches!(&event.action, KeyAction::ArrowDown)
                     || event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
             {
@@ -4715,8 +4718,7 @@ impl WokHandler {
                 self.needs_redraw = true;
                 true
             }
-            KeyAction::ArrowUp
-            | KeyAction::Char('p' | 'k')
+            KeyAction::ArrowUp | KeyAction::Char('p' | 'k')
                 if matches!(&event.action, KeyAction::ArrowUp)
                     || event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
             {
@@ -6410,8 +6412,6 @@ impl AppHandler for WokHandler {
 
                 let scroll_rows = if is_pixel_delta {
                     (delta_y as f32 / self.font.metrics.cell_height.max(1.0)).clamp(-24.0, 24.0)
-                } else if delta_y.abs() < 1.0 {
-                    delta_y as f32
                 } else {
                     delta_y as f32
                 };
@@ -7920,7 +7920,9 @@ fn platform_modifier_active(modifiers: wok_app::input::Modifiers) -> bool {
 
 fn owned_input_history_navigation(event: &InputEvent) -> Option<bool> {
     match &event.action {
-        KeyAction::ArrowUp if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta => {
+        KeyAction::ArrowUp
+            if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+        {
             Some(true)
         }
         KeyAction::ArrowDown
@@ -7928,10 +7930,14 @@ fn owned_input_history_navigation(event: &InputEvent) -> Option<bool> {
         {
             Some(false)
         }
-        KeyAction::Char('p') if event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta => {
+        KeyAction::Char('p')
+            if event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+        {
             Some(true)
         }
-        KeyAction::Char('n') if event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta => {
+        KeyAction::Char('n')
+            if event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+        {
             Some(false)
         }
         _ => None,
