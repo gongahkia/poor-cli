@@ -8,9 +8,9 @@ struct PoorMacApp: App {
         WindowGroup("PoorMac", id: "main") {
             RootView()
                 .environment(appModel)
-                .frame(minWidth: 1120, minHeight: 720)
+                .frame(minWidth: 820, minHeight: 620)
         }
-        .defaultSize(width: 1280, height: 800)
+        .defaultSize(width: 1120, height: 760)
         .commands {
             PoorMacCommands(app: appModel)
         }
