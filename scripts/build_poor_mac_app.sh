@@ -6,6 +6,9 @@ APP_SRC="$ROOT/apps/PoorMac"
 CONFIGURATION="${CONFIGURATION:-release}"
 APP_VERSION="${APP_VERSION:-$(cat "$ROOT/VERSION" 2>/dev/null || echo 0.1.0)}"
 BUNDLE_ID="${BUNDLE_ID:-dev.poor-cli.PoorMac}"
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
+ENTITLEMENTS_PATH="${ENTITLEMENTS_PATH:-}"
+HARDENED_RUNTIME="${HARDENED_RUNTIME:-}"
 BUILD_DIR="$APP_SRC/.build"
 DIST_DIR="$ROOT/dist/macos"
 APP_DIR="$DIST_DIR/PoorMac.app"
@@ -41,7 +44,18 @@ if [[ -f "$ROOT/asset/logo/1.png" ]] && command -v sips >/dev/null && command -v
 fi
 
 if command -v codesign >/dev/null; then
-  codesign --force --sign "${CODESIGN_IDENTITY:--}" "$APP_DIR" >/dev/null
+  codesign_args=(--force --sign "$CODESIGN_IDENTITY")
+  if [[ -n "$ENTITLEMENTS_PATH" ]]; then
+    if [[ ! -f "$ENTITLEMENTS_PATH" ]]; then
+      echo "ENTITLEMENTS_PATH does not exist: $ENTITLEMENTS_PATH" >&2
+      exit 2
+    fi
+    codesign_args+=(--entitlements "$ENTITLEMENTS_PATH")
+  fi
+  if [[ "$HARDENED_RUNTIME" == "1" || "$CODESIGN_IDENTITY" != "-" ]]; then
+    codesign_args+=(--options runtime)
+  fi
+  codesign "${codesign_args[@]}" "$APP_DIR" >/dev/null
 fi
 
 echo "$APP_DIR"

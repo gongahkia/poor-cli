@@ -1,4 +1,4 @@
-.PHONY: cli server install installer install-info dev build build-server-registry-index run macos-app macos-zip macos-test macos-run test test-unit lint bench-swe bench-startup-profile bench-import-time bench-cli-command-profile bench-cli-command-compare bench-server-first-rpc-profile bench-server-first-rpc-compare bench-tool-capability-graph bench-harness-quality bench-turn-replay bench-router-calibration bench-budget-retuning bench-harness-failure bench-harness-burnin bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
+.PHONY: cli server install installer install-info dev build build-server-registry-index run macos-app macos-zip macos-test macos-run macos-verify test test-unit lint bench-swe bench-startup-profile bench-import-time bench-cli-command-profile bench-cli-command-compare bench-server-first-rpc-profile bench-server-first-rpc-compare bench-tool-capability-graph bench-harness-quality bench-turn-replay bench-router-calibration bench-budget-retuning bench-harness-failure bench-harness-burnin bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
 
 PYTHON := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/python,python3)
 PIP := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/pip,pip)
@@ -75,6 +75,9 @@ macos-test: ## run PoorMac Swift tests
 
 macos-run: ## run PoorMac via SwiftPM
 	swift run --package-path apps/PoorMac PoorMac
+
+macos-verify: macos-app ## validate PoorMac.app plist and signature
+	./scripts/verify_poor_mac_app.sh
 
 run: cli ## alias for `make cli`
 

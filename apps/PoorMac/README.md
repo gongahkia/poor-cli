@@ -20,6 +20,8 @@ Provider API keys can be loaded from or saved to macOS Keychain from Settings wh
 Chat uses `poor-cli/chatStreaming`, renders stream chunks and activity events, and presents permission/plan review as native sheets.
 Provider onboarding, diff review, and the main backend domains use native table/detail or grouped-form layouts; the RPC console remains available for full method coverage.
 `make macos-app` builds `dist/macos/PoorMac.app`; `make macos-zip` also creates a distributable zip.
+`make macos-verify` rebuilds and validates the bundle plist plus code signature.
+Set `CODESIGN_IDENTITY` to a Developer ID identity for distribution signing; non-ad-hoc identities automatically enable the hardened runtime. Set `HARDENED_RUNTIME=1` to force runtime options for local signing, and `ENTITLEMENTS_PATH=/path/to/app.entitlements` when a real entitlement file is needed.
 
 Native UI defaults used:
 
