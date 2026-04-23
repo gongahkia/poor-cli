@@ -70,6 +70,13 @@ struct BackendConfiguration: Equatable, Sendable {
         )
     }
 
+    static func saved(
+        defaults: UserDefaults = .standard,
+        base: BackendConfiguration = .detected()
+    ) -> BackendConfiguration {
+        BackendConfigurationStore.load(defaults: defaults, base: base)
+    }
+
     var launchURL: URL {
         URL(fileURLWithPath: pythonExecutable)
     }
@@ -105,6 +112,44 @@ struct BackendConfiguration: Equatable, Sendable {
             params["apiKey"] = .string(apiKey)
         }
         return params
+    }
+}
+
+enum BackendConfigurationStore {
+    private enum Key {
+        static let repoRoot = "PoorMac.backend.repoRoot"
+        static let pythonExecutable = "PoorMac.backend.pythonExecutable"
+        static let provider = "PoorMac.provider.name"
+        static let model = "PoorMac.provider.model"
+        static let permissionMode = "PoorMac.backend.permissionMode"
+        static let sandboxPreset = "PoorMac.backend.sandboxPreset"
+        static let validateAPIKey = "PoorMac.provider.validateAPIKey"
+    }
+
+    static func load(
+        defaults: UserDefaults = .standard,
+        base: BackendConfiguration = .detected()
+    ) -> BackendConfiguration {
+        BackendConfiguration(
+            repoRoot: defaults.string(forKey: Key.repoRoot) ?? base.repoRoot,
+            pythonExecutable: defaults.string(forKey: Key.pythonExecutable) ?? base.pythonExecutable,
+            provider: defaults.string(forKey: Key.provider) ?? base.provider,
+            model: defaults.string(forKey: Key.model) ?? base.model,
+            apiKey: base.apiKey,
+            permissionMode: defaults.string(forKey: Key.permissionMode) ?? base.permissionMode,
+            sandboxPreset: defaults.string(forKey: Key.sandboxPreset) ?? base.sandboxPreset,
+            validateAPIKey: defaults.object(forKey: Key.validateAPIKey) as? Bool ?? base.validateAPIKey
+        )
+    }
+
+    static func save(_ configuration: BackendConfiguration, defaults: UserDefaults = .standard) {
+        defaults.set(configuration.repoRoot, forKey: Key.repoRoot)
+        defaults.set(configuration.pythonExecutable, forKey: Key.pythonExecutable)
+        defaults.set(configuration.provider, forKey: Key.provider)
+        defaults.set(configuration.model, forKey: Key.model)
+        defaults.set(configuration.permissionMode, forKey: Key.permissionMode)
+        defaults.set(configuration.sandboxPreset, forKey: Key.sandboxPreset)
+        defaults.set(configuration.validateAPIKey, forKey: Key.validateAPIKey)
     }
 }
 

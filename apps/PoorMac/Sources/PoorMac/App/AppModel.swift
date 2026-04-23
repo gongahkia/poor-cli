@@ -83,7 +83,11 @@ enum PendingReviewSheet: Identifiable, Hashable {
 @MainActor
 @Observable
 final class AppModel: @unchecked Sendable {
-    var configuration = BackendConfiguration.detected()
+    var configuration = BackendConfiguration.saved() {
+        didSet {
+            BackendConfigurationStore.save(configuration)
+        }
+    }
     var connectionState: ConnectionState = .stopped
     var lastResult: JSONValue = .object([:])
     var logs: [AppLogLine] = []
@@ -105,7 +109,7 @@ final class AppModel: @unchecked Sendable {
     @ObservationIgnored private var reviewContinuation: CheckedContinuation<Bool, Never>?
 
     init() {
-        let configuration = BackendConfiguration.detected()
+        let configuration = BackendConfiguration.saved()
         self.configuration = configuration
         self.client = JSONRPCStdioClient(configuration: configuration)
         self.discoveredMethods = Self.loadRegistryMethods(repoRoot: configuration.repoRoot)
