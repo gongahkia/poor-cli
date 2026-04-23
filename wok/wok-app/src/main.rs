@@ -600,6 +600,104 @@ fn measure_phase<T>(enabled: bool, total: &mut Duration, f: impl FnOnce() -> T) 
     }
 }
 
+#[derive(Clone)]
+struct CommandTelemetryBlockSnapshot {
+    block_id: u64,
+    output_start_row: usize,
+    output_end_row: usize,
+    duration_ms: Option<u64>,
+}
+
+struct CommandTelemetryLogger {
+    file: File,
+}
+
+impl CommandTelemetryLogger {
+    fn new() -> Result<Self, std::io::Error> {
+        let config_dir = WokConfig::config_dir();
+        std::fs::create_dir_all(&config_dir)?;
+        let path = config_dir.join("command-telemetry.jsonl");
+        let file = OpenOptions::new().create(true).append(true).open(path)?;
+        Ok(Self { file })
+    }
+
+    fn log_submitted(&mut self, pane_id: PaneId, command: &str, cwd: Option<&PathBuf>) {
+        let command = command.trim();
+        if command.is_empty() {
+            return;
+        }
+        let cwd = cwd.map(|path| path.display().to_string());
+        let payload = json!({
+            "event": "command_submitted",
+            "timestamp_ms": current_unix_ms(),
+            "pane_id": pane_id,
+            "command": command,
+            "cwd": cwd,
+        });
+        self.write_payload(payload);
+        info!(
+            target: "wok::commands",
+            pane_id,
+            command,
+            cwd = cwd.as_deref().unwrap_or(""),
+            "command submitted"
+        );
+    }
+
+    fn log_completed(
+        &mut self,
+        entry: &HistoryEntry,
+        block: Option<&CommandTelemetryBlockSnapshot>,
+    ) {
+        let command = entry.command.trim();
+        if command.is_empty() {
+            return;
+        }
+        let cwd = entry.cwd.as_ref().map(|path| path.display().to_string());
+        let block_id = block.map(|block| block.block_id);
+        let output_start_row = block.map(|block| block.output_start_row);
+        let output_end_row = block.map(|block| block.output_end_row);
+        let duration_ms = entry
+            .duration_ms
+            .or_else(|| block.and_then(|block| block.duration_ms));
+        let payload = json!({
+            "event": "command_completed",
+            "timestamp_ms": current_unix_ms(),
+            "pane_id": entry.source_pane_id,
+            "block_id": block_id,
+            "command": command,
+            "cwd": cwd,
+            "exit_code": entry.exit_code,
+            "duration_ms": duration_ms,
+            "output_start_row": output_start_row,
+            "output_end_row": output_end_row,
+        });
+        self.write_payload(payload);
+        info!(
+            target: "wok::commands",
+            pane_id = ?entry.source_pane_id,
+            block_id = ?block_id,
+            command,
+            cwd = cwd.as_deref().unwrap_or(""),
+            exit_code = ?entry.exit_code,
+            duration_ms = ?duration_ms,
+            "command completed"
+        );
+    }
+
+    fn write_payload(&mut self, payload: Value) {
+        if let Err(error) = writeln!(self.file, "{payload}") {
+            warn!("failed to write command telemetry: {error}");
+        }
+    }
+}
+
+fn current_unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_millis() as u64)
+}
+
 /// Wok application handler.
 struct WokHandler {
     config: WokConfig,
