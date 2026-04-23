@@ -5,11 +5,12 @@ struct PoorMacApp: App {
     @State private var appModel = AppModel()
 
     var body: some Scene {
-        WindowGroup("PoorMac") {
+        WindowGroup("PoorMac", id: "main") {
             RootView()
                 .environment(appModel)
                 .frame(minWidth: 1120, minHeight: 720)
         }
+        .defaultSize(width: 1280, height: 800)
         .commands {
             PoorMacCommands(app: appModel)
         }
@@ -17,7 +18,6 @@ struct PoorMacApp: App {
         Settings {
             SettingsView()
                 .environment(appModel)
-                .frame(width: 560)
         }
     }
 }
