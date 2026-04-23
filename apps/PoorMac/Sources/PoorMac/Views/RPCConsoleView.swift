@@ -18,12 +18,14 @@ struct RPCConsoleView: View {
                     Image(systemName: "magnifyingglass")
                     TextField("Filter methods", text: $filter)
                         .textFieldStyle(.plain)
+                        .accessibilityIdentifier("PoorMac.RPC.Filter")
                     Button {
                         app.refreshRegistry()
                     } label: {
                         Label("Refresh", systemImage: "arrow.clockwise")
                     }
                     .labelStyle(.iconOnly)
+                    .accessibilityIdentifier("PoorMac.RPC.Refresh")
                 }
                 .padding(8)
 
@@ -38,6 +40,7 @@ struct RPCConsoleView: View {
                     Table(methods.map(MethodRow.init), selection: $selectedMethod) {
                         TableColumn("Method", value: \.id)
                     }
+                    .accessibilityIdentifier("PoorMac.RPC.MethodTable")
                     .onChange(of: selectedMethod) { _, value in
                         if let value {
                             app.rpcMethod = value
@@ -51,9 +54,11 @@ struct RPCConsoleView: View {
                 Form {
                     Section("Request") {
                         TextField("Method", text: methodBinding)
+                            .accessibilityIdentifier("PoorMac.RPC.Method")
                         TextEditor(text: paramsBinding)
                             .font(.system(.body, design: .monospaced))
                             .frame(minHeight: 160)
+                            .accessibilityIdentifier("PoorMac.RPC.Params")
                             .overlay {
                                 RoundedRectangle(cornerRadius: 6)
                                     .stroke(Color.secondary.opacity(0.25))
@@ -69,6 +74,7 @@ struct RPCConsoleView: View {
                             Label("Send RPC", systemImage: "paperplane")
                         }
                         .keyboardShortcut(.return, modifiers: [.command])
+                        .accessibilityIdentifier("PoorMac.RPC.Send")
                         .disabled(app.isBusy || app.rpcMethod.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || paramsError != nil)
                     }
                 }

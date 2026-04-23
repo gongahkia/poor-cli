@@ -8,7 +8,9 @@ struct SettingsView: View {
             Form {
                 Section("Backend Process") {
                     TextField("Repository root", text: repoRootBinding)
+                        .accessibilityIdentifier("PoorMac.Settings.RepoRoot")
                     TextField("Python executable", text: pythonBinding)
+                        .accessibilityIdentifier("PoorMac.Settings.PythonExecutable")
                     ValidationRow(
                         title: "Repository root",
                         isValid: repositoryExists,
@@ -24,11 +26,13 @@ struct SettingsView: View {
                             Text($0).tag($0)
                         }
                     }
+                    .accessibilityIdentifier("PoorMac.Settings.PermissionMode")
                     Picker("Sandbox preset", selection: sandboxBinding) {
                         ForEach(["read-only", "review-only", "workspace-write", "full-access"], id: \.self) {
                             Text($0).tag($0)
                         }
                     }
+                    .accessibilityIdentifier("PoorMac.Settings.SandboxPreset")
                 }
 
                 Section {
@@ -37,6 +41,7 @@ struct SettingsView: View {
                     } label: {
                         Label("Apply and Restart Backend", systemImage: "arrow.clockwise")
                     }
+                    .accessibilityIdentifier("PoorMac.Settings.ApplyRestart")
                     .disabled(app.isBusy || !repositoryExists || !pythonExecutableValid)
                 }
             }
@@ -49,20 +54,27 @@ struct SettingsView: View {
             Form {
                 Section("Provider Override") {
                     TextField("Provider", text: providerBinding)
+                        .accessibilityIdentifier("PoorMac.Settings.Provider")
                     TextField("Model", text: modelBinding)
+                        .accessibilityIdentifier("PoorMac.Settings.Model")
                     SecureField("API key for this launch", text: apiKeyBinding)
+                        .accessibilityIdentifier("PoorMac.Settings.APIKey")
                     Toggle("Validate API key during initialize", isOn: validateBinding)
+                        .accessibilityIdentifier("PoorMac.Settings.ValidateAPIKey")
                     HStack {
                         Button("Load Keychain") {
                             app.loadAPIKeyFromKeychain()
                         }
+                        .accessibilityIdentifier("PoorMac.Settings.LoadKeychain")
                         Button("Save Keychain") {
                             app.saveAPIKeyToKeychain()
                         }
+                        .accessibilityIdentifier("PoorMac.Settings.SaveKeychain")
                         .disabled(app.configuration.apiKey.isEmpty)
                         Button("Delete Keychain") {
                             app.deleteAPIKeyFromKeychain()
                         }
+                        .accessibilityIdentifier("PoorMac.Settings.DeleteKeychain")
                     }
                     .disabled(app.configuration.provider.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     if !app.keychainStatus.isEmpty {

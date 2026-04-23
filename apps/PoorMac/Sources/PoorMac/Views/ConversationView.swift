@@ -73,7 +73,11 @@ private struct ComposerPanel: View {
                 Text("Message")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                PromptEditor(text: $chatText, placeholder: "Ask poor-cli to inspect, edit, explain, or run something...")
+                PromptEditor(
+                    text: $chatText,
+                    placeholder: "Ask poor-cli to inspect, edit, explain, or run something...",
+                    identifier: "PoorMac.Conversation.MessageEditor"
+                )
                     .frame(height: 88)
                 HStack {
                     Button {
@@ -82,12 +86,14 @@ private struct ComposerPanel: View {
                         Label("Send", systemImage: "paperplane.fill")
                     }
                     .keyboardShortcut(.return, modifiers: [.command])
+                    .accessibilityIdentifier("PoorMac.Conversation.Send")
                     .disabled(app.isBusy || chatText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     Button {
                         Task { await app.cancelActiveRequest() }
                     } label: {
                         Label("Cancel", systemImage: "xmark.circle")
                     }
+                    .accessibilityIdentifier("PoorMac.Conversation.Cancel")
                     .disabled(app.activeRequestID == nil)
                     Spacer()
                 }
@@ -97,13 +103,18 @@ private struct ComposerPanel: View {
                 Text("Headless Exec")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                PromptEditor(text: $execText, placeholder: "Run a one-shot backend request...")
+                PromptEditor(
+                    text: $execText,
+                    placeholder: "Run a one-shot backend request...",
+                    identifier: "PoorMac.Conversation.ExecEditor"
+                )
                     .frame(height: 58)
                 Button {
                     Task { await app.runExec() }
                 } label: {
                     Label("Run Exec", systemImage: "play.rectangle")
                 }
+                .accessibilityIdentifier("PoorMac.Conversation.RunExec")
                 .disabled(app.isBusy || execText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
@@ -115,6 +126,7 @@ private struct ComposerPanel: View {
 private struct PromptEditor: View {
     @Binding var text: String
     let placeholder: String
+    let identifier: String
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -135,6 +147,7 @@ private struct PromptEditor: View {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(Color.secondary.opacity(0.22))
         }
+        .accessibilityIdentifier(identifier)
     }
 }
 

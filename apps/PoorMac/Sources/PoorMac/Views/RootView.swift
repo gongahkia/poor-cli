@@ -8,8 +8,10 @@ struct RootView: View {
         NavigationSplitView {
             List(BackendArea.allCases, selection: selectionBinding) { area in
                 Label(area.title, systemImage: area.symbol)
+                    .accessibilityIdentifier("PoorMac.Sidebar.\(area.rawValue)")
                     .tag(area)
             }
+            .accessibilityIdentifier("PoorMac.Sidebar")
             .navigationTitle("PoorMac")
             .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 320)
         } detail: {
@@ -29,6 +31,7 @@ struct RootView: View {
                         }
                         .labelStyle(.iconOnly)
                         .help("Start Backend")
+                        .accessibilityIdentifier("PoorMac.Toolbar.StartBackend")
                         .disabled(app.isBusy)
                         Button {
                             Task { await app.stopBackend() }
@@ -37,6 +40,7 @@ struct RootView: View {
                         }
                         .labelStyle(.iconOnly)
                         .help("Stop Backend")
+                        .accessibilityIdentifier("PoorMac.Toolbar.StopBackend")
                         Button {
                             Task { await app.cancelActiveRequest() }
                         } label: {
@@ -44,6 +48,7 @@ struct RootView: View {
                         }
                         .labelStyle(.iconOnly)
                         .help("Cancel Request")
+                        .accessibilityIdentifier("PoorMac.Toolbar.CancelRequest")
                         .disabled(app.activeRequestID == nil)
                     }
                 }
