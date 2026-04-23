@@ -238,6 +238,13 @@ class ContextAssemblyOrchestrator:
             git_ctx = core._git_context_summary_cached()
             if git_ctx:
                 message = f"{message}\n\n[Git context]\n{git_ctx}"
+        try:
+            from .context_substrate import render_routed_context
+            substrate = render_routed_context(message, repo_root=getattr(core, "_repo_root", Path.cwd()))
+            if substrate:
+                message = f"{substrate}\n\n{message}"
+        except Exception as e:
+            logger.debug("context substrate routing skipped: %s", e)
         context_result = await self._select_files(message, request)
         if context_result is not None:
             self._apply_safe_pretokenization(context_result, request)

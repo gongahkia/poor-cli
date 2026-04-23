@@ -535,6 +535,17 @@ class TurnLifecycle:
             summary=summary,
             metadata_updates=metadata_updates,
         )
+        try:
+            from .context_substrate import append_run_summary_if_initialized
+            append_run_summary_if_initialized(
+                repo_root=getattr(self, "_repo_root", Path.cwd()),
+                run_id=record.run_id,
+                status=status,
+                summary=summary,
+                metadata=metadata_updates or {},
+            )
+        except Exception as e:
+            logger.debug("context substrate run summary skipped: %s", e)
 
     def _estimate_cost(self, input_tokens: int, output_tokens: int) -> float:
         """Rough cost estimation based on provider/model."""

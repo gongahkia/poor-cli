@@ -171,3 +171,84 @@ def context_map(repo_root: Optional[Path] = None) -> Dict[str, Any]:
         if path.is_file():
             files.append({"path": str(path), "bytes": path.stat().st_size})
     return {"root": str(root), "files": files}
+
+
+def _tail_jsonl(path: Path, *, max_rows: int = 8) -> List[Dict[str, Any]]:
+    rows = _jsonl_lines(path)
+    return rows[1:][-max_rows:] if len(rows) > 1 else []
+
+
+def _read_limited(path: Path, max_bytes: int) -> str:
+    data = path.read_bytes()[:max_bytes]
+    return data.decode("utf-8", errors="replace")
+
+
+def routed_context_blocks(
+    prompt: str,
+    *,
+    repo_root: Optional[Path] = None,
+    max_bytes: int = 12_000,
+) -> List[Dict[str, str]]:
+    root = context_root(repo_root)
+    if not root.exists():
+        return []
+    remaining = max(1024, int(max_bytes))
+    prompt_l = str(prompt or "").lower()
+    wanted = ["MAP.md", "goals.yaml", "open_questions.md"]
+    if any(word in prompt_l for word in ("decision", "tradeoff", "why", "choose", "architecture")):
+        wanted.append("decisions.jsonl")
+    if any(word in prompt_l for word in ("fail", "bug", "regression", "postmortem", "incident")):
+        wanted.append("failures.jsonl")
+    if any(word in prompt_l for word in ("continue", "resume", "handoff", "last run", "previous")):
+        wanted.append("runs.jsonl")
+    blocks: List[Dict[str, str]] = []
+    for name in wanted:
+        path = root / name
+        if not path.exists() or remaining <= 0:
+            continue
+        if name.endswith(".jsonl"):
+            rows = _tail_jsonl(path)
+            content = "\n".join(json.dumps(row, sort_keys=True) for row in rows)
+        else:
+            content = _read_limited(path, remaining)
+        if not content.strip():
+            continue
+        content = content[:remaining]
+        remaining -= len(content.encode("utf-8", errors="replace"))
+        blocks.append({"path": str(path), "content": content})
+    return blocks
+
+
+def render_routed_context(
+    prompt: str,
+    *,
+    repo_root: Optional[Path] = None,
+    max_bytes: int = 12_000,
+) -> str:
+    blocks = routed_context_blocks(prompt, repo_root=repo_root, max_bytes=max_bytes)
+    if not blocks:
+        return ""
+    chunks = ["[Project context substrate]"]
+    for block in blocks:
+        chunks.append(f"--- {block['path']}\n{block['content']}")
+    return "\n\n".join(chunks)
+
+
+def append_run_summary_if_initialized(
+    *,
+    repo_root: Optional[Path] = None,
+    run_id: str = "",
+    status: str = "",
+    summary: str = "",
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    root = context_root(repo_root)
+    if not root.exists():
+        return None
+    record = {
+        "run_id": run_id,
+        "status": status,
+        "summary": str(summary or "")[:2000],
+        "metadata": dict(metadata or {}),
+    }
+    return append_jsonl_record("runs.jsonl", record, repo_root=repo_root)
