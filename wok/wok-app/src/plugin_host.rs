@@ -13,8 +13,8 @@ use tracing::warn;
 use crate::app::WokApp;
 use crate::keybindings::{Action, Context, KeyCombo};
 use crate::scripting::{
-    LuaRuntime, QuickSelectPatternRequest, SetupRequest, StatusBarRequest, ThemeRequest,
-    SystemNotificationRequest, TriggerRequest, WorkflowRequest,
+    LuaRuntime, QuickSelectPatternRequest, SetupRequest, StatusBarRequest,
+    SystemNotificationRequest, ThemeRequest, TriggerRequest, WorkflowRequest,
 };
 
 /// Queued side effects emitted by plugins.
@@ -188,14 +188,20 @@ struct ExternalPluginBridge {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum ExternalPluginMessage {
-    Notify { message: String },
+    Notify {
+        message: String,
+    },
     SystemNotify {
         title: Option<String>,
         message: String,
         subtitle: Option<String>,
     },
-    Exec { command: String },
-    Action { action: String },
+    Exec {
+        command: String,
+    },
+    Action {
+        action: String,
+    },
 }
 
 impl ExternalPluginBridge {

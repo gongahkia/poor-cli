@@ -35,6 +35,12 @@ Notification:
 {"kind":"notify","message":"plugin ready"}
 ```
 
+Native desktop notification:
+
+```json
+{"kind":"system_notify","title":"Agent finished","subtitle":"review tab","message":"codex completed"}
+```
+
 Command execution request:
 
 ```json

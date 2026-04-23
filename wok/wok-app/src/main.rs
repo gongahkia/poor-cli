@@ -35,8 +35,8 @@ use wok_app::remote_control::{
     error_response, result_response, RemoteControlServer, RemoteRequest,
 };
 use wok_app::scripting::{
-    QuickSelectPatternRequest, SetupRequest, StatusBarRequest, ThemeRequest, TriggerRequest,
-    WorkflowRequest, SystemNotificationRequest,
+    QuickSelectPatternRequest, SetupRequest, StatusBarRequest, SystemNotificationRequest,
+    ThemeRequest, TriggerRequest, WorkflowRequest,
 };
 use wok_app::session::{
     block_from_state, block_to_state, default_session_path, history_entry_from_state,
@@ -2291,7 +2291,10 @@ impl WokHandler {
     fn pane_exit_hook_payload(&self, pane_id: PaneId) -> serde_json::Value {
         let mut payload = self.pane_hook_payload(pane_id);
         if let Some(object) = payload.as_object_mut() {
-            let exit_code = self.panes.get(&pane_id).and_then(|pane| pane.terminal.exit_code);
+            let exit_code = self
+                .panes
+                .get(&pane_id)
+                .and_then(|pane| pane.terminal.exit_code);
             object.insert("exit_code".to_string(), json!(exit_code));
         }
         payload

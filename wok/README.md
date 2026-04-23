@@ -58,6 +58,7 @@ More detail:
 
 - [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
 - [docs/LUA_SCRIPTING.md](docs/LUA_SCRIPTING.md)
+- [docs/CLI_CODING_AGENTS.md](docs/CLI_CODING_AGENTS.md)
 - [docs/CLI.md](docs/CLI.md)
 - [docs/REMOTE_RPC.md](docs/REMOTE_RPC.md)
 - [docs/RELEASE_HARDENING.md](docs/RELEASE_HARDENING.md)
