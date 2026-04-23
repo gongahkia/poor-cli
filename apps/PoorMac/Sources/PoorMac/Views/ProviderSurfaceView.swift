@@ -78,7 +78,7 @@ struct ProviderSurfaceView: View {
                     .background(.bar)
                 }
             }
-            .frame(minWidth: 360)
+            .frame(minWidth: 280, idealWidth: 340)
 
             Form {
                 Section("Provider Setup") {
@@ -125,7 +125,7 @@ struct ProviderSurfaceView: View {
                 }
             }
             .formStyle(.grouped)
-            .frame(minWidth: 520)
+            .frame(minWidth: 340)
         }
     }
 

@@ -78,7 +78,7 @@ struct DomainSurfaceView: View {
                     .background(.bar)
                 }
             }
-            .frame(minWidth: 360)
+            .frame(minWidth: 280, idealWidth: 340)
 
             VStack(alignment: .leading, spacing: 8) {
                 if let selectedRecord {
@@ -101,7 +101,7 @@ struct DomainSurfaceView: View {
                 }
             }
             .padding()
-            .frame(minWidth: 420)
+            .frame(minWidth: 320)
         }
     }
 }

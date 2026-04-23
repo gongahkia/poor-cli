@@ -108,7 +108,7 @@ struct ActionGrid: View {
     let actions: [BackendAction]
 
     private let columns = [
-        GridItem(.adaptive(minimum: 240), spacing: 12, alignment: .topLeading),
+        GridItem(.adaptive(minimum: 190), spacing: 12, alignment: .topLeading),
     ]
 
     var body: some View {

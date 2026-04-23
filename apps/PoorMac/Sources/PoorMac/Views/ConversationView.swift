@@ -7,9 +7,9 @@ struct ConversationView: View {
         VStack(spacing: 0) {
             HSplitView {
                 ConversationTranscriptView()
-                    .frame(minWidth: 520)
+                    .frame(minWidth: 360)
                 StreamEventsView()
-                    .frame(minWidth: 280, idealWidth: 320)
+                    .frame(minWidth: 220, idealWidth: 280)
             }
             .frame(minHeight: 320)
             Divider()
@@ -78,7 +78,7 @@ private struct ComposerPanel: View {
                     placeholder: "Ask poor-cli to inspect, edit, explain, or run something...",
                     identifier: "PoorMac.Conversation.MessageEditor"
                 )
-                    .frame(height: 88)
+                    .frame(minHeight: 72, idealHeight: 88, maxHeight: 110)
                 HStack {
                     Button {
                         Task { await app.sendChat() }
@@ -108,7 +108,7 @@ private struct ComposerPanel: View {
                     placeholder: "Run a one-shot backend request...",
                     identifier: "PoorMac.Conversation.ExecEditor"
                 )
-                    .frame(height: 58)
+                    .frame(minHeight: 48, idealHeight: 58, maxHeight: 80)
                 Button {
                     Task { await app.runExec() }
                 } label: {

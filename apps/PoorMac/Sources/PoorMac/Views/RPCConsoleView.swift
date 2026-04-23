@@ -48,7 +48,7 @@ struct RPCConsoleView: View {
                     }
                 }
             }
-            .frame(minWidth: 320, idealWidth: 380)
+            .frame(minWidth: 260, idealWidth: 340)
 
             VStack(alignment: .leading, spacing: 10) {
                 Form {
@@ -81,7 +81,7 @@ struct RPCConsoleView: View {
                 .formStyle(.grouped)
                 ResultAndLogView()
             }
-            .frame(minWidth: 520)
+            .frame(minWidth: 360)
         }
     }
 

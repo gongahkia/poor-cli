@@ -47,7 +47,7 @@ struct ResultAndLogView: View {
                     }
                 }
             }
-            .frame(minWidth: 360)
+            .frame(minWidth: 280)
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Recent Calls")
@@ -72,7 +72,7 @@ struct ResultAndLogView: View {
                     }
                 }
             }
-            .frame(minWidth: 300)
+            .frame(minWidth: 220)
         }
         .padding()
     }

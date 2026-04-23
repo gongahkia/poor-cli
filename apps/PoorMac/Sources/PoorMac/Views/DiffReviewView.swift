@@ -71,7 +71,7 @@ struct DiffReviewView: View {
                     .background(.bar)
                 }
             }
-            .frame(minWidth: 360)
+            .frame(minWidth: 280, idealWidth: 340)
 
             VStack(alignment: .leading, spacing: 10) {
                 if selectedEdit == nil {
@@ -108,7 +108,7 @@ struct DiffReviewView: View {
                 }
             }
             .padding()
-            .frame(minWidth: 520)
+            .frame(minWidth: 340)
         }
     }
 
