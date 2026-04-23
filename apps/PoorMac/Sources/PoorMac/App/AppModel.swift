@@ -100,6 +100,7 @@ final class AppModel: @unchecked Sendable {
     var isBusy = false
     var keychainStatus = ""
     var streamEvents: [StreamEventLine] = []
+    var needsAPIKeyMessage = ""
     var pendingReviewSheet: PendingReviewSheet?
     var activeRequestID: String?
     var domainRecords: [BackendArea: [DomainRecord]] = [:]
@@ -135,6 +136,11 @@ final class AppModel: @unchecked Sendable {
         }
     }
 
+    func startBackendIfNeeded() async {
+        guard connectionState == .stopped else { return }
+        await startBackend()
+    }
+
     private func connectBackend() async throws {
         connectionState = .starting
         do {
@@ -148,6 +154,7 @@ final class AppModel: @unchecked Sendable {
             try await client.start()
             let result = try await client.initialize()
             lastResult = result
+            needsAPIKeyMessage = Self.apiKeyMessage(from: result)
             connectionState = .connected
             appendLog("Backend initialized", result.prettyPrinted)
             discoveredMethods = Self.loadRegistryMethods(repoRoot: configuration.repoRoot)
@@ -223,6 +230,13 @@ final class AppModel: @unchecked Sendable {
         chatTurns.append(ChatTurn(id: assistantID, role: "assistant", content: ""))
         do {
             try await ensureBackend()
+            if !needsAPIKeyMessage.isEmpty {
+                replaceChatTurn(
+                    id: assistantID,
+                    content: "\(needsAPIKeyMessage)\n\nOpen Settings > Provider to add a key, then restart the backend."
+                )
+                return
+            }
             let requestID = "mac-\(UUID().uuidString)"
             activeRequestID = requestID
             let result = try await client.call(
@@ -587,5 +601,14 @@ final class AppModel: @unchecked Sendable {
             return rpc.errorDescription ?? rpc.message
         }
         return error.localizedDescription
+    }
+
+    private static func apiKeyMessage(from value: JSONValue) -> String {
+        guard let capabilities = value.objectValue?["capabilities"]?.objectValue,
+              capabilities["needsApiKey"] == .bool(true)
+        else {
+            return ""
+        }
+        return capabilities["message"]?.stringValue ?? "API key required."
     }
 }
