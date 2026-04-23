@@ -31,6 +31,16 @@ status_bar_visible = true
 status_bar_side = "bottom"
 status_bar_size = 36.0
 window_opacity = 1.0
+background_image = "~/.config/wok/backgrounds/workspace.png"
+background_opacity = 0.85
+background_fit = "cover"
+background_position = "center"
+# background_width = 900.0
+# background_height = 600.0
+# terminal_background_opacity = 0.72
+pane_border_width = 1.0
+focused_pane_border_width = 2.0
+floating_pane_title_height = 18.0
 recent_keys_visible = true
 recent_keys_position = "bottom_right"
 recent_keys_max_entries = 8
@@ -66,6 +76,16 @@ external_plugin_command = "node ~/.config/wok/plugins/bridge.js"
 | `status_bar_side` | string | `"bottom"` | Active | Places the status bar on any edge: `top`, `bottom`, `left`, or `right`; vertical status bars render segments as a stacked list |
 | `status_bar_size` | float | auto | Active | Optional status bar thickness in physical pixels; defaults to the active font metrics |
 | `window_opacity` | float | `1.0` | Active | Applies window/chrome opacity and blends terminal surfaces against the configured background |
+| `background_image` | string | none | Active | Loads a background image from config or theme and renders it behind the workspace chrome and panes |
+| `background_opacity` | float | `1.0` | Active | Multiplies background image opacity from `0.0` to `1.0`; combines with `window_opacity` |
+| `background_fit` | string | `"stretch"` | Active | Background sizing mode: `stretch`, `cover`, `contain`, or `center` |
+| `background_position` | string | `"center"` | Active | Background anchor: `center`, `top_left`, `top_right`, `bottom_left`, or `bottom_right` |
+| `background_width` | float | none | Active | Optional rendered background width in physical pixels; preserves source aspect ratio when height is omitted |
+| `background_height` | float | none | Active | Optional rendered background height in physical pixels; preserves source aspect ratio when width is omitted |
+| `terminal_background_opacity` | float | auto | Active | Optional terminal pane fill opacity from `0.0` to `1.0`; by default panes become slightly translucent only when a background image is loaded |
+| `pane_border_width` | float | `1.0` | Active | Split pane border width in physical pixels; use `0.0` to hide inactive borders |
+| `focused_pane_border_width` | float | `2.0` | Active | Focused split pane accent border width in physical pixels; use `0.0` to hide it |
+| `floating_pane_title_height` | float | `18.0` | Active | Floating pane title strip height in physical pixels |
 | `recent_keys_visible` | boolean | `true` | Active | Shows a local in-app recent-key visualizer; keys are not persisted |
 | `recent_keys_position` | string | `"bottom_right"` | Active | Places the recent-key visualizer at `top_left`, `top_right`, `bottom_left`, or `bottom_right` |
 | `recent_keys_max_entries` | integer | `8` | Active | Maximum number of recent key labels shown, capped at 64 |
@@ -78,7 +98,6 @@ external_plugin_command = "node ~/.config/wok/plugins/bridge.js"
 | `debug_overlay` | boolean | `false` | Active | Shows a benchmark overlay with FPS, redraw time, phase timings, CPU, memory, disk, GPU adapter/render diagnostics, battery when available, scrollback, and session memory |
 | `command_telemetry` | boolean | `false` | Active | Writes opt-in command lifecycle telemetry to `~/.config/wok/command-telemetry.jsonl`; command text is included, so avoid enabling it for secret-bearing workflows |
 | `theme_path` | string | none | Active | Path to a custom theme TOML file |
-| `background_image` | string | none | Active | Loads a background image from config or theme and renders it behind the workspace chrome and panes |
 | `external_plugin_command` | string | none | Active | Optional out-of-process plugin bridge command; receives hook/event JSON lines on stdin and can emit typed effects (`notify`, `exec`, `action`) on stdout |
 
 ## Session Files

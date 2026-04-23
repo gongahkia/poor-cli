@@ -1611,6 +1611,46 @@ mod tests {
 
         assert!(bar_height >= cell_height);
     }
+
+    #[test]
+    fn background_layout_stretches_to_window_by_default() {
+        let rect = Rect::new(0.0, 0.0, 640.0, 360.0);
+        let config = WokConfig::default();
+
+        let (image_rect, uv) = background_image_layout(rect, (100, 100), &config);
+
+        assert_eq!(image_rect, rect);
+        assert_eq!(uv, [0.0, 0.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn background_layout_cover_crops_uvs() {
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let config = WokConfig {
+            background_fit: wok_app::config::BackgroundFit::Cover,
+            ..WokConfig::default()
+        };
+
+        let (image_rect, uv) = background_image_layout(rect, (200, 100), &config);
+
+        assert_eq!(image_rect, rect);
+        assert_eq!(uv, [0.25, 0.0, 0.75, 1.0]);
+    }
+
+    #[test]
+    fn background_layout_custom_width_preserves_aspect_ratio() {
+        let rect = Rect::new(0.0, 0.0, 500.0, 300.0);
+        let config = WokConfig {
+            background_width: Some(200.0),
+            background_position: wok_app::config::BackgroundPosition::TopLeft,
+            ..WokConfig::default()
+        };
+
+        let (image_rect, uv) = background_image_layout(rect, (400, 200), &config);
+
+        assert_eq!(image_rect, Rect::new(0.0, 0.0, 200.0, 100.0));
+        assert_eq!(uv, [0.0, 0.0, 1.0, 1.0]);
+    }
 }
 
 pub(crate) fn palette_highlight_columns(label: &str, query: &str) -> Vec<usize> {
@@ -2686,17 +2726,112 @@ pub(crate) fn with_opacity(mut color: [f32; 4], opacity: f32) -> [f32; 4] {
     color
 }
 
-pub(crate) fn push_background_image(batch: &mut QuadBatch, rect: Rect, opacity: f32) {
-    if rect.w <= 0.0 || rect.h <= 0.0 {
+pub(crate) fn push_background_image(
+    batch: &mut QuadBatch,
+    rect: Rect,
+    image_size: (u32, u32),
+    config: &WokConfig,
+    window_opacity: f32,
+) {
+    if rect.w <= 0.0 || rect.h <= 0.0 || image_size.0 == 0 || image_size.1 == 0 {
         return;
     }
-    batch.push_image_quad(
-        rect.x,
-        rect.y,
-        rect.w,
-        rect.h,
-        [1.0, 1.0, 1.0, opacity.clamp(0.0, 1.0)],
+    let opacity = (window_opacity * config.background_opacity).clamp(0.0, 1.0);
+    if opacity <= 0.0 {
+        return;
+    }
+    let (image_rect, uv_rect) = background_image_layout(rect, image_size, config);
+    if image_rect.w <= 0.0 || image_rect.h <= 0.0 {
+        return;
+    }
+    batch.push_image_quad_with_uv(
+        image_rect.x,
+        image_rect.y,
+        image_rect.w,
+        image_rect.h,
+        uv_rect,
+        [1.0, 1.0, 1.0, opacity],
     );
+}
+
+fn background_image_layout(
+    rect: Rect,
+    image_size: (u32, u32),
+    config: &WokConfig,
+) -> (Rect, [f32; 4]) {
+    let source_w = image_size.0 as f32;
+    let source_h = image_size.1 as f32;
+    let custom_w = config.background_width;
+    let custom_h = config.background_height;
+    let (mut width, mut height) = match (custom_w, custom_h) {
+        (Some(width), Some(height)) => (width, height),
+        (Some(width), None) => (width, width * source_h / source_w),
+        (None, Some(height)) => (height * source_w / source_h, height),
+        (None, None) => match config.background_fit {
+            wok_app::config::BackgroundFit::Stretch => (rect.w, rect.h),
+            wok_app::config::BackgroundFit::Cover => {
+                let scale = (rect.w / source_w).max(rect.h / source_h);
+                (source_w * scale, source_h * scale)
+            }
+            wok_app::config::BackgroundFit::Contain => {
+                let scale = (rect.w / source_w).min(rect.h / source_h);
+                (source_w * scale, source_h * scale)
+            }
+            wok_app::config::BackgroundFit::Center => (source_w, source_h),
+        },
+    };
+    if matches!(
+        config.background_fit,
+        wok_app::config::BackgroundFit::Stretch
+    ) && custom_w.is_none()
+        && custom_h.is_none()
+    {
+        width = rect.w;
+        height = rect.h;
+    }
+
+    let x = match config.background_position {
+        wok_app::config::BackgroundPosition::TopLeft
+        | wok_app::config::BackgroundPosition::BottomLeft => rect.x,
+        wok_app::config::BackgroundPosition::TopRight
+        | wok_app::config::BackgroundPosition::BottomRight => rect.x + rect.w - width,
+        wok_app::config::BackgroundPosition::Center => rect.x + (rect.w - width) * 0.5,
+    };
+    let y = match config.background_position {
+        wok_app::config::BackgroundPosition::TopLeft
+        | wok_app::config::BackgroundPosition::TopRight => rect.y,
+        wok_app::config::BackgroundPosition::BottomLeft
+        | wok_app::config::BackgroundPosition::BottomRight => rect.y + rect.h - height,
+        wok_app::config::BackgroundPosition::Center => rect.y + (rect.h - height) * 0.5,
+    };
+
+    let mut image_rect = Rect::new(x, y, width, height);
+    let original_width = image_rect.w;
+    let original_height = image_rect.h;
+    let mut uv = [0.0, 0.0, 1.0, 1.0];
+    if image_rect.x < rect.x {
+        let clipped = rect.x - image_rect.x;
+        uv[0] += clipped / original_width;
+        image_rect.w -= clipped;
+        image_rect.x = rect.x;
+    }
+    if image_rect.y < rect.y {
+        let clipped = rect.y - image_rect.y;
+        uv[1] += clipped / original_height;
+        image_rect.h -= clipped;
+        image_rect.y = rect.y;
+    }
+    let overflow_x = image_rect.x + image_rect.w - (rect.x + rect.w);
+    if overflow_x > 0.0 {
+        uv[2] -= overflow_x / original_width;
+        image_rect.w -= overflow_x;
+    }
+    let overflow_y = image_rect.y + image_rect.h - (rect.y + rect.h);
+    if overflow_y > 0.0 {
+        uv[3] -= overflow_y / original_height;
+        image_rect.h -= overflow_y;
+    }
+    (image_rect, uv)
 }
 
 pub(crate) fn resolve_background_image_path(config: &WokConfig) -> Option<std::path::PathBuf> {

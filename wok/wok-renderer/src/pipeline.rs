@@ -307,6 +307,20 @@ mod tests {
     }
 
     #[test]
+    fn test_push_image_quad_with_uv_records_custom_texture_region() {
+        let mut batch = QuadBatch::new();
+        let uv = [0.25, 0.0, 0.75, 1.0];
+
+        batch.push_image_quad_with_uv(0.0, 0.0, 10.0, 20.0, uv, [1.0; 4]);
+
+        assert_float_array_eq(batch.instances[0].uv_rect, uv);
+        assert_float_array_eq(batch.vertices[0].tex_coords, [0.25, 0.0]);
+        assert_float_array_eq(batch.vertices[1].tex_coords, [0.75, 0.0]);
+        assert_float_array_eq(batch.vertices[2].tex_coords, [0.75, 1.0]);
+        assert_float_array_eq(batch.vertices[3].tex_coords, [0.25, 1.0]);
+    }
+
+    #[test]
     fn test_append_offsets_indices() {
         let mut first = QuadBatch::with_capacity(8, 12);
         let mut second = QuadBatch::with_capacity(8, 12);
@@ -320,5 +334,11 @@ mod tests {
         assert_eq!(first.indices, vec![0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
         assert_eq!(first.instances.len(), 2);
         assert_eq!(first.quad_count(), 2);
+    }
+
+    fn assert_float_array_eq<const N: usize>(actual: [f32; N], expected: [f32; N]) {
+        for (actual, expected) in actual.iter().zip(expected.iter()) {
+            assert!((actual - expected).abs() < f32::EPSILON);
+        }
     }
 }

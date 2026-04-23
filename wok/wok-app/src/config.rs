@@ -778,6 +778,17 @@ mod tests {
         assert_eq!(config.tab_bar_side, ChromeSide::Top);
         assert_eq!(config.tab_bar_orientation, TabBarOrientation::Horizontal);
         assert_eq!(config.status_bar_side, ChromeSide::Bottom);
+        assert!((config.window_opacity - 1.0).abs() < f32::EPSILON);
+        assert_eq!(config.background_image, None);
+        assert!((config.background_opacity - 1.0).abs() < f32::EPSILON);
+        assert_eq!(config.background_fit, BackgroundFit::Stretch);
+        assert_eq!(config.background_position, BackgroundPosition::Center);
+        assert_eq!(config.background_width, None);
+        assert_eq!(config.background_height, None);
+        assert_eq!(config.terminal_background_opacity, None);
+        assert!((config.pane_border_width - 1.0).abs() < f32::EPSILON);
+        assert!((config.focused_pane_border_width - 2.0).abs() < f32::EPSILON);
+        assert!((config.floating_pane_title_height - 18.0).abs() < f32::EPSILON);
         assert!(config.close_on_shell_exit);
         assert!(config.recent_keys.visible);
         assert_eq!(config.recent_keys.position, OverlayPosition::BottomRight);
@@ -825,6 +836,39 @@ mod tests {
         assert_eq!(
             parse_overlay_position("left_top"),
             Some(OverlayPosition::TopLeft)
+        );
+    }
+
+    #[test]
+    fn test_parse_background_fit_supports_sizing_modes() {
+        assert_eq!(parse_background_fit("cover"), BackgroundFit::Cover);
+        assert_eq!(parse_background_fit("contain"), BackgroundFit::Contain);
+        assert_eq!(parse_background_fit("fit"), BackgroundFit::Contain);
+        assert_eq!(parse_background_fit("actual-size"), BackgroundFit::Center);
+        assert_eq!(parse_background_fit("unknown"), BackgroundFit::Stretch);
+    }
+
+    #[test]
+    fn test_parse_background_position_supports_corners() {
+        assert_eq!(
+            parse_background_position("top-left"),
+            BackgroundPosition::TopLeft
+        );
+        assert_eq!(
+            parse_background_position("right_top"),
+            BackgroundPosition::TopRight
+        );
+        assert_eq!(
+            parse_background_position("bottom_left"),
+            BackgroundPosition::BottomLeft
+        );
+        assert_eq!(
+            parse_background_position("bottom-right"),
+            BackgroundPosition::BottomRight
+        );
+        assert_eq!(
+            parse_background_position("unknown"),
+            BackgroundPosition::Center
         );
     }
 }

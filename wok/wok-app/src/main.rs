@@ -1432,6 +1432,9 @@ impl WokHandler {
         let window_opacity = self.config.window_opacity.clamp(0.0, 1.0);
         let background_image = self.background.image.clone();
         let background_loaded = background_image.is_some();
+        let background_image_size = background_image
+            .as_ref()
+            .map(|image| (image.width, image.height));
         let show_failure_trends_panel = self.show_failure_trends_panel;
         let show_workspace_insights_panel = self.show_workspace_insights_panel;
         let failure_trend_bucket_ms = self.failure_trend_bucket_ms;
@@ -1480,8 +1483,14 @@ impl WokHandler {
         };
 
         render.batch.clear();
-        if background_image.is_some() {
-            push_background_image(&mut render.batch, full_rect, window_opacity);
+        if let Some(image_size) = background_image_size {
+            push_background_image(
+                &mut render.batch,
+                full_rect,
+                image_size,
+                &self.config,
+                window_opacity,
+            );
         }
         if self.config.tab_bar_visible {
             render_tab_bar(
@@ -1536,11 +1545,14 @@ impl WokHandler {
                 .map(|block| block.id);
             let cw = self.font.metrics.cell_width;
             let ch = self.font.metrics.cell_height;
-            let terminal_surface_alpha = if background_loaded {
-                (window_opacity * theme.opacity * 0.72).clamp(0.18, 1.0)
-            } else {
-                (window_opacity * theme.opacity).clamp(0.0, 1.0)
-            };
+            let terminal_surface_alpha =
+                if let Some(opacity) = self.config.terminal_background_opacity {
+                    (window_opacity * theme.opacity * opacity).clamp(0.0, 1.0)
+                } else if background_loaded {
+                    (window_opacity * theme.opacity * 0.72).clamp(0.18, 1.0)
+                } else {
+                    (window_opacity * theme.opacity).clamp(0.0, 1.0)
+                };
 
             render.batch.push_bg_quad(
                 viewport.x,
@@ -1577,7 +1589,7 @@ impl WokHandler {
                         terminal_surface_alpha,
                     );
                     if let Some(floating) = floating.as_ref() {
-                        let title_height = 18.0;
+                        let title_height = self.config.floating_pane_title_height;
                         render.batch.push_bg_quad(
                             viewport.x,
                             viewport.y,
@@ -1704,28 +1716,42 @@ impl WokHandler {
                     0.9,
                 ]
             };
-            render
-                .batch
-                .push_bg_quad(viewport.x, viewport.y, viewport.w, 1.0, border_color);
-            render
-                .batch
-                .push_bg_quad(viewport.x, viewport.y, 1.0, viewport.h, border_color);
-            if focused {
+            let border_width = self.config.pane_border_width;
+            if border_width > 0.0 {
                 render.batch.push_bg_quad(
                     viewport.x,
                     viewport.y,
                     viewport.w,
-                    2.0,
-                    [
-                        theme.highlight_current_match.r,
-                        theme.highlight_current_match.g,
-                        theme.highlight_current_match.b,
-                        0.8,
-                    ],
+                    border_width,
+                    border_color,
+                );
+                render.batch.push_bg_quad(
+                    viewport.x,
+                    viewport.y,
+                    border_width,
+                    viewport.h,
+                    border_color,
                 );
             }
+            if focused {
+                let focused_border_width = self.config.focused_pane_border_width;
+                if focused_border_width > 0.0 {
+                    render.batch.push_bg_quad(
+                        viewport.x,
+                        viewport.y,
+                        viewport.w,
+                        focused_border_width,
+                        [
+                            theme.highlight_current_match.r,
+                            theme.highlight_current_match.g,
+                            theme.highlight_current_match.b,
+                            0.8,
+                        ],
+                    );
+                }
+            }
             if let Some(floating) = floating.as_ref() {
-                let title_height = 18.0;
+                let title_height = self.config.floating_pane_title_height;
                 render.batch.push_bg_quad(
                     viewport.x,
                     viewport.y,
@@ -1746,30 +1772,33 @@ impl WokHandler {
                         0.95,
                     ],
                 );
-                render.batch.push_bg_quad(
-                    viewport.x + viewport.w - 1.0,
-                    viewport.y,
-                    1.0,
-                    viewport.h,
-                    [
-                        theme.block_separator.r,
-                        theme.block_separator.g,
-                        theme.block_separator.b,
-                        0.9,
-                    ],
-                );
-                render.batch.push_bg_quad(
-                    viewport.x,
-                    viewport.y + viewport.h - 1.0,
-                    viewport.w,
-                    1.0,
-                    [
-                        theme.block_separator.r,
-                        theme.block_separator.g,
-                        theme.block_separator.b,
-                        0.9,
-                    ],
-                );
+                let border_width = self.config.pane_border_width;
+                if border_width > 0.0 {
+                    render.batch.push_bg_quad(
+                        viewport.x + viewport.w - border_width,
+                        viewport.y,
+                        border_width,
+                        viewport.h,
+                        [
+                            theme.block_separator.r,
+                            theme.block_separator.g,
+                            theme.block_separator.b,
+                            0.9,
+                        ],
+                    );
+                    render.batch.push_bg_quad(
+                        viewport.x,
+                        viewport.y + viewport.h - border_width,
+                        viewport.w,
+                        border_width,
+                        [
+                            theme.block_separator.r,
+                            theme.block_separator.g,
+                            theme.block_separator.b,
+                            0.9,
+                        ],
+                    );
+                }
             }
 
             if focused && !pane.app.input_editor.is_active && pane.app.command_search.is_none() {
