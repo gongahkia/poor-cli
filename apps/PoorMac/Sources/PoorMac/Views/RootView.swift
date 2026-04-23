@@ -8,12 +8,13 @@ struct RootView: View {
         NavigationSplitView {
             List(BackendArea.allCases, selection: selectionBinding) { area in
                 Label(area.title, systemImage: area.symbol)
+                    .lineLimit(1)
                     .accessibilityIdentifier("PoorMac.Sidebar.\(area.rawValue)")
                     .tag(area)
             }
             .accessibilityIdentifier("PoorMac.Sidebar")
             .navigationTitle("PoorMac")
-            .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 320)
+            .navigationSplitViewColumnWidth(min: 170, ideal: 210, max: 260)
         } detail: {
             DetailRouter(area: selectedArea)
                 .navigationTitle(selectedArea.title)
