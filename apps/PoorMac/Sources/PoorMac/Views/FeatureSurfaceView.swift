@@ -11,23 +11,34 @@ struct FeatureSurfaceView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Table(actions, selection: $selectedActionID) {
-                TableColumn("Action") { action in
-                    Label(action.title, systemImage: area.symbol)
+            Group {
+                if actions.isEmpty {
+                    ContentUnavailableView(
+                        "No Actions",
+                        systemImage: area.symbol,
+                        description: Text("No backend actions are registered for this screen.")
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    Table(actions, selection: $selectedActionID) {
+                        TableColumn("Action") { action in
+                            Label(action.title, systemImage: area.symbol)
+                        }
+                        TableColumn("RPC Method", value: \.method)
+                        TableColumn("Params") { action in
+                            Text(action.params.isEmpty ? "none" : JSONValue.object(action.params).prettyPrinted)
+                                .font(.system(.caption, design: .monospaced))
+                                .lineLimit(1)
+                        }
+                    }
+                    .contextMenu(forSelectionType: BackendAction.ID.self) { selection in
+                        Button("Run") {
+                            run(selection: selection)
+                        }
+                    } primaryAction: { selection in
+                        run(selection: selection)
+                    }
                 }
-                TableColumn("RPC Method", value: \.method)
-                TableColumn("Params") { action in
-                    Text(action.params.isEmpty ? "none" : JSONValue.object(action.params).prettyPrinted)
-                        .font(.system(.caption, design: .monospaced))
-                        .lineLimit(1)
-                }
-            }
-            .contextMenu(forSelectionType: BackendAction.ID.self) { selection in
-                Button("Run") {
-                    run(selection: selection)
-                }
-            } primaryAction: { selection in
-                run(selection: selection)
             }
             .safeAreaInset(edge: .bottom) {
                 HStack {

@@ -27,12 +27,21 @@ struct RPCConsoleView: View {
                 }
                 .padding(8)
 
-                Table(methods.map(MethodRow.init), selection: $selectedMethod) {
-                    TableColumn("Method", value: \.id)
-                }
-                .onChange(of: selectedMethod) { _, value in
-                    if let value {
-                        app.rpcMethod = value
+                if methods.isEmpty {
+                    ContentUnavailableView(
+                        "No Methods",
+                        systemImage: "terminal",
+                        description: Text(filter.isEmpty ? "Refresh the registry to load RPC methods." : "No method matches the current filter.")
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    Table(methods.map(MethodRow.init), selection: $selectedMethod) {
+                        TableColumn("Method", value: \.id)
+                    }
+                    .onChange(of: selectedMethod) { _, value in
+                        if let value {
+                            app.rpcMethod = value
+                        }
                     }
                 }
             }
@@ -49,13 +58,18 @@ struct RPCConsoleView: View {
                                 RoundedRectangle(cornerRadius: 6)
                                     .stroke(Color.secondary.opacity(0.25))
                             }
+                        if let paramsError {
+                            Label(paramsError, systemImage: "exclamationmark.triangle")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
                         Button {
                             Task { await app.runRPCConsole() }
                         } label: {
                             Label("Send RPC", systemImage: "paperplane")
                         }
                         .keyboardShortcut(.return, modifiers: [.command])
-                        .disabled(app.isBusy)
+                        .disabled(app.isBusy || app.rpcMethod.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || paramsError != nil)
                     }
                 }
                 .formStyle(.grouped)
@@ -71,6 +85,17 @@ struct RPCConsoleView: View {
 
     private var paramsBinding: Binding<String> {
         Binding(get: { app.rpcParamsText }, set: { app.rpcParamsText = $0 })
+    }
+
+    private var paramsError: String? {
+        let trimmed = app.rpcParamsText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        do {
+            let value = try JSONDecoder().decode(JSONValue.self, from: Data(trimmed.utf8))
+            return value.objectValue == nil ? "Parameters must be a JSON object." : nil
+        } catch {
+            return "Invalid JSON parameters."
+        }
     }
 }
 

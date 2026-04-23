@@ -51,6 +51,12 @@ struct ProviderSurfaceView: View {
                         }
                     }
                 }
+                .onChange(of: providers) { _, value in
+                    guard let selectedProviderID else { return }
+                    if !value.contains(where: { $0.id == selectedProviderID }) {
+                        self.selectedProviderID = nil
+                    }
+                }
                 .safeAreaInset(edge: .bottom) {
                     HStack {
                         Button {
@@ -83,13 +89,15 @@ struct ProviderSurfaceView: View {
                         Button("Test") {
                             Task { await app.testProviderAPIKey() }
                         }
+                        .disabled(app.configuration.provider.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         Button("Save") {
                             Task { await app.setProviderAPIKey() }
                         }
-                        .disabled(app.configuration.apiKey.isEmpty)
+                        .disabled(app.configuration.provider.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || app.configuration.apiKey.isEmpty)
                         Button("Switch") {
                             Task { await app.switchProviderFromSettings() }
                         }
+                        .disabled(app.configuration.provider.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
 

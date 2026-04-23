@@ -147,15 +147,24 @@ private struct StreamEventsView: View {
                 .font(.headline)
                 .padding(.horizontal)
                 .padding(.top, 8)
-            List(app.streamEvents) { event in
-                VStack(alignment: .leading, spacing: 3) {
-                    Label(event.title, systemImage: event.symbol)
-                        .font(.callout)
-                    if !event.detail.isEmpty {
-                        Text(event.detail)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(3)
+            if app.streamEvents.isEmpty {
+                ContentUnavailableView(
+                    "No Activity",
+                    systemImage: "waveform.path.ecg",
+                    description: Text("Streaming events appear during a backend request.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(app.streamEvents) { event in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Label(event.title, systemImage: event.symbol)
+                            .font(.callout)
+                        if !event.detail.isEmpty {
+                            Text(event.detail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(3)
+                        }
                     }
                 }
             }

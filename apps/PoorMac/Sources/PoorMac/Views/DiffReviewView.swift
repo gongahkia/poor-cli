@@ -3,13 +3,14 @@ import SwiftUI
 struct DiffReviewView: View {
     @Environment(AppModel.self) private var app
     @State private var selectedEditID: DomainRecord.ID?
+    @State private var previewText: String?
 
     private var records: [DomainRecord] {
         app.domainRecords[.review] ?? []
     }
 
     private var selectedEdit: DomainRecord? {
-        records.first { $0.id == selectedEditID } ?? records.first
+        records.first { $0.id == selectedEditID }
     }
 
     var body: some View {
@@ -40,6 +41,15 @@ struct DiffReviewView: View {
                 .onAppear {
                     if records.isEmpty {
                         Task { await refresh() }
+                    }
+                }
+                .onChange(of: selectedEditID) { _, _ in
+                    previewText = nil
+                }
+                .onChange(of: records) { _, value in
+                    guard let selectedEditID else { return }
+                    if !value.contains(where: { $0.id == selectedEditID }) {
+                        self.selectedEditID = nil
                     }
                 }
                 .safeAreaInset(edge: .bottom) {
@@ -75,7 +85,7 @@ struct DiffReviewView: View {
                     Text(selectedEdit?.title ?? "Pending Edit")
                         .font(.headline)
                     ScrollView {
-                        Text(app.lastResult.prettyPrinted)
+                        Text(previewText ?? selectedEdit?.detail ?? "")
                             .font(.system(.body, design: .monospaced))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -111,11 +121,13 @@ struct DiffReviewView: View {
 
     private func preview() async {
         guard let editID = selectedEdit?.id else { return }
-        _ = await app.callBackend(
+        if let result = await app.callBackend(
             method: "diff.preview",
             params: ["editId": .string(editID)],
             title: "Preview edit"
-        )
+        ) {
+            previewText = result.prettyPrinted
+        }
     }
 
     private func accept() async {
@@ -125,6 +137,7 @@ struct DiffReviewView: View {
             params: ["editId": .string(editID)],
             title: "Accept edit"
         )
+        previewText = nil
         await refresh()
     }
 
@@ -135,6 +148,7 @@ struct DiffReviewView: View {
             params: ["editId": .string(editID)],
             title: "Reject edit"
         )
+        previewText = nil
         await refresh()
     }
 }

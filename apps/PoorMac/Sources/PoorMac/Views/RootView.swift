@@ -26,17 +26,23 @@ struct RootView: View {
                         } label: {
                             Label("Start Backend", systemImage: "play.fill")
                         }
+                        .labelStyle(.iconOnly)
+                        .help("Start Backend")
                         .disabled(app.isBusy)
                         Button {
                             Task { await app.stopBackend() }
                         } label: {
                             Label("Stop Backend", systemImage: "stop.fill")
                         }
+                        .labelStyle(.iconOnly)
+                        .help("Stop Backend")
                         Button {
                             Task { await app.cancelActiveRequest() }
                         } label: {
                             Label("Cancel Request", systemImage: "xmark.circle")
                         }
+                        .labelStyle(.iconOnly)
+                        .help("Cancel Request")
                         .disabled(app.activeRequestID == nil)
                     }
                 }
@@ -143,10 +149,15 @@ private struct ReviewSheetView: View {
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                 }
-                List(review.steps, id: \.self) { step in
-                    Label(step, systemImage: "checkmark.circle")
+                if review.steps.isEmpty {
+                    ContentUnavailableView("No Steps", systemImage: "list.clipboard")
+                        .frame(minHeight: 180)
+                } else {
+                    List(review.steps, id: \.self) { step in
+                        Label(step, systemImage: "checkmark.circle")
+                    }
+                    .frame(minHeight: 180)
                 }
-                .frame(minHeight: 180)
             }
 
             HStack {

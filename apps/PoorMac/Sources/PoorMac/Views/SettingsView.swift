@@ -8,6 +8,16 @@ struct SettingsView: View {
             Section("Backend Process") {
                 TextField("Repository root", text: repoRootBinding)
                 TextField("Python executable", text: pythonBinding)
+                ValidationRow(
+                    title: "Repository root",
+                    isValid: repositoryExists,
+                    detail: repositoryExists ? "Found" : "Path does not exist"
+                )
+                ValidationRow(
+                    title: "Python executable",
+                    isValid: pythonExecutableValid,
+                    detail: pythonExecutableValid ? "Runnable" : "Executable not found"
+                )
                 Picker("Permission mode", selection: permissionBinding) {
                     ForEach(["default", "acceptEdits", "plan", "prompt", "auto-safe", "dontAsk", "bypassPermissions", "danger-full-access"], id: \.self) {
                         Text($0).tag($0)
@@ -51,7 +61,7 @@ struct SettingsView: View {
                 } label: {
                     Label("Apply and Restart Backend", systemImage: "arrow.clockwise")
                 }
-                .disabled(app.isBusy)
+                .disabled(app.isBusy || !repositoryExists || !pythonExecutableValid)
             }
         }
         .formStyle(.grouped)
@@ -88,5 +98,27 @@ struct SettingsView: View {
 
     private var validateBinding: Binding<Bool> {
         Binding(get: { app.configuration.validateAPIKey }, set: { app.configuration.validateAPIKey = $0 })
+    }
+
+    private var repositoryExists: Bool {
+        FileManager.default.fileExists(atPath: app.configuration.repoRoot)
+    }
+
+    private var pythonExecutableValid: Bool {
+        app.configuration.pythonExecutable == "/usr/bin/env"
+            || FileManager.default.isExecutableFile(atPath: app.configuration.pythonExecutable)
+    }
+}
+
+private struct ValidationRow: View {
+    let title: String
+    let isValid: Bool
+    let detail: String
+
+    var body: some View {
+        LabeledContent(title) {
+            Label(detail, systemImage: isValid ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                .foregroundStyle(isValid ? .green : .red)
+        }
     }
 }

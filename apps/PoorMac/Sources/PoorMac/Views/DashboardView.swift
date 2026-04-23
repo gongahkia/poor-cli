@@ -12,13 +12,7 @@ struct DashboardView: View {
                     LabeledContent("Discovered RPC methods", value: "\(app.discoveredMethods.count)")
                 }
                 Section("Quick Actions") {
-                    HStack {
-                        ForEach(BackendCatalog.actions(for: .dashboard)) { action in
-                            Button(action.title) {
-                                Task { await app.runAction(action) }
-                            }
-                        }
-                    }
+                    ActionGrid(actions: BackendCatalog.actions(for: .dashboard))
                 }
             }
             .formStyle(.grouped)
@@ -36,12 +30,21 @@ struct ResultAndLogView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Result")
                     .font(.headline)
-                ScrollView {
-                    Text(app.lastResult.prettyPrinted)
-                        .font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
+                if app.lastResult.objectValue?.isEmpty == true {
+                    ContentUnavailableView(
+                        "No Result",
+                        systemImage: "doc.text",
+                        description: Text("Run a backend action to inspect its response.")
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        Text(app.lastResult.prettyPrinted)
+                            .font(.system(.body, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                    }
                 }
             }
             .frame(minWidth: 360)
@@ -49,14 +52,23 @@ struct ResultAndLogView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Recent Calls")
                     .font(.headline)
-                List(app.logs) { line in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(line.title)
-                            .font(.callout)
-                        Text(line.detail)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
+                if app.logs.isEmpty {
+                    ContentUnavailableView(
+                        "No Recent Calls",
+                        systemImage: "clock",
+                        description: Text("Backend call history appears here.")
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    List(app.logs) { line in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(line.title)
+                                .font(.callout)
+                            Text(line.detail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
                     }
                 }
             }

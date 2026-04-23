@@ -78,7 +78,16 @@ struct NativeActionSurface: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Text(section.title)
                                 .font(.headline)
-                            ActionGrid(actions: Array(section.actions))
+                            if section.actions.isEmpty {
+                                ContentUnavailableView(
+                                    "No Actions",
+                                    systemImage: area.symbol,
+                                    description: Text("No backend actions are registered for this group.")
+                                )
+                                .frame(maxWidth: .infinity, minHeight: 120)
+                            } else {
+                                ActionGrid(actions: Array(section.actions))
+                            }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }

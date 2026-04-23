@@ -12,7 +12,7 @@ struct DomainSurfaceView: View {
     }
 
     private var selectedRecord: DomainRecord? {
-        records.first { $0.id == selectedRecordID } ?? records.first
+        records.first { $0.id == selectedRecordID }
     }
 
     var body: some View {
@@ -45,6 +45,12 @@ struct DomainSurfaceView: View {
                 .onAppear {
                     if records.isEmpty {
                         Task { await app.loadDomain(area: area, action: primaryAction) }
+                    }
+                }
+                .onChange(of: records) { _, value in
+                    guard let selectedRecordID else { return }
+                    if !value.contains(where: { $0.id == selectedRecordID }) {
+                        self.selectedRecordID = nil
                     }
                 }
                 .safeAreaInset(edge: .bottom) {
