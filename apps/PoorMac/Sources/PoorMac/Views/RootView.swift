@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppModel.self) private var app
+    @SceneStorage("PoorMac.selectedArea") private var selectedAreaRaw = BackendArea.dashboard.rawValue
 
     var body: some View {
         NavigationSplitView {
@@ -12,8 +13,8 @@ struct RootView: View {
             .navigationTitle("PoorMac")
             .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 320)
         } detail: {
-            DetailRouter(area: app.selectedArea)
-                .navigationTitle(app.selectedArea.title)
+            DetailRouter(area: selectedArea)
+                .navigationTitle(selectedArea.title)
                 .toolbar {
                     ToolbarItemGroup {
                         StatusBadge(state: app.connectionState)
@@ -56,9 +57,13 @@ struct RootView: View {
 
     private var selectionBinding: Binding<BackendArea?> {
         Binding(
-            get: { app.selectedArea },
-            set: { app.selectedArea = $0 ?? .dashboard }
+            get: { selectedArea },
+            set: { selectedAreaRaw = ($0 ?? .dashboard).rawValue }
         )
+    }
+
+    private var selectedArea: BackendArea {
+        BackendArea(rawValue: selectedAreaRaw) ?? .dashboard
     }
 
     private var reviewSheetBinding: Binding<PendingReviewSheet?> {
@@ -98,8 +103,6 @@ private struct DetailRouter: View {
             )
         case .rpcConsole:
             RPCConsoleView()
-        case .settings:
-            SettingsView()
         }
     }
 }

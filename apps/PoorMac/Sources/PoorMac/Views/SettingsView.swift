@@ -4,68 +4,81 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {
-        Form {
-            Section("Backend Process") {
-                TextField("Repository root", text: repoRootBinding)
-                TextField("Python executable", text: pythonBinding)
-                ValidationRow(
-                    title: "Repository root",
-                    isValid: repositoryExists,
-                    detail: repositoryExists ? "Found" : "Path does not exist"
-                )
-                ValidationRow(
-                    title: "Python executable",
-                    isValid: pythonExecutableValid,
-                    detail: pythonExecutableValid ? "Runnable" : "Executable not found"
-                )
-                Picker("Permission mode", selection: permissionBinding) {
-                    ForEach(["default", "acceptEdits", "plan", "prompt", "auto-safe", "dontAsk", "bypassPermissions", "danger-full-access"], id: \.self) {
-                        Text($0).tag($0)
+        TabView {
+            Form {
+                Section("Backend Process") {
+                    TextField("Repository root", text: repoRootBinding)
+                    TextField("Python executable", text: pythonBinding)
+                    ValidationRow(
+                        title: "Repository root",
+                        isValid: repositoryExists,
+                        detail: repositoryExists ? "Found" : "Path does not exist"
+                    )
+                    ValidationRow(
+                        title: "Python executable",
+                        isValid: pythonExecutableValid,
+                        detail: pythonExecutableValid ? "Runnable" : "Executable not found"
+                    )
+                    Picker("Permission mode", selection: permissionBinding) {
+                        ForEach(["default", "acceptEdits", "plan", "prompt", "auto-safe", "dontAsk", "bypassPermissions", "danger-full-access"], id: \.self) {
+                            Text($0).tag($0)
+                        }
+                    }
+                    Picker("Sandbox preset", selection: sandboxBinding) {
+                        ForEach(["read-only", "review-only", "workspace-write", "full-access"], id: \.self) {
+                            Text($0).tag($0)
+                        }
                     }
                 }
-                Picker("Sandbox preset", selection: sandboxBinding) {
-                    ForEach(["read-only", "review-only", "workspace-write", "full-access"], id: \.self) {
-                        Text($0).tag($0)
+
+                Section {
+                    Button {
+                        Task { await app.startBackend() }
+                    } label: {
+                        Label("Apply and Restart Backend", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(app.isBusy || !repositoryExists || !pythonExecutableValid)
+                }
+            }
+            .formStyle(.grouped)
+            .padding()
+            .tabItem {
+                Label("Backend", systemImage: "server.rack")
+            }
+
+            Form {
+                Section("Provider Override") {
+                    TextField("Provider", text: providerBinding)
+                    TextField("Model", text: modelBinding)
+                    SecureField("API key for this launch", text: apiKeyBinding)
+                    Toggle("Validate API key during initialize", isOn: validateBinding)
+                    HStack {
+                        Button("Load Keychain") {
+                            app.loadAPIKeyFromKeychain()
+                        }
+                        Button("Save Keychain") {
+                            app.saveAPIKeyToKeychain()
+                        }
+                        .disabled(app.configuration.apiKey.isEmpty)
+                        Button("Delete Keychain") {
+                            app.deleteAPIKeyFromKeychain()
+                        }
+                    }
+                    .disabled(app.configuration.provider.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    if !app.keychainStatus.isEmpty {
+                        Text(app.keychainStatus)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
-
-            Section("Provider Override") {
-                TextField("Provider", text: providerBinding)
-                TextField("Model", text: modelBinding)
-                SecureField("API key for this launch", text: apiKeyBinding)
-                Toggle("Validate API key during initialize", isOn: validateBinding)
-                HStack {
-                    Button("Load Keychain") {
-                        app.loadAPIKeyFromKeychain()
-                    }
-                    Button("Save Keychain") {
-                        app.saveAPIKeyToKeychain()
-                    }
-                    .disabled(app.configuration.apiKey.isEmpty)
-                    Button("Delete Keychain") {
-                        app.deleteAPIKeyFromKeychain()
-                    }
-                }
-                .disabled(app.configuration.provider.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                if !app.keychainStatus.isEmpty {
-                    Text(app.keychainStatus)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Section {
-                Button {
-                    Task { await app.startBackend() }
-                } label: {
-                    Label("Apply and Restart Backend", systemImage: "arrow.clockwise")
-                }
-                .disabled(app.isBusy || !repositoryExists || !pythonExecutableValid)
+            .formStyle(.grouped)
+            .padding()
+            .tabItem {
+                Label("Provider", systemImage: "cpu")
             }
         }
-        .formStyle(.grouped)
-        .padding()
+        .frame(width: 620, minHeight: 420)
     }
 
     private var repoRootBinding: Binding<String> {

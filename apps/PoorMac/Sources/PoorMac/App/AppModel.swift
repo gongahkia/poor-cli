@@ -83,7 +83,6 @@ enum PendingReviewSheet: Identifiable, Hashable {
 @MainActor
 @Observable
 final class AppModel: @unchecked Sendable {
-    var selectedArea: BackendArea = .dashboard
     var configuration = BackendConfiguration.detected()
     var connectionState: ConnectionState = .stopped
     var lastResult: JSONValue = .object([:])

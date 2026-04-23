@@ -17,7 +17,6 @@ enum BackendArea: String, CaseIterable, Identifiable {
     case memory
     case services
     case rpcConsole
-    case settings
 
     var id: String { rawValue }
 
@@ -39,7 +38,6 @@ enum BackendArea: String, CaseIterable, Identifiable {
         case .memory: "Memory"
         case .services: "Services"
         case .rpcConsole: "RPC Console"
-        case .settings: "Settings"
         }
     }
 
@@ -61,7 +59,6 @@ enum BackendArea: String, CaseIterable, Identifiable {
         case .memory: "brain"
         case .services: "server.rack"
         case .rpcConsole: "terminal"
-        case .settings: "gearshape"
         }
     }
 }
