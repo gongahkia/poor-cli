@@ -3,7 +3,9 @@
 [![](https://img.shields.io/badge/tests-passing-brightgreen)](https://github.com/gongahkia/poor-cli/actions/workflows/tests.yml)
 [![](https://img.shields.io/badge/poor-cli_5.0.0-blue)](https://github.com/gongahkia/poor-cli)
 
-CI-focused CLI agent harness for code work. The product surface is a non-interactive `exec` path for automation and a JSON-RPC server for harness integrations.
+CI-focused CLI agent harness for code work. The main surfaces are a minimal dependency-free `curses` TUI for interactive use, a non-interactive `exec` path for automation, and a JSON-RPC server for harness integrations.
+
+Current direction and upcoming work are tracked in [ROADMAP.md](ROADMAP.md).
 
 ## Install
 
@@ -11,6 +13,8 @@ CI-focused CLI agent harness for code work. The product surface is a non-interac
 python3 -m pip install --upgrade 'poor-cli[all]'
 poor-cli --version
 ```
+
+For the voice stack only, install `poor-cli[voice]`.
 
 Supported Python versions are `3.11`, `3.12`, `3.13`, and `3.14`.
 
@@ -25,6 +29,7 @@ Useful commands:
 
 ```sh
 poor-cli help
+poor-cli tui
 poor-cli provider list
 poor-cli install info
 poor-cli diag doctor
@@ -34,10 +39,40 @@ poor-cli server --stdio
 
 ## Product Surface
 
+- `poor-cli tui`: dependency-free interactive terminal client focused on the agent harness.
 - `poor-cli exec`: one-shot agent run for CI, scripts, and review gates.
 - `poor-cli-server`: JSON-RPC runtime for automation clients.
 - Tools: filesystem, shell, git, diagnostics, tasks, review, deploy, MCP, memory, checkpoints.
 - State: repo-local `.poor-cli/` for config, sessions, checkpoints, audit logs, memories, and automation history.
+
+## TUI
+
+The interactive surface is intentionally narrow. It is designed to keep the user inside the agent harness, not to expose every backend subsystem as first-class UI.
+
+- Transcript pane, activity pane, and single-line composer.
+- Approval overlays for permission and plan review.
+- Compact action palette for status, provider, sandbox, policy, diagnostics, and session actions.
+- Voice mode via `Ctrl-V`: local microphone capture, local Whisper transcription, and optional spoken assistant replies.
+- In-session voice mode via `/voice on` and `/voice off` for continuous talk-listen loops without global hotkeys.
+- Key controls: `Enter` send, `Ctrl-V` voice, `Tab` focus, `Ctrl-O` actions, `Esc` cancel, `Ctrl-R` restart, `?` help.
+
+Voice runtime is configured through environment variables:
+
+- `POOR_CLI_VOICE_MODE`: `1` enables continuous in-session voice mode on startup
+- `POOR_CLI_VOICE_MODEL`: local Whisper model name, default `base`
+- `POOR_CLI_VOICE_LANGUAGE`: transcription language or `auto`
+- `POOR_CLI_VOICE_SPEAK_RESPONSES`: `1` to speak voice-originated assistant replies
+- `POOR_CLI_VOICE_TTS_ENGINE`: `auto`, `say`, `spd-say`, or `espeak-ng`
+
+Useful in-app voice commands:
+
+- `/voice on`
+- `/voice off`
+- `/voice talk`
+- `/voice status`
+- `/voice speak on|off`
+- `/voice language <code>`
+- `/voice model <name>`
 
 ## Providers
 
@@ -78,18 +113,12 @@ sandbox:
   preset: moderate
 ```
 
-## Documentation
+## Repository Landmarks
 
-- [Quickstart](./docs/QUICKSTART.md)
-- [Architecture](./docs/ARCHITECTURE.md)
-- [Features](./docs/FEATURES.md)
-- [Slash commands](./docs/COMMANDS.md)
-- [Providers](./docs/PROVIDERS.md)
-- [MCP](./docs/MCP.md)
-- [Sandbox](./docs/SANDBOX.md)
-- [Automations](./docs/AUTOMATIONS.md)
-- [Economy](./docs/ECONOMY.md)
-- [Troubleshooting](./docs/TROUBLESHOOTING.md)
+- `poor_cli/tui/`: dependency-free `curses` frontend.
+- `poor_cli/server/`: JSON-RPC runtime and handlers.
+- `poor_cli/core.py`: shared agent harness core.
+- `asset/reference/architecture.png`: current architecture reference image.
 
 ## License
 

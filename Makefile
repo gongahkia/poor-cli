@@ -1,11 +1,11 @@
-.PHONY: cli server install installer install-info dev build build-server-registry-index run macos-app macos-zip macos-test macos-run macos-verify test test-unit lint bench-swe bench-startup-profile bench-import-time bench-cli-command-profile bench-cli-command-compare bench-server-first-rpc-profile bench-server-first-rpc-compare bench-tool-capability-graph bench-harness-quality bench-context-memory bench-turn-replay bench-router-calibration bench-budget-retuning bench-harness-failure bench-harness-burnin bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
+.PHONY: cli tui server install installer install-info dev build build-server-registry-index run test test-unit lint bench-swe bench-startup-profile bench-import-time bench-cli-command-profile bench-cli-command-compare bench-server-first-rpc-profile bench-server-first-rpc-compare bench-tool-capability-graph bench-harness-quality bench-context-memory bench-turn-replay bench-router-calibration bench-budget-retuning bench-harness-failure bench-harness-burnin bench-perf-import-compare bench-perf-compare bench-perf-bootstrap bench-perf-reduce bench-perf-history bench-perf-dashboard bench-provider-probe-breakdown bench-status-view bench-context-memo bench-tool-schema release clean help hooks
 
 PYTHON := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/python,python3)
 PIP := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/pip,pip)
 VERSION := $(shell cat VERSION 2>/dev/null || echo dev)
 
 # ── venv guard ──────────────────────────────────────────────────────
-REQUIRE_VENV := cli server exec agent-start agent-list watch preview deploy review-pr installer install-info install dev test lint index bench-swe
+REQUIRE_VENV := cli tui server exec agent-start agent-list watch preview deploy review-pr installer install-info install dev test lint index bench-swe
 $(foreach t,$(REQUIRE_VENV),$(eval $(t): _check-venv))
 
 _check-venv:
@@ -17,6 +17,9 @@ endif
 
 cli: ## launch poor-cli (default surface)
 	$(PYTHON) -m poor_cli
+
+tui: ## launch the dependency-free curses TUI
+	$(PYTHON) -m poor_cli tui
 
 server: ## start the JSON-RPC server (for editor plugins)
 	$(PYTHON) -m poor_cli server
@@ -63,21 +66,6 @@ build: ## build the Python package (wheel + sdist)
 
 build-server-registry-index: ## regenerate committed static server registry index
 	$(PYTHON) bench/build_server_registry_index.py
-
-macos-app: ## build PoorMac.app into dist/macos
-	./scripts/build_poor_mac_app.sh
-
-macos-zip: macos-app ## build zip archive for PoorMac.app
-	cd dist/macos && ditto -c -k --sequesterRsrc --keepParent PoorMac.app PoorMac-$(VERSION).zip
-
-macos-test: ## run PoorMac Swift tests
-	swift test --package-path apps/PoorMac
-
-macos-run: ## run PoorMac via SwiftPM
-	swift run --package-path apps/PoorMac PoorMac
-
-macos-verify: macos-app ## validate PoorMac.app plist and signature
-	./scripts/verify_poor_mac_app.sh
 
 run: cli ## alias for `make cli`
 

@@ -24,6 +24,7 @@ def _render_root_help() -> str:
         "Lifecycle:\n"
         "  poor-cli exec               Run one shared-core request headlessly\n"
         "  poor-cli server             Run the JSON-RPC server (automation/API)\n"
+        "  poor-cli tui                Launch the dependency-free curses TUI\n"
         "  poor-cli install            Installer: poor-cli install (run) / poor-cli install info\n"
         "\n"
         "Work units:\n"
@@ -708,6 +709,12 @@ def _run_watch_mode(argv: Sequence[str]) -> int:
     except KeyboardInterrupt:
         pass
     return 0
+
+
+def _run_tui_mode(argv: Sequence[str]) -> int:
+    from .tui.app import main as tui_main
+
+    return tui_main(list(argv))
 
 
 def _run_deploy_mode(argv: Sequence[str]) -> int:
@@ -1741,6 +1748,8 @@ def _main() -> None:
         raise SystemExit(0)
     if argv and argv[0] == "exec":
         raise SystemExit(_run_exec_mode(argv[1:]))
+    if argv and argv[0] == "tui":
+        raise SystemExit(_run_tui_mode(argv[1:]))
     if argv and argv[0] == "agent":
         raise SystemExit(_run_agent_mode(argv[1:]))
     if argv and argv[0] == "task":

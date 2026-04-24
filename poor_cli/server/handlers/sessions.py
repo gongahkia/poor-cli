@@ -17,7 +17,7 @@ class SessionsHandlersMixin:
         return payload
 
     def _get_repo_config(self):
-        from ..repo_config import get_repo_config
+        from ...repo_config import get_repo_config
 
         auto_migrate = True
         if self.core.config is not None:
