@@ -32,6 +32,10 @@ class CursesTUIApplication:
         self._state = AppState(status_detail=configuration.repo_root)
         self._ui_events: "queue.Queue[Dict[str, Any]]" = queue.Queue()
         self._request_origins: Dict[str, str] = {}
+        self._request_queue_items: Dict[str, str] = {}
+        self._multiplayer_poll_inflight = False
+        self._multiplayer_poll_error_reported = False
+        self._last_multiplayer_poll = 0.0
         self._voice_store = VoicePreferencesStore(configuration.repo_root)
         self._voice = build_default_voice_controller(
             configuration.repo_root,
@@ -85,17 +89,17 @@ class CursesTUIApplication:
     def _enqueue_voice_event(self, event: Dict[str, Any]) -> None:
         self._ui_events.put(event)
 
-    def _start_chat_request(self, prompt: str, *, origin: str = "text") -> None:
+    def _start_chat_request(self, prompt: str, *, origin: str = "text") -> Optional[str]:
         message = prompt.strip()
         if not message:
-            return
+            return None
         if self._handle_local_command(message):
             self._state.composer = ""
             self._state.cursor = 0
-            return
+            return None
         if self._state.active_request_id is not None:
             self._state.add_activity("Busy", "Wait for the active request or cancel it.")
-            return
+            return None
         request_id = f"tui-{uuid.uuid4().hex[:8]}"
         self._state.composer = ""
         self._state.cursor = 0
@@ -111,6 +115,7 @@ class CursesTUIApplication:
             name=f"poor-cli-tui-chat-{request_id}",
             daemon=True,
         ).start()
+        return request_id
 
     def _chat_worker(self, request_id: str, assistant_index: int, message: str) -> None:
         try:
@@ -202,6 +207,27 @@ class CursesTUIApplication:
             processed = True
         if processed:
             self._needs_redraw = True
+        self._maybe_poll_multiplayer_queue()
+
+    def _maybe_poll_multiplayer_queue(self) -> None:
+        if self._state.connection_state != "connected":
+            return
+        if self._state.active_request_id is not None or self._state.pending_review is not None:
+            return
+        if self._multiplayer_poll_inflight:
+            return
+        now = time.monotonic()
+        if now - self._last_multiplayer_poll < 1.5:
+            return
+        self._last_multiplayer_poll = now
+        self._multiplayer_poll_inflight = True
+        self._start_rpc_request(
+            "Multiplayer Queue",
+            "multiplayer.queue.next",
+            {},
+            event_type="multiplayer_queue_next",
+            timeout=5.0,
+        )
 
     def _handle_ui_event(self, event: Dict[str, Any]) -> None:
         event_type = str(event.get("type", ""))
@@ -249,6 +275,7 @@ class CursesTUIApplication:
         if event_type == "chat_complete":
             request_id = str(event.get("request_id", ""))
             origin = self._request_origins.pop(request_id, "text")
+            queue_item_id = self._request_queue_items.pop(request_id, "")
             final_text = ""
             spoken = False
             if request_id == self._state.active_request_id:
@@ -273,12 +300,15 @@ class CursesTUIApplication:
                     self._voice_rearm_pending = True
                 else:
                     self._schedule_voice_rearm()
+            if queue_item_id:
+                self._finish_multiplayer_queue_item(queue_item_id, "completed")
             self._state.add_activity("Chat", "Request completed")
             return
 
         if event_type == "chat_error":
             request_id = str(event.get("request_id", ""))
             self._request_origins.pop(request_id, None)
+            queue_item_id = self._request_queue_items.pop(request_id, "")
             if request_id == self._state.active_request_id:
                 self._state.replace_turn(
                     self._state.active_assistant_index,
@@ -286,6 +316,8 @@ class CursesTUIApplication:
                 )
                 self._state.active_request_id = None
                 self._state.active_assistant_index = None
+            if queue_item_id:
+                self._finish_multiplayer_queue_item(queue_item_id, "failed")
             self._state.add_activity("Chat", str(event.get("error", "Request failed")))
             return
 
@@ -348,15 +380,31 @@ class CursesTUIApplication:
             self._state.add_activity(title, _summarize_result(result))
             return
 
-        if event_type.startswith("multiplayer_snapshot_"):
+        if event_type == "multiplayer_snapshot" or event_type.startswith("multiplayer_snapshot_"):
             title = str(event.get("title", "Multiplayer"))
             result = event.get("result")
             self._state.add_activity(title, _summarize_result(result))
             self._open_detail(title, _detail_lines_for_result(result), footer="Close [Esc]")
             return
 
+        if event_type == "multiplayer_queue_next":
+            self._multiplayer_poll_inflight = False
+            self._handle_multiplayer_queue_next(event.get("result"))
+            return
+
+        if event_type == "multiplayer_queue_finished":
+            result = event.get("result")
+            self._state.add_activity("Multiplayer", _summarize_result(result))
+            return
+
         if event_type == "rpc_error":
             title = str(event.get("title", "RPC"))
+            if title == "Multiplayer Queue":
+                self._multiplayer_poll_inflight = False
+                if not self._multiplayer_poll_error_reported:
+                    self._state.add_activity(title, str(event.get("error", "RPC failed")))
+                    self._multiplayer_poll_error_reported = True
+                return
             self._state.add_activity(title, str(event.get("error", "RPC failed")))
             return
 
@@ -473,6 +521,36 @@ class CursesTUIApplication:
         active_session_id = str(result.get("activeSessionId", "") or "")
         if active_session_id:
             self._state.session_id = active_session_id
+
+    def _handle_multiplayer_queue_next(self, result: Any) -> None:
+        if not isinstance(result, dict):
+            return
+        item = result.get("item")
+        if not isinstance(item, dict):
+            return
+        prompt = str(item.get("prompt") or "").strip()
+        item_id = str(item.get("itemId") or "").strip()
+        author_id = str(item.get("authorId") or "").strip()
+        if not prompt or not item_id:
+            return
+        request_id = self._start_chat_request(prompt, origin="multiplayer")
+        if request_id is None:
+            self._finish_multiplayer_queue_item(item_id, "failed")
+            return
+        self._request_queue_items[request_id] = item_id
+        detail = f"{item_id}"
+        if author_id:
+            detail = f"{detail} from {author_id}"
+        self._state.add_activity("Multiplayer", f"Started queued prompt {detail}")
+
+    def _finish_multiplayer_queue_item(self, item_id: str, status: str) -> None:
+        self._start_rpc_request(
+            "Multiplayer Queue Finish",
+            "multiplayer.queue.finish",
+            {"itemId": item_id, "status": status},
+            event_type="multiplayer_queue_finished",
+            timeout=5.0,
+        )
 
     def _open_action_menu(self) -> None:
         voice_detail = self._state.voice_detail or "Voice controls and settings"

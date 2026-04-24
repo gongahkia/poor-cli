@@ -52,6 +52,26 @@ def test_author_or_host_can_edit_queued_prompt(tmp_path):
     assert host_updated.prompt == "host edit"
 
 
+def test_host_can_claim_and_finish_next_prompt(tmp_path):
+    store = MultiplayerStore(tmp_path)
+    host = store.host_session("Host")
+    peer = store.join_session("Peer")
+    first = store.enqueue_prompt(peer.participant_id, "first")
+    second = store.enqueue_prompt(peer.participant_id, "second")
+
+    claimed = store.claim_next_prompt(host.participant_id)
+    assert claimed is not None
+    assert claimed.item_id == first.item_id
+    assert claimed.status == "running"
+
+    finished = store.finish_queue_item(claimed.item_id, "completed")
+    assert finished.status == "completed"
+
+    next_claimed = store.claim_next_prompt()
+    assert next_claimed is not None
+    assert next_claimed.item_id == second.item_id
+
+
 def test_task_thread_merge_requires_template_approval(tmp_path):
     store = MultiplayerStore(tmp_path)
     host = store.host_session("Host")

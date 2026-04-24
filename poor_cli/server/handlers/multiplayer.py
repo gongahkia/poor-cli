@@ -79,6 +79,19 @@ class MultiplayerHandlersMixin:
         )
         return {"items": [item.to_dict() for item in items]}
 
+    async def handle_multiplayer_next_queue_item(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        item = self._multiplayer_store().claim_next_prompt(
+            str(params.get("actorId") or params.get("actor_id") or "")
+        )
+        return {"item": item.to_dict() if item is not None else None}
+
+    async def handle_multiplayer_finish_queue_item(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        item = self._multiplayer_store().finish_queue_item(
+            str(params.get("itemId") or params.get("item_id") or ""),
+            str(params.get("status") or ""),
+        )
+        return {"item": item.to_dict()}
+
     async def handle_multiplayer_update_queued_prompt(self, params: Dict[str, Any]) -> Dict[str, Any]:
         item = self._multiplayer_store().update_queued_prompt(
             str(params.get("actorId") or params.get("actor_id") or ""),
@@ -227,6 +240,16 @@ async def _rpc_multiplayer_queue_enqueue(ctx, params):
 @register("multiplayer.queue.list")
 async def _rpc_multiplayer_queue_list(ctx, params):
     return await ctx.handle_multiplayer_list_queue(params)
+
+
+@register("multiplayer.queue.next")
+async def _rpc_multiplayer_queue_next(ctx, params):
+    return await ctx.handle_multiplayer_next_queue_item(params)
+
+
+@register("multiplayer.queue.finish")
+async def _rpc_multiplayer_queue_finish(ctx, params):
+    return await ctx.handle_multiplayer_finish_queue_item(params)
 
 
 @register("multiplayer.queue.update")

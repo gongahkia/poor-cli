@@ -6,6 +6,7 @@ import argparse
 import json
 import socket
 import socketserver
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
@@ -66,6 +67,15 @@ class MultiplayerCommandRouter:
             item = self._store.enqueue_prompt(
                 str(params.get("authorId") or ""),
                 str(params.get("prompt") or ""),
+            )
+            return {"item": item.to_dict(), "queue": self._queue()}
+        if method == "queue.next":
+            item = self._store.claim_next_prompt(str(params.get("actorId") or ""))
+            return {"item": item.to_dict() if item is not None else None, "queue": self._queue()}
+        if method == "queue.finish":
+            item = self._store.finish_queue_item(
+                str(params.get("itemId") or ""),
+                str(params.get("status") or ""),
             )
             return {"item": item.to_dict(), "queue": self._queue()}
         if method == "queue.move":
@@ -236,6 +246,41 @@ def build_parser() -> argparse.ArgumentParser:
     snapshot.add_argument("--host", default=DEFAULT_MULTIPLAYER_HOST, help="Host address")
     snapshot.add_argument("--port", type=int, default=DEFAULT_MULTIPLAYER_PORT, help="TCP port")
     snapshot.add_argument("--json", action="store_true", help="Print raw JSON")
+
+    prompt = sub.add_parser("prompt", help="Submit a prompt to the hosted foreground queue")
+    prompt.add_argument("--host", default=DEFAULT_MULTIPLAYER_HOST, help="Host address")
+    prompt.add_argument("--port", type=int, default=DEFAULT_MULTIPLAYER_PORT, help="TCP port")
+    prompt.add_argument("--participant-id", required=True, help="Participant id returned by join")
+    prompt.add_argument("--prompt", help="Prompt text. Reads stdin when omitted")
+    prompt.add_argument("--json", action="store_true", help="Print raw JSON")
+
+    queue_list = sub.add_parser("queue", help="List queued and running prompts")
+    queue_list.add_argument("--host", default=DEFAULT_MULTIPLAYER_HOST, help="Host address")
+    queue_list.add_argument("--port", type=int, default=DEFAULT_MULTIPLAYER_PORT, help="TCP port")
+    queue_list.add_argument("--json", action="store_true", help="Print raw JSON")
+
+    move = sub.add_parser("move", help="Move a queued prompt up or down")
+    move.add_argument("--host", default=DEFAULT_MULTIPLAYER_HOST, help="Host address")
+    move.add_argument("--port", type=int, default=DEFAULT_MULTIPLAYER_PORT, help="TCP port")
+    move.add_argument("--participant-id", required=True, help="Host participant id")
+    move.add_argument("--item-id", required=True, help="Queue item id")
+    move.add_argument("--direction", choices=("up", "down"), required=True, help="Move direction")
+    move.add_argument("--json", action="store_true", help="Print raw JSON")
+
+    edit = sub.add_parser("edit", help="Edit a queued prompt")
+    edit.add_argument("--host", default=DEFAULT_MULTIPLAYER_HOST, help="Host address")
+    edit.add_argument("--port", type=int, default=DEFAULT_MULTIPLAYER_PORT, help="TCP port")
+    edit.add_argument("--participant-id", required=True, help="Prompt author or host participant id")
+    edit.add_argument("--item-id", required=True, help="Queue item id")
+    edit.add_argument("--prompt", help="Replacement prompt. Reads stdin when omitted")
+    edit.add_argument("--json", action="store_true", help="Print raw JSON")
+
+    cancel = sub.add_parser("cancel", help="Cancel a queued or running prompt")
+    cancel.add_argument("--host", default=DEFAULT_MULTIPLAYER_HOST, help="Host address")
+    cancel.add_argument("--port", type=int, default=DEFAULT_MULTIPLAYER_PORT, help="TCP port")
+    cancel.add_argument("--participant-id", required=True, help="Prompt author or host participant id")
+    cancel.add_argument("--item-id", required=True, help="Queue item id")
+    cancel.add_argument("--json", action="store_true", help="Print raw JSON")
     return parser
 
 
@@ -280,5 +325,91 @@ def run_multiplayer_mode(argv: Sequence[str]) -> int:
             print(f"participants: {len(participants)}")
             print(f"queued prompts: {len(queue_items)}")
             print(f"task threads: {len(threads)}")
+        return 0
+    if args.subcommand == "prompt":
+        prompt_text = str(args.prompt) if args.prompt is not None else sys.stdin.read()
+        result = send_multiplayer_command(
+            str(args.host),
+            int(args.port),
+            "queue.enqueue",
+            {
+                "authorId": str(args.participant_id),
+                "prompt": prompt_text,
+            },
+        )
+        if bool(args.json):
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+        else:
+            item = result.get("item") if isinstance(result.get("item"), dict) else {}
+            print(
+                "queued prompt "
+                f"{item.get('itemId', 'unknown')} "
+                f"at position {item.get('position', '?')}"
+            )
+        return 0
+    if args.subcommand == "queue":
+        result = send_multiplayer_command(str(args.host), int(args.port), "snapshot")
+        queue_items = result.get("queue") if isinstance(result.get("queue"), list) else []
+        if bool(args.json):
+            print(json.dumps({"queue": queue_items}, indent=2, ensure_ascii=False))
+        else:
+            if not queue_items:
+                print("queue is empty")
+            for item in queue_items:
+                print(
+                    f"{item.get('position', '?')}. {item.get('itemId', 'unknown')} "
+                    f"[{item.get('status', 'unknown')}] {item.get('prompt', '')}"
+                )
+        return 0
+    if args.subcommand == "move":
+        result = send_multiplayer_command(
+            str(args.host),
+            int(args.port),
+            "queue.move",
+            {
+                "actorId": str(args.participant_id),
+                "itemId": str(args.item_id),
+                "direction": str(args.direction),
+            },
+        )
+        if bool(args.json):
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+        else:
+            item = result.get("item") if isinstance(result.get("item"), dict) else {}
+            print(f"moved {item.get('itemId', args.item_id)} {args.direction}")
+        return 0
+    if args.subcommand == "edit":
+        prompt_text = str(args.prompt) if args.prompt is not None else sys.stdin.read()
+        result = send_multiplayer_command(
+            str(args.host),
+            int(args.port),
+            "queue.update",
+            {
+                "actorId": str(args.participant_id),
+                "itemId": str(args.item_id),
+                "prompt": prompt_text,
+            },
+        )
+        if bool(args.json):
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+        else:
+            item = result.get("item") if isinstance(result.get("item"), dict) else {}
+            print(f"updated {item.get('itemId', args.item_id)}")
+        return 0
+    if args.subcommand == "cancel":
+        result = send_multiplayer_command(
+            str(args.host),
+            int(args.port),
+            "queue.cancel",
+            {
+                "actorId": str(args.participant_id),
+                "itemId": str(args.item_id),
+            },
+        )
+        if bool(args.json):
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+        else:
+            item = result.get("item") if isinstance(result.get("item"), dict) else {}
+            print(f"cancelled {item.get('itemId', args.item_id)}")
         return 0
     return 1

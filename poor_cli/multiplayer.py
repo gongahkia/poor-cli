@@ -369,6 +369,46 @@ class MultiplayerStore:
             rows = conn.execute(query, params).fetchall()
         return [self._queue_from_row(row) for row in rows]
 
+    def claim_next_prompt(self, actor_id: str = "") -> Optional[QueueItem]:
+        now = _utc_now()
+        with self._connect() as conn:
+            if actor_id.strip():
+                self._require_host(conn, actor_id)
+            else:
+                self._require_host_exists(conn)
+            item = conn.execute(
+                """
+                SELECT * FROM prompt_queue
+                WHERE status = 'queued'
+                ORDER BY position ASC, created_at ASC
+                LIMIT 1
+                """
+            ).fetchone()
+            if item is None:
+                return None
+            conn.execute(
+                "UPDATE prompt_queue SET status = 'running', updated_at = ? WHERE item_id = ?",
+                (now, str(item["item_id"])),
+            )
+            row = self._get_queue_item(conn, str(item["item_id"]))
+        return self._queue_from_row(row)
+
+    def finish_queue_item(self, item_id: str, status: str) -> QueueItem:
+        clean_status = status.strip().lower()
+        if clean_status not in {"completed", "failed", "cancelled"}:
+            raise ValidationError("status must be completed, failed, or cancelled")
+        now = _utc_now()
+        with self._connect() as conn:
+            item = self._get_queue_item(conn, item_id)
+            if item["status"] != "running" and clean_status != "cancelled":
+                raise ValidationError("only running prompts can be completed or failed")
+            conn.execute(
+                "UPDATE prompt_queue SET status = ?, updated_at = ? WHERE item_id = ?",
+                (clean_status, now, item_id),
+            )
+            row = self._get_queue_item(conn, item_id)
+        return self._queue_from_row(row)
+
     def update_queued_prompt(self, actor_id: str, item_id: str, prompt: str) -> QueueItem:
         text = prompt.strip()
         if not text:
