@@ -1643,6 +1643,12 @@ def _help_lines() -> List[str]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="poor-cli tui")
+    parser.add_argument(
+        "--frontend",
+        choices=("textual", "curses"),
+        default="textual",
+        help="TUI frontend implementation",
+    )
     parser.add_argument("--repo-root", help="Working repository root for the backend server")
     parser.add_argument(
         "--python",
@@ -1693,4 +1699,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         validate_api_key=bool(args.validate_api_key),
         enable_multiplayer_queue=bool(args.multiplayer_host),
     )
+    if args.frontend == "textual":
+        from .textual_app import run_textual_tui
+
+        return run_textual_tui(configuration)
     return run_tui(configuration)

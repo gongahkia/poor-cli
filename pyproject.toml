@@ -64,6 +64,9 @@ voice = [
     "sounddevice>=0.4.6",
     "faster-whisper>=1.0.3",
 ]
+tui = [
+    "textual>=1.0.0",
+]
 all = [
     "openai>=1.0.0",
     "anthropic>=0.18.0",
@@ -73,6 +76,7 @@ all = [
     "numpy>=1.26",
     "sounddevice>=0.4.6",
     "faster-whisper>=1.0.3",
+    "textual>=1.0.0",
     "tree-sitter",
     "tree-sitter-python",
     "tree-sitter-lua",

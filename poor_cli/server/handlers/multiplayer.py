@@ -7,10 +7,10 @@ from poor_cli.server.registry import register
 
 class MultiplayerHandlersMixin:
     def _multiplayer_store(self) -> MultiplayerStore:
-        store = getattr(self, "_multiplayer_store", None)
+        store = getattr(self, "_multiplayer_store_instance", None)
         if store is None:
             store = MultiplayerStore(Path.cwd())
-            self._multiplayer_store = store
+            self._multiplayer_store_instance = store
         return store
 
     def _multiplayer_snapshot(self) -> Dict[str, Any]:
