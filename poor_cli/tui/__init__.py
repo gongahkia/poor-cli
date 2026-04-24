@@ -1,4 +1,4 @@
-"""Dependency-free curses TUI for poor-cli."""
+"""Textual TUI for poor-cli."""
 
 from .app import run_tui
 from .rpc_client import BackendConfiguration

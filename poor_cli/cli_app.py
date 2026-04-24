@@ -24,7 +24,7 @@ def _render_root_help() -> str:
         "Lifecycle:\n"
         "  poor-cli exec               Run one shared-core request headlessly\n"
         "  poor-cli server             Run the JSON-RPC server (automation/API)\n"
-        "  poor-cli tui                Launch the dependency-free curses TUI\n"
+        "  poor-cli tui                Launch the minimal Textual TUI\n"
         "  poor-cli multiplayer        Host or attach to a multiplayer session\n"
         "  poor-cli install            Installer: poor-cli install (run) / poor-cli install info\n"
         "\n"

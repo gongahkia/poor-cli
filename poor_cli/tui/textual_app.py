@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import queue
 import threading
@@ -12,11 +11,11 @@ from typing import Any, Dict, List, Optional
 try:
     from textual.app import App, ComposeResult
     from textual.containers import Horizontal, Vertical
-    from textual.widgets import Footer, Header, Input, Static
+    from textual.widgets import Footer, Input, Static
 except Exception as exc:  # pragma: no cover - exercised when optional extra is absent
     App = object  # type: ignore[assignment,misc]
     ComposeResult = object  # type: ignore[assignment,misc]
-    Horizontal = Vertical = Footer = Header = Input = Static = None  # type: ignore[assignment]
+    Horizontal = Vertical = Footer = Input = Static = None  # type: ignore[assignment]
     _TEXTUAL_IMPORT_ERROR: Optional[BaseException] = exc
 else:
     _TEXTUAL_IMPORT_ERROR = None
@@ -37,11 +36,11 @@ def _json_text(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
-class TextualTUIApplication(App):  # type: ignore[misc,valid-type]
+class PoorCLIApp(App):  # type: ignore[misc,valid-type]
     """Small harness-first Textual UI.
 
-    This intentionally keeps the same basic shape as the curses screen:
-    transcript, activity, status, composer.
+    This intentionally keeps the screen narrow: transcript, activity, status,
+    composer.
     """
 
     CSS = """
@@ -98,6 +97,8 @@ class TextualTUIApplication(App):  # type: ignore[misc,valid-type]
 
     def __init__(self, configuration: BackendConfiguration):
         super().__init__()
+        self.title = "poor-cli"
+        self.sub_title = ""
         self._configuration = configuration
         self._client = JsonRpcClient(configuration)
         self._events: "queue.Queue[Dict[str, Any]]" = queue.Queue()
@@ -115,7 +116,6 @@ class TextualTUIApplication(App):  # type: ignore[misc,valid-type]
         self._multiplayer_poll_error_reported = False
 
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=False)
         yield Static("", id="status")
         with Horizontal(id="main"):
             with Vertical(id="transcript_box"):
@@ -414,14 +414,8 @@ def _summarize_result(result: Any) -> str:
 def run_textual_tui(configuration: BackendConfiguration) -> int:
     if _TEXTUAL_IMPORT_ERROR is not None:
         raise RuntimeError(
-            "Textual is not installed. Install with `python3 -m pip install -e '.[tui]'`."
+            "Textual is not installed. Install package dependencies with `python3 -m pip install -e .`."
         ) from _TEXTUAL_IMPORT_ERROR
-    app = TextualTUIApplication(configuration)
+    app = PoorCLIApp(configuration)
     app.run()
     return 0
-
-
-def build_parser() -> argparse.ArgumentParser:
-    from .app import build_parser as build_curses_parser
-
-    return build_curses_parser()

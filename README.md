@@ -14,7 +14,7 @@ python3 -m pip install --upgrade 'poor-cli[all]'
 poor-cli --version
 ```
 
-For the Textual TUI only, install `poor-cli[tui]`. For the voice stack only, install `poor-cli[voice]`.
+For the voice stack only, install `poor-cli[voice]`.
 
 Supported Python versions are `3.11`, `3.12`, `3.13`, and `3.14`.
 
@@ -31,7 +31,6 @@ Useful commands:
 poor-cli help
 poor-cli tui
 python3 -m poor_cli tui
-poor-cli tui --frontend curses
 poor-cli tui --multiplayer-host
 poor-cli multiplayer host --name "Host"
 poor-cli multiplayer join --name "Peer"
@@ -53,7 +52,7 @@ poor-cli server --stdio
 
 ## TUI
 
-The interactive surface is intentionally narrow. It is designed to keep the user inside the agent harness, not to expose every backend subsystem as first-class UI. The default frontend is Textual for lower input latency; `--frontend curses` keeps the dependency-free fallback available.
+The interactive surface is intentionally narrow. It is designed to keep the user inside the agent harness, not to expose every backend subsystem as first-class UI. The frontend is Textual for low-latency input while keeping the layout intentionally plain.
 
 - Transcript pane, activity pane, and single-line composer.
 - Approval overlays for permission and plan review.
@@ -122,7 +121,7 @@ sandbox:
 
 ## Repository Landmarks
 
-- `poor_cli/tui/`: minimal Textual frontend with a curses fallback.
+- `poor_cli/tui/`: minimal Textual frontend.
 - `poor_cli/server/`: JSON-RPC runtime and handlers.
 - `poor_cli/core.py`: shared agent harness core.
 - `asset/reference/architecture.png`: current architecture reference image.

@@ -1,4 +1,4 @@
-"""JSON-RPC stdio client for the curses TUI."""
+"""JSON-RPC stdio client for the Textual TUI."""
 
 from __future__ import annotations
 
