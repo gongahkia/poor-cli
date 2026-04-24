@@ -828,28 +828,10 @@ class CursesTUIApplication:
         if action == "multiplayer-status":
             self._state.menu_view = None
             self._start_rpc_request(
-                "Multiplayer Participants",
-                "multiplayer.participants",
+                "Multiplayer",
+                "multiplayer.snapshot",
                 {},
-                event_type="multiplayer_snapshot_participants",
-            )
-            self._start_rpc_request(
-                "Multiplayer Queue",
-                "multiplayer.queue.list",
-                {"statuses": ["queued", "running"]},
-                event_type="multiplayer_snapshot_queue",
-            )
-            self._start_rpc_request(
-                "Multiplayer Threads",
-                "multiplayer.thread.list",
-                {},
-                event_type="multiplayer_snapshot_threads",
-            )
-            self._start_rpc_request(
-                "Multiplayer Templates",
-                "multiplayer.template.list",
-                {},
-                event_type="multiplayer_snapshot_templates",
+                event_type="multiplayer_snapshot",
             )
             return
         if action == "sessions":

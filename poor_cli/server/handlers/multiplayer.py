@@ -13,6 +13,31 @@ class MultiplayerHandlersMixin:
             self._multiplayer_store = store
         return store
 
+    def _multiplayer_snapshot(self) -> Dict[str, Any]:
+        store = self._multiplayer_store()
+        return {
+            "participants": [
+                participant.to_dict()
+                for participant in store.list_participants()
+            ],
+            "queue": [
+                item.to_dict()
+                for item in store.list_queue(statuses=["queued", "running"])
+            ],
+            "threads": [
+                thread.to_dict()
+                for thread in store.list_threads()
+            ],
+            "approvalTemplates": [
+                template.to_dict()
+                for template in store.list_approval_templates()
+            ],
+        }
+
+    async def handle_multiplayer_snapshot(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        del params
+        return self._multiplayer_snapshot()
+
     async def handle_multiplayer_host(self, params: Dict[str, Any]) -> Dict[str, Any]:
         participant = self._multiplayer_store().host_session(
             str(params.get("displayName") or params.get("display_name") or "Host")
@@ -172,6 +197,11 @@ class MultiplayerHandlersMixin:
 @register("multiplayer.host")
 async def _rpc_multiplayer_host(ctx, params):
     return await ctx.handle_multiplayer_host(params)
+
+
+@register("multiplayer.snapshot")
+async def _rpc_multiplayer_snapshot(ctx, params):
+    return await ctx.handle_multiplayer_snapshot(params)
 
 
 @register("multiplayer.join")
