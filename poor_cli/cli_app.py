@@ -25,6 +25,7 @@ def _render_root_help() -> str:
         "  poor-cli exec               Run one shared-core request headlessly\n"
         "  poor-cli server             Run the JSON-RPC server (automation/API)\n"
         "  poor-cli tui                Launch the dependency-free curses TUI\n"
+        "  poor-cli multiplayer        Host or attach to a multiplayer session\n"
         "  poor-cli install            Installer: poor-cli install (run) / poor-cli install info\n"
         "\n"
         "Work units:\n"
@@ -1735,6 +1736,12 @@ def _run_services_mode(argv: Sequence[str]) -> int:
     return run_services_mode(argv)
 
 
+def _run_multiplayer_mode(argv: Sequence[str]) -> int:
+    from .multiplayer_runtime import run_multiplayer_mode
+
+    return run_multiplayer_mode(argv)
+
+
 def _main() -> None:
     argv = sys.argv[1:]
     if not argv:
@@ -1750,6 +1757,8 @@ def _main() -> None:
         raise SystemExit(_run_exec_mode(argv[1:]))
     if argv and argv[0] == "tui":
         raise SystemExit(_run_tui_mode(argv[1:]))
+    if argv and argv[0] == "multiplayer":
+        raise SystemExit(_run_multiplayer_mode(argv[1:]))
     if argv and argv[0] == "agent":
         raise SystemExit(_run_agent_mode(argv[1:]))
     if argv and argv[0] == "task":

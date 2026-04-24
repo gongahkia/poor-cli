@@ -14,62 +14,61 @@ This document tracks the next practical workstreams for `poor-cli` after the shi
    - Keep the visible feature set narrow and centered on the agent harness.
    - Continue improving approvals, cancellation, and session continuity without turning the TUI into a dashboard.
 
-3. Multiplayer architecture exploration
-   - Brainstorm what a multiplayer CLI coding agent should be from scratch before implementing any transport or UI.
-   - Treat this as a product and systems-design track first, not a coding track.
+3. Multiplayer architecture and backend foundations
+   - Build the shared-session primitives before exposing a network attach flow.
+   - Keep multiplayer centered on a host-admin model, a foreground prompt queue, task threads, merge requests, and approval templates.
 
 ## Multiplayer Exploration
 
-The next major design question is how `poor-cli` could support a multiplayer mode where more than one human and more than one agent can collaborate inside the same coding session.
+The target multiplayer model is one hosted shared session with a host and peers.
+The host is the admin because they started the session and own the local harness process.
+Peers are otherwise full participants: they can prompt, edit their queued prompts, start task threads, spawn or assign agents, and participate in approvals when an approval template allows them.
 
-The first step is to define the model clearly:
+The main session has three work lanes:
 
-- Is multiplayer one shared workspace with multiple humans?
-- Is it one human supervising multiple agents in parallel?
-- Is it several humans and several agents sharing the same task graph?
-- Is the session local-only, LAN-based, or networked across machines?
+- Foreground queue: the shared conversation thread. It is first-come, first-served by default, with one active foreground prompt at a time. The host can move queued prompts up or down, remove queued items, and clear stuck work.
+- Task threads: side lanes inside the same shared session. A task thread is a lightweight work item with comments, agent runs, approvals, artifacts, and a lifecycle.
+- Agent runs: autonomous workers attached to either the foreground session or a task thread. Agents remain visible in the shared session but run in their own execution contexts, usually isolated worktrees.
 
-The design work should answer these questions before implementation starts.
+Task threads can merge back into the main session. The merge is Git-like but broader: file changes are reviewed alongside a context summary, decisions, approvals, test results, and links to raw thread logs. The main transcript should receive the reviewed summary and references, not the entire side-thread transcript.
 
 ## Multiplayer Design Questions
 
-1. Session model
-   - What is the unit of collaboration: repo, branch, task, conversation, or workspace?
-   - Does multiplayer create one shared session log or several linked sessions?
+1. Queue execution
+   - How should queued prompts be edited, cancelled, promoted, demoted, and started?
+   - What should happen when the active foreground prompt fails or is cancelled?
 
-2. Roles and permissions
-   - What can a participant do: observe, chat, approve, assign work, run tools, merge results?
-   - How are tool permissions scoped per participant and per agent?
+2. Thread merging
+   - What exactly becomes part of the main transcript when a task thread merges?
+   - How should file diffs, summaries, decisions, and follow-up tasks be represented together?
 
-3. Agent orchestration
-   - How are parallel agents assigned ownership over files, tasks, or subsystems?
-   - How are collisions, duplicate work, and conflicting edits prevented?
+3. Approval templates
+   - Which events need templates: plan review, PRD review, risky writes, destructive commands, merge requests?
+   - Should templates require a count, named people, the host, or a combination?
 
-4. State synchronization
-   - What state must be shared live: transcript, plans, approvals, diffs, task ownership, diagnostics, presence?
-   - Does the system need optimistic updates, locks, or a CRDT-style event log?
+4. Agent orchestration
+   - Are agents attached to the foreground session, task threads, or both?
+   - How are file ownership, worktree isolation, and merge conflicts surfaced?
 
-5. UX inside a CLI
-   - How does a terminal surface show presence, assignments, and live activity without becoming noisy?
-   - What is the minimum viable multiplayer UX for a harness-first CLI?
+5. Transport and runtime shape
+   - Is the first attachable runtime a local socket, LAN server, or WebSocket server?
+   - How are participant identity and session join secrets handled?
 
-6. Transport and runtime shape
-   - Is stdio still enough, or does multiplayer require a long-lived local server with sockets or WebSockets?
-   - How should remote participants attach to a running session?
-
-7. Audit and replay
-   - How are actions, approvals, tool calls, and handoffs recorded?
-   - Can a multiplayer session be replayed or resumed deterministically?
+6. Audit and replay
+   - How are prompts, queue edits, thread events, approvals, agent actions, and merges recorded?
+   - Can a hosted session be resumed and replayed from the event log?
 
 ## Suggested Multiplayer V1
 
-If multiplayer is pursued, the first version should stay narrow:
+The first version should stay narrow:
 
-1. One shared repo session.
-2. One host process runs the harness.
-3. Multiple human participants can attach as observers or approvers.
-4. The host can spin up multiple agents and assign them scoped tasks.
-5. The shared UI exposes presence, active tasks, approvals, and transcript only.
+1. One shared repo session hosted by one local harness process.
+2. One host participant plus full peer participants.
+3. A first-come foreground queue that the host can reorder.
+4. Task threads for parallel side work inside the same shared session.
+5. Merge requests from task threads back to the main session.
+6. Approval templates for plans, PRDs, risky actions, and merges.
+7. Shared UI surfaces for presence, queue, task threads, approvals, agents, and transcript.
 
 This keeps multiplayer aligned with the current product direction: an agent harness first, not a feature-heavy collaboration suite.
 
@@ -79,7 +78,9 @@ Before multiplayer implementation begins, the project should have:
 
 - a written session model
 - a permissions model
-- a task ownership model for parallel agents
+- a foreground queue model
+- a task-thread and merge model
+- an approval-template model
 - a transport decision
 - a minimal CLI UX proposal
 - a clear V1 scope with explicit non-goals

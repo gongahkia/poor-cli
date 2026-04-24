@@ -36,6 +36,7 @@ _HANDLER_ORDER: tuple[str, ...] = (
     "branches",
     "repo_map",
     "mcp",
+    "multiplayer",
 )
 _HANDLER_RANK = {name: idx for idx, name in enumerate(_HANDLER_ORDER)}
 _MEMBER_RANK: dict[str, int] = {}

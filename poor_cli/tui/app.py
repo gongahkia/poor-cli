@@ -348,6 +348,13 @@ class CursesTUIApplication:
             self._state.add_activity(title, _summarize_result(result))
             return
 
+        if event_type.startswith("multiplayer_snapshot_"):
+            title = str(event.get("title", "Multiplayer"))
+            result = event.get("result")
+            self._state.add_activity(title, _summarize_result(result))
+            self._open_detail(title, _detail_lines_for_result(result), footer="Close [Esc]")
+            return
+
         if event_type == "rpc_error":
             title = str(event.get("title", "RPC"))
             self._state.add_activity(title, str(event.get("error", "RPC failed")))
@@ -478,6 +485,7 @@ class CursesTUIApplication:
                 MenuItem("sandbox-status", "Sandbox status", "Trust and sandbox posture"),
                 MenuItem("policy-status", "Policy status", "Permission and policy summary"),
                 MenuItem("doctor-report", "Doctor report", "Diagnostics snapshot"),
+                MenuItem("multiplayer-status", "Multiplayer", "Participants, queue, threads, and templates"),
                 MenuItem("sessions", "Sessions", "Browse and switch active sessions"),
                 MenuItem("new-session", "New session", "Create and switch to a fresh session"),
                 MenuItem("save-session", "Save session", "Persist the current transcript snapshot"),
@@ -816,6 +824,33 @@ class CursesTUIApplication:
         if action == "doctor-report":
             self._state.menu_view = None
             self._start_rpc_request("Doctor Report", "poor-cli/getDoctorReport")
+            return
+        if action == "multiplayer-status":
+            self._state.menu_view = None
+            self._start_rpc_request(
+                "Multiplayer Participants",
+                "multiplayer.participants",
+                {},
+                event_type="multiplayer_snapshot_participants",
+            )
+            self._start_rpc_request(
+                "Multiplayer Queue",
+                "multiplayer.queue.list",
+                {"statuses": ["queued", "running"]},
+                event_type="multiplayer_snapshot_queue",
+            )
+            self._start_rpc_request(
+                "Multiplayer Threads",
+                "multiplayer.thread.list",
+                {},
+                event_type="multiplayer_snapshot_threads",
+            )
+            self._start_rpc_request(
+                "Multiplayer Templates",
+                "multiplayer.template.list",
+                {},
+                event_type="multiplayer_snapshot_templates",
+            )
             return
         if action == "sessions":
             self._start_rpc_request(
