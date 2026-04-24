@@ -94,6 +94,7 @@ class BackendConfiguration:
     permission_mode: str = "default"
     sandbox_preset: str = "workspace-write"
     validate_api_key: bool = False
+    enable_multiplayer_queue: bool = False
 
     @classmethod
     def detected(
@@ -107,6 +108,7 @@ class BackendConfiguration:
         permission_mode: str = "default",
         sandbox_preset: str = "workspace-write",
         validate_api_key: bool = False,
+        enable_multiplayer_queue: bool = False,
     ) -> "BackendConfiguration":
         resolved_root = Path(repo_root).expanduser() if repo_root else _detect_repo_root()
         resolved_python = (
@@ -123,6 +125,7 @@ class BackendConfiguration:
             permission_mode=permission_mode,
             sandbox_preset=sandbox_preset,
             validate_api_key=validate_api_key,
+            enable_multiplayer_queue=enable_multiplayer_queue,
         )
 
     def launch_command(self) -> list[str]:

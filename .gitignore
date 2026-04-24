@@ -123,3 +123,5 @@ data/
 seuss.yaml
 
 *.log
+
+.poor-cli

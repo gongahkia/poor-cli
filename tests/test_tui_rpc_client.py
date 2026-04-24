@@ -50,3 +50,18 @@ def test_backend_configuration_falls_back_to_current_python(tmp_path: Path):
 
     config = BackendConfiguration.detected(repo_root=str(repo_root))
     assert config.python_executable == sys.executable
+
+
+def test_backend_configuration_multiplayer_queue_defaults_off(tmp_path: Path):
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / "pyproject.toml").write_text("[project]\nname='demo'\n", encoding="utf-8")
+
+    default_config = BackendConfiguration.detected(repo_root=str(repo_root))
+    enabled_config = BackendConfiguration.detected(
+        repo_root=str(repo_root),
+        enable_multiplayer_queue=True,
+    )
+
+    assert default_config.enable_multiplayer_queue is False
+    assert enabled_config.enable_multiplayer_queue is True

@@ -56,7 +56,7 @@ class CursesTUIApplication:
 
     def _curses_main(self, stdscr: "curses._CursesWindow") -> int:
         curses.use_default_colors()
-        stdscr.nodelay(True)
+        stdscr.timeout(25)
         stdscr.keypad(True)
         with context_suppress_curses_error():
             curses.curs_set(1)
@@ -67,7 +67,6 @@ class CursesTUIApplication:
             key = stdscr.getch()
             if key != -1:
                 self._handle_key(key)
-            time.sleep(0.03)
         return 0
 
     def _start_initialize(self) -> None:
@@ -210,6 +209,8 @@ class CursesTUIApplication:
         self._maybe_poll_multiplayer_queue()
 
     def _maybe_poll_multiplayer_queue(self) -> None:
+        if not self._configuration.enable_multiplayer_queue:
+            return
         if self._state.connection_state != "connected":
             return
         if self._state.active_request_id is not None or self._state.pending_review is not None:
@@ -1666,6 +1667,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Validate the configured API key during initialize",
     )
+    parser.add_argument(
+        "--multiplayer-host",
+        action="store_true",
+        help="Let this TUI consume and execute prompts from the multiplayer foreground queue",
+    )
     return parser
 
 
@@ -1685,5 +1691,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         permission_mode=args.permission_mode,
         sandbox_preset=args.sandbox_preset,
         validate_api_key=bool(args.validate_api_key),
+        enable_multiplayer_queue=bool(args.multiplayer_host),
     )
     return run_tui(configuration)
