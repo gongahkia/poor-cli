@@ -1118,6 +1118,73 @@ export const QueryOutcomeSchema = z.discriminatedUnion("status", [
   QueryFailedResultSchema,
 ]);
 
+const HousingApplicantSchema = z.object({
+  age: z.number().int().positive(),
+  citizenship: z.enum(["citizen", "pr", "foreigner"]),
+  monthlyIncomeSgd: z.number().nonnegative(),
+  employmentMonths: z.number().int().nonnegative().optional(),
+  firstTimer: z.boolean().optional(),
+}).strict();
+
+const HouseholdProfileSchema = z.object({
+  applicants: z.array(HousingApplicantSchema).min(1).max(4),
+  maritalStatus: z.enum(["single", "married", "joint_singles", "fiance_fiancee"]),
+  flatMode: z.enum(["bto", "resale"]),
+  flatSize: z.enum(["2_room", "3_room", "4_room", "5_room", "executive"]),
+  proximityToParents: z.enum(["live_with", "near", "neither"]).optional(),
+  upgradingFromTwoRoomBtoNonMature: z.boolean().optional(),
+}).strict();
+
+export const HousingGrantEligibilitySchema = z.object({
+  profile: HouseholdProfileSchema,
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+const BankPackageSchema = z.object({
+  bank: z.string().min(1),
+  packageName: z.string().min(1),
+  rateBasis: z.enum(["sora_1m", "sora_3m", "fixed", "board_rate"]),
+  spreadBps: z.number().optional(),
+  fixedRate: z.number().optional(),
+  lockInYears: z.number().int().nonnegative().optional(),
+  thereafterSpreadBps: z.number().optional(),
+  notes: z.string().optional(),
+}).strict();
+
+export const HousingLoanCompareSchema = z.object({
+  priceSgd: z.number().positive(),
+  downpaymentSgd: z.number().nonnegative(),
+  tenureYears: z.number().int().positive().max(35),
+  soraValue: z.number().nonnegative().optional(),
+  soraTenor: z.enum(["1m", "3m"]).optional(),
+  bankPackages: z.array(BankPackageSchema).max(20).optional(),
+  includeHdbLoan: z.boolean().optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+export const HousingAffordabilitySchema = z.object({
+  profile: HouseholdProfileSchema,
+  targetPriceSgd: z.number().positive(),
+  tenureYears: z.number().int().positive().max(35),
+  cashOnHandSgd: z.number().nonnegative(),
+  cpfOaBalanceSgd: z.number().nonnegative(),
+  otherMonthlyDebtSgd: z.number().nonnegative().optional(),
+  soraValue: z.number().nonnegative().optional(),
+  bankPackages: z.array(BankPackageSchema).max(20).optional(),
+  loanType: z.enum(["hdb", "bank"]).optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+export const HousingResaleCompareSchema = z.object({
+  town: z.string().min(1),
+  flatType: z.string().min(1),
+  askingPriceSgd: z.number().positive(),
+  storeyBand: z.string().min(1).optional(),
+  remainingLeaseYears: z.number().int().positive().max(99).optional(),
+  lookbackMonths: z.number().int().positive().max(36).optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
 export const validateInput = <T>(schema: ZodSchema<T>, input: unknown): T => {
   const result = schema.safeParse(input);
   if (!result.success) {

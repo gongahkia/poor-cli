@@ -22,6 +22,14 @@ The repo currently exposes 101 `sg_*` tools total across 37 official data famili
 - [PHASE4.md](./PHASE4.md)
 - [PHASE5.md](./PHASE5.md)
 
+## Skills & Agents
+
+This repo ships **two products in one**: an MCP server *and* a meta-prompt surface that teaches agents how to use it deterministically.
+
+- [AGENTS.md](./AGENTS.md) — conventional agent-instruction file (Codex, Cursor, OpenAI Agents SDK, Aider).
+- [.claude/skills/sg-singapore-data/SKILL.md](./.claude/skills/sg-singapore-data/SKILL.md) — Claude Code skill covering the full `sg_*` surface, including the deterministic Housing Advisor flow (BTO/resale affordability, HDB grants, HDB-vs-bank loan comparison, resale price benchmarking).
+- In-server MCP prompts (`prompts/list`) expose ~25 recipes and 3 persona playbooks; see `packages/mcp-server/src/tools/catalog.ts` (`RECIPE_CATALOG`, `PLAYBOOK_CATALOG`).
+
 ## Why This Exists
 
 This repo is for agent builders who want one honest MCP server for Singapore public data instead of stitching together SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, BOA, ACRA, PA, Sport Singapore, ECDA, MSF Family Services, MSF Student Care Services, MSF Social Service Offices, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, HSA, SFA, Government RSS Feeds, NParks, PUB, MOM, STB, HLB, COE, IRAS, SPF, EMA, NLB, SSO Law, and data.gov.sg manually.

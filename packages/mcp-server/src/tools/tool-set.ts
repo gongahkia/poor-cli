@@ -16,6 +16,7 @@ import { hawkerToolDefinitions } from "./hawker-tools.js";
 import { healthCheckToolDefinitions } from "./health-check.js";
 import { hdbToolDefinitions } from "./hdb-tools.js";
 import { hlbToolDefinitions } from "./hlb-tools.js";
+import { housingToolDefinitions } from "./housing-tools.js";
 import { hsaToolDefinitions } from "./hsa-tools.js";
 import { irasToolDefinitions } from "./iras-tools.js";
 import { keystoreToolDefinitions } from "./keystore-tools.js";
@@ -57,6 +58,7 @@ const RAW_TOOL_DEFINITIONS = [
   ...ltaToolDefinitions,
   ...neaToolDefinitions,
   ...hdbToolDefinitions,
+  ...housingToolDefinitions,
   ...ceaToolDefinitions,
   ...bcaToolDefinitions,
   ...boaToolDefinitions,

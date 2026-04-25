@@ -159,6 +159,10 @@ export {
   QueryFailedResultSchema,
   QueryOutcomeSchema,
   NextCheckSchema,
+  HousingGrantEligibilitySchema,
+  HousingLoanCompareSchema,
+  HousingAffordabilitySchema,
+  HousingResaleCompareSchema,
 } from "./schemas/index.js";
 export { loadConfig } from "./config/index.js";
 export type { Config } from "./config/index.js";

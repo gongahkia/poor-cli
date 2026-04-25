@@ -1,0 +1,145 @@
+{
+  "version": "2026.04",
+  "effectiveFrom": "2026-01-01",
+  "lastVerified": "2026-04-25",
+  "sources": {
+    "ehg": "https://www.hdb.gov.sg/buying-a-flat/flat-grant-and-loan-eligibility/couples-and-families/enhanced-cpf-housing-grant",
+    "familyGrant": "https://www.hdb.gov.sg/buying-a-flat/flat-grant-and-loan-eligibility/couples-and-families",
+    "singlesGrant": "https://www.hdb.gov.sg/buying-a-flat/flat-grant-and-loan-eligibility/singles",
+    "proximityGrant": "https://www.hdb.gov.sg/buying-a-flat/flat-grant-and-loan-eligibility/couples-and-families",
+    "hdbLoan": "https://www.hdb.gov.sg/buying-a-flat/flat-grant-and-loan-eligibility/housing-loan",
+    "tdsrMsr": "https://www.mas.gov.sg/regulation/notices/notice-645",
+    "cpfOaRate": "https://www.cpf.gov.sg/member/growing-your-savings/earning-higher-returns/earning-attractive-interest"
+  },
+  "verificationLog": {
+    "2026-04-25": {
+      "verifiedFields": ["hdbLoan.cpfOaRate", "hdbLoan.spread", "hdbLoan.interestRate"],
+      "verifiedAgainst": "cpf.gov.sg confirms OA rate 2.5% for 1 Apr 2026 - 30 Jun 2026; HDB concessionary = OA + 0.1% = 2.6%",
+      "unverifiedFields": [
+        "ehg.tiers (JS-rendered HDB page; could not fetch)",
+        "ehg.incomeCeilingSgd",
+        "ehg.singlesIncomeCeilingSgd",
+        "familyGrant.amounts (JS-rendered)",
+        "singlesGrant.amounts (JS-rendered)",
+        "proximityGrant.amounts (JS-rendered)",
+        "stepUpGrant.amountSgd",
+        "servicingRatios.tdsr (MAS notice page returned maintenance error)",
+        "servicingRatios.msr",
+        "buyerStampDuty.tiers"
+      ],
+      "method": "WebFetch via Claude Code; HDB and MAS sites return JS-only or maintenance pages",
+      "nextStep": "Manual maintainer review against source URLs each Singapore Budget (~Feb)"
+    }
+  },
+  "verificationNote": "[Unverified] Most grant amounts and ratios are seed values not confirmed against live HDB/MAS sites in last verification pass. Only CPF-OA rate (2.5%) was directly verified. Re-verify all unverifiedFields against source URLs before production advice. Income ceilings and grant amounts change at Singapore Budget.",
+  "ehg": {
+    "name": "Enhanced CPF Housing Grant",
+    "appliesTo": ["bto", "resale"],
+    "incomeCeilingSgd": 9500,
+    "minEmploymentMonths": 12,
+    "tiers": [
+      { "incomeMaxSgd": 1500, "amountSgd": 120000 },
+      { "incomeMaxSgd": 2000, "amountSgd": 115000 },
+      { "incomeMaxSgd": 2500, "amountSgd": 110000 },
+      { "incomeMaxSgd": 3000, "amountSgd": 105000 },
+      { "incomeMaxSgd": 3500, "amountSgd": 95000 },
+      { "incomeMaxSgd": 4000, "amountSgd": 85000 },
+      { "incomeMaxSgd": 4500, "amountSgd": 75000 },
+      { "incomeMaxSgd": 5000, "amountSgd": 65000 },
+      { "incomeMaxSgd": 5500, "amountSgd": 55000 },
+      { "incomeMaxSgd": 6000, "amountSgd": 45000 },
+      { "incomeMaxSgd": 6500, "amountSgd": 35000 },
+      { "incomeMaxSgd": 7000, "amountSgd": 25000 },
+      { "incomeMaxSgd": 7500, "amountSgd": 15000 },
+      { "incomeMaxSgd": 8000, "amountSgd": 10000 },
+      { "incomeMaxSgd": 8500, "amountSgd": 7500 },
+      { "incomeMaxSgd": 9000, "amountSgd": 5000 },
+      { "incomeMaxSgd": 9500, "amountSgd": 5000 }
+    ],
+    "singlesHalfRule": "Single applicants get half of the tier amount; income ceiling is also halved to 4,750.",
+    "singlesIncomeCeilingSgd": 4750
+  },
+  "familyGrant": {
+    "name": "CPF Housing Grant (Family) - resale only",
+    "appliesTo": ["resale"],
+    "incomeCeilingSgd": 14000,
+    "amounts": {
+      "citizenCitizen2to4Room": 80000,
+      "citizenCitizen5RoomPlus": 50000,
+      "citizenPr2to4Room": 70000,
+      "citizenPr5RoomPlus": 40000
+    }
+  },
+  "singlesGrant": {
+    "name": "CPF Housing Grant (Single) - resale only",
+    "appliesTo": ["resale"],
+    "minAge": 35,
+    "incomeCeilingSgd": 7000,
+    "amounts": {
+      "citizen2to4Room": 40000,
+      "citizen5RoomPlus": 25000,
+      "jointSingles2to4Room": 80000,
+      "jointSingles5RoomPlus": 50000
+    }
+  },
+  "proximityGrant": {
+    "name": "Proximity Housing Grant - resale only",
+    "appliesTo": ["resale"],
+    "amounts": {
+      "familyLiveWithParents": 30000,
+      "familyNearParents": 20000,
+      "singleLiveWithParents": 15000,
+      "singleNearParents": 10000
+    },
+    "proximityKm": 4
+  },
+  "stepUpGrant": {
+    "name": "Step-Up CPF Housing Grant",
+    "appliesTo": ["bto", "resale"],
+    "scope": "Second-timer families upgrading from 2-room to 3-room in non-mature estates",
+    "incomeCeilingSgd": 7000,
+    "amountSgd": 15000
+  },
+  "hdbLoan": {
+    "name": "HDB Concessionary Loan",
+    "rateBasis": "CPF-OA + 0.1%",
+    "cpfOaRate": 0.025,
+    "spread": 0.001,
+    "interestRate": 0.026,
+    "ltvRatio": 0.75,
+    "minDownpaymentCash": 0,
+    "minDownpaymentCpfOrCash": 0.25,
+    "incomeCeilingFamilySgd": 14000,
+    "incomeCeilingExtendedFamilySgd": 21000,
+    "incomeCeilingSinglesSgd": 7000,
+    "maxTenureYears": 25,
+    "maxAge": 65
+  },
+  "bankLoanTemplate": {
+    "name": "Bank Home Loan (template)",
+    "rateBasis": "SORA-pegged or fixed",
+    "ltvRatio": 0.75,
+    "minDownpaymentCashPercent": 0.05,
+    "minDownpaymentCpfOrCashPercent": 0.20,
+    "maxTenureYears": 30,
+    "maxAge": 65,
+    "stressTestRate": 0.04,
+    "note": "Banks publish package details (lock-in, year-1 spread, thereafter spread). Pass actual packages to sg_loan_compare; the stress test uses MAS-mandated 4% medium-term floor for affordability checks."
+  },
+  "servicingRatios": {
+    "msr": 0.30,
+    "tdsr": 0.55,
+    "msrAppliesTo": "HDB and EC purchases only"
+  },
+  "buyerStampDuty": {
+    "tiers": [
+      { "uptoSgd": 180000, "rate": 0.01 },
+      { "uptoSgd": 360000, "rate": 0.02 },
+      { "uptoSgd": 1000000, "rate": 0.03 },
+      { "uptoSgd": 1500000, "rate": 0.04 },
+      { "uptoSgd": 3000000, "rate": 0.05 },
+      { "uptoSgd": null, "rate": 0.06 }
+    ],
+    "note": "Residential property BSD tiers."
+  }
+}

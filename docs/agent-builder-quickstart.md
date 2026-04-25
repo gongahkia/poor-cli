@@ -1,5 +1,26 @@
 # Agent Builder Quickstart
 
+## Skills And AGENTS.md
+
+This repo ships a meta-prompt surface alongside the MCP server so an agent installing the server also gets curated instructions:
+
+- [`AGENTS.md`](../AGENTS.md) at repo root — Codex, Cursor, OpenAI Agents SDK, and Aider read this by convention. Covers tool routing, output contract, the housing-advisor flow, auth, anti-patterns, and a worked example.
+- [`.claude/skills/sg-singapore-data/SKILL.md`](../.claude/skills/sg-singapore-data/SKILL.md) — Claude Code skill with the same content scoped to the Skill loader.
+- In-server MCP prompts (`prompts/list`) expose ~25 recipes and 3 persona playbooks defined in `RECIPE_CATALOG` / `PLAYBOOK_CATALOG`.
+
+If you are building an agent on top of `sg-apis-mcp`, point it at `AGENTS.md` (Codex-style stacks) or the Claude skill (Anthropic stacks) and let it route through `sg_query` or direct tools.
+
+## Housing Advisor Surface
+
+Four deterministic compute tools pair with the live data tools to turn the server into a Singapore housing advisor:
+
+- `sg_grant_eligibility` — EHG, Family, Singles, Proximity, Step-Up grants. Banks do not issue HDB grants.
+- `sg_loan_compare` — HDB concessionary vs caller-supplied bank packages; pass live SORA from `sg_mas_interest_rates`.
+- `sg_housing_affordability` — TDSR (55%) + MSR (30%) + LTV (75%) + downpayment cash/CPF split + BSD + grants verdict.
+- `sg_resale_price_compare` — benchmark a target resale unit against `sg_hdb_resale_prices`.
+
+Rules are versioned in `packages/mcp-server/src/housing/rules-2026.json` with `effectiveFrom`, `lastVerified`, and a `verificationLog` flagging which fields are confirmed against live HDB/MAS sources vs seed values. Re-verify each Singapore Budget (~Feb).
+
 ## Start With Discovery
 
 Use the catalog resources before you build prompt routing logic:

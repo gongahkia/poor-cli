@@ -261,6 +261,19 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
     preferredInterface: "sg_query",
   },
   {
+    name: "Housing Advisor",
+    description: "Deterministic housing-affordability surface: HDB grant eligibility, HDB-vs-bank loan comparison, integrated TDSR/MSR/LTV affordability, and resale price benchmarking. Rules are versioned and embedded; SORA and bank packages are caller-supplied.",
+    tools: [
+      "sg_grant_eligibility",
+      "sg_loan_compare",
+      "sg_housing_affordability",
+      "sg_resale_price_compare",
+    ],
+    authRequired: false,
+    rateLimit: "Local computation; sg_resale_price_compare reuses sg_hdb_resale_prices rate budget.",
+    positioning: "Compute-only advisor surface that pairs with sg_mas_interest_rates (live SORA) and sg_hdb_resale_prices (market context).",
+  },
+  {
     name: "CEA",
     description: "Curated estate-agent diligence surface over the official CEA salesperson registry published on data.gov.sg.",
     tools: ["sg_cea_salespersons"],
