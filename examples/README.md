@@ -1,7 +1,12 @@
 # Examples
 
-This folder contains eleven walkthroughs: five additive brief outcomes, two recipe-driven discovery flows, and four sector-specific diligence workflows.
+This folder contains outcome examples, additive brief walkthroughs, recipe-driven discovery flows, and sector-specific diligence workflows.
 
+- `outcome-relocation-assistant.md`
+- `outcome-sme-diligence-dashboard.md`
+- `outcome-school-childcare-finder.md`
+- `outcome-outdoor-event-checker.md`
+- `outcome-procurement-monitor.md`
 - `business-dossier.md`
 - `architecture-firm-diligence.md`
 - `healthcare-supplier-diligence.md`
