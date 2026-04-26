@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BriefArtifactSchema, MasDataset, type ToolResult } from "@sg-apis/shared";
+import { BriefArtifactSchema, MasDataset, type BriefArtifact, type ToolResult } from "@sg-apis/shared";
 
 vi.mock("../../apis/acra/client.js", () => ({
   getAcraEntities: vi.fn(),
@@ -114,6 +114,26 @@ const expectMarkdownSections = (text: string) => {
   expect(text).toContain("### What This Does Not Do");
 };
 
+const expectBriefQualityContract = (
+  payload: BriefArtifact,
+  options: Readonly<{
+    title: string;
+    requiredRecords: readonly string[];
+    requiredTools: readonly string[];
+    requiredLimitCodes: readonly string[];
+  }>,
+) => {
+  expect(payload.title).toBe(options.title);
+  expect(payload.summary.length).toBeGreaterThanOrEqual(3);
+  expect(payload.evidence.length).toBeGreaterThanOrEqual(2);
+  expect(payload.provenance.map((item) => item.tool)).toEqual(expect.arrayContaining(options.requiredTools));
+  expect(payload.freshness.length).toBeGreaterThanOrEqual(options.requiredTools.length);
+  expect(payload.limits.map((item) => item.code)).toEqual(expect.arrayContaining(options.requiredLimitCodes));
+  expect(Object.keys(payload.records)).toEqual(expect.arrayContaining([...options.requiredRecords]));
+  expect(payload.provenance.every((item) => item.source.length > 0 && item.coverage.length > 0)).toBe(true);
+  expect(payload.freshness.every((item) => item.source.length > 0 && item.observedAt.length > 0)).toBe(true);
+};
+
 describe("brief tools", () => {
   beforeEach(() => {
     vi.mocked(getAcraEntities).mockReset();
@@ -171,6 +191,12 @@ describe("brief tools", () => {
     const payload = parseBrief(jsonText);
 
     expect(payload.title).toBe("Business Dossier");
+    expectBriefQualityContract(payload, {
+      title: "Business Dossier",
+      requiredRecords: ["resolution", "quality", "handoff"],
+      requiredTools: ["sg_acra_entities", "sg_bca_licensed_builders", "sg_bca_registered_contractors"],
+      requiredLimitCodes: ["PUBLIC_REGISTRY_SCOPE"],
+    });
     expect(payload.provenance).toHaveLength(4);
     expect(payload.freshness).toHaveLength(4);
     expect(payload.limits.length).toBeGreaterThan(0);
@@ -539,6 +565,12 @@ describe("brief tools", () => {
     const evidenceByLabel = new Map(payload.evidence.map((item) => [item.label, item.value]));
 
     expect(payload.title).toBe("Macro Brief");
+    expectBriefQualityContract(payload, {
+      title: "Macro Brief",
+      requiredRecords: ["kpis", "headlines", "exchangeRates", "gdpSeries", "cpiYoYSeries"],
+      requiredTools: ["sg_mas_exchange_rates", "sg_mas_interest_rates", "sg_mas_financial_stats", "sg_singstat_table"],
+      requiredLimitCodes: ["STARTER_SNAPSHOT", "BOUNDED_SINGSTAT_SERIES", "NO_FORWARD_VIEW"],
+    });
     expect(payload.provenance).toHaveLength(4);
     expect(payload.summary.some((item) => item.label === "GDP table ID")).toBe(true);
     expect(summaryByLabel.get("3M SORA")).toBe(3.2);
@@ -638,6 +670,12 @@ describe("brief tools", () => {
     const payload = parseBrief(getText(jsonResult));
 
     expect(payload.title).toBe("Transport Brief");
+    expectBriefQualityContract(payload, {
+      title: "Transport Brief",
+      requiredRecords: ["status", "coverage", "serviceStatusByMode", "signals", "followups", "actionTemplates"],
+      requiredTools: ["sg_lta_bus_arrivals", "sg_lta_train_alerts", "sg_lta_traffic_incidents"],
+      requiredLimitCodes: ["SNAPSHOT_ONLY", "NO_ROUTE_PLANNING"],
+    });
     expect(payload.provenance).toHaveLength(3);
     expect(payload.summary.some((item) => item.label === "Transport status")).toBe(true);
     expect((payload.records["status"] as Record<string, unknown>)["level"]).toBe("disrupted");
@@ -791,6 +829,12 @@ describe("brief tools", () => {
     const payload = parseBrief(getText(jsonResult));
 
     expect(payload.title).toBe("Environment Brief");
+    expectBriefQualityContract(payload, {
+      title: "Environment Brief",
+      requiredRecords: ["status", "coverage", "thresholds", "signals", "followups", "actionTemplates"],
+      requiredTools: ["sg_nea_forecast_2hr", "sg_nea_air_quality", "sg_nea_rainfall"],
+      requiredLimitCodes: ["LIVE_SNAPSHOT_ONLY"],
+    });
     expect(payload.provenance).toHaveLength(3);
     expect(payload.summary.some((item) => item.label === "Monitoring status")).toBe(true);
     expect((payload.records["status"] as Record<string, unknown>)["level"]).toBe("watch");
