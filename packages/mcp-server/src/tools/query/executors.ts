@@ -49,6 +49,7 @@ import {
   handleMsfStudentCareServices,
 } from "../msf-tools.js";
 import { handleNeaAirQuality, handleNeaForecast2Hr, handleNeaRainfall } from "../nea-tools.js";
+import { handleNlbLibraries } from "../nlb-tools.js";
 import { handleNParks } from "../nparks-tools.js";
 import {
   handleOneMapConvertCoords,
@@ -60,6 +61,7 @@ import {
 import { handlePaCommunityOutlets, handlePaResidentNetworkCentres } from "../pa-tools.js";
 import { handlePubWaterLevels } from "../pub-tools.js";
 import { handleSfaEstablishments } from "../sfa-tools.js";
+import { handleLawSearch } from "../law-tools.js";
 import {
   handleSingStatBrowse,
   handleSingStatSearch,
@@ -239,6 +241,10 @@ export const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
     handleSfaEstablishments(params as Parameters<typeof handleSfaEstablishments>[0]),
   sg_nparks_parks: async (params) =>
     handleNParks(params as Parameters<typeof handleNParks>[0]),
+  sg_nlb_libraries: async (params) =>
+    handleNlbLibraries(params as Parameters<typeof handleNlbLibraries>[0]),
+  sg_law_search: async (params) =>
+    handleLawSearch(params as Parameters<typeof handleLawSearch>[0]),
   sg_pub_water_levels: async (params) =>
     handlePubWaterLevels(params as Parameters<typeof handlePubWaterLevels>[0]),
   sg_mom_labour_stats: async (params) =>

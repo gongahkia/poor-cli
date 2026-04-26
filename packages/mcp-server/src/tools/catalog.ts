@@ -1278,6 +1278,70 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
     continuationTools: ["sg_moh_facilities"],
   },
   {
+    name: "NLB Library Directory Lookup",
+    goal: "Find public libraries by region, postal code, or exact name without turning the lookup into a recommendation.",
+    prompt: "Find public libraries in east region",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Find public libraries in east region", mode: "execute" },
+    },
+    fallbackTools: ["sg_nlb_libraries"],
+    notes: [
+      "Designed for deterministic library-directory lookup, not programme discovery or library ranking.",
+      "Use postalCode or exact-name filters when the caller needs a narrower result set.",
+    ],
+    requiredInputs: ["optional region, postalCode, or exact name"],
+    continuationTools: ["sg_nlb_libraries"],
+  },
+  {
+    name: "NParks Park Directory Lookup",
+    goal: "Find parks and nature reserves by exact name for civic and relocation products.",
+    prompt: "Find parks named \"East Coast Park\"",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Find parks named \"East Coast Park\"", mode: "execute" },
+    },
+    fallbackTools: ["sg_nparks_parks"],
+    notes: [
+      "Designed for deterministic parks-directory lookup, not event planning or safety recommendations.",
+      "For weather-sensitive use cases, continue into sg_environment_brief.",
+    ],
+    requiredInputs: ["optional exact name"],
+    continuationTools: ["sg_nparks_parks", "sg_environment_brief"],
+  },
+  {
+    name: "SFA Licensed Food Establishment Lookup",
+    goal: "Check licensed food-establishment directory rows by exact name.",
+    prompt: "Find licensed food establishments named \"ABC FOOD\"",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Find licensed food establishments named \"ABC FOOD\"", mode: "execute" },
+    },
+    fallbackTools: ["sg_sfa_establishments"],
+    notes: [
+      "Designed for public licensing discovery, not food-safety scoring or enforcement advice.",
+      "Use exact names when possible because the direct surface is intentionally bounded.",
+    ],
+    requiredInputs: ["optional exact name"],
+    continuationTools: ["sg_sfa_establishments"],
+  },
+  {
+    name: "Singapore Statutes Search",
+    goal: "Search Singapore Statutes Online by keyword while preserving the no-legal-advice boundary.",
+    prompt: "Search Singapore statutes for Employment Act",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Search Singapore statutes for Employment Act", mode: "execute" },
+    },
+    fallbackTools: ["sg_law_search"],
+    notes: [
+      "Search results are snippets and official URLs only; agents must not provide legal advice.",
+      "Use this as a research pointer before the user verifies current text on Singapore Statutes Online.",
+    ],
+    requiredInputs: ["query"],
+    continuationTools: ["sg_law_search"],
+  },
+  {
     id: "bus_stop_status",
     name: "Bus Stop Status",
     goal: "Get live bus arrival timings and transport context for a specific bus stop.",

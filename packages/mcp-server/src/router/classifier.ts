@@ -451,6 +451,34 @@ export const classifyIntent = (query: string): IntentResult => {
   }
 
   if (
+    aliasedTool === "sg_nlb_libraries"
+    || /\bnlb\b|public\s+librar(?:y|ies)|library\s+directory|libraries\s+(?:near|in|around)/i.test(lower)
+  ) {
+    return buildIntentResult("civic", "direct_tool", 0.87, params, "sg_nlb_libraries");
+  }
+
+  if (
+    aliasedTool === "sg_nparks_parks"
+    || /\bnparks\b|parks?\s+(?:near|in|around|named|called|directory)|nature\s+reserve|park\s+directory/i.test(lower)
+  ) {
+    return buildIntentResult("civic", "direct_tool", 0.87, params, "sg_nparks_parks");
+  }
+
+  if (
+    aliasedTool === "sg_sfa_establishments"
+    || /\bsfa\b|licensed\s+food\s+establishments?|food\s+establishments?\s+(?:near|named|called|in|around)|food\s+licen[cs]e/i.test(lower)
+  ) {
+    return buildIntentResult("civic", "direct_tool", 0.87, params, "sg_sfa_establishments");
+  }
+
+  if (
+    aliasedTool === "sg_law_search"
+    || /singapore\s+(?:statutes?|acts?|law)\s+(?:search|lookup)|sso\s+law|statutes?\s+online|search\s+(?:singapore\s+)?(?:acts?|law|statutes?)/i.test(lower)
+  ) {
+    return buildIntentResult("law", "direct_tool", 0.87, params, "sg_law_search");
+  }
+
+  if (
     aliasedTool?.startsWith("sg_transit_")
     || /transit\s*(health|hotspots?|ops|brief|pack|reliability|transfer|accessib|objective|counterfactual|policy|model)/i.test(lower)
   ) {
@@ -771,6 +799,33 @@ export const resolveToolInput = (
           ...(params["type"] !== undefined ? { type: params["type"] } : {}),
           ...(params["name"] !== undefined ? { name: params["name"] } : {}),
           ...(params["postalCode"] !== undefined ? { postalCode: params["postalCode"] } : {}),
+        },
+      };
+    case "sg_nlb_libraries":
+      return {
+        tool,
+        input: {
+          ...(params["name"] !== undefined ? { name: params["name"] } : {}),
+          ...(params["region"] !== undefined ? { region: params["region"] } : {}),
+          ...(params["postalCode"] !== undefined ? { postalCode: params["postalCode"] } : {}),
+        },
+      };
+    case "sg_nparks_parks":
+    case "sg_sfa_establishments":
+      return {
+        tool,
+        input: {
+          ...(params["name"] !== undefined ? { name: params["name"] } : {}),
+        },
+      };
+    case "sg_law_search":
+      return {
+        tool,
+        input: {
+          query: query
+            .replace(/^\s*(?:search|lookup|find|show)\s+(?:singapore\s+)?(?:statutes?|law|acts?|sso\s+law|statutes?\s+online)\s+(?:for|about)?\s*/i, "")
+            .replace(/\s+/g, " ")
+            .trim() || query,
         },
       };
     case "sg_singstat_table":

@@ -102,6 +102,22 @@ vi.mock("../../apis/moh/client.js", () => ({
   getHealthcareFacilities: vi.fn(),
 }));
 
+vi.mock("../../apis/nlb/client.js", () => ({
+  getNlbLibraries: vi.fn(),
+}));
+
+vi.mock("../../apis/nparks/client.js", () => ({
+  getParks: vi.fn(),
+}));
+
+vi.mock("../../apis/sfa/client.js", () => ({
+  getSfaEstablishments: vi.fn(),
+}));
+
+vi.mock("../../apis/law/client.js", () => ({
+  searchSingaporeLaw: vi.fn(),
+}));
+
 import { query as masQuery } from "../../apis/mas/client.js";
 import { geocode, getPopulationData, getRoute } from "../../apis/onemap/client.js";
 import { searchDatasets as singstatSearch } from "../../apis/singstat/client.js";
@@ -133,6 +149,10 @@ import {
 } from "../../apis/msf/client.js";
 import { getSchools } from "../../apis/moe/client.js";
 import { getHealthcareFacilities } from "../../apis/moh/client.js";
+import { getNlbLibraries } from "../../apis/nlb/client.js";
+import { getParks } from "../../apis/nparks/client.js";
+import { getSfaEstablishments } from "../../apis/sfa/client.js";
+import { searchSingaporeLaw } from "../../apis/law/client.js";
 import { queryToolDefinitions } from "../query-tool.js";
 
 const runQuery = async (input: Readonly<Record<string, unknown>>) => {
@@ -178,6 +198,10 @@ describe("sg_query workflows", () => {
     vi.mocked(getMsfSocialServiceOffices).mockReset();
     vi.mocked(getSchools).mockReset();
     vi.mocked(getHealthcareFacilities).mockReset();
+    vi.mocked(getNlbLibraries).mockReset();
+    vi.mocked(getParks).mockReset();
+    vi.mocked(getSfaEstablishments).mockReset();
+    vi.mocked(searchSingaporeLaw).mockReset();
   });
 
   it("returns a macro workflow plan without executing steps", async () => {
@@ -469,6 +493,85 @@ describe("sg_query workflows", () => {
     });
     expect(vi.mocked(getHealthcareFacilities)).toHaveBeenCalledWith(
       expect.objectContaining({ type: "HOSPITAL", postalCode: "119077" }),
+    );
+  });
+
+  it("executes direct NLB library lookups through sg_query", async () => {
+    vi.mocked(getNlbLibraries).mockResolvedValue([
+      {
+        name: "Bedok Public Library",
+        region: "East",
+        postalCode: "467360",
+      },
+    ] as never);
+
+    const result = await runQuery({
+      query: "Find public libraries in east region",
+      mode: "execute",
+      format: "json",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "direct_tool",
+      toolsUsed: ["sg_nlb_libraries"],
+    });
+    expect(vi.mocked(getNlbLibraries)).toHaveBeenCalledWith(
+      expect.objectContaining({ region: "East" }),
+    );
+  });
+
+  it("executes direct NParks and SFA lookups through sg_query", async () => {
+    vi.mocked(getParks).mockResolvedValue([{ name: "East Coast Park" }] as never);
+    vi.mocked(getSfaEstablishments).mockResolvedValue([{ name: "ABC FOOD" }] as never);
+
+    const parks = await runQuery({
+      query: "Find parks named \"East Coast Park\"",
+      mode: "execute",
+      format: "json",
+    });
+    const food = await runQuery({
+      query: "Find licensed food establishments named \"ABC FOOD\"",
+      mode: "execute",
+      format: "json",
+    });
+
+    expect(parks.structuredContent).toMatchObject({
+      status: "completed",
+      toolsUsed: ["sg_nparks_parks"],
+    });
+    expect(food.structuredContent).toMatchObject({
+      status: "completed",
+      toolsUsed: ["sg_sfa_establishments"],
+    });
+    expect(vi.mocked(getParks)).toHaveBeenCalledWith(expect.objectContaining({ name: "East Coast Park" }));
+    expect(vi.mocked(getSfaEstablishments)).toHaveBeenCalledWith(expect.objectContaining({ name: "ABC FOOD" }));
+  });
+
+  it("executes Singapore law searches through sg_query with a research disclaimer", async () => {
+    vi.mocked(searchSingaporeLaw).mockResolvedValue([
+      {
+        title: "Employment Act 1968",
+        url: "https://sso.agc.gov.sg/Act/EmA1968",
+        snippet: "Employment Act",
+      },
+    ] as never);
+
+    const result = await runQuery({
+      query: "Search Singapore statutes for Employment Act",
+      mode: "execute",
+      format: "json",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "direct_tool",
+      toolsUsed: ["sg_law_search"],
+    });
+    expect(vi.mocked(searchSingaporeLaw)).toHaveBeenCalledWith(
+      expect.objectContaining({ query: "Employment Act" }),
     );
   });
 

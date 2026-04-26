@@ -486,6 +486,10 @@ export const getApiForTool = (tool: string): string => {
   if (tool.startsWith("sg_acra_")) return "acra";
   if (tool.startsWith("sg_hsa_")) return "hsa";
   if (tool.startsWith("sg_hlb_")) return "hlb";
+  if (tool.startsWith("sg_sfa_")) return "sfa";
+  if (tool.startsWith("sg_nparks_")) return "nparks";
+  if (tool.startsWith("sg_nlb_")) return "nlb";
+  if (tool.startsWith("sg_law_")) return "law";
   if (tool.startsWith("sg_pa_")) return "pa";
   if (tool.startsWith("sg_sportsg_")) return "sportsg";
   if (tool.startsWith("sg_ecda_")) return "ecda";
