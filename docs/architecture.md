@@ -10,7 +10,7 @@ Accepted for the current product shape.
 
 ## Context
 
-This repo is not a general Singapore analyst copilot. It is a tool-first MCP server for agent builders who need reliable, explicit interfaces over 37 official data families.
+This repo is not a general Singapore analyst copilot. It is a tool-first MCP server for agent builders who need reliable, explicit interfaces over 38 catalog families.
 
 The product boundary is:
 
@@ -36,9 +36,9 @@ Consequence:
 - new scope is added with honest direct tools first
 - additive briefs are allowed only when they return a bounded artifact, not hidden orchestration
 
-### 2. The repo goes deep on 37 official data families
+### 2. The repo goes deep on 38 catalog families
 
-The current families are:
+The current data and advisory families are:
 
 - SingStat
 - MAS
@@ -48,6 +48,7 @@ The current families are:
 - Transit Intelligence
 - NEA
 - HDB
+- Housing Advisor
 - CEA
 - BCA
 - BOA

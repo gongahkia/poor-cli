@@ -6,7 +6,7 @@ Observed on 2026-03-27 from the perspective of a developer deciding whether to i
 
 There is an actual value prop here.
 
-It is not "Singapore data for everyone." It is narrower and more defensible than that: one deterministic MCP server for Singapore public data with stable `sg_*` contracts, bounded workflow routing, additive brief artifacts, and enough runtime discipline to save a developer from wiring nearly thirty separate public-data surfaces by hand.
+It is not "Singapore data for everyone." It is narrower and more defensible than that: one deterministic MCP server for Singapore public data with stable `sg_*` contracts, bounded workflow routing, additive brief artifacts, and enough runtime discipline to save a developer from wiring dozens of separate public-data surfaces by hand.
 
 That is real value for the right buyer.
 
@@ -23,7 +23,7 @@ This pass tightened adoption-critical runtime behavior:
 
 ## Evidence That The Repo Is Real
 
-- The codebase now exposes 29 official data families and 68 public `sg_*` tools.
+- The codebase now exposes 38 catalog families and 105 registered `sg_*` tools.
 - `npm run verify` is the repo-wide gate for lint, build, docs parity, tests, and packaging smoke.
 - The repo exposes machine-readable discovery resources through `sg://apis`, `sg://tools`, `sg://workflows`, `sg://recipes`, and `sg://runtime`.
 - The server has centralized cache, timeout, retry, rate-limit, and packaging checks instead of leaving those concerns to downstream consumers.

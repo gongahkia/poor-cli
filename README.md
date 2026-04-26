@@ -6,21 +6,24 @@ Official Singapore public data for agents with deterministic contracts.
 
 ## Surface Snapshot
 
-The repo currently exposes 101 `sg_*` tools total across 37 official data families.
+The repo currently exposes 105 `sg_*` tools total across 38 catalog families.
 
-- 84 family, brief/query, and ergonomics tools across the 37 API families
-- 17 operational tools for transit decisioning/governance plus keys, cache, config, health, and trace lookup
+- 86 direct data tools across the 38 API families
+- 7 additive brief tools plus the bounded `sg_query` router
+- 11 runtime and operational tools for keys, cache, config, health, tracing, and visualization
 
 `sg_query` is the bounded preferred interface across 21 routed families. It plans or executes bounded deterministic workflows with transparent step metadata. The direct `sg_*` tools remain the stable low-level contract.
 
+## Start Here For Builders
+
+1. Read [docs/agent-builder-quickstart.md](./docs/agent-builder-quickstart.md) for the recommended `sg_query` and direct-tool integration pattern.
+2. Build and run the local MCP server with `npm install`, `npm run build`, then `node packages/mcp-server/dist/index.js`.
+3. Cache `sg://recipes`, `sg://tools`, `sg://runtime`, `sg://playbooks`, and `sg://benchmarks` in your agent or app planner.
+4. Start from [examples/integration/basic-client.ts](./examples/integration/basic-client.ts) or [examples/integration/basic-client.py](./examples/integration/basic-client.py), then graduate to the backend, UI state, or scheduled-monitor templates under [examples/integration](./examples/integration).
+
 ## Roadmap
 
-- [MASTER-ROADMAP.md](./MASTER-ROADMAP.md)
-- [PHASE1.md](./PHASE1.md)
-- [PHASE2.md](./PHASE2.md)
-- [PHASE3.md](./PHASE3.md)
-- [PHASE4.md](./PHASE4.md)
-- [PHASE5.md](./PHASE5.md)
+Roadmap planning files live under [docs/roadmap](./docs/roadmap) so the repository root stays focused on the runtime, install path, and agent-facing instructions.
 
 ## Skills & Agents
 
@@ -42,7 +45,7 @@ The value is not hidden magic. The value is:
 - provenance, freshness, and limits surfaced directly in brief artifacts
 - caching, rate limiting, auth handling, packaging, and parity checks already done
 
-If you are evaluating whether the repo is actually useful for developers, start with [docs/product-audit.md](./docs/product-audit.md), [docs/developer-adoption-audit.md](./docs/developer-adoption-audit.md), [docs/agent-builder-quickstart.md](./docs/agent-builder-quickstart.md), [docs/market-conventions-audit.md](./docs/market-conventions-audit.md), [docs/ecosystem-snapshot.md](./docs/ecosystem-snapshot.md), [docs/compatibility-matrix.md](./docs/compatibility-matrix.md), [docs/known-issues.md](./docs/known-issues.md), [docs/governance-checklist.md](./docs/governance-checklist.md), [docs/audit-retention-policy.md](./docs/audit-retention-policy.md), [docs/kpi-thresholds.md](./docs/kpi-thresholds.md), and [docs/incident-playbook.md](./docs/incident-playbook.md).
+If you are evaluating whether the repo is actually useful for developers, start with [docs/agent-builder-quickstart.md](./docs/agent-builder-quickstart.md) and the product-health index at [docs/product-health.md](./docs/product-health.md).
 
 ## Capability Matrix
 
@@ -71,6 +74,7 @@ If you are evaluating whether the repo is actually useful for developers, start 
 | Transit Intelligence | 14 | Health/hotspots, ops brief + pack, reliability, transfer-risk, accessible route, objective planning, counterfactuals, outcomes, model metrics, policy audit/insights/replay | LTA key for live-dependent reads |
 | NEA | 3 | 2-hour forecast, air quality, rainfall | None |
 | HDB | 2 | Curated resale and rental market reads over official data.gov.sg datasets | None |
+| Housing Advisor | 4 | Deterministic HDB grant eligibility, HDB-vs-bank loan comparison, resale price benchmarking, and affordability checks | None |
 | CEA | 1 | Curated salesperson and estate-agent registry lookup | None |
 | BCA | 2 | Curated licensed-builder and contractor registry lookup | None |
 | BOA | 2 | Curated architect and architecture-firm registry lookup | None |

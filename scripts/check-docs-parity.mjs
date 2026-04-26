@@ -44,7 +44,7 @@ const ensureExcludes = (path, snippets) => {
 
 ensureIncludes(readmeTarget, [
   `${totalTools} \`sg_*\` tools total`,
-  `${familyCount} official data families`,
+  `${familyCount} catalog families`,
   `bounded preferred interface across ${routedFamilyCount} routed families`,
   "Business Registry Diligence",
   "sg_acra_entities",
@@ -52,30 +52,17 @@ ensureIncludes(readmeTarget, [
   "sg://runtime",
   "sg://playbooks",
   "sg://benchmarks",
-  "docs/product-audit.md",
   "docs/agent-builder-quickstart.md",
-  "docs/market-conventions-audit.md",
-  "docs/compatibility-matrix.md",
-  "docs/known-issues.md",
-  "docs/governance-checklist.md",
-  "docs/audit-retention-policy.md",
-  "docs/kpi-thresholds.md",
-  "docs/troubleshooting.md",
+  "docs/product-health.md",
   "npm run diagnostics",
-  "npm run kpis:dashboard",
-  "npm run release:preflight",
-  "npm run release:evidence",
-  "npm run quarterly:report",
   "Route Planning",
   "SingStat Table Drilldown",
   "Dataset Collection Browse",
   "sg_civic_brief",
-  "MASTER-ROADMAP.md",
-  "PHASE1.md",
-  "PHASE2.md",
-  "PHASE3.md",
-  "PHASE4.md",
-  "PHASE5.md",
+  "docs/roadmap",
+  "Start Here For Builders",
+  "examples/integration/basic-client.ts",
+  "examples/integration/basic-client.py",
   "comparisons are supported only for two-planning-area prompts",
   "npm run test:smoke:public",
   ...familyNames,
@@ -86,7 +73,7 @@ ensureExcludes(readmeTarget, [
 ]);
 
 ensureIncludes("docs/architecture.md", [
-  `${familyCount} official data families`,
+  `${familyCount} catalog families`,
   `bounded preferred interface across ${routedFamilyCount} routed families`,
   "business-registry workflows can route to ACRA, CEA, BCA, BOA, HSA, HLB, and GeBIZ",
   "sg://recipes",
@@ -113,7 +100,7 @@ ensureIncludes("docs/api-auth-guide.md", [
 ]);
 
 ensureIncludes("docs/contributing.md", [
-  `${familyCount} data families`,
+  `${familyCount} catalog families`,
   "RegisteredToolDefinition[]",
   "tool-set.ts",
   "scripts/check-docs-parity.mjs",
@@ -132,6 +119,28 @@ ensureIncludes("docs/product-audit.md", [
   "Education",
   "Healthcare facilities",
   "Procurement and tender discovery",
+]);
+
+ensureIncludes("docs/product-health.md", [
+  "Product audit",
+  "Developer adoption audit",
+  "Market conventions audit",
+  "Compatibility matrix",
+  "Known issues",
+  "Governance checklist",
+  "Audit retention policy",
+  "KPI thresholds",
+  "Quarterly product health template",
+  "Release guide",
+]);
+
+ensureIncludes("docs/roadmap/README.md", [
+  "Master roadmap",
+  "Phase 1",
+  "Phase 2",
+  "Phase 3",
+  "Phase 4",
+  "Phase 5",
 ]);
 
 ensureIncludes("docs/agent-builder-quickstart.md", [
@@ -278,5 +287,5 @@ for (const path of ["smithery.yaml", "glama.json", "packages/mcp-server/package.
 }
 
 process.stdout.write(
-  `Docs parity OK: ${totalTools} tools, ${familyCount} families, ${authFamilies.length} authenticated families, ${routedFamilyCount} sg_query-routed families.\n`,
+  `Docs parity OK: ${totalTools} tools, ${familyCount} catalog families, ${authFamilies.length} authenticated families, ${routedFamilyCount} sg_query-routed families.\n`,
 );

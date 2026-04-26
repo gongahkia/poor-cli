@@ -42,6 +42,7 @@ These tool families do not require credentials:
 - MAS
 - NEA
 - HDB
+- Housing Advisor
 - CEA
 - BCA
 - BOA
