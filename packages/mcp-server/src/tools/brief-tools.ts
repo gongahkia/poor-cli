@@ -1652,6 +1652,9 @@ export const handleMacroBrief = async (
   const exchangeValue = latestExchange?.[exchangeKey]
     ?? latestExchange?.[`${currency.toLowerCase()}_sgd_100`]
     ?? null;
+  const exchangeHeadlineValue = typeof exchangeValue === "number" || typeof exchangeValue === "string"
+    ? exchangeValue
+    : null;
   const soraMetric = extractNamedMasMetric(latestInterest, ["sora", "sora_1m", "sora_3m", "sora_6m", "sor_average"]);
   const bankingMetric = extractNamedMasMetric(latestBanking, ["total_deposits", "total_loans", "total_assets", "dbd_deposit"]);
   if (latestInterest !== undefined && soraMetric === null) {
@@ -1714,7 +1717,7 @@ export const handleMacroBrief = async (
   const macroHeadlines = [
     {
       code: "FX",
-      headline: `${currency}/SGD${formatMacroHeadlineValue(exchangeValue) === null ? " unavailable" : ` at ${formatMacroHeadlineValue(exchangeValue)}`}`,
+      headline: `${currency}/SGD${formatMacroHeadlineValue(exchangeHeadlineValue) === null ? " unavailable" : ` at ${formatMacroHeadlineValue(exchangeHeadlineValue)}`}`,
       source: "MAS",
       date: typeof latestExchange?.["date"] === "string" ? latestExchange["date"] : null,
     },

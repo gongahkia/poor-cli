@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BriefArtifactSchema, MasDataset, type BriefArtifact, type ToolResult } from "@sg-apis/shared";
+import { BriefArtifactSchema, MasDataset, type ToolResult } from "@sg-apis/shared";
 
 vi.mock("../../apis/acra/client.js", () => ({
   getAcraEntities: vi.fn(),
@@ -104,6 +104,8 @@ const parseBrief = (resultText: string) => {
   return BriefArtifactSchema.parse(JSON.parse(resultText));
 };
 
+type ParsedBriefArtifact = ReturnType<(typeof BriefArtifactSchema)["parse"]>;
+
 const getText = (result: ToolResult): string => {
   return result.content.find((item): item is Extract<ToolResult["content"][number], { type: "text" }> => item.type === "text")?.text ?? "";
 };
@@ -115,7 +117,7 @@ const expectMarkdownSections = (text: string) => {
 };
 
 const expectBriefQualityContract = (
-  payload: BriefArtifact,
+  payload: ParsedBriefArtifact,
   options: Readonly<{
     title: string;
     requiredRecords: readonly string[];
@@ -126,9 +128,9 @@ const expectBriefQualityContract = (
   expect(payload.title).toBe(options.title);
   expect(payload.summary.length).toBeGreaterThanOrEqual(3);
   expect(payload.evidence.length).toBeGreaterThanOrEqual(2);
-  expect(payload.provenance.map((item) => item.tool)).toEqual(expect.arrayContaining(options.requiredTools));
+  expect(payload.provenance.map((item) => item.tool)).toEqual(expect.arrayContaining([...options.requiredTools]));
   expect(payload.freshness.length).toBeGreaterThanOrEqual(options.requiredTools.length);
-  expect(payload.limits.map((item) => item.code)).toEqual(expect.arrayContaining(options.requiredLimitCodes));
+  expect(payload.limits.map((item) => item.code)).toEqual(expect.arrayContaining([...options.requiredLimitCodes]));
   expect(Object.keys(payload.records)).toEqual(expect.arrayContaining([...options.requiredRecords]));
   expect(payload.provenance.every((item) => item.source.length > 0 && item.coverage.length > 0)).toBe(true);
   expect(payload.freshness.every((item) => item.source.length > 0 && item.observedAt.length > 0)).toBe(true);
