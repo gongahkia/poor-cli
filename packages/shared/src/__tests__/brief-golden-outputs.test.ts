@@ -46,6 +46,7 @@ describe("brief golden outputs", () => {
     const payload = BriefArtifactSchema.parse(readGolden("macro-brief.json"));
     const summaryLabels = new Set(payload.summary.map((item) => item.label));
     const kpis = payload.records["kpis"] as Record<string, unknown>;
+    const headlines = payload.records["headlines"] as readonly Record<string, unknown>[];
 
     expect(payload.title).toBe("Macro Brief");
     expect(summaryLabels.has("SORA")).toBe(true);
@@ -59,6 +60,13 @@ describe("brief golden outputs", () => {
     });
     expect(payload.summary.find((item) => item.label === "GDP table ID")?.value).not.toBe(
       payload.summary.find((item) => item.label === "CPI YoY table ID")?.value,
+    );
+    expect(headlines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "SORA", headline: "SORA at 2.61%" }),
+        expect.objectContaining({ code: "GDP", tableId: "M015631" }),
+        expect.objectContaining({ code: "CPI_YOY", tableId: "M213781" }),
+      ]),
     );
   });
 

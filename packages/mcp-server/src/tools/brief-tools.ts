@@ -1130,6 +1130,19 @@ const buildMacroLimits = (): readonly BriefLimit[] => [
   toLimit("NO_FORWARD_VIEW", "The brief reports current or requested historical values and does not forecast or interpret future macro conditions."),
 ];
 
+const formatMacroHeadlineValue = (
+  value: string | number | null | undefined,
+  suffix = "",
+): string | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return `${value}${suffix}`;
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    return `${value}${suffix}`;
+  }
+  return null;
+};
+
 const buildTransportLimits = (hasBusStopCode: boolean): readonly BriefLimit[] => {
   const limits: BriefLimit[] = [
     toLimit("SNAPSHOT_ONLY", "This brief summarizes current LTA operational conditions and does not predict delays or incident resolution time."),
@@ -1698,6 +1711,38 @@ export const handleMacroBrief = async (
       cpiIndexDeltaPercent: cpiIndexDelta,
     },
   };
+  const macroHeadlines = [
+    {
+      code: "FX",
+      headline: `${currency}/SGD${formatMacroHeadlineValue(exchangeValue) === null ? " unavailable" : ` at ${formatMacroHeadlineValue(exchangeValue)}`}`,
+      source: "MAS",
+      date: typeof latestExchange?.["date"] === "string" ? latestExchange["date"] : null,
+    },
+    {
+      code: "SORA",
+      headline: `${soraMetric === null ? "SORA" : formatMetricLabel(soraMetric.key)}${formatMacroHeadlineValue(soraMetric?.value, "%") === null ? " unavailable" : ` at ${formatMacroHeadlineValue(soraMetric?.value, "%")}`}`,
+      source: "MAS",
+      date: typeof latestInterest?.["date"] === "string" ? latestInterest["date"] : null,
+    },
+    {
+      code: "BANKING",
+      headline: `${bankingMetric === null ? "MAS banking metric" : formatMetricLabel(bankingMetric.key)}${formatMacroHeadlineValue(bankingMetric?.value) === null ? " unavailable" : ` at ${formatMacroHeadlineValue(bankingMetric?.value)}`}`,
+      source: "MAS",
+      date: typeof latestBanking?.["date"] === "string" ? latestBanking["date"] : null,
+    },
+    {
+      code: "GDP",
+      headline: `GDP at current prices${formatMacroHeadlineValue(latestGdp?.["value"] as string | number | null | undefined) === null ? " unavailable" : ` at ${formatMacroHeadlineValue(latestGdp?.["value"] as string | number | null | undefined)} for ${String(latestGdp?.["period"] ?? "unknown period")}`}`,
+      source: "SingStat",
+      tableId: gdpTableId,
+    },
+    {
+      code: "CPI_YOY",
+      headline: `CPI YoY${formatMacroHeadlineValue(latestCpiYoY?.["value"] as string | number | null | undefined, "%") === null ? " unavailable" : ` at ${formatMacroHeadlineValue(latestCpiYoY?.["value"] as string | number | null | undefined, "%")} for ${String(latestCpiYoY?.["period"] ?? "unknown period")}`}`,
+      source: "SingStat",
+      tableId: cpiTableId,
+    },
+  ];
 
   const payload: BriefArtifact = {
     title: "Macro Brief",
@@ -1739,6 +1784,7 @@ export const handleMacroBrief = async (
       gdpSeries,
       cpiYoYSeries,
       cpiIndexSeries,
+      headlines: macroHeadlines,
     },
     gaps,
     provenance: [

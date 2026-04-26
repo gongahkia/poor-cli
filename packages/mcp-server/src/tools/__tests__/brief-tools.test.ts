@@ -565,6 +565,13 @@ describe("brief tools", () => {
         cpiIndexDeltaPercent: expect.any(Number),
       },
     });
+    expect(payload.records["headlines"]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "SORA", headline: "3M SORA at 3.2%", source: "MAS" }),
+        expect.objectContaining({ code: "GDP", headline: "GDP at current prices at 156000 for 2025 4Q", tableId: "M015631" }),
+        expect.objectContaining({ code: "CPI_YOY", headline: "CPI YoY at 1.6% for 2026 Feb", tableId: "M213781" }),
+      ]),
+    );
     expect(summaryByLabel.get("Banking period delta %")).toBe(2.04);
     expect(summaryByLabel.get("GDP period delta %")).toBe(1.3);
     expect(typeof summaryByLabel.get("CPI YoY period delta %")).toBe("number");

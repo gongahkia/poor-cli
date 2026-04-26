@@ -81,6 +81,13 @@
     "cpiIndexSeries": [
       { "period": "2026 Feb", "variable": "All Items", "value": 116.2, "unit": "index" },
       { "period": "2026 Jan", "variable": "All Items", "value": 115.9, "unit": "index" }
+    ],
+    "headlines": [
+      { "code": "FX", "headline": "USD/SGD at 1.359", "source": "MAS", "date": "2025-01-03T00:00:00+08:00" },
+      { "code": "SORA", "headline": "SORA at 2.61%", "source": "MAS", "date": "2025-01-03T00:00:00+08:00" },
+      { "code": "BANKING", "headline": "Total deposits at 803500.4", "source": "MAS", "date": "2025-01-03T00:00:00+08:00" },
+      { "code": "GDP", "headline": "GDP at current prices at 156000 for 2025 4Q", "source": "SingStat", "tableId": "M015631" },
+      { "code": "CPI_YOY", "headline": "CPI YoY at 1.6% for 2026 Feb", "source": "SingStat", "tableId": "M213781" }
     ]
   },
   "gaps": [],
