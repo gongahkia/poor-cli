@@ -616,6 +616,29 @@ describe("brief tools", () => {
       format: "markdown",
     });
     expectMarkdownSections(getText(markdownResult));
+
+    const headlines = payload.records["headlines"] as readonly Record<string, unknown>[];
+    const gdpHeadline = headlines.find((h) => h["code"] === "GDP");
+    const cpiHeadline = headlines.find((h) => h["code"] === "CPI_YOY");
+    const soraHeadline = headlines.find((h) => h["code"] === "SORA");
+    const bankingHeadline = headlines.find((h) => h["code"] === "BANKING");
+
+    // CPI/GDP separation: tableIds must not collide and headline strings must not cross-reference each other.
+    expect(gdpHeadline?.["tableId"]).toBe("M015631");
+    expect(cpiHeadline?.["tableId"]).toBe("M213781");
+    expect(gdpHeadline?.["tableId"]).not.toBe(cpiHeadline?.["tableId"]);
+    expect(String(gdpHeadline?.["headline"] ?? "")).not.toMatch(/CPI/i);
+    expect(String(cpiHeadline?.["headline"] ?? "")).not.toMatch(/GDP/i);
+
+    // SORA / banking labels must be named, not generic placeholder strings.
+    expect(String(soraHeadline?.["headline"] ?? "")).not.toMatch(/^SORA metric/);
+    expect(String(soraHeadline?.["headline"] ?? "")).not.toMatch(/CPI|GDP/i);
+    expect(String(bankingHeadline?.["headline"] ?? "")).not.toMatch(/^MAS banking metric at/);
+    expect(String(bankingHeadline?.["headline"] ?? "")).not.toMatch(/CPI|GDP/i);
+
+    // Summary must not contain a generic 'metric' label fallback once SORA / banking are mapped.
+    expect(payload.summary.some((item) => item.label === "SORA metric")).toBe(false);
+    expect(payload.summary.some((item) => item.label === "MAS Banking metric")).toBe(false);
   });
 
   it("fails loud with gaps when MAS interest and banking records lack known metric fields", async () => {
