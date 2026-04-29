@@ -510,6 +510,48 @@ const RECIPE_PROMPT_METADATA: Readonly<Record<string, PromptMetadata>> = {
     ],
     buildStarterPrompt: (args) => `Hotel operator lookup for ${renderBusinessLookupTarget(args)}`,
   },
+  nlb_library_directory_lookup: {
+    args: [
+      {
+        name: "region",
+        description: "Optional NLB region filter.",
+        kind: "enum",
+        enumValues: ["NORTH", "SOUTH", "EAST", "WEST", "CENTRAL"],
+      },
+      { name: "postalCode", description: "Optional Singapore postal code filter.", kind: "string" },
+      { name: "name", description: "Optional exact library name filter.", kind: "string" },
+    ],
+    buildStarterPrompt: (args) => {
+      const region = typeof args["region"] === "string" ? ` in ${args["region"].toLowerCase()} region` : "";
+      const postalCode = typeof args["postalCode"] === "string" ? ` near postal code ${args["postalCode"]}` : "";
+      const name = typeof args["name"] === "string" ? ` named "${args["name"]}"` : "";
+      return `Find public libraries${region}${postalCode}${name}`.trim();
+    },
+  },
+  nparks_park_directory_lookup: {
+    args: [
+      { name: "name", description: "Optional exact park name filter.", kind: "string" },
+    ],
+    buildStarterPrompt: (args) => {
+      const name = typeof args["name"] === "string" ? ` named "${args["name"]}"` : "";
+      return `Find parks and nature reserves${name}`.trim();
+    },
+  },
+  sfa_licensed_food_establishment_lookup: {
+    args: [
+      { name: "name", description: "Optional exact establishment name filter.", kind: "string" },
+    ],
+    buildStarterPrompt: (args) => {
+      const name = typeof args["name"] === "string" ? ` named "${args["name"]}"` : "";
+      return `Find licensed food establishments${name}`.trim();
+    },
+  },
+  singapore_statutes_search: {
+    args: [
+      { name: "query", description: "Keyword or phrase to search across Singapore Statutes Online.", kind: "string", required: true },
+    ],
+    buildStarterPrompt: (args) => `Search Singapore statutes for ${String(args["query"] ?? "").trim()}`,
+  },
   transit_ops_brief: {
     args: [
       { name: "scopeKey", description: "Optional deterministic scope key used for repeat monitoring runs.", kind: "string" },
