@@ -1,0 +1,9 @@
+[package]
+name = "wok-keymap"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Context-scoped chord-tree keymap resolver"
+
+[dependencies]

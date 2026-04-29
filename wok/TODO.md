@@ -138,14 +138,8 @@ Doctor now prints `channel: dev` and `feature_flags: on=[…] off=[…]`. Remain
 - *Out of scope (for now):* presenter/scene/wgpu pipeline (keep current `wok-renderer`).
 - *Migration:* incrementally lift `WokHandler` substates into entities. Target: shrink `main.rs` below 50k by end of P6.
 
-### P6.2 Keymap rewrite
-- *Why:* `wok-app/keybindings.rs` is 24k flat. warp's `warpui_core/keymap.rs` (36k) is context-scoped chord trees w/ arbitration.
-- *Shape:*
-  - `KeyContext` stack (e.g., `[Workspace, Pane, Editor]`).
-  - `Binding { sequence: Vec<Stroke>, action: ActionId, when: ContextPredicate }`.
-  - `Keymap::resolve(strokes, ctx) -> Resolution { Pending | Match(ActionId) | None }`.
-- *Migration:* parser reads existing `~/.config/wok/keymap.toml`; add `when:` field opt-in.
-- *Tests:* chord disambiguation; context masking; conflict reporting.
+### ~~P6.2 Keymap framework~~ ✅ done (resolver)
+New crate `wok-keymap`. Types: `Stroke { Key, Mods }`, `Key { Char, Enter, Esc, Tab, Backspace, Space }`, `Mods { ctrl, shift, alt, super_ }`, `Binding { sequence, action: &'static str, when: ContextPredicate }`, `ContextPredicate { Any, All, AnyOf, None_ }`, `Context = HashSet<&'static str>`. `Keymap::resolve(buffer, ctx) -> Resolution { Match { action, sequence_len } | Pending | None }`. Arbitration: a longer pending binding blocks a short exact match until disambiguated; same-length bindings are last-wins. 9 tests covering chord disambiguation, context masking, modifier-aware strokes, all four predicate kinds. TOML parser (`when:` opt-in) + migration from `wok-app/keybindings.rs` deferred to a follow-up.
 
 ---
 
