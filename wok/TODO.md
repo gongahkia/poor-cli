@@ -38,11 +38,15 @@ Crate landed w/ `score(query, candidate) -> Option<Score>` + `match_many`. Subst
 ### ~~P1.3 wok-watcher~~ ✅ done
 Crate landed w/ `PathWatcher::{new,with_debounce,swap,path,poll}`. Drains notify events, coalesces by debounce window. `wok-ui/theme_watcher.rs` reduced to thin adapter. `poll()` signature changed `&self → &mut self`; one call site in main.rs updated. Config-reload + lua-reload subscribers deferred to first consumer.
 
-### P1.4 New crate: `wok-sumtree`
-- *Why:* scrollback in `wok-terminal/state.rs` and edit buffer in `wok-input/buffer.rs` are linear. O(n) line-index lookups will hurt at 100k+ scrollback. sum_tree gives O(log n).
-- *Shape:* generic B-tree of `Item: Summary` w/ cursor + seek-by-dim. Keep it minimal — no rope-text specialization yet.
-- *Adoption:* land crate first w/o consumers. Migrate scrollback in P2.3 only after benches show win.
-- *Tests:* property — invariants under random insert/remove; cursor seek matches linear oracle.
+### ~~P1.4 wok-sumtree~~ ✅ done
+B-tree (fanout 8) w/ `Item`/`Summary` traits. API: `push`/`extend`/`get`/`len`/`summary`/`iter`/`seek_by`. Splits root upward on overflow; cached child counts make `get` truly O(log n). 7 unit tests + criterion benches.
+
+Bench numbers (release, 100k items, 1024 ops):
+- `get` random: vec ≈ 0.3 ns/op, sumtree ≈ 17 ns/op — Vec wins for raw indexed access (expected; sumtree has overhead).
+- `seek_by` row-lookup: sumtree ≈ 24 ns/op, scales O(log n). Vec equivalent can't do this in O(log n); the bench's vec_linear column is unreliable (LLVM elides the constant inner loop).
+- Push (sequential append): negligible difference.
+
+Conclusion: migrate scrollback to sumtree only where soft-wrapped line→logical row needs the seek_by win. Raw indexed access stays on Vec.
 
 ---
 
