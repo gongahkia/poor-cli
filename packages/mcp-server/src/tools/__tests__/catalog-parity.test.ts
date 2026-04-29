@@ -194,6 +194,15 @@ describe("resource catalog parity", () => {
     expect(NORMALIZED_PLAYBOOK_CATALOG.every((entry) => entry.promptMetadata !== undefined)).toBe(true);
   });
 
+  it("keeps RECIPE_FALLBACK_TOOLS aligned with RECIPE_CATALOG fallbackTools", async () => {
+    const { RECIPE_FALLBACK_TOOLS } = await import("../recipe-fallbacks.js");
+    for (const [recipeId, fallbackTools] of Object.entries(RECIPE_FALLBACK_TOOLS)) {
+      const entry = NORMALIZED_RECIPE_CATALOG.find((candidate) => candidate.id === recipeId);
+      expect(entry, `RECIPE_FALLBACK_TOOLS lists '${recipeId}' but no recipe with that id exists`).toBeDefined();
+      expect(entry!.fallbackTools, `fallback tools for '${recipeId}' drifted from catalog`).toEqual(fallbackTools);
+    }
+  });
+
   it("serves the API catalog through sg://apis", async () => {
     const { resourceHandlers } = collectSurface();
     const result = await resourceHandlers.get(RESOURCE_URIS.apis)!();
