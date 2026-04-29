@@ -52,17 +52,15 @@ Conclusion: migrate scrollback to sumtree only where soft-wrapped line→logical
 
 ## P2 — State and parsing
 
-### P2.1 `wok-settings` crate w/ derive macro (port of warp `settings_value` + `_derive`)
-- *Why:* `wok-app/config.rs` is 31k of hand-rolled serde + validation + defaults. Adding a setting touches 4 places. Derive collapses to one.
-- *Shape:*
-  - `wok-settings` — `Setting<T>` value type, `SettingsStore`, layered sources (env > user toml > defaults).
-  - `wok-settings-derive` — proc-macro `#[derive(Settings)]` emits TOML schema, defaults, JSON-schema export for editor LSP, live-reload diff.
-- *Migration plan:*
-  1. New crate empty + derive.
-  2. Mirror current TOML schema as `#[derive(Settings)] struct WokConfig`.
-  3. Switch loader; keep old `config.rs` as adapter for one release.
-  4. Delete adapter.
-- *Tests:* round-trip TOML; defaults stable; layer precedence; rejects unknown keys w/ helpful error.
+### P2.1 wok-settings + derive (framework ✅ / migration deferred)
+**Done:** `wok-settings` crate w/ `Settings` trait, `SettingsSchema { type_name, fields }`, `SettingsStore<T>` (Defaults < UserToml < Overrides layers), `replace()` returning a per-field `ChangedField` diff for live reload. `wok-settings-derive` proc-macro emits the `Settings` impl by walking named fields. Self-derive supported via `extern crate self as wok_settings;`. 7 tests.
+
+**Deferred (separate PR):**
+- Mirror `wok-app/config.rs` (31k) as `#[derive(Settings)] struct WokConfig`.
+- Adapter shim around the current loader.
+- Delete the adapter once stable.
+
+The framework is shaped to absorb the migration without further API changes; the holdup is the careful per-field walk to preserve every existing TOML key.
 
 ### P2.2 ANSI/CSI/DCS parser audit
 - *Why:* warp ships 23k of parser + 33k of tests + `ESCAPE_SEQUENCES.md` spec. wok's `wok-terminal/terminal.rs` is 35k mixed concerns.

@@ -4666,6 +4666,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "wok-settings"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror 2.0.18",
+ "toml",
+ "wok-settings-derive",
+]
+
+[[package]]
+name = "wok-settings-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "wok-sumtree"
 version = "0.1.0"
 dependencies = [
