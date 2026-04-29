@@ -15,6 +15,7 @@ members = [
     "wok-settings",
     "wok-settings-derive",
     "wok-input-classifier",
+    "wok-vim",
 ]
 resolver = "2"
 
