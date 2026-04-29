@@ -88,15 +88,8 @@ Split into: `block_id.rs` (`BlockId = u64` alias + `BlockIdGenerator` w/ `new`/`
 ### ~~P3.1 wok-input-classifier~~ ✅ done (framework)
 Crate landed w/ `classify(buf) -> Classification { kind: InputKind, hints: Hints }` and `kind(buf) -> InputKind` shortcut. Variants: `Empty | Heredoc | Paste | Shell | PossiblyNl`. Hints carry bytes/lines/has_crlf/has_nul. Heuristics in priority order: empty → heredoc (`<<` / `<<-` outside single quotes, w/ tag) → paste (≥4096 bytes or multi-line non-shell) → shell (known cmd, abs/relative path, top-level metas `|&;><$\``) → NL prose (≥3 words, no metas, no leading path). 13 tests. Consumers (`wok-input/editor.rs` paste bracketing, `wok-blocks/triggers.rs` boundary hints) wired in a follow-up PR.
 
-### P3.2 Completion engine rewrite
-- *Why:* current `wok-input/completion.rs` (9k) is shell-history-only. warp uses Fig spec corpus + ranked merge across providers.
-- *Shape:*
-  - `Provider` trait: `fn candidates(ctx: &CompletionCtx) -> Vec<Candidate>`.
-  - Built-ins: history, filesystem (cwd-aware), executables-in-PATH, alias.
-  - Optional: Fig-spec loader behind feature `fig_specs` (specs in `~/.config/wok/specs/` only — no network fetch).
-  - Re-rank w/ `wok-fuzzy`.
-- *Migration:* keep old behavior under flag `completion_engine = "legacy"`; new = `"providers"`.
-- *Tests:* deterministic ordering for fixed corpus; provider isolation (one panic doesn't kill others).
+### ~~P3.2 Completion engine~~ ✅ done (multi-provider runtime)
+`wok-input/src/provider_runtime.rs` lands w/ `RankedRunner` (panic-isolated provider chain + dedup + fuzzy rerank via wok-fuzzy + max_results truncation), plus two new built-ins: `HistoryProvider` (prefix match against past commands) and `AliasProvider` (first-token only). Existing `completion.rs` providers (`PathCompletionProvider`, `CommandCompletionProvider`, `EnvVarCompletionProvider`) work unchanged with the new runner. 6 tests including panic isolation, dedup, truncation, empty-word passthrough. Fig-spec loader still deferred (filesystem-only loader fits in a follow-up). Migration flag swap (`FeatureFlag::ProviderCompletion`) lands when consumers switch over.
 
 ### P3.3 Universal input surface
 - *Why:* warp's `universal_developer_input.rs` (46k) is one editor that routes to shell/search/palette. Matches wok's `command_entry_mode = owned_primary` direction. Avoids three near-duplicate buffers in `wok-app/input.rs`, `wok-ui/command_palette.rs`, `wok-ui/search.rs`.
