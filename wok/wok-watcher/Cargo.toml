@@ -1,0 +1,12 @@
+[package]
+name = "wok-watcher"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Debounced filesystem watcher for Wok"
+
+[dependencies]
+notify = "6"
+thiserror = "2"
+tracing = "0.1"

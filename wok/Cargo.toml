@@ -8,6 +8,7 @@ members = [
     "wok-ui",
     "wok-process",
     "wok-fuzzy",
+    "wok-watcher",
 ]
 resolver = "2"
 

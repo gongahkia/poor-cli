@@ -35,11 +35,8 @@ Crate landed w/ `Cmd` builder, `run`/`run_with`/`spawn_detached`/`sh`/`open_url`
 ### ~~P1.2 wok-fuzzy~~ ✅ done
 Crate landed w/ `score(query, candidate) -> Option<Score>` + `match_many`. Substring tier (prefix > mid), subsequence tier w/ boundary (`_-/. :\` + camelCase) + contiguity + position bonuses. 11 tests. `wok-ui/command_palette.rs` migrated. `quick_select.rs` doesn't fuzzy-rank (label-pick), no migration needed. Future consumer: `wok-input/completion.rs` re-rank in P3.2.
 
-### P1.3 New crate: `wok-watcher`
-- *Why:* `wok-ui/theme_watcher.rs` is bespoke; future config/lua reload + plugin reload need it. warp's `watcher` crate is the model.
-- *Shape:* notify-rs wrapper w/ debounce + path-set subscription + coalescing channel.
-- *Migration:* fold `theme_watcher.rs` into it; add config-reload + lua-reload subscribers.
-- *Tests:* burst-write debounce; rename-then-write; symlink follow toggle.
+### ~~P1.3 wok-watcher~~ ✅ done
+Crate landed w/ `PathWatcher::{new,with_debounce,swap,path,poll}`. Drains notify events, coalesces by debounce window. `wok-ui/theme_watcher.rs` reduced to thin adapter. `poll()` signature changed `&self → &mut self`; one call site in main.rs updated. Config-reload + lua-reload subscribers deferred to first consumer.
 
 ### P1.4 New crate: `wok-sumtree`
 - *Why:* scrollback in `wok-terminal/state.rs` and edit buffer in `wok-input/buffer.rs` are linear. O(n) line-index lookups will hurt at 100k+ scrollback. sum_tree gives O(log n).

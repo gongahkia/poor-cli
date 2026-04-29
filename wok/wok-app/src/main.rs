@@ -5943,7 +5943,7 @@ impl AppHandler for WokHandler {
             self.needs_redraw = true;
         }
 
-        if let Some(theme) = self.theme_watcher.as_ref().and_then(ThemeWatcher::poll) {
+        if let Some(theme) = self.theme_watcher.as_mut().and_then(ThemeWatcher::poll) {
             let mut theme = theme;
             if let Err(error) =
                 wok_ui::theme_loader::apply_theme_overrides(&mut theme, &self.theme_overrides)
