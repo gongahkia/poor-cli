@@ -435,6 +435,10 @@ export const formatQueryIssue = (
   suggestion: string,
   format: OutputFormat,
   blockers: readonly QueryBlocker[] = [],
+  unsupportedContext?: Readonly<{
+    readonly nearestRecipe?: { readonly id: string; readonly name: string; readonly prompt: string } | undefined;
+    readonly directToolHints?: readonly string[];
+  }>,
 ): string => {
   if (format === "markdown") {
     const lines = [
@@ -453,6 +457,18 @@ export const formatQueryIssue = (
       }
     }
 
+    if (status === "unsupported" && unsupportedContext?.nearestRecipe !== undefined) {
+      lines.push(
+        `Closest supported recipe: \`${unsupportedContext.nearestRecipe.id}\` (${unsupportedContext.nearestRecipe.name}). Try prompt: "${unsupportedContext.nearestRecipe.prompt}".`,
+      );
+    }
+
+    if (status === "unsupported" && unsupportedContext?.directToolHints !== undefined && unsupportedContext.directToolHints.length > 0) {
+      lines.push(
+        `Direct sg_* tools that cover this area: ${unsupportedContext.directToolHints.map((tool) => `\`${tool}\``).join(", ")}.`,
+      );
+    }
+
     lines.push(`Try this instead: ${suggestion}`);
     return lines.join("\n\n");
   }
@@ -463,6 +479,8 @@ export const formatQueryIssue = (
       reason,
       suggestion,
       ...(status === "blocked" && blockers.length > 0 ? { blockers } : {}),
+      ...(status === "unsupported" && unsupportedContext?.nearestRecipe !== undefined ? { nearestRecipe: unsupportedContext.nearestRecipe } : {}),
+      ...(status === "unsupported" && unsupportedContext?.directToolHints !== undefined && unsupportedContext.directToolHints.length > 0 ? { directToolHints: unsupportedContext.directToolHints } : {}),
     },
     "json",
   );

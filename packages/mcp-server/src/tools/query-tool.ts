@@ -58,30 +58,33 @@ const findRecipeIdForWorkflow = (workflow: string | undefined): string | undefin
 
 // keyword-to-recipe mapping drives the unsupported->nearest-recipe suggestion.
 // kept inline to avoid a circular import with catalog.ts (which depends on tool-set.ts).
+// fallbackTools are duplicated from RECIPE_CATALOG so unsupported responses can hint at
+// direct sg_* tools without dragging the full catalog through the import graph.
 const RECIPE_KEYWORD_HINTS: ReadonlyArray<{
   readonly keywords: readonly string[];
   readonly name: string;
   readonly prompt: string;
+  readonly fallbackTools: readonly string[];
 }> = [
-  { keywords: ["route", "walk", "drive", "from", "to"], name: "Postal Route", prompt: "Walk from 049178 to 048616" },
-  { keywords: ["reverse", "geocode", "coordinate"], name: "Reverse Geocode", prompt: "Reverse geocode 1.2840, 103.8510" },
-  { keywords: ["convert", "svy21", "wgs84"], name: "Coordinate Conversion", prompt: "Convert SVY21 28001 38744 to WGS84" },
-  { keywords: ["singstat", "gdp", "cpi", "time series"], name: "SingStat Drilldown", prompt: "Browse SingStat transport datasets" },
-  { keywords: ["dataset", "data.gov", "browse"], name: "Dataset Discovery Fallback", prompt: "Discover Singapore HDB datasets" },
-  { keywords: ["macro", "inflation", "economy", "sora"], name: "Macro Snapshot", prompt: "Macro snapshot of Singapore" },
-  { keywords: ["property", "transaction", "planning area"], name: "Property Due Diligence", prompt: "Property due diligence for Bedok HDB resale" },
-  { keywords: ["bus", "train", "mrt", "traffic", "transport"], name: "Transport Status", prompt: "Transport status in Singapore right now" },
-  { keywords: ["weather", "rain", "air quality", "psi", "forecast"], name: "Environment Snapshot", prompt: "Environment snapshot of Singapore right now" },
-  { keywords: ["acra", "uen", "business", "dossier", "company"], name: "Business Registry Diligence", prompt: "Registry diligence for UEN 201912345K" },
-  { keywords: ["community club", "childcare", "sports facility", "family service"], name: "Civic Discovery", prompt: "Find a community club near 560123" },
-  { keywords: ["hdb", "resale"], name: "HDB Resale Check", prompt: "Bedok HDB 4-room resale" },
-  { keywords: ["rental"], name: "HDB Rental Check", prompt: "Bedok HDB rental" },
-  { keywords: ["development charge", "ura charge"], name: "URA Development Charges", prompt: "URA development charges for Bedok" },
+  { keywords: ["route", "walk", "drive", "from", "to"], name: "Postal Route", prompt: "Walk from 049178 to 048616", fallbackTools: ["sg_onemap_geocode", "sg_onemap_route", "sg_onemap_reverse_geocode"] },
+  { keywords: ["reverse", "geocode", "coordinate"], name: "Reverse Geocode", prompt: "Reverse geocode 1.2840, 103.8510", fallbackTools: ["sg_onemap_geocode", "sg_onemap_route", "sg_onemap_reverse_geocode"] },
+  { keywords: ["convert", "svy21", "wgs84"], name: "Coordinate Conversion", prompt: "Convert SVY21 28001 38744 to WGS84", fallbackTools: ["sg_onemap_convert_coords"] },
+  { keywords: ["singstat", "gdp", "cpi", "time series"], name: "SingStat Drilldown", prompt: "Browse SingStat transport datasets", fallbackTools: ["sg_singstat_browse", "sg_singstat_search", "sg_singstat_table", "sg_singstat_timeseries"] },
+  { keywords: ["dataset", "data.gov", "browse"], name: "Dataset Discovery Fallback", prompt: "Discover Singapore HDB datasets", fallbackTools: ["sg_datagov_search", "sg_datagov_get", "sg_datagov_resources", "sg_datagov_rows"] },
+  { keywords: ["macro", "inflation", "economy", "sora"], name: "Macro Snapshot", prompt: "Macro snapshot of Singapore", fallbackTools: ["sg_macro_brief", "sg_mas_exchange_rates", "sg_singstat_search"] },
+  { keywords: ["property", "transaction", "planning area"], name: "Property Due Diligence", prompt: "Property due diligence for Bedok HDB resale", fallbackTools: ["sg_property_brief", "sg_ura_property_transactions", "sg_hdb_resale_prices"] },
+  { keywords: ["bus", "train", "mrt", "traffic", "transport"], name: "Transport Status", prompt: "Transport status in Singapore right now", fallbackTools: ["sg_transport_brief", "sg_lta_bus_arrivals", "sg_lta_train_alerts", "sg_lta_traffic_incidents"] },
+  { keywords: ["weather", "rain", "air quality", "psi", "forecast"], name: "Environment Snapshot", prompt: "Environment snapshot of Singapore right now", fallbackTools: ["sg_environment_brief", "sg_nea_forecast_2hr", "sg_nea_air_quality", "sg_nea_rainfall"] },
+  { keywords: ["acra", "uen", "business", "dossier", "company"], name: "Business Registry Diligence", prompt: "Registry diligence for UEN 201912345K", fallbackTools: ["sg_business_dossier", "sg_acra_entities", "sg_bca_licensed_builders", "sg_bca_registered_contractors", "sg_cea_salespersons"] },
+  { keywords: ["community club", "childcare", "sports facility", "family service"], name: "Civic Discovery", prompt: "Find a community club near 560123", fallbackTools: ["sg_civic_brief", "sg_pa_community_outlets", "sg_sportsg_facilities", "sg_ecda_childcare_centres", "sg_msf_family_services"] },
+  { keywords: ["hdb", "resale"], name: "HDB Resale Check", prompt: "Bedok HDB 4-room resale", fallbackTools: ["sg_property_brief", "sg_hdb_resale_prices", "sg_ura_property_transactions"] },
+  { keywords: ["rental"], name: "HDB Rental Check", prompt: "Bedok HDB rental", fallbackTools: ["sg_hdb_rental_prices", "sg_hdb_resale_prices"] },
+  { keywords: ["development charge", "ura charge"], name: "URA Development Charges", prompt: "URA development charges for Bedok", fallbackTools: ["sg_ura_dev_charges", "sg_ura_planning_area"] },
 ];
 
 const findNearestRecipe = (
   query: string,
-): { id: string; name: string; prompt: string } | undefined => {
+): { id: string; name: string; prompt: string; fallbackTools: readonly string[] } | undefined => {
   const lower = query.toLowerCase();
   let best: { score: number; hint: (typeof RECIPE_KEYWORD_HINTS)[number] } | undefined;
   for (const hint of RECIPE_KEYWORD_HINTS) {
@@ -98,6 +101,7 @@ const findNearestRecipe = (
     id: recipeIdFromName(best.hint.name),
     name: best.hint.name,
     prompt: best.hint.prompt,
+    fallbackTools: best.hint.fallbackTools,
   };
 };
 
@@ -420,14 +424,29 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
         }
 
         const nearestRecipe = findNearestRecipe(query);
+        const directToolHints = nearestRecipe?.fallbackTools ?? [];
+        const nearestRecipeForResponse = nearestRecipe === undefined
+          ? undefined
+          : { id: nearestRecipe.id, name: nearestRecipe.name, prompt: nearestRecipe.prompt };
         return {
-          content: [{ type: "text", text: formatQueryIssue("unsupported", plan.reason, plan.suggestion, resolvedFormat) }],
+          content: [{
+            type: "text",
+            text: formatQueryIssue(
+              "unsupported",
+              plan.reason,
+              plan.suggestion,
+              resolvedFormat,
+              [],
+              { nearestRecipe: nearestRecipeForResponse, directToolHints },
+            ),
+          }],
           structuredContent: {
             status: "unsupported",
             mode,
             reason: plan.reason,
             suggestion: plan.suggestion,
-            ...(nearestRecipe === undefined ? {} : { nearestRecipe }),
+            ...(nearestRecipeForResponse === undefined ? {} : { nearestRecipe: nearestRecipeForResponse }),
+            ...(directToolHints.length === 0 ? {} : { directToolHints }),
             ...(contextIds === undefined ? {} : { contextIds }),
           },
         };
