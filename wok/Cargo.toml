@@ -11,6 +11,7 @@ members = [
     "wok-watcher",
     "wok-channels",
     "wok-features",
+    "wok-sumtree",
 ]
 resolver = "2"
 

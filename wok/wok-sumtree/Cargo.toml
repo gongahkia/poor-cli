@@ -1,0 +1,14 @@
+[package]
+name = "wok-sumtree"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Indexed B-tree of summarisable items for Wok"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "sumtree"
+harness = false

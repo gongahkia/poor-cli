@@ -4666,6 +4666,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "wok-sumtree"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+]
+
+[[package]]
 name = "wok-terminal"
 version = "0.1.0"
 dependencies = [
