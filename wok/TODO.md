@@ -32,12 +32,8 @@ P1 foundations (command, watcher, fuzzy_match, sum_tree)
 ### ~~P1.1 wok-process~~ ✅ done
 Crate landed w/ `Cmd` builder, `run`/`run_with`/`spawn_detached`/`sh`/`open_url`/`notify`. Migrated `wok-ui/links.rs`, `wok-app/perf_metrics.rs`, `wok-app/main.rs` system notifications, `wok-app/plugin_host.rs::shell_command`. PTY spawning stays in `wok-terminal` (uses `portable-pty::CommandBuilder`, not `std::process::Command`). Async wrapper deferred until first consumer needs it.
 
-### P1.2 New crate: `wok-fuzzy` (port of warp `fuzzy_match`)
-- *Why:* `wok-ui/command_palette.rs` and `quick_select.rs` use linear substring match. Need ranked subsequence match w/ proximity + camelCase boundaries.
-- *Shape:* single `match_score(query, candidate) -> Option<Score>` + parallel `match_many` over `Vec<&str>`.
-- *Algo:* fzf-style Smith-Waterman variant; tie-break on (boundary hits, contiguous run, item position).
-- *Tests:* property — every match has score ≥ baseline; golden — known query/candidate pairs.
-- *Migration:* `wok-ui/command_palette.rs`, `quick_select.rs`, future `wok-input/completion.rs` re-rank.
+### ~~P1.2 wok-fuzzy~~ ✅ done
+Crate landed w/ `score(query, candidate) -> Option<Score>` + `match_many`. Substring tier (prefix > mid), subsequence tier w/ boundary (`_-/. :\` + camelCase) + contiguity + position bonuses. 11 tests. `wok-ui/command_palette.rs` migrated. `quick_select.rs` doesn't fuzzy-rank (label-pick), no migration needed. Future consumer: `wok-input/completion.rs` re-rank in P3.2.
 
 ### P1.3 New crate: `wok-watcher`
 - *Why:* `wok-ui/theme_watcher.rs` is bespoke; future config/lua reload + plugin reload need it. warp's `watcher` crate is the model.

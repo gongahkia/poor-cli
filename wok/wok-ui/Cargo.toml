@@ -11,6 +11,7 @@ wok-renderer = { path = "../wok-renderer" }
 wok-terminal = { path = "../wok-terminal" }
 wok-blocks = { path = "../wok-blocks" }
 wok-process = { path = "../wok-process" }
+wok-fuzzy = { path = "../wok-fuzzy" }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 arboard = "3"

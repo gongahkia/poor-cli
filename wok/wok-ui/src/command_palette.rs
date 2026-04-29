@@ -199,27 +199,7 @@ fn category_rank(category: PaletteCategory, workflow_priority: bool) -> u8 {
 }
 
 fn fuzzy_score(text: &str, query: &str) -> Option<f64> {
-    if query.is_empty() {
-        return Some(0.0);
-    }
-    let text = text.to_ascii_lowercase();
-    let query = query.to_ascii_lowercase();
-
-    if let Some(position) = text.find(&query) {
-        let prefix = if position == 0 { 1.0 } else { 0.0 };
-        let compact = 1.0 / (position as f64 + 1.0);
-        return Some(1000.0 + prefix * 100.0 + compact * 100.0);
-    }
-
-    let mut score = 0.0;
-    let mut cursor = 0usize;
-    for query_ch in query.chars() {
-        let slice = &text[cursor..];
-        let position = slice.find(query_ch)?;
-        score += 10.0 - position as f64 * 0.2;
-        cursor += position + 1;
-    }
-    Some(score.max(0.0))
+    wok_fuzzy::score(query, text)
 }
 
 #[cfg(test)]
