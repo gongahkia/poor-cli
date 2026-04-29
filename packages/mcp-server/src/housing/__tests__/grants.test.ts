@@ -19,7 +19,7 @@ describe("computeGrantEligibility — EHG", () => {
     const r = computeGrantEligibility(couple());
     const ehg = r.eligible.find((g) => g.id === "ehg");
     expect(ehg).toBeDefined();
-    expect(ehg!.amountSgd).toBe(10000); // income 8000 -> tier <=8000 = 10k
+    expect(ehg!.amountSgd).toBe(20000); // income 8000 -> tier <=8000 = 20k (Aug 2024 update)
   });
 
   it("awards higher EHG tier for lower income", () => {
@@ -29,7 +29,7 @@ describe("computeGrantEligibility — EHG", () => {
         { age: 29, citizenship: "citizen", monthlyIncomeSgd: 1500, employmentMonths: 24, firstTimer: true },
       ],
     }));
-    expect(r.eligible.find((g) => g.id === "ehg")?.amountSgd).toBe(105000); // income 3000 -> tier <=3000 = 105k
+    expect(r.eligible.find((g) => g.id === "ehg")?.amountSgd).toBe(95000); // income 3000 -> tier <=3000 = 95k (Aug 2024 update)
   });
 
   it("blocks EHG when income exceeds ceiling", () => {
@@ -152,7 +152,7 @@ describe("computeGrantEligibility — Singles Grant", () => {
       flatMode: "resale",
       flatSize: "4_room",
     });
-    expect(r.eligible.find((g) => g.id === "singles_grant")?.amountSgd).toBe(80000);
+    expect(r.eligible.find((g) => g.id === "singles_grant")?.amountSgd).toBe(50000); // joint singles 4-room (verified 2026-04-29)
   });
 });
 
