@@ -4650,6 +4650,14 @@ name = "wok-input-classifier"
 version = "0.1.0"
 
 [[package]]
+name = "wok-integration"
+version = "0.1.0"
+dependencies = [
+ "wok-blocks",
+ "wok-terminal",
+]
+
+[[package]]
 name = "wok-keymap"
 version = "0.1.0"
 

@@ -100,14 +100,8 @@ Crate landed w/ `classify(buf) -> Classification { kind: InputKind, hints: Hints
 
 ## P4 — Testing and replay
 
-### P4.1 Integration harness crate `wok-integration`
-- *Why:* current per-crate tests can't cover end-to-end PTY → block → render flows. warp's `crates/integration` Builder/TestStep DSL is the model.
-- *Shape:*
-  - `Builder` — constructs a headless wok app w/ mock PTY, virtual fs, fixed clock.
-  - `TestStep` — enum: `SendInput`, `WaitForBlock`, `AssertCell`, `Resize`, `Snapshot`.
-  - `MockPty` — scriptable byte stream + ack on writes.
-- *Targets:* shell bootstrap golden, block detection across bash/zsh/fish/PowerShell/wsl, search-jump cross-pane, session save/restore round-trip.
-- *Run:* `cargo nextest run -p wok-integration`.
+### ~~P4.1 Integration harness~~ ✅ done (skeleton)
+New crate `wok-integration`. `Builder::new().dims(c, r).scrollback(n).step(...).run() -> Harness`. Steps: `PtyOutput(bytes)`, `SendInput(bytes)`, `InjectEvent(SemanticEvent)`, `Resize { cols, rows }`, `Assert(Arc<dyn Fn(&Harness)->Result>)`. Wraps a real `TerminalState` + `BlockManager`, scripts feed semantic events for end-to-end block-detection coverage. `MockPty` records user input + queues scripted output. 6 unit tests including a 3-block scenario (`echo a / false / pwd` → 3 blocks, exit codes preserved). Real PTY adapters + virtual fs + fixed clock deferred — current scope covers parse → state → block-manager which is the hot path; shell-bootstrap goldens land when consumers do.
 
 ### ~~P4.2 wokcast format~~ ✅ done (codec)
 `wok-terminal/src/cast.rs` lands w/ `CastWriter` + `CastReader` for a newline-delimited record format: header `# wokcast v1 cols=… rows=… started=…` + records `<elapsed_us> <base64_chunk>`. Comment/blank lines skipped on read; unknown header keys ignored (forward-compat). `schedule(&mut reader, speed) -> Vec<(Duration, Vec<u8>)>` produces relative-delay playback plans; `speed=0.0` collapses to instant for deterministic tests. 8 unit tests including round-trip + malformed input. Existing `replay.rs` (in-memory cell snapshots) is untouched — different concern. PTY tap into the writer + `wok record/replay` CLI subcommands deferred to a wiring PR.

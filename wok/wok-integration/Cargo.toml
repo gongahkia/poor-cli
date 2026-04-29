@@ -1,0 +1,11 @@
+[package]
+name = "wok-integration"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Integration test harness — Builder + TestStep DSL + MockPty"
+
+[dependencies]
+wok-terminal = { path = "../wok-terminal" }
+wok-blocks = { path = "../wok-blocks" }
