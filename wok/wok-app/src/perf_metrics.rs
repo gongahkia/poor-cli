@@ -164,13 +164,8 @@ impl SystemMetricsSampler {
 
 #[cfg(target_os = "macos")]
 fn platform_battery_snapshot() -> Result<Option<BatterySnapshot>, String> {
-    let output = std::process::Command::new("pmset")
-        .args(["-g", "batt"])
-        .output()
+    let output = wok_process::run(wok_process::Cmd::new("pmset").args(["-g", "batt"]))
         .map_err(|error| format!("failed to execute pmset: {error}"))?;
-    if !output.status.success() {
-        return Err(format!("pmset exited with status {}", output.status));
-    }
     let stdout = String::from_utf8_lossy(&output.stdout);
     Ok(parse_pmset_battery(&stdout))
 }

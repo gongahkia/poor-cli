@@ -6,6 +6,7 @@ members = [
     "wok-blocks",
     "wok-input",
     "wok-ui",
+    "wok-process",
 ]
 resolver = "2"
 

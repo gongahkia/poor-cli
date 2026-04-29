@@ -4627,6 +4627,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "wok-process"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "wok-renderer"
 version = "0.1.0"
 dependencies = [
