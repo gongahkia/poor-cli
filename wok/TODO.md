@@ -116,10 +116,8 @@ Crate landed w/ `classify(buf) -> Classification { kind: InputKind, hints: Hints
 - *Targets:* shell bootstrap golden, block detection across bash/zsh/fish/PowerShell/wsl, search-jump cross-pane, session save/restore round-trip.
 - *Run:* `cargo nextest run -p wok-integration`.
 
-### P4.2 Recorder upgrade
-- *Why:* `wok-terminal/replay.rs` exists; warp's `recorder.rs` shows productized record-and-share. Useful for bug repro.
-- *Action:* `wok record <file.wokcast>` writes ts+stream tuples; `wok replay <file>` schedules them into a virtual terminal. Self-contained, no upload path.
-- *Tests:* record-replay equivalence on golden corpus.
+### ~~P4.2 wokcast format~~ ✅ done (codec)
+`wok-terminal/src/cast.rs` lands w/ `CastWriter` + `CastReader` for a newline-delimited record format: header `# wokcast v1 cols=… rows=… started=…` + records `<elapsed_us> <base64_chunk>`. Comment/blank lines skipped on read; unknown header keys ignored (forward-compat). `schedule(&mut reader, speed) -> Vec<(Duration, Vec<u8>)>` produces relative-delay playback plans; `speed=0.0` collapses to instant for deterministic tests. 8 unit tests including round-trip + malformed input. Existing `replay.rs` (in-memory cell snapshots) is untouched — different concern. PTY tap into the writer + `wok record/replay` CLI subcommands deferred to a wiring PR.
 
 ---
 

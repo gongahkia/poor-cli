@@ -19,6 +19,7 @@
 #![allow(clippy::field_reassign_with_default)]
 
 pub mod async_io;
+pub mod cast;
 pub mod config;
 pub mod prompt;
 pub mod pty;
