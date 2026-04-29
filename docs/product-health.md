@@ -11,6 +11,7 @@ This page is the public entrypoint for product-health, governance, and adoption 
 
 ## Operations
 
+- [Operating expectations](./operating-expectations.md) — single-page adoption-grade per-family latency, cache TTL, SLO posture, partial-failure semantics.
 - [Compatibility matrix](./compatibility-matrix.md) — supported clients, transports, and smoke checks.
 - [Known issues](./known-issues.md) — active limitations and triage rules.
 - [Production notes](./production-notes.md) — runtime, audit, KPI, and deployment guidance.
