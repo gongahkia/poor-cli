@@ -457,6 +457,7 @@ export const CivicBriefBaseSchema = z.object({
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
   radiusKm: z.number().positive().max(20).optional(),
+  modules: z.array(z.enum(["pa", "sportsg", "ecda", "msf", "hawker"])).min(1).optional(),
   format: z.enum(["json", "markdown"]).optional(),
 }).strict();
 

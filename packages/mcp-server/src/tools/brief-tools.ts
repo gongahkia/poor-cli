@@ -2363,10 +2363,12 @@ const CivicBriefInputSchema = {
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
   radiusKm: z.number().positive().max(20).optional(),
+  modules: z.array(z.enum(["pa", "sportsg", "ecda", "msf", "hawker"])).min(1).optional(),
   format: z.enum(["json", "markdown"]).optional(),
 };
 
-type CivicSourceResult = { category: string; count: number; records: readonly Record<string, unknown>[] };
+type CivicModule = "pa" | "sportsg" | "ecda" | "msf" | "hawker";
+type CivicSourceResult = { category: string; module: CivicModule; count: number; records: readonly Record<string, unknown>[] };
 
 export const handleCivicBrief = async (
   params: Readonly<{
@@ -2375,6 +2377,7 @@ export const handleCivicBrief = async (
     lat?: number | undefined;
     lng?: number | undefined;
     radiusKm?: number | undefined;
+    modules?: readonly CivicModule[] | undefined;
     format?: "json" | "markdown" | undefined;
   }>,
 ): Promise<ToolResult> => {
@@ -2395,26 +2398,32 @@ export const handleCivicBrief = async (
     gaps.push(toGap("NO_LOCATION", "No resolvable location provided. Supply postalCode, address, or lat/lng."));
   }
   const coordParams = { lat, lng, radiusKm: params.radiusKm ?? 3, limit: 10 };
+  const enabled: ReadonlySet<CivicModule> = new Set(params.modules ?? ["pa", "sportsg", "ecda", "msf", "hawker"]);
+  const optionalRead = async <T>(active: boolean, code: string, message: string, read: () => Promise<T>): Promise<T | null> => {
+    if (!active) return null;
+    return safeRead(code, message, read, gaps);
+  };
   const [pa, paRn, sport, ecda, msfFamily, msfStudent, msfSso, hawker] = await Promise.all([
-    safeRead("PA_OUTLETS_FAILED", "PA community outlets lookup failed", () => getPaCommunityOutlets(coordParams), gaps),
-    safeRead("PA_RESIDENT_FAILED", "PA resident network centres lookup failed", () => getPaResidentNetworkCentres(coordParams), gaps),
-    safeRead("SPORTSG_FAILED", "SportSG facilities lookup failed", () => getSportSgFacilities(coordParams), gaps),
-    safeRead("ECDA_FAILED", "ECDA childcare centres lookup failed", () => getEcdaChildcareCentres(coordParams), gaps),
-    safeRead("MSF_FAMILY_FAILED", "MSF family services lookup failed", () => getMsfFamilyServices(coordParams), gaps),
-    safeRead("MSF_STUDENT_FAILED", "MSF student care services lookup failed", () => getMsfStudentCareServices(coordParams), gaps),
-    safeRead("MSF_SSO_FAILED", "MSF social service offices lookup failed", () => getMsfSocialServiceOffices(coordParams), gaps),
-    safeRead("HAWKER_FAILED", "Hawker centres lookup failed", () => getHawkerCentres({ ...coordParams }), gaps),
+    optionalRead(enabled.has("pa"), "PA_OUTLETS_FAILED", "PA community outlets lookup failed", () => getPaCommunityOutlets(coordParams)),
+    optionalRead(enabled.has("pa"), "PA_RESIDENT_FAILED", "PA resident network centres lookup failed", () => getPaResidentNetworkCentres(coordParams)),
+    optionalRead(enabled.has("sportsg"), "SPORTSG_FAILED", "SportSG facilities lookup failed", () => getSportSgFacilities(coordParams)),
+    optionalRead(enabled.has("ecda"), "ECDA_FAILED", "ECDA childcare centres lookup failed", () => getEcdaChildcareCentres(coordParams)),
+    optionalRead(enabled.has("msf"), "MSF_FAMILY_FAILED", "MSF family services lookup failed", () => getMsfFamilyServices(coordParams)),
+    optionalRead(enabled.has("msf"), "MSF_STUDENT_FAILED", "MSF student care services lookup failed", () => getMsfStudentCareServices(coordParams)),
+    optionalRead(enabled.has("msf"), "MSF_SSO_FAILED", "MSF social service offices lookup failed", () => getMsfSocialServiceOffices(coordParams)),
+    optionalRead(enabled.has("hawker"), "HAWKER_FAILED", "Hawker centres lookup failed", () => getHawkerCentres({ ...coordParams })),
   ]);
-  const sources: CivicSourceResult[] = [
-    { category: "Community Clubs", count: pa?.length ?? 0, records: (pa ?? []) as unknown as Record<string, unknown>[] },
-    { category: "Resident Network Centres", count: paRn?.length ?? 0, records: (paRn ?? []) as unknown as Record<string, unknown>[] },
-    { category: "Sports Facilities", count: sport?.length ?? 0, records: (sport ?? []) as unknown as Record<string, unknown>[] },
-    { category: "Childcare Centres", count: ecda?.length ?? 0, records: (ecda ?? []) as unknown as Record<string, unknown>[] },
-    { category: "Family Services", count: msfFamily?.length ?? 0, records: (msfFamily ?? []) as unknown as Record<string, unknown>[] },
-    { category: "Student Care", count: msfStudent?.length ?? 0, records: (msfStudent ?? []) as unknown as Record<string, unknown>[] },
-    { category: "Social Service Offices", count: msfSso?.length ?? 0, records: (msfSso ?? []) as unknown as Record<string, unknown>[] },
-    { category: "Hawker Centres", count: hawker?.length ?? 0, records: (hawker ?? []) as unknown as Record<string, unknown>[] },
+  const allSources: CivicSourceResult[] = [
+    { category: "Community Clubs", module: "pa", count: pa?.length ?? 0, records: (pa ?? []) as unknown as Record<string, unknown>[] },
+    { category: "Resident Network Centres", module: "pa", count: paRn?.length ?? 0, records: (paRn ?? []) as unknown as Record<string, unknown>[] },
+    { category: "Sports Facilities", module: "sportsg", count: sport?.length ?? 0, records: (sport ?? []) as unknown as Record<string, unknown>[] },
+    { category: "Childcare Centres", module: "ecda", count: ecda?.length ?? 0, records: (ecda ?? []) as unknown as Record<string, unknown>[] },
+    { category: "Family Services", module: "msf", count: msfFamily?.length ?? 0, records: (msfFamily ?? []) as unknown as Record<string, unknown>[] },
+    { category: "Student Care", module: "msf", count: msfStudent?.length ?? 0, records: (msfStudent ?? []) as unknown as Record<string, unknown>[] },
+    { category: "Social Service Offices", module: "msf", count: msfSso?.length ?? 0, records: (msfSso ?? []) as unknown as Record<string, unknown>[] },
+    { category: "Hawker Centres", module: "hawker", count: hawker?.length ?? 0, records: (hawker ?? []) as unknown as Record<string, unknown>[] },
   ];
+  const sources = allSources.filter((source) => enabled.has(source.module));
   const totalFacilities = sources.reduce((sum, s) => sum + s.count, 0);
   const locationLabel = params.postalCode ?? params.address ?? (lat !== undefined ? `${lat}, ${lng}` : "unknown");
   const records: Record<string, unknown> = {};
@@ -2431,14 +2440,14 @@ export const handleCivicBrief = async (
     records,
     gaps,
     provenance: [
-      toProvenance("PA", "sg_pa_community_outlets", "Community clubs and PAssion WaVe outlets within the search radius.", false, pa?.length ?? 0),
-      toProvenance("PA", "sg_pa_resident_network_centres", "Residents' committee and network centres within the search radius.", false, paRn?.length ?? 0),
-      toProvenance("SportSG", "sg_sportsg_facilities", "Sport facilities within the search radius.", false, sport?.length ?? 0),
-      toProvenance("ECDA", "sg_ecda_childcare_centres", "Childcare centres within the search radius.", false, ecda?.length ?? 0),
-      toProvenance("MSF", "sg_msf_family_services", "Family service centres within the search radius.", false, msfFamily?.length ?? 0),
-      toProvenance("MSF", "sg_msf_student_care_services", "Student care services within the search radius.", false, msfStudent?.length ?? 0),
-      toProvenance("MSF", "sg_msf_social_service_offices", "Social service offices within the search radius.", false, msfSso?.length ?? 0),
-      toProvenance("Hawker", "sg_hawker_centres", "Hawker centres within the search radius.", false, hawker?.length ?? 0),
+      ...(enabled.has("pa") ? [toProvenance("PA", "sg_pa_community_outlets", "Community clubs and PAssion WaVe outlets within the search radius.", false, pa?.length ?? 0)] : []),
+      ...(enabled.has("pa") ? [toProvenance("PA", "sg_pa_resident_network_centres", "Residents' committee and network centres within the search radius.", false, paRn?.length ?? 0)] : []),
+      ...(enabled.has("sportsg") ? [toProvenance("SportSG", "sg_sportsg_facilities", "Sport facilities within the search radius.", false, sport?.length ?? 0)] : []),
+      ...(enabled.has("ecda") ? [toProvenance("ECDA", "sg_ecda_childcare_centres", "Childcare centres within the search radius.", false, ecda?.length ?? 0)] : []),
+      ...(enabled.has("msf") ? [toProvenance("MSF", "sg_msf_family_services", "Family service centres within the search radius.", false, msfFamily?.length ?? 0)] : []),
+      ...(enabled.has("msf") ? [toProvenance("MSF", "sg_msf_student_care_services", "Student care services within the search radius.", false, msfStudent?.length ?? 0)] : []),
+      ...(enabled.has("msf") ? [toProvenance("MSF", "sg_msf_social_service_offices", "Social service offices within the search radius.", false, msfSso?.length ?? 0)] : []),
+      ...(enabled.has("hawker") ? [toProvenance("Hawker", "sg_hawker_centres", "Hawker centres within the search radius.", false, hawker?.length ?? 0)] : []),
     ],
     freshness: [toFreshness("Civic directories", observedAt, null)],
     limits: [
