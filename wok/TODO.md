@@ -171,9 +171,8 @@ Doctor now prints `channel: dev` and `feature_flags: on=[…] off=[…]`. Remain
 - *Action:* new `wok-vim` crate w/ pure state machine `(Mode, Operator, Motion, Count, Register) -> Vec<Edit>`. `wok-ui/vi_mode.rs` becomes a thin view binding.
 - *Tests:* operator+motion matrix golden; counts; registers `"a..z`, `"+`, `"*`.
 
-### P7.4 Bootstrap consolidation
-- *Why:* warp's `terminal/bootstrap.rs` + `available_shells.rs` (39k) is more thorough than wok's `wok-terminal/shell.rs` (6.5k) + `shell_integration.rs` (15k).
-- *Action:* widen shell detection (nu, xonsh, elvish, ash, dash, ksh, csh, tcsh) w/ capability matrix `{ osc133, prompt_var, history_file, profile_path, alias_file }`. Failing capability → degrade gracefully + report via `doctor`.
+### ~~P7.4 Bootstrap capability matrix~~ ✅ done (data table)
+`wok-terminal/src/shell_capabilities.rs` — static `ShellCapability { name, osc133, prompt_var, history_file, profile_path, alias_file, has_integration }` array covering bash, zsh, fish, ash, dash, ksh, csh, tcsh, nu, xonsh, elvish, powershell. APIs: `lookup`, `integrated_shell_names`, `osc133_capable_names`. 7 unit tests including invariant `has_integration → osc133`. Decoupled from `ShellType` enum on purpose — wider detection + doctor reporting can wire it in a follow-up without rippling to ipc/jsonrpc/cli code.
 
 ### P7.5 Onboarding flow
 - *Action:* `wok init` already exists. Extend into a 4-step onboarding: detect shell → install integration → seed config + theme → run smoke test (echo/false/pwd → expect 3 blocks). Idempotent. Output is plain text, scriptable.
