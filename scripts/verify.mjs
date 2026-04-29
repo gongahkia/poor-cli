@@ -36,6 +36,7 @@ runNodeScript("docs parity", "./scripts/check-docs-parity.mjs");
 runNodeScript("governance policy", "./scripts/check-governance.mjs");
 runNodeScript("housing rules freshness", "./scripts/check-housing-rules-freshness.mjs");
 run("template smoke", ["run", "test:smoke:templates"], testEnv);
+run("outcomes smoke", ["run", "test:smoke:outcomes"], testEnv);
 run("profile smoke", ["run", "test:smoke:profiles"], testEnv);
 run("test", ["test"], testEnv);
 

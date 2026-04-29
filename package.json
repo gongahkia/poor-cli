@@ -26,6 +26,7 @@
     "test:smoke:live": "node ./scripts/live-smoke.mjs",
     "test:smoke:public": "node ./scripts/live-smoke.mjs --public-only",
     "test:smoke:templates": "node ./scripts/smoke-templates.mjs",
+    "test:smoke:outcomes": "node ./scripts/smoke-outcomes.mjs",
     "test:smoke:profiles": "node ./scripts/smoke-profiles.mjs",
     "test:smoke:registry": "node ./scripts/registry-smoke.mjs",
     "release:evidence": "node ./scripts/check-release-evidence.mjs",
