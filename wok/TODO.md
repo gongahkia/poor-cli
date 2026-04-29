@@ -71,9 +71,8 @@ Crate landed w/ `PathWatcher::{new,with_debounce,swap,path,poll}`. Drains notify
 - *Bench:* 100k-line scrollback; viewport scroll, search-next, block-nav-up.
 - *Flag:* `scrollback_backend = "sumtree" | "vec"` until soak passes.
 
-### P2.4 Block model split
-- *Why:* `wok-blocks/block.rs` is 20k. warp factors block id, block index, block grid separately.
-- *Action:* split into `block.rs` (record), `block_id.rs` (typed id), `block_index.rs` (id↔offset map), keep `triggers.rs`. Pure refactor, no behavior change.
+### ~~P2.4 block model split~~ ✅ done
+Split into: `block_id.rs` (`BlockId = u64` alias + `BlockIdGenerator` w/ `new`/`after`/`peek`/`next_id`), `block_index.rs` (`BlockIndex` w/ id→pos HashMap, O(1) lookup), `block_manager.rs` (state machine, uses generator + index). `block.rs` slimmed to record-only + re-exports `BlockManager` so external imports `wok_blocks::block::BlockManager` keep working. `restore_blocks` now rebuilds index. 25 tests pass (16 retained + 9 new across split modules).
 
 ---
 
