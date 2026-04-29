@@ -187,8 +187,8 @@ Doctor now prints `channel: dev` and `feature_flags: on=[…] off=[…]`. Remain
 ### P7.7 Inline image consolidation
 - *Why:* `wok-renderer/inline_images.rs` already exists. warp covers sixel + kitty + iTerm. Audit coverage; add kitty graphics if missing.
 
-### P7.8 Snapshot recorder for bug reports
-- *Action:* `wok bug-report` bundles config, last N PTY bytes (redacted), feature-flag state, doctor output → `bug-<ts>.tar.gz` in cwd. No upload.
+### ~~P7.8 wok bug-report~~ ✅ done (directory bundle)
+`wok bug-report [--output <dir>]` writes a directory `bug-<unix_ms>/` (default in cwd) containing: `doctor.json`, copies of `config.toml`/`init.lua` (if present), `channel.txt`, `flags.txt`, `system.txt`, and a `README.txt`. No upload, no network. tar.gz packing intentionally deferred (no tar/gz dep on wok-app yet — directory is just as shareable). Last-N PTY bytes also deferred until P4.2 recorder lands. 2 unit tests + manual smoke verified output.
 
 ---
 

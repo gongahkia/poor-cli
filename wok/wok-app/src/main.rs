@@ -152,6 +152,12 @@ enum CliCommand {
         #[command(subcommand)]
         command: ShellCommand,
     },
+    /// Bundle local diagnostics into a directory for bug reports (no upload).
+    BugReport {
+        /// Optional explicit destination directory. Default: ./bug-<unix_ms>.
+        #[arg(long)]
+        output: Option<std::path::PathBuf>,
+    },
     /// Attach to a running named session.
     Attach {
         /// Session name.

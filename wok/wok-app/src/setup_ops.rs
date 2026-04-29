@@ -255,6 +255,98 @@ pub(crate) fn run_doctor(as_json: bool) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+pub(crate) fn run_bug_report(output: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
+    let config_dir = WokConfig::config_dir();
+    let dest = output.unwrap_or_else(|| {
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(format!("bug-{}", unix_time_ms_now()))
+    });
+    write_bug_bundle(&config_dir, &dest)?;
+    println!("Wrote bug-report bundle to {}", dest.display());
+    println!("Inspect before sharing; redact secrets if any leaked through.");
+    Ok(())
+}
+
+fn write_bug_bundle(config_dir: &Path, dest: &Path) -> io::Result<()> {
+    fs::create_dir_all(dest)?;
+
+    // doctor checks as JSON
+    let checks = doctor_checks_at(config_dir);
+    let summary = doctor_summary(&checks);
+    let doctor_json = serde_json::json!({
+        "config_dir": config_dir,
+        "checks": checks
+            .iter()
+            .map(|check| DoctorCheckView {
+                label: check.label.clone(),
+                status: check.status.as_str().to_string(),
+                detail: check.detail.clone(),
+            })
+            .collect::<Vec<_>>(),
+        "summary": summary,
+    });
+    fs::write(
+        dest.join("doctor.json"),
+        serde_json::to_string_pretty(&doctor_json)
+            .unwrap_or_else(|_| "{}".to_string()),
+    )?;
+
+    // copy config + lua if present
+    for name in ["config.toml", "init.lua"] {
+        let src = config_dir.join(name);
+        if src.exists() {
+            if let Ok(text) = fs::read_to_string(&src) {
+                fs::write(dest.join(name), text)?;
+            }
+        }
+    }
+
+    // channel + flags as flat text
+    fs::write(
+        dest.join("channel.txt"),
+        format!("{}\n", wok_channels::Channel::current().short_name()),
+    )?;
+    let flags = wok_features::snapshot();
+    let mut flags_text = String::new();
+    for (name, on) in &flags {
+        flags_text.push_str(if *on { "+" } else { "-" });
+        flags_text.push_str(name);
+        flags_text.push('\n');
+    }
+    fs::write(dest.join("flags.txt"), flags_text)?;
+
+    // system info
+    let mut sys = String::new();
+    sys.push_str(&format!("os: {}\n", std::env::consts::OS));
+    sys.push_str(&format!("arch: {}\n", std::env::consts::ARCH));
+    sys.push_str(&format!("family: {}\n", std::env::consts::FAMILY));
+    sys.push_str(&format!(
+        "wok_version: {}\n",
+        option_env!("CARGO_PKG_VERSION").unwrap_or("unknown")
+    ));
+    sys.push_str(&format!(
+        "build_channel: {}\n",
+        option_env!("WOK_CHANNEL").unwrap_or("dev")
+    ));
+    fs::write(dest.join("system.txt"), sys)?;
+
+    // README inside the bundle so users know what is here
+    fs::write(
+        dest.join("README.txt"),
+        "Wok bug-report bundle.\n\
+         Files:\n\
+           - doctor.json   diagnostics snapshot\n\
+           - config.toml   user config (if present)\n\
+           - init.lua      user lua (if present)\n\
+           - channel.txt   release channel\n\
+           - flags.txt     feature flag snapshot\n\
+           - system.txt    OS/arch/version\n\
+         No upload was performed. Inspect before sharing.\n",
+    )?;
+    Ok(())
+}
+
 pub(crate) fn run_reset(scope: ResetScope, yes: bool) -> Result<(), Box<dyn Error>> {
     if !yes {
         return Err("reset is destructive; re-run with `wok reset --yes`".into());
@@ -971,6 +1063,44 @@ mod tests {
             .expect("time should move forward")
             .as_nanos();
         std::env::temp_dir().join(format!("wok-setup-{nanos}"))
+    }
+
+    #[test]
+    fn test_bug_report_writes_expected_files() {
+        let cfg = unique_temp_dir();
+        init_at(&cfg, false).expect("init should succeed");
+        let dest = unique_temp_dir().join("bundle");
+        write_bug_bundle(&cfg, &dest).expect("bundle should write");
+
+        for name in ["doctor.json", "channel.txt", "flags.txt", "system.txt", "README.txt"] {
+            assert!(dest.join(name).exists(), "missing {name}");
+        }
+        assert!(dest.join("config.toml").exists(), "config.toml should be copied");
+        assert!(dest.join("init.lua").exists(), "init.lua should be copied");
+
+        let doctor = fs::read_to_string(dest.join("doctor.json")).unwrap();
+        assert!(doctor.contains("\"checks\""));
+        let flags = fs::read_to_string(dest.join("flags.txt")).unwrap();
+        assert!(flags.lines().all(|l| l.starts_with('+') || l.starts_with('-')));
+
+        let _ = fs::remove_dir_all(cfg);
+        let _ = fs::remove_dir_all(dest.parent().unwrap());
+    }
+
+    #[test]
+    fn test_bug_report_skips_missing_optional_files() {
+        let cfg = unique_temp_dir();
+        // do NOT init; only create the dir
+        fs::create_dir_all(&cfg).unwrap();
+        let dest = unique_temp_dir().join("bundle2");
+        write_bug_bundle(&cfg, &dest).expect("bundle should still write");
+
+        assert!(dest.join("doctor.json").exists());
+        assert!(!dest.join("config.toml").exists(), "no config to copy");
+        assert!(!dest.join("init.lua").exists(), "no lua to copy");
+
+        let _ = fs::remove_dir_all(cfg);
+        let _ = fs::remove_dir_all(dest.parent().unwrap());
     }
 
     #[test]
