@@ -31,7 +31,8 @@
     "release:preflight": "node ./scripts/release-preflight.mjs",
     "quarterly:report": "node ./scripts/generate-quarterly-report.mjs",
     "rest-gateway": "node packages/mcp-server/dist/rest-gateway.js",
-    "quick-start": "node ./scripts/quick-start.mjs"
+    "quick-start": "node ./scripts/quick-start.mjs",
+    "try": "node ./scripts/quick-start.mjs --public"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.57.1",

@@ -14,12 +14,21 @@ The repo currently exposes 105 `sg_*` tools total across 38 catalog families.
 
 `sg_query` is the bounded preferred interface across 21 routed families. It plans or executes bounded deterministic workflows with transparent step metadata. The direct `sg_*` tools remain the stable low-level contract.
 
+## Try It In 60 Seconds (No Credentials)
+
+```bash
+npm install && npm run try
+```
+
+`npm run try` builds the server and runs the no-credential public smoke (`sg_health_check` plus release-blocking public flows). It is the fastest way to confirm the package boots and the no-auth surface is reachable on your machine before wiring credentials. Use `npm run quick-start` for the full live smoke once OneMap/URA/LTA keys are configured.
+
 ## Start Here For Builders
 
-1. Read [docs/agent-builder-quickstart.md](./docs/agent-builder-quickstart.md) for the recommended `sg_query` and direct-tool integration pattern.
-2. Build and run the local MCP server with `npm install`, `npm run build`, then `node packages/mcp-server/dist/index.js`.
-3. Cache `sg://recipes`, `sg://tools`, `sg://runtime`, `sg://playbooks`, and `sg://benchmarks` in your agent or app planner.
-4. Start from [examples/integration/basic-client.ts](./examples/integration/basic-client.ts) or [examples/integration/basic-client.py](./examples/integration/basic-client.py), then graduate to the backend, UI state, or scheduled-monitor templates under [examples/integration](./examples/integration).
+1. Run `npm run try` for a no-credential boot check, then read [docs/ship-in-2-days.md](./docs/ship-in-2-days.md) for the fastest path from clone to a UI-ready brief artifact.
+2. Read [docs/agent-builder-quickstart.md](./docs/agent-builder-quickstart.md) for the recommended `sg_query` and direct-tool integration pattern.
+3. Build and run the local MCP server with `npm install`, `npm run build`, then `node packages/mcp-server/dist/index.js`.
+4. Cache `sg://recipes`, `sg://tools`, `sg://runtime`, `sg://playbooks`, and `sg://benchmarks` in your agent or app planner.
+5. Start from [examples/integration/basic-client.ts](./examples/integration/basic-client.ts) or [examples/integration/basic-client.py](./examples/integration/basic-client.py), then graduate to the backend, UI state, scheduled-monitor, or end-to-end outcome templates under [examples/integration](./examples/integration).
 
 ## Roadmap
 
