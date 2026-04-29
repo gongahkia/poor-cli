@@ -310,18 +310,7 @@ impl ExternalPluginBridge {
 }
 
 fn shell_command(command_line: &str) -> Command {
-    #[cfg(windows)]
-    {
-        let mut command = Command::new("cmd");
-        command.arg("/C").arg(command_line);
-        command
-    }
-    #[cfg(not(windows))]
-    {
-        let mut command = Command::new("sh");
-        command.arg("-lc").arg(command_line);
-        command
-    }
+    wok_process::sh(command_line).into_std()
 }
 
 fn parse_lua_context(mode: &str) -> Option<Context> {

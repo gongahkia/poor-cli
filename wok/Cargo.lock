@@ -4600,6 +4600,7 @@ dependencies = [
  "winit",
  "wok-blocks",
  "wok-input",
+ "wok-process",
  "wok-renderer",
  "wok-terminal",
  "wok-ui",
@@ -4674,6 +4675,7 @@ dependencies = [
  "toml",
  "tracing",
  "wok-blocks",
+ "wok-process",
  "wok-renderer",
  "wok-terminal",
 ]

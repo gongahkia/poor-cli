@@ -7,7 +7,6 @@ use std::error::Error;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -699,56 +698,15 @@ fn current_unix_ms() -> u64 {
         .map_or(0, |duration| duration.as_millis() as u64)
 }
 
-#[cfg(target_os = "macos")]
 fn send_system_notification(
     notification: &SystemNotificationRequest,
 ) -> Result<(), Box<dyn Error>> {
-    let title = escape_applescript_text(&notification.title);
-    let message = escape_applescript_text(&notification.message);
-    let subtitle = notification
-        .subtitle
-        .as_ref()
-        .filter(|subtitle| !subtitle.trim().is_empty())
-        .map(|subtitle| format!(" subtitle \"{}\"", escape_applescript_text(subtitle)))
-        .unwrap_or_default();
-    let script = format!("display notification \"{message}\" with title \"{title}\"{subtitle}");
-    let status = Command::new("/usr/bin/osascript")
-        .arg("-e")
-        .arg(script)
-        .status()?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("osascript exited with status {status}").into())
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn escape_applescript_text(value: &str) -> String {
-    value.replace('\\', "\\\\").replace('"', "\\\"")
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn send_system_notification(
-    notification: &SystemNotificationRequest,
-) -> Result<(), Box<dyn Error>> {
-    let status = Command::new("notify-send")
-        .arg(&notification.title)
-        .arg(&notification.message)
-        .status()?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("notify-send exited with status {status}").into())
-    }
-}
-
-#[cfg(not(unix))]
-fn send_system_notification(
-    notification: &SystemNotificationRequest,
-) -> Result<(), Box<dyn Error>> {
-    let _ = notification;
-    Ok(())
+    let n = wok_process::Notification {
+        title: &notification.title,
+        message: &notification.message,
+        subtitle: notification.subtitle.as_deref(),
+    };
+    wok_process::notify(&n).map_err(|e| Box::new(e) as Box<dyn Error>)
 }
 
 /// Wok application handler.

@@ -29,17 +29,8 @@ P1 foundations (command, watcher, fuzzy_match, sum_tree)
 
 ## P1 — Foundations (low risk, high leverage)
 
-### P1.1 New crate: `wok-process` (port of warp `command`)
-- *Why:* `Command::new` is sprinkled across `wok-terminal/pty.rs`, `wok-app/setup_ops.rs`, `wok-app/cli_runtime.rs`. Centralizing fixes inconsistent env scrubbing, signal handling, and Windows quoting.
-- *Shape:*
-  - `wok-process/src/lib.rs` — re-exports.
-  - `async.rs` — tokio-based, returns `ExitStatus + captured stdio`.
-  - `blocking.rs` — std::process wrapper for boot paths.
-  - `unix.rs` — pgid, SIGTERM-then-SIGKILL escalation, controlling tty hand-off.
-  - `windows.rs` — job objects, ctrl-break, argv quoting (`CommandLineToArgvW` round-trip tests).
-- *Migration:* replace `Command::new` call sites in `wok-terminal/{pty,shell}.rs`, `wok-app/setup_ops.rs`, `wok-app/cli_runtime.rs`.
-- *Tests:* env propagation, signal escalation, child cleanup on drop, Windows quoting fuzz.
-- *Acceptance:* `rg "Command::new"` returns only `wok-process/src/`.
+### ~~P1.1 wok-process~~ ✅ done
+Crate landed w/ `Cmd` builder, `run`/`run_with`/`spawn_detached`/`sh`/`open_url`/`notify`. Migrated `wok-ui/links.rs`, `wok-app/perf_metrics.rs`, `wok-app/main.rs` system notifications, `wok-app/plugin_host.rs::shell_command`. PTY spawning stays in `wok-terminal` (uses `portable-pty::CommandBuilder`, not `std::process::Command`). Async wrapper deferred until first consumer needs it.
 
 ### P1.2 New crate: `wok-fuzzy` (port of warp `fuzzy_match`)
 - *Why:* `wok-ui/command_palette.rs` and `quick_select.rs` use linear substring match. Need ranked subsequence match w/ proximity + camelCase boundaries.

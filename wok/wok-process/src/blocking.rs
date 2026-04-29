@@ -105,6 +105,14 @@ impl Cmd {
         self
     }
 
+    /// Consume the builder and return the underlying [`std::process::Command`].
+    ///
+    /// Use this when you need streaming stdio (piped stdin/stdout) and intend
+    /// to manage the [`Child`] lifetime manually.
+    pub fn into_std(self) -> Command {
+        self.into_command()
+    }
+
     fn into_command(self) -> Command {
         let mut cmd = Command::new(&self.program);
         if self.clear_env {
