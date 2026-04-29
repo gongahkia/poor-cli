@@ -67,11 +67,16 @@ The framework is shaped to absorb the migration without further API changes; the
 - *Action:* split parsing out of `terminal.rs` into `wok-terminal/parser.rs` + `parser_tests.rs`. Use warp's `ESCAPE_SEQUENCES.md` as a *spec checklist* (read-only reference). Add corpus tests covering: SGR 38;2/5, mouse 1006/1015, OSC 4/10/11/52, OSC 133 A–D, OSC 8 hyperlinks, DCS sixel, APC kitty graphics, mode 2026 sync update, mode 2027 grapheme.
 - *Acceptance:* parser is pure (no terminal-state writes); state mutations live in `state.rs`; coverage report ≥ 90% on `parser.rs`.
 
-### P2.3 Scrollback indexing on `wok-sumtree`
-- *Why:* enable instant search jump + O(log n) viewport seek.
-- *Action:* re-layer `wok-terminal/state.rs` scrollback as `SumTree<Line>` w/ `LineSummary { count, byte_len, has_block_marker }`.
-- *Bench:* 100k-line scrollback; viewport scroll, search-next, block-nav-up.
-- *Flag:* `scrollback_backend = "sumtree" | "vec"` until soak passes.
+### P2.3 Scrollback indexing on wok-sumtree (re-scoped, deferred)
+**Why deferred:** investigation showed scrollback storage is owned by `alacritty_terminal::Grid` (`wok-terminal/src/state.rs`). We don't control the underlying buffer, so a "swap-the-backend" flag isn't viable without forking alacritty.
+
+**Re-scoped target for next attempt:** maintain a *parallel* `SumTree<LineSnapshot>` mirror that the renderer consults for:
+- O(log n) row → block-boundary lookup (currently a linear scan in `wok-blocks/block_nav.rs`).
+- O(log n) "find the Nth visible line under a filter predicate" once P7.1 block filtering lands.
+
+The mirror would be updated when `BlockManager` mutates and on viewport scroll. Behind `FeatureFlag::SumTreeScrollback` (already registered in `wok-features`).
+
+Holdup: requires deciding what `LineSnapshot` carries and where the mirror lives. Worth its own design pass before code.
 
 ### ~~P2.4 block model split~~ ✅ done
 Split into: `block_id.rs` (`BlockId = u64` alias + `BlockIdGenerator` w/ `new`/`after`/`peek`/`next_id`), `block_index.rs` (`BlockIndex` w/ id→pos HashMap, O(1) lookup), `block_manager.rs` (state machine, uses generator + index). `block.rs` slimmed to record-only + re-exports `BlockManager` so external imports `wok_blocks::block::BlockManager` keep working. `restore_blocks` now rebuilds index. 25 tests pass (16 retained + 9 new across split modules).
