@@ -1,0 +1,9 @@
+[package]
+name = "wok-input-classifier"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Heuristic classifier for input buffers (shell vs paste vs heredoc vs NL)"
+
+[dependencies]

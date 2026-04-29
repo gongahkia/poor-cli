@@ -85,11 +85,8 @@ Split into: `block_id.rs` (`BlockId = u64` alias + `BlockIdGenerator` w/ `new`/`
 
 ## P3 — Input and completion
 
-### P3.1 New crate: `wok-input-classifier`
-- *Why:* enables paste detection, NL-vs-shell heuristics for future block annotation, safer auto-execute decisions.
-- *Shape:* `classify(buf: &str) -> InputKind { Shell, Paste, Heredoc, Possibly NL, Empty }` + size/time hints.
-- *Consumers:* `wok-input/editor.rs` (paste bracketing), `wok-blocks/triggers.rs` (block boundary hints).
-- *Tests:* known shells, multi-line heredoc, large paste, mixed CRLF.
+### ~~P3.1 wok-input-classifier~~ ✅ done (framework)
+Crate landed w/ `classify(buf) -> Classification { kind: InputKind, hints: Hints }` and `kind(buf) -> InputKind` shortcut. Variants: `Empty | Heredoc | Paste | Shell | PossiblyNl`. Hints carry bytes/lines/has_crlf/has_nul. Heuristics in priority order: empty → heredoc (`<<` / `<<-` outside single quotes, w/ tag) → paste (≥4096 bytes or multi-line non-shell) → shell (known cmd, abs/relative path, top-level metas `|&;><$\``) → NL prose (≥3 words, no metas, no leading path). 13 tests. Consumers (`wok-input/editor.rs` paste bracketing, `wok-blocks/triggers.rs` boundary hints) wired in a follow-up PR.
 
 ### P3.2 Completion engine rewrite
 - *Why:* current `wok-input/completion.rs` (9k) is shell-history-only. warp uses Fig spec corpus + ranked merge across providers.

@@ -4645,6 +4645,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "wok-input-classifier"
+version = "0.1.0"
+
+[[package]]
 name = "wok-process"
 version = "0.1.0"
 dependencies = [
