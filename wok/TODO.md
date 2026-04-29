@@ -166,8 +166,8 @@ New crate `wok-vim` w/ pure state machine. Inputs: `Stroke { Char(c), Esc, Enter
 - Generic `modal.rs` deferred — too vague to port without a UI fwk decision (lands w/ P6.1).
 - UI integration (mounting in menu/quit flows) follows the existing wok-ui adapter pattern; deferred to a feature PR.
 
-### P7.7 Inline image consolidation
-- *Why:* `wok-renderer/inline_images.rs` already exists. warp covers sixel + kitty + iTerm. Audit coverage; add kitty graphics if missing.
+### ~~P7.7 Inline image audit~~ ✅ done (iTerm 1337 parser added)
+Audit: `wok-renderer/inline_images.rs` is the protocol-agnostic store. Decoders: sixel ✓ (`wok-terminal/src/sixel.rs`), kitty graphics ✓ (`wok-terminal/src/terminal.rs::parse_kitty_apc`), iTerm OSC 1337 ✗. Gap closed by adding `wok-terminal/src/iterm_image.rs` w/ `parse(payload) -> ItermImagePayload { name, size, width/height: DisplayDim, preserve_aspect, inline, bytes }`. Handles `auto`/`<n>`/`<n>px`/`<n>%` dims, base64 name + bytes, forward-compat key skipping. 8 tests. Wiring into the OSC dispatcher in `terminal.rs` deferred (no consumer yet).
 
 ### ~~P7.8 wok bug-report~~ ✅ done (directory bundle)
 `wok bug-report [--output <dir>]` writes a directory `bug-<unix_ms>/` (default in cwd) containing: `doctor.json`, copies of `config.toml`/`init.lua` (if present), `channel.txt`, `flags.txt`, `system.txt`, and a `README.txt`. No upload, no network. tar.gz packing intentionally deferred (no tar/gz dep on wok-app yet — directory is just as shareable). Last-N PTY bytes also deferred until P4.2 recorder lands. 2 unit tests + manual smoke verified output.

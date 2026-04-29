@@ -21,6 +21,7 @@
 pub mod async_io;
 pub mod cast;
 pub mod config;
+pub mod iterm_image;
 pub mod prompt;
 pub mod pty;
 pub mod replay;
