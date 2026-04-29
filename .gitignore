@@ -4,3 +4,4 @@ dist/
 .sg-apis/
 *.tsbuildinfo
 CLAUDE.md
+artifacts/release/
