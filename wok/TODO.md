@@ -174,8 +174,8 @@ Doctor now prints `channel: dev` and `feature_flags: on=[…] off=[…]`. Remain
 ### ~~P7.4 Bootstrap capability matrix~~ ✅ done (data table)
 `wok-terminal/src/shell_capabilities.rs` — static `ShellCapability { name, osc133, prompt_var, history_file, profile_path, alias_file, has_integration }` array covering bash, zsh, fish, ash, dash, ksh, csh, tcsh, nu, xonsh, elvish, powershell. APIs: `lookup`, `integrated_shell_names`, `osc133_capable_names`. 7 unit tests including invariant `has_integration → osc133`. Decoupled from `ShellType` enum on purpose — wider detection + doctor reporting can wire it in a follow-up without rippling to ipc/jsonrpc/cli code.
 
-### P7.5 Onboarding flow
-- *Action:* `wok init` already exists. Extend into a 4-step onboarding: detect shell → install integration → seed config + theme → run smoke test (echo/false/pwd → expect 3 blocks). Idempotent. Output is plain text, scriptable.
+### ~~P7.5 Onboarding flow~~ ✅ done
+`wok onboard [--shell auto|bash|zsh|fish] [--no-install] [--overwrite]` runs 4 steps with `[N/4]` plain-text output: (1) detect shell, (2) seed config + theme + integration scripts under `~/.config/wok` (idempotent via existing `init_at`), (3) wire managed-block markers into the user's startup file (skippable with `--no-install`), (4) smoke check that the installed integration script advertises OSC 133 `;A` and `;D` markers — fail/warn/ok report. Re-running is safe (uses managed-block markers + `--overwrite` opt-in). Smoke is content-based (no PTY harness needed). 3 unit tests + manual CLI smoke verified.
 
 ### ~~P7.6 safe-triangle + quit-warning~~ ✅ done (algorithms)
 - `wok-ui/src/safe_triangle.rs` — pure 2-D geometry. `intent_preserved(apex, cursor, Rect)` returns `true` iff the cursor is still inside the triangle from the previous pointer position to the target's near edge. Auxiliary: `Rect`, `Side`, `approach_side`. 7 tests.

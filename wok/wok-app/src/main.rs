@@ -158,6 +158,18 @@ enum CliCommand {
         #[arg(long)]
         output: Option<std::path::PathBuf>,
     },
+    /// Guided 4-step onboarding: detect shell → seed config → install → smoke.
+    Onboard {
+        /// Target shell: auto, bash, zsh, or fish.
+        #[arg(long)]
+        shell: Option<String>,
+        /// Skip writing to the user's shell startup file.
+        #[arg(long, default_value_t = false)]
+        no_install: bool,
+        /// Overwrite existing managed config files.
+        #[arg(long, default_value_t = false)]
+        overwrite: bool,
+    },
     /// Attach to a running named session.
     Attach {
         /// Session name.

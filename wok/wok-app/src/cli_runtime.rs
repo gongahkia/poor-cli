@@ -33,6 +33,14 @@ pub(crate) fn dispatch_cli_command(cli: &Cli) -> Result<CliAction, Box<dyn Error
             setup_ops::run_bug_report(output)?;
             Ok(CliAction::ExitOk)
         }
+        Some(CliCommand::Onboard {
+            shell,
+            no_install,
+            overwrite,
+        }) => {
+            setup_ops::run_onboard(shell.as_deref(), !no_install, overwrite)?;
+            Ok(CliAction::ExitOk)
+        }
         Some(CliCommand::Shell { command }) => {
             match command {
                 ShellCommand::Install { shell, overwrite } => {

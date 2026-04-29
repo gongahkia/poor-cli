@@ -255,6 +255,89 @@ pub(crate) fn run_doctor(as_json: bool) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+pub(crate) fn run_onboard(
+    shell_arg: Option<&str>,
+    install: bool,
+    overwrite: bool,
+) -> Result<(), Box<dyn Error>> {
+    let config_dir = WokConfig::config_dir();
+
+    // step 1: detect shell
+    let shell = resolve_shell_target(shell_arg)?;
+    println!("[1/4] detected shell: {}", shell.as_str());
+
+    // step 2: seed config + theme + scripts (idempotent)
+    let stats = init_at(&config_dir, overwrite)?;
+    write_first_run_marker(&config_dir)?;
+    println!(
+        "[2/4] seeded config at {} (created={}, updated={}, skipped={})",
+        config_dir.display(),
+        stats.created.len(),
+        stats.updated.len(),
+        stats.skipped.len()
+    );
+
+    // step 3: install integration (idempotent via managed-block markers)
+    if install {
+        match shell_startup_path(shell) {
+            Ok(target_path) => {
+                let mut record = prepare_install_target(&target_path)?;
+                let source_script = config_dir.join("shell").join(shell_script_file(shell));
+                let block = integration_block(shell, &source_script);
+                let existing = fs::read_to_string(&target_path).unwrap_or_default();
+                let updated = replace_or_append_managed_block(&existing, &block);
+                fs::write(&target_path, updated)?;
+                record.target_path = target_path.clone();
+                set_executable_if_script(&target_path)?;
+                let mut state = load_shell_install_state(&config_dir)?.unwrap_or_default();
+                let previous = state.installs.insert(
+                    shell.as_str().to_string(),
+                    ShellInstallEntry {
+                        installed_at_ms: unix_time_ms_now(),
+                        records: vec![record],
+                    },
+                );
+                if let Some(previous) = previous {
+                    cleanup_shell_install_entry_backups(&previous);
+                }
+                save_shell_install_state(&config_dir, &state)?;
+                println!("[3/4] wired {} → {}", shell.as_str(), target_path.display());
+            }
+            Err(err) => {
+                println!("[3/4] skipped install: {err}");
+            }
+        }
+    } else {
+        println!("[3/4] skipped install (--no-install)");
+    }
+
+    // step 4: smoke test — verify integration script advertises OSC 133.
+    let smoke = smoke_check_integration(&config_dir, shell);
+    println!("[4/4] smoke: {smoke}");
+    if smoke.starts_with("fail:") {
+        return Err(format!("onboard smoke failed: {smoke}").into());
+    }
+
+    println!("onboard ok. run `wok doctor` to re-verify.");
+    Ok(())
+}
+
+fn smoke_check_integration(config_dir: &Path, shell: ShellTarget) -> String {
+    let path = config_dir.join("shell").join(shell_script_file(shell));
+    let Ok(text) = fs::read_to_string(&path) else {
+        return format!("fail: integration script missing at {}", path.display());
+    };
+    let begin = text.contains("133;A") || text.contains("\\e]133;A") || text.contains("\\033]133;A");
+    let end = text.contains("133;D") || text.contains("\\e]133;D") || text.contains("\\033]133;D");
+    if begin && end {
+        "ok: OSC 133 prompt + done markers present".to_string()
+    } else if begin {
+        "warn: OSC 133;A present but ;D missing — block ends may not register".to_string()
+    } else {
+        format!("fail: OSC 133 markers absent in {}", path.display())
+    }
+}
+
 pub(crate) fn run_bug_report(output: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
     let config_dir = WokConfig::config_dir();
     let dest = output.unwrap_or_else(|| {
@@ -1063,6 +1146,35 @@ mod tests {
             .expect("time should move forward")
             .as_nanos();
         std::env::temp_dir().join(format!("wok-setup-{nanos}"))
+    }
+
+    #[test]
+    fn test_smoke_check_passes_after_init() {
+        let dir = unique_temp_dir();
+        init_at(&dir, false).expect("init should succeed");
+        for s in [ShellTarget::Bash, ShellTarget::Zsh, ShellTarget::Fish] {
+            let report = smoke_check_integration(&dir, s);
+            assert!(report.starts_with("ok:"), "{}: {report}", s.as_str());
+        }
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_smoke_check_fails_when_missing() {
+        let dir = unique_temp_dir();
+        let report = smoke_check_integration(&dir, ShellTarget::Bash);
+        assert!(report.starts_with("fail:"));
+    }
+
+    #[test]
+    fn test_smoke_check_warns_on_partial_markers() {
+        let dir = unique_temp_dir();
+        let shell_dir = dir.join("shell");
+        fs::create_dir_all(&shell_dir).unwrap();
+        fs::write(shell_dir.join("bash.sh"), "echo 133;A only\n").unwrap();
+        let report = smoke_check_integration(&dir, ShellTarget::Bash);
+        assert!(report.starts_with("warn:"), "got {report}");
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
