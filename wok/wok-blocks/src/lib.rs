@@ -26,4 +26,5 @@ pub mod block_index;
 pub mod block_manager;
 pub mod block_nav;
 pub mod block_search;
+pub mod share;
 pub mod triggers;

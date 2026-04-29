@@ -165,9 +165,8 @@ Doctor now prints `channel: dev` and `feature_flags: on=[…] off=[…]`. Remain
 - *Shape:* `wok-blocks/filter.rs` w/ predicate combinators; `wok-renderer` consumes filtered iterator; viewport caches Y-positions in sumtree (synergy w/ P2.3).
 - *Tests:* correctness vs naive filter; scroll stability when filter toggles.
 
-### P7.2 Block share
-- *Why:* warp has share-block-modal. Local-first equivalent = export.
-- *Action:* `Mod+Shift+X` exports selected block to `.md` (cmd, exit, cwd, output, duration). No upload. Stretch: `--ansi` flag preserves color.
+### ~~P7.2 Block share~~ ✅ done (formatter)
+`wok-blocks/src/share.rs` lands w/ `format_markdown(&Block, &[String], OutputMode)` + `OutputMode::{Plain, Ansi}` + `strip_csi(&str)`. Emits self-contained `.md`: id, cwd, git branch (+`*` if dirty), exit code, duration, fenced cmd (`sh`), fenced output (`text` or `ansi`). Output text supplied by caller (Block records grid rows, not bytes; the terminal grid is the source). 9 unit tests. Keybind wiring + actual file write deferred to action layer.
 
 ### P7.3 Vim crate split
 - *Why:* `wok-ui/vi_mode.rs` mixes UI + vim semantics. warp factors `vim` as its own crate.
