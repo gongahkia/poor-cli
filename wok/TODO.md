@@ -180,9 +180,11 @@ Doctor now prints `channel: dev` and `feature_flags: on=[…] off=[…]`. Remain
 ### P7.5 Onboarding flow
 - *Action:* `wok init` already exists. Extend into a 4-step onboarding: detect shell → install integration → seed config + theme → run smoke test (echo/false/pwd → expect 3 blocks). Idempotent. Output is plain text, scriptable.
 
-### P7.6 Modal / safe-triangle / quit-warning polish
-- *Why:* warp ships small UX modules (`safe_triangle.rs`, `quit_warning/`, `modal.rs`) wok lacks.
-- *Action:* port the *patterns*, not code. Safe-triangle is a generic pointer-intent algorithm; quit-warning is a confirm modal w/ "running children" detection. Both <500 LoC each, written fresh.
+### ~~P7.6 safe-triangle + quit-warning~~ ✅ done (algorithms)
+- `wok-ui/src/safe_triangle.rs` — pure 2-D geometry. `intent_preserved(apex, cursor, Rect)` returns `true` iff the cursor is still inside the triangle from the previous pointer position to the target's near edge. Auxiliary: `Rect`, `Side`, `approach_side`. 7 tests.
+- `wok-ui/src/quit_warning.rs` — pure state machine `QuitWarning` w/ `on_quit_request`/`on_running_children`/`confirm`/`dismiss`/`should_show`/`should_quit`. Effects `{Quit, Show, Hide, NoChange}`. 8 tests.
+- Generic `modal.rs` deferred — too vague to port without a UI fwk decision (lands w/ P6.1).
+- UI integration (mounting in menu/quit flows) follows the existing wok-ui adapter pattern; deferred to a feature PR.
 
 ### P7.7 Inline image consolidation
 - *Why:* `wok-renderer/inline_images.rs` already exists. warp covers sixel + kitty + iTerm. Audit coverage; add kitty graphics if missing.
