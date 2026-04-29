@@ -158,10 +158,8 @@ Doctor now prints `channel: dev` and `feature_flags: on=[…] off=[…]`. Remain
 
 ## P7 — Product polish
 
-### P7.1 Block filtering & viewport virtualization
-- *Why:* warp's `block_filter.rs` (29k) + `block_list_viewport.rs` (91k) shows block UX ceiling. wok lacks filtering ("show only failed", "since last `git push`", "matching regex").
-- *Shape:* `wok-blocks/filter.rs` w/ predicate combinators; `wok-renderer` consumes filtered iterator; viewport caches Y-positions in sumtree (synergy w/ P2.3).
-- *Tests:* correctness vs naive filter; scroll stability when filter toggles.
+### ~~P7.1 Block filtering~~ ✅ done (predicate combinators)
+`wok-blocks/src/filter.rs` lands w/ `BlockFilter` (clone+send+sync `Arc<dyn Fn(&Block)->bool>`) and `and`/`or`/`not`/`any`/`none`. Built-ins: `failed_only`, `succeeded_only`, `running_only`, `matching_regex`, `cwd_under`, `since_id`, `command_contains`, `bookmarked_only`. `apply(blocks, &filter) -> Vec<usize>` returns matching indices in order. 13 tests including AND/OR/NOT, regex compile error, path-prefix, since-id strict-greater. Renderer integration + viewport sumtree caching deferred — they ride P2.3 once the scrollback mirror lands.
 
 ### ~~P7.2 Block share~~ ✅ done (formatter)
 `wok-blocks/src/share.rs` lands w/ `format_markdown(&Block, &[String], OutputMode)` + `OutputMode::{Plain, Ansi}` + `strip_csi(&str)`. Emits self-contained `.md`: id, cwd, git branch (+`*` if dirty), exit code, duration, fenced cmd (`sh`), fenced output (`text` or `ansi`). Output text supplied by caller (Block records grid rows, not bytes; the terminal grid is the source). 9 unit tests. Keybind wiring + actual file write deferred to action layer.
