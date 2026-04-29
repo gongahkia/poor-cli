@@ -7,6 +7,7 @@ import { planQuery } from "../router/planner.js";
 import type { QueryExecutionContext, QueryPlan, QueryStep } from "../router/planner.js";
 import { buildArtifactResult, shouldUseArtifact } from "./artifacts.js";
 import { buildMapPayloadFromStructuredContent, withMapUiMetadata } from "./map-payload.js";
+import { RECIPE_FALLBACK_TOOLS } from "./recipe-fallbacks.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 import { executeQueryTool } from "./query/executors.js";
 import {
