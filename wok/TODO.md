@@ -121,18 +121,11 @@ Split into: `block_id.rs` (`BlockId = u64` alias + `BlockIdGenerator` w/ `new`/`
 
 ## P5 — Release discipline
 
-### P5.1 Feature-flag rings
-- *Why:* wok's "honest gap" roadmap needs gated rollouts.
-- *Shape:* `wok-features` crate. `enum FeatureFlag { UnifiedInput, SumTreeScrollback, ProviderCompletion, ... }` w/ const arrays `DOGFOOD`, `PREVIEW`, `RELEASE`. Runtime check `FeatureFlag::X.is_enabled()` reads channel + env override `WOK_FLAGS=+X,-Y`.
-- *Doc:* one-line per flag in `docs/FEATURE_FLAGS.md` (auto-generated from a `build.rs` step).
+### ~~P5.1 / P5.2 feature flags + channels~~ ✅ done
+`wok-channels` (Dev/Dogfood/Preview/Stable, picked at build via `WOK_CHANNEL`) and `wok-features` (FeatureFlag enum w/ dogfood/preview/release ring arrays + `WOK_FLAGS=+X,-Y` overrides). 4 starter flags reserved for later phases (UnifiedInput, SumTreeScrollback, ProviderCompletion, BlockFiltering); arrays empty until landed. 7+5 tests.
 
-### P5.2 Channel metadata
-- *Why:* parallel to warp's `channel_versions`. wok currently has no notion of dev/preview/stable.
-- *Shape:* `wok-channels` crate exposing `Channel::current()`. Build sets it via `WOK_CHANNEL` env at compile time. Default `Dev`.
-- *Use:* `doctor` reports channel; flag rings consult it.
-
-### P5.3 `wok doctor` extension
-- *Action:* extend `wok-app/setup_ops.rs` doctor to report: shell-integration status per shell, parser conformance (run a tiny escape-corpus through the live parser), feature-flag state, channel, GPU adapter info, font fallback chain, sumtree-vs-vec scrollback choice.
+### ~~P5.3 doctor channel + flags~~ ✅ done
+Doctor now prints `channel: dev` and `feature_flags: on=[…] off=[…]`. Remaining doctor work (parser conformance, GPU adapter, font fallback chain, sumtree backend) deferred until those subsystems land.
 
 ---
 

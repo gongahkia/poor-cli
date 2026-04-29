@@ -22,6 +22,8 @@ wok-blocks = { path = "../wok-blocks" }
 wok-input = { path = "../wok-input" }
 wok-ui = { path = "../wok-ui" }
 wok-process = { path = "../wok-process" }
+wok-channels = { path = "../wok-channels" }
+wok-features = { path = "../wok-features" }
 winit = "0.30"
 wgpu = "24"
 pollster = "0.4"

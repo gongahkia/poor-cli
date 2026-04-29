@@ -9,6 +9,8 @@ members = [
     "wok-process",
     "wok-fuzzy",
     "wok-watcher",
+    "wok-channels",
+    "wok-features",
 ]
 resolver = "2"
 

@@ -730,6 +730,25 @@ fn doctor_checks_at(config_dir: &Path) -> Vec<DoctorCheck> {
         detail: WokConfig::load().shell.to_string(),
     });
 
+    checks.push(DoctorCheck {
+        label: "channel".to_string(),
+        status: CheckStatus::Ok,
+        detail: wok_channels::Channel::current().short_name().to_string(),
+    });
+
+    let flags = wok_features::snapshot();
+    let on: Vec<&str> = flags.iter().filter(|(_, v)| *v).map(|(n, _)| *n).collect();
+    let off: Vec<&str> = flags.iter().filter(|(_, v)| !*v).map(|(n, _)| *n).collect();
+    checks.push(DoctorCheck {
+        label: "feature_flags".to_string(),
+        status: CheckStatus::Ok,
+        detail: format!(
+            "on=[{on}] off=[{off}]",
+            on = on.join(","),
+            off = off.join(",")
+        ),
+    });
+
     checks
 }
 

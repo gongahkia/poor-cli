@@ -4599,6 +4599,8 @@ dependencies = [
  "wgpu",
  "winit",
  "wok-blocks",
+ "wok-channels",
+ "wok-features",
  "wok-input",
  "wok-process",
  "wok-renderer",
@@ -4614,6 +4616,17 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "wok-terminal",
+]
+
+[[package]]
+name = "wok-channels"
+version = "0.1.0"
+
+[[package]]
+name = "wok-features"
+version = "0.1.0"
+dependencies = [
+ "wok-channels",
 ]
 
 [[package]]
