@@ -1476,6 +1476,9 @@ export const handlePropertyBrief = async (
       { label: "Resolved planning area", value: planningArea, source: "URA" },
       { label: "Region", value: region, source: "URA" },
       { label: "Resolved postal code", value: firstGeocode?.postal ?? params.postalCode ?? null, source: "OneMap" },
+      { label: "Address confidence", value: geospatialConfidence.level, source: "OneMap/URA" },
+      { label: "Address confidence reason", value: geospatialConfidence.reason, source: "OneMap/URA" },
+      { label: "Resolution path", value: planningArea !== null && firstGeocode !== null ? "geocode + planning_area" : params.planningArea !== undefined && planningArea !== null ? "planning_area_direct" : planningArea !== null ? "planning_area_only" : "unresolved", source: "OneMap/URA" },
       { label: "Private transaction count", value: (uraRollup?.["count"] as number | null) ?? 0, source: "URA" },
       { label: "Private transaction average", value: privateAverage, source: "URA" },
       { label: "Private transaction median", value: uraRollup?.["median"] as number | null ?? null, source: "URA" },
@@ -1516,6 +1519,11 @@ export const handlePropertyBrief = async (
       contextSignals: {
         transport: transportSignals,
         environment: environmentSignals,
+      },
+      dealChecklist: {
+        items: dealChecklist.map((item) => ({ code: item.code, severity: item.severity, message: item.message, source: item.source })),
+        outstandingCount: dealChecklist.length,
+        highSeverityCount: dealChecklist.filter((item) => item.severity === "high").length,
       },
       provenanceSummary,
       freshnessSummary,
