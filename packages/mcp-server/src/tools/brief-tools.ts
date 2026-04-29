@@ -2010,12 +2010,56 @@ export const handleTransportBrief = async (
       toFreshness("LTA traffic incidents", observedAt, null),
     ],
     limits: buildTransportLimits(params.busStopCode !== undefined),
+    nextChecks: followups as readonly NextCheck[],
+    riskFlags: buildTransportRiskFlags(opsLevel, counts, coverage, params.busStopCode !== undefined),
   };
 
   const contextIds = buildContextIds(params.includeContextIds);
   return toToolResult(payload, resolveOutputFormat(params.format) === "json" ? "json" : "markdown", {
     ...(contextIds === undefined ? {} : { structuredContent: { contextIds } }),
   });
+};
+
+const buildTransportRiskFlags = (
+  opsLevel: string,
+  counts: Readonly<{ trainAlerts: number; trainMessages: number; trafficSignals: number }>,
+  coverage: Readonly<{ busCoverage: string; trainCoverage: string; trafficCoverage: string }>,
+  busStopRequested: boolean,
+): readonly RiskFlag[] => {
+  const flags: RiskFlag[] = [];
+  if (counts.trainAlerts > 0) {
+    flags.push({
+      code: "TRAIN_ALERTS_ACTIVE",
+      severity: counts.trainAlerts > 1 ? "high" : "medium",
+      message: `${counts.trainAlerts} active train alert(s); escalate to transport-ops channel.`,
+      source: "LTA",
+    });
+  }
+  if (counts.trafficSignals > 0) {
+    flags.push({
+      code: "TRAFFIC_INCIDENTS_ACTIVE",
+      severity: counts.trafficSignals > 5 ? "medium" : "low",
+      message: `${counts.trafficSignals} active traffic incident(s) on the network.`,
+      source: "LTA",
+    });
+  }
+  if (busStopRequested && coverage.busCoverage === "unavailable") {
+    flags.push({
+      code: "BUS_COVERAGE_UNAVAILABLE",
+      severity: "medium",
+      message: "Stop-level bus coverage was requested but is unavailable; verify stop code and service number.",
+      source: "LTA",
+    });
+  }
+  if (opsLevel === "disrupted") {
+    flags.push({
+      code: "OPS_LEVEL_DISRUPTED",
+      severity: "high",
+      message: "Aggregated transport ops level is disrupted; one or more modes are returning warning signals.",
+      source: "aggregated",
+    });
+  }
+  return flags;
 };
 
 const AREA_TO_REGION: Readonly<Record<string, string>> = {
@@ -2247,12 +2291,70 @@ export const handleEnvironmentBrief = async (
       toFreshness("NEA rainfall", observedAt, getFirstTimestamp(rainfall, ["timestamp"])),
     ],
     limits: buildEnvironmentLimits(params.area !== undefined, params.region !== undefined, params.stationId !== undefined),
+    nextChecks: followups as readonly NextCheck[],
+    riskFlags: buildEnvironmentRiskFlags(thresholds, booleanFlags, opsLevel),
   };
 
   const contextIds = buildContextIds(params.includeContextIds);
   return toToolResult(payload, resolveOutputFormat(params.format) === "json" ? "json" : "markdown", {
     ...(contextIds === undefined ? {} : { structuredContent: { contextIds } }),
   });
+};
+
+const buildEnvironmentRiskFlags = (
+  thresholds: Readonly<{ forecastRisk: string; airQualityBand: string; rainfallBand: string }>,
+  flags: Readonly<{ rainActive: boolean; rainHeavy: boolean; forecastThundery: boolean; psiUnhealthy: boolean; pm25Unhealthy: boolean }>,
+  opsLevel: string,
+): readonly RiskFlag[] => {
+  const list: RiskFlag[] = [];
+  if (thresholds.forecastRisk === "caution") {
+    list.push({
+      code: "FORECAST_THUNDERY",
+      severity: "high",
+      message: "Forecast indicates thundery or stormy conditions; outdoor activity should be deferred.",
+      source: "NEA",
+    });
+  }
+  if (thresholds.airQualityBand === "caution" || flags.psiUnhealthy) {
+    list.push({
+      code: "AIR_QUALITY_UNHEALTHY",
+      severity: "high",
+      message: "PSI 24h reading is in the unhealthy band (>100); avoid prolonged outdoor exertion.",
+      source: "NEA",
+    });
+  } else if (thresholds.airQualityBand === "watch") {
+    list.push({
+      code: "AIR_QUALITY_WATCH",
+      severity: "medium",
+      message: "PSI 24h reading is in the moderate band (51-100); sensitive groups should reduce prolonged exertion.",
+      source: "NEA",
+    });
+  }
+  if (flags.pm25Unhealthy) {
+    list.push({
+      code: "PM25_UNHEALTHY",
+      severity: "medium",
+      message: "PM2.5 reading exceeds the 55 ug/m3 short-term advisory threshold.",
+      source: "NEA",
+    });
+  }
+  if (thresholds.rainfallBand === "caution" || flags.rainHeavy) {
+    list.push({
+      code: "RAIN_HEAVY",
+      severity: "medium",
+      message: "Heavy rainfall reported at the focus station; expect localised flooding risk.",
+      source: "NEA",
+    });
+  }
+  if (opsLevel === "caution") {
+    list.push({
+      code: "OPS_LEVEL_CAUTION",
+      severity: "high",
+      message: "Aggregated environment ops level is caution; outdoor operations should be paused.",
+      source: "aggregated",
+    });
+  }
+  return list;
 };
 
 const CivicBriefInputSchema = {
@@ -2344,8 +2446,72 @@ export const handleCivicBrief = async (
       toLimit("PER_CATEGORY_CAP", "Each category returns at most 10 nearest facilities."),
       toLimit("NO_OPERATING_HOURS", "Operating hours and real-time availability are not included."),
     ],
+    nextChecks: buildCivicNextChecks(coordParams, totalFacilities, lat, lng),
+    riskFlags: buildCivicRiskFlags(totalFacilities, lat, lng, coordParams.radiusKm),
   };
   return toToolResult(payload, resolveOutputFormat(params.format) === "json" ? "json" : "markdown");
+};
+
+const buildCivicNextChecks = (
+  coordParams: Readonly<{ radiusKm: number }>,
+  totalFacilities: number,
+  lat: number | undefined,
+  lng: number | undefined,
+): readonly NextCheck[] => {
+  const checks: NextCheck[] = [];
+  if (lat === undefined || lng === undefined) {
+    checks.push({
+      tool: "sg_onemap_geocode",
+      reason: "Resolve a postal code, address, or building name into coordinates before re-running the civic brief.",
+      input: {},
+    });
+    return checks;
+  }
+  if (totalFacilities === 0 && coordParams.radiusKm < 5) {
+    checks.push({
+      tool: "sg_civic_brief",
+      reason: "Widen the search radius when no facilities surface at the current radius.",
+      input: { lat, lng, radiusKm: Math.min(coordParams.radiusKm * 2, 10) },
+    });
+  }
+  checks.push({
+    tool: "sg_pa_community_outlets",
+    reason: "Drill into community-club inventory directly when civic-brief categories are too aggregated.",
+    input: { lat, lng, radiusKm: coordParams.radiusKm, limit: 10 },
+  });
+  checks.push({
+    tool: "sg_ecda_childcare_centres",
+    reason: "Drill into childcare directory directly for family-relocation workflows.",
+    input: { lat, lng, radiusKm: coordParams.radiusKm, limit: 10 },
+  });
+  return checks;
+};
+
+const buildCivicRiskFlags = (
+  totalFacilities: number,
+  lat: number | undefined,
+  lng: number | undefined,
+  radiusKm: number,
+): readonly RiskFlag[] => {
+  const flags: RiskFlag[] = [];
+  if (lat === undefined || lng === undefined) {
+    flags.push({
+      code: "LOCATION_UNRESOLVED",
+      severity: "high",
+      message: "Could not resolve location to coordinates; civic results are empty until geocode succeeds.",
+      source: "OneMap",
+    });
+    return flags;
+  }
+  if (totalFacilities === 0) {
+    flags.push({
+      code: "NO_FACILITIES_IN_RADIUS",
+      severity: "medium",
+      message: `No civic facilities found within ${radiusKm} km of the requested location; widen radius or verify the location.`,
+      source: "aggregated",
+    });
+  }
+  return flags;
 };
 
 export const briefToolDefinitions: readonly RegisteredToolDefinition[] = [
