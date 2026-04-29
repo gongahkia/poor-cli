@@ -3,3 +3,4 @@ dist/
 *.db
 .sg-apis/
 *.tsbuildinfo
+CLAUDE.md
