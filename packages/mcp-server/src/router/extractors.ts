@@ -324,6 +324,28 @@ export const extractAuditStatus = (query: string): string | null => {
   return match?.[1] === undefined ? null : `Grade ${match[1].toUpperCase()}`;
 };
 
+export type CivicModule = "pa" | "sportsg" | "ecda" | "msf" | "hawker";
+
+export const extractCivicModules = (query: string): readonly CivicModule[] => {
+  const modules = new Set<CivicModule>();
+  if (/\bcommunity\s+club|passion\s*wave|resident(?:s')?\s*(?:committee|network)|\brn\b|\brc\b|\bcc\b/i.test(query)) {
+    modules.add("pa");
+  }
+  if (/\bsportsg\b|\bsports?\s+facility\b|\bswim(?:ming)?|pool\b|\btennis\b|\bsquash\b|\bstadium\b|\bsports?\s+hall\b|\bsport(?:s)?\s+centre\b|\bhockey\b|\barchery\b/i.test(query)) {
+    modules.add("sportsg");
+  }
+  if (/\bchild\s*care\b|\bchildcare\b|\bpreschool\b|\bkindergarten\b|\becda\b/i.test(query)) {
+    modules.add("ecda");
+  }
+  if (/\bfamily\s+services?\b|\bfamily\s+service\s+cent(?:re|er)s?\b|\bfsc\b|\bstudent\s+care\b|\bscfa\b|\bsocial\s+service\s+offices?\b|\bsso\b|\bmsf\b/i.test(query)) {
+    modules.add("msf");
+  }
+  if (/\bhawker\s+cent(?:re|er)s?\b|\bhawker\b/i.test(query)) {
+    modules.add("hawker");
+  }
+  return Array.from(modules);
+};
+
 export const detectCivicTool = (query: string): string | null => {
   if (/\bfamily\s+service\s+cent(?:re|er)s?\b|\bfsc\b/i.test(query)) {
     return "sg_msf_family_services";

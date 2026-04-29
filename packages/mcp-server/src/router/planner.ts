@@ -10,6 +10,7 @@ import {
   type QueryPlan,
 } from "./planner-core.js";
 import { buildBusinessRegistryPlan } from "./plans/business.js";
+import { extractCivicModules } from "./extractors.js";
 
 export type { QueryExecutionContext, QueryPlan, QueryStep } from "./planner-core.js";
 
@@ -1607,6 +1608,8 @@ const buildComparisonPlan = (query: string): QueryPlan | null => {
   if (areas.length !== 2) return null; // only support location-based comparison for now
   const matched = COMPARISON_TOOL_MAP.find((m) => m.pattern.test(query));
   const { tool, paramKey } = matched?.mapping ?? { tool: "sg_property_brief", paramKey: "planningArea" }; // default to property
+  const civicModules = tool === "sg_civic_brief" ? extractCivicModules(query) : [];
+  const civicExtras = civicModules.length > 0 ? { modules: civicModules } : {};
   return {
     supported: true,
     workflow: "comparison",
@@ -1614,8 +1617,8 @@ const buildComparisonPlan = (query: string): QueryPlan | null => {
     confidence: 0.85,
     apis: [],
     steps: [
-      { id: "compare_a", purpose: `Fetch data for ${areas[0]}`, tool, input: { [paramKey]: areas[0], format: "json" } },
-      { id: "compare_b", purpose: `Fetch data for ${areas[1]}`, tool, input: { [paramKey]: areas[1], format: "json" } },
+      { id: "compare_a", purpose: `Fetch data for ${areas[0]}`, tool, input: { [paramKey]: areas[0], format: "json", ...civicExtras } },
+      { id: "compare_b", purpose: `Fetch data for ${areas[1]}`, tool, input: { [paramKey]: areas[1], format: "json", ...civicExtras } },
     ],
   };
 };
