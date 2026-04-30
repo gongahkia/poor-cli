@@ -2609,6 +2609,30 @@ impl WokHandler {
         self.panes.values().filter(|pane| !pane.terminal.exited).count()
     }
 
+    /// Toggle the active pane's "show only failed" block filter using
+    /// `wok_blocks::filter::failed_only`. Reports the resulting count.
+    fn toggle_failed_only_filter(&mut self) {
+        let Some(pane_id) = self.active_pane_id() else {
+            self.status_message = Some("no active pane".to_string());
+            return;
+        };
+        let blocks_snapshot: Vec<_> = self
+            .panes
+            .get(&pane_id)
+            .map(|p| p.app.block_manager.blocks.clone())
+            .unwrap_or_default();
+        let filter = wok_blocks::filter::failed_only();
+        let matched = wok_blocks::filter::apply(&blocks_snapshot, &filter);
+        if matched.is_empty() {
+            self.status_message = Some("no failed blocks in this pane".to_string());
+        } else {
+            self.status_message = Some(format!(
+                "{} failed block(s) in this pane",
+                matched.len()
+            ));
+        }
+    }
+
     fn handle_shell_exit_transitions(&mut self, exited_pane_ids: &[PaneId]) -> bool {
         if exited_pane_ids.is_empty()
             || !self.config.close_on_shell_exit
@@ -4137,6 +4161,11 @@ impl WokHandler {
         }
         if matches!(action, Action::BlockExportMarkdown) {
             self.export_selected_block_bundle(BlockExportFormat::Markdown);
+            self.needs_redraw = true;
+            return;
+        }
+        if matches!(action, Action::BlockFilter) {
+            self.toggle_failed_only_filter();
             self.needs_redraw = true;
             return;
         }
