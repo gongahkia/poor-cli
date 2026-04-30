@@ -62,10 +62,8 @@ Conclusion: migrate scrollback to sumtree only where soft-wrapped line→logical
 
 The framework is shaped to absorb the migration without further API changes; the holdup is the careful per-field walk to preserve every existing TOML key.
 
-### P2.2 ANSI/CSI/DCS parser audit
-- *Why:* warp ships 23k of parser + 33k of tests + `ESCAPE_SEQUENCES.md` spec. wok's `wok-terminal/terminal.rs` is 35k mixed concerns.
-- *Action:* split parsing out of `terminal.rs` into `wok-terminal/parser.rs` + `parser_tests.rs`. Use warp's `ESCAPE_SEQUENCES.md` as a *spec checklist* (read-only reference). Add corpus tests covering: SGR 38;2/5, mouse 1006/1015, OSC 4/10/11/52, OSC 133 A–D, OSC 8 hyperlinks, DCS sixel, APC kitty graphics, mode 2026 sync update, mode 2027 grapheme.
-- *Acceptance:* parser is pure (no terminal-state writes); state mutations live in `state.rs`; coverage report ≥ 90% on `parser.rs`.
+### ~~P2.2 Parser split~~ ✅ done (extraction)
+Pure parser helpers extracted from `wok-terminal/src/terminal.rs` into a new `parser.rs` module: `find_osc_terminator`, `find_apc_terminator`, `find_dcs_terminator`, `find_csi_terminator`, `parse_kitty_keyboard_control`, `decode_kitty_image_data`, `parse_kitty_file_path`, `parse_osc8_params`, `sixel_display_size`, plus the `KittyKeyboardControl` enum. All `pub(crate)` so the dispatch loop in `terminal.rs` is unchanged. Tests moved + expanded: 14 parser tests (vs 6 before) covering OSC BEL/ST + EOF, APC ST-only, DCS dual-terminator, CSI final byte ranges, OSC 8 blank-token skipping, kitty RGB→RGBA padding, short-payload + unknown-format errors. Wider corpus (SGR 38;2/5, OSC 4/10/11/52, mode 2026/2027) deferred — they live in the dispatch loop and would require splitting more state-touching code.
 
 ### P2.3 Scrollback indexing on wok-sumtree (re-scoped, deferred)
 **Why deferred:** investigation showed scrollback storage is owned by `alacritty_terminal::Grid` (`wok-terminal/src/state.rs`). We don't control the underlying buffer, so a "swap-the-backend" flag isn't viable without forking alacritty.

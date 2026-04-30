@@ -1,15 +1,18 @@
 //! Terminal: connects the PTY async reader to alacritty_terminal.
 
 use std::collections::HashMap;
-use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 
-use base64::Engine;
 use thiserror::Error;
 use tracing::{debug, instrument, warn};
 
 use crate::async_io::{PtyEvent, PtyIoHandle, WakeCallback};
+use crate::parser::{
+    decode_kitty_image_data, find_apc_terminator, find_csi_terminator, find_dcs_terminator,
+    find_osc_terminator, parse_kitty_keyboard_control, parse_osc8_params, sixel_display_size,
+    KittyKeyboardControl,
+};
 use crate::pty::{PtyError, PtyManager};
 use crate::shell::ShellType;
 use crate::sixel;
@@ -743,218 +746,9 @@ fn bytes_need_full_damage(bytes: &[u8]) -> bool {
     false
 }
 
-fn find_osc_terminator(bytes: &[u8], start: usize) -> Option<(usize, usize)> {
-    let mut idx = start;
-    while idx < bytes.len() {
-        if bytes[idx] == 0x07 {
-            return Some((idx, 1));
-        }
-        if bytes[idx] == 0x1b && bytes.get(idx + 1) == Some(&b'\\') {
-            return Some((idx, 2));
-        }
-        idx += 1;
-    }
-    None
-}
-
-fn find_apc_terminator(bytes: &[u8], start: usize) -> Option<(usize, usize)> {
-    let mut idx = start;
-    while idx < bytes.len() {
-        if bytes[idx] == 0x1b && bytes.get(idx + 1) == Some(&b'\\') {
-            return Some((idx, 2));
-        }
-        idx += 1;
-    }
-    None
-}
-
-fn find_dcs_terminator(bytes: &[u8], start: usize) -> Option<(usize, usize)> {
-    let mut idx = start;
-    while idx < bytes.len() {
-        if bytes[idx] == 0x1b && bytes.get(idx + 1) == Some(&b'\\') {
-            return Some((idx, 2));
-        }
-        if bytes[idx] == 0x9c {
-            return Some((idx, 1));
-        }
-        idx += 1;
-    }
-    None
-}
-
-fn find_csi_terminator(bytes: &[u8], start: usize) -> Option<usize> {
-    let mut idx = start;
-    while idx < bytes.len() {
-        let byte = bytes[idx];
-        if (0x40..=0x7e).contains(&byte) {
-            return Some(idx);
-        }
-        idx += 1;
-    }
-    None
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum KittyKeyboardControl {
-    Query,
-    Push(u32),
-    Pop,
-}
-
-fn parse_kitty_keyboard_control(params: &str) -> Option<KittyKeyboardControl> {
-    let trimmed = params.trim();
-    match trimmed {
-        "?" => Some(KittyKeyboardControl::Query),
-        "<" => Some(KittyKeyboardControl::Pop),
-        _ => {
-            let rest = trimmed.strip_prefix('>')?;
-            let flags_text = rest.split(';').next().unwrap_or_default().trim();
-            if flags_text.is_empty() {
-                return Some(KittyKeyboardControl::Push(0));
-            }
-            match flags_text.parse::<u32>() {
-                Ok(flags) => Some(KittyKeyboardControl::Push(flags)),
-                Err(error) => {
-                    warn!("ignoring invalid kitty keyboard flags '{flags_text}': {error}");
-                    None
-                }
-            }
-        }
-    }
-}
-
-fn decode_kitty_image_data(
-    format: u32,
-    transmission: char,
-    encoded: &str,
-    source_width: u32,
-    source_height: u32,
-) -> Result<(u32, u32, Vec<u8>), String> {
-    let bytes = match transmission {
-        'd' => base64::engine::general_purpose::STANDARD
-            .decode(encoded.as_bytes())
-            .map_err(|error| format!("invalid kitty base64 payload: {error}"))?,
-        'f' | 't' => {
-            let path = parse_kitty_file_path(encoded)?;
-            let bytes = fs::read(&path).map_err(|error| {
-                format!(
-                    "failed to read kitty image file {}: {error}",
-                    path.display()
-                )
-            })?;
-            if transmission == 't' {
-                if let Err(error) = fs::remove_file(&path) {
-                    warn!("failed to remove kitty temp image {path:?}: {error}");
-                }
-            }
-            bytes
-        }
-        other => {
-            return Err(format!(
-                "unsupported kitty transmission mode '{other}' (expected d/f/t)"
-            ));
-        }
-    };
-
-    match format {
-        24 => {
-            let width = source_width.max(1);
-            let height = source_height.max(1);
-            let expected = (width as usize)
-                .saturating_mul(height as usize)
-                .saturating_mul(3);
-            if bytes.len() < expected {
-                return Err("kitty RGB payload shorter than declared dimensions".to_string());
-            }
-            let mut rgba = Vec::with_capacity((width as usize) * (height as usize) * 4);
-            for chunk in bytes[..expected].chunks_exact(3) {
-                rgba.push(chunk[0]);
-                rgba.push(chunk[1]);
-                rgba.push(chunk[2]);
-                rgba.push(255);
-            }
-            Ok((width, height, rgba))
-        }
-        32 => {
-            let width = source_width.max(1);
-            let height = source_height.max(1);
-            let expected = (width as usize)
-                .saturating_mul(height as usize)
-                .saturating_mul(4);
-            if bytes.len() < expected {
-                return Err("kitty RGBA payload shorter than declared dimensions".to_string());
-            }
-            Ok((width, height, bytes[..expected].to_vec()))
-        }
-        100 => {
-            let image = image::load_from_memory(&bytes)
-                .map_err(|error| format!("failed to decode kitty image payload: {error}"))?
-                .to_rgba8();
-            Ok((image.width(), image.height(), image.into_raw()))
-        }
-        other => Err(format!(
-            "unsupported kitty format '{other}' (expected 24/32/100)"
-        )),
-    }
-}
-
-fn parse_kitty_file_path(encoded: &str) -> Result<PathBuf, String> {
-    let decoded = base64::engine::general_purpose::STANDARD
-        .decode(encoded.as_bytes())
-        .ok()
-        .and_then(|bytes| String::from_utf8(bytes).ok())
-        .unwrap_or_else(|| encoded.to_string());
-    let cleaned = decoded.trim_matches('\0').trim();
-    if cleaned.is_empty() {
-        return Err("empty kitty file transmission path".to_string());
-    }
-    Ok(PathBuf::from(cleaned))
-}
-
-fn parse_osc8_params(params: &str) -> HashMap<String, String> {
-    let mut parsed = HashMap::new();
-    for token in params
-        .split(':')
-        .flat_map(|segment| segment.split(';'))
-        .filter(|segment| !segment.trim().is_empty())
-    {
-        if let Some((key, value)) = token.split_once('=') {
-            parsed.insert(key.trim().to_string(), value.trim().to_string());
-        }
-    }
-    parsed
-}
-
-fn sixel_display_size(width: u32, height: u32) -> (u16, u16) {
-    const CELL_PIXEL_WIDTH: u32 = 8;
-    const CELL_PIXEL_HEIGHT: u32 = 16;
-
-    let cols = width.div_ceil(CELL_PIXEL_WIDTH).max(1);
-    let rows = height.div_ceil(CELL_PIXEL_HEIGHT).max(1);
-    (
-        cols.min(u32::from(u16::MAX)) as u16,
-        rows.min(u32::from(u16::MAX)) as u16,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_parse_osc8_params_extracts_id() {
-        let params = parse_osc8_params("id=abc123:foo=bar");
-        assert_eq!(params.get("id"), Some(&"abc123".to_string()));
-        assert_eq!(params.get("foo"), Some(&"bar".to_string()));
-    }
-
-    #[test]
-    fn test_find_osc_terminator_supports_bel_and_st() {
-        let bel = b"\x1b]8;;https://example.com\x07";
-        let st = b"\x1b]8;;https://example.com\x1b\\";
-        assert_eq!(find_osc_terminator(bel, 2), Some((24, 1)));
-        assert_eq!(find_osc_terminator(st, 2), Some((24, 2)));
-    }
 
     #[test]
     fn test_damage_detection_keeps_sgr_incremental() {
@@ -962,48 +756,5 @@ mod tests {
         assert!(!bytes_need_full_damage(b"\x1b[31mred\x1b[0m"));
         assert!(bytes_need_full_damage(b"\x1b[2J"));
         assert!(bytes_need_full_damage(b"\x1b[H"));
-    }
-
-    #[test]
-    fn test_sixel_display_size_rounds_up_cells() {
-        assert_eq!(sixel_display_size(1, 1), (1, 1));
-        assert_eq!(sixel_display_size(16, 32), (2, 2));
-        assert_eq!(sixel_display_size(17, 33), (3, 3));
-    }
-
-    #[test]
-    fn test_parse_kitty_file_path_accepts_raw_and_base64() {
-        let raw = parse_kitty_file_path("/tmp/a.png").expect("raw path");
-        assert_eq!(raw, PathBuf::from("/tmp/a.png"));
-
-        let encoded = base64::engine::general_purpose::STANDARD.encode("/tmp/b.png");
-        let decoded = parse_kitty_file_path(&encoded).expect("base64 path");
-        assert_eq!(decoded, PathBuf::from("/tmp/b.png"));
-    }
-
-    #[test]
-    fn test_parse_kitty_keyboard_control_variants() {
-        assert_eq!(
-            parse_kitty_keyboard_control("?"),
-            Some(KittyKeyboardControl::Query)
-        );
-        assert_eq!(
-            parse_kitty_keyboard_control("<"),
-            Some(KittyKeyboardControl::Pop)
-        );
-        assert_eq!(
-            parse_kitty_keyboard_control(">5"),
-            Some(KittyKeyboardControl::Push(5))
-        );
-        assert_eq!(
-            parse_kitty_keyboard_control(">5;1"),
-            Some(KittyKeyboardControl::Push(5))
-        );
-    }
-
-    #[test]
-    fn test_parse_kitty_keyboard_control_rejects_invalid_flags() {
-        assert_eq!(parse_kitty_keyboard_control(">abc"), None);
-        assert_eq!(parse_kitty_keyboard_control(""), None);
     }
 }
