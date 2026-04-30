@@ -184,3 +184,187 @@ Per item: open issue w/ label `port:warp`, link this section, attach acceptance 
 - Relicense to AGPL to allow direct lifts? [Speculation] cleaner but loses the MIT pitch in README. Default = no.
 - Adopt `warpui_core` wholesale (MIT-compatible) vs distill? Default = distill (P6.1) to avoid pulling its text/clipboard/keymap that conflict w/ wok's.
 - Keep Lua scripting alongside a future entity-handle plugin model, or migrate? [Inference] keep both; Lua = user-side, entities = internal decomposition.
+
+---
+
+## P8 — Cross-platform parity (currently macOS-first)
+
+[Inference] All development to date assumes macOS (Homebrew, zsh, AppKit menu, Cmd modifier). Windows + Linux compile but have not been smoke-tested as primary daily drivers.
+
+### P8.1 macOS-first audit
+- Identify every `#[cfg(target_os = "macos")]` branch and document the Windows/Linux fallback.
+- Audit `wok-app/src/main.rs` for hard-coded macOS assumptions (`Mod` = Cmd, AppKit menu via `muda`, `~/Library/...` paths).
+- Result: write a `docs/PLATFORM.md` table — feature × {macOS, Linux, Windows} = {ok, broken, untested}.
+
+### P8.2 Linux daily driver
+- Test under: GNOME on Wayland (Fedora 40+), KDE on Wayland (Plasma 6), GNOME on X11 (Ubuntu LTS), i3 on X11.
+- Known concerns: clipboard via wayland (`arboard` should handle but verify), font fallback (no Core Text), HiDPI scaling, IME.
+- Goal: 1-week soak with primary user as Linux dev.
+
+### P8.3 Windows daily driver
+- Test under: Windows 11 native (PowerShell + cmd + WSL2), Windows Terminal as control.
+- Known concerns: ConPTY vs portable-pty handling, Mod = Ctrl not Cmd, no AppKit menu, font fallback (DirectWrite via wgpu), high-DPI.
+- Goal: 1-week soak with primary user as Windows dev.
+
+### P8.4 Per-platform CI
+- GitHub Actions matrix: `{macos-14, ubuntu-22.04, windows-2022} × {stable, beta}`.
+- Cross-compile to: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-pc-windows-msvc`.
+- Cache `target/` per OS to keep CI under 10 minutes.
+
+---
+
+## P9 — Configurable keybindings (TOML override layer)
+
+Today bindings are baked into `wok-app/src/keybindings.rs` via Rust defaults. The new `Action::KeybindingDiscovery` palette lets users *see* every binding but not edit them. A real keybind editor needs a TOML override layer first.
+
+### P9.1 TOML schema
+- `~/.config/wok/keybindings.toml`:
+  ```toml
+  [[binding]]
+  keys = "cmd+t"
+  action = "new_tab"
+  when = ["any"]
+  ```
+- Use `wok-keymap`'s `ContextPredicate` for the `when` field.
+- Action names match `action_to_palette_id` strings (already canonical).
+
+### P9.2 Loader + merge
+- Load keybindings.toml after defaults; user entries override matching `(key, when)` tuples.
+- Validate action names against `palette_actions_catalog` at load time; warn on unknown.
+- Surface load errors in `wok doctor`.
+
+### P9.3 Editor UI
+- Two-pane palette: left = action list, right = current binding + "press new keys".
+- Bindings save to keybindings.toml on confirm; live config reload picks them up.
+- Reset-to-default per binding.
+
+---
+
+## P10 — Settings: structured editor (current = TOML buffer)
+
+Today `Action::OpenSettings` opens config.toml in a text buffer (Mod+S to save). It works but isn't discoverable. A structured form would surface every option with a control + default + reset button.
+
+### P10.1 Schema-driven form
+- `wok_settings::Settings` schema is already implemented for `WokConfig`.
+- Build a renderer that walks the schema and emits a control per field type:
+  - `bool` → toggle
+  - `f32`/`usize` → numeric input + slider
+  - enum → dropdown (requires the enum to expose its variants — add `pub fn variants() -> &'static [&'static str]` per enum)
+  - `Option<PathBuf>` → file picker + clear button
+  - `Vec<TriggerConfig>` etc → "edit raw" escape hatch back to TOML buffer
+- "Reset to default" per field.
+- "Open as TOML" escape hatch keeps power-user workflow.
+
+### P10.2 Live preview
+- Settings changes apply to a temp `WokConfig` clone first; "Apply" persists. "Discard" reverts.
+
+---
+
+## P11 — Distribution + release ops
+
+Zero of these exist. None of the product matters until users can download a signed binary.
+
+### P11.1 Signed macOS .dmg
+- `cargo bundle --target aarch64-apple-darwin --target x86_64-apple-darwin` → universal binary.
+- Code-sign w/ Developer ID Application cert; notarize via `xcrun notarytool`; staple ticket.
+- `create-dmg` for the disk image w/ background + drag-to-Applications shortcut.
+- Test that downloading + double-clicking from a browser produces no Gatekeeper warning.
+
+### P11.2 Linux packages
+- `.deb` via `cargo-deb` — Ubuntu 22.04+ / Debian 12+.
+- `.rpm` via `cargo-generate-rpm` — Fedora 40+ / RHEL 9.
+- AppImage for distros without packaging.
+- `flatpak` and `snap` are stretch goals.
+
+### P11.3 Windows installer
+- `wix`-based `.msi` w/ Authenticode signature (EV cert preferred for SmartScreen).
+- Standalone `.exe` via `cargo-wix`.
+
+### P11.4 Homebrew tap
+- `homebrew-wok` repo with a `wok.rb` formula pointing at signed release tarballs.
+- `brew install wok/tap/wok` Just Works.
+
+### P11.5 Auto-update
+- `tauri-plugin-updater` style: check a `latest.json` manifest at startup, download + verify signature, prompt restart.
+- Opt-out via `[updates] check = false` in config.
+
+### P11.6 Crash reporting (opt-in)
+- `sentry-rust` integration; `[telemetry] crash_reports = false` is the default per charter.
+- First-run dialog: "Send anonymous crash reports to help fix bugs? [Yes] [No]" — choice is sticky.
+
+---
+
+## P12 — Pitch + positioning
+
+Wok rejects AI, cloud, telemetry-by-default by charter. That niche is real but needs to be marketed *as the niche*.
+
+### Three taglines to A/B
+1. **"The terminal that stays out of your way — and off the network."**
+2. **"Blocks. Hot reload. Zero telemetry. No AI."**
+3. **"A modern terminal for people who don't want their shell history in the cloud."**
+
+### Target audiences (ranked)
+1. **Privacy-conscious devs** — security researchers, infosec, journalists, people who switched from Warp after the cloud-history incident.
+2. **Regulated industries** — finance, healthcare, defense — orgs where cloud sync is a compliance violation.
+3. **Power users tired of bloat** — "I want blocks like Warp but I don't want an AI assistant or sign-in screen."
+4. **Lua/scripting fans** — Wok's Lua plugin model is more open than Warp's workflow YAML.
+
+### Anti-positioning (what wok is NOT)
+- Not for people who want AI command suggestions.
+- Not for teams that need shared shell sessions across machines.
+- Not a Warp replacement — a Warp *alternative for a specific user*.
+
+### Differentiators to lead with
+1. **Hot reload everything** — config.toml, themes, Lua plugins. No restart.
+2. **Lua plugin model** — full programmatic control over the terminal.
+3. **Zero network** — disable Wi-Fi, run wok, every feature works.
+4. **Local-first sessions** — all state in `~/.config/wok` and `~/.local/share/wok`. Backup is a `tar`.
+5. **Channel + flag system** — ship features behind flags, soak in dogfood, promote to stable.
+
+---
+
+## P13 — Weaknesses → functional improvements
+
+Each weakness from the strategic audit becomes a concrete ticket here.
+
+| Weakness | Ticket | Owner of fix |
+|---|---|---|
+| No signed builds | P11.1 / P11.3 | release engineering |
+| No installers | P11.1–P11.4 | release engineering |
+| No auto-update | P11.5 | release engineering + UI |
+| No crash reports | P11.6 (opt-in) | infra |
+| macOS-first only | P8 | platform owners |
+| Settings = TOML buffer only | P10 (structured form) | UI |
+| Keybindings hardcoded | P9 (TOML overrides + editor) | UI + config |
+| No theme picker | ~~done 2787829~~ ✅ | — |
+| No marketplace for Lua plugins | P14.1 (new) | infra |
+| No "first 60 seconds" demo | P14.2 (new) | onboarding + docs |
+| No website / landing page | P14.3 (new) | marketing |
+| No demo video | P14.4 (new) | marketing |
+| No competitor benchmarks | P14.5 (new) | benchmarking |
+
+---
+
+## P14 — Marketing + community
+
+### P14.1 Lua plugin marketplace
+- Plugins live in a single `wok-plugins` GitHub org; one repo per plugin.
+- `wok plugin install <github_user/plugin_repo>` clones into `~/.config/wok/plugins/`.
+- `wok plugin list` lists installed; `wok plugin update [name]` pulls.
+- No central registry; just GitHub. Discovery via `awesome-wok` README.
+
+### P14.2 First 60 seconds demo
+- Extend `wok onboard` with an optional fifth step: "Show me what's cool."
+- Plays a wokcast that demonstrates: hot config reload, theme switch via palette, block bookmarking, Lua plugin loading, recording a `.wokcast`.
+
+### P14.3 Landing page (wok.sh or similar)
+- One page. Hero screenshot. Three differentiators. One 30-second video. Download buttons (macOS / Linux / Windows). Pricing block. "View on GitHub" link.
+- Static site (Astro / 11ty / plain HTML). Deploy to Cloudflare Pages or Netlify.
+
+### P14.4 Demo video
+- 30 seconds. Screen recording, no narration, captions only. Show: install → onboard → use blocks → switch theme via palette → record + replay a session.
+
+### P14.5 Competitor benchmarks
+- vs iTerm2, Wezterm, Alacritty, Ghostty, Warp.
+- Metrics: cold start, scrollback render at 100k lines, paste 10MB, fork+exec latency, memory at idle / under load.
+- Publish in `docs/BENCHMARKS.md` with reproducer scripts.
