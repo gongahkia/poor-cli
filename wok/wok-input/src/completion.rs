@@ -202,10 +202,17 @@ impl CompletionProvider for EnvVarCompletionProvider {
 }
 
 /// Merge and rank completion candidates from all providers.
+///
+/// When `wok_features::FeatureFlag::ProviderCompletion` is enabled, items are
+/// re-ranked via `wok-fuzzy` against the active word using the multi-provider
+/// runtime; otherwise the legacy alphabetical merge is used.
 pub fn gather_completions(
     context: &CompletionContext,
     providers: &[&dyn CompletionProvider],
 ) -> Vec<CompletionItem> {
+    if wok_features::FeatureFlag::ProviderCompletion.is_enabled() {
+        return crate::provider_runtime::gather_ranked(context, providers);
+    }
     let mut items = Vec::new();
     let mut seen = HashSet::new();
 

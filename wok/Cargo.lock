@@ -4645,6 +4645,7 @@ dependencies = [
  "thiserror 2.0.18",
  "toml",
  "tracing",
+ "wok-features",
  "wok-fuzzy",
  "wok-terminal",
 ]

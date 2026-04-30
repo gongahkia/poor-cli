@@ -14,6 +14,33 @@ use wok_fuzzy::score as fuzzy_score;
 
 use crate::completion::{CompletionContext, CompletionItem, CompletionKind, CompletionProvider};
 
+/// Functional version: re-rank `providers`' merged output by fuzzy score
+/// against `ctx.word`. Used by `completion::gather_completions` when the
+/// `ProviderCompletion` feature flag is on.
+pub fn gather_ranked(
+    ctx: &CompletionContext,
+    providers: &[&dyn CompletionProvider],
+) -> Vec<CompletionItem> {
+    let mut merged: Vec<CompletionItem> = Vec::new();
+    for provider in providers {
+        let items = catch_unwind(AssertUnwindSafe(|| provider.complete(ctx))).unwrap_or_default();
+        merged.extend(items);
+    }
+    let mut seen = std::collections::HashSet::new();
+    merged.retain(|item| seen.insert(item.text.clone()));
+
+    if ctx.word.is_empty() {
+        return merged;
+    }
+
+    let mut scored: Vec<(f64, CompletionItem)> = merged
+        .into_iter()
+        .filter_map(|item| fuzzy_score(&ctx.word, &item.text).map(|s| (s, item)))
+        .collect();
+    scored.sort_by(|a, b| b.0.total_cmp(&a.0));
+    scored.into_iter().map(|(_, item)| item).collect()
+}
+
 /// Run multiple providers w/ panic isolation + fuzzy reranking.
 pub struct RankedRunner {
     providers: Vec<Box<dyn CompletionProvider + Send + Sync>>,
