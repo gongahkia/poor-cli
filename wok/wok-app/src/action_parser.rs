@@ -59,6 +59,10 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
     if let Some(name) = action.strip_prefix("load_session:") {
         return (!name.trim().is_empty()).then(|| Action::LoadSession(name.trim().to_string()));
     }
+    if let Some(rest) = action.strip_prefix("switch_to_tab:") {
+        let n: u8 = rest.trim().parse().ok()?;
+        return (1..=9).contains(&n).then_some(Action::SwitchToTab(n));
+    }
 
     match action {
         "new_tab" => Some(Action::NewTab),

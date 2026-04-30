@@ -783,6 +783,56 @@ impl LuaRuntime {
         pane_table.set("info", pane_info_fn)?;
         wok.set("pane_api", pane_table)?;
 
+        // wok.tabs — tab manipulation, all routed through action_requests.
+        let tabs_table = self.lua.create_table()?;
+        let action_state = self.state.action_requests.clone();
+        let tabs_new_fn = {
+            let queue = action_state.clone();
+            self.lua.create_function(move |_, ()| {
+                queue.lock().unwrap().push("new_tab".into());
+                Ok(())
+            })?
+        };
+        tabs_table.set("new", tabs_new_fn)?;
+        let tabs_close_fn = {
+            let queue = action_state.clone();
+            self.lua.create_function(move |_, ()| {
+                queue.lock().unwrap().push("close_tab".into());
+                Ok(())
+            })?
+        };
+        tabs_table.set("close", tabs_close_fn)?;
+        let tabs_next_fn = {
+            let queue = action_state.clone();
+            self.lua.create_function(move |_, ()| {
+                queue.lock().unwrap().push("next_tab".into());
+                Ok(())
+            })?
+        };
+        tabs_table.set("next", tabs_next_fn)?;
+        let tabs_prev_fn = {
+            let queue = action_state.clone();
+            self.lua.create_function(move |_, ()| {
+                queue.lock().unwrap().push("prev_tab".into());
+                Ok(())
+            })?
+        };
+        tabs_table.set("prev", tabs_prev_fn)?;
+        let tabs_switch_fn = {
+            let queue = action_state.clone();
+            self.lua.create_function(move |_, index: u8| {
+                if !(1..=9).contains(&index) {
+                    return Err(mlua::Error::external(
+                        "wok.tabs.switch expects an index in 1..=9",
+                    ));
+                }
+                queue.lock().unwrap().push(format!("switch_to_tab:{index}"));
+                Ok(())
+            })?
+        };
+        tabs_table.set("switch", tabs_switch_fn)?;
+        wok.set("tabs", tabs_table)?;
+
         // wok.blocks.list() — read blocks from snapshot for the active pane.
         let snapshot_state_blocks = self.state.runtime_snapshot.clone();
         let blocks_list_fn = self.lua.create_function(move |lua, ()| {
