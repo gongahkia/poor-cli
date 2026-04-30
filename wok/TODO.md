@@ -52,15 +52,10 @@ Conclusion: migrate scrollback to sumtree only where soft-wrapped line→logical
 
 ## P2 — State and parsing
 
-### P2.1 wok-settings + derive (framework ✅ / migration deferred)
-**Done:** `wok-settings` crate w/ `Settings` trait, `SettingsSchema { type_name, fields }`, `SettingsStore<T>` (Defaults < UserToml < Overrides layers), `replace()` returning a per-field `ChangedField` diff for live reload. `wok-settings-derive` proc-macro emits the `Settings` impl by walking named fields. Self-derive supported via `extern crate self as wok_settings;`. 7 tests.
+### ~~P2.1 wok-settings + WokConfig schema~~ ✅ done
+**Framework (earlier):** `wok-settings` crate w/ `Settings` trait, `SettingsSchema`, `SettingsStore<T>` (Defaults < UserToml < Overrides), `replace()` returning a `ChangedField` diff. `wok-settings-derive` proc-macro emits the impl. Self-derive supported via `extern crate self as wok_settings;`.
 
-**Deferred (separate PR):**
-- Mirror `wok-app/config.rs` (31k) as `#[derive(Settings)] struct WokConfig`.
-- Adapter shim around the current loader.
-- Delete the adapter once stable.
-
-The framework is shaped to absorb the migration without further API changes; the holdup is the careful per-field walk to preserve every existing TOML key.
+**Migration:** `WokConfig` now has a manual `wok_settings::Settings` impl in `wok-app/src/config.rs` that mirrors all 36 top-level TOML keys w/ stringified types. Manual rather than derived because the struct contains custom enums (ShellType, ChromeSide, BackgroundFit, …) that aren't all `Serialize` — derive would require a wider-scope refactor. Live-reload diffing can now name changed fields. 2 schema tests (known fields present, names unique). Adapter loader shim deferred — current `WokConfig::load` already implements the layered defaults+TOML behaviour the framework would otherwise wrap.
 
 ### ~~P2.2 Parser split~~ ✅ done (extraction)
 Pure parser helpers extracted from `wok-terminal/src/terminal.rs` into a new `parser.rs` module: `find_osc_terminator`, `find_apc_terminator`, `find_dcs_terminator`, `find_csi_terminator`, `parse_kitty_keyboard_control`, `decode_kitty_image_data`, `parse_kitty_file_path`, `parse_osc8_params`, `sixel_display_size`, plus the `KittyKeyboardControl` enum. All `pub(crate)` so the dispatch loop in `terminal.rs` is unchanged. Tests moved + expanded: 14 parser tests (vs 6 before) covering OSC BEL/ST + EOF, APC ST-only, DCS dual-terminator, CSI final byte ranges, OSC 8 blank-token skipping, kitty RGB→RGBA padding, short-payload + unknown-format errors. Wider corpus (SGR 38;2/5, OSC 4/10/11/52, mode 2026/2027) deferred — they live in the dispatch loop and would require splitting more state-touching code.

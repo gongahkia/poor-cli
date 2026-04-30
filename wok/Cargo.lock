@@ -4604,6 +4604,7 @@ dependencies = [
  "wok-input",
  "wok-process",
  "wok-renderer",
+ "wok-settings",
  "wok-terminal",
  "wok-ui",
 ]

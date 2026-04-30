@@ -763,9 +763,89 @@ fn preset_node_from_toml(node: PresetNodeToml) -> Option<PresetNode> {
     }
 }
 
+/// Manual `wok_settings::Settings` impl. Mirrors every TOML key on
+/// `WokConfig` so live-reload diffing can name changed fields without forcing
+/// `Serialize`/`Deserialize` derives onto every nested enum (which would
+/// require a wider-scope refactor).
+impl wok_settings::Settings for WokConfig {
+    fn schema() -> wok_settings::SettingsSchema {
+        macro_rules! field {
+            ($name:literal, $ty:literal) => {
+                wok_settings::SettingsField {
+                    name: $name,
+                    type_name: $ty,
+                }
+            };
+        }
+        wok_settings::SettingsSchema {
+            type_name: "WokConfig",
+            fields: vec![
+                field!("shell", "ShellType"),
+                field!("theme_path", "Option<PathBuf>"),
+                field!("font_family", "String"),
+                field!("font_size", "f32"),
+                field!("input_position", "InputPosition"),
+                field!("command_entry_mode", "CommandEntryMode"),
+                field!("scrollback_lines", "usize"),
+                field!("cursor_style", "CursorStyle"),
+                field!("cursor_blink", "bool"),
+                field!("tab_bar_visible", "bool"),
+                field!("tab_bar_side", "ChromeSide"),
+                field!("tab_bar_orientation", "TabBarOrientation"),
+                field!("tab_bar_size", "Option<f32>"),
+                field!("status_bar_visible", "bool"),
+                field!("status_bar_side", "ChromeSide"),
+                field!("status_bar_size", "Option<f32>"),
+                field!("window_opacity", "f32"),
+                field!("background_image", "Option<PathBuf>"),
+                field!("background_opacity", "f32"),
+                field!("background_fit", "BackgroundFit"),
+                field!("background_position", "BackgroundPosition"),
+                field!("background_width", "Option<f32>"),
+                field!("background_height", "Option<f32>"),
+                field!("terminal_background_opacity", "Option<f32>"),
+                field!("pane_border_width", "f32"),
+                field!("focused_pane_border_width", "f32"),
+                field!("floating_pane_title_height", "f32"),
+                field!("external_plugin_command", "Option<String>"),
+                field!("copy_on_select", "bool"),
+                field!("confirm_close_with_running_process", "bool"),
+                field!("close_on_shell_exit", "bool"),
+                field!("restore_session", "bool"),
+                field!("debug_overlay", "bool"),
+                field!("command_telemetry", "bool"),
+                field!("recent_keys", "RecentKeysConfig"),
+                field!("triggers", "Vec<TriggerConfig>"),
+                field!("layout_presets", "Vec<LayoutPreset>"),
+            ],
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wok_settings::Settings as _;
+
+    #[test]
+    fn schema_lists_known_fields() {
+        let s = WokConfig::schema();
+        assert_eq!(s.type_name, "WokConfig");
+        assert!(s.fields.iter().any(|f| f.name == "shell"));
+        assert!(s.fields.iter().any(|f| f.name == "scrollback_lines"));
+        assert!(s.fields.iter().any(|f| f.name == "triggers"));
+        assert!(s.fields.iter().any(|f| f.name == "layout_presets"));
+    }
+
+    #[test]
+    fn schema_field_names_are_unique() {
+        let s = WokConfig::schema();
+        let mut seen: Vec<&str> = s.fields.iter().map(|f| f.name).collect();
+        let original = seen.len();
+        seen.sort_unstable();
+        seen.dedup();
+        assert_eq!(seen.len(), original);
+    }
 
     #[test]
     fn test_default_config() {
