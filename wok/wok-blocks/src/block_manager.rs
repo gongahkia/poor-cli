@@ -8,6 +8,7 @@ use wok_terminal::terminal::{SemanticEvent, Terminal};
 use crate::block::{Block, BlockBuildState, OutputLineEvent};
 use crate::block_id::{BlockId, BlockIdGenerator};
 use crate::block_index::BlockIndex;
+use crate::scrollback_mirror::{LineSnapshot, ScrollbackMirror};
 
 /// Manages all blocks in a terminal session.
 pub struct BlockManager {
@@ -23,6 +24,9 @@ pub struct BlockManager {
     pending_command_text: Option<String>,
     /// Current build state.
     pub state: BlockBuildState,
+    /// Parallel sumtree mirror for O(log n) row→boundary queries (gated by
+    /// `wok_features::FeatureFlag::SumTreeScrollback`).
+    pub mirror: ScrollbackMirror,
 }
 
 impl BlockManager {
@@ -35,6 +39,7 @@ impl BlockManager {
             index: BlockIndex::new(),
             pending_command_text: None,
             state: BlockBuildState::WaitingForPrompt,
+            mirror: ScrollbackMirror::new(),
         }
     }
 
@@ -92,10 +97,19 @@ impl BlockManager {
                         trigger_highlights: Vec::new(),
                     };
                     let pos = self.blocks.len();
+                    let row_for_mirror = block.output_start_row;
                     self.blocks.push(block);
                     self.index.push(id, pos);
                     self.active_block = Some(id);
                     self.state = BlockBuildState::InOutput { block_id: id };
+                    // sumtree mirror: record this block's first row as a
+                    // boundary for O(log n) navigation.
+                    self.mirror.push(LineSnapshot {
+                        absolute_row: row_for_mirror,
+                        block_id: Some(id),
+                        visible: true,
+                        is_boundary: true,
+                    });
                 }
             }
             SemanticEvent::CommandEnd { row, exit_code } => {
@@ -167,6 +181,16 @@ impl BlockManager {
         self.index.rebuild(&self.blocks);
         self.pending_command_text = None;
         self.state = BlockBuildState::WaitingForPrompt;
+        // rebuild mirror to match restored timeline.
+        self.mirror = ScrollbackMirror::new();
+        for block in &self.blocks {
+            self.mirror.push(LineSnapshot {
+                absolute_row: block.output_start_row,
+                block_id: Some(block.id),
+                visible: true,
+                is_boundary: true,
+            });
+        }
     }
 
     /// Return the selected block when known, otherwise the latest block.
