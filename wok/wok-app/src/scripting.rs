@@ -77,6 +77,17 @@ pub enum WorkflowRequest {
     Register(Workflow),
 }
 
+/// Window-level operations requested by Lua.
+#[derive(Debug, Clone, PartialEq)]
+pub enum WindowRequest {
+    /// Set the OS window title.
+    SetTitle(String),
+    /// Toggle fullscreen state.
+    ToggleFullscreen,
+    /// Set the window opacity in `[0.0, 1.0]`.
+    SetOpacity(f32),
+}
+
 /// Status bar update work requested by Lua.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StatusBarRequest {
@@ -176,6 +187,8 @@ pub struct LuaState {
     pub clipboard_copy_requests: Arc<Mutex<Vec<String>>>,
     /// Raw PTY bytes to inject into the active pane.
     pub pty_input_requests: Arc<Mutex<Vec<Vec<u8>>>>,
+    /// Window-level requests (title, fullscreen, opacity).
+    pub window_requests: Arc<Mutex<Vec<WindowRequest>>>,
 }
 
 /// Scheduled Lua timer callback entry.
@@ -783,6 +796,39 @@ impl LuaRuntime {
         pane_table.set("info", pane_info_fn)?;
         wok.set("pane_api", pane_table)?;
 
+        // wok.window — title, fullscreen, opacity.
+        let window_table = self.lua.create_table()?;
+        let win_state = self.state.window_requests.clone();
+        let window_set_title_fn = {
+            let queue = win_state.clone();
+            self.lua.create_function(move |_, title: String| {
+                queue.lock().unwrap().push(WindowRequest::SetTitle(title));
+                Ok(())
+            })?
+        };
+        window_table.set("set_title", window_set_title_fn)?;
+        let window_toggle_fs_fn = {
+            let queue = win_state.clone();
+            self.lua.create_function(move |_, ()| {
+                queue.lock().unwrap().push(WindowRequest::ToggleFullscreen);
+                Ok(())
+            })?
+        };
+        window_table.set("toggle_fullscreen", window_toggle_fs_fn)?;
+        let window_set_opacity_fn = {
+            let queue = win_state.clone();
+            self.lua.create_function(move |_, value: f32| {
+                let clamped = value.clamp(0.0, 1.0);
+                queue
+                    .lock()
+                    .unwrap()
+                    .push(WindowRequest::SetOpacity(clamped));
+                Ok(())
+            })?
+        };
+        window_table.set("set_opacity", window_set_opacity_fn)?;
+        wok.set("window", window_table)?;
+
         // wok.history — read-only history accessor.
         let history_table = self.lua.create_table()?;
         let snap_for_history = self.state.runtime_snapshot.clone();
@@ -1147,6 +1193,11 @@ impl LuaRuntime {
     /// Drain queued PTY input injection requests.
     pub fn take_pty_input_requests(&self) -> Vec<Vec<u8>> {
         std::mem::take(&mut *self.state.pty_input_requests.lock().unwrap())
+    }
+
+    /// Drain queued window-level requests.
+    pub fn take_window_requests(&self) -> Vec<WindowRequest> {
+        std::mem::take(&mut *self.state.window_requests.lock().unwrap())
     }
 
     /// Update the read-only `wok.config` table with current runtime values.

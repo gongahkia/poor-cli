@@ -3027,8 +3027,35 @@ impl WokHandler {
         for bytes in effects.pty_input_requests {
             self.send_to_pty(&bytes);
         }
+        for request in effects.window_requests {
+            self.apply_window_request(request);
+        }
         self.refresh_plugin_config();
         self.refresh_plugin_snapshot();
+    }
+
+    fn apply_window_request(&mut self, request: wok_app::scripting::WindowRequest) {
+        let Some(window) = self.window.as_ref() else {
+            return;
+        };
+        match request {
+            wok_app::scripting::WindowRequest::SetTitle(title) => {
+                window.set_title(&title);
+            }
+            wok_app::scripting::WindowRequest::ToggleFullscreen => {
+                use winit::window::Fullscreen;
+                let new = if window.fullscreen().is_some() {
+                    None
+                } else {
+                    Some(Fullscreen::Borderless(None))
+                };
+                window.set_fullscreen(new);
+            }
+            wok_app::scripting::WindowRequest::SetOpacity(value) => {
+                self.config.window_opacity = value.clamp(0.0, 1.0);
+                self.needs_redraw = true;
+            }
+        }
     }
 
     fn apply_status_bar_request(&mut self, request: StatusBarRequest) {

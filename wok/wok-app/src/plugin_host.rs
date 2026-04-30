@@ -14,7 +14,7 @@ use crate::app::WokApp;
 use crate::keybindings::{Action, Context, KeyCombo};
 use crate::scripting::{
     LuaRuntime, QuickSelectPatternRequest, SetupRequest, StatusBarRequest,
-    SystemNotificationRequest, ThemeRequest, TriggerRequest, WorkflowRequest,
+    SystemNotificationRequest, ThemeRequest, TriggerRequest, WindowRequest, WorkflowRequest,
 };
 
 /// Queued side effects emitted by plugins.
@@ -44,6 +44,8 @@ pub struct PluginEffects {
     pub clipboard_copy_requests: Vec<String>,
     /// Raw PTY input bytes to inject into the active pane.
     pub pty_input_requests: Vec<Vec<u8>>,
+    /// Window-level requests (title, fullscreen, opacity).
+    pub window_requests: Vec<WindowRequest>,
 }
 
 /// Thin runtime wrapper that isolates the scripting engine from app orchestration.
@@ -177,6 +179,7 @@ impl PluginHost {
             setup_requests: self.runtime.take_setup_requests(),
             clipboard_copy_requests: self.runtime.take_clipboard_copy_requests(),
             pty_input_requests: self.runtime.take_pty_input_requests(),
+            window_requests: self.runtime.take_window_requests(),
         };
         if let Some(bridge) = &self.external_bridge {
             bridge.extend_effects(&mut effects);
