@@ -158,6 +158,15 @@ enum CliCommand {
         #[arg(long)]
         output: Option<std::path::PathBuf>,
     },
+    /// Replay a previously recorded `.wokcast` file by writing its byte
+    /// chunks to stdout at original cadence (or scaled by `--speed`).
+    Replay {
+        /// Path to the wokcast file.
+        file: std::path::PathBuf,
+        /// Playback speed multiplier (1.0 = original, 2.0 = 2x, 0 = instant).
+        #[arg(long, default_value_t = 1.0)]
+        speed: f64,
+    },
     /// Guided 4-step onboarding: detect shell → seed config → install → smoke.
     Onboard {
         /// Target shell: auto, bash, zsh, or fish.
@@ -756,6 +765,7 @@ struct WokHandler {
     last_status_bar_refresh: Instant,
     hovered_link: Option<String>,
     theme_watcher: Option<ThemeWatcher>,
+    config_watcher: Option<wok_watcher::PathWatcher>,
     background: BackgroundRenderer,
     font: FontSystem,
     render: Option<RenderState>,
@@ -861,6 +871,10 @@ impl WokHandler {
             last_status_bar_refresh: Instant::now(),
             hovered_link: None,
             theme_watcher,
+            config_watcher: wok_watcher::PathWatcher::new(
+                &WokConfig::config_dir().join("config.toml"),
+            )
+            .ok(),
             background,
             font,
             render: None,
@@ -5959,6 +5973,15 @@ impl AppHandler for WokHandler {
                 self.status_message = None;
             }
             self.needs_redraw = true;
+        }
+
+        if let Some(watcher) = self.config_watcher.as_mut() {
+            if watcher.poll() {
+                self.reload_configuration();
+                info!("config.toml reloaded from disk");
+                self.status_message = Some("config.toml reloaded".to_string());
+                self.needs_redraw = true;
+            }
         }
 
         if let Some(theme) = self.theme_watcher.as_mut().and_then(ThemeWatcher::poll) {

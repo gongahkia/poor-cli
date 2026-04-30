@@ -899,11 +899,41 @@ fn doctor_checks_at(config_dir: &Path) -> Vec<DoctorCheck> {
         });
     }
 
+    let default_shell_str = WokConfig::load().shell.to_string();
     checks.push(DoctorCheck {
         label: "default_shell".to_string(),
         status: CheckStatus::Ok,
-        detail: WokConfig::load().shell.to_string(),
+        detail: default_shell_str.clone(),
     });
+
+    // shell capability — if known, surface OSC 133 + integration support.
+    let shell_lookup_name = default_shell_str
+        .split(':')
+        .next()
+        .unwrap_or(&default_shell_str);
+    match wok_terminal::shell_capabilities::lookup(shell_lookup_name) {
+        Some(cap) => {
+            let detail = format!(
+                "osc133={} integration={} prompt_var={} profile={}",
+                cap.osc133, cap.has_integration, cap.prompt_var, cap.profile_path
+            );
+            let status = if cap.osc133 {
+                CheckStatus::Ok
+            } else {
+                CheckStatus::Warn
+            };
+            checks.push(DoctorCheck {
+                label: "shell_capability".to_string(),
+                status,
+                detail,
+            });
+        }
+        None => checks.push(DoctorCheck {
+            label: "shell_capability".to_string(),
+            status: CheckStatus::Warn,
+            detail: format!("unknown shell '{shell_lookup_name}'"),
+        }),
+    }
 
     checks.push(DoctorCheck {
         label: "channel".to_string(),

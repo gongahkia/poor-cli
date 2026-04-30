@@ -4607,6 +4607,7 @@ dependencies = [
  "wok-settings",
  "wok-terminal",
  "wok-ui",
+ "wok-watcher",
 ]
 
 [[package]]

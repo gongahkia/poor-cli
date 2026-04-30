@@ -8,6 +8,7 @@ use thiserror::Error;
 use tracing::{debug, instrument, warn};
 
 use crate::async_io::{PtyEvent, PtyIoHandle, WakeCallback};
+use crate::iterm_image::{self, DisplayDim};
 use crate::parser::{
     decode_kitty_image_data, find_apc_terminator, find_csi_terminator, find_dcs_terminator,
     find_osc_terminator, parse_kitty_keyboard_control, parse_osc8_params, sixel_display_size,
@@ -329,6 +330,41 @@ impl Terminal {
                                     id,
                                     params: parsed,
                                 }));
+                            }
+                        } else if let Some(rest) = s.strip_prefix("1337;") {
+                            // iTerm2 inline-image protocol.
+                            match iterm_image::parse(&format!("File={rest}")) {
+                                Ok(payload) if payload.inline => {
+                                    if let Ok(decoded) =
+                                        image::load_from_memory(&payload.bytes)
+                                            .map(|img| img.to_rgba8())
+                                    {
+                                        let (w, h) = (decoded.width(), decoded.height());
+                                        let pixels = decoded.into_raw();
+                                        let (display_cols, display_rows) =
+                                            iterm_display_dims(&payload, w, h);
+                                        let image_id = self.next_inline_image_id;
+                                        self.next_inline_image_id =
+                                            self.next_inline_image_id.saturating_add(1);
+                                        self.events.push(SemanticEvent::InlineImage(
+                                            InlineImageEvent::Put {
+                                                image_id,
+                                                width: w,
+                                                height: h,
+                                                pixels,
+                                                row: absolute_row,
+                                                col,
+                                                display_cols,
+                                                display_rows,
+                                                placement_id: 0,
+                                            },
+                                        ));
+                                    } else {
+                                        warn!("failed to decode iTerm 1337 image bytes");
+                                    }
+                                }
+                                Ok(_) => {} // inline=0 — ignore.
+                                Err(error) => warn!("ignoring invalid iTerm 1337 payload: {error}"),
                             }
                         }
                     }
@@ -746,6 +782,22 @@ fn bytes_need_full_damage(bytes: &[u8]) -> bool {
     false
 }
 
+/// Resolve iTerm 1337 width/height into terminal cells.
+fn iterm_display_dims(payload: &iterm_image::ItermImagePayload, w: u32, h: u32) -> (u16, u16) {
+    let auto = sixel_display_size(w, h);
+    let cols = match payload.width {
+        Some(DisplayDim::Cells(n)) => n.min(u32::from(u16::MAX)) as u16,
+        Some(DisplayDim::Pixels(p)) => sixel_display_size(p, 1).0,
+        Some(DisplayDim::Percent(_)) | Some(DisplayDim::Auto) | None => auto.0,
+    };
+    let rows = match payload.height {
+        Some(DisplayDim::Cells(n)) => n.min(u32::from(u16::MAX)) as u16,
+        Some(DisplayDim::Pixels(p)) => sixel_display_size(1, p).1,
+        Some(DisplayDim::Percent(_)) | Some(DisplayDim::Auto) | None => auto.1,
+    };
+    (cols.max(1), rows.max(1))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -756,5 +808,20 @@ mod tests {
         assert!(!bytes_need_full_damage(b"\x1b[31mred\x1b[0m"));
         assert!(bytes_need_full_damage(b"\x1b[2J"));
         assert!(bytes_need_full_damage(b"\x1b[H"));
+    }
+
+    #[test]
+    fn iterm_display_dims_uses_payload_overrides() {
+        let mut p = iterm_image::ItermImagePayload::default();
+        p.width = Some(DisplayDim::Cells(20));
+        p.height = Some(DisplayDim::Cells(5));
+        assert_eq!(iterm_display_dims(&p, 100, 100), (20, 5));
+    }
+
+    #[test]
+    fn iterm_display_dims_falls_back_to_pixel_size_when_auto() {
+        let p = iterm_image::ItermImagePayload::default();
+        // 16x32 pixels → 2x2 cells (8x16 cell pixels).
+        assert_eq!(iterm_display_dims(&p, 16, 32), (2, 2));
     }
 }

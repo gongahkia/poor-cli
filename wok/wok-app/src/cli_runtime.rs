@@ -33,6 +33,10 @@ pub(crate) fn dispatch_cli_command(cli: &Cli) -> Result<CliAction, Box<dyn Error
             setup_ops::run_bug_report(output)?;
             Ok(CliAction::ExitOk)
         }
+        Some(CliCommand::Replay { file, speed }) => {
+            run_wokcast_replay(&file, speed)?;
+            Ok(CliAction::ExitOk)
+        }
         Some(CliCommand::Onboard {
             shell,
             no_install,
@@ -106,6 +110,23 @@ pub(crate) fn dispatch_cli_command(cli: &Cli) -> Result<CliAction, Box<dyn Error
             attached_session: None,
         }),
     }
+}
+
+fn run_wokcast_replay(file: &std::path::Path, speed: f64) -> Result<(), Box<dyn Error>> {
+    use std::io::{stdout, Write};
+    use wok_terminal::cast::{schedule, CastReader};
+    let f = std::fs::File::open(file)?;
+    let mut reader = CastReader::new(f);
+    let plan = schedule(&mut reader, speed)?;
+    let mut out = stdout().lock();
+    for (delay, bytes) in plan {
+        if !delay.is_zero() {
+            std::thread::sleep(delay);
+        }
+        out.write_all(&bytes)?;
+        out.flush()?;
+    }
+    Ok(())
 }
 
 pub(crate) fn parse_shell_type(value: &str) -> ShellType {
