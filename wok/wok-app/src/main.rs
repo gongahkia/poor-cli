@@ -2605,6 +2605,10 @@ impl WokHandler {
         self.panes.values().any(|pane| !pane.terminal.exited)
     }
 
+    fn running_process_count(&self) -> usize {
+        self.panes.values().filter(|pane| !pane.terminal.exited).count()
+    }
+
     fn handle_shell_exit_transitions(&mut self, exited_pane_ids: &[PaneId]) -> bool {
         if exited_pane_ids.is_empty()
             || !self.config.close_on_shell_exit
@@ -6658,13 +6662,20 @@ impl AppHandler for WokHandler {
 
     fn on_close_requested(&mut self) -> bool {
         if self.config.confirm_close_with_running_process && self.has_running_processes() {
+            // drive the wok_ui::quit_warning state machine; preserve
+            // tap-twice cancellation via the existing pending instant.
+            let mut warning = wok_ui::quit_warning::QuitWarning::new();
+            let _ = warning.on_running_children(self.running_process_count());
+            let effect = warning.on_quit_request();
             let confirmed = self
                 .pending_close_confirmation
                 .is_some_and(|instant| instant.elapsed().as_secs_f32() <= 2.0);
-            if !confirmed {
+            if matches!(effect, wok_ui::quit_warning::Effect::Show) && !confirmed {
                 self.pending_close_confirmation = Some(Instant::now());
-                self.status_message =
-                    Some("Running processes detected. Close again within 2s to exit.".to_string());
+                self.status_message = Some(format!(
+                    "{} running process(es). Close again within 2s to exit.",
+                    warning.running_children()
+                ));
                 self.needs_redraw = true;
                 return false;
             }
