@@ -7644,7 +7644,13 @@ impl BlockExportBundle {
         let duration = self
             .duration_ms
             .map_or_else(|| "unknown".to_string(), |ms| format!("{ms}ms"));
-        let output = self.output_lines.join("\n");
+        // strip ANSI escapes so the fenced ```text block stays readable.
+        let output = self
+            .output_lines
+            .iter()
+            .map(|line| wok_blocks::share::strip_csi(line))
+            .collect::<Vec<_>>()
+            .join("\n");
         format!(
             "# Wok Block Export\n\n\
              - Generated At (unix ms): `{}`\n\
