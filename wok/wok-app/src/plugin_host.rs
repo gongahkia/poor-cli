@@ -40,6 +40,10 @@ pub struct PluginEffects {
     pub status_bar_requests: Vec<StatusBarRequest>,
     /// Setup lifecycle requests requested by plugins.
     pub setup_requests: Vec<SetupRequest>,
+    /// Clipboard copy requests (UTF-8 strings).
+    pub clipboard_copy_requests: Vec<String>,
+    /// Raw PTY input bytes to inject into the active pane.
+    pub pty_input_requests: Vec<Vec<u8>>,
 }
 
 /// Thin runtime wrapper that isolates the scripting engine from app orchestration.
@@ -171,6 +175,8 @@ impl PluginHost {
             workflow_requests: self.runtime.take_workflow_requests(),
             status_bar_requests: self.runtime.take_status_bar_requests(),
             setup_requests: self.runtime.take_setup_requests(),
+            clipboard_copy_requests: self.runtime.take_clipboard_copy_requests(),
+            pty_input_requests: self.runtime.take_pty_input_requests(),
         };
         if let Some(bridge) = &self.external_bridge {
             bridge.extend_effects(&mut effects);

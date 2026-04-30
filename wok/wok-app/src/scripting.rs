@@ -7,7 +7,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Result as LuaResult, Table, Value};
+use mlua::{Function, Integer, Lua, LuaSerdeExt, RegistryKey, Result as LuaResult, Table, Value};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tracing::{info, warn};
@@ -172,6 +172,10 @@ pub struct LuaState {
     pub commands: Arc<Mutex<HashMap<String, String>>>,
     /// Latest runtime snapshot exposed to plugin callbacks.
     pub runtime_snapshot: Arc<Mutex<JsonValue>>,
+    /// Clipboard copy requests (UTF-8 strings).
+    pub clipboard_copy_requests: Arc<Mutex<Vec<String>>>,
+    /// Raw PTY bytes to inject into the active pane.
+    pub pty_input_requests: Arc<Mutex<Vec<Vec<u8>>>>,
 }
 
 /// Scheduled Lua timer callback entry.
@@ -721,6 +725,79 @@ impl LuaRuntime {
         })?;
         wok.set("system_notify", system_notify_fn)?;
 
+        // wok.clipboard.copy(text) — push text to system clipboard
+        let clipboard_state = self.state.clipboard_copy_requests.clone();
+        let clipboard_copy_fn = self.lua.create_function(move |_, text: String| {
+            clipboard_state.lock().unwrap().push(text);
+            Ok(())
+        })?;
+        // wok.clipboard.paste() — read from snapshot (caller refreshes each tick)
+        let snapshot_state_clip = self.state.runtime_snapshot.clone();
+        let clipboard_paste_fn = self.lua.create_function(move |_, ()| {
+            let snap = snapshot_state_clip.lock().unwrap();
+            let text = snap
+                .get("clipboard")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            Ok(text)
+        })?;
+        let clipboard_table = self.lua.create_table()?;
+        clipboard_table.set("copy", clipboard_copy_fn)?;
+        clipboard_table.set("paste", clipboard_paste_fn)?;
+        wok.set("clipboard", clipboard_table)?;
+
+        // wok.pane.send_input(bytes_or_string) — inject input into the active pane.
+        let pty_state = self.state.pty_input_requests.clone();
+        let send_input_fn = self.lua.create_function(move |_, value: Value| {
+            let bytes: Vec<u8> = match value {
+                Value::String(s) => s.as_bytes().to_vec(),
+                Value::Table(t) => {
+                    let mut buf = Vec::new();
+                    for pair in t.pairs::<Integer, Integer>() {
+                        let (_, b) = pair?;
+                        buf.push(b as u8);
+                    }
+                    buf
+                }
+                _ => {
+                    return Err(mlua::Error::external(
+                        "wok.pane.send_input expects a string or array of integers",
+                    ));
+                }
+            };
+            if !bytes.is_empty() {
+                pty_state.lock().unwrap().push(bytes);
+            }
+            Ok(())
+        })?;
+        // wok.pane.info() — read current pane snapshot
+        let snapshot_state_pane = self.state.runtime_snapshot.clone();
+        let pane_info_fn = self.lua.create_function(move |lua, ()| {
+            let snap = snapshot_state_pane.lock().unwrap().clone();
+            let pane = snap.get("pane").cloned().unwrap_or_default();
+            lua.to_value(&pane)
+        })?;
+        let pane_table = self.lua.create_table()?;
+        pane_table.set("send_input", send_input_fn)?;
+        pane_table.set("info", pane_info_fn)?;
+        wok.set("pane_api", pane_table)?;
+
+        // wok.blocks.list() — read blocks from snapshot for the active pane.
+        let snapshot_state_blocks = self.state.runtime_snapshot.clone();
+        let blocks_list_fn = self.lua.create_function(move |lua, ()| {
+            let snap = snapshot_state_blocks.lock().unwrap().clone();
+            let blocks = snap
+                .get("pane")
+                .and_then(|p| p.get("blocks"))
+                .cloned()
+                .unwrap_or_default();
+            lua.to_value(&blocks)
+        })?;
+        let blocks_table = self.lua.create_table()?;
+        blocks_table.set("list", blocks_list_fn)?;
+        wok.set("blocks", blocks_table)?;
+
         let snapshot_state = self.state.runtime_snapshot.clone();
         wok.set(
             "app",
@@ -938,6 +1015,16 @@ impl LuaRuntime {
     /// Update the latest runtime snapshot exposed through the `wok.*()` accessors.
     pub fn set_runtime_snapshot(&self, snapshot: JsonValue) {
         *self.state.runtime_snapshot.lock().unwrap() = snapshot;
+    }
+
+    /// Drain queued clipboard.copy requests.
+    pub fn take_clipboard_copy_requests(&self) -> Vec<String> {
+        std::mem::take(&mut *self.state.clipboard_copy_requests.lock().unwrap())
+    }
+
+    /// Drain queued PTY input injection requests.
+    pub fn take_pty_input_requests(&self) -> Vec<Vec<u8>> {
+        std::mem::take(&mut *self.state.pty_input_requests.lock().unwrap())
     }
 
     /// Update the read-only `wok.config` table with current runtime values.

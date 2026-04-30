@@ -2978,6 +2978,16 @@ impl WokHandler {
         for request in effects.setup_requests {
             self.apply_setup_request(request);
         }
+        for text in effects.clipboard_copy_requests {
+            if let Some(active_pane) = self.active_pane_mut() {
+                if let Err(error) = active_pane.app.clipboard.copy(&text) {
+                    warn!("lua clipboard.copy failed: {error}");
+                }
+            }
+        }
+        for bytes in effects.pty_input_requests {
+            self.send_to_pty(&bytes);
+        }
         self.refresh_plugin_config();
         self.refresh_plugin_snapshot();
     }
