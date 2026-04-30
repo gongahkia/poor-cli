@@ -783,6 +783,43 @@ impl LuaRuntime {
         pane_table.set("info", pane_info_fn)?;
         wok.set("pane_api", pane_table)?;
 
+        // wok.history — read-only history accessor.
+        let history_table = self.lua.create_table()?;
+        let snap_for_history = self.state.runtime_snapshot.clone();
+        let history_entries_fn = self.lua.create_function(move |lua, ()| {
+            let snap = snap_for_history.lock().unwrap().clone();
+            let entries = snap
+                .get("app")
+                .and_then(|a| a.get("history"))
+                .cloned()
+                .unwrap_or_default();
+            lua.to_value(&entries)
+        })?;
+        history_table.set("entries", history_entries_fn)?;
+        let snap_for_search = self.state.runtime_snapshot.clone();
+        let history_search_fn = self.lua.create_function(move |lua, query: String| {
+            let snap = snap_for_search.lock().unwrap().clone();
+            let entries = snap
+                .get("app")
+                .and_then(|a| a.get("history"))
+                .and_then(|h| h.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let needle = query.to_lowercase();
+            let filtered: Vec<_> = entries
+                .into_iter()
+                .filter(|entry| {
+                    entry
+                        .get("command")
+                        .and_then(|c| c.as_str())
+                        .is_some_and(|c| c.to_lowercase().contains(&needle))
+                })
+                .collect();
+            lua.to_value(&filtered)
+        })?;
+        history_table.set("search", history_search_fn)?;
+        wok.set("history", history_table)?;
+
         // wok.tabs — tab manipulation, all routed through action_requests.
         let tabs_table = self.lua.create_table()?;
         let action_state = self.state.action_requests.clone();

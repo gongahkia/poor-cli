@@ -2793,6 +2793,23 @@ impl WokHandler {
                 "status_message": self.status_message,
                 "cursor_visible": self.cursor_visible(),
                 "uptime_ms": self.started_at.elapsed().as_millis() as u64,
+                // Last 200 global history entries, for wok.history.entries().
+                "history": self
+                    .global_history
+                    .entries()
+                    .iter()
+                    .rev()
+                    .take(200)
+                    .rev()
+                    .map(|e| json!({
+                        "command": e.command,
+                        "cwd": e.cwd.as_ref().map(|p| p.display().to_string()),
+                        "started_at_ms": e.started_at_ms,
+                        "completed_at_ms": e.completed_at_ms,
+                        "exit_code": e.exit_code,
+                        "duration_ms": e.duration_ms,
+                    }))
+                    .collect::<Vec<_>>(),
             },
             "workspace": {
                 "active_tab_index": self.workspace.active_tab,
@@ -2813,6 +2830,28 @@ impl WokHandler {
                 "selected_block_id": pane
                     .and_then(|pane| pane.app.block_navigator.selected_block(&pane.app.block_manager))
                     .map(|block| block.id),
+                // Last 100 blocks of the active pane, for wok.blocks.list().
+                "blocks": pane
+                    .map(|pane| {
+                        pane.app
+                            .block_manager
+                            .blocks
+                            .iter()
+                            .rev()
+                            .take(100)
+                            .rev()
+                            .map(|b| json!({
+                                "id": b.id,
+                                "command": b.command_text,
+                                "cwd": b.cwd.display().to_string(),
+                                "exit_code": b.exit_code,
+                                "duration_ms": b.duration.map(|d| d.as_millis() as u64),
+                                "is_bookmarked": b.is_bookmarked,
+                                "git_branch": b.git_branch.clone(),
+                            }))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default(),
             },
             "session": {
                 "restore_enabled": self.config.restore_session,
