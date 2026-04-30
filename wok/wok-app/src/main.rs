@@ -4175,6 +4175,14 @@ impl WokHandler {
             self.needs_redraw = true;
             return;
         }
+        if matches!(action, Action::ThemePicker) {
+            self.open_theme_picker();
+            return;
+        }
+        if matches!(action, Action::KeybindingDiscovery) {
+            self.open_keybinding_discovery();
+            return;
+        }
         if matches!(action, Action::BlockExportJson) {
             self.export_selected_block_bundle(BlockExportFormat::Json);
             self.needs_redraw = true;
@@ -4977,6 +4985,13 @@ impl WokHandler {
                                     .set_query(&active_pane.app.input_editor.buffer.text());
                             }
                         }
+                        PaletteAction::ApplyTheme(path) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
+                            self.apply_theme_selection(&path);
+                        }
                     }
                 } else {
                     let query = self
@@ -5457,6 +5472,136 @@ impl WokHandler {
         if let Some(active_pane) = self.panes.get_mut(&pane_id) {
             if let Some(command_search) = active_pane.app.command_search.as_mut() {
                 command_search.search(&query, &pane_entries, &global_entries);
+            }
+        }
+    }
+
+    /// Open a palette pre-populated with available themes (built-in +
+    /// `~/.config/wok/themes/*.toml`). Selecting a theme writes its path
+    /// to `theme_path` in config.toml and triggers a reload.
+    fn open_theme_picker(&mut self) {
+        let Some(pane_id) = self.active_pane_id() else {
+            self.status_message = Some("no active pane".to_string());
+            return;
+        };
+        let entries = self.build_theme_palette_entries();
+        if entries.is_empty() {
+            self.status_message = Some("no themes found in ~/.config/wok/themes".to_string());
+            return;
+        }
+        if let Some(active_pane) = self.panes.get_mut(&pane_id) {
+            active_pane.app.input_mode = InputMode::CommandPalette;
+            active_pane.app.command_palette.open(entries);
+        }
+        self.needs_redraw = true;
+    }
+
+    fn build_theme_palette_entries(&self) -> Vec<PaletteEntry> {
+        let mut entries = Vec::new();
+        let theme_dir = WokConfig::config_dir().join("themes");
+        let active_path = self
+            .config
+            .theme_path
+            .as_ref()
+            .and_then(|p| p.canonicalize().ok());
+        if let Ok(rd) = std::fs::read_dir(&theme_dir) {
+            let mut names: Vec<_> = rd
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.path()
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .is_some_and(|ext| ext == "toml")
+                })
+                .collect();
+            names.sort_by_key(|e| e.file_name());
+            for entry in names {
+                let path = entry.path();
+                let label = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("theme")
+                    .to_string();
+                let description = if active_path == path.canonicalize().ok() {
+                    "active".to_string()
+                } else {
+                    path.display().to_string()
+                };
+                entries.push(PaletteEntry {
+                    label,
+                    description,
+                    category: PaletteCategory::Theme,
+                    score: 0.0,
+                    action: PaletteAction::ApplyTheme(path.display().to_string()),
+                });
+            }
+        }
+        entries
+    }
+
+    /// Open a read-only palette listing every active keybinding. Selecting
+    /// an entry triggers its action immediately. This is the discovery UI;
+    /// editing bindings still requires editing config + recompiling until
+    /// the TOML keybind override layer ships.
+    fn open_keybinding_discovery(&mut self) {
+        let Some(pane_id) = self.active_pane_id() else {
+            self.status_message = Some("no active pane".to_string());
+            return;
+        };
+        let mut entries: Vec<PaletteEntry> = Vec::new();
+        if let Some(pane) = self.panes.get(&pane_id) {
+            let mut bindings: Vec<(String, &Action)> = pane
+                .app
+                .keybindings
+                .bindings
+                .iter()
+                .map(|(combo, action)| (key_combo_label(combo), action))
+                .collect();
+            bindings.sort_by(|a, b| a.0.cmp(&b.0));
+            for (label, action) in bindings {
+                let Some(action_id) = action_to_palette_id(action) else {
+                    continue;
+                };
+                let display = action_display_label(action);
+                entries.push(PaletteEntry {
+                    label: format!("{label}  →  {display}"),
+                    description: action_id.clone(),
+                    category: PaletteCategory::Keybinding,
+                    score: 0.0,
+                    action: PaletteAction::BuiltInAction(action_id),
+                });
+            }
+        }
+        if entries.is_empty() {
+            self.status_message = Some("no keybindings registered".to_string());
+            return;
+        }
+        if let Some(active_pane) = self.panes.get_mut(&pane_id) {
+            active_pane.app.input_mode = InputMode::CommandPalette;
+            active_pane.app.command_palette.open(entries);
+        }
+        self.needs_redraw = true;
+    }
+
+    /// Persist `theme_path` to config.toml + reload configuration.
+    fn apply_theme_selection(&mut self, theme_path: &str) {
+        let config_path = WokConfig::config_dir().join("config.toml");
+        let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
+        let new = upsert_toml_string_key(&existing, "theme_path", theme_path);
+        match std::fs::write(&config_path, new) {
+            Ok(()) => {
+                self.reload_configuration();
+                self.status_message = Some(format!(
+                    "Applied theme '{}'",
+                    std::path::Path::new(theme_path)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or(theme_path)
+                ));
+            }
+            Err(error) => {
+                warn!("failed to persist theme selection: {error}");
+                self.status_message = Some(format!("Failed to save theme: {error}"));
             }
         }
     }
@@ -6794,6 +6939,38 @@ fn mouse_button_code(button: MouseButton) -> Option<u16> {
     }
 }
 
+/// Insert or replace a top-level `key = "value"` line in a TOML document.
+/// Preserves comments + other lines. Strings are double-quoted; embedded
+/// double-quotes are escaped.
+fn upsert_toml_string_key(existing: &str, key: &str, value: &str) -> String {
+    let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+    let new_line = format!("{key} = \"{escaped}\"");
+    let mut out = String::with_capacity(existing.len() + new_line.len() + 1);
+    let mut replaced = false;
+    let key_eq_prefix = format!("{key} =");
+    let key_eq_compact = format!("{key}=");
+    for line in existing.lines() {
+        let trimmed = line.trim_start();
+        if !replaced
+            && (trimmed.starts_with(&key_eq_prefix) || trimmed.starts_with(&key_eq_compact))
+        {
+            out.push_str(&new_line);
+            replaced = true;
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    if !replaced {
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str(&new_line);
+        out.push('\n');
+    }
+    out
+}
+
 fn ensure_settings_file() -> std::io::Result<PathBuf> {
     let config_dir = WokConfig::config_dir();
     std::fs::create_dir_all(&config_dir)?;
@@ -7917,6 +8094,8 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::SendEof => "send_eof".to_string(),
         Action::SaveSession(name) => format!("save_session:{name}"),
         Action::LoadSession(name) => format!("load_session:{name}"),
+        Action::ThemePicker => "theme_picker".to_string(),
+        Action::KeybindingDiscovery => "keybinding_discovery".to_string(),
     };
     Some(id)
 }
@@ -8003,6 +8182,8 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::ZoomOut,
         Action::ZoomReset,
         Action::OpenSettings,
+        Action::ThemePicker,
+        Action::KeybindingDiscovery,
         Action::ClearScreen,
         Action::SendEof,
         Action::Copy,
@@ -8082,6 +8263,8 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::SendEof => "Send EOF (Ctrl+D) to the active shell",
         Action::SaveSession(_) => "Persist the current workspace as a named session",
         Action::LoadSession(_) => "Load a previously saved named session",
+        Action::ThemePicker => "Pick a theme from ~/.config/wok/themes",
+        Action::KeybindingDiscovery => "List all keybindings (read-only)",
     };
 
     if keybinding.trim().is_empty() {

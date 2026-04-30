@@ -1474,6 +1474,8 @@ pub(crate) fn palette_category_label(category: PaletteCategory) -> &'static str 
         PaletteCategory::Workflow => "Workflows",
         PaletteCategory::RecentCommand => "Recent Commands",
         PaletteCategory::FilePath => "File Paths",
+        PaletteCategory::Theme => "Themes",
+        PaletteCategory::Keybinding => "Keybindings",
     }
 }
 

@@ -141,6 +141,10 @@ pub enum Action {
     SaveSession(String),
     /// Load a named workspace session snapshot.
     LoadSession(String),
+    /// Open the theme picker palette.
+    ThemePicker,
+    /// Open the read-only keybinding discovery palette.
+    KeybindingDiscovery,
 }
 
 /// A key combination (key + modifiers).

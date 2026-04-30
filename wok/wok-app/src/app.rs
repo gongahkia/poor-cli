@@ -524,6 +524,9 @@ impl WokApp {
                     name.clone(),
                 )));
             }
+            // Discovery palettes — handled directly in WokHandler (no app-level
+            // effect; they manipulate the global theme/keybinding registries).
+            Action::ThemePicker | Action::KeybindingDiscovery => {}
         }
 
         effects
