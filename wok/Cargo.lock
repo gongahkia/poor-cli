@@ -4602,6 +4602,7 @@ dependencies = [
  "wok-channels",
  "wok-features",
  "wok-input",
+ "wok-input-classifier",
  "wok-process",
  "wok-renderer",
  "wok-settings",

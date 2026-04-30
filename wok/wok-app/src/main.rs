@@ -5264,6 +5264,25 @@ impl WokHandler {
 
     fn submit_owned_input(&mut self, pane_id: PaneId, command: String) {
         let trimmed = command.trim().to_string();
+        // surface a hint in the status bar when the input looks like a paste
+        // or heredoc — gives users a chance to bail before sending big runs.
+        let classification = wok_input_classifier::classify(&command);
+        match classification.kind {
+            wok_input_classifier::InputKind::Paste => {
+                self.status_message = Some(format!(
+                    "submitting {} bytes pasted across {} lines",
+                    classification.hints.bytes,
+                    classification.hints.lines + 1
+                ));
+            }
+            wok_input_classifier::InputKind::Heredoc => {
+                self.status_message = Some(
+                    "submitting heredoc — terminator must close on its own line"
+                        .to_string(),
+                );
+            }
+            _ => {}
+        }
         if let Some(pane) = self.panes.get_mut(&pane_id) {
             pane.history_nav = HistoryNavigationState::default();
             pane.prompt_ready = false;
