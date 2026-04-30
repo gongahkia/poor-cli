@@ -120,17 +120,8 @@ Doctor now prints `channel: dev` and `feature_flags: on=[…] off=[…]`. Remain
 
 ## P6 — UI framework decomposition
 
-### P6.1 Vendor `warpui_core` (MIT) as reference for entity-handle pattern
-- *Why:* wok README admits "main runtime orchestration still lives in one large entrypoint". `wok-app/main.rs` is 325k. Need a retained-mode UI w/ entity handles to break it apart.
-- *Decision:* do NOT depend on `warpui_core` directly (heavy, opinionated, brings text-layout/clipboard/keymap that conflict w/ wok's). Instead, distill the entity-handle pattern into a minimal `wok-ui-core` crate.
-- *Shape (minimal subset):*
-  - `App` global w/ typed `Entity<T>` arena.
-  - `Handle<T>` (cheap clone, refcount).
-  - `Context<'_, T>` for borrow + emit.
-  - `Action` trait + dispatch.
-  - `View` trait returning `Element` tree.
-- *Out of scope (for now):* presenter/scene/wgpu pipeline (keep current `wok-renderer`).
-- *Migration:* incrementally lift `WokHandler` substates into entities. Target: shrink `main.rs` below 50k by end of P6.
+### ~~P6.1 wok-ui-core skeleton~~ ✅ done (framework)
+New crate `wok-ui-core` distilling the entity-handle pattern (no `warpui_core` dep). `App` owns a type-erased `HashMap<EntityId, Rc<RefCell<dyn Any>>>` arena; `new_entity<T>(value) -> Handle<T>` returns a refcounted typed handle. `Handle::{read, write}` borrow w/ closure scope. `Entity<T>` is a copy-able id w/ compile-time T witness. `App::dispatch(entity, |&mut T, &mut Context|)` runs a handler and returns queued follow-up `Box<dyn Action>`s. `Context::new_entity` and `Context::emit` available inside the scope. `View::render() -> Element` w/ `Element::{Text, Container { tag, children }}`. Drop semantics: `App::drop_entity` invalidates new lookups but outstanding handles keep value alive (via Rc). 9 tests including dispatch on dropped entity = noop, handle clone shares storage, render produces tree, nested entity creation in handler. Migration of `WokHandler` substates is the follow-up; this crate gives them a target.
 
 ### ~~P6.2 Keymap framework~~ ✅ done (resolver)
 New crate `wok-keymap`. Types: `Stroke { Key, Mods }`, `Key { Char, Enter, Esc, Tab, Backspace, Space }`, `Mods { ctrl, shift, alt, super_ }`, `Binding { sequence, action: &'static str, when: ContextPredicate }`, `ContextPredicate { Any, All, AnyOf, None_ }`, `Context = HashSet<&'static str>`. `Keymap::resolve(buffer, ctx) -> Resolution { Match { action, sequence_len } | Pending | None }`. Arbitration: a longer pending binding blocks a short exact match until disambiguated; same-length bindings are last-wins. 9 tests covering chord disambiguation, context masking, modifier-aware strokes, all four predicate kinds. TOML parser (`when:` opt-in) + migration from `wok-app/keybindings.rs` deferred to a follow-up.

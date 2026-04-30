@@ -4743,6 +4743,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "wok-ui-core"
+version = "0.1.0"
+
+[[package]]
 name = "wok-vim"
 version = "0.1.0"
 

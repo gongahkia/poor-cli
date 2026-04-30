@@ -1,0 +1,9 @@
+[package]
+name = "wok-ui-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Minimal entity-handle UI core (App, Entity<T>, Handle<T>, Context, Action, View)"
+
+[dependencies]
