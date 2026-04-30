@@ -65,16 +65,8 @@ The framework is shaped to absorb the migration without further API changes; the
 ### ~~P2.2 Parser split~~ ✅ done (extraction)
 Pure parser helpers extracted from `wok-terminal/src/terminal.rs` into a new `parser.rs` module: `find_osc_terminator`, `find_apc_terminator`, `find_dcs_terminator`, `find_csi_terminator`, `parse_kitty_keyboard_control`, `decode_kitty_image_data`, `parse_kitty_file_path`, `parse_osc8_params`, `sixel_display_size`, plus the `KittyKeyboardControl` enum. All `pub(crate)` so the dispatch loop in `terminal.rs` is unchanged. Tests moved + expanded: 14 parser tests (vs 6 before) covering OSC BEL/ST + EOF, APC ST-only, DCS dual-terminator, CSI final byte ranges, OSC 8 blank-token skipping, kitty RGB→RGBA padding, short-payload + unknown-format errors. Wider corpus (SGR 38;2/5, OSC 4/10/11/52, mode 2026/2027) deferred — they live in the dispatch loop and would require splitting more state-touching code.
 
-### P2.3 Scrollback indexing on wok-sumtree (re-scoped, deferred)
-**Why deferred:** investigation showed scrollback storage is owned by `alacritty_terminal::Grid` (`wok-terminal/src/state.rs`). We don't control the underlying buffer, so a "swap-the-backend" flag isn't viable without forking alacritty.
-
-**Re-scoped target for next attempt:** maintain a *parallel* `SumTree<LineSnapshot>` mirror that the renderer consults for:
-- O(log n) row → block-boundary lookup (currently a linear scan in `wok-blocks/block_nav.rs`).
-- O(log n) "find the Nth visible line under a filter predicate" once P7.1 block filtering lands.
-
-The mirror would be updated when `BlockManager` mutates and on viewport scroll. Behind `FeatureFlag::SumTreeScrollback` (already registered in `wok-features`).
-
-Holdup: requires deciding what `LineSnapshot` carries and where the mirror lives. Worth its own design pass before code.
+### ~~P2.3 Scrollback mirror~~ ✅ done (mirror data structure)
+`wok-blocks/src/scrollback_mirror.rs` lands. `LineSnapshot { absolute_row, block_id: Option<BlockId>, visible, is_boundary }` is a `SumTree::Item`; `LineSummary { total, visible, boundaries }` is its `Summary`. `ScrollbackMirror::{len, summary, push, get, nth_boundary, nth_visible, block_at_row}` — `nth_boundary` and `nth_visible` are O(log n) via `seek_by` over the boundaries/visible projections, validated against a 10k-line corpus. `block_at_row` is currently linear (real O(log n) needs a sorted secondary index — follow-up). 7 tests. The `alacritty_terminal::Grid` is still the source of truth for bytes; this mirror is metadata only and updates from `BlockManager` + viewport scroll wire in a follow-up PR (gated behind `FeatureFlag::SumTreeScrollback`).
 
 ### ~~P2.4 block model split~~ ✅ done
 Split into: `block_id.rs` (`BlockId = u64` alias + `BlockIdGenerator` w/ `new`/`after`/`peek`/`next_id`), `block_index.rs` (`BlockIndex` w/ id→pos HashMap, O(1) lookup), `block_manager.rs` (state machine, uses generator + index). `block.rs` slimmed to record-only + re-exports `BlockManager` so external imports `wok_blocks::block::BlockManager` keep working. `restore_blocks` now rebuilds index. 25 tests pass (16 retained + 9 new across split modules).
