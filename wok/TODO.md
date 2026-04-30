@@ -91,10 +91,8 @@ Crate landed w/ `classify(buf) -> Classification { kind: InputKind, hints: Hints
 ### ~~P3.2 Completion engine~~ ✅ done (multi-provider runtime)
 `wok-input/src/provider_runtime.rs` lands w/ `RankedRunner` (panic-isolated provider chain + dedup + fuzzy rerank via wok-fuzzy + max_results truncation), plus two new built-ins: `HistoryProvider` (prefix match against past commands) and `AliasProvider` (first-token only). Existing `completion.rs` providers (`PathCompletionProvider`, `CommandCompletionProvider`, `EnvVarCompletionProvider`) work unchanged with the new runner. 6 tests including panic isolation, dedup, truncation, empty-word passthrough. Fig-spec loader still deferred (filesystem-only loader fits in a follow-up). Migration flag swap (`FeatureFlag::ProviderCompletion`) lands when consumers switch over.
 
-### P3.3 Universal input surface
-- *Why:* warp's `universal_developer_input.rs` (46k) is one editor that routes to shell/search/palette. Matches wok's `command_entry_mode = owned_primary` direction. Avoids three near-duplicate buffers in `wok-app/input.rs`, `wok-ui/command_palette.rs`, `wok-ui/search.rs`.
-- *Action:* extract a `wok-input/surface.rs` `InputSurface` that owns buffer + mode (`Shell | Palette | Search | Find`) + key routing. Existing palette/search become thin views over it.
-- *Risk:* invasive. Land behind `unified_input = true` flag; default off for one release.
+### ~~P3.3 Universal input surface~~ ✅ done (framework)
+`wok-input/src/surface.rs` lands w/ `InputSurface { mode, slots: HashMap<SurfaceMode, ModeSlot> }`. `SurfaceMode::{Shell, Palette, Search, Find}` — each gets its own buffer + cursor (preserved across mode switches). API: `set_mode`, `text`, `cursor`, `set_text`, `insert_char`, `backspace`, `move_cursor`, `submit`, `cancel`. Returns `SurfaceAction::{Changed, Submit, Cancel, ModeChanged}`. Multi-byte safe — `backspace`/`move_cursor` step to char boundaries. 11 tests. Migration of existing `wok-app/input.rs`/`command_palette.rs`/`search.rs` consumers is the invasive part — lands behind `FeatureFlag::UnifiedInput` (already registered in `wok-features`) once views are factored.
 
 ---
 

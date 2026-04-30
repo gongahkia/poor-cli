@@ -33,4 +33,5 @@ pub mod editor;
 pub mod highlighter;
 pub mod history;
 pub mod provider_runtime;
+pub mod surface;
 pub mod workflows;
