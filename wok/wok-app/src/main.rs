@@ -4196,6 +4196,10 @@ impl WokHandler {
             self.open_keybinding_discovery();
             return;
         }
+        if matches!(action, Action::SettingsDiscovery) {
+            self.open_settings_discovery();
+            return;
+        }
         if matches!(action, Action::BlockExportJson) {
             self.export_selected_block_bundle(BlockExportFormat::Json);
             self.needs_redraw = true;
@@ -5550,6 +5554,150 @@ impl WokHandler {
             }
         }
         entries
+    }
+
+    /// Open a structured palette listing every settings field with its
+    /// current value, declared type, and a "→ open in TOML editor" hint.
+    /// Selecting any entry opens config.toml in the existing settings buffer
+    /// editor. This is the structured *view*; in-place form controls land in
+    /// a future commit.
+    fn open_settings_discovery(&mut self) {
+        use wok_settings::Settings as _;
+        let Some(pane_id) = self.active_pane_id() else {
+            self.status_message = Some("no active pane".to_string());
+            return;
+        };
+        let schema = wok_app::config::WokConfig::schema();
+        let snapshot = self.settings_field_snapshot();
+        let mut entries: Vec<PaletteEntry> = Vec::new();
+        for field in &schema.fields {
+            let current = snapshot
+                .get(field.name)
+                .cloned()
+                .unwrap_or_else(|| "—".to_string());
+            entries.push(PaletteEntry {
+                label: format!("{}  =  {current}", field.name),
+                description: format!("{}  →  open settings", field.type_name),
+                category: PaletteCategory::SettingsField,
+                score: 0.0,
+                action: PaletteAction::BuiltInAction("open_settings".to_string()),
+            });
+        }
+        if entries.is_empty() {
+            self.status_message = Some("no settings fields registered".to_string());
+            return;
+        }
+        if let Some(active_pane) = self.panes.get_mut(&pane_id) {
+            active_pane.app.input_mode = InputMode::CommandPalette;
+            active_pane.app.command_palette.open(entries);
+        }
+        self.needs_redraw = true;
+    }
+
+    /// Render every WokConfig field as a string so the discovery palette can
+    /// show current values. Optional fields render as `none` when unset.
+    fn settings_field_snapshot(&self) -> std::collections::HashMap<&'static str, String> {
+        use std::collections::HashMap;
+        let c = &self.config;
+        let mut m: HashMap<&'static str, String> = HashMap::new();
+        m.insert("shell", c.shell.to_string());
+        m.insert(
+            "theme_path",
+            c.theme_path
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "none".to_string()),
+        );
+        m.insert("font_family", c.font_family.clone());
+        m.insert("font_size", format!("{}", c.font_size));
+        m.insert("input_position", format!("{:?}", c.input_position));
+        m.insert("command_entry_mode", format!("{:?}", c.command_entry_mode));
+        m.insert("scrollback_lines", c.scrollback_lines.to_string());
+        m.insert("cursor_style", format!("{:?}", c.cursor_style));
+        m.insert("cursor_blink", c.cursor_blink.to_string());
+        m.insert("tab_bar_visible", c.tab_bar_visible.to_string());
+        m.insert("tab_bar_side", format!("{:?}", c.tab_bar_side));
+        m.insert(
+            "tab_bar_orientation",
+            format!("{:?}", c.tab_bar_orientation),
+        );
+        m.insert(
+            "tab_bar_size",
+            c.tab_bar_size
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "auto".to_string()),
+        );
+        m.insert("status_bar_visible", c.status_bar_visible.to_string());
+        m.insert("status_bar_side", format!("{:?}", c.status_bar_side));
+        m.insert(
+            "status_bar_size",
+            c.status_bar_size
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "auto".to_string()),
+        );
+        m.insert("window_opacity", format!("{}", c.window_opacity));
+        m.insert(
+            "background_image",
+            c.background_image
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "none".to_string()),
+        );
+        m.insert("background_opacity", format!("{}", c.background_opacity));
+        m.insert("background_fit", format!("{:?}", c.background_fit));
+        m.insert(
+            "background_position",
+            format!("{:?}", c.background_position),
+        );
+        m.insert(
+            "background_width",
+            c.background_width
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "auto".to_string()),
+        );
+        m.insert(
+            "background_height",
+            c.background_height
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "auto".to_string()),
+        );
+        m.insert(
+            "terminal_background_opacity",
+            c.terminal_background_opacity
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "auto".to_string()),
+        );
+        m.insert("pane_border_width", format!("{}", c.pane_border_width));
+        m.insert(
+            "focused_pane_border_width",
+            format!("{}", c.focused_pane_border_width),
+        );
+        m.insert(
+            "floating_pane_title_height",
+            format!("{}", c.floating_pane_title_height),
+        );
+        m.insert(
+            "external_plugin_command",
+            c.external_plugin_command
+                .clone()
+                .unwrap_or_else(|| "none".to_string()),
+        );
+        m.insert("copy_on_select", c.copy_on_select.to_string());
+        m.insert(
+            "confirm_close_with_running_process",
+            c.confirm_close_with_running_process.to_string(),
+        );
+        m.insert("close_on_shell_exit", c.close_on_shell_exit.to_string());
+        m.insert("restore_session", c.restore_session.to_string());
+        m.insert("debug_overlay", c.debug_overlay.to_string());
+        m.insert("command_telemetry", c.command_telemetry.to_string());
+        m.insert("recent_keys", format!("{:?}", c.recent_keys));
+        m.insert("triggers", format!("{} entries", c.triggers.len()));
+        m.insert(
+            "layout_presets",
+            format!("{} entries", c.layout_presets.len()),
+        );
+        m
     }
 
     /// Open a read-only palette listing every active keybinding. Selecting
@@ -8152,6 +8300,7 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::LoadSession(name) => format!("load_session:{name}"),
         Action::ThemePicker => "theme_picker".to_string(),
         Action::KeybindingDiscovery => "keybinding_discovery".to_string(),
+        Action::SettingsDiscovery => "settings_discovery".to_string(),
     };
     Some(id)
 }
@@ -8240,6 +8389,7 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::OpenSettings,
         Action::ThemePicker,
         Action::KeybindingDiscovery,
+        Action::SettingsDiscovery,
         Action::ClearScreen,
         Action::SendEof,
         Action::Copy,
@@ -8321,6 +8471,7 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::LoadSession(_) => "Load a previously saved named session",
         Action::ThemePicker => "Pick a theme from ~/.config/wok/themes",
         Action::KeybindingDiscovery => "List all keybindings (read-only)",
+        Action::SettingsDiscovery => "List every settings field with current value",
     };
 
     if keybinding.trim().is_empty() {

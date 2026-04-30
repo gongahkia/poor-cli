@@ -17,6 +17,8 @@ pub enum PaletteCategory {
     Theme,
     /// Keybinding listing entries (read-only).
     Keybinding,
+    /// Settings field entries (structured discovery view).
+    SettingsField,
 }
 
 /// Action performed when selecting a palette entry.
@@ -210,6 +212,7 @@ fn category_rank(category: PaletteCategory, workflow_priority: bool) -> u8 {
             PaletteCategory::FilePath => 4,
             PaletteCategory::Theme => 5,
             PaletteCategory::Keybinding => 6,
+            PaletteCategory::SettingsField => 7,
         }
     } else {
         match category {
@@ -220,6 +223,7 @@ fn category_rank(category: PaletteCategory, workflow_priority: bool) -> u8 {
             PaletteCategory::FilePath => 4,
             PaletteCategory::Theme => 5,
             PaletteCategory::Keybinding => 6,
+            PaletteCategory::SettingsField => 7,
         }
     }
 }

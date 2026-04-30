@@ -219,6 +219,7 @@ pub fn parse_action_id(id: &str) -> Option<Action> {
         "send_eof" => Action::SendEof,
         "theme_picker" => Action::ThemePicker,
         "keybinding_discovery" => Action::KeybindingDiscovery,
+        "settings_discovery" => Action::SettingsDiscovery,
         _ => return None,
     })
 }

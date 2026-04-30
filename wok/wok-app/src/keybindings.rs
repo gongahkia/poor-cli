@@ -145,6 +145,8 @@ pub enum Action {
     ThemePicker,
     /// Open the read-only keybinding discovery palette.
     KeybindingDiscovery,
+    /// Open the structured settings field discovery palette.
+    SettingsDiscovery,
 }
 
 /// A key combination (key + modifiers).

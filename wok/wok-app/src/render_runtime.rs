@@ -1476,6 +1476,7 @@ pub(crate) fn palette_category_label(category: PaletteCategory) -> &'static str 
         PaletteCategory::FilePath => "File Paths",
         PaletteCategory::Theme => "Themes",
         PaletteCategory::Keybinding => "Keybindings",
+        PaletteCategory::SettingsField => "Settings Fields",
     }
 }
 
