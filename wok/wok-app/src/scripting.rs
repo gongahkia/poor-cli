@@ -833,6 +833,41 @@ impl LuaRuntime {
         tabs_table.set("switch", tabs_switch_fn)?;
         wok.set("tabs", tabs_table)?;
 
+        // wok.panes — split / close / focus, all routed through actions.
+        let panes_table = self.lua.create_table()?;
+        let push_action = |name: &'static str, queue: Arc<Mutex<Vec<String>>>| {
+            self.lua.create_function(move |_, ()| {
+                queue.lock().unwrap().push(name.into());
+                Ok(())
+            })
+        };
+        let action_state = self.state.action_requests.clone();
+        panes_table.set("split_vertical", push_action("split_vertical", action_state.clone())?)?;
+        panes_table.set(
+            "split_horizontal",
+            push_action("split_horizontal", action_state.clone())?,
+        )?;
+        panes_table.set("close", push_action("close_split", action_state.clone())?)?;
+        panes_table.set("focus_left", push_action("focus_left", action_state.clone())?)?;
+        panes_table.set(
+            "focus_right",
+            push_action("focus_right", action_state.clone())?,
+        )?;
+        panes_table.set("focus_up", push_action("focus_up", action_state.clone())?)?;
+        panes_table.set(
+            "focus_down",
+            push_action("focus_down", action_state.clone())?,
+        )?;
+        panes_table.set(
+            "new_floating",
+            push_action("new_floating_pane", action_state.clone())?,
+        )?;
+        panes_table.set(
+            "toggle_floating",
+            push_action("toggle_floating_pane", action_state.clone())?,
+        )?;
+        wok.set("panes", panes_table)?;
+
         // wok.blocks.list() — read blocks from snapshot for the active pane.
         let snapshot_state_blocks = self.state.runtime_snapshot.clone();
         let blocks_list_fn = self.lua.create_function(move |lua, ()| {
