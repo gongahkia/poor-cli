@@ -10,6 +10,7 @@ description = "Gap buffer editor, cursor ops, syntax highlighting, and history f
 wok-terminal = { path = "../wok-terminal" }
 wok-fuzzy = { path = "../wok-fuzzy" }
 wok-features = { path = "../wok-features" }
+wok-vim = { path = "../wok-vim" }
 thiserror = "2"
 tracing = "0.1"
 serde = { version = "1", features = ["derive"] }

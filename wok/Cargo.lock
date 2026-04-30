@@ -4648,6 +4648,7 @@ dependencies = [
  "wok-features",
  "wok-fuzzy",
  "wok-terminal",
+ "wok-vim",
 ]
 
 [[package]]

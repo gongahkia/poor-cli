@@ -169,6 +169,11 @@ pub struct InputEditor {
     path_completions: PathCompletionProvider,
     command_completions: CommandCompletionProvider,
     env_completions: EnvVarCompletionProvider,
+    /// Vim state machine (present unconditionally; consumed when
+    /// `vim_enabled` toggles on).
+    vim: wok_vim::Vim,
+    /// Whether vim-mode key routing is active.
+    pub vim_enabled: bool,
 }
 
 impl InputEditor {
@@ -189,7 +194,24 @@ impl InputEditor {
             path_completions: PathCompletionProvider,
             command_completions: CommandCompletionProvider::default(),
             env_completions: EnvVarCompletionProvider,
+            vim: wok_vim::Vim::new(),
+            vim_enabled: false,
         }
+    }
+
+    /// Toggle vim-mode routing. Returns the new state.
+    pub fn set_vim_enabled(&mut self, enabled: bool) -> bool {
+        self.vim_enabled = enabled;
+        if enabled {
+            self.vim = wok_vim::Vim::new();
+        }
+        self.vim_enabled
+    }
+
+    /// Active vim mode (Normal/Insert/Visual/etc.). Always tracks the
+    /// underlying state machine even when vim_enabled is false.
+    pub fn vim_mode(&self) -> wok_vim::Mode {
+        self.vim.mode()
     }
 
     /// Handle a key event and return the resulting action.
