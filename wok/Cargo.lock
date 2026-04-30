@@ -4743,6 +4743,7 @@ dependencies = [
  "tracing",
  "wok-blocks",
  "wok-fuzzy",
+ "wok-input",
  "wok-process",
  "wok-renderer",
  "wok-terminal",

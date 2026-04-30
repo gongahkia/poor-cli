@@ -72,6 +72,22 @@ impl CommandPaletteState {
         }
     }
 
+    /// Build a `wok_input::surface::InputSurface` view of the current query.
+    /// Edits to the returned surface do not flow back automatically; call
+    /// [`apply_input_surface`] to commit.
+    pub fn to_input_surface(&self) -> wok_input::surface::InputSurface {
+        let mut s = wok_input::surface::InputSurface::new(
+            wok_input::surface::SurfaceMode::Palette,
+        );
+        let _ = s.set_text(self.query.clone());
+        s
+    }
+
+    /// Replace the current query from a surface (after callers edit it).
+    pub fn apply_input_surface(&mut self, surface: &wok_input::surface::InputSurface) {
+        self.set_query(surface.text());
+    }
+
     /// Open the palette with a fresh index.
     pub fn open(&mut self, entries: Vec<PaletteEntry>) {
         self.entries = entries;

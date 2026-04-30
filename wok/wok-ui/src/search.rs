@@ -52,6 +52,21 @@ pub struct GlobalSearch {
 }
 
 impl GlobalSearch {
+    /// Build an `InputSurface` view of the current `search_input` in Search
+    /// mode. Edits do not flow back; use [`apply_input_surface`] to commit.
+    pub fn to_input_surface(&self) -> wok_input::surface::InputSurface {
+        let mut s = wok_input::surface::InputSurface::new(
+            wok_input::surface::SurfaceMode::Search,
+        );
+        let _ = s.set_text(self.search_input.clone());
+        s
+    }
+
+    /// Replace `search_input` from a surface.
+    pub fn apply_input_surface(&mut self, surface: &wok_input::surface::InputSurface) {
+        self.search_input = surface.text().to_string();
+    }
+
     /// Create a new inactive search.
     pub fn new() -> Self {
         Self {
