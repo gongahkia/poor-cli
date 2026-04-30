@@ -766,6 +766,11 @@ struct WokHandler {
     hovered_link: Option<String>,
     theme_watcher: Option<ThemeWatcher>,
     config_watcher: Option<wok_watcher::PathWatcher>,
+    /// Future-home of the entity-handle runtime. Currently empty; existing
+    /// `WokHandler` substates are *not* migrated. This field gives downstream
+    /// PRs a place to lift state into `Handle<T>` entities incrementally.
+    #[allow(dead_code)]
+    ui_core: wok_ui_core::App,
     background: BackgroundRenderer,
     font: FontSystem,
     render: Option<RenderState>,
@@ -875,6 +880,7 @@ impl WokHandler {
                 &WokConfig::config_dir().join("config.toml"),
             )
             .ok(),
+            ui_core: wok_ui_core::App::new(),
             background,
             font,
             render: None,
