@@ -40,6 +40,7 @@ pub mod handler;
 pub mod input;
 pub mod ipc;
 pub mod keybindings;
+pub mod keybindings_toml;
 pub mod plugin_host;
 pub mod remote_control;
 pub mod scripting;

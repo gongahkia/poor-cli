@@ -766,6 +766,11 @@ struct WokHandler {
     hovered_link: Option<String>,
     theme_watcher: Option<ThemeWatcher>,
     config_watcher: Option<wok_watcher::PathWatcher>,
+    /// User keybinding overrides loaded from `~/.config/wok/keybindings.toml`.
+    /// Applied to every pane's `KeybindingConfig` after construction.
+    user_keybinding_overrides: Vec<wok_app::keybindings_toml::BindingOverride>,
+    /// Watcher for `keybindings.toml` so saves apply live.
+    keybindings_watcher: Option<wok_watcher::PathWatcher>,
     /// Future-home of the entity-handle runtime. Currently empty; existing
     /// `WokHandler` substates are *not* migrated. This field gives downstream
     /// PRs a place to lift state into `Handle<T>` entities incrementally.
@@ -878,6 +883,11 @@ impl WokHandler {
             theme_watcher,
             config_watcher: wok_watcher::PathWatcher::new(
                 &WokConfig::config_dir().join("config.toml"),
+            )
+            .ok(),
+            user_keybinding_overrides: load_user_keybinding_overrides(),
+            keybindings_watcher: wok_watcher::PathWatcher::new(
+                &WokConfig::config_dir().join("keybindings.toml"),
             )
             .ok(),
             ui_core: wok_ui_core::App::new(),
@@ -1060,6 +1070,9 @@ impl WokHandler {
         }
         let mut app = WokApp::new(pane_config.clone());
         self.apply_plugin_keybindings(&mut app);
+        // user TOML overrides win over both defaults and plugin bindings.
+        app.keybindings
+            .apply_toml_overrides(self.user_keybinding_overrides.clone());
         if let Some(pane_state) = &restore {
             app.input_editor.buffer.set_text(&pane_state.input_draft);
             if !pane_state.search_query.is_empty() {
@@ -6187,6 +6200,28 @@ impl AppHandler for WokHandler {
             }
         }
 
+        let keybindings_changed = self
+            .keybindings_watcher
+            .as_mut()
+            .is_some_and(|w| w.poll());
+        if keybindings_changed {
+            let overrides = load_user_keybinding_overrides();
+            let count = overrides.len();
+            self.user_keybinding_overrides = overrides.clone();
+            // upsert user overrides on top of each pane's existing bindings.
+            // bindings removed from the file persist in-memory until restart;
+            // documented as a known limitation pending a defaults-rebuild API.
+            for pane in self.panes.values_mut() {
+                pane.app
+                    .keybindings
+                    .apply_toml_overrides(overrides.clone());
+            }
+            info!("keybindings.toml reloaded ({count} overrides)");
+            self.status_message =
+                Some(format!("keybindings.toml reloaded ({count} overrides)"));
+            self.needs_redraw = true;
+        }
+
         if let Some(theme) = self.theme_watcher.as_mut().and_then(ThemeWatcher::poll) {
             let mut theme = theme;
             if let Err(error) =
@@ -6936,6 +6971,27 @@ fn mouse_button_code(button: MouseButton) -> Option<u16> {
         MouseButton::Middle => Some(1),
         MouseButton::Right => Some(2),
         _ => None,
+    }
+}
+
+/// Load `~/.config/wok/keybindings.toml` if present. Logs warnings; returns
+/// empty Vec on missing file or parse error.
+fn load_user_keybinding_overrides() -> Vec<wok_app::keybindings_toml::BindingOverride> {
+    let path = WokConfig::config_dir().join("keybindings.toml");
+    if !path.exists() {
+        return Vec::new();
+    }
+    match wok_app::keybindings_toml::load(&path) {
+        Ok((overrides, warnings)) => {
+            for w in warnings {
+                warn!("keybindings.toml: {w}");
+            }
+            overrides
+        }
+        Err(error) => {
+            warn!("failed to load keybindings.toml: {error}");
+            Vec::new()
+        }
     }
 }
 

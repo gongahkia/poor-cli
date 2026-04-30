@@ -221,6 +221,34 @@ impl KeybindingConfig {
     pub fn clear_chord_buffer(&mut self) {
         self.chord_buffer.clear();
     }
+
+    /// Apply user TOML overrides on top of defaults. Each override upserts a
+    /// `(KeyCombo, Action)` pair into `bindings`. Returns the warnings list
+    /// from the loader so the caller can surface them in the status bar.
+    pub fn apply_toml_overrides(
+        &mut self,
+        overrides: Vec<crate::keybindings_toml::BindingOverride>,
+    ) -> usize {
+        let n = overrides.len();
+        for ov in overrides {
+            self.bindings.insert(ov.combo, ov.action);
+        }
+        n
+    }
+
+    /// Convenience: load `path` (if it exists) + apply. Missing file returns
+    /// `Ok(0, vec![])`. Parse errors propagate.
+    pub fn load_and_apply_overrides(
+        &mut self,
+        path: &std::path::Path,
+    ) -> Result<(usize, Vec<String>), crate::keybindings_toml::LoadError> {
+        if !path.exists() {
+            return Ok((0, Vec::new()));
+        }
+        let (overrides, warnings) = crate::keybindings_toml::load(path)?;
+        let count = self.apply_toml_overrides(overrides);
+        Ok((count, warnings))
+    }
 }
 
 /// Get the platform modifier (Cmd on macOS, Ctrl elsewhere).
