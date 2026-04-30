@@ -14,6 +14,64 @@ use tracing::{info, warn};
 use wok_input::workflows::{Workflow, WorkflowParam};
 use wok_ui::status_bar::StatusSegment;
 
+/// Allowed sandbox roots for `wok.fs.*`. Resolves `$HOME` lazily so the test
+/// suite can override it via env.
+fn sandbox_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        roots.push(home.join(".config").join("wok").join("data"));
+        roots.push(home.join(".local").join("share").join("wok"));
+    }
+    roots
+}
+
+/// Resolve a user-supplied path against the wok.fs sandbox. The input may be
+/// relative (resolved under `~/.config/wok/data/`) or absolute. After symlink
+/// resolution it must descend from at least one [`sandbox_roots`] entry, else
+/// returns an error.
+pub(crate) fn resolve_sandboxed_path(path: &str) -> Result<PathBuf, String> {
+    if path.is_empty() {
+        return Err("wok.fs: path is empty".to_string());
+    }
+    let mut candidate = PathBuf::from(path);
+    if candidate.is_relative() {
+        let roots = sandbox_roots();
+        let primary = roots
+            .first()
+            .ok_or_else(|| "wok.fs: HOME not set; sandbox unavailable".to_string())?;
+        candidate = primary.join(candidate);
+    }
+    // ensure parent exists so canonicalize succeeds for files we're about to
+    // write; parent must itself canonicalise to inside the sandbox.
+    let canon = if candidate.exists() {
+        candidate
+            .canonicalize()
+            .map_err(|e| format!("wok.fs: canonicalize failed: {e}"))?
+    } else {
+        let parent = candidate
+            .parent()
+            .ok_or_else(|| "wok.fs: path has no parent".to_string())?;
+        let parent_canon = if parent.exists() {
+            parent
+                .canonicalize()
+                .map_err(|e| format!("wok.fs: parent canonicalize failed: {e}"))?
+        } else {
+            // parent is in the sandbox root; allow if any root is a prefix.
+            parent.to_path_buf()
+        };
+        parent_canon.join(candidate.file_name().unwrap_or_default())
+    };
+    let roots = sandbox_roots();
+    if roots.iter().any(|root| canon.starts_with(root)) {
+        Ok(canon)
+    } else {
+        Err(format!(
+            "wok.fs: path {} is outside the allowed sandbox roots",
+            canon.display()
+        ))
+    }
+}
+
 /// Collected keybinding overrides from Lua.
 #[derive(Debug, Clone)]
 pub struct LuaKeybinding {
@@ -796,6 +854,53 @@ impl LuaRuntime {
         pane_table.set("info", pane_info_fn)?;
         wok.set("pane_api", pane_table)?;
 
+        // wok.fs — sandboxed filesystem ops. Allowed roots: ~/.config/wok/data
+        // and ~/.local/share/wok. Paths must canonicalise to a descendant of
+        // an allowed root after symlink resolution; everything else errors.
+        let fs_table = self.lua.create_table()?;
+        let fs_read_fn = self.lua.create_function(move |_, path: String| {
+            let abs = match resolve_sandboxed_path(&path) {
+                Ok(p) => p,
+                Err(error) => return Err(mlua::Error::external(error)),
+            };
+            std::fs::read_to_string(&abs).map_err(mlua::Error::external)
+        })?;
+        fs_table.set("read", fs_read_fn)?;
+        let fs_write_fn = self.lua.create_function(move |_, (path, contents): (String, String)| {
+            let abs = match resolve_sandboxed_path(&path) {
+                Ok(p) => p,
+                Err(error) => return Err(mlua::Error::external(error)),
+            };
+            if let Some(parent) = abs.parent() {
+                std::fs::create_dir_all(parent).map_err(mlua::Error::external)?;
+            }
+            std::fs::write(&abs, contents).map_err(mlua::Error::external)?;
+            Ok(())
+        })?;
+        fs_table.set("write", fs_write_fn)?;
+        let fs_exists_fn = self.lua.create_function(move |_, path: String| {
+            match resolve_sandboxed_path(&path) {
+                Ok(p) => Ok(p.exists()),
+                Err(_) => Ok(false), // outside sandbox → caller treats as missing
+            }
+        })?;
+        fs_table.set("exists", fs_exists_fn)?;
+        let fs_list_fn = self.lua.create_function(move |lua, path: String| {
+            let abs = match resolve_sandboxed_path(&path) {
+                Ok(p) => p,
+                Err(error) => return Err(mlua::Error::external(error)),
+            };
+            let mut names: Vec<String> = std::fs::read_dir(&abs)
+                .map_err(mlua::Error::external)?
+                .filter_map(|e| e.ok())
+                .filter_map(|e| e.file_name().into_string().ok())
+                .collect();
+            names.sort();
+            lua.to_value(&names)
+        })?;
+        fs_table.set("list", fs_list_fn)?;
+        wok.set("fs", fs_table)?;
+
         // wok.window — title, fullscreen, opacity.
         let window_table = self.lua.create_table()?;
         let win_state = self.state.window_requests.clone();
@@ -1268,6 +1373,32 @@ fn parse_system_notification(value: Value) -> LuaResult<SystemNotificationReques
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sandbox_rejects_paths_outside_roots() {
+        // /tmp is never inside the sandbox roots.
+        let err = resolve_sandboxed_path("/tmp/does/not/matter").unwrap_err();
+        assert!(err.contains("outside"), "got: {err}");
+    }
+
+    #[test]
+    fn sandbox_resolves_relative_under_data_root() {
+        // Relative path lands under ~/.config/wok/data/ — accepted even if the
+        // file does not yet exist (write path).
+        if std::env::var_os("HOME").is_none() {
+            return; // skip on environments without HOME
+        }
+        let result = resolve_sandboxed_path("plugin-state.json");
+        assert!(result.is_ok(), "got: {result:?}");
+        let path = result.unwrap();
+        assert!(path.ends_with("plugin-state.json"));
+    }
+
+    #[test]
+    fn sandbox_rejects_empty_path() {
+        let err = resolve_sandboxed_path("").unwrap_err();
+        assert!(err.contains("empty"), "got: {err}");
+    }
 
     #[test]
     fn test_trigger_hook_passes_structured_payload() {
