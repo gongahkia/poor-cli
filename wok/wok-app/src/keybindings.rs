@@ -175,6 +175,11 @@ pub struct KeybindingConfig {
     pub bindings: HashMap<KeyCombo, Action>,
     /// Context-specific keybindings.
     pub context_bindings: HashMap<Context, HashMap<KeyCombo, Action>>,
+    /// Chord-style bindings (multi-stroke sequences). Resolved separately via
+    /// [`KeybindingConfig::resolve_chord`]; flat bindings above keep working.
+    pub chord_keymap: wok_keymap::Keymap,
+    /// Stroke buffer accumulated since the last chord resolution.
+    pub chord_buffer: Vec<wok_keymap::Stroke>,
 }
 
 impl KeybindingConfig {
@@ -188,6 +193,29 @@ impl KeybindingConfig {
         }
         // Fall back to global bindings
         self.bindings.get(combo)
+    }
+
+    /// Feed one stroke into the chord resolver. Returns:
+    ///   - `Match { action, .. }` — buffer cleared, caller dispatches `action`.
+    ///   - `Pending` — buffer retained; caller buffers the next stroke.
+    ///   - `None` — buffer cleared; caller falls back to flat-binding lookup.
+    pub fn resolve_chord(
+        &mut self,
+        stroke: wok_keymap::Stroke,
+        ctx: &wok_keymap::Context,
+    ) -> wok_keymap::Resolution {
+        self.chord_buffer.push(stroke);
+        let resolution = self.chord_keymap.resolve(&self.chord_buffer, ctx);
+        match resolution {
+            wok_keymap::Resolution::Pending => {}
+            _ => self.chord_buffer.clear(),
+        }
+        resolution
+    }
+
+    /// Drop any in-flight chord buffer (call on focus change / Esc).
+    pub fn clear_chord_buffer(&mut self) {
+        self.chord_buffer.clear();
     }
 }
 
@@ -640,6 +668,8 @@ impl Default for KeybindingConfig {
         Self {
             bindings,
             context_bindings,
+            chord_keymap: wok_keymap::Keymap::new(),
+            chord_buffer: Vec::new(),
         }
     }
 }

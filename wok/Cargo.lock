@@ -4603,6 +4603,7 @@ dependencies = [
  "wok-features",
  "wok-input",
  "wok-input-classifier",
+ "wok-keymap",
  "wok-process",
  "wok-renderer",
  "wok-settings",
