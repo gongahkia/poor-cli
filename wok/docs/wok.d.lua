@@ -119,6 +119,13 @@
 ---@field pane_count integer
 ---@field is_active_tab boolean
 
+-- `tab_opened` and `pane_opened` extend the standard pane payload. Floating
+-- panes report `direction = "floating"`.
+---@class wok.TabOpenedPayload : wok.PanePayload
+
+---@class wok.PaneOpenedPayload : wok.PanePayload
+---@field direction "vertical" | "horizontal" | "floating"
+
 ---@class wok.SystemNotification
 ---@field title string?
 ---@field subtitle string?
@@ -223,8 +230,8 @@ function wok.register_command(name, action) end
 ---@overload fun(event: "command_submitted", fn: fun(event: wok.CommandSubmittedPayload))
 ---@overload fun(event: "pane_exited", fn: fun(event: wok.PaneExitedPayload))
 ---@overload fun(event: "tab_done", fn: fun(event: wok.TabDonePayload))
----@overload fun(event: "tab_opened", fn: fun(event: wok.TabDonePayload))
----@overload fun(event: "pane_opened", fn: fun(event: wok.PanePayload))
+---@overload fun(event: "tab_opened", fn: fun(event: wok.TabOpenedPayload))
+---@overload fun(event: "pane_opened", fn: fun(event: wok.PaneOpenedPayload))
 function wok.on(event, fn) end
 
 -- =====================================================================

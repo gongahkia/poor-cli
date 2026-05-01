@@ -312,6 +312,104 @@ fn tab_done_payload_matches_docs() {
 }
 
 #[test]
+fn tab_opened_payload_matches_docs() {
+    let mut runtime = fresh_runtime();
+    register_schema_handler(
+        &mut runtime,
+        "tab_opened",
+        &[
+            ("pane_id", "number"),
+            ("tab_index", "number"),
+            ("tab_id", "number"),
+            ("tab_title", "string"),
+            ("shell", "string"),
+            ("title", "string"),
+            ("cwd", "string"),
+            ("is_active_pane", "boolean"),
+        ],
+    );
+
+    runtime
+        .trigger_hook(
+            "tab_opened",
+            &json!({
+                "pane_id": 5,
+                "tab_index": 1,
+                "tab_id": 2,
+                "tab_title": "Shell",
+                "shell": "zsh",
+                "title": "Shell",
+                "cwd": "/home/u",
+                "is_active_pane": true,
+            }),
+        )
+        .expect("hook should run cleanly");
+    assert_eq!(runtime.take_notifications(), vec!["tab_opened-ok"]);
+}
+
+#[test]
+fn pane_opened_payload_matches_docs() {
+    let mut runtime = fresh_runtime();
+    register_schema_handler(
+        &mut runtime,
+        "pane_opened",
+        &[
+            ("pane_id", "number"),
+            ("tab_index", "number"),
+            ("tab_id", "number"),
+            ("tab_title", "string"),
+            ("shell", "string"),
+            ("title", "string"),
+            ("cwd", "string"),
+            ("is_active_pane", "boolean"),
+            ("direction", "string"),
+        ],
+    );
+
+    runtime
+        .trigger_hook(
+            "pane_opened",
+            &json!({
+                "pane_id": 6,
+                "tab_index": 1,
+                "tab_id": 2,
+                "tab_title": "Shell",
+                "shell": "zsh",
+                "title": "Shell",
+                "cwd": "/home/u",
+                "is_active_pane": true,
+                "direction": "vertical",
+            }),
+        )
+        .expect("vertical split hook should run cleanly");
+    assert_eq!(runtime.take_notifications(), vec!["pane_opened-ok"]);
+}
+
+#[test]
+fn pane_opened_floating_direction_is_string() {
+    // Same schema, exercise the "floating" code path.
+    let mut runtime = fresh_runtime();
+    register_schema_handler(
+        &mut runtime,
+        "pane_opened",
+        &[("direction", "string")],
+    );
+
+    for direction in ["vertical", "horizontal", "floating"] {
+        runtime
+            .trigger_hook(
+                "pane_opened",
+                &json!({ "direction": direction }),
+            )
+            .expect("hook should run cleanly");
+    }
+    assert_eq!(
+        runtime.take_notifications(),
+        vec!["pane_opened-ok", "pane_opened-ok", "pane_opened-ok"]
+    );
+}
+
+#[test]
 fn missing_required_field_makes_hook_error() {
     // Belt-and-suspenders: prove the schema asserter actually fails when a
     // documented field is missing. Otherwise these tests are no-ops.

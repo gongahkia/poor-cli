@@ -155,10 +155,10 @@ Register a structured hook. Callbacks receive a payload table.
 
 | Event | Payload fields |
 |---|---|
-| `app_start` | `pane_id?`, `tab_id?`, `tab_index?`, `tab_title?`, `shell?` |
-| `app_exit` | same |
-| `tab_opened` | `tab_id`, `tab_index`, `tab_title` |
-| `pane_opened` | `pane_id`, `tab_index`, `shell`, `cwd` |
+| `app_start` | `active_tab_index`, `active_tab_id?`, `tab_count`, `pane_count`, `active_pane_id?` |
+| `app_exit` | same as `app_start` |
+| `tab_opened` | `pane_id`, `tab_index`, `tab_id?`, `tab_title?`, `shell?`, `title?`, `cwd`, `is_active_pane` |
+| `pane_opened` | same as `tab_opened` plus `direction` (`"vertical"` / `"horizontal"` / `"floating"`) |
 | `pane_exited` | `pane_id`, `exit_code` |
 | `tab_done` | `tab_id`, `pane_ids`, `pane_count` |
 | `command_submitted` | `pane_id`, `command`, `cwd?` |
