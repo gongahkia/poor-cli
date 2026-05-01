@@ -64,6 +64,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo doc --no-deps --workspace
 
+  lua_api_lint:
+    name: Lua API @since lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: .github/scripts/lua_api_lint.sh
+
   perf_gate:
     name: Performance Gate
     if: github.event_name == 'pull_request'

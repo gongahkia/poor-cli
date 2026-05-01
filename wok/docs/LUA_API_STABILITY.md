@@ -189,3 +189,15 @@ Removing or renaming:
 - **External plugin marketplace** — pending P14.1. Once the marketplace ships, plugins will declare their required API version in their manifest and the resolver will refuse to install a plugin whose minimum is above the running wok's version.
 - **Tooling to auto-detect deprecated usage** — `lua-language-server` already shows deprecations from `wok.d.lua` annotations; that's the supported path.
 - **Cross-major auto-migration** — you migrate. We provide a one-minor warning window and clear replacements.
+
+---
+
+## CI enforcement
+
+`.github/scripts/lua_api_lint.sh` runs on every PR (job: `lua_api_lint`) and refuses to merge if `docs/wok.d.lua` contains a public `---@class wok.X` or `function wok.x.y(...)` declaration without an `---@since X.Y.Z` annotation in its preceding doc block. Run it locally before pushing:
+
+```bash
+./.github/scripts/lua_api_lint.sh
+```
+
+Negative-control: temporarily delete an `---@since` line and re-run; the script must exit non-zero. The two test cases (a function missing `@since` and a class missing `@since`) were verified before this lint shipped.
