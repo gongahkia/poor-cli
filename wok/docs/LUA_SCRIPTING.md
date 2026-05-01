@@ -548,3 +548,22 @@ wok.bind_key("terminal", "cmd+shift+z", "zen")
 - [`docs/examples/minimal.lua`](examples/minimal.lua) — bare minimum
 - [`docs/examples/full.lua`](examples/full.lua) — keybindings + theme + a few hooks
 - [`docs/examples/powerful.lua`](examples/powerful.lua) — every namespace exercised
+
+## Editor autocomplete
+
+[`docs/wok.d.lua`](wok.d.lua) ships LuaCATS type annotations for the entire `wok.*` API. With `lua-language-server` installed (most editors via the Lua extension), drop the file into your workspace library to get autocomplete, hover docs, and type checking for every function, namespace, hook payload, and snapshot field.
+
+Drop-in setup:
+
+```bash
+mkdir -p ~/.config/wok/types
+cp /path/to/wok/docs/wok.d.lua ~/.config/wok/types/
+cat > ~/.config/wok/.luarc.json <<'EOF'
+{
+  "workspace": { "library": ["~/.config/wok/types"] },
+  "runtime":   { "version": "Lua 5.4" }
+}
+EOF
+```
+
+After that, opening `~/.config/wok/init.lua` in any LSP-capable editor will auto-complete `wok.<TAB>` with proper type signatures and inline documentation.
