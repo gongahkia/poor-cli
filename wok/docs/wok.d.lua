@@ -194,6 +194,7 @@
 
 ---@class wok                                Top-level table; injected as the `wok` global
 ---@field config wok.Config
+---@field api_version string                  Semantic-version string of the Lua API ("MAJOR.MINOR.PATCH"). See docs/LUA_API_STABILITY.md.
 local wok = {}
 
 -- =====================================================================

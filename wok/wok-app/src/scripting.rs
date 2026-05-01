@@ -1,5 +1,9 @@
 //! Lua scripting runtime for user configuration and extensions.
 
+/// Version of the Lua plugin API surface, exposed to plugins as
+/// `wok.api_version`. Bumped per `docs/LUA_API_STABILITY.md`.
+pub const LUA_API_VERSION: &str = "1.0.0";
+
 use std::cell::RefCell;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -854,6 +858,10 @@ impl LuaRuntime {
         pane_table.set("info", pane_info_fn)?;
         wok.set("pane_api", pane_table)?;
 
+        // wok.api_version — string constant, baseline for plugin compatibility
+        // checks. Bumped per docs/LUA_API_STABILITY.md.
+        wok.set("api_version", LUA_API_VERSION)?;
+
         // wok.fs — sandboxed filesystem ops. Allowed roots: ~/.config/wok/data
         // and ~/.local/share/wok. Paths must canonicalise to a descendant of
         // an allowed root after symlink resolution; everything else errors.
@@ -1373,6 +1381,17 @@ fn parse_system_notification(value: Value) -> LuaResult<SystemNotificationReques
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn api_version_is_exposed_to_lua() {
+        let mut runtime = LuaRuntime::new().expect("lua runtime");
+        runtime.init(&std::env::temp_dir()).expect("lua init");
+        runtime
+            .exec("wok.notify(wok.api_version)")
+            .expect("exec should succeed");
+        let messages = runtime.take_notifications();
+        assert_eq!(messages, vec![LUA_API_VERSION.to_string()]);
+    }
 
     #[test]
     fn sandbox_rejects_paths_outside_roots() {

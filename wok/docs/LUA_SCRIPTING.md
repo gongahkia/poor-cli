@@ -15,6 +15,13 @@ Wok loads `~/.config/wok/init.lua` on startup and exposes a local-only plugin su
 
 All APIs are local-only — no network access, no telemetry, no cloud sync.
 
+**Stability promise**: this surface is versioned independently of the wok binary. See [`LUA_API_STABILITY.md`](LUA_API_STABILITY.md) for the deprecation policy, the meaning of `wok.api_version`, and the contributor checklist for adding/removing APIs.
+
+```lua
+-- Pin a minimum API version in your init.lua
+assert(wok.api_version >= "1.0.0", "wok 1.0+ required")
+```
+
 ## Getting Started
 
 Create `~/.config/wok/init.lua`:
