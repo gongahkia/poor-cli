@@ -265,7 +265,7 @@ fn platform_mod() -> Modifiers {
     #[cfg(not(target_os = "macos"))]
     {
         Modifiers {
-            ctrl: true,
+            meta: true,
             ..Modifiers::default()
         }
     }

@@ -156,16 +156,9 @@ fn convert_modifiers(state: &ModifiersState) -> Modifiers {
     }
 }
 
-/// Check if the platform modifier is active (Cmd on macOS, Ctrl elsewhere).
+/// Check if the platform modifier is active (Cmd on macOS, Super elsewhere).
 fn has_platform_modifier(mods: &Modifiers) -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        mods.meta
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        mods.ctrl
-    }
+    mods.meta
 }
 
 /// Translate a raw winit key event into a Wok `InputEvent`.
