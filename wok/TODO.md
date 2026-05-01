@@ -215,37 +215,27 @@ Per item: open issue w/ label `port:warp`, link this section, attach acceptance 
 
 ## P9 — Configurable keybindings (TOML override layer)
 
-Today bindings are baked into `wok-app/src/keybindings.rs` via Rust defaults. The new `Action::KeybindingDiscovery` palette lets users *see* every binding but not edit them. A real keybind editor needs a TOML override layer first.
+### ~~P9.1 TOML schema~~ ✅ done (commit `7d5fea9`)
+`~/.config/wok/keybindings.toml` schema lands. `[[binding]]` entries with `keys`, `action`, optional `when`. Modifier syntax: `cmd|super|meta|win`, `ctrl|control`, `alt|opt|option`, `shift`. Final token is a single char or named key (`enter`, `pgup`, `f1..f12`, etc.). Action ids come from `parse_lua_action` (canonical strings shared with the Lua API). 8 loader unit tests.
 
-### P9.1 TOML schema
-- `~/.config/wok/keybindings.toml`:
-  ```toml
-  [[binding]]
-  keys = "cmd+t"
-  action = "new_tab"
-  when = ["any"]
-  ```
-- Use `wok-keymap`'s `ContextPredicate` for the `when` field.
-- Action names match `action_to_palette_id` strings (already canonical).
+### ~~P9.2 Loader + merge~~ ✅ done (commit `7d5fea9`, partial)
+Hot-reload via `wok-watcher::PathWatcher` polled per frame. `KeybindingConfig::apply_toml_overrides` upserts user entries on top of defaults; user wins on conflict. Unknown action names log warnings + drop only that entry. **Deferred**: surfacing load errors in `wok doctor` (today the warnings only land in stderr). Known limitation: bindings *removed* from the file persist in-memory until restart.
 
-### P9.2 Loader + merge
-- Load keybindings.toml after defaults; user entries override matching `(key, when)` tuples.
-- Validate action names against `palette_actions_catalog` at load time; warn on unknown.
-- Surface load errors in `wok doctor`.
-
-### P9.3 Editor UI
-- Two-pane palette: left = action list, right = current binding + "press new keys".
+### P9.3 Editor UI (still open)
+- Two-pane palette: left = action list, right = current binding + "press new keys" capture.
 - Bindings save to keybindings.toml on confirm; live config reload picks them up.
 - Reset-to-default per binding.
 
+The read-only keybind discovery palette (commit `2787829`) is *not* this — it lists current bindings and runs them on select, but doesn't capture new strokes.
+
 ---
 
-## P10 — Settings: structured editor (current = TOML buffer)
+## P10 — Settings: structured editor (current = TOML buffer + discovery palette)
 
-Today `Action::OpenSettings` opens config.toml in a text buffer (Mod+S to save). It works but isn't discoverable. A structured form would surface every option with a control + default + reset button.
+`Action::OpenSettings` opens `config.toml` in a text buffer editor (Mod+S to save). Commit `25e2ae8` adds `Action::SettingsDiscovery` — a structured *view* (palette listing every field + current value + type) that jumps to the TOML editor on select. The form-with-controls work below is still open.
 
-### P10.1 Schema-driven form
-- `wok_settings::Settings` schema is already implemented for `WokConfig`.
+### P10.1 Schema-driven form (still open)
+- `wok_settings::Settings` schema is already implemented for `WokConfig`; the discovery palette uses it.
 - Build a renderer that walks the schema and emits a control per field type:
   - `bool` → toggle
   - `f32`/`usize` → numeric input + slider
@@ -255,7 +245,7 @@ Today `Action::OpenSettings` opens config.toml in a text buffer (Mod+S to save).
 - "Reset to default" per field.
 - "Open as TOML" escape hatch keeps power-user workflow.
 
-### P10.2 Live preview
+### P10.2 Live preview (still open)
 - Settings changes apply to a temp `WokConfig` clone first; "Apply" persists. "Discard" reverts.
 
 ---
@@ -334,9 +324,12 @@ Each weakness from the strategic audit becomes a concrete ticket here.
 | No auto-update | P11.5 | release engineering + UI |
 | No crash reports | P11.6 (opt-in) | infra |
 | macOS-first only | P8 | platform owners |
-| Settings = TOML buffer only | P10 (structured form) | UI |
-| Keybindings hardcoded | P9 (TOML overrides + editor) | UI + config |
+| Settings = TOML buffer only | P10 partial — discovery palette ✅ `25e2ae8`; form controls + live preview open | UI |
+| Keybindings hardcoded | P9 partial — TOML overrides ✅ `7d5fea9`; editor UI w/ stroke capture open | UI + config |
 | No theme picker | ~~done 2787829~~ ✅ | — |
+| Lua API surface narrow | ~~done~~ ✅ — see P15 | — |
+| No Lua plugin SDK | ~~done~~ ✅ — see P15 | — |
+| Framework crates not wired | ~~done~~ ✅ — see P16 | — |
 | No marketplace for Lua plugins | P14.1 (new) | infra |
 | No "first 60 seconds" demo | P14.2 (new) | onboarding + docs |
 | No website / landing page | P14.3 (new) | marketing |
@@ -368,3 +361,59 @@ Each weakness from the strategic audit becomes a concrete ticket here.
 - vs iTerm2, Wezterm, Alacritty, Ghostty, Warp.
 - Metrics: cold start, scrollback render at 100k lines, paste 10MB, fork+exec latency, memory at idle / under load.
 - Publish in `docs/BENCHMARKS.md` with reproducer scripts.
+
+---
+
+## P15 — Lua plugin SDK + API stability ✅ done
+
+Tracked retroactively because it shipped as an epic outside the original P1–P14 scope.
+
+### ~~P15.1 Lua API expansion~~ ✅
+Eight namespaces added to scripting.rs across `94242d2` … `00781e0`:
+- `wok.tabs.{new,close,next,prev,switch}`
+- `wok.panes.{split_*,close,focus_*,*_floating}`
+- `wok.history.{entries,search}`
+- `wok.window.{set_title,toggle_fullscreen,set_opacity}`
+- `wok.fs.{read,write,exists,list}` (sandboxed to `~/.config/wok/data` + `~/.local/share/wok`)
+- `wok.clipboard.{copy,paste}`, `wok.pane_api.{send_input,info}`, `wok.blocks.list`
+
+Total Lua surface: ~50 functions across 18 namespaces.
+
+### ~~P15.2 Plugin SDK assets~~ ✅
+- `docs/LUA_SCRIPTING.md` (commit `d6fd763`) — full prose API reference.
+- `docs/wok.d.lua` (commits `9611802` + `14fb0e8`) — LuaCATS type defs w/ 86 `---@since 1.0.0` annotations.
+- `docs/examples/{minimal,full,powerful}.lua` — copy-paste starters.
+- `wok-app/tests/lua_hook_payloads.rs` (commits `587ebd7` + `f266c6b`) — 12 hook payload schema tests.
+- `docs/LUA_API_STABILITY.md` (commit `76b2ec1`) — versioning policy + deprecation workflow.
+- `wok.api_version = "1.0.0"` constant exposed to Lua.
+- `CHANGELOG.md` (commit `681240d`) — 1.0.0 baseline.
+- `.github/scripts/lua_api_lint.sh` + CI job (commit `413ce39`) — enforces `---@since` on every public surface.
+
+### P15.3 Open extensions (deferred)
+- Live deprecation warnings on first invocation of a deprecated API (the policy describes it; the runtime hook isn't wired).
+- `shellcheck` pass on `lua_api_lint.sh` in CI.
+- CHANGELOG.md release-URL placeholders (currently `example.com`).
+
+---
+
+## P16 — Tier-A wirings ✅ done
+
+Once the framework crates landed, each had to be wired into `main.rs` to actually ship behavior. Tracked retroactively.
+
+| Wiring | Commit | What user sees |
+|---|---|---|
+| iTerm 1337 inline images | `8abc669` | `imgcat`-style scripts now render in-terminal |
+| Doctor shell capabilities | `8abc669` | `wok doctor` shows OSC 133 + integration support per shell |
+| `wok replay <file>` CLI | `8abc669` | wokcast files play back to stdout |
+| Live `config.toml` reload | `8abc669` | Edit config while wok runs → "config.toml reloaded" status |
+| `share::strip_csi` in markdown export | `b1f58c1` | Block export `.md` is ANSI-clean |
+| Paste/heredoc submit hint | `7fd29e6` | Status bar warns on big paste / heredoc |
+| ProviderCompletion flag | `2b1d5f0` | `WOK_FLAGS=+ProviderCompletion` swaps to fuzzy-ranked completions |
+| QuitWarning state machine | `42ab6c7` | Close-with-running-shells confirm shows live process count |
+| BlockFilter failed count | `b2c0522` | Action shows "N failed blocks in pane" |
+| ScrollbackMirror per-block push | `38b2b33` | Sumtree mirror populated on every block boundary |
+| Vim state machine on InputEditor | `f2ebbf4` | `vim_enabled` field (key routing wiring still open) |
+| Chord keymap parallel to flat | `395a213` | `KeybindingConfig::resolve_chord` available; bindings still empty by default |
+| InputSurface accessors on palette/search | `e78e488` | `to_input_surface()` helpers ready for unified-input migration |
+| `ui_core::App` mount on WokHandler | `d8c7545` | Empty entity arena ready for incremental main.rs decomposition |
+| Theme picker / keybind discovery / settings discovery palettes | `2787829` + `25e2ae8` | Three new palette-driven UIs for theme switch, binding discovery, settings field discovery |
