@@ -5134,6 +5134,27 @@ impl WokHandler {
                             }
                             self.open_git_file_diff(&path);
                         }
+                        PaletteAction::GitStageFile(path) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
+                            self.apply_git_file_action(&path, GitPaletteFileAction::Stage);
+                        }
+                        PaletteAction::GitUnstageFile(path) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
+                            self.apply_git_file_action(&path, GitPaletteFileAction::Unstage);
+                        }
+                        PaletteAction::GitDiscardFile(path) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
+                            self.apply_git_file_action(&path, GitPaletteFileAction::Discard);
+                        }
                         PaletteAction::ChangeDirectory(path) => {
                             if let Some(active_pane) = self.active_pane_mut() {
                                 active_pane.app.close_command_palette();
@@ -5776,18 +5797,68 @@ impl WokHandler {
         snapshot
             .files
             .into_iter()
-            .map(|file| {
-                let status = file.status_text();
-                let path = file.path.clone();
-                PaletteEntry {
-                    label: format!("{status}  {path}"),
-                    description: git_status_file_description(&file),
-                    category: PaletteCategory::GitFile,
-                    score: 0.0,
-                    action: PaletteAction::GitFileDiff(path),
-                }
-            })
+            .flat_map(git_change_palette_entries_for_file)
             .collect()
+    }
+
+    fn apply_git_file_action(&mut self, path: &str, action: GitPaletteFileAction) {
+        let Some(pane_id) = self.active_pane_id() else {
+            self.status_message = Some("no active pane".to_string());
+            return;
+        };
+        let Some(cwd) = self
+            .panes
+            .get(&pane_id)
+            .map(|pane| pane.current_cwd.clone())
+        else {
+            self.status_message = Some("no active pane".to_string());
+            return;
+        };
+
+        let result = match action {
+            GitPaletteFileAction::Stage => wok_git::service::stage_path(&cwd, path),
+            GitPaletteFileAction::Unstage => wok_git::service::unstage_path(&cwd, path),
+            GitPaletteFileAction::Discard => wok_git::service::discard_path(&cwd, path),
+        };
+
+        if let Err(error) = result {
+            self.status_message = Some(match error {
+                wok_git::service::GitServiceError::NotGitRepository(_) => {
+                    "not in a Git repository".to_string()
+                }
+                error => format!("failed to {} {path}: {error}", action.verb()),
+            });
+            return;
+        }
+
+        let entries = match wok_git::service::load_status(&cwd) {
+            Ok(snapshot) => self.build_git_changes_palette_entries(snapshot),
+            Err(error) => {
+                self.status_message = Some(format!(
+                    "{} {path}; failed to refresh Git changes: {error}",
+                    action.past_tense()
+                ));
+                self.needs_redraw = true;
+                return;
+            }
+        };
+
+        if entries.is_empty() {
+            self.status_message = Some("Git working tree is clean".to_string());
+            self.needs_redraw = true;
+            return;
+        }
+
+        if let Some(active_pane) = self.panes.get_mut(&pane_id) {
+            active_pane.app.global_search.deactivate();
+            active_pane.app.command_search = None;
+            active_pane.app.block_query = None;
+            active_pane.app.quick_select.dismiss();
+            active_pane.app.input_mode = InputMode::CommandPalette;
+            active_pane.app.command_palette.open(entries);
+        }
+        self.status_message = Some(format!("{} {path}", action.past_tense()));
+        self.needs_redraw = true;
     }
 
     /// Open an in-app unified diff overlay for one repository-relative path.
@@ -5885,8 +5956,11 @@ impl WokHandler {
     }
 
     fn change_active_pane_directory(&mut self, path: &str) {
-        let command = format!("cd {}\r", shell_quote_path(path));
+        let command = cd_command_for_path(path);
         self.send_raw_input_to_pty(command.as_bytes());
+        if let Some(active_pane) = self.active_pane_mut() {
+            active_pane.current_cwd = std::path::PathBuf::from(path);
+        }
         self.status_message = Some(format!("Switching to {path}"));
         self.needs_redraw = true;
     }
@@ -8809,6 +8883,74 @@ fn build_git_worktree_palette_entries(
     entries
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GitPaletteFileAction {
+    Stage,
+    Unstage,
+    Discard,
+}
+
+impl GitPaletteFileAction {
+    fn verb(self) -> &'static str {
+        match self {
+            GitPaletteFileAction::Stage => "stage",
+            GitPaletteFileAction::Unstage => "unstage",
+            GitPaletteFileAction::Discard => "discard",
+        }
+    }
+
+    fn past_tense(self) -> &'static str {
+        match self {
+            GitPaletteFileAction::Stage => "Staged",
+            GitPaletteFileAction::Unstage => "Unstaged",
+            GitPaletteFileAction::Discard => "Discarded",
+        }
+    }
+}
+
+fn git_change_palette_entries_for_file(file: wok_git::status::GitStatusFile) -> Vec<PaletteEntry> {
+    let status = file.status_text();
+    let description = git_status_file_description(&file);
+    let path = file.path.clone();
+    let mut entries = vec![PaletteEntry {
+        label: format!("Preview {status}  {path}"),
+        description: description.clone(),
+        category: PaletteCategory::GitFile,
+        score: 0.0,
+        action: PaletteAction::GitFileDiff(path.clone()),
+    }];
+
+    if file.is_unstaged() {
+        entries.push(PaletteEntry {
+            label: format!("Stage {path}"),
+            description: description.clone(),
+            category: PaletteCategory::GitFile,
+            score: 0.0,
+            action: PaletteAction::GitStageFile(path.clone()),
+        });
+    }
+    if file.is_staged() {
+        entries.push(PaletteEntry {
+            label: format!("Unstage {path}"),
+            description: description.clone(),
+            category: PaletteCategory::GitFile,
+            score: 0.0,
+            action: PaletteAction::GitUnstageFile(path.clone()),
+        });
+    }
+    if file.is_staged() || file.is_unstaged() {
+        entries.push(PaletteEntry {
+            label: format!("Discard {path}"),
+            description,
+            category: PaletteCategory::GitFile,
+            score: 0.0,
+            action: PaletteAction::GitDiscardFile(path),
+        });
+    }
+
+    entries
+}
+
 fn git_worktree_label(worktree: &wok_git::service::GitWorktree) -> String {
     worktree
         .branch
@@ -8849,6 +8991,10 @@ fn git_worktree_description(
 
 fn shell_quote_path(path: &str) -> String {
     format!("'{}'", path.replace('\'', "'\"'\"'"))
+}
+
+fn cd_command_for_path(path: &str) -> String {
+    format!("cd {}\r", shell_quote_path(path))
 }
 
 fn git_status_file_description(file: &wok_git::status::GitStatusFile) -> String {
@@ -9184,6 +9330,37 @@ mod tests {
     }
 
     #[test]
+    fn test_git_change_palette_entries_include_file_actions() {
+        let file = wok_git::status::GitStatusFile {
+            path: "src/main.rs".to_string(),
+            old_path: None,
+            index_status: 'M',
+            worktree_status: 'M',
+            additions: Some(3),
+            deletions: Some(1),
+            is_binary: false,
+        };
+
+        let entries = git_change_palette_entries_for_file(file);
+        let actions = entries
+            .iter()
+            .map(|entry| entry.action.clone())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            actions,
+            vec![
+                PaletteAction::GitFileDiff("src/main.rs".to_string()),
+                PaletteAction::GitStageFile("src/main.rs".to_string()),
+                PaletteAction::GitUnstageFile("src/main.rs".to_string()),
+                PaletteAction::GitDiscardFile("src/main.rs".to_string()),
+            ]
+        );
+        assert_eq!(entries[0].label, "Preview M  src/main.rs");
+        assert!(entries[0].description.contains("+3 -1"));
+    }
+
+    #[test]
     fn test_git_worktree_entries_mark_current_worktree() {
         let worktree = wok_git::service::GitWorktree {
             path: std::path::PathBuf::from("/repo/main"),
@@ -9209,6 +9386,14 @@ mod tests {
     #[test]
     fn test_shell_quote_path_escapes_single_quotes() {
         assert_eq!(shell_quote_path("/tmp/it's-here"), "'/tmp/it'\"'\"'s-here'");
+    }
+
+    #[test]
+    fn test_cd_command_for_path_quotes_path() {
+        assert_eq!(
+            cd_command_for_path("/tmp/work tree"),
+            "cd '/tmp/work tree'\r"
+        );
     }
 
     #[test]

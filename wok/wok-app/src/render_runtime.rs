@@ -2222,7 +2222,12 @@ pub(crate) fn render_block_query_overlay(
     } else {
         0.0
     };
-    let height = font.metrics.cell_height * 2.0 + 16.0 + list_height;
+    let help_height = if is_diff {
+        font.metrics.cell_height + 6.0
+    } else {
+        0.0
+    };
+    let height = font.metrics.cell_height * 2.0 + 16.0 + list_height + help_height;
     let x = viewport.x + viewport.w - width - 12.0;
     let y = viewport.y + 12.0;
 
@@ -2341,6 +2346,22 @@ pub(crate) fn render_block_query_overlay(
                     surface_opacity,
                 ),
             );
+            push_text(
+                render,
+                font,
+                x + 10.0,
+                y + height - font.metrics.cell_height - 4.0,
+                "Enter/Down next change  Up previous  Esc close",
+                with_opacity(
+                    [
+                        theme.status_bar_text.r,
+                        theme.status_bar_text.g,
+                        theme.status_bar_text.b,
+                        theme.status_bar_text.a,
+                    ],
+                    surface_opacity,
+                ),
+            );
             return;
         }
 
@@ -2423,6 +2444,22 @@ pub(crate) fn render_block_query_overlay(
                 with_opacity(accent, surface_opacity),
             );
         }
+        push_text(
+            render,
+            font,
+            x + 10.0,
+            y + height - font.metrics.cell_height - 4.0,
+            "Enter/Down next change  Up previous  Esc close",
+            with_opacity(
+                [
+                    theme.status_bar_text.r,
+                    theme.status_bar_text.g,
+                    theme.status_bar_text.b,
+                    theme.status_bar_text.a,
+                ],
+                surface_opacity,
+            ),
+        );
         return;
     }
 

@@ -110,6 +110,45 @@ pub fn load_worktrees(cwd: &Path) -> Result<Vec<GitWorktree>, GitServiceError> {
     Ok(parse_worktree_list(&output))
 }
 
+/// Stage one repository-relative path.
+pub fn stage_path(cwd: &Path, path: &str) -> Result<(), GitServiceError> {
+    let repo = detect_repo_info(cwd)
+        .ok_or_else(|| GitServiceError::NotGitRepository(cwd.to_path_buf()))?;
+    run_git_bytes_dynamic(&repo.worktree_root, ["add", "--"], [path]).map(|_| ())
+}
+
+/// Remove one repository-relative path from the index.
+pub fn unstage_path(cwd: &Path, path: &str) -> Result<(), GitServiceError> {
+    let repo = detect_repo_info(cwd)
+        .ok_or_else(|| GitServiceError::NotGitRepository(cwd.to_path_buf()))?;
+    run_git_bytes_dynamic(&repo.worktree_root, ["restore", "--staged", "--"], [path]).map(|_| ())
+}
+
+/// Discard local changes for one repository-relative path.
+///
+/// For untracked paths this uses `git clean -f -- <path>`. For tracked paths it
+/// restores both index and worktree state from HEAD.
+pub fn discard_path(cwd: &Path, path: &str) -> Result<(), GitServiceError> {
+    let repo = detect_repo_info(cwd)
+        .ok_or_else(|| GitServiceError::NotGitRepository(cwd.to_path_buf()))?;
+    let snapshot = load_status_for_repo(&repo)?;
+    let is_untracked = snapshot
+        .files
+        .iter()
+        .any(|file| file.path == path && file.index_status == '?' && file.worktree_status == '?');
+
+    if is_untracked {
+        run_git_bytes_dynamic(&repo.worktree_root, ["clean", "-f", "--"], [path]).map(|_| ())
+    } else {
+        run_git_bytes_dynamic(
+            &repo.worktree_root,
+            ["restore", "--staged", "--worktree", "--"],
+            [path],
+        )
+        .map(|_| ())
+    }
+}
+
 fn load_status_for_repo(repo: &GitRepoInfo) -> Result<GitStatusSnapshot, GitServiceError> {
     let status = run_git_bytes(
         &repo.worktree_root,
@@ -172,6 +211,18 @@ fn run_git_bytes(repo_root: &Path, args: &[&str]) -> Result<Vec<u8>, GitServiceE
     Ok(run(Cmd::new("git").args(args).cwd(repo_root))?.stdout)
 }
 
+fn run_git_bytes_dynamic<'a, A, P>(
+    repo_root: &Path,
+    args: A,
+    pathspecs: P,
+) -> Result<Vec<u8>, GitServiceError>
+where
+    A: IntoIterator<Item = &'a str>,
+    P: IntoIterator<Item = &'a str>,
+{
+    Ok(run(Cmd::new("git").args(args).args(pathspecs).cwd(repo_root))?.stdout)
+}
+
 fn run_git_text(repo_root: &Path, args: &[&str]) -> Result<String, GitServiceError> {
     String::from_utf8(run_git_bytes(repo_root, args)?).map_err(|_| GitServiceError::InvalidUtf8)
 }
@@ -185,8 +236,8 @@ where
     A: IntoIterator<Item = &'a str>,
     P: IntoIterator<Item = &'a str>,
 {
-    let cmd = Cmd::new("git").args(args).args(pathspecs).cwd(repo_root);
-    String::from_utf8(run(cmd)?.stdout).map_err(|_| GitServiceError::InvalidUtf8)
+    String::from_utf8(run_git_bytes_dynamic(repo_root, args, pathspecs)?)
+        .map_err(|_| GitServiceError::InvalidUtf8)
 }
 
 fn parse_worktree_list(output: &str) -> Vec<GitWorktree> {
@@ -254,6 +305,28 @@ mod tests {
         std::env::temp_dir().join(format!("wok-git-service-{name}-{stamp}"))
     }
 
+    fn init_repo(name: &str) -> PathBuf {
+        let dir = unique_path(name);
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        run(Cmd::new("git").args(["init"]).cwd(&dir)).expect("git init should pass");
+        run(Cmd::new("git")
+            .args(["config", "user.email", "wok@example.test"])
+            .cwd(&dir))
+        .expect("git config email should pass");
+        run(Cmd::new("git")
+            .args(["config", "user.name", "Wok Test"])
+            .cwd(&dir))
+        .expect("git config name should pass");
+        dir
+    }
+
+    fn commit_file(dir: &Path, path: &str, contents: &str) {
+        fs::write(dir.join(path), contents).expect("file should be written");
+        run(Cmd::new("git").args(["add", path]).cwd(dir)).expect("git add should pass");
+        run(Cmd::new("git").args(["commit", "-m", "initial"]).cwd(dir))
+            .expect("git commit should pass");
+    }
+
     #[test]
     fn non_repo_returns_not_git_repository() {
         let dir = unique_path("not-repo");
@@ -283,21 +356,8 @@ mod tests {
 
     #[test]
     fn load_file_diff_parses_tracked_modifications() {
-        let dir = unique_path("file-diff");
-        fs::create_dir_all(&dir).expect("temp dir should be created");
-        run(Cmd::new("git").args(["init"]).cwd(&dir)).expect("git init should pass");
-        run(Cmd::new("git")
-            .args(["config", "user.email", "wok@example.test"])
-            .cwd(&dir))
-        .expect("git config email should pass");
-        run(Cmd::new("git")
-            .args(["config", "user.name", "Wok Test"])
-            .cwd(&dir))
-        .expect("git config name should pass");
-        fs::write(dir.join("file.txt"), "old\nsame\n").expect("file should be written");
-        run(Cmd::new("git").args(["add", "file.txt"]).cwd(&dir)).expect("git add should pass");
-        run(Cmd::new("git").args(["commit", "-m", "initial"]).cwd(&dir))
-            .expect("git commit should pass");
+        let dir = init_repo("file-diff");
+        commit_file(&dir, "file.txt", "old\nsame\n");
 
         fs::write(dir.join("file.txt"), "new\nsame\n").expect("file should be modified");
         let diff = load_file_diff(&dir, "file.txt").expect("diff should load");
@@ -307,6 +367,55 @@ mod tests {
         assert_eq!(diff.deletions, 1);
         assert!(diff.rows.iter().any(|row| row.text == "+new"));
         assert!(diff.rows.iter().any(|row| row.text == "-old"));
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn stage_and_unstage_path_update_index_state() {
+        let dir = init_repo("stage-unstage");
+        commit_file(&dir, "file.txt", "old\n");
+
+        fs::write(dir.join("file.txt"), "new\n").expect("file should be modified");
+        stage_path(&dir, "file.txt").expect("path should stage");
+        let staged = load_status(&dir).expect("status should load");
+        assert_eq!(staged.files[0].index_status, 'M');
+        assert_eq!(staged.files[0].worktree_status, ' ');
+
+        unstage_path(&dir, "file.txt").expect("path should unstage");
+        let unstaged = load_status(&dir).expect("status should load");
+        assert_eq!(unstaged.files[0].index_status, ' ');
+        assert_eq!(unstaged.files[0].worktree_status, 'M');
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn discard_path_restores_tracked_file() {
+        let dir = init_repo("discard-tracked");
+        commit_file(&dir, "file.txt", "old\n");
+
+        fs::write(dir.join("file.txt"), "new\n").expect("file should be modified");
+        stage_path(&dir, "file.txt").expect("path should stage");
+        discard_path(&dir, "file.txt").expect("path should discard");
+
+        assert_eq!(
+            fs::read_to_string(dir.join("file.txt")).expect("file should exist"),
+            "old\n"
+        );
+        assert!(load_status(&dir).expect("status should load").is_clean());
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn discard_path_removes_untracked_file() {
+        let dir = init_repo("discard-untracked");
+        commit_file(&dir, "file.txt", "old\n");
+        let untracked = dir.join("scratch.txt");
+        fs::write(&untracked, "scratch\n").expect("untracked file should be written");
+
+        discard_path(&dir, "scratch.txt").expect("path should discard");
+
+        assert!(!untracked.exists());
+        assert!(load_status(&dir).expect("status should load").is_clean());
         fs::remove_dir_all(dir).ok();
     }
 

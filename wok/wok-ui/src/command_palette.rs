@@ -42,6 +42,12 @@ pub enum PaletteAction {
     ApplyTheme(String),
     /// Preview the diff for a changed Git file.
     GitFileDiff(String),
+    /// Stage a changed Git file.
+    GitStageFile(String),
+    /// Unstage a changed Git file.
+    GitUnstageFile(String),
+    /// Discard local changes for a Git file.
+    GitDiscardFile(String),
     /// Change the active pane working directory.
     ChangeDirectory(String),
 }
