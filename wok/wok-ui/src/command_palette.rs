@@ -48,6 +48,10 @@ pub enum PaletteAction {
     GitUnstageFile(String),
     /// Discard local changes for a Git file.
     GitDiscardFile(String),
+    /// Confirm discarding local changes for a Git file.
+    GitConfirmDiscardFile(String),
+    /// Close the command palette without taking another action.
+    Dismiss,
     /// Change the active pane working directory.
     ChangeDirectory(String),
 }

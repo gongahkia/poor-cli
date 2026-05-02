@@ -1166,6 +1166,42 @@ impl LuaRuntime {
             }
         })?;
         git_table.set("diff", git_diff_fn)?;
+        let snapshot_state_git_stage = self.state.runtime_snapshot.clone();
+        let git_stage_fn = self.lua.create_function(move |lua, options: Value| {
+            run_lua_git_mutation(
+                lua,
+                "stage",
+                options,
+                false,
+                &snapshot_state_git_stage,
+                wok_git::service::stage_path,
+            )
+        })?;
+        git_table.set("stage", git_stage_fn)?;
+        let snapshot_state_git_unstage = self.state.runtime_snapshot.clone();
+        let git_unstage_fn = self.lua.create_function(move |lua, options: Value| {
+            run_lua_git_mutation(
+                lua,
+                "unstage",
+                options,
+                false,
+                &snapshot_state_git_unstage,
+                wok_git::service::unstage_path,
+            )
+        })?;
+        git_table.set("unstage", git_unstage_fn)?;
+        let snapshot_state_git_discard = self.state.runtime_snapshot.clone();
+        let git_discard_fn = self.lua.create_function(move |lua, options: Value| {
+            run_lua_git_mutation(
+                lua,
+                "discard",
+                options,
+                true,
+                &snapshot_state_git_discard,
+                wok_git::service::discard_path,
+            )
+        })?;
+        git_table.set("discard", git_discard_fn)?;
         wok.set("git", git_table)?;
 
         let snapshot_state = self.state.runtime_snapshot.clone();
@@ -1438,6 +1474,71 @@ fn parse_status_segments(table: &Table) -> LuaResult<Vec<StatusSegment>> {
         .collect::<LuaResult<Vec<_>>>()
 }
 
+fn active_snapshot_cwd(snapshot_state: &Arc<Mutex<JsonValue>>) -> Option<String> {
+    snapshot_state
+        .lock()
+        .unwrap()
+        .get("pane")
+        .and_then(|pane| pane.get("cwd"))
+        .and_then(|cwd| cwd.as_str())
+        .filter(|cwd| !cwd.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn lua_git_path_options(
+    options: Value,
+    api_name: &str,
+) -> LuaResult<(String, Option<String>, bool)> {
+    match options {
+        Value::String(path) => Ok((path.to_string_lossy().to_string(), None, false)),
+        Value::Table(table) => {
+            let path = table.get::<Option<String>>("path")?.ok_or_else(|| {
+                mlua::Error::runtime(format!("wok.git.{api_name} table requires path"))
+            })?;
+            let cwd = table.get::<Option<String>>("cwd")?;
+            let confirm = table.get::<Option<bool>>("confirm")?.unwrap_or(false);
+            Ok((path, cwd, confirm))
+        }
+        _ => Err(mlua::Error::runtime(format!(
+            "wok.git.{api_name} expects a path string or options table"
+        ))),
+    }
+}
+
+fn run_lua_git_mutation(
+    lua: &Lua,
+    action: &'static str,
+    options: Value,
+    require_confirm: bool,
+    snapshot_state: &Arc<Mutex<JsonValue>>,
+    apply: fn(&Path, &str) -> Result<(), wok_git::service::GitServiceError>,
+) -> LuaResult<Table> {
+    let (path, cwd, confirm) = lua_git_path_options(options, action)?;
+    if path.trim().is_empty() {
+        return Err(mlua::Error::runtime(format!(
+            "wok.git.{action} path is empty"
+        )));
+    }
+    if require_confirm && !confirm {
+        return Err(mlua::Error::runtime(format!(
+            "wok.git.{action} requires confirm = true"
+        )));
+    }
+    let cwd = cwd
+        .or_else(|| active_snapshot_cwd(snapshot_state))
+        .ok_or_else(|| mlua::Error::runtime(format!("wok.git.{action} requires cwd")))?;
+
+    apply(Path::new(&cwd), &path).map_err(|error| {
+        mlua::Error::external(format!("wok.git.{action} failed for {path}: {error}"))
+    })?;
+    let snapshot = wok_git::service::load_status(Path::new(&cwd)).map_err(|error| {
+        mlua::Error::external(format!(
+            "wok.git.{action} changed {path} but refresh failed: {error}"
+        ))
+    })?;
+    git_mutation_result_table(lua, action, path, snapshot)
+}
+
 fn empty_git_status_table(lua: &Lua) -> LuaResult<Table> {
     let table = lua.create_table()?;
     table.set("is_git_repo", false)?;
@@ -1479,6 +1580,20 @@ fn git_status_table(lua: &Lua, snapshot: wok_git::service::GitStatusSnapshot) ->
     }
     table.set("files", files)?;
 
+    Ok(table)
+}
+
+fn git_mutation_result_table(
+    lua: &Lua,
+    action: &str,
+    path: String,
+    snapshot: wok_git::service::GitStatusSnapshot,
+) -> LuaResult<Table> {
+    let table = lua.create_table()?;
+    table.set("ok", true)?;
+    table.set("action", action)?;
+    table.set("path", path)?;
+    table.set("status", git_status_table(lua, snapshot)?)?;
     Ok(table)
 }
 
@@ -1824,6 +1939,80 @@ mod tests {
             vec!["false:x.txt:0".to_string()]
         );
         fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn test_git_stage_and_unstage_mutations_return_refreshed_status() {
+        let repo = unique_temp_dir("git-stage-unstage");
+        fs::create_dir_all(&repo).expect("repo dir should be created");
+        run_git(&repo, &["init"]);
+        run_git(&repo, &["config", "user.email", "wok@example.test"]);
+        run_git(&repo, &["config", "user.name", "Wok Test"]);
+        fs::write(repo.join("tracked.txt"), "old\n").expect("file should be written");
+        run_git(&repo, &["add", "tracked.txt"]);
+        run_git(&repo, &["commit", "-m", "initial"]);
+        fs::write(repo.join("tracked.txt"), "new\n").expect("file should be modified");
+
+        let mut runtime = LuaRuntime::new().expect("lua runtime");
+        runtime.init(&std::env::temp_dir()).expect("lua init");
+        runtime.set_runtime_snapshot(serde_json::json!({
+            "pane": { "cwd": repo },
+        }));
+        runtime
+            .exec(
+                r#"
+                local staged = wok.git.stage("tracked.txt")
+                local unstaged = wok.git.unstage("tracked.txt")
+                wok.notify(
+                    staged.action .. ":" ..
+                    tostring(staged.status.files[1].is_staged) .. ":" ..
+                    unstaged.action .. ":" ..
+                    tostring(unstaged.status.files[1].is_unstaged)
+                )
+            "#,
+            )
+            .expect("git mutations should be callable from lua");
+
+        assert_eq!(
+            runtime.take_notifications(),
+            vec!["stage:true:unstage:true".to_string()]
+        );
+        fs::remove_dir_all(repo).ok();
+    }
+
+    #[test]
+    fn test_git_discard_requires_confirm_true() {
+        let repo = unique_temp_dir("git-discard-confirm");
+        fs::create_dir_all(&repo).expect("repo dir should be created");
+        run_git(&repo, &["init"]);
+        fs::write(repo.join("scratch.txt"), "scratch\n").expect("file should be written");
+
+        let mut runtime = LuaRuntime::new().expect("lua runtime");
+        runtime.init(&std::env::temp_dir()).expect("lua init");
+        runtime
+            .exec(&format!(
+                r#"
+                local ok, err = pcall(function()
+                    wok.git.discard({{ cwd = "{}", path = "scratch.txt" }})
+                end)
+                wok.notify(tostring(ok) .. ":" .. tostring(err):match("confirm = true"))
+                local discarded = wok.git.discard({{ cwd = "{}", path = "scratch.txt", confirm = true }})
+                wok.notify(discarded.action .. ":" .. tostring(discarded.status.clean))
+                "#,
+                repo.display(),
+                repo.display()
+            ))
+            .expect("discard confirmation should be enforced");
+
+        assert!(!repo.join("scratch.txt").exists());
+        assert_eq!(
+            runtime.take_notifications(),
+            vec![
+                "false:confirm = true".to_string(),
+                "discard:true".to_string(),
+            ]
+        );
+        fs::remove_dir_all(repo).ok();
     }
 
     #[test]

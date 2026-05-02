@@ -123,6 +123,24 @@ impl WokHandler {
             "wok.get_text" => self.remote_get_text(&request.params),
             "wok.get_git_status" => self.remote_get_git_status(&request.params),
             "wok.get_git_diff" => self.remote_get_git_diff(&request.params),
+            "wok.git.stage" => self.remote_git_mutation(
+                &request.params,
+                "stage",
+                false,
+                wok_git::service::stage_path,
+            ),
+            "wok.git.unstage" => self.remote_git_mutation(
+                &request.params,
+                "unstage",
+                false,
+                wok_git::service::unstage_path,
+            ),
+            "wok.git.discard" => self.remote_git_mutation(
+                &request.params,
+                "discard",
+                true,
+                wok_git::service::discard_path,
+            ),
             "wok.create_pane" => self.remote_create_pane(&request.params),
             "wok.close_pane" => self.remote_close_pane(&request.params),
             "wok.set_theme" => self.remote_set_theme(&request.params),
@@ -291,29 +309,7 @@ impl WokHandler {
         };
 
         match wok_git::service::load_status(&pane.current_cwd) {
-            Ok(snapshot) => Ok(json!({
-                "pane_id": pane_id,
-                "is_git_repo": true,
-                "repo_root": snapshot.worktree_root.display().to_string(),
-                "branch": snapshot.branch,
-                "clean": snapshot.is_clean(),
-                "files": snapshot.files.into_iter().map(|file| {
-                    json!({
-                        "path": file.path,
-                        "old_path": file.old_path,
-                        "index_status": file.index_status.to_string(),
-                        "worktree_status": file.worktree_status.to_string(),
-                        "status_text": file.status_text().to_string(),
-                        "staged_status_text": file.staged_status_text().to_string(),
-                        "unstaged_status_text": file.unstaged_status_text().to_string(),
-                        "is_staged": file.is_staged(),
-                        "is_unstaged": file.is_unstaged(),
-                        "additions": file.additions,
-                        "deletions": file.deletions,
-                        "is_binary": file.is_binary,
-                    })
-                }).collect::<Vec<_>>(),
-            })),
+            Ok(snapshot) => Ok(git_status_snapshot_json(pane_id, snapshot)),
             Err(wok_git::service::GitServiceError::NotGitRepository(_)) => Ok(json!({
                 "pane_id": pane_id,
                 "is_git_repo": false,
@@ -326,6 +322,54 @@ impl WokHandler {
                 "failed to load git status: {error}"
             ))),
         }
+    }
+
+    fn remote_git_mutation(
+        &self,
+        params: &Value,
+        action: &'static str,
+        require_confirm: bool,
+        apply: fn(&std::path::Path, &str) -> Result<(), wok_git::service::GitServiceError>,
+    ) -> Result<Value, RpcError> {
+        let path = jsonrpc_params::jsonrpc_string_param(params, 0, "path")
+            .map_err(RpcError::invalid_params)?;
+        if path.trim().is_empty() {
+            return Err(RpcError::invalid_params("path must not be empty"));
+        }
+        let pane_id = jsonrpc_params::jsonrpc_optional_u64_param(params, 1, "pane_id")
+            .or_else(|| self.active_pane_id())
+            .ok_or_else(|| RpcError::server_error("no active pane"))?;
+        if require_confirm
+            && !jsonrpc_params::jsonrpc_optional_bool_param(params, 2, "confirm").unwrap_or(false)
+        {
+            return Err(RpcError::invalid_params(format!(
+                "wok.git.{action} requires confirm=true"
+            )));
+        }
+        let Some(pane) = self.panes.get(&pane_id) else {
+            return Err(RpcError::server_error(format!("pane {pane_id} not found")));
+        };
+
+        apply(&pane.current_cwd, &path).map_err(|error| match error {
+            wok_git::service::GitServiceError::NotGitRepository(_) => {
+                RpcError::server_error("not in a Git repository")
+            }
+            error => RpcError::server_error(format!("failed to {action} {path}: {error}")),
+        })?;
+        self.git_status_bar_cache
+            .borrow_mut()
+            .remove(&pane.current_cwd);
+        let status = wok_git::service::load_status(&pane.current_cwd).map_err(|error| {
+            RpcError::server_error(format!("{action} changed {path}; refresh failed: {error}"))
+        })?;
+
+        Ok(json!({
+            "ok": true,
+            "pane_id": pane_id,
+            "action": action,
+            "path": path,
+            "status": git_status_snapshot_json(pane_id, status),
+        }))
     }
 
     fn remote_get_git_diff(&self, params: &Value) -> Result<Value, RpcError> {
@@ -547,6 +591,35 @@ impl WokHandler {
             "yes": yes,
         }))
     }
+}
+
+fn git_status_snapshot_json(
+    pane_id: PaneId,
+    snapshot: wok_git::service::GitStatusSnapshot,
+) -> Value {
+    json!({
+        "pane_id": pane_id,
+        "is_git_repo": true,
+        "repo_root": snapshot.worktree_root.display().to_string(),
+        "branch": snapshot.branch,
+        "clean": snapshot.is_clean(),
+        "files": snapshot.files.into_iter().map(|file| {
+            json!({
+                "path": file.path,
+                "old_path": file.old_path,
+                "index_status": file.index_status.to_string(),
+                "worktree_status": file.worktree_status.to_string(),
+                "status_text": file.status_text().to_string(),
+                "staged_status_text": file.staged_status_text().to_string(),
+                "unstaged_status_text": file.unstaged_status_text().to_string(),
+                "is_staged": file.is_staged(),
+                "is_unstaged": file.is_unstaged(),
+                "additions": file.additions,
+                "deletions": file.deletions,
+                "is_binary": file.is_binary,
+            })
+        }).collect::<Vec<_>>(),
+    })
 }
 
 fn git_file_diff_json(pane_id: Option<PaneId>, diff: wok_git::service::GitFileDiff) -> Value {

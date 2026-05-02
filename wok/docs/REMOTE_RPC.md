@@ -101,6 +101,34 @@ This method is read-only and shells out to local `git` for the pane's current wo
 
 This method is read-only and combines staged plus unstaged `git diff` hunks for the requested file.
 
+### `wok.git.stage`
+
+- Params:
+  - `path` (`string`, required; repository-relative file path)
+  - `pane_id` (`u64`, optional; defaults to active pane)
+- Response: `{ok, pane_id, action, path, status}`
+
+Stages the path with `git add -- <path>` and returns a refreshed Git status snapshot.
+
+### `wok.git.unstage`
+
+- Params:
+  - `path` (`string`, required; repository-relative file path)
+  - `pane_id` (`u64`, optional; defaults to active pane)
+- Response: `{ok, pane_id, action, path, status}`
+
+Removes the path from the index with `git restore --staged -- <path>` and returns a refreshed Git status snapshot.
+
+### `wok.git.discard`
+
+- Params:
+  - `path` (`string`, required; repository-relative file path)
+  - `pane_id` (`u64`, optional; defaults to active pane)
+  - `confirm` (`bool`, required and must be `true`)
+- Response: `{ok, pane_id, action, path, status}`
+
+Discards tracked staged/unstaged changes or removes an untracked path. This method rejects requests unless `confirm=true` is supplied.
+
 ### `wok.get_failure_summary`
 
 - Params:

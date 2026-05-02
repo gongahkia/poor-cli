@@ -130,6 +130,19 @@
 ---@field cwd string?                         Directory to inspect; defaults to the active pane cwd.
 ---@since 1.0.0
 
+---@class wok.GitMutation
+---@field ok boolean
+---@field action "stage"|"unstage"|"discard"
+---@field path string
+---@field status wok.GitStatus
+---@since 1.0.0
+
+---@class wok.GitMutationOptions
+---@field path string                         Repository-relative file path.
+---@field cwd string?                         Directory to inspect; defaults to the active pane cwd.
+---@field confirm boolean?                    Required for discard.
+---@since 1.0.0
+
 ---@class wok.GitDiffRow
 ---@field kind "hunk"|"context"|"addition"|"deletion"|"collapsed"
 ---@field old_line_number integer?
@@ -416,6 +429,24 @@ function wok.git.status(options) end
 ---@return wok.GitDiff
 ---@since 1.0.0
 function wok.git.diff(path_or_options) end
+
+---Stage one repository-relative path.
+---@param path_or_options string|wok.GitMutationOptions
+---@return wok.GitMutation
+---@since 1.0.0
+function wok.git.stage(path_or_options) end
+
+---Unstage one repository-relative path.
+---@param path_or_options string|wok.GitMutationOptions
+---@return wok.GitMutation
+---@since 1.0.0
+function wok.git.unstage(path_or_options) end
+
+---Discard local changes for one path. Requires `confirm = true`.
+---@param options wok.GitMutationOptions
+---@return wok.GitMutation
+---@since 1.0.0
+function wok.git.discard(options) end
 
 -- =====================================================================
 --  Tabs

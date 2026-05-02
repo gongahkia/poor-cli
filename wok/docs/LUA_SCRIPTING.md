@@ -60,7 +60,7 @@ The `wok.keymap(...)` name is an alias for `wok.bind_key(...)`.
 | `wok.window` | `set_title`, `toggle_fullscreen`, `set_opacity` |
 | `wok.history` | `entries`, `search` |
 | `wok.blocks` | `list` |
-| `wok.git` | `status`, `diff` |
+| `wok.git` | `status`, `diff`, `stage`, `unstage`, `discard` |
 | `wok.fs` | `read`, `write`, `exists`, `list` (sandboxed) |
 
 ---
@@ -312,6 +312,23 @@ Returns `{ is_git_repo, repo_root, branch, path, additions, deletions, rows }`. 
 Each row: `{ kind, old_line_number, new_line_number, old_text, new_text, text }`, where `kind` is `hunk`, `context`, `addition`, `deletion`, or `collapsed`.
 
 The same changed-file list is available in the app via the **Git Changes** palette action (`git_changes`). The palette can preview a diff, stage unstaged changes, unstage indexed changes, or discard local edits for a path. Use **Git Worktrees** (`git_worktrees`) to switch the active pane into another worktree for the same repository.
+
+### `wok.git.stage(path | options)`
+
+Stages one repository-relative path and returns `{ ok, action, path, status }`, where `status` is the refreshed `wok.git.status()` snapshot.
+
+```lua
+wok.git.stage("src/lib.rs")
+wok.git.unstage({ path = "src/lib.rs", cwd = "/repo" })
+```
+
+### `wok.git.discard(options)`
+
+Discards local edits for one repository-relative path and returns `{ ok, action, path, status }`. This is destructive, so `confirm = true` is required.
+
+```lua
+wok.git.discard({ path = "scratch.txt", confirm = true })
+```
 
 ### `wok.pane_api.info()`
 

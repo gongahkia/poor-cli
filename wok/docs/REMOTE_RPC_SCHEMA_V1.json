@@ -49,6 +49,25 @@
         "pane_id:u64?"
       ]
     },
+    "wok.git.stage": {
+      "params": [
+        "path:string",
+        "pane_id:u64?"
+      ]
+    },
+    "wok.git.unstage": {
+      "params": [
+        "path:string",
+        "pane_id:u64?"
+      ]
+    },
+    "wok.git.discard": {
+      "params": [
+        "path:string",
+        "pane_id:u64?",
+        "confirm:bool"
+      ]
+    },
     "wok.create_pane": {
       "params": [
         "direction:string?"

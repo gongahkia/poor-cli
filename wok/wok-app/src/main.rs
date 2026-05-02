@@ -1,5 +1,6 @@
 //! Wok terminal emulator entry point.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
@@ -445,6 +446,7 @@ const REMOTE_RPC_SCHEMA_VERSION: &str = "1.0.0";
 const MAX_GLOBAL_SEARCH_LINES: usize = 50_000;
 const MAX_DIFF_INPUT_LINES: usize = 1_200;
 const MAX_DIFF_ENTRIES: usize = 8_000;
+const STATUS_BAR_GIT_CACHE_TTL: Duration = Duration::from_secs(2);
 
 fn attached_mode_blocks_workspace_effect(effect: &WorkspaceEffect) -> bool {
     matches!(
@@ -458,6 +460,12 @@ struct StatusBarSegments {
     left: Vec<StatusSegment>,
     center: Vec<StatusSegment>,
     right: Vec<StatusSegment>,
+}
+
+#[derive(Clone)]
+struct GitStatusBarCacheEntry {
+    fetched_at: Instant,
+    text: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -773,6 +781,7 @@ struct WokHandler {
     settings_editor: Option<SettingsEditorState>,
     failure_trend_bucket_ms: u64,
     status_bar_state: StatusBarState,
+    git_status_bar_cache: RefCell<HashMap<PathBuf, GitStatusBarCacheEntry>>,
     status_bar_refresh_interval: Duration,
     last_status_bar_refresh: Instant,
     hovered_link: Option<String>,
@@ -889,6 +898,7 @@ impl WokHandler {
             settings_editor: None,
             failure_trend_bucket_ms: DEFAULT_FAILURE_TREND_BUCKET_MS,
             status_bar_state: StatusBarState::default(),
+            git_status_bar_cache: RefCell::new(HashMap::new()),
             status_bar_refresh_interval: Duration::from_secs(5),
             last_status_bar_refresh: Instant::now(),
             hovered_link: None,
@@ -969,27 +979,31 @@ impl WokHandler {
     fn compose_status_bar_segments(&self, pane: &PaneRuntime) -> StatusBarSegments {
         let mut state = self.status_bar_state.clone();
         state.shell = pane.app.config.shell.to_string();
-        state.cwd = pane
+        state.cwd = if !pane.current_cwd.as_os_str().is_empty() {
+            pane.current_cwd.clone()
+        } else {
+            pane.app
+                .block_manager
+                .blocks
+                .last()
+                .map(|block| block.cwd.clone())
+                .filter(|cwd| !cwd.as_os_str().is_empty())
+                .unwrap_or_else(|| PathBuf::from("~"))
+        };
+        state.git_branch = pane
             .app
             .block_manager
             .blocks
             .last()
-            .map(|block| block.cwd.clone())
-            .filter(|cwd| !cwd.as_os_str().is_empty())
-            .unwrap_or_else(|| PathBuf::from("~"));
-        state.git_branch = pane.app.block_manager.blocks.last().and_then(|block| {
-            block
-                .git_branch
-                .clone()
-                .or_else(|| wok_ui::status_bar::detect_git_branch(&state.cwd))
-        });
+            .and_then(|block| block.git_branch.clone())
+            .or_else(|| wok_ui::status_bar::detect_git_branch(&state.cwd));
 
         let mut left = vec![
             StatusSegment::plain(state.cwd.display().to_string()),
             StatusSegment::plain(state.shell.clone()),
         ];
-        if let Some(branch) = state.git_branch.as_ref() {
-            left.push(StatusSegment::plain(format!("git:{branch}")));
+        if let Some(git_text) = self.status_bar_git_text(&state.cwd, state.git_branch.as_deref()) {
+            left.push(StatusSegment::plain(git_text));
         }
         left.extend(state.custom_left.clone());
 
@@ -1034,6 +1048,37 @@ impl WokHandler {
             center,
             right,
         }
+    }
+
+    fn status_bar_git_text(&self, cwd: &PathBuf, fallback_branch: Option<&str>) -> Option<String> {
+        if let Some(entry) = self.git_status_bar_cache.borrow().get(cwd) {
+            if entry.fetched_at.elapsed() < STATUS_BAR_GIT_CACHE_TTL {
+                return entry.text.clone();
+            }
+        }
+
+        let text = match wok_git::service::load_status(cwd) {
+            Ok(snapshot) => snapshot
+                .branch
+                .as_deref()
+                .or(fallback_branch)
+                .map(|branch| git_status_bar_text(branch, snapshot.files.len())),
+            Err(wok_git::service::GitServiceError::NotGitRepository(_)) => {
+                fallback_branch.map(|branch| git_status_bar_text(branch, 0))
+            }
+            Err(error) => {
+                warn!("failed to load Git status for status bar: {error}");
+                fallback_branch.map(|branch| git_status_bar_text(branch, 0))
+            }
+        };
+        self.git_status_bar_cache.borrow_mut().insert(
+            cwd.clone(),
+            GitStatusBarCacheEntry {
+                fetched_at: Instant::now(),
+                text: text.clone(),
+            },
+        );
+        text
     }
 
     fn should_activate_owned_input(pane: &PaneRuntime) -> bool {
@@ -5149,11 +5194,20 @@ impl WokHandler {
                             self.apply_git_file_action(&path, GitPaletteFileAction::Unstage);
                         }
                         PaletteAction::GitDiscardFile(path) => {
+                            self.open_git_discard_confirmation(&path);
+                        }
+                        PaletteAction::GitConfirmDiscardFile(path) => {
                             if let Some(active_pane) = self.active_pane_mut() {
                                 active_pane.app.close_command_palette();
                                 active_pane.app.input_mode = InputMode::OwnedInput;
                             }
                             self.apply_git_file_action(&path, GitPaletteFileAction::Discard);
+                        }
+                        PaletteAction::Dismiss => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
                         }
                         PaletteAction::ChangeDirectory(path) => {
                             if let Some(active_pane) = self.active_pane_mut() {
@@ -5794,11 +5848,25 @@ impl WokHandler {
         &self,
         snapshot: wok_git::service::GitStatusSnapshot,
     ) -> Vec<PaletteEntry> {
-        snapshot
-            .files
-            .into_iter()
-            .flat_map(git_change_palette_entries_for_file)
-            .collect()
+        git_changes_palette_entries_from_snapshot(snapshot)
+    }
+
+    fn open_git_discard_confirmation(&mut self, path: &str) {
+        let Some(pane_id) = self.active_pane_id() else {
+            self.status_message = Some("no active pane".to_string());
+            return;
+        };
+        let entries = git_discard_confirmation_entries(path);
+        if let Some(active_pane) = self.panes.get_mut(&pane_id) {
+            active_pane.app.global_search.deactivate();
+            active_pane.app.command_search = None;
+            active_pane.app.block_query = None;
+            active_pane.app.quick_select.dismiss();
+            active_pane.app.input_mode = InputMode::CommandPalette;
+            active_pane.app.command_palette.open(entries);
+        }
+        self.status_message = Some(format!("Confirm discard for {path}"));
+        self.needs_redraw = true;
     }
 
     fn apply_git_file_action(&mut self, path: &str, action: GitPaletteFileAction) {
@@ -5831,8 +5899,8 @@ impl WokHandler {
             return;
         }
 
-        let entries = match wok_git::service::load_status(&cwd) {
-            Ok(snapshot) => self.build_git_changes_palette_entries(snapshot),
+        let refresh = match wok_git::service::load_status(&cwd) {
+            Ok(snapshot) => git_changes_refresh_after_action(snapshot),
             Err(error) => {
                 self.status_message = Some(format!(
                     "{} {path}; failed to refresh Git changes: {error}",
@@ -5843,21 +5911,23 @@ impl WokHandler {
             }
         };
 
-        if entries.is_empty() {
-            self.status_message = Some("Git working tree is clean".to_string());
-            self.needs_redraw = true;
-            return;
+        match refresh {
+            GitChangesRefresh::Clean => {
+                self.status_message = Some("Git working tree is clean".to_string());
+            }
+            GitChangesRefresh::Entries(entries) => {
+                if let Some(active_pane) = self.panes.get_mut(&pane_id) {
+                    active_pane.app.global_search.deactivate();
+                    active_pane.app.command_search = None;
+                    active_pane.app.block_query = None;
+                    active_pane.app.quick_select.dismiss();
+                    active_pane.app.input_mode = InputMode::CommandPalette;
+                    active_pane.app.command_palette.open(entries);
+                }
+                self.status_message = Some(format!("{} {path}", action.past_tense()));
+            }
         }
-
-        if let Some(active_pane) = self.panes.get_mut(&pane_id) {
-            active_pane.app.global_search.deactivate();
-            active_pane.app.command_search = None;
-            active_pane.app.block_query = None;
-            active_pane.app.quick_select.dismiss();
-            active_pane.app.input_mode = InputMode::CommandPalette;
-            active_pane.app.command_palette.open(entries);
-        }
-        self.status_message = Some(format!("{} {path}", action.past_tense()));
+        self.git_status_bar_cache.borrow_mut().remove(&cwd);
         self.needs_redraw = true;
     }
 
@@ -8524,6 +8594,9 @@ fn remote_rpc_methods() -> &'static [&'static str] {
         "wok.get_text",
         "wok.get_git_status",
         "wok.get_git_diff",
+        "wok.git.stage",
+        "wok.git.unstage",
+        "wok.git.discard",
         "wok.create_pane",
         "wok.close_pane",
         "wok.set_theme",
@@ -8908,6 +8981,33 @@ impl GitPaletteFileAction {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+enum GitChangesRefresh {
+    Clean,
+    Entries(Vec<PaletteEntry>),
+}
+
+fn git_changes_palette_entries_from_snapshot(
+    snapshot: wok_git::service::GitStatusSnapshot,
+) -> Vec<PaletteEntry> {
+    snapshot
+        .files
+        .into_iter()
+        .flat_map(git_change_palette_entries_for_file)
+        .collect()
+}
+
+fn git_changes_refresh_after_action(
+    snapshot: wok_git::service::GitStatusSnapshot,
+) -> GitChangesRefresh {
+    let entries = git_changes_palette_entries_from_snapshot(snapshot);
+    if entries.is_empty() {
+        GitChangesRefresh::Clean
+    } else {
+        GitChangesRefresh::Entries(entries)
+    }
+}
+
 fn git_change_palette_entries_for_file(file: wok_git::status::GitStatusFile) -> Vec<PaletteEntry> {
     let status = file.status_text();
     let description = git_status_file_description(&file);
@@ -8949,6 +9049,25 @@ fn git_change_palette_entries_for_file(file: wok_git::status::GitStatusFile) -> 
     }
 
     entries
+}
+
+fn git_discard_confirmation_entries(path: &str) -> Vec<PaletteEntry> {
+    vec![
+        PaletteEntry {
+            label: format!("Confirm discard {path}"),
+            description: "Deletes unstaged edits or removes an untracked file".to_string(),
+            category: PaletteCategory::GitFile,
+            score: 0.0,
+            action: PaletteAction::GitConfirmDiscardFile(path.to_string()),
+        },
+        PaletteEntry {
+            label: "Cancel".to_string(),
+            description: "Return to the terminal without discarding changes".to_string(),
+            category: PaletteCategory::GitFile,
+            score: 0.0,
+            action: PaletteAction::Dismiss,
+        },
+    ]
 }
 
 fn git_worktree_label(worktree: &wok_git::service::GitWorktree) -> String {
@@ -8995,6 +9114,14 @@ fn shell_quote_path(path: &str) -> String {
 
 fn cd_command_for_path(path: &str) -> String {
     format!("cd {}\r", shell_quote_path(path))
+}
+
+fn git_status_bar_text(branch: &str, dirty_count: usize) -> String {
+    if dirty_count == 0 {
+        format!("git:{branch}")
+    } else {
+        format!("git:{branch} +{dirty_count}")
+    }
 }
 
 fn git_status_file_description(file: &wok_git::status::GitStatusFile) -> String {
@@ -9361,6 +9488,52 @@ mod tests {
     }
 
     #[test]
+    fn test_git_discard_confirmation_entries_require_confirm_action() {
+        let entries = git_discard_confirmation_entries("src/main.rs");
+
+        assert_eq!(entries[0].label, "Confirm discard src/main.rs");
+        assert_eq!(
+            entries[0].action,
+            PaletteAction::GitConfirmDiscardFile("src/main.rs".to_string())
+        );
+        assert_eq!(entries[1].label, "Cancel");
+        assert_eq!(entries[1].action, PaletteAction::Dismiss);
+    }
+
+    #[test]
+    fn test_git_changes_refresh_reports_clean_or_entries() {
+        let clean = wok_git::service::GitStatusSnapshot {
+            worktree_root: std::path::PathBuf::from("/repo"),
+            branch: Some("main".to_string()),
+            files: Vec::new(),
+        };
+        assert_eq!(
+            git_changes_refresh_after_action(clean),
+            GitChangesRefresh::Clean
+        );
+
+        let dirty = wok_git::service::GitStatusSnapshot {
+            worktree_root: std::path::PathBuf::from("/repo"),
+            branch: Some("main".to_string()),
+            files: vec![wok_git::status::GitStatusFile {
+                path: "src/main.rs".to_string(),
+                old_path: None,
+                index_status: ' ',
+                worktree_status: 'M',
+                additions: None,
+                deletions: None,
+                is_binary: false,
+            }],
+        };
+        let GitChangesRefresh::Entries(entries) = git_changes_refresh_after_action(dirty) else {
+            panic!("dirty snapshot should reopen palette entries");
+        };
+        assert!(entries.iter().any(|entry| {
+            entry.action == PaletteAction::GitStageFile("src/main.rs".to_string())
+        }));
+    }
+
+    #[test]
     fn test_git_worktree_entries_mark_current_worktree() {
         let worktree = wok_git::service::GitWorktree {
             path: std::path::PathBuf::from("/repo/main"),
@@ -9394,6 +9567,12 @@ mod tests {
             cd_command_for_path("/tmp/work tree"),
             "cd '/tmp/work tree'\r"
         );
+    }
+
+    #[test]
+    fn test_git_status_bar_text_includes_dirty_count() {
+        assert_eq!(git_status_bar_text("main", 0), "git:main");
+        assert_eq!(git_status_bar_text("feature/x", 3), "git:feature/x +3");
     }
 
     #[test]
