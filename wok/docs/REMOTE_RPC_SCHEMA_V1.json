@@ -38,6 +38,11 @@
         "end_row:u64"
       ]
     },
+    "wok.get_git_status": {
+      "params": [
+        "pane_id:u64?"
+      ]
+    },
     "wok.create_pane": {
       "params": [
         "direction:string?"

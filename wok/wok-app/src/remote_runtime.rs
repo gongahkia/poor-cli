@@ -121,6 +121,7 @@ impl WokHandler {
             "wok.run_action" => self.remote_run_action(&request.params),
             "wok.get_blocks" => self.remote_get_blocks(&request.params),
             "wok.get_text" => self.remote_get_text(&request.params),
+            "wok.get_git_status" => self.remote_get_git_status(&request.params),
             "wok.create_pane" => self.remote_create_pane(&request.params),
             "wok.close_pane" => self.remote_close_pane(&request.params),
             "wok.set_theme" => self.remote_set_theme(&request.params),
@@ -278,6 +279,52 @@ impl WokHandler {
                 })
                 .collect(),
         ))
+    }
+
+    fn remote_get_git_status(&self, params: &Value) -> Result<Value, RpcError> {
+        let pane_id = jsonrpc_params::jsonrpc_optional_u64_param(params, 0, "pane_id")
+            .or_else(|| self.active_pane_id())
+            .ok_or_else(|| RpcError::server_error("no active pane"))?;
+        let Some(pane) = self.panes.get(&pane_id) else {
+            return Err(RpcError::server_error(format!("pane {pane_id} not found")));
+        };
+
+        match wok_git::service::load_status(&pane.current_cwd) {
+            Ok(snapshot) => Ok(json!({
+                "pane_id": pane_id,
+                "is_git_repo": true,
+                "repo_root": snapshot.worktree_root.display().to_string(),
+                "branch": snapshot.branch,
+                "clean": snapshot.is_clean(),
+                "files": snapshot.files.into_iter().map(|file| {
+                    json!({
+                        "path": file.path,
+                        "old_path": file.old_path,
+                        "index_status": file.index_status.to_string(),
+                        "worktree_status": file.worktree_status.to_string(),
+                        "status_text": file.status_text().to_string(),
+                        "staged_status_text": file.staged_status_text().to_string(),
+                        "unstaged_status_text": file.unstaged_status_text().to_string(),
+                        "is_staged": file.is_staged(),
+                        "is_unstaged": file.is_unstaged(),
+                        "additions": file.additions,
+                        "deletions": file.deletions,
+                        "is_binary": file.is_binary,
+                    })
+                }).collect::<Vec<_>>(),
+            })),
+            Err(wok_git::service::GitServiceError::NotGitRepository(_)) => Ok(json!({
+                "pane_id": pane_id,
+                "is_git_repo": false,
+                "repo_root": null,
+                "branch": null,
+                "clean": true,
+                "files": [],
+            })),
+            Err(error) => Err(RpcError::server_error(format!(
+                "failed to load git status: {error}"
+            ))),
+        }
     }
 
     fn remote_create_pane(&mut self, params: &Value) -> Result<Value, RpcError> {

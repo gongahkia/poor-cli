@@ -29,6 +29,7 @@ wok-watcher = { path = "../wok-watcher" }
 wok-input-classifier = { path = "../wok-input-classifier" }
 wok-keymap = { path = "../wok-keymap" }
 wok-ui-core = { path = "../wok-ui-core" }
+wok-git = { path = "../wok-git" }
 winit = "0.30"
 wgpu = "24"
 pollster = "0.4"

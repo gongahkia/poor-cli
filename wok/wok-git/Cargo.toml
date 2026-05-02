@@ -7,3 +7,5 @@ license.workspace = true
 description = "Git parsing primitives for Wok"
 
 [dependencies]
+thiserror = "2"
+wok-process = { path = "../wok-process" }

@@ -4601,6 +4601,7 @@ dependencies = [
  "wok-blocks",
  "wok-channels",
  "wok-features",
+ "wok-git",
  "wok-input",
  "wok-input-classifier",
  "wok-keymap",
@@ -4643,6 +4644,10 @@ version = "0.1.0"
 [[package]]
 name = "wok-git"
 version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.18",
+ "wok-process",
+]
 
 [[package]]
 name = "wok-input"
