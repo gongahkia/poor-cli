@@ -8449,6 +8449,7 @@ fn remote_rpc_methods() -> &'static [&'static str] {
         "wok.get_blocks",
         "wok.get_text",
         "wok.get_git_status",
+        "wok.get_git_diff",
         "wok.create_pane",
         "wok.close_pane",
         "wok.set_theme",

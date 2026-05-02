@@ -43,6 +43,12 @@
         "pane_id:u64?"
       ]
     },
+    "wok.get_git_diff": {
+      "params": [
+        "path:string",
+        "pane_id:u64?"
+      ]
+    },
     "wok.create_pane": {
       "params": [
         "direction:string?"

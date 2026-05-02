@@ -86,6 +86,21 @@ When `WOK_RPC_TOKEN` is set in the Wok server process environment, all methods e
 
 This method is read-only and shells out to local `git` for the pane's current working directory.
 
+### `wok.get_git_diff`
+
+- Params:
+  - `path` (`string`, required; repository-relative file path)
+  - `pane_id` (`u64`, optional; defaults to active pane)
+- Response:
+  - `is_git_repo` (`bool`)
+  - `repo_root` (`string | null`)
+  - `branch` (`string | null`)
+  - `path` (`string`)
+  - `additions` / `deletions` (`u64`)
+  - `rows` array of `{kind, old_line_number, new_line_number, old_text, new_text, text}`
+
+This method is read-only and combines staged plus unstaged `git diff` hunks for the requested file.
+
 ### `wok.get_failure_summary`
 
 - Params:

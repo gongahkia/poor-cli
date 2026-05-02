@@ -60,7 +60,7 @@ The `wok.keymap(...)` name is an alias for `wok.bind_key(...)`.
 | `wok.window` | `set_title`, `toggle_fullscreen`, `set_opacity` |
 | `wok.history` | `entries`, `search` |
 | `wok.blocks` | `list` |
-| `wok.git` | `status` |
+| `wok.git` | `status`, `diff` |
 | `wok.fs` | `read`, `write`, `exists`, `list` (sandboxed) |
 
 ---
@@ -295,6 +295,21 @@ end
 Returns `{ is_git_repo, repo_root, branch, clean, files }`. Outside a repository it returns `{ is_git_repo = false, clean = true, files = {} }`.
 
 Each file: `{ path, old_path, index_status, worktree_status, status_text, staged_status_text, unstaged_status_text, is_staged, is_unstaged, additions, deletions, is_binary }`.
+
+### `wok.git.diff(path | options)`
+
+Read parsed staged plus unstaged diff rows for one repository-relative file path. Pass a string path or `{ cwd = "/repo", path = "src/lib.rs" }`.
+
+```lua
+local diff = wok.git.diff("src/lib.rs")
+for _, row in ipairs(diff.rows) do
+    print(row.kind, row.old_line_number, row.new_line_number, row.text)
+end
+```
+
+Returns `{ is_git_repo, repo_root, branch, path, additions, deletions, rows }`. Outside a repository it returns `{ is_git_repo = false, path = path, additions = 0, deletions = 0, rows = {} }`.
+
+Each row: `{ kind, old_line_number, new_line_number, old_text, new_text, text }`, where `kind` is `hunk`, `context`, `addition`, `deletion`, or `collapsed`.
 
 The same changed-file list is available in the app via the **Git Changes** palette action (`git_changes`). Selecting a tracked file opens an in-app diff preview. Use **Git Worktrees** (`git_worktrees`) to switch the active pane into another worktree for the same repository.
 

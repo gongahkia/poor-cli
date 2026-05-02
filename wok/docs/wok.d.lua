@@ -115,6 +115,30 @@
 ---@field is_binary boolean
 ---@since 1.0.0
 
+---@class wok.GitDiff
+---@field is_git_repo boolean
+---@field repo_root string?
+---@field branch string?
+---@field path string
+---@field additions integer
+---@field deletions integer
+---@field rows wok.GitDiffRow[]
+---@since 1.0.0
+
+---@class wok.GitDiffOptions
+---@field path string                         Repository-relative file path.
+---@field cwd string?                         Directory to inspect; defaults to the active pane cwd.
+---@since 1.0.0
+
+---@class wok.GitDiffRow
+---@field kind "hunk"|"context"|"addition"|"deletion"|"collapsed"
+---@field old_line_number integer?
+---@field new_line_number integer?
+---@field old_text string?
+---@field new_text string?
+---@field text string
+---@since 1.0.0
+
 ---@class wok.PanePayload                    Common base of pane-related hook payloads
 ---@field pane_id integer
 ---@field tab_index integer
@@ -386,6 +410,12 @@ wok.git = {}
 ---@return wok.GitStatus
 ---@since 1.0.0
 function wok.git.status(options) end
+
+---Read parsed diff rows for one repository-relative file path.
+---@param path_or_options string|wok.GitDiffOptions
+---@return wok.GitDiff
+---@since 1.0.0
+function wok.git.diff(path_or_options) end
 
 -- =====================================================================
 --  Tabs

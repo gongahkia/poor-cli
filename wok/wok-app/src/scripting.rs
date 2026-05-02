@@ -1119,6 +1119,53 @@ impl LuaRuntime {
             }
         })?;
         git_table.set("status", git_status_fn)?;
+        let snapshot_state_git_diff = self.state.runtime_snapshot.clone();
+        let git_diff_fn = self.lua.create_function(move |lua, options: Value| {
+            let (path, cwd) = match options {
+                Value::String(path) => (path.to_string_lossy().to_string(), None),
+                Value::Table(table) => {
+                    let path = table
+                        .get::<Option<String>>("path")?
+                        .ok_or_else(|| mlua::Error::runtime("wok.git.diff table requires path"))?;
+                    let cwd = table.get::<Option<String>>("cwd")?;
+                    (path, cwd)
+                }
+                _ => {
+                    return Err(mlua::Error::runtime(
+                        "wok.git.diff expects a path string or options table",
+                    ));
+                }
+            };
+            if path.trim().is_empty() {
+                return Err(mlua::Error::runtime("wok.git.diff path is empty"));
+            }
+
+            let cwd = cwd.or_else(|| {
+                snapshot_state_git_diff
+                    .lock()
+                    .unwrap()
+                    .get("pane")
+                    .and_then(|pane| pane.get("cwd"))
+                    .and_then(|cwd| cwd.as_str())
+                    .filter(|cwd| !cwd.is_empty())
+                    .map(ToOwned::to_owned)
+            });
+
+            let Some(cwd) = cwd else {
+                return empty_git_diff_table(lua, path);
+            };
+
+            match wok_git::service::load_file_diff(Path::new(&cwd), &path) {
+                Ok(diff) => git_diff_table(lua, diff),
+                Err(wok_git::service::GitServiceError::NotGitRepository(_)) => {
+                    empty_git_diff_table(lua, path)
+                }
+                Err(error) => Err(mlua::Error::external(format!(
+                    "wok.git.diff failed: {error}"
+                ))),
+            }
+        })?;
+        git_table.set("diff", git_diff_fn)?;
         wok.set("git", git_table)?;
 
         let snapshot_state = self.state.runtime_snapshot.clone();
@@ -1435,6 +1482,51 @@ fn git_status_table(lua: &Lua, snapshot: wok_git::service::GitStatusSnapshot) ->
     Ok(table)
 }
 
+fn empty_git_diff_table(lua: &Lua, path: String) -> LuaResult<Table> {
+    let table = lua.create_table()?;
+    table.set("is_git_repo", false)?;
+    table.set("path", path)?;
+    table.set("additions", 0)?;
+    table.set("deletions", 0)?;
+    table.set("rows", lua.create_table()?)?;
+    Ok(table)
+}
+
+fn git_diff_table(lua: &Lua, diff: wok_git::service::GitFileDiff) -> LuaResult<Table> {
+    let table = lua.create_table()?;
+    table.set("is_git_repo", true)?;
+    table.set("repo_root", diff.worktree_root.display().to_string())?;
+    table.set("branch", diff.branch)?;
+    table.set("path", diff.path)?;
+    table.set("additions", diff.additions)?;
+    table.set("deletions", diff.deletions)?;
+
+    let rows = lua.create_table()?;
+    for (index, row) in diff.rows.into_iter().enumerate() {
+        let item = lua.create_table()?;
+        item.set("kind", git_diff_kind_name(row.kind))?;
+        item.set("old_line_number", row.old_line_number)?;
+        item.set("new_line_number", row.new_line_number)?;
+        item.set("old_text", row.old_text)?;
+        item.set("new_text", row.new_text)?;
+        item.set("text", row.text)?;
+        rows.set(index + 1, item)?;
+    }
+    table.set("rows", rows)?;
+
+    Ok(table)
+}
+
+fn git_diff_kind_name(kind: wok_git::diff::DiffRowKind) -> &'static str {
+    match kind {
+        wok_git::diff::DiffRowKind::Hunk => "hunk",
+        wok_git::diff::DiffRowKind::Context => "context",
+        wok_git::diff::DiffRowKind::Addition => "addition",
+        wok_git::diff::DiffRowKind::Deletion => "deletion",
+        wok_git::diff::DiffRowKind::Collapsed => "collapsed",
+    }
+}
+
 fn parse_system_notification(value: Value) -> LuaResult<SystemNotificationRequest> {
     match value {
         Value::String(message) => Ok(SystemNotificationRequest {
@@ -1666,6 +1758,70 @@ mod tests {
         assert_eq!(
             runtime.take_notifications(),
             vec!["false:true:0".to_string()]
+        );
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn test_git_diff_uses_active_pane_cwd() {
+        let repo = unique_temp_dir("git-diff");
+        fs::create_dir_all(&repo).expect("repo dir should be created");
+        run_git(&repo, &["init"]);
+        run_git(&repo, &["config", "user.email", "wok@example.test"]);
+        run_git(&repo, &["config", "user.name", "Wok Test"]);
+        fs::write(repo.join("tracked.txt"), "old\nsame\n").expect("file should be written");
+        run_git(&repo, &["add", "tracked.txt"]);
+        run_git(&repo, &["commit", "-m", "initial"]);
+        fs::write(repo.join("tracked.txt"), "new\nsame\n").expect("file should be modified");
+
+        let mut runtime = LuaRuntime::new().expect("lua runtime");
+        runtime.init(&std::env::temp_dir()).expect("lua init");
+        runtime.set_runtime_snapshot(serde_json::json!({
+            "pane": { "cwd": repo },
+        }));
+        runtime
+            .exec(
+                r#"
+                local diff = wok.git.diff("tracked.txt")
+                wok.notify(
+                    tostring(diff.is_git_repo) .. ":" ..
+                    diff.path .. ":" ..
+                    tostring(diff.additions) .. ":" ..
+                    tostring(diff.deletions) .. ":" ..
+                    diff.rows[2].kind .. ":" ..
+                    diff.rows[3].kind
+                )
+            "#,
+            )
+            .expect("git diff should be readable from lua");
+
+        assert_eq!(
+            runtime.take_notifications(),
+            vec!["true:tracked.txt:1:1:deletion:addition".to_string()]
+        );
+        fs::remove_dir_all(repo).ok();
+    }
+
+    #[test]
+    fn test_git_diff_returns_empty_snapshot_outside_repo() {
+        let dir = unique_temp_dir("diff-non-repo");
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+
+        let mut runtime = LuaRuntime::new().expect("lua runtime");
+        runtime.init(&std::env::temp_dir()).expect("lua init");
+        runtime
+            .exec(&format!(
+                r#"
+                local diff = wok.git.diff({{ cwd = "{}", path = "x.txt" }})
+                wok.notify(tostring(diff.is_git_repo) .. ":" .. diff.path .. ":" .. tostring(#diff.rows))
+                "#,
+                dir.display()
+            ))
+            .expect("non-repo diff should not error");
+
+        assert_eq!(
+            runtime.take_notifications(),
+            vec!["false:x.txt:0".to_string()]
         );
         fs::remove_dir_all(dir).ok();
     }

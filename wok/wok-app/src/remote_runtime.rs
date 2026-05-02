@@ -122,6 +122,7 @@ impl WokHandler {
             "wok.get_blocks" => self.remote_get_blocks(&request.params),
             "wok.get_text" => self.remote_get_text(&request.params),
             "wok.get_git_status" => self.remote_get_git_status(&request.params),
+            "wok.get_git_diff" => self.remote_get_git_diff(&request.params),
             "wok.create_pane" => self.remote_create_pane(&request.params),
             "wok.close_pane" => self.remote_close_pane(&request.params),
             "wok.set_theme" => self.remote_set_theme(&request.params),
@@ -327,6 +328,34 @@ impl WokHandler {
         }
     }
 
+    fn remote_get_git_diff(&self, params: &Value) -> Result<Value, RpcError> {
+        let path = jsonrpc_params::jsonrpc_string_param(params, 0, "path")
+            .map_err(RpcError::invalid_params)?;
+        let pane_id = jsonrpc_params::jsonrpc_optional_u64_param(params, 1, "pane_id")
+            .or_else(|| self.active_pane_id())
+            .ok_or_else(|| RpcError::server_error("no active pane"))?;
+        let Some(pane) = self.panes.get(&pane_id) else {
+            return Err(RpcError::server_error(format!("pane {pane_id} not found")));
+        };
+
+        match wok_git::service::load_file_diff(&pane.current_cwd, &path) {
+            Ok(diff) => Ok(git_file_diff_json(Some(pane_id), diff)),
+            Err(wok_git::service::GitServiceError::NotGitRepository(_)) => Ok(json!({
+                "pane_id": pane_id,
+                "is_git_repo": false,
+                "repo_root": null,
+                "branch": null,
+                "path": path,
+                "additions": 0,
+                "deletions": 0,
+                "rows": [],
+            })),
+            Err(error) => Err(RpcError::server_error(format!(
+                "failed to load git diff: {error}"
+            ))),
+        }
+    }
+
     fn remote_create_pane(&mut self, params: &Value) -> Result<Value, RpcError> {
         if self.window.is_none() {
             return Err(RpcError::server_error("window is not initialized yet"));
@@ -520,6 +549,38 @@ impl WokHandler {
     }
 }
 
+fn git_file_diff_json(pane_id: Option<PaneId>, diff: wok_git::service::GitFileDiff) -> Value {
+    json!({
+        "pane_id": pane_id,
+        "is_git_repo": true,
+        "repo_root": diff.worktree_root.display().to_string(),
+        "branch": diff.branch,
+        "path": diff.path,
+        "additions": diff.additions,
+        "deletions": diff.deletions,
+        "rows": diff.rows.into_iter().map(|row| {
+            json!({
+                "kind": git_diff_row_kind(row.kind),
+                "old_line_number": row.old_line_number,
+                "new_line_number": row.new_line_number,
+                "old_text": row.old_text,
+                "new_text": row.new_text,
+                "text": row.text,
+            })
+        }).collect::<Vec<_>>(),
+    })
+}
+
+fn git_diff_row_kind(kind: wok_git::diff::DiffRowKind) -> &'static str {
+    match kind {
+        wok_git::diff::DiffRowKind::Hunk => "hunk",
+        wok_git::diff::DiffRowKind::Context => "context",
+        wok_git::diff::DiffRowKind::Addition => "addition",
+        wok_git::diff::DiffRowKind::Deletion => "deletion",
+        wok_git::diff::DiffRowKind::Collapsed => "collapsed",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -598,5 +659,32 @@ mod tests {
             json!(REMOTE_RPC_SCHEMA_VERSION)
         );
         assert_eq!(response["result"]["auth_required"], json!(true));
+    }
+
+    #[test]
+    fn git_file_diff_json_serializes_rows() {
+        let payload = git_file_diff_json(
+            Some(9),
+            wok_git::service::GitFileDiff {
+                worktree_root: PathBuf::from("/repo"),
+                branch: Some("main".to_string()),
+                path: "src/lib.rs".to_string(),
+                rows: vec![wok_git::diff::DiffDisplayRow {
+                    kind: wok_git::diff::DiffRowKind::Addition,
+                    old_line_number: None,
+                    new_line_number: Some(7),
+                    old_text: None,
+                    new_text: Some("new".to_string()),
+                    text: "+new".to_string(),
+                }],
+                additions: 1,
+                deletions: 0,
+            },
+        );
+
+        assert_eq!(payload["pane_id"], json!(9));
+        assert_eq!(payload["is_git_repo"], json!(true));
+        assert_eq!(payload["rows"][0]["kind"], json!("addition"));
+        assert_eq!(payload["rows"][0]["new_line_number"], json!(7));
     }
 }
