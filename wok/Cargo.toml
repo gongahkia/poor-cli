@@ -19,6 +19,7 @@ members = [
     "wok-keymap",
     "wok-integration",
     "wok-ui-core",
+    "wok-git",
 ]
 resolver = "2"
 

@@ -89,24 +89,7 @@ impl StatusBarState {
 
 /// Detect git branch from a directory path.
 pub fn detect_git_branch(cwd: &Path) -> Option<String> {
-    let mut dir = cwd.to_path_buf();
-    loop {
-        let head = dir.join(".git").join("HEAD");
-        if head.exists() {
-            if let Ok(content) = std::fs::read_to_string(&head) {
-                let content = content.trim();
-                if let Some(branch) = content.strip_prefix("ref: refs/heads/") {
-                    return Some(branch.to_string());
-                }
-                // Detached HEAD: return short hash
-                return Some(content.chars().take(8).collect());
-            }
-        }
-        if !dir.pop() {
-            break;
-        }
-    }
-    None
+    wok_git::repo::detect_branch(cwd)
 }
 
 /// Status bar renderer.

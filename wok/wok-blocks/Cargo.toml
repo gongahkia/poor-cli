@@ -9,6 +9,7 @@ description = "Block detection, navigation, search, and metadata for Wok termina
 [dependencies]
 wok-terminal = { path = "../wok-terminal" }
 wok-sumtree = { path = "../wok-sumtree" }
+wok-git = { path = "../wok-git" }
 thiserror = "2"
 tracing = "0.1"
 regex = "1"

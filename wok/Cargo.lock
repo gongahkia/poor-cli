@@ -4620,6 +4620,7 @@ dependencies = [
  "regex",
  "thiserror 2.0.18",
  "tracing",
+ "wok-git",
  "wok-sumtree",
  "wok-terminal",
 ]
@@ -4637,6 +4638,10 @@ dependencies = [
 
 [[package]]
 name = "wok-fuzzy"
+version = "0.1.0"
+
+[[package]]
+name = "wok-git"
 version = "0.1.0"
 
 [[package]]
@@ -4744,6 +4749,7 @@ dependencies = [
  "tracing",
  "wok-blocks",
  "wok-fuzzy",
+ "wok-git",
  "wok-input",
  "wok-process",
  "wok-renderer",

@@ -14,6 +14,7 @@ wok-process = { path = "../wok-process" }
 wok-fuzzy = { path = "../wok-fuzzy" }
 wok-watcher = { path = "../wok-watcher" }
 wok-input = { path = "../wok-input" }
+wok-git = { path = "../wok-git" }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 arboard = "3"

@@ -1,6 +1,6 @@
 # Wok Architecture
 
-Wok is a 6-crate Rust workspace implementing a GPU-accelerated workspace terminal. This document describes the current runtime architecture rather than an aspirational one.
+Wok is a Rust workspace implementing a GPU-accelerated workspace terminal. This document describes the current runtime architecture rather than an aspirational one.
 
 ## Crate Graph
 
@@ -12,6 +12,8 @@ Wok is a 6-crate Rust workspace implementing a GPU-accelerated workspace termina
                |  \       |            |
                |   \      |            |
         wok-renderer  wok-terminal --+
+
+        sidecar domain crate: wok-git
 ```
 
 ## Module Map (wok-app)
@@ -94,6 +96,13 @@ Wok treats scrollback rows as the stable identity for block bookkeeping.
 - search, copy, and collapse read from logical buffer snapshots rather than viewport-relative rows
 
 That keeps block boundaries stable after scrolling, search jumps, and resize reflow.
+
+## Git Parsing
+
+Git parsing lives in `wok-git` so future VCS panels, block metadata, RPC payloads,
+and project/worktree flows can share the same pure parser layer. It currently
+handles `git status --porcelain=v1 -z`, `git diff --numstat`, and unified diff
+display rows, including rename normalization and long-context collapsing.
 
 ## Daemon Session Architecture
 

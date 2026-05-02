@@ -87,6 +87,7 @@ Named snapshots are available through Lua action aliases such as `save_session:d
 - `wok-blocks`: block state machine, navigation, block metadata
 - `wok-input`: editor buffer and command history
 - `wok-renderer`: wgpu pipeline, glyph atlas, font rasterization
+- `wok-git`: git status, numstat, and unified-diff parsing
 - `wok-ui`: clipboard, search state, split layout, theme loading
 
 ## Interview Notes

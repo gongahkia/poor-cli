@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
+use wok_git::repo;
 use wok_terminal::terminal::{SemanticEvent, Terminal};
 
 use crate::block::{Block, BlockBuildState, OutputLineEvent};
@@ -22,6 +23,8 @@ pub struct BlockManager {
     index: BlockIndex,
     /// Command text submitted for the next block.
     pending_command_text: Option<String>,
+    /// Latest current working directory reported by the terminal.
+    current_cwd: PathBuf,
     /// Current build state.
     pub state: BlockBuildState,
     /// Parallel sumtree mirror for O(log n) row→boundary queries (gated by
@@ -38,6 +41,7 @@ impl BlockManager {
             ids: BlockIdGenerator::new(),
             index: BlockIndex::new(),
             pending_command_text: None,
+            current_cwd: PathBuf::new(),
             state: BlockBuildState::WaitingForPrompt,
             mirror: ScrollbackMirror::new(),
         }
@@ -90,8 +94,8 @@ impl BlockManager {
                         duration: None,
                         is_collapsed: false,
                         scroll_offset: 0,
-                        cwd: PathBuf::new(),
-                        git_branch: None,
+                        cwd: self.current_cwd.clone(),
+                        git_branch: repo::detect_branch(&self.current_cwd),
                         git_dirty: None,
                         is_bookmarked: false,
                         trigger_highlights: Vec::new(),
@@ -125,9 +129,11 @@ impl BlockManager {
                 }
             }
             SemanticEvent::CwdChanged(path) => {
+                self.current_cwd.clone_from(path);
                 if let BlockBuildState::InOutput { block_id } = &self.state {
                     if let Some(pos) = self.index.position(*block_id) {
                         self.blocks[pos].cwd.clone_from(path);
+                        self.blocks[pos].git_branch = repo::detect_branch(path);
                     }
                 }
             }
@@ -180,6 +186,11 @@ impl BlockManager {
         self.blocks = blocks;
         self.index.rebuild(&self.blocks);
         self.pending_command_text = None;
+        self.current_cwd = self
+            .blocks
+            .last()
+            .map(|block| block.cwd.clone())
+            .unwrap_or_default();
         self.state = BlockBuildState::WaitingForPrompt;
         // rebuild mirror to match restored timeline.
         self.mirror = ScrollbackMirror::new();
@@ -346,7 +357,21 @@ impl Default for BlockManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
     use wok_terminal::terminal::SemanticEvent;
+
+    fn temp_repo(name: &str) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("wok-blocks-{name}-{stamp}"));
+        fs::create_dir_all(path.join(".git")).expect("repo directory should be created");
+        fs::write(path.join(".git").join("HEAD"), "ref: refs/heads/main\n")
+            .expect("HEAD should be written");
+        path
+    }
 
     #[test]
     fn test_single_command_block() {
@@ -522,6 +547,37 @@ mod tests {
         mgr.handle_event(&SemanticEvent::CwdChanged("/tmp".into()));
 
         assert_eq!(mgr.blocks[0].cwd, std::path::PathBuf::from("/tmp"));
+    }
+
+    #[test]
+    fn cwd_before_output_populates_block_git_branch() {
+        let repo = temp_repo("branch");
+        let mut mgr = BlockManager::new();
+        mgr.handle_event(&SemanticEvent::CwdChanged(repo.clone()));
+        mgr.handle_event(&SemanticEvent::PromptStart { row: 0 });
+        mgr.handle_event(&SemanticEvent::CommandStart { row: 1 });
+        mgr.handle_event(&SemanticEvent::OutputStart { row: 2 });
+
+        assert_eq!(mgr.blocks[0].cwd, repo);
+        assert_eq!(mgr.blocks[0].git_branch.as_deref(), Some("main"));
+        fs::remove_dir_all(&mgr.blocks[0].cwd).ok();
+    }
+
+    #[test]
+    fn cwd_during_output_refreshes_block_git_branch() {
+        let repo = temp_repo("refresh");
+        let nested = repo.join("src");
+        fs::create_dir_all(&nested).expect("nested directory should be created");
+
+        let mut mgr = BlockManager::new();
+        mgr.handle_event(&SemanticEvent::PromptStart { row: 0 });
+        mgr.handle_event(&SemanticEvent::CommandStart { row: 1 });
+        mgr.handle_event(&SemanticEvent::OutputStart { row: 2 });
+        mgr.handle_event(&SemanticEvent::CwdChanged(nested.clone()));
+
+        assert_eq!(mgr.blocks[0].cwd, nested);
+        assert_eq!(mgr.blocks[0].git_branch.as_deref(), Some("main"));
+        fs::remove_dir_all(repo).ok();
     }
 
     #[test]
