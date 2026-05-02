@@ -396,6 +396,7 @@ impl WokApp {
                 ));
             }
             Action::GitChanges => {}
+            Action::GitWorktrees => {}
             Action::SearchGlobal => {
                 effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenSearch));
             }

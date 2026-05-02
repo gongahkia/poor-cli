@@ -126,6 +126,7 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
             Some(Action::ToggleWorkspaceInsightsPanel)
         }
         "git_changes" | "git_status" | "changed_files" => Some(Action::GitChanges),
+        "git_worktrees" | "git_worktree" | "worktree_switcher" => Some(Action::GitWorktrees),
         "zoom_in" => Some(Action::ZoomIn),
         "zoom_out" => Some(Action::ZoomOut),
         "zoom_reset" => Some(Action::ZoomReset),
@@ -248,5 +249,9 @@ mod tests {
         );
         assert_eq!(parse_lua_action("git_changes"), Some(Action::GitChanges));
         assert_eq!(parse_lua_action("git_status"), Some(Action::GitChanges));
+        assert_eq!(
+            parse_lua_action("git_worktrees"),
+            Some(Action::GitWorktrees)
+        );
     }
 }

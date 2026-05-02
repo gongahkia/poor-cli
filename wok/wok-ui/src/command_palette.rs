@@ -21,6 +21,8 @@ pub enum PaletteCategory {
     SettingsField,
     /// Git changed-file entries.
     GitFile,
+    /// Git worktree entries.
+    GitWorktree,
 }
 
 /// Action performed when selecting a palette entry.
@@ -40,6 +42,8 @@ pub enum PaletteAction {
     ApplyTheme(String),
     /// Preview the diff for a changed Git file.
     GitFileDiff(String),
+    /// Change the active pane working directory.
+    ChangeDirectory(String),
 }
 
 /// One command palette entry.
@@ -218,6 +222,7 @@ fn category_rank(category: PaletteCategory, workflow_priority: bool) -> u8 {
             PaletteCategory::Keybinding => 6,
             PaletteCategory::SettingsField => 7,
             PaletteCategory::GitFile => 8,
+            PaletteCategory::GitWorktree => 9,
         }
     } else {
         match category {
@@ -226,10 +231,11 @@ fn category_rank(category: PaletteCategory, workflow_priority: bool) -> u8 {
             PaletteCategory::RecentCommand => 2,
             PaletteCategory::LuaCommand => 3,
             PaletteCategory::GitFile => 4,
-            PaletteCategory::FilePath => 5,
-            PaletteCategory::Theme => 6,
-            PaletteCategory::Keybinding => 7,
-            PaletteCategory::SettingsField => 8,
+            PaletteCategory::GitWorktree => 5,
+            PaletteCategory::FilePath => 6,
+            PaletteCategory::Theme => 7,
+            PaletteCategory::Keybinding => 8,
+            PaletteCategory::SettingsField => 9,
         }
     }
 }

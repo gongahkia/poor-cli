@@ -101,6 +101,8 @@ pub enum Action {
     ToggleWorkspaceInsightsPanel,
     /// Open changed files for the active Git repository.
     GitChanges,
+    /// Open Git worktrees for the active repository.
+    GitWorktrees,
     /// Global terminal search.
     SearchGlobal,
     /// Enter vi navigation mode.
@@ -540,6 +542,13 @@ impl Default for KeybindingConfig {
             },
             Action::GitChanges,
         );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('g'),
+                modifiers: Modifiers { shift: true, ..pma },
+            },
+            Action::GitWorktrees,
+        );
 
         // Search
         bindings.insert(
@@ -847,6 +856,22 @@ mod tests {
         assert_eq!(
             config.resolve(&combo, &Context::Terminal),
             Some(&Action::GitChanges)
+        );
+    }
+
+    #[test]
+    fn test_git_worktrees_binding_exists() {
+        let config = KeybindingConfig::default();
+        let combo = KeyCombo {
+            key: KeyAction::Char('g'),
+            modifiers: Modifiers {
+                shift: true,
+                ..platform_mod_alt()
+            },
+        };
+        assert_eq!(
+            config.resolve(&combo, &Context::Terminal),
+            Some(&Action::GitWorktrees)
         );
     }
 

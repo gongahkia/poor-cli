@@ -1478,6 +1478,7 @@ pub(crate) fn palette_category_label(category: PaletteCategory) -> &'static str 
         PaletteCategory::Keybinding => "Keybindings",
         PaletteCategory::SettingsField => "Settings Fields",
         PaletteCategory::GitFile => "Git Changes",
+        PaletteCategory::GitWorktree => "Git Worktrees",
     }
 }
 

@@ -4312,6 +4312,10 @@ impl WokHandler {
             self.open_git_changes_palette();
             return;
         }
+        if matches!(action, Action::GitWorktrees) {
+            self.open_git_worktrees_palette();
+            return;
+        }
         if matches!(action, Action::BlockExportJson) {
             self.export_selected_block_bundle(BlockExportFormat::Json);
             self.needs_redraw = true;
@@ -4349,6 +4353,7 @@ impl WokHandler {
                         | Action::ToggleFailureTrendsPanel
                         | Action::ToggleWorkspaceInsightsPanel
                         | Action::GitChanges
+                        | Action::GitWorktrees
                         | Action::SearchGlobal
                         | Action::CommandPalette
                         | Action::CommandSearch
@@ -5129,6 +5134,13 @@ impl WokHandler {
                             }
                             self.open_git_file_diff(&path);
                         }
+                        PaletteAction::ChangeDirectory(path) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
+                            self.change_active_pane_directory(&path);
+                        }
                     }
                 } else {
                     let query = self
@@ -5826,6 +5838,56 @@ impl WokHandler {
             active_pane.app.block_query = Some(state);
         }
         self.status_message = Some(format!("Opened diff for {path}"));
+        self.needs_redraw = true;
+    }
+
+    /// Open a palette listing worktrees for the active pane's Git repository.
+    fn open_git_worktrees_palette(&mut self) {
+        let Some(pane_id) = self.active_pane_id() else {
+            self.status_message = Some("no active pane".to_string());
+            return;
+        };
+        let Some(cwd) = self
+            .panes
+            .get(&pane_id)
+            .map(|pane| pane.current_cwd.clone())
+        else {
+            self.status_message = Some("no active pane".to_string());
+            return;
+        };
+
+        let entries = match wok_git::service::load_worktrees(&cwd) {
+            Ok(worktrees) => build_git_worktree_palette_entries(worktrees, &cwd),
+            Err(wok_git::service::GitServiceError::NotGitRepository(_)) => {
+                self.status_message = Some("not in a Git repository".to_string());
+                return;
+            }
+            Err(error) => {
+                self.status_message = Some(format!("failed to load Git worktrees: {error}"));
+                return;
+            }
+        };
+
+        if entries.is_empty() {
+            self.status_message = Some("no Git worktrees found".to_string());
+            return;
+        }
+
+        if let Some(active_pane) = self.panes.get_mut(&pane_id) {
+            active_pane.app.global_search.deactivate();
+            active_pane.app.command_search = None;
+            active_pane.app.block_query = None;
+            active_pane.app.quick_select.dismiss();
+            active_pane.app.input_mode = InputMode::CommandPalette;
+            active_pane.app.command_palette.open(entries);
+        }
+        self.needs_redraw = true;
+    }
+
+    fn change_active_pane_directory(&mut self, path: &str) {
+        let command = format!("cd {}\r", shell_quote_path(path));
+        self.send_raw_input_to_pty(command.as_bytes());
+        self.status_message = Some(format!("Switching to {path}"));
         self.needs_redraw = true;
     }
 
@@ -8538,6 +8600,7 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::KeybindingDiscovery => "keybinding_discovery".to_string(),
         Action::SettingsDiscovery => "settings_discovery".to_string(),
         Action::GitChanges => "git_changes".to_string(),
+        Action::GitWorktrees => "git_worktrees".to_string(),
     };
     Some(id)
 }
@@ -8548,6 +8611,7 @@ fn action_display_label(action: &Action) -> String {
         Action::SaveSession(name) => format!("Save Session ({name})"),
         Action::LoadSession(name) => format!("Load Session ({name})"),
         Action::GitChanges => "Git Changes".to_string(),
+        Action::GitWorktrees => "Git Worktrees".to_string(),
         _ => action_to_palette_id(action)
             .unwrap_or_default()
             .replace('_', " ")
@@ -8583,6 +8647,7 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::ToggleFailureTrendsPanel,
         Action::ToggleWorkspaceInsightsPanel,
         Action::GitChanges,
+        Action::GitWorktrees,
         Action::BlockPrevFailed,
         Action::BlockNextFailed,
         Action::BlockPrev,
@@ -8712,6 +8777,7 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::KeybindingDiscovery => "List all keybindings (read-only)",
         Action::SettingsDiscovery => "List every settings field with current value",
         Action::GitChanges => "List changed files in the active Git repository",
+        Action::GitWorktrees => "Switch between Git worktrees for the active repository",
     };
 
     if keybinding.trim().is_empty() {
@@ -8719,6 +8785,69 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
     } else {
         format!("{summary}. Shortcut: {keybinding}")
     }
+}
+
+fn build_git_worktree_palette_entries(
+    worktrees: Vec<wok_git::service::GitWorktree>,
+    current_cwd: &std::path::Path,
+) -> Vec<PaletteEntry> {
+    let mut entries = worktrees
+        .into_iter()
+        .map(|worktree| {
+            let path = worktree.path.display().to_string();
+            PaletteEntry {
+                label: git_worktree_label(&worktree),
+                description: git_worktree_description(&worktree, current_cwd),
+                category: PaletteCategory::GitWorktree,
+                score: 0.0,
+                action: PaletteAction::ChangeDirectory(path),
+            }
+        })
+        .collect::<Vec<_>>();
+    entries.sort_by(|left, right| left.label.cmp(&right.label));
+    entries
+}
+
+fn git_worktree_label(worktree: &wok_git::service::GitWorktree) -> String {
+    worktree
+        .branch
+        .clone()
+        .or_else(|| {
+            worktree
+                .head
+                .as_ref()
+                .map(|head| format!("detached {}", head.chars().take(8).collect::<String>()))
+        })
+        .unwrap_or_else(|| {
+            worktree
+                .path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("worktree")
+                .to_string()
+        })
+}
+
+fn git_worktree_description(
+    worktree: &wok_git::service::GitWorktree,
+    current_cwd: &std::path::Path,
+) -> String {
+    let mut parts = Vec::new();
+    if current_cwd.starts_with(&worktree.path) {
+        parts.push("current".to_string());
+    }
+    if worktree.is_bare {
+        parts.push("bare".to_string());
+    }
+    if worktree.is_detached {
+        parts.push("detached".to_string());
+    }
+    parts.push(worktree.path.display().to_string());
+    parts.join(" | ")
+}
+
+fn shell_quote_path(path: &str) -> String {
+    format!("'{}'", path.replace('\'', "'\"'\"'"))
 }
 
 fn git_status_file_description(file: &wok_git::status::GitStatusFile) -> String {
@@ -9051,6 +9180,34 @@ mod tests {
 
         assert_eq!(entries[0].kind, DiffLineKind::HunkHeader);
         assert_eq!(entries[1].kind, DiffLineKind::Added);
+    }
+
+    #[test]
+    fn test_git_worktree_entries_mark_current_worktree() {
+        let worktree = wok_git::service::GitWorktree {
+            path: std::path::PathBuf::from("/repo/main"),
+            branch: Some("main".to_string()),
+            head: Some("abcdef".to_string()),
+            is_bare: false,
+            is_detached: false,
+        };
+
+        let entries = build_git_worktree_palette_entries(
+            vec![worktree],
+            std::path::Path::new("/repo/main/src"),
+        );
+
+        assert_eq!(entries[0].label, "main");
+        assert!(entries[0].description.contains("current"));
+        assert_eq!(
+            entries[0].action,
+            PaletteAction::ChangeDirectory("/repo/main".to_string())
+        );
+    }
+
+    #[test]
+    fn test_shell_quote_path_escapes_single_quotes() {
+        assert_eq!(shell_quote_path("/tmp/it's-here"), "'/tmp/it'\"'\"'s-here'");
     }
 
     #[test]

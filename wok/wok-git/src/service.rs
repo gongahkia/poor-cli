@@ -38,6 +38,21 @@ pub struct GitFileDiff {
     pub deletions: usize,
 }
 
+/// One `git worktree list --porcelain` entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitWorktree {
+    /// Worktree root path.
+    pub path: PathBuf,
+    /// Current branch name, when attached to a branch.
+    pub branch: Option<String>,
+    /// HEAD commit hash, when Git reports one.
+    pub head: Option<String>,
+    /// Whether this is a bare worktree.
+    pub is_bare: bool,
+    /// Whether this worktree is detached.
+    pub is_detached: bool,
+}
+
 impl GitStatusSnapshot {
     /// Return true when there are no changed files.
     pub fn is_clean(&self) -> bool {
@@ -85,6 +100,14 @@ pub fn load_file_diff(cwd: &Path, path: &str) -> Result<GitFileDiff, GitServiceE
         additions: parsed.additions,
         deletions: parsed.deletions,
     })
+}
+
+/// List Git worktrees for the repository containing `cwd`.
+pub fn load_worktrees(cwd: &Path) -> Result<Vec<GitWorktree>, GitServiceError> {
+    let repo = detect_repo_info(cwd)
+        .ok_or_else(|| GitServiceError::NotGitRepository(cwd.to_path_buf()))?;
+    let output = run_git_text(&repo.worktree_root, &["worktree", "list", "--porcelain"])?;
+    Ok(parse_worktree_list(&output))
 }
 
 fn load_status_for_repo(repo: &GitRepoInfo) -> Result<GitStatusSnapshot, GitServiceError> {
@@ -166,6 +189,57 @@ where
     String::from_utf8(run(cmd)?.stdout).map_err(|_| GitServiceError::InvalidUtf8)
 }
 
+fn parse_worktree_list(output: &str) -> Vec<GitWorktree> {
+    let mut worktrees = Vec::new();
+    let mut current: Option<GitWorktree> = None;
+
+    for line in output.lines() {
+        if line.is_empty() {
+            if let Some(worktree) = current.take() {
+                worktrees.push(worktree);
+            }
+            continue;
+        }
+
+        if let Some(path) = line.strip_prefix("worktree ") {
+            if let Some(worktree) = current.replace(GitWorktree {
+                path: PathBuf::from(path),
+                branch: None,
+                head: None,
+                is_bare: false,
+                is_detached: false,
+            }) {
+                worktrees.push(worktree);
+            }
+            continue;
+        }
+
+        let Some(worktree) = current.as_mut() else {
+            continue;
+        };
+        if let Some(head) = line.strip_prefix("HEAD ") {
+            worktree.head = Some(head.to_string());
+        } else if let Some(branch) = line.strip_prefix("branch ") {
+            worktree.branch = Some(
+                branch
+                    .strip_prefix("refs/heads/")
+                    .unwrap_or(branch)
+                    .to_string(),
+            );
+        } else if line == "bare" {
+            worktree.is_bare = true;
+        } else if line == "detached" {
+            worktree.is_detached = true;
+        }
+    }
+
+    if let Some(worktree) = current {
+        worktrees.push(worktree);
+    }
+
+    worktrees
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,5 +308,18 @@ mod tests {
         assert!(diff.rows.iter().any(|row| row.text == "+new"));
         assert!(diff.rows.iter().any(|row| row.text == "-old"));
         fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn parse_worktree_list_normalizes_branch_names() {
+        let worktrees = parse_worktree_list(
+            "worktree /repo\nHEAD abc123\nbranch refs/heads/main\n\nworktree /repo-feature\nHEAD def456\ndetached\n\n",
+        );
+
+        assert_eq!(worktrees.len(), 2);
+        assert_eq!(worktrees[0].path, PathBuf::from("/repo"));
+        assert_eq!(worktrees[0].branch.as_deref(), Some("main"));
+        assert_eq!(worktrees[0].head.as_deref(), Some("abc123"));
+        assert!(worktrees[1].is_detached);
     }
 }
