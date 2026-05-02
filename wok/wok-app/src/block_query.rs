@@ -44,6 +44,8 @@ pub struct BlockQueryState {
     pub mode: BlockQueryMode,
     /// Optional baseline block id used for diff mode.
     pub baseline_block_id: Option<u64>,
+    /// Optional overlay title for non-block diff views.
+    pub title: Option<String>,
     /// The current user-entered query.
     pub query: String,
     /// All matches in block-output-relative coordinates.
@@ -63,6 +65,7 @@ impl BlockQueryState {
             target_block_id,
             mode,
             baseline_block_id: None,
+            title: None,
             query: String::new(),
             matches: Vec::new(),
             diff_entries: Vec::new(),
@@ -77,6 +80,7 @@ impl BlockQueryState {
         self.current_match = 0;
         self.overlay_scroll_offset = 0;
         self.baseline_block_id = None;
+        self.title = None;
         self.diff_entries.clear();
 
         if query.is_empty() {
@@ -91,6 +95,7 @@ impl BlockQueryState {
     pub fn set_diff_entries(&mut self, baseline_block_id: u64, entries: Vec<DiffLineEntry>) {
         self.mode = BlockQueryMode::Diff;
         self.baseline_block_id = Some(baseline_block_id);
+        self.title = None;
         self.query.clear();
         self.current_match = 0;
         self.overlay_scroll_offset = 0;
@@ -106,6 +111,20 @@ impl BlockQueryState {
                 col_end: entry.text.chars().count(),
             });
         }
+    }
+
+    /// Configure the overlay to show a non-block diff with a custom title.
+    pub fn set_external_diff_entries(&mut self, title: String, entries: Vec<DiffLineEntry>) {
+        self.set_diff_entries(0, entries);
+        self.baseline_block_id = None;
+        self.title = Some(title);
+    }
+
+    /// Return true for diff overlays that are not anchored to a terminal block.
+    pub fn is_external_diff(&self) -> bool {
+        matches!(self.mode, BlockQueryMode::Diff)
+            && self.baseline_block_id.is_none()
+            && self.title.is_some()
     }
 
     /// Advance to the next match, wrapping when needed.
@@ -296,5 +315,22 @@ mod tests {
         assert_eq!(query.matches.len(), 2);
         assert_eq!(query.matches[0].line, 2);
         assert_eq!(query.matches[1].line, 3);
+    }
+
+    #[test]
+    fn test_external_diff_entries_keep_custom_title() {
+        let mut query = BlockQueryState::new(BlockQueryMode::Diff, 0);
+        query.set_external_diff_entries(
+            "Git Diff src/lib.rs".to_string(),
+            vec![DiffLineEntry {
+                kind: DiffLineKind::Added,
+                text: "new line".to_string(),
+            }],
+        );
+
+        assert!(query.is_external_diff());
+        assert_eq!(query.title.as_deref(), Some("Git Diff src/lib.rs"));
+        assert_eq!(query.baseline_block_id, None);
+        assert_eq!(query.matches.len(), 1);
     }
 }

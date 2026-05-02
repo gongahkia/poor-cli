@@ -99,6 +99,8 @@ pub enum Action {
     ToggleFailureTrendsPanel,
     /// Toggle the workspace insights panel for the active pane.
     ToggleWorkspaceInsightsPanel,
+    /// Open changed files for the active Git repository.
+    GitChanges,
     /// Global terminal search.
     SearchGlobal,
     /// Enter vi navigation mode.
@@ -531,6 +533,13 @@ impl Default for KeybindingConfig {
             },
             Action::ToggleWorkspaceInsightsPanel,
         );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('g'),
+                modifiers: pma,
+            },
+            Action::GitChanges,
+        );
 
         // Search
         bindings.insert(
@@ -825,6 +834,19 @@ mod tests {
         assert_eq!(
             config.resolve(&combo, &Context::Terminal),
             Some(&Action::ToggleWorkspaceInsightsPanel)
+        );
+    }
+
+    #[test]
+    fn test_git_changes_binding_exists() {
+        let config = KeybindingConfig::default();
+        let combo = KeyCombo {
+            key: KeyAction::Char('g'),
+            modifiers: platform_mod_alt(),
+        };
+        assert_eq!(
+            config.resolve(&combo, &Context::Terminal),
+            Some(&Action::GitChanges)
         );
     }
 

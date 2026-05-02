@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 use wok_process::{run, Cmd, ProcessError};
 
+use crate::diff::{collapse_context_rows, parse_rows, DiffDisplayRow};
 use crate::repo::{detect_repo_info, GitRepoInfo};
 use crate::status::{parse_numstat, parse_status_porcelain_z, GitStatusFile, NumstatEntry};
 
@@ -18,6 +19,23 @@ pub struct GitStatusSnapshot {
     pub branch: Option<String>,
     /// Changed files, sorted by path.
     pub files: Vec<GitStatusFile>,
+}
+
+/// Parsed diff for one changed Git file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitFileDiff {
+    /// Repository worktree root.
+    pub worktree_root: PathBuf,
+    /// Current branch or detached HEAD short hash.
+    pub branch: Option<String>,
+    /// Repository-relative file path.
+    pub path: String,
+    /// Display-ready diff rows.
+    pub rows: Vec<DiffDisplayRow>,
+    /// Added line count.
+    pub additions: usize,
+    /// Deleted line count.
+    pub deletions: usize,
 }
 
 impl GitStatusSnapshot {
@@ -46,6 +64,27 @@ pub fn load_status(cwd: &Path) -> Result<GitStatusSnapshot, GitServiceError> {
     let repo = detect_repo_info(cwd)
         .ok_or_else(|| GitServiceError::NotGitRepository(cwd.to_path_buf()))?;
     load_status_for_repo(&repo)
+}
+
+/// Load a parsed diff for `path` in the repository containing `cwd`.
+///
+/// Both unstaged and staged hunks are included. Untracked files usually produce
+/// an empty diff because Git has no index baseline for them yet.
+pub fn load_file_diff(cwd: &Path, path: &str) -> Result<GitFileDiff, GitServiceError> {
+    let repo = detect_repo_info(cwd)
+        .ok_or_else(|| GitServiceError::NotGitRepository(cwd.to_path_buf()))?;
+    let patch = combined_file_diff(&repo.worktree_root, path)?;
+    let parsed = parse_rows(&patch);
+    let rows = collapse_context_rows(&parsed.rows);
+
+    Ok(GitFileDiff {
+        worktree_root: repo.worktree_root,
+        branch: repo.branch,
+        path: path.to_string(),
+        rows,
+        additions: parsed.additions,
+        deletions: parsed.deletions,
+    })
 }
 
 fn load_status_for_repo(repo: &GitRepoInfo) -> Result<GitStatusSnapshot, GitServiceError> {
@@ -78,6 +117,18 @@ fn combined_numstat(repo_root: &Path) -> Result<HashMap<String, NumstatEntry>, G
     Ok(stats)
 }
 
+fn combined_file_diff(repo_root: &Path, path: &str) -> Result<String, GitServiceError> {
+    let unstaged = run_git_text_dynamic(repo_root, ["diff", "--"], [path])?;
+    let staged = run_git_text_dynamic(repo_root, ["diff", "--cached", "--"], [path])?;
+    Ok(if staged.trim().is_empty() {
+        unstaged
+    } else if unstaged.trim().is_empty() {
+        staged
+    } else {
+        format!("{staged}\n{unstaged}")
+    })
+}
+
 fn merge_numstat(left: NumstatEntry, right: NumstatEntry) -> NumstatEntry {
     NumstatEntry {
         additions: add_optional_counts(left.additions, right.additions),
@@ -100,6 +151,19 @@ fn run_git_bytes(repo_root: &Path, args: &[&str]) -> Result<Vec<u8>, GitServiceE
 
 fn run_git_text(repo_root: &Path, args: &[&str]) -> Result<String, GitServiceError> {
     String::from_utf8(run_git_bytes(repo_root, args)?).map_err(|_| GitServiceError::InvalidUtf8)
+}
+
+fn run_git_text_dynamic<'a, A, P>(
+    repo_root: &Path,
+    args: A,
+    pathspecs: P,
+) -> Result<String, GitServiceError>
+where
+    A: IntoIterator<Item = &'a str>,
+    P: IntoIterator<Item = &'a str>,
+{
+    let cmd = Cmd::new("git").args(args).args(pathspecs).cwd(repo_root);
+    String::from_utf8(run(cmd)?.stdout).map_err(|_| GitServiceError::InvalidUtf8)
 }
 
 #[cfg(test)]
@@ -141,5 +205,34 @@ mod tests {
         assert_eq!(merged.additions, Some(7));
         assert_eq!(merged.deletions, Some(3));
         assert!(merged.is_binary);
+    }
+
+    #[test]
+    fn load_file_diff_parses_tracked_modifications() {
+        let dir = unique_path("file-diff");
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        run(Cmd::new("git").args(["init"]).cwd(&dir)).expect("git init should pass");
+        run(Cmd::new("git")
+            .args(["config", "user.email", "wok@example.test"])
+            .cwd(&dir))
+        .expect("git config email should pass");
+        run(Cmd::new("git")
+            .args(["config", "user.name", "Wok Test"])
+            .cwd(&dir))
+        .expect("git config name should pass");
+        fs::write(dir.join("file.txt"), "old\nsame\n").expect("file should be written");
+        run(Cmd::new("git").args(["add", "file.txt"]).cwd(&dir)).expect("git add should pass");
+        run(Cmd::new("git").args(["commit", "-m", "initial"]).cwd(&dir))
+            .expect("git commit should pass");
+
+        fs::write(dir.join("file.txt"), "new\nsame\n").expect("file should be modified");
+        let diff = load_file_diff(&dir, "file.txt").expect("diff should load");
+
+        assert_eq!(diff.path, "file.txt");
+        assert_eq!(diff.additions, 1);
+        assert_eq!(diff.deletions, 1);
+        assert!(diff.rows.iter().any(|row| row.text == "+new"));
+        assert!(diff.rows.iter().any(|row| row.text == "-old"));
+        fs::remove_dir_all(dir).ok();
     }
 }

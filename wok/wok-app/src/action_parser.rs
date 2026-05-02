@@ -125,6 +125,7 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         "toggle_workspace_insights_panel" | "workspace_insights_panel" | "workspace_insights" => {
             Some(Action::ToggleWorkspaceInsightsPanel)
         }
+        "git_changes" | "git_status" | "changed_files" => Some(Action::GitChanges),
         "zoom_in" => Some(Action::ZoomIn),
         "zoom_out" => Some(Action::ZoomOut),
         "zoom_reset" => Some(Action::ZoomReset),
@@ -245,5 +246,7 @@ mod tests {
             parse_lua_action("workspace_insights"),
             Some(Action::ToggleWorkspaceInsightsPanel)
         );
+        assert_eq!(parse_lua_action("git_changes"), Some(Action::GitChanges));
+        assert_eq!(parse_lua_action("git_status"), Some(Action::GitChanges));
     }
 }

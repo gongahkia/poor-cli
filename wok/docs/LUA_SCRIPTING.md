@@ -115,7 +115,7 @@ Pane focus/resize: `focus_left`, `focus_right`, `focus_up`, `focus_down`, `resiz
 
 Floating panes: `new_floating_pane`, `toggle_floating_pane`, `close_floating_pane`
 
-Search & palette: `search_global`, `command_palette`, `command_search`, `quick_select`, `quick_select_block`, `keybinding_discovery`, `theme_picker`, `settings_discovery`
+Search & palette: `search_global`, `command_palette`, `command_search`, `quick_select`, `quick_select_block`, `keybinding_discovery`, `theme_picker`, `settings_discovery`, `git_changes`
 
 Block navigation: `block_prev`, `block_next`, `block_copy`, `block_copy_command`, `block_copy_output`, `block_collapse`, `block_toggle_bookmark`, `block_prev_bookmark`, `block_next_bookmark`, `block_prev_failed`, `block_next_failed`, `block_find`, `block_filter`, `block_diff`, `block_rerun`, `block_rerun_in_split`, `block_save_workflow`, `block_export_markdown`, `block_export_json`
 
@@ -127,7 +127,7 @@ Sessions: `save_session:<name>`, `load_session:<name>`
 
 Settings: `open_settings`, `settings_discovery`
 
-Aliases (also accepted): `close_pane`, `search`, `copy_block`, `collapse_block`, `diff_block`, `failure_trends`, `prev_failed_block`, `next_failed_block`, `rerun_block_split`, `save_block_workflow`, `export_block_markdown`, `export_block_json`, `workspace_insights`, `history_search`.
+Aliases (also accepted): `close_pane`, `search`, `copy_block`, `collapse_block`, `diff_block`, `failure_trends`, `prev_failed_block`, `next_failed_block`, `rerun_block_split`, `save_block_workflow`, `export_block_markdown`, `export_block_json`, `workspace_insights`, `history_search`, `git_status`, `changed_files`.
 
 ### TOML keybindings (`~/.config/wok/keybindings.toml`)
 
@@ -295,6 +295,8 @@ end
 Returns `{ is_git_repo, repo_root, branch, clean, files }`. Outside a repository it returns `{ is_git_repo = false, clean = true, files = {} }`.
 
 Each file: `{ path, old_path, index_status, worktree_status, status_text, staged_status_text, unstaged_status_text, is_staged, is_unstaged, additions, deletions, is_binary }`.
+
+The same changed-file list is available in the app via the **Git Changes** palette action (`git_changes`). Selecting a tracked file opens an in-app diff preview.
 
 ### `wok.pane_api.info()`
 

@@ -1477,6 +1477,7 @@ pub(crate) fn palette_category_label(category: PaletteCategory) -> &'static str 
         PaletteCategory::Theme => "Themes",
         PaletteCategory::Keybinding => "Keybindings",
         PaletteCategory::SettingsField => "Settings Fields",
+        PaletteCategory::GitFile => "Git Changes",
     }
 }
 
@@ -2261,13 +2262,15 @@ pub(crate) fn render_block_query_overlay(
         BlockQueryMode::Diff => "Diff Block",
     };
     let header_text = if is_diff {
-        let baseline = block_query
-            .baseline_block_id
-            .map_or_else(|| "?".to_string(), |id| id.to_string());
-        format!(
-            "{} #{} -> #{}",
-            title, baseline, block_query.target_block_id
-        )
+        block_query.title.clone().unwrap_or_else(|| {
+            let baseline = block_query
+                .baseline_block_id
+                .map_or_else(|| "?".to_string(), |id| id.to_string());
+            format!(
+                "{} #{} -> #{}",
+                title, baseline, block_query.target_block_id
+            )
+        })
     } else if block_query.query.is_empty() {
         title.to_string()
     } else {
@@ -2322,7 +2325,11 @@ pub(crate) fn render_block_query_overlay(
                 font,
                 x + 10.0,
                 lines_y,
-                "No changed lines between these blocks",
+                if block_query.is_external_diff() {
+                    "No diff hunks for this file"
+                } else {
+                    "No changed lines between these blocks"
+                },
                 with_opacity(
                     [
                         theme.status_bar_text.r,

@@ -395,6 +395,7 @@ impl WokApp {
                     OverlayEffect::ToggleWorkspaceInsightsPanel,
                 ));
             }
+            Action::GitChanges => {}
             Action::SearchGlobal => {
                 effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenSearch));
             }

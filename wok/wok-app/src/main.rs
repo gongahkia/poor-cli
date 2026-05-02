@@ -1999,15 +1999,15 @@ impl WokHandler {
 
             if focused {
                 if let Some(mut block_query_state) = pane.app.block_query.clone() {
-                    let Some(target_block) = pane
+                    let target_block = pane
                         .app
                         .block_manager
                         .get_block(block_query_state.target_block_id)
-                        .cloned()
-                    else {
+                        .cloned();
+                    if target_block.is_none() && !block_query_state.is_external_diff() {
                         pane.app.block_query = None;
                         continue;
-                    };
+                    }
                     let filtered_lines = if matches!(
                         block_query_state.mode,
                         BlockQueryMode::Filter | BlockQueryMode::Diff
@@ -2020,16 +2020,27 @@ impl WokHandler {
                         if matches!(block_query_state.mode, BlockQueryMode::Diff) {
                             Vec::new()
                         } else {
-                            block_query_state
-                                .filtered_line_indices()
-                                .into_iter()
-                                .filter_map(|line_idx| {
-                                    let absolute_row = target_block.output_start_row + line_idx;
-                                    (absolute_row <= target_block.output_end_row).then(|| {
-                                        (line_idx, pane.terminal.state.row_text(absolute_row))
-                                    })
+                            target_block
+                                .as_ref()
+                                .map(|target_block| {
+                                    block_query_state
+                                        .filtered_line_indices()
+                                        .into_iter()
+                                        .filter_map(|line_idx| {
+                                            let absolute_row =
+                                                target_block.output_start_row + line_idx;
+                                            (absolute_row <= target_block.output_end_row).then(
+                                                || {
+                                                    (
+                                                        line_idx,
+                                                        pane.terminal.state.row_text(absolute_row),
+                                                    )
+                                                },
+                                            )
+                                        })
+                                        .collect::<Vec<_>>()
                                 })
-                                .collect::<Vec<_>>()
+                                .unwrap_or_default()
                         }
                     } else {
                         Vec::new()
@@ -2418,6 +2429,15 @@ impl WokHandler {
         }) else {
             return;
         };
+
+        if self
+            .panes
+            .get(&pane_id)
+            .and_then(|pane| pane.app.block_query.as_ref())
+            .is_some_and(BlockQueryState::is_external_diff)
+        {
+            return;
+        }
 
         if matches!(mode, BlockQueryMode::Diff) {
             let Some((baseline_block_id, entries)) = self
@@ -4288,6 +4308,10 @@ impl WokHandler {
             self.open_settings_discovery();
             return;
         }
+        if matches!(action, Action::GitChanges) {
+            self.open_git_changes_palette();
+            return;
+        }
         if matches!(action, Action::BlockExportJson) {
             self.export_selected_block_bundle(BlockExportFormat::Json);
             self.needs_redraw = true;
@@ -4324,6 +4348,7 @@ impl WokHandler {
                         | Action::BlockExportJson
                         | Action::ToggleFailureTrendsPanel
                         | Action::ToggleWorkspaceInsightsPanel
+                        | Action::GitChanges
                         | Action::SearchGlobal
                         | Action::CommandPalette
                         | Action::CommandSearch
@@ -5097,6 +5122,13 @@ impl WokHandler {
                             }
                             self.apply_theme_selection(&path);
                         }
+                        PaletteAction::GitFileDiff(path) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
+                            self.open_git_file_diff(&path);
+                        }
                     }
                 } else {
                     let query = self
@@ -5679,6 +5711,121 @@ impl WokHandler {
             active_pane.app.input_mode = InputMode::CommandPalette;
             active_pane.app.command_palette.open(entries);
         }
+        self.needs_redraw = true;
+    }
+
+    /// Open a palette listing changed files in the active pane's Git repo.
+    fn open_git_changes_palette(&mut self) {
+        let Some(pane_id) = self.active_pane_id() else {
+            self.status_message = Some("no active pane".to_string());
+            return;
+        };
+        let Some(cwd) = self
+            .panes
+            .get(&pane_id)
+            .map(|pane| pane.current_cwd.clone())
+        else {
+            self.status_message = Some("no active pane".to_string());
+            return;
+        };
+
+        let entries = match wok_git::service::load_status(&cwd) {
+            Ok(snapshot) => self.build_git_changes_palette_entries(snapshot),
+            Err(wok_git::service::GitServiceError::NotGitRepository(_)) => {
+                self.status_message = Some("not in a Git repository".to_string());
+                return;
+            }
+            Err(error) => {
+                self.status_message = Some(format!("failed to load Git changes: {error}"));
+                return;
+            }
+        };
+
+        if entries.is_empty() {
+            self.status_message = Some("Git working tree is clean".to_string());
+            return;
+        }
+
+        if let Some(active_pane) = self.panes.get_mut(&pane_id) {
+            active_pane.app.global_search.deactivate();
+            active_pane.app.command_search = None;
+            active_pane.app.block_query = None;
+            active_pane.app.quick_select.dismiss();
+            active_pane.app.input_mode = InputMode::CommandPalette;
+            active_pane.app.command_palette.open(entries);
+        }
+        self.needs_redraw = true;
+    }
+
+    fn build_git_changes_palette_entries(
+        &self,
+        snapshot: wok_git::service::GitStatusSnapshot,
+    ) -> Vec<PaletteEntry> {
+        snapshot
+            .files
+            .into_iter()
+            .map(|file| {
+                let status = file.status_text();
+                let path = file.path.clone();
+                PaletteEntry {
+                    label: format!("{status}  {path}"),
+                    description: git_status_file_description(&file),
+                    category: PaletteCategory::GitFile,
+                    score: 0.0,
+                    action: PaletteAction::GitFileDiff(path),
+                }
+            })
+            .collect()
+    }
+
+    /// Open an in-app unified diff overlay for one repository-relative path.
+    fn open_git_file_diff(&mut self, path: &str) {
+        let Some(pane_id) = self.active_pane_id() else {
+            self.status_message = Some("no active pane".to_string());
+            return;
+        };
+        let Some(cwd) = self
+            .panes
+            .get(&pane_id)
+            .map(|pane| pane.current_cwd.clone())
+        else {
+            self.status_message = Some("no active pane".to_string());
+            return;
+        };
+
+        let diff = match wok_git::service::load_file_diff(&cwd, path) {
+            Ok(diff) => diff,
+            Err(wok_git::service::GitServiceError::NotGitRepository(_)) => {
+                self.status_message = Some("not in a Git repository".to_string());
+                return;
+            }
+            Err(error) => {
+                self.status_message = Some(format!("failed to load Git diff: {error}"));
+                return;
+            }
+        };
+
+        let title = format!("Git Diff {}", diff.path);
+        let entries = git_diff_line_entries(diff.rows);
+        if entries.is_empty() {
+            self.status_message = Some(format!("no diff hunks for {}", diff.path));
+            return;
+        }
+
+        let mut state = BlockQueryState::new(BlockQueryMode::Diff, 0);
+        state.set_external_diff_entries(title, entries);
+        let max_visible_lines = self.active_pane().map_or(0, |pane| {
+            filter_overlay_visible_lines(pane.ui_rects.viewport, self.font.metrics.cell_height)
+        });
+        state.ensure_current_line_visible(max_visible_lines);
+
+        if let Some(active_pane) = self.panes.get_mut(&pane_id) {
+            active_pane.app.global_search.deactivate();
+            active_pane.app.command_search = None;
+            active_pane.app.quick_select.dismiss();
+            active_pane.app.block_query = Some(state);
+        }
+        self.status_message = Some(format!("Opened diff for {path}"));
         self.needs_redraw = true;
     }
 
@@ -8390,6 +8537,7 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::ThemePicker => "theme_picker".to_string(),
         Action::KeybindingDiscovery => "keybinding_discovery".to_string(),
         Action::SettingsDiscovery => "settings_discovery".to_string(),
+        Action::GitChanges => "git_changes".to_string(),
     };
     Some(id)
 }
@@ -8399,6 +8547,7 @@ fn action_display_label(action: &Action) -> String {
         Action::SwitchToTab(index) => format!("Switch To Tab {index}"),
         Action::SaveSession(name) => format!("Save Session ({name})"),
         Action::LoadSession(name) => format!("Load Session ({name})"),
+        Action::GitChanges => "Git Changes".to_string(),
         _ => action_to_palette_id(action)
             .unwrap_or_default()
             .replace('_', " ")
@@ -8433,6 +8582,7 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::BlockExportJson,
         Action::ToggleFailureTrendsPanel,
         Action::ToggleWorkspaceInsightsPanel,
+        Action::GitChanges,
         Action::BlockPrevFailed,
         Action::BlockNextFailed,
         Action::BlockPrev,
@@ -8561,6 +8711,7 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::ThemePicker => "Pick a theme from ~/.config/wok/themes",
         Action::KeybindingDiscovery => "List all keybindings (read-only)",
         Action::SettingsDiscovery => "List every settings field with current value",
+        Action::GitChanges => "List changed files in the active Git repository",
     };
 
     if keybinding.trim().is_empty() {
@@ -8568,6 +8719,51 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
     } else {
         format!("{summary}. Shortcut: {keybinding}")
     }
+}
+
+fn git_status_file_description(file: &wok_git::status::GitStatusFile) -> String {
+    let mut parts = Vec::new();
+    if file.is_staged() {
+        parts.push(format!("staged {}", file.staged_status_text()));
+    }
+    if file.is_unstaged() {
+        parts.push(format!("unstaged {}", file.unstaged_status_text()));
+    }
+    if let Some(old_path) = &file.old_path {
+        parts.push(format!("from {old_path}"));
+    }
+    match (file.additions, file.deletions, file.is_binary) {
+        (_, _, true) => parts.push("binary".to_string()),
+        (Some(additions), Some(deletions), false) => {
+            parts.push(format!("+{additions} -{deletions}"))
+        }
+        (Some(additions), None, false) => parts.push(format!("+{additions}")),
+        (None, Some(deletions), false) => parts.push(format!("-{deletions}")),
+        (None, None, false) => {}
+    }
+    if parts.is_empty() {
+        "Git change".to_string()
+    } else {
+        parts.join(" | ")
+    }
+}
+
+fn git_diff_line_entries(rows: Vec<wok_git::diff::DiffDisplayRow>) -> Vec<DiffLineEntry> {
+    rows.into_iter()
+        .map(|row| {
+            let kind = match row.kind {
+                wok_git::diff::DiffRowKind::Hunk => DiffLineKind::HunkHeader,
+                wok_git::diff::DiffRowKind::Context => DiffLineKind::Context,
+                wok_git::diff::DiffRowKind::Addition => DiffLineKind::Added,
+                wok_git::diff::DiffRowKind::Deletion => DiffLineKind::Removed,
+                wok_git::diff::DiffRowKind::Collapsed => DiffLineKind::HunkHeader,
+            };
+            DiffLineEntry {
+                kind,
+                text: row.text,
+            }
+        })
+        .collect()
 }
 
 fn key_combo_label(combo: &wok_app::keybindings::KeyCombo) -> String {
@@ -8812,6 +9008,49 @@ mod tests {
     fn test_action_palette_description_marks_unbound_shortcut() {
         let description = action_palette_description(&Action::CommandPalette, "");
         assert!(description.contains("Shortcut: unbound"));
+    }
+
+    #[test]
+    fn test_git_status_file_description_includes_staging_and_counts() {
+        let file = wok_git::status::GitStatusFile {
+            path: "src/lib.rs".to_string(),
+            old_path: None,
+            index_status: 'M',
+            worktree_status: 'M',
+            additions: Some(3),
+            deletions: Some(1),
+            is_binary: false,
+        };
+
+        assert_eq!(
+            git_status_file_description(&file),
+            "staged M | unstaged M | +3 -1"
+        );
+    }
+
+    #[test]
+    fn test_git_diff_line_entries_map_to_overlay_kinds() {
+        let entries = git_diff_line_entries(vec![
+            wok_git::diff::DiffDisplayRow {
+                kind: wok_git::diff::DiffRowKind::Hunk,
+                old_line_number: None,
+                new_line_number: None,
+                old_text: None,
+                new_text: None,
+                text: "@@ -1 +1 @@".to_string(),
+            },
+            wok_git::diff::DiffDisplayRow {
+                kind: wok_git::diff::DiffRowKind::Addition,
+                old_line_number: None,
+                new_line_number: Some(1),
+                old_text: None,
+                new_text: Some("new".to_string()),
+                text: "+new".to_string(),
+            },
+        ]);
+
+        assert_eq!(entries[0].kind, DiffLineKind::HunkHeader);
+        assert_eq!(entries[1].kind, DiffLineKind::Added);
     }
 
     #[test]
