@@ -88,6 +88,33 @@
 ---@field git_branch string?
 ---@since 1.0.0
 
+---@class wok.GitStatus
+---@field is_git_repo boolean
+---@field repo_root string?
+---@field branch string?
+---@field clean boolean
+---@field files wok.GitStatusFile[]
+---@since 1.0.0
+
+---@class wok.GitStatusOptions
+---@field cwd string?                         Directory to inspect; defaults to the active pane cwd.
+---@since 1.0.0
+
+---@class wok.GitStatusFile
+---@field path string
+---@field old_path string?
+---@field index_status string
+---@field worktree_status string
+---@field status_text string
+---@field staged_status_text string
+---@field unstaged_status_text string
+---@field is_staged boolean
+---@field is_unstaged boolean
+---@field additions integer?
+---@field deletions integer?
+---@field is_binary boolean
+---@since 1.0.0
+
 ---@class wok.PanePayload                    Common base of pane-related hook payloads
 ---@field pane_id integer
 ---@field tab_index integer
@@ -347,6 +374,18 @@ wok.blocks = {}
 ---@return wok.Block[]
 ---@since 1.0.0
 function wok.blocks.list() end
+
+-- =====================================================================
+--  Git
+-- =====================================================================
+
+wok.git = {}
+
+---Read changed-file status for the repository containing the active pane cwd.
+---@param options wok.GitStatusOptions?
+---@return wok.GitStatus
+---@since 1.0.0
+function wok.git.status(options) end
 
 -- =====================================================================
 --  Tabs

@@ -60,6 +60,7 @@ The `wok.keymap(...)` name is an alias for `wok.bind_key(...)`.
 | `wok.window` | `set_title`, `toggle_fullscreen`, `set_opacity` |
 | `wok.history` | `entries`, `search` |
 | `wok.blocks` | `list` |
+| `wok.git` | `status` |
 | `wok.fs` | `read`, `write`, `exists`, `list` (sandboxed) |
 
 ---
@@ -277,6 +278,23 @@ end
 ```
 
 Each block: `{ id, command, cwd, exit_code, duration_ms, is_bookmarked, git_branch }`.
+
+### `wok.git.status([options])`
+
+Read the changed-file snapshot for the Git repository containing the active pane's `cwd`. Pass `{ cwd = "/path" }` to inspect a specific directory.
+
+```lua
+local status = wok.git.status()
+if status.is_git_repo and not status.clean then
+    for _, file in ipairs(status.files) do
+        print(file.status_text, file.path, file.additions, file.deletions)
+    end
+end
+```
+
+Returns `{ is_git_repo, repo_root, branch, clean, files }`. Outside a repository it returns `{ is_git_repo = false, clean = true, files = {} }`.
+
+Each file: `{ path, old_path, index_status, worktree_status, status_text, staged_status_text, unstaged_status_text, is_staged, is_unstaged, additions, deletions, is_binary }`.
 
 ### `wok.pane_api.info()`
 

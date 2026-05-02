@@ -1079,6 +1079,48 @@ impl LuaRuntime {
         blocks_table.set("list", blocks_list_fn)?;
         wok.set("blocks", blocks_table)?;
 
+        // wok.git.status({ cwd = optional }) - changed-file snapshot for the
+        // active pane repository, backed by the shared git service.
+        let git_table = self.lua.create_table()?;
+        let snapshot_state_git = self.state.runtime_snapshot.clone();
+        let git_status_fn = self.lua.create_function(move |lua, options: Value| {
+            let cwd = match options {
+                Value::Nil => None,
+                Value::Table(table) => table.get::<Option<String>>("cwd")?,
+                _ => {
+                    return Err(mlua::Error::runtime(
+                        "wok.git.status expects nil or an options table",
+                    ));
+                }
+            }
+            .or_else(|| {
+                snapshot_state_git
+                    .lock()
+                    .unwrap()
+                    .get("pane")
+                    .and_then(|pane| pane.get("cwd"))
+                    .and_then(|cwd| cwd.as_str())
+                    .filter(|cwd| !cwd.is_empty())
+                    .map(ToOwned::to_owned)
+            });
+
+            let Some(cwd) = cwd else {
+                return empty_git_status_table(lua);
+            };
+
+            match wok_git::service::load_status(Path::new(&cwd)) {
+                Ok(snapshot) => git_status_table(lua, snapshot),
+                Err(wok_git::service::GitServiceError::NotGitRepository(_)) => {
+                    empty_git_status_table(lua)
+                }
+                Err(error) => Err(mlua::Error::external(format!(
+                    "wok.git.status failed: {error}"
+                ))),
+            }
+        })?;
+        git_table.set("status", git_status_fn)?;
+        wok.set("git", git_table)?;
+
         let snapshot_state = self.state.runtime_snapshot.clone();
         wok.set(
             "app",
@@ -1349,6 +1391,50 @@ fn parse_status_segments(table: &Table) -> LuaResult<Vec<StatusSegment>> {
         .collect::<LuaResult<Vec<_>>>()
 }
 
+fn empty_git_status_table(lua: &Lua) -> LuaResult<Table> {
+    let table = lua.create_table()?;
+    table.set("is_git_repo", false)?;
+    table.set("clean", true)?;
+    table.set("files", lua.create_table()?)?;
+    Ok(table)
+}
+
+fn git_status_table(lua: &Lua, snapshot: wok_git::service::GitStatusSnapshot) -> LuaResult<Table> {
+    let clean = snapshot.is_clean();
+    let table = lua.create_table()?;
+    table.set("is_git_repo", true)?;
+    table.set("repo_root", snapshot.worktree_root.display().to_string())?;
+    table.set("branch", snapshot.branch)?;
+    table.set("clean", clean)?;
+
+    let files = lua.create_table()?;
+    for (index, file) in snapshot.files.into_iter().enumerate() {
+        let status_text = file.status_text().to_string();
+        let staged_status_text = file.staged_status_text().to_string();
+        let unstaged_status_text = file.unstaged_status_text().to_string();
+        let is_staged = file.is_staged();
+        let is_unstaged = file.is_unstaged();
+
+        let row = lua.create_table()?;
+        row.set("path", file.path)?;
+        row.set("old_path", file.old_path)?;
+        row.set("index_status", file.index_status.to_string())?;
+        row.set("worktree_status", file.worktree_status.to_string())?;
+        row.set("status_text", status_text)?;
+        row.set("staged_status_text", staged_status_text)?;
+        row.set("unstaged_status_text", unstaged_status_text)?;
+        row.set("is_staged", is_staged)?;
+        row.set("is_unstaged", is_unstaged)?;
+        row.set("additions", file.additions)?;
+        row.set("deletions", file.deletions)?;
+        row.set("is_binary", file.is_binary)?;
+        files.set(index + 1, row)?;
+    }
+    table.set("files", files)?;
+
+    Ok(table)
+}
+
 fn parse_system_notification(value: Value) -> LuaResult<SystemNotificationRequest> {
     match value {
         Value::String(message) => Ok(SystemNotificationRequest {
@@ -1381,6 +1467,31 @@ fn parse_system_notification(value: Value) -> LuaResult<SystemNotificationReques
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::process::Command;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("wok-lua-{name}-{stamp}"))
+    }
+
+    fn run_git(cwd: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .expect("git should run");
+        assert!(
+            output.status.success(),
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 
     #[test]
     fn api_version_is_exposed_to_lua() {
@@ -1499,6 +1610,64 @@ mod tests {
             runtime.take_notifications(),
             vec!["3:/tmp/demo".to_string()]
         );
+    }
+
+    #[test]
+    fn test_git_status_uses_active_pane_cwd() {
+        let repo = unique_temp_dir("git-status");
+        fs::create_dir_all(&repo).expect("repo dir should be created");
+        run_git(&repo, &["init"]);
+        fs::write(repo.join("new.txt"), "hello\n").expect("file should be written");
+
+        let mut runtime = LuaRuntime::new().expect("lua runtime");
+        runtime.init(&std::env::temp_dir()).expect("lua init");
+        runtime.set_runtime_snapshot(serde_json::json!({
+            "pane": { "cwd": repo },
+        }));
+        runtime
+            .exec(
+                r#"
+                local status = wok.git.status()
+                wok.notify(
+                    tostring(status.is_git_repo) .. ":" ..
+                    tostring(status.clean) .. ":" ..
+                    tostring(#status.files) .. ":" ..
+                    status.files[1].path .. ":" ..
+                    status.files[1].unstaged_status_text
+                )
+            "#,
+            )
+            .expect("git status should be readable from lua");
+
+        assert_eq!(
+            runtime.take_notifications(),
+            vec!["true:false:1:new.txt:U".to_string()]
+        );
+        fs::remove_dir_all(repo).ok();
+    }
+
+    #[test]
+    fn test_git_status_returns_empty_snapshot_outside_repo() {
+        let dir = unique_temp_dir("non-repo");
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+
+        let mut runtime = LuaRuntime::new().expect("lua runtime");
+        runtime.init(&std::env::temp_dir()).expect("lua init");
+        runtime
+            .exec(&format!(
+                r#"
+                local status = wok.git.status({{ cwd = "{}" }})
+                wok.notify(tostring(status.is_git_repo) .. ":" .. tostring(status.clean) .. ":" .. tostring(#status.files))
+                "#,
+                dir.display()
+            ))
+            .expect("non-repo status should not error");
+
+        assert_eq!(
+            runtime.take_notifications(),
+            vec!["false:true:0".to_string()]
+        );
+        fs::remove_dir_all(dir).ok();
     }
 
     #[test]
