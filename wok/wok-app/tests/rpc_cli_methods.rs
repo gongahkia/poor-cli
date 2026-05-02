@@ -271,6 +271,63 @@ fn rpc_cli_sends_failure_trends_request_and_prints_result() {
 }
 
 #[test]
+fn git_status_cli_calls_rpc_and_prints_result_payload() {
+    let home = unique_temp_dir("git-status");
+    fs::create_dir_all(&home).expect("temp home should be created");
+
+    let socket_path = unique_socket_path();
+    let expected_request = json!({
+        "jsonrpc": "2.0",
+        "method": "wok.get_git_status",
+        "params": {"pane_id": 3},
+        "id": 1
+    });
+    let server = spawn_mock_rpc_server(
+        socket_path.clone(),
+        expected_request,
+        Some(json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "pane_id": 3,
+                "is_git_repo": true,
+                "repo_root": "/repo",
+                "branch": "main",
+                "clean": false,
+                "files": [{"path": "src/lib.rs", "status_text": "M"}]
+            }
+        })),
+    );
+
+    let output = run_wok(
+        &home,
+        &[
+            "git-status",
+            "--pane-id",
+            "3",
+            "--socket",
+            &socket_path.display().to_string(),
+        ],
+    );
+    assert_success(&output);
+
+    let response: Value =
+        serde_json::from_slice(&output.stdout).expect("git-status output should parse as json");
+    assert_eq!(response["pane_id"], Value::from(3_u64));
+    assert_eq!(
+        response["files"][0]["path"],
+        Value::String("src/lib.rs".to_string())
+    );
+    assert!(
+        response.get("jsonrpc").is_none(),
+        "should print result only"
+    );
+    server
+        .join()
+        .expect("mock server thread should finish cleanly");
+}
+
+#[test]
 fn rpc_cli_supports_explicit_token_flag() {
     let home = unique_temp_dir("token-flag");
     fs::create_dir_all(&home).expect("temp home should be created");

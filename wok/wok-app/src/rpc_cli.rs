@@ -3,7 +3,7 @@
 use std::error::Error;
 use std::path::Path;
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 /// Execute one remote JSON-RPC request and optionally return a response payload.
 pub fn execute_rpc_command(
@@ -54,6 +54,37 @@ pub fn execute_rpc_command(
     send_remote_rpc_request(Path::new(&socket_path), &request, !notify)
 }
 
+/// Execute `wok.get_git_status` and return the result payload.
+pub fn execute_git_status_command(
+    pane_id: Option<u64>,
+    socket: Option<String>,
+    token: Option<String>,
+) -> Result<Value, Box<dyn Error>> {
+    let params = pane_id
+        .map(|pane_id| json!({ "pane_id": pane_id }).to_string())
+        .unwrap_or_else(|| "null".to_string());
+    let response = execute_rpc_command(
+        "wok.get_git_status".to_string(),
+        params,
+        socket,
+        token,
+        None,
+        false,
+    )?
+    .ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "remote control server did not return a response",
+        )
+    })?;
+
+    if let Some(error) = response.get("error") {
+        return Err(std::io::Error::other(format!("remote RPC error: {error}")).into());
+    }
+
+    Ok(response.get("result").cloned().unwrap_or(response))
+}
+
 #[cfg(unix)]
 fn send_remote_rpc_request(
     socket_path: &Path,
@@ -101,7 +132,7 @@ fn send_remote_rpc_request(
 
 #[cfg(test)]
 mod tests {
-    use super::execute_rpc_command;
+    use super::{execute_git_status_command, execute_rpc_command};
 
     #[test]
     fn test_execute_rpc_command_rejects_invalid_params_json() {
@@ -115,5 +146,12 @@ mod tests {
         )
         .expect_err("invalid JSON params should fail");
         assert!(error.to_string().contains("invalid --params JSON"));
+    }
+
+    #[test]
+    fn test_execute_git_status_requires_socket() {
+        let error = execute_git_status_command(Some(7), None, None)
+            .expect_err("missing socket should fail before connecting");
+        assert!(error.to_string().contains("missing remote-control socket"));
     }
 }

@@ -71,6 +71,15 @@ pub(crate) fn dispatch_cli_command(cli: &Cli) -> Result<CliAction, Box<dyn Error
             }
             Ok(CliAction::ExitOk)
         }
+        Some(CliCommand::GitStatus {
+            pane_id,
+            socket,
+            token,
+        }) => {
+            let status = rpc_cli::execute_git_status_command(pane_id, socket, token)?;
+            println!("{}", serde_json::to_string_pretty(&status)?);
+            Ok(CliAction::ExitOk)
+        }
         Some(CliCommand::List) => {
             for session in wok_app::daemon::list_sessions() {
                 println!(

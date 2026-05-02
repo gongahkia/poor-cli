@@ -100,3 +100,18 @@ Flags:
 - `--notify`: send as notification (no id, no response expected)
 
 See [REMOTE_RPC.md](REMOTE_RPC.md) for supported method contracts.
+
+## `wok git-status`
+
+Print the active pane's Git status snapshot by calling `wok.get_git_status` on a running Wok instance.
+
+```bash
+wok git-status --socket /tmp/wok.sock
+wok git-status --pane-id 3 --socket /tmp/wok.sock
+```
+
+Flags:
+
+- `--pane-id`: optional pane id (defaults to the active pane)
+- `--socket`: explicit socket path (falls back to `$WOK_SOCKET`)
+- `--token`: optional RPC auth token (falls back to `$WOK_RPC_TOKEN`)

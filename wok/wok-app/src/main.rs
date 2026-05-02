@@ -216,6 +216,18 @@ enum CliCommand {
         #[arg(long, default_value_t = false)]
         notify: bool,
     },
+    /// Print Git status for the active pane through remote control.
+    GitStatus {
+        /// Optional pane id. Defaults to the active pane.
+        #[arg(long)]
+        pane_id: Option<u64>,
+        /// Explicit remote-control socket path. Defaults to $WOK_SOCKET.
+        #[arg(long)]
+        socket: Option<String>,
+        /// Optional remote-control auth token. Defaults to $WOK_RPC_TOKEN.
+        #[arg(long)]
+        token: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
