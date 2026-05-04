@@ -57,6 +57,12 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
         padding: 0 1;
     }
 
+    #hud {
+        height: 1;
+        color: #a9a07a;
+        padding: 0 1;
+    }
+
     #main {
         height: 1fr;
     }
@@ -111,9 +117,12 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
         self._session_id = "-"
         self._active_request_id: Optional[str] = None
         self._active_assistant_index: Optional[int] = None
+        self._hud_inflight = False
+        self._hud_text = "tok -/-/- | comp - | mode - | trend - | cost $0.000000"
 
     def compose(self) -> ComposeResult:
         yield Static("", id="status")
+        yield Static("", id="hud")
         with Horizontal(id="main"):
             with Vertical(id="transcript_box"):
                 yield Static("Transcript", classes="title")
@@ -127,7 +136,9 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
     def on_mount(self) -> None:
         self.query_one("#composer", Input).focus()
         self.set_interval(0.05, self._process_events)
+        self.set_interval(2.0, self._poll_hud)
         self._set_status("starting")
+        self._render_hud(None)
         threading.Thread(
             target=self._initialize_worker,
             name="poor-cli-textual-init",
@@ -274,7 +285,15 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
             return
         if event_type == "rpc_error":
             title = str(event.get("title") or "RPC")
+            if title == "HUD":
+                self._hud_inflight = False
+                return
             self._add_activity(title, str(event.get("error") or "RPC failed"))
+            return
+        if event_type == "hud_snapshot":
+            self._hud_inflight = False
+            self._render_hud(event.get("result"))
+            return
 
     def _handle_notification(self, event: Dict[str, Any]) -> None:
         method = str(event.get("method") or "")
@@ -326,6 +345,37 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
         if not self.is_mounted:
             return
         self.query_one("#activity", Static).update("\n".join(self._activity[:80]))
+
+    def _poll_hud(self) -> None:
+        if self._connection_state != "connected" or self._hud_inflight:
+            return
+        self._hud_inflight = True
+        self._start_rpc_request(
+            "HUD",
+            "poor-cli/budgetHudSnapshot",
+            {},
+            event_type="hud_snapshot",
+            timeout=3.0,
+        )
+
+    def _render_hud(self, result: Any) -> None:
+        if isinstance(result, dict):
+            action = result.get("lastAction") if isinstance(result.get("lastAction"), dict) else {}
+            outcome = result.get("lastOutcome") if isinstance(result.get("lastOutcome"), dict) else {}
+            adaptation = result.get("adaptation") if isinstance(result.get("adaptation"), dict) else {}
+            input_tokens = int(outcome.get("input_tokens") or outcome.get("inputTokens") or 0)
+            output_tokens = int(outcome.get("output_tokens") or outcome.get("outputTokens") or 0)
+            thinking_tokens = int(action.get("max_thinking_tokens") or action.get("maxThinkingTokens") or 0)
+            compression = float(action.get("compression_ratio") or action.get("compressionRatio") or 0.0)
+            mode = str(action.get("model_tier") or action.get("modelTier") or "-")
+            trend = float(adaptation.get("trend") or 0.0)
+            cost = float(result.get("projectedCostUsd") or 0.0)
+            self._hud_text = (
+                f"tok {input_tokens}/{output_tokens}/{thinking_tokens} | "
+                f"comp {compression:.0%} | mode {mode} | trend {trend:+.2f} | cost ${cost:.6f}"
+            )
+        if self.is_mounted:
+            self.query_one("#hud", Static).update(self._hud_text)
 
     def _set_status(self, state: str) -> None:
         request_state = self._active_request_id or "-"

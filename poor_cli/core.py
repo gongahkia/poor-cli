@@ -51,7 +51,9 @@ from .token_budget_controller import (
     RuleBasedController,
     TokenBudgetState,
     TokenBudgetAction,
+    TurnOutcome,
 )
+from .adaptive_budget import AdaptiveBudgetController
 from .budget_logger import BudgetLogger
 from .error_recovery import ErrorRecoveryManager
 from .kv_cache_store import maybe_init_kv_cache, KVCacheStore
@@ -232,10 +234,13 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
 
         # Token budget controller (Phase 7A)
         self._budget_controller: RuleBasedController = RuleBasedController()
+        self._adaptive_budget: AdaptiveBudgetController = AdaptiveBudgetController(self._budget_controller)
         self._budget_logger: BudgetLogger = BudgetLogger()
         self._thinking_optimizer: ThinkingBudgetOptimizer = ThinkingBudgetOptimizer()
         self._budget_state: Optional[TokenBudgetState] = None
         self._budget_action: Optional[TokenBudgetAction] = None
+        self._last_budget_action: Optional[TokenBudgetAction] = None
+        self._last_turn_outcome: Optional[TurnOutcome] = None
         self._turn_start_mono: float = 0.0
         self._turn_tool_call_count: int = 0
         self._recent_turn_failures: List[bool] = [] # last N turn success/fail

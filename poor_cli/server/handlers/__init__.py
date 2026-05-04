@@ -35,6 +35,7 @@ _HANDLER_ORDER: tuple[str, ...] = (
     "plan",
     "branches",
     "repo_map",
+    "budget_hud",
     "mcp",
 )
 _HANDLER_RANK = {name: idx for idx, name in enumerate(_HANDLER_ORDER)}

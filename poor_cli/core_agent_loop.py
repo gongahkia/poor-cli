@@ -295,7 +295,9 @@ class AgentLoop:
                 recent_failures=recent_fails,
                 recent_turns=max(len(recent_5), 1),
             )
-            self._budget_action = self._budget_controller.decide(self._budget_state)
+            budget_decider = getattr(self, "_adaptive_budget", None) or self._budget_controller
+            self._budget_action = budget_decider.decide(self._budget_state)
+            self._last_budget_action = self._budget_action
             # apply data-driven thinking budget override
             try:
                 if self.provider and provider_has_capability(self.provider, ProviderCapability.EXTENDED_THINKING):
@@ -906,8 +908,12 @@ class AgentLoop:
                         response_time_seconds=round(elapsed, 2),
                         tool_calls_made=self._turn_tool_call_count,
                     )
+                    adaptive_budget = getattr(self, "_adaptive_budget", None)
+                    if adaptive_budget is not None:
+                        adaptive_budget.observe(self._budget_state, self._budget_action, outcome)
                     self._budget_controller.observe(self._budget_state, self._budget_action, outcome)
                     self._budget_logger.log(self._budget_state, self._budget_action, outcome)
+                    self._last_turn_outcome = outcome
                     self._recent_turn_failures.append(not task_ok)
                     if len(self._recent_turn_failures) > 10:
                         self._recent_turn_failures = self._recent_turn_failures[-10:]
