@@ -249,6 +249,7 @@ class ContextAssemblyOrchestrator:
         if context_result is not None:
             self._apply_safe_pretokenization(context_result, request)
             self._apply_diff_of_diff_cache(context_result, request)
+            await self._apply_repo_map_compression(context_result)
             referenced_files.extend(file_ctx.path for file_ctx in context_result.files)
             self._record_context_result(context_result, request)
         rules = self._assemble_rules(message, referenced_files)
@@ -392,6 +393,88 @@ class ContextAssemblyOrchestrator:
                     ),
                 },
             ))
+
+    async def _apply_repo_map_compression(self, context_result: Any) -> None:
+        files = list(getattr(context_result, "files", []) or [])
+        if not files:
+            return
+        cfg = getattr(getattr(self._core, "config", None), "context", None)
+        threshold = int(getattr(cfg, "repo_map_threshold", 12_000) or 12_000)
+        if threshold <= 0:
+            return
+        total = sum(int(getattr(file_ctx, "tokens_estimate", 0) or 0) for file_ctx in files)
+        if total <= threshold:
+            return
+        candidates = [
+            file_ctx for file_ctx in files
+            if str(getattr(file_ctx, "source", "")) not in {"explicit", "pinned"}
+            and not bool(getattr(file_ctx, "include_full_content", False))
+        ]
+        if not candidates:
+            return
+        emit_hooks = getattr(self._core, "_emit_policy_hooks", None)
+        if callable(emit_hooks):
+            await emit_hooks("pre_compact", {"tokensBefore": total, "ratio": 1.0, "kind": "repo-map"})
+        try:
+            from .repo_map import RepoMap
+            repo_map = RepoMap(
+                Path(getattr(self._core, "_repo_root", Path.cwd())),
+                graph=getattr(self._core, "_repo_graph", None),
+            )
+        except Exception as exc:
+            logger.debug("repo-map compressor unavailable: %s", exc)
+            return
+        replaced = 0
+        saved = 0
+        for file_ctx in sorted(candidates, key=lambda item: (float(getattr(item, "priority", 0.0) or 0.0), str(getattr(item, "path", "")))):
+            if total <= threshold:
+                break
+            try:
+                skeleton = repo_map.skeleton_for(str(getattr(file_ctx, "path", "")))
+            except Exception as exc:
+                logger.debug("repo-map skeleton failed for %s: %s", getattr(file_ctx, "path", ""), exc)
+                continue
+            if skeleton is None or skeleton.skeleton_tokens >= int(getattr(file_ctx, "tokens_estimate", 0) or 0):
+                continue
+            rendered = RepoMap.render_skeleton(
+                skeleton.path,
+                skeleton.language,
+                skeleton.top_symbols,
+                skeleton.total_lines,
+            )
+            before = int(getattr(file_ctx, "tokens_estimate", 0) or 0)
+            file_ctx.content = rendered
+            file_ctx.size = len(rendered)
+            file_ctx.tokens_estimate = skeleton.skeleton_tokens
+            file_ctx.source = "repo_map"
+            file_ctx.include_full_content = False
+            file_ctx.selection_reason = "repo-map skeleton; call repo_map_query or read_file to expand"
+            delta = max(0, before - skeleton.skeleton_tokens)
+            total -= delta
+            saved += delta
+            replaced += 1
+        if replaced <= 0:
+            return
+        context_result.total_tokens = sum(int(getattr(file_ctx, "tokens_estimate", 0) or 0) for file_ctx in files)
+        summary = {
+            "kind": "repo-map",
+            "filesReplaced": replaced,
+            "tokensSaved": saved,
+            "tokensAfter": context_result.total_tokens,
+            "threshold": threshold,
+        }
+        self._core._last_repo_map_summary = summary
+        if callable(emit_hooks):
+            await emit_hooks(
+                "post_compact",
+                {
+                    "tokensBefore": total + saved,
+                    "tokensAfter": context_result.total_tokens,
+                    "ratio": context_result.total_tokens / max(1, total + saved),
+                    "kind": "repo-map",
+                    "filesReplaced": replaced,
+                },
+            )
 
     def _apply_safe_pretokenization(self, context_result: Any, request: TurnInput) -> None:
         cfg = getattr(getattr(self._core, "config", None), "context", None)

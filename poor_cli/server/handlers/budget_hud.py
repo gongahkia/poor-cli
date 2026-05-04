@@ -44,11 +44,15 @@ class BudgetHudHandlersMixin:
             last_action = getattr(core, "_budget_action", None)
         last_outcome = getattr(core, "_last_turn_outcome", None) if core else None
         projected_cost = getattr(core, "_task_cost_usd", 0.0) if core else 0.0
+        repo_map = getattr(core, "_last_repo_map_summary", {}) if core else {}
+        prompt_decision = getattr(core, "_last_prompt_decision", {}) if core else {}
         return {
             "lastAction": _to_payload(last_action),
             "lastOutcome": _to_payload(last_outcome),
             "adaptation": _adaptation_payload(adapt),
             "projectedCostUsd": round(float(projected_cost or 0.0), 6),
+            "repoMap": dict(repo_map) if isinstance(repo_map, dict) else {},
+            "prompt": dict(prompt_decision) if isinstance(prompt_decision, dict) else {},
             "ts": _utc_now(),
         }
 

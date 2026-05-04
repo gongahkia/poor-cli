@@ -69,6 +69,32 @@ class RepoMapHandlersMixin:
             return graph.repo_map_symbols(path, limit=limit)
         return {"path": path, "symbols": []}
 
+    async def handle_repo_map_summary(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        graph = await self._repo_map_graph()
+        from poor_cli.repo_map import RepoMap
+
+        limit = self._repo_map_limit(params)
+        query = str(params.get("query") or "")
+        repo_map = RepoMap(getattr(self.core, "_repo_root", Path.cwd()), graph=graph)
+        symbols = repo_map.hot_symbols(query, limit=limit)
+        top_files = graph.repo_map_top(limit) if hasattr(graph, "repo_map_top") else []
+        skeletons = []
+        for entry in top_files[: min(limit, 10)]:
+            skeleton = repo_map.skeleton_for(str(entry.get("relative_path") or entry.get("path") or ""))
+            if skeleton:
+                skeletons.append(skeleton)
+        tokens_if_read = sum(skeleton.full_tokens for skeleton in skeletons)
+        tokens_if_map = sum(skeleton.skeleton_tokens for skeleton in skeletons)
+        return {
+            "symbols": [symbol.to_dict() for symbol in symbols],
+            "skeletonStats": {
+                "files": len(skeletons),
+                "tokensIfRead": tokens_if_read,
+                "tokensIfMap": tokens_if_map,
+                "tokensSaved": max(0, tokens_if_read - tokens_if_map),
+            },
+        }
+
 
 @register("repo_map.top")
 @register("poor-cli/repoMapTopK")
@@ -86,3 +112,8 @@ async def _rpc_repo_map_expand(ctx, params):
 @register("poor-cli/repoMapSymbols")
 async def _rpc_repo_map_symbols(ctx, params):
     return await ctx.handle_repo_map_symbols(params)
+
+
+@register("poor-cli/repoMapSummary")
+async def _rpc_repo_map_summary(ctx, params):
+    return await ctx.handle_repo_map_summary(params)

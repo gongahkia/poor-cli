@@ -1003,6 +1003,34 @@ def build_tool_registry(self) -> None:
         "declaration": self._discover_tools_declaration(),
     }
 
+    try:
+        from .tools.repo_map import repo_map_query
+        self.tools["repo_map_query"] = {
+            "function": repo_map_query,
+            "declaration": {
+                "name": "repo_map_query",
+                "description": (
+                    "Return top symbols and file skeletons relevant to a query or paths. "
+                    "Use this before reading many files for cross-file resolution."
+                ),
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "query": {"type": "STRING", "description": "Symbol, file, or concept query"},
+                        "paths": {
+                            "type": "ARRAY",
+                            "items": {"type": "STRING"},
+                            "description": "Optional files to summarize as skeletons",
+                        },
+                        "limit": {"type": "INTEGER", "description": "Maximum symbols to return"},
+                    },
+                    "required": [],
+                },
+            },
+        }
+    except Exception as e:
+        logger.debug("repo_map_query tool not registered: %s", e)
+
     # register browser automation tools (lazy — playwright imported on first use)
     try:
         from .browser_tool import BROWSER_TOOLS, BROWSER_TOOL_DECLARATIONS

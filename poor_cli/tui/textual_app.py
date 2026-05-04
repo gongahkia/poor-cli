@@ -423,6 +423,8 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
             action = result.get("lastAction") if isinstance(result.get("lastAction"), dict) else {}
             outcome = result.get("lastOutcome") if isinstance(result.get("lastOutcome"), dict) else {}
             adaptation = result.get("adaptation") if isinstance(result.get("adaptation"), dict) else {}
+            repo_map = result.get("repoMap") if isinstance(result.get("repoMap"), dict) else {}
+            prompt = result.get("prompt") if isinstance(result.get("prompt"), dict) else {}
             input_tokens = int(outcome.get("input_tokens") or outcome.get("inputTokens") or 0)
             output_tokens = int(outcome.get("output_tokens") or outcome.get("outputTokens") or 0)
             thinking_tokens = int(action.get("max_thinking_tokens") or action.get("maxThinkingTokens") or 0)
@@ -430,9 +432,14 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
             mode = str(action.get("model_tier") or action.get("modelTier") or "-")
             trend = float(adaptation.get("trend") or 0.0)
             cost = float(result.get("projectedCostUsd") or 0.0)
+            repo_map_text = ""
+            if repo_map:
+                repo_map_text = f" | repo-map {int(repo_map.get('filesReplaced') or 0)}f"
+            prompt_text = f" | prompt:{prompt.get('level')}" if prompt.get("level") else ""
             self._hud_text = (
                 f"tok {input_tokens}/{output_tokens}/{thinking_tokens} | "
-                f"comp {compression:.0%} | mode {mode} | trend {trend:+.2f} | cost ${cost:.6f}"
+                f"comp {compression:.0%} | mode {mode} | trend {trend:+.2f}"
+                f"{repo_map_text}{prompt_text} | cost ${cost:.6f}"
             )
         if self.is_mounted:
             self.query_one("#hud", Static).update(self._hud_text)
