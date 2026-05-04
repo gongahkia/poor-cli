@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::error::Error;
 use std::fs::{File, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -543,7 +543,12 @@ struct SettingsEditorState {
 
 struct FilePreviewState {
     path: PathBuf,
+    title: String,
+    help: String,
     editor: InputEditor,
+    search_active: bool,
+    search_query: String,
+    truncated: bool,
 }
 
 struct ScratchBufferState {
@@ -1762,7 +1767,20 @@ impl WokHandler {
             (
                 self.active_pane()
                     .map_or_else(Theme::default, |pane| pane.app.theme.clone()),
+                preview.title.clone(),
                 preview.path.clone(),
+                if preview.search_active {
+                    format!(
+                        "Search: {}  Enter next  Esc exit search",
+                        if preview.search_query.is_empty() {
+                            "(type query)"
+                        } else {
+                            preview.search_query.as_str()
+                        }
+                    )
+                } else {
+                    preview.help.clone()
+                },
                 preview.editor.render_data(),
             )
         });
@@ -2452,15 +2470,15 @@ impl WokHandler {
                 window_opacity,
             );
         }
-        if let Some((theme, path, input)) = file_preview_overlay.as_ref() {
+        if let Some((theme, title, path, help, input)) = file_preview_overlay.as_ref() {
             render_settings_editor(
                 render,
                 &mut self.font,
                 theme,
                 self.chrome_rects.content,
-                "Preview",
+                title,
                 path,
-                "Esc close  arrows scroll  Mod+C copy",
+                help,
                 input,
                 cursor_shape,
                 false,
@@ -3665,25 +3683,51 @@ impl WokHandler {
             self.needs_redraw = true;
             return;
         }
-        match std::fs::read_to_string(&path) {
-            Ok(content) => {
-                let mut editor = InputEditor::new(
-                    self.config.shell.clone(),
-                    wok_input::editor::InputPosition::Bottom,
+        match read_text_preview_file(&path) {
+            Ok((content, truncated)) => {
+                self.open_text_preview_state(
+                    "Preview",
+                    path.clone(),
+                    content,
+                    truncated,
+                    "Esc close  / search  Enter next  arrows scroll  Mod+C copy",
                 );
-                editor.buffer.set_text(&content);
-                editor.is_active = true;
-                self.file_preview = Some(FilePreviewState {
-                    path: path.clone(),
-                    editor,
+                self.status_message = Some(if truncated {
+                    format!("Previewing first 2 MiB of text: {}", path.display())
+                } else {
+                    format!("Previewing text: {}", path.display())
                 });
-                self.status_message = Some(format!("Previewing text: {}", path.display()));
             }
             Err(error) => {
                 self.status_message = Some(format!("Failed to preview text: {error}"));
             }
         }
         self.needs_redraw = true;
+    }
+
+    fn open_text_preview_state(
+        &mut self,
+        title: &str,
+        path: PathBuf,
+        content: String,
+        truncated: bool,
+        help: &str,
+    ) {
+        let mut editor = InputEditor::new(
+            self.config.shell.clone(),
+            wok_input::editor::InputPosition::Bottom,
+        );
+        editor.buffer.set_text(&content);
+        editor.is_active = true;
+        self.file_preview = Some(FilePreviewState {
+            path,
+            title: title.to_string(),
+            help: help.to_string(),
+            editor,
+            search_active: false,
+            search_query: String::new(),
+            truncated,
+        });
     }
 
     fn open_scratch_buffer(&mut self) {
@@ -4728,14 +4772,108 @@ impl WokHandler {
         self.needs_redraw = true;
     }
 
+    fn find_next_in_file_preview(&mut self) {
+        let Some(preview) = self.file_preview.as_mut() else {
+            return;
+        };
+        let query = preview.search_query.trim();
+        if query.is_empty() {
+            self.status_message = Some("Preview search is empty".to_string());
+            return;
+        }
+        let lines = preview.editor.buffer.text().lines().collect::<Vec<_>>();
+        let current_row = preview
+            .editor
+            .buffer
+            .cursor_positions()
+            .first()
+            .map(|(row, _)| *row)
+            .unwrap_or_default();
+        let query_lower = query.to_ascii_lowercase();
+        let total = lines.len().max(1);
+        for step in 1..=total {
+            let row = (current_row + step) % total;
+            let Some(line) = lines.get(row) else {
+                continue;
+            };
+            let found = line.to_ascii_lowercase().find(&query_lower);
+            if let Some(col) = found {
+                let offset = text_offset_for_line_col(&preview.editor.buffer.text(), row, col);
+                if let Some(cursor) = preview.editor.buffer.cursors_mut().first_mut() {
+                    cursor.position = offset;
+                    cursor.anchor = None;
+                }
+                self.status_message =
+                    Some(format!("Preview search: match on line {}", row + 1));
+                return;
+            }
+        }
+        self.status_message = Some(format!("Preview search: no match for '{query}'"));
+    }
+
     fn handle_file_preview_input(&mut self, event: &InputEvent) -> bool {
         if self.file_preview.is_none() {
             return false;
+        }
+        if self
+            .file_preview
+            .as_ref()
+            .is_some_and(|preview| preview.search_active)
+        {
+            match event.action {
+                KeyAction::Escape => {
+                    if let Some(preview) = self.file_preview.as_mut() {
+                        preview.search_active = false;
+                    }
+                    self.needs_redraw = true;
+                    return true;
+                }
+                KeyAction::Enter | KeyAction::ArrowDown => {
+                    self.find_next_in_file_preview();
+                    self.needs_redraw = true;
+                    return true;
+                }
+                KeyAction::Backspace
+                    if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+                {
+                    if let Some(preview) = self.file_preview.as_mut() {
+                        preview.search_query.pop();
+                    }
+                    self.needs_redraw = true;
+                    return true;
+                }
+                KeyAction::Char(ch)
+                    if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+                {
+                    if let Some(preview) = self.file_preview.as_mut() {
+                        preview.search_query.push(ch);
+                    }
+                    self.find_next_in_file_preview();
+                    self.needs_redraw = true;
+                    return true;
+                }
+                _ => return true,
+            }
         }
         match event.action {
             KeyAction::Escape => {
                 self.file_preview = None;
                 self.status_message = Some("Closed file preview".to_string());
+                self.needs_redraw = true;
+                return true;
+            }
+            KeyAction::Char('/')
+                if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+            {
+                if let Some(preview) = self.file_preview.as_mut() {
+                    preview.search_active = true;
+                    preview.search_query.clear();
+                }
+                self.needs_redraw = true;
+                return true;
+            }
+            KeyAction::Enter => {
+                self.find_next_in_file_preview();
                 self.needs_redraw = true;
                 return true;
             }
@@ -10072,12 +10210,6 @@ fn is_text_preview_path(path: &Path) -> bool {
     if !path.is_file() {
         return false;
     }
-    if path
-        .metadata()
-        .is_ok_and(|metadata| metadata.len() > 2 * 1024 * 1024)
-    {
-        return false;
-    }
     let Some(extension) = path.extension().and_then(|value| value.to_str()) else {
         return true;
     };
@@ -10108,6 +10240,25 @@ fn is_text_preview_path(path: &Path) -> bool {
             | "env"
             | "gitignore"
     )
+}
+
+fn read_text_preview_file(path: &Path) -> std::io::Result<(String, bool)> {
+    const MAX_PREVIEW_BYTES: u64 = 2 * 1024 * 1024;
+    let mut file = File::open(path)?;
+    let mut bytes = Vec::new();
+    let read = file
+        .by_ref()
+        .take(MAX_PREVIEW_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    let truncated = read as u64 > MAX_PREVIEW_BYTES;
+    if truncated {
+        bytes.truncate(MAX_PREVIEW_BYTES as usize);
+    }
+    let mut content = String::from_utf8_lossy(&bytes).into_owned();
+    if truncated {
+        content.push_str("\n\n[preview truncated at 2 MiB]");
+    }
+    Ok((content, truncated))
 }
 
 fn extract_path_near_column(line: &str, col: usize) -> Option<String> {

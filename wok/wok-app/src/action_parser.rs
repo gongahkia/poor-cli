@@ -92,6 +92,8 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         "close_media_preview" | "media_preview_close" | "close_preview" => {
             Some(Action::CloseMediaPreview)
         }
+        "toggle_media_preview_playback" | "media_play_pause" | "media_pause"
+        | "preview_play_pause" => Some(Action::ToggleMediaPreviewPlayback),
         "preview_path_under_cursor" | "preview_file_under_cursor" | "preview_path" => {
             Some(Action::PreviewPathUnderCursor)
         }
@@ -113,6 +115,20 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         }
         "cycle_search_scope" | "search_scope_cycle" | "next_search_scope" => {
             Some(Action::CycleSearchScope)
+        }
+        "open_search_results" | "search_results" | "show_search_results" => {
+            Some(Action::OpenSearchResults)
+        }
+        "save_current_search" | "save_search" => Some(Action::SaveCurrentSearch),
+        "open_saved_searches" | "saved_searches" => Some(Action::OpenSavedSearches),
+        "open_block_inspector" | "block_inspector" | "inspect_block" => {
+            Some(Action::OpenBlockInspector)
+        }
+        "open_block_rerun_history" | "block_rerun_history" | "rerun_history" => {
+            Some(Action::OpenBlockRerunHistory)
+        }
+        "insert_scratch_selection_into_input" | "insert_scratch" | "send_scratch_to_input" => {
+            Some(Action::InsertScratchSelectionIntoInput)
         }
         "new_floating_pane" | "floating_new" => Some(Action::NewFloatingPane),
         "toggle_floating_pane" | "toggle_floating" | "floating_toggle" => {

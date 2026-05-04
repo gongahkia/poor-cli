@@ -50,6 +50,17 @@ pub enum PaletteAction {
     RevealPath(String),
     /// Tail a file in a new split.
     TailPath(String),
+    /// Jump to a global search match.
+    SearchMatch {
+        /// Pane id containing the match.
+        pane_id: u64,
+        /// Absolute row containing the match.
+        row: usize,
+    },
+    /// Load a saved search query.
+    SavedSearch(String),
+    /// Insert text from scratch into the active command input.
+    ScratchSnippet(String),
     /// Apply the theme at the given absolute path.
     ApplyTheme(String),
     /// Preview the diff for a changed Git file.

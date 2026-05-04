@@ -44,6 +44,7 @@ pub fn media_kind_for_path(path: &Path) -> Option<MediaKind> {
 pub struct MediaPreview {
     path: PathBuf,
     kind: MediaKind,
+    is_playing: bool,
     platform: PlatformMediaPreview,
 }
 
@@ -59,6 +60,7 @@ impl MediaPreview {
         Ok(Self {
             path,
             kind,
+            is_playing: matches!(kind, MediaKind::Gif | MediaKind::Mp4),
             platform,
         })
     }
@@ -76,6 +78,16 @@ impl MediaPreview {
     /// Previewed media kind.
     pub fn kind(&self) -> MediaKind {
         self.kind
+    }
+
+    /// Toggle playback for animated media. Returns the new playback state.
+    pub fn toggle_playback(&mut self) -> Option<bool> {
+        if !matches!(self.kind, MediaKind::Gif | MediaKind::Mp4) {
+            return None;
+        }
+        self.is_playing = !self.is_playing;
+        self.platform.set_playing(self.kind, self.is_playing);
+        Some(self.is_playing)
     }
 }
 
@@ -134,6 +146,7 @@ mod platform {
     pub(super) struct PlatformMediaPreview {
         container: *mut Object,
         child: *mut Object,
+        player: *mut Object,
     }
 
     impl PlatformMediaPreview {
@@ -149,12 +162,16 @@ mod platform {
             // thread. Objects created with alloc/init are balanced in Drop.
             unsafe {
                 let container = create_container(parent, frame)?;
-                let child = match kind {
-                    MediaKind::Image | MediaKind::Gif => create_image_view(path, frame)?,
+                let (child, player) = match kind {
+                    MediaKind::Image | MediaKind::Gif => (create_image_view(path, frame)?, ptr::null_mut()),
                     MediaKind::Mp4 => create_video_view(path, frame)?,
                 };
                 let _: () = msg_send![container, addSubview: child];
-                Ok(Self { container, child })
+                Ok(Self {
+                    container,
+                    child,
+                    player,
+                })
             }
         }
 
@@ -166,6 +183,27 @@ mod platform {
                 let child_frame = ns_rect(0.0, 0.0, frame.width, frame.height);
                 let _: () = msg_send![self.container, setFrame: container_frame];
                 let _: () = msg_send![self.child, setFrame: child_frame];
+            }
+        }
+
+        pub(super) fn set_playing(&mut self, kind: MediaKind, playing: bool) {
+            // SAFETY: The Objective-C objects are alive while self is alive and
+            // are only touched on the main event-loop thread.
+            unsafe {
+                match kind {
+                    MediaKind::Gif => {
+                        let animates = if playing { YES } else { objc::runtime::NO };
+                        let _: () = msg_send![self.child, setAnimates: animates];
+                    }
+                    MediaKind::Mp4 if !self.player.is_null() => {
+                        if playing {
+                            let _: () = msg_send![self.player, play];
+                        } else {
+                            let _: () = msg_send![self.player, pause];
+                        }
+                    }
+                    MediaKind::Image | MediaKind::Mp4 => {}
+                }
             }
         }
     }
@@ -187,6 +225,10 @@ mod platform {
                     let _: () = msg_send![self.child, removeFromSuperview];
                     let _: () = msg_send![self.child, release];
                     self.child = ptr::null_mut();
+                }
+                if !self.player.is_null() {
+                    let _: () = msg_send![self.player, release];
+                    self.player = ptr::null_mut();
                 }
                 if !self.container.is_null() {
                     let _: () = msg_send![self.container, removeFromSuperview];
@@ -242,7 +284,10 @@ mod platform {
         Ok(view)
     }
 
-    unsafe fn create_video_view(path: &Path, frame: PreviewFrame) -> Result<*mut Object, String> {
+    unsafe fn create_video_view(
+        path: &Path,
+        frame: PreviewFrame,
+    ) -> Result<(*mut Object, *mut Object), String> {
         let path_string = ns_string(path)?;
         let url: *mut Object = msg_send![class!(NSURL), fileURLWithPath: path_string];
         if url.is_null() {
@@ -252,18 +297,20 @@ mod platform {
         if player.is_null() {
             return Err(format!("failed to create MP4 player '{}'", path.display()));
         }
+        let _: () = msg_send![player, retain];
 
         let rect = ns_rect(0.0, 0.0, frame.width, frame.height);
         let view: *mut Object = msg_send![class!(AVPlayerView), alloc];
         let view: *mut Object = msg_send![view, initWithFrame: rect];
         if view.is_null() {
+            let _: () = msg_send![player, release];
             return Err("failed to create MP4 preview view".to_string());
         }
         let _: () = msg_send![view, setPlayer: player];
         let _: () = msg_send![view, setControlsStyle: 1isize];
         let _: () = msg_send![view, setAutoresizingMask: 18usize];
         let _: () = msg_send![player, play];
-        Ok(view)
+        Ok((view, player))
     }
 
     unsafe fn ns_string(path: &Path) -> Result<*mut Object, String> {
@@ -311,6 +358,8 @@ mod platform {
         }
 
         pub(super) fn set_frame(&mut self, _frame: PreviewFrame) {}
+
+        pub(super) fn set_playing(&mut self, _kind: MediaKind, _playing: bool) {}
     }
 }
 

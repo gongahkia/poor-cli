@@ -115,6 +115,8 @@ pub enum Action {
     CycleVisualEffect,
     /// Close the built-in media preview.
     CloseMediaPreview,
+    /// Toggle playback for the built-in GIF or MP4 preview.
+    ToggleMediaPreviewPlayback,
     /// Preview the file path under the cursor.
     PreviewPathUnderCursor,
     /// Open the file path under the cursor externally.
@@ -131,6 +133,18 @@ pub enum Action {
     ToggleSearchRegex,
     /// Cycle global search scope.
     CycleSearchScope,
+    /// Open search matches as a navigable result list.
+    OpenSearchResults,
+    /// Save the current global search query.
+    SaveCurrentSearch,
+    /// Open saved global search queries.
+    OpenSavedSearches,
+    /// Open an inspector for the selected command block.
+    OpenBlockInspector,
+    /// Open rerun history for the selected command block.
+    OpenBlockRerunHistory,
+    /// Insert the scratch buffer selection into the active command input.
+    InsertScratchSelectionIntoInput,
     /// Create a new floating pane.
     NewFloatingPane,
     /// Toggle visibility for floating panes.
@@ -626,6 +640,97 @@ impl Default for KeybindingConfig {
         );
         bindings.insert(
             KeyCombo {
+                key: KeyAction::Char(' '),
+                modifiers: pma,
+            },
+            Action::ToggleMediaPreviewPlayback,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('p'),
+                modifiers: pma,
+            },
+            Action::PreviewPathUnderCursor,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('o'),
+                modifiers: pma,
+            },
+            Action::OpenPathUnderCursor,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('c'),
+                modifiers: pma,
+            },
+            Action::CopyPathUnderCursor,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('v'),
+                modifiers: pma,
+            },
+            Action::RevealPathUnderCursor,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('x'),
+                modifiers: pma,
+            },
+            Action::OpenScratchBuffer,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('x'),
+                modifiers: Modifiers { shift: true, ..pma },
+            },
+            Action::InsertScratchSelectionIntoInput,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('/'),
+                modifiers: pma,
+            },
+            Action::ToggleSearchRegex,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('f'),
+                modifiers: Modifiers { shift: true, ..pma },
+            },
+            Action::CycleSearchScope,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('u'),
+                modifiers: pma,
+            },
+            Action::OpenSearchResults,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('u'),
+                modifiers: Modifiers { shift: true, ..pma },
+            },
+            Action::SaveCurrentSearch,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('h'),
+                modifiers: pma,
+            },
+            Action::OpenBlockInspector,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('h'),
+                modifiers: Modifiers { shift: true, ..pma },
+            },
+            Action::OpenBlockRerunHistory,
+        );
+        bindings.insert(
+            KeyCombo {
                 key: KeyAction::Char('n'),
                 modifiers: pma,
             },
@@ -1001,6 +1106,41 @@ mod tests {
         assert_eq!(
             config.resolve(&load_combo, &Context::Terminal),
             Some(&Action::LoadSession("manual".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_default_file_search_and_scratch_keybindings_exist() {
+        let config = KeybindingConfig::default();
+        assert_eq!(
+            config.resolve(
+                &KeyCombo {
+                    key: KeyAction::Char('p'),
+                    modifiers: platform_mod_alt(),
+                },
+                &Context::Terminal,
+            ),
+            Some(&Action::PreviewPathUnderCursor)
+        );
+        assert_eq!(
+            config.resolve(
+                &KeyCombo {
+                    key: KeyAction::Char('/'),
+                    modifiers: platform_mod_alt(),
+                },
+                &Context::Terminal,
+            ),
+            Some(&Action::ToggleSearchRegex)
+        );
+        assert_eq!(
+            config.resolve(
+                &KeyCombo {
+                    key: KeyAction::Char('x'),
+                    modifiers: platform_mod_alt(),
+                },
+                &Context::Terminal,
+            ),
+            Some(&Action::OpenScratchBuffer)
         );
     }
 }
