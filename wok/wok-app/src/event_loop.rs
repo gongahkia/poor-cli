@@ -314,6 +314,10 @@ impl<H: AppHandler> ApplicationHandler<WokUserEvent> for WinitApp<H> {
                 });
                 self.note_user_activity();
             }
+            WindowEvent::DroppedFile(path) => {
+                self.handler.on_file_drop(path);
+                self.note_user_activity();
+            }
             WindowEvent::RedrawRequested => {
                 self.handler.on_redraw();
             }

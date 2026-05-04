@@ -416,13 +416,24 @@ impl WokApp {
             | Action::RevealPathUnderCursor
             | Action::TailPathUnderCursor
             | Action::OpenScratchBuffer
+            | Action::OpenScratchPalette
             | Action::ToggleMediaPreviewPlayback
+            | Action::SeekMediaPreviewBackward
+            | Action::SeekMediaPreviewForward
+            | Action::SlowMediaPreviewPlayback
+            | Action::FastMediaPreviewPlayback
+            | Action::StepMediaPreviewBackward
+            | Action::StepMediaPreviewForward
+            | Action::ToggleMediaPreviewMute
             | Action::OpenSearchResults
             | Action::SaveCurrentSearch
             | Action::OpenSavedSearches
             | Action::OpenBlockInspector
             | Action::OpenBlockRerunHistory
+            | Action::OpenBlockRerunComparison
             | Action::InsertScratchSelectionIntoInput
+            | Action::SendScratchSelectionToPane
+            | Action::OpenWorkspaceBrowser
             | Action::ToggleSearchRegex
             | Action::CycleSearchScope => {}
             Action::NewFloatingPane => {

@@ -176,6 +176,12 @@ pub struct WorkspaceSessionState {
     /// Wok package version that wrote this session.
     #[serde(default)]
     pub wok_version: String,
+    /// Optional user-facing workspace description.
+    #[serde(default)]
+    pub workspace_description: String,
+    /// Optional workspace tags.
+    #[serde(default)]
+    pub workspace_tags: Vec<String>,
     /// Saved tabs.
     pub tabs: Vec<WorkspaceTabState>,
     /// Saved panes.
@@ -436,6 +442,8 @@ mod tests {
             schema_version: 1,
             saved_at_unix_ms: 123,
             wok_version: "test".to_string(),
+            workspace_description: "demo workspace".to_string(),
+            workspace_tags: vec!["backend".to_string()],
             tabs: vec![WorkspaceTabState {
                 id: 1,
                 title: "Shell".to_string(),
@@ -499,6 +507,8 @@ mod tests {
         assert_eq!(loaded.schema_version, 1);
         assert_eq!(loaded.saved_at_unix_ms, 123);
         assert_eq!(loaded.wok_version, "test");
+        assert_eq!(loaded.workspace_description, "demo workspace");
+        assert_eq!(loaded.workspace_tags, vec!["backend"]);
         assert!(loaded.show_failure_trends_panel);
         assert!(loaded.show_workspace_insights_panel);
         assert_eq!(loaded.failure_trend_bucket_ms, 120_000);
@@ -593,6 +603,8 @@ mod tests {
         assert_eq!(loaded.schema_version, 1);
         assert_eq!(loaded.saved_at_unix_ms, 0);
         assert!(loaded.wok_version.is_empty());
+        assert!(loaded.workspace_description.is_empty());
+        assert!(loaded.workspace_tags.is_empty());
         assert_eq!(
             loaded.failure_trend_bucket_ms,
             default_failure_trend_bucket_ms()
@@ -631,6 +643,8 @@ mod tests {
             schema_version: 1,
             saved_at_unix_ms: 0,
             wok_version: String::new(),
+            workspace_description: String::new(),
+            workspace_tags: Vec::new(),
             tabs: Vec::new(),
             panes: Vec::new(),
             active_tab: 0,

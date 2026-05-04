@@ -78,16 +78,17 @@ Use `bash`, `zsh`, or `fish` for the cleanest first-run block demo.
 7. Use `Mod+F` to search across the workspace and jump between panes.
 8. Use `Mod+Alt+S` to toggle typewriter-style output reveal.
 9. Use `Mod+P` and run `Cycle Visual Effect` to preview the default-off visual effects.
-10. Use `Mod+P` and choose a `Preview ...` file entry for images, GIFs, or MP4s in the current directory; `Mod+Alt+Space` pauses GIF/MP4 previews, and `Escape` or `Close Media Preview` closes them.
-11. Put the cursor on a path and use `Mod+Alt+P/O/C/V` for preview/open/copy/reveal, or run `Tail Path Under Cursor` from the palette.
+10. Use `Mod+P` and choose a `Preview ...` file entry for images, GIFs, or MP4s in the current directory; `Mod+Alt+Space` pauses GIF/MP4 previews, `Mod+Alt+=/-` changes MP4 speed, `Mod+Alt+M` mutes, and `Escape` or `Close Media Preview` closes them.
+11. Put the cursor on a path and use `Mod+Alt+P/O/C/V` for preview/open/copy/reveal. Quoted paths, escaped spaces, and `file:line:col` compiler output are recognized; unsupported previews fall back to Quick Look/open.
 12. Use `Mod+Alt+/` for regex search, `Mod+Alt+Shift+F` to cycle search scope, and `Open Search Results` or `Saved Searches` from the palette.
-13. Use `Open Block Inspector` or `Block Rerun History` on a selected command block.
-14. Use `Mod+Alt+X` for the scratch buffer, and `Mod+Alt+Shift+X` to insert the selection into command input.
+13. Use `Open Block Inspector`, `Block Rerun History`, or `Block Rerun Comparison` on a selected command block.
+14. Use `Mod+Alt+X` for the default scratch buffer, `Open Scratch Palette` for named scratches, `Mod+Alt+Shift+X` to insert the selection into command input, or `Send Scratch Selection To Pane` to run/send it directly.
 15. Use `Mod+P` and run `Reset Settings` to restore the managed default config.
 16. Use `Mod+Shift+S` to save the `manual` session snapshot, then `Mod+Shift+R` to load it.
 
 Named snapshots are available through Lua action aliases such as `save_session:demo` and `load_session:demo`.
 From a shell attached to a running Wok instance, `wok workspace save backend`, `wok workspace load backend`, and `wok workspace list` provide the same named-workspace flow.
+The command palette also exposes a workspace browser for saved snapshots.
 
 ## Repo Map
 

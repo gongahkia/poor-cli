@@ -1666,6 +1666,8 @@ impl WokHandler {
             schema_version: 1,
             saved_at_unix_ms: current_time_ms(),
             wok_version: env!("CARGO_PKG_VERSION").to_string(),
+            workspace_description: String::new(),
+            workspace_tags: Vec::new(),
             tabs,
             panes,
             active_tab: self.workspace.active_tab,
@@ -1682,6 +1684,8 @@ impl WokHandler {
             schema_version: _,
             saved_at_unix_ms: _,
             wok_version: _,
+            workspace_description: _,
+            workspace_tags: _,
             tabs,
             panes,
             active_tab,
@@ -3699,10 +3703,6 @@ impl WokHandler {
         }
     }
 
-    fn open_text_file_preview(&mut self, path: PathBuf) {
-        self.open_text_file_preview_at(path, None, None);
-    }
-
     fn open_text_file_preview_at(
         &mut self,
         path: PathBuf,
@@ -3933,8 +3933,10 @@ impl WokHandler {
             }),
             _ => None,
         };
-        self.status_message =
-            Some(message.unwrap_or_else(|| "Media control is only available for MP4 previews".to_string()));
+        self.status_message = Some(
+            message
+                .unwrap_or_else(|| "Media control is only available for MP4 previews".to_string()),
+        );
         self.needs_redraw = true;
     }
 
@@ -4227,7 +4229,10 @@ impl WokHandler {
                 self.status_message = Some(format!("Opened Quick Look: {}", path.display()));
             }
             Err(error) => {
-                warn!("failed to launch Quick Look for '{}': {error}", path.display());
+                warn!(
+                    "failed to launch Quick Look for '{}': {error}",
+                    path.display()
+                );
                 self.open_path_externally(path);
                 return;
             }
@@ -7670,14 +7675,29 @@ impl WokHandler {
                 .get(&found.pane_id)
                 .map(|pane| pane.terminal.state.row_text(found.row))
                 .unwrap_or_default();
+            let block_label = self
+                .panes
+                .get(&found.pane_id)
+                .and_then(|pane| {
+                    found.block_id.and_then(|block_id| {
+                        pane.app
+                            .block_manager
+                            .get_block(block_id)
+                            .map(|block| truncate_metric_text(&block.command_text, 48))
+                    })
+                })
+                .map_or_else(
+                    || "output".to_string(),
+                    |command| format!("block: {command}"),
+                );
             entries.push(PaletteEntry {
                 label: format!(
-                    "{}:{}:{}",
+                    "Pane {} line {} col {}",
                     found.pane_id,
                     found.row + 1,
                     usize::from(found.col_start) + 1
                 ),
-                description: truncate_metric_text(&line, 120),
+                description: format!("{block_label} | {}", truncate_metric_text(&line, 100)),
                 category: PaletteCategory::SearchResult,
                 score: 0.0,
                 action: PaletteAction::SearchMatch {
@@ -9102,6 +9122,23 @@ impl AppHandler for WokHandler {
         }
     }
 
+    fn on_file_drop(&mut self, path: PathBuf) {
+        let text = shell_quote_path(&path.display().to_string());
+        if let Some(active_pane) = self.active_pane_mut() {
+            if active_pane.app.input_mode == InputMode::OwnedInput
+                || active_pane.app.input_editor.is_active
+            {
+                let _ = active_pane.app.input_editor.buffer.insert_at(0, &text);
+                self.status_message = Some(format!("Inserted dropped path: {}", path.display()));
+                self.needs_redraw = true;
+                return;
+            }
+        }
+        self.send_raw_input_to_pty(text.as_bytes());
+        self.status_message = Some(format!("Sent dropped path: {}", path.display()));
+        self.needs_redraw = true;
+    }
+
     fn on_menu_action(&mut self, action: AppMenuAction) -> bool {
         if self.settings_editor.is_some() {
             match action {
@@ -10438,12 +10475,20 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::CycleVisualEffect => "cycle_visual_effect".to_string(),
         Action::CloseMediaPreview => "close_media_preview".to_string(),
         Action::ToggleMediaPreviewPlayback => "toggle_media_preview_playback".to_string(),
+        Action::SeekMediaPreviewBackward => "seek_media_preview_backward".to_string(),
+        Action::SeekMediaPreviewForward => "seek_media_preview_forward".to_string(),
+        Action::SlowMediaPreviewPlayback => "slow_media_preview_playback".to_string(),
+        Action::FastMediaPreviewPlayback => "fast_media_preview_playback".to_string(),
+        Action::StepMediaPreviewBackward => "step_media_preview_backward".to_string(),
+        Action::StepMediaPreviewForward => "step_media_preview_forward".to_string(),
+        Action::ToggleMediaPreviewMute => "toggle_media_preview_mute".to_string(),
         Action::PreviewPathUnderCursor => "preview_path_under_cursor".to_string(),
         Action::OpenPathUnderCursor => "open_path_under_cursor".to_string(),
         Action::CopyPathUnderCursor => "copy_path_under_cursor".to_string(),
         Action::RevealPathUnderCursor => "reveal_path_under_cursor".to_string(),
         Action::TailPathUnderCursor => "tail_path_under_cursor".to_string(),
         Action::OpenScratchBuffer => "open_scratch_buffer".to_string(),
+        Action::OpenScratchPalette => "open_scratch_palette".to_string(),
         Action::ToggleSearchRegex => "toggle_search_regex".to_string(),
         Action::CycleSearchScope => "cycle_search_scope".to_string(),
         Action::OpenSearchResults => "open_search_results".to_string(),
@@ -10451,9 +10496,12 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::OpenSavedSearches => "open_saved_searches".to_string(),
         Action::OpenBlockInspector => "open_block_inspector".to_string(),
         Action::OpenBlockRerunHistory => "open_block_rerun_history".to_string(),
+        Action::OpenBlockRerunComparison => "open_block_rerun_comparison".to_string(),
         Action::InsertScratchSelectionIntoInput => {
             "insert_scratch_selection_into_input".to_string()
         }
+        Action::SendScratchSelectionToPane => "send_scratch_selection_to_pane".to_string(),
+        Action::OpenWorkspaceBrowser => "open_workspace_browser".to_string(),
         Action::NewFloatingPane => "new_floating_pane".to_string(),
         Action::ToggleFloatingPane => "toggle_floating_pane".to_string(),
         Action::CloseFloatingPane => "close_floating_pane".to_string(),
@@ -10537,13 +10585,22 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::CycleVisualEffect,
         Action::CloseMediaPreview,
         Action::ToggleMediaPreviewPlayback,
+        Action::SeekMediaPreviewBackward,
+        Action::SeekMediaPreviewForward,
+        Action::SlowMediaPreviewPlayback,
+        Action::FastMediaPreviewPlayback,
+        Action::StepMediaPreviewBackward,
+        Action::StepMediaPreviewForward,
+        Action::ToggleMediaPreviewMute,
         Action::PreviewPathUnderCursor,
         Action::OpenPathUnderCursor,
         Action::CopyPathUnderCursor,
         Action::RevealPathUnderCursor,
         Action::TailPathUnderCursor,
         Action::OpenScratchBuffer,
+        Action::OpenScratchPalette,
         Action::InsertScratchSelectionIntoInput,
+        Action::SendScratchSelectionToPane,
         Action::ToggleSearchRegex,
         Action::CycleSearchScope,
         Action::OpenSearchResults,
@@ -10551,6 +10608,8 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::OpenSavedSearches,
         Action::OpenBlockInspector,
         Action::OpenBlockRerunHistory,
+        Action::OpenBlockRerunComparison,
+        Action::OpenWorkspaceBrowser,
         Action::SplitVertical,
         Action::SplitHorizontal,
         Action::CloseSplit,
@@ -10655,15 +10714,24 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::CycleVisualEffect => "Cycle rainbow, wavy, glitch, CRT, bloom, and cookie effects",
         Action::CloseMediaPreview => "Close the built-in image, GIF, or MP4 preview",
         Action::ToggleMediaPreviewPlayback => "Play or pause the built-in GIF or MP4 preview",
+        Action::SeekMediaPreviewBackward => "Seek the MP4 preview backward by five seconds",
+        Action::SeekMediaPreviewForward => "Seek the MP4 preview forward by five seconds",
+        Action::SlowMediaPreviewPlayback => "Slow down MP4 preview playback",
+        Action::FastMediaPreviewPlayback => "Speed up MP4 preview playback",
+        Action::StepMediaPreviewBackward => "Step MP4 preview backward by one frame",
+        Action::StepMediaPreviewForward => "Step MP4 preview forward by one frame",
+        Action::ToggleMediaPreviewMute => "Mute or unmute the MP4 preview",
         Action::PreviewPathUnderCursor => "Preview the file path under the cursor",
         Action::OpenPathUnderCursor => "Open the file path under the cursor externally",
         Action::CopyPathUnderCursor => "Copy the file path under the cursor",
         Action::RevealPathUnderCursor => "Reveal the file path under the cursor in Finder",
         Action::TailPathUnderCursor => "Tail the file path under the cursor in a new split",
         Action::OpenScratchBuffer => "Open a persistent scratch buffer",
+        Action::OpenScratchPalette => "Open named scratch buffers",
         Action::InsertScratchSelectionIntoInput => {
             "Insert selected scratch text into command input"
         }
+        Action::SendScratchSelectionToPane => "Send selected scratch text directly to the pane",
         Action::ToggleSearchRegex => "Toggle global search regex mode",
         Action::CycleSearchScope => "Cycle search scope across all, pane, commands, and output",
         Action::OpenSearchResults => "Open current search matches as a result list",
@@ -10671,6 +10739,8 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::OpenSavedSearches => "Open saved search queries",
         Action::OpenBlockInspector => "Inspect selected command block metadata and output",
         Action::OpenBlockRerunHistory => "Show recorded rerun history for selected command block",
+        Action::OpenBlockRerunComparison => "Compare every recorded rerun of the selected command",
+        Action::OpenWorkspaceBrowser => "Browse and load named workspace snapshots",
         Action::NewFloatingPane => "Create a floating pane",
         Action::ToggleFloatingPane => "Show or hide floating panes",
         Action::CloseFloatingPane => "Close focused floating pane",
@@ -11029,10 +11099,63 @@ fn write_saved_searches(queries: &[String]) -> std::io::Result<()> {
     std::fs::write(path, queries.join("\n"))
 }
 
+fn workspace_session_entries() -> Vec<(String, String)> {
+    let dir = WokConfig::config_dir().join("sessions");
+    let mut entries = Vec::new();
+    if let Ok(read_dir) = std::fs::read_dir(dir) {
+        for entry in read_dir.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|value| value.to_str()) != Some("json") {
+                continue;
+            }
+            let Some(name) = path.file_stem().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            let description = load_session(&path).map_or_else(
+                |_| path.display().to_string(),
+                |session| {
+                    let saved = if session.saved_at_unix_ms == 0 {
+                        "unknown time".to_string()
+                    } else {
+                        format!("saved {}", session.saved_at_unix_ms)
+                    };
+                    let mut label = format!(
+                        "{} | {} tabs | {} panes | Wok {}",
+                        saved,
+                        session.tabs.len(),
+                        session.panes.len(),
+                        if session.wok_version.is_empty() {
+                            "unknown"
+                        } else {
+                            session.wok_version.as_str()
+                        }
+                    );
+                    if !session.workspace_description.trim().is_empty() {
+                        label.push_str(&format!(" | {}", session.workspace_description.trim()));
+                    }
+                    if !session.workspace_tags.is_empty() {
+                        label.push_str(&format!(" | tags: {}", session.workspace_tags.join(",")));
+                    }
+                    label
+                },
+            );
+            entries.push((name.to_string(), description));
+        }
+    }
+    entries.sort_by(|left, right| left.0.cmp(&right.0));
+    entries
+}
+
 fn scratch_snippet_entries() -> Vec<String> {
     scratch_files()
         .into_iter()
-        .flat_map(|(_, path)| std::fs::read_to_string(path).unwrap_or_default().lines().map(ToString::to_string).collect::<Vec<_>>())
+        .flat_map(|(_, path)| {
+            std::fs::read_to_string(path)
+                .unwrap_or_default()
+                .lines()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        })
         .map(|line| line.trim().to_string())
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
         .collect()
@@ -11132,7 +11255,8 @@ fn path_like_spans(line: &str) -> Vec<PathLikeSpan> {
             }
             if ch == active_quote {
                 if let Some(start) = start_byte {
-                    push_path_span_candidate(line, start, byte_idx + ch.len_utf8(), start_col, &mut spans);
+                    let end = extend_line_column_suffix_end(line, byte_idx + ch.len_utf8());
+                    push_path_span_candidate(line, start, end, start_col, &mut spans);
                 }
                 start_byte = None;
                 quote = None;
@@ -11219,12 +11343,37 @@ fn push_path_span_candidate(
     });
 }
 
+fn extend_line_column_suffix_end(line: &str, mut end_byte: usize) -> usize {
+    let bytes = line.as_bytes();
+    let mut cursor = end_byte;
+    for _ in 0..2 {
+        if bytes.get(cursor) != Some(&b':') {
+            break;
+        }
+        let digits_start = cursor + 1;
+        let mut digits_end = digits_start;
+        while bytes
+            .get(digits_end)
+            .is_some_and(|byte| byte.is_ascii_digit())
+        {
+            digits_end += 1;
+        }
+        if digits_end == digits_start {
+            break;
+        }
+        end_byte = digits_end;
+        cursor = digits_end;
+    }
+    end_byte
+}
+
 fn parse_path_target(raw: &str) -> Option<ParsedPathTarget> {
     let mut token = clean_path_token(raw);
     if token.is_empty() {
         return None;
     }
     let (line, column) = parse_line_column_suffix(&mut token);
+    token = clean_path_token(&token);
     if !looks_like_path_token(&token) {
         return None;
     }
@@ -11236,7 +11385,7 @@ fn parse_path_target(raw: &str) -> Option<ParsedPathTarget> {
 }
 
 fn parse_line_column_suffix(token: &mut String) -> (Option<usize>, Option<usize>) {
-    let mut parts = token.rsplitn(3, ':').collect::<Vec<_>>();
+    let parts = token.rsplitn(3, ':').collect::<Vec<_>>();
     if parts.len() < 2 {
         return (None, None);
     }
@@ -11511,6 +11660,10 @@ mod tests {
             Some(Action::ToggleMediaPreviewPlayback)
         );
         assert_eq!(
+            parse_lua_action("media_faster"),
+            Some(Action::FastMediaPreviewPlayback)
+        );
+        assert_eq!(
             parse_lua_action("search_results"),
             Some(Action::OpenSearchResults)
         );
@@ -11521,6 +11674,18 @@ mod tests {
         assert_eq!(
             parse_lua_action("insert_scratch"),
             Some(Action::InsertScratchSelectionIntoInput)
+        );
+        assert_eq!(
+            parse_lua_action("run_scratch"),
+            Some(Action::SendScratchSelectionToPane)
+        );
+        assert_eq!(
+            parse_lua_action("workspace_browser"),
+            Some(Action::OpenWorkspaceBrowser)
+        );
+        assert_eq!(
+            parse_lua_action("compare_reruns"),
+            Some(Action::OpenBlockRerunComparison)
         );
     }
 
@@ -11593,25 +11758,35 @@ mod tests {
         assert!(catalog.contains(&Action::CycleVisualEffect));
         assert!(catalog.contains(&Action::CloseMediaPreview));
         assert!(catalog.contains(&Action::ToggleMediaPreviewPlayback));
+        assert!(catalog.contains(&Action::FastMediaPreviewPlayback));
         assert!(catalog.contains(&Action::PreviewPathUnderCursor));
         assert!(catalog.contains(&Action::OpenScratchBuffer));
+        assert!(catalog.contains(&Action::OpenScratchPalette));
         assert!(catalog.contains(&Action::InsertScratchSelectionIntoInput));
+        assert!(catalog.contains(&Action::SendScratchSelectionToPane));
         assert!(catalog.contains(&Action::ToggleSearchRegex));
         assert!(catalog.contains(&Action::OpenSearchResults));
         assert!(catalog.contains(&Action::OpenBlockInspector));
+        assert!(catalog.contains(&Action::OpenBlockRerunComparison));
+        assert!(catalog.contains(&Action::OpenWorkspaceBrowser));
     }
 
     #[test]
     fn test_extract_path_near_column_finds_visible_paths() {
         let line = "open ./src/main.rs or /tmp/out.log";
         assert_eq!(
-            extract_path_near_column(line, 8),
-            Some("./src/main.rs".to_string())
+            extract_path_near_column(line, 8).map(|target| target.path),
+            Some(PathBuf::from("./src/main.rs"))
         );
         assert_eq!(
-            extract_path_near_column(line, 26),
-            Some("/tmp/out.log".to_string())
+            extract_path_near_column(line, 26).map(|target| target.path),
+            Some(PathBuf::from("/tmp/out.log"))
         );
+        let compiler = r#"error: "src/my file.rs":42:7: nope"#;
+        let target = extract_path_near_column(compiler, 10).expect("path target");
+        assert_eq!(target.path, PathBuf::from("src/my file.rs"));
+        assert_eq!(target.line, Some(42));
+        assert_eq!(target.column, Some(7));
     }
 
     #[test]

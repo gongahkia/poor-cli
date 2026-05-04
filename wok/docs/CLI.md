@@ -126,6 +126,6 @@ wok workspace load backend
 wok workspace list
 ```
 
-`save` and `load` call the running app through `wok.run_action`, so they use `--socket` or `$WOK_SOCKET` and optional `--token` or `$WOK_RPC_TOKEN`. Session JSON now includes lightweight metadata (`schema_version`, `saved_at_unix_ms`, and `wok_version`) so saved workspaces are easier to inspect outside Wok.
+`save` and `load` call the running app through `wok.run_action`, so they use `--socket` or `$WOK_SOCKET` and optional `--token` or `$WOK_RPC_TOKEN`. Session JSON now includes lightweight metadata (`schema_version`, `saved_at_unix_ms`, `wok_version`, `workspace_description`, and `workspace_tags`) so saved workspaces are easier to inspect outside Wok and in the command-palette workspace browser.
 
-Wok also supports Kitty graphics, Sixel, and iTerm image escape sequences for inline terminal image output, plus built-in file previews for images, GIFs, MP4/M4V, and bounded text/code previews. GIF and MP4 previews can be paused/resumed from the command palette or default keybinding.
+Wok also supports Kitty graphics, Sixel, and iTerm image escape sequences for inline terminal image output, plus built-in file previews for images, GIFs, MP4/M4V, and bounded text/code previews. GIF and MP4 previews can be paused/resumed from the command palette or default keybinding; MP4 previews also expose seek, speed, frame-step, and mute actions.

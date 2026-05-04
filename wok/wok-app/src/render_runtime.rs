@@ -1303,6 +1303,45 @@ pub(crate) fn render_settings_editor(
     let text_width = (editor_rect.x + editor_rect.w - text_x - 8.0).max(0.0);
     let line_number_width = (gutter_width - 8.0).max(font.metrics.cell_width);
 
+    if line_count > max_visible_lines {
+        let rail_x = editor_rect.x + editor_rect.w - 4.0;
+        let thumb_h = ((max_visible_lines as f32 / line_count as f32) * editor_rect.h)
+            .clamp(18.0, editor_rect.h);
+        let scrollable = line_count.saturating_sub(max_visible_lines).max(1);
+        let thumb_y =
+            editor_rect.y + (start as f32 / scrollable as f32) * (editor_rect.h - thumb_h).max(0.0);
+        render.batch.push_bg_quad(
+            rail_x,
+            editor_rect.y,
+            2.0,
+            editor_rect.h,
+            with_opacity(
+                [
+                    theme.status_bar_text.r,
+                    theme.status_bar_text.g,
+                    theme.status_bar_text.b,
+                    0.18,
+                ],
+                surface_opacity,
+            ),
+        );
+        render.batch.push_bg_quad(
+            rail_x - 1.0,
+            thumb_y,
+            4.0,
+            thumb_h,
+            with_opacity(
+                [
+                    theme.highlight_current_match.r,
+                    theme.highlight_current_match.g,
+                    theme.highlight_current_match.b,
+                    0.72,
+                ],
+                surface_opacity,
+            ),
+        );
+    }
+
     for visible_row in 0..end.saturating_sub(start) {
         let absolute_row = start + visible_row;
         let line = input

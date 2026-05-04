@@ -1,5 +1,6 @@
 //! Application handler trait for dispatching window events.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use winit::dpi::PhysicalSize;
@@ -80,6 +81,9 @@ pub trait AppHandler {
 
     /// Called when a mouse event is received.
     fn on_mouse_event(&mut self, _event: MouseEvent) {}
+
+    /// Called when files are dropped on the window.
+    fn on_file_drop(&mut self, _path: PathBuf) {}
 
     /// Called when a native app menu action is selected.
     ///
