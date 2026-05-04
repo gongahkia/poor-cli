@@ -990,6 +990,7 @@ def build_tool_registry(self) -> None:
                     "max_iterations": {"type": "INTEGER", "description": "Max tool iterations for sub-agent (default 10)"},
                     "tools": {"type": "STRING", "description": "Comma-separated allowed tools (e.g. 'read_file,grep_files'); use 'none' for toolless latent sub-agents. If omitted, write/exec tools are denied by default."},
                     "archetype": {"type": "STRING", "description": "Sub-agent archetype: 'generic', 'research' (read-only), 'code' (explicit opt-in writer), 'test' (run tests), 'review' (clean-context diff review), 'advisor' (smart-friend plan/risk critique). Overrides tool restrictions with archetype-specific defaults."},
+                    "agent": {"type": "STRING", "description": "Markdown-defined agent name from .poor-cli/agents/<name>.md. When set, its prompt, model/provider, and tool policy are used."},
                     "communication_mode": {"type": "STRING", "description": "Sub-agent communication mode: text or latent. Latent requires hf_local and research.latent_communication.enabled."}
                 },
                 "required": ["prompt"]

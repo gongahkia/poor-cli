@@ -837,6 +837,7 @@ def _run_agent_mode(argv: Sequence[str]) -> int:
     """Handle 'poor-cli agent' subcommands."""
     import asyncio
     import argparse
+    from .cli.agent_cmds import add_definition_subcommands, print_definitions, run_definition, show_definition, validate_definitions
     parser = argparse.ArgumentParser(prog="poor-cli agent", description="Background agent management")
     sub = parser.add_subparsers(dest="subcommand")
 
@@ -853,6 +854,7 @@ def _run_agent_mode(argv: Sequence[str]) -> int:
     p_list = sub.add_parser("list", help="List agents")
     p_list.add_argument("--status", nargs="*", help="Filter by status")
     p_list.add_argument("--json", action="store_true")
+    p_list.add_argument("--background", action="store_true", help="List background agent runs instead of markdown definitions")
 
     # agent logs
     p_logs = sub.add_parser("logs", help="Show agent logs")
@@ -868,9 +870,16 @@ def _run_agent_mode(argv: Sequence[str]) -> int:
     p_cancel.add_argument("agent_id", help="Agent ID")
 
     # agent run (internal — called by subprocess)
-    p_run = sub.add_parser("run", help=argparse.SUPPRESS)
-    p_run.add_argument("--agent-id", required=True)
-    p_run.add_argument("--repo-root", required=True)
+    p_run = sub.add_parser("run", help="Run a markdown-defined subagent")
+    p_run.add_argument("name", nargs="?")
+    p_run.add_argument("--prompt", "-p")
+    p_run.add_argument("--provider")
+    p_run.add_argument("--model")
+    p_run.add_argument("--api-key")
+    p_run.add_argument("--json", action="store_true")
+    p_run.add_argument("--agent-id")
+    p_run.add_argument("--repo-root")
+    add_definition_subcommands(sub)
 
     args = parser.parse_args(list(argv))
     if not args.subcommand:
@@ -880,9 +889,18 @@ def _run_agent_mode(argv: Sequence[str]) -> int:
     from .agent_runner import AgentManager, run_agent_worker
     from pathlib import Path
 
-    if args.subcommand == "run":
+    if args.subcommand == "show":
+        return show_definition(Path.cwd(), args.name, json_output=bool(args.json))
+
+    if args.subcommand == "validate":
+        return validate_definitions(Path.cwd(), json_output=bool(args.json))
+
+    if args.subcommand == "run" and args.agent_id and args.repo_root:
         asyncio.run(run_agent_worker(args.agent_id, args.repo_root))
         return 0
+
+    if args.subcommand == "run":
+        return run_definition(argv)
 
     mgr = AgentManager(Path.cwd())
 
@@ -903,6 +921,9 @@ def _run_agent_mode(argv: Sequence[str]) -> int:
             print(f"  Branch: {agent.branch_name}")
             print(f"  Logs: {agent.log_path}")
         return 0
+
+    if args.subcommand == "list" and not args.background:
+        return print_definitions(Path.cwd(), json_output=bool(args.json))
 
     if args.subcommand == "list":
         agents = mgr.list_agents(statuses=args.status or None)

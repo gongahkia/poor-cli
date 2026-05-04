@@ -3909,14 +3909,24 @@ class ToolRegistryAsync:
         max_iterations: int = 10,
         tools: Optional[str] = None,
         archetype: Optional[str] = None,
+        agent: Optional[str] = None,
         communication_mode: str = "text",
         _request_id: str = "",
     ) -> str:
         if not self._core:
             return "error: core engine not available for delegation"
         try:
+            from pathlib import Path
+            from .agent_definitions import AgentDefinitionRegistry
             from .sub_agent import SubAgent
             archetype = archetype or "generic"
+            definition = None
+            if agent and agent.strip():
+                registry = AgentDefinitionRegistry(Path.cwd(), available_tools=self.tools.keys())
+                definition = registry.get(agent.strip())
+                if definition is None:
+                    detail = "; ".join(str(error.get("error", "")) for error in registry.errors())
+                    return f"unknown sub-agent definition: {agent.strip()}" + (f" ({detail})" if detail else "")
             allowed_tools = None
             denied_tools = None
             if tools and tools.strip().lower() == "none":
@@ -3926,12 +3936,20 @@ class ToolRegistryAsync:
             elif archetype == "generic":
                 agentic_cfg = getattr(self._core.config, "agentic", None) if self._core.config else None
                 denied_tools = set(getattr(agentic_cfg, "sub_agent_default_denied_tools", []) if agentic_cfg else [])
-            agent = SubAgent(self._core, max_iterations=max_iterations, allowed_tools=allowed_tools, denied_tools=denied_tools, archetype=archetype, communication_mode=communication_mode)
+            sub_agent = SubAgent(
+                self._core,
+                max_iterations=max_iterations,
+                allowed_tools=allowed_tools,
+                denied_tools=denied_tools,
+                archetype=archetype,
+                communication_mode=communication_mode,
+                agent_definition=definition,
+            )
             cancel_event = None
             if _request_id and hasattr(self._core, "_cancel_events"):
                 cancel_event = self._core._cancel_events.get(_request_id)
-            result = await agent.run(prompt, context_files=context_files, cancel_event=cancel_event)
-            usage = agent.get_usage()
+            result = await sub_agent.run(prompt, context_files=context_files, cancel_event=cancel_event)
+            usage = sub_agent.get_usage()
             if usage.get("input_tokens") or usage.get("output_tokens"):
                 self._core._track_cost(usage.get("input_tokens", 0), usage.get("output_tokens", 0))
             return result

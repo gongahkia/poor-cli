@@ -6,6 +6,7 @@ from enum import Enum
 import time
 from typing import Any, Dict, List, Optional
 import uuid
+from .agent_definitions import AgentDefinition, effective_allowed_tools
 from .exceptions import setup_logger
 from .policy_hooks import emit_policy_hook_nowait
 
@@ -105,15 +106,24 @@ class SubAgent:
         denied_tools: Optional[set] = None,
         archetype: str = "generic",
         communication_mode: str = "text",
+        agent_definition: Optional[AgentDefinition] = None,
     ):
         self._parent = parent_core
-        self._archetype = archetype
+        self._agent_definition = agent_definition
+        self._archetype = f"agent:{agent_definition.name}" if agent_definition else archetype
         if communication_mode not in ("text", "latent"):
             raise ValueError("communication_mode must be 'text' or 'latent'")
         self._communication_mode = communication_mode
         self._hard_denied_tools = {"delegate_task", "spawn_parallel_agents"}
         arch_cfg = _ARCHETYPE_CONFIGS.get(archetype, {})
-        if archetype != "generic" and arch_cfg.get("allowed_tools") is not None:
+        if agent_definition is not None:
+            available = [
+                str(declaration.get("name", ""))
+                for declaration in parent_core.tool_registry.get_tool_declarations()
+                if isinstance(declaration, dict)
+            ]
+            self._allowed_tools = effective_allowed_tools(agent_definition, available)
+        elif archetype != "generic" and arch_cfg.get("allowed_tools") is not None:
             self._allowed_tools = set(arch_cfg["allowed_tools"])
         else:
             self._allowed_tools = set(allowed_tools) if allowed_tools is not None else None
@@ -122,11 +132,18 @@ class SubAgent:
         cfg_max_iter = getattr(agentic_cfg, "sub_agent_max_iterations", 10) if agentic_cfg else 10
         self._max_iterations = min(max_iterations, cfg_max_iter, 25)
         self._timeout = getattr(agentic_cfg, "sub_agent_timeout", timeout) if agentic_cfg else timeout
-        default_denied = set(getattr(agentic_cfg, "sub_agent_default_denied_tools", []) if agentic_cfg else [])
+        default_denied = set() if agent_definition is not None else set(
+            getattr(agentic_cfg, "sub_agent_default_denied_tools", []) if agentic_cfg else []
+        )
         explicit_denied = set(denied_tools or set())
+        if agent_definition is not None:
+            explicit_denied |= set(agent_definition.denied_tools)
         self._denied_tools = default_denied | explicit_denied | self._hard_denied_tools
         self._max_input_tokens = int(getattr(agentic_cfg, "sub_agent_max_input_tokens", 0) or 0)
-        self._max_output_tokens = int(getattr(agentic_cfg, "sub_agent_max_output_tokens", 0) or 0)
+        cfg_max_output = int(getattr(agentic_cfg, "sub_agent_max_output_tokens", 0) or 0)
+        if agent_definition is not None:
+            cfg_max_output = min(cfg_max_output or agent_definition.max_output_tokens, agent_definition.max_output_tokens)
+        self._max_output_tokens = cfg_max_output
         self._max_cost_usd = float(getattr(agentic_cfg, "sub_agent_max_cost_usd", 0.0) or 0.0)
         self._total_input_tokens: int = 0
         self._total_output_tokens: int = 0
@@ -222,17 +239,19 @@ class SubAgent:
             return "[sub-agent cancelled before start]"
         from .providers.provider_factory import ProviderFactory
         config = self._parent.config
-        api_key = self._parent._config_manager.get_api_key(config.model.provider)
-        provider_config = self._parent._config_manager.get_provider_config(config.model.provider)
+        provider_name = self._agent_definition.provider if self._agent_definition and self._agent_definition.provider else config.model.provider
+        model_name = self._agent_definition.model if self._agent_definition and self._agent_definition.model else config.model.model_name
+        api_key = self._parent._config_manager.get_api_key(provider_name)
+        provider_config = self._parent._config_manager.get_provider_config(provider_name)
         extra_kwargs: Dict[str, Any] = {}
         if provider_config and provider_config.base_url:
             extra_kwargs["base_url"] = provider_config.base_url
-        if config.model.provider in ("anthropic", "claude"):
+        if provider_name in ("anthropic", "claude"):
             extra_kwargs["prompt_caching"] = getattr(config.model, "prompt_caching", True)
         provider = ProviderFactory.create(
-            provider_name=config.model.provider,
+            provider_name=provider_name,
             api_key=api_key or "",
-            model_name=config.model.model_name,
+            model_name=model_name,
             **extra_kwargs,
         )
         filtered_tools = self._resolve_filtered_tools()
@@ -366,7 +385,7 @@ class SubAgent:
     def _build_system_instruction(self, filtered_tools: List[Dict[str, Any]]) -> str:
         """Build system instruction based on archetype and available tools."""
         arch_cfg = _ARCHETYPE_CONFIGS.get(self._archetype, {})
-        arch_prompt = arch_cfg.get("system_prompt", "")
+        arch_prompt = self._agent_definition.system_prompt if self._agent_definition else arch_cfg.get("system_prompt", "")
         sandbox_preset = getattr(self._parent, "_sandbox_preset", "workspace-write")
         tool_names = sorted(t.get("name", "") for t in filtered_tools)
         parts = [
