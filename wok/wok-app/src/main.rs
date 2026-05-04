@@ -6289,6 +6289,20 @@ impl WokHandler {
                             }
                             self.tail_path_in_split(&PathBuf::from(path));
                         }
+                        PaletteAction::SearchMatch { pane_id, row } => {
+                            self.jump_to_search_match(pane_id, row);
+                        }
+                        PaletteAction::SavedSearch(query) => {
+                            self.load_saved_search(query);
+                        }
+                        PaletteAction::ScratchSnippet(text) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                                active_pane.app.input_editor.is_active = true;
+                                let _ = active_pane.app.input_editor.buffer.insert_at(0, &text);
+                            }
+                        }
                         PaletteAction::ApplyTheme(path) => {
                             if let Some(active_pane) = self.active_pane_mut() {
                                 active_pane.app.close_command_palette();
@@ -7355,6 +7369,157 @@ impl WokHandler {
         }
     }
 
+    fn open_search_results_palette(&mut self) {
+        self.refresh_global_search();
+        let Some(search) = self.active_search_state() else {
+            self.status_message = Some("Search is not active".to_string());
+            self.needs_redraw = true;
+            return;
+        };
+        if search.matches.is_empty() {
+            self.status_message = Some("No search results to list".to_string());
+            self.needs_redraw = true;
+            return;
+        }
+        let mut entries = Vec::new();
+        for (index, found) in search.matches.iter().take(200).enumerate() {
+            let line = self
+                .panes
+                .get(&found.pane_id)
+                .map(|pane| pane.terminal.state.row_text(found.row))
+                .unwrap_or_default();
+            entries.push(PaletteEntry {
+                label: format!(
+                    "{}:{}:{}",
+                    found.pane_id,
+                    found.row + 1,
+                    usize::from(found.col_start) + 1
+                ),
+                description: truncate_metric_text(&line, 120),
+                category: PaletteCategory::SearchResult,
+                score: 0.0,
+                action: PaletteAction::SearchMatch {
+                    pane_id: found.pane_id,
+                    row: found.row,
+                },
+            });
+            if index >= 199 {
+                break;
+            }
+        }
+        self.open_transient_palette(entries, "Search results");
+    }
+
+    fn open_saved_searches_palette(&mut self) {
+        let queries = read_saved_searches();
+        if queries.is_empty() {
+            self.status_message = Some("No saved searches yet".to_string());
+            self.needs_redraw = true;
+            return;
+        }
+        let entries = queries
+            .into_iter()
+            .map(|query| PaletteEntry {
+                label: query.clone(),
+                description: "Run saved search".to_string(),
+                category: PaletteCategory::SavedSearch,
+                score: 0.0,
+                action: PaletteAction::SavedSearch(query),
+            })
+            .collect();
+        self.open_transient_palette(entries, "Saved searches");
+    }
+
+    fn save_current_search(&mut self) {
+        let query = self
+            .active_search_state()
+            .map(|search| {
+                if search.search_input.trim().is_empty() {
+                    search.query
+                } else {
+                    search.search_input
+                }
+            })
+            .unwrap_or_default();
+        let query = query.trim();
+        if query.is_empty() {
+            self.status_message = Some("No active search query to save".to_string());
+            self.needs_redraw = true;
+            return;
+        }
+        let mut queries = read_saved_searches();
+        queries.retain(|existing| existing != query);
+        queries.insert(0, query.to_string());
+        queries.truncate(100);
+        match write_saved_searches(&queries) {
+            Ok(()) => self.status_message = Some(format!("Saved search: {query}")),
+            Err(error) => self.status_message = Some(format!("Failed to save search: {error}")),
+        }
+        self.needs_redraw = true;
+    }
+
+    fn load_saved_search(&mut self, query: String) {
+        if let Some(active_pane) = self.active_pane_mut() {
+            active_pane.app.close_command_palette();
+            active_pane.app.global_search.activate();
+            active_pane.app.global_search.search_input = query.clone();
+        }
+        self.refresh_global_search();
+        self.scroll_to_current_search_match();
+        self.status_message = Some(format!("Loaded saved search: {query}"));
+        self.needs_redraw = true;
+    }
+
+    fn jump_to_search_match(&mut self, pane_id: PaneId, row: usize) {
+        if self.workspace.focus_pane(pane_id) {
+            if let Some(window) = &self.window {
+                self.sync_workspace_layout(window.inner_size());
+            }
+        }
+        if let Some(active_pane) = self.active_pane_mut() {
+            active_pane.app.close_command_palette();
+            if let Some(index) = active_pane
+                .app
+                .global_search
+                .matches
+                .iter()
+                .position(|found| found.pane_id == pane_id && found.row == row)
+            {
+                active_pane.app.global_search.current = index;
+            }
+            let screen_lines = active_pane.terminal.state.screen_lines().max(1);
+            let desired_start = row.saturating_sub(screen_lines / 2);
+            let new_offset = active_pane
+                .terminal
+                .state
+                .scrollback_len()
+                .saturating_sub(desired_start);
+            active_pane
+                .viewport
+                .reveal_offset(new_offset, pane_max_scroll(active_pane));
+            active_pane
+                .terminal
+                .state
+                .set_display_offset(active_pane.viewport.display_offset());
+        }
+        self.needs_redraw = true;
+    }
+
+    fn open_transient_palette(&mut self, entries: Vec<PaletteEntry>, label: &str) {
+        let Some(active_pane) = self.active_pane_mut() else {
+            return;
+        };
+        active_pane.app.global_search.deactivate();
+        active_pane.app.command_search = None;
+        active_pane.app.block_query = None;
+        active_pane.app.quick_select.dismiss();
+        active_pane.app.command_palette.open(entries);
+        active_pane.app.input_mode = InputMode::CommandPalette;
+        active_pane.app.input_editor.buffer.set_text("");
+        self.status_message = Some(format!("Opened {label}"));
+        self.needs_redraw = true;
+    }
+
     fn build_palette_entries(&self, pane_id: PaneId) -> Vec<PaletteEntry> {
         let mut entries = Vec::new();
         let Some(pane) = self.panes.get(&pane_id) else {
@@ -7452,6 +7617,26 @@ impl WokHandler {
                 category: PaletteCategory::RecentCommand,
                 score: 0.0,
                 action: PaletteAction::RecentCommand(command),
+            });
+        }
+
+        for query in read_saved_searches().into_iter().take(25) {
+            entries.push(PaletteEntry {
+                label: query.clone(),
+                description: "Run saved search".to_string(),
+                category: PaletteCategory::SavedSearch,
+                score: 0.0,
+                action: PaletteAction::SavedSearch(query),
+            });
+        }
+
+        for snippet in scratch_snippet_entries().into_iter().take(40) {
+            entries.push(PaletteEntry {
+                label: truncate_metric_text(&snippet, 80),
+                description: "Insert scratch snippet".to_string(),
+                category: PaletteCategory::ScratchSnippet,
+                score: 0.0,
+                action: PaletteAction::ScratchSnippet(snippet),
             });
         }
 
@@ -9901,6 +10086,7 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::ToggleTypewriterEffect => "toggle_typewriter_effect".to_string(),
         Action::CycleVisualEffect => "cycle_visual_effect".to_string(),
         Action::CloseMediaPreview => "close_media_preview".to_string(),
+        Action::ToggleMediaPreviewPlayback => "toggle_media_preview_playback".to_string(),
         Action::PreviewPathUnderCursor => "preview_path_under_cursor".to_string(),
         Action::OpenPathUnderCursor => "open_path_under_cursor".to_string(),
         Action::CopyPathUnderCursor => "copy_path_under_cursor".to_string(),
@@ -9909,6 +10095,12 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::OpenScratchBuffer => "open_scratch_buffer".to_string(),
         Action::ToggleSearchRegex => "toggle_search_regex".to_string(),
         Action::CycleSearchScope => "cycle_search_scope".to_string(),
+        Action::OpenSearchResults => "open_search_results".to_string(),
+        Action::SaveCurrentSearch => "save_current_search".to_string(),
+        Action::OpenSavedSearches => "open_saved_searches".to_string(),
+        Action::OpenBlockInspector => "open_block_inspector".to_string(),
+        Action::OpenBlockRerunHistory => "open_block_rerun_history".to_string(),
+        Action::InsertScratchSelectionIntoInput => "insert_scratch_selection_into_input".to_string(),
         Action::NewFloatingPane => "new_floating_pane".to_string(),
         Action::ToggleFloatingPane => "toggle_floating_pane".to_string(),
         Action::CloseFloatingPane => "close_floating_pane".to_string(),
@@ -9991,14 +10183,21 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::ToggleTypewriterEffect,
         Action::CycleVisualEffect,
         Action::CloseMediaPreview,
+        Action::ToggleMediaPreviewPlayback,
         Action::PreviewPathUnderCursor,
         Action::OpenPathUnderCursor,
         Action::CopyPathUnderCursor,
         Action::RevealPathUnderCursor,
         Action::TailPathUnderCursor,
         Action::OpenScratchBuffer,
+        Action::InsertScratchSelectionIntoInput,
         Action::ToggleSearchRegex,
         Action::CycleSearchScope,
+        Action::OpenSearchResults,
+        Action::SaveCurrentSearch,
+        Action::OpenSavedSearches,
+        Action::OpenBlockInspector,
+        Action::OpenBlockRerunHistory,
         Action::SplitVertical,
         Action::SplitHorizontal,
         Action::CloseSplit,
@@ -10102,14 +10301,21 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::ToggleTypewriterEffect => "Toggle character-by-character output reveal",
         Action::CycleVisualEffect => "Cycle rainbow, wavy, glitch, CRT, bloom, and cookie effects",
         Action::CloseMediaPreview => "Close the built-in image, GIF, or MP4 preview",
+        Action::ToggleMediaPreviewPlayback => "Play or pause the built-in GIF or MP4 preview",
         Action::PreviewPathUnderCursor => "Preview the file path under the cursor",
         Action::OpenPathUnderCursor => "Open the file path under the cursor externally",
         Action::CopyPathUnderCursor => "Copy the file path under the cursor",
         Action::RevealPathUnderCursor => "Reveal the file path under the cursor in Finder",
         Action::TailPathUnderCursor => "Tail the file path under the cursor in a new split",
         Action::OpenScratchBuffer => "Open a persistent scratch buffer",
+        Action::InsertScratchSelectionIntoInput => "Insert selected scratch text into command input",
         Action::ToggleSearchRegex => "Toggle global search regex mode",
         Action::CycleSearchScope => "Cycle search scope across all, pane, commands, and output",
+        Action::OpenSearchResults => "Open current search matches as a result list",
+        Action::SaveCurrentSearch => "Save the current search query",
+        Action::OpenSavedSearches => "Open saved search queries",
+        Action::OpenBlockInspector => "Inspect selected command block metadata and output",
+        Action::OpenBlockRerunHistory => "Show recorded rerun history for selected command block",
         Action::NewFloatingPane => "Create a floating pane",
         Action::ToggleFloatingPane => "Show or hide floating panes",
         Action::CloseFloatingPane => "Close focused floating pane",
@@ -10433,6 +10639,39 @@ fn read_text_preview_file(path: &Path) -> std::io::Result<(String, bool)> {
         content.push_str("\n\n[preview truncated at 2 MiB]");
     }
     Ok((content, truncated))
+}
+
+fn saved_searches_path() -> PathBuf {
+    WokConfig::config_dir().join("searches.txt")
+}
+
+fn read_saved_searches() -> Vec<String> {
+    std::fs::read_to_string(saved_searches_path())
+        .unwrap_or_default()
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToString::to_string)
+        .collect()
+}
+
+fn write_saved_searches(queries: &[String]) -> std::io::Result<()> {
+    let path = saved_searches_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, queries.join("\n"))
+}
+
+fn scratch_snippet_entries() -> Vec<String> {
+    let path = WokConfig::config_dir().join("scratch.md");
+    std::fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(ToString::to_string)
+        .collect()
 }
 
 fn extract_path_near_column(line: &str, col: usize) -> Option<String> {
