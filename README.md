@@ -31,9 +31,6 @@ Useful commands:
 poor-cli help
 poor-cli tui
 python3 -m poor_cli tui
-poor-cli tui --multiplayer-host
-poor-cli multiplayer host --name "Host"
-poor-cli multiplayer join --name "Peer"
 poor-cli provider list
 poor-cli install info
 poor-cli diag doctor
@@ -46,7 +43,6 @@ poor-cli server --stdio
 - `poor-cli tui`: minimal interactive terminal client focused on the agent harness.
 - `poor-cli exec`: one-shot agent run for CI, scripts, and review gates.
 - `poor-cli-server`: JSON-RPC runtime for automation clients.
-- Multiplayer foundations: shared-session queue, task threads, merge requests, and approval templates.
 - Tools: filesystem, shell, git, diagnostics, tasks, review, deploy, MCP, memory, checkpoints.
 - State: repo-local `.poor-cli/` for config, sessions, checkpoints, audit logs, memories, and automation history.
 
@@ -59,7 +55,6 @@ The interactive surface is intentionally narrow. It is designed to keep the user
 - Compact action palette for status, provider, sandbox, policy, diagnostics, and session actions.
 - Voice mode via `Ctrl-V`: local microphone capture, local Whisper transcription, and optional spoken assistant replies.
 - In-session voice mode via `/voice on` and `/voice off` for continuous talk-listen loops without global hotkeys.
-- Multiplayer queue execution is opt-in with `poor-cli tui --multiplayer-host`.
 - Key controls: `Enter` send, `Ctrl-V` voice, `Tab` focus, `Ctrl-O` actions, `Esc` cancel, `Ctrl-R` restart, `?` help.
 
 Voice runtime is configured through environment variables:

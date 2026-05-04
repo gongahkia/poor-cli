@@ -103,7 +103,6 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
         self._client = JsonRpcClient(configuration)
         self._events: "queue.Queue[Dict[str, Any]]" = queue.Queue()
         self._request_origins: Dict[str, str] = {}
-        self._request_queue_items: Dict[str, str] = {}
         self._transcript: List[tuple[str, str]] = []
         self._activity: List[str] = []
         self._connection_state = "stopped"
@@ -112,8 +111,6 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
         self._session_id = "-"
         self._active_request_id: Optional[str] = None
         self._active_assistant_index: Optional[int] = None
-        self._multiplayer_poll_inflight = False
-        self._multiplayer_poll_error_reported = False
 
     def compose(self) -> ComposeResult:
         yield Static("", id="status")
@@ -130,8 +127,6 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
     def on_mount(self) -> None:
         self.query_one("#composer", Input).focus()
         self.set_interval(0.05, self._process_events)
-        if self._configuration.enable_multiplayer_queue:
-            self.set_interval(1.5, self._poll_multiplayer_queue)
         self._set_status("starting")
         threading.Thread(
             target=self._initialize_worker,
@@ -236,20 +231,6 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
                 break
             self._handle_ui_event(event)
 
-    def _poll_multiplayer_queue(self) -> None:
-        if self._connection_state != "connected":
-            return
-        if self._active_request_id is not None or self._multiplayer_poll_inflight:
-            return
-        self._multiplayer_poll_inflight = True
-        self._start_rpc_request(
-            "Multiplayer Queue",
-            "multiplayer.queue.next",
-            {},
-            event_type="multiplayer_queue_next",
-            timeout=5.0,
-        )
-
     def _handle_ui_event(self, event: Dict[str, Any]) -> None:
         event_type = str(event.get("type") or "")
         if event_type == "initialized":
@@ -272,7 +253,6 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
             return
         if event_type == "chat_complete":
             request_id = str(event.get("requestId") or "")
-            queue_item_id = self._request_queue_items.pop(request_id, "")
             if request_id == self._active_request_id:
                 result = event.get("result") if isinstance(event.get("result"), dict) else {}
                 content = str(result.get("content") or "")
@@ -280,38 +260,20 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
                     self._replace_turn(self._active_assistant_index, content)
                 self._active_request_id = None
                 self._active_assistant_index = None
-            if queue_item_id:
-                self._finish_multiplayer_queue_item(queue_item_id, "completed")
             self._add_activity("Chat", "Request completed")
             self._set_status(self._connection_state)
             return
         if event_type == "chat_error":
             request_id = str(event.get("requestId") or "")
-            queue_item_id = self._request_queue_items.pop(request_id, "")
             if request_id == self._active_request_id:
                 self._replace_turn(self._active_assistant_index, str(event.get("error") or "Request failed"))
                 self._active_request_id = None
                 self._active_assistant_index = None
-            if queue_item_id:
-                self._finish_multiplayer_queue_item(queue_item_id, "failed")
             self._add_activity("Chat", str(event.get("error") or "Request failed"))
             self._set_status(self._connection_state)
             return
-        if event_type == "multiplayer_queue_next":
-            self._multiplayer_poll_inflight = False
-            self._handle_multiplayer_queue_next(event.get("result"))
-            return
-        if event_type == "multiplayer_queue_finished":
-            self._add_activity("Multiplayer", _summarize_result(event.get("result")))
-            return
         if event_type == "rpc_error":
             title = str(event.get("title") or "RPC")
-            if title == "Multiplayer Queue":
-                self._multiplayer_poll_inflight = False
-                if not self._multiplayer_poll_error_reported:
-                    self._add_activity(title, str(event.get("error") or "RPC failed"))
-                    self._multiplayer_poll_error_reported = True
-                return
             self._add_activity(title, str(event.get("error") or "RPC failed"))
 
     def _handle_notification(self, event: Dict[str, Any]) -> None:
@@ -337,32 +299,6 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
             self._add_activity("Plan", _truncate(str(params.get("summary") or "Review requested"), 180))
             return
         self._add_activity(method, _truncate(_json_text(params), 180))
-
-    def _handle_multiplayer_queue_next(self, result: Any) -> None:
-        if not isinstance(result, dict):
-            return
-        item = result.get("item")
-        if not isinstance(item, dict):
-            return
-        prompt = str(item.get("prompt") or "").strip()
-        item_id = str(item.get("itemId") or "").strip()
-        if not prompt or not item_id:
-            return
-        request_id = self._start_chat_request(prompt, origin="multiplayer")
-        if request_id is None:
-            self._finish_multiplayer_queue_item(item_id, "failed")
-            return
-        self._request_queue_items[request_id] = item_id
-        self._add_activity("Multiplayer", f"Started queued prompt {item_id}")
-
-    def _finish_multiplayer_queue_item(self, item_id: str, status: str) -> None:
-        self._start_rpc_request(
-            "Multiplayer Queue Finish",
-            "multiplayer.queue.finish",
-            {"itemId": item_id, "status": status},
-            event_type="multiplayer_queue_finished",
-            timeout=5.0,
-        )
 
     def _replace_turn(self, index: Optional[int], content: str) -> None:
         if index is None:
@@ -393,10 +329,9 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
 
     def _set_status(self, state: str) -> None:
         request_state = self._active_request_id or "-"
-        multiplayer = " | mp:on" if self._configuration.enable_multiplayer_queue else ""
         text = (
             f"poor-cli tui | {state} | session:{self._session_id[:8]} | "
-            f"{self._provider}/{self._model} | req:{request_state}{multiplayer}"
+            f"{self._provider}/{self._model} | req:{request_state}"
         )
         if self.is_mounted:
             self.query_one("#status", Static).update(text)

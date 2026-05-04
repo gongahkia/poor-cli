@@ -44,7 +44,6 @@ _HANDLER_ORDER: tuple[str, ...] = (
     "branches",
     "repo_map",
     "mcp",
-    "multiplayer",
 )
 _HANDLER_RANK = {name: idx for idx, name in enumerate(_HANDLER_ORDER)}
 _REGISTER_DECORATORS = {"register", "rpc"}

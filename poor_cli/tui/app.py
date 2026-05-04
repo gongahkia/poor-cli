@@ -35,11 +35,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Validate the configured API key during initialize",
     )
-    parser.add_argument(
-        "--multiplayer-host",
-        action="store_true",
-        help="Let this TUI consume and execute prompts from the multiplayer foreground queue",
-    )
     return parser
 
 
@@ -59,6 +54,5 @@ def main(argv: Optional[List[str]] = None) -> int:
         permission_mode=args.permission_mode,
         sandbox_preset=args.sandbox_preset,
         validate_api_key=bool(args.validate_api_key),
-        enable_multiplayer_queue=bool(args.multiplayer_host),
     )
     return run_tui(configuration)

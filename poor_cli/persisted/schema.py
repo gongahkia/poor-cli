@@ -30,7 +30,6 @@ CURRENT_VERSIONS: dict[ArtifactId, int] = {
     "checkpoint": 1,
     "audit": 1,
     "savings": 1,
-    "multiplayer": 1,
 }
 
 LEGACY_BACKUP_DIRNAME = ".legacy-v0"
