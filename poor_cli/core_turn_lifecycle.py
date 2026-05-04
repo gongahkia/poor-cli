@@ -15,7 +15,7 @@ import re
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from .audit_log import AuditEventType, AuditSeverity
 from .provider_probe import (
@@ -132,9 +132,14 @@ class TurnLifecycle:
         event: str,
         payload: Dict[str, Any],
     ) -> List[HookExecutionResult]:
-        if not self._hook_manager:
+        if not getattr(self, "_hook_manager", None):
             return []
-        results = await self._hook_manager.run(event, payload)
+        enriched = {
+            **(payload or {}),
+            "event": event,
+            "sessionId": str(getattr(self, "session_id", "") or getattr(self, "_last_run_id", "") or ""),
+        }
+        results = await self._hook_manager.run(event, enriched)
         for result in results:
             self._log_audit_event(
                 AuditEventType.HOOK_DENY if result.blocked else AuditEventType.HOOK_ALLOW,
@@ -146,6 +151,140 @@ class TurnLifecycle:
                 error_message=result.stderr or None,
             )
         return results
+
+    def _provider_hook_basics(self, message: Any) -> Dict[str, Any]:
+        provider = getattr(self, "provider", None)
+        provider_name = ""
+        model = ""
+        if provider is not None:
+            get_provider_name = getattr(provider, "get_provider_name", None)
+            provider_name = get_provider_name() if callable(get_provider_name) else provider.__class__.__name__
+            model = str(getattr(provider, "model_name", "") or "")
+        tokens_in = 0
+        try:
+            tokens_in = get_token_counter().count(
+                str(message),
+                provider=provider_name,
+                model=model,
+            ).count
+        except Exception:
+            tokens_in = 0
+        return {
+            "provider": provider_name,
+            "model": model,
+            "tokensIn": tokens_in,
+        }
+
+    def _provider_tokens_out(self, response: Any, fallback_text: str = "") -> int:
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            return int(
+                getattr(usage, "output_tokens", 0)
+                or getattr(usage, "completion_tokens", 0)
+                or getattr(usage, "eval_count", 0)
+                or 0
+            )
+        provider = getattr(self, "provider", None)
+        provider_name = provider.get_provider_name() if provider and hasattr(provider, "get_provider_name") else ""
+        model = str(getattr(provider, "model_name", "") or "") if provider else ""
+        try:
+            return get_token_counter().count(str(fallback_text or ""), provider=provider_name, model=model).count
+        except Exception:
+            return 0
+
+    def _provider_cost(self, tokens_in: int, tokens_out: int) -> float:
+        estimator = getattr(self, "_estimate_cost", None)
+        if callable(estimator):
+            try:
+                return round(float(estimator(tokens_in, tokens_out) or 0.0), 8)
+            except Exception:
+                return 0.0
+        return 0.0
+
+    def _hook_history_tokens(self, history: List[Dict[str, Any]]) -> int:
+        try:
+            provider, model = self._token_provider_model()
+        except Exception:
+            provider, model = "", ""
+        total = 0
+        counter = get_token_counter()
+        for message in history:
+            if not isinstance(message, dict):
+                continue
+            total += counter.count(str(message.get("content", "")), provider=provider, model=model).count
+        return total
+
+    async def _send_provider_message_with_hooks(self, message: Any, **kwargs: Any) -> Any:
+        basics = self._provider_hook_basics(message)
+        started = time.monotonic()
+        await self._emit_policy_hooks("pre_provider_call", basics)
+        try:
+            response = await self.provider.send_message(message, **kwargs)
+        except Exception as exc:
+            await self._emit_policy_hooks(
+                "post_provider_call",
+                {
+                    **basics,
+                    "tokensOut": 0,
+                    "latencyMs": int((time.monotonic() - started) * 1000),
+                    "costUsd": 0.0,
+                    "status": "error",
+                    "error": str(exc),
+                },
+            )
+            raise
+        tokens_out = self._provider_tokens_out(response, getattr(response, "content", ""))
+        await self._emit_policy_hooks(
+            "post_provider_call",
+            {
+                **basics,
+                "tokensOut": tokens_out,
+                "latencyMs": int((time.monotonic() - started) * 1000),
+                "costUsd": self._provider_cost(int(basics["tokensIn"]), tokens_out),
+                "status": "ok",
+            },
+        )
+        return response
+
+    async def _stream_provider_message_with_hooks(self, message: Any) -> AsyncIterator[Any]:
+        basics = self._provider_hook_basics(message)
+        started = time.monotonic()
+        await self._emit_policy_hooks("pre_provider_call", basics)
+        tokens_out = 0
+        content_parts: List[str] = []
+        try:
+            async for chunk in self.provider.send_message_stream(message):
+                usage_tokens = self._provider_tokens_out(chunk)
+                if usage_tokens:
+                    tokens_out = max(tokens_out, usage_tokens)
+                if getattr(chunk, "content", None):
+                    content_parts.append(str(chunk.content))
+                yield chunk
+        except Exception as exc:
+            await self._emit_policy_hooks(
+                "post_provider_call",
+                {
+                    **basics,
+                    "tokensOut": tokens_out,
+                    "latencyMs": int((time.monotonic() - started) * 1000),
+                    "costUsd": self._provider_cost(int(basics["tokensIn"]), tokens_out),
+                    "status": "error",
+                    "error": str(exc),
+                },
+            )
+            raise
+        if tokens_out <= 0 and content_parts:
+            tokens_out = self._provider_tokens_out(None, "".join(content_parts))
+        await self._emit_policy_hooks(
+            "post_provider_call",
+            {
+                **basics,
+                "tokensOut": tokens_out,
+                "latencyMs": int((time.monotonic() - started) * 1000),
+                "costUsd": self._provider_cost(int(basics["tokensIn"]), tokens_out),
+                "status": "ok",
+            },
+        )
 
     def _should_request_plan_review(self, function_calls: List[FunctionCall]) -> bool:
         if not self.config or not self.config.plan_mode.enabled:
@@ -1718,14 +1857,39 @@ class TurnLifecycle:
         if len(history) <= 4:
             return None
         _strip_chars = getattr(self.config.economy, "tool_strip_chars", 200)
+        tokens_before = self._hook_history_tokens(history)
+        await self._emit_policy_hooks(
+            "pre_compact",
+            {
+                "tokensBefore": tokens_before,
+                "ratio": float(pressure.get("pressure_pct", 0) or 0) / 100.0,
+            },
+        )
         compressed = await self._context_compressor.compress_auto(
             history, cc_cfg, provider=self.provider, tool_strip_chars=_strip_chars,
         )
         if len(compressed) < len(history):
             self.provider.set_history(compressed)
+            tokens_after = self._hook_history_tokens(compressed)
+            await self._emit_policy_hooks(
+                "post_compact",
+                {
+                    "tokensBefore": tokens_before,
+                    "tokensAfter": tokens_after,
+                    "ratio": tokens_after / max(1, tokens_before),
+                },
+            )
             logger.info("Auto-compress on pressure (%.1f%%): %d -> %d messages",
                         pressure["pressure_pct"], len(history), len(compressed))
             return "auto_pressure"
+        await self._emit_policy_hooks(
+            "post_compact",
+            {
+                "tokensBefore": tokens_before,
+                "tokensAfter": tokens_before,
+                "ratio": 1.0,
+            },
+        )
         return None
 
     def _refresh_system_context(self) -> bool:
@@ -2230,7 +2394,7 @@ class TurnLifecycle:
             f"Draft summary:\n{draft_summary}\n\n"
             f"Conversation:\n{conversation_text}"
         )
-        response = await self.provider.send_message(prompt)
+        response = await self._send_provider_message_with_hooks(prompt)
         rendered = response.content.strip() if response and response.content else ""
         return rendered or draft_summary
 
@@ -2273,6 +2437,22 @@ class TurnLifecycle:
                 max_ctx = 0
         threshold, target = self._resolve_auto_compaction_settings()
         callback = self._summarize_compaction_chunk if allow_model_summary else None
+        hook_manager = getattr(self, "_hook_manager", None)
+        history_pruner = getattr(getattr(self._tiered_compactor, "_history_pruner", None), "__dict__", None)
+        if history_pruner is not None:
+            self._tiered_compactor._history_pruner._hook_manager = hook_manager
+        tokens_before_hook = 0
+        try:
+            tokens_before_hook = self._hook_history_tokens(history)
+        except Exception:
+            tokens_before_hook = 0
+        await self._emit_policy_hooks(
+            "pre_compact",
+            {
+                "tokensBefore": tokens_before_hook,
+                "ratio": (tokens_before_hook / max_ctx) if max_ctx > 0 else 0.0,
+            },
+        )
         result = await self._tiered_compactor.compact(
             history,
             max_tokens=max_ctx,
@@ -2282,6 +2462,14 @@ class TurnLifecycle:
             summary_callback=callback,
             auto_compact_threshold=threshold,
             auto_compact_target=target,
+        )
+        await self._emit_policy_hooks(
+            "post_compact",
+            {
+                "tokensBefore": result.tokens_before,
+                "tokensAfter": result.tokens_after,
+                "ratio": result.tokens_after / max(1, result.tokens_before),
+            },
         )
         pruning_sidecar_path = self._save_pruning_sidecar(result.pruned_turns)
         if self.provider:
@@ -2404,9 +2592,31 @@ class TurnLifecycle:
                 allow_model_summary=True,
             )
         elif strategy == "compress":
+            tokens_before = self._hook_history_tokens(history)
+            await self._emit_policy_hooks("pre_compact", {"tokensBefore": tokens_before, "ratio": 1.0})
             result = self._compact_compress(history, messages_before)
+            tokens_after = self._hook_history_tokens(self.get_history())
+            await self._emit_policy_hooks(
+                "post_compact",
+                {
+                    "tokensBefore": tokens_before,
+                    "tokensAfter": tokens_after,
+                    "ratio": tokens_after / max(1, tokens_before),
+                },
+            )
         elif strategy == "handoff":
+            tokens_before = self._hook_history_tokens(history)
+            await self._emit_policy_hooks("pre_compact", {"tokensBefore": tokens_before, "ratio": 1.0})
             result = await self._compact_handoff(history, messages_before)
+            tokens_after = self._hook_history_tokens(self.get_history())
+            await self._emit_policy_hooks(
+                "post_compact",
+                {
+                    "tokensBefore": tokens_before,
+                    "tokensAfter": tokens_after,
+                    "ratio": tokens_after / max(1, tokens_before),
+                },
+            )
         else:
             raise PoorCLIError(f"Unknown compaction strategy: {strategy}")
         # reset working memory after compaction — delta state is stale
@@ -2439,12 +2649,12 @@ class TurnLifecycle:
             "Output only the summary, no preamble.\n\n"
             f"{conversation_text}"
         )
-        response = await self.provider.send_message(prompt) # one-shot call outside the chat session
+        response = await self._send_provider_message_with_hooks(prompt) # one-shot call outside the chat session
         summary = response.content.strip() if response.content else "(no summary generated)"
         await self.provider.clear_history()
         if self.history_adapter:
             self.history_adapter.clear_history()
-        await self.provider.send_message(f"[Context from previous conversation]\n{summary}") # inject summary as context
+        await self._send_provider_message_with_hooks(f"[Context from previous conversation]\n{summary}") # inject summary as context
         if self.history_adapter:
             self.history_adapter.add_message("user", f"[Context from previous conversation]\n{summary}")
         return {"strategy": "compact", "summary": summary, "messages_before": messages_before, "messages_after": 1}
@@ -2502,11 +2712,11 @@ class TurnLifecycle:
             "Be concise. Output only the summary.\n\n"
             f"{conversation_text}"
         )
-        response = await self.provider.send_message(prompt)
+        response = await self._send_provider_message_with_hooks(prompt)
         summary = response.content.strip() if response.content else "(no summary generated)"
         await self.clear_history()
         handoff_msg = f"[Handoff from previous session]\n{summary}" # seed new session with handoff context
-        await self.provider.send_message(handoff_msg)
+        await self._send_provider_message_with_hooks(handoff_msg)
         if self.history_adapter:
             self.history_adapter.add_message("user", handoff_msg)
         return {"strategy": "handoff", "summary": summary, "messages_before": messages_before, "messages_after": 1}

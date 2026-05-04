@@ -12,6 +12,7 @@ import os
 import shlex
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -32,8 +33,80 @@ HOOK_EVENTS: tuple[str, ...] = (
     "automation_finished",
     "checkpoint_restored",
     "session_end",
+    "notification",
+    "subagent_stop",
+    "subagent_start",
+    "pre_compact",
+    "post_compact",
+    "pre_prune",
+    "post_prune",
+    "pre_checkpoint",
+    "post_checkpoint",
+    "pre_edit",
+    "post_edit",
+    "pre_provider_call",
+    "post_provider_call",
+    "budget_breach",
 )
 SUPPORTED_SCHEMA_VERSIONS: tuple[int, ...] = (1,)
+
+HOOK_PAYLOAD_SCHEMAS: Dict[str, str] = {
+    "notification": "{event, ts, sessionId, title, detail, severity}",
+    "subagent_start": "{event, ts, sessionId, subagentId, archetype, parentRequestId}",
+    "subagent_stop": "{event, ts, sessionId, subagentId, archetype, parentRequestId, status, duration_ms}",
+    "pre_compact": "{event, ts, sessionId, tokensBefore, ratio}",
+    "post_compact": "{event, ts, sessionId, tokensBefore, tokensAfter, ratio}",
+    "pre_prune": "{event, ts, sessionId, rowsBefore}",
+    "post_prune": "{event, ts, sessionId, rowsBefore, rowsAfter, removed}",
+    "pre_checkpoint": "{event, ts, sessionId, checkpointId, reason}",
+    "post_checkpoint": "{event, ts, sessionId, checkpointId, reason}",
+    "pre_edit": "{event, ts, sessionId, path, hunks, editId}",
+    "post_edit": "{event, ts, sessionId, path, hunks, editId, status}",
+    "pre_provider_call": "{event, ts, sessionId, provider, model, tokensIn}",
+    "post_provider_call": "{event, ts, sessionId, provider, model, tokensIn, tokensOut, latencyMs, costUsd}",
+    "budget_breach": "{event, ts, sessionId, field, requested, clamped, limit}",
+}
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def normalize_hook_payload(event: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    data = dict(payload or {})
+    data.setdefault("event", event)
+    data.setdefault("ts", _utc_now())
+    data.setdefault("sessionId", str(data.get("session_id") or os.environ.get("POOR_CLI_SESSION_ID", "")))
+    return data
+
+
+def emit_policy_hook_nowait(
+    hook_manager: Any,
+    event: str,
+    payload: Dict[str, Any],
+    *,
+    repo_root: Optional[Path] = None,
+) -> None:
+    manager = hook_manager
+    if manager is None:
+        root = (repo_root or Path.cwd()).resolve()
+        if not (root / ".poor-cli" / "hooks").is_dir():
+            return
+        manager = PolicyHookManager(root)
+    data = normalize_hook_payload(event, payload)
+
+    async def _run() -> None:
+        try:
+            await manager.run(event, data)
+        except Exception as exc:
+            logger.debug("policy hook emission failed for %s: %s", event, exc)
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(_run())
+    else:
+        loop.create_task(_run())
 
 
 @dataclass
@@ -127,7 +200,7 @@ class PolicyHookManager:
         if not hooks:
             return []
 
-        encoded_payload = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        encoded_payload = json.dumps(normalize_hook_payload(event, payload), ensure_ascii=False).encode("utf-8")
         results: List[HookExecutionResult] = []
 
         for hook in hooks:

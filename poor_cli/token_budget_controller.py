@@ -73,10 +73,33 @@ def compute_reward(state: TokenBudgetState, action: TokenBudgetAction, outcome: 
 
 def _clamp_action(action: TokenBudgetAction) -> TokenBudgetAction:
     """Enforce hard safety limits on any action."""
-    action.max_thinking_tokens = max(MIN_THINKING_TOKENS, min(THINKING_CEIL, action.max_thinking_tokens))
-    action.max_output_tokens = max(MIN_OUTPUT_TOKENS, min(MAX_OUTPUT_TOKENS, action.max_output_tokens))
-    action.compression_ratio = max(0.0, min(MAX_COMPRESSION_RATIO, action.compression_ratio))
+    _clamp_field(action, "max_thinking_tokens", MIN_THINKING_TOKENS, THINKING_CEIL)
+    _clamp_field(action, "max_output_tokens", MIN_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS)
+    _clamp_field(action, "compression_ratio", 0.0, MAX_COMPRESSION_RATIO)
     return action
+
+
+def _clamp_field(action: TokenBudgetAction, field: str, minimum: float, maximum: float) -> None:
+    requested = getattr(action, field)
+    clamped = max(minimum, min(maximum, requested))
+    setattr(action, field, clamped)
+    if requested == clamped:
+        return
+    try:
+        from .policy_hooks import emit_policy_hook_nowait
+        limit = minimum if requested < minimum else maximum
+        emit_policy_hook_nowait(
+            None,
+            "budget_breach",
+            {
+                "field": field,
+                "requested": requested,
+                "clamped": clamped,
+                "limit": limit,
+            },
+        )
+    except Exception:
+        pass
 
 # ── complexity mapper ───────────────────────────────────────────────────
 

@@ -22,6 +22,7 @@ else:
 
 from .rpc_client import BackendConfiguration, JsonRpcClient
 from .autocomplete import Suggestion, all_suggestions, fuzzy_match
+from ..policy_hooks import emit_policy_hook_nowait
 
 
 def _truncate(value: str, limit: int = 240) -> str:
@@ -380,6 +381,16 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
         line = f"{title}: {detail}" if detail else title
         self._activity.insert(0, line)
         del self._activity[120:]
+        emit_policy_hook_nowait(
+            None,
+            "notification",
+            {
+                "title": title,
+                "detail": detail,
+                "severity": "info",
+                "sessionId": self._session_id,
+            },
+        )
         self._render_activity()
 
     def _render_transcript(self) -> None:

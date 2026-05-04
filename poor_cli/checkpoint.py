@@ -18,6 +18,7 @@ from threading import Thread, Event
 
 from poor_cli.exceptions import FileOperationError, setup_logger
 from poor_cli.persisted import load_json, save_json
+from poor_cli.policy_hooks import emit_policy_hook_nowait
 
 logger = setup_logger(__name__)
 
@@ -257,6 +258,14 @@ class CheckpointManager:
         """
         checkpoint_id = self._generate_checkpoint_id()
         checkpoint_dir = self._get_checkpoint_dir(checkpoint_id)
+        reason = str(operation_type or "manual")
+        hook_manager = getattr(self, "_hook_manager", None)
+        emit_policy_hook_nowait(
+            hook_manager,
+            "pre_checkpoint",
+            {"checkpointId": checkpoint_id, "reason": reason},
+            repo_root=self.workspace_root,
+        )
 
         try:
             # Create checkpoint directory
@@ -296,11 +305,28 @@ class CheckpointManager:
             logger.info(
                 f"Created checkpoint {checkpoint_id} with {len(snapshots)} file(s)"
             )
+            emit_policy_hook_nowait(
+                hook_manager,
+                "post_checkpoint",
+                {"checkpointId": checkpoint_id, "reason": reason, "status": "created"},
+                repo_root=self.workspace_root,
+            )
 
             return checkpoint
 
         except Exception as e:
             logger.error(f"Failed to create checkpoint: {e}")
+            emit_policy_hook_nowait(
+                hook_manager,
+                "post_checkpoint",
+                {
+                    "checkpointId": checkpoint_id,
+                    "reason": reason,
+                    "status": "failed",
+                    "error": str(e),
+                },
+                repo_root=self.workspace_root,
+            )
             # Cleanup on failure
             if checkpoint_dir.exists():
                 shutil.rmtree(checkpoint_dir, ignore_errors=True)

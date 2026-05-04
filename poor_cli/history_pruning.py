@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .token_counter import get_token_counter
+from .policy_hooks import emit_policy_hook_nowait
 
 _FILE_RE = re.compile(r"(?:^|[\s`'\"])((?:[\w.\-]+/)*[\w.\-]+\.[A-Za-z0-9_]+)")
 _DECISION_RE = re.compile(
@@ -207,6 +208,13 @@ class HistoryPruner:
     ) -> PruningResult:
         if turn_pin_overlay:
             history = _apply_turn_pin_overlay(history, turn_pin_overlay)
+        hook_manager = getattr(self, "_hook_manager", None)
+        rows_before = len(history)
+        emit_policy_hook_nowait(
+            hook_manager,
+            "pre_prune",
+            {"rowsBefore": rows_before},
+        )
         policy = self.policy_for(mode=mode, economy_preset=economy_preset)
         scored_turns = self.score_history(history, policy=policy, active_files=active_files)
         current_tokens = self._history_tokens(history)
@@ -250,7 +258,7 @@ class HistoryPruner:
             )
         retained_history = [self._annotate_message(history[index], turn) for index, turn in enumerate(scored_turns) if keep[index]]
         reason_counts = self._count_reasons(pruned_turns)
-        return PruningResult(
+        result = PruningResult(
             history=retained_history,
             scored_turns=scored_turns,
             pruned_turns=pruned_turns,
@@ -260,6 +268,16 @@ class HistoryPruner:
             notification=self._build_notification(pruned_turns, reason_counts, trigger),
             reason_counts=reason_counts,
         )
+        emit_policy_hook_nowait(
+            hook_manager,
+            "post_prune",
+            {
+                "rowsBefore": rows_before,
+                "rowsAfter": len(retained_history),
+                "removed": len(pruned_turns),
+            },
+        )
+        return result
 
     def score_history(
         self,

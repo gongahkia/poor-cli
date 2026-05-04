@@ -5,6 +5,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from .policy_hooks import HOOK_EVENTS
+
+
+LIFECYCLE_HOOK_EVENTS: tuple[str, ...] = HOOK_EVENTS
+
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()

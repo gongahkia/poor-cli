@@ -9,7 +9,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 
 from poor_cli.policy_hooks import (
     HookDefinition, HookExecutionResult, PolicyHookManager,
-    HOOK_EVENTS, SUPPORTED_SCHEMA_VERSIONS,
+    HOOK_EVENTS, HOOK_PAYLOAD_SCHEMAS, SUPPORTED_SCHEMA_VERSIONS,
 )
 
 
@@ -67,12 +67,20 @@ class TestHookEvents(unittest.TestCase):
             "pre_tool_use", "post_tool_use", "tool_failure",
             "task_started", "task_finished", "automation_started",
             "automation_finished", "checkpoint_restored",
-            "session_end",
+            "session_end", "notification", "subagent_stop",
+            "subagent_start", "pre_compact", "post_compact",
+            "pre_prune", "post_prune", "pre_checkpoint",
+            "post_checkpoint", "pre_edit", "post_edit",
+            "pre_provider_call", "post_provider_call", "budget_breach",
         }
         self.assertEqual(expected, set(HOOK_EVENTS))
 
     def test_event_count(self):
-        self.assertEqual(len(HOOK_EVENTS), 12)
+        self.assertEqual(len(HOOK_EVENTS), 26)
+
+    def test_new_events_document_payload_shape(self):
+        for event in HOOK_EVENTS[12:]:
+            self.assertIn(event, HOOK_PAYLOAD_SCHEMAS)
 
 
 class TestPolicyHookManager(unittest.TestCase):
@@ -157,6 +165,26 @@ class TestHookRun(unittest.TestCase):
             results = asyncio.run(mgr.run("session_start", payload))
             self.assertEqual(len(results), 1)
             self.assertIn('"test"', results[0].stdout)
+            self.assertIn('"event": "session_start"', results[0].stdout)
+
+    def test_new_events_load_and_receive_payload(self):
+        with tempfile.TemporaryDirectory() as td:
+            hooks_dir = Path(td) / ".poor-cli" / "hooks"
+            hooks_dir.mkdir(parents=True)
+            hook = {
+                "hooks": {
+                    event: [{"command": "cat"}]
+                    for event in HOOK_EVENTS[12:]
+                }
+            }
+            (hooks_dir / "new-events.json").write_text(json.dumps(hook))
+            mgr = PolicyHookManager(repo_root=Path(td))
+            self.assertEqual(mgr.status()["totalHooks"], len(HOOK_EVENTS[12:]))
+            for event in HOOK_EVENTS[12:]:
+                results = asyncio.run(mgr.run(event, {"sessionId": "s1"}))
+                self.assertEqual(len(results), 1)
+                self.assertIn(f'"event": "{event}"', results[0].stdout)
+                self.assertIn('"sessionId": "s1"', results[0].stdout)
 
     def test_blocked_hook_stops_chain(self):
         with tempfile.TemporaryDirectory() as td:

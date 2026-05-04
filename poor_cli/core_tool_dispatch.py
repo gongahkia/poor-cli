@@ -609,6 +609,15 @@ class ToolDispatcher:
         if self._should_checkpoint_tool(tool_name, arguments):
             checkpoint_id = await self._create_mutation_checkpoint(tool_name, arguments)
 
+        edit_payload = {
+            "path": ",".join(targets),
+            "hunks": 0,
+            "editId": str(arguments.get("edit_id") or arguments.get("editId") or ""),
+            "toolName": tool_name,
+        }
+        if tool_name in _MUTATING_TOOLS:
+            await self._emit_policy_hooks("pre_edit", edit_payload)
+
         post_payload = {
             "toolName": tool_name,
             "toolArgs": self._stringify_tool_arguments(arguments),
@@ -649,6 +658,11 @@ class ToolDispatcher:
                 "post_tool_use",
                 {**post_payload, "success": False, "error": str(error)},
             )
+            if tool_name in _MUTATING_TOOLS:
+                await self._emit_policy_hooks(
+                    "post_edit",
+                    {**edit_payload, "status": "failed", "error": str(error)},
+                )
             # CB3: record exception path as failure
             try:
                 from .tool_success_tracker import get_default_tracker
@@ -688,6 +702,15 @@ class ToolDispatcher:
                 "message": self._tool_result_message(result),
             },
         )
+        if tool_name in _MUTATING_TOOLS:
+            await self._emit_policy_hooks(
+                "post_edit",
+                {
+                    **edit_payload,
+                    "status": "changed" if self._tool_result_changed(result) else "unchanged",
+                    "paths": self._tool_result_paths(tool_name, arguments, result),
+                },
+            )
         # Cache read-only tool results for this turn
         if tool_name not in _MUTATING_TOOLS and self._is_concurrency_safe_tool(tool_name, arguments):
             cache_key = self._turn_cache_key(tool_name, arguments)

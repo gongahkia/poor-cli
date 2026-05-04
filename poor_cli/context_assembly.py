@@ -657,6 +657,9 @@ class ContextAssemblyOrchestrator:
         if total <= budget:
             return history
         core = self._core
+        emit_hooks = getattr(core, "_emit_policy_hooks", None)
+        if callable(emit_hooks):
+            await emit_hooks("pre_compact", {"tokensBefore": total, "ratio": total / max(1, budget)})
         compactor = getattr(core, "_tiered_compactor", None)
         if compactor is not None:
             eco = getattr(getattr(core, "config", None), "economy", None)
@@ -672,6 +675,15 @@ class ContextAssemblyOrchestrator:
             )
             history = [dict(message) for message in result.history]
             self._set_provider_history(history)
+            if callable(emit_hooks):
+                await emit_hooks(
+                    "post_compact",
+                    {
+                        "tokensBefore": total,
+                        "tokensAfter": result.tokens_after,
+                        "ratio": result.tokens_after / max(1, total),
+                    },
+                )
         total = self._token_breakdown(
             system_prompt=system_prompt,
             rules=rules,
@@ -688,6 +700,7 @@ class ContextAssemblyOrchestrator:
         cc_cfg = getattr(getattr(core, "config", None), "context_compression", None)
         provider = getattr(core, "provider", None)
         if compressor is not None and cc_cfg is not None:
+            before_compress = total
             strip_chars = getattr(getattr(core, "config", None).economy, "tool_strip_chars", 200) if getattr(core, "config", None) else 200
             history = await compressor.compress_auto(
                 history,
@@ -697,6 +710,25 @@ class ContextAssemblyOrchestrator:
             )
             history = [dict(message) for message in history]
             self._set_provider_history(history)
+            if callable(emit_hooks):
+                after_compress = self._token_breakdown(
+                    system_prompt=system_prompt,
+                    rules=rules,
+                    files=files,
+                    history=history,
+                    tool_schemas=tool_schemas,
+                    messages=({"role": "user", "content": message},),
+                    provider_name=provider_name,
+                    model_name=model_name,
+                )["total"]
+                await emit_hooks(
+                    "post_compact",
+                    {
+                        "tokensBefore": before_compress,
+                        "tokensAfter": after_compress,
+                        "ratio": after_compress / max(1, before_compress),
+                    },
+                )
         return history
 
     def _set_provider_history(self, history: List[Dict[str, Any]]) -> None:

@@ -3,8 +3,11 @@
 from __future__ import annotations
 import asyncio
 from enum import Enum
+import time
 from typing import Any, Dict, List, Optional
+import uuid
 from .exceptions import setup_logger
+from .policy_hooks import emit_policy_hook_nowait
 
 logger = setup_logger(__name__)
 
@@ -189,7 +192,33 @@ class SubAgent:
         cancel_event: Optional[Any] = None,
     ) -> str:
         """Run sub-agent and return final text response."""
+        subagent_id = f"subagent-{uuid.uuid4().hex[:8]}"
+        started = time.monotonic()
+        parent_request_id = str(getattr(self._parent, "_active_request_id", "") or "")
+        hook_manager = getattr(self._parent, "_hook_manager", None)
+        emit_policy_hook_nowait(
+            hook_manager,
+            "subagent_start",
+            {
+                "subagentId": subagent_id,
+                "archetype": self._archetype,
+                "parentRequestId": parent_request_id,
+            },
+        )
+        status = "completed"
         if self._cancelled(cancel_event):
+            status = "cancelled"
+            emit_policy_hook_nowait(
+                hook_manager,
+                "subagent_stop",
+                {
+                    "subagentId": subagent_id,
+                    "archetype": self._archetype,
+                    "parentRequestId": parent_request_id,
+                    "status": status,
+                    "duration_ms": int((time.monotonic() - started) * 1000),
+                },
+            )
             return "[sub-agent cancelled before start]"
         from .providers.provider_factory import ProviderFactory
         config = self._parent.config
@@ -308,15 +337,30 @@ class SubAgent:
         try:
             text = await asyncio.wait_for(_run_impl(), timeout=max(1.0, float(self._timeout)))
         except asyncio.TimeoutError:
+            status = "timeout"
             text = "[sub-agent timed out]"
         except Exception as e:
+            status = "error"
             logger.error("sub-agent error: %s", e, exc_info=True)
             text = f"[sub-agent error: {e}]"
+        if text.startswith("[sub-agent cancelled"):
+            status = "cancelled"
         if self._total_input_tokens or self._total_output_tokens:
             text += (
                 f"\n[sub-agent tokens: {self._total_input_tokens}in/{self._total_output_tokens}out]"
                 f"\n[sub-agent est_cost_usd: {self._estimated_cost_usd:.6f}]"
             )
+        emit_policy_hook_nowait(
+            hook_manager,
+            "subagent_stop",
+            {
+                "subagentId": subagent_id,
+                "archetype": self._archetype,
+                "parentRequestId": parent_request_id,
+                "status": status,
+                "duration_ms": int((time.monotonic() - started) * 1000),
+            },
+        )
         return text.strip() or "(no response from sub-agent)"
 
     def _build_system_instruction(self, filtered_tools: List[Dict[str, Any]]) -> str:

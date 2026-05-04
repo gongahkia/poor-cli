@@ -551,7 +551,7 @@ class AgentLoop:
                     logger.debug("kv cache prompt reorder skipped: %s", e)
             provider_message = self._maybe_apply_vision(full_message) # multimodal if images detected
             provider_message = self._block_cache_provider_message(provider_message, context_snapshot)
-            async for chunk in self.provider.send_message_stream(provider_message):
+            async for chunk in self._stream_provider_message_with_hooks(provider_message):
                 if cancel_event.is_set():
                     self._append_turn_transition(
                         turn_diagnostics,
@@ -971,7 +971,7 @@ class AgentLoop:
                     self._provider_ready = True
                     # Retry with fallback provider (non-recursive, single retry)
                     try:
-                        async for chunk in self.provider.send_message_stream(full_message):
+                        async for chunk in self._stream_provider_message_with_hooks(full_message):
                             if chunk.content:
                                 accumulated_text += chunk.content
                                 yield CoreEvent.text_chunk(chunk.content, request_id)
@@ -1065,7 +1065,7 @@ class AgentLoop:
         metadata: Dict[str, Any] = {}
         events: List[CoreEvent] = []
         last_usage: Optional[UsageMetadata] = None
-        async for chunk in self.provider.send_message_stream(message):
+        async for chunk in self._stream_provider_message_with_hooks(message):
             if chunk.usage:
                 last_usage = chunk.usage
             if chunk.function_calls:
@@ -1206,7 +1206,7 @@ class AgentLoop:
             last_checkpoint_id: Optional[str] = None
 
             provider_message = self._block_cache_provider_message(full_message, context_snapshot)
-            async for chunk in self.provider.send_message_stream(provider_message):
+            async for chunk in self._stream_provider_message_with_hooks(provider_message):
                 if chunk.function_calls:
                     tool_results = await self._handle_function_calls_events(
                         chunk,
@@ -1226,7 +1226,7 @@ class AgentLoop:
                                 result=ev.data,
                             )
                     self._pending_events = []
-                    response = await self.provider.send_message(tool_results)
+                    response = await self._send_provider_message_with_hooks(tool_results)
                     if response.content:
                         accumulated_text += response.content
                         yield response.content
@@ -1252,7 +1252,7 @@ class AgentLoop:
                                     result=ev.data,
                                 )
                         self._pending_events = []
-                        response = await self.provider.send_message(tool_results)
+                        response = await self._send_provider_message_with_hooks(tool_results)
                         if response.content:
                             accumulated_text += response.content
                             yield response.content
@@ -1386,7 +1386,7 @@ class AgentLoop:
         
         try:
             provider_message = self._block_cache_provider_message(full_message, context_snapshot)
-            response = await self.provider.send_message(provider_message)
+            response = await self._send_provider_message_with_hooks(provider_message)
             accumulated_text = response.content or ""
             iteration = 0
             last_checkpoint_id: Optional[str] = None
@@ -1427,7 +1427,7 @@ class AgentLoop:
                             result=ev.data,
                         )
                 self._pending_events = []
-                response = await self.provider.send_message(tool_results)
+                response = await self._send_provider_message_with_hooks(tool_results)
                 if response.content:
                     accumulated_text += response.content
                 iteration += 1

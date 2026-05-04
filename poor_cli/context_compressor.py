@@ -6,6 +6,7 @@ import re
 from typing import Any, Dict, List, Set
 
 from .exceptions import setup_logger
+from .policy_hooks import emit_policy_hook_nowait
 
 logger = setup_logger(__name__)
 
@@ -38,6 +39,29 @@ class CompactionStrategy:
 
 class ContextCompressor:
     """Compresses conversation history via multiple strategies."""
+
+    def __init__(self) -> None:
+        self._hook_manager: Any = None
+
+    def _history_size(self, history: List[Dict[str, Any]]) -> int:
+        return sum(len(str(turn.get("content", ""))) for turn in history)
+
+    def _emit_compact_hook(
+        self,
+        event: str,
+        before: List[Dict[str, Any]],
+        after: List[Dict[str, Any]] | None = None,
+    ) -> None:
+        before_size = self._history_size(before)
+        payload = {
+            "tokensBefore": before_size,
+            "ratio": 1.0,
+        }
+        if after is not None:
+            after_size = self._history_size(after)
+            payload["tokensAfter"] = after_size
+            payload["ratio"] = after_size / max(1, before_size)
+        emit_policy_hook_nowait(self._hook_manager, event, payload)
 
     def select_strategy(self, history: List[Dict[str, Any]], config: Any) -> str:
         """Pick the best compaction strategy for the current history shape."""
@@ -214,15 +238,24 @@ class ContextCompressor:
         """Auto-select and apply the best compression strategy."""
         if not self.should_compress(history, config):
             return history
+        self._emit_compact_hook("pre_compact", history)
         strategy = self.select_strategy(history, config)
         logger.info("auto-compaction selected strategy: %s", strategy)
         if strategy == CompactionStrategy.TOOL_STRIP:
-            return self.compress_tool_strip(history, config, max_tool_result_chars=tool_strip_chars)
+            result = self.compress_tool_strip(history, config, max_tool_result_chars=tool_strip_chars)
+            self._emit_compact_hook("post_compact", history, result)
+            return result
         if strategy == CompactionStrategy.SLIDING_WINDOW:
-            return self.compress_sliding_window(history, config)
+            result = self.compress_sliding_window(history, config)
+            self._emit_compact_hook("post_compact", history, result)
+            return result
         if strategy == CompactionStrategy.LLM and provider is not None:
-            return await self.compress_with_llm(history, config, provider)
-        return self.compress(history, config) # extractive fallback
+            result = await self.compress_with_llm(history, config, provider)
+            self._emit_compact_hook("post_compact", history, result)
+            return result
+        result = self.compress(history, config) # extractive fallback
+        self._emit_compact_hook("post_compact", history, result)
+        return result
 
     def _summarize_turns(self, turns: List[Dict[str, Any]]) -> str:
         tools_used: Set[str] = set()

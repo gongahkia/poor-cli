@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from .policy_hooks import emit_policy_hook_nowait
+
 
 @dataclass
 class Hunk:
@@ -225,6 +227,13 @@ class EditStage:
         accepted = [hunk for hunk in edit.hunks if hunk.status == "accepted"]
         if accepted:
             path = Path(edit.path)
+            hook_payload = {
+                "path": edit.path,
+                "hunks": len(accepted),
+                "editId": edit.edit_id,
+            }
+            hook_manager = getattr(self, "_hook_manager", None)
+            emit_policy_hook_nowait(hook_manager, "pre_edit", hook_payload)
             current = path.read_text(encoding="utf-8", errors="ignore") if path.exists() else ""
             if current != edit.original:
                 raise RuntimeError(f"Current file changed since staging: {edit.path}")
@@ -236,6 +245,11 @@ class EditStage:
                     checkpoint = checkpoint_manager.create_checkpoint([edit.path], label, "diff_review_accept", ["diff_review"])
                 edit.checkpoint_id = getattr(checkpoint, "checkpoint_id", None)
             self._writer(path, self._apply_accepted(edit))
+            emit_policy_hook_nowait(
+                hook_manager,
+                "post_edit",
+                {**hook_payload, "status": "written"},
+            )
         edit.finalized = True
         self._refresh_status(edit)
         self._audit("diff.finalize", edit, accepted_hunks=len(accepted), checkpoint_id=edit.checkpoint_id)

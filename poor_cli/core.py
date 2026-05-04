@@ -411,6 +411,13 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
                 instruction_manager=self._instruction_manager,
             )
             self._hook_manager = PolicyHookManager(repo_root)
+            if self._context_compressor is not None:
+                self._context_compressor._hook_manager = self._hook_manager
+            if self.checkpoint_manager is not None:
+                self.checkpoint_manager._hook_manager = self._hook_manager
+            edit_stage = getattr(self.tool_registry, "edit_stage", None) if self.tool_registry else None
+            if edit_stage is not None:
+                edit_stage._hook_manager = self._hook_manager
 
             # persistent memory
             from .memory import MemoryManager
