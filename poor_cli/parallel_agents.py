@@ -158,3 +158,10 @@ class ParallelAgentPool:
             if self._mgr.cleanup_worktree(aid):
                 cleaned += 1
         return cleaned
+
+    async def run_team(self, goal: str, team_id: Optional[str] = None) -> Dict[str, Any]:
+        """Run a lightweight planner/executor/reviewer team with a shared scratchpad."""
+        from .agent_team import AgentTeam
+        team = AgentTeam(team_id=team_id)
+        scratchpad = team.run_stub(goal)
+        return scratchpad.to_dict()

@@ -862,6 +862,56 @@ def build_tool_registry(self) -> None:
         }
     }
 
+    self.tools["scratchpad_read"] = {
+        "function": self.scratchpad_read,
+        "declaration": {
+            "name": "scratchpad_read",
+            "description": "Read the shared agent-team scratchpad or one named section.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "section": {"type": "STRING", "description": "Optional section name"},
+                    "team_id": {"type": "STRING", "description": "Team id (default: default)"},
+                },
+                "required": [],
+            },
+        },
+    }
+    self.tools["scratchpad_write_section"] = {
+        "function": self.scratchpad_write_section,
+        "declaration": {
+            "name": "scratchpad_write_section",
+            "description": "Write or append a named section in the shared agent-team scratchpad.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "name": {"type": "STRING", "description": "Section name"},
+                    "body": {"type": "STRING", "description": "Section body"},
+                    "team_id": {"type": "STRING", "description": "Team id (default: default)"},
+                    "append": {"type": "BOOLEAN", "description": "Append instead of overwrite"},
+                },
+                "required": ["name", "body"],
+            },
+        },
+    }
+    self.tools["scratchpad_post_message"] = {
+        "function": self.scratchpad_post_message,
+        "declaration": {
+            "name": "scratchpad_post_message",
+            "description": "Post a role-tagged message to the shared agent-team scratchpad.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "role": {"type": "STRING", "description": "info, decision, blocker, or request"},
+                    "body": {"type": "STRING", "description": "Message body"},
+                    "author": {"type": "STRING", "description": "Author agent name"},
+                    "team_id": {"type": "STRING", "description": "Team id (default: default)"},
+                },
+                "required": ["role", "body"],
+            },
+        },
+    }
+
     # ── memory tools ─────────────────────────────────────────────────
     self.tools["memory_save"] = {
         "function": self.memory_save,

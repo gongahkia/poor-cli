@@ -3774,6 +3774,36 @@ class ToolRegistryAsync:
         except Exception as exc:
             return f"error spawning parallel agents: {exc}"
 
+    async def scratchpad_read(self, section: str = "", team_id: str = "default") -> str:
+        try:
+            from .agent_team import AgentTeam
+            scratchpad = AgentTeam(team_id=team_id).scratchpad
+            if section:
+                return scratchpad.sections.get(section, "")
+            return scratchpad.to_context()
+        except Exception as exc:
+            return f"error reading scratchpad: {exc}"
+
+    async def scratchpad_write_section(self, name: str, body: str, team_id: str = "default", append: bool = False) -> str:
+        try:
+            from .agent_team import AgentTeam
+            scratchpad = AgentTeam(team_id=team_id).scratchpad
+            if append:
+                scratchpad.append_section(name, body)
+            else:
+                scratchpad.write_section(name, body)
+            return f"scratchpad section written: {name}"
+        except Exception as exc:
+            return f"error writing scratchpad: {exc}"
+
+    async def scratchpad_post_message(self, role: str, body: str, author: str = "agent", team_id: str = "default") -> str:
+        try:
+            from .agent_team import AgentTeam
+            message = AgentTeam(team_id=team_id).scratchpad.post_message(author, role, body)
+            return json.dumps(message.to_dict(), indent=2)
+        except Exception as exc:
+            return f"error posting scratchpad message: {exc}"
+
     # ── memory tool implementations ────────────────────────────────────
 
     async def memory_save(

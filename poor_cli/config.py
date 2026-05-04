@@ -525,6 +525,11 @@ class SpecModeConfig:
 
 
 @dataclass
+class AgentTeamConfig:
+    enabled: bool = False
+
+
+@dataclass
 class Config:
     """Main configuration class"""
     model: ModelConfig = field(default_factory=ModelConfig)
@@ -553,6 +558,7 @@ class Config:
     research: ResearchConfig = field(default_factory=ResearchConfig)
     mcp: McpConfig = field(default_factory=McpConfig)
     spec_mode: SpecModeConfig = field(default_factory=SpecModeConfig)
+    agent_teams: AgentTeamConfig = field(default_factory=AgentTeamConfig)
     economy: EconomyConfig = field(default_factory=EconomyConfig)
     retry: RetryConfig = field(default_factory=RetryConfig)
     circuit_breaker: CircuitBreakerConfig = field(default_factory=CircuitBreakerConfig)
@@ -596,6 +602,7 @@ class Config:
             "research": asdict(self.research),
             "mcp": asdict(self.mcp),
             "spec_mode": asdict(self.spec_mode),
+            "agent_teams": asdict(self.agent_teams),
             "economy": asdict(self.economy),
             "retry": {k: v for k, v in asdict(self.retry).items() if k != "retryable_exceptions"},
             "circuit_breaker": asdict(self.circuit_breaker),
@@ -633,6 +640,7 @@ class Config:
             research=ResearchConfig.from_dict(data.get("research", {})),
             mcp=McpConfig.from_dict(data.get("mcp", {})),
             spec_mode=SpecModeConfig(**data.get("spec_mode", {})),
+            agent_teams=AgentTeamConfig(**data.get("agent_teams", {})),
             economy=EconomyConfig(**data.get("economy", {})),
             retry=RetryConfig(**{k: v for k, v in data.get("retry", {}).items() if k != "retryable_exceptions"}),
             circuit_breaker=CircuitBreakerConfig(**data.get("circuit_breaker", {})),
