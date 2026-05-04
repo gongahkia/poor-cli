@@ -117,6 +117,20 @@ pub enum Action {
     CloseMediaPreview,
     /// Toggle playback for the built-in GIF or MP4 preview.
     ToggleMediaPreviewPlayback,
+    /// Seek media preview backward.
+    SeekMediaPreviewBackward,
+    /// Seek media preview forward.
+    SeekMediaPreviewForward,
+    /// Slow down media preview playback.
+    SlowMediaPreviewPlayback,
+    /// Speed up media preview playback.
+    FastMediaPreviewPlayback,
+    /// Step media preview backward by one frame when supported.
+    StepMediaPreviewBackward,
+    /// Step media preview forward by one frame when supported.
+    StepMediaPreviewForward,
+    /// Toggle media preview mute.
+    ToggleMediaPreviewMute,
     /// Preview the file path under the cursor.
     PreviewPathUnderCursor,
     /// Open the file path under the cursor externally.
@@ -129,6 +143,8 @@ pub enum Action {
     TailPathUnderCursor,
     /// Open the scratch buffer.
     OpenScratchBuffer,
+    /// Open the scratch buffer picker.
+    OpenScratchPalette,
     /// Toggle global search regex mode.
     ToggleSearchRegex,
     /// Cycle global search scope.
@@ -145,6 +161,12 @@ pub enum Action {
     OpenBlockRerunHistory,
     /// Insert the scratch buffer selection into the active command input.
     InsertScratchSelectionIntoInput,
+    /// Send the scratch buffer selection directly to the active pane.
+    SendScratchSelectionToPane,
+    /// Open saved workspace/session browser.
+    OpenWorkspaceBrowser,
+    /// Open a comparison view for every recorded rerun of the selected command.
+    OpenBlockRerunComparison,
     /// Create a new floating pane.
     NewFloatingPane,
     /// Toggle visibility for floating panes.
@@ -647,6 +669,41 @@ impl Default for KeybindingConfig {
         );
         bindings.insert(
             KeyCombo {
+                key: KeyAction::ArrowLeft,
+                modifiers: Modifiers { shift: true, ..pma },
+            },
+            Action::SeekMediaPreviewBackward,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::ArrowRight,
+                modifiers: Modifiers { shift: true, ..pma },
+            },
+            Action::SeekMediaPreviewForward,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('-'),
+                modifiers: pma,
+            },
+            Action::SlowMediaPreviewPlayback,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('='),
+                modifiers: pma,
+            },
+            Action::FastMediaPreviewPlayback,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('m'),
+                modifiers: pma,
+            },
+            Action::ToggleMediaPreviewMute,
+        );
+        bindings.insert(
+            KeyCombo {
                 key: KeyAction::Char('p'),
                 modifiers: pma,
             },
@@ -682,10 +739,24 @@ impl Default for KeybindingConfig {
         );
         bindings.insert(
             KeyCombo {
+                key: KeyAction::Char('s'),
+                modifiers: Modifiers { shift: true, ..pma },
+            },
+            Action::OpenScratchPalette,
+        );
+        bindings.insert(
+            KeyCombo {
                 key: KeyAction::Char('x'),
                 modifiers: Modifiers { shift: true, ..pma },
             },
             Action::InsertScratchSelectionIntoInput,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Enter,
+                modifiers: Modifiers { shift: true, ..pma },
+            },
+            Action::SendScratchSelectionToPane,
         );
         bindings.insert(
             KeyCombo {
@@ -728,6 +799,28 @@ impl Default for KeybindingConfig {
                 modifiers: Modifiers { shift: true, ..pma },
             },
             Action::OpenBlockRerunHistory,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('h'),
+                modifiers: Modifiers {
+                    ctrl: true,
+                    shift: true,
+                    ..pma
+                },
+            },
+            Action::OpenBlockRerunComparison,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('s'),
+                modifiers: Modifiers {
+                    ctrl: true,
+                    shift: true,
+                    ..pma
+                },
+            },
+            Action::OpenWorkspaceBrowser,
         );
         bindings.insert(
             KeyCombo {

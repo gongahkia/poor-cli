@@ -45,6 +45,8 @@ pub struct MediaPreview {
     path: PathBuf,
     kind: MediaKind,
     is_playing: bool,
+    rate: f32,
+    muted: bool,
     platform: PlatformMediaPreview,
 }
 
@@ -61,6 +63,8 @@ impl MediaPreview {
             path,
             kind,
             is_playing: matches!(kind, MediaKind::Gif | MediaKind::Mp4),
+            rate: 1.0,
+            muted: false,
             platform,
         })
     }
@@ -86,8 +90,47 @@ impl MediaPreview {
             return None;
         }
         self.is_playing = !self.is_playing;
-        self.platform.set_playing(self.kind, self.is_playing);
+        self.platform
+            .set_playing(self.kind, self.is_playing, self.rate);
         Some(self.is_playing)
+    }
+
+    /// Seek video playback by a relative number of seconds.
+    pub fn seek_by_seconds(&mut self, seconds: f64) -> Option<()> {
+        if !matches!(self.kind, MediaKind::Mp4) {
+            return None;
+        }
+        self.platform.seek_by_seconds(seconds);
+        Some(())
+    }
+
+    /// Step video playback by one frame when AVFoundation can do so.
+    pub fn step_frame(&mut self, direction: i64) -> Option<()> {
+        if !matches!(self.kind, MediaKind::Mp4) {
+            return None;
+        }
+        self.platform.step_frame(direction);
+        Some(())
+    }
+
+    /// Adjust playback rate. Returns the clamped rate.
+    pub fn adjust_rate(&mut self, delta: f32) -> Option<f32> {
+        if !matches!(self.kind, MediaKind::Mp4) {
+            return None;
+        }
+        self.rate = (self.rate + delta).clamp(0.25, 3.0);
+        self.platform.set_rate(self.rate, self.is_playing);
+        Some(self.rate)
+    }
+
+    /// Toggle mute for video playback. Returns the new mute state.
+    pub fn toggle_mute(&mut self) -> Option<bool> {
+        if !matches!(self.kind, MediaKind::Mp4) {
+            return None;
+        }
+        self.muted = !self.muted;
+        self.platform.set_muted(self.muted);
+        Some(self.muted)
     }
 }
 
@@ -143,6 +186,15 @@ mod platform {
         size: NSSize,
     }
 
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct CMTime {
+        value: i64,
+        timescale: i32,
+        flags: u32,
+        epoch: i64,
+    }
+
     pub(super) struct PlatformMediaPreview {
         container: *mut Object,
         child: *mut Object,
@@ -188,7 +240,7 @@ mod platform {
             }
         }
 
-        pub(super) fn set_playing(&mut self, kind: MediaKind, playing: bool) {
+        pub(super) fn set_playing(&mut self, kind: MediaKind, playing: bool, rate: f32) {
             // SAFETY: The Objective-C objects are alive while self is alive and
             // are only touched on the main event-loop thread.
             unsafe {
@@ -199,13 +251,67 @@ mod platform {
                     }
                     MediaKind::Mp4 if !self.player.is_null() => {
                         if playing {
-                            let _: () = msg_send![self.player, play];
+                            let _: () = msg_send![self.player, setRate: rate];
                         } else {
                             let _: () = msg_send![self.player, pause];
                         }
                     }
                     MediaKind::Image | MediaKind::Mp4 => {}
                 }
+            }
+        }
+
+        pub(super) fn seek_by_seconds(&mut self, seconds: f64) {
+            if self.player.is_null() {
+                return;
+            }
+            // SAFETY: AVPlayer is retained by self; CMTime is passed by value.
+            unsafe {
+                let current: CMTime = msg_send![self.player, currentTime];
+                let timescale = current.timescale.max(1);
+                let delta = (seconds * f64::from(timescale)).round() as i64;
+                let target = CMTime {
+                    value: current.value.saturating_add(delta).max(0),
+                    timescale,
+                    flags: current.flags,
+                    epoch: current.epoch,
+                };
+                let _: () = msg_send![self.player, seekToTime: target];
+            }
+        }
+
+        pub(super) fn step_frame(&mut self, direction: i64) {
+            if self.player.is_null() {
+                return;
+            }
+            // SAFETY: currentItem is owned by the player and used immediately.
+            unsafe {
+                let _: () = msg_send![self.player, pause];
+                let item: *mut Object = msg_send![self.player, currentItem];
+                if !item.is_null() {
+                    let _: () = msg_send![item, stepByCount: direction];
+                }
+            }
+        }
+
+        pub(super) fn set_rate(&mut self, rate: f32, playing: bool) {
+            if self.player.is_null() || !playing {
+                return;
+            }
+            // SAFETY: AVPlayer is retained by self.
+            unsafe {
+                let _: () = msg_send![self.player, setRate: rate];
+            }
+        }
+
+        pub(super) fn set_muted(&mut self, muted: bool) {
+            if self.player.is_null() {
+                return;
+            }
+            // SAFETY: AVPlayer is retained by self.
+            unsafe {
+                let muted = if muted { YES } else { objc::runtime::NO };
+                let _: () = msg_send![self.player, setMuted: muted];
             }
         }
     }
@@ -361,7 +467,15 @@ mod platform {
 
         pub(super) fn set_frame(&mut self, _frame: PreviewFrame) {}
 
-        pub(super) fn set_playing(&mut self, _kind: MediaKind, _playing: bool) {}
+        pub(super) fn set_playing(&mut self, _kind: MediaKind, _playing: bool, _rate: f32) {}
+
+        pub(super) fn seek_by_seconds(&mut self, _seconds: f64) {}
+
+        pub(super) fn step_frame(&mut self, _direction: i64) {}
+
+        pub(super) fn set_rate(&mut self, _rate: f32, _playing: bool) {}
+
+        pub(super) fn set_muted(&mut self, _muted: bool) {}
     }
 }
 

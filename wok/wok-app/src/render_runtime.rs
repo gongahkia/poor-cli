@@ -1543,6 +1543,7 @@ pub(crate) fn palette_category_label(category: PaletteCategory) -> &'static str 
         PaletteCategory::SearchResult => "Search Results",
         PaletteCategory::SavedSearch => "Saved Searches",
         PaletteCategory::ScratchSnippet => "Scratch Snippets",
+        PaletteCategory::Workspace => "Workspaces",
         PaletteCategory::Theme => "Themes",
         PaletteCategory::Keybinding => "Keybindings",
         PaletteCategory::SettingsField => "Settings Fields",

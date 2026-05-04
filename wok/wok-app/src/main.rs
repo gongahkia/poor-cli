@@ -666,6 +666,13 @@ enum PathCursorAction {
     Tail,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ParsedPathTarget {
+    path: PathBuf,
+    line: Option<usize>,
+    column: Option<usize>,
+}
+
 struct RecentKeyEntry {
     label: String,
     at: Instant,
@@ -3672,19 +3679,36 @@ impl WokHandler {
     }
 
     fn preview_file_path(&mut self, path: PathBuf) {
-        let path = self.resolve_preview_path(&path);
+        self.preview_file_target(ParsedPathTarget {
+            path,
+            line: None,
+            column: None,
+        });
+    }
+
+    fn preview_file_target(&mut self, target: ParsedPathTarget) {
+        let path = self.resolve_preview_path(&target.path);
         if media_kind_for_path(&path).is_some() {
             self.open_media_preview(path);
             return;
         }
         if is_text_preview_path(&path) {
-            self.open_text_file_preview(path);
+            self.open_text_file_preview_at(path, target.line, target.column);
         } else {
-            self.open_path_externally(&path);
+            self.quick_look_or_open_path(&path);
         }
     }
 
     fn open_text_file_preview(&mut self, path: PathBuf) {
+        self.open_text_file_preview_at(path, None, None);
+    }
+
+    fn open_text_file_preview_at(
+        &mut self,
+        path: PathBuf,
+        line: Option<usize>,
+        column: Option<usize>,
+    ) {
         let path = self.resolve_preview_path(&path);
         if !path.is_file() {
             self.status_message = Some(format!("Preview file not found: {}", path.display()));
@@ -3698,6 +3722,8 @@ impl WokHandler {
                     path.clone(),
                     content,
                     truncated,
+                    line,
+                    column,
                     "Esc close  / search  Enter next  arrows scroll  Mod+C copy",
                 );
                 self.status_message = Some(if truncated {
@@ -3719,6 +3745,8 @@ impl WokHandler {
         path: PathBuf,
         content: String,
         truncated: bool,
+        line: Option<usize>,
+        column: Option<usize>,
         help: &str,
     ) {
         let mut editor = InputEditor::new(
@@ -3726,6 +3754,17 @@ impl WokHandler {
             wok_input::editor::InputPosition::Bottom,
         );
         editor.buffer.set_text(&content);
+        if let Some(line) = line {
+            let offset = text_offset_for_line_col(
+                &content,
+                line.saturating_sub(1),
+                column.unwrap_or(1).saturating_sub(1),
+            );
+            if let Some(cursor) = editor.buffer.cursors_mut().first_mut() {
+                cursor.position = offset;
+                cursor.anchor = None;
+            }
+        }
         editor.is_active = true;
         self.file_preview = Some(FilePreviewState {
             path,
@@ -3739,7 +3778,11 @@ impl WokHandler {
     }
 
     fn open_scratch_buffer(&mut self) {
-        let path = WokConfig::config_dir().join("scratch.md");
+        self.open_scratch_buffer_named("default");
+    }
+
+    fn open_scratch_buffer_named(&mut self, name: &str) {
+        let path = scratch_path_for_name(name);
         if let Some(parent) = path.parent() {
             if let Err(error) = std::fs::create_dir_all(parent) {
                 self.status_message = Some(format!("Scratch unavailable: {error}"));
@@ -3815,6 +3858,45 @@ impl WokHandler {
         self.needs_redraw = true;
     }
 
+    fn control_media_preview(&mut self, action: Action) {
+        let Some(preview) = self.media_preview.as_mut() else {
+            self.status_message = Some("No media preview is open".to_string());
+            self.needs_redraw = true;
+            return;
+        };
+        let message = match action {
+            Action::SeekMediaPreviewBackward => preview
+                .seek_by_seconds(-5.0)
+                .map(|()| "Rewound preview 5s".to_string()),
+            Action::SeekMediaPreviewForward => preview
+                .seek_by_seconds(5.0)
+                .map(|()| "Skipped preview 5s".to_string()),
+            Action::SlowMediaPreviewPlayback => preview
+                .adjust_rate(-0.25)
+                .map(|rate| format!("Preview speed: {rate:.2}x")),
+            Action::FastMediaPreviewPlayback => preview
+                .adjust_rate(0.25)
+                .map(|rate| format!("Preview speed: {rate:.2}x")),
+            Action::StepMediaPreviewBackward => preview
+                .step_frame(-1)
+                .map(|()| "Stepped preview back one frame".to_string()),
+            Action::StepMediaPreviewForward => preview
+                .step_frame(1)
+                .map(|()| "Stepped preview forward one frame".to_string()),
+            Action::ToggleMediaPreviewMute => preview.toggle_mute().map(|muted| {
+                if muted {
+                    "Muted preview".to_string()
+                } else {
+                    "Unmuted preview".to_string()
+                }
+            }),
+            _ => None,
+        };
+        self.status_message =
+            Some(message.unwrap_or_else(|| "Media control is only available for MP4 previews".to_string()));
+        self.needs_redraw = true;
+    }
+
     fn open_block_inspector(&mut self) {
         let Some((path, content)) = self.active_pane().and_then(|pane| {
             let block = pane.app.selected_or_latest_block()?;
@@ -3856,6 +3938,8 @@ impl WokHandler {
             path,
             content,
             false,
+            None,
+            None,
             "Esc close  / search  Enter next  Mod+C copy",
         );
         self.needs_redraw = true;
@@ -3907,6 +3991,8 @@ impl WokHandler {
             PathBuf::from("block-rerun-history.md"),
             content,
             false,
+            None,
+            None,
             "Esc close  / search  Mod+C copy",
         );
         self.needs_redraw = true;
@@ -3968,7 +4054,7 @@ impl WokHandler {
             .unwrap_or_else(|| path.to_path_buf())
     }
 
-    fn path_under_cursor(&self) -> Option<PathBuf> {
+    fn path_under_cursor(&self) -> Option<ParsedPathTarget> {
         let pane = self.active_pane()?;
         let (row, col) = if let Some(vi) = pane.app.vi_mode.as_ref() {
             (vi.cursor_row, vi.cursor_col)
@@ -3976,19 +4062,32 @@ impl WokHandler {
             let (col, _) = pane.terminal.state.cursor_position();
             (pane.terminal.state.absolute_cursor_row(), col)
         };
-        let line = pane.terminal.state.row_text(row);
-        extract_path_near_column(&line, col).map(PathBuf::from)
+        let line = self.path_detection_line_for_row(pane, row);
+        extract_path_near_column(&line, col)
+    }
+
+    fn path_detection_line_for_row(&self, pane: &PaneRuntime, row: usize) -> String {
+        let mut line = pane.terminal.state.row_text(row);
+        if line.ends_with('\\') || line.ends_with('/') {
+            let next = pane.terminal.state.row_text(row.saturating_add(1));
+            line.push_str(next.trim_start());
+        }
+        line
     }
 
     fn apply_path_action_under_cursor(&mut self, action: PathCursorAction) {
-        let Some(path) = self.path_under_cursor() else {
+        let Some(target) = self.path_under_cursor() else {
             self.status_message = Some("No file path under cursor".to_string());
             self.needs_redraw = true;
             return;
         };
-        let path = self.resolve_preview_path(&path);
+        let path = self.resolve_preview_path(&target.path);
         match action {
-            PathCursorAction::Preview => self.preview_file_path(path),
+            PathCursorAction::Preview => self.preview_file_target(ParsedPathTarget {
+                path,
+                line: target.line,
+                column: target.column,
+            }),
             PathCursorAction::Open => self.open_path_externally(&path),
             PathCursorAction::Copy => self.copy_path_to_clipboard(&path),
             PathCursorAction::Reveal => self.reveal_path_in_finder(&path),
@@ -4006,6 +4105,20 @@ impl WokHandler {
             }
             Err(error) => {
                 self.status_message = Some(format!("Failed to open externally: {error}"));
+            }
+        }
+        self.needs_redraw = true;
+    }
+
+    fn quick_look_or_open_path(&mut self, path: &Path) {
+        match Command::new("qlmanage").arg("-p").arg(path).spawn() {
+            Ok(_) => {
+                self.status_message = Some(format!("Opened Quick Look: {}", path.display()));
+            }
+            Err(error) => {
+                warn!("failed to launch Quick Look for '{}': {error}", path.display());
+                self.open_path_externally(path);
+                return;
             }
         }
         self.needs_redraw = true;
@@ -10543,10 +10656,16 @@ fn git_worktree_description(
 
 fn visible_file_paths_for_pane(pane: &PaneRuntime) -> Vec<PathBuf> {
     let mut paths = Vec::new();
-    for row in pane.terminal.state.visible_rows() {
-        let line = pane.terminal.state.row_text(row);
-        for (_, token) in path_like_spans(&line) {
-            paths.push(PathBuf::from(clean_path_token(token)));
+    let visible = pane.terminal.state.visible_rows();
+    for (index, row) in visible.iter().copied().enumerate() {
+        let mut line = pane.terminal.state.row_text(row);
+        if line.ends_with('\\') || line.ends_with('/') {
+            if let Some(next_row) = visible.get(index + 1) {
+                line.push_str(pane.terminal.state.row_text(*next_row).trim_start());
+            }
+        }
+        for span in path_like_spans(&line) {
+            paths.push(span.target.path);
         }
     }
     paths
@@ -10656,6 +10775,12 @@ fn read_text_preview_file(path: &Path) -> std::io::Result<(String, bool)> {
     if truncated {
         bytes.truncate(MAX_PREVIEW_BYTES as usize);
     }
+    if bytes.iter().take(8192).any(|byte| *byte == 0) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "binary-looking file contains NUL bytes",
+        ));
+    }
     let mut content = String::from_utf8_lossy(&bytes).into_owned();
     if truncated {
         content.push_str("\n\n[preview truncated at 2 MiB]");
@@ -10686,36 +10811,131 @@ fn write_saved_searches(queries: &[String]) -> std::io::Result<()> {
 }
 
 fn scratch_snippet_entries() -> Vec<String> {
-    let path = WokConfig::config_dir().join("scratch.md");
-    std::fs::read_to_string(path)
-        .unwrap_or_default()
-        .lines()
-        .map(str::trim)
+    scratch_files()
+        .into_iter()
+        .flat_map(|(_, path)| std::fs::read_to_string(path).unwrap_or_default().lines().map(ToString::to_string).collect::<Vec<_>>())
+        .map(|line| line.trim().to_string())
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .map(ToString::to_string)
         .collect()
 }
 
-fn extract_path_near_column(line: &str, col: usize) -> Option<String> {
+fn scratch_dir() -> PathBuf {
+    WokConfig::config_dir().join("scratch")
+}
+
+fn scratch_path_for_name(name: &str) -> PathBuf {
+    let safe = sanitize_workspace_name(name);
+    if safe == "default" {
+        return WokConfig::config_dir().join("scratch.md");
+    }
+    scratch_dir().join(format!("{safe}.md"))
+}
+
+fn scratch_files() -> Vec<(String, PathBuf)> {
+    let mut files = vec![("default".to_string(), scratch_path_for_name("default"))];
+    if let Ok(read_dir) = std::fs::read_dir(scratch_dir()) {
+        for entry in read_dir.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|value| value.to_str()) != Some("md") {
+                continue;
+            }
+            let Some(name) = path.file_stem().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            if name != "default" {
+                files.push((name.to_string(), path));
+            }
+        }
+    }
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+    files.dedup_by(|left, right| left.0 == right.0);
+    files
+}
+
+fn sanitize_workspace_name(name: &str) -> String {
+    let sanitized = name
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string();
+    if sanitized.is_empty() {
+        "default".to_string()
+    } else {
+        sanitized
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PathLikeSpan {
+    start_col: usize,
+    end_col: usize,
+    target: ParsedPathTarget,
+}
+
+fn extract_path_near_column(line: &str, col: usize) -> Option<ParsedPathTarget> {
     let mut candidates = Vec::new();
-    for (start, raw) in path_like_spans(line) {
-        let end = start + raw.chars().count();
+    for span in path_like_spans(line) {
+        let start = span.start_col;
+        let end = span.end_col;
         if (start..=end).contains(&col) {
-            candidates.push(raw);
+            candidates.push(span);
         }
     }
     candidates
         .into_iter()
-        .max_by_key(|candidate| candidate.len())
-        .map(clean_path_token)
-        .filter(|candidate| !candidate.is_empty())
+        .max_by_key(|candidate| candidate.end_col.saturating_sub(candidate.start_col))
+        .map(|candidate| candidate.target)
 }
 
-fn path_like_spans(line: &str) -> Vec<(usize, &str)> {
+fn path_like_spans(line: &str) -> Vec<PathLikeSpan> {
     let mut spans = Vec::new();
     let mut start_byte = None;
     let mut start_col = 0usize;
+    let mut quote = None;
+    let mut escaped = false;
+
     for (byte_idx, ch) in line.char_indices() {
+        if let Some(active_quote) = quote {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == active_quote {
+                if let Some(start) = start_byte {
+                    push_path_span_candidate(line, start, byte_idx + ch.len_utf8(), start_col, &mut spans);
+                }
+                start_byte = None;
+                quote = None;
+            }
+            continue;
+        }
+
+        if matches!(ch, '"' | '\'' | '`') {
+            start_byte = Some(byte_idx);
+            start_col = line[..byte_idx].chars().count();
+            quote = Some(ch);
+            continue;
+        }
+
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' && start_byte.is_some() {
+            escaped = true;
+            continue;
+        }
         let path_char = is_path_token_char(ch);
         match (start_byte, path_char) {
             (None, true) => {
@@ -10723,26 +10943,24 @@ fn path_like_spans(line: &str) -> Vec<(usize, &str)> {
                 start_col = line[..byte_idx].chars().count();
             }
             (Some(start), false) => {
-                let token = &line[start..byte_idx];
-                if looks_like_path_token(token) {
-                    spans.push((start_col, token));
-                }
+                push_path_span_candidate(line, start, byte_idx, start_col, &mut spans);
                 start_byte = None;
             }
             _ => {}
         }
     }
     if let Some(start) = start_byte {
-        let token = &line[start..];
-        if looks_like_path_token(token) {
-            spans.push((start_col, token));
-        }
+        push_path_span_candidate(line, start, line.len(), start_col, &mut spans);
     }
     spans
 }
 
 fn is_path_token_char(ch: char) -> bool {
-    ch.is_ascii_alphanumeric() || matches!(ch, '/' | '~' | '.' | '_' | '-' | '+' | '@' | ':')
+    ch.is_ascii_alphanumeric()
+        || matches!(
+            ch,
+            '/' | '~' | '.' | '_' | '-' | '+' | '@' | ':' | '[' | ']'
+        )
 }
 
 fn looks_like_path_token(token: &str) -> bool {
@@ -10757,7 +10975,69 @@ fn clean_path_token(token: &str) -> String {
     token
         .trim_matches(|ch: char| matches!(ch, '"' | '\'' | '`' | '<' | '>' | '[' | ']' | '(' | ')'))
         .trim_end_matches(|ch: char| matches!(ch, ',' | ';' | ':' | '.'))
+        .replace("\\ ", " ")
+        .replace("\\(", "(")
+        .replace("\\)", ")")
         .to_string()
+}
+
+fn push_path_span_candidate(
+    line: &str,
+    start_byte: usize,
+    end_byte: usize,
+    start_col: usize,
+    spans: &mut Vec<PathLikeSpan>,
+) {
+    let raw = &line[start_byte..end_byte];
+    let Some(target) = parse_path_target(raw) else {
+        return;
+    };
+    let end_col = start_col + raw.chars().count();
+    spans.push(PathLikeSpan {
+        start_col,
+        end_col,
+        target,
+    });
+}
+
+fn parse_path_target(raw: &str) -> Option<ParsedPathTarget> {
+    let mut token = clean_path_token(raw);
+    if token.is_empty() {
+        return None;
+    }
+    let (line, column) = parse_line_column_suffix(&mut token);
+    if !looks_like_path_token(&token) {
+        return None;
+    }
+    Some(ParsedPathTarget {
+        path: PathBuf::from(token),
+        line,
+        column,
+    })
+}
+
+fn parse_line_column_suffix(token: &mut String) -> (Option<usize>, Option<usize>) {
+    let mut parts = token.rsplitn(3, ':').collect::<Vec<_>>();
+    if parts.len() < 2 {
+        return (None, None);
+    }
+    let first = parts[0].parse::<usize>().ok();
+    let second = parts.get(1).and_then(|value| value.parse::<usize>().ok());
+    match (first, second) {
+        (Some(column), Some(line)) if parts.len() == 3 => {
+            let keep = token
+                .len()
+                .saturating_sub(parts[0].len() + parts[1].len() + 2);
+            token.truncate(keep);
+            (Some(line), Some(column))
+        }
+        (Some(line), _) => {
+            let keep = token.len().saturating_sub(parts[0].len() + 1);
+            token.truncate(keep);
+            (Some(line), None)
+        }
+        _ => (None, None),
+    }
 }
 
 fn cd_command_for_path(path: &str) -> String {

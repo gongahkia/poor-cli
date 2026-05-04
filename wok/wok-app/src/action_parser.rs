@@ -96,6 +96,21 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         | "media_play_pause"
         | "media_pause"
         | "preview_play_pause" => Some(Action::ToggleMediaPreviewPlayback),
+        "seek_media_preview_backward" | "media_seek_backward" | "media_back" => {
+            Some(Action::SeekMediaPreviewBackward)
+        }
+        "seek_media_preview_forward" | "media_seek_forward" | "media_forward" => {
+            Some(Action::SeekMediaPreviewForward)
+        }
+        "slow_media_preview_playback" | "media_slower" => Some(Action::SlowMediaPreviewPlayback),
+        "fast_media_preview_playback" | "media_faster" => Some(Action::FastMediaPreviewPlayback),
+        "step_media_preview_backward" | "media_step_backward" => {
+            Some(Action::StepMediaPreviewBackward)
+        }
+        "step_media_preview_forward" | "media_step_forward" => {
+            Some(Action::StepMediaPreviewForward)
+        }
+        "toggle_media_preview_mute" | "media_mute" => Some(Action::ToggleMediaPreviewMute),
         "preview_path_under_cursor" | "preview_file_under_cursor" | "preview_path" => {
             Some(Action::PreviewPathUnderCursor)
         }
@@ -112,6 +127,9 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
             Some(Action::TailPathUnderCursor)
         }
         "open_scratch_buffer" | "scratch_buffer" | "scratch" => Some(Action::OpenScratchBuffer),
+        "open_scratch_palette" | "scratch_palette" | "scratch_picker" => {
+            Some(Action::OpenScratchPalette)
+        }
         "toggle_search_regex" | "search_regex_toggle" | "regex_search" => {
             Some(Action::ToggleSearchRegex)
         }
@@ -131,6 +149,15 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         }
         "insert_scratch_selection_into_input" | "insert_scratch" | "send_scratch_to_input" => {
             Some(Action::InsertScratchSelectionIntoInput)
+        }
+        "send_scratch_selection_to_pane" | "run_scratch" | "send_scratch" => {
+            Some(Action::SendScratchSelectionToPane)
+        }
+        "open_workspace_browser" | "workspace_browser" | "workspace_picker" => {
+            Some(Action::OpenWorkspaceBrowser)
+        }
+        "open_block_rerun_comparison" | "block_rerun_comparison" | "compare_reruns" => {
+            Some(Action::OpenBlockRerunComparison)
         }
         "new_floating_pane" | "floating_new" => Some(Action::NewFloatingPane),
         "toggle_floating_pane" | "toggle_floating" | "floating_toggle" => {

@@ -19,6 +19,8 @@ pub enum PaletteCategory {
     SavedSearch,
     /// Scratch snippet entries.
     ScratchSnippet,
+    /// Workspace/session entries.
+    Workspace,
     /// Theme entries (built-in + user-installed).
     Theme,
     /// Keybinding listing entries (read-only).
@@ -65,8 +67,14 @@ pub enum PaletteAction {
     },
     /// Load a saved search query.
     SavedSearch(String),
+    /// Delete a saved search query.
+    DeleteSavedSearch(String),
     /// Insert text from scratch into the active command input.
     ScratchSnippet(String),
+    /// Open a named scratch buffer.
+    OpenScratch(String),
+    /// Load a named workspace.
+    LoadWorkspace(String),
     /// Apply the theme at the given absolute path.
     ApplyTheme(String),
     /// Preview the diff for a changed Git file.
@@ -257,12 +265,13 @@ fn category_rank(category: PaletteCategory, workflow_priority: bool) -> u8 {
             PaletteCategory::SearchResult => 4,
             PaletteCategory::SavedSearch => 5,
             PaletteCategory::ScratchSnippet => 6,
-            PaletteCategory::FilePath => 7,
-            PaletteCategory::Theme => 8,
-            PaletteCategory::Keybinding => 9,
-            PaletteCategory::SettingsField => 10,
-            PaletteCategory::GitFile => 11,
-            PaletteCategory::GitWorktree => 12,
+            PaletteCategory::Workspace => 7,
+            PaletteCategory::FilePath => 8,
+            PaletteCategory::Theme => 9,
+            PaletteCategory::Keybinding => 10,
+            PaletteCategory::SettingsField => 11,
+            PaletteCategory::GitFile => 12,
+            PaletteCategory::GitWorktree => 13,
         }
     } else {
         match category {
@@ -273,12 +282,13 @@ fn category_rank(category: PaletteCategory, workflow_priority: bool) -> u8 {
             PaletteCategory::SearchResult => 4,
             PaletteCategory::SavedSearch => 5,
             PaletteCategory::ScratchSnippet => 6,
-            PaletteCategory::GitFile => 7,
-            PaletteCategory::GitWorktree => 8,
-            PaletteCategory::FilePath => 9,
-            PaletteCategory::Theme => 10,
-            PaletteCategory::Keybinding => 11,
-            PaletteCategory::SettingsField => 12,
+            PaletteCategory::Workspace => 7,
+            PaletteCategory::GitFile => 8,
+            PaletteCategory::GitWorktree => 9,
+            PaletteCategory::FilePath => 10,
+            PaletteCategory::Theme => 11,
+            PaletteCategory::Keybinding => 12,
+            PaletteCategory::SettingsField => 13,
         }
     }
 }
