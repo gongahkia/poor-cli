@@ -3843,6 +3843,47 @@ impl WokHandler {
         self.needs_redraw = true;
     }
 
+    fn send_scratch_selection_to_pane(&mut self) {
+        let Some(text) = self.scratch_buffer.as_ref().map(|scratch| {
+            selected_editor_text(&scratch.editor).unwrap_or_else(|| scratch.editor.buffer.text())
+        }) else {
+            self.status_message = Some("Scratch buffer is not open".to_string());
+            self.needs_redraw = true;
+            return;
+        };
+        if text.trim().is_empty() {
+            self.status_message = Some("Scratch buffer is empty".to_string());
+            self.needs_redraw = true;
+            return;
+        }
+        let mut payload = text;
+        if !payload.ends_with('\n') {
+            payload.push('\n');
+        }
+        self.send_raw_input_to_pty(payload.as_bytes());
+        self.status_message = Some("Sent scratch text to pane".to_string());
+        self.needs_redraw = true;
+    }
+
+    fn open_scratch_palette(&mut self) {
+        let mut entries = Vec::new();
+        for (name, path) in scratch_files() {
+            entries.push(PaletteEntry {
+                label: format!("Open Scratch {name}"),
+                description: path.display().to_string(),
+                category: PaletteCategory::ScratchSnippet,
+                score: 0.0,
+                action: PaletteAction::OpenScratch(name),
+            });
+        }
+        if entries.is_empty() {
+            self.status_message = Some("No scratch buffers found".to_string());
+            self.needs_redraw = true;
+        } else {
+            self.open_transient_palette(entries, "scratch buffers");
+        }
+    }
+
     fn toggle_media_preview_playback(&mut self) {
         let Some(preview) = self.media_preview.as_mut() else {
             self.status_message = Some("No media preview is open".to_string());
@@ -3989,6 +4030,76 @@ impl WokHandler {
         self.open_text_preview_state(
             "Rerun History",
             PathBuf::from("block-rerun-history.md"),
+            content,
+            false,
+            None,
+            None,
+            "Esc close  / search  Mod+C copy",
+        );
+        self.needs_redraw = true;
+    }
+
+    fn open_block_rerun_comparison(&mut self) {
+        let Some(command) = self
+            .active_pane()
+            .and_then(|pane| pane.app.selected_or_latest_block())
+            .map(|block| block.command_text.clone())
+        else {
+            self.status_message = Some("No command block for rerun comparison".to_string());
+            self.needs_redraw = true;
+            return;
+        };
+        let mut entries = self
+            .active_pane()
+            .map(|pane| pane.pane_history.clone())
+            .unwrap_or_default();
+        entries.extend(self.global_history.entries().iter().cloned());
+        entries.retain(|entry| entry.command.trim() == command.trim());
+        entries.sort_by(|left, right| left.started_at_ms.cmp(&right.started_at_ms));
+        entries.dedup_by(|left, right| {
+            left.started_at_ms == right.started_at_ms && left.source_pane_id == right.source_pane_id
+        });
+
+        let mut content = format!("# Rerun Comparison\n\ncommand: {}\n\n", command);
+        if entries.is_empty() {
+            content.push_str("No comparable runs recorded.");
+        } else {
+            let durations = entries
+                .iter()
+                .filter_map(|entry| entry.duration_ms)
+                .collect::<Vec<_>>();
+            if let (Some(min), Some(max)) = (durations.iter().min(), durations.iter().max()) {
+                content.push_str(&format!(
+                    "runs: {}\nfastest: {}ms\nslowest: {}ms\n\n",
+                    entries.len(),
+                    min,
+                    max
+                ));
+            }
+            content.push_str("| run | exit | duration | cwd |\n| --- | --- | --- | --- |\n");
+            for (index, entry) in entries.iter().enumerate() {
+                let exit = entry
+                    .exit_code
+                    .map_or_else(|| "?".to_string(), |code| code.to_string());
+                let duration = entry
+                    .duration_ms
+                    .map_or_else(|| "?".to_string(), |ms| format!("{ms}ms"));
+                let cwd = entry
+                    .cwd
+                    .as_ref()
+                    .map_or_else(|| "~".to_string(), |path| path.display().to_string());
+                content.push_str(&format!(
+                    "| {} | {} | {} | {} |\n",
+                    index + 1,
+                    exit,
+                    duration,
+                    cwd.replace('|', "\\|")
+                ));
+            }
+        }
+        self.open_text_preview_state(
+            "Rerun Comparison",
+            PathBuf::from("block-rerun-comparison.md"),
             content,
             false,
             None,
@@ -5468,6 +5579,19 @@ impl WokHandler {
             self.toggle_media_preview_playback();
             return;
         }
+        if matches!(
+            action,
+            Action::SeekMediaPreviewBackward
+                | Action::SeekMediaPreviewForward
+                | Action::SlowMediaPreviewPlayback
+                | Action::FastMediaPreviewPlayback
+                | Action::StepMediaPreviewBackward
+                | Action::StepMediaPreviewForward
+                | Action::ToggleMediaPreviewMute
+        ) {
+            self.control_media_preview(action);
+            return;
+        }
         match action {
             Action::PreviewPathUnderCursor => {
                 self.apply_path_action_under_cursor(PathCursorAction::Preview);
@@ -5493,8 +5617,16 @@ impl WokHandler {
                 self.open_scratch_buffer();
                 return;
             }
+            Action::OpenScratchPalette => {
+                self.open_scratch_palette();
+                return;
+            }
             Action::InsertScratchSelectionIntoInput => {
                 self.insert_scratch_selection_into_input();
+                return;
+            }
+            Action::SendScratchSelectionToPane => {
+                self.send_scratch_selection_to_pane();
                 return;
             }
             Action::OpenBlockInspector => {
@@ -5503,6 +5635,10 @@ impl WokHandler {
             }
             Action::OpenBlockRerunHistory => {
                 self.open_block_rerun_history();
+                return;
+            }
+            Action::OpenBlockRerunComparison => {
+                self.open_block_rerun_comparison();
                 return;
             }
             Action::ToggleSearchRegex => {
@@ -5541,6 +5677,10 @@ impl WokHandler {
             }
             Action::OpenSavedSearches => {
                 self.open_saved_searches_palette();
+                return;
+            }
+            Action::OpenWorkspaceBrowser => {
+                self.open_workspace_browser_palette();
                 return;
             }
             _ => {}
@@ -6420,6 +6560,9 @@ impl WokHandler {
                         PaletteAction::SavedSearch(query) => {
                             self.load_saved_search(query);
                         }
+                        PaletteAction::DeleteSavedSearch(query) => {
+                            self.delete_saved_search(query);
+                        }
                         PaletteAction::ScratchSnippet(text) => {
                             if let Some(active_pane) = self.active_pane_mut() {
                                 active_pane.app.close_command_palette();
@@ -6427,6 +6570,20 @@ impl WokHandler {
                                 active_pane.app.input_editor.is_active = true;
                                 let _ = active_pane.app.input_editor.buffer.insert_at(0, &text);
                             }
+                        }
+                        PaletteAction::OpenScratch(name) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
+                            self.open_scratch_buffer_named(&name);
+                        }
+                        PaletteAction::LoadWorkspace(name) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
+                            self.handle_action(Action::LoadSession(name));
                         }
                         PaletteAction::ApplyTheme(path) => {
                             if let Some(active_pane) = self.active_pane_mut() {
@@ -7542,17 +7699,43 @@ impl WokHandler {
             self.needs_redraw = true;
             return;
         }
-        let entries = queries
-            .into_iter()
-            .map(|query| PaletteEntry {
+        let mut entries = Vec::new();
+        for query in queries {
+            entries.push(PaletteEntry {
                 label: query.clone(),
                 description: "Run saved search".to_string(),
                 category: PaletteCategory::SavedSearch,
                 score: 0.0,
-                action: PaletteAction::SavedSearch(query),
-            })
-            .collect();
+                action: PaletteAction::SavedSearch(query.clone()),
+            });
+            entries.push(PaletteEntry {
+                label: format!("Delete Saved Search {query}"),
+                description: "Remove saved search query".to_string(),
+                category: PaletteCategory::SavedSearch,
+                score: 0.0,
+                action: PaletteAction::DeleteSavedSearch(query),
+            });
+        }
         self.open_transient_palette(entries, "Saved searches");
+    }
+
+    fn open_workspace_browser_palette(&mut self) {
+        let entries = workspace_session_entries()
+            .into_iter()
+            .map(|(name, description)| PaletteEntry {
+                label: format!("Load Workspace {name}"),
+                description,
+                category: PaletteCategory::Workspace,
+                score: 0.0,
+                action: PaletteAction::LoadWorkspace(name),
+            })
+            .collect::<Vec<_>>();
+        if entries.is_empty() {
+            self.status_message = Some("No named workspaces saved yet".to_string());
+            self.needs_redraw = true;
+            return;
+        }
+        self.open_transient_palette(entries, "workspace browser");
     }
 
     fn save_current_search(&mut self) {
@@ -7592,6 +7775,22 @@ impl WokHandler {
         self.refresh_global_search();
         self.scroll_to_current_search_match();
         self.status_message = Some(format!("Loaded saved search: {query}"));
+        self.needs_redraw = true;
+    }
+
+    fn delete_saved_search(&mut self, query: String) {
+        let mut queries = read_saved_searches();
+        let before = queries.len();
+        queries.retain(|existing| existing != &query);
+        match write_saved_searches(&queries) {
+            Ok(()) if queries.len() < before => {
+                self.status_message = Some(format!("Deleted saved search: {query}"));
+            }
+            Ok(()) => self.status_message = Some(format!("Saved search not found: {query}")),
+            Err(error) => {
+                self.status_message = Some(format!("Failed to delete saved search: {error}"))
+            }
+        }
         self.needs_redraw = true;
     }
 
@@ -7755,6 +7954,16 @@ impl WokHandler {
             });
         }
 
+        for (name, path) in scratch_files().into_iter().take(20) {
+            entries.push(PaletteEntry {
+                label: format!("Open Scratch {name}"),
+                description: path.display().to_string(),
+                category: PaletteCategory::ScratchSnippet,
+                score: 0.0,
+                action: PaletteAction::OpenScratch(name),
+            });
+        }
+
         for snippet in scratch_snippet_entries().into_iter().take(40) {
             entries.push(PaletteEntry {
                 label: truncate_metric_text(&snippet, 80),
@@ -7762,6 +7971,16 @@ impl WokHandler {
                 category: PaletteCategory::ScratchSnippet,
                 score: 0.0,
                 action: PaletteAction::ScratchSnippet(snippet),
+            });
+        }
+
+        for (name, description) in workspace_session_entries().into_iter().take(20) {
+            entries.push(PaletteEntry {
+                label: format!("Load Workspace {name}"),
+                description,
+                category: PaletteCategory::Workspace,
+                score: 0.0,
+                action: PaletteAction::LoadWorkspace(name),
             });
         }
 
