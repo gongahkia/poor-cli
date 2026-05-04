@@ -111,6 +111,8 @@ pub enum Action {
     ToggleBroadcast,
     /// Toggle command-output typewriter reveal.
     ToggleTypewriterEffect,
+    /// Cycle decorative terminal visual effects.
+    CycleVisualEffect,
     /// Create a new floating pane.
     NewFloatingPane,
     /// Toggle visibility for floating panes.

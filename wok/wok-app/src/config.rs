@@ -802,6 +802,19 @@ fn parse_background_position(value: &str) -> BackgroundPosition {
     }
 }
 
+fn parse_visual_effect_mode(value: &str) -> VisualEffectMode {
+    match value.trim().to_ascii_lowercase().replace('-', "_").as_str() {
+        "rainbow" | "rainbow_cycle" | "rainbow_cycling" => VisualEffectMode::Rainbow,
+        "rainbow_static" | "static_rainbow" | "gradient" => VisualEffectMode::RainbowStatic,
+        "wavy" | "wave" | "wobble" => VisualEffectMode::Wavy,
+        "glitch" | "flicker" => VisualEffectMode::Glitch,
+        "crt" | "scanlines" => VisualEffectMode::Crt,
+        "bloom" | "glow" => VisualEffectMode::Bloom,
+        "cookie" | "cookie_cutter" | "speckle" | "speckled" => VisualEffectMode::Cookie,
+        _ => VisualEffectMode::None,
+    }
+}
+
 fn clamp_unit(value: f32) -> f32 {
     if value.is_finite() {
         value.clamp(0.0, 1.0)
@@ -900,6 +913,9 @@ impl wok_settings::Settings for WokConfig {
                 field!("floating_pane_title_height", "f32"),
                 field!("typewriter_effect_enabled", "bool"),
                 field!("typewriter_effect_cps", "f32"),
+                field!("visual_effect", "VisualEffectMode"),
+                field!("visual_effect_intensity", "f32"),
+                field!("visual_effect_animated", "bool"),
                 field!("external_plugin_command", "Option<String>"),
                 field!("copy_on_select", "bool"),
                 field!("confirm_close_with_running_process", "bool"),
@@ -964,6 +980,9 @@ mod tests {
         assert!((config.floating_pane_title_height - 18.0).abs() < f32::EPSILON);
         assert!(!config.typewriter_effect_enabled);
         assert!((config.typewriter_effect_cps - 180.0).abs() < f32::EPSILON);
+        assert_eq!(config.visual_effect, VisualEffectMode::None);
+        assert!((config.visual_effect_intensity - 0.5).abs() < f32::EPSILON);
+        assert!(config.visual_effect_animated);
         assert!(config.close_on_shell_exit);
         assert!(config.recent_keys.visible);
         assert_eq!(config.recent_keys.position, OverlayPosition::BottomRight);
