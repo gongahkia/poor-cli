@@ -194,6 +194,7 @@ impl WokApp {
             Action::OpenSettings => {
                 effects.push(RuntimeEffect::Status("Opening settings".to_string()));
             }
+            Action::ResetSettings => {}
             Action::BlockPrev => {
                 self.block_navigator.select_prev(self.block_manager.len());
                 self.sync_active_block();

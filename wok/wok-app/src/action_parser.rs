@@ -85,7 +85,7 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         "toggle_broadcast" | "broadcast_toggle" => Some(Action::ToggleBroadcast),
         "toggle_typewriter_effect" | "typewriter_toggle" | "typewriter_effect" => {
             Some(Action::ToggleTypewriterEffect)
-        }
+        },
         "new_floating_pane" | "floating_new" => Some(Action::NewFloatingPane),
         "toggle_floating_pane" | "toggle_floating" | "floating_toggle" => {
             Some(Action::ToggleFloatingPane)
@@ -134,6 +134,7 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         "zoom_out" => Some(Action::ZoomOut),
         "zoom_reset" => Some(Action::ZoomReset),
         "open_settings" | "settings" | "open_config" | "config" => Some(Action::OpenSettings),
+        "reset_settings" | "settings_reset" | "reset_config" => Some(Action::ResetSettings),
         "clear_screen" => Some(Action::ClearScreen),
         "send_eof" => Some(Action::SendEof),
         _ => None,

@@ -139,6 +139,8 @@ pub enum Action {
     ZoomReset,
     /// Open the Wok settings file.
     OpenSettings,
+    /// Reset the Wok settings file to the managed defaults.
+    ResetSettings,
     /// Clear terminal screen.
     ClearScreen,
     /// Send EOF (Ctrl+D).

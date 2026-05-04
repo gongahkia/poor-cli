@@ -77,7 +77,8 @@ Use `bash`, `zsh`, or `fish` for the cleanest first-run block demo.
 6. Use `Mod+Shift+C` to copy the selected block.
 7. Use `Mod+F` to search across the workspace and jump between panes.
 8. Use `Mod+Alt+S` to toggle typewriter-style output reveal.
-9. Use `Mod+Shift+S` to save the `manual` session snapshot, then `Mod+Shift+R` to load it.
+9. Use `Mod+P` and run `Reset Settings` to restore the managed default config.
+10. Use `Mod+Shift+S` to save the `manual` session snapshot, then `Mod+Shift+R` to load it.
 
 Named snapshots are available through Lua action aliases such as `save_session:demo` and `load_session:demo`.
 

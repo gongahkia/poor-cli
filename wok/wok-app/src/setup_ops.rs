@@ -209,6 +209,19 @@ pub(crate) fn run_init(overwrite: bool) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+pub(crate) fn reset_config_file() -> io::Result<PathBuf> {
+    let config_dir = WokConfig::config_dir();
+    reset_config_file_at(&config_dir)
+}
+
+fn reset_config_file_at(config_dir: &Path) -> io::Result<PathBuf> {
+    fs::create_dir_all(&config_dir)?;
+    let path = config_dir.join("config.toml");
+    fs::write(&path, CONFIG_TEMPLATE)?;
+    write_first_run_marker(&config_dir)?;
+    Ok(path)
+}
+
 pub(crate) fn ensure_first_run_bootstrap() -> Result<Option<String>, Box<dyn Error>> {
     let config_dir = WokConfig::config_dir();
     let result = ensure_first_run_bootstrap_at(&config_dir)?;

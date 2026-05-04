@@ -121,13 +121,13 @@ Block navigation: `block_prev`, `block_next`, `block_copy`, `block_copy_command`
 
 Layout / panels: `next_layout`, `prev_layout`, `toggle_failure_trends_panel`, `toggle_workspace_insights_panel`, `toggle_broadcast`
 
-Input & terminal: `toggle_input_position`, `zoom_in`, `zoom_out`, `zoom_reset`, `clear_screen`, `send_eof`
+Input & terminal: `toggle_input_position`, `toggle_typewriter_effect`, `zoom_in`, `zoom_out`, `zoom_reset`, `clear_screen`, `send_eof`
 
 Sessions: `save_session:<name>`, `load_session:<name>`
 
-Settings: `open_settings`, `settings_discovery`
+Settings: `open_settings`, `reset_settings`, `settings_discovery`
 
-Aliases (also accepted): `close_pane`, `search`, `copy_block`, `collapse_block`, `diff_block`, `failure_trends`, `prev_failed_block`, `next_failed_block`, `rerun_block_split`, `save_block_workflow`, `export_block_markdown`, `export_block_json`, `workspace_insights`, `history_search`, `git_status`, `changed_files`, `git_worktree`, `worktree_switcher`.
+Aliases (also accepted): `close_pane`, `search`, `copy_block`, `collapse_block`, `diff_block`, `failure_trends`, `prev_failed_block`, `next_failed_block`, `rerun_block_split`, `save_block_workflow`, `export_block_markdown`, `export_block_json`, `workspace_insights`, `history_search`, `git_status`, `changed_files`, `git_worktree`, `worktree_switcher`, `reset_config`.
 
 ### TOML keybindings (`~/.config/wok/keybindings.toml`)
 

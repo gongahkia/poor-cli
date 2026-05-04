@@ -4266,6 +4266,31 @@ impl WokHandler {
         }
     }
 
+    fn reset_settings_to_defaults(&mut self) {
+        match setup_ops::reset_config_file() {
+            Ok(path) => {
+                let content = std::fs::read_to_string(&path).ok();
+                self.reload_configuration();
+                if let Some(settings) = self.settings_editor.as_mut() {
+                    if settings.path == path {
+                        if let Some(content) = content {
+                            settings.editor.buffer.set_text(&content);
+                        }
+                    } else {
+                        self.settings_editor = None;
+                    }
+                }
+                self.status_message = Some(format!("Reset settings to defaults ({})", path.display()));
+                self.needs_redraw = true;
+            }
+            Err(error) => {
+                warn!("failed to reset settings: {error}");
+                self.status_message = Some(format!("Failed to reset settings: {error}"));
+                self.needs_redraw = true;
+            }
+        }
+    }
+
     fn save_settings_editor(&mut self) {
         let Some(settings) = self.settings_editor.as_ref() else {
             return;
@@ -4540,6 +4565,10 @@ impl WokHandler {
         if matches!(action, Action::OpenSettings) {
             self.open_settings();
             self.needs_redraw = true;
+            return;
+        }
+        if matches!(action, Action::ResetSettings) {
+            self.reset_settings_to_defaults();
             return;
         }
         if matches!(action, Action::ToggleTypewriterEffect) {
@@ -8941,6 +8970,7 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::ZoomOut => "zoom_out".to_string(),
         Action::ZoomReset => "zoom_reset".to_string(),
         Action::OpenSettings => "open_settings".to_string(),
+        Action::ResetSettings => "reset_settings".to_string(),
         Action::ClearScreen => "clear_screen".to_string(),
         Action::SendEof => "send_eof".to_string(),
         Action::SaveSession(name) => format!("save_session:{name}"),
@@ -9041,6 +9071,7 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::ZoomOut,
         Action::ZoomReset,
         Action::OpenSettings,
+        Action::ResetSettings,
         Action::ThemePicker,
         Action::KeybindingDiscovery,
         Action::SettingsDiscovery,
@@ -9120,6 +9151,7 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::ZoomOut => "Decrease terminal font size",
         Action::ZoomReset => "Reset terminal font size",
         Action::OpenSettings => "Open the Wok settings buffer",
+        Action::ResetSettings => "Reset the Wok settings file to defaults",
         Action::ClearScreen => "Clear terminal viewport and scrollback",
         Action::SendEof => "Send EOF (Ctrl+D) to the active shell",
         Action::SaveSession(_) => "Persist the current workspace as a named session",
