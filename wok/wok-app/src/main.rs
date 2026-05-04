@@ -4280,7 +4280,8 @@ impl WokHandler {
                         self.settings_editor = None;
                     }
                 }
-                self.status_message = Some(format!("Reset settings to defaults ({})", path.display()));
+                self.status_message =
+                    Some(format!("Reset settings to defaults ({})", path.display()));
                 self.needs_redraw = true;
             }
             Err(error) => {
@@ -9562,6 +9563,10 @@ mod tests {
             Some(Action::SearchGlobal)
         );
         assert_eq!(parse_lua_action("copy_block"), Some(Action::BlockCopy));
+        assert_eq!(
+            parse_lua_action("reset_config"),
+            Some(Action::ResetSettings)
+        );
     }
 
     #[test]
@@ -9629,6 +9634,7 @@ mod tests {
         assert_eq!(catalog[1], Action::CommandSearch);
         assert_eq!(catalog[2], Action::SearchGlobal);
         assert_eq!(catalog[3], Action::QuickSelect);
+        assert!(catalog.contains(&Action::ResetSettings));
     }
 
     #[test]

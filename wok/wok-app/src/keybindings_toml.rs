@@ -267,6 +267,10 @@ mod tests {
     #[test]
     fn parse_action_id_known_and_unknown() {
         assert!(matches!(parse_action_id("new_tab"), Some(Action::NewTab)));
+        assert!(matches!(
+            parse_action_id("reset_settings"),
+            Some(Action::ResetSettings)
+        ));
         assert!(parse_action_id("not_a_real_action").is_none());
     }
 

@@ -255,8 +255,12 @@ impl Terminal {
                     self.title.clone_from(&title);
                     self.events.push(SemanticEvent::TitleChanged(title));
                 }
-                TermEvent::PtyWrite(_)
-                | TermEvent::Bell
+                TermEvent::PtyWrite(text) => {
+                    if let Err(error) = self.pty.write(text.as_bytes()) {
+                        warn!("failed to write terminal response to PTY: {error}");
+                    }
+                }
+                TermEvent::Bell
                 | TermEvent::Exit
                 | TermEvent::ChildExit(_)
                 | TermEvent::ClipboardStore(_)

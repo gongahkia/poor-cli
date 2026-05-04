@@ -170,6 +170,58 @@ pub struct TriggerConfig {
     pub scope: TriggerScopeConfig,
 }
 
+/// Decorative terminal text effect.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum VisualEffectMode {
+    /// No decorative effect.
+    #[default]
+    None,
+    /// Animated hue cycling.
+    Rainbow,
+    /// Static per-character rainbow gradient.
+    RainbowStatic,
+    /// Sinusoidal vertical glyph wobble.
+    Wavy,
+    /// Jitter, flicker, and chromatic ghosting.
+    Glitch,
+    /// Scanlines and subtle phosphor tint.
+    Crt,
+    /// Soft duplicate glyph glow.
+    Bloom,
+    /// Speckled cookie-cutter holes and crumbs.
+    Cookie,
+}
+
+impl VisualEffectMode {
+    /// Stable config/action label.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Rainbow => "rainbow",
+            Self::RainbowStatic => "rainbow_static",
+            Self::Wavy => "wavy",
+            Self::Glitch => "glitch",
+            Self::Crt => "crt",
+            Self::Bloom => "bloom",
+            Self::Cookie => "cookie",
+        }
+    }
+
+    /// Return the next effect in the palette cycle.
+    pub fn next(self) -> Self {
+        match self {
+            Self::None => Self::Rainbow,
+            Self::Rainbow => Self::RainbowStatic,
+            Self::RainbowStatic => Self::Wavy,
+            Self::Wavy => Self::Glitch,
+            Self::Glitch => Self::Crt,
+            Self::Crt => Self::Bloom,
+            Self::Bloom => Self::Cookie,
+            Self::Cookie => Self::None,
+        }
+    }
+}
+
 /// Complete Wok configuration.
 #[derive(Debug, Clone)]
 pub struct WokConfig {
@@ -231,6 +283,12 @@ pub struct WokConfig {
     pub typewriter_effect_enabled: bool,
     /// Reveal speed for the command-output typewriter effect.
     pub typewriter_effect_cps: f32,
+    /// Decorative terminal text effect.
+    pub visual_effect: VisualEffectMode,
+    /// Visual effect strength from 0.0 to 1.0.
+    pub visual_effect_intensity: f32,
+    /// Whether the visual effect animates over time.
+    pub visual_effect_animated: bool,
     /// Optional out-of-process plugin bridge command.
     pub external_plugin_command: Option<String>,
     /// Copy text to clipboard on selection.
@@ -294,6 +352,9 @@ struct ConfigToml {
     floating_pane_title_height: Option<f32>,
     typewriter_effect_enabled: Option<bool>,
     typewriter_effect_cps: Option<f32>,
+    visual_effect: Option<String>,
+    visual_effect_intensity: Option<f32>,
+    visual_effect_animated: Option<bool>,
     external_plugin_command: Option<String>,
     copy_on_select: Option<bool>,
     confirm_close_with_running_process: Option<bool>,
@@ -373,6 +434,9 @@ impl Default for WokConfig {
             floating_pane_title_height: 18.0,
             typewriter_effect_enabled: false,
             typewriter_effect_cps: 180.0,
+            visual_effect: VisualEffectMode::None,
+            visual_effect_intensity: 0.5,
+            visual_effect_animated: true,
             external_plugin_command: None,
             copy_on_select: false,
             confirm_close_with_running_process: true,
@@ -543,6 +607,17 @@ impl WokConfig {
             if cps.is_finite() {
                 config.typewriter_effect_cps = cps.clamp(20.0, 2_000.0);
             }
+        }
+        if let Some(effect) = toml_config.visual_effect {
+            config.visual_effect = parse_visual_effect_mode(&effect);
+        }
+        if let Some(intensity) = toml_config.visual_effect_intensity {
+            if intensity.is_finite() {
+                config.visual_effect_intensity = intensity.clamp(0.0, 1.0);
+            }
+        }
+        if let Some(animated) = toml_config.visual_effect_animated {
+            config.visual_effect_animated = animated;
         }
         if let Some(command) = toml_config.external_plugin_command {
             let trimmed = command.trim();
