@@ -9,6 +9,7 @@ use std::error::Error;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -156,6 +157,11 @@ enum CliCommand {
         #[command(subcommand)]
         command: ShellCommand,
     },
+    /// Manage named workspace snapshots on a running Wok instance.
+    Workspace {
+        #[command(subcommand)]
+        command: WorkspaceCommand,
+    },
     /// Bundle local diagnostics into a directory for bug reports (no upload).
     BugReport {
         /// Optional explicit destination directory. Default: ./bug-<unix_ms>.
@@ -254,6 +260,34 @@ enum ShellCommand {
         #[arg(long, default_value_t = false)]
         yes: bool,
     },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+enum WorkspaceCommand {
+    /// Save the current workspace to a named snapshot.
+    Save {
+        /// Snapshot name.
+        name: String,
+        /// Explicit remote-control socket path. Defaults to $WOK_SOCKET.
+        #[arg(long)]
+        socket: Option<String>,
+        /// Optional remote-control auth token. Defaults to $WOK_RPC_TOKEN.
+        #[arg(long)]
+        token: Option<String>,
+    },
+    /// Load a named workspace snapshot.
+    Load {
+        /// Snapshot name.
+        name: String,
+        /// Explicit remote-control socket path. Defaults to $WOK_SOCKET.
+        #[arg(long)]
+        socket: Option<String>,
+        /// Optional remote-control auth token. Defaults to $WOK_RPC_TOKEN.
+        #[arg(long)]
+        token: Option<String>,
+    },
+    /// List saved workspace snapshots.
+    List,
 }
 
 /// GPU render state, initialized after window creation.
@@ -507,6 +541,16 @@ struct SettingsEditorState {
     editor: InputEditor,
 }
 
+struct FilePreviewState {
+    path: PathBuf,
+    editor: InputEditor,
+}
+
+struct ScratchBufferState {
+    path: PathBuf,
+    editor: InputEditor,
+}
+
 struct PaneRuntime {
     app: WokApp,
     terminal: Terminal,
@@ -607,6 +651,14 @@ enum TerminalMouseEvent {
     Release,
     Motion(Option<MouseButton>),
     Wheel { horizontal: bool, positive: bool },
+}
+
+enum PathCursorAction {
+    Preview,
+    Open,
+    Copy,
+    Reveal,
+    Tail,
 }
 
 struct RecentKeyEntry {
@@ -898,6 +950,8 @@ struct WokHandler {
     show_failure_trends_panel: bool,
     show_workspace_insights_panel: bool,
     settings_editor: Option<SettingsEditorState>,
+    file_preview: Option<FilePreviewState>,
+    scratch_buffer: Option<ScratchBufferState>,
     failure_trend_bucket_ms: u64,
     status_bar_state: StatusBarState,
     git_status_bar_cache: RefCell<HashMap<PathBuf, GitStatusBarCacheEntry>>,
@@ -1016,6 +1070,8 @@ impl WokHandler {
             show_failure_trends_panel: false,
             show_workspace_insights_panel: false,
             settings_editor: None,
+            file_preview: None,
+            scratch_buffer: None,
             failure_trend_bucket_ms: DEFAULT_FAILURE_TREND_BUCKET_MS,
             status_bar_state: StatusBarState::default(),
             git_status_bar_cache: RefCell::new(HashMap::new()),
@@ -1702,6 +1758,22 @@ impl WokHandler {
                 settings.editor.render_data(),
             )
         });
+        let file_preview_overlay = self.file_preview.as_ref().map(|preview| {
+            (
+                self.active_pane()
+                    .map_or_else(Theme::default, |pane| pane.app.theme.clone()),
+                preview.path.clone(),
+                preview.editor.render_data(),
+            )
+        });
+        let scratch_overlay = self.scratch_buffer.as_ref().map(|scratch| {
+            (
+                self.active_pane()
+                    .map_or_else(Theme::default, |pane| pane.app.theme.clone()),
+                scratch.path.clone(),
+                scratch.editor.render_data(),
+            )
+        });
         let recent_keys_overlay = if self.config.recent_keys.visible {
             let labels = self.recent_key_labels();
             (!labels.is_empty()).then(|| {
@@ -2371,7 +2443,39 @@ impl WokHandler {
                 &mut self.font,
                 theme,
                 self.chrome_rects.content,
+                "Settings",
                 path,
+                "Esc close  Mod+S save  Enter newline",
+                input,
+                cursor_shape,
+                cursor_visible,
+                window_opacity,
+            );
+        }
+        if let Some((theme, path, input)) = file_preview_overlay.as_ref() {
+            render_settings_editor(
+                render,
+                &mut self.font,
+                theme,
+                self.chrome_rects.content,
+                "Preview",
+                path,
+                "Esc close  arrows scroll  Mod+C copy",
+                input,
+                cursor_shape,
+                false,
+                window_opacity,
+            );
+        }
+        if let Some((theme, path, input)) = scratch_overlay.as_ref() {
+            render_settings_editor(
+                render,
+                &mut self.font,
+                theme,
+                self.chrome_rects.content,
+                "Scratch",
+                path,
+                "Esc close  Mod+S save  Enter newline",
                 input,
                 cursor_shape,
                 cursor_visible,
@@ -3541,6 +3645,86 @@ impl WokHandler {
         self.needs_redraw = true;
     }
 
+    fn preview_file_path(&mut self, path: PathBuf) {
+        let path = self.resolve_preview_path(&path);
+        if media_kind_for_path(&path).is_some() {
+            self.open_media_preview(path);
+            return;
+        }
+        if is_text_preview_path(&path) {
+            self.open_text_file_preview(path);
+        } else {
+            self.open_path_externally(&path);
+        }
+    }
+
+    fn open_text_file_preview(&mut self, path: PathBuf) {
+        let path = self.resolve_preview_path(&path);
+        if !path.is_file() {
+            self.status_message = Some(format!("Preview file not found: {}", path.display()));
+            self.needs_redraw = true;
+            return;
+        }
+        match std::fs::read_to_string(&path) {
+            Ok(content) => {
+                let mut editor = InputEditor::new(
+                    self.config.shell.clone(),
+                    wok_input::editor::InputPosition::Bottom,
+                );
+                editor.buffer.set_text(&content);
+                editor.is_active = true;
+                self.file_preview = Some(FilePreviewState {
+                    path: path.clone(),
+                    editor,
+                });
+                self.status_message = Some(format!("Previewing text: {}", path.display()));
+            }
+            Err(error) => {
+                self.status_message = Some(format!("Failed to preview text: {error}"));
+            }
+        }
+        self.needs_redraw = true;
+    }
+
+    fn open_scratch_buffer(&mut self) {
+        let path = WokConfig::config_dir().join("scratch.md");
+        if let Some(parent) = path.parent() {
+            if let Err(error) = std::fs::create_dir_all(parent) {
+                self.status_message = Some(format!("Scratch unavailable: {error}"));
+                self.needs_redraw = true;
+                return;
+            }
+        }
+        let content = std::fs::read_to_string(&path).unwrap_or_default();
+        let mut editor = InputEditor::new(
+            self.config.shell.clone(),
+            wok_input::editor::InputPosition::Bottom,
+        );
+        editor.buffer.set_text(&content);
+        editor.is_active = true;
+        self.scratch_buffer = Some(ScratchBufferState {
+            path: path.clone(),
+            editor,
+        });
+        self.status_message = Some(format!("Scratch buffer opened: {}", path.display()));
+        self.needs_redraw = true;
+    }
+
+    fn save_scratch_buffer(&mut self) {
+        let Some(scratch) = self.scratch_buffer.as_ref() else {
+            return;
+        };
+        match std::fs::write(&scratch.path, scratch.editor.buffer.text()) {
+            Ok(()) => {
+                self.status_message = Some(format!("Saved scratch ({})", scratch.path.display()));
+            }
+            Err(error) => {
+                self.status_message = Some(format!("Failed to save scratch: {error}"));
+            }
+        }
+        self.needs_redraw = true;
+    }
+
     fn close_media_preview(&mut self) {
         if let Some(preview) = self.media_preview.take() {
             self.status_message = Some(format!(
@@ -3595,6 +3779,90 @@ impl WokHandler {
         self.active_pane()
             .map(|pane| pane.current_cwd.join(path))
             .unwrap_or_else(|| path.to_path_buf())
+    }
+
+    fn path_under_cursor(&self) -> Option<PathBuf> {
+        let pane = self.active_pane()?;
+        let (row, col) = if let Some(vi) = pane.app.vi_mode.as_ref() {
+            (vi.cursor_row, vi.cursor_col)
+        } else {
+            let (col, _) = pane.terminal.state.cursor_position();
+            (pane.terminal.state.absolute_cursor_row(), col)
+        };
+        let line = pane.terminal.state.row_text(row);
+        extract_path_near_column(&line, col).map(PathBuf::from)
+    }
+
+    fn apply_path_action_under_cursor(&mut self, action: PathCursorAction) {
+        let Some(path) = self.path_under_cursor() else {
+            self.status_message = Some("No file path under cursor".to_string());
+            self.needs_redraw = true;
+            return;
+        };
+        let path = self.resolve_preview_path(&path);
+        match action {
+            PathCursorAction::Preview => self.preview_file_path(path),
+            PathCursorAction::Open => self.open_path_externally(&path),
+            PathCursorAction::Copy => self.copy_path_to_clipboard(&path),
+            PathCursorAction::Reveal => self.reveal_path_in_finder(&path),
+            PathCursorAction::Tail => self.tail_path_in_split(&path),
+        }
+    }
+
+    fn open_path_externally(&mut self, path: &Path) {
+        match Command::new("open").arg(path).status() {
+            Ok(status) if status.success() => {
+                self.status_message = Some(format!("Opened externally: {}", path.display()));
+            }
+            Ok(status) => {
+                self.status_message = Some(format!("open exited with status {status}"));
+            }
+            Err(error) => {
+                self.status_message = Some(format!("Failed to open externally: {error}"));
+            }
+        }
+        self.needs_redraw = true;
+    }
+
+    fn reveal_path_in_finder(&mut self, path: &Path) {
+        match Command::new("open").arg("-R").arg(path).status() {
+            Ok(status) if status.success() => {
+                self.status_message = Some(format!("Revealed in Finder: {}", path.display()));
+            }
+            Ok(status) => {
+                self.status_message = Some(format!("open -R exited with status {status}"))
+            }
+            Err(error) => self.status_message = Some(format!("Failed to reveal path: {error}")),
+        }
+        self.needs_redraw = true;
+    }
+
+    fn copy_path_to_clipboard(&mut self, path: &Path) {
+        let text = path.display().to_string();
+        if let Some(active_pane) = self.active_pane_mut() {
+            if let Err(error) = active_pane.app.clipboard.copy(&text) {
+                self.status_message = Some(format!("Failed to copy path: {error}"));
+            } else {
+                self.status_message = Some(format!("Copied path: {text}"));
+            }
+        }
+        self.needs_redraw = true;
+    }
+
+    fn tail_path_in_split(&mut self, path: &Path) {
+        if !path.is_file() {
+            self.status_message = Some(format!("Cannot tail missing file: {}", path.display()));
+            self.needs_redraw = true;
+            return;
+        }
+        let command = format!(
+            "tail -f {}\n",
+            shell_quote_path(&path.display().to_string())
+        );
+        self.handle_action(Action::SplitHorizontal);
+        self.send_to_pty(command.as_bytes());
+        self.status_message = Some(format!("Tailing: {}", path.display()));
+        self.needs_redraw = true;
     }
 
     fn send_to_pty(&mut self, data: &[u8]) {
@@ -4448,6 +4716,126 @@ impl WokHandler {
         self.needs_redraw = true;
     }
 
+    fn copy_file_preview_to_clipboard(&mut self) {
+        let text = self
+            .file_preview
+            .as_ref()
+            .map(|preview| preview.editor.buffer.text());
+        if let (Some(text), Some(active_pane)) = (text, self.active_pane_mut()) {
+            let _ = active_pane.app.clipboard.copy(&text);
+            self.status_message = Some("Copied preview contents".to_string());
+        }
+        self.needs_redraw = true;
+    }
+
+    fn handle_file_preview_input(&mut self, event: &InputEvent) -> bool {
+        if self.file_preview.is_none() {
+            return false;
+        }
+        match event.action {
+            KeyAction::Escape => {
+                self.file_preview = None;
+                self.status_message = Some("Closed file preview".to_string());
+                self.needs_redraw = true;
+                return true;
+            }
+            KeyAction::Copy => {
+                self.copy_file_preview_to_clipboard();
+                return true;
+            }
+            _ => {}
+        }
+        if let Some(editor_key) = input_event_to_editor_key(event) {
+            if let Some(preview) = self.file_preview.as_mut() {
+                let _ = preview.editor.handle_key(editor_key);
+            }
+        }
+        self.needs_redraw = true;
+        true
+    }
+
+    fn handle_scratch_buffer_input(&mut self, event: &InputEvent) -> bool {
+        if self.scratch_buffer.is_none() {
+            return false;
+        }
+
+        match event.action {
+            KeyAction::Escape => {
+                self.scratch_buffer = None;
+                self.status_message = Some("Closed scratch buffer".to_string());
+                self.needs_redraw = true;
+                return true;
+            }
+            KeyAction::Char('s') | KeyAction::Char('S')
+                if platform_modifier_active(event.modifiers) =>
+            {
+                self.save_scratch_buffer();
+                return true;
+            }
+            KeyAction::Copy => {
+                if let Some(text) = self
+                    .scratch_buffer
+                    .as_ref()
+                    .and_then(|scratch| selected_editor_text(&scratch.editor))
+                {
+                    if let Some(active_pane) = self.active_pane_mut() {
+                        let _ = active_pane.app.clipboard.copy(&text);
+                    }
+                }
+                return true;
+            }
+            KeyAction::Paste => {
+                let pasted = self
+                    .active_pane_mut()
+                    .and_then(|pane| pane.app.clipboard.paste().ok());
+                if let (Some(text), Some(scratch)) = (pasted, self.scratch_buffer.as_mut()) {
+                    replace_editor_selection(&mut scratch.editor, &text);
+                }
+                self.needs_redraw = true;
+                return true;
+            }
+            KeyAction::Enter => {
+                if let Some(scratch) = self.scratch_buffer.as_mut() {
+                    replace_editor_selection(&mut scratch.editor, "\n");
+                }
+                self.needs_redraw = true;
+                return true;
+            }
+            KeyAction::Char(ch)
+                if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+            {
+                if let Some(scratch) = self.scratch_buffer.as_mut() {
+                    replace_editor_selection(&mut scratch.editor, &ch.to_string());
+                }
+                self.needs_redraw = true;
+                return true;
+            }
+            KeyAction::Backspace | KeyAction::Delete => {
+                let deleted_selection = self
+                    .scratch_buffer
+                    .as_mut()
+                    .is_some_and(|scratch| delete_editor_selection(&mut scratch.editor));
+                if deleted_selection {
+                    self.needs_redraw = true;
+                    return true;
+                }
+            }
+            _ => {}
+        }
+
+        if let Some(editor_key) = input_event_to_editor_key(event) {
+            let editor_key = match editor_key {
+                EditorKey::Enter => EditorKey::ShiftEnter,
+                other => other,
+            };
+            if let Some(scratch) = self.scratch_buffer.as_mut() {
+                let _ = scratch.editor.handle_key(editor_key);
+            }
+        }
+        self.needs_redraw = true;
+        true
+    }
+
     fn handle_settings_editor_input(&mut self, event: &InputEvent) -> bool {
         if self.settings_editor.is_none() {
             return false;
@@ -4677,6 +5065,59 @@ impl WokHandler {
         if matches!(action, Action::CloseMediaPreview) {
             self.close_media_preview();
             return;
+        }
+        match action {
+            Action::PreviewPathUnderCursor => {
+                self.apply_path_action_under_cursor(PathCursorAction::Preview);
+                return;
+            }
+            Action::OpenPathUnderCursor => {
+                self.apply_path_action_under_cursor(PathCursorAction::Open);
+                return;
+            }
+            Action::CopyPathUnderCursor => {
+                self.apply_path_action_under_cursor(PathCursorAction::Copy);
+                return;
+            }
+            Action::RevealPathUnderCursor => {
+                self.apply_path_action_under_cursor(PathCursorAction::Reveal);
+                return;
+            }
+            Action::TailPathUnderCursor => {
+                self.apply_path_action_under_cursor(PathCursorAction::Tail);
+                return;
+            }
+            Action::OpenScratchBuffer => {
+                self.open_scratch_buffer();
+                return;
+            }
+            Action::ToggleSearchRegex => {
+                if let Some(active_pane) = self.active_pane_mut() {
+                    active_pane.app.global_search.mode =
+                        active_pane.app.global_search.mode.toggled();
+                    self.status_message = Some(format!(
+                        "Search mode: {}",
+                        active_pane.app.global_search.mode.label()
+                    ));
+                }
+                self.refresh_global_search();
+                self.needs_redraw = true;
+                return;
+            }
+            Action::CycleSearchScope => {
+                if let Some(active_pane) = self.active_pane_mut() {
+                    active_pane.app.global_search.scope =
+                        active_pane.app.global_search.scope.next();
+                    self.status_message = Some(format!(
+                        "Search scope: {}",
+                        active_pane.app.global_search.scope.label()
+                    ));
+                }
+                self.refresh_global_search();
+                self.needs_redraw = true;
+                return;
+            }
+            _ => {}
         }
         if matches!(action, Action::ToggleTypewriterEffect) {
             self.config.typewriter_effect_enabled = !self.config.typewriter_effect_enabled;
@@ -5512,6 +5953,41 @@ impl WokHandler {
                             }
                             self.open_media_preview(PathBuf::from(path));
                         }
+                        PaletteAction::PreviewPath(path) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
+                            self.preview_file_path(PathBuf::from(path));
+                        }
+                        PaletteAction::OpenPathExternal(path) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
+                            self.open_path_externally(&PathBuf::from(path));
+                        }
+                        PaletteAction::CopyPath(path) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
+                            self.copy_path_to_clipboard(&PathBuf::from(path));
+                        }
+                        PaletteAction::RevealPath(path) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
+                            self.reveal_path_in_finder(&PathBuf::from(path));
+                        }
+                        PaletteAction::TailPath(path) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
+                            self.tail_path_in_split(&PathBuf::from(path));
+                        }
                         PaletteAction::ApplyTheme(path) => {
                             if let Some(active_pane) = self.active_pane_mut() {
                                 active_pane.app.close_command_palette();
@@ -6010,11 +6486,15 @@ impl WokHandler {
             return;
         }
 
+        let active_pane_id = self.active_pane_id().map(u64::from);
         let lines = self.collect_workspace_search_lines();
         let Some(active_pane) = self.active_pane_mut() else {
             return;
         };
-        active_pane.app.global_search.search(&query, &lines);
+        active_pane
+            .app
+            .global_search
+            .search_for_pane(&query, &lines, active_pane_id);
         self.scroll_to_current_search_match();
     }
 
@@ -6677,24 +7157,7 @@ impl WokHandler {
         if pane.current_cwd.is_dir() {
             if let Ok(read_dir) = std::fs::read_dir(&pane.current_cwd) {
                 for path in read_dir.flatten().take(50).map(|entry| entry.path()) {
-                    if let Some(kind) = media_kind_for_path(&path) {
-                        entries.push(PaletteEntry {
-                            label: format!(
-                                "Preview {}",
-                                path.file_name()
-                                    .and_then(|name| name.to_str())
-                                    .unwrap_or_default()
-                            ),
-                            description: format!(
-                                "Open {} in built-in preview: {}",
-                                kind.label(),
-                                path.display()
-                            ),
-                            category: PaletteCategory::FilePath,
-                            score: 0.0,
-                            action: PaletteAction::PreviewMedia(path.display().to_string()),
-                        });
-                    }
+                    entries.extend(file_action_palette_entries(&path));
                     entries.push(PaletteEntry {
                         label: path
                             .file_name()
@@ -6707,6 +7170,14 @@ impl WokHandler {
                         action: PaletteAction::FilePath(path.display().to_string()),
                     });
                 }
+            }
+        }
+
+        let mut seen_visible_paths = HashSet::new();
+        for path in visible_file_paths_for_pane(pane).into_iter().take(40) {
+            let path = self.resolve_preview_path(&path);
+            if seen_visible_paths.insert(path.clone()) {
+                entries.extend(file_action_palette_entries(&path));
             }
         }
 
@@ -7492,6 +7963,14 @@ impl AppHandler for WokHandler {
             }
 
             self.record_recent_key(&event);
+
+            if self.handle_file_preview_input(&event) {
+                return;
+            }
+
+            if self.handle_scratch_buffer_input(&event) {
+                return;
+            }
 
             if self.handle_settings_editor_input(&event) {
                 return;
@@ -9110,6 +9589,14 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::ToggleTypewriterEffect => "toggle_typewriter_effect".to_string(),
         Action::CycleVisualEffect => "cycle_visual_effect".to_string(),
         Action::CloseMediaPreview => "close_media_preview".to_string(),
+        Action::PreviewPathUnderCursor => "preview_path_under_cursor".to_string(),
+        Action::OpenPathUnderCursor => "open_path_under_cursor".to_string(),
+        Action::CopyPathUnderCursor => "copy_path_under_cursor".to_string(),
+        Action::RevealPathUnderCursor => "reveal_path_under_cursor".to_string(),
+        Action::TailPathUnderCursor => "tail_path_under_cursor".to_string(),
+        Action::OpenScratchBuffer => "open_scratch_buffer".to_string(),
+        Action::ToggleSearchRegex => "toggle_search_regex".to_string(),
+        Action::CycleSearchScope => "cycle_search_scope".to_string(),
         Action::NewFloatingPane => "new_floating_pane".to_string(),
         Action::ToggleFloatingPane => "toggle_floating_pane".to_string(),
         Action::CloseFloatingPane => "close_floating_pane".to_string(),
@@ -9192,6 +9679,14 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::ToggleTypewriterEffect,
         Action::CycleVisualEffect,
         Action::CloseMediaPreview,
+        Action::PreviewPathUnderCursor,
+        Action::OpenPathUnderCursor,
+        Action::CopyPathUnderCursor,
+        Action::RevealPathUnderCursor,
+        Action::TailPathUnderCursor,
+        Action::OpenScratchBuffer,
+        Action::ToggleSearchRegex,
+        Action::CycleSearchScope,
         Action::SplitVertical,
         Action::SplitHorizontal,
         Action::CloseSplit,
@@ -9295,6 +9790,14 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::ToggleTypewriterEffect => "Toggle character-by-character output reveal",
         Action::CycleVisualEffect => "Cycle rainbow, wavy, glitch, CRT, bloom, and cookie effects",
         Action::CloseMediaPreview => "Close the built-in image, GIF, or MP4 preview",
+        Action::PreviewPathUnderCursor => "Preview the file path under the cursor",
+        Action::OpenPathUnderCursor => "Open the file path under the cursor externally",
+        Action::CopyPathUnderCursor => "Copy the file path under the cursor",
+        Action::RevealPathUnderCursor => "Reveal the file path under the cursor in Finder",
+        Action::TailPathUnderCursor => "Tail the file path under the cursor in a new split",
+        Action::OpenScratchBuffer => "Open a persistent scratch buffer",
+        Action::ToggleSearchRegex => "Toggle global search regex mode",
+        Action::CycleSearchScope => "Cycle search scope across all, pane, commands, and output",
         Action::NewFloatingPane => "Create a floating pane",
         Action::ToggleFloatingPane => "Show or hide floating panes",
         Action::CloseFloatingPane => "Close focused floating pane",
@@ -9497,8 +10000,178 @@ fn git_worktree_description(
     parts.join(" | ")
 }
 
+fn visible_file_paths_for_pane(pane: &PaneRuntime) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    for row in pane.terminal.state.visible_rows() {
+        let line = pane.terminal.state.row_text(row);
+        for (_, token) in path_like_spans(&line) {
+            paths.push(PathBuf::from(clean_path_token(token)));
+        }
+    }
+    paths
+}
+
+fn file_action_palette_entries(path: &Path) -> Vec<PaletteEntry> {
+    let display = path.display().to_string();
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(display.as_str());
+    let preview_action = if media_kind_for_path(path).is_some() {
+        PaletteAction::PreviewMedia(display.clone())
+    } else {
+        PaletteAction::PreviewPath(display.clone())
+    };
+    let mut entries = vec![
+        PaletteEntry {
+            label: format!("Preview {name}"),
+            description: format!("Open in built-in preview: {display}"),
+            category: PaletteCategory::FilePath,
+            score: 0.0,
+            action: preview_action,
+        },
+        PaletteEntry {
+            label: format!("Open {name} Externally"),
+            description: display.clone(),
+            category: PaletteCategory::FilePath,
+            score: 0.0,
+            action: PaletteAction::OpenPathExternal(display.clone()),
+        },
+        PaletteEntry {
+            label: format!("Copy Path {name}"),
+            description: display.clone(),
+            category: PaletteCategory::FilePath,
+            score: 0.0,
+            action: PaletteAction::CopyPath(display.clone()),
+        },
+        PaletteEntry {
+            label: format!("Reveal {name}"),
+            description: display.clone(),
+            category: PaletteCategory::FilePath,
+            score: 0.0,
+            action: PaletteAction::RevealPath(display.clone()),
+        },
+    ];
+    if path.is_file() {
+        entries.push(PaletteEntry {
+            label: format!("Tail {name}"),
+            description: display.clone(),
+            category: PaletteCategory::FilePath,
+            score: 0.0,
+            action: PaletteAction::TailPath(display),
+        });
+    }
+    entries
+}
+
 fn shell_quote_path(path: &str) -> String {
     format!("'{}'", path.replace('\'', "'\"'\"'"))
+}
+
+fn is_text_preview_path(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+    if path
+        .metadata()
+        .is_ok_and(|metadata| metadata.len() > 2 * 1024 * 1024)
+    {
+        return false;
+    }
+    let Some(extension) = path.extension().and_then(|value| value.to_str()) else {
+        return true;
+    };
+    matches!(
+        extension.to_ascii_lowercase().as_str(),
+        "txt"
+            | "md"
+            | "markdown"
+            | "rs"
+            | "toml"
+            | "json"
+            | "yaml"
+            | "yml"
+            | "lua"
+            | "sh"
+            | "zsh"
+            | "fish"
+            | "py"
+            | "js"
+            | "ts"
+            | "tsx"
+            | "jsx"
+            | "css"
+            | "html"
+            | "xml"
+            | "csv"
+            | "log"
+            | "env"
+            | "gitignore"
+    )
+}
+
+fn extract_path_near_column(line: &str, col: usize) -> Option<String> {
+    let mut candidates = Vec::new();
+    for (start, raw) in path_like_spans(line) {
+        let end = start + raw.chars().count();
+        if (start..=end).contains(&col) {
+            candidates.push(raw);
+        }
+    }
+    candidates
+        .into_iter()
+        .max_by_key(|candidate| candidate.len())
+        .map(clean_path_token)
+        .filter(|candidate| !candidate.is_empty())
+}
+
+fn path_like_spans(line: &str) -> Vec<(usize, &str)> {
+    let mut spans = Vec::new();
+    let mut start_byte = None;
+    let mut start_col = 0usize;
+    for (byte_idx, ch) in line.char_indices() {
+        let path_char = is_path_token_char(ch);
+        match (start_byte, path_char) {
+            (None, true) => {
+                start_byte = Some(byte_idx);
+                start_col = line[..byte_idx].chars().count();
+            }
+            (Some(start), false) => {
+                let token = &line[start..byte_idx];
+                if looks_like_path_token(token) {
+                    spans.push((start_col, token));
+                }
+                start_byte = None;
+            }
+            _ => {}
+        }
+    }
+    if let Some(start) = start_byte {
+        let token = &line[start..];
+        if looks_like_path_token(token) {
+            spans.push((start_col, token));
+        }
+    }
+    spans
+}
+
+fn is_path_token_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || matches!(ch, '/' | '~' | '.' | '_' | '-' | '+' | '@' | ':')
+}
+
+fn looks_like_path_token(token: &str) -> bool {
+    token.starts_with('/')
+        || token.starts_with("~/")
+        || token.starts_with("./")
+        || token.starts_with("../")
+        || token.contains('/')
+}
+
+fn clean_path_token(token: &str) -> String {
+    token
+        .trim_matches(|ch: char| matches!(ch, '"' | '\'' | '`' | '<' | '>' | '[' | ']' | '(' | ')'))
+        .trim_end_matches(|ch: char| matches!(ch, ',' | ';' | ':' | '.'))
+        .to_string()
 }
 
 fn cd_command_for_path(path: &str) -> String {
@@ -9739,6 +10412,15 @@ mod tests {
             parse_lua_action("close_preview"),
             Some(Action::CloseMediaPreview)
         );
+        assert_eq!(
+            parse_lua_action("preview_path"),
+            Some(Action::PreviewPathUnderCursor)
+        );
+        assert_eq!(parse_lua_action("scratch"), Some(Action::OpenScratchBuffer));
+        assert_eq!(
+            parse_lua_action("regex_search"),
+            Some(Action::ToggleSearchRegex)
+        );
     }
 
     #[test]
@@ -9809,6 +10491,22 @@ mod tests {
         assert!(catalog.contains(&Action::ResetSettings));
         assert!(catalog.contains(&Action::CycleVisualEffect));
         assert!(catalog.contains(&Action::CloseMediaPreview));
+        assert!(catalog.contains(&Action::PreviewPathUnderCursor));
+        assert!(catalog.contains(&Action::OpenScratchBuffer));
+        assert!(catalog.contains(&Action::ToggleSearchRegex));
+    }
+
+    #[test]
+    fn test_extract_path_near_column_finds_visible_paths() {
+        let line = "open ./src/main.rs or /tmp/out.log";
+        assert_eq!(
+            extract_path_near_column(line, 8),
+            Some("./src/main.rs".to_string())
+        );
+        assert_eq!(
+            extract_path_near_column(line, 26),
+            Some("/tmp/out.log".to_string())
+        );
     }
 
     #[test]

@@ -211,6 +211,14 @@ pub fn parse_action_id(id: &str) -> Option<Action> {
         "toggle_typewriter_effect" => Action::ToggleTypewriterEffect,
         "cycle_visual_effect" => Action::CycleVisualEffect,
         "close_media_preview" => Action::CloseMediaPreview,
+        "preview_path_under_cursor" => Action::PreviewPathUnderCursor,
+        "open_path_under_cursor" => Action::OpenPathUnderCursor,
+        "copy_path_under_cursor" => Action::CopyPathUnderCursor,
+        "reveal_path_under_cursor" => Action::RevealPathUnderCursor,
+        "tail_path_under_cursor" => Action::TailPathUnderCursor,
+        "open_scratch_buffer" => Action::OpenScratchBuffer,
+        "toggle_search_regex" => Action::ToggleSearchRegex,
+        "cycle_search_scope" => Action::CycleSearchScope,
         "new_floating_pane" => Action::NewFloatingPane,
         "toggle_floating_pane" => Action::ToggleFloatingPane,
         "close_floating_pane" => Action::CloseFloatingPane,
@@ -283,6 +291,18 @@ mod tests {
         assert!(matches!(
             parse_action_id("close_media_preview"),
             Some(Action::CloseMediaPreview)
+        ));
+        assert!(matches!(
+            parse_action_id("preview_path_under_cursor"),
+            Some(Action::PreviewPathUnderCursor)
+        ));
+        assert!(matches!(
+            parse_action_id("open_scratch_buffer"),
+            Some(Action::OpenScratchBuffer)
+        ));
+        assert!(matches!(
+            parse_action_id("toggle_search_regex"),
+            Some(Action::ToggleSearchRegex)
         ));
         assert!(parse_action_id("not_a_real_action").is_none());
     }

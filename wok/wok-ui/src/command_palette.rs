@@ -40,6 +40,16 @@ pub enum PaletteAction {
     FilePath(String),
     /// Open a supported media file in the built-in preview.
     PreviewMedia(String),
+    /// Preview a file path using the best available built-in viewer.
+    PreviewPath(String),
+    /// Open a file externally.
+    OpenPathExternal(String),
+    /// Copy a file path.
+    CopyPath(String),
+    /// Reveal a file in the platform file manager.
+    RevealPath(String),
+    /// Tail a file in a new split.
+    TailPath(String),
     /// Apply the theme at the given absolute path.
     ApplyTheme(String),
     /// Preview the diff for a changed Git file.

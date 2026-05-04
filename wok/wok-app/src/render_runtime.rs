@@ -1148,7 +1148,9 @@ pub(crate) fn render_settings_editor(
     font: &mut FontSystem,
     theme: &Theme,
     viewport: Rect,
+    title: &str,
     path: &Path,
+    help: &str,
     input: &wok_input::editor::InputRenderData,
     cursor_shape: CursorShape,
     cursor_visible: bool,
@@ -1210,18 +1212,14 @@ pub(crate) fn render_settings_editor(
         inner_width,
         font.metrics.cell_width,
     );
-    let help_text = fit_text_to_width(
-        "Esc close  Mod+S save  Enter newline",
-        inner_width,
-        font.metrics.cell_width,
-    );
+    let help_text = fit_text_to_width(help, inner_width, font.metrics.cell_width);
 
     push_text(
         render,
         font,
         base_x,
         base_y,
-        "Settings",
+        title,
         with_opacity(
             [
                 theme.foreground.r,
@@ -1978,7 +1976,16 @@ pub(crate) fn render_search_overlay(
         font,
         x + 10.0,
         y + 6.0 + font.metrics.cell_height,
-        &search.match_count_display(),
+        &fit_text_to_width(
+            &format!(
+                "{}  mode:{} scope:{}",
+                search.match_count_display(),
+                search.mode.label(),
+                search.scope.label()
+            ),
+            width - 20.0,
+            font.metrics.cell_width,
+        ),
         with_opacity(
             [
                 theme.status_bar_text.r,

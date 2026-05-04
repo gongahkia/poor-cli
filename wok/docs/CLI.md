@@ -115,3 +115,17 @@ Flags:
 - `--pane-id`: optional pane id (defaults to the active pane)
 - `--socket`: explicit socket path (falls back to `$WOK_SOCKET`)
 - `--token`: optional RPC auth token (falls back to `$WOK_RPC_TOKEN`)
+
+## `wok workspace`
+
+Manage named workspace snapshots from a shell connected to a running Wok instance.
+
+```bash
+wok workspace save backend
+wok workspace load backend
+wok workspace list
+```
+
+`save` and `load` call the running app through `wok.run_action`, so they use `--socket` or `$WOK_SOCKET` and optional `--token` or `$WOK_RPC_TOKEN`.
+
+Wok also supports Kitty graphics, Sixel, and iTerm image escape sequences for inline terminal image output, plus built-in file previews for images, GIFs, MP4/M4V, and text files.

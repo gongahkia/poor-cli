@@ -410,6 +410,14 @@ impl WokApp {
             Action::ToggleTypewriterEffect => {}
             Action::CycleVisualEffect => {}
             Action::CloseMediaPreview => {}
+            Action::PreviewPathUnderCursor
+            | Action::OpenPathUnderCursor
+            | Action::CopyPathUnderCursor
+            | Action::RevealPathUnderCursor
+            | Action::TailPathUnderCursor
+            | Action::OpenScratchBuffer
+            | Action::ToggleSearchRegex
+            | Action::CycleSearchScope => {}
             Action::NewFloatingPane => {
                 effects.push(RuntimeEffect::Workspace(WorkspaceEffect::NewFloatingPane));
             }

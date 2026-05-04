@@ -92,6 +92,28 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         "close_media_preview" | "media_preview_close" | "close_preview" => {
             Some(Action::CloseMediaPreview)
         }
+        "preview_path_under_cursor" | "preview_file_under_cursor" | "preview_path" => {
+            Some(Action::PreviewPathUnderCursor)
+        }
+        "open_path_under_cursor" | "open_file_under_cursor" | "open_path" => {
+            Some(Action::OpenPathUnderCursor)
+        }
+        "copy_path_under_cursor" | "copy_file_path_under_cursor" | "copy_path" => {
+            Some(Action::CopyPathUnderCursor)
+        }
+        "reveal_path_under_cursor" | "reveal_file_under_cursor" | "reveal_path" => {
+            Some(Action::RevealPathUnderCursor)
+        }
+        "tail_path_under_cursor" | "tail_file_under_cursor" | "tail_path" => {
+            Some(Action::TailPathUnderCursor)
+        }
+        "open_scratch_buffer" | "scratch_buffer" | "scratch" => Some(Action::OpenScratchBuffer),
+        "toggle_search_regex" | "search_regex_toggle" | "regex_search" => {
+            Some(Action::ToggleSearchRegex)
+        }
+        "cycle_search_scope" | "search_scope_cycle" | "next_search_scope" => {
+            Some(Action::CycleSearchScope)
+        }
         "new_floating_pane" | "floating_new" => Some(Action::NewFloatingPane),
         "toggle_floating_pane" | "toggle_floating" | "floating_toggle" => {
             Some(Action::ToggleFloatingPane)

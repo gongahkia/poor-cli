@@ -115,6 +115,22 @@ pub enum Action {
     CycleVisualEffect,
     /// Close the built-in media preview.
     CloseMediaPreview,
+    /// Preview the file path under the cursor.
+    PreviewPathUnderCursor,
+    /// Open the file path under the cursor externally.
+    OpenPathUnderCursor,
+    /// Copy the file path under the cursor.
+    CopyPathUnderCursor,
+    /// Reveal the file path under the cursor in Finder.
+    RevealPathUnderCursor,
+    /// Tail the file path under the cursor in a new split.
+    TailPathUnderCursor,
+    /// Open the scratch buffer.
+    OpenScratchBuffer,
+    /// Toggle global search regex mode.
+    ToggleSearchRegex,
+    /// Cycle global search scope.
+    CycleSearchScope,
     /// Create a new floating pane.
     NewFloatingPane,
     /// Toggle visibility for floating panes.

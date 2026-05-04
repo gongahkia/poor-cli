@@ -56,6 +56,41 @@ pub(crate) fn dispatch_cli_command(cli: &Cli) -> Result<CliAction, Box<dyn Error
             }
             Ok(CliAction::ExitOk)
         }
+        Some(CliCommand::Workspace { command }) => {
+            match command {
+                WorkspaceCommand::Save {
+                    name,
+                    socket,
+                    token,
+                } => {
+                    run_workspace_action(&format!("save_session:{name}"), socket, token)?;
+                    println!("saved workspace '{name}'");
+                }
+                WorkspaceCommand::Load {
+                    name,
+                    socket,
+                    token,
+                } => {
+                    run_workspace_action(&format!("load_session:{name}"), socket, token)?;
+                    println!("loaded workspace '{name}'");
+                }
+                WorkspaceCommand::List => {
+                    let dir = WokConfig::config_dir().join("sessions");
+                    if let Ok(read_dir) = std::fs::read_dir(dir) {
+                        for entry in read_dir.flatten() {
+                            let path = entry.path();
+                            if path.extension().and_then(|ext| ext.to_str()) == Some("json") {
+                                if let Some(name) = path.file_stem().and_then(|name| name.to_str())
+                                {
+                                    println!("{name}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(CliAction::ExitOk)
+        }
         Some(CliCommand::Rpc {
             method,
             params,
@@ -119,6 +154,31 @@ pub(crate) fn dispatch_cli_command(cli: &Cli) -> Result<CliAction, Box<dyn Error
             attached_session: None,
         }),
     }
+}
+
+fn run_workspace_action(
+    action: &str,
+    socket: Option<String>,
+    token: Option<String>,
+) -> Result<(), Box<dyn Error>> {
+    let response = rpc_cli::execute_rpc_command(
+        "wok.run_action".to_string(),
+        serde_json::json!({ "action": action }).to_string(),
+        socket,
+        token,
+        None,
+        false,
+    )?
+    .ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "remote control server did not return a response",
+        )
+    })?;
+    if let Some(error) = response.get("error") {
+        return Err(std::io::Error::other(format!("remote RPC error: {error}")).into());
+    }
+    Ok(())
 }
 
 fn run_wokcast_replay(file: &std::path::Path, speed: f64) -> Result<(), Box<dyn Error>> {

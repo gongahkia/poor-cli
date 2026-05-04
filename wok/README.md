@@ -79,10 +79,13 @@ Use `bash`, `zsh`, or `fish` for the cleanest first-run block demo.
 8. Use `Mod+Alt+S` to toggle typewriter-style output reveal.
 9. Use `Mod+P` and run `Cycle Visual Effect` to preview the default-off visual effects.
 10. Use `Mod+P` and choose a `Preview ...` file entry for images, GIFs, or MP4s in the current directory; press `Escape` or run `Close Media Preview` to close it.
-11. Use `Mod+P` and run `Reset Settings` to restore the managed default config.
-12. Use `Mod+Shift+S` to save the `manual` session snapshot, then `Mod+Shift+R` to load it.
+11. Put the cursor on a path and run `Preview Path Under Cursor`, `Open Path Under Cursor`, `Reveal Path Under Cursor`, or `Tail Path Under Cursor`.
+12. Use `Mod+P` and run `Open Scratch Buffer` for temporary notes.
+13. Use `Mod+P` and run `Reset Settings` to restore the managed default config.
+14. Use `Mod+Shift+S` to save the `manual` session snapshot, then `Mod+Shift+R` to load it.
 
 Named snapshots are available through Lua action aliases such as `save_session:demo` and `load_session:demo`.
+From a shell attached to a running Wok instance, `wok workspace save backend`, `wok workspace load backend`, and `wok workspace list` provide the same named-workspace flow.
 
 ## Repo Map
 
