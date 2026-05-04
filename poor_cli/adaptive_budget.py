@@ -73,6 +73,8 @@ class AdaptiveBudgetController:
     ):
         self._inner = inner or RuleBasedController()
         self._rewards: Deque[float] = deque(maxlen=window)
+        self._complexities: Deque[float] = deque(maxlen=window)
+        self._successes: Deque[bool] = deque(maxlen=window)
         self._window = window
         self._enabled = enabled
         self._stats = AdaptationStats(window_size=window)
@@ -114,8 +116,21 @@ class AdaptiveBudgetController:
     def observe(self, state: TokenBudgetState, action: TokenBudgetAction, outcome: TurnOutcome) -> float:
         reward = compute_reward(state, action, outcome)
         self._rewards.append(reward)
+        self._complexities.append(float(getattr(state, "task_complexity", 0.5) or 0.5))
+        self._successes.append(bool(getattr(outcome, "task_succeeded", False)))
         self._stats.window_size = len(self._rewards)
         return reward
+
+    def recent_complexity_estimate(self) -> float:
+        if not self._complexities:
+            return 0.5
+        return sum(self._complexities) / len(self._complexities)
+
+    def recent_success_rate(self, window: int = DEFAULT_WINDOW) -> float:
+        if not self._successes:
+            return 0.0
+        recent = list(self._successes)[-max(1, int(window or 1)):]
+        return sum(1 for item in recent if item) / len(recent)
 
     # ── internals ────────────────────────────────────────────────────────
 

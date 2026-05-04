@@ -27,11 +27,14 @@ def detect_relevant_skills(
     user_prompt: str,
     available_skill_names: Sequence[str],
     max_hints: int = 3,
+    whitelist: Optional[Sequence[str]] = None,
 ) -> List[str]:
     """Return skill names relevant to the user prompt, capped at max_hints."""
     if not user_prompt or not available_skill_names:
         return []
     available = set(available_skill_names)
+    if whitelist is not None:
+        available &= {str(name) for name in whitelist}
     scored: List[tuple] = []
     for name, pattern in _KEYWORD_PATTERNS.items():
         if name not in available:

@@ -54,6 +54,7 @@ from .token_budget_controller import (
     TurnOutcome,
 )
 from .adaptive_budget import AdaptiveBudgetController
+from .prompt_optimizer import PromptOptimizer
 from .budget_logger import BudgetLogger
 from .error_recovery import ErrorRecoveryManager
 from .kv_cache_store import maybe_init_kv_cache, KVCacheStore
@@ -235,6 +236,8 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
         # Token budget controller (Phase 7A)
         self._budget_controller: RuleBasedController = RuleBasedController()
         self._adaptive_budget: AdaptiveBudgetController = AdaptiveBudgetController(self._budget_controller)
+        self._prompt_optimizer: PromptOptimizer = PromptOptimizer(self._adaptive_budget)
+        self._last_prompt_decision: Dict[str, Any] = {}
         self._budget_logger: BudgetLogger = BudgetLogger()
         self._thinking_optimizer: ThinkingBudgetOptimizer = ThinkingBudgetOptimizer()
         self._budget_state: Optional[TokenBudgetState] = None
@@ -483,7 +486,10 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
                 plan_mode=_plan,
                 include_agent_tools=not _plan,
                 max_system_tokens=_max_sys,
+                prompt_optimizer=self._prompt_optimizer,
+                task_complexity=self._adaptive_budget.recent_complexity_estimate(),
             )
+            self._record_prompt_decision()
 
             # inject persistent memory context
             memory_index = self._memory_manager.load_index()

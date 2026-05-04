@@ -6,6 +6,7 @@ Each prompt is designed to elicit high-quality responses from LLMs.
 """
 
 from pathlib import Path
+from typing import Any, Optional
 
 from .skills import InstructionSkillContext, SkillRegistry
 
@@ -522,6 +523,8 @@ def build_tool_calling_system_instruction(
     # kept for backward compat but now no-ops
     include_gh_tools: bool = True,
     include_extended_tools: bool = True,
+    prompt_optimizer: Optional[Any] = None,
+    task_complexity: float = 0.5,
 ) -> str:
     """Build the shared tool-calling system instruction from skill files."""
     del agentic_mode, include_agent_tools, include_gh_tools, include_extended_tools
@@ -532,11 +535,30 @@ def build_tool_calling_system_instruction(
         terse_mode=terse_mode,
         batched_reads=batched_reads,
     )
-    instruction = SkillRegistry(Path(current_dir)).render_system_instruction(
-        "",
-        context,
-        max_system_tokens=max_system_tokens,
-    )
+    registry = SkillRegistry(Path(current_dir))
+    decision = None
+    if prompt_optimizer is not None:
+        try:
+            available = {skill.name for skill in registry.list_instruction_skills()}
+            decision = prompt_optimizer.choose(available, task_complexity)
+        except Exception:
+            decision = None
+    if decision is None:
+        instruction = registry.render_system_instruction(
+            "",
+            context,
+            max_system_tokens=max_system_tokens,
+        )
+    else:
+        plan = registry.build_instruction_plan("", context)
+        whitelist = set(decision.skill_whitelist)
+        ordered = [name for name in plan.system_skill_names if name in whitelist]
+        instruction = registry.render_instruction_skills(ordered, context)
+        instruction = _apply_system_prompt_level(
+            instruction,
+            decision.system_prompt_level,
+            current_dir,
+        )
     if not instruction:
         instruction = (
             "You are an AI coding assistant with tool calling.\n\n"
@@ -551,3 +573,32 @@ def build_tool_calling_system_instruction(
     if provider:
         instruction = _truncate_instruction_for_provider(instruction, provider)
     return instruction
+
+
+def _apply_system_prompt_level(instruction: str, level: str, current_dir: str) -> str:
+    normalized = str(level or "full").strip().lower()
+    if normalized == "full" or not instruction:
+        return instruction
+    lines = [line.rstrip() for line in instruction.splitlines()]
+    if normalized == "trim":
+        kept = []
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                if kept and kept[-1]:
+                    kept.append("")
+                continue
+            if stripped.startswith("- Persistent memory writes") or stripped.startswith("- For cross-file"):
+                continue
+            kept.append(line)
+        return "\n".join(kept).strip()
+    return (
+        "You are an AI coding assistant with tool calling.\n\n"
+        f"CURRENT WORKING DIRECTORY: {current_dir}\n\n"
+        "Core rules:\n"
+        "- Use tools directly for file and system work.\n"
+        "- Use absolute paths rooted at the working directory.\n"
+        "- Ask before destructive or production-impacting actions.\n"
+        "- Keep output terse and action-first.\n"
+        "- End final replies with `Confidence: <Category> (<0-100>%)`."
+    )
