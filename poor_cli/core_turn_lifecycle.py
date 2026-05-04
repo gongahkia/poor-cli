@@ -175,6 +175,71 @@ class TurnLifecycle:
             "tokensIn": tokens_in,
         }
 
+    def _start_speculative_draft_task(self, message: Any) -> Optional[asyncio.Task[Any]]:
+        try:
+            from .speculative_draft import run_shadow_prediction, speculation_enabled
+        except Exception:
+            return None
+        config = getattr(self, "config", None)
+        preferences = getattr(getattr(self, "repo_config", None), "preferences", None)
+        if not speculation_enabled(config, preferences):
+            return None
+        settings = getattr(config, "speculative", None)
+        if settings is None and preferences is not None:
+            raw = getattr(preferences, "speculative", {}) or {}
+            draft_provider_name = str(raw.get("draft_provider", "ollama"))
+            draft_model = str(raw.get("draft_model", "llama3.1"))
+        else:
+            draft_provider_name = str(getattr(settings, "draft_provider", "ollama"))
+            draft_model = str(getattr(settings, "draft_model", "llama3.1"))
+        draft_provider = getattr(self, "_speculative_draft_provider", None)
+        if draft_provider is None:
+            draft_provider = self._create_speculative_draft_provider(draft_provider_name, draft_model)
+        dispatcher = getattr(self, "_speculative_tool_dispatcher", None)
+        if dispatcher is None:
+            registry = getattr(self, "tool_registry", None)
+            execute_tool = getattr(registry, "execute_tool", None)
+            if callable(execute_tool):
+                dispatcher = execute_tool
+        if draft_provider is None or dispatcher is None:
+            return None
+        history = [{"role": "user", "content": str(message)}]
+        tools = self._speculative_tool_names()
+        cache = getattr(self, "tool_cache", None)
+        return asyncio.create_task(
+            run_shadow_prediction(history, tools, draft_provider, draft_model, dispatcher, cache=cache)
+        )
+
+    def _create_speculative_draft_provider(self, provider_name: str, draft_model: str) -> Any:
+        try:
+            if not ProviderFactory.is_provider_available(provider_name):
+                return None
+            return ProviderFactory.create(provider_name, api_key="", model_name=draft_model, timeout=15.0)
+        except Exception:
+            logger.debug("speculative draft provider unavailable", exc_info=True)
+            return None
+
+    def _speculative_tool_names(self) -> List[str]:
+        registry = getattr(self, "tool_registry", None)
+        get_declarations = getattr(registry, "get_tool_declarations", None)
+        if callable(get_declarations):
+            try:
+                return [str(item.get("name")) for item in get_declarations() if isinstance(item, dict)]
+            except Exception:
+                return []
+        return []
+
+    async def _cancel_speculative_draft_task(self, task: Optional[asyncio.Task[Any]]) -> None:
+        if task is None or task.done():
+            return
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            logger.debug("speculative draft task failed", exc_info=True)
+
     def _provider_tokens_out(self, response: Any, fallback_text: str = "") -> int:
         usage = getattr(response, "usage", None)
         if usage is not None:
@@ -218,9 +283,11 @@ class TurnLifecycle:
         basics = self._provider_hook_basics(message)
         started = time.monotonic()
         await self._emit_policy_hooks("pre_provider_call", basics)
+        speculative_task = self._start_speculative_draft_task(message)
         try:
             response = await self.provider.send_message(message, **kwargs)
         except Exception as exc:
+            await self._cancel_speculative_draft_task(speculative_task)
             await self._emit_policy_hooks(
                 "post_provider_call",
                 {
@@ -233,6 +300,7 @@ class TurnLifecycle:
                 },
             )
             raise
+        await self._cancel_speculative_draft_task(speculative_task)
         tokens_out = self._provider_tokens_out(response, getattr(response, "content", ""))
         await self._emit_policy_hooks(
             "post_provider_call",
@@ -250,6 +318,7 @@ class TurnLifecycle:
         basics = self._provider_hook_basics(message)
         started = time.monotonic()
         await self._emit_policy_hooks("pre_provider_call", basics)
+        speculative_task = self._start_speculative_draft_task(message)
         tokens_out = 0
         content_parts: List[str] = []
         try:
@@ -261,6 +330,7 @@ class TurnLifecycle:
                     content_parts.append(str(chunk.content))
                 yield chunk
         except Exception as exc:
+            await self._cancel_speculative_draft_task(speculative_task)
             await self._emit_policy_hooks(
                 "post_provider_call",
                 {
@@ -273,6 +343,7 @@ class TurnLifecycle:
                 },
             )
             raise
+        await self._cancel_speculative_draft_task(speculative_task)
         if tokens_out <= 0 and content_parts:
             tokens_out = self._provider_tokens_out(None, "".join(content_parts))
         await self._emit_policy_hooks(

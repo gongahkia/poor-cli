@@ -547,6 +547,13 @@ class CheckpointTreeConfig:
 
 
 @dataclass
+class SpeculativeConfig:
+    enabled: bool = False
+    draft_provider: str = "ollama"
+    draft_model: str = "llama3.1"
+
+
+@dataclass
 class Config:
     """Main configuration class"""
     model: ModelConfig = field(default_factory=ModelConfig)
@@ -577,6 +584,7 @@ class Config:
     spec_mode: SpecModeConfig = field(default_factory=SpecModeConfig)
     agent_teams: AgentTeamConfig = field(default_factory=AgentTeamConfig)
     checkpoint_tree: CheckpointTreeConfig = field(default_factory=CheckpointTreeConfig)
+    speculative: SpeculativeConfig = field(default_factory=SpeculativeConfig)
     economy: EconomyConfig = field(default_factory=EconomyConfig)
     retry: RetryConfig = field(default_factory=RetryConfig)
     circuit_breaker: CircuitBreakerConfig = field(default_factory=CircuitBreakerConfig)
@@ -622,6 +630,7 @@ class Config:
             "spec_mode": asdict(self.spec_mode),
             "agent_teams": asdict(self.agent_teams),
             "checkpoint_tree": asdict(self.checkpoint_tree),
+            "speculative": asdict(self.speculative),
             "economy": asdict(self.economy),
             "retry": {k: v for k, v in asdict(self.retry).items() if k != "retryable_exceptions"},
             "circuit_breaker": asdict(self.circuit_breaker),
@@ -661,6 +670,7 @@ class Config:
             spec_mode=SpecModeConfig(**data.get("spec_mode", {})),
             agent_teams=AgentTeamConfig(**data.get("agent_teams", {})),
             checkpoint_tree=CheckpointTreeConfig(**data.get("checkpoint_tree", {})),
+            speculative=SpeculativeConfig(**data.get("speculative", {})),
             economy=EconomyConfig(**data.get("economy", {})),
             retry=RetryConfig(**{k: v for k, v in data.get("retry", {}).items() if k != "retryable_exceptions"}),
             circuit_breaker=CircuitBreakerConfig(**data.get("circuit_breaker", {})),
@@ -781,6 +791,7 @@ class ConfigManager:
             "kv_cache",
             "research",
             "mcp",
+            "speculative",
             "economy",
             "mcp_servers",
             "file_cache",

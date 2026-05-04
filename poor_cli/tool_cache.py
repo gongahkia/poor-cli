@@ -85,8 +85,21 @@ class ToolCache:
             self._entries.move_to_end(key)
             return entry.result
 
-    def put(self, tool: str, args: Dict[str, Any], result: ToolResult) -> None:
+    def put(
+        self,
+        tool: str,
+        args: Dict[str, Any],
+        result: ToolResult,
+        *,
+        from_speculation: bool = False,
+    ) -> None:
         """Insert or replace a cache entry. Evicts oldest when cap reached."""
+        if from_speculation:
+            result = ToolResult(
+                content=list(result.content),
+                is_error=result.is_error,
+                metadata={**(result.metadata or {}), "from_speculation": True},
+            )
         key = self._key(tool, args)
         with self._lock:
             if key in self._entries:

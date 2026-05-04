@@ -48,6 +48,14 @@ def _default_context_preferences() -> Dict[str, Dict[str, float]]:
     }
 
 
+def _default_speculative_preferences() -> Dict[str, Any]:
+    return {
+        "enabled": False,
+        "draft_provider": "ollama",
+        "draft_model": "llama3.1",
+    }
+
+
 def _coerce_selection_weights(raw_weights: Any) -> Dict[str, float]:
     weights = _default_context_preferences()["selection_weights"]
     if not isinstance(raw_weights, dict):
@@ -88,6 +96,7 @@ class RepoPreferences:
     research: Dict[str, Dict[str, bool]] = field(default_factory=_default_research_preferences)
     context: Dict[str, Dict[str, float]] = field(default_factory=_default_context_preferences)
     edit: Dict[str, bool] = field(default_factory=lambda: {"requireDiffPreview": True})
+    speculative: Dict[str, Any] = field(default_factory=_default_speculative_preferences)
 
     # Tracking
     created_at: str = ""
@@ -122,6 +131,17 @@ class RepoPreferences:
         context["selection_weights"] = _coerce_selection_weights(raw_weights)
         data["context"] = context
         data.pop("selection_weights", None)
+        speculative = _default_speculative_preferences()
+        raw_speculative = data.get("speculative", {})
+        if isinstance(raw_speculative, dict):
+            speculative.update({
+                "enabled": bool(raw_speculative.get("enabled", speculative["enabled"])),
+                "draft_provider": str(raw_speculative.get("draft_provider", speculative["draft_provider"])),
+                "draft_model": str(raw_speculative.get("draft_model", speculative["draft_model"])),
+            })
+        elif isinstance(raw_speculative, bool):
+            speculative["enabled"] = raw_speculative
+        data["speculative"] = speculative
         raw_mode = data.get("permission_mode", PermissionMode.DEFAULT)
         mode = parse_permission_mode(raw_mode)
 
