@@ -5,8 +5,10 @@ from typing import Any, Dict
 
 from poor_cli.mcp.config_store import McpConfigStore
 from poor_cli.mcp.registry import McpRegistryClient
+from poor_cli.permission_dsl import remove_mcp_default_deny_rules
 from poor_cli.server.registry import register
 from poor_cli.server.types import InvalidParamsError
+from poor_cli.tui.mcp_browser import McpMarketplaceState
 
 
 def _repo_root(ctx: Any) -> Path:
@@ -19,6 +21,16 @@ def _repo_root(ctx: Any) -> Path:
 
 def _store(ctx: Any) -> McpConfigStore:
     return McpConfigStore(_repo_root(ctx))
+
+
+def _marketplace_enabled(ctx: Any) -> bool:
+    try:
+        marketplace = getattr(getattr(ctx.core.config, "mcp", None), "marketplace", None)
+    except Exception:
+        marketplace = None
+    if marketplace is not None:
+        return bool(getattr(marketplace, "enabled", False))
+    return _store(ctx).registry_enabled()
 
 
 def _manager(ctx: Any) -> Any:
@@ -152,6 +164,90 @@ class McpHandlersMixin:
         result["page"] = int(offset / limit) if limit > 0 else 0
         return result
 
+    async def handle_mcp_search(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        store = _store(self)
+        query = str(params.get("query", "") or "")
+        limit = int(params.get("limit", 20) or 20)
+        offset = int(params.get("offset", 0) or 0)
+        enabled = _marketplace_enabled(self)
+        if not enabled:
+            payload = {"enabled": False, "servers": [], "page": int(params.get("page", 0) or 0)}
+        else:
+            try:
+                client = McpRegistryClient(enabled=True)
+                payload = await client.search_cached(query=query, limit=limit, offset=offset, repo_root=_repo_root(self))
+            except RuntimeError as exc:
+                if "aiohttp required" not in str(exc):
+                    raise
+                payload = {"enabled": True, "servers": [], "error": "missing_aiohttp"}
+            payload["enabled"] = True
+            payload["limit"] = limit
+            payload["offset"] = offset
+            payload["page"] = int(offset / limit) if limit > 0 else 0
+        state = McpMarketplaceState.from_search_payload(
+            payload,
+            installed_servers=store.list_servers(),
+            query=query,
+        )
+        return {
+            **payload,
+            "rows": [row.to_dict() for row in state.rows],
+            "message": state.message,
+            "configPath": str(store.path),
+        }
+
+    async def handle_mcp_install(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        if not _marketplace_enabled(self):
+            return {"enabled": False, "installed": False, "error": "MCP marketplace disabled"}
+        name = str(params.get("name") or params.get("serverName") or "").strip()
+        if not name:
+            raise InvalidParamsError("name is required")
+        version = params.get("version")
+        server = params.get("server") if isinstance(params.get("server"), dict) else None
+        try:
+            install = await McpRegistryClient(enabled=True).install(
+                name,
+                str(version) if version else None,
+                repo_root=_repo_root(self),
+                server=server,
+            )
+        except ValueError as exc:
+            raise InvalidParamsError(str(exc)) from exc
+        return {"enabled": True, "installed": True, **install}
+
+    async def handle_mcp_uninstall(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        if params.get("confirmed") is not True:
+            raise InvalidParamsError("confirmed=true is required")
+        name = str(params.get("name") or params.get("serverName") or "").strip()
+        if not name:
+            raise InvalidParamsError("name is required")
+        try:
+            _store(self).remove_server(name)
+        except KeyError as exc:
+            raise InvalidParamsError(str(exc)) from exc
+        permission = remove_mcp_default_deny_rules(_repo_root(self), name)
+        return {"uninstalled": True, "permission": permission, **await self.handle_mcp_list({})}
+
+    async def handle_mcp_enable(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        name = str(params.get("name") or params.get("serverName") or "").strip()
+        if not name:
+            raise InvalidParamsError("name is required")
+        try:
+            _store(self).toggle_server(name, True)
+        except KeyError as exc:
+            raise InvalidParamsError(str(exc)) from exc
+        return await self.handle_mcp_list({})
+
+    async def handle_mcp_disable(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        name = str(params.get("name") or params.get("serverName") or "").strip()
+        if not name:
+            raise InvalidParamsError("name is required")
+        try:
+            _store(self).toggle_server(name, False)
+        except KeyError as exc:
+            raise InvalidParamsError(str(exc)) from exc
+        return await self.handle_mcp_list({})
+
 
 @register("mcp.list")
 @register("poor-cli/mcpList")
@@ -194,3 +290,28 @@ async def _rpc_mcp_test(ctx, params):
 @register("poor-cli/registrySearch")
 async def _rpc_mcp_registry_search(ctx, params):
     return await ctx.handle_mcp_registry_search(params)
+
+
+@register("poor-cli/mcpSearch")
+async def _rpc_mcp_search(ctx, params):
+    return await ctx.handle_mcp_search(params)
+
+
+@register("poor-cli/mcpInstall")
+async def _rpc_mcp_install(ctx, params):
+    return await ctx.handle_mcp_install(params)
+
+
+@register("poor-cli/mcpUninstall")
+async def _rpc_mcp_uninstall(ctx, params):
+    return await ctx.handle_mcp_uninstall(params)
+
+
+@register("poor-cli/mcpEnable")
+async def _rpc_mcp_enable(ctx, params):
+    return await ctx.handle_mcp_enable(params)
+
+
+@register("poor-cli/mcpDisable")
+async def _rpc_mcp_disable(ctx, params):
+    return await ctx.handle_mcp_disable(params)

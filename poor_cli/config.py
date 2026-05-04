@@ -507,8 +507,14 @@ class McpRegistryConfig:
 
 
 @dataclass
+class McpMarketplaceConfig:
+    enabled: bool = False
+
+
+@dataclass
 class McpConfig:
     registry: McpRegistryConfig = field(default_factory=McpRegistryConfig)
+    marketplace: McpMarketplaceConfig = field(default_factory=McpMarketplaceConfig)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'McpConfig':
@@ -516,7 +522,13 @@ class McpConfig:
             return cls()
         registry_data = data.get("registry", {})
         registry = McpRegistryConfig(**registry_data) if isinstance(registry_data, dict) else McpRegistryConfig()
-        return cls(registry=registry)
+        marketplace_data = data.get("marketplace", {})
+        marketplace = (
+            McpMarketplaceConfig(**marketplace_data)
+            if isinstance(marketplace_data, dict)
+            else McpMarketplaceConfig()
+        )
+        return cls(registry=registry, marketplace=marketplace)
 
 
 @dataclass

@@ -389,6 +389,9 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
         if command == "/timeline":
             self._start_rpc_request("Timeline", "poor-cli/listCheckpoints", {"limit": 100})
             return True
+        if command == "/mcp":
+            self._start_rpc_request("MCP marketplace", "poor-cli/mcpSearch", {"query": arg, "limit": 20})
+            return True
         if command == "/spec":
             if not arg:
                 self._add_activity("Command", "/spec requires a spec path")

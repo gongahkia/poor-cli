@@ -151,6 +151,69 @@ class PermissionDsl:
         return []
 
 
+_MCP_MARKETPLACE_REASON = "newly installed MCP tool, awaiting review"
+_MCP_MARKETPLACE_SOURCE = "mcp_marketplace"
+
+
+def ensure_mcp_default_deny_rules(
+    repo_root: Optional[Path],
+    server_name: str,
+    tool_names: Sequence[str] | None = None,
+) -> Dict[str, Any]:
+    """Add conservative deny rules for newly installed marketplace tools."""
+    root = (repo_root or Path.cwd()).resolve()
+    path = root / ".poor-cli" / "permissions.yml"
+    payload = _load_permissions_payload(path)
+    rules = payload.setdefault("rules", [])
+    if not isinstance(rules, list):
+        rules = []
+        payload["rules"] = rules
+
+    patterns = _mcp_tool_patterns(server_name, tool_names)
+    existing = {
+        str(rule.get("tool"))
+        for rule in rules
+        if isinstance(rule, dict)
+        and rule.get("source") == _MCP_MARKETPLACE_SOURCE
+        and str(rule.get("server") or "") == server_name
+    }
+    for pattern in patterns:
+        if pattern in existing:
+            continue
+        rules.append({
+            "tool": pattern,
+            "deny": True,
+            "reason": _MCP_MARKETPLACE_REASON,
+            "source": _MCP_MARKETPLACE_SOURCE,
+            "server": server_name,
+        })
+    _write_permissions_payload(path, payload)
+    return {"path": str(path), "server": server_name, "rulesAdded": len(set(patterns) - existing)}
+
+
+def remove_mcp_default_deny_rules(repo_root: Optional[Path], server_name: str) -> Dict[str, Any]:
+    root = (repo_root or Path.cwd()).resolve()
+    path = root / ".poor-cli" / "permissions.yml"
+    payload = _load_permissions_payload(path)
+    rules = payload.get("rules")
+    if not isinstance(rules, list):
+        return {"path": str(path), "server": server_name, "rulesRemoved": 0}
+    kept = []
+    removed = 0
+    for rule in rules:
+        if (
+            isinstance(rule, dict)
+            and rule.get("source") == _MCP_MARKETPLACE_SOURCE
+            and str(rule.get("server") or "") == server_name
+        ):
+            removed += 1
+            continue
+        kept.append(rule)
+    payload["rules"] = kept
+    _write_permissions_payload(path, payload)
+    return {"path": str(path), "server": server_name, "rulesRemoved": removed}
+
+
 def combine_behaviors(left: str, right: str) -> str:
     a = _normalize_behavior(left)
     b = _normalize_behavior(right)
@@ -257,6 +320,34 @@ def _normalize_behavior(value: Any) -> str:
     if text not in _STRICTNESS:
         raise ValueError("behavior must be allow, deny, or ask")
     return text
+
+
+def _load_permissions_payload(path: Path) -> Dict[str, Any]:
+    if not path.is_file():
+        return {"version": 1, "defaults": {"unmatched": "ask"}, "rules": []}
+    try:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    payload.setdefault("version", 1)
+    payload.setdefault("defaults", {"unmatched": "ask"})
+    payload.setdefault("rules", [])
+    return payload
+
+
+def _write_permissions_payload(path: Path, payload: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+
+def _mcp_tool_patterns(server_name: str, tool_names: Sequence[str] | None) -> List[str]:
+    server = str(server_name or "").strip()
+    names = [str(name).strip() for name in (tool_names or []) if str(name).strip()]
+    if names:
+        return names
+    return [f"{server}:*", f"mcp__{server}__*"]
 
 
 def input_from_cli(tool_name: str, raw: str) -> Dict[str, Any]:
