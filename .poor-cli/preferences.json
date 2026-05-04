@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "artifact": "preferences",
+  "data": {
+    "permission_mode": "default",
+    "auto_approve_read": false,
+    "auto_approve_write": false,
+    "auto_approve_edit": false,
+    "auto_approve_bash": false,
+    "safe_bash_commands": [
+      "pwd",
+      "ls",
+      "echo",
+      "cat",
+      "head",
+      "tail",
+      "grep",
+      "find",
+      "which",
+      "whoami",
+      "date"
+    ],
+    "max_sessions": 100,
+    "max_messages_per_session": 200,
+    "rtk_enabled": true,
+    "rtk_tee_on_failure": true,
+    "research": {
+      "latent_communication": {
+        "enabled": false
+      },
+      "neural_code_encoder": {
+        "enabled": false
+      }
+    },
+    "context": {
+      "selection_weights": {
+        "alpha": 0.4,
+        "beta": 0.4,
+        "gamma": 0.2
+      }
+    },
+    "edit": {
+      "requireDiffPreview": true
+    },
+    "created_at": "2026-05-04T15:04:43.260780",
+    "updated_at": "2026-05-04T15:04:43.260780",
+    "total_sessions": 0
+  }
+}

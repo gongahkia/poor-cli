@@ -143,6 +143,10 @@ class PermissionRuleEngine:
         return False
 
     def evaluate(self, tool_name: str, tool_args: Dict[str, Any]) -> Optional[PermissionRuleMatch]:
+        legacy_match = self._evaluate_legacy(tool_name, tool_args)
+        return self._compose_with_dsl(tool_name, tool_args, legacy_match)
+
+    def _evaluate_legacy(self, tool_name: str, tool_args: Dict[str, Any]) -> Optional[PermissionRuleMatch]:
         normalized_tool = str(tool_name or "").strip().lower()
         if not normalized_tool:
             return None
@@ -159,6 +163,42 @@ class PermissionRuleEngine:
                 continue
             return PermissionRuleMatch(behavior=rule.behavior, rule=rule)
         return None
+
+    def _compose_with_dsl(
+        self,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        legacy_match: Optional[PermissionRuleMatch],
+    ) -> Optional[PermissionRuleMatch]:
+        try:
+            from .permission_dsl import PermissionDsl, combine_behaviors
+            decision = PermissionDsl(self.repo_root).evaluate(tool_name, tool_args)
+        except Exception:
+            decision = None
+        if decision is None:
+            return legacy_match
+        if legacy_match is None:
+            rule = PermissionRule(
+                tool_name=tool_name,
+                behavior=decision.behavior,
+                rule_content=decision.reason or "permissions.yml",
+                source="dsl",
+                source_file=str(self.repo_root / ".poor-cli" / "permissions.yml"),
+                source_line=(decision.rule.index + 1) if decision.rule else 0,
+            )
+            return PermissionRuleMatch(behavior=decision.behavior, rule=rule)
+        behavior = combine_behaviors(legacy_match.behavior, decision.behavior)
+        if behavior == legacy_match.behavior:
+            return legacy_match
+        rule = PermissionRule(
+            tool_name=tool_name,
+            behavior=behavior,
+            rule_content=decision.reason or "permissions.yml",
+            source=f"{legacy_match.rule.source}+dsl",
+            source_file=str(self.repo_root / ".poor-cli" / "permissions.yml"),
+            source_line=(decision.rule.index + 1) if decision.rule else 0,
+        )
+        return PermissionRuleMatch(behavior=behavior, rule=rule, segment=legacy_match.segment)
 
     def _evaluate_bash_rules(
         self,
