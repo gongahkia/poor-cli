@@ -8,10 +8,12 @@ import contextlib
 import json
 import os
 import signal
+import shutil
 import sqlite3
 import subprocess
 import sys
 import textwrap
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -231,7 +233,7 @@ class TaskManager:
             worktree_path=str(worktree_path),
             branch_name=branch_name,
             artifact_dir=str(artifact_dir),
-            log_path=str(artifact_dir / "worker.log"),
+            log_path=str(artifact_dir / "log.ndjson"),
             response_path=str(artifact_dir / "response.md"),
             events_path=str(artifact_dir / "events.jsonl"),
             approved_at=created_at if effective_auto_approve else None,
@@ -272,6 +274,7 @@ class TaskManager:
                     record.metadata_json,
                 ),
             )
+        self._write_task_json(record)
         if auto_start and record.status == "queued":
             return self.start_task_process(record.task_id)
         return record
@@ -342,6 +345,7 @@ class TaskManager:
             worker_pid=None,
         )
         self._record_terminal_metadata(task.task_id, status="cancelled", reason_code="cancelled_by_user")
+        self._remove_pid_file(task)
         return self._require_task(task.task_id)
 
     def retry_task(self, task_id: str, *, auto_start: Optional[bool] = None) -> TaskRecord:
@@ -424,6 +428,83 @@ class TaskManager:
             )
         ]
 
+    def spawn_detached(
+        self,
+        *,
+        prompt: str,
+        title: str = "",
+        sandbox_preset: str = "read-only",
+        provider: str = "",
+        model: str = "",
+        config_path: str = "",
+        auto_approve_edits: bool = False,
+    ) -> TaskRecord:
+        execution: Dict[str, Any] = {"executionMode": "worktree"}
+        if provider:
+            execution["provider"] = provider
+        if model:
+            execution["model"] = model
+        if config_path:
+            execution["configPath"] = config_path
+        if auto_approve_edits:
+            execution["autoApproveEdits"] = True
+        task = self.create_task(
+            title=(title or prompt.splitlines()[0][:80] or "Detached task").strip(),
+            prompt=prompt,
+            sandbox_preset=normalize_preset(sandbox_preset),
+            source="detached",
+            metadata={"execution": execution},
+            auto_start=False,
+            requires_approval=False,
+            auto_approve=bool(auto_approve_edits),
+        )
+        return self.start_task_process(task.task_id)
+
+    def attach_to(self, task_id: str, *, limit: int = 200) -> Iterator[str]:
+        task = self._require_task(task_id)
+        paths = [Path(task.log_path), Path(task.events_path)]
+        emitted = 0
+        for path in paths:
+            if not path.is_file():
+                continue
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+                yield line
+                emitted += 1
+                if emitted >= limit:
+                    return
+
+    def cancel(self, task_id: str, *, grace_timeout: float = 2.0) -> TaskRecord:
+        task = self._require_task(task_id)
+        pid = task.worker_pid
+        cancelled = self.cancel_task(task_id)
+        if pid and self._pid_is_running(pid):
+            time.sleep(max(0.0, float(grace_timeout)))
+            if self._pid_is_running(pid):
+                self._signal_task_process_group(pid, signal.SIGKILL)
+        return cancelled
+
+    def prune(self, *, status: str = "completed", older_than_days: int = 7) -> List[str]:
+        cutoff = time.time() - max(0, int(older_than_days)) * 86400
+        removed: List[str] = []
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM tasks WHERE status = ?",
+                (str(status),),
+            ).fetchall()
+            for row in rows:
+                task = self._row_to_task(row)
+                timestamp = task.finished_at or task.updated_at or task.created_at
+                try:
+                    parsed = datetime.fromisoformat(timestamp).timestamp()
+                except ValueError:
+                    parsed = time.time()
+                if parsed > cutoff:
+                    continue
+                shutil.rmtree(task.artifact_dir, ignore_errors=True)
+                conn.execute("DELETE FROM tasks WHERE task_id = ?", (task.task_id,))
+                removed.append(task.task_id)
+        return removed
+
     def attach_run(self, task_id: str, run_id: str) -> TaskRecord:
         task = self._require_task(task_id)
         metadata = dict(task.metadata)
@@ -475,9 +556,7 @@ class TaskManager:
         argv = [
             sys.executable,
             "-m",
-            "poor-cli",
-            "task",
-            "run",
+            "poor_cli.task_supervisor",
             "--task-id",
             task.task_id,
             "--repo-root",
@@ -512,7 +591,10 @@ class TaskManager:
             status="running",
             started_at=_utc_now(),
         )
-        return self._require_task(task.task_id)
+        self._pid_path(task).write_text(str(process.pid), encoding="utf-8")
+        updated = self._require_task(task.task_id)
+        self._write_task_json(updated)
+        return updated
 
     def mark_running(self, task_id: str, *, worker_pid: Optional[int] = None) -> TaskRecord:
         self._update_task(
@@ -522,6 +604,8 @@ class TaskManager:
             worker_pid=worker_pid,
             error_message="",
         )
+        if worker_pid:
+            self._pid_path(self._require_task(task_id)).write_text(str(worker_pid), encoding="utf-8")
         task = self._require_task(task_id)
         self._update_linked_automation_state(
             task,
@@ -542,6 +626,7 @@ class TaskManager:
         )
         task = self._require_task(task_id)
         self._record_terminal_metadata(task.task_id, status="completed", reason_code="completed")
+        self._remove_pid_file(task)
         task = self._require_task(task_id)
         self._update_linked_automation_state(
             task,
@@ -562,6 +647,7 @@ class TaskManager:
         task = self._require_task(task_id)
         reason_code = classify_error(error_message) or "task_failed"
         self._record_terminal_metadata(task.task_id, status="failed", reason_code=reason_code)
+        self._remove_pid_file(task)
         task = self._require_task(task_id)
         self._update_linked_automation_state(
             task,
@@ -618,6 +704,27 @@ class TaskManager:
                 f"UPDATE tasks SET {assignments} WHERE task_id = ?",
                 params,
             )
+        task = self.get_task(task_id)
+        if task is not None:
+            self._write_task_json(task)
+
+    def _write_task_json(self, task: TaskRecord) -> None:
+        try:
+            path = Path(task.artifact_dir) / "task.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(task.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+
+    @staticmethod
+    def _pid_path(task: TaskRecord) -> Path:
+        return Path(task.artifact_dir) / "pid"
+
+    def _remove_pid_file(self, task: TaskRecord) -> None:
+        try:
+            self._pid_path(task).unlink(missing_ok=True)
+        except OSError:
+            pass
 
     def _record_terminal_metadata(self, task_id: str, *, status: str, reason_code: str) -> None:
         task = self._require_task(task_id)
@@ -839,6 +946,8 @@ async def run_task_worker(
         routing_mode = str(execution.get("routingMode", "")).strip()
         if routing_mode:
             core.set_routing_mode(routing_mode)
+        if bool(execution.get("autoApproveEdits", False)) and core.config is not None:
+            core.config.agentic.auto_approve_edits = True
         context_files = [
             str(path)
             for path in execution.get("contextFiles", [])

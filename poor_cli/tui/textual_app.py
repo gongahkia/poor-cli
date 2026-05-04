@@ -383,6 +383,15 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
         parts = message.split(maxsplit=1)
         command = parts[0].lower()
         arg = parts[1].strip() if len(parts) > 1 else ""
+        if command == "/tasks":
+            self._start_rpc_request("Tasks", "poor-cli/listTasks", {"statuses": ["running", "queued"]})
+            return True
+        if command == "/cancel-task":
+            if not arg:
+                self._add_activity("Command", "/cancel-task requires a task id")
+                return True
+            self._start_rpc_request("Cancel task", "poor-cli/taskCancel", {"taskId": arg})
+            return True
         if command not in {"/approve", "/reject", "/diff"}:
             return False
         if not arg:

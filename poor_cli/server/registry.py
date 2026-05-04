@@ -26,6 +26,7 @@ _HANDLER_ORDER: tuple[str, ...] = (
     "providers",
     "sessions",
     "tasks",
+    "tasks_async",
     "automations",
     "checkpoints",
     "services",

@@ -547,6 +547,15 @@ def _read_text_if_present(path: str) -> str:
     return candidate.read_text(encoding="utf-8", errors="replace")
 
 
+def _parse_older_than_days(value: str) -> int:
+    text = str(value or "7d").strip().lower()
+    if text.endswith("d"):
+        return int(text[:-1] or "0")
+    if text.endswith("h"):
+        return 0 if int(text[:-1] or "0") < 24 else int(text[:-1]) // 24
+    return int(text or "0")
+
+
 def _build_task_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="poor-cli task")
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
@@ -591,6 +600,9 @@ def _build_task_parser() -> argparse.ArgumentParser:
     list_parser.add_argument("--inbox", action="store_true")
     list_parser.add_argument("--json", action="store_true")
 
+    run_detached = subparsers.add_parser("run-detached", help=argparse.SUPPRESS)
+    run_detached.add_argument("--prompt", required=True)
+
     show = subparsers.add_parser("show")
     show.add_argument("task_id")
     show.add_argument("--response", action="store_true")
@@ -620,6 +632,19 @@ def _build_task_parser() -> argparse.ArgumentParser:
     cancel.add_argument("task_id")
     cancel.add_argument("--json", action="store_true")
 
+    watch = subparsers.add_parser("watch")
+    watch.add_argument("task_id")
+    watch.add_argument("--json", action="store_true")
+
+    inspect = subparsers.add_parser("inspect")
+    inspect.add_argument("task_id")
+    inspect.add_argument("--json", action="store_true")
+
+    prune = subparsers.add_parser("prune")
+    prune.add_argument("--status", default="completed")
+    prune.add_argument("--older-than", default="7d")
+    prune.add_argument("--json", action="store_true")
+
     retry = subparsers.add_parser("retry")
     retry.add_argument("task_id")
     retry.add_argument("--no-auto-start", action="store_true")
@@ -635,9 +660,17 @@ def _build_task_parser() -> argparse.ArgumentParser:
     replay.add_argument("--json", action="store_true")
 
     run = subparsers.add_parser("run")
-    run.add_argument("--task-id", required=True)
-    run.add_argument("--repo-root", required=True)
+    run.add_argument("--task-id")
+    run.add_argument("--repo-root")
     run.add_argument("--config")
+    run.add_argument("--prompt")
+    run.add_argument("--title")
+    run.add_argument("--provider")
+    run.add_argument("--model")
+    run.add_argument("--preset", default="read-only", choices=tuple(_preset_description().keys()))
+    run.add_argument("--detach", action="store_true")
+    run.add_argument("--auto-approve-edits", action="store_true")
+    run.add_argument("--json", action="store_true")
     return parser
 
 
@@ -1091,11 +1124,40 @@ def _run_task_mode(argv: Sequence[str]) -> int:
         return 0
 
     if args.subcommand == "cancel":
-        task = manager.cancel_task(args.task_id)
+        task = manager.cancel(args.task_id)
         if args.json:
             _print_json(task.to_dict())
         else:
             print(_format_task(task.to_dict()))
+        return 0
+
+    if args.subcommand == "watch":
+        lines = list(manager.attach_to(args.task_id))
+        if args.json:
+            _print_json({"taskId": args.task_id, "events": lines})
+        else:
+            print("\n".join(lines))
+        return 0
+
+    if args.subcommand == "inspect":
+        task = manager.get_task(args.task_id)
+        if task is None:
+            raise SystemExit(f"Unknown task: {args.task_id}")
+        events = list(manager.attach_to(args.task_id, limit=50))
+        payload = {"task": task.to_dict(), "events": events}
+        if args.json:
+            _print_json(payload)
+        else:
+            _print_json(payload)
+        return 0
+
+    if args.subcommand == "prune":
+        days = _parse_older_than_days(args.older_than)
+        removed = manager.prune(status=args.status, older_than_days=days)
+        if args.json:
+            _print_json({"removed": removed})
+        else:
+            print("\n".join(removed) if removed else "No tasks pruned")
         return 0
 
     if args.subcommand == "retry":
@@ -1133,6 +1195,26 @@ def _run_task_mode(argv: Sequence[str]) -> int:
         return 0
 
     if args.subcommand == "run":
+        if bool(args.detach):
+            prompt = str(args.prompt or "").strip()
+            if not prompt:
+                raise SystemExit("`poor-cli task run --detach` requires --prompt.")
+            task = manager.spawn_detached(
+                prompt=prompt,
+                title=str(args.title or ""),
+                sandbox_preset=args.preset,
+                provider=str(args.provider or ""),
+                model=str(args.model or ""),
+                config_path=str(args.config or ""),
+                auto_approve_edits=bool(args.auto_approve_edits),
+            )
+            if args.json:
+                _print_json(task.to_dict())
+            else:
+                print(task.task_id)
+            return 0
+        if not args.task_id or not args.repo_root:
+            raise SystemExit("internal task run requires --task-id and --repo-root")
         repo_root = Path(args.repo_root).expanduser().resolve()
         config_path = Path(args.config).expanduser() if args.config else None
         return asyncio.run(
