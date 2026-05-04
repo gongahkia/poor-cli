@@ -3769,6 +3769,141 @@ impl WokHandler {
         self.needs_redraw = true;
     }
 
+    fn insert_scratch_selection_into_input(&mut self) {
+        let Some(text) = self.scratch_buffer.as_ref().map(|scratch| {
+            selected_editor_text(&scratch.editor).unwrap_or_else(|| scratch.editor.buffer.text())
+        }) else {
+            self.status_message = Some("Scratch buffer is not open".to_string());
+            self.needs_redraw = true;
+            return;
+        };
+        let text = text.trim_end_matches('\n').to_string();
+        if text.is_empty() {
+            self.status_message = Some("Scratch buffer is empty".to_string());
+            self.needs_redraw = true;
+            return;
+        }
+        if let Some(active_pane) = self.active_pane_mut() {
+            active_pane.app.input_mode = InputMode::OwnedInput;
+            active_pane.app.input_editor.is_active = true;
+            let _ = active_pane.app.input_editor.buffer.insert_at(0, &text);
+            self.status_message = Some("Inserted scratch text into command input".to_string());
+        }
+        self.needs_redraw = true;
+    }
+
+    fn toggle_media_preview_playback(&mut self) {
+        let Some(preview) = self.media_preview.as_mut() else {
+            self.status_message = Some("No media preview is open".to_string());
+            self.needs_redraw = true;
+            return;
+        };
+        let path = preview.path().display().to_string();
+        match preview.toggle_playback() {
+            Some(true) => self.status_message = Some(format!("Playing preview: {path}")),
+            Some(false) => self.status_message = Some(format!("Paused preview: {path}")),
+            None => self.status_message = Some("Static image preview has no playback".to_string()),
+        }
+        self.needs_redraw = true;
+    }
+
+    fn open_block_inspector(&mut self) {
+        let Some((path, content)) = self.active_pane().and_then(|pane| {
+            let block = pane.app.selected_or_latest_block()?;
+            let output = extract_block_output_text(&pane.terminal, block);
+            let duration = block
+                .duration
+                .map(|duration| format!("{}ms", duration.as_millis()))
+                .unwrap_or_else(|| "running".to_string());
+            let exit = block
+                .exit_code
+                .map_or_else(|| "running".to_string(), |code| code.to_string());
+            let branch = block.git_branch.as_deref().unwrap_or("unknown");
+            let dirty = block
+                .git_dirty
+                .map_or_else(|| "unknown".to_string(), |dirty| dirty.to_string());
+            let content = format!(
+                "# Command Block {}\n\ncommand: {}\ncwd: {}\nexit: {}\nduration: {}\nrows: {}..{}\nbranch: {}\ngit_dirty: {}\nbookmarked: {}\ncollapsed: {}\n\n## Output\n\n{}",
+                block.id,
+                block.command_text,
+                block.cwd.display(),
+                exit,
+                duration,
+                block.output_start_row,
+                block.output_end_row,
+                branch,
+                dirty,
+                block.is_bookmarked,
+                block.is_collapsed,
+                output
+            );
+            Some((PathBuf::from(format!("block-{}-inspector.md", block.id)), content))
+        }) else {
+            self.status_message = Some("No command block to inspect".to_string());
+            self.needs_redraw = true;
+            return;
+        };
+        self.open_text_preview_state(
+            "Block Inspector",
+            path,
+            content,
+            false,
+            "Esc close  / search  Enter next  Mod+C copy",
+        );
+        self.needs_redraw = true;
+    }
+
+    fn open_block_rerun_history(&mut self) {
+        let Some(command) = self
+            .active_pane()
+            .and_then(|pane| pane.app.selected_or_latest_block())
+            .map(|block| block.command_text.clone())
+        else {
+            self.status_message = Some("No command block for rerun history".to_string());
+            self.needs_redraw = true;
+            return;
+        };
+        let mut entries = self
+            .active_pane()
+            .map(|pane| pane.pane_history.clone())
+            .unwrap_or_default();
+        entries.extend(self.global_history.entries().iter().cloned());
+        entries.retain(|entry| entry.command.trim() == command.trim());
+        entries.sort_by(|left, right| right.started_at_ms.cmp(&left.started_at_ms));
+        entries.dedup_by(|left, right| {
+            left.started_at_ms == right.started_at_ms && left.source_pane_id == right.source_pane_id
+        });
+        let mut content = format!("# Rerun History\n\ncommand: {}\n\n", command);
+        if entries.is_empty() {
+            content.push_str("No previous runs recorded.");
+        } else {
+            for entry in entries.iter().take(100) {
+                let cwd = entry
+                    .cwd
+                    .as_ref()
+                    .map_or_else(|| "~".to_string(), |path| path.display().to_string());
+                let exit = entry
+                    .exit_code
+                    .map_or_else(|| "exit ?".to_string(), |code| format!("exit {code}"));
+                let duration = entry
+                    .duration_ms
+                    .map_or_else(String::new, |ms| format!(" in {ms}ms"));
+                content.push_str(&format!(
+                    "- {}{} | {} | started {}\n",
+                    exit, duration, cwd, entry.started_at_ms
+                ));
+            }
+        }
+        self.open_text_preview_state(
+            "Rerun History",
+            PathBuf::from("block-rerun-history.md"),
+            content,
+            false,
+            "Esc close  / search  Mod+C copy",
+        );
+        self.needs_redraw = true;
+    }
+
     fn close_media_preview(&mut self) {
         if let Some(preview) = self.media_preview.take() {
             self.status_message = Some(format!(
@@ -5204,6 +5339,10 @@ impl WokHandler {
             self.close_media_preview();
             return;
         }
+        if matches!(action, Action::ToggleMediaPreviewPlayback) {
+            self.toggle_media_preview_playback();
+            return;
+        }
         match action {
             Action::PreviewPathUnderCursor => {
                 self.apply_path_action_under_cursor(PathCursorAction::Preview);
@@ -5227,6 +5366,18 @@ impl WokHandler {
             }
             Action::OpenScratchBuffer => {
                 self.open_scratch_buffer();
+                return;
+            }
+            Action::InsertScratchSelectionIntoInput => {
+                self.insert_scratch_selection_into_input();
+                return;
+            }
+            Action::OpenBlockInspector => {
+                self.open_block_inspector();
+                return;
+            }
+            Action::OpenBlockRerunHistory => {
+                self.open_block_rerun_history();
                 return;
             }
             Action::ToggleSearchRegex => {
@@ -5253,6 +5404,18 @@ impl WokHandler {
                 }
                 self.refresh_global_search();
                 self.needs_redraw = true;
+                return;
+            }
+            Action::OpenSearchResults => {
+                self.open_search_results_palette();
+                return;
+            }
+            Action::SaveCurrentSearch => {
+                self.save_current_search();
+                return;
+            }
+            Action::OpenSavedSearches => {
+                self.open_saved_searches_palette();
                 return;
             }
             _ => {}
@@ -8670,6 +8833,17 @@ fn delete_editor_selection(editor: &mut InputEditor) -> bool {
 fn replace_editor_selection(editor: &mut InputEditor, replacement: &str) {
     let _ = delete_editor_selection(editor);
     let _ = editor.buffer.insert_at(0, replacement);
+}
+
+fn text_offset_for_line_col(text: &str, target_row: usize, target_col: usize) -> usize {
+    let mut offset = 0usize;
+    for (row, line) in text.lines().enumerate() {
+        if row == target_row {
+            return offset + target_col.min(line.chars().count());
+        }
+        offset += line.chars().count() + 1;
+    }
+    text.chars().count()
 }
 
 fn trigger_engine_from_config(config: &WokConfig) -> TriggerEngine {
