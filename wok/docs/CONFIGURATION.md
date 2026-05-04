@@ -12,6 +12,10 @@ You can scaffold managed defaults with:
 wok init
 ```
 
+From inside Wok, open the command palette and run `Reset Settings` to overwrite
+`~/.config/wok/config.toml` with the managed default config. This does not
+remove sessions, themes, shell integration, workflows, or `init.lua`.
+
 ## Full Example
 
 ```toml

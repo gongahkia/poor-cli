@@ -1309,6 +1309,26 @@ mod tests {
     }
 
     #[test]
+    fn test_reset_config_file_at_overwrites_config_only() {
+        let dir = unique_temp_dir();
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        fs::write(dir.join("config.toml"), "font_size = 99.0\n")
+            .expect("config should be written");
+        fs::write(dir.join("init.lua"), "wok.notify('keep')\n").expect("lua should be written");
+
+        let path = reset_config_file_at(&dir).expect("config reset should succeed");
+        let config = fs::read_to_string(&path).expect("config should be readable");
+        let lua = fs::read_to_string(dir.join("init.lua")).expect("lua should remain readable");
+
+        assert!(config.contains("# Wok configuration"));
+        assert!(config.contains("font_size = 24.0"));
+        assert_eq!(lua, "wok.notify('keep')\n");
+        assert!(dir.join(FIRST_RUN_MARKER_FILE).exists());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn test_doctor_warns_when_not_initialized() {
         let dir = unique_temp_dir();
         let checks = doctor_checks_at(&dir);

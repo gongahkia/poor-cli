@@ -7850,18 +7850,7 @@ fn ensure_settings_file() -> std::io::Result<PathBuf> {
     std::fs::create_dir_all(&config_dir)?;
     let path = config_dir.join("config.toml");
     if !path.exists() {
-        std::fs::write(
-            &path,
-            "# Wok settings\n\n\
-             font_family = \"JetBrains Mono\"\n\
-             font_size = 24.0\n\
-             tab_bar_side = \"top\"\n\
-             status_bar_side = \"bottom\"\n\
-             recent_keys_visible = true\n\
-             recent_keys_position = \"bottom_right\"\n\
-             close_on_shell_exit = true\n\
-             debug_overlay = false\n",
-        )?;
+        return setup_ops::reset_config_file();
     }
     Ok(path)
 }
