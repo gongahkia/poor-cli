@@ -386,6 +386,9 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
         if command == "/tasks":
             self._start_rpc_request("Tasks", "poor-cli/listTasks", {"statuses": ["running", "queued"]})
             return True
+        if command == "/timeline":
+            self._start_rpc_request("Timeline", "poor-cli/listCheckpoints", {"limit": 100})
+            return True
         if command == "/spec":
             if not arg:
                 self._add_activity("Command", "/spec requires a spec path")

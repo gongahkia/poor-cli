@@ -81,6 +81,44 @@ class TimelineHandlersMixin:
         cleaned = strip_dismissed_results_from_history(history, self._timeline_store().dismissed_events())
         provider.set_history(cleaned)
 
+    async def handle_timeline_rollback(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        self._ensure_initialized()
+        checkpoint_id = str(params.get("checkpointId") or "").strip()
+        if not checkpoint_id:
+            raise InvalidParamsError("checkpointId is required")
+        manager = self.core.checkpoint_manager
+        if manager is None:
+            raise PoorCLIError("Checkpoint system not available")
+        restored = await asyncio.to_thread(manager.restore_checkpoint, checkpoint_id)
+        return {"checkpointId": checkpoint_id, "restoredFiles": restored}
+
+    async def handle_timeline_branch(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        self._ensure_initialized()
+        checkpoint_id = str(params.get("checkpointId") or "").strip()
+        if not checkpoint_id:
+            raise InvalidParamsError("checkpointId is required")
+        return {"checkpointId": checkpoint_id, "branchId": f"checkpoint-branch-{checkpoint_id}"}
+
+    async def handle_timeline_diff(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        self._ensure_initialized()
+        checkpoint_id = str(params.get("checkpointId") or "").strip()
+        other_id = str(params.get("otherCheckpointId") or params.get("otherId") or "").strip()
+        if not checkpoint_id:
+            raise InvalidParamsError("checkpointId is required")
+        manager = self.core.checkpoint_manager
+        if manager is None:
+            raise PoorCLIError("Checkpoint system not available")
+        files = await asyncio.to_thread(manager.preview_checkpoint, checkpoint_id)
+        diff_text = "\n".join(str(item.get("diff") or item) for item in files)
+        from poor_cli.tui.checkpoint_tree import diff_hunk_count
+        return {
+            "checkpointId": checkpoint_id,
+            "otherCheckpointId": other_id,
+            "files": files,
+            "diff": diff_text,
+            "hunkCount": diff_hunk_count(diff_text),
+        }
+
 
 @register("timeline.list")
 async def _rpc_timeline_list(ctx, params):
@@ -100,3 +138,18 @@ async def _rpc_timeline_retry(ctx, params):
 @register("timeline.dismiss")
 async def _rpc_timeline_dismiss(ctx, params):
     return await ctx.handle_timeline_dismiss(params)
+
+
+@register("poor-cli/timelineRollback")
+async def _rpc_timeline_rollback(ctx, params):
+    return await ctx.handle_timeline_rollback(params)
+
+
+@register("poor-cli/timelineBranch")
+async def _rpc_timeline_branch(ctx, params):
+    return await ctx.handle_timeline_branch(params)
+
+
+@register("poor-cli/timelineDiff")
+async def _rpc_timeline_diff(ctx, params):
+    return await ctx.handle_timeline_diff(params)
