@@ -386,6 +386,12 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
         if command == "/tasks":
             self._start_rpc_request("Tasks", "poor-cli/listTasks", {"statuses": ["running", "queued"]})
             return True
+        if command == "/spec":
+            if not arg:
+                self._add_activity("Command", "/spec requires a spec path")
+                return True
+            self._start_rpc_request("Spec", "poor-cli/specRun", {"path": arg})
+            return True
         if command == "/cancel-task":
             if not arg:
                 self._add_activity("Command", "/cancel-task requires a task id")

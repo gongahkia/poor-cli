@@ -31,6 +31,7 @@ def _render_root_help() -> str:
         "  poor-cli task               Durable background tasks + worktrees\n"
         "  poor-cli agent              Background agents\n"
         "  poor-cli automation         Scheduled AutomationRule triggers\n"
+        "  poor-cli spec               PRD-driven checkpointed development runs\n"
         "  poor-cli pr                 Pull-request workflows (poor-cli pr review <n>, pr task create)\n\n"
         "State:\n"
         "  poor-cli session            List, create, fork, or destroy sessions\n"
@@ -1865,6 +1866,9 @@ def _main() -> None:
         raise SystemExit(_run_agent_mode(argv[1:]))
     if argv and argv[0] == "task":
         raise SystemExit(_run_task_mode(argv[1:]))
+    if argv and argv[0] == "spec":
+        from .cli.spec_cmds import run_spec_mode
+        raise SystemExit(run_spec_mode(argv[1:]))
     if argv and argv[0] == "skill":
         raise SystemExit(_run_skill_mode(argv[1:]))
     if argv and argv[0] == "automation":

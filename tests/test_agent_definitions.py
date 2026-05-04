@@ -19,6 +19,9 @@ AVAILABLE_TOOLS = {
     "bash",
     "delegate_task",
     "spawn_parallel_agents",
+    "json_yaml_edit",
+    "repo_map_query",
+    "run_tests",
 }
 
 

@@ -520,6 +520,11 @@ class McpConfig:
 
 
 @dataclass
+class SpecModeConfig:
+    enabled: bool = False
+
+
+@dataclass
 class Config:
     """Main configuration class"""
     model: ModelConfig = field(default_factory=ModelConfig)
@@ -547,6 +552,7 @@ class Config:
     kv_cache: KVCacheConfig = field(default_factory=KVCacheConfig)
     research: ResearchConfig = field(default_factory=ResearchConfig)
     mcp: McpConfig = field(default_factory=McpConfig)
+    spec_mode: SpecModeConfig = field(default_factory=SpecModeConfig)
     economy: EconomyConfig = field(default_factory=EconomyConfig)
     retry: RetryConfig = field(default_factory=RetryConfig)
     circuit_breaker: CircuitBreakerConfig = field(default_factory=CircuitBreakerConfig)
@@ -589,6 +595,7 @@ class Config:
             "kv_cache": asdict(self.kv_cache),
             "research": asdict(self.research),
             "mcp": asdict(self.mcp),
+            "spec_mode": asdict(self.spec_mode),
             "economy": asdict(self.economy),
             "retry": {k: v for k, v in asdict(self.retry).items() if k != "retryable_exceptions"},
             "circuit_breaker": asdict(self.circuit_breaker),
@@ -625,6 +632,7 @@ class Config:
             kv_cache=KVCacheConfig(**data.get("kv_cache", {})),
             research=ResearchConfig.from_dict(data.get("research", {})),
             mcp=McpConfig.from_dict(data.get("mcp", {})),
+            spec_mode=SpecModeConfig(**data.get("spec_mode", {})),
             economy=EconomyConfig(**data.get("economy", {})),
             retry=RetryConfig(**{k: v for k, v in data.get("retry", {}).items() if k != "retryable_exceptions"}),
             circuit_breaker=CircuitBreakerConfig(**data.get("circuit_breaker", {})),
