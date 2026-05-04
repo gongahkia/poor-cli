@@ -21,6 +21,7 @@ else:
     _TEXTUAL_IMPORT_ERROR = None
 
 from .rpc_client import BackendConfiguration, JsonRpcClient
+from .autocomplete import Suggestion, all_suggestions, fuzzy_match
 
 
 def _truncate(value: str, limit: int = 240) -> str:
@@ -94,11 +95,21 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
         height: 3;
         border: solid #83784f;
     }
+
+    #suggest {
+        max-height: 8;
+        background: #1c1b18;
+        color: #e7ddb5;
+        padding: 0 1;
+    }
     """
 
     BINDINGS = [
         ("ctrl+c", "quit", "Quit"),
         ("escape", "cancel", "Cancel"),
+        ("tab", "suggest_accept", "Complete"),
+        ("up", "suggest_up", "Previous"),
+        ("down", "suggest_down", "Next"),
     ]
 
     def __init__(self, configuration: BackendConfiguration):
@@ -119,6 +130,10 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
         self._active_assistant_index: Optional[int] = None
         self._hud_inflight = False
         self._hud_text = "tok -/-/- | comp - | mode - | trend - | cost $0.000000"
+        self._all_suggestions: List[Suggestion] = []
+        self._suggestions: List[Suggestion] = []
+        self._suggestion_index = 0
+        self._suggest_visible = False
 
     def compose(self) -> ComposeResult:
         yield Static("", id="status")
@@ -130,10 +145,13 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
             with Vertical(id="activity_box"):
                 yield Static("Activity", classes="title")
                 yield Static("", id="activity")
+        yield Static("", id="suggest")
         yield Input(placeholder="Type a prompt and press Enter", id="composer")
         yield Footer()
 
     def on_mount(self) -> None:
+        self._all_suggestions = all_suggestions()
+        self.query_one("#suggest", Static).display = False
         self.query_one("#composer", Input).focus()
         self.set_interval(0.05, self._process_events)
         self.set_interval(2.0, self._poll_hud)
@@ -149,15 +167,46 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
         self._client.shutdown_if_running()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
+        if self._suggest_visible:
+            self._accept_suggestion()
+            return
         message = event.value.strip()
         event.input.value = ""
         if message:
             self._start_chat_request(message)
 
+    def on_input_changed(self, event: Input.Changed) -> None:
+        text = event.value
+        if text.startswith("/"):
+            self._suggestions = fuzzy_match(text, self._all_suggestions)
+            self._suggestion_index = 0
+            self._render_suggestions()
+            return
+        self._hide_suggestions()
+
     def action_cancel(self) -> None:
+        if self._suggest_visible:
+            self._hide_suggestions()
+            return
         if self._active_request_id:
             self._client.notify("poor-cli/cancelRequest", {"requestId": self._active_request_id})
             self._add_activity("Cancel", self._active_request_id)
+
+    def action_suggest_accept(self) -> None:
+        if self._suggest_visible:
+            self._accept_suggestion()
+
+    def action_suggest_up(self) -> None:
+        if not self._suggest_visible or not self._suggestions:
+            return
+        self._suggestion_index = (self._suggestion_index - 1) % len(self._suggestions)
+        self._render_suggestions()
+
+    def action_suggest_down(self) -> None:
+        if not self._suggest_visible or not self._suggestions:
+            return
+        self._suggestion_index = (self._suggestion_index + 1) % len(self._suggestions)
+        self._render_suggestions()
 
     def _initialize_worker(self) -> None:
         try:
@@ -376,6 +425,46 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
             )
         if self.is_mounted:
             self.query_one("#hud", Static).update(self._hud_text)
+
+    def _render_suggestions(self) -> None:
+        if not self.is_mounted:
+            return
+        suggest = self.query_one("#suggest", Static)
+        if not self._suggestions:
+            suggest.update("")
+            suggest.display = False
+            self._suggest_visible = False
+            return
+        lines: List[str] = []
+        for index, item in enumerate(self._suggestions[:8]):
+            marker = ">" if index == self._suggestion_index else " "
+            detail = f"{item.category} - {item.description}" if item.description else item.category
+            lines.append(f"{marker} {item.command:<18} {detail}")
+        suggest.update("\n".join(lines))
+        suggest.display = True
+        self._suggest_visible = True
+
+    def _hide_suggestions(self) -> None:
+        self._suggestions = []
+        self._suggestion_index = 0
+        self._suggest_visible = False
+        if self.is_mounted:
+            suggest = self.query_one("#suggest", Static)
+            suggest.update("")
+            suggest.display = False
+
+    def _accept_suggestion(self) -> None:
+        if not self._suggestions:
+            self._hide_suggestions()
+            return
+        selected = self._suggestions[self._suggestion_index]
+        composer = self.query_one("#composer", Input)
+        composer.value = f"{selected.command} "
+        try:
+            composer.cursor_position = len(composer.value)
+        except Exception:
+            pass
+        self._hide_suggestions()
 
     def _set_status(self, state: str) -> None:
         request_state = self._active_request_id or "-"
