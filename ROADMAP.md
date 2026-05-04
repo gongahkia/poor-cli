@@ -10,14 +10,14 @@ This document tracks the next practical workstreams for `poor-cli` after the shi
    - Add better runtime diagnostics for missing voice dependencies and device issues.
 
 2. TUI and harness polish
-   - Tighten the transcript and activity flow for long-running agent sessions.
-   - Keep the visible feature set narrow and centered on the agent harness.
-   - Continue improving approvals, cancellation, and session continuity without turning the TUI into a dashboard.
+   - Implemented: long-running activity events are compacted instead of flooding the pane.
+   - Implemented: cancellation status is explicit when a request is active or absent.
+   - Implemented: `/budget` and `/context-status` expose narrow, harness-centered inspection without adding dashboard surfaces.
 
 3. Token-aware budget surfacing
-   - Surface per-turn budget controller decisions and adaptive retuning state in the TUI activity pane.
-   - Expose compaction, pruning, and compression triggers as inspectable events.
-   - Keep budget telemetry first-class — the harness should stay obviously token-aware to its operator.
+   - Implemented: per-turn budget decisions, compression ratio, model tier, adaptive trend, cost, and latest retuning state surface in the TUI activity pane.
+   - Implemented: compaction, pruning, and compression state is exposed through HUD polling and `/context-status`.
+   - Implemented: stream notifications for cost, context pressure, economy reports, and progress are rendered as concise activity entries.
 
 ## Non-Goals
 

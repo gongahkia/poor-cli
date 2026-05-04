@@ -184,6 +184,12 @@
       "category": "Review & Safety"
     },
     {
+      "command": "/context-status",
+      "description": "Show compaction, pruning, and context pressure state",
+      "recommended": false,
+      "category": "Review & Safety"
+    },
+    {
       "command": "/trust",
       "description": "Open the trust center for provider, sandbox, rollback, and policy state",
       "recommended": false,
@@ -573,6 +579,12 @@
     {
       "command": "/cost",
       "description": "Show session token usage and estimated cost",
+      "recommended": true,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/budget",
+      "description": "Show token budget controller, compression, and retuning state",
       "recommended": true,
       "category": "Core Workflow"
     },

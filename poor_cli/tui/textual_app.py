@@ -123,6 +123,10 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
         self._request_origins: Dict[str, str] = {}
         self._transcript: List[tuple[str, str]] = []
         self._activity: List[str] = []
+        self._last_activity_key = ""
+        self._last_activity_count = 0
+        self._last_budget_signature = ""
+        self._last_compaction_signature = ""
         self._connection_state = "stopped"
         self._provider = "provider?"
         self._model = "model?"
@@ -194,6 +198,9 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
         if self._active_request_id:
             self._client.notify("poor-cli/cancelRequest", {"requestId": self._active_request_id})
             self._add_activity("Cancel", self._active_request_id)
+            self._set_status("cancelling")
+            return
+        self._add_activity("Cancel", "No active request")
 
     def action_suggest_accept(self) -> None:
         if self._suggest_visible:
@@ -230,6 +237,7 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
         self._active_assistant_index = assistant_index
         self._request_origins[request_id] = origin
         self._add_activity("Chat", "Request started")
+        self._set_status("running")
         self._render_transcript()
         threading.Thread(
             target=self._chat_worker,
@@ -343,7 +351,15 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
             self._add_activity(title, str(event.get("error") or "RPC failed"))
             return
         if event_type == "rpc_success":
-            self._add_activity(str(event.get("title") or "RPC"), _summarize_result(event.get("result")))
+            title = str(event.get("title") or "RPC")
+            result = event.get("result")
+            if title == "Budget":
+                self._add_activity("Budget", summarize_budget_activity(result) or _summarize_result(result))
+                return
+            if title == "Context":
+                self._add_activity("Context", summarize_compaction_activity(result) or _summarize_result(result))
+                return
+            self._add_activity(title, _summarize_result(result))
             return
         if event_type == "hud_snapshot":
             self._hud_inflight = False
@@ -365,6 +381,22 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
             return
         if method == "poor-cli/toolEvent":
             self._add_activity(str(params.get("toolName") or "tool"), str(params.get("eventType") or "event"))
+            return
+        if method == "poor-cli/costUpdate":
+            detail = summarize_cost_update(params)
+            if detail:
+                self._add_activity("Cost", detail)
+            return
+        if method == "poor-cli/contextPressure":
+            self._add_activity("Context", summarize_context_pressure(params))
+            return
+        if method == "poor-cli/economyTurnReport":
+            self._add_activity("Economy", _truncate(str(params.get("summary") or _json_text(params)), 180))
+            return
+        if method == "poor-cli/progress":
+            phase = str(params.get("phase") or "progress")
+            message = str(params.get("message") or "")
+            self._add_activity(phase, _truncate(message, 180))
             return
         if method == "poor-cli/permissionReq":
             self._add_activity("Permission", _truncate(_json_text(params), 180))
@@ -391,6 +423,12 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
             return True
         if command == "/mcp":
             self._start_rpc_request("MCP marketplace", "poor-cli/mcpSearch", {"query": arg, "limit": 20})
+            return True
+        if command == "/budget":
+            self._start_rpc_request("Budget", "poor-cli/budgetHudSnapshot", {})
+            return True
+        if command in {"/context-status", "/compact-status"}:
+            self._start_rpc_request("Context", "poor-cli/budgetHudSnapshot", {})
             return True
         if command == "/spec":
             if not arg:
@@ -428,7 +466,15 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
 
     def _add_activity(self, title: str, detail: str = "") -> None:
         line = f"{title}: {detail}" if detail else title
-        self._activity.insert(0, line)
+        key = f"{title}\0{detail}"
+        if key == self._last_activity_key and self._activity:
+            self._last_activity_count += 1
+            suffix = f" x{self._last_activity_count}" if self._last_activity_count > 1 else ""
+            self._activity[0] = f"{line}{suffix}"
+        else:
+            self._last_activity_key = key
+            self._last_activity_count = 1
+            self._activity.insert(0, line)
         del self._activity[120:]
         emit_policy_hook_nowait(
             None,
@@ -474,6 +520,7 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
             adaptation = result.get("adaptation") if isinstance(result.get("adaptation"), dict) else {}
             repo_map = result.get("repoMap") if isinstance(result.get("repoMap"), dict) else {}
             prompt = result.get("prompt") if isinstance(result.get("prompt"), dict) else {}
+            compaction = result.get("compaction") if isinstance(result.get("compaction"), dict) else {}
             input_tokens = int(outcome.get("input_tokens") or outcome.get("inputTokens") or 0)
             output_tokens = int(outcome.get("output_tokens") or outcome.get("outputTokens") or 0)
             thinking_tokens = int(action.get("max_thinking_tokens") or action.get("maxThinkingTokens") or 0)
@@ -490,6 +537,16 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
                 f"comp {compression:.0%} | mode {mode} | trend {trend:+.2f}"
                 f"{repo_map_text}{prompt_text} | cost ${cost:.6f}"
             )
+            budget_detail = summarize_budget_activity(result)
+            budget_signature = budget_detail or ""
+            if budget_signature and budget_signature != self._last_budget_signature:
+                self._last_budget_signature = budget_signature
+                self._add_activity("Budget", budget_detail)
+            compaction_detail = summarize_compaction_activity({"compaction": compaction})
+            compaction_signature = compaction_detail or ""
+            if compaction_signature and compaction_signature != self._last_compaction_signature:
+                self._last_compaction_signature = compaction_signature
+                self._add_activity("Context", compaction_detail)
         if self.is_mounted:
             self.query_one("#hud", Static).update(self._hud_text)
 
@@ -550,6 +607,78 @@ def _summarize_result(result: Any) -> str:
                 return _truncate(str(result[key]), 180)
         return _truncate(json.dumps(result, ensure_ascii=False, sort_keys=True), 180)
     return _truncate(str(result), 180)
+
+
+def summarize_budget_activity(result: Any) -> str:
+    if not isinstance(result, dict):
+        return ""
+    action = result.get("lastAction") if isinstance(result.get("lastAction"), dict) else {}
+    outcome = result.get("lastOutcome") if isinstance(result.get("lastOutcome"), dict) else {}
+    adaptation = result.get("adaptation") if isinstance(result.get("adaptation"), dict) else {}
+    retuning = result.get("retuning") if isinstance(result.get("retuning"), dict) else {}
+    if not action and not outcome and not adaptation and not retuning:
+        return ""
+    input_tokens = int(outcome.get("input_tokens") or outcome.get("inputTokens") or 0)
+    output_tokens = int(outcome.get("output_tokens") or outcome.get("outputTokens") or 0)
+    thinking = int(action.get("max_thinking_tokens") or action.get("maxThinkingTokens") or 0)
+    out_cap = int(action.get("max_output_tokens") or action.get("maxOutputTokens") or 0)
+    compression = float(action.get("compression_ratio") or action.get("compressionRatio") or 0.0)
+    tier = str(action.get("model_tier") or action.get("modelTier") or "-")
+    trend = float(adaptation.get("trend") or 0.0)
+    cost = float(result.get("projectedCostUsd") or 0.0)
+    parts = [
+        f"in/out {input_tokens}/{output_tokens}",
+        f"caps think/out {thinking}/{out_cap}",
+        f"comp {compression:.0%}",
+        f"tier {tier}",
+        f"trend {trend:+.2f}",
+        f"cost ${cost:.6f}",
+    ]
+    if retuning.get("available"):
+        savings = float(retuning.get("estimatedSavingsPct") or 0.0)
+        generated = str(retuning.get("generatedAt") or "").split("T", 1)[0]
+        parts.append(f"retune {generated or 'latest'} {savings:.1f}%")
+    return " | ".join(parts)
+
+
+def summarize_compaction_activity(result: Any) -> str:
+    payload = result.get("compaction") if isinstance(result, dict) and isinstance(result.get("compaction"), dict) else result
+    if not isinstance(payload, dict):
+        return ""
+    state = str(payload.get("state") or "idle")
+    if state == "idle" and not payload.get("backgroundActive"):
+        return ""
+    strategy = str(payload.get("strategy") or "compact")
+    trigger = str(payload.get("trigger") or "-")
+    if state == "queued":
+        before = payload.get("utilization_before_pct")
+        target = payload.get("target_utilization_pct")
+        return f"queued {strategy} ({trigger}) {before}% -> {target}%"
+    if state == "error":
+        return f"error {strategy} ({trigger}): {_truncate(str(payload.get('error') or ''), 120)}"
+    before_tokens = int(payload.get("tokens_before") or payload.get("tokensBefore") or 0)
+    after_tokens = int(payload.get("tokens_after") or payload.get("tokensAfter") or 0)
+    pruned = int(payload.get("pruned_turns") or payload.get("prunedTurns") or 0)
+    removed = int(payload.get("removed_tokens") or payload.get("removedTokens") or max(0, before_tokens - after_tokens))
+    return f"{state} {strategy} ({trigger}) {before_tokens}->{after_tokens} tok, removed {removed}, pruned {pruned}"
+
+
+def summarize_cost_update(params: Dict[str, Any]) -> str:
+    input_tokens = int(params.get("inputTokens") or params.get("input_tokens") or 0)
+    output_tokens = int(params.get("outputTokens") or params.get("output_tokens") or 0)
+    cost = float(params.get("estimatedCostUsd") or params.get("estimated_cost_usd") or 0.0)
+    if input_tokens <= 0 and output_tokens <= 0 and cost <= 0:
+        return ""
+    confidence = params.get("confidencePercent")
+    suffix = f" confidence {confidence}%" if confidence else ""
+    return f"in/out {input_tokens}/{output_tokens} cost ${cost:.6f}{suffix}"
+
+
+def summarize_context_pressure(params: Dict[str, Any]) -> str:
+    total = int(params.get("totalTokens") or params.get("total") or 0)
+    maximum = int(params.get("maxTokens") or params.get("max") or 0)
+    pressure = float(params.get("pressurePct") or params.get("pressure_pct") or 0.0)
+    return f"{total}/{maximum} tokens ({pressure:.1f}%)"
 
 
 def run_textual_tui(configuration: BackendConfiguration) -> int:

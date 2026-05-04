@@ -18,7 +18,7 @@ class _Ctx(BudgetHudHandlersMixin):
 
 
 @pytest.mark.asyncio
-async def test_budget_hud_snapshot_returns_budget_state() -> None:
+async def test_budget_hud_snapshot_returns_budget_state(tmp_path) -> None:
     adapt = AdaptiveBudgetController()
     adapt.observe(TokenBudgetState(), TokenBudgetAction(), TurnOutcome(task_succeeded=True))
     core = SimpleNamespace(
@@ -36,6 +36,13 @@ async def test_budget_hud_snapshot_returns_budget_state() -> None:
             response_time_seconds=1.5,
         ),
         _task_cost_usd=0.00123,
+        _repo_root=tmp_path,
+        get_compaction_status=lambda: {
+            "state": "done",
+            "tokens_before": 1000,
+            "tokens_after": 600,
+            "pruned_turns": 2,
+        },
     )
 
     payload = await _Ctx(core).handle_budget_hud_snapshot({})
@@ -43,6 +50,8 @@ async def test_budget_hud_snapshot_returns_budget_state() -> None:
     assert payload["lastAction"]["max_thinking_tokens"] == 2048
     assert payload["lastOutcome"]["input_tokens"] == 111
     assert payload["adaptation"]["windowSize"] == 1
+    assert payload["compaction"]["state"] == "done"
+    assert payload["retuning"]["available"] is False
     assert payload["projectedCostUsd"] == 0.00123
     assert payload["ts"]
 
