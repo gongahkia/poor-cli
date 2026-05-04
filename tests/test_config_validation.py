@@ -9,6 +9,7 @@ from poor_cli.config import (
     SecurityConfig,
     CheckpointConfig,
     ContextConfig,
+    DiffReviewConfig,
 )
 from poor_cli.economy import EconomyConfig
 
@@ -73,6 +74,10 @@ class TestAgenticConfigDefaults(unittest.TestCase):
         cfg = AgenticConfig()
         self.assertTrue(cfg.path_scoped_approval)
 
+    def test_auto_approve_edits_default_false(self):
+        cfg = AgenticConfig()
+        self.assertFalse(cfg.auto_approve_edits)
+
     def test_context_pressure_ratios(self):
         cfg = AgenticConfig()
         self.assertAlmostEqual(cfg.context_pressure_stop_ratio, 0.2)
@@ -93,6 +98,13 @@ class TestContextConfigDefaults(unittest.TestCase):
     def test_safe_pretokenization_default_false(self):
         cfg = ContextConfig()
         self.assertFalse(cfg.safe_pretokenization)
+
+
+class TestDiffReviewConfigDefaults(unittest.TestCase):
+    def test_requires_diff_preview_by_default(self):
+        cfg = DiffReviewConfig()
+        self.assertTrue(cfg.require_diff_preview)
+        self.assertFalse(cfg.bypass_diff_preview)
 
 
 class TestModelConfigDefaults(unittest.TestCase):

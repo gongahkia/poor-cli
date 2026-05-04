@@ -325,6 +325,7 @@ class AgenticConfig:
     editor_provider: str = "" # provider for editing (e.g. "gemini")
     editor_model: str = "" # model for editing (e.g. "gemini-2.5-flash")
     auto_commit: bool = False # auto-commit file mutations with descriptive messages
+    auto_approve_edits: bool = False # apply edits immediately without staged diff approval
 
 
 @dataclass
@@ -344,6 +345,8 @@ class CheckpointConfig:
 @dataclass
 class DiffReviewConfig:
     mode: str = "review"
+    require_diff_preview: bool = True
+    bypass_diff_preview: bool = False
     layout: str = "unified"
     panel_position: str = "right"
     panel_width: int = 90

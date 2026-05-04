@@ -109,7 +109,10 @@ Recommended CI defaults:
 ```yaml
 agentic:
   auto_approve_tools: ["read_file", "glob_files", "grep_files", "git_status", "git_diff"]
+  auto_approve_edits: false
   deny_patterns: ["rm -rf", "force-push", "drop database"]
+diff_review:
+  require_diff_preview: true
 sandbox:
   preset: moderate
 ```

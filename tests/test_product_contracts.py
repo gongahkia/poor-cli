@@ -264,6 +264,14 @@ class ProductContractTests(unittest.TestCase):
         self.assertEqual(schedule.get("kind"), "daily")
         self.assertEqual(schedule.get("timezone"), "Asia/Singapore")
 
+    def test_exec_parser_accepts_edit_auto_approval_flag(self) -> None:
+        from poor_cli.__main__ import _build_exec_parser
+
+        parser = _build_exec_parser()
+        args = parser.parse_args(["--prompt", "update docs", "--auto-approve-edits"])
+
+        self.assertTrue(args.auto_approve_edits)
+
     def test_local_execution_mode_uses_repo_root_instead_of_worktree(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

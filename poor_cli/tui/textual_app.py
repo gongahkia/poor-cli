@@ -174,6 +174,8 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
         message = event.value.strip()
         event.input.value = ""
         if message:
+            if self._handle_composer_command(message):
+                return
             self._start_chat_request(message)
 
     def on_input_changed(self, event: Input.Changed) -> None:
@@ -340,6 +342,9 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
                 return
             self._add_activity(title, str(event.get("error") or "RPC failed"))
             return
+        if event_type == "rpc_success":
+            self._add_activity(str(event.get("title") or "RPC"), _summarize_result(event.get("result")))
+            return
         if event_type == "hud_snapshot":
             self._hud_inflight = False
             self._render_hud(event.get("result"))
@@ -367,7 +372,30 @@ class PoorCLIApp(App):  # type: ignore[misc,valid-type]
         if method == "poor-cli/planReq":
             self._add_activity("Plan", _truncate(str(params.get("summary") or "Review requested"), 180))
             return
+        if method == "poor-cli/editStaged":
+            edit_id = str(params.get("editId") or params.get("edit_id") or "")
+            diff = _truncate(str(params.get("diff") or ""), 420)
+            self._add_activity("Edit staged", f"{edit_id}\n{diff}")
+            return
         self._add_activity(method, _truncate(_json_text(params), 180))
+
+    def _handle_composer_command(self, message: str) -> bool:
+        parts = message.split(maxsplit=1)
+        command = parts[0].lower()
+        arg = parts[1].strip() if len(parts) > 1 else ""
+        if command not in {"/approve", "/reject", "/diff"}:
+            return False
+        if not arg:
+            self._add_activity("Command", f"{command} requires an edit id")
+            return True
+        if command == "/approve":
+            self._start_rpc_request("Approve", "poor-cli/editApprove", {"editId": arg})
+            return True
+        if command == "/reject":
+            self._start_rpc_request("Reject", "poor-cli/editReject", {"editId": arg})
+            return True
+        self._start_rpc_request("Diff", "poor-cli/previewEdit", {"editId": arg})
+        return True
 
     def _replace_turn(self, index: Optional[int], content: str) -> None:
         if index is None:

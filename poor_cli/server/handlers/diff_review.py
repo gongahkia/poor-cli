@@ -45,12 +45,40 @@ class DiffReviewHandlersMixin:
         ).to_dict()
         try:
             await self.write_message_stdio(JsonRpcMessage(
+                method="poor-cli/editStaged",
+                params=edit,
+            ))
+            await self.write_message_stdio(JsonRpcMessage(
                 method="poor-cli/stageEvent",
                 params=edit,
             ))
         except Exception as e:
             logger.debug("emit stageEvent failed: %s", e)
         return edit
+
+    async def handle_edit_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        del params
+        return await self.handle_diff_list({})
+
+    async def handle_edit_approve(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        edit_id = str(params.get("editId") or params.get("edit_id") or "").strip()
+        if not edit_id:
+            raise InvalidParamsError("editId is required")
+        result = self._edit_stage().commit_or_reject(
+            edit_id,
+            "approve",
+            checkpoint_manager=self.core.checkpoint_manager,
+        )
+        await self._emit_edit_committed(result)
+        return result
+
+    async def handle_edit_reject(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        edit_id = str(params.get("editId") or params.get("edit_id") or "").strip()
+        if not edit_id:
+            raise InvalidParamsError("editId is required")
+        result = self._edit_stage().commit_or_reject(edit_id, "reject")
+        await self._emit_edit_committed(result)
+        return result
 
     async def handle_diff_accept(self, params: Dict[str, Any]) -> Dict[str, Any]:
         edit_id = str(params.get("editId") or params.get("edit_id") or "").strip()
@@ -121,3 +149,18 @@ async def _rpc_diff_reject(ctx, params):
 @register("poor-cli/regenerateHunk")
 async def _rpc_diff_regen(ctx, params):
     return await ctx.handle_diff_regen(params)
+
+
+@register("poor-cli/editList")
+async def _rpc_edit_list(ctx, params):
+    return await ctx.handle_edit_list(params)
+
+
+@register("poor-cli/editApprove")
+async def _rpc_edit_approve(ctx, params):
+    return await ctx.handle_edit_approve(params)
+
+
+@register("poor-cli/editReject")
+async def _rpc_edit_reject(ctx, params):
+    return await ctx.handle_edit_reject(params)

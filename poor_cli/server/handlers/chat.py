@@ -87,10 +87,8 @@ class ChatHandlersMixin:
             loop = asyncio.get_running_loop()
             def _stage_event(payload: Dict[str, Any]) -> None:
                 async def _emit() -> None:
-                    await self.write_message_stdio(JsonRpcMessage(
-                        method="poor-cli/stageEvent",
-                        params=payload,
-                    ))
+                    await self.write_message_stdio(JsonRpcMessage(method="poor-cli/editStaged", params=payload))
+                    await self.write_message_stdio(JsonRpcMessage(method="poor-cli/stageEvent", params=payload))
                 loop.call_soon_threadsafe(lambda: asyncio.create_task(_emit()))
             self.core._diff_stage_event_callback = _stage_event
             # collect directory tree nodes for the graph overlay

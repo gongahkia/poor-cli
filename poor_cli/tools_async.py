@@ -276,6 +276,9 @@ class ToolOutcome:
             "message": self.message,
             "metadata": self.metadata,
         }
+        for key in ("status", "edit_id", "editId"):
+            if key in self.metadata:
+                payload[key] = self.metadata[key]
         return payload
 
     def to_json(self) -> str:
@@ -368,6 +371,7 @@ class ToolRegistryAsync:
         self._http_session: Optional["aiohttp.ClientSession"] = None # pooled HTTP client
         self._output_filter_stats = empty_filter_stats()
         self.edit_stage = EditStage(writer=self._atomic_write_text)
+        self.edit_stage.set_mandatory(True)
         self._load_todos()
         self._register_tools()
 
@@ -786,6 +790,15 @@ class ToolRegistryAsync:
         after: str,
         interactive: bool,
     ) -> bool:
+        agentic = getattr(getattr(self, "config", None), "agentic", None)
+        auto_approve = bool(getattr(agentic, "auto_approve_edits", False))
+        if auto_approve:
+            self.edit_stage.audit_events.append({
+                "operation": "diff.auto_approve",
+                "path": str(path),
+                "details": {"bytes_before": len(before), "bytes_after": len(after)},
+            })
+            return False
         should_stage = should_stage_edit(
             getattr(self, "config", None),
             str(path),
@@ -829,6 +842,7 @@ class ToolRegistryAsync:
                 logger.debug("diff review stage notification skipped: %s", e)
         payload = dict(metadata or {})
         payload.update({
+            "status": "staged",
             "staged": True,
             "edit_id": edit.edit_id,
             "editId": edit.edit_id,
@@ -3155,6 +3169,7 @@ class ToolRegistryAsync:
                         diff="".join(edit.diff_text for edit in staged_edits),
                         message=f"Staged {len(staged_edits)} patch file(s) for diff review",
                         metadata={
+                            "status": "staged",
                             "check_only": False,
                             "staged": True,
                             "edit_ids": [edit.edit_id for edit in staged_edits],
@@ -3443,6 +3458,9 @@ class ToolRegistryAsync:
         file_path: str,
         updates_json: str,
         create_missing: bool = True,
+        _tool_call_id: str = "",
+        _prompt: str = "",
+        _interactive: bool = True,
     ) -> ToolOutcome:
         """Apply dotted-path updates to JSON/YAML files."""
         try:
@@ -3455,6 +3473,19 @@ class ToolRegistryAsync:
 
             changed = rendered != raw_content
             if changed:
+                if self._diff_review_should_stage(path_obj, raw_content, rendered, bool(_interactive)):
+                    return self._stage_edit_outcome(
+                        operation="json_yaml_edit",
+                        path=path_obj,
+                        before=raw_content,
+                        after=rendered,
+                        tool_call_id=_tool_call_id,
+                        prompt=_prompt,
+                        metadata={
+                            "changed_paths": changed_paths,
+                            "create_missing": create_missing,
+                        },
+                    )
                 self._atomic_write_text(path_obj, rendered)
 
             return self._tool_outcome(

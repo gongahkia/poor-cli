@@ -81,7 +81,12 @@ class EditStageTests(unittest.TestCase):
 
     def test_non_interactive_bypass_applies_immediately(self):
         config = Config()
+        config.diff_review.require_diff_preview = False
         self.assertFalse(should_stage_edit(config, "demo.py", "a\n", "b\n", interactive=False))
+
+    def test_default_requires_staging_even_when_non_interactive(self):
+        config = Config()
+        self.assertTrue(should_stage_edit(config, "demo.py", "a\n", "b\n", interactive=False))
 
     def test_audit_log_records_stage_and_finalize(self):
         with tempfile.TemporaryDirectory() as td:

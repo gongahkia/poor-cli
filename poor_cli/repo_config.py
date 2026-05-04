@@ -87,6 +87,7 @@ class RepoPreferences:
     rtk_tee_on_failure: bool = True
     research: Dict[str, Dict[str, bool]] = field(default_factory=_default_research_preferences)
     context: Dict[str, Dict[str, float]] = field(default_factory=_default_context_preferences)
+    edit: Dict[str, bool] = field(default_factory=lambda: {"requireDiffPreview": True})
 
     # Tracking
     created_at: str = ""

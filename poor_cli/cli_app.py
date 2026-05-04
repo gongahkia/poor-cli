@@ -142,6 +142,11 @@ def _build_exec_parser() -> argparse.ArgumentParser:
         help="Auto-approve operations that would otherwise require interactive approval",
     )
     parser.add_argument(
+        "--auto-approve-edits",
+        action="store_true",
+        help="Apply file edits immediately instead of requiring staged diff approval",
+    )
+    parser.add_argument(
         "--context-file",
         action="append",
         default=[],
@@ -263,6 +268,8 @@ async def _run_exec_mode_async(args: argparse.Namespace) -> int:
     if args.routing_mode:
         core.set_routing_mode(args.routing_mode)
     if core.config is not None:
+        if args.auto_approve_edits:
+            core.config.agentic.auto_approve_edits = True
         if args.permission_mode:
             core.config.security.permission_mode = parse_permission_mode(args.permission_mode)
         effective_permission_mode = (
@@ -331,6 +338,7 @@ async def _run_exec_mode_async(args: argparse.Namespace) -> int:
                         "permissionMode": effective_permission_mode,
                         "sandboxPreset": effective_sandbox_preset,
                         "autoApprove": bool(args.auto_approve),
+                        "autoApproveEdits": bool(args.auto_approve_edits),
                         "cost": core.get_session_cost_summary(),
                         "statusView": core.build_status_view(),
                         "instructionStack": core.inspect_instruction_stack(

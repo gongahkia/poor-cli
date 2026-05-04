@@ -102,12 +102,16 @@ def should_stage_edit(
 ) -> bool:
     if original == proposed:
         return False
+    diff_cfg = getattr(config, "diff_review", None)
+    if bool(getattr(diff_cfg, "bypass_diff_preview", False)):
+        return False
+    if bool(getattr(diff_cfg, "require_diff_preview", True)):
+        return True
     env = env or os.environ
     if str(env.get("POOR_CLI_DIFF_REVIEW", "")).strip().lower() == "auto":
         return False
     if not interactive:
         return False
-    diff_cfg = getattr(config, "diff_review", None)
     mode = str(getattr(diff_cfg, "mode", "review") or "review").strip().lower()
     if mode == "auto":
         return False
@@ -137,6 +141,7 @@ class EditStage:
         self._edits: Dict[str, PendingEdit] = {}
         self._writer = writer or self._default_write
         self.audit_events: List[Dict[str, Any]] = []
+        self._mandatory = False
 
     @staticmethod
     def _default_write(path: Path, content: str) -> None:
@@ -150,6 +155,13 @@ class EditStage:
             "path": edit.path,
             "details": details,
         })
+
+    def set_mandatory(self, flag: bool = True) -> None:
+        self._mandatory = bool(flag)
+
+    def assert_can_bypass(self, path: str) -> None:
+        if self._mandatory:
+            raise RuntimeError(f"mandatory diff preview required before writing {path}")
 
     def stage(
         self,
@@ -211,6 +223,14 @@ class EditStage:
             hunk.status = "rejected"
         self._refresh_status(edit)
         return self.finalize(edit_id)
+
+    def commit_or_reject(self, edit_id: str, decision: str, checkpoint_manager: Any = None) -> Dict[str, Any]:
+        normalized = str(decision or "").strip().lower()
+        if normalized in {"approve", "accept", "commit", "yes"}:
+            return self.accept_all(edit_id, checkpoint_manager=checkpoint_manager)
+        if normalized in {"reject", "deny", "discard", "no"}:
+            return self.reject_all(edit_id)
+        raise ValueError("decision must be approve or reject")
 
     def regenerate_hunk(self, edit_id: str, hunk_id: str, new_content: str = "") -> Dict[str, Any]:
         edit = self._require(edit_id)
