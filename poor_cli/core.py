@@ -294,6 +294,34 @@ class PoorCLICore(AgentLoop, ToolDispatcher, TurnLifecycle, PermissionEngineMixi
 
         logger.info("PoorCLICore instance created")
 
+    def _record_prompt_decision(self) -> None:
+        decision = getattr(getattr(self, "_prompt_optimizer", None), "last_decision", None)
+        if decision is None:
+            return
+        payload = decision.to_dict() if hasattr(decision, "to_dict") else {}
+        if not payload:
+            return
+        previous = self._last_prompt_decision.get("level") if isinstance(self._last_prompt_decision, dict) else None
+        self._last_prompt_decision = payload
+        try:
+            self._budget_logger.log_prompt_decision(payload)
+        except Exception:
+            pass
+        if previous and previous != payload.get("level"):
+            try:
+                from .policy_hooks import emit_policy_hook_nowait
+                emit_policy_hook_nowait(
+                    self._hook_manager,
+                    "notification",
+                    {
+                        "title": "Prompt optimizer",
+                        "detail": f"level {previous} -> {payload.get('level')}",
+                        "severity": "info",
+                    },
+                )
+            except Exception:
+                pass
+
 
 
 

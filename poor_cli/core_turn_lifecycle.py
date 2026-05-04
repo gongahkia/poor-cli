@@ -1403,7 +1403,12 @@ class TurnLifecycle:
                 terse_mode=new_verbosity == "caveman", batched_reads=new_batched,
                 sandbox_preset=_sandbox_preset, plan_mode=_plan,
                 include_agent_tools=not _plan, max_system_tokens=_max_sys,
+                prompt_optimizer=getattr(self, "_prompt_optimizer", None),
+                task_complexity=getattr(getattr(self, "_adaptive_budget", None), "recent_complexity_estimate", lambda: 0.5)(),
             )
+            recorder = getattr(self, "_record_prompt_decision", None)
+            if callable(recorder):
+                recorder()
         return _asdict(self.config.economy)
 
     def _maybe_apply_vision(self, message: str) -> Any:
@@ -1931,7 +1936,12 @@ class TurnLifecycle:
             plan_mode=_plan,
             include_gh_tools=getattr(self.config.tools, "enable_git_tools", True),
             include_agent_tools=not _plan,
+            prompt_optimizer=getattr(self, "_prompt_optimizer", None),
+            task_complexity=getattr(getattr(self, "_adaptive_budget", None), "recent_complexity_estimate", lambda: 0.5)(),
         )
+        recorder = getattr(self, "_record_prompt_decision", None)
+        if callable(recorder):
+            recorder()
         if memory_index:
             new_instruction += (
                 "\n\n## Persistent Memory\n"

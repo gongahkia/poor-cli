@@ -57,6 +57,15 @@ class BudgetLogger:
         if len(self._buffer) >= self._flush_every:
             self.flush()
 
+    def log_prompt_decision(self, decision: dict) -> None:
+        record = {
+            "ts": time.time(),
+            "prompt_decision": dict(decision or {}),
+        }
+        self._buffer.append(record)
+        if len(self._buffer) >= self._flush_every:
+            self.flush()
+
     def flush(self) -> None:
         """Write buffered records to disk."""
         if not self._buffer:

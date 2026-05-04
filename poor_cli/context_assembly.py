@@ -652,7 +652,13 @@ class ContextAssemblyOrchestrator:
                 search_paths=core._configured_skill_search_paths(),
             )
             all_skills = skill_reg.list_skills()
-            matched = detect_relevant_skills(message, [skill.name for skill in all_skills])
+            decision = getattr(core, "_last_prompt_decision", {}) or {}
+            whitelist = decision.get("skillWhitelist") if isinstance(decision, dict) else None
+            matched = detect_relevant_skills(
+                message,
+                [skill.name for skill in all_skills],
+                whitelist=whitelist if isinstance(whitelist, list) else None,
+            )
             if not matched:
                 return ""
             descriptions = {skill.name: skill.description for skill in all_skills}
