@@ -130,7 +130,10 @@ impl<R: Read> CastReader<R> {
         let n = self.inner.read_line(&mut line)?;
         self.line_no += 1;
         if n == 0 {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "empty cast file"));
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "empty cast file",
+            ));
         }
         let h = parse_header(line.trim_end_matches('\n'))?;
         self.header = Some(h);

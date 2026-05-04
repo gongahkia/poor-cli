@@ -874,17 +874,19 @@ impl LuaRuntime {
             std::fs::read_to_string(&abs).map_err(mlua::Error::external)
         })?;
         fs_table.set("read", fs_read_fn)?;
-        let fs_write_fn = self.lua.create_function(move |_, (path, contents): (String, String)| {
-            let abs = match resolve_sandboxed_path(&path) {
-                Ok(p) => p,
-                Err(error) => return Err(mlua::Error::external(error)),
-            };
-            if let Some(parent) = abs.parent() {
-                std::fs::create_dir_all(parent).map_err(mlua::Error::external)?;
-            }
-            std::fs::write(&abs, contents).map_err(mlua::Error::external)?;
-            Ok(())
-        })?;
+        let fs_write_fn =
+            self.lua
+                .create_function(move |_, (path, contents): (String, String)| {
+                    let abs = match resolve_sandboxed_path(&path) {
+                        Ok(p) => p,
+                        Err(error) => return Err(mlua::Error::external(error)),
+                    };
+                    if let Some(parent) = abs.parent() {
+                        std::fs::create_dir_all(parent).map_err(mlua::Error::external)?;
+                    }
+                    std::fs::write(&abs, contents).map_err(mlua::Error::external)?;
+                    Ok(())
+                })?;
         fs_table.set("write", fs_write_fn)?;
         let fs_exists_fn = self.lua.create_function(move |_, path: String| {
             match resolve_sandboxed_path(&path) {
@@ -1038,13 +1040,19 @@ impl LuaRuntime {
             })
         };
         let action_state = self.state.action_requests.clone();
-        panes_table.set("split_vertical", push_action("split_vertical", action_state.clone())?)?;
+        panes_table.set(
+            "split_vertical",
+            push_action("split_vertical", action_state.clone())?,
+        )?;
         panes_table.set(
             "split_horizontal",
             push_action("split_horizontal", action_state.clone())?,
         )?;
         panes_table.set("close", push_action("close_split", action_state.clone())?)?;
-        panes_table.set("focus_left", push_action("focus_left", action_state.clone())?)?;
+        panes_table.set(
+            "focus_left",
+            push_action("focus_left", action_state.clone())?,
+        )?;
         panes_table.set(
             "focus_right",
             push_action("focus_right", action_state.clone())?,

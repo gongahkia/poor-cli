@@ -92,7 +92,9 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         "close_media_preview" | "media_preview_close" | "close_preview" => {
             Some(Action::CloseMediaPreview)
         }
-        "toggle_media_preview_playback" | "media_play_pause" | "media_pause"
+        "toggle_media_preview_playback"
+        | "media_play_pause"
+        | "media_pause"
         | "preview_play_pause" => Some(Action::ToggleMediaPreviewPlayback),
         "preview_path_under_cursor" | "preview_file_under_cursor" | "preview_path" => {
             Some(Action::PreviewPathUnderCursor)

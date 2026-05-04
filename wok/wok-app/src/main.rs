@@ -1656,6 +1656,9 @@ impl WokHandler {
             .collect();
 
         WorkspaceSessionState {
+            schema_version: 1,
+            saved_at_unix_ms: current_time_ms(),
+            wok_version: env!("CARGO_PKG_VERSION").to_string(),
             tabs,
             panes,
             active_tab: self.workspace.active_tab,
@@ -1669,6 +1672,9 @@ impl WokHandler {
 
     fn restore_session(&mut self, session: WorkspaceSessionState) {
         let WorkspaceSessionState {
+            schema_version: _,
+            saved_at_unix_ms: _,
+            wok_version: _,
             tabs,
             panes,
             active_tab,
@@ -1778,6 +1784,8 @@ impl WokHandler {
                             preview.search_query.as_str()
                         }
                     )
+                } else if preview.truncated {
+                    format!("{}  truncated", preview.help)
                 } else {
                     preview.help.clone()
                 },
@@ -4532,6 +4540,7 @@ impl WokHandler {
                                 display_cols,
                                 display_rows,
                                 placement_id,
+                                z_index,
                             } => {
                                 pane.inline_images.upsert_image(
                                     image_id,
@@ -4544,6 +4553,7 @@ impl WokHandler {
                                         display_cols,
                                         display_rows,
                                         placement_id,
+                                        z_index,
                                     },
                                 );
                             }
@@ -4554,6 +4564,7 @@ impl WokHandler {
                                 display_cols,
                                 display_rows,
                                 placement_id,
+                                z_index,
                             } => {
                                 pane.inline_images.place_existing(
                                     image_id,
@@ -4563,6 +4574,7 @@ impl WokHandler {
                                         display_cols,
                                         display_rows,
                                         placement_id,
+                                        z_index,
                                     },
                                 );
                             }
@@ -4916,7 +4928,8 @@ impl WokHandler {
             self.status_message = Some("Preview search is empty".to_string());
             return;
         }
-        let lines = preview.editor.buffer.text().lines().collect::<Vec<_>>();
+        let text = preview.editor.buffer.text();
+        let lines = text.lines().collect::<Vec<_>>();
         let current_row = preview
             .editor
             .buffer
@@ -4933,13 +4946,12 @@ impl WokHandler {
             };
             let found = line.to_ascii_lowercase().find(&query_lower);
             if let Some(col) = found {
-                let offset = text_offset_for_line_col(&preview.editor.buffer.text(), row, col);
+                let offset = text_offset_for_line_col(&text, row, col);
                 if let Some(cursor) = preview.editor.buffer.cursors_mut().first_mut() {
                     cursor.position = offset;
                     cursor.anchor = None;
                 }
-                self.status_message =
-                    Some(format!("Preview search: match on line {}", row + 1));
+                self.status_message = Some(format!("Preview search: match on line {}", row + 1));
                 return;
             }
         }
@@ -9031,6 +9043,13 @@ fn text_offset_for_line_col(text: &str, target_row: usize, target_col: usize) ->
     text.chars().count()
 }
 
+fn current_time_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
 fn trigger_engine_from_config(config: &WokConfig) -> TriggerEngine {
     let mut engine = TriggerEngine::new();
     for trigger in &config.triggers {
@@ -10100,7 +10119,9 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::OpenSavedSearches => "open_saved_searches".to_string(),
         Action::OpenBlockInspector => "open_block_inspector".to_string(),
         Action::OpenBlockRerunHistory => "open_block_rerun_history".to_string(),
-        Action::InsertScratchSelectionIntoInput => "insert_scratch_selection_into_input".to_string(),
+        Action::InsertScratchSelectionIntoInput => {
+            "insert_scratch_selection_into_input".to_string()
+        }
         Action::NewFloatingPane => "new_floating_pane".to_string(),
         Action::ToggleFloatingPane => "toggle_floating_pane".to_string(),
         Action::CloseFloatingPane => "close_floating_pane".to_string(),
@@ -10308,7 +10329,9 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::RevealPathUnderCursor => "Reveal the file path under the cursor in Finder",
         Action::TailPathUnderCursor => "Tail the file path under the cursor in a new split",
         Action::OpenScratchBuffer => "Open a persistent scratch buffer",
-        Action::InsertScratchSelectionIntoInput => "Insert selected scratch text into command input",
+        Action::InsertScratchSelectionIntoInput => {
+            "Insert selected scratch text into command input"
+        }
         Action::ToggleSearchRegex => "Toggle global search regex mode",
         Action::CycleSearchScope => "Cycle search scope across all, pane, commands, and output",
         Action::OpenSearchResults => "Open current search matches as a result list",
@@ -10626,8 +10649,7 @@ fn read_text_preview_file(path: &Path) -> std::io::Result<(String, bool)> {
     const MAX_PREVIEW_BYTES: u64 = 2 * 1024 * 1024;
     let mut file = File::open(path)?;
     let mut bytes = Vec::new();
-    let read = file
-        .by_ref()
+    let read = std::io::Read::by_ref(&mut file)
         .take(MAX_PREVIEW_BYTES + 1)
         .read_to_end(&mut bytes)?;
     let truncated = read as u64 > MAX_PREVIEW_BYTES;
@@ -10985,6 +11007,22 @@ mod tests {
             parse_lua_action("regex_search"),
             Some(Action::ToggleSearchRegex)
         );
+        assert_eq!(
+            parse_lua_action("media_play_pause"),
+            Some(Action::ToggleMediaPreviewPlayback)
+        );
+        assert_eq!(
+            parse_lua_action("search_results"),
+            Some(Action::OpenSearchResults)
+        );
+        assert_eq!(
+            parse_lua_action("block_inspector"),
+            Some(Action::OpenBlockInspector)
+        );
+        assert_eq!(
+            parse_lua_action("insert_scratch"),
+            Some(Action::InsertScratchSelectionIntoInput)
+        );
     }
 
     #[test]
@@ -11055,9 +11093,13 @@ mod tests {
         assert!(catalog.contains(&Action::ResetSettings));
         assert!(catalog.contains(&Action::CycleVisualEffect));
         assert!(catalog.contains(&Action::CloseMediaPreview));
+        assert!(catalog.contains(&Action::ToggleMediaPreviewPlayback));
         assert!(catalog.contains(&Action::PreviewPathUnderCursor));
         assert!(catalog.contains(&Action::OpenScratchBuffer));
+        assert!(catalog.contains(&Action::InsertScratchSelectionIntoInput));
         assert!(catalog.contains(&Action::ToggleSearchRegex));
+        assert!(catalog.contains(&Action::OpenSearchResults));
+        assert!(catalog.contains(&Action::OpenBlockInspector));
     }
 
     #[test]

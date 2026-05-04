@@ -115,19 +115,21 @@ Pane focus/resize: `focus_left`, `focus_right`, `focus_up`, `focus_down`, `resiz
 
 Floating panes: `new_floating_pane`, `toggle_floating_pane`, `close_floating_pane`
 
-Search & palette: `search_global`, `command_palette`, `command_search`, `quick_select`, `quick_select_block`, `keybinding_discovery`, `theme_picker`, `settings_discovery`, `git_changes`, `git_worktrees`
+Search & palette: `search_global`, `open_search_results`, `save_current_search`, `open_saved_searches`, `command_palette`, `command_search`, `quick_select`, `quick_select_block`, `keybinding_discovery`, `theme_picker`, `settings_discovery`, `git_changes`, `git_worktrees`
 
 Block navigation: `block_prev`, `block_next`, `block_copy`, `block_copy_command`, `block_copy_output`, `block_collapse`, `block_toggle_bookmark`, `block_prev_bookmark`, `block_next_bookmark`, `block_prev_failed`, `block_next_failed`, `block_find`, `block_filter`, `block_diff`, `block_rerun`, `block_rerun_in_split`, `block_save_workflow`, `block_export_markdown`, `block_export_json`
 
 Layout / panels: `next_layout`, `prev_layout`, `toggle_failure_trends_panel`, `toggle_workspace_insights_panel`, `toggle_broadcast`
 
-Input & terminal: `toggle_input_position`, `toggle_typewriter_effect`, `cycle_visual_effect`, `close_media_preview`, `preview_path_under_cursor`, `open_path_under_cursor`, `copy_path_under_cursor`, `reveal_path_under_cursor`, `tail_path_under_cursor`, `open_scratch_buffer`, `toggle_search_regex`, `cycle_search_scope`, `zoom_in`, `zoom_out`, `zoom_reset`, `clear_screen`, `send_eof`
+Input & terminal: `toggle_input_position`, `toggle_typewriter_effect`, `cycle_visual_effect`, `close_media_preview`, `toggle_media_preview_playback`, `preview_path_under_cursor`, `open_path_under_cursor`, `copy_path_under_cursor`, `reveal_path_under_cursor`, `tail_path_under_cursor`, `open_scratch_buffer`, `insert_scratch_selection_into_input`, `toggle_search_regex`, `cycle_search_scope`, `zoom_in`, `zoom_out`, `zoom_reset`, `clear_screen`, `send_eof`
+
+Block tools: `open_block_inspector`, `open_block_rerun_history`
 
 Sessions: `save_session:<name>`, `load_session:<name>`
 
 Settings: `open_settings`, `reset_settings`, `settings_discovery`
 
-Aliases (also accepted): `close_pane`, `search`, `copy_block`, `collapse_block`, `diff_block`, `failure_trends`, `prev_failed_block`, `next_failed_block`, `rerun_block_split`, `save_block_workflow`, `export_block_markdown`, `export_block_json`, `workspace_insights`, `history_search`, `git_status`, `changed_files`, `git_worktree`, `worktree_switcher`, `reset_config`, `close_preview`, `preview_path`, `open_path`, `copy_path`, `reveal_path`, `tail_path`, `scratch`, `regex_search`, `next_search_scope`.
+Aliases (also accepted): `close_pane`, `search`, `copy_block`, `collapse_block`, `diff_block`, `failure_trends`, `prev_failed_block`, `next_failed_block`, `rerun_block_split`, `save_block_workflow`, `export_block_markdown`, `export_block_json`, `workspace_insights`, `history_search`, `git_status`, `changed_files`, `git_worktree`, `worktree_switcher`, `reset_config`, `close_preview`, `media_play_pause`, `preview_path`, `open_path`, `copy_path`, `reveal_path`, `tail_path`, `scratch`, `insert_scratch`, `regex_search`, `next_search_scope`, `search_results`, `save_search`, `saved_searches`, `block_inspector`, `rerun_history`.
 
 ### TOML keybindings (`~/.config/wok/keybindings.toml`)
 

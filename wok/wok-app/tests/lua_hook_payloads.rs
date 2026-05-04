@@ -63,7 +63,9 @@ fn register_schema_handler(
         end)
         "#
     );
-    runtime.exec(&script).expect("hook registration must succeed");
+    runtime
+        .exec(&script)
+        .expect("hook registration must succeed");
 }
 
 #[test]
@@ -389,18 +391,11 @@ fn pane_opened_payload_matches_docs() {
 fn pane_opened_floating_direction_is_string() {
     // Same schema, exercise the "floating" code path.
     let mut runtime = fresh_runtime();
-    register_schema_handler(
-        &mut runtime,
-        "pane_opened",
-        &[("direction", "string")],
-    );
+    register_schema_handler(&mut runtime, "pane_opened", &[("direction", "string")]);
 
     for direction in ["vertical", "horizontal", "floating"] {
         runtime
-            .trigger_hook(
-                "pane_opened",
-                &json!({ "direction": direction }),
-            )
+            .trigger_hook("pane_opened", &json!({ "direction": direction }))
             .expect("hook should run cleanly");
     }
     assert_eq!(
@@ -433,11 +428,7 @@ fn missing_required_field_makes_hook_error() {
 #[test]
 fn wrong_field_type_makes_hook_error() {
     let mut runtime = fresh_runtime();
-    register_schema_handler(
-        &mut runtime,
-        "block_finished",
-        &[("exit_code", "number")],
-    );
+    register_schema_handler(&mut runtime, "block_finished", &[("exit_code", "number")]);
 
     let result = runtime.trigger_hook(
         "block_finished",

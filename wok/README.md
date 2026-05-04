@@ -13,7 +13,7 @@ The product is intentionally opinionated: no AI, no login, no cloud dependency. 
 | PowerShell / WSL | Shipped | Automatic bootstrap wrappers emit block markers, source user profiles deterministically, restore startup cwd, and now have explicit regression coverage |
 | Tabs, splits, sessions | Shipped | IDE-style workspace with autosave/restore, manual snapshot save/load, and restored transcript/block continuity |
 | Input bar | Shipped | Bottom bar supports both the action palette and an owned-primary command editor behind `command_entry_mode = "owned_primary"` |
-| Search | Shipped | Workspace-global query with focused-pane overlay, match counts, next/prev navigation, and cross-pane result jumps |
+| Search | Shipped | Workspace-global query with regex/scope controls, saved queries, result-list navigation, match counts, and cross-pane result jumps |
 | Mouse selection | Shipped | Drag selection works; `copy_on_select` is honored |
 | Lua scripting | Shipped | Loads `~/.config/wok/init.lua`, supports keybindings, command aliases, structured hooks, `run_action`, `exec`, `notify`, and runtime state accessors |
 | Theme loading | Shipped | Graph Box Dark is the default; `wok init` seeds editable themes, `theme_path` loads at startup, and themes can be changed live through `wok.theme.load(...)` / `wok.theme.set(...)` |
@@ -78,11 +78,13 @@ Use `bash`, `zsh`, or `fish` for the cleanest first-run block demo.
 7. Use `Mod+F` to search across the workspace and jump between panes.
 8. Use `Mod+Alt+S` to toggle typewriter-style output reveal.
 9. Use `Mod+P` and run `Cycle Visual Effect` to preview the default-off visual effects.
-10. Use `Mod+P` and choose a `Preview ...` file entry for images, GIFs, or MP4s in the current directory; press `Escape` or run `Close Media Preview` to close it.
-11. Put the cursor on a path and run `Preview Path Under Cursor`, `Open Path Under Cursor`, `Reveal Path Under Cursor`, or `Tail Path Under Cursor`.
-12. Use `Mod+P` and run `Open Scratch Buffer` for temporary notes.
-13. Use `Mod+P` and run `Reset Settings` to restore the managed default config.
-14. Use `Mod+Shift+S` to save the `manual` session snapshot, then `Mod+Shift+R` to load it.
+10. Use `Mod+P` and choose a `Preview ...` file entry for images, GIFs, or MP4s in the current directory; `Mod+Alt+Space` pauses GIF/MP4 previews, and `Escape` or `Close Media Preview` closes them.
+11. Put the cursor on a path and use `Mod+Alt+P/O/C/V` for preview/open/copy/reveal, or run `Tail Path Under Cursor` from the palette.
+12. Use `Mod+Alt+/` for regex search, `Mod+Alt+Shift+F` to cycle search scope, and `Open Search Results` or `Saved Searches` from the palette.
+13. Use `Open Block Inspector` or `Block Rerun History` on a selected command block.
+14. Use `Mod+Alt+X` for the scratch buffer, and `Mod+Alt+Shift+X` to insert the selection into command input.
+15. Use `Mod+P` and run `Reset Settings` to restore the managed default config.
+16. Use `Mod+Shift+S` to save the `manual` session snapshot, then `Mod+Shift+R` to load it.
 
 Named snapshots are available through Lua action aliases such as `save_session:demo` and `load_session:demo`.
 From a shell attached to a running Wok instance, `wok workspace save backend`, `wok workspace load backend`, and `wok workspace list` provide the same named-workspace flow.

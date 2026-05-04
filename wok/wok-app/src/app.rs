@@ -416,6 +416,13 @@ impl WokApp {
             | Action::RevealPathUnderCursor
             | Action::TailPathUnderCursor
             | Action::OpenScratchBuffer
+            | Action::ToggleMediaPreviewPlayback
+            | Action::OpenSearchResults
+            | Action::SaveCurrentSearch
+            | Action::OpenSavedSearches
+            | Action::OpenBlockInspector
+            | Action::OpenBlockRerunHistory
+            | Action::InsertScratchSelectionIntoInput
             | Action::ToggleSearchRegex
             | Action::CycleSearchScope => {}
             Action::NewFloatingPane => {

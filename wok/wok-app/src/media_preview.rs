@@ -163,7 +163,9 @@ mod platform {
             unsafe {
                 let container = create_container(parent, frame)?;
                 let (child, player) = match kind {
-                    MediaKind::Image | MediaKind::Gif => (create_image_view(path, frame)?, ptr::null_mut()),
+                    MediaKind::Image | MediaKind::Gif => {
+                        (create_image_view(path, frame)?, ptr::null_mut())
+                    }
                     MediaKind::Mp4 => create_video_view(path, frame)?,
                 };
                 let _: () = msg_send![container, addSubview: child];

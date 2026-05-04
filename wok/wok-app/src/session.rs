@@ -167,6 +167,15 @@ pub struct FloatingPaneState {
 /// Complete saved workspace session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceSessionState {
+    /// Session schema version.
+    #[serde(default = "default_session_schema_version")]
+    pub schema_version: u32,
+    /// Unix timestamp when this session was saved, in milliseconds.
+    #[serde(default)]
+    pub saved_at_unix_ms: u64,
+    /// Wok package version that wrote this session.
+    #[serde(default)]
+    pub wok_version: String,
     /// Saved tabs.
     pub tabs: Vec<WorkspaceTabState>,
     /// Saved panes.
@@ -194,6 +203,10 @@ fn default_follow_output() -> bool {
 
 fn default_failure_trend_bucket_ms() -> u64 {
     60 * 60 * 1000
+}
+
+fn default_session_schema_version() -> u32 {
+    1
 }
 
 /// Save a session state to a JSON file.
@@ -420,6 +433,9 @@ mod tests {
             .as_nanos();
         let path = std::env::temp_dir().join(format!("wok-session-{unique}.json"));
         let state = WorkspaceSessionState {
+            schema_version: 1,
+            saved_at_unix_ms: 123,
+            wok_version: "test".to_string(),
             tabs: vec![WorkspaceTabState {
                 id: 1,
                 title: "Shell".to_string(),
@@ -480,6 +496,9 @@ mod tests {
         assert_eq!(loaded.panes.len(), 1);
         assert_eq!(loaded.panes[0].shell, "zsh");
         assert_eq!(loaded.window_size, (1280, 800));
+        assert_eq!(loaded.schema_version, 1);
+        assert_eq!(loaded.saved_at_unix_ms, 123);
+        assert_eq!(loaded.wok_version, "test");
         assert!(loaded.show_failure_trends_panel);
         assert!(loaded.show_workspace_insights_panel);
         assert_eq!(loaded.failure_trend_bucket_ms, 120_000);
@@ -571,6 +590,9 @@ mod tests {
         assert!(!loaded.panes[0].blocks[0].is_bookmarked);
         assert!(!loaded.show_failure_trends_panel);
         assert!(!loaded.show_workspace_insights_panel);
+        assert_eq!(loaded.schema_version, 1);
+        assert_eq!(loaded.saved_at_unix_ms, 0);
+        assert!(loaded.wok_version.is_empty());
         assert_eq!(
             loaded.failure_trend_bucket_ms,
             default_failure_trend_bucket_ms()
@@ -606,6 +628,9 @@ mod tests {
         let path = dir.join("session.json");
 
         let state = WorkspaceSessionState {
+            schema_version: 1,
+            saved_at_unix_ms: 0,
+            wok_version: String::new(),
             tabs: Vec::new(),
             panes: Vec::new(),
             active_tab: 0,

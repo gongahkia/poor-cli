@@ -94,6 +94,8 @@ pub enum InlineImageEvent {
         display_rows: u16,
         /// Protocol placement id.
         placement_id: u32,
+        /// Kitty z-index. Higher values render above lower values.
+        z_index: i32,
     },
     /// Add one placement to an existing image id.
     Place {
@@ -109,6 +111,8 @@ pub enum InlineImageEvent {
         display_rows: u16,
         /// Protocol placement id.
         placement_id: u32,
+        /// Kitty z-index. Higher values render above lower values.
+        z_index: i32,
     },
     /// Delete one image id or all images when `None`.
     Delete {
@@ -339,9 +343,8 @@ impl Terminal {
                             // iTerm2 inline-image protocol.
                             match iterm_image::parse(&format!("File={rest}")) {
                                 Ok(payload) if payload.inline => {
-                                    if let Ok(decoded) =
-                                        image::load_from_memory(&payload.bytes)
-                                            .map(|img| img.to_rgba8())
+                                    if let Ok(decoded) = image::load_from_memory(&payload.bytes)
+                                        .map(|img| img.to_rgba8())
                                     {
                                         let (w, h) = (decoded.width(), decoded.height());
                                         let pixels = decoded.into_raw();
@@ -361,6 +364,7 @@ impl Terminal {
                                                 display_cols,
                                                 display_rows,
                                                 placement_id: 0,
+                                                z_index: 0,
                                             },
                                         ));
                                     } else {
@@ -413,6 +417,7 @@ impl Terminal {
                                         display_cols,
                                         display_rows,
                                         placement_id: 0,
+                                        z_index: 0,
                                     },
                                 ));
                                 col = col.saturating_add(display_cols as usize);
@@ -534,6 +539,10 @@ impl Terminal {
             .get("r")
             .and_then(|value| value.parse::<u16>().ok())
             .unwrap_or(1);
+        let z_index = params
+            .get("z")
+            .and_then(|value| value.parse::<i32>().ok())
+            .unwrap_or(0);
 
         match action {
             'd' => {
@@ -555,6 +564,7 @@ impl Terminal {
                     display_cols,
                     display_rows,
                     placement_id,
+                    z_index,
                 })
             }
             _ => {
@@ -613,6 +623,7 @@ impl Terminal {
                     display_cols,
                     display_rows,
                     placement_id,
+                    z_index,
                 })
             }
         }

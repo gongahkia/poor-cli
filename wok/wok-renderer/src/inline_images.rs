@@ -15,6 +15,8 @@ pub struct ImagePlacement {
     pub display_rows: u16,
     /// Optional protocol placement id.
     pub placement_id: u32,
+    /// Placement stacking order. Higher values render above lower values.
+    pub z_index: i32,
 }
 
 /// Decoded inline image content.
@@ -106,8 +108,13 @@ impl InlineImageStore {
 
     /// Return a sampled RGBA color for one terminal cell when covered by an inline image.
     pub fn sample_cell_color(&self, absolute_row: usize, col: usize) -> Option<[f32; 4]> {
+        let mut sampled = None;
+        let mut sampled_z = i32::MIN;
         for image in self.images.values() {
             for placement in &image.placements {
+                if placement.z_index < sampled_z {
+                    continue;
+                }
                 let row_start = placement.row;
                 let row_end = row_start + placement.display_rows as usize;
                 let col_start = placement.col;
@@ -138,15 +145,16 @@ impl InlineImageStore {
                     continue;
                 }
 
-                return Some([
+                sampled = Some([
                     f32::from(image.pixels[index]) / 255.0,
                     f32::from(image.pixels[index + 1]) / 255.0,
                     f32::from(image.pixels[index + 2]) / 255.0,
                     f32::from(image.pixels[index + 3]) / 255.0,
                 ]);
+                sampled_z = placement.z_index;
             }
         }
-        None
+        sampled
     }
 }
 
@@ -168,6 +176,7 @@ mod tests {
                 display_cols: 2,
                 display_rows: 2,
                 placement_id: 1,
+                z_index: 0,
             },
         );
 
@@ -190,6 +199,7 @@ mod tests {
                 display_cols: 1,
                 display_rows: 1,
                 placement_id: 11,
+                z_index: 0,
             },
         );
         store.place_existing(
@@ -200,6 +210,7 @@ mod tests {
                 display_cols: 1,
                 display_rows: 1,
                 placement_id: 12,
+                z_index: 0,
             },
         );
 
@@ -210,5 +221,42 @@ mod tests {
 
         assert!(store.sample_cell_color(5, 10).is_none());
         assert!(store.sample_cell_color(6, 11).is_some());
+    }
+
+    #[test]
+    fn test_z_index_controls_overlapping_samples() {
+        let mut store = InlineImageStore::new();
+        store.upsert_image(
+            1,
+            1,
+            1,
+            vec![255, 0, 0, 255],
+            ImagePlacement {
+                row: 0,
+                col: 0,
+                display_cols: 1,
+                display_rows: 1,
+                placement_id: 1,
+                z_index: 0,
+            },
+        );
+        store.upsert_image(
+            2,
+            1,
+            1,
+            vec![0, 0, 255, 255],
+            ImagePlacement {
+                row: 0,
+                col: 0,
+                display_cols: 1,
+                display_rows: 1,
+                placement_id: 2,
+                z_index: 10,
+            },
+        );
+
+        let sampled = store.sample_cell_color(0, 0).expect("sampled");
+        assert!(sampled[2] > 0.9);
+        assert!(sampled[0] < 0.1);
     }
 }

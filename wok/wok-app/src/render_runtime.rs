@@ -1356,21 +1356,14 @@ pub(crate) fn render_settings_editor(
         );
 
         let visible_line = fit_text_to_width(line, text_width, font.metrics.cell_width);
+        let text_color = settings_editor_line_color(theme, path, line);
         push_text(
             render,
             font,
             text_x,
             row_y,
             &visible_line,
-            with_opacity(
-                [
-                    theme.foreground.r,
-                    theme.foreground.g,
-                    theme.foreground.b,
-                    theme.foreground.a,
-                ],
-                surface_opacity,
-            ),
+            with_opacity(text_color, surface_opacity),
         );
     }
 
@@ -1390,6 +1383,57 @@ pub(crate) fn render_settings_editor(
                 surface_opacity,
             ),
         );
+    }
+}
+
+fn settings_editor_line_color(theme: &Theme, path: &Path, line: &str) -> [f32; 4] {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with('#') || trimmed.starts_with("//") || trimmed.starts_with("--") {
+        return [
+            theme.status_bar_text.r,
+            theme.status_bar_text.g,
+            theme.status_bar_text.b,
+            0.78,
+        ];
+    }
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    let first = trimmed
+        .split(|ch: char| ch.is_whitespace() || matches!(ch, '(' | '{' | ':' | '='))
+        .next()
+        .unwrap_or_default();
+    let keyword = match extension {
+        "rs" => matches!(
+            first,
+            "fn" | "let" | "pub" | "struct" | "enum" | "impl" | "use" | "mod" | "match"
+        ),
+        "js" | "ts" | "tsx" | "jsx" => matches!(
+            first,
+            "function" | "const" | "let" | "var" | "class" | "import" | "export" | "return"
+        ),
+        "py" => matches!(
+            first,
+            "def" | "class" | "import" | "from" | "return" | "if" | "for" | "while"
+        ),
+        "toml" | "yaml" | "yml" | "json" => trimmed.contains('=') || trimmed.ends_with(':'),
+        _ => false,
+    };
+    if keyword {
+        [
+            theme.highlight_current_match.r,
+            theme.highlight_current_match.g,
+            theme.highlight_current_match.b,
+            0.96,
+        ]
+    } else {
+        [
+            theme.foreground.r,
+            theme.foreground.g,
+            theme.foreground.b,
+            theme.foreground.a,
+        ]
     }
 }
 
