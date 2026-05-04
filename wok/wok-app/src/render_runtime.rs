@@ -3089,9 +3089,7 @@ fn push_effect_glyph_to_batch(
             );
         }
         VisualEffectMode::Wavy => {
-            gy += ((col as f32 * 0.45) + effect.time_secs * 5.0).sin()
-                * 3.0
-                * effect.intensity;
+            gy += ((col as f32 * 0.45) + effect.time_secs * 5.0).sin() * 3.0 * effect.intensity;
         }
         VisualEffectMode::Glitch => {
             let jitter = ((hash % 3) as f32 - 1.0) * 2.0 * effect.intensity;

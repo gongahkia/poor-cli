@@ -1315,8 +1315,7 @@ mod tests {
     fn test_reset_config_file_at_overwrites_config_only() {
         let dir = unique_temp_dir();
         fs::create_dir_all(&dir).expect("temp dir should be created");
-        fs::write(dir.join("config.toml"), "font_size = 99.0\n")
-            .expect("config should be written");
+        fs::write(dir.join("config.toml"), "font_size = 99.0\n").expect("config should be written");
         fs::write(dir.join("init.lua"), "wok.notify('keep')\n").expect("lua should be written");
 
         let path = reset_config_file_at(&dir).expect("config reset should succeed");

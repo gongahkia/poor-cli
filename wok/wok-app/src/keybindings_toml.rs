@@ -82,7 +82,10 @@ pub fn load(path: &Path) -> Result<(Vec<BindingOverride>, Vec<String>), LoadErro
         let combo = match parse_keys(&entry.keys) {
             Some(c) => c,
             None => {
-                warnings.push(format!("ignoring binding with unparseable keys: {:?}", entry.keys));
+                warnings.push(format!(
+                    "ignoring binding with unparseable keys: {:?}",
+                    entry.keys
+                ));
                 continue;
             }
         };
@@ -207,6 +210,7 @@ pub fn parse_action_id(id: &str) -> Option<Action> {
         "toggle_broadcast" => Action::ToggleBroadcast,
         "toggle_typewriter_effect" => Action::ToggleTypewriterEffect,
         "cycle_visual_effect" => Action::CycleVisualEffect,
+        "close_media_preview" => Action::CloseMediaPreview,
         "new_floating_pane" => Action::NewFloatingPane,
         "toggle_floating_pane" => Action::ToggleFloatingPane,
         "close_floating_pane" => Action::CloseFloatingPane,
@@ -275,6 +279,10 @@ mod tests {
         assert!(matches!(
             parse_action_id("cycle_visual_effect"),
             Some(Action::CycleVisualEffect)
+        ));
+        assert!(matches!(
+            parse_action_id("close_media_preview"),
+            Some(Action::CloseMediaPreview)
         ));
         assert!(parse_action_id("not_a_real_action").is_none());
     }

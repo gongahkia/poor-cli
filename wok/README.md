@@ -78,8 +78,9 @@ Use `bash`, `zsh`, or `fish` for the cleanest first-run block demo.
 7. Use `Mod+F` to search across the workspace and jump between panes.
 8. Use `Mod+Alt+S` to toggle typewriter-style output reveal.
 9. Use `Mod+P` and run `Cycle Visual Effect` to preview the default-off visual effects.
-10. Use `Mod+P` and run `Reset Settings` to restore the managed default config.
-11. Use `Mod+Shift+S` to save the `manual` session snapshot, then `Mod+Shift+R` to load it.
+10. Use `Mod+P` and choose a `Preview ...` file entry for images, GIFs, or MP4s in the current directory; press `Escape` or run `Close Media Preview` to close it.
+11. Use `Mod+P` and run `Reset Settings` to restore the managed default config.
+12. Use `Mod+Shift+S` to save the `manual` session snapshot, then `Mod+Shift+R` to load it.
 
 Named snapshots are available through Lua action aliases such as `save_session:demo` and `load_session:demo`.
 

@@ -1,4 +1,5 @@
 //! Wok terminal emulator entry point.
+#![allow(unexpected_cfgs)]
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -7,7 +8,7 @@ use std::collections::VecDeque;
 use std::error::Error;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -87,6 +88,7 @@ mod action_parser;
 mod cli_runtime;
 mod input_codec;
 mod jsonrpc_params;
+mod media_preview;
 mod perf_metrics;
 mod remote_runtime;
 mod render_runtime;
@@ -97,6 +99,7 @@ mod workspace_runtime;
 use action_parser::parse_lua_action;
 use cli_runtime::{dispatch_cli_command, parse_shell_type, CliAction};
 use input_codec::{input_event_to_editor_key, input_event_to_pty_bytes};
+use media_preview::{media_kind_for_path, MediaPreview, PreviewFrame};
 use perf_metrics::{format_bytes, percent, SystemMetricsSampler};
 use render_runtime::*;
 
@@ -914,6 +917,7 @@ struct WokHandler {
     #[allow(dead_code)]
     ui_core: wok_ui_core::App,
     background: BackgroundRenderer,
+    media_preview: Option<MediaPreview>,
     font: FontSystem,
     render: Option<RenderState>,
     runtime_waker: Option<RuntimeWaker>,
@@ -1030,6 +1034,7 @@ impl WokHandler {
             .ok(),
             ui_core: wok_ui_core::App::new(),
             background,
+            media_preview: None,
             font,
             render: None,
             runtime_waker: None,
@@ -1406,6 +1411,7 @@ impl WokHandler {
             }
         }
         self.ensure_active_tab_visible();
+        self.sync_media_preview_frame();
     }
 
     fn clamp_tab_scroll(&mut self) {
@@ -3497,6 +3503,100 @@ impl WokHandler {
         }
     }
 
+    fn open_media_preview(&mut self, path: PathBuf) {
+        let path = self.resolve_preview_path(&path);
+        let Some(kind) = media_kind_for_path(&path) else {
+            self.status_message = Some(format!("Unsupported preview type: {}", path.display()));
+            self.needs_redraw = true;
+            return;
+        };
+        if !path.is_file() {
+            self.status_message = Some(format!("Preview file not found: {}", path.display()));
+            self.needs_redraw = true;
+            return;
+        }
+
+        let Some(window) = self.window.clone() else {
+            self.status_message = Some("Window is not ready for media preview".to_string());
+            self.needs_redraw = true;
+            return;
+        };
+        let Some(frame) = self.media_preview_frame_for_window(&window) else {
+            self.status_message = Some("Window is too small for media preview".to_string());
+            self.needs_redraw = true;
+            return;
+        };
+
+        self.media_preview = None;
+        match MediaPreview::open(&window, path.clone(), kind, frame) {
+            Ok(preview) => {
+                self.status_message =
+                    Some(format!("Previewing {}: {}", kind.label(), path.display()));
+                self.media_preview = Some(preview);
+            }
+            Err(error) => {
+                self.status_message = Some(format!("Failed to open preview: {error}"));
+            }
+        }
+        self.needs_redraw = true;
+    }
+
+    fn close_media_preview(&mut self) {
+        if let Some(preview) = self.media_preview.take() {
+            self.status_message = Some(format!(
+                "Closed {} preview: {}",
+                preview.kind().label(),
+                preview.path().display()
+            ));
+            self.needs_redraw = true;
+        }
+    }
+
+    fn sync_media_preview_frame(&mut self) {
+        let Some(window) = self.window.clone() else {
+            return;
+        };
+        let Some(frame) = self.media_preview_frame_for_window(&window) else {
+            return;
+        };
+        if let Some(preview) = self.media_preview.as_mut() {
+            preview.set_frame(frame);
+        }
+    }
+
+    fn media_preview_frame_for_window(&self, window: &Window) -> Option<PreviewFrame> {
+        let content = self.chrome_rects.content;
+        if content.w <= 1.0 || content.h <= 1.0 {
+            return None;
+        }
+
+        let scale = window.scale_factor().max(1.0) as f32;
+        let inner_size = window.inner_size();
+        let window_height_points = inner_size.height as f32 / scale;
+        let margin = 24.0;
+        let x = (content.x + margin) / scale;
+        let y_from_top = (content.y + margin) / scale;
+        let width = (content.w - margin * 2.0).max(120.0) / scale;
+        let height = (content.h - margin * 2.0).max(90.0) / scale;
+        let y = (window_height_points - y_from_top - height).max(0.0);
+
+        Some(PreviewFrame {
+            x: f64::from(x),
+            y: f64::from(y),
+            width: f64::from(width),
+            height: f64::from(height),
+        })
+    }
+
+    fn resolve_preview_path(&self, path: &Path) -> PathBuf {
+        if path.is_absolute() {
+            return path.to_path_buf();
+        }
+        self.active_pane()
+            .map(|pane| pane.current_cwd.join(path))
+            .unwrap_or_else(|| path.to_path_buf())
+    }
+
     fn send_to_pty(&mut self, data: &[u8]) {
         if let Some(session) = self.attached_session.as_deref() {
             if let Some(pane_id) = self.active_pane_id() {
@@ -4574,6 +4674,10 @@ impl WokHandler {
             self.reset_settings_to_defaults();
             return;
         }
+        if matches!(action, Action::CloseMediaPreview) {
+            self.close_media_preview();
+            return;
+        }
         if matches!(action, Action::ToggleTypewriterEffect) {
             self.config.typewriter_effect_enabled = !self.config.typewriter_effect_enabled;
             for pane in self.panes.values_mut() {
@@ -5400,6 +5504,13 @@ impl WokHandler {
                                     .command_palette
                                     .set_query(&active_pane.app.input_editor.buffer.text());
                             }
+                        }
+                        PaletteAction::PreviewMedia(path) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
+                            self.open_media_preview(PathBuf::from(path));
                         }
                         PaletteAction::ApplyTheme(path) => {
                             if let Some(active_pane) = self.active_pane_mut() {
@@ -6566,6 +6677,24 @@ impl WokHandler {
         if pane.current_cwd.is_dir() {
             if let Ok(read_dir) = std::fs::read_dir(&pane.current_cwd) {
                 for path in read_dir.flatten().take(50).map(|entry| entry.path()) {
+                    if let Some(kind) = media_kind_for_path(&path) {
+                        entries.push(PaletteEntry {
+                            label: format!(
+                                "Preview {}",
+                                path.file_name()
+                                    .and_then(|name| name.to_str())
+                                    .unwrap_or_default()
+                            ),
+                            description: format!(
+                                "Open {} in built-in preview: {}",
+                                kind.label(),
+                                path.display()
+                            ),
+                            category: PaletteCategory::FilePath,
+                            score: 0.0,
+                            action: PaletteAction::PreviewMedia(path.display().to_string()),
+                        });
+                    }
                     entries.push(PaletteEntry {
                         label: path
                             .file_name()
@@ -7357,6 +7486,11 @@ impl AppHandler for WokHandler {
         }
 
         if event.event_type != InputEventType::Release {
+            if matches!(event.action, KeyAction::Escape) && self.media_preview.is_some() {
+                self.close_media_preview();
+                return;
+            }
+
             self.record_recent_key(&event);
 
             if self.handle_settings_editor_input(&event) {
@@ -8975,6 +9109,7 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::ToggleBroadcast => "toggle_broadcast".to_string(),
         Action::ToggleTypewriterEffect => "toggle_typewriter_effect".to_string(),
         Action::CycleVisualEffect => "cycle_visual_effect".to_string(),
+        Action::CloseMediaPreview => "close_media_preview".to_string(),
         Action::NewFloatingPane => "new_floating_pane".to_string(),
         Action::ToggleFloatingPane => "toggle_floating_pane".to_string(),
         Action::CloseFloatingPane => "close_floating_pane".to_string(),
@@ -9056,6 +9191,7 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::ToggleBroadcast,
         Action::ToggleTypewriterEffect,
         Action::CycleVisualEffect,
+        Action::CloseMediaPreview,
         Action::SplitVertical,
         Action::SplitHorizontal,
         Action::CloseSplit,
@@ -9158,6 +9294,7 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::ToggleBroadcast => "Toggle input broadcast across panes",
         Action::ToggleTypewriterEffect => "Toggle character-by-character output reveal",
         Action::CycleVisualEffect => "Cycle rainbow, wavy, glitch, CRT, bloom, and cookie effects",
+        Action::CloseMediaPreview => "Close the built-in image, GIF, or MP4 preview",
         Action::NewFloatingPane => "Create a floating pane",
         Action::ToggleFloatingPane => "Show or hide floating panes",
         Action::CloseFloatingPane => "Close focused floating pane",
@@ -9598,6 +9735,10 @@ mod tests {
             parse_lua_action("next_visual_effect"),
             Some(Action::CycleVisualEffect)
         );
+        assert_eq!(
+            parse_lua_action("close_preview"),
+            Some(Action::CloseMediaPreview)
+        );
     }
 
     #[test]
@@ -9667,6 +9808,7 @@ mod tests {
         assert_eq!(catalog[3], Action::QuickSelect);
         assert!(catalog.contains(&Action::ResetSettings));
         assert!(catalog.contains(&Action::CycleVisualEffect));
+        assert!(catalog.contains(&Action::CloseMediaPreview));
     }
 
     #[test]

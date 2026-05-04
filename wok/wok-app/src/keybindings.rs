@@ -113,6 +113,8 @@ pub enum Action {
     ToggleTypewriterEffect,
     /// Cycle decorative terminal visual effects.
     CycleVisualEffect,
+    /// Close the built-in media preview.
+    CloseMediaPreview,
     /// Create a new floating pane.
     NewFloatingPane,
     /// Toggle visibility for floating panes.

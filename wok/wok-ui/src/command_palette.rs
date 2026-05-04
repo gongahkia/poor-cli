@@ -38,6 +38,8 @@ pub enum PaletteAction {
     RecentCommand(String),
     /// Insert a file path.
     FilePath(String),
+    /// Open a supported media file in the built-in preview.
+    PreviewMedia(String),
     /// Apply the theme at the given absolute path.
     ApplyTheme(String),
     /// Preview the diff for a changed Git file.
@@ -102,9 +104,7 @@ impl CommandPaletteState {
     /// Edits to the returned surface do not flow back automatically; call
     /// [`apply_input_surface`] to commit.
     pub fn to_input_surface(&self) -> wok_input::surface::InputSurface {
-        let mut s = wok_input::surface::InputSurface::new(
-            wok_input::surface::SurfaceMode::Palette,
-        );
+        let mut s = wok_input::surface::InputSurface::new(wok_input::surface::SurfaceMode::Palette);
         let _ = s.set_text(self.query.clone());
         s
     }

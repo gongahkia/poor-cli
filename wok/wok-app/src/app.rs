@@ -409,6 +409,7 @@ impl WokApp {
             }
             Action::ToggleTypewriterEffect => {}
             Action::CycleVisualEffect => {}
+            Action::CloseMediaPreview => {}
             Action::NewFloatingPane => {
                 effects.push(RuntimeEffect::Workspace(WorkspaceEffect::NewFloatingPane));
             }

@@ -85,10 +85,13 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         "toggle_broadcast" | "broadcast_toggle" => Some(Action::ToggleBroadcast),
         "toggle_typewriter_effect" | "typewriter_toggle" | "typewriter_effect" => {
             Some(Action::ToggleTypewriterEffect)
-        },
+        }
         "cycle_visual_effect" | "visual_effect_cycle" | "next_visual_effect" => {
             Some(Action::CycleVisualEffect)
-        },
+        }
+        "close_media_preview" | "media_preview_close" | "close_preview" => {
+            Some(Action::CloseMediaPreview)
+        }
         "new_floating_pane" | "floating_new" => Some(Action::NewFloatingPane),
         "toggle_floating_pane" | "toggle_floating" | "floating_toggle" => {
             Some(Action::ToggleFloatingPane)

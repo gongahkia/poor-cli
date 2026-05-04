@@ -4587,6 +4587,7 @@ dependencies = [
  "criterion",
  "mlua",
  "muda",
+ "objc",
  "pollster",
  "regex",
  "serde",
