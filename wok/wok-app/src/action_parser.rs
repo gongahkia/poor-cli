@@ -88,7 +88,7 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         },
         "cycle_visual_effect" | "visual_effect_cycle" | "next_visual_effect" => {
             Some(Action::CycleVisualEffect)
-        }
+        },
         "new_floating_pane" | "floating_new" => Some(Action::NewFloatingPane),
         "toggle_floating_pane" | "toggle_floating" | "floating_toggle" => {
             Some(Action::ToggleFloatingPane)

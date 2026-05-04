@@ -1,6 +1,30 @@
 use super::*;
 use std::path::Path;
 
+#[derive(Clone, Copy)]
+pub(crate) struct VisualEffectState {
+    pub mode: VisualEffectMode,
+    pub intensity: f32,
+    pub time_secs: f32,
+}
+
+impl VisualEffectState {
+    pub(crate) fn from_config(config: &WokConfig, elapsed: Duration) -> Option<Self> {
+        if matches!(config.visual_effect, VisualEffectMode::None) {
+            return None;
+        }
+        Some(Self {
+            mode: config.visual_effect,
+            intensity: config.visual_effect_intensity.clamp(0.0, 1.0),
+            time_secs: if config.visual_effect_animated {
+                elapsed.as_secs_f32()
+            } else {
+                0.0
+            },
+        })
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn compute_chrome_rects(
     size: PhysicalSize<u32>,
@@ -3022,6 +3046,181 @@ pub(crate) fn push_glyph_to_batch(
     push_glyph_impl(pipeline, gpu, atlas, batch, font, x, y, character, color);
 }
 
+#[allow(clippy::too_many_arguments)]
+fn push_effect_glyph_to_batch(
+    render: &mut RenderState,
+    batch: &mut QuadBatch,
+    font: &mut FontSystem,
+    x: f32,
+    y: f32,
+    character: char,
+    color: [f32; 4],
+    visual_effect: Option<VisualEffectState>,
+    absolute_row: usize,
+    col: usize,
+    cell_width: f32,
+) {
+    let Some(effect) = visual_effect else {
+        push_glyph_to_batch(render, batch, font, x, y, character, color);
+        return;
+    };
+
+    let mut fg = color;
+    let mut gx = x;
+    let mut gy = y;
+    let hash = effect_hash(absolute_row, col, effect.time_secs);
+
+    match effect.mode {
+        VisualEffectMode::None => {}
+        VisualEffectMode::Rainbow => {
+            fg = blend_rgb(
+                fg,
+                with_rgb(fg, hsv_to_rgb(effect.time_secs * 0.18 + col as f32 * 0.025)),
+                effect.intensity,
+            );
+        }
+        VisualEffectMode::RainbowStatic => {
+            fg = blend_rgb(
+                fg,
+                with_rgb(
+                    fg,
+                    hsv_to_rgb((absolute_row as f32 * 0.025) + col as f32 * 0.035),
+                ),
+                effect.intensity,
+            );
+        }
+        VisualEffectMode::Wavy => {
+            gy += ((col as f32 * 0.45) + effect.time_secs * 5.0).sin()
+                * 3.0
+                * effect.intensity;
+        }
+        VisualEffectMode::Glitch => {
+            let jitter = ((hash % 3) as f32 - 1.0) * 2.0 * effect.intensity;
+            gx += jitter;
+            if hash % 23 == 0 {
+                fg[3] *= 0.35;
+            }
+            let mut cyan = [0.2, 0.95, 1.0, fg[3] * 0.35 * effect.intensity];
+            let mut magenta = [1.0, 0.15, 0.75, fg[3] * 0.30 * effect.intensity];
+            if hash % 2 == 0 {
+                std::mem::swap(&mut cyan, &mut magenta);
+            }
+            push_glyph_to_batch(render, batch, font, gx - 1.5, gy, character, cyan);
+            push_glyph_to_batch(render, batch, font, gx + 1.5, gy, character, magenta);
+        }
+        VisualEffectMode::Crt => {
+            fg[0] = (fg[0] * (1.0 - 0.18 * effect.intensity)).clamp(0.0, 1.0);
+            fg[1] = (fg[1] * (1.0 + 0.18 * effect.intensity)).clamp(0.0, 1.0);
+            fg[2] = (fg[2] * (1.0 - 0.22 * effect.intensity)).clamp(0.0, 1.0);
+        }
+        VisualEffectMode::Bloom => {
+            let glow = [fg[0], fg[1], fg[2], fg[3] * 0.28 * effect.intensity];
+            push_glyph_to_batch(render, batch, font, gx - 1.0, gy, character, glow);
+            push_glyph_to_batch(render, batch, font, gx + 1.0, gy, character, glow);
+            push_glyph_to_batch(render, batch, font, gx, gy - 1.0, character, glow);
+            push_glyph_to_batch(render, batch, font, gx, gy + 1.0, character, glow);
+        }
+        VisualEffectMode::Cookie => {
+            if hash % 17 == 0 {
+                fg[3] *= 1.0 - 0.65 * effect.intensity;
+            }
+            if hash % 29 == 0 {
+                fg = with_rgb(fg, [0.95, 0.68, 0.34]);
+            }
+        }
+    }
+
+    push_glyph_to_batch(render, batch, font, gx, gy, character, fg);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_cell_visual_effect_overlay(
+    batch: &mut QuadBatch,
+    effect: VisualEffectState,
+    x: f32,
+    y: f32,
+    cell_width: f32,
+    cell_height: f32,
+    absolute_row: usize,
+    col: usize,
+) {
+    match effect.mode {
+        VisualEffectMode::Crt => {
+            if absolute_row % 2 == 0 {
+                batch.push_bg_quad(
+                    x,
+                    y,
+                    cell_width,
+                    (cell_height * 0.25).max(1.0),
+                    [0.0, 0.0, 0.0, 0.22 * effect.intensity],
+                );
+            }
+        }
+        VisualEffectMode::Cookie => {
+            let hash = effect_hash(absolute_row, col, effect.time_secs);
+            if hash % 19 == 0 {
+                let crumb = (hash % 7) as f32;
+                batch.push_bg_quad(
+                    x + (crumb / 7.0) * cell_width,
+                    y + ((hash % 11) as f32 / 11.0) * cell_height,
+                    2.0 + 2.0 * effect.intensity,
+                    2.0 + 2.0 * effect.intensity,
+                    [0.82, 0.47, 0.18, 0.36 * effect.intensity],
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+fn with_rgb(mut color: [f32; 4], rgb: [f32; 3]) -> [f32; 4] {
+    color[0] = rgb[0];
+    color[1] = rgb[1];
+    color[2] = rgb[2];
+    color
+}
+
+fn blend_rgb(base: [f32; 4], effect: [f32; 4], amount: f32) -> [f32; 4] {
+    let t = amount.clamp(0.0, 1.0);
+    [
+        base[0] * (1.0 - t) + effect[0] * t,
+        base[1] * (1.0 - t) + effect[1] * t,
+        base[2] * (1.0 - t) + effect[2] * t,
+        base[3],
+    ]
+}
+
+fn hsv_to_rgb(hue: f32) -> [f32; 3] {
+    let h = hue.rem_euclid(1.0) * 6.0;
+    let c = 1.0;
+    let x = c * (1.0 - (h.rem_euclid(2.0) - 1.0).abs());
+    let (r, g, b) = if h < 1.0 {
+        (c, x, 0.0)
+    } else if h < 2.0 {
+        (x, c, 0.0)
+    } else if h < 3.0 {
+        (0.0, c, x)
+    } else if h < 4.0 {
+        (0.0, x, c)
+    } else if h < 5.0 {
+        (x, 0.0, c)
+    } else {
+        (c, 0.0, x)
+    };
+    [r, g, b]
+}
+
+fn effect_hash(row: usize, col: usize, time_secs: f32) -> u32 {
+    let tick = (time_secs * 24.0) as u32;
+    let mut value = (row as u32).wrapping_mul(0x9e37_79b1)
+        ^ (col as u32).wrapping_mul(0x85eb_ca6b)
+        ^ tick.wrapping_mul(0xc2b2_ae35);
+    value ^= value >> 16;
+    value = value.wrapping_mul(0x7feb_352d);
+    value ^= value >> 15;
+    value
+}
+
 pub(crate) fn prewarm_common_glyphs(render: &mut RenderState, font: &mut FontSystem) -> usize {
     let (pipeline, gpu, atlas) = (&mut render.pipeline, &render.gpu, &mut render.atlas);
     let mut warmed = 0;
@@ -3492,6 +3691,7 @@ pub(crate) fn rebuild_visible_row_batch(
     cell_width: f32,
     cell_height: f32,
     terminal_surface_alpha: f32,
+    visual_effect: Option<VisualEffectState>,
     typewriter: Option<&TypewriterState>,
     render_time: Instant,
 ) {
@@ -3588,12 +3788,37 @@ pub(crate) fn rebuild_visible_row_batch(
             );
         }
 
+        if let Some(effect) = visual_effect {
+            push_cell_visual_effect_overlay(
+                batch,
+                effect,
+                x,
+                row_y,
+                cell_width,
+                cell_height,
+                absolute_row,
+                col_idx,
+            );
+        }
+
         if !typewriter_hidden
             && inline_color.is_none()
             && cell.character != ' '
             && cell.character != '\0'
         {
-            push_glyph_to_batch(render, batch, font, x, row_y, cell.character, fg);
+            push_effect_glyph_to_batch(
+                render,
+                batch,
+                font,
+                x,
+                row_y,
+                cell.character,
+                fg,
+                visual_effect,
+                absolute_row,
+                col_idx,
+                cell_width,
+            );
         }
         if !typewriter_hidden && is_hyperlink_cell {
             batch.push_bg_quad(

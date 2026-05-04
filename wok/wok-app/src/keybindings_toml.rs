@@ -206,6 +206,7 @@ pub fn parse_action_id(id: &str) -> Option<Action> {
         "quick_select_block" => Action::QuickSelectBlock,
         "toggle_broadcast" => Action::ToggleBroadcast,
         "toggle_typewriter_effect" => Action::ToggleTypewriterEffect,
+        "cycle_visual_effect" => Action::CycleVisualEffect,
         "new_floating_pane" => Action::NewFloatingPane,
         "toggle_floating_pane" => Action::ToggleFloatingPane,
         "close_floating_pane" => Action::CloseFloatingPane,

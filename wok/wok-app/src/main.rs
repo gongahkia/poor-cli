@@ -25,7 +25,7 @@ use wok_app::action_effects::{
 use wok_app::app::{InputMode, WokApp};
 use wok_app::block_query::{BlockQueryMode, BlockQueryState, DiffLineEntry, DiffLineKind};
 use wok_app::command_search::{CommandSearchScope, CommandSearchState};
-use wok_app::config::{TriggerScopeConfig, WokConfig};
+use wok_app::config::{TriggerScopeConfig, VisualEffectMode, WokConfig};
 use wok_app::event_loop::{run_event_loop, RuntimeWaker};
 use wok_app::handler::{AppHandler, AppMenuAction};
 use wok_app::input::{InputEvent, InputEventType, KeyAction};
@@ -1717,6 +1717,7 @@ impl WokHandler {
         let render_time = Instant::now();
         let typewriter_enabled = self.config.typewriter_effect_enabled;
         let typewriter_cps = self.config.typewriter_effect_cps;
+        let visual_effect = VisualEffectState::from_config(&self.config, self.started_at.elapsed());
         let Some(render) = self.render.as_mut() else {
             return;
         };
@@ -1947,6 +1948,7 @@ impl WokHandler {
                         cw,
                         ch,
                         terminal_surface_alpha,
+                        visual_effect,
                         typewriter,
                         render_time,
                     );
@@ -4592,6 +4594,19 @@ impl WokHandler {
             self.needs_redraw = true;
             return;
         }
+        if matches!(action, Action::CycleVisualEffect) {
+            self.config.visual_effect = self.config.visual_effect.next();
+            for pane in self.panes.values_mut() {
+                pane.app.config.visual_effect = self.config.visual_effect;
+                pane.row_cache.invalidate();
+            }
+            self.status_message = Some(format!(
+                "Visual effect: {}",
+                self.config.visual_effect.as_str()
+            ));
+            self.needs_redraw = true;
+            return;
+        }
 
         if self.active_pane().is_some_and(|pane| {
             pane.terminal.state.is_alt_screen()
@@ -7137,6 +7152,15 @@ impl AppHandler for WokHandler {
                 });
             }
             self.needs_redraw |= is_dirty;
+        }
+
+        if !matches!(self.config.visual_effect, VisualEffectMode::None)
+            && self.config.visual_effect_animated
+        {
+            for pane in self.panes.values_mut() {
+                pane.row_cache.dirty.mark_fully_damaged();
+            }
+            self.needs_redraw = true;
         }
 
         if self.config.typewriter_effect_enabled {

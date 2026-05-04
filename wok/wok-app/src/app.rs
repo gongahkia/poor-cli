@@ -408,6 +408,7 @@ impl WokApp {
                 effects.push(RuntimeEffect::Workspace(WorkspaceEffect::ToggleBroadcast));
             }
             Action::ToggleTypewriterEffect => {}
+            Action::CycleVisualEffect => {}
             Action::NewFloatingPane => {
                 effects.push(RuntimeEffect::Workspace(WorkspaceEffect::NewFloatingPane));
             }
