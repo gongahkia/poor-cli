@@ -1,0 +1,44 @@
+version: 1
+defaults:
+  unmatched: ask
+
+rules:
+  - tool: write_file
+    when:
+      path_matches:
+        - "src/**"
+        - "tests/**"
+    allow: true
+
+  - tool: write_file
+    when:
+      path_matches:
+        - ".github/**"
+        - "infra/**"
+    deny: true
+    reason: "infra/CI changes require human review"
+
+  - tool: run_shell
+    when:
+      command_matches:
+        - "^pytest(\\s|$)"
+        - "^npm test"
+        - "^cargo test"
+    allow: true
+
+  - tool: run_shell
+    when:
+      command_class: destructive
+    deny: true
+
+  - tool: "*"
+    when:
+      provider_in: ["openai"]
+      repo_label: "internal-only"
+    deny: true
+    reason: "internal repos must use anthropic or local providers"
+
+  - tool: delegate_task
+    when:
+      agent_name: security-reviewer
+    allow: true

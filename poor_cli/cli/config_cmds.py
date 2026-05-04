@@ -39,6 +39,16 @@ def run_config_mode(argv: Sequence[str]) -> int:
     p_toggle = sub.add_parser("toggle")
     p_toggle.add_argument("key")
     p_toggle.add_argument("--json", action="store_true")
+    p_permissions = sub.add_parser("permissions")
+    permissions_sub = p_permissions.add_subparsers(dest="permissions_command", required=True)
+    permissions_sub.add_parser("show").add_argument("--json", action="store_true")
+    permissions_sub.add_parser("validate").add_argument("--json", action="store_true")
+    p_explain = permissions_sub.add_parser("explain")
+    p_explain.add_argument("tool")
+    p_explain.add_argument("--input", default="")
+    p_explain.add_argument("--provider", default="")
+    p_explain.add_argument("--model", default="")
+    p_explain.add_argument("--json", action="store_true")
     args = parser.parse_args(list(argv))
     manager = ConfigManager()
     config = manager.load() if manager.config_path.exists() else Config()
@@ -107,6 +117,37 @@ def run_config_mode(argv: Sequence[str]) -> int:
         else:
             print(f"{args.key} = {new_value}")
         return 0
+    if args.subcommand == "permissions":
+        from ..permission_dsl import PermissionDsl, input_from_cli
+        dsl = PermissionDsl(Path.cwd())
+        if args.permissions_command == "show":
+            payload = dsl.show()
+            if args.json:
+                _print_json(payload)
+            else:
+                _print_json(payload)
+            return 1 if payload.get("errors") else 0
+        if args.permissions_command == "validate":
+            errors = dsl.errors()
+            payload = {"ok": not errors, "errors": errors}
+            if args.json:
+                _print_json(payload)
+            else:
+                print("permissions.yml ok" if not errors else "permissions.yml has errors")
+                for error in errors:
+                    print(f"  {error}")
+            return 0 if not errors else 1
+        if args.permissions_command == "explain":
+            payload = dsl.explain(
+                args.tool,
+                input_from_cli(args.tool, args.input),
+                context={"provider": args.provider, "model": args.model},
+            )
+            if args.json:
+                _print_json(payload)
+            else:
+                _print_json(payload)
+            return 0
     raise SystemExit(f"Unknown config subcommand: {args.subcommand}")
 
 

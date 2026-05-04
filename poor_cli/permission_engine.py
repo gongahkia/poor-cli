@@ -204,16 +204,36 @@ class PermissionEngineMixin:
 
     def _check_auto_permission(self, tool_name: str, tool_args: Dict[str, Any]) -> Optional[bool]:
         """Return True if auto-approved, False if auto-denied, None if manual check needed."""
+        candidate: Optional[str] = None
         if not self.config:
-            return None
-        agentic = self.config.agentic
-        auto_approve = getattr(agentic, "auto_approve_tools", [])
-        if tool_name in auto_approve:
+            candidate = None
+        else:
+            agentic = self.config.agentic
+            auto_approve = getattr(agentic, "auto_approve_tools", [])
+            if tool_name in auto_approve:
+                candidate = "allow"
+            deny_patterns = getattr(agentic, "deny_patterns", [])
+            args_str = str(tool_args)
+            for pattern in deny_patterns:
+                if pattern in args_str:
+                    logger.warning("Deny pattern matched: %s", pattern)
+                    candidate = "deny"
+                    break
+        try:
+            from .permission_dsl import PermissionDsl, combine_behaviors
+            model = getattr(getattr(self.config, "model", None), "model_name", "") if self.config else ""
+            provider = getattr(getattr(self.config, "model", None), "provider", "") if self.config else ""
+            decision = PermissionDsl(Path.cwd()).evaluate(
+                tool_name,
+                tool_args,
+                context={"provider": provider, "model": model},
+            )
+            if decision is not None:
+                candidate = decision.behavior if candidate is None else combine_behaviors(candidate, decision.behavior)
+        except Exception as error:
+            logger.debug("permission DSL evaluation skipped: %s", error)
+        if candidate == "deny":
+            return False
+        if candidate == "allow":
             return True
-        deny_patterns = getattr(agentic, "deny_patterns", [])
-        args_str = str(tool_args)
-        for pattern in deny_patterns:
-            if pattern in args_str:
-                logger.warning("Deny pattern matched: %s", pattern)
-                return False
         return None

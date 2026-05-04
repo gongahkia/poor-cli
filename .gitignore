@@ -51,6 +51,7 @@ Thumbs.db
 !.poor-cli/tool_projections.yaml
 !.poor-cli/agents/
 !.poor-cli/agents/*.md
+!.poor-cli/permissions.example.yml
 .poor-cli/preferences.json
 .poor-cli/.legacy-v0/
 poor-cli.log
@@ -129,3 +130,4 @@ seuss.yaml
 .poor-cli/*
 !.poor-cli/agents/
 !.poor-cli/agents/*.md
+!.poor-cli/permissions.example.yml
