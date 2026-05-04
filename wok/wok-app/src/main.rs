@@ -8974,6 +8974,7 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::QuickSelectBlock => "quick_select_block".to_string(),
         Action::ToggleBroadcast => "toggle_broadcast".to_string(),
         Action::ToggleTypewriterEffect => "toggle_typewriter_effect".to_string(),
+        Action::CycleVisualEffect => "cycle_visual_effect".to_string(),
         Action::NewFloatingPane => "new_floating_pane".to_string(),
         Action::ToggleFloatingPane => "toggle_floating_pane".to_string(),
         Action::CloseFloatingPane => "close_floating_pane".to_string(),
@@ -9054,6 +9055,7 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::BlockCollapse,
         Action::ToggleBroadcast,
         Action::ToggleTypewriterEffect,
+        Action::CycleVisualEffect,
         Action::SplitVertical,
         Action::SplitHorizontal,
         Action::CloseSplit,
@@ -9155,6 +9157,7 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::QuickSelectBlock => "Start quick-select labels for selected block",
         Action::ToggleBroadcast => "Toggle input broadcast across panes",
         Action::ToggleTypewriterEffect => "Toggle character-by-character output reveal",
+        Action::CycleVisualEffect => "Cycle rainbow, wavy, glitch, CRT, bloom, and cookie effects",
         Action::NewFloatingPane => "Create a floating pane",
         Action::ToggleFloatingPane => "Show or hide floating panes",
         Action::CloseFloatingPane => "Close focused floating pane",
@@ -9591,6 +9594,10 @@ mod tests {
             parse_lua_action("reset_config"),
             Some(Action::ResetSettings)
         );
+        assert_eq!(
+            parse_lua_action("next_visual_effect"),
+            Some(Action::CycleVisualEffect)
+        );
     }
 
     #[test]
@@ -9659,6 +9666,7 @@ mod tests {
         assert_eq!(catalog[2], Action::SearchGlobal);
         assert_eq!(catalog[3], Action::QuickSelect);
         assert!(catalog.contains(&Action::ResetSettings));
+        assert!(catalog.contains(&Action::CycleVisualEffect));
     }
 
     #[test]

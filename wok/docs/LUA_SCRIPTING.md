@@ -121,7 +121,7 @@ Block navigation: `block_prev`, `block_next`, `block_copy`, `block_copy_command`
 
 Layout / panels: `next_layout`, `prev_layout`, `toggle_failure_trends_panel`, `toggle_workspace_insights_panel`, `toggle_broadcast`
 
-Input & terminal: `toggle_input_position`, `toggle_typewriter_effect`, `zoom_in`, `zoom_out`, `zoom_reset`, `clear_screen`, `send_eof`
+Input & terminal: `toggle_input_position`, `toggle_typewriter_effect`, `cycle_visual_effect`, `zoom_in`, `zoom_out`, `zoom_reset`, `clear_screen`, `send_eof`
 
 Sessions: `save_session:<name>`, `load_session:<name>`
 

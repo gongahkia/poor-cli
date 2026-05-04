@@ -486,4 +486,15 @@ mod tests {
         state.pop_kitty_keyboard_flags();
         assert_eq!(state.kitty_keyboard_flags(), 0);
     }
+
+    #[test]
+    fn test_dsr_cursor_position_request_emits_pty_write() {
+        let mut state = TerminalState::new(80, 24, 1000);
+        state.process_bytes(b"\x1b[6n");
+
+        let events = state.drain_events();
+        assert!(events.iter().any(|event| {
+            matches!(event, TermEvent::PtyWrite(response) if response.contains("[1;1R"))
+        }));
+    }
 }

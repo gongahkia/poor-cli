@@ -272,6 +272,10 @@ mod tests {
             parse_action_id("reset_settings"),
             Some(Action::ResetSettings)
         ));
+        assert!(matches!(
+            parse_action_id("cycle_visual_effect"),
+            Some(Action::CycleVisualEffect)
+        ));
         assert!(parse_action_id("not_a_real_action").is_none());
     }
 

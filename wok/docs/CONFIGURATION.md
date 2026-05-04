@@ -52,6 +52,9 @@ recent_keys_timeout_ms = 2000
 recent_keys_opacity = 0.86
 typewriter_effect_enabled = false
 typewriter_effect_cps = 180.0
+visual_effect = "none"
+visual_effect_intensity = 0.5
+visual_effect_animated = true
 copy_on_select = false
 confirm_close_with_running_process = true
 close_on_shell_exit = true
@@ -99,6 +102,9 @@ external_plugin_command = "node ~/.config/wok/plugins/bridge.js"
 | `recent_keys_opacity` | float | `0.86` | Active | Recent-key overlay opacity from `0.0` to `1.0` |
 | `typewriter_effect_enabled` | boolean | `false` | Active | Reveals new command-output cells character by character while leaving terminal state, copy, search, and sessions immediate |
 | `typewriter_effect_cps` | float | `180.0` | Active | Reveal speed in characters per second, clamped to 20..2000 |
+| `visual_effect` | string | `"none"` | Active | Decorative terminal glyph effect: `none`, `rainbow`, `rainbow_static`, `wavy`, `glitch`, `crt`, `bloom`, or `cookie` |
+| `visual_effect_intensity` | float | `0.5` | Active | Effect strength from `0.0` to `1.0` |
+| `visual_effect_animated` | boolean | `true` | Active | Enables time-based animation for effects that support motion or flicker |
 | `copy_on_select` | boolean | `false` | Active | Auto-copy selected text on mouse-up |
 | `confirm_close_with_running_process` | boolean | `true` | Active | Requires a second close request within 2 seconds when panes still have running shell processes |
 | `close_on_shell_exit` | boolean | `true` | Active | Closes the exited pane, closes an all-exited tab when other tabs remain, or exits Wok when the final shell exits |

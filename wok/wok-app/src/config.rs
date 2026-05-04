@@ -1073,6 +1073,17 @@ actions = ["highlight_blue", "system_notify:Homebrew task finished"]
     }
 
     #[test]
+    fn test_parse_visual_effect_mode_supports_effects() {
+        assert_eq!(parse_visual_effect_mode("rainbow"), VisualEffectMode::Rainbow);
+        assert_eq!(parse_visual_effect_mode("static-rainbow"), VisualEffectMode::RainbowStatic);
+        assert_eq!(parse_visual_effect_mode("wobble"), VisualEffectMode::Wavy);
+        assert_eq!(parse_visual_effect_mode("scanlines"), VisualEffectMode::Crt);
+        assert_eq!(parse_visual_effect_mode("glow"), VisualEffectMode::Bloom);
+        assert_eq!(parse_visual_effect_mode("cookie-cutter"), VisualEffectMode::Cookie);
+        assert_eq!(parse_visual_effect_mode("plain"), VisualEffectMode::None);
+    }
+
+    #[test]
     fn test_parse_background_position_supports_corners() {
         assert_eq!(
             parse_background_position("top-left"),

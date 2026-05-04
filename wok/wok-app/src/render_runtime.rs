@@ -3058,7 +3058,6 @@ fn push_effect_glyph_to_batch(
     visual_effect: Option<VisualEffectState>,
     absolute_row: usize,
     col: usize,
-    cell_width: f32,
 ) {
     let Some(effect) = visual_effect else {
         push_glyph_to_batch(render, batch, font, x, y, character, color);
@@ -3817,7 +3816,6 @@ pub(crate) fn rebuild_visible_row_batch(
                 visual_effect,
                 absolute_row,
                 col_idx,
-                cell_width,
             );
         }
         if !typewriter_hidden && is_hyperlink_cell {
