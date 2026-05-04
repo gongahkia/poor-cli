@@ -1,6 +1,8 @@
 //! Configuration file system: loads and provides typed access to Wok settings.
 
 use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Deserialize;
 use tracing::warn;
