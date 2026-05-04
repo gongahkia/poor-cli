@@ -31,6 +31,8 @@ background_position = "center"
 pane_border_width = 1.0
 focused_pane_border_width = 2.0
 floating_pane_title_height = 18.0
+typewriter_effect_enabled = false
+typewriter_effect_cps = 180.0
 recent_keys_visible = true
 recent_keys_position = "bottom_right"
 recent_keys_max_entries = 8
@@ -327,7 +329,8 @@ fn smoke_check_integration(config_dir: &Path, shell: ShellTarget) -> String {
     let Ok(text) = fs::read_to_string(&path) else {
         return format!("fail: integration script missing at {}", path.display());
     };
-    let begin = text.contains("133;A") || text.contains("\\e]133;A") || text.contains("\\033]133;A");
+    let begin =
+        text.contains("133;A") || text.contains("\\e]133;A") || text.contains("\\033]133;A");
     let end = text.contains("133;D") || text.contains("\\e]133;D") || text.contains("\\033]133;D");
     if begin && end {
         "ok: OSC 133 prompt + done markers present".to_string()
@@ -371,8 +374,7 @@ fn write_bug_bundle(config_dir: &Path, dest: &Path) -> io::Result<()> {
     });
     fs::write(
         dest.join("doctor.json"),
-        serde_json::to_string_pretty(&doctor_json)
-            .unwrap_or_else(|_| "{}".to_string()),
+        serde_json::to_string_pretty(&doctor_json).unwrap_or_else(|_| "{}".to_string()),
     )?;
 
     // copy config + lua if present
@@ -1214,16 +1216,27 @@ mod tests {
         let dest = unique_temp_dir().join("bundle");
         write_bug_bundle(&cfg, &dest).expect("bundle should write");
 
-        for name in ["doctor.json", "channel.txt", "flags.txt", "system.txt", "README.txt"] {
+        for name in [
+            "doctor.json",
+            "channel.txt",
+            "flags.txt",
+            "system.txt",
+            "README.txt",
+        ] {
             assert!(dest.join(name).exists(), "missing {name}");
         }
-        assert!(dest.join("config.toml").exists(), "config.toml should be copied");
+        assert!(
+            dest.join("config.toml").exists(),
+            "config.toml should be copied"
+        );
         assert!(dest.join("init.lua").exists(), "init.lua should be copied");
 
         let doctor = fs::read_to_string(dest.join("doctor.json")).unwrap();
         assert!(doctor.contains("\"checks\""));
         let flags = fs::read_to_string(dest.join("flags.txt")).unwrap();
-        assert!(flags.lines().all(|l| l.starts_with('+') || l.starts_with('-')));
+        assert!(flags
+            .lines()
+            .all(|l| l.starts_with('+') || l.starts_with('-')));
 
         let _ = fs::remove_dir_all(cfg);
         let _ = fs::remove_dir_all(dest.parent().unwrap());

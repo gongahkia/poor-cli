@@ -406,6 +406,7 @@ impl WokApp {
             Action::ToggleBroadcast => {
                 effects.push(RuntimeEffect::Workspace(WorkspaceEffect::ToggleBroadcast));
             }
+            Action::ToggleTypewriterEffect => {}
             Action::NewFloatingPane => {
                 effects.push(RuntimeEffect::Workspace(WorkspaceEffect::NewFloatingPane));
             }
@@ -528,9 +529,7 @@ impl WokApp {
             }
             // Discovery palettes — handled directly in WokHandler (no app-level
             // effect; they manipulate the global theme/keybinding registries).
-            Action::ThemePicker
-            | Action::KeybindingDiscovery
-            | Action::SettingsDiscovery => {}
+            Action::ThemePicker | Action::KeybindingDiscovery | Action::SettingsDiscovery => {}
         }
 
         effects

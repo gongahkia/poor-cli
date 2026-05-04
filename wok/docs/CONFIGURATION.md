@@ -46,6 +46,8 @@ recent_keys_position = "bottom_right"
 recent_keys_max_entries = 8
 recent_keys_timeout_ms = 2000
 recent_keys_opacity = 0.86
+typewriter_effect_enabled = false
+typewriter_effect_cps = 180.0
 copy_on_select = false
 confirm_close_with_running_process = true
 close_on_shell_exit = true
@@ -91,6 +93,8 @@ external_plugin_command = "node ~/.config/wok/plugins/bridge.js"
 | `recent_keys_max_entries` | integer | `8` | Active | Maximum number of recent key labels shown, capped at 64 |
 | `recent_keys_timeout_ms` | integer | `2000` | Active | Time in milliseconds before a key label expires, clamped to 250..30000 |
 | `recent_keys_opacity` | float | `0.86` | Active | Recent-key overlay opacity from `0.0` to `1.0` |
+| `typewriter_effect_enabled` | boolean | `false` | Active | Reveals new command-output cells character by character while leaving terminal state, copy, search, and sessions immediate |
+| `typewriter_effect_cps` | float | `180.0` | Active | Reveal speed in characters per second, clamped to 20..2000 |
 | `copy_on_select` | boolean | `false` | Active | Auto-copy selected text on mouse-up |
 | `confirm_close_with_running_process` | boolean | `true` | Active | Requires a second close request within 2 seconds when panes still have running shell processes |
 | `close_on_shell_exit` | boolean | `true` | Active | Closes the exited pane, closes an all-exited tab when other tabs remain, or exits Wok when the final shell exits |

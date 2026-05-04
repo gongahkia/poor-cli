@@ -3492,6 +3492,8 @@ pub(crate) fn rebuild_visible_row_batch(
     cell_width: f32,
     cell_height: f32,
     terminal_surface_alpha: f32,
+    typewriter: Option<&TypewriterState>,
+    render_time: Instant,
 ) {
     batch.clear();
     let Some(render_row) = render_row else {
@@ -3522,6 +3524,8 @@ pub(crate) fn rebuild_visible_row_batch(
         let is_hyperlink_cell = row_links
             .iter()
             .any(|link| (link.col_start..link.col_end).contains(&col_idx));
+        let typewriter_hidden = typewriter
+            .is_some_and(|state| state.is_cell_hidden(absolute_row, col_idx, render_time));
 
         if cell.is_inverse {
             std::mem::swap(&mut bg, &mut fg);
@@ -3584,10 +3588,14 @@ pub(crate) fn rebuild_visible_row_batch(
             );
         }
 
-        if inline_color.is_none() && cell.character != ' ' && cell.character != '\0' {
+        if !typewriter_hidden
+            && inline_color.is_none()
+            && cell.character != ' '
+            && cell.character != '\0'
+        {
             push_glyph_to_batch(render, batch, font, x, row_y, cell.character, fg);
         }
-        if is_hyperlink_cell {
+        if !typewriter_hidden && is_hyperlink_cell {
             batch.push_bg_quad(
                 x,
                 row_y + cell_height - 1.5,

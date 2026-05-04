@@ -374,6 +374,92 @@ impl PaneRowCache {
     }
 }
 
+#[derive(Clone, Copy)]
+struct TypewriterReveal {
+    reveal_at: Instant,
+}
+
+#[derive(Default)]
+struct TypewriterState {
+    pending: HashMap<(usize, usize), TypewriterReveal>,
+    next_reveal_at: Option<Instant>,
+}
+
+impl TypewriterState {
+    const MAX_LAG: Duration = Duration::from_millis(2_500);
+
+    fn clear(&mut self) {
+        self.pending.clear();
+        self.next_reveal_at = None;
+    }
+
+    fn has_pending(&self) -> bool {
+        !self.pending.is_empty()
+    }
+
+    fn pending_rows(&self) -> impl Iterator<Item = usize> + '_ {
+        self.pending.keys().map(|(row, _)| *row)
+    }
+
+    fn is_cell_hidden(&self, absolute_row: usize, col: usize, now: Instant) -> bool {
+        self.pending
+            .get(&(absolute_row, col))
+            .is_some_and(|cell| cell.reveal_at > now)
+    }
+
+    fn prune_revealed(&mut self, now: Instant) {
+        self.pending.retain(|_, cell| cell.reveal_at > now);
+        if self.pending.is_empty() {
+            self.next_reveal_at = None;
+        }
+    }
+
+    fn enqueue_changed_cells(
+        &mut self,
+        absolute_row: usize,
+        previous: Option<&PaneRowSignature>,
+        next_cells: &[CellRenderData],
+        now: Instant,
+        cps: f32,
+    ) {
+        let Some(previous) = previous else {
+            return;
+        };
+        if previous.absolute_row != absolute_row {
+            return;
+        }
+
+        let interval = Duration::from_secs_f64(1.0 / f64::from(cps.clamp(20.0, 2_000.0)));
+        let max_reveal_at = now + Self::MAX_LAG;
+        let mut reveal_at = self.next_reveal_at.unwrap_or(now).max(now);
+
+        for (col, next_cell) in next_cells.iter().enumerate() {
+            let Some(previous_cell) = previous.cells.get(col) else {
+                continue;
+            };
+            if previous_cell == next_cell {
+                continue;
+            }
+
+            let key = (absolute_row, col);
+            if next_cell.character == ' ' || next_cell.character == '\0' {
+                self.pending.remove(&key);
+                continue;
+            }
+
+            self.pending.insert(
+                key,
+                TypewriterReveal {
+                    reveal_at: reveal_at.min(max_reveal_at),
+                },
+            );
+            reveal_at = (reveal_at + interval).min(max_reveal_at);
+        }
+
+        self.next_reveal_at = Some(reveal_at);
+    }
+}
+
 /// Runtime state for a pane.
 #[derive(Debug, Clone, Default)]
 struct HistoryNavigationState {
@@ -438,6 +524,7 @@ struct PaneRuntime {
     inline_images: InlineImageStore,
     last_output_line_row: Option<usize>,
     pending_rerun_diff: Option<PendingRerunDiff>,
+    typewriter: TypewriterState,
 }
 
 const ATTACHED_DAEMON_PANE_ID: u64 = 0;
@@ -447,6 +534,35 @@ const MAX_GLOBAL_SEARCH_LINES: usize = 50_000;
 const MAX_DIFF_INPUT_LINES: usize = 1_200;
 const MAX_DIFF_ENTRIES: usize = 8_000;
 const STATUS_BAR_GIT_CACHE_TTL: Duration = Duration::from_secs(2);
+
+fn typewriter_applies_to_row(
+    blocks: &[Block],
+    active_output_block_id: Option<u64>,
+    absolute_row: usize,
+) -> bool {
+    blocks.iter().rev().any(|block| {
+        if Some(block.id) == active_output_block_id && block.exit_code.is_none() {
+            absolute_row >= block.output_start_row
+        } else {
+            absolute_row >= block.output_start_row && absolute_row <= block.output_end_row
+        }
+    })
+}
+
+fn mark_typewriter_pending_rows_dirty(pane: &mut PaneRuntime) {
+    if !pane.typewriter.has_pending() {
+        return;
+    }
+    let pending_rows = pane.typewriter.pending_rows().collect::<HashSet<_>>();
+    if pending_rows.is_empty() {
+        return;
+    }
+    for (row_idx, absolute_row) in pane.terminal.state.visible_rows().into_iter().enumerate() {
+        if pending_rows.contains(&absolute_row) {
+            pane.row_cache.dirty.mark_row_dirty(row_idx);
+        }
+    }
+}
 
 fn attached_mode_blocks_workspace_effect(effect: &WorkspaceEffect) -> bool {
     matches!(
@@ -1200,6 +1316,7 @@ impl WokHandler {
                     inline_images: InlineImageStore::new(),
                     last_output_line_row: None,
                     pending_rerun_diff: None,
+                    typewriter: TypewriterState::default(),
                 };
                 self.panes.insert(pane_id, pane_runtime);
                 self.sync_owned_input_state_for_pane(pane_id);
@@ -1597,6 +1714,9 @@ impl WokHandler {
         let full_height =
             self.chrome_rects.content.y + self.chrome_rects.content.h + self.chrome_rects.status.h;
         let full_rect = Rect::new(0.0, 0.0, full_width, full_height);
+        let render_time = Instant::now();
+        let typewriter_enabled = self.config.typewriter_effect_enabled;
+        let typewriter_cps = self.config.typewriter_effect_cps;
         let Some(render) = self.render.as_mut() else {
             return;
         };
@@ -1716,6 +1836,7 @@ impl WokHandler {
 
             let search = workspace_search.as_ref().unwrap_or(&pane.app.global_search);
             let block_query = pane.app.block_query.as_ref();
+            let active_output_block_id = pane.app.block_manager.active_output_block_id();
             let overlay_signature = pane_overlay_signature(
                 &pane.app.block_manager.blocks,
                 selected_block_id,
@@ -1737,12 +1858,29 @@ impl WokHandler {
             if pane.viewport.needs_render() || matches!(terminal_damage, Some(TerminalDamage::Full))
             {
                 for (row_idx, absolute_row) in visible_rows.iter().copied().enumerate() {
+                    let previous_signature = pane.row_cache.row_signatures[row_idx].clone();
                     let signature = PaneRowSignature {
                         absolute_row,
                         render_row: row_positions.get(row_idx).copied().flatten(),
                         cells: collect_row_cells(&pane.terminal, absolute_row, total_cols),
                     };
                     if pane.row_cache.row_signatures[row_idx].as_ref() != Some(&signature) {
+                        if typewriter_enabled
+                            && !pane.terminal.state.is_alt_screen()
+                            && typewriter_applies_to_row(
+                                &pane.app.block_manager.blocks,
+                                active_output_block_id,
+                                absolute_row,
+                            )
+                        {
+                            pane.typewriter.enqueue_changed_cells(
+                                absolute_row,
+                                previous_signature.as_ref(),
+                                &signature.cells,
+                                render_time,
+                                typewriter_cps,
+                            );
+                        }
                         pane.row_cache.row_signatures[row_idx] = Some(signature);
                         pane.row_cache.dirty.mark_row_dirty(row_idx);
                     }
@@ -1752,12 +1890,29 @@ impl WokHandler {
                     let Some(absolute_row) = visible_rows.get(row_idx).copied() else {
                         continue;
                     };
+                    let previous_signature = pane.row_cache.row_signatures[row_idx].clone();
                     let signature = PaneRowSignature {
                         absolute_row,
                         render_row: row_positions.get(row_idx).copied().flatten(),
                         cells: collect_row_cells(&pane.terminal, absolute_row, total_cols),
                     };
                     if pane.row_cache.row_signatures[row_idx].as_ref() != Some(&signature) {
+                        if typewriter_enabled
+                            && !pane.terminal.state.is_alt_screen()
+                            && typewriter_applies_to_row(
+                                &pane.app.block_manager.blocks,
+                                active_output_block_id,
+                                absolute_row,
+                            )
+                        {
+                            pane.typewriter.enqueue_changed_cells(
+                                absolute_row,
+                                previous_signature.as_ref(),
+                                &signature.cells,
+                                render_time,
+                                typewriter_cps,
+                            );
+                        }
                         pane.row_cache.row_signatures[row_idx] = Some(signature);
                         pane.row_cache.dirty.mark_row_dirty(row_idx);
                     }
@@ -1768,6 +1923,7 @@ impl WokHandler {
                 let blocks = &pane.app.block_manager.blocks;
                 let terminal = &pane.terminal;
                 let row_cache = &mut pane.row_cache;
+                let typewriter = typewriter_enabled.then_some(&pane.typewriter);
                 for (row_idx, absolute_row) in visible_rows.iter().copied().enumerate() {
                     if !row_cache.dirty.is_row_dirty(row_idx) {
                         continue;
@@ -1791,9 +1947,15 @@ impl WokHandler {
                         cw,
                         ch,
                         terminal_surface_alpha,
+                        typewriter,
+                        render_time,
                     );
                 }
                 row_cache.dirty.clear();
+            }
+
+            if typewriter_enabled {
+                pane.typewriter.prune_revealed(render_time);
             }
 
             for row_batch in pane.row_cache.row_batches.iter().take(visible_rows.len()) {
@@ -2702,7 +2864,10 @@ impl WokHandler {
     }
 
     fn running_process_count(&self) -> usize {
-        self.panes.values().filter(|pane| !pane.terminal.exited).count()
+        self.panes
+            .values()
+            .filter(|pane| !pane.terminal.exited)
+            .count()
     }
 
     /// Toggle the active pane's "show only failed" block filter using
@@ -2722,10 +2887,7 @@ impl WokHandler {
         if matched.is_empty() {
             self.status_message = Some("no failed blocks in this pane".to_string());
         } else {
-            self.status_message = Some(format!(
-                "{} failed block(s) in this pane",
-                matched.len()
-            ));
+            self.status_message = Some(format!("{} failed block(s) in this pane", matched.len()));
         }
     }
 
@@ -4315,6 +4477,15 @@ impl WokHandler {
             self.needs_redraw = true;
         }
 
+        for pane in self.panes.values_mut() {
+            pane.app.config.typewriter_effect_enabled = self.config.typewriter_effect_enabled;
+            pane.app.config.typewriter_effect_cps = self.config.typewriter_effect_cps;
+            if !self.config.typewriter_effect_enabled {
+                pane.typewriter.clear();
+            }
+            pane.row_cache.invalidate();
+        }
+
         self.refresh_plugin_config();
         self.refresh_plugin_snapshot();
         self.status_message = Some("Reloaded configuration".to_string());
@@ -4368,6 +4539,26 @@ impl WokHandler {
         }
         if matches!(action, Action::OpenSettings) {
             self.open_settings();
+            self.needs_redraw = true;
+            return;
+        }
+        if matches!(action, Action::ToggleTypewriterEffect) {
+            self.config.typewriter_effect_enabled = !self.config.typewriter_effect_enabled;
+            for pane in self.panes.values_mut() {
+                pane.app.config.typewriter_effect_enabled = self.config.typewriter_effect_enabled;
+                if !self.config.typewriter_effect_enabled {
+                    pane.typewriter.clear();
+                }
+                pane.row_cache.invalidate();
+            }
+            self.status_message = Some(format!(
+                "Typewriter output {}",
+                if self.config.typewriter_effect_enabled {
+                    "on"
+                } else {
+                    "off"
+                }
+            ));
             self.needs_redraw = true;
             return;
         }
@@ -5554,10 +5745,8 @@ impl WokHandler {
                 ));
             }
             wok_input_classifier::InputKind::Heredoc => {
-                self.status_message = Some(
-                    "submitting heredoc — terminator must close on its own line"
-                        .to_string(),
-                );
+                self.status_message =
+                    Some("submitting heredoc — terminator must close on its own line".to_string());
             }
             _ => {}
         }
@@ -6789,10 +6978,7 @@ impl AppHandler for WokHandler {
             }
         }
 
-        let keybindings_changed = self
-            .keybindings_watcher
-            .as_mut()
-            .is_some_and(|w| w.poll());
+        let keybindings_changed = self.keybindings_watcher.as_mut().is_some_and(|w| w.poll());
         if keybindings_changed {
             let overrides = load_user_keybinding_overrides();
             let count = overrides.len();
@@ -6801,13 +6987,10 @@ impl AppHandler for WokHandler {
             // bindings removed from the file persist in-memory until restart;
             // documented as a known limitation pending a defaults-rebuild API.
             for pane in self.panes.values_mut() {
-                pane.app
-                    .keybindings
-                    .apply_toml_overrides(overrides.clone());
+                pane.app.keybindings.apply_toml_overrides(overrides.clone());
             }
             info!("keybindings.toml reloaded ({count} overrides)");
-            self.status_message =
-                Some(format!("keybindings.toml reloaded ({count} overrides)"));
+            self.status_message = Some(format!("keybindings.toml reloaded ({count} overrides)"));
             self.needs_redraw = true;
         }
 
@@ -6924,6 +7107,23 @@ impl AppHandler for WokHandler {
                 });
             }
             self.needs_redraw |= is_dirty;
+        }
+
+        if self.config.typewriter_effect_enabled {
+            for pane in self.panes.values_mut() {
+                if pane.typewriter.has_pending() {
+                    mark_typewriter_pending_rows_dirty(pane);
+                    self.needs_redraw = true;
+                }
+            }
+        } else {
+            for pane in self.panes.values_mut() {
+                if pane.typewriter.has_pending() {
+                    pane.typewriter.clear();
+                    pane.row_cache.invalidate();
+                    self.needs_redraw = true;
+                }
+            }
         }
 
         if output_line_hooks_enabled {
@@ -8730,6 +8930,7 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::QuickSelect => "quick_select".to_string(),
         Action::QuickSelectBlock => "quick_select_block".to_string(),
         Action::ToggleBroadcast => "toggle_broadcast".to_string(),
+        Action::ToggleTypewriterEffect => "toggle_typewriter_effect".to_string(),
         Action::NewFloatingPane => "new_floating_pane".to_string(),
         Action::ToggleFloatingPane => "toggle_floating_pane".to_string(),
         Action::CloseFloatingPane => "close_floating_pane".to_string(),
@@ -8808,6 +9009,7 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::BlockCopyOutput,
         Action::BlockCollapse,
         Action::ToggleBroadcast,
+        Action::ToggleTypewriterEffect,
         Action::SplitVertical,
         Action::SplitHorizontal,
         Action::CloseSplit,
@@ -8907,6 +9109,7 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::QuickSelect => "Start quick-select labels for visible output",
         Action::QuickSelectBlock => "Start quick-select labels for selected block",
         Action::ToggleBroadcast => "Toggle input broadcast across panes",
+        Action::ToggleTypewriterEffect => "Toggle character-by-character output reveal",
         Action::NewFloatingPane => "Create a floating pane",
         Action::ToggleFloatingPane => "Show or hide floating panes",
         Action::CloseFloatingPane => "Close focused floating pane",

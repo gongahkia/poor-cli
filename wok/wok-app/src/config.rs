@@ -227,6 +227,10 @@ pub struct WokConfig {
     pub focused_pane_border_width: f32,
     /// Floating pane title height.
     pub floating_pane_title_height: f32,
+    /// Whether command output is revealed character-by-character.
+    pub typewriter_effect_enabled: bool,
+    /// Reveal speed for the command-output typewriter effect.
+    pub typewriter_effect_cps: f32,
     /// Optional out-of-process plugin bridge command.
     pub external_plugin_command: Option<String>,
     /// Copy text to clipboard on selection.
@@ -288,6 +292,8 @@ struct ConfigToml {
     pane_border_width: Option<f32>,
     focused_pane_border_width: Option<f32>,
     floating_pane_title_height: Option<f32>,
+    typewriter_effect_enabled: Option<bool>,
+    typewriter_effect_cps: Option<f32>,
     external_plugin_command: Option<String>,
     copy_on_select: Option<bool>,
     confirm_close_with_running_process: Option<bool>,
@@ -365,6 +371,8 @@ impl Default for WokConfig {
             pane_border_width: 1.0,
             focused_pane_border_width: 2.0,
             floating_pane_title_height: 18.0,
+            typewriter_effect_enabled: false,
+            typewriter_effect_cps: 180.0,
             external_plugin_command: None,
             copy_on_select: false,
             confirm_close_with_running_process: true,
@@ -527,6 +535,14 @@ impl WokConfig {
         }
         if let Some(height) = toml_config.floating_pane_title_height {
             config.floating_pane_title_height = finite_non_negative(height).unwrap_or(0.0);
+        }
+        if let Some(enabled) = toml_config.typewriter_effect_enabled {
+            config.typewriter_effect_enabled = enabled;
+        }
+        if let Some(cps) = toml_config.typewriter_effect_cps {
+            if cps.is_finite() {
+                config.typewriter_effect_cps = cps.clamp(20.0, 2_000.0);
+            }
         }
         if let Some(command) = toml_config.external_plugin_command {
             let trimmed = command.trim();
@@ -807,6 +823,8 @@ impl wok_settings::Settings for WokConfig {
                 field!("pane_border_width", "f32"),
                 field!("focused_pane_border_width", "f32"),
                 field!("floating_pane_title_height", "f32"),
+                field!("typewriter_effect_enabled", "bool"),
+                field!("typewriter_effect_cps", "f32"),
                 field!("external_plugin_command", "Option<String>"),
                 field!("copy_on_select", "bool"),
                 field!("confirm_close_with_running_process", "bool"),
@@ -869,6 +887,8 @@ mod tests {
         assert!((config.pane_border_width - 1.0).abs() < f32::EPSILON);
         assert!((config.focused_pane_border_width - 2.0).abs() < f32::EPSILON);
         assert!((config.floating_pane_title_height - 18.0).abs() < f32::EPSILON);
+        assert!(!config.typewriter_effect_enabled);
+        assert!((config.typewriter_effect_cps - 180.0).abs() < f32::EPSILON);
         assert!(config.close_on_shell_exit);
         assert!(config.recent_keys.visible);
         assert_eq!(config.recent_keys.position, OverlayPosition::BottomRight);

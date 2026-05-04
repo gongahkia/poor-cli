@@ -109,6 +109,8 @@ pub enum Action {
     EnterViMode,
     /// Toggle pane input broadcast mode.
     ToggleBroadcast,
+    /// Toggle command-output typewriter reveal.
+    ToggleTypewriterEffect,
     /// Create a new floating pane.
     NewFloatingPane,
     /// Toggle visibility for floating panes.
@@ -592,6 +594,13 @@ impl Default for KeybindingConfig {
                 modifiers: pma,
             },
             Action::ToggleBroadcast,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('s'),
+                modifiers: pma,
+            },
+            Action::ToggleTypewriterEffect,
         );
         bindings.insert(
             KeyCombo {

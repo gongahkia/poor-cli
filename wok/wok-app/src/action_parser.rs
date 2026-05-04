@@ -83,6 +83,9 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         "quick_select" => Some(Action::QuickSelect),
         "quick_select_block" => Some(Action::QuickSelectBlock),
         "toggle_broadcast" | "broadcast_toggle" => Some(Action::ToggleBroadcast),
+        "toggle_typewriter_effect" | "typewriter_toggle" | "typewriter_effect" => {
+            Some(Action::ToggleTypewriterEffect)
+        }
         "new_floating_pane" | "floating_new" => Some(Action::NewFloatingPane),
         "toggle_floating_pane" | "toggle_floating" | "floating_toggle" => {
             Some(Action::ToggleFloatingPane)
