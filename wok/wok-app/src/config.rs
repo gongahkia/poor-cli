@@ -474,17 +474,7 @@ impl WokConfig {
     /// Search order: `$WOK_CONFIG`, `~/.config/wok/config.toml`, `~/.wok.toml`.
     pub fn load() -> Self {
         let paths = config_search_paths();
-        for path in &paths {
-            if path.exists() {
-                match Self::load_from(path) {
-                    Ok(config) => return config,
-                    Err(e) => {
-                        warn!("failed to load config from {}: {e}", path.display());
-                    }
-                }
-            }
-        }
-        Self::default()
+        Self::load_from_search_paths(&paths)
     }
 
     /// Load configuration from a specific file.
@@ -711,6 +701,20 @@ impl WokConfig {
         }
 
         Ok(config)
+    }
+
+    fn load_from_search_paths(paths: &[PathBuf]) -> Self {
+        for path in paths {
+            if path.exists() {
+                match Self::load_from(path) {
+                    Ok(config) => return config,
+                    Err(e) => {
+                        warn!("failed to load config from {}: {e}", path.display());
+                    }
+                }
+            }
+        }
+        Self::default()
     }
 
     /// Return the platform-appropriate config directory.
@@ -990,7 +994,14 @@ mod tests {
 
     #[test]
     fn test_load_with_no_file() {
-        let config = WokConfig::load();
+        let missing = std::env::temp_dir().join(format!(
+            "wok-missing-config-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock should be after epoch")
+                .as_nanos()
+        ));
+        let config = WokConfig::load_from_search_paths(&[missing]);
         // Should return defaults without error
         assert!((config.font_size - 24.0).abs() < f32::EPSILON);
     }
