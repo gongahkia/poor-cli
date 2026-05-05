@@ -870,6 +870,40 @@ fn doctor_checks_at(config_dir: &Path) -> Vec<DoctorCheck> {
         }
     }
 
+    let keybindings_path = config_dir.join("keybindings.toml");
+    if !keybindings_path.exists() {
+        checks.push(DoctorCheck {
+            label: "keybindings.toml".to_string(),
+            status: CheckStatus::Ok,
+            detail: "missing (using defaults)".to_string(),
+        });
+    } else {
+        match wok_app::keybindings_toml::load(&keybindings_path) {
+            Ok((overrides, warnings)) => {
+                let status = if warnings.is_empty() {
+                    CheckStatus::Ok
+                } else {
+                    CheckStatus::Warn
+                };
+                let detail = if warnings.is_empty() {
+                    format!("{} overrides", overrides.len())
+                } else {
+                    format!("{} overrides, warnings: {}", overrides.len(), warnings.join("; "))
+                };
+                checks.push(DoctorCheck {
+                    label: "keybindings.toml".to_string(),
+                    status,
+                    detail,
+                });
+            }
+            Err(error) => checks.push(DoctorCheck {
+                label: "keybindings.toml".to_string(),
+                status: CheckStatus::Fail,
+                detail: format!("invalid: {error}"),
+            }),
+        }
+    }
+
     let init_lua_path = config_dir.join("init.lua");
     checks.push(DoctorCheck {
         label: "init.lua".to_string(),
