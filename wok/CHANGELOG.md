@@ -10,10 +10,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - _Track here as features land before the next release._
 
 ### Changed
-- _Track behavior changes here._
+- `wok.api_version` is now `"1.1.0"`.
 
 ### Deprecated
-- _Track deprecation notices here. Functions are removed in the next major; events get a one-minor warning window._
+- `wok.keymap(...)` is deprecated; use `wok.bind_key(...)`.
+- `wok.action(id)` is deprecated; use `wok.run_action(id)`.
 
 ### Removed
 - _Track removals here._
@@ -88,5 +89,5 @@ The wok binary ships at version `0.1.0` (per `Cargo.toml`); the API version (`wo
 
 ---
 
-[Unreleased]: https://example.com/wok/compare/lua-api-1.0.0...HEAD
-[1.0.0]: https://example.com/wok/releases/tag/lua-api-1.0.0
+[Unreleased]: https://github.com/gongahkia/wok/compare/lua-api-1.0.0...HEAD
+[1.0.0]: https://github.com/gongahkia/wok/releases/tag/lua-api-1.0.0

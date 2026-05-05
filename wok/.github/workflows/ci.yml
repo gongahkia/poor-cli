@@ -69,6 +69,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: shellcheck .github/scripts/lua_api_lint.sh
       - run: .github/scripts/lua_api_lint.sh
 
   perf_gate:

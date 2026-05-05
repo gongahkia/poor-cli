@@ -187,46 +187,16 @@ Per item: open issue w/ label `port:warp`, link this section, attach acceptance 
 
 ---
 
-## P8 — Cross-platform parity (currently macOS-first)
-
-[Inference] All development to date assumes macOS (Homebrew, zsh, AppKit menu, Cmd modifier). Windows + Linux compile but have not been smoke-tested as primary daily drivers.
-
-### P8.1 macOS-first audit
-- Identify every `#[cfg(target_os = "macos")]` branch and document the Windows/Linux fallback.
-- Audit `wok-app/src/main.rs` for hard-coded macOS assumptions (`Mod` = Cmd, AppKit menu via `muda`, `~/Library/...` paths).
-- Result: write a `docs/PLATFORM.md` table — feature × {macOS, Linux, Windows} = {ok, broken, untested}.
-
-### P8.2 Linux daily driver
-- Test under: GNOME on Wayland (Fedora 40+), KDE on Wayland (Plasma 6), GNOME on X11 (Ubuntu LTS), i3 on X11.
-- Known concerns: clipboard via wayland (`arboard` should handle but verify), font fallback (no Core Text), HiDPI scaling, IME.
-- Goal: 1-week soak with primary user as Linux dev.
-
-### P8.3 Windows daily driver
-- Test under: Windows 11 native (PowerShell + cmd + WSL2), Windows Terminal as control.
-- Known concerns: ConPTY vs portable-pty handling, Mod = Ctrl not Cmd, no AppKit menu, font fallback (DirectWrite via wgpu), high-DPI.
-- Goal: 1-week soak with primary user as Windows dev.
-
-### P8.4 Per-platform CI
-- GitHub Actions matrix: `{macos-14, ubuntu-22.04, windows-2022} × {stable, beta}`.
-- Cross-compile to: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-pc-windows-msvc`.
-- Cache `target/` per OS to keep CI under 10 minutes.
-
----
-
 ## P9 — Configurable keybindings (TOML override layer)
 
 ### ~~P9.1 TOML schema~~ ✅ done (commit `7d5fea9`)
 `~/.config/wok/keybindings.toml` schema lands. `[[binding]]` entries with `keys`, `action`, optional `when`. Modifier syntax: `cmd|super|meta|win`, `ctrl|control`, `alt|opt|option`, `shift`. Final token is a single char or named key (`enter`, `pgup`, `f1..f12`, etc.). Action ids come from `parse_lua_action` (canonical strings shared with the Lua API). 8 loader unit tests.
 
-### ~~P9.2 Loader + merge~~ ✅ done (commit `7d5fea9`, partial)
-Hot-reload via `wok-watcher::PathWatcher` polled per frame. `KeybindingConfig::apply_toml_overrides` upserts user entries on top of defaults; user wins on conflict. Unknown action names log warnings + drop only that entry. **Deferred**: surfacing load errors in `wok doctor` (today the warnings only land in stderr). Known limitation: bindings *removed* from the file persist in-memory until restart.
+### ~~P9.2 Loader + merge~~ ✅ done
+Hot-reload via `wok-watcher::PathWatcher` polled per frame. `KeybindingConfig::apply_toml_overrides` upserts user entries on top of defaults; user wins on conflict. Unknown action names log warnings + drop only that entry. `wok doctor` now validates `keybindings.toml` and reports parse failures or dropped-entry warnings. Live reload now rebuilds each pane from defaults + Lua/plugin bindings + TOML, so bindings removed from the file disappear without restart.
 
-### P9.3 Editor UI (still open)
-- Two-pane palette: left = action list, right = current binding + "press new keys" capture.
-- Bindings save to keybindings.toml on confirm; live config reload picks them up.
-- Reset-to-default per binding.
-
-The read-only keybind discovery palette (commit `2787829`) is *not* this — it lists current bindings and runs them on select, but doesn't capture new strokes.
+### ~~P9.3 Editor UI~~ ✅ done
+`Action::KeybindingEditor` opens an editable palette: each action shows the current/default binding, "Bind" captures the next key press into `~/.config/wok/keybindings.toml`, and "Reset" removes the user override for that action. The existing read-only `Action::KeybindingDiscovery` palette remains available for quick reference.
 
 ---
 
@@ -389,10 +359,10 @@ Total Lua surface: ~50 functions across 18 namespaces.
 - `CHANGELOG.md` (commit `681240d`) — 1.0.0 baseline.
 - `.github/scripts/lua_api_lint.sh` + CI job (commit `413ce39`) — enforces `---@since` on every public surface.
 
-### P15.3 Open extensions (deferred)
-- Live deprecation warnings on first invocation of a deprecated API (the policy describes it; the runtime hook isn't wired).
-- `shellcheck` pass on `lua_api_lint.sh` in CI.
-- CHANGELOG.md release-URL placeholders (currently `example.com`).
+### ~~P15.3 Open extensions~~ ✅ done
+- Runtime warns once per session when deprecated Lua aliases are used (`wok.keymap` → `wok.bind_key`, `wok.action` → `wok.run_action`).
+- CI runs `shellcheck` on `.github/scripts/lua_api_lint.sh`.
+- CHANGELOG release links now point at `github.com/gongahkia/wok`.
 
 ---
 

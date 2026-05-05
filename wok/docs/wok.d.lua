@@ -300,10 +300,11 @@ local wok = {}
 ---@since 1.0.0
 function wok.bind_key(mode, key, action) end
 
----Alias for `wok.bind_key`.
+---Deprecated alias for `wok.bind_key`.
 ---@param mode wok.KeyMode
 ---@param key string
 ---@param action string
+---@deprecated since 1.1.0; use `wok.bind_key(mode, key, action)` instead
 ---@since 1.0.0
 function wok.keymap(mode, key, action) end
 
@@ -340,8 +341,9 @@ function wok.on(event, fn) end
 ---@since 1.0.0
 function wok.run_action(action) end
 
----Alias for `wok.run_action`.
+---Deprecated alias for `wok.run_action`.
 ---@param action string
+---@deprecated since 1.1.0; use `wok.run_action(action)` instead
 ---@since 1.0.0
 function wok.action(action) end
 

@@ -52,7 +52,7 @@ wok.add_trigger("ci agent finished", "^\\s*(claude|codex|gemini|gh\\s+copilot)",
     "system_notify:CI agent command finished",
 })
 
--- 5. Custom commands the user can run from the palette / via wok.action
+-- 5. Custom commands the user can run from the palette / via wok.run_action
 wok.register_command("backup_history", function()
     local entries = wok.history.entries()
     local lines = {}

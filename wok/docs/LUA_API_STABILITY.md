@@ -154,7 +154,7 @@ Every PR that adds an API surface adds tests in the appropriate file. The CI gat
 
 Before publishing your `init.lua` or a wok plugin:
 
-1. **Pin the API version**: `assert(wok.api_version >= "1.0.0", "wok 1.0+ required")`.
+1. **Pin the API version**: `assert(wok.api_version >= "1.1.0", "wok Lua API 1.1+ required")`.
 2. **Use only typed surfaces**: drop `wok.d.lua` into your editor; if a `wok.X.Y` call shows red, you're depending on something undocumented.
 3. **Don't poke runtime internals**: anything reached via `_G` or `debug.*` is unsupported.
 4. **Read deprecation logs**: when the runtime warns about a deprecated call, you have one minor cycle to migrate.

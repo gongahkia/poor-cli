@@ -888,7 +888,11 @@ fn doctor_checks_at(config_dir: &Path) -> Vec<DoctorCheck> {
                 let detail = if warnings.is_empty() {
                     format!("{} overrides", overrides.len())
                 } else {
-                    format!("{} overrides, warnings: {}", overrides.len(), warnings.join("; "))
+                    format!(
+                        "{} overrides, warnings: {}",
+                        overrides.len(),
+                        warnings.join("; ")
+                    )
                 };
                 checks.push(DoctorCheck {
                     label: "keybindings.toml".to_string(),
@@ -1386,6 +1390,27 @@ mod tests {
         assert!(checks.iter().any(|check| {
             matches!(check.status, CheckStatus::Ok) && check.label == "shell/bash.sh"
         }));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_doctor_reports_keybinding_warnings() {
+        let dir = unique_temp_dir();
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        fs::write(
+            dir.join("keybindings.toml"),
+            "[[binding]]\nkeys = \"cmd+t\"\naction = \"not_real\"\n",
+        )
+        .expect("keybindings should be written");
+
+        let checks = doctor_checks_at(&dir);
+        let keybindings = checks
+            .iter()
+            .find(|check| check.label == "keybindings.toml")
+            .expect("keybindings check should exist");
+        assert!(matches!(keybindings.status, CheckStatus::Warn));
+        assert!(keybindings.detail.contains("not_real"));
 
         let _ = fs::remove_dir_all(dir);
     }

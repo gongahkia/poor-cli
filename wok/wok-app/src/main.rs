@@ -7654,8 +7654,10 @@ impl WokHandler {
                 continue;
             };
             let label = action_display_label(&action);
-            let current_label = binding_list_label(current.get(&action).cloned().unwrap_or_default());
-            let default_label = binding_list_label(defaults.get(&action).cloned().unwrap_or_default());
+            let current_label =
+                binding_list_label(current.get(&action).cloned().unwrap_or_default());
+            let default_label =
+                binding_list_label(defaults.get(&action).cloned().unwrap_or_default());
             let user_override = self
                 .user_keybinding_overrides
                 .iter()

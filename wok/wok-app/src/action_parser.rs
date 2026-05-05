@@ -80,9 +80,7 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         "enter_vi_mode" | "vi_mode" => Some(Action::EnterViMode),
         "command_palette" | "palette" => Some(Action::CommandPalette),
         "command_search" | "history_search" => Some(Action::CommandSearch),
-        "keybinding_editor" | "edit_keybindings" | "rebind_keys" => {
-            Some(Action::KeybindingEditor)
-        }
+        "keybinding_editor" | "edit_keybindings" | "rebind_keys" => Some(Action::KeybindingEditor),
         "quick_select" => Some(Action::QuickSelect),
         "quick_select_block" => Some(Action::QuickSelectBlock),
         "toggle_broadcast" | "broadcast_toggle" => Some(Action::ToggleBroadcast),

@@ -19,7 +19,7 @@ All APIs are local-only — no network access, no telemetry, no cloud sync.
 
 ```lua
 -- Pin a minimum API version in your init.lua
-assert(wok.api_version >= "1.0.0", "wok 1.0+ required")
+assert(wok.api_version >= "1.1.0", "wok Lua API 1.1+ required")
 ```
 
 ## Getting Started
@@ -41,13 +41,13 @@ Two example files ship in this repo:
 - [`docs/examples/minimal.lua`](examples/minimal.lua) — the smallest useful config
 - [`docs/examples/powerful.lua`](examples/powerful.lua) — exercises the full API
 
-The `wok.keymap(...)` name is an alias for `wok.bind_key(...)`.
+The `wok.keymap(...)` name remains as a deprecated alias for `wok.bind_key(...)`; Wok logs a warning once per session when deprecated aliases are used.
 
 ## Quick Reference
 
 | Namespace | Functions |
 |---|---|
-| top-level | `bind_key`/`keymap`, `register_command`, `register_workflow`, `workflows`, `add_trigger`, `remove_trigger`, `on`, `run_action`/`action`, `exec`, `notify`, `system_notify`, `set_timeout`, `set_interval`, `clear_timer`, `app`, `workspace`, `pane`, `session` |
+| top-level | `bind_key`, `register_command`, `register_workflow`, `workflows`, `add_trigger`, `remove_trigger`, `on`, `run_action`, `exec`, `notify`, `system_notify`, `set_timeout`, `set_interval`, `clear_timer`, `app`, `workspace`, `pane`, `session` |
 | `wok.config` | read-only config snapshot |
 | `wok.theme` | `set`, `load` |
 | `wok.status_bar` | `set_left`, `set_center`, `set_right`, `clear`, `set_refresh_interval` |
@@ -115,7 +115,7 @@ Pane focus/resize: `focus_left`, `focus_right`, `focus_up`, `focus_down`, `resiz
 
 Floating panes: `new_floating_pane`, `toggle_floating_pane`, `close_floating_pane`
 
-Search & palette: `search_global`, `open_search_results`, `save_current_search`, `open_saved_searches`, `open_workspace_browser`, `command_palette`, `command_search`, `quick_select`, `quick_select_block`, `keybinding_discovery`, `theme_picker`, `settings_discovery`, `git_changes`, `git_worktrees`
+Search & palette: `search_global`, `open_search_results`, `save_current_search`, `open_saved_searches`, `open_workspace_browser`, `command_palette`, `command_search`, `quick_select`, `quick_select_block`, `keybinding_discovery`, `keybinding_editor`, `theme_picker`, `settings_discovery`, `git_changes`, `git_worktrees`
 
 Block navigation: `block_prev`, `block_next`, `block_copy`, `block_copy_command`, `block_copy_output`, `block_collapse`, `block_toggle_bookmark`, `block_prev_bookmark`, `block_next_bookmark`, `block_prev_failed`, `block_next_failed`, `block_find`, `block_filter`, `block_diff`, `block_rerun`, `block_rerun_in_split`, `block_save_workflow`, `block_export_markdown`, `block_export_json`
 
@@ -151,9 +151,11 @@ action = "command_palette"
 
 `keys` syntax: `+`-separated tokens, case-insensitive. Modifiers: `cmd`/`super`/`meta`/`win`, `ctrl`/`control`, `alt`/`opt`/`option`, `shift`. Final token is the key (single char, named like `enter`, `escape`, `pgup`, `f1`..`f12`, `up`/`down`/`left`/`right`).
 
-`action` matches a canonical action id from the list above. Unknown actions log warnings; other entries keep loading.
+`action` matches a canonical action id from the list above. Unknown actions log warnings; other entries keep loading. `wok doctor` reports keybinding parse failures and dropped-entry warnings.
 
-The file is hot-reloaded — saving applies immediately. Removed bindings persist in-memory until you restart wok (known limitation).
+The file is hot-reloaded — saving applies immediately. Removed bindings also apply immediately because Wok rebuilds pane keymaps from defaults + Lua/plugin bindings + TOML overrides on every reload.
+
+You can edit without touching TOML directly: run `keybinding_editor` from the command palette, pick **Bind** for an action, then press the new shortcut. **Reset** removes that action's user override.
 
 ---
 
@@ -187,9 +189,11 @@ end)
 
 ## Actions, exec, and notifications
 
-### `wok.run_action(action)` / `wok.action(action)`
+### `wok.run_action(action)`
 
 Queue a built-in action through the same path as keybindings.
+
+`wok.action(action)` is a deprecated alias for older configs and emits one runtime warning per session.
 
 ```lua
 wok.run_action("new_tab")

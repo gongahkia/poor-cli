@@ -2,7 +2,7 @@
 
 /// Version of the Lua plugin API surface, exposed to plugins as
 /// `wok.api_version`. Bumped per `docs/LUA_API_STABILITY.md`.
-pub const LUA_API_VERSION: &str = "1.0.0";
+pub const LUA_API_VERSION: &str = "1.1.0";
 
 use std::cell::RefCell;
 use std::collections::{BinaryHeap, HashMap, HashSet};
@@ -285,6 +285,17 @@ impl Ord for TimerEntry {
     }
 }
 
+fn warn_deprecated_lua_api_once(
+    warnings: &Rc<RefCell<HashSet<String>>>,
+    symbol: &str,
+    replacement: &str,
+) {
+    let key = symbol.to_string();
+    if warnings.borrow_mut().insert(key) {
+        warn!("deprecated Lua API '{symbol}' used; use '{replacement}' instead");
+    }
+}
+
 /// Lua scripting runtime for Wok.
 pub struct LuaRuntime {
     lua: Lua,
@@ -295,6 +306,7 @@ pub struct LuaRuntime {
     timers: Rc<RefCell<BinaryHeap<TimerEntry>>>,
     cancelled_timers: Rc<RefCell<HashSet<u64>>>,
     next_timer_id: Rc<RefCell<u64>>,
+    deprecated_warnings: Rc<RefCell<HashSet<String>>>,
 }
 
 impl LuaRuntime {
@@ -314,6 +326,7 @@ impl LuaRuntime {
             timers: Rc::new(RefCell::new(BinaryHeap::new())),
             cancelled_timers: Rc::new(RefCell::new(HashSet::new())),
             next_timer_id: Rc::new(RefCell::new(1)),
+            deprecated_warnings: Rc::new(RefCell::new(HashSet::new())),
         })
     }
 
@@ -369,7 +382,14 @@ impl LuaRuntime {
                     Ok(())
                 })?;
         wok.set("bind_key", bind_key_fn.clone())?;
-        wok.set("keymap", bind_key_fn)?;
+        let keymap_warnings = self.deprecated_warnings.clone();
+        let keymap_fn =
+            self.lua
+                .create_function(move |_, (mode, key, action): (String, String, Value)| {
+                    warn_deprecated_lua_api_once(&keymap_warnings, "wok.keymap", "wok.bind_key");
+                    bind_key_fn.call::<()>((mode, key, action))
+                })?;
+        wok.set("keymap", keymap_fn)?;
 
         // wok.theme table with set() and load()
         let theme_table = self.lua.create_table()?;
@@ -773,7 +793,12 @@ impl LuaRuntime {
             Ok(())
         })?;
         wok.set("run_action", run_action_fn.clone())?;
-        wok.set("action", run_action_fn)?;
+        let action_warnings = self.deprecated_warnings.clone();
+        let action_alias_fn = self.lua.create_function(move |_, action: String| {
+            warn_deprecated_lua_api_once(&action_warnings, "wok.action", "wok.run_action");
+            run_action_fn.call::<()>(action)
+        })?;
+        wok.set("action", action_alias_fn)?;
 
         // wok.exec(command) — queue a shell command for the active pane
         let exec_state = self.state.exec_requests.clone();
@@ -1775,6 +1800,32 @@ mod tests {
             .expect("run_action should work");
 
         assert_eq!(runtime.take_action_requests(), vec!["new_tab".to_string()]);
+    }
+
+    #[test]
+    fn deprecated_aliases_warn_once_and_still_work() {
+        let mut runtime = LuaRuntime::new().expect("lua runtime");
+        runtime.init(&std::env::temp_dir()).expect("lua init");
+        runtime
+            .exec(
+                r#"
+                wok.action("new_tab")
+                wok.action("close_tab")
+                wok.keymap("terminal", "ctrl+t", "new_tab")
+                wok.keymap("terminal", "ctrl+w", "close_tab")
+                "#,
+            )
+            .expect("deprecated aliases should still work");
+
+        assert_eq!(
+            runtime.take_action_requests(),
+            vec!["new_tab".to_string(), "close_tab".to_string()]
+        );
+        assert_eq!(runtime.state.keybindings.lock().unwrap().len(), 2);
+        let warnings = runtime.deprecated_warnings.borrow();
+        assert!(warnings.contains("wok.action"));
+        assert!(warnings.contains("wok.keymap"));
+        assert_eq!(warnings.len(), 2);
     }
 
     #[test]
