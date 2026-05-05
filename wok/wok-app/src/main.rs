@@ -2007,13 +2007,15 @@ impl WokHandler {
             } else {
                 None
             };
+            let terminal_had_damage = terminal_damage.is_some();
+            let terminal_full_damage =
+                matches!(terminal_damage.as_ref(), Some(TerminalDamage::Full));
             let typewriter_active = typewriter_enabled && !pane.terminal.state.is_alt_screen();
             if typewriter_enabled && !typewriter_active && pane.typewriter.has_pending() {
                 pane.typewriter.clear();
                 pane.row_cache.dirty.mark_fully_damaged();
             }
-            if pane.viewport.needs_render() || matches!(terminal_damage, Some(TerminalDamage::Full))
-            {
+            if pane.viewport.needs_render() || terminal_full_damage {
                 for (row_idx, absolute_row) in visible_rows.iter().copied().enumerate() {
                     let previous_signature = pane.row_cache.row_signatures[row_idx].clone();
                     let signature = PaneRowSignature {
@@ -2023,7 +2025,7 @@ impl WokHandler {
                     };
                     if pane.row_cache.row_signatures[row_idx].as_ref() != Some(&signature) {
                         if typewriter_active
-                            && terminal_damage.is_some()
+                            && terminal_had_damage
                             && typewriter_applies_to_row(
                                 &pane.app.block_manager.blocks,
                                 active_output_block_id,
@@ -11870,6 +11872,37 @@ fn main() -> Result<(), Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_cell(character: char) -> CellRenderData {
+        CellRenderData {
+            character,
+            fg: CellColor::Named(256),
+            bg: CellColor::Named(257),
+            is_inverse: false,
+            is_bold: false,
+            is_italic: false,
+            is_underline: false,
+        }
+    }
+
+    #[test]
+    fn typewriter_enqueues_nonempty_cells_for_new_output_rows() {
+        let now = Instant::now();
+        let mut typewriter = TypewriterState::default();
+        let cells = vec![
+            test_cell('l'),
+            test_cell('s'),
+            test_cell(' '),
+            test_cell('\0'),
+        ];
+
+        typewriter.enqueue_changed_cells(42, None, &cells, now, 100.0);
+
+        assert!(!typewriter.is_cell_hidden(42, 0, now));
+        assert!(typewriter.is_cell_hidden(42, 1, now));
+        assert!(!typewriter.is_cell_hidden(42, 2, now));
+        assert!(!typewriter.is_cell_hidden(42, 3, now));
+    }
 
     #[test]
     fn test_parse_lua_action_supports_aliases() {
