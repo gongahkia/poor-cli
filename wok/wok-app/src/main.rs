@@ -460,9 +460,11 @@ impl TypewriterState {
         cps: f32,
     ) {
         let Some(previous) = previous else {
+            self.enqueue_new_cells(absolute_row, next_cells, now, cps);
             return;
         };
         if previous.absolute_row != absolute_row {
+            self.enqueue_new_cells(absolute_row, next_cells, now, cps);
             return;
         }
 
@@ -494,6 +496,37 @@ impl TypewriterState {
         }
 
         self.next_reveal_at = Some(reveal_at);
+    }
+
+    fn enqueue_new_cells(
+        &mut self,
+        absolute_row: usize,
+        next_cells: &[CellRenderData],
+        now: Instant,
+        cps: f32,
+    ) {
+        let interval = Duration::from_secs_f64(1.0 / f64::from(cps.clamp(20.0, 2_000.0)));
+        let max_reveal_at = now + Self::MAX_LAG;
+        let mut reveal_at = self.next_reveal_at.unwrap_or(now).max(now);
+        let mut queued = false;
+
+        for (col, next_cell) in next_cells.iter().enumerate() {
+            if next_cell.character == ' ' || next_cell.character == '\0' {
+                continue;
+            }
+            self.pending.insert(
+                (absolute_row, col),
+                TypewriterReveal {
+                    reveal_at: reveal_at.min(max_reveal_at),
+                },
+            );
+            reveal_at = (reveal_at + interval).min(max_reveal_at);
+            queued = true;
+        }
+
+        if queued {
+            self.next_reveal_at = Some(reveal_at);
+        }
     }
 }
 
@@ -1974,6 +2007,11 @@ impl WokHandler {
             } else {
                 None
             };
+            let typewriter_active = typewriter_enabled && !pane.terminal.state.is_alt_screen();
+            if typewriter_enabled && !typewriter_active && pane.typewriter.has_pending() {
+                pane.typewriter.clear();
+                pane.row_cache.dirty.mark_fully_damaged();
+            }
             if pane.viewport.needs_render() || matches!(terminal_damage, Some(TerminalDamage::Full))
             {
                 for (row_idx, absolute_row) in visible_rows.iter().copied().enumerate() {
@@ -1984,8 +2022,8 @@ impl WokHandler {
                         cells: collect_row_cells(&pane.terminal, absolute_row, total_cols),
                     };
                     if pane.row_cache.row_signatures[row_idx].as_ref() != Some(&signature) {
-                        if typewriter_enabled
-                            && !pane.terminal.state.is_alt_screen()
+                        if typewriter_active
+                            && terminal_damage.is_some()
                             && typewriter_applies_to_row(
                                 &pane.app.block_manager.blocks,
                                 active_output_block_id,
@@ -2016,8 +2054,7 @@ impl WokHandler {
                         cells: collect_row_cells(&pane.terminal, absolute_row, total_cols),
                     };
                     if pane.row_cache.row_signatures[row_idx].as_ref() != Some(&signature) {
-                        if typewriter_enabled
-                            && !pane.terminal.state.is_alt_screen()
+                        if typewriter_active
                             && typewriter_applies_to_row(
                                 &pane.app.block_manager.blocks,
                                 active_output_block_id,
@@ -2042,7 +2079,7 @@ impl WokHandler {
                 let blocks = &pane.app.block_manager.blocks;
                 let terminal = &pane.terminal;
                 let row_cache = &mut pane.row_cache;
-                let typewriter = typewriter_enabled.then_some(&pane.typewriter);
+                let typewriter = typewriter_active.then_some(&pane.typewriter);
                 for (row_idx, absolute_row) in visible_rows.iter().copied().enumerate() {
                     if !row_cache.dirty.is_row_dirty(row_idx) {
                         continue;
