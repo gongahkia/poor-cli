@@ -209,6 +209,8 @@ pub enum Action {
     ThemePicker,
     /// Open the read-only keybinding discovery palette.
     KeybindingDiscovery,
+    /// Open the keybinding editor and shortcut capture flow.
+    KeybindingEditor,
     /// Open the structured settings field discovery palette.
     SettingsDiscovery,
 }

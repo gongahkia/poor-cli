@@ -558,7 +558,10 @@ impl WokApp {
             }
             // Discovery palettes — handled directly in WokHandler (no app-level
             // effect; they manipulate the global theme/keybinding registries).
-            Action::ThemePicker | Action::KeybindingDiscovery | Action::SettingsDiscovery => {}
+            Action::ThemePicker
+            | Action::KeybindingDiscovery
+            | Action::KeybindingEditor
+            | Action::SettingsDiscovery => {}
         }
 
         effects

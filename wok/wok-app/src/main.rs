@@ -977,6 +977,8 @@ struct WokHandler {
     user_keybinding_overrides: Vec<wok_app::keybindings_toml::BindingOverride>,
     /// Watcher for `keybindings.toml` so saves apply live.
     keybindings_watcher: Option<wok_watcher::PathWatcher>,
+    /// Action id currently waiting for the next key press in the keybinding editor.
+    pending_keybinding_capture: Option<String>,
     /// Future-home of the entity-handle runtime. Currently empty; existing
     /// `WokHandler` substates are *not* migrated. This field gives downstream
     /// PRs a place to lift state into `Handle<T>` entities incrementally.
@@ -1100,6 +1102,7 @@ impl WokHandler {
                 &WokConfig::config_dir().join("keybindings.toml"),
             )
             .ok(),
+            pending_keybinding_capture: None,
             ui_core: wok_ui_core::App::new(),
             background,
             media_preview: None,
@@ -5550,6 +5553,10 @@ impl WokHandler {
             self.open_keybinding_discovery();
             return;
         }
+        if matches!(action, Action::KeybindingEditor) {
+            self.open_keybinding_editor();
+            return;
+        }
         if matches!(action, Action::SettingsDiscovery) {
             self.open_settings_discovery();
             return;
@@ -6590,6 +6597,20 @@ impl WokHandler {
                             }
                             self.handle_action(Action::LoadSession(name));
                         }
+                        PaletteAction::RebindKeybinding(action_id) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
+                            self.begin_keybinding_capture(action_id);
+                        }
+                        PaletteAction::ResetKeybinding(action_id) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
+                            self.reset_user_keybinding(&action_id);
+                        }
                         PaletteAction::ApplyTheme(path) => {
                             if let Some(active_pane) = self.active_pane_mut() {
                                 active_pane.app.close_command_palette();
@@ -7612,6 +7633,144 @@ impl WokHandler {
         self.needs_redraw = true;
     }
 
+    /// Open the editable keybinding palette. Selecting "Bind" closes the
+    /// palette and captures the next key press into keybindings.toml.
+    fn open_keybinding_editor(&mut self) {
+        let Some(pane_id) = self.active_pane_id() else {
+            self.status_message = Some("no active pane".to_string());
+            return;
+        };
+
+        let current = self
+            .panes
+            .get(&pane_id)
+            .map(|pane| action_binding_labels(&pane.app.keybindings))
+            .unwrap_or_default();
+        let defaults = action_binding_labels(&wok_app::keybindings::KeybindingConfig::default());
+
+        let mut entries = Vec::new();
+        for action in palette_actions_catalog() {
+            let Some(action_id) = action_to_palette_id(&action) else {
+                continue;
+            };
+            let label = action_display_label(&action);
+            let current_label = binding_list_label(current.get(&action).cloned().unwrap_or_default());
+            let default_label = binding_list_label(defaults.get(&action).cloned().unwrap_or_default());
+            let user_override = self
+                .user_keybinding_overrides
+                .iter()
+                .any(|binding| binding.action == action);
+
+            entries.push(PaletteEntry {
+                label: format!("Bind {label}"),
+                description: format!("current: {current_label} | default: {default_label}"),
+                category: PaletteCategory::Keybinding,
+                score: 0.0,
+                action: PaletteAction::RebindKeybinding(action_id.clone()),
+            });
+
+            if user_override {
+                entries.push(PaletteEntry {
+                    label: format!("Reset {label}"),
+                    description: format!("remove user override | default: {default_label}"),
+                    category: PaletteCategory::Keybinding,
+                    score: 0.0,
+                    action: PaletteAction::ResetKeybinding(action_id),
+                });
+            }
+        }
+
+        if let Some(active_pane) = self.panes.get_mut(&pane_id) {
+            active_pane.app.input_mode = InputMode::CommandPalette;
+            active_pane.app.command_palette.open(entries);
+        }
+        self.needs_redraw = true;
+    }
+
+    fn begin_keybinding_capture(&mut self, action_id: String) {
+        let label = parse_palette_action(&action_id)
+            .map(|action| action_display_label(&action))
+            .unwrap_or_else(|| action_id.clone());
+        self.pending_keybinding_capture = Some(action_id);
+        self.status_message = Some(format!("Press a new shortcut for {label}. Esc cancels."));
+        self.needs_redraw = true;
+    }
+
+    fn handle_keybinding_capture(&mut self, event: &InputEvent) -> bool {
+        let Some(action_id) = self.pending_keybinding_capture.clone() else {
+            return false;
+        };
+        if event.event_type == InputEventType::Release {
+            return true;
+        }
+        if matches!(event.action, KeyAction::Escape) {
+            self.pending_keybinding_capture = None;
+            self.status_message = Some("Keybinding capture cancelled".to_string());
+            self.needs_redraw = true;
+            return true;
+        }
+        if is_modifier_only_key(&event.action) {
+            return true;
+        }
+
+        let combo = wok_app::keybindings::KeyCombo {
+            key: event.action.clone(),
+            modifiers: event.modifiers,
+        };
+        let path = keybindings_toml_path();
+        match wok_app::keybindings_toml::upsert_binding(&path, &action_id, &combo) {
+            Ok(()) => {
+                self.pending_keybinding_capture = None;
+                self.reload_user_keybindings();
+                self.status_message = Some(format!(
+                    "Bound {action_id} to {}",
+                    wok_app::keybindings_toml::format_keys(&combo)
+                ));
+            }
+            Err(error) => {
+                self.pending_keybinding_capture = None;
+                self.status_message = Some(format!("Failed to save keybinding: {error}"));
+            }
+        }
+        self.needs_redraw = true;
+        true
+    }
+
+    fn reset_user_keybinding(&mut self, action_id: &str) {
+        let path = keybindings_toml_path();
+        match wok_app::keybindings_toml::remove_binding(&path, action_id) {
+            Ok(true) => {
+                self.reload_user_keybindings();
+                self.status_message = Some(format!("Reset keybinding for {action_id}"));
+            }
+            Ok(false) => {
+                self.status_message = Some(format!("No user keybinding for {action_id}"));
+            }
+            Err(error) => {
+                self.status_message = Some(format!("Failed to reset keybinding: {error}"));
+            }
+        }
+        self.needs_redraw = true;
+    }
+
+    fn reload_user_keybindings(&mut self) {
+        let overrides = load_user_keybinding_overrides();
+        self.user_keybinding_overrides = overrides;
+        self.rebuild_runtime_keybindings();
+    }
+
+    fn rebuild_runtime_keybindings(&mut self) {
+        let plugins = self.plugins.as_ref();
+        let overrides = self.user_keybinding_overrides.clone();
+        for pane in self.panes.values_mut() {
+            pane.app.keybindings = wok_app::keybindings::KeybindingConfig::default();
+            if let Some(plugins) = plugins {
+                plugins.apply_keybindings(&mut pane.app, parse_lua_action);
+            }
+            pane.app.keybindings.apply_toml_overrides(overrides.clone());
+        }
+    }
+
     /// Persist `theme_path` to config.toml + reload configuration.
     fn apply_theme_selection(&mut self, theme_path: &str) {
         let config_path = WokConfig::config_dir().join("config.toml");
@@ -8475,15 +8634,8 @@ impl AppHandler for WokHandler {
 
         let keybindings_changed = self.keybindings_watcher.as_mut().is_some_and(|w| w.poll());
         if keybindings_changed {
-            let overrides = load_user_keybinding_overrides();
-            let count = overrides.len();
-            self.user_keybinding_overrides = overrides.clone();
-            // upsert user overrides on top of each pane's existing bindings.
-            // bindings removed from the file persist in-memory until restart;
-            // documented as a known limitation pending a defaults-rebuild API.
-            for pane in self.panes.values_mut() {
-                pane.app.keybindings.apply_toml_overrides(overrides.clone());
-            }
+            self.reload_user_keybindings();
+            let count = self.user_keybinding_overrides.len();
             info!("keybindings.toml reloaded ({count} overrides)");
             self.status_message = Some(format!("keybindings.toml reloaded ({count} overrides)"));
             self.needs_redraw = true;
@@ -8807,6 +8959,10 @@ impl AppHandler for WokHandler {
         }
 
         if event.event_type != InputEventType::Release {
+            if self.handle_keybinding_capture(&event) {
+                return;
+            }
+
             if matches!(event.action, KeyAction::Escape) && self.media_preview.is_some() {
                 self.close_media_preview();
                 return;
@@ -9300,7 +9456,7 @@ fn mouse_button_code(button: MouseButton) -> Option<u16> {
 /// Load `~/.config/wok/keybindings.toml` if present. Logs warnings; returns
 /// empty Vec on missing file or parse error.
 fn load_user_keybinding_overrides() -> Vec<wok_app::keybindings_toml::BindingOverride> {
-    let path = WokConfig::config_dir().join("keybindings.toml");
+    let path = keybindings_toml_path();
     if !path.exists() {
         return Vec::new();
     }
@@ -10519,6 +10675,7 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::LoadSession(name) => format!("load_session:{name}"),
         Action::ThemePicker => "theme_picker".to_string(),
         Action::KeybindingDiscovery => "keybinding_discovery".to_string(),
+        Action::KeybindingEditor => "keybinding_editor".to_string(),
         Action::SettingsDiscovery => "settings_discovery".to_string(),
         Action::GitChanges => "git_changes".to_string(),
         Action::GitWorktrees => "git_worktrees".to_string(),
@@ -10644,6 +10801,7 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::ResetSettings,
         Action::ThemePicker,
         Action::KeybindingDiscovery,
+        Action::KeybindingEditor,
         Action::SettingsDiscovery,
         Action::ClearScreen,
         Action::SendEof,
@@ -10758,6 +10916,7 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::LoadSession(_) => "Load a previously saved named session",
         Action::ThemePicker => "Pick a theme from ~/.config/wok/themes",
         Action::KeybindingDiscovery => "List all keybindings (read-only)",
+        Action::KeybindingEditor => "Edit keybindings and capture new shortcuts",
         Action::SettingsDiscovery => "List every settings field with current value",
         Action::GitChanges => "List changed files in the active Git repository",
         Action::GitWorktrees => "Switch between Git worktrees for the active repository",
@@ -11465,6 +11624,39 @@ fn git_diff_line_entries(rows: Vec<wok_git::diff::DiffDisplayRow>) -> Vec<DiffLi
         .collect()
 }
 
+fn action_binding_labels(
+    config: &wok_app::keybindings::KeybindingConfig,
+) -> HashMap<Action, Vec<String>> {
+    let mut labels: HashMap<Action, Vec<String>> = HashMap::new();
+    for (combo, action) in &config.bindings {
+        labels
+            .entry(action.clone())
+            .or_default()
+            .push(key_combo_label(combo));
+    }
+    for bindings in config.context_bindings.values() {
+        for (combo, action) in bindings {
+            labels
+                .entry(action.clone())
+                .or_default()
+                .push(key_combo_label(combo));
+        }
+    }
+    for values in labels.values_mut() {
+        values.sort();
+        values.dedup();
+    }
+    labels
+}
+
+fn binding_list_label(labels: Vec<String>) -> String {
+    if labels.is_empty() {
+        "unbound".to_string()
+    } else {
+        labels.join(", ")
+    }
+}
+
 fn key_combo_label(combo: &wok_app::keybindings::KeyCombo) -> String {
     let mut parts = Vec::new();
     if combo.modifiers.ctrl {
@@ -11485,6 +11677,20 @@ fn key_combo_label(combo: &wok_app::keybindings::KeyCombo) -> String {
     } else {
         format!("{}-{key}", parts.join("-"))
     }
+}
+
+fn is_modifier_only_key(action: &KeyAction) -> bool {
+    matches!(
+        action,
+        KeyAction::ModifierShift
+            | KeyAction::ModifierControl
+            | KeyAction::ModifierAlt
+            | KeyAction::ModifierMeta
+    )
+}
+
+fn keybindings_toml_path() -> PathBuf {
+    WokConfig::config_dir().join("keybindings.toml")
 }
 
 fn key_action_label(action: &KeyAction) -> String {

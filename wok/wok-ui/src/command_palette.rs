@@ -75,6 +75,10 @@ pub enum PaletteAction {
     OpenScratch(String),
     /// Load a named workspace.
     LoadWorkspace(String),
+    /// Capture a new shortcut for a built-in action id.
+    RebindKeybinding(String),
+    /// Remove the user override for a built-in action id.
+    ResetKeybinding(String),
     /// Apply the theme at the given absolute path.
     ApplyTheme(String),
     /// Preview the diff for a changed Git file.
