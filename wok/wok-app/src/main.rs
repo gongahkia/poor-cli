@@ -625,12 +625,13 @@ fn typewriter_applies_to_row(
     active_output_block_id: Option<u64>,
     absolute_row: usize,
 ) -> bool {
+    let Some(active_output_block_id) = active_output_block_id else {
+        return false;
+    };
     blocks.iter().rev().any(|block| {
-        if Some(block.id) == active_output_block_id && block.exit_code.is_none() {
-            absolute_row >= block.output_start_row
-        } else {
-            absolute_row >= block.output_start_row && absolute_row <= block.output_end_row
-        }
+        block.id == active_output_block_id
+            && block.exit_code.is_none()
+            && absolute_row >= block.output_start_row
     })
 }
 
@@ -11902,6 +11903,37 @@ mod tests {
         assert!(typewriter.is_cell_hidden(42, 1, now));
         assert!(!typewriter.is_cell_hidden(42, 2, now));
         assert!(!typewriter.is_cell_hidden(42, 3, now));
+    }
+
+    fn test_block(id: u64, start: usize, end: usize, exit_code: Option<i32>) -> Block {
+        Block {
+            id,
+            prompt_text: String::new(),
+            command_text: format!("command {id}"),
+            output_start_row: start,
+            output_end_row: end,
+            exit_code,
+            start_time: Instant::now(),
+            end_time: exit_code.map(|_| Instant::now()),
+            duration: None,
+            is_collapsed: false,
+            scroll_offset: 0,
+            cwd: PathBuf::from("/tmp"),
+            git_branch: None,
+            git_dirty: None,
+            is_bookmarked: false,
+            trigger_highlights: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn typewriter_only_applies_to_active_output_block() {
+        let blocks = vec![test_block(1, 10, 12, Some(0)), test_block(2, 20, 20, None)];
+
+        assert!(!typewriter_applies_to_row(&blocks, Some(2), 11));
+        assert!(typewriter_applies_to_row(&blocks, Some(2), 20));
+        assert!(typewriter_applies_to_row(&blocks, Some(2), 21));
+        assert!(!typewriter_applies_to_row(&blocks, None, 20));
     }
 
     #[test]
