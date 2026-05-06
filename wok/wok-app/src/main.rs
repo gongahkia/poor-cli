@@ -1156,6 +1156,59 @@ struct WokHandler {
     session_estimate_cache: Option<SessionEstimateCache>,
 }
 
+fn status_mode_label(app: &WokApp) -> &'static str {
+    if app.command_palette.is_open {
+        "palette"
+    } else if app.global_search.is_active {
+        "search"
+    } else if app.command_search.is_some() {
+        "history"
+    } else if app.quick_select.active {
+        "quick"
+    } else if app.block_query.is_some() {
+        "inspect"
+    } else if app.vi_mode.is_some() {
+        "vi"
+    } else {
+        match app.input_mode {
+            InputMode::OwnedInput => "editor",
+            InputMode::CommandPalette => "palette",
+            InputMode::ShellNative => "shell",
+        }
+    }
+}
+
+fn contextual_status_bindings(handler: &WokHandler, pane: &PaneRuntime) -> Vec<&'static str> {
+    if handler.pending_keybinding_capture.is_some() {
+        return vec!["Esc cancel", "press key to bind"];
+    }
+    if handler.settings_editor.is_some() {
+        return vec!["Esc close", "Mod-S save"];
+    }
+    if handler.scratch_buffer.is_some() {
+        return vec!["Esc close", "Mod-S save", "Mod-Enter send"];
+    }
+    if handler.media_preview.is_some() {
+        return vec!["Esc close", "Space play", "Left/Right seek"];
+    }
+    if pane.app.command_palette.is_open {
+        return vec!["Esc editor", "Enter run", "↑/↓ select"];
+    }
+    if pane.app.global_search.is_active {
+        return vec!["Esc editor", "Enter next", "Mod-R regex"];
+    }
+    if pane.app.command_search.is_some() {
+        return vec!["Esc editor", "Enter accept", "↑/↓ history"];
+    }
+    if pane.app.quick_select.active {
+        return vec!["Esc cancel", "type hint"];
+    }
+    if pane.app.vi_mode.is_some() {
+        return vec!["i insert", "/ search", "n/N match"];
+    }
+    vec!["Mod-P palette", "Mod-F search", "Mod-Alt-X scratch"]
+}
+
 impl WokHandler {
     fn new(config: WokConfig) -> Self {
         let font = FontSystem::new(&config.font_family, config.font_size);
@@ -1323,7 +1376,11 @@ impl WokHandler {
         }
     }
 
-    fn compose_status_bar_segments(&self, pane: &PaneRuntime) -> StatusBarSegments {
+    fn compose_status_bar_segments(
+        &self,
+        pane_id: Option<PaneId>,
+        pane: &PaneRuntime,
+    ) -> StatusBarSegments {
         let mut state = self.status_bar_state.clone();
         state.shell = pane.app.config.shell.to_string();
         state.cwd = if !pane.current_cwd.as_os_str().is_empty() {
@@ -1345,8 +1402,26 @@ impl WokHandler {
             .and_then(|block| block.git_branch.clone())
             .or_else(|| wok_ui::status_bar::detect_git_branch(&state.cwd));
 
+        let cwd_label = state
+            .cwd
+            .file_name()
+            .and_then(|name| name.to_str())
+            .filter(|name| !name.is_empty())
+            .unwrap_or("~")
+            .to_string();
         let mut left = vec![
-            StatusSegment::plain(state.cwd.display().to_string()),
+            StatusSegment {
+                text: status_mode_label(&pane.app).to_string(),
+                fg: Some("#7cf7c1".to_string()),
+                bg: None,
+                bold: true,
+            },
+            StatusSegment::plain(
+                pane_id
+                    .map(|id| format!("pane {id}"))
+                    .unwrap_or_else(|| "pane".to_string()),
+            ),
+            StatusSegment::plain(cwd_label),
             StatusSegment::plain(state.shell.clone()),
         ];
         if let Some(git_text) = self.status_bar_git_text(&state.cwd, state.git_branch.as_deref()) {
@@ -1381,9 +1456,22 @@ impl WokHandler {
         if let Some(message) = self.hovered_link.as_ref().or(self.status_message.as_ref()) {
             center.push(StatusSegment::plain(message.clone()));
         }
+        if pane.app.global_search.is_active {
+            center.push(StatusSegment::plain(format!(
+                "search {}/{}",
+                pane.app.global_search.current.saturating_add(1),
+                pane.app.global_search.matches.len()
+            )));
+        }
         center.extend(state.custom_center.clone());
 
         let mut right = state.custom_right.clone();
+        right.push(StatusSegment {
+            text: contextual_status_bindings(self, pane).join("  "),
+            fg: Some("#7f9594".to_string()),
+            bg: None,
+            bold: false,
+        });
         let zoom_percent = (pane.app.zoom.current_size() / self.config.font_size * 100.0).round();
         right.push(StatusSegment::plain(format!(
             "Zoom {}%",
@@ -1932,7 +2020,7 @@ impl WokHandler {
         let mouse_hover_overlay = self.mouse_hover;
         let status_segments = self
             .active_pane()
-            .map(|active_pane| self.compose_status_bar_segments(active_pane));
+            .map(|active_pane| self.compose_status_bar_segments(active_pane_id, active_pane));
         let workspace_search = self.active_search_state();
         self.ensure_active_tab_visible();
         self.clamp_tab_scroll();

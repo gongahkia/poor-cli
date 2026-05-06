@@ -483,45 +483,74 @@ pub(crate) fn render_status_bar(
         return;
     }
 
+    render_status_spine(render, font, rect, status_segments, surface_opacity);
+}
+
+fn render_status_spine(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    rect: Rect,
+    status_segments: &StatusBarSegments,
+    surface_opacity: f32,
+) {
     let text_y = rect.y + ((rect.h - font.metrics.cell_height) * 0.5).max(0.0);
-    let mut left_x = rect.x + 8.0;
-    draw_status_segments(
-        render,
-        font,
-        &status_segments.left,
-        &mut left_x,
-        text_y,
-        false,
-        surface_opacity,
-    );
+    let max_x = rect.x + rect.w - 8.0;
+    let mut cursor_x = rect.x + 8.0;
+    let segments = status_spine_segments(status_segments);
 
-    let mut right_x = rect.x + rect.w - 8.0;
-    draw_status_segments(
-        render,
-        font,
-        &status_segments.right,
-        &mut right_x,
-        text_y,
-        true,
-        surface_opacity,
-    );
+    for segment in segments {
+        let width = status_segment_width(font, &segment);
+        if cursor_x >= max_x {
+            break;
+        }
+        let remaining = max_x - cursor_x;
+        let mut segment = segment;
+        let draw_width = if width > remaining {
+            let available_text_width = (remaining - 12.0).max(0.0);
+            segment.text =
+                fit_text_to_width(&segment.text, available_text_width, font.metrics.cell_width);
+            if segment.text.is_empty() {
+                break;
+            }
+            status_segment_width(font, &segment).min(remaining)
+        } else {
+            width
+        };
+        draw_status_segment(
+            render,
+            font,
+            &segment,
+            cursor_x,
+            text_y,
+            draw_width,
+            surface_opacity,
+        );
+        cursor_x += draw_width + 4.0;
+    }
+}
 
-    let center_width = status_segments
-        .center
+fn status_spine_segments(status_segments: &StatusBarSegments) -> Vec<StatusSegment> {
+    let mut merged = Vec::new();
+    for segment in status_segments
+        .left
         .iter()
-        .map(|segment| status_segment_width(font, segment))
-        .sum::<f32>()
-        + ((status_segments.center.len().saturating_sub(1) as f32) * 4.0);
-    let mut center_x = rect.x + (rect.w - center_width) * 0.5;
-    draw_status_segments(
-        render,
-        font,
-        &status_segments.center,
-        &mut center_x,
-        text_y,
-        false,
-        surface_opacity,
-    );
+        .chain(status_segments.center.iter())
+        .chain(status_segments.right.iter())
+    {
+        if segment.text.trim().is_empty() {
+            continue;
+        }
+        if !merged.is_empty() {
+            merged.push(StatusSegment {
+                text: "|".to_string(),
+                fg: Some("#5f6a73".to_string()),
+                bg: None,
+                bold: false,
+            });
+        }
+        merged.push(segment.clone());
+    }
+    merged
 }
 
 fn render_vertical_status_bar(
@@ -574,55 +603,46 @@ pub(crate) fn status_segment_width(font: &FontSystem, segment: &StatusSegment) -
     text_width + 12.0
 }
 
-pub(crate) fn draw_status_segments(
+fn draw_status_segment(
     render: &mut RenderState,
     font: &mut FontSystem,
-    segments: &[StatusSegment],
-    cursor_x: &mut f32,
+    segment: &StatusSegment,
+    x: f32,
     y: f32,
-    rtl: bool,
+    width: f32,
     surface_opacity: f32,
 ) {
-    for segment in segments {
-        let width = status_segment_width(font, segment);
-        let x = if rtl { *cursor_x - width } else { *cursor_x };
-        if let Some(bg) = segment.bg.as_deref().and_then(parse_hex_rgba) {
-            render.batch.push_bg_quad(
-                x,
-                y - 1.0,
-                width,
-                font.metrics.cell_height + 2.0,
-                with_opacity(bg, surface_opacity),
-            );
-        }
-        let color = segment
-            .fg
-            .as_deref()
-            .and_then(parse_hex_rgba)
-            .unwrap_or([0.54, 0.58, 0.65, 1.0]);
+    if let Some(bg) = segment.bg.as_deref().and_then(parse_hex_rgba) {
+        render.batch.push_bg_quad(
+            x,
+            y - 1.0,
+            width,
+            font.metrics.cell_height + 2.0,
+            with_opacity(bg, surface_opacity),
+        );
+    }
+    let color = segment
+        .fg
+        .as_deref()
+        .and_then(parse_hex_rgba)
+        .unwrap_or([0.54, 0.58, 0.65, 1.0]);
+    push_text(
+        render,
+        font,
+        x + 6.0,
+        y,
+        &segment.text,
+        with_opacity(color, surface_opacity),
+    );
+    if segment.bold {
         push_text(
             render,
             font,
-            x + 6.0,
+            x + 6.6,
             y,
             &segment.text,
             with_opacity(color, surface_opacity),
         );
-        if segment.bold {
-            push_text(
-                render,
-                font,
-                x + 6.6,
-                y,
-                &segment.text,
-                with_opacity(color, surface_opacity),
-            );
-        }
-        if rtl {
-            *cursor_x = x - 4.0;
-        } else {
-            *cursor_x = x + width + 4.0;
-        }
     }
 }
 
