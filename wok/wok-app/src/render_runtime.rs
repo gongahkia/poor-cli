@@ -1735,6 +1735,13 @@ pub(crate) fn context_menu_row_height(cell_height: f32) -> f32 {
     cell_height + 7.0
 }
 
+pub(crate) fn context_menu_visible_row_count(rect: Rect, cell_height: f32) -> usize {
+    let row_height = context_menu_row_height(cell_height);
+    ((rect.h - 12.0).max(row_height) / row_height)
+        .floor()
+        .max(1.0) as usize
+}
+
 pub(crate) fn context_menu_index_at(
     menu: &ContextMenuState,
     viewport: Rect,
@@ -1756,7 +1763,7 @@ pub(crate) fn context_menu_index_at(
     if index < 0 {
         return None;
     }
-    let index = index as usize;
+    let index = menu.scroll_offset.floor().max(0.0) as usize + index as usize;
     (index < menu.entries.len()).then_some(index)
 }
 
@@ -1810,13 +1817,19 @@ pub(crate) fn render_context_menu(
     let label_width = (rect.w * 0.46).clamp(110.0, 220.0);
     let description_x = rect.x + padding_x + label_width + 10.0;
     let description_width = (rect.x + rect.w - padding_x - description_x).max(0.0);
-    for (index, entry) in menu.entries.iter().enumerate() {
-        let row_y = rect.y + 6.0 + index as f32 * row_height;
+    for (visible_index, (index, entry)) in menu
+        .entries
+        .iter()
+        .enumerate()
+        .skip(menu.scroll_offset.floor().max(0.0) as usize)
+        .enumerate()
+    {
+        let row_y = rect.y + 6.0 + visible_index as f32 * row_height;
         if row_y + row_height > rect.y + rect.h {
             break;
         }
         let is_actionable = entry.action.is_some();
-        if !is_actionable && index > 0 {
+        if !is_actionable && visible_index > 0 {
             render.batch.push_bg_quad(
                 rect.x + 8.0,
                 row_y - 4.0,
@@ -1904,6 +1917,48 @@ pub(crate) fn render_context_menu(
                 ),
             );
         }
+    }
+
+    let visible_rows = context_menu_visible_row_count(rect, font.metrics.cell_height);
+    if menu.entries.len() > visible_rows {
+        let track_h = (rect.h - 12.0).max(row_height);
+        let thumb_h =
+            (track_h * visible_rows as f32 / menu.entries.len() as f32).clamp(12.0, track_h);
+        let max_offset = menu.entries.len().saturating_sub(visible_rows).max(1);
+        let thumb_y = rect.y
+            + 6.0
+            + (track_h - thumb_h)
+                * (menu.scroll_offset.clamp(0.0, max_offset as f32) / max_offset as f32);
+        render.batch.push_bg_quad(
+            rect.x + rect.w - 5.0,
+            rect.y + 6.0,
+            2.0,
+            track_h,
+            with_opacity(
+                [
+                    theme.status_bar_text.r,
+                    theme.status_bar_text.g,
+                    theme.status_bar_text.b,
+                    0.16,
+                ],
+                surface_opacity,
+            ),
+        );
+        render.batch.push_bg_quad(
+            rect.x + rect.w - 6.0,
+            thumb_y,
+            4.0,
+            thumb_h,
+            with_opacity(
+                [
+                    theme.status_bar_text.r,
+                    theme.status_bar_text.g,
+                    theme.status_bar_text.b,
+                    0.48,
+                ],
+                surface_opacity,
+            ),
+        );
     }
 }
 

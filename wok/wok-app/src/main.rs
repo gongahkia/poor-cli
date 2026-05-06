@@ -613,6 +613,7 @@ struct ContextMenuState {
     y: f32,
     entries: Vec<ContextMenuEntry>,
     selected: usize,
+    scroll_offset: f32,
     pane_id: PaneId,
     target_block_id: Option<u64>,
 }
@@ -8882,6 +8883,7 @@ impl WokHandler {
             y: y as f32,
             entries,
             selected,
+            scroll_offset: 0.0,
             pane_id,
             target_block_id,
         });
@@ -9017,9 +9019,64 @@ impl WokHandler {
         if let Some(menu) = self.context_menu.as_mut() {
             if context_menu_index_is_actionable(menu, index) {
                 menu.selected = index;
+                let visible_rows = context_menu_visible_rows_for_metrics(
+                    menu,
+                    self.chrome_rects.content,
+                    self.font.metrics.cell_width,
+                    self.font.metrics.cell_height,
+                );
+                ensure_context_menu_selection_visible(menu, visible_rows);
                 self.needs_redraw = true;
             }
         }
+    }
+
+    fn scroll_context_menu_at(
+        &mut self,
+        x: f64,
+        y: f64,
+        delta_y: f64,
+        is_pixel_delta: bool,
+    ) -> bool {
+        let Some(menu) = self.context_menu.as_mut() else {
+            return false;
+        };
+        let rect = context_menu_rect(
+            menu,
+            self.chrome_rects.content,
+            self.font.metrics.cell_width,
+            self.font.metrics.cell_height,
+        );
+        if !point_in_rect(rect, x, y) {
+            self.close_context_menu();
+            return true;
+        }
+
+        let visible_rows = context_menu_visible_row_count(rect, self.font.metrics.cell_height);
+        let max_offset = menu.entries.len().saturating_sub(visible_rows) as f32;
+        if max_offset <= 0.0 {
+            return true;
+        }
+        let rows = context_menu_scroll_rows_from_delta(
+            delta_y,
+            is_pixel_delta,
+            self.font.metrics.cell_height,
+        );
+        if rows.abs() <= f32::EPSILON {
+            return true;
+        }
+        menu.scroll_offset = (menu.scroll_offset + rows).clamp(0.0, max_offset);
+        if menu.selected < menu.scroll_offset.floor() as usize
+            || menu.selected >= menu.scroll_offset.floor() as usize + visible_rows
+        {
+            if let Some(index) =
+                first_actionable_context_menu_index_from(&menu.entries, menu.scroll_offset as usize)
+            {
+                menu.selected = index;
+            }
+        }
+        self.needs_redraw = true;
+        true
     }
 
     fn run_context_menu_selected(&mut self) {
@@ -9216,6 +9273,13 @@ impl WokHandler {
                     next_actionable_context_menu_index(&menu.entries, menu.selected, true)
                 {
                     menu.selected = index;
+                    let visible_rows = context_menu_visible_rows_for_metrics(
+                        menu,
+                        self.chrome_rects.content,
+                        self.font.metrics.cell_width,
+                        self.font.metrics.cell_height,
+                    );
+                    ensure_context_menu_selection_visible(menu, visible_rows);
                     self.needs_redraw = true;
                 }
                 true
@@ -9225,6 +9289,13 @@ impl WokHandler {
                     next_actionable_context_menu_index(&menu.entries, menu.selected, false)
                 {
                     menu.selected = index;
+                    let visible_rows = context_menu_visible_rows_for_metrics(
+                        menu,
+                        self.chrome_rects.content,
+                        self.font.metrics.cell_width,
+                        self.font.metrics.cell_height,
+                    );
+                    ensure_context_menu_selection_visible(menu, visible_rows);
                     self.needs_redraw = true;
                 }
                 true
@@ -9287,10 +9358,13 @@ impl WokHandler {
                 true
             }
             wok_app::input::MouseEvent::Release { .. } => true,
-            wok_app::input::MouseEvent::Scroll { .. } => {
-                self.close_context_menu();
-                true
-            }
+            wok_app::input::MouseEvent::Scroll {
+                x,
+                y,
+                delta_y,
+                is_pixel_delta,
+                ..
+            } => self.scroll_context_menu_at(*x, *y, *delta_y, *is_pixel_delta),
         }
     }
 
@@ -12569,8 +12643,57 @@ fn context_menu_index_is_actionable(menu: &ContextMenuState, index: usize) -> bo
         .is_some_and(|entry| entry.action.is_some())
 }
 
+fn context_menu_visible_rows_for_metrics(
+    menu: &ContextMenuState,
+    viewport: Rect,
+    cell_width: f32,
+    cell_height: f32,
+) -> usize {
+    let rect = context_menu_rect(menu, viewport, cell_width, cell_height);
+    context_menu_visible_row_count(rect, cell_height).min(menu.entries.len().max(1))
+}
+
+fn context_menu_scroll_rows_from_delta(
+    delta_y: f64,
+    is_pixel_delta: bool,
+    cell_height: f32,
+) -> f32 {
+    if is_pixel_delta {
+        (-(delta_y as f32) / cell_height.max(1.0)).clamp(-8.0, 8.0)
+    } else {
+        -(delta_y as f32)
+    }
+}
+
+fn ensure_context_menu_selection_visible(menu: &mut ContextMenuState, visible_rows: usize) {
+    if visible_rows == 0 || menu.entries.is_empty() {
+        menu.scroll_offset = 0.0;
+        return;
+    }
+    let max_offset = menu.entries.len().saturating_sub(visible_rows) as f32;
+    let scroll_offset = menu.scroll_offset.floor().max(0.0) as usize;
+    if menu.selected < scroll_offset {
+        menu.scroll_offset = menu.selected as f32;
+    } else if menu.selected >= scroll_offset + visible_rows {
+        menu.scroll_offset = (menu.selected + 1 - visible_rows) as f32;
+    }
+    menu.scroll_offset = menu.scroll_offset.clamp(0.0, max_offset);
+}
+
 fn first_actionable_context_menu_index(entries: &[ContextMenuEntry]) -> Option<usize> {
     entries.iter().position(|entry| entry.action.is_some())
+}
+
+fn first_actionable_context_menu_index_from(
+    entries: &[ContextMenuEntry],
+    start: usize,
+) -> Option<usize> {
+    entries
+        .iter()
+        .enumerate()
+        .skip(start.min(entries.len()))
+        .find_map(|(index, entry)| entry.action.is_some().then_some(index))
+        .or_else(|| first_actionable_context_menu_index(entries))
 }
 
 fn next_actionable_context_menu_index(
@@ -13917,6 +14040,60 @@ mod tests {
         assert!(labels.contains(&"Search Selection"));
         assert!(labels.contains(&"Send Selection To Scratch"));
         assert!(labels.contains(&"Run Selection"));
+    }
+
+    #[test]
+    fn test_context_menu_hit_testing_respects_scroll_offset() {
+        let mut entries = context_menu_workspace_entries();
+        entries.extend(context_menu_workspace_entries());
+        let menu = ContextMenuState {
+            x: 10.0,
+            y: 10.0,
+            entries,
+            selected: 8,
+            scroll_offset: 5.0,
+            pane_id: 1,
+            target_block_id: None,
+        };
+        let viewport = Rect::new(0.0, 0.0, 360.0, 80.0);
+        let rect = context_menu_rect(&menu, viewport, 8.0, 16.0);
+        let row_height = context_menu_row_height(16.0);
+
+        assert_eq!(
+            context_menu_index_at(
+                &menu,
+                viewport,
+                8.0,
+                16.0,
+                f64::from(rect.x + 12.0),
+                f64::from(rect.y + 6.0 + row_height + 2.0),
+            ),
+            Some(6)
+        );
+    }
+
+    #[test]
+    fn test_context_menu_selection_visibility_adjusts_scroll_offset() {
+        let entries = context_menu_workspace_entries();
+        let mut menu = ContextMenuState {
+            x: 0.0,
+            y: 0.0,
+            entries,
+            selected: 12,
+            scroll_offset: 0.0,
+            pane_id: 1,
+            target_block_id: None,
+        };
+
+        ensure_context_menu_selection_visible(&mut menu, 4);
+
+        assert_eq!(menu.scroll_offset, 9.0);
+    }
+
+    #[test]
+    fn test_context_menu_scroll_delta_reveals_lower_rows_on_down_scroll() {
+        assert_eq!(context_menu_scroll_rows_from_delta(-32.0, true, 16.0), 2.0);
+        assert_eq!(context_menu_scroll_rows_from_delta(32.0, true, 16.0), -2.0);
     }
 
     #[test]
