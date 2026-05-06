@@ -1536,9 +1536,9 @@ impl WokHandler {
 
     fn show_input_surface(pane: &PaneRuntime, focused: bool) -> bool {
         focused
-            && (pane.app.input_mode == InputMode::CommandPalette
-                || pane.app.command_search.is_some()
-                || pane.app.input_editor.is_active)
+            && pane.app.input_editor.is_active
+            && pane.app.input_mode != InputMode::CommandPalette
+            && pane.app.command_search.is_none()
     }
 
     fn pane_input_lines(pane: &PaneRuntime) -> usize {
@@ -2118,6 +2118,10 @@ impl WokHandler {
         let typewriter_cps = self.config.typewriter_effect_cps;
         let typewriter_max_pending_cells = self.config.typewriter_effect_max_pending_cells;
         let visual_effect = VisualEffectState::from_config(&self.config, self.started_at.elapsed());
+        let dock_rect = bottom_dock_rect(
+            self.chrome_rects.content,
+            self.chrome_font.metrics.cell_height,
+        );
         let Some(render) = self.render.as_mut() else {
             return;
         };
@@ -2601,7 +2605,7 @@ impl WokHandler {
                         render,
                         &mut self.font,
                         theme,
-                        pane.ui_rects.input,
+                        dock_rect,
                         command_search,
                         cursor_shape,
                         cursor_visible,
@@ -2615,7 +2619,7 @@ impl WokHandler {
                     render,
                     &mut self.font,
                     theme,
-                    pane.ui_rects.viewport,
+                    dock_rect,
                     search,
                     window_opacity,
                 );
@@ -2772,7 +2776,7 @@ impl WokHandler {
                 render,
                 &mut self.chrome_font,
                 theme,
-                self.chrome_rects.content,
+                dock_rect,
                 input,
                 palette,
                 cursor_shape,
@@ -2785,7 +2789,7 @@ impl WokHandler {
                 render,
                 &mut self.chrome_font,
                 theme,
-                self.chrome_rects.content,
+                dock_rect,
                 "Settings",
                 path,
                 "Esc close  Mod+S save  Enter newline",
@@ -2800,7 +2804,7 @@ impl WokHandler {
                 render,
                 &mut self.font,
                 theme,
-                self.chrome_rects.content,
+                dock_rect,
                 title,
                 path,
                 help,
@@ -2815,7 +2819,7 @@ impl WokHandler {
                 render,
                 &mut self.font,
                 theme,
-                self.chrome_rects.content,
+                dock_rect,
                 "Scratch",
                 path,
                 "Esc close  Mod+S save  Enter newline",
@@ -4019,6 +4023,18 @@ impl WokHandler {
         }
     }
 
+    fn close_bottom_dock_surfaces(&mut self) {
+        self.settings_editor = None;
+        self.file_preview = None;
+        self.scratch_buffer = None;
+        self.close_media_preview();
+        if let Some(active_pane) = self.active_pane_mut() {
+            active_pane.app.global_search.deactivate();
+            active_pane.app.command_search = None;
+            active_pane.app.close_command_palette();
+        }
+    }
+
     fn open_media_preview(&mut self, path: PathBuf) {
         let path = self.resolve_preview_path(&path);
         let Some(kind) = media_kind_for_path(&path) else {
@@ -4043,7 +4059,7 @@ impl WokHandler {
             return;
         };
 
-        self.media_preview = None;
+        self.close_bottom_dock_surfaces();
         match MediaPreview::open(&window, path.clone(), kind, frame) {
             Ok(preview) => {
                 self.status_message =
@@ -4124,6 +4140,7 @@ impl WokHandler {
         column: Option<usize>,
         help: &str,
     ) {
+        self.close_bottom_dock_surfaces();
         let mut editor = InputEditor::new(
             self.config.shell.clone(),
             wok_input::editor::InputPosition::Bottom,
@@ -4166,6 +4183,7 @@ impl WokHandler {
             }
         }
         let content = std::fs::read_to_string(&path).unwrap_or_default();
+        self.close_bottom_dock_surfaces();
         let mut editor = InputEditor::new(
             self.config.shell.clone(),
             wok_input::editor::InputPosition::Bottom,
@@ -4510,7 +4528,10 @@ impl WokHandler {
     }
 
     fn media_preview_frame_for_window(&self, window: &Window) -> Option<PreviewFrame> {
-        let content = self.chrome_rects.content;
+        let content = bottom_dock_rect(
+            self.chrome_rects.content,
+            self.chrome_font.metrics.cell_height,
+        );
         if content.w <= 1.0 || content.h <= 1.0 {
             return None;
         }
@@ -4518,7 +4539,7 @@ impl WokHandler {
         let scale = window.scale_factor().max(1.0) as f32;
         let inner_size = window.inner_size();
         let window_height_points = inner_size.height as f32 / scale;
-        let margin = 24.0;
+        let margin = 10.0;
         let x = (content.x + margin) / scale;
         let y_from_top = (content.y + margin) / scale;
         let width = (content.w - margin * 2.0).max(120.0) / scale;
@@ -5479,6 +5500,7 @@ impl WokHandler {
         match ensure_settings_file() {
             Ok(path) => match std::fs::read_to_string(&path) {
                 Ok(content) => {
+                    self.close_bottom_dock_surfaces();
                     let mut editor = InputEditor::new(
                         self.config.shell.clone(),
                         wok_input::editor::InputPosition::Bottom,
@@ -6378,6 +6400,7 @@ impl WokHandler {
     fn apply_overlay_effect(&mut self, effect: OverlayEffect) {
         match effect {
             OverlayEffect::OpenSearch => {
+                self.close_bottom_dock_surfaces();
                 if let Some(active_pane) = self.active_pane_mut() {
                     active_pane.app.close_command_palette();
                     active_pane.app.command_search = None;
@@ -6400,6 +6423,7 @@ impl WokHandler {
                 }
             }
             OverlayEffect::OpenCommandPalette => {
+                self.close_bottom_dock_surfaces();
                 if let Some(active_pane) = self.active_pane_mut() {
                     active_pane.app.global_search.deactivate();
                     active_pane.app.command_search = None;
@@ -6424,6 +6448,7 @@ impl WokHandler {
                 }
             }
             OverlayEffect::OpenCommandSearch => {
+                self.close_bottom_dock_surfaces();
                 if !self
                     .active_pane()
                     .is_some_and(Self::should_activate_owned_input)

@@ -148,6 +148,18 @@ pub(crate) fn compute_pane_ui_rects(
     }
 }
 
+pub(crate) fn bottom_dock_rect(content: Rect, cell_height: f32) -> Rect {
+    let dock_height = (cell_height * 12.0 + 28.0)
+        .clamp(168.0, 360.0)
+        .min((content.h * 0.46).max(96.0));
+    Rect::new(
+        content.x,
+        content.y + (content.h - dock_height).max(0.0),
+        content.w,
+        dock_height.min(content.h),
+    )
+}
+
 pub(crate) fn pane_max_scroll(pane: &PaneRuntime) -> f32 {
     pane.terminal.state.scrollback_len() as f32
 }
@@ -2052,6 +2064,17 @@ mod tests {
     fn columns_for_width_rejects_invalid_metrics() {
         assert_eq!(columns_for_width(100.0, 0.0), 0);
         assert_eq!(columns_for_width(-1.0, 10.0), 0);
+    }
+
+    #[test]
+    fn bottom_dock_rect_uses_lower_portion_of_content() {
+        let content = Rect::new(0.0, 20.0, 1000.0, 700.0);
+        let dock = bottom_dock_rect(content, 24.0);
+
+        assert_eq!(dock.x, content.x);
+        assert_eq!(dock.w, content.w);
+        assert!(dock.h <= content.h * 0.46 + f32::EPSILON);
+        assert!((dock.y + dock.h - (content.y + content.h)).abs() < f32::EPSILON);
     }
 
     #[test]
