@@ -159,6 +159,8 @@ pub(crate) fn render_tab_bar(
     tabs: &[(bool, String)],
     scroll_offset: f32,
     orientation: wok_app::config::TabBarOrientation,
+    hovered_tab: Option<usize>,
+    hovered_close: Option<usize>,
     surface_opacity: f32,
 ) {
     render.batch.push_bg_quad(
@@ -176,13 +178,15 @@ pub(crate) fn render_tab_bar(
         wok_app::config::TabBarOrientation::Horizontal => {
             let widths = tab_bar_tab_widths(tabs, font.metrics.cell_width);
             let mut x = rect.x - scroll_offset;
-            for ((is_active, label), tab_width) in tabs.iter().zip(widths) {
+            for (index, ((is_active, label), tab_width)) in tabs.iter().zip(widths).enumerate() {
                 render_tab_bar_item(
                     render,
                     font,
                     Rect::new(x, rect.y, tab_width, rect.h),
                     Rect::new(rect.x, rect.y, rect.w, rect.h),
                     *is_active,
+                    hovered_tab == Some(index),
+                    hovered_close == Some(index),
                     label,
                     surface_opacity,
                 );
@@ -192,13 +196,15 @@ pub(crate) fn render_tab_bar(
         wok_app::config::TabBarOrientation::Vertical => {
             let tab_height = 32.0;
             let mut y = rect.y - scroll_offset;
-            for (is_active, label) in tabs {
+            for (index, (is_active, label)) in tabs.iter().enumerate() {
                 render_tab_bar_item(
                     render,
                     font,
                     Rect::new(rect.x, y, rect.w, tab_height),
                     Rect::new(rect.x, rect.y, rect.w, rect.h),
                     *is_active,
+                    hovered_tab == Some(index),
+                    hovered_close == Some(index),
                     label,
                     surface_opacity,
                 );
@@ -214,6 +220,8 @@ fn render_tab_bar_item(
     item_rect: Rect,
     clip_rect: Rect,
     is_active: bool,
+    is_hovered: bool,
+    is_close_hovered: bool,
     label: &str,
     surface_opacity: f32,
 ) {
@@ -227,6 +235,8 @@ fn render_tab_bar_item(
 
     let background = if is_active {
         [0.14, 0.16, 0.22, 1.0]
+    } else if is_hovered {
+        [0.13, 0.14, 0.19, 1.0]
     } else {
         [0.10, 0.11, 0.15, 1.0]
     };
@@ -241,19 +251,46 @@ fn render_tab_bar_item(
     let text_x = (item_rect.x + TAB_TEXT_PAD_X).max(clip_rect.x + TAB_TEXT_PAD_X);
     let text_y =
         visible_top + ((visible_bottom - visible_top - font.metrics.cell_height) * 0.5).max(0.0);
-    let available_width = (visible_right - text_x - TAB_TEXT_PAD_X).max(0.0);
+    let close_rect = tab_close_rect_for_item(item_rect, clip_rect);
+    let close_reserve = close_rect
+        .map(|rect| visible_right - rect.x + TAB_TEXT_PAD_X * 0.5)
+        .unwrap_or(TAB_TEXT_PAD_X);
+    let available_width = (visible_right - text_x - close_reserve).max(0.0);
     let visible_label = fit_text_to_width(label, available_width, font.metrics.cell_width);
-    if visible_label.is_empty() {
-        return;
+    if !visible_label.is_empty() {
+        push_text(
+            render,
+            font,
+            text_x,
+            text_y,
+            &visible_label,
+            with_opacity([0.75, 0.79, 0.96, 1.0], surface_opacity),
+        );
     }
-    push_text(
-        render,
-        font,
-        text_x,
-        text_y,
-        &visible_label,
-        with_opacity([0.75, 0.79, 0.96, 1.0], surface_opacity),
-    );
+    if is_hovered || is_active {
+        if let Some(close_rect) = close_rect {
+            let color = if is_close_hovered {
+                [0.76, 0.22, 0.25, 0.88]
+            } else {
+                [0.20, 0.22, 0.30, 0.84]
+            };
+            render.batch.push_bg_quad(
+                close_rect.x,
+                close_rect.y,
+                close_rect.w,
+                close_rect.h,
+                with_opacity(color, surface_opacity),
+            );
+            push_text(
+                render,
+                font,
+                close_rect.x + (close_rect.w - font.metrics.cell_width) * 0.5,
+                close_rect.y + (close_rect.h - font.metrics.cell_height) * 0.5,
+                "x",
+                with_opacity([0.86, 0.88, 0.96, 1.0], surface_opacity),
+            );
+        }
+    }
 }
 
 const TAB_TEXT_PAD_X: f32 = 12.0;
@@ -352,6 +389,75 @@ pub(crate) fn tab_bar_index_at_point(
         }
     }
     None
+}
+
+pub(crate) fn tab_bar_close_index_at_point(
+    rect: Rect,
+    tabs: &[(bool, String)],
+    scroll_offset: f32,
+    x: f32,
+    y: f32,
+    cell_width: f32,
+    orientation: wok_app::config::TabBarOrientation,
+) -> Option<usize> {
+    if tabs.is_empty() {
+        return None;
+    }
+    for index in 0..tabs.len() {
+        let Some(close_rect) =
+            tab_bar_close_rect_for_index(rect, tabs, index, scroll_offset, cell_width, orientation)
+        else {
+            continue;
+        };
+        if x >= close_rect.x
+            && x <= close_rect.x + close_rect.w
+            && y >= close_rect.y
+            && y <= close_rect.y + close_rect.h
+        {
+            return Some(index);
+        }
+    }
+    None
+}
+
+pub(crate) fn tab_bar_close_rect_for_index(
+    rect: Rect,
+    tabs: &[(bool, String)],
+    index: usize,
+    scroll_offset: f32,
+    cell_width: f32,
+    orientation: wok_app::config::TabBarOrientation,
+) -> Option<Rect> {
+    let (start, end) = tab_bar_tab_range(tabs, index, cell_width, orientation)?;
+    let item_rect = match orientation {
+        wok_app::config::TabBarOrientation::Horizontal => {
+            Rect::new(rect.x + start - scroll_offset, rect.y, end - start, rect.h)
+        }
+        wok_app::config::TabBarOrientation::Vertical => {
+            Rect::new(rect.x, rect.y + start - scroll_offset, rect.w, end - start)
+        }
+    };
+    tab_close_rect_for_item(item_rect, rect)
+}
+
+fn tab_close_rect_for_item(item_rect: Rect, clip_rect: Rect) -> Option<Rect> {
+    let visible_left = item_rect.x.max(clip_rect.x);
+    let visible_top = item_rect.y.max(clip_rect.y);
+    let visible_right = (item_rect.x + item_rect.w).min(clip_rect.x + clip_rect.w);
+    let visible_bottom = (item_rect.y + item_rect.h).min(clip_rect.y + clip_rect.h);
+    if visible_right <= visible_left || visible_bottom <= visible_top {
+        return None;
+    }
+    let size = (visible_bottom - visible_top - 10.0).clamp(14.0, 20.0);
+    if visible_right - visible_left < size + TAB_TEXT_PAD_X * 2.0 {
+        return None;
+    }
+    Some(Rect::new(
+        visible_right - TAB_TEXT_PAD_X - size,
+        visible_top + ((visible_bottom - visible_top - size) * 0.5).max(0.0),
+        size,
+        size,
+    ))
 }
 
 pub(crate) fn render_status_bar(
@@ -1709,7 +1815,25 @@ pub(crate) fn render_context_menu(
         if row_y + row_height > rect.y + rect.h {
             break;
         }
-        if index == menu.selected {
+        let is_actionable = entry.action.is_some();
+        if !is_actionable && index > 0 {
+            render.batch.push_bg_quad(
+                rect.x + 8.0,
+                row_y - 4.0,
+                rect.w - 16.0,
+                1.0,
+                with_opacity(
+                    [
+                        theme.status_bar_text.r,
+                        theme.status_bar_text.g,
+                        theme.status_bar_text.b,
+                        0.18,
+                    ],
+                    surface_opacity,
+                ),
+            );
+        }
+        if is_actionable && index == menu.selected {
             render.batch.push_bg_quad(
                 rect.x + 4.0,
                 row_y - 2.0,
@@ -1726,23 +1850,39 @@ pub(crate) fn render_context_menu(
                 ),
             );
         }
+        let label = if is_actionable {
+            fit_text_to_width(&entry.label, label_width, font.metrics.cell_width)
+        } else {
+            fit_text_to_width(
+                &entry.label.to_uppercase(),
+                label_width,
+                font.metrics.cell_width,
+            )
+        };
+        let label_color = if is_actionable {
+            [
+                theme.foreground.r,
+                theme.foreground.g,
+                theme.foreground.b,
+                theme.foreground.a,
+            ]
+        } else {
+            [
+                theme.status_bar_text.r,
+                theme.status_bar_text.g,
+                theme.status_bar_text.b,
+                0.72,
+            ]
+        };
         push_text(
             render,
             font,
             rect.x + padding_x,
             row_y,
-            &fit_text_to_width(&entry.label, label_width, font.metrics.cell_width),
-            with_opacity(
-                [
-                    theme.foreground.r,
-                    theme.foreground.g,
-                    theme.foreground.b,
-                    theme.foreground.a,
-                ],
-                surface_opacity,
-            ),
+            &label,
+            with_opacity(label_color, surface_opacity),
         );
-        if description_width >= font.metrics.cell_width * 4.0 {
+        if is_actionable && description_width >= font.metrics.cell_width * 4.0 {
             push_text(
                 render,
                 font,
@@ -1881,6 +2021,62 @@ mod tests {
                 0.0,
                 12.0,
                 VERTICAL_TAB_HEIGHT + 4.0,
+                12.0,
+                wok_app::config::TabBarOrientation::Vertical,
+            ),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn horizontal_tab_close_hit_testing_uses_visible_close_rect() {
+        let tabs = vec![(true, "Wok".to_string()), (false, "Shell".to_string())];
+        let rect = Rect::new(0.0, 0.0, 320.0, 32.0);
+        let close = tab_bar_close_rect_for_index(
+            rect,
+            &tabs,
+            0,
+            0.0,
+            12.0,
+            wok_app::config::TabBarOrientation::Horizontal,
+        )
+        .expect("close rect should exist");
+
+        assert_eq!(
+            tab_bar_close_index_at_point(
+                rect,
+                &tabs,
+                0.0,
+                close.x + close.w * 0.5,
+                close.y + close.h * 0.5,
+                12.0,
+                wok_app::config::TabBarOrientation::Horizontal,
+            ),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn vertical_tab_close_hit_testing_uses_visible_close_rect() {
+        let tabs = vec![(true, "Wok".to_string()), (false, "Shell".to_string())];
+        let rect = Rect::new(0.0, 0.0, 180.0, 96.0);
+        let close = tab_bar_close_rect_for_index(
+            rect,
+            &tabs,
+            1,
+            0.0,
+            12.0,
+            wok_app::config::TabBarOrientation::Vertical,
+        )
+        .expect("close rect should exist");
+
+        assert_eq!(
+            tab_bar_close_index_at_point(
+                rect,
+                &tabs,
+                0.0,
+                close.x + close.w * 0.5,
+                close.y + close.h * 0.5,
                 12.0,
                 wok_app::config::TabBarOrientation::Vertical,
             ),
