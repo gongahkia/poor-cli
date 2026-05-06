@@ -27,10 +27,10 @@ use wok_app::action_effects::{
 use wok_app::app::{InputMode, WokApp};
 use wok_app::block_query::{BlockQueryMode, BlockQueryState, DiffLineEntry, DiffLineKind};
 use wok_app::command_search::{CommandSearchScope, CommandSearchState};
-use wok_app::config::{TriggerScopeConfig, VisualEffectMode, WokConfig};
+use wok_app::config::{MouseBindingArea, TriggerScopeConfig, VisualEffectMode, WokConfig};
 use wok_app::event_loop::{run_event_loop, RuntimeWaker};
 use wok_app::handler::{AppHandler, AppMenuAction};
-use wok_app::input::{InputEvent, InputEventType, KeyAction};
+use wok_app::input::{InputEvent, InputEventType, KeyAction, Modifiers};
 use wok_app::keybindings::Action;
 use wok_app::plugin_host::PluginHost;
 use wok_app::remote_control::{
@@ -627,9 +627,23 @@ enum ContextMenuAction {
     Clipboard(ClipboardEffect),
     Palette(PaletteAction),
     BuiltIn(Action),
+    Window(WindowContextAction),
     OpenUrl(String),
-    CopyText(String),
-    Dismiss,
+    CopyText(String, String),
+}
+
+#[derive(Clone)]
+enum WindowContextAction {
+    ToggleFullscreen,
+    ToggleMaximized,
+    Minimize,
+}
+
+#[derive(Clone, Copy)]
+struct MouseBindingTarget {
+    area: MouseBindingArea,
+    tab_index: Option<usize>,
+    pane_id: Option<PaneId>,
 }
 
 struct PaneRuntime {
@@ -7804,6 +7818,10 @@ impl WokHandler {
         m.insert("debug_overlay", c.debug_overlay.to_string());
         m.insert("command_telemetry", c.command_telemetry.to_string());
         m.insert("recent_keys", format!("{:?}", c.recent_keys));
+        m.insert(
+            "mouse_bindings",
+            format!("{} entries", c.mouse_bindings.len()),
+        );
         m.insert("triggers", format!("{} entries", c.triggers.len()));
         m.insert(
             "layout_presets",
@@ -8763,6 +8781,527 @@ impl WokHandler {
         let selected = active_pane.app.selected_or_latest_block()?;
         Some(extract_block_output_text(&active_pane.terminal, selected))
     }
+
+    fn open_context_menu_at(&mut self, pane_id: PaneId, x: f64, y: f64) -> bool {
+        let Some(cell) = self.pixel_to_cell_in_pane(pane_id, x, y) else {
+            return false;
+        };
+        let entries = self.context_menu_entries_for_cell(pane_id, cell);
+        let target_block_id = self.block_id_at_cell(pane_id, cell);
+        self.open_context_menu_with_entries(pane_id, x, y, entries, target_block_id)
+    }
+
+    fn open_context_menu_with_entries(
+        &mut self,
+        pane_id: PaneId,
+        x: f64,
+        y: f64,
+        entries: Vec<ContextMenuEntry>,
+        target_block_id: Option<u64>,
+    ) -> bool {
+        if entries.is_empty() {
+            self.context_menu = None;
+            return false;
+        }
+        self.context_menu = Some(ContextMenuState {
+            x: x as f32,
+            y: y as f32,
+            entries,
+            selected: 0,
+            pane_id,
+            target_block_id,
+        });
+        self.needs_redraw = true;
+        true
+    }
+
+    fn open_tab_context_menu_at(&mut self, tab_index: usize, x: f64, y: f64) -> bool {
+        self.switch_to_tab_index(tab_index);
+        let Some(pane_id) = self.active_pane_id() else {
+            return false;
+        };
+        self.open_context_menu_with_entries(
+            pane_id,
+            x,
+            y,
+            context_menu_tab_entries(tab_index),
+            None,
+        )
+    }
+
+    fn open_workspace_context_menu_at(&mut self, x: f64, y: f64) -> bool {
+        let Some(pane_id) = self.active_pane_id() else {
+            return false;
+        };
+        self.open_context_menu_with_entries(pane_id, x, y, context_menu_workspace_entries(), None)
+    }
+
+    fn context_menu_entries_for_cell(
+        &self,
+        pane_id: PaneId,
+        cell: CellPos,
+    ) -> Vec<ContextMenuEntry> {
+        let mut entries = Vec::new();
+        let has_selection = self
+            .panes
+            .get(&pane_id)
+            .is_some_and(|pane| pane.app.selection.has_selection());
+        if has_selection {
+            entries.push(ContextMenuEntry {
+                label: "Copy Selection".to_string(),
+                description: "selection".to_string(),
+                action: ContextMenuAction::Clipboard(ClipboardEffect::CopySelection),
+            });
+        }
+        entries.push(ContextMenuEntry {
+            label: "Paste".to_string(),
+            description: "clipboard".to_string(),
+            action: ContextMenuAction::Clipboard(ClipboardEffect::Paste),
+        });
+
+        if let Some(uri) = self.link_at_pane_cell(pane_id, cell) {
+            entries.push(ContextMenuEntry {
+                label: "Open Link".to_string(),
+                description: truncate_menu_description(&uri),
+                action: ContextMenuAction::OpenUrl(uri.clone()),
+            });
+            entries.push(ContextMenuEntry {
+                label: "Copy Link".to_string(),
+                description: truncate_menu_description(&uri),
+                action: ContextMenuAction::CopyText(uri, "link".to_string()),
+            });
+        }
+
+        if let Some(target) = self.path_at_cell(pane_id, cell) {
+            let path = self.resolve_preview_path(&target.path);
+            entries.extend(
+                file_action_palette_entries(&path)
+                    .into_iter()
+                    .map(context_menu_entry_from_palette),
+            );
+        }
+
+        if self.block_id_at_cell(pane_id, cell).is_some() {
+            entries.extend([
+                context_menu_builtin("Copy Block", "command + output", Action::BlockCopy),
+                context_menu_builtin("Copy Command", "selected block", Action::BlockCopyCommand),
+                context_menu_builtin("Copy Output", "selected block", Action::BlockCopyOutput),
+                context_menu_builtin("Rerun Command", "selected block", Action::BlockRerun),
+                context_menu_builtin(
+                    "Rerun In Split",
+                    "selected block",
+                    Action::BlockRerunInSplit,
+                ),
+                context_menu_builtin("Collapse Output", "selected block", Action::BlockCollapse),
+                context_menu_builtin(
+                    "Inspect Block",
+                    "metadata + output",
+                    Action::OpenBlockInspector,
+                ),
+                context_menu_builtin("Diff Block", "compare output", Action::BlockDiff),
+                context_menu_builtin(
+                    "Bookmark Block",
+                    "toggle bookmark",
+                    Action::BlockToggleBookmark,
+                ),
+            ]);
+        }
+
+        entries.extend(context_menu_workspace_entries());
+        entries
+    }
+
+    fn link_at_pane_cell(&self, pane_id: PaneId, cell: CellPos) -> Option<String> {
+        let pane = self.panes.get(&pane_id)?;
+        let absolute_row = pane
+            .terminal
+            .state
+            .viewport_row_to_absolute(usize::from(cell.row));
+        link_at_cell(&pane.terminal, absolute_row, usize::from(cell.col))
+    }
+
+    fn block_id_at_cell(&self, pane_id: PaneId, cell: CellPos) -> Option<u64> {
+        let pane = self.panes.get(&pane_id)?;
+        let absolute_row = pane
+            .terminal
+            .state
+            .viewport_row_to_absolute(usize::from(cell.row));
+        pane.app
+            .block_manager
+            .blocks
+            .iter()
+            .rev()
+            .find_map(|block| {
+                (absolute_row >= block.output_start_row && absolute_row <= block.output_end_row)
+                    .then_some(block.id)
+            })
+    }
+
+    fn close_context_menu(&mut self) {
+        if self.context_menu.take().is_some() {
+            self.needs_redraw = true;
+        }
+    }
+
+    fn select_context_menu_entry(&mut self, index: usize) {
+        if let Some(menu) = self.context_menu.as_mut() {
+            if index < menu.entries.len() {
+                menu.selected = index;
+                self.needs_redraw = true;
+            }
+        }
+    }
+
+    fn run_context_menu_selected(&mut self) {
+        let Some(menu) = self.context_menu.take() else {
+            return;
+        };
+        let Some(entry) = menu.entries.get(menu.selected).cloned() else {
+            return;
+        };
+        if let Some(pane) = self.panes.get_mut(&menu.pane_id) {
+            if let Some(block_id) = menu.target_block_id {
+                pane.app.select_block(block_id);
+            }
+        }
+        self.execute_context_menu_action(entry.action);
+        self.needs_redraw = true;
+    }
+
+    fn execute_context_menu_action(&mut self, action: ContextMenuAction) {
+        match action {
+            ContextMenuAction::Clipboard(effect) => self.apply_clipboard_effect(effect),
+            ContextMenuAction::Palette(action) => self.execute_palette_action(action),
+            ContextMenuAction::BuiltIn(action) => self.handle_action(action),
+            ContextMenuAction::Window(action) => self.execute_window_context_action(action),
+            ContextMenuAction::OpenUrl(uri) => {
+                wok_ui::links::open_url(&uri);
+                self.status_message = Some(format!("Opened {uri}"));
+                self.needs_redraw = true;
+            }
+            ContextMenuAction::CopyText(text, label) => {
+                self.copy_text_to_clipboard(&text, &label);
+            }
+        }
+    }
+
+    fn execute_window_context_action(&mut self, action: WindowContextAction) {
+        let Some(window) = self.window.as_ref() else {
+            self.status_message = Some("No active window".to_string());
+            self.needs_redraw = true;
+            return;
+        };
+        match action {
+            WindowContextAction::ToggleFullscreen => {
+                use winit::window::Fullscreen;
+                let fullscreen = if window.fullscreen().is_some() {
+                    None
+                } else {
+                    Some(Fullscreen::Borderless(None))
+                };
+                window.set_fullscreen(fullscreen);
+                self.status_message = Some("Toggled full screen".to_string());
+            }
+            WindowContextAction::ToggleMaximized => {
+                window.set_maximized(!window.is_maximized());
+                self.status_message = Some("Toggled window zoom".to_string());
+            }
+            WindowContextAction::Minimize => {
+                window.set_minimized(true);
+                self.status_message = Some("Minimized window".to_string());
+            }
+        }
+        self.needs_redraw = true;
+    }
+
+    fn execute_palette_action(&mut self, action: PaletteAction) {
+        match action {
+            PaletteAction::BuiltInAction(action_name) => {
+                if let Some(action) = parse_palette_action(&action_name) {
+                    self.handle_action(action);
+                }
+            }
+            PaletteAction::PreviewMedia(path) => self.open_media_preview(PathBuf::from(path)),
+            PaletteAction::PreviewPath(path) => self.preview_file_path(PathBuf::from(path)),
+            PaletteAction::OpenPathExternal(path) => {
+                self.open_path_externally(&PathBuf::from(path))
+            }
+            PaletteAction::CopyPath(path) => self.copy_path_to_clipboard(&PathBuf::from(path)),
+            PaletteAction::RevealPath(path) => self.reveal_path_in_finder(&PathBuf::from(path)),
+            PaletteAction::TailPath(path) => self.tail_path_in_split(&PathBuf::from(path)),
+            PaletteAction::Dismiss => {}
+            other => {
+                self.status_message = Some(format!("Unsupported context action: {other:?}"));
+                self.needs_redraw = true;
+            }
+        }
+    }
+
+    fn handle_context_menu_input(&mut self, event: &InputEvent) -> bool {
+        let Some(menu) = self.context_menu.as_mut() else {
+            return false;
+        };
+        match event.action {
+            KeyAction::Escape => {
+                self.close_context_menu();
+                true
+            }
+            KeyAction::ArrowDown | KeyAction::Char('j') => {
+                if !menu.entries.is_empty() {
+                    menu.selected = (menu.selected + 1) % menu.entries.len();
+                    self.needs_redraw = true;
+                }
+                true
+            }
+            KeyAction::ArrowUp | KeyAction::Char('k') => {
+                if !menu.entries.is_empty() {
+                    menu.selected = if menu.selected == 0 {
+                        menu.entries.len() - 1
+                    } else {
+                        menu.selected - 1
+                    };
+                    self.needs_redraw = true;
+                }
+                true
+            }
+            KeyAction::Enter => {
+                self.run_context_menu_selected();
+                true
+            }
+            _ => {
+                self.close_context_menu();
+                false
+            }
+        }
+    }
+
+    fn handle_context_menu_mouse_event(&mut self, event: &wok_app::input::MouseEvent) -> bool {
+        let Some(menu) = self.context_menu.clone() else {
+            return false;
+        };
+        match event {
+            wok_app::input::MouseEvent::Move { x, y, .. } => {
+                if let Some(index) = context_menu_index_at(
+                    &menu,
+                    self.chrome_rects.content,
+                    self.font.metrics.cell_width,
+                    self.font.metrics.cell_height,
+                    *x,
+                    *y,
+                ) {
+                    self.select_context_menu_entry(index);
+                }
+                true
+            }
+            wok_app::input::MouseEvent::Press { button, x, y, .. } => {
+                if *button == MouseButton::Right {
+                    self.close_context_menu();
+                    return false;
+                }
+                if *button != MouseButton::Left {
+                    self.close_context_menu();
+                    return true;
+                }
+                if let Some(index) = context_menu_index_at(
+                    &menu,
+                    self.chrome_rects.content,
+                    self.font.metrics.cell_width,
+                    self.font.metrics.cell_height,
+                    *x,
+                    *y,
+                ) {
+                    self.select_context_menu_entry(index);
+                    self.run_context_menu_selected();
+                } else {
+                    self.close_context_menu();
+                }
+                true
+            }
+            wok_app::input::MouseEvent::Release { .. } => true,
+            wok_app::input::MouseEvent::Scroll { .. } => {
+                self.close_context_menu();
+                true
+            }
+        }
+    }
+
+    fn handle_configured_mouse_binding(
+        &mut self,
+        button: MouseButton,
+        x: f64,
+        y: f64,
+        modifiers: Modifiers,
+    ) -> bool {
+        let target = self.mouse_binding_target_at(x, y);
+        let action = self.config.mouse_bindings.iter().find_map(|binding| {
+            (mouse_button_matches(&binding.button, button)
+                && mouse_modifiers_match(&binding.modifiers, modifiers)
+                && mouse_binding_area_matches(binding.area, target.area))
+            .then(|| binding.action.clone())
+        });
+        let Some(action) = action else {
+            return false;
+        };
+
+        self.execute_mouse_binding_action(&action, target, x, y);
+        true
+    }
+
+    fn mouse_binding_target_at(&self, x: f64, y: f64) -> MouseBindingTarget {
+        let tab_index = self.tab_at_point(x, y);
+        if let Some(tab_index) = tab_index {
+            return MouseBindingTarget {
+                area: MouseBindingArea::Tab,
+                tab_index: Some(tab_index),
+                pane_id: self.active_pane_id(),
+            };
+        }
+        if point_in_rect(self.chrome_rects.tab_bar, x, y) {
+            return MouseBindingTarget {
+                area: MouseBindingArea::TabBar,
+                tab_index: None,
+                pane_id: self.active_pane_id(),
+            };
+        }
+        if point_in_rect(self.chrome_rects.status, x, y) {
+            return MouseBindingTarget {
+                area: MouseBindingArea::Status,
+                tab_index: None,
+                pane_id: self.active_pane_id(),
+            };
+        }
+        if point_in_rect(self.chrome_rects.content, x, y) {
+            let pane_id = self
+                .workspace
+                .pane_at_point(self.chrome_rects.content, x as f32, y as f32)
+                .or_else(|| self.active_pane_id());
+            return MouseBindingTarget {
+                area: MouseBindingArea::Content,
+                tab_index: None,
+                pane_id,
+            };
+        }
+        MouseBindingTarget {
+            area: MouseBindingArea::Any,
+            tab_index: None,
+            pane_id: self.active_pane_id(),
+        }
+    }
+
+    fn execute_mouse_binding_action(
+        &mut self,
+        action: &str,
+        target: MouseBindingTarget,
+        x: f64,
+        y: f64,
+    ) {
+        if let Some(tab_index) = target.tab_index {
+            self.switch_to_tab_index(tab_index);
+        } else if let Some(pane_id) = target.pane_id {
+            if self.workspace.focus_pane(pane_id) {
+                if let Some(window) = &self.window {
+                    self.sync_workspace_layout(window.inner_size());
+                }
+                self.needs_redraw = true;
+            }
+        }
+
+        match action.trim() {
+            "context_menu" => {
+                if target.area == MouseBindingArea::Tab {
+                    if let Some(tab_index) = target.tab_index {
+                        self.open_tab_context_menu_at(tab_index, x, y);
+                    }
+                } else if target.area == MouseBindingArea::Content {
+                    if let Some(pane_id) = target.pane_id {
+                        self.open_context_menu_at(pane_id, x, y);
+                    }
+                } else {
+                    self.open_workspace_context_menu_at(x, y);
+                }
+            }
+            "workspace_context_menu" => {
+                self.open_workspace_context_menu_at(x, y);
+            }
+            "tab_context_menu" => {
+                if let Some(tab_index) = target.tab_index {
+                    self.open_tab_context_menu_at(tab_index, x, y);
+                }
+            }
+            "paste" => {
+                self.apply_clipboard_effect(ClipboardEffect::Paste);
+                self.needs_redraw = true;
+            }
+            action => {
+                if let Some(action) = parse_lua_action(action) {
+                    self.handle_action(action);
+                } else {
+                    self.status_message = Some(format!("Unknown mouse action: {action}"));
+                    self.needs_redraw = true;
+                }
+            }
+        }
+    }
+
+    fn handle_chrome_mouse_press(
+        &mut self,
+        button: MouseButton,
+        x: f64,
+        y: f64,
+        _modifiers: Modifiers,
+    ) -> bool {
+        if let Some(tab_index) = self.tab_at_point(x, y) {
+            match button {
+                MouseButton::Left => {
+                    self.switch_to_tab_index(tab_index);
+                }
+                MouseButton::Middle => {
+                    self.close_tab_at_index(tab_index);
+                }
+                MouseButton::Right => {
+                    self.open_tab_context_menu_at(tab_index, x, y);
+                }
+                _ => {}
+            }
+            return true;
+        }
+
+        if point_in_rect(self.chrome_rects.tab_bar, x, y) {
+            match button {
+                MouseButton::Left | MouseButton::Middle => {
+                    self.handle_action(Action::NewTab);
+                }
+                MouseButton::Right => {
+                    self.open_workspace_context_menu_at(x, y);
+                }
+                _ => {}
+            }
+            return true;
+        }
+
+        if point_in_rect(self.chrome_rects.status, x, y) {
+            match button {
+                MouseButton::Left => {
+                    self.handle_action(Action::CommandPalette);
+                }
+                MouseButton::Middle => {
+                    self.handle_action(Action::NewFloatingPane);
+                }
+                MouseButton::Right => {
+                    self.open_workspace_context_menu_at(x, y);
+                }
+                _ => {}
+            }
+            return true;
+        }
+
+        false
+    }
+
+    fn close_tab_at_index(&mut self, tab_index: usize) {
+        self.switch_to_tab_index(tab_index);
+        self.handle_action(Action::CloseTab);
+    }
 }
 
 impl AppHandler for WokHandler {
@@ -9212,6 +9751,10 @@ impl AppHandler for WokHandler {
         }
 
         if event.event_type != InputEventType::Release {
+            if self.handle_context_menu_input(&event) {
+                return;
+            }
+
             self.complete_active_typewriter();
 
             if self.handle_keybinding_capture(&event) {
@@ -9280,6 +9823,10 @@ impl AppHandler for WokHandler {
     }
 
     fn on_mouse_event(&mut self, event: wok_app::input::MouseEvent) {
+        if self.context_menu.is_some() && self.handle_context_menu_mouse_event(&event) {
+            return;
+        }
+
         match event {
             wok_app::input::MouseEvent::Press {
                 button,
@@ -9288,10 +9835,12 @@ impl AppHandler for WokHandler {
                 modifiers,
             } => {
                 self.pressed_mouse_button = Some(button);
-                if let Some(tab_index) = self.tab_at_point(x, y) {
-                    if button == MouseButton::Left {
-                        self.switch_to_tab_index(tab_index);
-                    }
+                if !point_in_rect(self.chrome_rects.content, x, y)
+                    && self.handle_configured_mouse_binding(button, x, y, modifiers)
+                {
+                    return;
+                }
+                if self.handle_chrome_mouse_press(button, x, y, modifiers) {
                     return;
                 }
                 self.focus_pane_at_point(x, y);
@@ -9304,14 +9853,32 @@ impl AppHandler for WokHandler {
                     self.needs_redraw = true;
                     return;
                 }
+                if self.handle_configured_mouse_binding(button, x, y, modifiers) {
+                    return;
+                }
                 if button == MouseButton::Middle {
+                    if modifiers.alt && platform_modifier_active(modifiers) {
+                        self.handle_action(Action::NewFloatingPane);
+                        self.needs_redraw = true;
+                        return;
+                    }
+                    if modifiers.alt {
+                        self.handle_action(Action::SplitHorizontal);
+                        self.needs_redraw = true;
+                        return;
+                    }
+                    if platform_modifier_active(modifiers) {
+                        self.handle_action(Action::SplitVertical);
+                        self.needs_redraw = true;
+                        return;
+                    }
                     self.apply_clipboard_effect(ClipboardEffect::Paste);
                     self.needs_redraw = true;
                     return;
                 }
                 if button == MouseButton::Right {
-                    if self.copy_selection_to_clipboard() {
-                        self.status_message = Some("Copied selection".to_string());
+                    if let Some(pane_id) = self.active_pane_id() {
+                        self.open_context_menu_at(pane_id, x, y);
                         self.needs_redraw = true;
                     }
                     return;
@@ -11501,6 +12068,140 @@ fn file_action_palette_entries(path: &Path) -> Vec<PaletteEntry> {
         });
     }
     entries
+}
+
+fn context_menu_entry_from_palette(entry: PaletteEntry) -> ContextMenuEntry {
+    ContextMenuEntry {
+        label: entry.label,
+        description: truncate_menu_description(&entry.description),
+        action: ContextMenuAction::Palette(entry.action),
+    }
+}
+
+fn context_menu_tab_entries(tab_index: usize) -> Vec<ContextMenuEntry> {
+    let display_index = tab_index + 1;
+    let mut entries = vec![
+        context_menu_builtin(
+            &format!("Switch To Tab {display_index}"),
+            "focus tab",
+            Action::SwitchToTab(display_index.min(u8::MAX as usize) as u8),
+        ),
+        context_menu_builtin("New Tab", "tab bar", Action::NewTab),
+        context_menu_builtin("Close Tab", "focused tab", Action::CloseTab),
+        context_menu_builtin("Next Tab", "tab bar", Action::NextTab),
+        context_menu_builtin("Previous Tab", "tab bar", Action::PrevTab),
+    ];
+    entries.extend(context_menu_workspace_entries());
+    entries
+}
+
+fn context_menu_workspace_entries() -> Vec<ContextMenuEntry> {
+    vec![
+        context_menu_builtin("Split Right", "new pane", Action::SplitVertical),
+        context_menu_builtin("Split Down", "new pane", Action::SplitHorizontal),
+        context_menu_builtin("Close Pane", "focused pane", Action::CloseSplit),
+        context_menu_builtin("New Floating Pane", "overlay pane", Action::NewFloatingPane),
+        context_menu_builtin(
+            "Toggle Floating Panes",
+            "show / hide",
+            Action::ToggleFloatingPane,
+        ),
+        context_menu_builtin(
+            "Close Floating Pane",
+            "focused floating",
+            Action::CloseFloatingPane,
+        ),
+        context_menu_builtin("Next Layout", "cycle preset", Action::NextLayout),
+        context_menu_builtin("Previous Layout", "cycle preset", Action::PrevLayout),
+        context_menu_builtin("Focus Left", "neighbor pane", Action::FocusLeft),
+        context_menu_builtin("Focus Right", "neighbor pane", Action::FocusRight),
+        context_menu_builtin("Focus Up", "neighbor pane", Action::FocusUp),
+        context_menu_builtin("Focus Down", "neighbor pane", Action::FocusDown),
+        context_menu_window(
+            "Toggle Full Screen",
+            "macOS window",
+            WindowContextAction::ToggleFullscreen,
+        ),
+        context_menu_window(
+            "Zoom Window",
+            "macOS window",
+            WindowContextAction::ToggleMaximized,
+        ),
+        context_menu_window(
+            "Minimize Window",
+            "macOS window",
+            WindowContextAction::Minimize,
+        ),
+        context_menu_builtin("Command Palette", "all actions", Action::CommandPalette),
+        context_menu_builtin("Search Scrollback", "workspace", Action::SearchGlobal),
+    ]
+}
+
+fn context_menu_builtin(label: &str, description: &str, action: Action) -> ContextMenuEntry {
+    ContextMenuEntry {
+        label: label.to_string(),
+        description: description.to_string(),
+        action: ContextMenuAction::BuiltIn(action),
+    }
+}
+
+fn context_menu_window(
+    label: &str,
+    description: &str,
+    action: WindowContextAction,
+) -> ContextMenuEntry {
+    ContextMenuEntry {
+        label: label.to_string(),
+        description: description.to_string(),
+        action: ContextMenuAction::Window(action),
+    }
+}
+
+fn truncate_menu_description(value: &str) -> String {
+    const MAX_CHARS: usize = 42;
+    let mut chars = value.chars();
+    let truncated = chars.by_ref().take(MAX_CHARS).collect::<String>();
+    if chars.next().is_some() {
+        format!("{truncated}...")
+    } else {
+        truncated
+    }
+}
+
+fn point_in_rect(rect: Rect, x: f64, y: f64) -> bool {
+    rect.w > 0.0
+        && rect.h > 0.0
+        && x >= f64::from(rect.x)
+        && x <= f64::from(rect.x + rect.w)
+        && y >= f64::from(rect.y)
+        && y <= f64::from(rect.y + rect.h)
+}
+
+fn mouse_button_matches(expected: &str, actual: MouseButton) -> bool {
+    match actual {
+        MouseButton::Left => expected == "left",
+        MouseButton::Middle => expected == "middle",
+        MouseButton::Right => expected == "right",
+        MouseButton::Back => expected == "back",
+        MouseButton::Forward => expected == "forward",
+        MouseButton::Other(number) => expected == format!("other:{number}"),
+    }
+}
+
+fn mouse_modifiers_match(expected: &[String], actual: Modifiers) -> bool {
+    let ctrl = expected.iter().any(|modifier| modifier == "ctrl");
+    let alt = expected.iter().any(|modifier| modifier == "alt");
+    let shift = expected.iter().any(|modifier| modifier == "shift");
+    let meta = expected.iter().any(|modifier| modifier == "meta");
+    actual.ctrl == ctrl && actual.alt == alt && actual.shift == shift && actual.meta == meta
+}
+
+fn mouse_binding_area_matches(expected: MouseBindingArea, actual: MouseBindingArea) -> bool {
+    match expected {
+        MouseBindingArea::Any => true,
+        MouseBindingArea::Chrome => !matches!(actual, MouseBindingArea::Content),
+        _ => expected == actual,
+    }
 }
 
 fn shell_quote_path(path: &str) -> String {

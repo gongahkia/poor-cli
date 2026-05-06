@@ -64,6 +64,18 @@ debug_overlay = false
 command_telemetry = false
 theme_path = "~/.config/wok/themes/graph-box-dark.toml"
 external_plugin_command = "node ~/.config/wok/plugins/bridge.js"
+
+[[mouse_bindings]]
+button = "left"
+mods = ["alt"]
+area = "content"
+action = "split_horizontal"
+
+[[mouse_bindings]]
+button = "right"
+mods = ["meta"]
+area = "content"
+action = "split_vertical"
 ```
 
 ## Options
@@ -115,6 +127,7 @@ external_plugin_command = "node ~/.config/wok/plugins/bridge.js"
 | `command_telemetry` | boolean | `false` | Active | Writes opt-in command lifecycle telemetry to `~/.config/wok/command-telemetry.jsonl`; command text is included, so avoid enabling it for secret-bearing workflows |
 | `theme_path` | string | none | Active | Path to a custom theme TOML file |
 | `external_plugin_command` | string | none | Active | Optional out-of-process plugin bridge command; receives hook/event JSON lines on stdin and can emit typed effects (`notify`, `system_notify`, `exec`, `action`) on stdout |
+| `mouse_bindings` | array | middle-click fallbacks | Active | Optional `[[mouse_bindings]]` entries. `button` supports `left`, `middle`, `right`, `back`, `forward`, `other:N`; `mods` supports `ctrl`, `alt`, `shift`, `meta`; `area` supports `content`, `tab`, `tab_bar`, `status`, `chrome`, `any`; `action` uses built-in action ids such as `split_horizontal`, `split_vertical`, `new_floating_pane`, `close_tab` |
 
 ## Themes
 

@@ -147,6 +147,36 @@ pub struct RecentKeysConfig {
     pub opacity: f32,
 }
 
+/// Region where a configured mouse binding applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MouseBindingArea {
+    /// Terminal pane content.
+    Content,
+    /// A concrete tab label.
+    Tab,
+    /// Empty tab bar space.
+    TabBar,
+    /// Status bar.
+    Status,
+    /// Any non-content chrome surface.
+    Chrome,
+    /// Any app surface.
+    Any,
+}
+
+/// A configurable mouse shortcut.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MouseBindingConfig {
+    /// Mouse button: left, middle, right, back, forward, or other:N.
+    pub button: String,
+    /// Exact modifier set: ctrl, alt, shift, meta/cmd.
+    pub modifiers: Vec<String>,
+    /// Area where the binding applies.
+    pub area: MouseBindingArea,
+    /// Action id, using the same names as keybinding/Lua actions.
+    pub action: String,
+}
+
 /// Trigger scope loaded from config.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TriggerScopeConfig {
@@ -309,6 +339,8 @@ pub struct WokConfig {
     pub command_telemetry: bool,
     /// Recent key visualizer settings.
     pub recent_keys: RecentKeysConfig,
+    /// Configured mouse shortcuts.
+    pub mouse_bindings: Vec<MouseBindingConfig>,
     /// Regex triggers loaded from config.
     pub triggers: Vec<TriggerConfig>,
     /// Custom layout presets loaded from config.
@@ -372,8 +404,19 @@ struct ConfigToml {
     recent_keys_max_entries: Option<usize>,
     recent_keys_timeout_ms: Option<u64>,
     recent_keys_opacity: Option<f32>,
+    mouse_bindings: Option<Vec<MouseBindingToml>>,
     triggers: Option<Vec<TriggerToml>>,
     layouts: Option<Vec<LayoutToml>>,
+}
+
+/// TOML mouse binding section.
+#[derive(Debug, Default, Deserialize)]
+struct MouseBindingToml {
+    button: Option<String>,
+    modifiers: Option<Vec<String>>,
+    mods: Option<Vec<String>>,
+    area: Option<String>,
+    action: Option<String>,
 }
 
 /// TOML trigger section.
@@ -457,6 +500,7 @@ impl Default for WokConfig {
                 timeout_ms: 2_000,
                 opacity: 0.86,
             },
+            mouse_bindings: default_mouse_bindings(),
             triggers: Vec::new(),
             layout_presets: Vec::new(),
         }
@@ -661,6 +705,12 @@ impl WokConfig {
                 config.recent_keys.opacity = opacity.clamp(0.0, 1.0);
             }
         }
+        if let Some(mouse_bindings) = toml_config.mouse_bindings {
+            config.mouse_bindings = mouse_bindings
+                .into_iter()
+                .filter_map(parse_mouse_binding_toml)
+                .collect();
+        }
         if let Some(triggers) = toml_config.triggers {
             config.triggers = triggers
                 .into_iter()
@@ -828,6 +878,124 @@ fn parse_visual_effect_mode(value: &str) -> VisualEffectMode {
     }
 }
 
+fn default_mouse_bindings() -> Vec<MouseBindingConfig> {
+    vec![
+        mouse_binding(
+            "left",
+            ["alt"],
+            MouseBindingArea::Content,
+            "split_horizontal",
+        ),
+        mouse_binding(
+            "right",
+            ["meta"],
+            MouseBindingArea::Content,
+            "split_vertical",
+        ),
+        mouse_binding(
+            "right",
+            ["alt", "meta"],
+            MouseBindingArea::Content,
+            "new_floating_pane",
+        ),
+        mouse_binding("left", ["alt"], MouseBindingArea::Tab, "close_tab"),
+        mouse_binding("right", ["meta"], MouseBindingArea::Tab, "close_tab"),
+        mouse_binding("right", ["meta"], MouseBindingArea::TabBar, "new_tab"),
+        mouse_binding(
+            "left",
+            ["alt"],
+            MouseBindingArea::Status,
+            "new_floating_pane",
+        ),
+        mouse_binding(
+            "right",
+            ["meta"],
+            MouseBindingArea::Status,
+            "new_floating_pane",
+        ),
+    ]
+}
+
+fn mouse_binding<const N: usize>(
+    button: &str,
+    modifiers: [&str; N],
+    area: MouseBindingArea,
+    action: &str,
+) -> MouseBindingConfig {
+    MouseBindingConfig {
+        button: button.to_string(),
+        modifiers: modifiers
+            .into_iter()
+            .filter_map(normalize_mouse_modifier)
+            .collect(),
+        area,
+        action: action.to_string(),
+    }
+}
+
+fn parse_mouse_binding_toml(binding: MouseBindingToml) -> Option<MouseBindingConfig> {
+    let button = normalize_mouse_button(&binding.button?)?;
+    let action = binding.action?.trim().to_string();
+    if action.is_empty() {
+        return None;
+    }
+    let modifiers = binding
+        .modifiers
+        .or(binding.mods)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|modifier| normalize_mouse_modifier(&modifier))
+        .collect();
+    let area = binding
+        .area
+        .as_deref()
+        .and_then(parse_mouse_binding_area)
+        .unwrap_or(MouseBindingArea::Any);
+    Some(MouseBindingConfig {
+        button,
+        modifiers,
+        area,
+        action,
+    })
+}
+
+fn parse_mouse_binding_area(value: &str) -> Option<MouseBindingArea> {
+    match value.trim().to_ascii_lowercase().replace('-', "_").as_str() {
+        "content" | "pane" | "terminal" | "viewport" => Some(MouseBindingArea::Content),
+        "tab" | "tab_label" => Some(MouseBindingArea::Tab),
+        "tab_bar" | "tabs" | "empty_tab_bar" => Some(MouseBindingArea::TabBar),
+        "status" | "status_bar" => Some(MouseBindingArea::Status),
+        "chrome" => Some(MouseBindingArea::Chrome),
+        "any" | "global" => Some(MouseBindingArea::Any),
+        _ => None,
+    }
+}
+
+fn normalize_mouse_button(value: &str) -> Option<String> {
+    let normalized = value.trim().to_ascii_lowercase().replace('-', "_");
+    match normalized.as_str() {
+        "left" | "button1" | "primary" => Some("left".to_string()),
+        "middle" | "button2" | "aux" | "auxiliary" => Some("middle".to_string()),
+        "right" | "button3" | "secondary" => Some("right".to_string()),
+        "back" | "button4" => Some("back".to_string()),
+        "forward" | "button5" => Some("forward".to_string()),
+        _ => normalized
+            .strip_prefix("other:")
+            .and_then(|number| number.parse::<u16>().ok())
+            .map(|number| format!("other:{number}")),
+    }
+}
+
+fn normalize_mouse_modifier(value: &str) -> Option<String> {
+    match value.trim().to_ascii_lowercase().replace('-', "_").as_str() {
+        "ctrl" | "control" => Some("ctrl".to_string()),
+        "alt" | "option" => Some("alt".to_string()),
+        "shift" => Some("shift".to_string()),
+        "meta" | "cmd" | "command" | "super" => Some("meta".to_string()),
+        _ => None,
+    }
+}
+
 fn clamp_unit(value: f32) -> f32 {
     if value.is_finite() {
         value.clamp(0.0, 1.0)
@@ -938,6 +1106,7 @@ impl wok_settings::Settings for WokConfig {
                 field!("debug_overlay", "bool"),
                 field!("command_telemetry", "bool"),
                 field!("recent_keys", "RecentKeysConfig"),
+                field!("mouse_bindings", "Vec<MouseBindingConfig>"),
                 field!("triggers", "Vec<TriggerConfig>"),
                 field!("layout_presets", "Vec<LayoutPreset>"),
             ],
@@ -1001,6 +1170,13 @@ mod tests {
         assert!(config.close_on_shell_exit);
         assert!(config.recent_keys.visible);
         assert_eq!(config.recent_keys.position, OverlayPosition::BottomRight);
+        assert!(config
+            .mouse_bindings
+            .iter()
+            .any(|binding| binding.button == "left"
+                && binding.modifiers == vec!["alt"]
+                && binding.area == MouseBindingArea::Content
+                && binding.action == "split_horizontal"));
     }
 
     #[test]
@@ -1027,6 +1203,47 @@ mod tests {
     fn test_parse_shell_config_supports_wsl() {
         let shell = parse_shell_config("wsl:Ubuntu", &ShellType::Bash);
         assert_eq!(shell, ShellType::Wsl("Ubuntu".to_string()));
+    }
+
+    #[test]
+    fn test_load_mouse_bindings_normalizes_aliases() {
+        let path = std::env::temp_dir().join(format!(
+            "wok-config-mouse-bindings-{}.toml",
+            std::process::id()
+        ));
+        std::fs::write(
+            &path,
+            r#"
+[[mouse_bindings]]
+button = "secondary"
+mods = ["cmd", "option"]
+area = "terminal"
+action = "new_floating_pane"
+"#,
+        )
+        .expect("test config should be written");
+
+        let config = WokConfig::load_from(&path).expect("config should load");
+        std::fs::remove_file(&path).ok();
+        assert_eq!(config.mouse_bindings.len(), 1);
+        let binding = &config.mouse_bindings[0];
+        assert_eq!(binding.button, "right");
+        assert_eq!(binding.modifiers, vec!["meta", "alt"]);
+        assert_eq!(binding.area, MouseBindingArea::Content);
+        assert_eq!(binding.action, "new_floating_pane");
+    }
+
+    #[test]
+    fn test_empty_mouse_bindings_disable_defaults() {
+        let path = std::env::temp_dir().join(format!(
+            "wok-config-empty-mouse-bindings-{}.toml",
+            std::process::id()
+        ));
+        std::fs::write(&path, "mouse_bindings = []\n").expect("test config should be written");
+
+        let config = WokConfig::load_from(&path).expect("config should load");
+        std::fs::remove_file(&path).ok();
+        assert!(config.mouse_bindings.is_empty());
     }
 
     #[test]

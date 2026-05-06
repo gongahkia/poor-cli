@@ -48,6 +48,56 @@ restore_session = true
 debug_overlay = false
 command_telemetry = false
 
+# Mouse fallback bindings. Useful when another macOS tool globally captures
+# middle click before Wok receives it. Set `mouse_bindings = []` to disable.
+[[mouse_bindings]]
+button = "left"
+mods = ["alt"]
+area = "content"
+action = "split_horizontal"
+
+[[mouse_bindings]]
+button = "right"
+mods = ["meta"]
+area = "content"
+action = "split_vertical"
+
+[[mouse_bindings]]
+button = "right"
+mods = ["alt", "meta"]
+area = "content"
+action = "new_floating_pane"
+
+[[mouse_bindings]]
+button = "left"
+mods = ["alt"]
+area = "tab"
+action = "close_tab"
+
+[[mouse_bindings]]
+button = "right"
+mods = ["meta"]
+area = "tab"
+action = "close_tab"
+
+[[mouse_bindings]]
+button = "right"
+mods = ["meta"]
+area = "tab_bar"
+action = "new_tab"
+
+[[mouse_bindings]]
+button = "left"
+mods = ["alt"]
+area = "status"
+action = "new_floating_pane"
+
+[[mouse_bindings]]
+button = "right"
+mods = ["meta"]
+area = "status"
+action = "new_floating_pane"
+
 # Built-in themes are written by `wok init` under ~/.config/wok/themes.
 # theme_path = "~/.config/wok/themes/graph-box-dark.toml"
 

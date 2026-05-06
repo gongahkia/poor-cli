@@ -1616,7 +1616,9 @@ pub(crate) fn context_menu_rect(
     let row_height = context_menu_row_height(cell_height);
     let height = (menu.entries.len().max(1) as f32 * row_height + 12.0)
         .min((viewport.h - 16.0).max(row_height + 12.0));
-    let x = menu.x.clamp(viewport.x + 8.0, viewport.x + viewport.w - width - 8.0);
+    let x = menu
+        .x
+        .clamp(viewport.x + 8.0, viewport.x + viewport.w - width - 8.0);
     let y = menu
         .y
         .clamp(viewport.y + 8.0, viewport.y + viewport.h - height - 8.0);
@@ -1714,7 +1716,12 @@ pub(crate) fn render_context_menu(
                 rect.w - 8.0,
                 row_height,
                 with_opacity(
-                    [theme.selection.r, theme.selection.g, theme.selection.b, 0.22],
+                    [
+                        theme.selection.r,
+                        theme.selection.g,
+                        theme.selection.b,
+                        0.22,
+                    ],
                     surface_opacity,
                 ),
             );
