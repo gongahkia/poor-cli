@@ -643,6 +643,12 @@ struct PaneRuntime {
     pending_typewriter_block_id: Option<u64>,
 }
 
+#[derive(Clone, Copy)]
+struct SessionEstimateCache {
+    bytes: usize,
+    refreshed_at: Instant,
+}
+
 const ATTACHED_DAEMON_PANE_ID: u64 = 0;
 const DEFAULT_FAILURE_TREND_BUCKET_MS: u64 = 60 * 60 * 1000;
 const REMOTE_RPC_SCHEMA_VERSION: &str = "1.0.0";
@@ -650,6 +656,7 @@ const MAX_GLOBAL_SEARCH_LINES: usize = 50_000;
 const MAX_DIFF_INPUT_LINES: usize = 1_200;
 const MAX_DIFF_ENTRIES: usize = 8_000;
 const STATUS_BAR_GIT_CACHE_TTL: Duration = Duration::from_secs(2);
+const SESSION_ESTIMATE_CACHE_TTL: Duration = Duration::from_secs(1);
 
 fn typewriter_applies_to_row(
     blocks: &[Block],
@@ -1079,6 +1086,7 @@ struct WokHandler {
     pressed_mouse_button: Option<MouseButton>,
     recent_keys: VecDeque<RecentKeyEntry>,
     metrics: RuntimeMetrics,
+    session_estimate_cache: Option<SessionEstimateCache>,
 }
 
 impl WokHandler {
@@ -1199,6 +1207,7 @@ impl WokHandler {
             pressed_mouse_button: None,
             recent_keys: VecDeque::new(),
             metrics: RuntimeMetrics::default(),
+            session_estimate_cache: None,
         };
         handler.refresh_plugin_config();
         handler.refresh_plugin_snapshot();
@@ -2970,7 +2979,7 @@ impl WokHandler {
         !self.config.cursor_blink || ((self.started_at.elapsed().as_millis() / 600) % 2 == 0)
     }
 
-    fn debug_overlay_lines(&self) -> Vec<String> {
+    fn debug_overlay_lines(&mut self) -> Vec<String> {
         let active_scrollback = self
             .active_pane()
             .map_or(0, |pane| pane.terminal.state.scrollback_len());
@@ -3008,7 +3017,7 @@ impl WokHandler {
                 )
             },
         );
-        let total_session_bytes = self.estimated_session_bytes();
+        let total_session_bytes = self.cached_estimated_session_bytes(Instant::now());
         let avg_redraw_ms = if self.redraw_history_ms.is_empty() {
             0.0
         } else {
@@ -3108,6 +3117,21 @@ impl WokHandler {
         } else {
             (self.frame_timestamps.len() - 1) as f32 / elapsed
         }
+    }
+
+    fn cached_estimated_session_bytes(&mut self, now: Instant) -> usize {
+        if let Some(cache) = self.session_estimate_cache {
+            if now.duration_since(cache.refreshed_at) < SESSION_ESTIMATE_CACHE_TTL {
+                return cache.bytes;
+            }
+        }
+
+        let bytes = self.estimated_session_bytes();
+        self.session_estimate_cache = Some(SessionEstimateCache {
+            bytes,
+            refreshed_at: now,
+        });
+        bytes
     }
 
     fn estimated_session_bytes(&self) -> usize {
@@ -12114,13 +12138,32 @@ mod tests {
             typewriter_effect_enabled: true,
             ..Default::default()
         };
-        let handler = WokHandler::new(config);
+        let mut handler = WokHandler::new(config);
 
         assert!(handler.debug_overlay_lines().iter().any(|line| {
             line.contains("typewriter enabled=true")
                 && line.contains("active_block=n/a")
                 && line.contains("queue=0 cells 0 rows")
         }));
+    }
+
+    #[test]
+    fn debug_overlay_session_estimate_reuses_cache_until_ttl() {
+        let mut handler = WokHandler::new(WokConfig::default());
+        let now = Instant::now();
+        handler.session_estimate_cache = Some(SessionEstimateCache {
+            bytes: 42,
+            refreshed_at: now,
+        });
+
+        assert_eq!(
+            handler.cached_estimated_session_bytes(now + Duration::from_millis(250)),
+            42
+        );
+        assert_eq!(
+            handler.cached_estimated_session_bytes(now + SESSION_ESTIMATE_CACHE_TTL),
+            0
+        );
     }
 
     fn test_block(id: u64, start: usize, end: usize, exit_code: Option<i32>) -> Block {
