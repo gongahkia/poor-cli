@@ -55,7 +55,7 @@ impl BlockManager {
                 self.state = BlockBuildState::InPrompt { start_row: *row };
             }
             SemanticEvent::CommandStart { row } => {
-                self.finish_unclosed_command(row.saturating_sub(1));
+                self.finish_active_block(row.saturating_sub(1), None);
                 if !matches!(self.state, BlockBuildState::InOutput { .. }) {
                     self.state = BlockBuildState::InCommand {
                         prompt_text: String::new(),
@@ -518,6 +518,22 @@ mod tests {
         });
 
         assert_eq!(mgr.blocks[0].command_text, "cargo test");
+    }
+
+    #[test]
+    fn test_command_text_between_prompt_and_command_start_is_not_split() {
+        let mut mgr = BlockManager::new();
+        mgr.handle_event(&SemanticEvent::PromptStart { row: 0 });
+        mgr.set_command_text("echo hello");
+        mgr.handle_event(&SemanticEvent::CommandStart { row: 1 });
+        mgr.handle_event(&SemanticEvent::OutputStart { row: 2 });
+        mgr.handle_event(&SemanticEvent::CommandEnd {
+            row: 3,
+            exit_code: Some(0),
+        });
+
+        assert_eq!(mgr.len(), 1);
+        assert_eq!(mgr.blocks[0].command_text, "echo hello");
     }
 
     #[test]
