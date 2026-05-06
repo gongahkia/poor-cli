@@ -285,6 +285,8 @@ pub struct WokConfig {
     pub typewriter_effect_enabled: bool,
     /// Reveal speed for the command-output typewriter effect.
     pub typewriter_effect_cps: f32,
+    /// Maximum queued cells for the command-output typewriter effect.
+    pub typewriter_effect_max_pending_cells: usize,
     /// Decorative terminal text effect.
     pub visual_effect: VisualEffectMode,
     /// Visual effect strength from 0.0 to 1.0.
@@ -354,6 +356,7 @@ struct ConfigToml {
     floating_pane_title_height: Option<f32>,
     typewriter_effect_enabled: Option<bool>,
     typewriter_effect_cps: Option<f32>,
+    typewriter_effect_max_pending_cells: Option<usize>,
     visual_effect: Option<String>,
     visual_effect_intensity: Option<f32>,
     visual_effect_animated: Option<bool>,
@@ -436,6 +439,7 @@ impl Default for WokConfig {
             floating_pane_title_height: 18.0,
             typewriter_effect_enabled: false,
             typewriter_effect_cps: 180.0,
+            typewriter_effect_max_pending_cells: 4_096,
             visual_effect: VisualEffectMode::None,
             visual_effect_intensity: 0.5,
             visual_effect_animated: true,
@@ -599,6 +603,9 @@ impl WokConfig {
             if cps.is_finite() {
                 config.typewriter_effect_cps = cps.clamp(20.0, 2_000.0);
             }
+        }
+        if let Some(max_pending_cells) = toml_config.typewriter_effect_max_pending_cells {
+            config.typewriter_effect_max_pending_cells = max_pending_cells.min(100_000);
         }
         if let Some(effect) = toml_config.visual_effect {
             config.visual_effect = parse_visual_effect_mode(&effect);
@@ -919,6 +926,7 @@ impl wok_settings::Settings for WokConfig {
                 field!("floating_pane_title_height", "f32"),
                 field!("typewriter_effect_enabled", "bool"),
                 field!("typewriter_effect_cps", "f32"),
+                field!("typewriter_effect_max_pending_cells", "usize"),
                 field!("visual_effect", "VisualEffectMode"),
                 field!("visual_effect_intensity", "f32"),
                 field!("visual_effect_animated", "bool"),
@@ -986,6 +994,7 @@ mod tests {
         assert!((config.floating_pane_title_height - 18.0).abs() < f32::EPSILON);
         assert!(!config.typewriter_effect_enabled);
         assert!((config.typewriter_effect_cps - 180.0).abs() < f32::EPSILON);
+        assert_eq!(config.typewriter_effect_max_pending_cells, 4_096);
         assert_eq!(config.visual_effect, VisualEffectMode::None);
         assert!((config.visual_effect_intensity - 0.5).abs() < f32::EPSILON);
         assert!(config.visual_effect_animated);
@@ -1052,6 +1061,26 @@ actions = ["highlight_blue", "system_notify:Homebrew task finished"]
                 "system_notify:Homebrew task finished".to_string()
             ]
         );
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_load_typewriter_max_pending_cells_clamps() {
+        let path = std::env::temp_dir().join(format!(
+            "wok-config-typewriter-cap-{}.toml",
+            std::process::id()
+        ));
+        std::fs::write(
+            &path,
+            r#"
+typewriter_effect_max_pending_cells = 250000
+"#,
+        )
+        .expect("config should be written");
+
+        let config = WokConfig::load_from(&path).expect("config should load");
+        assert_eq!(config.typewriter_effect_max_pending_cells, 100_000);
 
         let _ = std::fs::remove_file(path);
     }

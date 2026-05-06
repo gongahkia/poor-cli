@@ -33,6 +33,7 @@ focused_pane_border_width = 2.0
 floating_pane_title_height = 18.0
 typewriter_effect_enabled = false
 typewriter_effect_cps = 180.0
+typewriter_effect_max_pending_cells = 4096
 visual_effect = "none"
 visual_effect_intensity = 0.5
 visual_effect_animated = true

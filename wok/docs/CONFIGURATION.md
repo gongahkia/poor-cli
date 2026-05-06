@@ -52,6 +52,7 @@ recent_keys_timeout_ms = 2000
 recent_keys_opacity = 0.86
 typewriter_effect_enabled = false
 typewriter_effect_cps = 180.0
+typewriter_effect_max_pending_cells = 4096
 visual_effect = "none"
 visual_effect_intensity = 0.5
 visual_effect_animated = true
@@ -102,6 +103,7 @@ external_plugin_command = "node ~/.config/wok/plugins/bridge.js"
 | `recent_keys_opacity` | float | `0.86` | Active | Recent-key overlay opacity from `0.0` to `1.0` |
 | `typewriter_effect_enabled` | boolean | `false` | Active | Reveals new command-output cells character by character while leaving terminal state, copy, search, and sessions immediate |
 | `typewriter_effect_cps` | float | `180.0` | Active | Reveal speed in characters per second, clamped to 20..2000 |
+| `typewriter_effect_max_pending_cells` | integer | `4096` | Active | Maximum number of queued cells waiting for typewriter reveal, clamped to 0..100000; cells beyond the cap render immediately |
 | `visual_effect` | string | `"none"` | Active | Decorative terminal glyph effect: `none`, `rainbow`, `rainbow_static`, `wavy`, `glitch`, `crt`, `bloom`, or `cookie` |
 | `visual_effect_intensity` | float | `0.5` | Active | Effect strength from `0.0` to `1.0` |
 | `visual_effect_animated` | boolean | `true` | Active | Enables time-based animation for effects that support motion or flicker |

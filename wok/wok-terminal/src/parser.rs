@@ -338,6 +338,51 @@ mod tests {
     }
 
     #[test]
+    fn decode_kitty_image_data_rgba_preserves_alpha_channel() {
+        let pixels: Vec<u8> = vec![10, 20, 30, 40, 50, 60, 70, 80];
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&pixels);
+        let (w, h, out) = decode_kitty_image_data(32, 'd', &encoded, 2, 1).unwrap();
+        assert_eq!((w, h), (2, 1));
+        assert_eq!(out, pixels);
+    }
+
+    #[test]
+    fn decode_kitty_image_data_file_transmission_reads_png_path() {
+        let path = std::env::temp_dir().join(format!(
+            "wok-kitty-graphics-file-{}.png",
+            std::process::id()
+        ));
+        let image = image::RgbaImage::from_pixel(1, 1, image::Rgba([7, 8, 9, 255]));
+        image.save(&path).expect("test image should write");
+        let encoded =
+            base64::engine::general_purpose::STANDARD.encode(path.to_string_lossy().as_bytes());
+
+        let (w, h, out) = decode_kitty_image_data(100, 'f', &encoded, 1, 1).unwrap();
+
+        assert_eq!((w, h), (1, 1));
+        assert_eq!(out, vec![7, 8, 9, 255]);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn decode_kitty_image_data_temp_file_transmission_removes_source() {
+        let path = std::env::temp_dir().join(format!(
+            "wok-kitty-graphics-temp-{}.png",
+            std::process::id()
+        ));
+        let image = image::RgbaImage::from_pixel(1, 1, image::Rgba([1, 2, 3, 255]));
+        image.save(&path).expect("test image should write");
+        let encoded =
+            base64::engine::general_purpose::STANDARD.encode(path.to_string_lossy().as_bytes());
+
+        let (w, h, out) = decode_kitty_image_data(100, 't', &encoded, 1, 1).unwrap();
+
+        assert_eq!((w, h), (1, 1));
+        assert_eq!(out, vec![1, 2, 3, 255]);
+        assert!(!path.exists());
+    }
+
+    #[test]
     fn decode_kitty_image_data_rejects_short_payload() {
         let encoded = base64::engine::general_purpose::STANDARD.encode([0u8, 0, 0]);
         let err = decode_kitty_image_data(24, 'd', &encoded, 2, 2).unwrap_err();

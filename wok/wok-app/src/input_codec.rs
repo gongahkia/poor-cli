@@ -115,6 +115,10 @@ fn input_event_to_legacy_pty_bytes(event: &InputEvent) -> Option<Vec<u8>> {
 }
 
 fn input_event_to_kitty_keyboard_bytes(event: &InputEvent, flags: u32) -> Option<Vec<u8>> {
+    if event.event_type == InputEventType::Release && flags & 0x2 == 0 {
+        return None;
+    }
+
     let key_code = match &event.action {
         KeyAction::Char(c) => *c as u32,
         KeyAction::Enter => 13,

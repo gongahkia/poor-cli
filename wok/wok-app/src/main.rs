@@ -434,6 +434,18 @@ impl TypewriterState {
         !self.pending.is_empty()
     }
 
+    fn pending_cell_count(&self) -> usize {
+        self.pending.len()
+    }
+
+    fn pending_row_count(&self) -> usize {
+        self.pending
+            .keys()
+            .map(|(row, _)| *row)
+            .collect::<HashSet<_>>()
+            .len()
+    }
+
     fn pending_rows(&self) -> impl Iterator<Item = usize> + '_ {
         self.pending.keys().map(|(row, _)| *row)
     }
@@ -458,19 +470,21 @@ impl TypewriterState {
         next_cells: &[CellRenderData],
         now: Instant,
         cps: f32,
+        max_pending_cells: usize,
     ) {
         let Some(previous) = previous else {
-            self.enqueue_new_cells(absolute_row, next_cells, now, cps);
+            self.enqueue_new_cells(absolute_row, next_cells, now, cps, max_pending_cells);
             return;
         };
         if previous.absolute_row != absolute_row {
-            self.enqueue_new_cells(absolute_row, next_cells, now, cps);
+            self.enqueue_new_cells(absolute_row, next_cells, now, cps, max_pending_cells);
             return;
         }
 
         let interval = Duration::from_secs_f64(1.0 / f64::from(cps.clamp(20.0, 2_000.0)));
         let max_reveal_at = now + Self::MAX_LAG;
         let mut reveal_at = self.next_reveal_at.unwrap_or(now).max(now);
+        let mut budget = max_pending_cells.saturating_sub(self.pending.len());
 
         for (col, next_cell) in next_cells.iter().enumerate() {
             let Some(previous_cell) = previous.cells.get(col) else {
@@ -483,9 +497,16 @@ impl TypewriterState {
             let key = (absolute_row, col);
             if next_cell.character == ' ' || next_cell.character == '\0' {
                 self.pending.remove(&key);
+                budget = max_pending_cells.saturating_sub(self.pending.len());
                 continue;
             }
 
+            if !self.pending.contains_key(&key) {
+                if budget == 0 {
+                    continue;
+                }
+                budget -= 1;
+            }
             self.pending.insert(
                 key,
                 TypewriterReveal {
@@ -504,18 +525,27 @@ impl TypewriterState {
         next_cells: &[CellRenderData],
         now: Instant,
         cps: f32,
+        max_pending_cells: usize,
     ) {
         let interval = Duration::from_secs_f64(1.0 / f64::from(cps.clamp(20.0, 2_000.0)));
         let max_reveal_at = now + Self::MAX_LAG;
         let mut reveal_at = self.next_reveal_at.unwrap_or(now).max(now);
         let mut queued = false;
+        let mut budget = max_pending_cells.saturating_sub(self.pending.len());
 
         for (col, next_cell) in next_cells.iter().enumerate() {
             if next_cell.character == ' ' || next_cell.character == '\0' {
                 continue;
             }
+            let key = (absolute_row, col);
+            if !self.pending.contains_key(&key) {
+                if budget == 0 {
+                    continue;
+                }
+                budget -= 1;
+            }
             self.pending.insert(
-                (absolute_row, col),
+                key,
                 TypewriterReveal {
                     reveal_at: reveal_at.min(max_reveal_at),
                 },
@@ -610,6 +640,7 @@ struct PaneRuntime {
     last_output_line_row: Option<usize>,
     pending_rerun_diff: Option<PendingRerunDiff>,
     typewriter: TypewriterState,
+    pending_typewriter_block_id: Option<u64>,
 }
 
 const ATTACHED_DAEMON_PANE_ID: u64 = 0;
@@ -629,10 +660,19 @@ fn typewriter_applies_to_row(
         return false;
     };
     blocks.iter().rev().any(|block| {
-        block.id == active_output_block_id
-            && block.exit_code.is_none()
-            && absolute_row >= block.output_start_row
+        if block.id != active_output_block_id {
+            return false;
+        }
+        if block.exit_code.is_none() {
+            absolute_row >= block.output_start_row
+        } else {
+            absolute_row >= block.output_start_row && absolute_row <= block.output_end_row
+        }
     })
+}
+
+fn typewriter_is_active(enabled: bool, is_alt_screen: bool) -> bool {
+    enabled && !is_alt_screen
 }
 
 fn mark_typewriter_pending_rows_dirty(pane: &mut PaneRuntime) {
@@ -1427,6 +1467,7 @@ impl WokHandler {
                     last_output_line_row: None,
                     pending_rerun_diff: None,
                     typewriter: TypewriterState::default(),
+                    pending_typewriter_block_id: None,
                 };
                 self.panes.insert(pane_id, pane_runtime);
                 self.sync_owned_input_state_for_pane(pane_id);
@@ -1869,6 +1910,7 @@ impl WokHandler {
         let render_time = Instant::now();
         let typewriter_enabled = self.config.typewriter_effect_enabled;
         let typewriter_cps = self.config.typewriter_effect_cps;
+        let typewriter_max_pending_cells = self.config.typewriter_effect_max_pending_cells;
         let visual_effect = VisualEffectState::from_config(&self.config, self.started_at.elapsed());
         let Some(render) = self.render.as_mut() else {
             return;
@@ -1990,6 +2032,7 @@ impl WokHandler {
             let search = workspace_search.as_ref().unwrap_or(&pane.app.global_search);
             let block_query = pane.app.block_query.as_ref();
             let active_output_block_id = pane.app.block_manager.active_output_block_id();
+            let typewriter_block_id = active_output_block_id.or(pane.pending_typewriter_block_id);
             let overlay_signature = pane_overlay_signature(
                 &pane.app.block_manager.blocks,
                 selected_block_id,
@@ -2011,7 +2054,8 @@ impl WokHandler {
             let terminal_had_damage = terminal_damage.is_some();
             let terminal_full_damage =
                 matches!(terminal_damage.as_ref(), Some(TerminalDamage::Full));
-            let typewriter_active = typewriter_enabled && !pane.terminal.state.is_alt_screen();
+            let typewriter_active =
+                typewriter_is_active(typewriter_enabled, pane.terminal.state.is_alt_screen());
             if typewriter_enabled && !typewriter_active && pane.typewriter.has_pending() {
                 pane.typewriter.clear();
                 pane.row_cache.dirty.mark_fully_damaged();
@@ -2029,7 +2073,7 @@ impl WokHandler {
                             && terminal_had_damage
                             && typewriter_applies_to_row(
                                 &pane.app.block_manager.blocks,
-                                active_output_block_id,
+                                typewriter_block_id,
                                 absolute_row,
                             )
                         {
@@ -2039,6 +2083,7 @@ impl WokHandler {
                                 &signature.cells,
                                 render_time,
                                 typewriter_cps,
+                                typewriter_max_pending_cells,
                             );
                         }
                         pane.row_cache.row_signatures[row_idx] = Some(signature);
@@ -2060,7 +2105,7 @@ impl WokHandler {
                         if typewriter_active
                             && typewriter_applies_to_row(
                                 &pane.app.block_manager.blocks,
-                                active_output_block_id,
+                                typewriter_block_id,
                                 absolute_row,
                             )
                         {
@@ -2070,12 +2115,18 @@ impl WokHandler {
                                 &signature.cells,
                                 render_time,
                                 typewriter_cps,
+                                typewriter_max_pending_cells,
                             );
                         }
                         pane.row_cache.row_signatures[row_idx] = Some(signature);
                         pane.row_cache.dirty.mark_row_dirty(row_idx);
                     }
                 }
+            }
+            if pane.pending_typewriter_block_id.is_some()
+                && pane.pending_typewriter_block_id != active_output_block_id
+            {
+                pane.pending_typewriter_block_id = None;
             }
 
             if pane.row_cache.dirty.has_damage() {
@@ -2923,6 +2974,40 @@ impl WokHandler {
         let active_scrollback = self
             .active_pane()
             .map_or(0, |pane| pane.terminal.state.scrollback_len());
+        let typewriter_line = self.active_pane().map_or_else(
+            || {
+                format!(
+                    "typewriter enabled={} active_block=n/a active_output=n/a pending_block=n/a queue=0 cells 0 rows cap={}",
+                    self.config.typewriter_effect_enabled,
+                    self.config.typewriter_effect_max_pending_cells
+                )
+            },
+            |pane| {
+                let active_block = pane
+                    .app
+                    .block_manager
+                    .active_block
+                    .map_or_else(|| "n/a".to_string(), |id| id.to_string());
+                let active_output = pane
+                    .app
+                    .block_manager
+                    .active_output_block_id()
+                    .map_or_else(|| "n/a".to_string(), |id| id.to_string());
+                let pending_block = pane
+                    .pending_typewriter_block_id
+                    .map_or_else(|| "n/a".to_string(), |id| id.to_string());
+                format!(
+                    "typewriter enabled={} active_block={} active_output={} pending_block={} queue={} cells {} rows cap={}",
+                    self.config.typewriter_effect_enabled,
+                    active_block,
+                    active_output,
+                    pending_block,
+                    pane.typewriter.pending_cell_count(),
+                    pane.typewriter.pending_row_count(),
+                    self.config.typewriter_effect_max_pending_cells
+                )
+            },
+        );
         let total_session_bytes = self.estimated_session_bytes();
         let avg_redraw_ms = if self.redraw_history_ms.is_empty() {
             0.0
@@ -3000,6 +3085,7 @@ impl WokHandler {
             format!("battery {battery}"),
             format!("scrollback {} rows", active_scrollback),
             format!("session ~{} KiB", total_session_bytes / 1024),
+            typewriter_line,
             self.metrics.summary_line(),
         ];
         lines.extend(self.metrics.phase_lines());
@@ -3186,6 +3272,9 @@ impl WokHandler {
             "status_bar_side": self.config.status_bar_side.as_str(),
             "recent_keys_visible": self.config.recent_keys.visible,
             "recent_keys_position": self.config.recent_keys.position.as_str(),
+            "typewriter_effect_enabled": self.config.typewriter_effect_enabled,
+            "typewriter_effect_cps": self.config.typewriter_effect_cps,
+            "typewriter_effect_max_pending_cells": self.config.typewriter_effect_max_pending_cells,
             "close_on_shell_exit": self.config.close_on_shell_exit,
             "restore_session": self.config.restore_session,
             "debug_overlay": self.config.debug_overlay,
@@ -4695,6 +4784,8 @@ impl WokHandler {
                     if let Some(pane) = self.panes.get_mut(&pane_id) {
                         pane.prompt_ready = false;
                         pane.last_output_line_row = row.checked_sub(1);
+                        pane.pending_typewriter_block_id =
+                            pane.app.block_manager.active_output_block_id();
                     }
                     relayout = true;
                 }
@@ -5553,6 +5644,8 @@ impl WokHandler {
         for pane in self.panes.values_mut() {
             pane.app.config.typewriter_effect_enabled = self.config.typewriter_effect_enabled;
             pane.app.config.typewriter_effect_cps = self.config.typewriter_effect_cps;
+            pane.app.config.typewriter_effect_max_pending_cells =
+                self.config.typewriter_effect_max_pending_cells;
             if !self.config.typewriter_effect_enabled {
                 pane.typewriter.clear();
             }
@@ -7604,6 +7697,18 @@ impl WokHandler {
         m.insert(
             "floating_pane_title_height",
             format!("{}", c.floating_pane_title_height),
+        );
+        m.insert(
+            "typewriter_effect_enabled",
+            c.typewriter_effect_enabled.to_string(),
+        );
+        m.insert(
+            "typewriter_effect_cps",
+            format!("{}", c.typewriter_effect_cps),
+        );
+        m.insert(
+            "typewriter_effect_max_pending_cells",
+            c.typewriter_effect_max_pending_cells.to_string(),
         );
         m.insert(
             "external_plugin_command",
@@ -11874,6 +11979,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 mod tests {
     use super::*;
 
+    const TEST_TYPEWRITER_CAP: usize = 4_096;
+
     fn test_cell(character: char) -> CellRenderData {
         CellRenderData {
             character,
@@ -11897,12 +12004,123 @@ mod tests {
             test_cell('\0'),
         ];
 
-        typewriter.enqueue_changed_cells(42, None, &cells, now, 100.0);
+        typewriter.enqueue_changed_cells(42, None, &cells, now, 100.0, TEST_TYPEWRITER_CAP);
 
         assert!(!typewriter.is_cell_hidden(42, 0, now));
         assert!(typewriter.is_cell_hidden(42, 1, now));
         assert!(!typewriter.is_cell_hidden(42, 2, now));
         assert!(!typewriter.is_cell_hidden(42, 3, now));
+    }
+
+    #[test]
+    fn typewriter_caps_large_output_bursts() {
+        let now = Instant::now();
+        let mut typewriter = TypewriterState::default();
+        let cells = vec![test_cell('x'); TEST_TYPEWRITER_CAP + 128];
+
+        typewriter.enqueue_changed_cells(42, None, &cells, now, 100.0, TEST_TYPEWRITER_CAP);
+
+        assert_eq!(typewriter.pending_cell_count(), TEST_TYPEWRITER_CAP);
+        assert!(!typewriter.is_cell_hidden(42, TEST_TYPEWRITER_CAP + 1, now));
+    }
+
+    #[test]
+    fn typewriter_zero_cap_reveals_large_output_immediately() {
+        let now = Instant::now();
+        let mut typewriter = TypewriterState::default();
+        let cells = vec![test_cell('x'); 512];
+
+        typewriter.enqueue_changed_cells(42, None, &cells, now, 100.0, 0);
+
+        assert_eq!(typewriter.pending_cell_count(), 0);
+        assert!(!typewriter.is_cell_hidden(42, 100, now));
+    }
+
+    #[test]
+    fn typewriter_large_scrollback_profile_stays_capped() {
+        let now = Instant::now();
+        let mut typewriter = TypewriterState::default();
+        let cells = vec![test_cell('x'); 80];
+        let start = Instant::now();
+
+        for row in 0..15_000 {
+            typewriter.enqueue_changed_cells(row, None, &cells, now, 2_000.0, TEST_TYPEWRITER_CAP);
+        }
+
+        let elapsed = start.elapsed();
+        eprintln!(
+            "typewriter large scrollback profile: queued={} rows={} elapsed_ms={:.3}",
+            typewriter.pending_cell_count(),
+            typewriter.pending_row_count(),
+            elapsed.as_secs_f64() * 1_000.0
+        );
+        assert_eq!(typewriter.pending_cell_count(), TEST_TYPEWRITER_CAP);
+        assert!(typewriter.pending_row_count() <= 15_000);
+    }
+
+    #[test]
+    fn typewriter_fast_finished_output_uses_pending_block_fixture() {
+        let mut blocks = wok_blocks::block::BlockManager::new();
+        blocks.handle_event(&SemanticEvent::PromptStart { row: 0 });
+        blocks.handle_event(&SemanticEvent::CommandStart { row: 0 });
+        blocks.handle_event(&SemanticEvent::CommandText {
+            row: 0,
+            text: "ls".to_string(),
+        });
+        blocks.handle_event(&SemanticEvent::OutputStart { row: 1 });
+        let pending_typewriter_block_id = blocks.active_output_block_id();
+
+        blocks.handle_event(&SemanticEvent::CommandEnd {
+            row: 2,
+            exit_code: Some(0),
+        });
+
+        assert_eq!(blocks.active_output_block_id(), None);
+        assert!(typewriter_applies_to_row(
+            &blocks.blocks,
+            pending_typewriter_block_id,
+            1
+        ));
+        assert!(typewriter_applies_to_row(
+            &blocks.blocks,
+            pending_typewriter_block_id,
+            2
+        ));
+        assert!(!typewriter_applies_to_row(
+            &blocks.blocks,
+            pending_typewriter_block_id,
+            3
+        ));
+    }
+
+    #[test]
+    fn typewriter_alt_screen_replay_fixture_disables_queueing() {
+        let mut terminal = wok_terminal::state::TerminalState::new(80, 24, 1_000);
+        assert!(typewriter_is_active(true, terminal.is_alt_screen()));
+
+        terminal.process_bytes(b"\x1b[?1049h");
+        assert!(terminal.is_alt_screen());
+        assert!(!typewriter_is_active(true, terminal.is_alt_screen()));
+
+        terminal.process_bytes(b"\x1b[?1049l");
+        assert!(!terminal.is_alt_screen());
+        assert!(typewriter_is_active(true, terminal.is_alt_screen()));
+        assert!(!typewriter_is_active(false, terminal.is_alt_screen()));
+    }
+
+    #[test]
+    fn debug_overlay_reports_typewriter_runtime_state() {
+        let config = WokConfig {
+            typewriter_effect_enabled: true,
+            ..Default::default()
+        };
+        let handler = WokHandler::new(config);
+
+        assert!(handler.debug_overlay_lines().iter().any(|line| {
+            line.contains("typewriter enabled=true")
+                && line.contains("active_block=n/a")
+                && line.contains("queue=0 cells 0 rows")
+        }));
     }
 
     fn test_block(id: u64, start: usize, end: usize, exit_code: Option<i32>) -> Block {
@@ -11934,6 +12152,19 @@ mod tests {
         assert!(typewriter_applies_to_row(&blocks, Some(2), 20));
         assert!(typewriter_applies_to_row(&blocks, Some(2), 21));
         assert!(!typewriter_applies_to_row(&blocks, None, 20));
+    }
+
+    #[test]
+    fn typewriter_allows_pending_completed_block_once() {
+        let blocks = vec![
+            test_block(1, 10, 12, Some(0)),
+            test_block(2, 20, 22, Some(0)),
+        ];
+
+        assert!(!typewriter_applies_to_row(&blocks, Some(2), 12));
+        assert!(typewriter_applies_to_row(&blocks, Some(2), 20));
+        assert!(typewriter_applies_to_row(&blocks, Some(2), 22));
+        assert!(!typewriter_applies_to_row(&blocks, Some(2), 23));
     }
 
     #[test]
@@ -12438,6 +12669,21 @@ mod tests {
     }
 
     #[test]
+    fn test_kitty_keyboard_release_requires_event_type_flag() {
+        let event = InputEvent {
+            action: KeyAction::Char('q'),
+            modifiers: Default::default(),
+            is_repeat: false,
+            event_type: InputEventType::Release,
+        };
+
+        assert!(input_event_to_pty_bytes(&event, 0x1).is_none());
+        let encoded =
+            input_event_to_pty_bytes(&event, 0x2).expect("release should encode with event flag");
+        assert_eq!(String::from_utf8(encoded).expect("utf8"), "\u{1b}[113;1;3u");
+    }
+
+    #[test]
     fn test_legacy_encoding_unchanged_without_kitty_flags() {
         let event = InputEvent {
             action: KeyAction::Enter,
@@ -12478,6 +12724,65 @@ mod tests {
         assert_eq!(
             String::from_utf8(encoded).expect("utf8"),
             "\u{1b}[57442;5;1u"
+        );
+    }
+
+    #[test]
+    fn test_kitty_keyboard_combined_modifiers_encode_single_modifier_field() {
+        let event = InputEvent {
+            action: KeyAction::ArrowUp,
+            modifiers: wok_app::input::Modifiers {
+                ctrl: true,
+                alt: true,
+                shift: true,
+                meta: true,
+            },
+            is_repeat: false,
+            event_type: InputEventType::Press,
+        };
+        let encoded = input_event_to_pty_bytes(&event, 0x1).expect("kitty arrow should encode");
+        assert_eq!(
+            String::from_utf8(encoded).expect("utf8"),
+            "\u{1b}[57362;16u"
+        );
+    }
+
+    #[test]
+    fn test_kitty_keyboard_repeat_omits_event_type_unless_requested() {
+        let event = InputEvent {
+            action: KeyAction::Char('j'),
+            modifiers: Default::default(),
+            is_repeat: true,
+            event_type: InputEventType::Repeat,
+        };
+
+        let base =
+            input_event_to_pty_bytes(&event, 0x1).expect("kitty repeat should encode without type");
+        assert_eq!(String::from_utf8(base).expect("utf8"), "\u{1b}[106;1u");
+
+        let typed =
+            input_event_to_pty_bytes(&event, 0x2).expect("kitty repeat should encode with type");
+        assert_eq!(String::from_utf8(typed).expect("utf8"), "\u{1b}[106;1;2u");
+    }
+
+    #[test]
+    fn test_kitty_keyboard_modifier_release_requires_event_type_flag() {
+        let event = InputEvent {
+            action: KeyAction::ModifierAlt,
+            modifiers: wok_app::input::Modifiers {
+                alt: true,
+                ..Default::default()
+            },
+            is_repeat: false,
+            event_type: InputEventType::Release,
+        };
+
+        assert!(input_event_to_pty_bytes(&event, 0x1 | 0x4).is_none());
+        let encoded =
+            input_event_to_pty_bytes(&event, 0x2).expect("modifier release should encode");
+        assert_eq!(
+            String::from_utf8(encoded).expect("utf8"),
+            "\u{1b}[57443;3;3u"
         );
     }
 

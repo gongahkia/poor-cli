@@ -149,6 +149,32 @@ mod tests {
     }
 
     #[test]
+    fn parse_png_payload_torture_envelope_keeps_image_bytes_intact() {
+        let image = image::RgbaImage::from_pixel(2, 1, image::Rgba([3, 4, 5, 255]));
+        let mut cursor = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(&mut cursor, image::ImageFormat::Png)
+            .expect("png should encode");
+        let png = cursor.into_inner();
+        let raw = format!(
+            "File=name={};size={};inline=1;width=2;height=1;preserveAspectRatio=1:{}",
+            b64("tiny.png"),
+            png.len(),
+            B64.encode(&png)
+        );
+
+        let p = parse(&raw).unwrap();
+        let decoded = image::load_from_memory(&p.bytes)
+            .expect("png should decode")
+            .to_rgba8();
+
+        assert_eq!(p.name.as_deref(), Some("tiny.png"));
+        assert_eq!(p.size, Some(png.len() as u64));
+        assert_eq!((decoded.width(), decoded.height()), (2, 1));
+        assert_eq!(&decoded.into_raw()[0..4], &[3, 4, 5, 255]);
+    }
+
+    #[test]
     fn missing_file_prefix_errors() {
         assert!(parse("inline=1:aGk=").is_err());
     }

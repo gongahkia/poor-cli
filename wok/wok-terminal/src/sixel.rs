@@ -335,6 +335,20 @@ mod tests {
     }
 
     #[test]
+    fn test_repeated_rows_torture_payload_stays_bounded() {
+        let image = parse_sixel_dcs("q#1;2;100;0;0!80~-!80~-!80~").expect("parse repeated rows");
+
+        assert_eq!(image.width, 80);
+        assert_eq!(image.height, 18);
+        assert_eq!(image.pixels.len(), 80 * 18 * 4);
+        assert_eq!(&image.pixels[0..4], &[255, 0, 0, 255]);
+        assert_eq!(
+            &image.pixels[(80 * 12 * 4)..(80 * 12 * 4 + 4)],
+            &[255, 0, 0, 255]
+        );
+    }
+
+    #[test]
     fn test_hls_palette_definition() {
         let image = parse_sixel_dcs("q#3;1;120;50;100?").expect("parse");
         let pixel = &image.pixels[0..4];
