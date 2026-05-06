@@ -160,6 +160,10 @@ pub(crate) fn bottom_dock_rect(content: Rect, cell_height: f32) -> Rect {
     )
 }
 
+pub(crate) fn timeline_rail_rect(viewport: Rect) -> Rect {
+    Rect::new(viewport.x, viewport.y, 14.0_f32.min(viewport.w), viewport.h)
+}
+
 pub(crate) fn pane_max_scroll(pane: &PaneRuntime) -> f32 {
     pane.terminal.state.scrollback_len() as f32
 }
@@ -496,6 +500,83 @@ pub(crate) fn render_status_bar(
     }
 
     render_status_spine(render, font, rect, status_segments, surface_opacity);
+}
+
+pub(crate) fn render_timeline_rail(
+    render: &mut RenderState,
+    theme: &Theme,
+    rect: Rect,
+    blocks: &[Block],
+    selected_block_id: Option<u64>,
+    total_rows: usize,
+    surface_opacity: f32,
+) {
+    if rect.w <= 0.0 || rect.h <= 0.0 || blocks.is_empty() || total_rows == 0 {
+        return;
+    }
+    render.batch.push_bg_quad(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        with_opacity(
+            [
+                theme.tab_bar_bg.r,
+                theme.tab_bar_bg.g,
+                theme.tab_bar_bg.b,
+                0.42,
+            ],
+            surface_opacity,
+        ),
+    );
+
+    let pip_h = 4.0_f32.min((rect.h / blocks.len().max(1) as f32).max(2.0));
+    for block in blocks {
+        let y = timeline_y_for_row(rect, block.output_start_row, total_rows);
+        let accent = block_accent_color(theme, block);
+        let selected = selected_block_id == Some(block.id);
+        let pip_w = if selected { rect.w - 3.0 } else { rect.w - 7.0 }.max(2.0);
+        let x = rect.x + (rect.w - pip_w) * 0.5;
+        render.batch.push_bg_quad(
+            x,
+            y,
+            pip_w,
+            if selected { pip_h + 2.0 } else { pip_h },
+            [
+                accent.r,
+                accent.g,
+                accent.b,
+                if selected { 1.0 } else { 0.78 },
+            ],
+        );
+    }
+}
+
+pub(crate) fn timeline_y_for_row(rect: Rect, row: usize, total_rows: usize) -> f32 {
+    if total_rows <= 1 {
+        return rect.y;
+    }
+    let t = (row as f32 / (total_rows.saturating_sub(1) as f32)).clamp(0.0, 1.0);
+    rect.y + t * rect.h
+}
+
+pub(crate) fn timeline_block_at_y<'a>(
+    blocks: &'a [Block],
+    rect: Rect,
+    y: f64,
+    total_rows: usize,
+) -> Option<&'a Block> {
+    if blocks.is_empty() || y < rect.y as f64 || y > (rect.y + rect.h) as f64 {
+        return None;
+    }
+    blocks.iter().min_by(|left, right| {
+        let left_y = timeline_y_for_row(rect, left.output_start_row, total_rows);
+        let right_y = timeline_y_for_row(rect, right.output_start_row, total_rows);
+        (left_y - y as f32)
+            .abs()
+            .partial_cmp(&(right_y - y as f32).abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    })
 }
 
 fn render_status_spine(
@@ -2075,6 +2156,63 @@ mod tests {
         assert_eq!(dock.w, content.w);
         assert!(dock.h <= content.h * 0.46 + f32::EPSILON);
         assert!((dock.y + dock.h - (content.y + content.h)).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn timeline_maps_rows_into_rail_bounds() {
+        let rect = Rect::new(2.0, 10.0, 14.0, 100.0);
+
+        assert_eq!(timeline_y_for_row(rect, 0, 101), 10.0);
+        assert_eq!(timeline_y_for_row(rect, 100, 101), 110.0);
+    }
+
+    #[test]
+    fn timeline_hit_test_picks_nearest_block() {
+        let rect = Rect::new(0.0, 0.0, 14.0, 100.0);
+        let now = Instant::now();
+        let blocks = vec![
+            Block {
+                id: 1,
+                prompt_text: String::new(),
+                command_text: "one".to_string(),
+                output_start_row: 0,
+                output_end_row: 1,
+                exit_code: Some(0),
+                start_time: now,
+                end_time: Some(now),
+                duration: Some(std::time::Duration::from_millis(1)),
+                is_collapsed: false,
+                scroll_offset: 0,
+                cwd: PathBuf::from("/tmp"),
+                git_branch: None,
+                git_dirty: None,
+                is_bookmarked: false,
+                trigger_highlights: Vec::new(),
+            },
+            Block {
+                id: 2,
+                prompt_text: String::new(),
+                command_text: "two".to_string(),
+                output_start_row: 90,
+                output_end_row: 91,
+                exit_code: Some(1),
+                start_time: now,
+                end_time: Some(now),
+                duration: Some(std::time::Duration::from_millis(1)),
+                is_collapsed: false,
+                scroll_offset: 0,
+                cwd: PathBuf::from("/tmp"),
+                git_branch: None,
+                git_dirty: None,
+                is_bookmarked: false,
+                trigger_highlights: Vec::new(),
+            },
+        ];
+
+        assert_eq!(
+            timeline_block_at_y(&blocks, rect, 95.0, 100).map(|b| b.id),
+            Some(2)
+        );
     }
 
     #[test]

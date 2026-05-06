@@ -291,6 +291,8 @@ pub struct WokConfig {
     pub status_bar_side: ChromeSide,
     /// Optional status bar thickness in physical pixels.
     pub status_bar_size: Option<f32>,
+    /// Whether to render the block timeline rail.
+    pub timeline_rail_visible: bool,
     /// Window opacity (0.0 to 1.0).
     pub window_opacity: f32,
     /// Background image path.
@@ -378,6 +380,7 @@ struct ConfigToml {
     status_bar_visible: Option<bool>,
     status_bar_side: Option<String>,
     status_bar_size: Option<f32>,
+    timeline_rail_visible: Option<bool>,
     window_opacity: Option<f32>,
     background_image: Option<String>,
     background_opacity: Option<f32>,
@@ -473,6 +476,7 @@ impl Default for WokConfig {
             status_bar_visible: true,
             status_bar_side: ChromeSide::Bottom,
             status_bar_size: None,
+            timeline_rail_visible: false,
             window_opacity: 1.0,
             background_image: None,
             background_opacity: 1.0,
@@ -616,6 +620,9 @@ impl WokConfig {
             if size.is_finite() && size > 0.0 {
                 config.status_bar_size = Some(size);
             }
+        }
+        if let Some(visible) = toml_config.timeline_rail_visible {
+            config.timeline_rail_visible = visible;
         }
         if let Some(o) = toml_config.window_opacity {
             config.window_opacity = clamp_unit(o);
@@ -1093,6 +1100,7 @@ impl wok_settings::Settings for WokConfig {
                 field!("status_bar_visible", "bool"),
                 field!("status_bar_side", "ChromeSide"),
                 field!("status_bar_size", "Option<f32>"),
+                field!("timeline_rail_visible", "bool"),
                 field!("window_opacity", "f32"),
                 field!("background_image", "Option<PathBuf>"),
                 field!("background_opacity", "f32"),
@@ -1163,6 +1171,7 @@ mod tests {
         assert_eq!(config.tab_bar_side, ChromeSide::Top);
         assert_eq!(config.tab_bar_orientation, TabBarOrientation::Horizontal);
         assert_eq!(config.status_bar_side, ChromeSide::Bottom);
+        assert!(!config.timeline_rail_visible);
         assert!((config.window_opacity - 1.0).abs() < f32::EPSILON);
         assert_eq!(config.background_image, None);
         assert!((config.background_opacity - 1.0).abs() < f32::EPSILON);
@@ -1283,6 +1292,18 @@ chrome_font_family = "IBM Plex Mono"
         let config = WokConfig::load_from(&path).expect("config should load");
         assert_eq!(config.font_family, "JetBrains Mono");
         assert_eq!(config.chrome_font_family, "IBM Plex Mono");
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_load_timeline_rail_visible() {
+        let path =
+            std::env::temp_dir().join(format!("wok-config-timeline-{}.toml", std::process::id()));
+        std::fs::write(&path, "timeline_rail_visible = true\n").expect("config should be written");
+
+        let config = WokConfig::load_from(&path).expect("config should load");
+        assert!(config.timeline_rail_visible);
 
         let _ = std::fs::remove_file(path);
     }

@@ -21,6 +21,7 @@ tab_bar_orientation = "horizontal"
 tab_bar_side = "top"
 status_bar_visible = true
 status_bar_side = "bottom"
+timeline_rail_visible = false
 window_opacity = 1.0
 # background_image = "~/Pictures/wok-background.png"
 background_opacity = 1.0

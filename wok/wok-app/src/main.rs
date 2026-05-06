@@ -2385,6 +2385,18 @@ impl WokHandler {
                     .append_translated(row_batch, 0.0, smooth_scroll_y);
             }
 
+            if self.config.timeline_rail_visible {
+                render_timeline_rail(
+                    render,
+                    theme,
+                    timeline_rail_rect(viewport),
+                    &pane.app.block_manager.blocks,
+                    selected_block_id,
+                    pane.terminal.state.total_rows().max(1),
+                    window_opacity,
+                );
+            }
+
             let border_color = if self.workspace.broadcast_input {
                 [
                     theme.block_error_accent.r,
@@ -3512,6 +3524,7 @@ impl WokHandler {
             },
             "tab_bar_side": self.config.tab_bar_side.as_str(),
             "status_bar_side": self.config.status_bar_side.as_str(),
+            "timeline_rail_visible": self.config.timeline_rail_visible,
             "recent_keys_visible": self.config.recent_keys.visible,
             "recent_keys_position": self.config.recent_keys.position.as_str(),
             "typewriter_effect_enabled": self.config.typewriter_effect_enabled,
@@ -8036,6 +8049,7 @@ impl WokHandler {
                 .map(|v| v.to_string())
                 .unwrap_or_else(|| "auto".to_string()),
         );
+        m.insert("timeline_rail_visible", c.timeline_rail_visible.to_string());
         m.insert("window_opacity", format!("{}", c.window_opacity));
         m.insert(
             "background_image",
@@ -9814,6 +9828,61 @@ impl WokHandler {
         false
     }
 
+    fn handle_timeline_rail_mouse_press(&mut self, button: MouseButton, x: f64, y: f64) -> bool {
+        if button != MouseButton::Left || !self.config.timeline_rail_visible {
+            return false;
+        }
+        let hit = self
+            .workspace
+            .active_pane_ids()
+            .into_iter()
+            .find_map(|pane_id| {
+                let pane = self.panes.get(&pane_id)?;
+                let rect = timeline_rail_rect(pane.ui_rects.viewport);
+                if !point_in_rect(rect, x, y) {
+                    return None;
+                }
+                let block = timeline_block_at_y(
+                    &pane.app.block_manager.blocks,
+                    rect,
+                    y,
+                    pane.terminal.state.total_rows().max(1),
+                )?;
+                Some((pane_id, block.id, block.output_start_row))
+            });
+        let Some((pane_id, block_id, row)) = hit else {
+            return false;
+        };
+        self.focus_block_in_pane(pane_id, block_id, row);
+        true
+    }
+
+    fn focus_block_in_pane(&mut self, pane_id: PaneId, block_id: u64, row: usize) {
+        if self.workspace.focus_pane(pane_id) {
+            if let Some(window) = &self.window {
+                self.sync_workspace_layout(window.inner_size());
+            }
+        }
+        if let Some(active_pane) = self.active_pane_mut() {
+            active_pane.app.select_block(block_id);
+            let screen_lines = active_pane.terminal.state.screen_lines().max(1);
+            let desired_start = row.saturating_sub(screen_lines / 2);
+            let new_offset = active_pane
+                .terminal
+                .state
+                .scrollback_len()
+                .saturating_sub(desired_start);
+            active_pane
+                .viewport
+                .reveal_offset(new_offset, pane_max_scroll(active_pane));
+            active_pane
+                .terminal
+                .state
+                .set_display_offset(active_pane.viewport.display_offset());
+        }
+        self.needs_redraw = true;
+    }
+
     fn close_tab_at_index(&mut self, tab_index: usize) {
         self.switch_to_tab_index(tab_index);
         self.handle_action(Action::CloseTab);
@@ -10542,6 +10611,9 @@ impl AppHandler for WokHandler {
                     return;
                 }
                 if self.handle_chrome_mouse_press(button, x, y, modifiers) {
+                    return;
+                }
+                if self.handle_timeline_rail_mouse_press(button, x, y) {
                     return;
                 }
                 if button == MouseButton::Left && self.start_split_divider_drag_at(x, y) {

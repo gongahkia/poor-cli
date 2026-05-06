@@ -35,6 +35,7 @@ tab_bar_size = 36.0
 status_bar_visible = true
 status_bar_side = "bottom"
 status_bar_size = 36.0
+timeline_rail_visible = false
 window_opacity = 1.0
 background_image = "~/.config/wok/backgrounds/workspace.png"
 background_opacity = 0.85
@@ -99,6 +100,7 @@ action = "split_vertical"
 | `status_bar_visible` | boolean | `true` | Active | Shows or hides the status bar |
 | `status_bar_side` | string | `"bottom"` | Active | Places the status bar on any edge: `top`, `bottom`, `left`, or `right`; vertical status bars render segments as a stacked list |
 | `status_bar_size` | float | auto | Active | Optional status bar thickness in physical pixels; defaults to the active font metrics |
+| `timeline_rail_visible` | boolean | `false` | Active | Shows the opt-in block timeline rail along the left edge of each pane |
 | `window_opacity` | float | `1.0` | Active | Applies window/chrome opacity and blends terminal surfaces against the configured background |
 | `background_image` | string | none | Active | Loads a background image from config or theme and renders it behind the workspace chrome and panes |
 | `background_opacity` | float | `1.0` | Active | Multiplies background image opacity from `0.0` to `1.0`; combines with `window_opacity` |
