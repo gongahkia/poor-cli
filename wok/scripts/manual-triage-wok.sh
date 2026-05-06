@@ -5,7 +5,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARTIFACT_ROOT="${WOK_TRIAGE_ARTIFACTS:-$ROOT/.triage/wok-manual}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 OUT="$ARTIFACT_ROOT/$STAMP"
-APP_NAME="${WOK_TRIAGE_APP_NAME:-wok}"
+APP_NAME="${WOK_TRIAGE_APP_NAME:-Wok}"
+BINARY_PROCESS_NAME="${WOK_TRIAGE_BINARY_PROCESS_NAME:-wok}"
 WINDOW_TITLE="${WOK_TRIAGE_WINDOW_TITLE:-Wok}"
 TYPE_DELAY="${WOK_TRIAGE_TYPE_DELAY:-0.02}"
 SCENARIO_DELAY="${WOK_TRIAGE_SCENARIO_DELAY:-1.2}"
@@ -25,6 +26,8 @@ QA matrix through macOS Accessibility automation, and writes screenshots/logs to
 
 Environment knobs:
   WOK_TRIAGE_ARTIFACTS=/path       Override artifact root.
+  WOK_TRIAGE_APP_NAME=Wok          UI process name for System Events.
+  WOK_TRIAGE_BINARY_PROCESS_NAME=wok Process name for pgrep/pkill/logs.
   WOK_TRIAGE_TYPE_DELAY=0.02       AppleScript keystroke delay.
   WOK_TRIAGE_SCENARIO_DELAY=1.2    Delay after normal commands.
   WOK_TRIAGE_LONG_DELAY=3.0        Delay after stress/alt-screen commands.
@@ -172,14 +175,15 @@ send_line() {
   local line="$2"
   local delay="${3:-$SCENARIO_DELAY}"
   log "input [$label]: $line"
-  run_osascript type-line "$APP_NAME" "$WINDOW_TITLE" "$line" "$TYPE_DELAY"
+  run_osascript type-line "${UI_PROCESS_NAME:-$APP_NAME}" "$WINDOW_TITLE" "$line" "$TYPE_DELAY"
   sleep "$delay"
   shot "$label"
 }
 
 if [[ "$KILL_EXISTING" == "1" ]]; then
-  log "stopping existing $APP_NAME processes, if any"
+  log "stopping existing $APP_NAME/$BINARY_PROCESS_NAME processes, if any"
   pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+  pkill -x "$BINARY_PROCESS_NAME" >/dev/null 2>&1 || true
   sleep 0.5
 fi
 
@@ -192,16 +196,71 @@ else
   BIN="$ROOT/target/debug/wok"
 fi
 
-log "launching $BIN with isolated config $OUT/config.toml"
-(
-  cd "$ROOT"
-  WOK_CONFIG="$OUT/config.toml" "$BIN" --title "$WINDOW_TITLE"
-) >"$OUT/wok.stdout.log" 2>"$OUT/wok.stderr.log" &
-WOK_PID=$!
+APP_BUNDLE="$OUT/Wok.app"
+log "creating temporary app bundle $APP_BUNDLE"
+mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
+cp "$BIN" "$APP_BUNDLE/Contents/MacOS/wok"
+chmod +x "$APP_BUNDLE/Contents/MacOS/wok"
+cat > "$APP_BUNDLE/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Wok</string>
+    <key>CFBundleIdentifier</key>
+    <string>dev.wok.terminal.triage</string>
+    <key>CFBundleVersion</key>
+    <string>0.1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleExecutable</key>
+    <string>wok</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.developer-tools</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>10.15</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+</dict>
+</plist>
+PLIST
+plutil -lint "$APP_BUNDLE/Contents/Info.plist" >/dev/null 2>&1 || true
+
+log "launching app bundle with isolated config $OUT/config.toml"
+if ! open -n "$APP_BUNDLE" --env "WOK_CONFIG=$OUT/config.toml" --args --title "$WINDOW_TITLE" 2>"$OUT/open.err"; then
+  log "open --env failed; falling back to raw executable launch"
+  (
+    cd "$ROOT"
+    exec env WOK_CONFIG="$OUT/config.toml" "$BIN" --title "$WINDOW_TITLE"
+  ) >"$OUT/wok.stdout.log" 2>"$OUT/wok.stderr.log" &
+  WOK_PID=$!
+fi
+
+if [[ -z "${WOK_PID:-}" ]]; then
+  for _ in $(seq 1 40); do
+    WOK_PID="$(pgrep -x "$BINARY_PROCESS_NAME" | tail -1 || true)"
+    if [[ -z "$WOK_PID" ]]; then
+      WOK_PID="$(pgrep -x "$APP_NAME" | tail -1 || true)"
+    fi
+    if [[ -n "$WOK_PID" ]]; then
+      break
+    fi
+    sleep 0.25
+  done
+fi
+if [[ -z "$WOK_PID" ]]; then
+  log "failed to find running Wok process after launch"
+  exit 1
+fi
 printf '%s\n' "$WOK_PID" > "$OUT/wok.pid"
 
 cleanup() {
-  if kill -0 "$WOK_PID" >/dev/null 2>&1; then
+  if [[ -n "${WOK_PID:-}" ]] && kill -0 "$WOK_PID" >/dev/null 2>&1; then
     log "stopping triage Wok pid $WOK_PID"
     kill "$WOK_PID" >/dev/null 2>&1 || true
   fi
@@ -209,13 +268,23 @@ cleanup() {
 trap cleanup EXIT
 
 log "waiting for Wok window"
+UI_PROCESS_NAME="$APP_NAME"
 for _ in $(seq 1 40); do
-  if run_osascript focus "$APP_NAME" "$WINDOW_TITLE" >/dev/null 2>"$OUT/focus.err"; then
+  if run_osascript focus "$UI_PROCESS_NAME" "$WINDOW_TITLE" >/dev/null 2>"$OUT/focus.err"; then
     break
   fi
+  UI_PROCESS_NAME="$BINARY_PROCESS_NAME"
+  if run_osascript focus "$UI_PROCESS_NAME" "$WINDOW_TITLE" >/dev/null 2>"$OUT/focus.err"; then
+    break
+  fi
+  UI_PROCESS_NAME="$APP_NAME"
   sleep 0.25
 done
-run_osascript focus "$APP_NAME" "$WINDOW_TITLE"
+if ! run_osascript focus "$UI_PROCESS_NAME" "$WINDOW_TITLE" 2>"$OUT/focus.err"; then
+  log "failed to focus Wok via System Events: $(tr '\n' ' ' < "$OUT/focus.err")"
+  log "grant Accessibility permission to the app running this script, then rerun"
+  exit 1
+fi
 sleep 1
 shot "00-launch"
 
@@ -235,7 +304,7 @@ fi
 
 if [[ -f "$ROOT/README.md" ]]; then
   send_line "09-less-open" "less README.md" "$LONG_DELAY"
-  run_osascript type-line "$APP_NAME" "$WINDOW_TITLE" "q" "$TYPE_DELAY"
+  run_osascript type-line "$UI_PROCESS_NAME" "$WINDOW_TITLE" "q" "$TYPE_DELAY"
   sleep "$SCENARIO_DELAY"
   shot "10-less-quit"
 fi
@@ -264,7 +333,7 @@ log "capturing process sample"
 sample "$WOK_PID" 1 -file "$OUT/wok.sample.txt" >/dev/null 2>&1 || true
 
 log "capturing recent unified logs"
-/usr/bin/log show --style compact --last 2m --predicate 'process == "wok"' > "$OUT/wok.unified.log" 2>&1 || true
+/usr/bin/log show --style compact --last 2m --predicate 'process == "wok" OR process == "Wok"' > "$OUT/wok.unified.log" 2>&1 || true
 
 log "triage complete: $OUT"
 echo "$OUT"
