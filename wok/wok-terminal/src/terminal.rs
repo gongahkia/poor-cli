@@ -156,6 +156,7 @@ pub struct Terminal {
     pub exited: bool,
     /// Exit code if shell has exited.
     pub exit_code: Option<i32>,
+    pending_escape_bytes: Vec<u8>,
     kitty_chunks: HashMap<u32, String>,
     next_inline_image_id: u32,
 }
@@ -213,6 +214,7 @@ impl Terminal {
             rows,
             exited: false,
             exit_code: None,
+            pending_escape_bytes: Vec::new(),
             kitty_chunks: HashMap::new(),
             next_inline_image_id: 1,
         })
@@ -278,11 +280,27 @@ impl Terminal {
     /// Looks for `\x1b]133;X\x07` patterns where X is A, B, C, or D.
     #[allow(clippy::too_many_lines)]
     fn scan_osc_markers(&mut self, bytes: &[u8]) {
+        let pending = std::mem::take(&mut self.pending_escape_bytes);
+        if pending.is_empty() {
+            self.scan_semantic_sequences(bytes);
+        } else {
+            let mut combined = pending;
+            combined.extend_from_slice(bytes);
+            self.scan_semantic_sequences(&combined);
+        }
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn scan_semantic_sequences(&mut self, bytes: &[u8]) {
         let mut i = 0;
         let mut absolute_row = self.state.absolute_cursor_row();
         let mut col = self.state.cursor_position().0;
 
         while i < bytes.len() {
+            if bytes[i] == 0x1b && bytes.get(i + 1).is_none() {
+                self.pending_escape_bytes = bytes[i..].to_vec();
+                break;
+            }
             if bytes[i] == 0x1b && bytes.get(i + 1) == Some(&b']') {
                 if let Some((payload_end, terminator_len)) = find_osc_terminator(bytes, i + 2) {
                     let payload = &bytes[i + 2..payload_end];
@@ -379,6 +397,8 @@ impl Terminal {
                     i = payload_end + terminator_len;
                     continue;
                 }
+                self.pending_escape_bytes = bytes[i..].to_vec();
+                break;
             }
             if bytes[i] == 0x1b && bytes.get(i + 1) == Some(&b'_') {
                 if let Some((payload_end, terminator_len)) = find_apc_terminator(bytes, i + 2) {
@@ -394,6 +414,8 @@ impl Terminal {
                     i = payload_end + terminator_len;
                     continue;
                 }
+                self.pending_escape_bytes = bytes[i..].to_vec();
+                break;
             }
             if bytes[i] == 0x1b && bytes.get(i + 1) == Some(&b'P') {
                 if let Some((payload_end, terminator_len)) = find_dcs_terminator(bytes, i + 2) {
@@ -432,6 +454,8 @@ impl Terminal {
                     i = payload_end + terminator_len;
                     continue;
                 }
+                self.pending_escape_bytes = bytes[i..].to_vec();
+                break;
             }
             if bytes[i] == 0x1b && bytes.get(i + 1) == Some(&b'[') {
                 if let Some(csi_end) = find_csi_terminator(bytes, i + 2) {
@@ -461,6 +485,8 @@ impl Terminal {
                     i = csi_end + 1;
                     continue;
                 }
+                self.pending_escape_bytes = bytes[i..].to_vec();
+                break;
             }
 
             if bytes[i] == b'\n' {

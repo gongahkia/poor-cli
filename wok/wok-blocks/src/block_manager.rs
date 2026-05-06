@@ -51,10 +51,11 @@ impl BlockManager {
     pub fn handle_event(&mut self, event: &SemanticEvent) {
         match event {
             SemanticEvent::PromptStart { row } => {
-                self.pending_command_text = None;
+                self.finish_unclosed_command(row.saturating_sub(1));
                 self.state = BlockBuildState::InPrompt { start_row: *row };
             }
-            SemanticEvent::CommandStart { .. } => {
+            SemanticEvent::CommandStart { row } => {
+                self.finish_unclosed_command(row.saturating_sub(1));
                 if !matches!(self.state, BlockBuildState::InOutput { .. }) {
                     self.state = BlockBuildState::InCommand {
                         prompt_text: String::new(),
@@ -71,49 +72,9 @@ impl BlockManager {
                 }
             }
             SemanticEvent::OutputStart { row } => {
-                let prompt_text = if let BlockBuildState::InCommand { prompt_text } = &self.state {
-                    Some(prompt_text.clone())
-                } else if self.pending_command_text.is_some() {
-                    Some(String::new())
-                } else {
-                    None
-                };
-
-                if let Some(prompt_text) = prompt_text {
-                    let id = self.ids.next_id();
-
-                    let block = Block {
-                        id,
-                        prompt_text,
-                        command_text: self.pending_command_text.take().unwrap_or_default(),
-                        output_start_row: *row,
-                        output_end_row: *row,
-                        exit_code: None,
-                        start_time: Instant::now(),
-                        end_time: None,
-                        duration: None,
-                        is_collapsed: false,
-                        scroll_offset: 0,
-                        cwd: self.current_cwd.clone(),
-                        git_branch: repo::detect_branch(&self.current_cwd),
-                        git_dirty: None,
-                        is_bookmarked: false,
-                        trigger_highlights: Vec::new(),
-                    };
-                    let pos = self.blocks.len();
-                    let row_for_mirror = block.output_start_row;
-                    self.blocks.push(block);
-                    self.index.push(id, pos);
-                    self.active_block = Some(id);
-                    self.state = BlockBuildState::InOutput { block_id: id };
-                    // sumtree mirror: record this block's first row as a
-                    // boundary for O(log n) navigation.
-                    self.mirror.push(LineSnapshot {
-                        absolute_row: row_for_mirror,
-                        block_id: Some(id),
-                        visible: true,
-                        is_boundary: true,
-                    });
+                self.finish_active_block(row.saturating_sub(1), None);
+                if let Some(prompt_text) = self.prompt_text_for_pending_block() {
+                    self.start_block(*row, prompt_text);
                 }
             }
             SemanticEvent::CommandEnd { row, exit_code } => {
@@ -126,6 +87,10 @@ impl BlockManager {
                         block.duration = block.end_time.map(|end| end - block.start_time);
                     }
                     self.state = BlockBuildState::WaitingForPrompt;
+                } else if let Some(prompt_text) = self.prompt_text_for_pending_block() {
+                    let output_row = *row;
+                    self.start_block(output_row, prompt_text);
+                    self.finish_active_block(*row, *exit_code);
                 }
             }
             SemanticEvent::CwdChanged(path) => {
@@ -139,6 +104,72 @@ impl BlockManager {
             }
             SemanticEvent::TitleChanged(_) => {}
             SemanticEvent::InlineImage(_) => {}
+        }
+    }
+
+    fn prompt_text_for_pending_block(&self) -> Option<String> {
+        if let BlockBuildState::InCommand { prompt_text } = &self.state {
+            return Some(prompt_text.clone());
+        }
+        self.pending_command_text.as_ref().map(|_| String::new())
+    }
+
+    fn start_block(&mut self, row: usize, prompt_text: String) -> BlockId {
+        let id = self.ids.next_id();
+        let block = Block {
+            id,
+            prompt_text,
+            command_text: self.pending_command_text.take().unwrap_or_default(),
+            output_start_row: row,
+            output_end_row: row,
+            exit_code: None,
+            start_time: Instant::now(),
+            end_time: None,
+            duration: None,
+            is_collapsed: false,
+            scroll_offset: 0,
+            cwd: self.current_cwd.clone(),
+            git_branch: repo::detect_branch(&self.current_cwd),
+            git_dirty: None,
+            is_bookmarked: false,
+            trigger_highlights: Vec::new(),
+        };
+        let pos = self.blocks.len();
+        self.blocks.push(block);
+        self.index.push(id, pos);
+        self.active_block = Some(id);
+        self.state = BlockBuildState::InOutput { block_id: id };
+        self.mirror.push(LineSnapshot {
+            absolute_row: row,
+            block_id: Some(id),
+            visible: true,
+            is_boundary: true,
+        });
+        id
+    }
+
+    fn finish_active_block(&mut self, row: usize, exit_code: Option<i32>) -> bool {
+        let BlockBuildState::InOutput { block_id } = self.state.clone() else {
+            return false;
+        };
+        if let Some(pos) = self.index.position(block_id) {
+            let block = &mut self.blocks[pos];
+            block.output_end_row = row.max(block.output_start_row);
+            block.exit_code = exit_code;
+            block.end_time = Some(Instant::now());
+            block.duration = block.end_time.map(|end| end - block.start_time);
+        }
+        self.state = BlockBuildState::WaitingForPrompt;
+        true
+    }
+
+    fn finish_unclosed_command(&mut self, row: usize) {
+        if self.finish_active_block(row, None) {
+            return;
+        }
+        if self.prompt_text_for_pending_block().is_some() {
+            self.start_block(row, String::new());
+            self.finish_active_block(row, None);
         }
     }
 
@@ -536,6 +567,43 @@ mod tests {
 
         mgr.handle_event(&SemanticEvent::OutputStart { row: 0 });
         assert_eq!(mgr.len(), 0);
+    }
+
+    #[test]
+    fn test_command_end_without_output_start_creates_zero_output_block() {
+        let mut mgr = BlockManager::new();
+        mgr.handle_event(&SemanticEvent::CommandStart { row: 10 });
+        mgr.handle_event(&SemanticEvent::CommandText {
+            row: 10,
+            text: "true".to_string(),
+        });
+        mgr.handle_event(&SemanticEvent::CommandEnd {
+            row: 10,
+            exit_code: Some(0),
+        });
+
+        assert_eq!(mgr.len(), 1);
+        assert_eq!(mgr.blocks[0].command_text, "true");
+        assert_eq!(mgr.blocks[0].output_start_row, 10);
+        assert_eq!(mgr.blocks[0].output_end_row, 10);
+        assert_eq!(mgr.blocks[0].exit_code, Some(0));
+    }
+
+    #[test]
+    fn test_prompt_start_closes_unfinished_output_block() {
+        let mut mgr = BlockManager::new();
+        mgr.handle_event(&SemanticEvent::CommandStart { row: 1 });
+        mgr.handle_event(&SemanticEvent::CommandText {
+            row: 1,
+            text: "sleep 1".to_string(),
+        });
+        mgr.handle_event(&SemanticEvent::OutputStart { row: 2 });
+        mgr.handle_event(&SemanticEvent::PromptStart { row: 5 });
+
+        assert_eq!(mgr.len(), 1);
+        assert_eq!(mgr.blocks[0].command_text, "sleep 1");
+        assert_eq!(mgr.blocks[0].output_end_row, 4);
+        assert_eq!(mgr.blocks[0].exit_code, None);
     }
 
     #[test]
