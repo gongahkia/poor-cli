@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use wok_ui::layout::Rect;
-use wok_ui::splits::{SplitDirection, SplitManager, SplitNode};
+use wok_ui::splits::{SplitDirection, SplitDividerHit, SplitManager, SplitNode};
 
 /// Unique identifier for a pane in the workspace.
 pub type PaneId = u64;
@@ -244,6 +244,25 @@ impl WorkspaceState {
                 .split_manager
                 .resize_split(active_tab.split_manager.focused_leaf, signed_delta);
         }
+    }
+
+    /// Hit-test draggable split dividers in the active tab.
+    pub fn hit_test_split_divider(
+        &self,
+        available: Rect,
+        x: f32,
+        y: f32,
+        tolerance: f32,
+    ) -> Option<SplitDividerHit> {
+        self.active_tab()?
+            .split_manager
+            .hit_test_divider(available, x, y, tolerance)
+    }
+
+    /// Resize a split divider in the active tab by its tree path.
+    pub fn resize_split_divider(&mut self, path: &[u8], delta: f32) -> bool {
+        self.active_tab_mut()
+            .is_some_and(|tab| tab.split_manager.resize_split_at_path(path, delta))
     }
 
     /// Focus the pane nearest to the current one in the requested direction.
@@ -499,6 +518,50 @@ impl WorkspaceState {
         true
     }
 
+    /// Resize a floating pane from any edge or corner.
+    pub fn resize_floating_pane_edges(
+        &mut self,
+        pane_id: PaneId,
+        edges: FloatingResizeEdges,
+        dx: f32,
+        dy: f32,
+        bounds: Rect,
+    ) -> bool {
+        let Some(tab) = self.active_tab_mut() else {
+            return false;
+        };
+        let Some(pane) = tab
+            .floating_panes
+            .iter_mut()
+            .find(|pane| pane.pane_id == pane_id)
+        else {
+            return false;
+        };
+
+        let min_w = 320.0_f32.min(bounds.w.max(1.0));
+        let min_h = 200.0_f32.min(bounds.h.max(1.0));
+        let mut left = pane.rect.x;
+        let mut right = pane.rect.x + pane.rect.w;
+        let mut top = pane.rect.y;
+        let mut bottom = pane.rect.y + pane.rect.h;
+
+        if edges.left {
+            left = (left + dx).clamp(bounds.x, right - min_w);
+        }
+        if edges.right {
+            right = (right + dx).clamp(left + min_w, bounds.x + bounds.w);
+        }
+        if edges.top {
+            top = (top + dy).clamp(bounds.y, bottom - min_h);
+        }
+        if edges.bottom {
+            bottom = (bottom + dy).clamp(top + min_h, bounds.y + bounds.h);
+        }
+
+        pane.rect = Rect::new(left, top, right - left, bottom - top);
+        true
+    }
+
     /// Hit-test panes for a point, prioritizing top-most floating panes.
     pub fn pane_at_point(&self, available: Rect, x: f32, y: f32) -> Option<PaneId> {
         let tab = self.active_tab()?;
@@ -572,6 +635,19 @@ impl Default for WorkspaceState {
     fn default() -> Self {
         Self::new("Wok").0
     }
+}
+
+/// Edges involved in a floating pane resize.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FloatingResizeEdges {
+    /// Left edge.
+    pub left: bool,
+    /// Right edge.
+    pub right: bool,
+    /// Top edge.
+    pub top: bool,
+    /// Bottom edge.
+    pub bottom: bool,
 }
 
 /// Directions for pane focus navigation.

@@ -46,7 +46,9 @@ use wok_app::session::{
     split_node_to_state, FloatingPaneState, PaneState, WorkspaceSessionState, WorkspaceTabState,
 };
 use wok_app::window::WindowConfig;
-use wok_app::workspace::{FloatingPane, FocusDirection, PaneId, WorkspaceState, WorkspaceTab};
+use wok_app::workspace::{
+    FloatingPane, FloatingResizeEdges, FocusDirection, PaneId, WorkspaceState, WorkspaceTab,
+};
 use wok_blocks::block::{Block, OutputLineEvent};
 use wok_blocks::triggers::{
     Trigger, TriggerAction, TriggerEngine, TriggerHighlight, TriggerMatch, TriggerScope,
@@ -78,7 +80,7 @@ use wok_ui::quick_select::{PatternRegistry, QuickSelectScope};
 use wok_ui::replay_overlay::ReplayTimeline;
 use wok_ui::search::SearchLine;
 use wok_ui::selection::{CellPos, SelectionState};
-use wok_ui::splits::SplitManager;
+use wok_ui::splits::{SplitDirection, SplitManager};
 use wok_ui::status_bar::{StatusBarState, StatusSegment};
 use wok_ui::theme::Theme;
 use wok_ui::theme_watcher::ThemeWatcher;
@@ -747,13 +749,22 @@ struct GitStatusBarCacheEntry {
 #[derive(Clone, Copy)]
 enum FloatingDragMode {
     Move,
-    Resize,
+    Resize(FloatingResizeEdges),
 }
 
 #[derive(Clone, Copy)]
 struct FloatingDragState {
     pane_id: PaneId,
     mode: FloatingDragMode,
+    last_x: f64,
+    last_y: f64,
+}
+
+#[derive(Clone)]
+struct SplitDividerDragState {
+    path: Vec<u8>,
+    direction: SplitDirection,
+    split_rect: Rect,
     last_x: f64,
     last_y: f64,
 }
@@ -1111,6 +1122,7 @@ struct WokHandler {
     system_metrics: SystemMetricsSampler,
     theme_overrides: HashMap<String, String>,
     floating_drag: Option<FloatingDragState>,
+    split_drag: Option<SplitDividerDragState>,
     pressed_mouse_button: Option<MouseButton>,
     recent_keys: VecDeque<RecentKeyEntry>,
     metrics: RuntimeMetrics,
@@ -1233,6 +1245,7 @@ impl WokHandler {
             system_metrics: SystemMetricsSampler::new(Duration::from_secs(2)),
             theme_overrides: HashMap::new(),
             floating_drag: None,
+            split_drag: None,
             pressed_mouse_button: None,
             recent_keys: VecDeque::new(),
             metrics: RuntimeMetrics::default(),
@@ -9301,6 +9314,113 @@ impl WokHandler {
     fn close_tab_at_index(&mut self, tab_index: usize) {
         self.switch_to_tab_index(tab_index);
         self.handle_action(Action::CloseTab);
+    }
+
+    fn start_split_divider_drag_at(&mut self, x: f64, y: f64) -> bool {
+        if !point_in_rect(self.chrome_rects.content, x, y) {
+            return false;
+        }
+        let topmost_pane = self
+            .workspace
+            .pane_at_point(self.chrome_rects.content, x as f32, y as f32);
+        if topmost_pane.is_some_and(|pane_id| self.workspace.is_active_floating_pane(pane_id)) {
+            return false;
+        }
+
+        let tolerance = self.config.focused_pane_border_width.max(8.0);
+        let Some(hit) =
+            self.workspace
+                .hit_test_split_divider(self.chrome_rects.content, x as f32, y as f32, tolerance)
+        else {
+            return false;
+        };
+
+        self.split_drag = Some(SplitDividerDragState {
+            path: hit.path,
+            direction: hit.direction,
+            split_rect: hit.split_rect,
+            last_x: x,
+            last_y: y,
+        });
+        self.needs_redraw = true;
+        true
+    }
+
+    fn start_floating_drag_at(&mut self, x: f64, y: f64) -> bool {
+        let Some(pane_id) = self.active_pane_id() else {
+            return false;
+        };
+        let Some(mode) = self.floating_drag_mode_at(pane_id, x, y) else {
+            return false;
+        };
+        self.floating_drag = Some(FloatingDragState {
+            pane_id,
+            mode,
+            last_x: x,
+            last_y: y,
+        });
+        self.needs_redraw = true;
+        true
+    }
+
+    fn floating_drag_mode_at(
+        &self,
+        pane_id: PaneId,
+        x: f64,
+        y: f64,
+    ) -> Option<FloatingDragMode> {
+        let floating = self.workspace.active_floating_pane(pane_id)?;
+        let rect = floating.rect;
+        if !point_in_rect(rect, x, y) {
+            return None;
+        }
+
+        let tolerance = self.config.focused_pane_border_width.max(8.0);
+        let xf = x as f32;
+        let yf = y as f32;
+        let edges = FloatingResizeEdges {
+            left: xf <= rect.x + tolerance,
+            right: xf >= rect.x + rect.w - tolerance,
+            top: yf <= rect.y + tolerance,
+            bottom: yf >= rect.y + rect.h - tolerance,
+        };
+        if edges.left || edges.right || edges.top || edges.bottom {
+            return Some(FloatingDragMode::Resize(edges));
+        }
+
+        let title_height = self.config.floating_pane_title_height.max(18.0);
+        if yf <= rect.y + title_height {
+            return Some(FloatingDragMode::Move);
+        }
+        None
+    }
+
+    fn update_split_divider_drag(&mut self, x: f64, y: f64) -> bool {
+        let Some(drag) = self.split_drag.as_mut() else {
+            return false;
+        };
+        let delta = match drag.direction {
+            SplitDirection::Horizontal => {
+                let width = drag.split_rect.w.max(1.0);
+                ((x - drag.last_x) as f32) / width
+            }
+            SplitDirection::Vertical => {
+                let height = drag.split_rect.h.max(1.0);
+                ((y - drag.last_y) as f32) / height
+            }
+        };
+        drag.last_x = x;
+        drag.last_y = y;
+        if delta.abs() <= f32::EPSILON {
+            return true;
+        }
+        if self.workspace.resize_split_divider(&drag.path, delta) {
+            if let Some(window) = &self.window {
+                self.sync_workspace_layout(window.inner_size());
+            }
+            self.needs_redraw = true;
+        }
+        true
     }
 }
 

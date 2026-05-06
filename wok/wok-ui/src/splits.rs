@@ -42,6 +42,19 @@ pub struct SplitManager {
     pub focused_leaf: u64,
 }
 
+/// A split divider hit-test result.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SplitDividerHit {
+    /// Path to the split node in the split tree. 0 = first child, 1 = second child.
+    pub path: Vec<u8>,
+    /// Direction of the split whose divider was hit.
+    pub direction: SplitDirection,
+    /// Rectangle covered by the draggable divider affordance.
+    pub rect: Rect,
+    /// Rectangle covered by the split node.
+    pub split_rect: Rect,
+}
+
 impl SplitManager {
     /// Create a new split manager with a single pane.
     pub fn new(tab_id: u64) -> Self {
@@ -77,6 +90,22 @@ impl SplitManager {
         let mut rects = HashMap::new();
         compute_rects_recursive(&self.root, available, &mut rects);
         rects
+    }
+
+    /// Hit-test split dividers, preferring the deepest matching divider.
+    pub fn hit_test_divider(
+        &self,
+        available: Rect,
+        x: f32,
+        y: f32,
+        tolerance: f32,
+    ) -> Option<SplitDividerHit> {
+        hit_test_divider_recursive(&self.root, available, x, y, tolerance.max(1.0), &[])
+    }
+
+    /// Resize a split node by a direct tree path.
+    pub fn resize_split_at_path(&mut self, path: &[u8], delta: f32) -> bool {
+        resize_split_at_path(&mut self.root, path, delta)
     }
 }
 
@@ -198,6 +227,99 @@ fn compute_rects_recursive(node: &SplitNode, available: Rect, rects: &mut HashMa
     }
 }
 
+fn hit_test_divider_recursive(
+    node: &SplitNode,
+    available: Rect,
+    x: f32,
+    y: f32,
+    tolerance: f32,
+    path: &[u8],
+) -> Option<SplitDividerHit> {
+    let SplitNode::Split {
+        direction,
+        ratio,
+        first,
+        second,
+    } = node
+    else {
+        return None;
+    };
+
+    let (r1, r2) = split_child_rects(available, *direction, *ratio);
+    let mut first_path = path.to_vec();
+    first_path.push(0);
+    if let Some(hit) = hit_test_divider_recursive(first, r1, x, y, tolerance, &first_path) {
+        return Some(hit);
+    }
+    let mut second_path = path.to_vec();
+    second_path.push(1);
+    if let Some(hit) = hit_test_divider_recursive(second, r2, x, y, tolerance, &second_path) {
+        return Some(hit);
+    }
+
+    let half = tolerance * 0.5;
+    let rect = match direction {
+        SplitDirection::Horizontal => {
+            let divider_x = r1.x + r1.w;
+            Rect::new(divider_x - half, available.y, tolerance, available.h)
+        }
+        SplitDirection::Vertical => {
+            let divider_y = r1.y + r1.h;
+            Rect::new(available.x, divider_y - half, available.w, tolerance)
+        }
+    };
+    contains_point(rect, x, y).then(|| SplitDividerHit {
+        path: path.to_vec(),
+        direction: *direction,
+        rect,
+        split_rect: available,
+    })
+}
+
+fn resize_split_at_path(node: &mut SplitNode, path: &[u8], delta: f32) -> bool {
+    if path.is_empty() {
+        if let SplitNode::Split { ratio, .. } = node {
+            *ratio = (*ratio + delta).clamp(0.1, 0.9);
+            return true;
+        }
+        return false;
+    }
+
+    let SplitNode::Split { first, second, .. } = node else {
+        return false;
+    };
+    match path[0] {
+        0 => resize_split_at_path(first, &path[1..], delta),
+        1 => resize_split_at_path(second, &path[1..], delta),
+        _ => false,
+    }
+}
+
+fn split_child_rects(
+    available: Rect,
+    direction: SplitDirection,
+    ratio: f32,
+) -> (Rect, Rect) {
+    match direction {
+        SplitDirection::Vertical => {
+            let h1 = available.h * ratio;
+            let h2 = available.h - h1;
+            (
+                Rect::new(available.x, available.y, available.w, h1),
+                Rect::new(available.x, available.y + h1, available.w, h2),
+            )
+        }
+        SplitDirection::Horizontal => {
+            let w1 = available.w * ratio;
+            let w2 = available.w - w1;
+            (
+                Rect::new(available.x, available.y, w1, available.h),
+                Rect::new(available.x + w1, available.y, w2, available.h),
+            )
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,6 +360,38 @@ mod tests {
         sm.split_active(SplitDirection::Vertical, 3);
         let rects = sm.compute_rects(Rect::new(0.0, 0.0, 800.0, 600.0));
         assert_eq!(rects.len(), 3);
+    }
+
+    #[test]
+    fn test_hit_test_and_resize_root_divider() {
+        let mut sm = SplitManager::new(1);
+        sm.split_active(SplitDirection::Horizontal, 2);
+        let bounds = Rect::new(0.0, 0.0, 800.0, 600.0);
+        let hit = sm
+            .hit_test_divider(bounds, 400.0, 120.0, 8.0)
+            .expect("divider should hit");
+
+        assert_eq!(hit.path, Vec::<u8>::new());
+        assert_eq!(hit.direction, SplitDirection::Horizontal);
+        assert!(sm.resize_split_at_path(&hit.path, 0.1));
+
+        let rects = sm.compute_rects(bounds);
+        assert!((rects[&1].w - 480.0).abs() < f32::EPSILON);
+        assert!((rects[&2].w - 320.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_hit_test_prefers_nested_divider() {
+        let mut sm = SplitManager::new(1);
+        sm.split_active(SplitDirection::Horizontal, 2);
+        sm.split_active(SplitDirection::Vertical, 3);
+        let bounds = Rect::new(0.0, 0.0, 800.0, 600.0);
+        let hit = sm
+            .hit_test_divider(bounds, 600.0, 300.0, 8.0)
+            .expect("nested divider should hit");
+
+        assert_eq!(hit.path, vec![1]);
+        assert_eq!(hit.direction, SplitDirection::Vertical);
     }
 
     #[test]
