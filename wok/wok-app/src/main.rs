@@ -12985,12 +12985,11 @@ fn shell_quote_path(path: &str) -> String {
 }
 
 fn relative_path_for_display(path: &Path, cwd: &Path) -> String {
-    path.strip_prefix(cwd)
-        .ok()
-        .filter(|relative| !relative.as_os_str().is_empty())
-        .unwrap_or(path)
-        .display()
-        .to_string()
+    match path.strip_prefix(cwd) {
+        Ok(relative) if relative.as_os_str().is_empty() => ".".to_string(),
+        Ok(relative) => relative.display().to_string(),
+        Err(_) => path.display().to_string(),
+    }
 }
 
 fn selection_is_multiline_command(text: &str) -> bool {
@@ -14269,6 +14268,10 @@ mod tests {
                 std::path::Path::new("/repo")
             ),
             "/other/src/main.rs"
+        );
+        assert_eq!(
+            relative_path_for_display(std::path::Path::new("/repo"), std::path::Path::new("/repo")),
+            "."
         );
     }
 
