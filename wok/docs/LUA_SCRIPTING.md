@@ -253,7 +253,7 @@ workspace: { active_tab_index, active_pane_id, tab_count, pane_count }
 pane: { pane_id, title, shell, cwd, cols, rows, follow_output, display_offset,
         search_query, selected_block_id, blocks }
 session: { restore_enabled, autosave_path, window_size, window_position }
-theme: { name, font_family, font_size, background_image }
+theme: { name, font_family, chrome_font_family, font_size, background_image }
 ```
 
 `pane.blocks` and `app.history` carry the last 100 blocks and last 200 history entries respectively.

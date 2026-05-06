@@ -6,6 +6,7 @@ vi_cursor_color = "#f9e2af"
 selection = "#585b7080"
 opacity = 1.0
 font_family = "JetBrains Mono"
+chrome_font_family = "IBM Plex Mono"
 font_size = 24.0
 tab_bar_bg = "#181825"
 tab_active_bg = "#313244"

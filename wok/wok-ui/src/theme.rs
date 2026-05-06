@@ -114,6 +114,8 @@ pub struct Theme {
     pub syntax: SyntaxColors,
     /// Font family name.
     pub font_family: String,
+    /// Font family for chrome labels and controls.
+    pub chrome_font_family: String,
     /// Font size in points.
     pub font_size: f32,
     /// Window opacity (0.0 = fully transparent, 1.0 = fully opaque).
@@ -167,6 +169,7 @@ impl Default for Theme {
             bracket_match: Color::new(0.486, 0.969, 0.757, 0.33), // #7cf7c155
             syntax: SyntaxColors::default(),
             font_family: "JetBrains Mono".to_string(),
+            chrome_font_family: "IBM Plex Mono".to_string(),
             font_size: 24.0,
             opacity: 1.0,
             background_image: None,

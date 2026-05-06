@@ -43,6 +43,8 @@ pub struct FontSystem {
     pub font_size: f32,
     /// Requested font family.
     pub font_family: FamilyOwned,
+    /// Stable atlas namespace for this font family.
+    font_id: u32,
     /// Cached rasterized glyphs.
     glyph_cache: HashMap<char, Option<RasterizedGlyph>>,
 }
@@ -53,6 +55,7 @@ impl FontSystem {
         let mut inner = CosmicFontSystem::new();
         let swash_cache = SwashCache::new();
         let family = parse_family(font_family);
+        let font_id = font_id_for_family(&family);
         let metrics = compute_metrics(&mut inner, font_size, &family);
 
         Self {
@@ -61,6 +64,7 @@ impl FontSystem {
             metrics,
             font_size,
             font_family: family,
+            font_id,
             glyph_cache: HashMap::new(),
         }
     }
@@ -77,6 +81,11 @@ impl FontSystem {
         let cols = (width / self.metrics.cell_width).floor() as u16;
         let rows = (height / self.metrics.cell_height).floor() as u16;
         (cols.max(2), rows.max(1))
+    }
+
+    /// Return the glyph atlas namespace for this font family.
+    pub fn font_id(&self) -> u32 {
+        self.font_id
     }
 
     /// Rasterize a single character glyph.
@@ -197,6 +206,15 @@ fn parse_family(font_family: &str) -> FamilyOwned {
     }
 }
 
+fn font_id_for_family(font_family: &FamilyOwned) -> u32 {
+    let mut hash = 0x811c_9dc5_u32;
+    for byte in format!("{font_family:?}").bytes() {
+        hash ^= u32::from(byte);
+        hash = hash.wrapping_mul(0x0100_0193);
+    }
+    hash.max(1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -223,6 +241,13 @@ mod tests {
             font.font_family,
             FamilyOwned::Name("JetBrains Mono".to_string())
         );
+    }
+
+    #[test]
+    fn test_different_font_families_get_different_atlas_namespaces() {
+        let body = FontSystem::new("JetBrains Mono", 14.0);
+        let chrome = FontSystem::new("IBM Plex Mono", 14.0);
+        assert_ne!(body.font_id(), chrome.font_id());
     }
 
     #[test]

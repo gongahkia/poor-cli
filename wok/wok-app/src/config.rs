@@ -263,6 +263,8 @@ pub struct WokConfig {
     pub theme_path: Option<PathBuf>,
     /// Font family name.
     pub font_family: String,
+    /// Font family for chrome labels and controls.
+    pub chrome_font_family: String,
     /// Font size in points.
     pub font_size: f32,
     /// Input editor position.
@@ -362,6 +364,7 @@ struct ConfigToml {
     shell: Option<String>,
     theme_path: Option<String>,
     font_family: Option<String>,
+    chrome_font_family: Option<String>,
     font_size: Option<f32>,
     input_position: Option<String>,
     command_entry_mode: Option<String>,
@@ -456,6 +459,7 @@ impl Default for WokConfig {
             shell: wok_terminal::shell::detect_default_shell(),
             theme_path: None,
             font_family: default_font_family().to_string(),
+            chrome_font_family: default_chrome_font_family().to_string(),
             font_size: 24.0,
             input_position: InputPosition::Bottom,
             command_entry_mode: CommandEntryMode::ShellNative,
@@ -518,6 +522,10 @@ fn default_font_family() -> &'static str {
     }
 }
 
+fn default_chrome_font_family() -> &'static str {
+    "IBM Plex Mono"
+}
+
 impl WokConfig {
     /// Load configuration from the standard search paths.
     ///
@@ -541,6 +549,9 @@ impl WokConfig {
         }
         if let Some(f) = toml_config.font_family {
             config.font_family = f;
+        }
+        if let Some(f) = toml_config.chrome_font_family {
+            config.chrome_font_family = f;
         }
         if let Some(s) = toml_config.font_size {
             config.font_size = s;
@@ -1068,6 +1079,7 @@ impl wok_settings::Settings for WokConfig {
                 field!("shell", "ShellType"),
                 field!("theme_path", "Option<PathBuf>"),
                 field!("font_family", "String"),
+                field!("chrome_font_family", "String"),
                 field!("font_size", "f32"),
                 field!("input_position", "InputPosition"),
                 field!("command_entry_mode", "CommandEntryMode"),
@@ -1143,6 +1155,7 @@ mod tests {
     fn test_default_config() {
         let config = WokConfig::default();
         assert!((config.font_size - 24.0).abs() < f32::EPSILON);
+        assert_eq!(config.chrome_font_family, default_chrome_font_family());
         assert_eq!(config.scrollback_lines, 10_000);
         assert_eq!(config.cursor_style, CursorStyle::Block);
         assert_eq!(config.input_position, InputPosition::Bottom);
@@ -1250,6 +1263,28 @@ action = "new_floating_pane"
     fn test_command_entry_mode_defaults_to_shell_native() {
         let config = WokConfig::default();
         assert_eq!(config.command_entry_mode, CommandEntryMode::ShellNative);
+    }
+
+    #[test]
+    fn test_load_chrome_font_family() {
+        let path = std::env::temp_dir().join(format!(
+            "wok-config-chrome-font-{}.toml",
+            std::process::id()
+        ));
+        std::fs::write(
+            &path,
+            r#"
+font_family = "JetBrains Mono"
+chrome_font_family = "IBM Plex Mono"
+"#,
+        )
+        .expect("config should be written");
+
+        let config = WokConfig::load_from(&path).expect("config should load");
+        assert_eq!(config.font_family, "JetBrains Mono");
+        assert_eq!(config.chrome_font_family, "IBM Plex Mono");
+
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

@@ -3767,7 +3767,7 @@ pub(crate) fn push_glyph_impl(
     }
 
     let glyph_key = wok_renderer::atlas::GlyphKey {
-        font_id: 0,
+        font_id: font.font_id(),
         glyph_id: character as u32,
         font_size_tenths: (font.font_size * 10.0) as u32,
     };
@@ -3813,7 +3813,7 @@ fn prewarm_glyph(
     }
 
     let glyph_key = wok_renderer::atlas::GlyphKey {
-        font_id: 0,
+        font_id: font.font_id(),
         glyph_id: character as u32,
         font_size_tenths: (font.font_size * 10.0) as u32,
     };

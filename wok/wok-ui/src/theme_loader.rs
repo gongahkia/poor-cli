@@ -35,6 +35,7 @@ struct ThemeToml {
     selection: Option<String>,
     opacity: Option<f32>,
     font_family: Option<String>,
+    chrome_font_family: Option<String>,
     font_size: Option<f32>,
     background_image: Option<String>,
     ansi: Option<AnsiToml>,
@@ -169,6 +170,9 @@ pub fn load_theme(path: &Path) -> Result<Theme, ThemeError> {
     if let Some(f) = toml_theme.font_family {
         theme.font_family = f;
     }
+    if let Some(f) = toml_theme.chrome_font_family {
+        theme.chrome_font_family = f;
+    }
     if let Some(s) = toml_theme.font_size {
         theme.font_size = s;
     }
@@ -296,6 +300,7 @@ pub fn apply_theme_overrides<S: std::hash::BuildHasher>(
                     .map_err(|_| ThemeError::InvalidColor(format!("{key}={value}")))?;
             }
             "font_family" => theme.font_family.clone_from(value),
+            "chrome_font_family" => theme.chrome_font_family.clone_from(value),
             "font_size" => {
                 theme.font_size = value
                     .parse::<f32>()
@@ -380,12 +385,17 @@ mod tests {
         let overrides = HashMap::from([
             ("background".to_string(), "#010203".to_string()),
             ("font_family".to_string(), "Iosevka".to_string()),
+            (
+                "chrome_font_family".to_string(),
+                "IBM Plex Mono".to_string(),
+            ),
             ("font_size".to_string(), "16".to_string()),
         ]);
 
         apply_theme_overrides(&mut theme, &overrides).unwrap();
 
         assert_eq!(theme.font_family, "Iosevka");
+        assert_eq!(theme.chrome_font_family, "IBM Plex Mono");
         assert!((theme.font_size - 16.0).abs() < f32::EPSILON);
         assert!((theme.background.r - (1.0 / 255.0)).abs() < 0.01);
     }
@@ -398,6 +408,7 @@ mod tests {
             &path,
             r##"
 name = "Full Chrome"
+chrome_font_family = "IBM Plex Mono"
 tab_text = "#112233"
 status_bar_text = "#223344"
 input_text = "#334455"
@@ -413,6 +424,7 @@ bracket_match = "#99aabb80"
 
         let theme = load_theme(&path).expect("theme should load");
         assert_eq!(theme.name, "Full Chrome");
+        assert_eq!(theme.chrome_font_family, "IBM Plex Mono");
         assert!((theme.tab_text.r - (0x11 as f32 / 255.0)).abs() < 0.01);
         assert!((theme.status_bar_text.r - (0x22 as f32 / 255.0)).abs() < 0.01);
         assert!((theme.input_text.r - (0x33 as f32 / 255.0)).abs() < 0.01);

@@ -13,6 +13,7 @@ const CONFIG_TEMPLATE: &str = r#"# Wok configuration
 # See docs/CONFIGURATION.md for all options.
 shell = "zsh"
 font_family = "JetBrains Mono"
+chrome_font_family = "IBM Plex Mono"
 font_size = 24.0
 scrollback_lines = 10000
 input_position = "bottom"
@@ -142,6 +143,8 @@ const BASH_SCRIPT: &str = include_str!("../../shell-integration/bash.sh");
 const ZSH_SCRIPT: &str = include_str!("../../shell-integration/zsh.zsh");
 const FISH_SCRIPT: &str = include_str!("../../shell-integration/fish.fish");
 const THEME_GRAPH_BOX_DARK: &str = include_str!("../../themes/graph-box-dark.toml");
+const THEME_GRAPH_BOX_DAY: &str = include_str!("../../themes/graph-box-day.toml");
+const THEME_GRAPH_BOX_NEON: &str = include_str!("../../themes/graph-box-neon.toml");
 const THEME_TOKYO_NIGHT: &str = include_str!("../../themes/tokyo-night.toml");
 const THEME_CATPPUCCIN: &str = include_str!("../../themes/catppuccin.toml");
 const THEME_NORD: &str = include_str!("../../themes/nord.toml");
@@ -1211,6 +1214,8 @@ fn init_at(config_dir: &Path, overwrite: bool) -> io::Result<InitStats> {
     )?;
     for (name, content) in [
         ("graph-box-dark.toml", THEME_GRAPH_BOX_DARK),
+        ("graph-box-day.toml", THEME_GRAPH_BOX_DAY),
+        ("graph-box-neon.toml", THEME_GRAPH_BOX_NEON),
         ("tokyo-night.toml", THEME_TOKYO_NIGHT),
         ("catppuccin.toml", THEME_CATPPUCCIN),
         ("nord.toml", THEME_NORD),
@@ -1374,6 +1379,8 @@ mod tests {
         assert!(dir.join("shell").join("zsh.zsh").exists());
         assert!(dir.join("shell").join("fish.fish").exists());
         assert!(dir.join("themes").join("graph-box-dark.toml").exists());
+        assert!(dir.join("themes").join("graph-box-day.toml").exists());
+        assert!(dir.join("themes").join("graph-box-neon.toml").exists());
         assert!(dir.join("themes").join("catppuccin.toml").exists());
         assert!(dir.join("themes").join("paper-light.toml").exists());
         assert!(!stats.created.is_empty());

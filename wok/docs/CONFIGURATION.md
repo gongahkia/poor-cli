@@ -21,6 +21,7 @@ remove sessions, themes, shell integration, workflows, or `init.lua`.
 ```toml
 shell = "zsh"
 font_family = "JetBrains Mono"
+chrome_font_family = "IBM Plex Mono"
 font_size = 24.0
 input_position = "bottom"
 command_entry_mode = "shell_native"
@@ -84,6 +85,7 @@ action = "split_vertical"
 | --- | --- | --- | --- | --- |
 | `shell` | string | auto-detected | Active | Shell to use: `bash`, `zsh`, `fish`, `powershell`, or `wsl:<distro>` |
 | `font_family` | string | `"Menlo"` on macOS, `"JetBrains Mono"` elsewhere | Active | Selects the font family used for glyph rasterization and cell metric measurement |
+| `chrome_font_family` | string | `"IBM Plex Mono"` | Active | Selects the separate mono family used for tab, status, palette, and other chrome labels |
 | `font_size` | float | `24.0` | Active | Font size in points |
 | `input_position` | string | `"bottom"` | Active | Places the owned input bar above or below the viewport |
 | `command_entry_mode` | string | `"shell_native"` | Active | Chooses prompt-time command entry routing: `shell_native` keeps shell-side editing, `owned_primary` routes idle prompt input into Wok's editor with pane-first history recall and `Ctrl+R` command search |
@@ -134,6 +136,8 @@ action = "split_vertical"
 The compiled default is `Graph Box Dark`. Running `wok init` also writes these editable theme files to `~/.config/wok/themes/`:
 
 - `graph-box-dark.toml`
+- `graph-box-day.toml`
+- `graph-box-neon.toml`
 - `tokyo-night.toml`
 - `catppuccin.toml`
 - `nord.toml`

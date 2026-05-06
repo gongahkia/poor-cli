@@ -1133,6 +1133,7 @@ struct WokHandler {
     background: BackgroundRenderer,
     media_preview: Option<MediaPreview>,
     font: FontSystem,
+    chrome_font: FontSystem,
     render: Option<RenderState>,
     runtime_waker: Option<RuntimeWaker>,
     window: Option<Arc<Window>>,
@@ -1158,6 +1159,7 @@ struct WokHandler {
 impl WokHandler {
     fn new(config: WokConfig) -> Self {
         let font = FontSystem::new(&config.font_family, config.font_size);
+        let chrome_font = FontSystem::new(&config.chrome_font_family, config.font_size);
         let (workspace, _) = WorkspaceState::new("Wok");
         let plugins = PluginHost::new(
             &WokConfig::config_dir(),
@@ -1257,6 +1259,7 @@ impl WokHandler {
             background,
             media_preview: None,
             font,
+            chrome_font,
             render: None,
             runtime_waker: None,
             window: None,
@@ -2647,7 +2650,7 @@ impl WokHandler {
         if self.config.tab_bar_visible {
             render_tab_bar(
                 render,
-                &mut self.font,
+                &mut self.chrome_font,
                 self.chrome_rects.tab_bar,
                 &tab_labels,
                 self.tab_scroll_offset,
@@ -2660,7 +2663,7 @@ impl WokHandler {
         if self.config.status_bar_visible {
             render_status_bar(
                 render,
-                &mut self.font,
+                &mut self.chrome_font,
                 self.chrome_rects.status,
                 status_segments.as_ref(),
                 window_opacity,
@@ -2669,7 +2672,7 @@ impl WokHandler {
         if let Some(lines) = debug_overlay_lines.as_ref() {
             render_debug_overlay(
                 render,
-                &mut self.font,
+                &mut self.chrome_font,
                 self.chrome_rects.content,
                 lines,
                 window_opacity,
@@ -2679,7 +2682,7 @@ impl WokHandler {
         if let Some((theme, input, palette)) = command_palette_overlay.as_ref() {
             render_command_palette(
                 render,
-                &mut self.font,
+                &mut self.chrome_font,
                 theme,
                 self.chrome_rects.content,
                 input,
@@ -2692,7 +2695,7 @@ impl WokHandler {
         if let Some((theme, path, input)) = settings_editor_overlay.as_ref() {
             render_settings_editor(
                 render,
-                &mut self.font,
+                &mut self.chrome_font,
                 theme,
                 self.chrome_rects.content,
                 "Settings",
@@ -2737,7 +2740,7 @@ impl WokHandler {
         if let Some((theme, menu)) = context_menu_overlay.as_ref() {
             render_context_menu(
                 render,
-                &mut self.font,
+                &mut self.chrome_font,
                 theme,
                 self.chrome_rects.content,
                 menu,
@@ -2747,7 +2750,7 @@ impl WokHandler {
         if let Some((theme, labels, position, opacity)) = recent_keys_overlay.as_ref() {
             render_recent_keys_overlay(
                 render,
-                &mut self.font,
+                &mut self.chrome_font,
                 theme,
                 self.chrome_rects.content,
                 labels,
@@ -3402,6 +3405,7 @@ impl WokHandler {
         json!({
             "shell": self.config.shell.to_string(),
             "font_family": self.config.font_family.clone(),
+            "chrome_font_family": self.config.chrome_font_family.clone(),
             "font_size": self.font.font_size,
             "scrollback_lines": self.config.scrollback_lines,
             "input_position": match self.config.input_position {
@@ -3528,6 +3532,7 @@ impl WokHandler {
             "theme": {
                 "name": pane.map(|pane| pane.app.theme.name.clone()),
                 "font_family": pane.map(|pane| pane.app.theme.font_family.clone()),
+                "chrome_font_family": pane.map(|pane| pane.app.theme.chrome_font_family.clone()),
                 "font_size": pane.map(|pane| pane.app.theme.font_size),
                 "background_image": pane
                     .and_then(|pane| pane.app.theme.background_image.as_ref().map(|path| path.display().to_string())),
@@ -3868,8 +3873,10 @@ impl WokHandler {
 
     fn apply_theme_to_runtime(&mut self, theme: Theme) {
         self.config.font_family = theme.font_family.clone();
+        self.config.chrome_font_family = theme.chrome_font_family.clone();
         self.config.font_size = theme.font_size;
         self.font = FontSystem::new(&theme.font_family, theme.font_size);
+        self.chrome_font = FontSystem::new(&theme.chrome_font_family, theme.font_size);
         if let Some(render) = self.render.as_mut() {
             render.atlas.clear();
         }
@@ -3877,6 +3884,7 @@ impl WokHandler {
         for pane in self.panes.values_mut() {
             pane.app.theme = theme.clone();
             pane.app.config.font_family = theme.font_family.clone();
+            pane.app.config.chrome_font_family = theme.chrome_font_family.clone();
             pane.app.config.font_size = theme.font_size;
             pane.app.config.theme_path = self.config.theme_path.clone();
             pane.app.zoom = wok_ui::zoom::ZoomManager::new(theme.font_size);
@@ -3892,6 +3900,7 @@ impl WokHandler {
     fn prewarm_glyph_atlas(&mut self) {
         if let Some(render) = self.render.as_mut() {
             let _ = prewarm_common_glyphs(render, &mut self.font);
+            let _ = prewarm_common_glyphs(render, &mut self.chrome_font);
         }
     }
 
@@ -5850,6 +5859,7 @@ impl WokHandler {
             self.apply_theme_to_runtime(theme);
         } else {
             self.font = FontSystem::new(&config.font_family, config.font_size);
+            self.chrome_font = FontSystem::new(&config.chrome_font_family, config.font_size);
             if let Some(render) = self.render.as_mut() {
                 render.atlas.clear();
             }
@@ -7886,6 +7896,7 @@ impl WokHandler {
                 .unwrap_or_else(|| "none".to_string()),
         );
         m.insert("font_family", c.font_family.clone());
+        m.insert("chrome_font_family", c.chrome_font_family.clone());
         m.insert("font_size", format!("{}", c.font_size));
         m.insert("input_position", format!("{:?}", c.input_position));
         m.insert("command_entry_mode", format!("{:?}", c.command_entry_mode));
