@@ -1703,7 +1703,7 @@ impl WokHandler {
     }
 
     fn tab_close_at_point(&self, x: f64, y: f64) -> Option<usize> {
-        if !self.config.tab_bar_visible || self.workspace.tabs.len() <= 1 {
+        if !self.config.tab_bar_visible || self.workspace.tabs.is_empty() {
             return None;
         }
         let rect = self.chrome_rects.tab_bar;
@@ -5375,6 +5375,10 @@ impl WokHandler {
     }
 
     fn open_settings(&mut self) {
+        self.open_settings_at_field(None);
+    }
+
+    fn open_settings_at_field(&mut self, field_name: Option<&str>) {
         match ensure_settings_file() {
             Ok(path) => match std::fs::read_to_string(&path) {
                 Ok(content) => {
@@ -5383,15 +5387,31 @@ impl WokHandler {
                         wok_input::editor::InputPosition::Bottom,
                     );
                     editor.buffer.set_text(&content);
+                    if let Some(field_name) = field_name {
+                        if let Some(position) = settings_field_cursor_position(&content, field_name)
+                        {
+                            if let Some(cursor) = editor.buffer.cursors_mut().first_mut() {
+                                cursor.position = position;
+                                cursor.anchor = None;
+                            }
+                        }
+                    }
                     editor.is_active = true;
                     self.settings_editor = Some(SettingsEditorState {
                         path: path.clone(),
                         editor,
                     });
-                    self.status_message = Some(format!(
-                        "Settings buffer opened: {} (save with Mod+S, close with Esc)",
-                        path.display()
-                    ));
+                    self.status_message = Some(if let Some(field_name) = field_name {
+                        format!(
+                            "Settings field '{field_name}' opened: {} (save with Mod+S, close with Esc)",
+                            path.display()
+                        )
+                    } else {
+                        format!(
+                            "Settings buffer opened: {} (save with Mod+S, close with Esc)",
+                            path.display()
+                        )
+                    });
                 }
                 Err(error) => {
                     warn!("failed to read settings '{}': {error}", path.display());
@@ -6971,6 +6991,13 @@ impl WokHandler {
                             }
                             self.reset_user_keybinding(&action_id);
                         }
+                        PaletteAction::OpenSettingsField(field_name) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
+                            self.open_settings_at_field(Some(&field_name));
+                        }
                         PaletteAction::ApplyTheme(path) => {
                             if let Some(active_pane) = self.active_pane_mut() {
                                 active_pane.app.close_command_palette();
@@ -7595,7 +7622,7 @@ impl WokHandler {
                 description: format!("{}  →  open settings", field.type_name),
                 category: PaletteCategory::SettingsField,
                 score: 0.0,
-                action: PaletteAction::BuiltInAction("open_settings".to_string()),
+                action: PaletteAction::OpenSettingsField(field.name.to_string()),
             });
         }
         if entries.is_empty() {
@@ -7603,7 +7630,7 @@ impl WokHandler {
             return;
         }
         if let Some(active_pane) = self.panes.get_mut(&pane_id) {
-            active_pane.app.input_mode = InputMode::CommandPalette;
+            active_pane.app.open_command_palette();
             active_pane.app.command_palette.open(entries);
         }
         self.needs_redraw = true;
@@ -9363,6 +9390,9 @@ impl WokHandler {
             PaletteAction::CopyPath(path) => self.copy_path_to_clipboard(&PathBuf::from(path)),
             PaletteAction::RevealPath(path) => self.reveal_path_in_finder(&PathBuf::from(path)),
             PaletteAction::TailPath(path) => self.tail_path_in_split(&PathBuf::from(path)),
+            PaletteAction::OpenSettingsField(field_name) => {
+                self.open_settings_at_field(Some(&field_name));
+            }
             PaletteAction::Dismiss => {}
             other => {
                 self.status_message = Some(format!("Unsupported context action: {other:?}"));
@@ -9827,6 +9857,26 @@ impl WokHandler {
             self.needs_redraw = true;
         }
         true
+    }
+
+    fn floating_pane_in_tab_bar_dock_zone(&self, pane_id: PaneId, x: f64, y: f64) -> bool {
+        if !self.config.tab_bar_visible
+            || self.chrome_rects.tab_bar.w <= 0.0
+            || self.chrome_rects.tab_bar.h <= 0.0
+        {
+            return false;
+        }
+        if point_in_rect(self.chrome_rects.tab_bar, x, y) {
+            return true;
+        }
+        self.workspace
+            .active_floating_pane(pane_id)
+            .is_some_and(|floating| {
+                rects_intersect(
+                    floating.rect,
+                    expanded_rect(self.chrome_rects.tab_bar, FLOATING_DOCK_ZONE_PX),
+                )
+            })
     }
 }
 
@@ -10492,6 +10542,22 @@ impl AppHandler for WokHandler {
                 modifiers,
             } => {
                 self.pressed_mouse_button = None;
+                let dock_target = self.floating_drag.as_ref().and_then(|drag| {
+                    (matches!(drag.mode, FloatingDragMode::Move)
+                        && button == MouseButton::Left
+                        && self.floating_pane_in_tab_bar_dock_zone(drag.pane_id, x, y))
+                    .then_some(drag.pane_id)
+                });
+                let docked_floating = dock_target.is_some_and(|pane_id| {
+                    self.workspace
+                        .dock_floating_pane_to_split(pane_id, SplitDirection::Horizontal)
+                });
+                if docked_floating {
+                    self.status_message = Some("Docked floating pane".to_string());
+                    if let Some(window) = &self.window {
+                        self.sync_workspace_layout(window.inner_size());
+                    }
+                }
                 let was_internal_drag = self.floating_drag.is_some() || self.split_drag.is_some();
                 self.floating_drag = None;
                 self.split_drag = None;
@@ -10942,6 +11008,21 @@ fn ensure_settings_file() -> std::io::Result<PathBuf> {
         return setup_ops::reset_config_file();
     }
     Ok(path)
+}
+
+fn settings_field_cursor_position(content: &str, field_name: &str) -> Option<usize> {
+    let key_eq_prefix = format!("{field_name} =");
+    let key_eq_compact = format!("{field_name}=");
+    let mut offset = 0;
+    for line in content.split_inclusive('\n') {
+        let line_without_newline = line.trim_end_matches('\n');
+        let trimmed = line_without_newline.trim_start();
+        if trimmed.starts_with(&key_eq_prefix) || trimmed.starts_with(&key_eq_compact) {
+            return Some(offset + line_without_newline.len().saturating_sub(trimmed.len()));
+        }
+        offset += line.chars().count();
+    }
+    None
 }
 
 fn editor_selection_range(editor: &InputEditor) -> Option<(usize, usize)> {
@@ -12918,6 +12999,28 @@ fn point_in_rect(rect: Rect, x: f64, y: f64) -> bool {
         && y <= f64::from(rect.y + rect.h)
 }
 
+const FLOATING_DOCK_ZONE_PX: f32 = 96.0;
+
+fn expanded_rect(rect: Rect, padding: f32) -> Rect {
+    Rect::new(
+        rect.x - padding,
+        rect.y - padding,
+        rect.w + padding * 2.0,
+        rect.h + padding * 2.0,
+    )
+}
+
+fn rects_intersect(a: Rect, b: Rect) -> bool {
+    a.w > 0.0
+        && a.h > 0.0
+        && b.w > 0.0
+        && b.h > 0.0
+        && a.x < b.x + b.w
+        && a.x + a.w > b.x
+        && a.y < b.y + b.h
+        && a.y + a.h > b.y
+}
+
 fn mouse_button_matches(expected: &str, actual: MouseButton) -> bool {
     match actual {
         MouseButton::Left => expected == "left",
@@ -14189,6 +14292,32 @@ mod tests {
     }
 
     #[test]
+    fn test_settings_field_cursor_position_finds_uncommented_key() {
+        let content = "# font_size = 11.0\nshell = \"zsh\"\nfont_size = 14.0\n";
+
+        assert_eq!(
+            settings_field_cursor_position(content, "font_size"),
+            Some("# font_size = 11.0\nshell = \"zsh\"\n".chars().count())
+        );
+    }
+
+    #[test]
+    fn test_expanded_rect_creates_forgiving_dock_zone() {
+        let tab_bar = Rect::new(0.0, 700.0, 1000.0, 32.0);
+        let floating_at_content_edge = Rect::new(300.0, 620.0, 300.0, 80.0);
+        let floating_far_away = Rect::new(300.0, 300.0, 300.0, 80.0);
+
+        assert!(rects_intersect(
+            floating_at_content_edge,
+            expanded_rect(tab_bar, FLOATING_DOCK_ZONE_PX)
+        ));
+        assert!(!rects_intersect(
+            floating_far_away,
+            expanded_rect(tab_bar, FLOATING_DOCK_ZONE_PX)
+        ));
+    }
+
+    #[test]
     fn test_cd_command_for_path_quotes_path() {
         assert_eq!(
             cd_command_for_path("/tmp/work tree"),
@@ -14592,8 +14721,8 @@ mod tests {
             is_repeat: false,
             event_type: InputEventType::Press,
         };
-        let encoded =
-            input_event_to_pty_bytes(&event, 0x2).expect("kitty modifier event should encode");
+        let encoded = input_event_to_pty_bytes(&event, 0x8 | 0x2)
+            .expect("kitty modifier event should encode");
         assert_eq!(
             String::from_utf8(encoded).expect("utf8"),
             "\u{1b}[57442;5:1u"
@@ -14650,13 +14779,28 @@ mod tests {
             event_type: InputEventType::Release,
         };
 
-        assert!(input_event_to_pty_bytes(&event, 0x1 | 0x4).is_none());
+        assert!(input_event_to_pty_bytes(&event, 0x8 | 0x1 | 0x4).is_none());
         let encoded =
-            input_event_to_pty_bytes(&event, 0x2).expect("modifier release should encode");
+            input_event_to_pty_bytes(&event, 0x8 | 0x2).expect("modifier release should encode");
         assert_eq!(
             String::from_utf8(encoded).expect("utf8"),
             "\u{1b}[57443;3:3u"
         );
+    }
+
+    #[test]
+    fn test_kitty_keyboard_modifier_only_events_require_all_keys_flag() {
+        let event = InputEvent {
+            action: KeyAction::ModifierShift,
+            modifiers: wok_app::input::Modifiers {
+                shift: true,
+                ..Default::default()
+            },
+            is_repeat: false,
+            event_type: InputEventType::Press,
+        };
+
+        assert!(input_event_to_pty_bytes(&event, 0x2).is_none());
     }
 
     #[test]

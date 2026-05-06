@@ -79,6 +79,8 @@ pub enum PaletteAction {
     RebindKeybinding(String),
     /// Remove the user override for a built-in action id.
     ResetKeybinding(String),
+    /// Open settings focused on a specific field.
+    OpenSettingsField(String),
     /// Apply the theme at the given absolute path.
     ApplyTheme(String),
     /// Preview the diff for a changed Git file.

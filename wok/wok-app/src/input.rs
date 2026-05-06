@@ -1,7 +1,7 @@
 //! Input event normalization: converts raw winit key events into Wok-internal types.
 
 use winit::event::{ElementState, MouseButton};
-use winit::keyboard::{Key, ModifiersState, NamedKey};
+use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 
 /// Actions that can be triggered by keyboard input.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -198,7 +198,8 @@ pub fn translate_key_event(
         }
     }
 
-    let action = key_action_from_logical_key(&event.logical_key);
+    let action = key_action_from_physical_modifier(&event.physical_key)
+        .or_else(|| key_action_from_logical_key(&event.logical_key));
 
     action.map(|action| InputEvent {
         action,
@@ -206,6 +207,22 @@ pub fn translate_key_event(
         is_repeat,
         event_type,
     })
+}
+
+fn key_action_from_physical_modifier(key: &PhysicalKey) -> Option<KeyAction> {
+    match key {
+        PhysicalKey::Code(KeyCode::ShiftLeft | KeyCode::ShiftRight) => {
+            Some(KeyAction::ModifierShift)
+        }
+        PhysicalKey::Code(KeyCode::ControlLeft | KeyCode::ControlRight) => {
+            Some(KeyAction::ModifierControl)
+        }
+        PhysicalKey::Code(KeyCode::AltLeft | KeyCode::AltRight) => Some(KeyAction::ModifierAlt),
+        PhysicalKey::Code(KeyCode::SuperLeft | KeyCode::SuperRight) => {
+            Some(KeyAction::ModifierMeta)
+        }
+        _ => None,
+    }
 }
 
 fn key_action_from_logical_key(key: &Key) -> Option<KeyAction> {

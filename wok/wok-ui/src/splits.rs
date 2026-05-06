@@ -66,6 +66,11 @@ impl SplitManager {
 
     /// Split the focused pane in the given direction.
     pub fn split_active(&mut self, direction: SplitDirection, new_tab_id: u64) {
+        self.split_active_existing(direction, new_tab_id);
+    }
+
+    /// Split the focused pane using an existing pane id as the new leaf.
+    pub fn split_active_existing(&mut self, direction: SplitDirection, new_tab_id: u64) {
         let old_id = self.focused_leaf;
         self.root = split_node(self.root.clone(), old_id, direction, new_tab_id);
         self.focused_leaf = new_tab_id;

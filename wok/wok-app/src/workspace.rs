@@ -562,6 +562,29 @@ impl WorkspaceState {
         true
     }
 
+    /// Dock a visible floating pane back into the active split tree.
+    pub fn dock_floating_pane_to_split(
+        &mut self,
+        pane_id: PaneId,
+        direction: SplitDirection,
+    ) -> bool {
+        let Some(tab) = self.active_tab_mut() else {
+            return false;
+        };
+        let Some(index) = tab
+            .floating_panes
+            .iter()
+            .position(|pane| pane.pane_id == pane_id && pane.is_visible)
+        else {
+            return false;
+        };
+
+        tab.floating_panes.remove(index);
+        tab.focused_floating = None;
+        tab.split_manager.split_active_existing(direction, pane_id);
+        true
+    }
+
     /// Hit-test panes for a point, prioritizing top-most floating panes.
     pub fn pane_at_point(&self, available: Rect, x: f32, y: f32) -> Option<PaneId> {
         let tab = self.active_tab()?;
@@ -825,5 +848,18 @@ mod tests {
             .expect("floating pane should remain");
         assert!((floating.rect.x - 60.0).abs() < 0.01);
         assert!((floating.rect.w - 440.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_dock_floating_pane_moves_it_into_split_tree() {
+        let (mut workspace, first_pane) = WorkspaceState::new("Wok");
+        let floating = workspace
+            .new_floating_pane(Rect::new(100.0, 100.0, 400.0, 300.0), "Float")
+            .expect("floating pane should be created");
+
+        assert!(workspace.dock_floating_pane_to_split(floating, SplitDirection::Horizontal));
+        assert!(!workspace.is_active_floating_pane(floating));
+        assert_eq!(workspace.active_pane_ids(), vec![first_pane, floating]);
+        assert_eq!(workspace.active_pane_id(), Some(floating));
     }
 }

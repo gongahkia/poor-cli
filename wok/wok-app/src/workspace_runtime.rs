@@ -123,6 +123,8 @@ impl WokHandler {
                         self.install_search_state_on_active_pane(search);
                         self.refresh_global_search();
                     }
+                } else if self.workspace.tabs.len() <= 1 {
+                    self.exit_requested = true;
                 }
             }
             WorkspaceEffect::NextTab => {

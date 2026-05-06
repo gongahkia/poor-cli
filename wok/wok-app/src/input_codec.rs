@@ -118,6 +118,9 @@ fn input_event_to_kitty_keyboard_bytes(event: &InputEvent, flags: u32) -> Option
     if event.event_type == InputEventType::Release && flags & 0x2 == 0 {
         return None;
     }
+    if is_modifier_only_action(&event.action) && flags & 0x8 == 0 {
+        return None;
+    }
 
     let key_code = match &event.action {
         KeyAction::Char(c) => *c as u32,
@@ -178,4 +181,14 @@ fn input_event_to_kitty_keyboard_bytes(event: &InputEvent, flags: u32) -> Option
         format!("\x1b[{key_code_repr};{modifier_bits}u")
     };
     Some(payload.into_bytes())
+}
+
+fn is_modifier_only_action(action: &KeyAction) -> bool {
+    matches!(
+        action,
+        KeyAction::ModifierShift
+            | KeyAction::ModifierControl
+            | KeyAction::ModifierAlt
+            | KeyAction::ModifierMeta
+    )
 }
