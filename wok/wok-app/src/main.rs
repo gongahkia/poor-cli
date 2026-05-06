@@ -2894,20 +2894,18 @@ impl WokHandler {
     }
 
     fn tab_labels_for_render(&self) -> Vec<(bool, String)> {
-        let active_pane_id = self.active_pane_id();
         self.workspace
             .tabs
             .iter()
             .enumerate()
             .map(|(index, tab)| {
-                let label = if index == self.workspace.active_tab {
-                    active_pane_id
-                        .and_then(|pane_id| self.panes.get(&pane_id))
-                        .map(|pane| format!("{}  [{}x{}]", tab.title, pane.cols, pane.rows))
-                        .unwrap_or_else(|| tab.title.clone())
-                } else {
-                    tab.title.clone()
-                };
+                let pane_ids = self.workspace.pane_ids_for_tab_index(index);
+                let block_count = pane_ids
+                    .iter()
+                    .filter_map(|pane_id| self.panes.get(pane_id))
+                    .map(|pane| pane.app.block_manager.blocks.len())
+                    .sum::<usize>();
+                let label = format!("{}  p{}  b{}", tab.title, pane_ids.len(), block_count);
                 (index == self.workspace.active_tab, label)
             })
             .collect()
