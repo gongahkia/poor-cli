@@ -1107,6 +1107,7 @@ struct WokHandler {
     show_workspace_insights_panel: bool,
     settings_editor: Option<SettingsEditorState>,
     file_preview: Option<FilePreviewState>,
+    inspector_dock: Option<FilePreviewState>,
     scratch_buffer: Option<ScratchBufferState>,
     context_menu: Option<ContextMenuState>,
     failure_trend_bucket_ms: u64,
@@ -1288,6 +1289,7 @@ impl WokHandler {
             show_workspace_insights_panel: false,
             settings_editor: None,
             file_preview: None,
+            inspector_dock: None,
             scratch_buffer: None,
             context_menu: None,
             failure_trend_bucket_ms: DEFAULT_FAILURE_TREND_BUCKET_MS,
@@ -2080,6 +2082,16 @@ impl WokHandler {
                 preview.editor.render_data(),
             )
         });
+        let inspector_dock_overlay = self.inspector_dock.as_ref().map(|preview| {
+            (
+                self.active_pane()
+                    .map_or_else(Theme::default, |pane| pane.app.theme.clone()),
+                preview.title.clone(),
+                preview.path.clone(),
+                preview.help.clone(),
+                preview.editor.render_data(),
+            )
+        });
         let scratch_overlay = self.scratch_buffer.as_ref().map(|scratch| {
             (
                 self.active_pane()
@@ -2122,6 +2134,7 @@ impl WokHandler {
             self.chrome_rects.content,
             self.chrome_font.metrics.cell_height,
         );
+        let inspector_rect = inspector_dock_rect(self.chrome_rects.content);
         let Some(render) = self.render.as_mut() else {
             return;
         };
@@ -2817,6 +2830,21 @@ impl WokHandler {
                 &mut self.font,
                 theme,
                 dock_rect,
+                title,
+                path,
+                help,
+                input,
+                cursor_shape,
+                false,
+                window_opacity,
+            );
+        }
+        if let Some((theme, title, path, help, input)) = inspector_dock_overlay.as_ref() {
+            render_settings_editor(
+                render,
+                &mut self.chrome_font,
+                theme,
+                inspector_rect,
                 title,
                 path,
                 help,
@@ -4182,6 +4210,30 @@ impl WokHandler {
         });
     }
 
+    fn open_inspector_dock_state(
+        &mut self,
+        title: &str,
+        path: PathBuf,
+        content: String,
+        help: &str,
+    ) {
+        let mut editor = InputEditor::new(
+            self.config.shell.clone(),
+            wok_input::editor::InputPosition::Bottom,
+        );
+        editor.buffer.set_text(&content);
+        editor.is_active = true;
+        self.inspector_dock = Some(FilePreviewState {
+            path,
+            title: title.to_string(),
+            help: help.to_string(),
+            editor,
+            search_active: false,
+            search_query: String::new(),
+            truncated: false,
+        });
+    }
+
     fn open_scratch_buffer(&mut self) {
         self.open_scratch_buffer_named("default");
     }
@@ -4382,15 +4434,7 @@ impl WokHandler {
             self.needs_redraw = true;
             return;
         };
-        self.open_text_preview_state(
-            "Block Inspector",
-            path,
-            content,
-            false,
-            None,
-            None,
-            "Esc close  / search  Enter next  Mod+C copy",
-        );
+        self.open_inspector_dock_state("Block Inspector", path, content, "Esc close  Mod+C copy");
         self.needs_redraw = true;
     }
 
@@ -4435,14 +4479,11 @@ impl WokHandler {
                 ));
             }
         }
-        self.open_text_preview_state(
+        self.open_inspector_dock_state(
             "Rerun History",
             PathBuf::from("block-rerun-history.md"),
             content,
-            false,
-            None,
-            None,
-            "Esc close  / search  Mod+C copy",
+            "Esc close  Mod+C copy",
         );
         self.needs_redraw = true;
     }
@@ -4505,14 +4546,11 @@ impl WokHandler {
                 ));
             }
         }
-        self.open_text_preview_state(
+        self.open_inspector_dock_state(
             "Rerun Comparison",
             PathBuf::from("block-rerun-comparison.md"),
             content,
-            false,
-            None,
-            None,
-            "Esc close  / search  Mod+C copy",
+            "Esc close  Mod+C copy",
         );
         self.needs_redraw = true;
     }
@@ -5767,6 +5805,41 @@ impl WokHandler {
         }
         self.needs_redraw = true;
         true
+    }
+
+    fn handle_inspector_dock_input(&mut self, event: &InputEvent) -> bool {
+        if self.inspector_dock.is_none() {
+            return false;
+        }
+        match event.action {
+            KeyAction::Escape => {
+                self.inspector_dock = None;
+                self.status_message = Some("Closed inspector dock".to_string());
+                self.needs_redraw = true;
+                return true;
+            }
+            KeyAction::Copy => {
+                let text = self
+                    .inspector_dock
+                    .as_ref()
+                    .map(|preview| preview.editor.buffer.text());
+                if let (Some(text), Some(active_pane)) = (text, self.active_pane_mut()) {
+                    let _ = active_pane.app.clipboard.copy(&text);
+                    self.status_message = Some("Copied inspector contents".to_string());
+                }
+                self.needs_redraw = true;
+                return true;
+            }
+            _ => {}
+        }
+        if let Some(editor_key) = input_event_to_editor_key(event) {
+            if let Some(preview) = self.inspector_dock.as_mut() {
+                let _ = preview.editor.handle_key(editor_key);
+            }
+            self.needs_redraw = true;
+            return true;
+        }
+        false
     }
 
     fn handle_scratch_buffer_input(&mut self, event: &InputEvent) -> bool {
@@ -10537,6 +10610,10 @@ impl AppHandler for WokHandler {
             }
 
             self.record_recent_key(&event);
+
+            if self.handle_inspector_dock_input(&event) {
+                return;
+            }
 
             if self.handle_file_preview_input(&event) {
                 return;

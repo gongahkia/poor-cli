@@ -164,6 +164,18 @@ pub(crate) fn timeline_rail_rect(viewport: Rect) -> Rect {
     Rect::new(viewport.x, viewport.y, 14.0_f32.min(viewport.w), viewport.h)
 }
 
+pub(crate) fn inspector_dock_rect(content: Rect) -> Rect {
+    let width = (content.w * 0.28)
+        .clamp(280.0, 460.0)
+        .min((content.w * 0.48).max(0.0));
+    Rect::new(
+        content.x + (content.w - width).max(0.0),
+        content.y,
+        width,
+        content.h,
+    )
+}
+
 pub(crate) fn pane_max_scroll(pane: &PaneRuntime) -> f32 {
     pane.terminal.state.scrollback_len() as f32
 }
@@ -2164,6 +2176,17 @@ mod tests {
 
         assert_eq!(timeline_y_for_row(rect, 0, 101), 10.0);
         assert_eq!(timeline_y_for_row(rect, 100, 101), 110.0);
+    }
+
+    #[test]
+    fn inspector_dock_rect_uses_right_side_of_content() {
+        let content = Rect::new(20.0, 10.0, 1000.0, 700.0);
+        let dock = inspector_dock_rect(content);
+
+        assert_eq!(dock.y, content.y);
+        assert_eq!(dock.h, content.h);
+        assert!((dock.x + dock.w - (content.x + content.w)).abs() < f32::EPSILON);
+        assert!(dock.w >= 280.0);
     }
 
     #[test]
