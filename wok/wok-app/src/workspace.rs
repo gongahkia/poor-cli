@@ -783,4 +783,47 @@ mod tests {
         assert_eq!(workspace.tabs.len(), 2);
         assert_eq!(workspace.active_pane_id(), Some(third_pane));
     }
+
+    #[test]
+    fn test_resize_split_divider_by_hit_path() {
+        let (mut workspace, first_pane) = WorkspaceState::new("Wok");
+        workspace
+            .split_active(SplitDirection::Horizontal)
+            .expect("split should create a pane");
+        let bounds = Rect::new(0.0, 0.0, 800.0, 600.0);
+        let hit = workspace
+            .hit_test_split_divider(bounds, 400.0, 200.0, 8.0)
+            .expect("divider should hit");
+
+        assert!(workspace.resize_split_divider(&hit.path, 0.1));
+        let rects = workspace.active_pane_rects(bounds);
+        assert!((rects[&first_pane].w - 480.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_resize_floating_pane_from_left_edge() {
+        let (mut workspace, _) = WorkspaceState::new("Wok");
+        let bounds = Rect::new(0.0, 0.0, 900.0, 700.0);
+        let pane_id = workspace
+            .new_floating_pane(Rect::new(100.0, 100.0, 400.0, 300.0), "Float")
+            .expect("floating pane should be created");
+
+        assert!(workspace.resize_floating_pane_edges(
+            pane_id,
+            FloatingResizeEdges {
+                left: true,
+                right: false,
+                top: false,
+                bottom: false,
+            },
+            -40.0,
+            0.0,
+            bounds,
+        ));
+        let floating = workspace
+            .active_floating_pane(pane_id)
+            .expect("floating pane should remain");
+        assert!((floating.rect.x - 60.0).abs() < 0.01);
+        assert!((floating.rect.w - 440.0).abs() < 0.01);
+    }
 }

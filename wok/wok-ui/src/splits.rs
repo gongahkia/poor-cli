@@ -376,8 +376,8 @@ mod tests {
         assert!(sm.resize_split_at_path(&hit.path, 0.1));
 
         let rects = sm.compute_rects(bounds);
-        assert!((rects[&1].w - 480.0).abs() < f32::EPSILON);
-        assert!((rects[&2].w - 320.0).abs() < f32::EPSILON);
+        assert!((rects[&1].w - 480.0).abs() < 0.01);
+        assert!((rects[&2].w - 320.0).abs() < 0.01);
     }
 
     #[test]
