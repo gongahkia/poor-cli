@@ -7081,7 +7081,12 @@ impl WokHandler {
                 if send_eof {
                     self.send_raw_input_to_pty(b"\x04");
                 }
-                self.refresh_command_palette();
+                let uses_static_entries = self
+                    .active_pane()
+                    .is_some_and(|pane| palette_uses_static_entries(&pane.app.command_palette));
+                if !uses_static_entries {
+                    self.refresh_command_palette();
+                }
                 if let Some(window) = &self.window {
                     self.sync_workspace_layout(window.inner_size());
                 }
@@ -7605,7 +7610,7 @@ impl WokHandler {
     /// a future commit.
     fn open_settings_discovery(&mut self) {
         use wok_settings::Settings as _;
-        let Some(pane_id) = self.active_pane_id() else {
+        let Some(_pane_id) = self.active_pane_id() else {
             self.status_message = Some("no active pane".to_string());
             return;
         };
@@ -7629,11 +7634,7 @@ impl WokHandler {
             self.status_message = Some("no settings fields registered".to_string());
             return;
         }
-        if let Some(active_pane) = self.panes.get_mut(&pane_id) {
-            active_pane.app.open_command_palette();
-            active_pane.app.command_palette.open(entries);
-        }
-        self.needs_redraw = true;
+        self.open_transient_palette(entries, "settings discovery");
     }
 
     /// Open a palette listing changed files in the active pane's Git repo.
@@ -12990,6 +12991,23 @@ fn truncate_menu_description(value: &str) -> String {
     }
 }
 
+fn palette_uses_static_entries(palette: &CommandPaletteState) -> bool {
+    palette.entries.iter().any(|entry| {
+        matches!(
+            entry.category,
+            PaletteCategory::SearchResult
+                | PaletteCategory::SavedSearch
+                | PaletteCategory::ScratchSnippet
+                | PaletteCategory::Workspace
+                | PaletteCategory::Theme
+                | PaletteCategory::Keybinding
+                | PaletteCategory::SettingsField
+                | PaletteCategory::GitFile
+                | PaletteCategory::GitWorktree
+        )
+    })
+}
+
 fn point_in_rect(rect: Rect, x: f64, y: f64) -> bool {
     rect.w > 0.0
         && rect.h > 0.0
@@ -14299,6 +14317,20 @@ mod tests {
             settings_field_cursor_position(content, "font_size"),
             Some("# font_size = 11.0\nshell = \"zsh\"\n".chars().count())
         );
+    }
+
+    #[test]
+    fn test_settings_palette_uses_static_entries() {
+        let mut palette = CommandPaletteState::new();
+        palette.open(vec![PaletteEntry {
+            label: "font_size = 14.0".to_string(),
+            description: "f32 -> open settings".to_string(),
+            category: PaletteCategory::SettingsField,
+            score: 0.0,
+            action: PaletteAction::OpenSettingsField("font_size".to_string()),
+        }]);
+
+        assert!(palette_uses_static_entries(&palette));
     }
 
     #[test]
