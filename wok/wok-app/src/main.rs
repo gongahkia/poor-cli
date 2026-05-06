@@ -12695,7 +12695,7 @@ mod tests {
             input_event_to_pty_bytes(&event, 0x2 | 0x4).expect("kitty-encoded bytes should exist");
         assert_eq!(
             String::from_utf8(encoded).expect("utf8"),
-            "\u{1b}[80:112;6;2u"
+            "\u{1b}[80:112;6:2u"
         );
     }
 
@@ -12723,7 +12723,7 @@ mod tests {
         assert!(input_event_to_pty_bytes(&event, 0x1).is_none());
         let encoded =
             input_event_to_pty_bytes(&event, 0x2).expect("release should encode with event flag");
-        assert_eq!(String::from_utf8(encoded).expect("utf8"), "\u{1b}[113;1;3u");
+        assert_eq!(String::from_utf8(encoded).expect("utf8"), "\u{1b}[113;1:3u");
     }
 
     #[test]
@@ -12748,7 +12748,7 @@ mod tests {
         };
         let encoded =
             input_event_to_pty_bytes(&event, 0x2).expect("kitty-encoded release should exist");
-        assert_eq!(String::from_utf8(encoded).expect("utf8"), "\u{1b}[97;1;3u");
+        assert_eq!(String::from_utf8(encoded).expect("utf8"), "\u{1b}[97;1:3u");
     }
 
     #[test]
@@ -12766,7 +12766,7 @@ mod tests {
             input_event_to_pty_bytes(&event, 0x2).expect("kitty modifier event should encode");
         assert_eq!(
             String::from_utf8(encoded).expect("utf8"),
-            "\u{1b}[57442;5;1u"
+            "\u{1b}[57442;5:1u"
         );
     }
 
@@ -12805,7 +12805,7 @@ mod tests {
 
         let typed =
             input_event_to_pty_bytes(&event, 0x2).expect("kitty repeat should encode with type");
-        assert_eq!(String::from_utf8(typed).expect("utf8"), "\u{1b}[106;1;2u");
+        assert_eq!(String::from_utf8(typed).expect("utf8"), "\u{1b}[106;1:2u");
     }
 
     #[test]
@@ -12825,7 +12825,7 @@ mod tests {
             input_event_to_pty_bytes(&event, 0x2).expect("modifier release should encode");
         assert_eq!(
             String::from_utf8(encoded).expect("utf8"),
-            "\u{1b}[57443;3;3u"
+            "\u{1b}[57443;3:3u"
         );
     }
 

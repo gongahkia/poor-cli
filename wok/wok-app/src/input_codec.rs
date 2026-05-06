@@ -173,7 +173,7 @@ fn input_event_to_kitty_keyboard_bytes(event: &InputEvent, flags: u32) -> Option
     };
 
     let payload = if flags & 0x2 != 0 {
-        format!("\x1b[{key_code_repr};{modifier_bits};{event_type}u")
+        format!("\x1b[{key_code_repr};{modifier_bits}:{event_type}u")
     } else {
         format!("\x1b[{key_code_repr};{modifier_bits}u")
     };
