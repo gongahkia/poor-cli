@@ -423,8 +423,6 @@ struct TypewriterState {
 }
 
 impl TypewriterState {
-    const MAX_LAG: Duration = Duration::from_millis(2_500);
-
     fn clear(&mut self) {
         self.pending.clear();
         self.next_reveal_at = None;
@@ -482,7 +480,6 @@ impl TypewriterState {
         }
 
         let interval = Duration::from_secs_f64(1.0 / f64::from(cps.clamp(20.0, 2_000.0)));
-        let max_reveal_at = now + Self::MAX_LAG;
         let mut reveal_at = self.next_reveal_at.unwrap_or(now).max(now);
         let mut budget = max_pending_cells.saturating_sub(self.pending.len());
 
@@ -507,13 +504,8 @@ impl TypewriterState {
                 }
                 budget -= 1;
             }
-            self.pending.insert(
-                key,
-                TypewriterReveal {
-                    reveal_at: reveal_at.min(max_reveal_at),
-                },
-            );
-            reveal_at = (reveal_at + interval).min(max_reveal_at);
+            self.pending.insert(key, TypewriterReveal { reveal_at });
+            reveal_at += interval;
         }
 
         self.next_reveal_at = Some(reveal_at);
@@ -528,7 +520,6 @@ impl TypewriterState {
         max_pending_cells: usize,
     ) {
         let interval = Duration::from_secs_f64(1.0 / f64::from(cps.clamp(20.0, 2_000.0)));
-        let max_reveal_at = now + Self::MAX_LAG;
         let mut reveal_at = self.next_reveal_at.unwrap_or(now).max(now);
         let mut queued = false;
         let mut budget = max_pending_cells.saturating_sub(self.pending.len());
@@ -544,13 +535,8 @@ impl TypewriterState {
                 }
                 budget -= 1;
             }
-            self.pending.insert(
-                key,
-                TypewriterReveal {
-                    reveal_at: reveal_at.min(max_reveal_at),
-                },
-            );
-            reveal_at = (reveal_at + interval).min(max_reveal_at);
+            self.pending.insert(key, TypewriterReveal { reveal_at });
+            reveal_at += interval;
             queued = true;
         }
 
@@ -617,6 +603,33 @@ struct FilePreviewState {
 struct ScratchBufferState {
     path: PathBuf,
     editor: InputEditor,
+}
+
+#[derive(Clone)]
+struct ContextMenuState {
+    x: f32,
+    y: f32,
+    entries: Vec<ContextMenuEntry>,
+    selected: usize,
+    pane_id: PaneId,
+    target_block_id: Option<u64>,
+}
+
+#[derive(Clone)]
+struct ContextMenuEntry {
+    label: String,
+    description: String,
+    action: ContextMenuAction,
+}
+
+#[derive(Clone)]
+enum ContextMenuAction {
+    Clipboard(ClipboardEffect),
+    Palette(PaletteAction),
+    BuiltIn(Action),
+    OpenUrl(String),
+    CopyText(String),
+    Dismiss,
 }
 
 struct PaneRuntime {
@@ -1045,6 +1058,7 @@ struct WokHandler {
     settings_editor: Option<SettingsEditorState>,
     file_preview: Option<FilePreviewState>,
     scratch_buffer: Option<ScratchBufferState>,
+    context_menu: Option<ContextMenuState>,
     failure_trend_bucket_ms: u64,
     status_bar_state: StatusBarState,
     git_status_bar_cache: RefCell<HashMap<PathBuf, GitStatusBarCacheEntry>>,
@@ -1168,6 +1182,7 @@ impl WokHandler {
             settings_editor: None,
             file_preview: None,
             scratch_buffer: None,
+            context_menu: None,
             failure_trend_bucket_ms: DEFAULT_FAILURE_TREND_BUCKET_MS,
             status_bar_state: StatusBarState::default(),
             git_status_bar_cache: RefCell::new(HashMap::new()),
@@ -1898,6 +1913,13 @@ impl WokHandler {
                 scratch.editor.render_data(),
             )
         });
+        let context_menu_overlay = self.context_menu.as_ref().map(|menu| {
+            (
+                self.active_pane()
+                    .map_or_else(Theme::default, |pane| pane.app.theme.clone()),
+                menu.clone(),
+            )
+        });
         let recent_keys_overlay = if self.config.recent_keys.visible {
             let labels = self.recent_key_labels();
             (!labels.is_empty()).then(|| {
@@ -2619,6 +2641,16 @@ impl WokHandler {
                 input,
                 cursor_shape,
                 cursor_visible,
+                window_opacity,
+            );
+        }
+        if let Some((theme, menu)) = context_menu_overlay.as_ref() {
+            render_context_menu(
+                render,
+                &mut self.font,
+                theme,
+                self.chrome_rects.content,
+                menu,
                 window_opacity,
             );
         }
@@ -5951,11 +5983,7 @@ impl WokHandler {
     fn apply_clipboard_effect(&mut self, effect: ClipboardEffect) {
         match effect {
             ClipboardEffect::CopySelection => {
-                if let Some(text) = self.selection_text() {
-                    if let Some(active_pane) = self.active_pane_mut() {
-                        let _ = active_pane.app.clipboard.copy(&text);
-                    }
-                }
+                self.copy_selection_to_clipboard();
             }
             ClipboardEffect::CopySelectedBlock => {
                 if let Some(text) = self.selected_block_text() {
@@ -6052,6 +6080,22 @@ impl WokHandler {
             .terminal
             .state
             .set_display_offset(active_pane.viewport.display_offset());
+    }
+
+    fn complete_active_typewriter(&mut self) {
+        let Some(pane_id) = self.active_pane_id() else {
+            return;
+        };
+        let Some(pane) = self.panes.get_mut(&pane_id) else {
+            return;
+        };
+        if !pane.typewriter.has_pending() {
+            return;
+        }
+
+        mark_typewriter_pending_rows_dirty(pane);
+        pane.typewriter.clear();
+        self.needs_redraw = true;
     }
 
     fn apply_overlay_effect(&mut self, effect: OverlayEffect) {
@@ -8662,6 +8706,16 @@ impl WokHandler {
         Some(extract_selection_text(&active_pane.terminal, start, end))
     }
 
+    fn copy_selection_to_clipboard(&mut self) -> bool {
+        let Some(text) = self.selection_text() else {
+            return false;
+        };
+        let Some(active_pane) = self.active_pane_mut() else {
+            return false;
+        };
+        active_pane.app.clipboard.copy(&text).is_ok()
+    }
+
     fn selected_block_text(&self) -> Option<String> {
         let active_pane = self.active_pane()?;
         let selected = active_pane.app.selected_or_latest_block()?;
@@ -9130,6 +9184,8 @@ impl AppHandler for WokHandler {
         }
 
         if event.event_type != InputEventType::Release {
+            self.complete_active_typewriter();
+
             if self.handle_keybinding_capture(&event) {
                 return;
             }
@@ -9220,6 +9276,18 @@ impl AppHandler for WokHandler {
                     self.needs_redraw = true;
                     return;
                 }
+                if button == MouseButton::Middle {
+                    self.apply_clipboard_effect(ClipboardEffect::Paste);
+                    self.needs_redraw = true;
+                    return;
+                }
+                if button == MouseButton::Right {
+                    if self.copy_selection_to_clipboard() {
+                        self.status_message = Some("Copied selection".to_string());
+                        self.needs_redraw = true;
+                    }
+                    return;
+                }
                 if button != MouseButton::Left {
                     return;
                 }
@@ -9285,6 +9353,33 @@ impl AppHandler for WokHandler {
                     if let Some(active_pane) = self.active_pane_mut() {
                         active_pane.app.selection.handle_mouse_down(cell);
                     }
+                    let click_count = self
+                        .active_pane()
+                        .map_or(0, |pane| pane.app.selection.click_count());
+                    if click_count == 2 {
+                        let selection = self
+                            .active_pane()
+                            .and_then(|pane| word_selection_at_cell(&pane.terminal, cell));
+                        if let (Some((start, end)), Some(active_pane)) =
+                            (selection, self.active_pane_mut())
+                        {
+                            active_pane.app.selection.state =
+                                SelectionState::Selected { start, end };
+                        }
+                    } else if click_count >= 3 {
+                        if let Some(active_pane) = self.active_pane_mut() {
+                            active_pane.app.selection.state = SelectionState::Selected {
+                                start: CellPos {
+                                    row: cell.row,
+                                    col: 0,
+                                },
+                                end: CellPos {
+                                    row: cell.row,
+                                    col: u16::MAX,
+                                },
+                            };
+                        }
+                    }
                     self.needs_redraw = true;
                 }
             }
@@ -9309,12 +9404,11 @@ impl AppHandler for WokHandler {
                 if let Some(active_pane) = self.active_pane_mut() {
                     active_pane.app.selection.handle_mouse_up();
                 }
-                if was_selecting && self.config.copy_on_select {
-                    if let Some(text) = self.selection_text() {
-                        if let Some(active_pane) = self.active_pane_mut() {
-                            let _ = active_pane.app.clipboard.copy(&text);
-                        }
-                    }
+                let has_selection = self
+                    .active_pane()
+                    .is_some_and(|pane| pane.app.selection.has_selection());
+                if (was_selecting || has_selection) && self.config.copy_on_select {
+                    self.copy_selection_to_clipboard();
                 }
                 self.needs_redraw = true;
             }
@@ -9622,6 +9716,44 @@ fn mouse_button_code(button: MouseButton) -> Option<u16> {
         MouseButton::Right => Some(2),
         _ => None,
     }
+}
+
+fn word_selection_at_cell(terminal: &Terminal, cell: CellPos) -> Option<(CellPos, CellPos)> {
+    let absolute_row = terminal
+        .state
+        .viewport_row_to_absolute(usize::from(cell.row));
+    let row = terminal
+        .state
+        .row_slice(absolute_row, 0, terminal.state.columns());
+    let (start, end) = word_selection_range(&row, usize::from(cell.col))?;
+
+    Some((
+        CellPos {
+            row: cell.row,
+            col: start.min(usize::from(u16::MAX)) as u16,
+        },
+        CellPos {
+            row: cell.row,
+            col: end.min(usize::from(u16::MAX)) as u16,
+        },
+    ))
+}
+
+fn word_selection_range(row: &str, col: usize) -> Option<(usize, usize)> {
+    let chars = row.chars().collect::<Vec<_>>();
+    if col >= chars.len() || chars[col].is_whitespace() {
+        return None;
+    }
+
+    let mut start = col;
+    while start > 0 && !chars[start - 1].is_whitespace() {
+        start -= 1;
+    }
+    let mut end = col;
+    while end + 1 < chars.len() && !chars[end + 1].is_whitespace() {
+        end += 1;
+    }
+    Some((start, end))
 }
 
 /// Load `~/.config/wok/keybindings.toml` if present. Logs warnings; returns
@@ -12049,6 +12181,18 @@ mod tests {
     }
 
     #[test]
+    fn typewriter_reveals_until_completion_without_time_cap() {
+        let now = Instant::now();
+        let mut typewriter = TypewriterState::default();
+        let cells = vec![test_cell('x'); 512];
+
+        typewriter.enqueue_changed_cells(42, None, &cells, now, 100.0, TEST_TYPEWRITER_CAP);
+
+        assert!(typewriter.is_cell_hidden(42, 400, now + Duration::from_secs(3)));
+        assert!(!typewriter.is_cell_hidden(42, 400, now + Duration::from_secs(5)));
+    }
+
+    #[test]
     fn typewriter_zero_cap_reveals_large_output_immediately() {
         let now = Instant::now();
         let mut typewriter = TypewriterState::default();
@@ -12583,6 +12727,42 @@ mod tests {
         .expect("release should encode");
 
         assert_eq!(bytes, vec![0x1b, b'[', b'M', 35, 33, 33]);
+    }
+
+    #[test]
+    fn test_sgr_mouse_drag_and_horizontal_wheel_encoding() {
+        let drag = encode_terminal_mouse_event(
+            TerminalMouseEvent::Motion(Some(MouseButton::Left)),
+            CellPos { row: 1, col: 1 },
+            wok_app::input::Modifiers {
+                ctrl: true,
+                ..Default::default()
+            },
+            true,
+        )
+        .expect("left drag should encode");
+        assert_eq!(drag, b"\x1b[<48;2;2M");
+
+        let wheel = encode_terminal_mouse_event(
+            TerminalMouseEvent::Wheel {
+                horizontal: true,
+                positive: false,
+            },
+            CellPos { row: 0, col: 0 },
+            wok_app::input::Modifiers::default(),
+            true,
+        )
+        .expect("horizontal wheel should encode");
+        assert_eq!(wheel, b"\x1b[<67;1;1M");
+    }
+
+    #[test]
+    fn test_word_selection_range_selects_cli_tokens() {
+        let row = "open /tmp/wok file.txt";
+
+        assert_eq!(word_selection_range(row, 7), Some((5, 12)));
+        assert_eq!(word_selection_range(row, 13), None);
+        assert_eq!(word_selection_range(row, 15), Some((14, 21)));
     }
 
     #[test]

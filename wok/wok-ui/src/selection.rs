@@ -99,6 +99,11 @@ impl SelectionManager {
         }
     }
 
+    /// Number of sequential clicks at the current click position.
+    pub fn click_count(&self) -> u8 {
+        self.click_count
+    }
+
     /// Handle mouse drag, updating the selection end point.
     pub fn handle_mouse_drag(&mut self, cell: CellPos) {
         if let SelectionState::Selecting { start, .. } = self.state {
@@ -176,5 +181,18 @@ mod tests {
         sm.handle_mouse_drag(CellPos { row: 0, col: 5 });
         sm.handle_mouse_up();
         assert!(sm.has_selection());
+    }
+
+    #[test]
+    fn test_click_count_tracks_multi_clicks() {
+        let mut sm = SelectionManager::new();
+        let cell = CellPos { row: 1, col: 2 };
+
+        sm.handle_mouse_down(cell);
+        assert_eq!(sm.click_count(), 1);
+        sm.handle_mouse_down(cell);
+        assert_eq!(sm.click_count(), 2);
+        sm.handle_mouse_down(cell);
+        assert_eq!(sm.click_count(), 3);
     }
 }
