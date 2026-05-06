@@ -634,13 +634,20 @@ enum ContextMenuAction {
     OpenUrl(String),
     CopyText(String, String),
     Selection(SelectionContextAction),
+    Path(PathContextAction, PathBuf),
 }
 
 #[derive(Clone)]
 enum SelectionContextAction {
     Search,
     SendToScratch,
+    PasteIntoInput,
     Run,
+}
+
+#[derive(Clone)]
+enum PathContextAction {
+    OpenContainingFolder,
 }
 
 #[derive(Clone)]
@@ -4489,6 +4496,59 @@ impl WokHandler {
         }
     }
 
+    fn handle_modifier_left_click_at_cell(&mut self, cell: CellPos, modifiers: Modifiers) -> bool {
+        if !(platform_modifier_active(modifiers)
+            || modifiers.ctrl
+            || modifiers.alt
+            || modifiers.shift)
+        {
+            return false;
+        }
+        let Some(pane_id) = self.active_pane_id() else {
+            return false;
+        };
+
+        if modifiers.shift {
+            if let Some(uri) = self.link_at_pane_cell(pane_id, cell) {
+                self.copy_link_to_clipboard(&uri);
+                return true;
+            }
+            if let Some(target) = self.path_at_cell(pane_id, cell) {
+                let path = self.resolve_preview_path(&target.path);
+                self.copy_path_to_clipboard(&path);
+                return true;
+            }
+        }
+
+        if platform_modifier_active(modifiers) || modifiers.ctrl {
+            if let Some(uri) = self.link_at_pane_cell(pane_id, cell) {
+                wok_ui::links::open_url(&uri);
+                self.status_message = Some(format!("Opened {uri}"));
+                self.needs_redraw = true;
+                return true;
+            }
+            if let Some(target) = self.path_at_cell(pane_id, cell) {
+                let path = self.resolve_preview_path(&target.path);
+                self.preview_file_target(ParsedPathTarget {
+                    path,
+                    line: target.line,
+                    column: target.column,
+                });
+                return true;
+            }
+        }
+
+        if modifiers.alt {
+            if let Some(target) = self.path_at_cell(pane_id, cell) {
+                let path = self.resolve_preview_path(&target.path);
+                self.reveal_path_in_finder(&path);
+                return true;
+            }
+        }
+
+        false
+    }
+
     fn open_path_externally(&mut self, path: &Path) {
         match Command::new("open").arg(path).status() {
             Ok(status) if status.success() => {
@@ -4536,14 +4596,20 @@ impl WokHandler {
 
     fn copy_path_to_clipboard(&mut self, path: &Path) {
         let text = path.display().to_string();
-        if let Some(active_pane) = self.active_pane_mut() {
-            if let Err(error) = active_pane.app.clipboard.copy(&text) {
-                self.status_message = Some(format!("Failed to copy path: {error}"));
-            } else {
-                self.status_message = Some(format!("Copied path: {text}"));
-            }
-        }
-        self.needs_redraw = true;
+        self.copy_text_to_clipboard(&text, "path");
+    }
+
+    fn open_containing_folder(&mut self, path: &Path) {
+        let folder = if path.is_dir() {
+            path
+        } else {
+            path.parent().unwrap_or(path)
+        };
+        self.open_path_externally(folder);
+    }
+
+    fn copy_link_to_clipboard(&mut self, uri: &str) {
+        self.copy_text_to_clipboard(uri, "link");
     }
 
     fn tail_path_in_split(&mut self, path: &Path) {
@@ -8950,6 +9016,12 @@ impl WokHandler {
                     .into_iter()
                     .map(context_menu_entry_from_palette),
             );
+            let relative_path = self
+                .panes
+                .get(&pane_id)
+                .map(|pane| relative_path_for_display(&path, &pane.current_cwd))
+                .unwrap_or_else(|| path.display().to_string());
+            entries.extend(context_menu_path_extra_entries(&path, &relative_path));
         }
 
         if self.block_id_at_cell(pane_id, cell).is_some() {
@@ -9106,6 +9178,7 @@ impl WokHandler {
             ContextMenuAction::BuiltIn(action) => self.handle_action(action),
             ContextMenuAction::Window(action) => self.execute_window_context_action(action),
             ContextMenuAction::Selection(action) => self.execute_selection_context_action(action),
+            ContextMenuAction::Path(action, path) => self.execute_path_context_action(action, path),
             ContextMenuAction::OpenUrl(uri) => {
                 wok_ui::links::open_url(&uri);
                 self.status_message = Some(format!("Opened {uri}"));
@@ -9117,10 +9190,17 @@ impl WokHandler {
         }
     }
 
+    fn execute_path_context_action(&mut self, action: PathContextAction, path: PathBuf) {
+        match action {
+            PathContextAction::OpenContainingFolder => self.open_containing_folder(&path),
+        }
+    }
+
     fn execute_selection_context_action(&mut self, action: SelectionContextAction) {
         match action {
             SelectionContextAction::Search => self.search_selected_text(),
             SelectionContextAction::SendToScratch => self.append_selected_text_to_scratch(),
+            SelectionContextAction::PasteIntoInput => self.paste_selected_text_into_input(),
             SelectionContextAction::Run => self.run_selected_text(),
         }
     }
@@ -9193,7 +9273,7 @@ impl WokHandler {
     fn run_selected_text(&mut self) {
         let Some(text) = self
             .selection_text()
-            .map(|text| text.trim().to_string())
+            .map(|text| text.trim_end().to_string())
             .filter(|text| !text.is_empty())
         else {
             self.status_message = Some("No selection to run".to_string());
@@ -9201,10 +9281,42 @@ impl WokHandler {
             return;
         };
 
+        if selection_is_multiline_command(&text) {
+            self.insert_text_into_command_input(&text);
+            self.status_message =
+                Some("Multiline selection inserted into input; press Enter to run".to_string());
+            self.needs_redraw = true;
+            return;
+        }
+
+        let text = text.trim();
         self.send_raw_input_to_pty(text.as_bytes());
         self.send_raw_input_to_pty(b"\r");
         self.status_message = Some("Ran selected text".to_string());
         self.needs_redraw = true;
+    }
+
+    fn paste_selected_text_into_input(&mut self) {
+        let Some(text) = self
+            .selection_text()
+            .map(|text| text.trim_end().to_string())
+            .filter(|text| !text.is_empty())
+        else {
+            self.status_message = Some("No selection to paste".to_string());
+            self.needs_redraw = true;
+            return;
+        };
+        self.insert_text_into_command_input(&text);
+        self.status_message = Some("Pasted selection into command input".to_string());
+        self.needs_redraw = true;
+    }
+
+    fn insert_text_into_command_input(&mut self, text: &str) {
+        if let Some(active_pane) = self.active_pane_mut() {
+            active_pane.app.input_mode = InputMode::OwnedInput;
+            active_pane.app.input_editor.is_active = true;
+            active_pane.app.input_editor.buffer.set_text(text);
+        }
     }
 
     fn execute_window_context_action(&mut self, action: WindowContextAction) {
@@ -10263,6 +10375,13 @@ impl AppHandler for WokHandler {
                 self.focus_pane_at_point(x, y);
                 if button == MouseButton::Left && self.start_floating_drag_at(x, y) {
                     return;
+                }
+                if button == MouseButton::Left {
+                    if let Some(cell) = self.pixel_to_cell(x, y) {
+                        if self.handle_modifier_left_click_at_cell(cell, modifiers) {
+                            return;
+                        }
+                    }
                 }
                 if self.send_terminal_mouse_event(
                     TerminalMouseEvent::Press(button),
@@ -12556,6 +12675,7 @@ fn context_menu_workspace_entries() -> Vec<ContextMenuEntry> {
 
 fn context_menu_selection_entries(selection_text: &str) -> Vec<ContextMenuEntry> {
     let markdown = format!("```text\n{}\n```", selection_text.trim_end());
+    let shell_arg = shell_quote_path(selection_text.trim_end());
     vec![
         context_menu_section("Selection"),
         context_menu_clipboard(
@@ -12571,6 +12691,14 @@ fn context_menu_selection_entries(selection_text: &str) -> Vec<ContextMenuEntry>
                 "selection as markdown".to_string(),
             )),
         },
+        ContextMenuEntry {
+            label: "Copy Selection As Shell Arg".to_string(),
+            description: "single quoted for shell".to_string(),
+            action: Some(ContextMenuAction::CopyText(
+                shell_arg,
+                "selection as shell arg".to_string(),
+            )),
+        },
         context_menu_selection_action(
             "Search Selection",
             "scrollback",
@@ -12581,7 +12709,59 @@ fn context_menu_selection_entries(selection_text: &str) -> Vec<ContextMenuEntry>
             "append to default scratch",
             SelectionContextAction::SendToScratch,
         ),
-        context_menu_selection_action("Run Selection", "send to pane", SelectionContextAction::Run),
+        context_menu_selection_action(
+            "Paste Selection Into Input",
+            "edit before running",
+            SelectionContextAction::PasteIntoInput,
+        ),
+        context_menu_selection_action(
+            "Run Selection",
+            "single-line; multiline inserts",
+            SelectionContextAction::Run,
+        ),
+    ]
+}
+
+fn context_menu_path_extra_entries(path: &Path, relative_path: &str) -> Vec<ContextMenuEntry> {
+    let display = path.display().to_string();
+    let filename = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(display.as_str())
+        .to_string();
+    vec![
+        ContextMenuEntry {
+            label: "Open Containing Folder".to_string(),
+            description: truncate_menu_description(&display),
+            action: Some(ContextMenuAction::Path(
+                PathContextAction::OpenContainingFolder,
+                path.to_path_buf(),
+            )),
+        },
+        ContextMenuEntry {
+            label: "Copy Relative Path".to_string(),
+            description: truncate_menu_description(relative_path),
+            action: Some(ContextMenuAction::CopyText(
+                relative_path.to_string(),
+                "relative path".to_string(),
+            )),
+        },
+        ContextMenuEntry {
+            label: "Copy Filename".to_string(),
+            description: truncate_menu_description(&filename),
+            action: Some(ContextMenuAction::CopyText(
+                filename,
+                "filename".to_string(),
+            )),
+        },
+        ContextMenuEntry {
+            label: "Copy Shell-Quoted Path".to_string(),
+            description: "safe shell argument".to_string(),
+            action: Some(ContextMenuAction::CopyText(
+                shell_quote_path(&display),
+                "shell-quoted path".to_string(),
+            )),
+        },
     ]
 }
 
@@ -12802,6 +12982,19 @@ fn floating_resize_affordance_rect(rect: Rect, edges: FloatingResizeEdges, toler
 
 fn shell_quote_path(path: &str) -> String {
     format!("'{}'", path.replace('\'', "'\"'\"'"))
+}
+
+fn relative_path_for_display(path: &Path, cwd: &Path) -> String {
+    path.strip_prefix(cwd)
+        .ok()
+        .filter(|relative| !relative.as_os_str().is_empty())
+        .unwrap_or(path)
+        .display()
+        .to_string()
+}
+
+fn selection_is_multiline_command(text: &str) -> bool {
+    text.lines().filter(|line| !line.trim().is_empty()).count() > 1
 }
 
 fn is_text_preview_path(path: &Path) -> bool {
@@ -14037,9 +14230,52 @@ mod tests {
         assert!(entries[0].action.is_none());
         assert!(labels.contains(&"Copy Selection"));
         assert!(labels.contains(&"Copy Selection As Markdown"));
+        assert!(labels.contains(&"Copy Selection As Shell Arg"));
         assert!(labels.contains(&"Search Selection"));
         assert!(labels.contains(&"Send Selection To Scratch"));
+        assert!(labels.contains(&"Paste Selection Into Input"));
         assert!(labels.contains(&"Run Selection"));
+    }
+
+    #[test]
+    fn test_context_menu_path_extra_entries_include_native_actions() {
+        let entries = context_menu_path_extra_entries(
+            std::path::Path::new("/repo/src/main.rs"),
+            "src/main.rs",
+        );
+        let labels = entries
+            .iter()
+            .map(|entry| entry.label.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(labels.contains(&"Open Containing Folder"));
+        assert!(labels.contains(&"Copy Relative Path"));
+        assert!(labels.contains(&"Copy Filename"));
+        assert!(labels.contains(&"Copy Shell-Quoted Path"));
+    }
+
+    #[test]
+    fn test_relative_path_for_display_uses_cwd_when_possible() {
+        assert_eq!(
+            relative_path_for_display(
+                std::path::Path::new("/repo/src/main.rs"),
+                std::path::Path::new("/repo")
+            ),
+            "src/main.rs"
+        );
+        assert_eq!(
+            relative_path_for_display(
+                std::path::Path::new("/other/src/main.rs"),
+                std::path::Path::new("/repo")
+            ),
+            "/other/src/main.rs"
+        );
+    }
+
+    #[test]
+    fn test_selection_is_multiline_command_ignores_blank_lines() {
+        assert!(!selection_is_multiline_command("cargo test\n\n"));
+        assert!(selection_is_multiline_command("cd app\ncargo test"));
     }
 
     #[test]
