@@ -13888,6 +13888,38 @@ mod tests {
     }
 
     #[test]
+    fn test_context_menu_workspace_entries_are_sectioned() {
+        let entries = context_menu_workspace_entries();
+
+        assert!(entries.iter().any(|entry| entry.action.is_none()));
+        assert!(entries
+            .iter()
+            .any(|entry| entry.label == "Split Right" && entry.action.is_some()));
+        assert_eq!(first_actionable_context_menu_index(&entries), Some(1));
+        assert_eq!(
+            next_actionable_context_menu_index(&entries, 1, false),
+            Some(21)
+        );
+    }
+
+    #[test]
+    fn test_context_menu_selection_entries_include_useful_actions() {
+        let entries = context_menu_selection_entries("cargo test\n");
+        let labels = entries
+            .iter()
+            .map(|entry| entry.label.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(entries[0].label, "Selection");
+        assert!(entries[0].action.is_none());
+        assert!(labels.contains(&"Copy Selection"));
+        assert!(labels.contains(&"Copy Selection As Markdown"));
+        assert!(labels.contains(&"Search Selection"));
+        assert!(labels.contains(&"Send Selection To Scratch"));
+        assert!(labels.contains(&"Run Selection"));
+    }
+
+    #[test]
     fn test_recent_key_label_preserves_character_case() {
         let lower = wok_app::keybindings::KeyCombo {
             key: KeyAction::Char('a'),

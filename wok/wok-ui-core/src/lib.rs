@@ -217,7 +217,12 @@ impl App {
         let id = EntityId(self.next_id);
         self.next_id += 1;
         let cell: Rc<RefCell<dyn Any>> = Rc::new(RefCell::new(value));
-        self.slots.insert(id, Slot { cell: Rc::clone(&cell) });
+        self.slots.insert(
+            id,
+            Slot {
+                cell: Rc::clone(&cell),
+            },
+        );
         Handle {
             entity: Entity {
                 id,

@@ -55,7 +55,8 @@ impl<T: Item> SumTree<T> {
     pub fn push(&mut self, item: T) {
         if let Some(extra) = self.root.push(item) {
             // Root split — grow upward.
-            self.root = Node::internal_from(vec![std::mem::replace(&mut self.root, Node::leaf()), extra]);
+            self.root =
+                Node::internal_from(vec![std::mem::replace(&mut self.root, Node::leaf()), extra]);
         }
     }
 
@@ -255,7 +256,7 @@ mod tests {
         t.push(Line("hello".into())); // 5
         t.push(Line("world".into())); // 5
         t.push(Line("!".into())); // 1
-        // Cumulative bytes: 5, 10, 11.
+                                  // Cumulative bytes: 5, 10, 11.
         assert_eq!(t.seek_by(1, &|s: &ByteSummary| s.0), Some(0));
         assert_eq!(t.seek_by(5, &|s: &ByteSummary| s.0), Some(0));
         assert_eq!(t.seek_by(6, &|s: &ByteSummary| s.0), Some(1));

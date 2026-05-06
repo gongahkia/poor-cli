@@ -184,10 +184,9 @@ pub fn spawn_detached(cmd: Cmd) -> Result<Child, ProcessError> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .into_command();
-    command.spawn().map_err(|source| ProcessError::Spawn {
-        program,
-        source,
-    })
+    command
+        .spawn()
+        .map_err(|source| ProcessError::Spawn { program, source })
 }
 
 /// Build a cross-platform shell command running `line`.

@@ -150,8 +150,8 @@ impl InputSurface {
     /// Move cursor by `delta` bytes (clamped to buffer + char boundaries).
     pub fn move_cursor(&mut self, delta: isize) -> Vec<SurfaceAction> {
         let slot = self.slot_mut();
-        let mut new_cursor = (slot.cursor as isize + delta).clamp(0, slot.text.len() as isize)
-            as usize;
+        let mut new_cursor =
+            (slot.cursor as isize + delta).clamp(0, slot.text.len() as isize) as usize;
         // step to nearest valid char boundary in delta direction
         if delta >= 0 {
             while new_cursor < slot.text.len() && !slot.text.is_char_boundary(new_cursor) {

@@ -67,8 +67,8 @@ impl RankedRunner {
     pub fn run(&self, ctx: &CompletionContext) -> Vec<CompletionItem> {
         let mut merged: Vec<CompletionItem> = Vec::new();
         for provider in &self.providers {
-            let items = catch_unwind(AssertUnwindSafe(|| provider.complete(ctx)))
-                .unwrap_or_default();
+            let items =
+                catch_unwind(AssertUnwindSafe(|| provider.complete(ctx))).unwrap_or_default();
             merged.extend(items);
         }
         // dedup preserving first occurrence.
@@ -82,9 +82,7 @@ impl RankedRunner {
 
         let mut scored: Vec<(f64, CompletionItem)> = merged
             .into_iter()
-            .filter_map(|item| {
-                fuzzy_score(&ctx.word, &item.text).map(|score| (score, item))
-            })
+            .filter_map(|item| fuzzy_score(&ctx.word, &item.text).map(|score| (score, item)))
             .collect();
         scored.sort_by(|a, b| b.0.total_cmp(&a.0));
         scored.truncate(self.max_results);
@@ -206,7 +204,10 @@ mod tests {
 
     #[test]
     fn alias_only_completes_first_token() {
-        let p = AliasProvider::new(vec![("g".into(), "git".into()), ("ll".into(), "ls -la".into())]);
+        let p = AliasProvider::new(vec![
+            ("g".into(), "git".into()),
+            ("ll".into(), "ls -la".into()),
+        ]);
         // first-token match
         let items = p.complete(&ctx("g", "g"));
         assert_eq!(items.len(), 1);
@@ -252,8 +253,8 @@ mod tests {
 
     #[test]
     fn empty_word_skips_fuzzy_filter() {
-        let r = RankedRunner::new(10)
-            .with(Box::new(StaticProvider(vec!["alpha", "beta", "gamma"])));
+        let r =
+            RankedRunner::new(10).with(Box::new(StaticProvider(vec!["alpha", "beta", "gamma"])));
         let items = r.run(&ctx("", ""));
         assert_eq!(items.len(), 3);
     }

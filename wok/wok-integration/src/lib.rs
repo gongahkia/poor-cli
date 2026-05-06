@@ -219,7 +219,9 @@ mod tests {
     fn injected_events_drive_block_manager() {
         let h = Builder::new()
             .step(TestStep::InjectEvent(SemanticEvent::PromptStart { row: 0 }))
-            .step(TestStep::InjectEvent(SemanticEvent::CommandStart { row: 0 }))
+            .step(TestStep::InjectEvent(SemanticEvent::CommandStart {
+                row: 0,
+            }))
             .step(TestStep::InjectEvent(SemanticEvent::CommandText {
                 row: 0,
                 text: "echo hi".into(),
@@ -248,7 +250,9 @@ mod tests {
                 row,
                 text: (*cmd).into(),
             }));
-            steps.push(TestStep::InjectEvent(SemanticEvent::OutputStart { row: row + 1 }));
+            steps.push(TestStep::InjectEvent(SemanticEvent::OutputStart {
+                row: row + 1,
+            }));
             steps.push(TestStep::InjectEvent(SemanticEvent::CommandEnd {
                 row: row + 2,
                 exit_code: Some(if *cmd == "false" { 1 } else { 0 }),
@@ -263,7 +267,10 @@ mod tests {
     fn resize_changes_state_dims() {
         let h = Builder::new()
             .dims(80, 24)
-            .step(TestStep::Resize { cols: 132, rows: 43 })
+            .step(TestStep::Resize {
+                cols: 132,
+                rows: 43,
+            })
             .run()
             .expect("run");
         // expose via state's grid; just verify run didn't panic.

@@ -61,24 +61,32 @@ fn bench_get(c: &mut Criterion) {
             t.push(l.clone());
         }
         let indices: Vec<usize> = (0..1024).map(|i| (i * 31) % n).collect();
-        group.bench_with_input(BenchmarkId::new("vec", n), &(&v, &indices), |b, (v, idx)| {
-            b.iter(|| {
-                let mut sum = 0;
-                for &i in idx.iter() {
-                    sum += v[i].0.len();
-                }
-                black_box(sum)
-            });
-        });
-        group.bench_with_input(BenchmarkId::new("sumtree", n), &(&t, &indices), |b, (t, idx)| {
-            b.iter(|| {
-                let mut sum = 0;
-                for &i in idx.iter() {
-                    sum += t.get(i).unwrap().0.len();
-                }
-                black_box(sum)
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::new("vec", n),
+            &(&v, &indices),
+            |b, (v, idx)| {
+                b.iter(|| {
+                    let mut sum = 0;
+                    for &i in idx.iter() {
+                        sum += v[i].0.len();
+                    }
+                    black_box(sum)
+                });
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("sumtree", n),
+            &(&t, &indices),
+            |b, (t, idx)| {
+                b.iter(|| {
+                    let mut sum = 0;
+                    for &i in idx.iter() {
+                        sum += t.get(i).unwrap().0.len();
+                    }
+                    black_box(sum)
+                });
+            },
+        );
     }
     group.finish();
 }

@@ -400,6 +400,9 @@ mod tests {
             m.resolve(&[stroke('q')], &empty_ctx()),
             Resolution::Match { .. }
         ));
-        assert_eq!(m.resolve(&[stroke('q')], &ctx(&["modal"])), Resolution::None);
+        assert_eq!(
+            m.resolve(&[stroke('q')], &ctx(&["modal"])),
+            Resolution::None
+        );
     }
 }

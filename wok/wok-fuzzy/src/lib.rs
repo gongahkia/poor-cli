@@ -100,7 +100,11 @@ pub fn match_many<S: AsRef<str>>(query: &str, candidates: &[S]) -> Vec<Match> {
         .enumerate()
         .filter_map(|(i, c)| score(query, c.as_ref()).map(|s| Match { index: i, score: s }))
         .collect();
-    out.sort_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.index.cmp(&b.index)));
+    out.sort_by(|a, b| {
+        b.score
+            .total_cmp(&a.score)
+            .then_with(|| a.index.cmp(&b.index))
+    });
     out
 }
 
