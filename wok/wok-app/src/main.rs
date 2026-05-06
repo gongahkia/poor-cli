@@ -4367,6 +4367,16 @@ impl WokHandler {
         extract_path_near_column(&line, col)
     }
 
+    fn path_at_cell(&self, pane_id: PaneId, cell: CellPos) -> Option<ParsedPathTarget> {
+        let pane = self.panes.get(&pane_id)?;
+        let absolute_row = pane
+            .terminal
+            .state
+            .viewport_row_to_absolute(usize::from(cell.row));
+        let line = self.path_detection_line_for_row(pane, absolute_row);
+        extract_path_near_column(&line, usize::from(cell.col))
+    }
+
     fn path_detection_line_for_row(&self, pane: &PaneRuntime, row: usize) -> String {
         let mut line = pane.terminal.state.row_text(row);
         if line.ends_with('\\') || line.ends_with('/') {
@@ -8714,6 +8724,24 @@ impl WokHandler {
             return false;
         };
         active_pane.app.clipboard.copy(&text).is_ok()
+    }
+
+    fn copy_text_to_clipboard(&mut self, text: &str, label: &str) -> bool {
+        let Some(active_pane) = self.active_pane_mut() else {
+            return false;
+        };
+        match active_pane.app.clipboard.copy(text) {
+            Ok(()) => {
+                self.status_message = Some(format!("Copied {label}"));
+                self.needs_redraw = true;
+                true
+            }
+            Err(error) => {
+                self.status_message = Some(format!("Failed to copy {label}: {error}"));
+                self.needs_redraw = true;
+                false
+            }
+        }
     }
 
     fn selected_block_text(&self) -> Option<String> {

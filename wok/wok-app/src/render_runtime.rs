@@ -1591,6 +1591,175 @@ pub(crate) fn palette_category_label(category: PaletteCategory) -> &'static str 
     }
 }
 
+pub(crate) fn context_menu_rect(
+    menu: &ContextMenuState,
+    viewport: Rect,
+    cell_width: f32,
+    cell_height: f32,
+) -> Rect {
+    let label_cols = menu
+        .entries
+        .iter()
+        .map(|entry| entry.label.chars().count())
+        .max()
+        .unwrap_or(12);
+    let description_cols = menu
+        .entries
+        .iter()
+        .map(|entry| entry.description.chars().count())
+        .max()
+        .unwrap_or(0)
+        .min(36);
+    let width = ((label_cols + description_cols + 8) as f32 * cell_width)
+        .clamp(220.0, 520.0)
+        .min((viewport.w - 16.0).max(180.0));
+    let row_height = context_menu_row_height(cell_height);
+    let height = (menu.entries.len().max(1) as f32 * row_height + 12.0)
+        .min((viewport.h - 16.0).max(row_height + 12.0));
+    let x = menu.x.clamp(viewport.x + 8.0, viewport.x + viewport.w - width - 8.0);
+    let y = menu
+        .y
+        .clamp(viewport.y + 8.0, viewport.y + viewport.h - height - 8.0);
+    Rect::new(x, y, width, height)
+}
+
+pub(crate) fn context_menu_row_height(cell_height: f32) -> f32 {
+    cell_height + 7.0
+}
+
+pub(crate) fn context_menu_index_at(
+    menu: &ContextMenuState,
+    viewport: Rect,
+    cell_width: f32,
+    cell_height: f32,
+    x: f64,
+    y: f64,
+) -> Option<usize> {
+    let rect = context_menu_rect(menu, viewport, cell_width, cell_height);
+    if x < f64::from(rect.x)
+        || x > f64::from(rect.x + rect.w)
+        || y < f64::from(rect.y)
+        || y > f64::from(rect.y + rect.h)
+    {
+        return None;
+    }
+    let row_height = context_menu_row_height(cell_height);
+    let index = ((y as f32 - rect.y - 6.0) / row_height).floor() as isize;
+    if index < 0 {
+        return None;
+    }
+    let index = index as usize;
+    (index < menu.entries.len()).then_some(index)
+}
+
+pub(crate) fn render_context_menu(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    theme: &Theme,
+    viewport: Rect,
+    menu: &ContextMenuState,
+    surface_opacity: f32,
+) {
+    if menu.entries.is_empty() {
+        return;
+    }
+
+    let rect = context_menu_rect(
+        menu,
+        viewport,
+        font.metrics.cell_width,
+        font.metrics.cell_height,
+    );
+    let row_height = context_menu_row_height(font.metrics.cell_height);
+
+    render.batch.push_bg_quad(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        with_opacity(
+            [theme.input_bg.r, theme.input_bg.g, theme.input_bg.b, 0.98],
+            surface_opacity,
+        ),
+    );
+    render.batch.push_bg_quad(
+        rect.x,
+        rect.y,
+        rect.w,
+        1.0,
+        with_opacity(
+            [
+                theme.highlight_current_match.r,
+                theme.highlight_current_match.g,
+                theme.highlight_current_match.b,
+                0.85,
+            ],
+            surface_opacity,
+        ),
+    );
+
+    let padding_x = 10.0;
+    let label_width = (rect.w * 0.46).clamp(110.0, 220.0);
+    let description_x = rect.x + padding_x + label_width + 10.0;
+    let description_width = (rect.x + rect.w - padding_x - description_x).max(0.0);
+    for (index, entry) in menu.entries.iter().enumerate() {
+        let row_y = rect.y + 6.0 + index as f32 * row_height;
+        if row_y + row_height > rect.y + rect.h {
+            break;
+        }
+        if index == menu.selected {
+            render.batch.push_bg_quad(
+                rect.x + 4.0,
+                row_y - 2.0,
+                rect.w - 8.0,
+                row_height,
+                with_opacity(
+                    [theme.selection.r, theme.selection.g, theme.selection.b, 0.22],
+                    surface_opacity,
+                ),
+            );
+        }
+        push_text(
+            render,
+            font,
+            rect.x + padding_x,
+            row_y,
+            &fit_text_to_width(&entry.label, label_width, font.metrics.cell_width),
+            with_opacity(
+                [
+                    theme.foreground.r,
+                    theme.foreground.g,
+                    theme.foreground.b,
+                    theme.foreground.a,
+                ],
+                surface_opacity,
+            ),
+        );
+        if description_width >= font.metrics.cell_width * 4.0 {
+            push_text(
+                render,
+                font,
+                description_x,
+                row_y,
+                &fit_text_to_width(
+                    &entry.description,
+                    description_width,
+                    font.metrics.cell_width,
+                ),
+                with_opacity(
+                    [
+                        theme.status_bar_text.r,
+                        theme.status_bar_text.g,
+                        theme.status_bar_text.b,
+                        0.82,
+                    ],
+                    surface_opacity,
+                ),
+            );
+        }
+    }
+}
+
 pub(crate) fn palette_query_content(query: &str) -> &str {
     let trimmed = query.trim();
     if let Some(stripped) = trimmed.strip_prefix('>') {
