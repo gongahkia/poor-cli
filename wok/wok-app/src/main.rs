@@ -9320,18 +9320,20 @@ impl WokHandler {
         if !point_in_rect(self.chrome_rects.content, x, y) {
             return false;
         }
-        let topmost_pane = self
-            .workspace
-            .pane_at_point(self.chrome_rects.content, x as f32, y as f32);
+        let topmost_pane =
+            self.workspace
+                .pane_at_point(self.chrome_rects.content, x as f32, y as f32);
         if topmost_pane.is_some_and(|pane_id| self.workspace.is_active_floating_pane(pane_id)) {
             return false;
         }
 
         let tolerance = self.config.focused_pane_border_width.max(8.0);
-        let Some(hit) =
-            self.workspace
-                .hit_test_split_divider(self.chrome_rects.content, x as f32, y as f32, tolerance)
-        else {
+        let Some(hit) = self.workspace.hit_test_split_divider(
+            self.chrome_rects.content,
+            x as f32,
+            y as f32,
+            tolerance,
+        ) else {
             return false;
         };
 
@@ -9363,12 +9365,7 @@ impl WokHandler {
         true
     }
 
-    fn floating_drag_mode_at(
-        &self,
-        pane_id: PaneId,
-        x: f64,
-        y: f64,
-    ) -> Option<FloatingDragMode> {
+    fn floating_drag_mode_at(&self, pane_id: PaneId, x: f64, y: f64) -> Option<FloatingDragMode> {
         let floating = self.workspace.active_floating_pane(pane_id)?;
         let rect = floating.rect;
         if !point_in_rect(rect, x, y) {
@@ -9963,7 +9960,13 @@ impl AppHandler for WokHandler {
                 if self.handle_chrome_mouse_press(button, x, y, modifiers) {
                     return;
                 }
+                if button == MouseButton::Left && self.start_split_divider_drag_at(x, y) {
+                    return;
+                }
                 self.focus_pane_at_point(x, y);
+                if button == MouseButton::Left && self.start_floating_drag_at(x, y) {
+                    return;
+                }
                 if self.send_terminal_mouse_event(
                     TerminalMouseEvent::Press(button),
                     x,
@@ -10005,38 +10008,6 @@ impl AppHandler for WokHandler {
                 }
                 if button != MouseButton::Left {
                     return;
-                }
-                if modifiers.alt && platform_modifier_active(modifiers) {
-                    if let Some(pane_id) = self.active_pane_id() {
-                        if let Some(floating) = self.workspace.active_floating_pane(pane_id) {
-                            let rect = floating.rect;
-                            let near_right = x >= f64::from(rect.x + rect.w - 10.0)
-                                && x <= f64::from(rect.x + rect.w);
-                            let near_bottom = y >= f64::from(rect.y + rect.h - 10.0)
-                                && y <= f64::from(rect.y + rect.h);
-                            let in_title = y >= f64::from(rect.y)
-                                && y <= f64::from(rect.y + 18.0)
-                                && x >= f64::from(rect.x)
-                                && x <= f64::from(rect.x + rect.w);
-                            let mode = if near_right || near_bottom {
-                                Some(FloatingDragMode::Resize)
-                            } else if in_title {
-                                Some(FloatingDragMode::Move)
-                            } else {
-                                None
-                            };
-                            if let Some(mode) = mode {
-                                self.floating_drag = Some(FloatingDragState {
-                                    pane_id,
-                                    mode,
-                                    last_x: x,
-                                    last_y: y,
-                                });
-                                self.needs_redraw = true;
-                                return;
-                            }
-                        }
-                    }
                 }
                 if let Some(cell) = self.pixel_to_cell(x, y) {
                     let should_open_link = self.active_pane().is_some_and(|pane| {
@@ -10105,7 +10076,13 @@ impl AppHandler for WokHandler {
                 modifiers,
             } => {
                 self.pressed_mouse_button = None;
+                let was_internal_drag = self.floating_drag.is_some() || self.split_drag.is_some();
                 self.floating_drag = None;
+                self.split_drag = None;
+                if was_internal_drag {
+                    self.needs_redraw = true;
+                    return;
+                }
                 if self.send_terminal_mouse_event(TerminalMouseEvent::Release, x, y, modifiers) {
                     self.needs_redraw = true;
                     return;
@@ -10128,6 +10105,10 @@ impl AppHandler for WokHandler {
                 self.needs_redraw = true;
             }
             wok_app::input::MouseEvent::Move { x, y, modifiers } => {
+                if self.split_drag.is_some() {
+                    self.update_split_divider_drag(x, y);
+                    return;
+                }
                 if let Some(drag) = self.floating_drag.as_mut() {
                     let dx = (x - drag.last_x) as f32;
                     let dy = (y - drag.last_y) as f32;
@@ -10138,12 +10119,15 @@ impl AppHandler for WokHandler {
                             dy,
                             self.chrome_rects.content,
                         ),
-                        FloatingDragMode::Resize => self.workspace.resize_floating_pane(
-                            drag.pane_id,
-                            dx,
-                            dy,
-                            self.chrome_rects.content,
-                        ),
+                        FloatingDragMode::Resize(edges) => {
+                            self.workspace.resize_floating_pane_edges(
+                                drag.pane_id,
+                                edges,
+                                dx,
+                                dy,
+                                self.chrome_rects.content,
+                            )
+                        }
                     };
                     drag.last_x = x;
                     drag.last_y = y;

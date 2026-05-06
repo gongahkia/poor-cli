@@ -295,11 +295,7 @@ fn resize_split_at_path(node: &mut SplitNode, path: &[u8], delta: f32) -> bool {
     }
 }
 
-fn split_child_rects(
-    available: Rect,
-    direction: SplitDirection,
-    ratio: f32,
-) -> (Rect, Rect) {
+fn split_child_rects(available: Rect, direction: SplitDirection, ratio: f32) -> (Rect, Rect) {
     match direction {
         SplitDirection::Vertical => {
             let h1 = available.h * ratio;
@@ -318,6 +314,10 @@ fn split_child_rects(
             )
         }
     }
+}
+
+fn contains_point(rect: Rect, x: f32, y: f32) -> bool {
+    x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h
 }
 
 #[cfg(test)]
