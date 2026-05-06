@@ -2055,6 +2055,22 @@ mod tests {
     }
 
     #[test]
+    fn format_duration_short_uses_compact_units() {
+        assert_eq!(
+            format_duration_short(std::time::Duration::from_millis(42)),
+            "42ms"
+        );
+        assert_eq!(
+            format_duration_short(std::time::Duration::from_millis(1_250)),
+            "1.2s"
+        );
+        assert_eq!(
+            format_duration_short(std::time::Duration::from_secs(120)),
+            "2m"
+        );
+    }
+
+    #[test]
     fn tab_bar_width_grows_to_fit_large_font_labels() {
         let width = tab_bar_tab_width_for_label("Wok  [147x59]", 18.0);
 
@@ -3557,6 +3573,29 @@ pub(crate) fn push_text(
     }
 }
 
+pub(crate) fn push_text_to_batch(
+    render: &mut RenderState,
+    batch: &mut QuadBatch,
+    font: &mut FontSystem,
+    x: f32,
+    y: f32,
+    text: &str,
+    color: [f32; 4],
+) {
+    let cell_width = font.metrics.cell_width;
+    for (index, ch) in text.chars().enumerate() {
+        push_glyph_to_batch(
+            render,
+            batch,
+            font,
+            x + index as f32 * cell_width,
+            y,
+            ch,
+            color,
+        );
+    }
+}
+
 pub(crate) fn push_glyph(
     render: &mut RenderState,
     font: &mut FontSystem,
@@ -4376,10 +4415,12 @@ pub(crate) fn rebuild_visible_row_batch(
     if let Some(block) = blocks.iter().find(|block| {
         absolute_row >= block.output_start_row && absolute_row <= block.output_end_row
     }) {
-        let accent = if block.exit_code.unwrap_or(0) == 0 {
-            theme.block_success_accent
+        let accent = block_accent_color(theme, block);
+        let accent_alpha = block_accent_alpha(block, selected_block_id, render_time);
+        let rail_width = if selected_block_id == Some(block.id) {
+            5.0
         } else {
-            theme.block_error_accent
+            3.0
         };
 
         if absolute_row == block.output_start_row {
@@ -4396,21 +4437,35 @@ pub(crate) fn rebuild_visible_row_batch(
                 ],
             );
         }
+        if absolute_row == block.output_end_row {
+            batch.push_bg_quad(
+                viewport.x + 4.0,
+                row_y + cell_height - 1.0,
+                viewport.w - 4.0,
+                1.0,
+                [
+                    theme.block_separator.r,
+                    theme.block_separator.g,
+                    theme.block_separator.b,
+                    0.38,
+                ],
+            );
+        }
 
         batch.push_bg_quad(
-            viewport.x,
-            row_y,
-            4.0,
-            cell_height,
-            [accent.r, accent.g, accent.b, 0.9],
+            viewport.x + 1.0,
+            row_y + 1.0,
+            rail_width,
+            (cell_height - 2.0).max(1.0),
+            [accent.r, accent.g, accent.b, accent_alpha],
         );
 
         if block.is_bookmarked {
             batch.push_bg_quad(
-                viewport.x + 4.0,
-                row_y,
+                viewport.x + rail_width + 3.0,
+                row_y + 2.0,
                 3.0,
-                cell_height,
+                (cell_height - 4.0).max(1.0),
                 [
                     theme.highlight_current_match.r,
                     theme.highlight_current_match.g,
@@ -4421,6 +4476,13 @@ pub(crate) fn rebuild_visible_row_batch(
         }
 
         if selected_block_id == Some(block.id) {
+            batch.push_bg_quad(
+                viewport.x + rail_width + 2.0,
+                row_y + 1.0,
+                1.0,
+                (cell_height - 2.0).max(1.0),
+                [accent.r, accent.g, accent.b, 0.75],
+            );
             batch.push_bg_quad(
                 viewport.x,
                 row_y,
@@ -4467,8 +4529,160 @@ pub(crate) fn rebuild_visible_row_batch(
                     ],
                 );
             }
+            render_block_header_chip(
+                batch,
+                render,
+                font,
+                theme,
+                block,
+                terminal,
+                absolute_row,
+                viewport,
+                row_y,
+                cell_width,
+                cell_height,
+            );
         }
     }
+}
+
+fn block_accent_color(theme: &Theme, block: &Block) -> wok_ui::theme::Color {
+    match block.exit_code {
+        None => theme.cursor,
+        Some(0) => theme.block_success_accent,
+        Some(_) => theme.block_error_accent,
+    }
+}
+
+fn block_accent_alpha(block: &Block, selected_block_id: Option<u64>, render_time: Instant) -> f32 {
+    if selected_block_id == Some(block.id) {
+        return 1.0;
+    }
+    if block.exit_code.is_none() {
+        let elapsed = render_time
+            .checked_duration_since(block.start_time)
+            .unwrap_or_else(|| block.start_time.elapsed())
+            .as_secs_f32();
+        return 0.62 + (elapsed * std::f32::consts::TAU * 0.5).sin().abs() * 0.18;
+    }
+    0.88
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_block_header_chip(
+    batch: &mut QuadBatch,
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    theme: &Theme,
+    block: &Block,
+    terminal: &Terminal,
+    absolute_row: usize,
+    viewport: Rect,
+    row_y: f32,
+    cell_width: f32,
+    cell_height: f32,
+) {
+    let meta = block_header_meta(block);
+    let chip_width =
+        ((meta.chars().count() as f32 * cell_width) + 12.0).min((viewport.w * 0.42).max(0.0));
+    if chip_width < cell_width * 6.0 || viewport.w < 180.0 {
+        return;
+    }
+    let chip_x = viewport.x + viewport.w - chip_width - 8.0;
+    let start_col = ((chip_x - viewport.x) / cell_width).floor().max(0.0) as usize;
+    if !block.is_collapsed && row_has_visible_text_from_col(terminal, absolute_row, start_col) {
+        return;
+    }
+
+    batch.push_bg_quad(
+        chip_x,
+        row_y + 2.0,
+        chip_width,
+        (cell_height - 4.0).max(1.0),
+        [theme.input_bg.r, theme.input_bg.g, theme.input_bg.b, 0.78],
+    );
+    let visible_meta = fit_text_to_width(&meta, chip_width - 10.0, cell_width);
+    push_text_to_batch(
+        render,
+        batch,
+        font,
+        chip_x + 5.0,
+        row_y,
+        &visible_meta,
+        [
+            theme.status_bar_text.r,
+            theme.status_bar_text.g,
+            theme.status_bar_text.b,
+            0.95,
+        ],
+    );
+
+    if block.is_collapsed {
+        let label_x = viewport.x + 12.0;
+        let label_width = (chip_x - label_x - 8.0).max(0.0);
+        let command = fit_text_to_width(&block.command_text, label_width, cell_width);
+        if !command.is_empty() {
+            push_text_to_batch(
+                render,
+                batch,
+                font,
+                label_x,
+                row_y,
+                &command,
+                [
+                    theme.foreground.r,
+                    theme.foreground.g,
+                    theme.foreground.b,
+                    0.96,
+                ],
+            );
+        }
+    }
+}
+
+fn block_header_meta(block: &Block) -> String {
+    let cwd = block
+        .cwd
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("~");
+    let branch = block.git_branch.as_deref().unwrap_or("-");
+    let exit = match block.exit_code {
+        None => "run".to_string(),
+        Some(code) => format!("exit {code}"),
+    };
+    let duration = block
+        .duration
+        .map(format_duration_short)
+        .unwrap_or_else(|| "now".to_string());
+    format!("{cwd} | {branch} | {exit} | {duration}")
+}
+
+fn format_duration_short(duration: std::time::Duration) -> String {
+    let millis = duration.as_millis();
+    if millis < 1_000 {
+        format!("{millis}ms")
+    } else if millis < 60_000 {
+        format!("{:.1}s", duration.as_secs_f32())
+    } else {
+        format!("{}m", duration.as_secs() / 60)
+    }
+}
+
+fn row_has_visible_text_from_col(
+    terminal: &Terminal,
+    absolute_row: usize,
+    start_col: usize,
+) -> bool {
+    let columns = terminal.state.columns();
+    if start_col >= columns {
+        return false;
+    }
+    (start_col..columns).any(|col| {
+        let ch = terminal.state.cell_at_absolute(absolute_row, col).character;
+        ch != ' ' && ch != '\0'
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
