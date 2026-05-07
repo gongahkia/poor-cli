@@ -1,11 +1,11 @@
-name = "Graph Box Day"
+name = "Gruvbox Wok Day"
 background = "#f6f3ec"
 foreground = "#182126"
 cursor = "#007a71"
 vi_cursor_color = "#a05a00"
 selection = "#8cc7d966"
 opacity = 1.0
-font_family = "Monaspace Neon"
+font_family = "JetBrainsMono Nerd Font Mono"
 chrome_font_family = "IBM Plex Mono"
 font_size = 24.0
 tab_bar_bg = "#ebe6dc"

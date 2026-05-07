@@ -20,11 +20,11 @@ remove sessions, themes, shell integration, workflows, or `init.lua`.
 
 ```toml
 shell = "zsh"
-font_family = "Monaspace Neon"
+font_family = "JetBrainsMono Nerd Font Mono"
 chrome_font_family = "IBM Plex Mono"
-font_size = 24.0
+font_size = 15.0
 ui_layout = "v2"
-pane_header_visible = true
+pane_header_visible = false
 input_position = "bottom"
 command_entry_mode = "owned_primary"
 scrollback_lines = 10000
@@ -34,7 +34,7 @@ tab_bar_visible = true
 tab_bar_orientation = "horizontal"
 tab_bar_side = "top"
 tab_bar_size = 24.0
-status_bar_visible = true
+status_bar_visible = false
 status_bar_side = "bottom"
 status_bar_size = 24.0
 timeline_rail_visible = false
@@ -46,10 +46,10 @@ background_position = "center"
 # background_width = 900.0
 # background_height = 600.0
 # terminal_background_opacity = 0.72
-pane_border_width = 1.0
-focused_pane_border_width = 2.0
+pane_border_width = 0.0
+focused_pane_border_width = 1.0
 block_foot_visible = false
-floating_pane_title_height = 18.0
+floating_pane_title_height = 16.0
 recent_keys_visible = true
 recent_keys_position = "bottom_right"
 recent_keys_max_entries = 8
@@ -67,7 +67,7 @@ close_on_shell_exit = true
 restore_session = true
 debug_overlay = false
 command_telemetry = false
-theme_path = "~/.config/wok/themes/graph-box-dark.toml"
+theme_path = "~/.config/wok/themes/ghostty-wok-dark.toml"
 external_plugin_command = "node ~/.config/wok/plugins/bridge.js"
 
 [[mouse_bindings]]
@@ -88,11 +88,11 @@ action = "split_vertical"
 | Option | Type | Default | Runtime Status | Description |
 | --- | --- | --- | --- | --- |
 | `shell` | string | auto-detected | Active | Shell to use: `bash`, `zsh`, `fish`, `powershell`, or `wsl:<distro>` |
-| `font_family` | string | `"Monaspace Neon"` | Active | Selects the font family used for glyph rasterization and cell metric measurement |
+| `font_family` | string | `"JetBrainsMono Nerd Font Mono"` | Active | Selects the font family used for glyph rasterization and cell metric measurement |
 | `chrome_font_family` | string | `"IBM Plex Mono"` | Active | Selects the separate mono family used for tab, status, palette, and other chrome labels |
-| `font_size` | float | `24.0` | Active | Font size in points |
+| `font_size` | float | `15.0` | Active | Font size in points |
 | `ui_layout` | string | `"v2"` | Active | Selects frontend chrome generation. `v2` enables the pane-first rework defaults; `v1` restores legacy shell-native/input/header sizing defaults |
-| `pane_header_visible` | boolean | `true` | Active | Reserves a compact pane header line showing pane id, cwd basename, branch, and running state |
+| `pane_header_visible` | boolean | `false` | Active | Reserves a compact pane header line showing pane id, cwd basename, branch, and running state |
 | `input_position` | string | `"bottom"` | Active | Places the owned input bar above or below the viewport |
 | `command_entry_mode` | string | `"owned_primary"` | Active | Chooses prompt-time command entry routing: `shell_native` keeps shell-side editing, `owned_primary` routes idle prompt input into Wok's editor with pane-first history recall and `Ctrl+R` command search |
 | `scrollback_lines` | integer | `10000` | Active | Number of scrollback lines to retain |
@@ -102,7 +102,7 @@ action = "split_vertical"
 | `tab_bar_orientation` | string | `"horizontal"` | Active | Backward-compatible tab layout option: `"horizontal"` maps to `tab_bar_side = "top"`, `"vertical"` maps to `tab_bar_side = "left"` |
 | `tab_bar_side` | string | `"top"` | Active | Places the tab bar on any edge: `top`, `bottom`, `left`, or `right` |
 | `tab_bar_size` | float | `24.0` | Active | Optional tab bar thickness in physical pixels; v1 falls back to active font metrics for horizontal tabs and `180.0` for vertical tabs |
-| `status_bar_visible` | boolean | `true` | Active | Shows or hides the status bar |
+| `status_bar_visible` | boolean | `false` | Active | Shows or hides the status bar |
 | `status_bar_side` | string | `"bottom"` | Active | Places the status bar on any edge: `top`, `bottom`, `left`, or `right`; vertical status bars render segments as a stacked list |
 | `status_bar_size` | float | `24.0` | Active | Optional status bar thickness in physical pixels; v1 falls back to active font metrics |
 | `timeline_rail_visible` | boolean | `false` | Active | Shows the opt-in block timeline rail along the left edge of each pane |
@@ -114,10 +114,10 @@ action = "split_vertical"
 | `background_width` | float | none | Active | Optional rendered background width in physical pixels; preserves source aspect ratio when height is omitted |
 | `background_height` | float | none | Active | Optional rendered background height in physical pixels; preserves source aspect ratio when width is omitted |
 | `terminal_background_opacity` | float | auto | Active | Optional terminal pane fill opacity from `0.0` to `1.0`; by default panes become slightly translucent only when a background image is loaded |
-| `pane_border_width` | float | `1.0` | Active | Split pane border width in physical pixels; use `0.0` to hide inactive borders |
-| `focused_pane_border_width` | float | `2.0` | Active | Focused split pane accent border width in physical pixels; use `0.0` to hide it |
+| `pane_border_width` | float | `0.0` | Active | Split pane border width in physical pixels; use `0.0` to hide inactive borders |
+| `focused_pane_border_width` | float | `1.0` | Active | Focused split pane accent border width in physical pixels; use `0.0` to hide it |
 | `block_foot_visible` | boolean | `false` | Active | Shows the optional selected-block foot strip with rerun/history/diff/copy/inspect affordances; `Mod-Alt-I` toggles it |
-| `floating_pane_title_height` | float | `18.0` | Active | Floating pane title strip height in physical pixels |
+| `floating_pane_title_height` | float | `16.0` | Active | Floating pane title strip height in physical pixels |
 | `recent_keys_visible` | boolean | `true` | Active | Shows a local in-app recent-key visualizer; keys are not persisted |
 | `recent_keys_position` | string | `"bottom_right"` | Active | Places the recent-key visualizer at `top_left`, `top_right`, `bottom_left`, or `bottom_right` |
 | `recent_keys_max_entries` | integer | `8` | Active | Maximum number of recent key labels shown, capped at 64 |
@@ -141,11 +141,12 @@ action = "split_vertical"
 
 ## Themes
 
-The compiled default is `Graph Box Dark`. Running `wok init` also writes these editable theme files to `~/.config/wok/themes/`:
+The compiled default is `Ghostty Wok Dark`. Running `wok init` also writes these editable theme files to `~/.config/wok/themes/`:
 
-- `graph-box-dark.toml`
-- `graph-box-day.toml`
-- `graph-box-neon.toml`
+- `ghostty-wok-dark.toml`
+- `gruvbox-wok-dark.toml`
+- `gruvbox-wok-day.toml`
+- `gruvbox-wok-neon.toml`
 - `tokyo-night.toml`
 - `catppuccin.toml`
 - `nord.toml`

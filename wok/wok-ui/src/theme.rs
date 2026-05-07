@@ -145,32 +145,32 @@ impl Default for SyntaxColors {
 impl Default for Theme {
     fn default() -> Self {
         Self {
-            name: "Graph Box Dark".to_string(),
-            background: Color::rgb(0.043, 0.059, 0.071), // #0b0f12
-            foreground: Color::rgb(0.843, 0.882, 0.875), // #d7e1df
-            cursor: Color::rgb(0.486, 0.969, 0.757),     // #7cf7c1
-            vi_cursor_color: Color::rgb(0.941, 0.776, 0.455), // #f0c674
-            selection: Color::new(0.184, 0.435, 0.522, 0.36), // #2f6f855c
+            name: "Ghostty Wok Dark".to_string(),
+            background: Color::rgb(0.063, 0.063, 0.063), // #101010
+            foreground: Color::rgb(0.949, 0.949, 0.949), // #f2f2f2
+            cursor: Color::rgb(0.961, 0.961, 0.961),     // #f5f5f5
+            vi_cursor_color: Color::rgb(0.796, 0.651, 0.969), // #cba6f7
+            selection: Color::new(0.227, 0.227, 0.227, 0.60), // #3a3a3a99
             ansi_colors: default_ansi_colors(),
-            tab_bar_bg: Color::rgb(0.031, 0.047, 0.059), // #080c0f
-            tab_active_bg: Color::rgb(0.075, 0.125, 0.153), // #132027
-            tab_inactive_bg: Color::rgb(0.051, 0.078, 0.094), // #0d1418
-            tab_text: Color::rgb(0.843, 0.882, 0.875),   // #d7e1df
-            status_bar_bg: Color::rgb(0.031, 0.047, 0.059), // #080c0f
-            status_bar_text: Color::rgb(0.498, 0.584, 0.580), // #7f9594
-            input_bg: Color::rgb(0.063, 0.094, 0.125),   // #101820
-            input_text: Color::rgb(0.843, 0.882, 0.875), // #d7e1df
-            block_separator: Color::rgb(0.133, 0.192, 0.227), // #22313a
-            block_success_accent: Color::rgb(0.486, 0.969, 0.757), // #7cf7c1
-            block_error_accent: Color::rgb(1.0, 0.420, 0.478), // #ff6b7a
-            highlight_match: Color::new(0.941, 0.776, 0.455, 0.33), // #f0c67455
-            highlight_current_match: Color::new(1.0, 0.722, 0.424, 0.50), // #ffb86c80
-            hyperlink_color: Color::rgb(0.478, 0.655, 1.0), // #7aa7ff
-            bracket_match: Color::new(0.486, 0.969, 0.757, 0.33), // #7cf7c155
+            tab_bar_bg: Color::rgb(0.051, 0.051, 0.051), // #0d0d0d
+            tab_active_bg: Color::rgb(0.086, 0.086, 0.086), // #161616
+            tab_inactive_bg: Color::rgb(0.067, 0.067, 0.067), // #111111
+            tab_text: Color::rgb(0.902, 0.902, 0.902),   // #e6e6e6
+            status_bar_bg: Color::rgb(0.051, 0.051, 0.051), // #0d0d0d
+            status_bar_text: Color::rgb(0.604, 0.604, 0.604), // #9a9a9a
+            input_bg: Color::rgb(0.071, 0.071, 0.071),   // #121212
+            input_text: Color::rgb(0.949, 0.949, 0.949), // #f2f2f2
+            block_separator: Color::rgb(0.141, 0.141, 0.141), // #242424
+            block_success_accent: Color::rgb(0.651, 0.890, 0.631), // #a6e3a1
+            block_error_accent: Color::rgb(0.953, 0.545, 0.659), // #f38ba8
+            highlight_match: Color::new(0.537, 0.706, 0.980, 0.33), // #89b4fa55
+            highlight_current_match: Color::new(0.976, 0.886, 0.686, 0.40), // #f9e2af66
+            hyperlink_color: Color::rgb(0.537, 0.706, 0.980), // #89b4fa
+            bracket_match: Color::new(0.580, 0.886, 0.835, 0.40), // #94e2d566
             syntax: SyntaxColors::default(),
-            font_family: "Monaspace Neon".to_string(),
+            font_family: "JetBrainsMono Nerd Font Mono".to_string(),
             chrome_font_family: "IBM Plex Mono".to_string(),
-            font_size: 24.0,
+            font_size: 15.0,
             opacity: 1.0,
             background_image: None,
         }
@@ -181,23 +181,23 @@ impl Default for Theme {
 fn default_ansi_colors() -> [Color; 16] {
     [
         // Normal colors
-        Color::rgb(0.043, 0.059, 0.071), // 0 Black   #0b0f12
-        Color::rgb(1.0, 0.420, 0.478),   // 1 Red     #ff6b7a
-        Color::rgb(0.486, 0.969, 0.757), // 2 Green   #7cf7c1
-        Color::rgb(0.941, 0.776, 0.455), // 3 Yellow  #f0c674
-        Color::rgb(0.478, 0.655, 1.0),   // 4 Blue    #7aa7ff
-        Color::rgb(0.780, 0.573, 0.918), // 5 Magenta #c792ea
-        Color::rgb(0.388, 0.847, 0.847), // 6 Cyan    #63d8d8
-        Color::rgb(0.843, 0.882, 0.875), // 7 White   #d7e1df
+        Color::rgb(0.114, 0.122, 0.129), // 0 Black   #1d1f21
+        Color::rgb(0.953, 0.545, 0.659), // 1 Red     #f38ba8
+        Color::rgb(0.651, 0.890, 0.631), // 2 Green   #a6e3a1
+        Color::rgb(0.976, 0.886, 0.686), // 3 Yellow  #f9e2af
+        Color::rgb(0.537, 0.706, 0.980), // 4 Blue    #89b4fa
+        Color::rgb(0.796, 0.651, 0.969), // 5 Magenta #cba6f7
+        Color::rgb(0.580, 0.886, 0.835), // 6 Cyan    #94e2d5
+        Color::rgb(0.804, 0.839, 0.957), // 7 White   #cdd6f4
         // Bright colors
-        Color::rgb(0.255, 0.314, 0.353), // 8  Bright Black   #41505a
-        Color::rgb(1.0, 0.514, 0.569),   // 9  Bright Red     #ff8391
-        Color::rgb(0.604, 1.0, 0.827),   // 10 Bright Green   #9affd3
-        Color::rgb(1.0, 0.859, 0.541),   // 11 Bright Yellow  #ffdb8a
-        Color::rgb(0.612, 0.753, 1.0),   // 12 Bright Blue    #9cc0ff
-        Color::rgb(0.875, 0.686, 1.0),   // 13 Bright Magenta #dfafff
-        Color::rgb(0.533, 0.965, 0.965), // 14 Bright Cyan    #88f6f6
-        Color::rgb(0.949, 0.973, 0.969), // 15 Bright White   #f2f8f7
+        Color::rgb(0.424, 0.439, 0.525), // 8  Bright Black   #6c7086
+        Color::rgb(0.922, 0.627, 0.675), // 9  Bright Red     #eba0ac
+        Color::rgb(0.706, 0.949, 0.678), // 10 Bright Green   #b4f2ad
+        Color::rgb(0.988, 0.914, 0.741), // 11 Bright Yellow  #fce9bd
+        Color::rgb(0.608, 0.769, 1.0),   // 12 Bright Blue    #9bc4ff
+        Color::rgb(0.851, 0.718, 1.0),   // 13 Bright Magenta #d9b7ff
+        Color::rgb(0.651, 0.953, 0.890), // 14 Bright Cyan    #a6f3e3
+        Color::rgb(0.961, 0.961, 0.961), // 15 Bright White   #f5f5f5
     ]
 }
 
@@ -220,14 +220,14 @@ mod tests {
     #[test]
     fn test_default_theme_font_size() {
         let theme = Theme::default();
-        assert!((theme.font_size - 24.0).abs() < f32::EPSILON);
+        assert!((theme.font_size - 15.0).abs() < f32::EPSILON);
     }
 
     #[test]
-    fn test_default_theme_is_graph_box_dark() {
+    fn test_default_theme_is_ghostty_wok_dark() {
         let theme = Theme::default();
-        assert_eq!(theme.name, "Graph Box Dark");
-        assert!((theme.background.r - (11.0 / 255.0)).abs() < 0.01);
+        assert_eq!(theme.name, "Ghostty Wok Dark");
+        assert!((theme.background.r - (16.0 / 255.0)).abs() < 0.01);
     }
 
     #[test]

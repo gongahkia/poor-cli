@@ -491,11 +491,11 @@ impl Default for WokConfig {
             theme_path: None,
             font_family: default_font_family().to_string(),
             chrome_font_family: default_chrome_font_family().to_string(),
-            font_size: 24.0,
+            font_size: 15.0,
             input_position: InputPosition::Bottom,
             command_entry_mode: CommandEntryMode::OwnedPrimary,
             ui_layout: FrontendLayout::V2,
-            pane_header_visible: true,
+            pane_header_visible: false,
             scrollback_lines: 10_000,
             cursor_style: CursorStyle::Block,
             cursor_blink: true,
@@ -503,7 +503,7 @@ impl Default for WokConfig {
             tab_bar_side: ChromeSide::Top,
             tab_bar_orientation: TabBarOrientation::Horizontal,
             tab_bar_size: Some(24.0),
-            status_bar_visible: true,
+            status_bar_visible: false,
             status_bar_side: ChromeSide::Bottom,
             status_bar_size: Some(24.0),
             timeline_rail_visible: false,
@@ -515,10 +515,10 @@ impl Default for WokConfig {
             background_width: None,
             background_height: None,
             terminal_background_opacity: None,
-            pane_border_width: 1.0,
-            focused_pane_border_width: 2.0,
+            pane_border_width: 0.0,
+            focused_pane_border_width: 1.0,
             block_foot_visible: false,
-            floating_pane_title_height: 18.0,
+            floating_pane_title_height: 16.0,
             typewriter_effect_enabled: false,
             typewriter_effect_cps: 180.0,
             typewriter_effect_max_pending_cells: 4_096,
@@ -547,14 +547,7 @@ impl Default for WokConfig {
 }
 
 fn default_font_family() -> &'static str {
-    #[cfg(target_os = "macos")]
-    {
-        "Monaspace Neon"
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        "Monaspace Neon"
-    }
+    "JetBrainsMono Nerd Font Mono"
 }
 
 fn default_chrome_font_family() -> &'static str {
@@ -1214,16 +1207,17 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = WokConfig::default();
-        assert!((config.font_size - 24.0).abs() < f32::EPSILON);
+        assert!((config.font_size - 15.0).abs() < f32::EPSILON);
         assert_eq!(config.chrome_font_family, default_chrome_font_family());
         assert_eq!(config.scrollback_lines, 10_000);
         assert_eq!(config.cursor_style, CursorStyle::Block);
         assert_eq!(config.input_position, InputPosition::Bottom);
         assert_eq!(config.command_entry_mode, CommandEntryMode::OwnedPrimary);
         assert_eq!(config.ui_layout, FrontendLayout::V2);
-        assert!(config.pane_header_visible);
+        assert!(!config.pane_header_visible);
         assert_eq!(config.tab_bar_side, ChromeSide::Top);
         assert_eq!(config.tab_bar_orientation, TabBarOrientation::Horizontal);
+        assert!(!config.status_bar_visible);
         assert_eq!(config.status_bar_side, ChromeSide::Bottom);
         assert!(!config.timeline_rail_visible);
         assert!((config.window_opacity - 1.0).abs() < f32::EPSILON);
@@ -1234,10 +1228,10 @@ mod tests {
         assert_eq!(config.background_width, None);
         assert_eq!(config.background_height, None);
         assert_eq!(config.terminal_background_opacity, None);
-        assert!((config.pane_border_width - 1.0).abs() < f32::EPSILON);
-        assert!((config.focused_pane_border_width - 2.0).abs() < f32::EPSILON);
+        assert!((config.pane_border_width - 0.0).abs() < f32::EPSILON);
+        assert!((config.focused_pane_border_width - 1.0).abs() < f32::EPSILON);
         assert!(!config.block_foot_visible);
-        assert!((config.floating_pane_title_height - 18.0).abs() < f32::EPSILON);
+        assert!((config.floating_pane_title_height - 16.0).abs() < f32::EPSILON);
         assert!(!config.typewriter_effect_enabled);
         assert!((config.typewriter_effect_cps - 180.0).abs() < f32::EPSILON);
         assert_eq!(config.typewriter_effect_max_pending_cells, 4_096);
@@ -1267,7 +1261,7 @@ mod tests {
         ));
         let config = WokConfig::load_from_search_paths(&[missing]);
         // Should return defaults without error
-        assert!((config.font_size - 24.0).abs() < f32::EPSILON);
+        assert!((config.font_size - 15.0).abs() < f32::EPSILON);
     }
 
     #[test]

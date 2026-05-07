@@ -12,18 +12,18 @@ use wok_app::config::WokConfig;
 const CONFIG_TEMPLATE: &str = r#"# Wok configuration
 # See docs/CONFIGURATION.md for all options.
 shell = "zsh"
-font_family = "Monaspace Neon"
+font_family = "JetBrainsMono Nerd Font Mono"
 chrome_font_family = "IBM Plex Mono"
-font_size = 24.0
+font_size = 15.0
 ui_layout = "v2"
-pane_header_visible = true
+pane_header_visible = false
 scrollback_lines = 10000
 input_position = "bottom"
 command_entry_mode = "owned_primary"
 tab_bar_orientation = "horizontal"
 tab_bar_side = "top"
 tab_bar_size = 24.0
-status_bar_visible = true
+status_bar_visible = false
 status_bar_side = "bottom"
 status_bar_size = 24.0
 timeline_rail_visible = false
@@ -35,10 +35,10 @@ background_position = "center"
 # background_width = 900.0
 # background_height = 600.0
 # terminal_background_opacity = 0.72
-pane_border_width = 1.0
-focused_pane_border_width = 2.0
+pane_border_width = 0.0
+focused_pane_border_width = 1.0
 block_foot_visible = false
-floating_pane_title_height = 18.0
+floating_pane_title_height = 16.0
 typewriter_effect_enabled = false
 typewriter_effect_cps = 180.0
 typewriter_effect_max_pending_cells = 4096
@@ -107,7 +107,7 @@ area = "status"
 action = "new_floating_pane"
 
 # Built-in themes are written by `wok init` under ~/.config/wok/themes.
-# theme_path = "~/.config/wok/themes/graph-box-dark.toml"
+# theme_path = "~/.config/wok/themes/ghostty-wok-dark.toml"
 
 # Command/task completion notifications are powered by regex triggers.
 # This default catches common CLI coding agents and sends a native notification
@@ -149,9 +149,10 @@ end)
 const BASH_SCRIPT: &str = include_str!("../../shell-integration/bash.sh");
 const ZSH_SCRIPT: &str = include_str!("../../shell-integration/zsh.zsh");
 const FISH_SCRIPT: &str = include_str!("../../shell-integration/fish.fish");
-const THEME_GRAPH_BOX_DARK: &str = include_str!("../../themes/graph-box-dark.toml");
-const THEME_GRAPH_BOX_DAY: &str = include_str!("../../themes/graph-box-day.toml");
-const THEME_GRAPH_BOX_NEON: &str = include_str!("../../themes/graph-box-neon.toml");
+const THEME_GHOSTTY_WOK_DARK: &str = include_str!("../../themes/ghostty-wok-dark.toml");
+const THEME_GRUVBOX_WOK_DARK: &str = include_str!("../../themes/gruvbox-wok-dark.toml");
+const THEME_GRUVBOX_WOK_DAY: &str = include_str!("../../themes/gruvbox-wok-day.toml");
+const THEME_GRUVBOX_WOK_NEON: &str = include_str!("../../themes/gruvbox-wok-neon.toml");
 const THEME_TOKYO_NIGHT: &str = include_str!("../../themes/tokyo-night.toml");
 const THEME_CATPPUCCIN: &str = include_str!("../../themes/catppuccin.toml");
 const THEME_NORD: &str = include_str!("../../themes/nord.toml");
@@ -1275,9 +1276,10 @@ fn init_at(config_dir: &Path, overwrite: bool) -> io::Result<InitStats> {
         &mut stats,
     )?;
     for (name, content) in [
-        ("graph-box-dark.toml", THEME_GRAPH_BOX_DARK),
-        ("graph-box-day.toml", THEME_GRAPH_BOX_DAY),
-        ("graph-box-neon.toml", THEME_GRAPH_BOX_NEON),
+        ("ghostty-wok-dark.toml", THEME_GHOSTTY_WOK_DARK),
+        ("gruvbox-wok-dark.toml", THEME_GRUVBOX_WOK_DARK),
+        ("gruvbox-wok-day.toml", THEME_GRUVBOX_WOK_DAY),
+        ("gruvbox-wok-neon.toml", THEME_GRUVBOX_WOK_NEON),
         ("tokyo-night.toml", THEME_TOKYO_NIGHT),
         ("catppuccin.toml", THEME_CATPPUCCIN),
         ("nord.toml", THEME_NORD),
@@ -1440,9 +1442,10 @@ mod tests {
         assert!(dir.join("shell").join("bash.sh").exists());
         assert!(dir.join("shell").join("zsh.zsh").exists());
         assert!(dir.join("shell").join("fish.fish").exists());
-        assert!(dir.join("themes").join("graph-box-dark.toml").exists());
-        assert!(dir.join("themes").join("graph-box-day.toml").exists());
-        assert!(dir.join("themes").join("graph-box-neon.toml").exists());
+        assert!(dir.join("themes").join("ghostty-wok-dark.toml").exists());
+        assert!(dir.join("themes").join("gruvbox-wok-dark.toml").exists());
+        assert!(dir.join("themes").join("gruvbox-wok-day.toml").exists());
+        assert!(dir.join("themes").join("gruvbox-wok-neon.toml").exists());
         assert!(dir.join("themes").join("catppuccin.toml").exists());
         assert!(dir.join("themes").join("paper-light.toml").exists());
         assert!(!stats.created.is_empty());
@@ -1481,7 +1484,7 @@ mod tests {
         let lua = fs::read_to_string(dir.join("init.lua")).expect("lua should remain readable");
 
         assert!(config.contains("# Wok configuration"));
-        assert!(config.contains("font_size = 24.0"));
+        assert!(config.contains("font_size = 15.0"));
         assert_eq!(lua, "wok.notify('keep')\n");
         assert!(dir.join(FIRST_RUN_MARKER_FILE).exists());
 

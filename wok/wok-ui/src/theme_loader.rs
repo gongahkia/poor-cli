@@ -442,7 +442,10 @@ bracket_match = "#99aabb80"
     fn test_checked_in_themes_load() {
         let themes_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../themes");
         for name in [
-            "graph-box-dark.toml",
+            "ghostty-wok-dark.toml",
+            "gruvbox-wok-dark.toml",
+            "gruvbox-wok-day.toml",
+            "gruvbox-wok-neon.toml",
             "tokyo-night.toml",
             "catppuccin.toml",
             "nord.toml",

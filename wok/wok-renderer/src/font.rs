@@ -202,6 +202,14 @@ fn parse_family(font_family: &str) -> FamilyOwned {
         "cursive" => FamilyOwned::Cursive,
         "fantasy" => FamilyOwned::Fantasy,
         "mono" | "monospace" => FamilyOwned::Monospace,
+        "jetbrainsmononerdfont"
+        | "jetbrainsmono nerd font"
+        | "jetbrains mono nerd font"
+        | "jetbrainsmononerdfontmono"
+        | "jetbrainsmono nerd font mono"
+        | "jetbrains mono nerd font mono" => {
+            FamilyOwned::Name("JetBrainsMono Nerd Font Mono".to_string())
+        }
         _ => FamilyOwned::Name(font_family.to_string()),
     }
 }
@@ -236,16 +244,25 @@ mod tests {
 
     #[test]
     fn test_custom_font_family_is_stored() {
-        let font = FontSystem::new("JetBrains Mono", 14.0);
+        let font = FontSystem::new("JetBrainsMono Nerd Font Mono", 14.0);
         assert_eq!(
             font.font_family,
-            FamilyOwned::Name("JetBrains Mono".to_string())
+            FamilyOwned::Name("JetBrainsMono Nerd Font Mono".to_string())
+        );
+    }
+
+    #[test]
+    fn test_jetbrains_nerd_font_alias_without_spaces_is_normalized() {
+        let font = FontSystem::new("jetbrainsmononerdfont", 14.0);
+        assert_eq!(
+            font.font_family,
+            FamilyOwned::Name("JetBrainsMono Nerd Font Mono".to_string())
         );
     }
 
     #[test]
     fn test_different_font_families_get_different_atlas_namespaces() {
-        let body = FontSystem::new("JetBrains Mono", 14.0);
+        let body = FontSystem::new("JetBrainsMono Nerd Font Mono", 14.0);
         let chrome = FontSystem::new("IBM Plex Mono", 14.0);
         assert_ne!(body.font_id(), chrome.font_id());
     }
