@@ -328,6 +328,64 @@ fn git_status_cli_calls_rpc_and_prints_result_payload() {
 }
 
 #[test]
+fn worktree_cli_calls_rpc_and_prints_result_payload() {
+    let home = unique_temp_dir("worktree-list");
+    fs::create_dir_all(&home).expect("temp home should be created");
+
+    let socket_path = unique_socket_path();
+    let expected_request = json!({
+        "jsonrpc": "2.0",
+        "method": "wok.worktree.list",
+        "params": {},
+        "id": 1
+    });
+    let server = spawn_mock_rpc_server(
+        socket_path.clone(),
+        expected_request,
+        Some(json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "repo_key": "abc",
+                "active_id": "main",
+                "worktrees": [{
+                    "id": "main",
+                    "name": "main",
+                    "path": "/repo",
+                    "branch": "main",
+                    "source": "primary",
+                    "owns_branch": false,
+                    "is_primary": true,
+                    "created_at": 1
+                }]
+            }
+        })),
+    );
+
+    let output = run_wok(
+        &home,
+        &[
+            "worktree",
+            "list",
+            "--socket",
+            &socket_path.display().to_string(),
+        ],
+    );
+    assert_success(&output);
+
+    let response: Value =
+        serde_json::from_slice(&output.stdout).expect("worktree output should parse as json");
+    assert_eq!(response["repo_key"], Value::String("abc".to_string()));
+    assert_eq!(
+        response["worktrees"][0]["id"],
+        Value::String("main".to_string())
+    );
+    server
+        .join()
+        .expect("mock server thread should finish cleanly");
+}
+
+#[test]
 fn rpc_cli_supports_explicit_token_flag() {
     let home = unique_temp_dir("token-flag");
     fs::create_dir_all(&home).expect("temp home should be created");

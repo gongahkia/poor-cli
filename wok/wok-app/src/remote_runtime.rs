@@ -123,6 +123,11 @@ impl WokHandler {
             "wok.get_text" => self.remote_get_text(&request.params),
             "wok.get_git_status" => self.remote_get_git_status(&request.params),
             "wok.get_git_diff" => self.remote_get_git_diff(&request.params),
+            "wok.worktree.list" => self.remote_worktree_list(&request.params),
+            "wok.worktree.switch" => self.remote_worktree_switch(&request.params),
+            "wok.worktree.add" => self.remote_worktree_add(&request.params),
+            "wok.worktree.remove" => self.remote_worktree_remove(&request.params),
+            "wok.worktree.refresh" => self.remote_worktree_refresh(&request.params),
             "wok.git.stage" => self.remote_git_mutation(
                 &request.params,
                 "stage",
@@ -400,6 +405,115 @@ impl WokHandler {
         }
     }
 
+    fn remote_worktree_list(&mut self, params: &Value) -> Result<Value, RpcError> {
+        let cwd = self.remote_worktree_cwd(params)?;
+        let store = WorktreeStore::open(&cwd).map_err(worktree_rpc_error)?;
+        self.active_worktree_id = store.identify_path(&cwd).map(|record| record.id.clone());
+        self.worktree_store = Some(store.clone());
+        Ok(worktree_list_json(
+            &store,
+            self.active_worktree_id.as_deref(),
+        ))
+    }
+
+    fn remote_worktree_refresh(&mut self, params: &Value) -> Result<Value, RpcError> {
+        let cwd = self.remote_worktree_cwd(params)?;
+        let mut store = WorktreeStore::open(&cwd).map_err(worktree_rpc_error)?;
+        store.refresh().map_err(worktree_rpc_error)?;
+        self.active_worktree_id = store.identify_path(&cwd).map(|record| record.id.clone());
+        let payload = worktree_list_json(&store, self.active_worktree_id.as_deref());
+        self.worktree_store = Some(store);
+        Ok(payload)
+    }
+
+    fn remote_worktree_switch(&mut self, params: &Value) -> Result<Value, RpcError> {
+        let id = jsonrpc_params::jsonrpc_string_param(params, 0, "id")
+            .or_else(|_| jsonrpc_params::jsonrpc_string_param(params, 0, "path"))
+            .map_err(RpcError::invalid_params)?;
+        let record = self
+            .switch_git_worktree_result(&id)
+            .map_err(worktree_rpc_error)?;
+        Ok(json!({
+            "ok": true,
+            "active": worktree_record_json(&record),
+        }))
+    }
+
+    fn remote_worktree_add(&mut self, params: &Value) -> Result<Value, RpcError> {
+        let branch = jsonrpc_params::jsonrpc_string_param(params, 0, "branch")
+            .map_err(RpcError::invalid_params)?;
+        wok_git::service::validate_branch_name(&branch)
+            .map_err(wok_app::worktree_store::WorktreeStoreError::Git)
+            .map_err(worktree_rpc_error)?;
+        let cwd = self.remote_worktree_cwd(params)?;
+        let mut store = WorktreeStore::open(&cwd).map_err(worktree_rpc_error)?;
+        let primary = store
+            .worktrees()
+            .iter()
+            .find(|record| record.is_primary)
+            .or_else(|| store.worktrees().first())
+            .ok_or_else(|| RpcError::server_error("no Git worktrees found"))?;
+        let path = jsonrpc_params::jsonrpc_optional_string_param(params, 1, "path")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                wok_app::worktree_store::default_worktree_path(&primary.path, &branch)
+            });
+        let create_branch = jsonrpc_params::jsonrpc_optional_bool_param(params, 2, "create_branch")
+            .unwrap_or_else(|| !wok_git::service::branch_exists(&cwd, &branch).unwrap_or(false));
+        let record = store
+            .add(&path, &branch, create_branch)
+            .map_err(worktree_rpc_error)?;
+        self.worktree_store = Some(store);
+        Ok(json!({
+            "ok": true,
+            "created": worktree_record_json(&record),
+            "create_branch": create_branch,
+        }))
+    }
+
+    fn remote_worktree_remove(&mut self, params: &Value) -> Result<Value, RpcError> {
+        let id = jsonrpc_params::jsonrpc_string_param(params, 0, "id")
+            .or_else(|_| jsonrpc_params::jsonrpc_string_param(params, 0, "path"))
+            .map_err(RpcError::invalid_params)?;
+        let cwd = self.remote_worktree_cwd(params)?;
+        let mut store = WorktreeStore::open(&cwd).map_err(worktree_rpc_error)?;
+        let force =
+            jsonrpc_params::jsonrpc_optional_bool_param(params, 1, "force").unwrap_or(false);
+        let delete_branch = jsonrpc_params::jsonrpc_optional_bool_param(params, 2, "delete_branch")
+            .unwrap_or(false);
+        let removed = store
+            .remove(
+                &id,
+                RemoveWorktreeOptions {
+                    force,
+                    delete_branch,
+                },
+            )
+            .map_err(worktree_rpc_error)?;
+        if self.active_worktree_id.as_deref() == Some(removed.id.as_str()) {
+            self.active_worktree_id = store.manifest().active_id.clone();
+        }
+        self.worktree_store = Some(store);
+        Ok(json!({
+            "ok": true,
+            "removed": worktree_record_json(&removed),
+            "delete_branch": delete_branch,
+        }))
+    }
+
+    fn remote_worktree_cwd(&self, params: &Value) -> Result<PathBuf, RpcError> {
+        if let Some(cwd) = jsonrpc_params::jsonrpc_optional_string_param(params, 3, "cwd") {
+            return Ok(PathBuf::from(cwd));
+        }
+        let pane_id = jsonrpc_params::jsonrpc_optional_u64_param(params, 4, "pane_id")
+            .or_else(|| self.active_pane_id())
+            .ok_or_else(|| RpcError::server_error("no active pane"))?;
+        let Some(pane) = self.panes.get(&pane_id) else {
+            return Err(RpcError::server_error(format!("pane {pane_id} not found")));
+        };
+        Ok(pane.current_cwd.clone())
+    }
+
     fn remote_create_pane(&mut self, params: &Value) -> Result<Value, RpcError> {
         if self.window.is_none() {
             return Err(RpcError::server_error("window is not initialized yet"));
@@ -642,6 +756,45 @@ fn git_file_diff_json(pane_id: Option<PaneId>, diff: wok_git::service::GitFileDi
             })
         }).collect::<Vec<_>>(),
     })
+}
+
+fn worktree_list_json(store: &WorktreeStore, active_id: Option<&str>) -> Value {
+    json!({
+        "repo_key": store.repo_key(),
+        "active_id": active_id,
+        "worktrees": store.worktrees().iter().map(worktree_record_json).collect::<Vec<_>>(),
+    })
+}
+
+fn worktree_record_json(record: &WorktreeRecord) -> Value {
+    json!({
+        "id": record.id,
+        "name": record.name,
+        "path": record.path.display().to_string(),
+        "branch": record.branch,
+        "source": record.source,
+        "owns_branch": record.owns_branch,
+        "is_primary": record.is_primary,
+        "created_at": record.created_at,
+    })
+}
+
+fn worktree_rpc_error(error: wok_app::worktree_store::WorktreeStoreError) -> RpcError {
+    match error {
+        wok_app::worktree_store::WorktreeStoreError::Git(
+            wok_git::service::GitServiceError::NotGitRepository(_),
+        ) => RpcError::server_error("not in a Git repository"),
+        wok_app::worktree_store::WorktreeStoreError::Git(
+            wok_git::service::GitServiceError::InvalidBranchName(branch),
+        ) => RpcError::invalid_params(format!("invalid branch name '{branch}'")),
+        wok_app::worktree_store::WorktreeStoreError::UnknownWorktree(id) => {
+            RpcError::invalid_params(format!("unknown worktree '{id}'"))
+        }
+        wok_app::worktree_store::WorktreeStoreError::Protected(message) => {
+            RpcError::server_error(message)
+        }
+        error => RpcError::server_error(format!("{error}")),
+    }
 }
 
 fn git_diff_row_kind(kind: wok_git::diff::DiffRowKind) -> &'static str {

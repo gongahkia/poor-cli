@@ -49,6 +49,41 @@
         "pane_id:u64?"
       ]
     },
+    "wok.worktree.list": {
+      "params": [
+        "cwd:string?",
+        "pane_id:u64?"
+      ]
+    },
+    "wok.worktree.switch": {
+      "params": [
+        "id:string"
+      ]
+    },
+    "wok.worktree.add": {
+      "params": [
+        "branch:string",
+        "path:string?",
+        "create_branch:bool?",
+        "cwd:string?",
+        "pane_id:u64?"
+      ]
+    },
+    "wok.worktree.remove": {
+      "params": [
+        "id:string",
+        "force:bool?",
+        "delete_branch:bool?",
+        "cwd:string?",
+        "pane_id:u64?"
+      ]
+    },
+    "wok.worktree.refresh": {
+      "params": [
+        "cwd:string?",
+        "pane_id:u64?"
+      ]
+    },
     "wok.git.stage": {
       "params": [
         "path:string",

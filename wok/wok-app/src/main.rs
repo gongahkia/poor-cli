@@ -43,12 +43,14 @@ use wok_app::scripting::{
 use wok_app::session::{
     block_from_state, block_to_state, default_session_path, history_entry_from_state,
     history_entry_to_state, load_session, named_session_path, save_session, split_node_from_state,
-    split_node_to_state, FloatingPaneState, PaneState, WorkspaceSessionState, WorkspaceTabState,
+    split_node_to_state, FloatingPaneState, PaneState, SplitNodeState, WorkspaceSessionState,
+    WorkspaceTabState,
 };
 use wok_app::window::WindowConfig;
 use wok_app::workspace::{
     FloatingPane, FloatingResizeEdges, FocusDirection, PaneId, WorkspaceState, WorkspaceTab,
 };
+use wok_app::worktree_store::{RemoveWorktreeOptions, WorktreeRecord, WorktreeStore};
 use wok_blocks::block::{Block, OutputLineEvent};
 use wok_blocks::triggers::{
     Trigger, TriggerAction, TriggerEngine, TriggerHighlight, TriggerMatch, TriggerScope,
@@ -163,6 +165,11 @@ enum CliCommand {
     Workspace {
         #[command(subcommand)]
         command: WorkspaceCommand,
+    },
+    /// Manage Git worktrees on a running Wok instance.
+    Worktree {
+        #[command(subcommand)]
+        command: WorktreeCommand,
     },
     /// Bundle local diagnostics into a directory for bug reports (no upload).
     BugReport {
@@ -301,6 +308,73 @@ enum WorkspaceCommand {
     },
     /// List saved workspace snapshots.
     List,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+enum WorktreeCommand {
+    /// List worktrees for the active Git repository.
+    List {
+        /// Explicit remote-control socket path. Defaults to $WOK_SOCKET.
+        #[arg(long)]
+        socket: Option<String>,
+        /// Optional remote-control auth token. Defaults to $WOK_RPC_TOKEN.
+        #[arg(long)]
+        token: Option<String>,
+    },
+    /// Add a new Git worktree.
+    Add {
+        /// Branch to check out.
+        branch: String,
+        /// Worktree path. Defaults to a sibling of the primary worktree.
+        #[arg(long)]
+        path: Option<String>,
+        /// Create the branch even if it does not already exist.
+        #[arg(long)]
+        create_branch: Option<bool>,
+        /// Explicit remote-control socket path. Defaults to $WOK_SOCKET.
+        #[arg(long)]
+        socket: Option<String>,
+        /// Optional remote-control auth token. Defaults to $WOK_RPC_TOKEN.
+        #[arg(long)]
+        token: Option<String>,
+    },
+    /// Remove a Git worktree.
+    Remove {
+        /// Worktree id or path.
+        id: String,
+        /// Force removal of protected or dirty worktrees.
+        #[arg(long, default_value_t = false)]
+        force: bool,
+        /// Delete the owned branch after removing the worktree.
+        #[arg(long, default_value_t = false)]
+        delete_branch: bool,
+        /// Explicit remote-control socket path. Defaults to $WOK_SOCKET.
+        #[arg(long)]
+        socket: Option<String>,
+        /// Optional remote-control auth token. Defaults to $WOK_RPC_TOKEN.
+        #[arg(long)]
+        token: Option<String>,
+    },
+    /// Switch to a Git worktree by id or path.
+    Switch {
+        /// Worktree id or path.
+        id: String,
+        /// Explicit remote-control socket path. Defaults to $WOK_SOCKET.
+        #[arg(long)]
+        socket: Option<String>,
+        /// Optional remote-control auth token. Defaults to $WOK_RPC_TOKEN.
+        #[arg(long)]
+        token: Option<String>,
+    },
+    /// Refresh worktree metadata from Git.
+    Refresh {
+        /// Explicit remote-control socket path. Defaults to $WOK_SOCKET.
+        #[arg(long)]
+        socket: Option<String>,
+        /// Optional remote-control auth token. Defaults to $WOK_RPC_TOKEN.
+        #[arg(long)]
+        token: Option<String>,
+    },
 }
 
 /// GPU render state, initialized after window creation.
@@ -1153,6 +1227,8 @@ struct WokHandler {
     workspace: WorkspaceState,
     panes: HashMap<PaneId, PaneRuntime>,
     pending_pane_restore: HashMap<PaneId, PaneState>,
+    worktree_store: Option<WorktreeStore>,
+    active_worktree_id: Option<String>,
     global_history: CommandHistory,
     plugins: Option<PluginHost>,
     command_telemetry: Option<CommandTelemetryLogger>,
@@ -1360,6 +1436,8 @@ impl WokHandler {
             workspace,
             panes: HashMap::new(),
             pending_pane_restore: HashMap::new(),
+            worktree_store: None,
+            active_worktree_id: None,
             global_history,
             plugins,
             command_telemetry,
@@ -7848,6 +7926,42 @@ impl WokHandler {
                             }
                             self.apply_git_file_action(&path, GitPaletteFileAction::Discard);
                         }
+                        PaletteAction::GitSwitchWorktree(id) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
+                            self.switch_git_worktree(&id);
+                        }
+                        PaletteAction::GitCreateWorktree {
+                            branch,
+                            path,
+                            create_branch,
+                        } => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
+                            self.create_git_worktree(
+                                &branch,
+                                Some(PathBuf::from(path)),
+                                Some(create_branch),
+                            );
+                        }
+                        PaletteAction::GitRemoveWorktree(id) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
+                            self.remove_git_worktree_from_palette(&id);
+                        }
+                        PaletteAction::GitRefreshWorktrees => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                            }
+                            self.refresh_git_worktrees();
+                        }
                         PaletteAction::Dismiss => {
                             if let Some(active_pane) = self.active_pane_mut() {
                                 active_pane.app.close_command_palette();
@@ -8657,9 +8771,15 @@ impl WokHandler {
             return;
         };
 
-        let entries = match wok_git::service::load_worktrees(&cwd) {
-            Ok(worktrees) => build_git_worktree_palette_entries(worktrees, &cwd),
-            Err(wok_git::service::GitServiceError::NotGitRepository(_)) => {
+        let entries = match WorktreeStore::open(&cwd) {
+            Ok(store) => {
+                self.active_worktree_id = store.identify_path(&cwd).map(|record| record.id.clone());
+                self.worktree_store = Some(store.clone());
+                build_git_worktree_palette_entries(store.worktrees().to_vec(), &cwd)
+            }
+            Err(wok_app::worktree_store::WorktreeStoreError::Git(
+                wok_git::service::GitServiceError::NotGitRepository(_),
+            )) => {
                 self.status_message = Some("not in a Git repository".to_string());
                 return;
             }
@@ -8683,6 +8803,211 @@ impl WokHandler {
             active_pane.app.command_palette.open(entries);
         }
         self.needs_redraw = true;
+    }
+
+    fn refresh_git_worktrees(&mut self) {
+        let Some(cwd) = self.active_pane().map(|pane| pane.current_cwd.clone()) else {
+            self.status_message = Some("no active pane".to_string());
+            self.needs_redraw = true;
+            return;
+        };
+        match WorktreeStore::open(&cwd).and_then(|mut store| {
+            store.refresh()?;
+            Ok(store)
+        }) {
+            Ok(store) => {
+                let count = store.worktrees().len();
+                self.active_worktree_id = store.identify_path(&cwd).map(|record| record.id.clone());
+                self.worktree_store = Some(store);
+                self.status_message = Some(format!("Refreshed {count} Git worktrees"));
+            }
+            Err(wok_app::worktree_store::WorktreeStoreError::Git(
+                wok_git::service::GitServiceError::NotGitRepository(_),
+            )) => {
+                self.status_message = Some("not in a Git repository".to_string());
+            }
+            Err(error) => {
+                self.status_message = Some(format!("failed to refresh Git worktrees: {error}"));
+            }
+        }
+        self.needs_redraw = true;
+    }
+
+    fn switch_git_worktree(&mut self, id_or_path: &str) {
+        match self.switch_git_worktree_result(id_or_path) {
+            Ok(record) => {
+                self.status_message = Some(format!("Switched to {}", record.name));
+            }
+            Err(error) => {
+                self.status_message = Some(format!("failed to switch worktree: {error}"));
+            }
+        }
+        self.needs_redraw = true;
+    }
+
+    fn switch_git_worktree_result(
+        &mut self,
+        id_or_path: &str,
+    ) -> Result<WorktreeRecord, wok_app::worktree_store::WorktreeStoreError> {
+        let current_cwd = self
+            .active_pane()
+            .map(|pane| pane.current_cwd.clone())
+            .ok_or_else(|| {
+                wok_app::worktree_store::WorktreeStoreError::Protected("no active pane".to_string())
+            })?;
+        let mut store = WorktreeStore::open(&current_cwd)?;
+        let current_id = self.active_worktree_id.clone().or_else(|| {
+            store
+                .identify_path(&current_cwd)
+                .map(|record| record.id.clone())
+        });
+        if let Some(current_id) = current_id {
+            let snapshot = self.snapshot_session();
+            store.save_session_for(&current_id, &snapshot)?;
+        }
+
+        let target = store.find(id_or_path).cloned().ok_or_else(|| {
+            wok_app::worktree_store::WorktreeStoreError::UnknownWorktree(id_or_path.to_string())
+        })?;
+        let session = store
+            .load_session_for(&target.id)?
+            .unwrap_or_else(|| self.default_worktree_session(&target.path, &target.name));
+        store.set_active(target.id.clone())?;
+        self.restore_session(session);
+        self.active_worktree_id = Some(target.id.clone());
+        self.worktree_store = Some(store);
+        if let Some(window) = &self.window {
+            self.sync_workspace_layout(window.inner_size());
+        }
+        Ok(target)
+    }
+
+    fn remove_git_worktree_from_palette(&mut self, id_or_path: &str) {
+        let Some(cwd) = self.active_pane().map(|pane| pane.current_cwd.clone()) else {
+            self.status_message = Some("no active pane".to_string());
+            self.needs_redraw = true;
+            return;
+        };
+        match WorktreeStore::open(&cwd).and_then(|mut store| {
+            let removed = store.remove(
+                id_or_path,
+                RemoveWorktreeOptions {
+                    force: false,
+                    delete_branch: false,
+                },
+            )?;
+            Ok((store, removed))
+        }) {
+            Ok((store, removed)) => {
+                self.worktree_store = Some(store);
+                self.status_message = Some(format!("Removed worktree {}", removed.name));
+            }
+            Err(error) => {
+                self.status_message = Some(format!("failed to remove worktree: {error}"));
+            }
+        }
+        self.needs_redraw = true;
+    }
+
+    fn create_git_worktree(
+        &mut self,
+        branch: &str,
+        path: Option<PathBuf>,
+        create_branch: Option<bool>,
+    ) {
+        match self.create_git_worktree_result(branch, path, create_branch) {
+            Ok(record) => {
+                self.status_message = Some(format!("Created worktree {}", record.name));
+            }
+            Err(error) => {
+                self.status_message = Some(format!("failed to create worktree: {error}"));
+            }
+        }
+        self.needs_redraw = true;
+    }
+
+    fn create_git_worktree_result(
+        &mut self,
+        branch: &str,
+        path: Option<PathBuf>,
+        create_branch: Option<bool>,
+    ) -> Result<WorktreeRecord, wok_app::worktree_store::WorktreeStoreError> {
+        wok_git::service::validate_branch_name(branch)
+            .map_err(wok_app::worktree_store::WorktreeStoreError::Git)?;
+        let cwd = self
+            .active_pane()
+            .map(|pane| pane.current_cwd.clone())
+            .ok_or_else(|| {
+                wok_app::worktree_store::WorktreeStoreError::Protected("no active pane".to_string())
+            })?;
+        let mut store = WorktreeStore::open(&cwd)?;
+        let primary = store
+            .worktrees()
+            .iter()
+            .find(|record| record.is_primary)
+            .or_else(|| store.worktrees().first())
+            .ok_or_else(|| {
+                wok_app::worktree_store::WorktreeStoreError::Protected(
+                    "no Git worktrees found".to_string(),
+                )
+            })?;
+        let path = path.unwrap_or_else(|| {
+            wok_app::worktree_store::default_worktree_path(&primary.path, branch)
+        });
+        let create_branch = create_branch
+            .unwrap_or_else(|| !wok_git::service::branch_exists(&cwd, branch).unwrap_or(false));
+        let record = store.add(&path, branch, create_branch)?;
+        self.worktree_store = Some(store);
+        Ok(record)
+    }
+
+    fn default_worktree_session(&self, path: &Path, title: &str) -> WorkspaceSessionState {
+        let (window_size, window_position) =
+            self.window
+                .as_ref()
+                .map_or(((1280, 800), (0, 0)), |window| {
+                    let size = window.inner_size();
+                    let position = window.outer_position().ok();
+                    (
+                        (size.width, size.height),
+                        position.map_or((0, 0), |position| (position.x, position.y)),
+                    )
+                });
+        WorkspaceSessionState {
+            schema_version: 1,
+            saved_at_unix_ms: current_time_ms(),
+            wok_version: env!("CARGO_PKG_VERSION").to_string(),
+            workspace_description: String::new(),
+            workspace_tags: Vec::new(),
+            tabs: vec![WorkspaceTabState {
+                id: 1,
+                title: title.to_string(),
+                focused_pane: 1,
+                focused_floating: None,
+                split_tree: SplitNodeState::Leaf { pane_id: 1 },
+                floating_panes: Vec::new(),
+            }],
+            panes: vec![PaneState {
+                id: 1,
+                cwd: path.to_path_buf(),
+                shell: self.config.shell.to_string(),
+                title: title.to_string(),
+                input_draft: String::new(),
+                search_query: String::new(),
+                command_history: Vec::new(),
+                buffer_lines: Vec::new(),
+                display_offset: 0,
+                follow_output: true,
+                blocks: Vec::new(),
+                selected_block: None,
+            }],
+            active_tab: 0,
+            window_size,
+            window_position,
+            show_failure_trends_panel: false,
+            show_workspace_insights_panel: false,
+            failure_trend_bucket_ms: self.failure_trend_bucket_ms,
+        }
     }
 
     fn change_active_pane_directory(&mut self, path: &str) {
@@ -9628,6 +9953,7 @@ impl WokHandler {
             "open" => self.open_path_externally(&PathBuf::from(argument)),
             "tail" => self.tail_path_in_split(&PathBuf::from(argument)),
             "cd" => self.change_active_pane_directory(&argument),
+            "worktree_add" => self.create_git_worktree(&argument, None, None),
             _ => return false,
         }
         if let Some(window) = &self.window {
@@ -13900,6 +14226,11 @@ fn remote_rpc_methods() -> &'static [&'static str] {
         "wok.get_text",
         "wok.get_git_status",
         "wok.get_git_diff",
+        "wok.worktree.list",
+        "wok.worktree.switch",
+        "wok.worktree.add",
+        "wok.worktree.remove",
+        "wok.worktree.refresh",
         "wok.git.stage",
         "wok.git.unstage",
         "wok.git.discard",
@@ -14248,7 +14579,6 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::ThemePicker,
         Action::KeybindingDiscovery,
         Action::KeybindingEditor,
-        Action::SettingsDiscovery,
         Action::ClearScreen,
         Action::SendEof,
         Action::Copy,
@@ -14392,22 +14722,34 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
 }
 
 fn build_git_worktree_palette_entries(
-    worktrees: Vec<wok_git::service::GitWorktree>,
+    worktrees: Vec<WorktreeRecord>,
     current_cwd: &std::path::Path,
 ) -> Vec<PaletteEntry> {
-    let mut entries = worktrees
-        .into_iter()
-        .map(|worktree| {
-            let path = worktree.path.display().to_string();
-            PaletteEntry {
-                label: git_worktree_label(&worktree),
-                description: git_worktree_description(&worktree, current_cwd),
-                category: PaletteCategory::GitWorktree,
-                score: 0.0,
-                action: PaletteAction::ChangeDirectory(path),
-            }
-        })
-        .collect::<Vec<_>>();
+    let mut entries = vec![PaletteEntry {
+        label: "Refresh Worktrees".to_string(),
+        description: "Reload Git worktree metadata from disk".to_string(),
+        category: PaletteCategory::GitWorktree,
+        score: 0.0,
+        action: PaletteAction::GitRefreshWorktrees,
+    }];
+    entries.extend(worktrees.into_iter().flat_map(|worktree| {
+        let switch = PaletteEntry {
+            label: git_worktree_label(&worktree),
+            description: git_worktree_description(&worktree, current_cwd),
+            category: PaletteCategory::GitWorktree,
+            score: 0.0,
+            action: PaletteAction::GitSwitchWorktree(worktree.id.clone()),
+        };
+        let removable = !worktree.is_primary && worktree.source == "wok";
+        let remove = removable.then(|| PaletteEntry {
+            label: format!("Remove {}", worktree.name),
+            description: worktree.path.display().to_string(),
+            category: PaletteCategory::GitWorktree,
+            score: 0.0,
+            action: PaletteAction::GitRemoveWorktree(worktree.id),
+        });
+        std::iter::once(switch).chain(remove)
+    }));
     entries.sort_by(|left, right| left.label.cmp(&right.label));
     entries
 }
@@ -14526,39 +14868,28 @@ fn git_discard_confirmation_entries(path: &str) -> Vec<PaletteEntry> {
     ]
 }
 
-fn git_worktree_label(worktree: &wok_git::service::GitWorktree) -> String {
-    worktree
-        .branch
-        .clone()
-        .or_else(|| {
-            worktree
-                .head
-                .as_ref()
-                .map(|head| format!("detached {}", head.chars().take(8).collect::<String>()))
-        })
-        .unwrap_or_else(|| {
-            worktree
-                .path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or("worktree")
-                .to_string()
-        })
+fn git_worktree_label(worktree: &WorktreeRecord) -> String {
+    let prefix = if worktree.is_primary {
+        "Primary"
+    } else {
+        "Switch"
+    };
+    format!("{prefix} {}", worktree.name)
 }
 
-fn git_worktree_description(
-    worktree: &wok_git::service::GitWorktree,
-    current_cwd: &std::path::Path,
-) -> String {
+fn git_worktree_description(worktree: &WorktreeRecord, current_cwd: &std::path::Path) -> String {
     let mut parts = Vec::new();
     if current_cwd.starts_with(&worktree.path) {
         parts.push("current".to_string());
     }
-    if worktree.is_bare {
-        parts.push("bare".to_string());
+    if worktree.is_primary {
+        parts.push("primary".to_string());
     }
-    if worktree.is_detached {
-        parts.push("detached".to_string());
+    if worktree.source == "wok" {
+        parts.push("wok-owned".to_string());
+    }
+    if let Some(branch) = worktree.branch.as_deref() {
+        parts.push(branch.to_string());
     }
     parts.push(worktree.path.display().to_string());
     parts.join(" | ")
@@ -15002,6 +15333,11 @@ fn typed_palette_command_entries() -> Vec<PaletteEntry> {
             "Change Directory <path>",
             "Change active pane directory",
         ),
+        (
+            "worktree_add",
+            "Create Worktree <branch>",
+            "Create a sibling Git worktree for typed branch",
+        ),
     ]
     .into_iter()
     .map(|(id, label, description)| PaletteEntry {
@@ -15024,6 +15360,7 @@ fn typed_palette_command_label(command_id: &str) -> &'static str {
         "open" => "Open Path",
         "tail" => "Tail Path",
         "cd" => "Change Directory",
+        "worktree_add" => "Create Worktree",
         _ => "typed command",
     }
 }
@@ -15054,6 +15391,7 @@ fn parse_typed_palette_query(query: &str) -> Option<(&'static str, &str)> {
         "open" | "open_path" => "open",
         "tail" | "tail_path" => "tail",
         "cd" | "chdir" => "cd",
+        "worktree" | "worktree_add" | "add_worktree" => "worktree_add",
         _ => return None,
     };
     (!tail.is_empty()).then_some((command, tail))
@@ -16187,6 +16525,7 @@ mod tests {
         assert!(catalog.contains(&Action::OpenBlockInspector));
         assert!(catalog.contains(&Action::OpenBlockRerunComparison));
         assert!(catalog.contains(&Action::OpenWorkspaceBrowser));
+        assert!(!catalog.contains(&Action::SettingsDiscovery));
     }
 
     #[test]
@@ -16388,12 +16727,15 @@ mod tests {
 
     #[test]
     fn test_git_worktree_entries_mark_current_worktree() {
-        let worktree = wok_git::service::GitWorktree {
+        let worktree = WorktreeRecord {
+            id: "main-id".to_string(),
+            name: "main".to_string(),
             path: std::path::PathBuf::from("/repo/main"),
             branch: Some("main".to_string()),
-            head: Some("abcdef".to_string()),
-            is_bare: false,
-            is_detached: false,
+            source: "primary".to_string(),
+            owns_branch: false,
+            is_primary: true,
+            created_at: 1,
         };
 
         let entries = build_git_worktree_palette_entries(
@@ -16401,12 +16743,19 @@ mod tests {
             std::path::Path::new("/repo/main/src"),
         );
 
-        assert_eq!(entries[0].label, "main");
-        assert!(entries[0].description.contains("current"));
+        let entry = entries
+            .iter()
+            .find(|entry| matches!(entry.action, PaletteAction::GitSwitchWorktree(_)))
+            .expect("switch entry should exist");
+        assert_eq!(entry.label, "Primary main");
+        assert!(entry.description.contains("current"));
         assert_eq!(
-            entries[0].action,
-            PaletteAction::ChangeDirectory("/repo/main".to_string())
+            entry.action,
+            PaletteAction::GitSwitchWorktree("main-id".to_string())
         );
+        assert!(entries
+            .iter()
+            .any(|entry| entry.action == PaletteAction::GitRefreshWorktrees));
     }
 
     #[test]

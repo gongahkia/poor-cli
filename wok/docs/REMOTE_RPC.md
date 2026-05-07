@@ -101,6 +101,52 @@ This method is read-only and shells out to local `git` for the pane's current wo
 
 This method is read-only and combines staged plus unstaged `git diff` hunks for the requested file.
 
+### `wok.worktree.list`
+
+- Params:
+  - `cwd` (`string`, optional; defaults to active pane cwd)
+  - `pane_id` (`u64`, optional; defaults to active pane)
+- Response: `{repo_key, active_id, worktrees}`
+
+Each worktree entry includes `{id, name, path, branch, source, owns_branch, is_primary, created_at}`.
+
+### `wok.worktree.switch`
+
+- Params:
+  - `id` (`string`, required; worktree id or exact path)
+- Response: `{ok, active}`
+
+Saves the current worktree workspace snapshot and restores the target worktree snapshot, creating a one-pane workspace rooted at the target path when no snapshot exists.
+
+### `wok.worktree.add`
+
+- Params:
+  - `branch` (`string`, required)
+  - `path` (`string`, optional; defaults to a sibling path based on branch)
+  - `create_branch` (`bool`, optional; defaults to true when branch is missing)
+  - `cwd` (`string`, optional)
+  - `pane_id` (`u64`, optional)
+- Response: `{ok, created, create_branch}`
+
+### `wok.worktree.remove`
+
+- Params:
+  - `id` (`string`, required; worktree id or exact path)
+  - `force` (`bool`, optional)
+  - `delete_branch` (`bool`, optional; only deletes Wok-owned branches)
+  - `cwd` (`string`, optional)
+  - `pane_id` (`u64`, optional)
+- Response: `{ok, removed, delete_branch}`
+
+Primary and externally managed worktrees are protected unless `force=true` is supplied.
+
+### `wok.worktree.refresh`
+
+- Params:
+  - `cwd` (`string`, optional; defaults to active pane cwd)
+  - `pane_id` (`u64`, optional; defaults to active pane)
+- Response: same shape as `wok.worktree.list`
+
 ### `wok.git.stage`
 
 - Params:

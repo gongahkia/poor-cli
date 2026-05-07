@@ -93,6 +93,21 @@ pub enum PaletteAction {
     GitDiscardFile(String),
     /// Confirm discarding local changes for a Git file.
     GitConfirmDiscardFile(String),
+    /// Switch to a Git worktree by Wok worktree id.
+    GitSwitchWorktree(String),
+    /// Create a Git worktree.
+    GitCreateWorktree {
+        /// Branch to check out.
+        branch: String,
+        /// Worktree path.
+        path: String,
+        /// Whether to create the branch.
+        create_branch: bool,
+    },
+    /// Remove a Git worktree by Wok worktree id.
+    GitRemoveWorktree(String),
+    /// Refresh Git worktree metadata.
+    GitRefreshWorktrees,
     /// Close the command palette without taking another action.
     Dismiss,
     /// Change the active pane working directory.

@@ -116,6 +116,20 @@ Flags:
 - `--socket`: explicit socket path (falls back to `$WOK_SOCKET`)
 - `--token`: optional RPC auth token (falls back to `$WOK_RPC_TOKEN`)
 
+## `wok worktree`
+
+Manage Git worktrees for the active repository in a running Wok instance.
+
+```bash
+wok worktree list
+wok worktree add feature/new-api
+wok worktree remove <id-or-path> --delete-branch
+wok worktree switch <id-or-path>
+wok worktree refresh
+```
+
+`add` defaults to creating a branch when it does not already exist and places the new worktree next to the primary worktree using a sanitized branch name.
+
 ## `wok workspace`
 
 Manage named workspace snapshots from a shell connected to a running Wok instance.

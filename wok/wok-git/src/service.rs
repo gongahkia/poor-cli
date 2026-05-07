@@ -51,6 +51,8 @@ pub struct GitWorktree {
     pub is_bare: bool,
     /// Whether this worktree is detached.
     pub is_detached: bool,
+    /// Whether Git reports this worktree as prunable.
+    pub is_prunable: bool,
 }
 
 impl GitStatusSnapshot {
@@ -72,6 +74,9 @@ pub enum GitServiceError {
     /// Git output was not valid UTF-8 where text output was expected.
     #[error("git output was not valid UTF-8")]
     InvalidUtf8,
+    /// A branch name failed Wok's conservative worktree branch validation.
+    #[error("invalid branch name: {0}")]
+    InvalidBranchName(String),
 }
 
 /// Load changed-file status for the repository containing `cwd`.
@@ -108,6 +113,101 @@ pub fn load_worktrees(cwd: &Path) -> Result<Vec<GitWorktree>, GitServiceError> {
         .ok_or_else(|| GitServiceError::NotGitRepository(cwd.to_path_buf()))?;
     let output = run_git_text(&repo.worktree_root, &["worktree", "list", "--porcelain"])?;
     Ok(parse_worktree_list(&output))
+}
+
+/// List Git worktrees for the repository containing `cwd`.
+pub fn list_worktrees(cwd: &Path) -> Result<Vec<GitWorktree>, GitServiceError> {
+    load_worktrees(cwd)
+}
+
+/// Return the canonical Git common-dir path for the repository containing `cwd`.
+pub fn load_common_dir(cwd: &Path) -> Result<PathBuf, GitServiceError> {
+    let repo = detect_repo_info(cwd)
+        .ok_or_else(|| GitServiceError::NotGitRepository(cwd.to_path_buf()))?;
+    let raw = run_git_text(&repo.worktree_root, &["rev-parse", "--git-common-dir"])?;
+    let path = PathBuf::from(raw.trim());
+    let path = if path.is_absolute() {
+        path
+    } else {
+        repo.worktree_root.join(path)
+    };
+    Ok(path.canonicalize().unwrap_or(path))
+}
+
+/// Return true when `branch` exists in the repository containing `cwd`.
+pub fn branch_exists(cwd: &Path, branch: &str) -> Result<bool, GitServiceError> {
+    validate_branch_name(branch)?;
+    let repo = detect_repo_info(cwd)
+        .ok_or_else(|| GitServiceError::NotGitRepository(cwd.to_path_buf()))?;
+    Ok(run(Cmd::new("git")
+        .args(["show-ref", "--verify", "--quiet"])
+        .arg(format!("refs/heads/{branch}"))
+        .cwd(&repo.worktree_root))
+    .is_ok())
+}
+
+/// Create a Git worktree at `path`, optionally creating `branch`.
+pub fn add_worktree(
+    repo: &Path,
+    path: &Path,
+    branch: &str,
+    create_branch: bool,
+) -> Result<(), GitServiceError> {
+    validate_branch_name(branch)?;
+    let repo_info = detect_repo_info(repo)
+        .ok_or_else(|| GitServiceError::NotGitRepository(repo.to_path_buf()))?;
+    let path_arg = path.display().to_string();
+    if create_branch {
+        run(Cmd::new("git")
+            .args(["worktree", "add", "-b", branch, "--"])
+            .arg(&path_arg)
+            .cwd(&repo_info.worktree_root))?;
+    } else {
+        run(Cmd::new("git")
+            .args(["worktree", "add", "--"])
+            .arg(&path_arg)
+            .arg(branch)
+            .cwd(&repo_info.worktree_root))?;
+    }
+    Ok(())
+}
+
+/// Remove a Git worktree at `path`.
+pub fn remove_worktree(repo: &Path, path: &Path, force: bool) -> Result<(), GitServiceError> {
+    let repo_info = detect_repo_info(repo)
+        .ok_or_else(|| GitServiceError::NotGitRepository(repo.to_path_buf()))?;
+    let path_arg = path.display().to_string();
+    let cmd = Cmd::new("git").args(["worktree", "remove"]);
+    let cmd = if force { cmd.arg("--force") } else { cmd };
+    let cmd = cmd.arg("--").arg(&path_arg).cwd(&repo_info.worktree_root);
+    run(cmd)?;
+    Ok(())
+}
+
+/// Delete a local branch.
+pub fn delete_branch(repo: &Path, branch: &str, force: bool) -> Result<(), GitServiceError> {
+    validate_branch_name(branch)?;
+    let repo_info = detect_repo_info(repo)
+        .ok_or_else(|| GitServiceError::NotGitRepository(repo.to_path_buf()))?;
+    let flag = if force { "-D" } else { "-d" };
+    run(Cmd::new("git")
+        .args(["branch", flag, "--", branch])
+        .cwd(&repo_info.worktree_root))?;
+    Ok(())
+}
+
+/// Validate a branch name accepted by Wok worktree creation.
+pub fn validate_branch_name(branch: &str) -> Result<(), GitServiceError> {
+    let branch = branch.trim();
+    if branch.is_empty()
+        || branch.starts_with('-')
+        || !branch
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '/' | '-'))
+    {
+        return Err(GitServiceError::InvalidBranchName(branch.to_string()));
+    }
+    Ok(())
 }
 
 /// Stage one repository-relative path.
@@ -259,6 +359,7 @@ fn parse_worktree_list(output: &str) -> Vec<GitWorktree> {
                 head: None,
                 is_bare: false,
                 is_detached: false,
+                is_prunable: false,
             }) {
                 worktrees.push(worktree);
             }
@@ -281,6 +382,8 @@ fn parse_worktree_list(output: &str) -> Vec<GitWorktree> {
             worktree.is_bare = true;
         } else if line == "detached" {
             worktree.is_detached = true;
+        } else if line.starts_with("prunable") {
+            worktree.is_prunable = true;
         }
     }
 
@@ -422,13 +525,60 @@ mod tests {
     #[test]
     fn parse_worktree_list_normalizes_branch_names() {
         let worktrees = parse_worktree_list(
-            "worktree /repo\nHEAD abc123\nbranch refs/heads/main\n\nworktree /repo-feature\nHEAD def456\ndetached\n\n",
+            "worktree /repo\nHEAD abc123\nbranch refs/heads/main\n\nworktree /repo-feature\nHEAD def456\ndetached\nprunable gitdir file points to non-existent location\n\nworktree /repo-bare\nbare\n\n",
         );
 
-        assert_eq!(worktrees.len(), 2);
+        assert_eq!(worktrees.len(), 3);
         assert_eq!(worktrees[0].path, PathBuf::from("/repo"));
         assert_eq!(worktrees[0].branch.as_deref(), Some("main"));
         assert_eq!(worktrees[0].head.as_deref(), Some("abc123"));
         assert!(worktrees[1].is_detached);
+        assert!(worktrees[1].is_prunable);
+        assert!(worktrees[2].is_bare);
+    }
+
+    #[test]
+    fn branch_validation_accepts_muxy_style_safe_names() {
+        for branch in ["feature/demo", "bug.fix_42", "release-1/alpha"] {
+            validate_branch_name(branch).expect("branch should be valid");
+        }
+    }
+
+    #[test]
+    fn branch_validation_rejects_empty_dash_prefixed_and_special_names() {
+        for branch in ["", "-bad", "bad space", "bad~name", "bad:name"] {
+            assert!(
+                matches!(
+                    validate_branch_name(branch),
+                    Err(GitServiceError::InvalidBranchName(_))
+                ),
+                "{branch:?} should be invalid"
+            );
+        }
+    }
+
+    #[test]
+    fn add_remove_and_delete_branch_cover_path_arguments_after_separator() {
+        let dir = init_repo("worktree-lifecycle");
+        commit_file(&dir, "file.txt", "old\n");
+        let worktree_path = dir
+            .parent()
+            .expect("temp repo should have parent")
+            .join(format!(
+                "{}-linked",
+                dir.file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("worktree")
+            ));
+
+        add_worktree(&dir, &worktree_path, "feature/path-args", true)
+            .expect("worktree should be added");
+        assert!(worktree_path.join("file.txt").exists());
+
+        remove_worktree(&dir, &worktree_path, false).expect("worktree should be removed");
+        assert!(!worktree_path.exists());
+
+        delete_branch(&dir, "feature/path-args", true).expect("branch should be deleted");
+        assert!(!branch_exists(&dir, "feature/path-args").expect("branch query should pass"));
     }
 }

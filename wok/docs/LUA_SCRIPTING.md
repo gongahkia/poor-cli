@@ -317,7 +317,7 @@ Returns `{ is_git_repo, repo_root, branch, path, additions, deletions, rows }`. 
 
 Each row: `{ kind, old_line_number, new_line_number, old_text, new_text, text }`, where `kind` is `hunk`, `context`, `addition`, `deletion`, or `collapsed`.
 
-The same changed-file list is available in the app via the **Git Changes** palette action (`git_changes`). The palette can preview a diff, stage unstaged changes, unstage indexed changes, or discard local edits for a path. Use **Git Worktrees** (`git_worktrees`) to switch the active pane into another worktree for the same repository.
+The same changed-file list is available in the app via the **Git Changes** palette action (`git_changes`). The palette can preview a diff, stage unstaged changes, unstage indexed changes, or discard local edits for a path. Use **Git Worktrees** (`git_worktrees`) to switch between per-worktree Wok workspace snapshots for the same repository.
 
 ### `wok.git.stage(path | options)`
 

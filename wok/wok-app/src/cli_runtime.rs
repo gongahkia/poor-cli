@@ -95,6 +95,73 @@ pub(crate) fn dispatch_cli_command(cli: &Cli) -> Result<CliAction, Box<dyn Error
             }
             Ok(CliAction::ExitOk)
         }
+        Some(CliCommand::Worktree { command }) => {
+            let (method, params, socket, token) = match command {
+                WorktreeCommand::List { socket, token } => {
+                    ("wok.worktree.list", json!({}), socket, token)
+                }
+                WorktreeCommand::Add {
+                    branch,
+                    path,
+                    create_branch,
+                    socket,
+                    token,
+                } => (
+                    "wok.worktree.add",
+                    json!({
+                        "branch": branch,
+                        "path": path,
+                        "create_branch": create_branch,
+                    }),
+                    socket,
+                    token,
+                ),
+                WorktreeCommand::Remove {
+                    id,
+                    force,
+                    delete_branch,
+                    socket,
+                    token,
+                } => (
+                    "wok.worktree.remove",
+                    json!({
+                        "id": id,
+                        "force": force,
+                        "delete_branch": delete_branch,
+                    }),
+                    socket,
+                    token,
+                ),
+                WorktreeCommand::Switch { id, socket, token } => {
+                    ("wok.worktree.switch", json!({ "id": id }), socket, token)
+                }
+                WorktreeCommand::Refresh { socket, token } => {
+                    ("wok.worktree.refresh", json!({}), socket, token)
+                }
+            };
+            let response = rpc_cli::execute_rpc_command(
+                method.to_string(),
+                params.to_string(),
+                socket,
+                token,
+                None,
+                false,
+            )?
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "remote control server did not return a response",
+                )
+            })?;
+            if let Some(error) = response.get("error") {
+                return Err(std::io::Error::other(format!("remote RPC error: {error}")).into());
+            }
+            println!(
+                "{}",
+                serde_json::to_string_pretty(response.get("result").unwrap_or(&response))?
+            );
+            Ok(CliAction::ExitOk)
+        }
         Some(CliCommand::Rpc {
             method,
             params,
