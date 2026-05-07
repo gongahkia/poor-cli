@@ -538,7 +538,7 @@ mod tests {
     }
 
     #[test]
-    fn branch_validation_accepts_muxy_style_safe_names() {
+    fn branch_validation_accepts_wok_worktree_safe_names() {
         for branch in ["feature/demo", "bug.fix_42", "release-1/alpha"] {
             validate_branch_name(branch).expect("branch should be valid");
         }
