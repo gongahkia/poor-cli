@@ -594,7 +594,7 @@ fn default_font_family() -> &'static str {
 }
 
 fn default_chrome_font_family() -> &'static str {
-    "IBM Plex Mono"
+    default_font_family()
 }
 
 impl WokConfig {
@@ -620,6 +620,7 @@ impl WokConfig {
         }
         if let Some(f) = toml_config.font_family {
             config.font_family = f;
+            config.chrome_font_family = config.font_family.clone();
         }
         if let Some(f) = toml_config.chrome_font_family {
             config.chrome_font_family = f;
@@ -1441,6 +1442,27 @@ chrome_font_family = "IBM Plex Mono"
         let config = WokConfig::load_from(&path).expect("config should load");
         assert_eq!(config.font_family, "JetBrains Mono");
         assert_eq!(config.chrome_font_family, "IBM Plex Mono");
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_chrome_font_follows_configured_terminal_font_when_omitted() {
+        let path = std::env::temp_dir().join(format!(
+            "wok-config-font-fallback-{}.toml",
+            std::process::id()
+        ));
+        std::fs::write(
+            &path,
+            r#"
+font_family = "Iosevka Term"
+"#,
+        )
+        .expect("config should be written");
+
+        let config = WokConfig::load_from(&path).expect("config should load");
+        assert_eq!(config.font_family, "Iosevka Term");
+        assert_eq!(config.chrome_font_family, "Iosevka Term");
 
         let _ = std::fs::remove_file(path);
     }

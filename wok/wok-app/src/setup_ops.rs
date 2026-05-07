@@ -13,7 +13,7 @@ const CONFIG_TEMPLATE: &str = r#"# Wok configuration
 # See docs/CONFIGURATION.md for all options.
 shell = "zsh"
 font_family = "JetBrainsMono Nerd Font Mono"
-chrome_font_family = "IBM Plex Mono"
+chrome_font_family = "JetBrainsMono Nerd Font Mono"
 font_size = 15.0
 ui_layout = "v2"
 pane_header_visible = false

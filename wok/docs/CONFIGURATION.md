@@ -21,7 +21,7 @@ remove sessions, themes, shell integration, workflows, or `init.lua`.
 ```toml
 shell = "zsh"
 font_family = "JetBrainsMono Nerd Font Mono"
-chrome_font_family = "IBM Plex Mono"
+chrome_font_family = "JetBrainsMono Nerd Font Mono"
 font_size = 15.0
 ui_layout = "v2"
 pane_header_visible = false
@@ -95,7 +95,7 @@ action = "split_vertical"
 | --- | --- | --- | --- | --- |
 | `shell` | string | auto-detected | Active | Shell to use: `bash`, `zsh`, `fish`, `powershell`, or `wsl:<distro>` |
 | `font_family` | string | `"JetBrainsMono Nerd Font Mono"` | Active | Selects the font family used for glyph rasterization and cell metric measurement |
-| `chrome_font_family` | string | `"IBM Plex Mono"` | Active | Selects the separate mono family used for tab, status, palette, and other chrome labels |
+| `chrome_font_family` | string | `"JetBrainsMono Nerd Font Mono"` | Active | Selects the separate mono family used for tab, status, palette, and other chrome labels; when omitted it follows `font_family` |
 | `font_size` | float | `15.0` | Active | Font size in points |
 | `ui_layout` | string | `"v2"` | Active | Selects frontend chrome generation. `v2` enables the pane-first rework defaults; `v1` restores legacy shell-native/input/header sizing defaults |
 | `pane_header_visible` | boolean | `false` | Active | Reserves a compact pane header line showing pane id, cwd basename, branch, and running state |

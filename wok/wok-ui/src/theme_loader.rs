@@ -180,6 +180,7 @@ pub fn load_theme(path: &Path) -> Result<Theme, ThemeError> {
     }
     if let Some(f) = toml_theme.font_family {
         theme.font_family = f;
+        theme.chrome_font_family = theme.font_family.clone();
     }
     if let Some(f) = toml_theme.chrome_font_family {
         theme.chrome_font_family = f;
@@ -496,6 +497,29 @@ bracket_match = "#99aabb80"
         assert!((theme.highlight_match.a - (0x80 as f32 / 255.0)).abs() < 0.01);
         assert!((theme.highlight_current_match.r - (0x88 as f32 / 255.0)).abs() < 0.01);
         assert!((theme.bracket_match.r - (0x99 as f32 / 255.0)).abs() < 0.01);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_load_theme_chrome_font_follows_font_when_omitted() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "wok-theme-loader-font-fallback-{}.toml",
+            std::process::id()
+        ));
+        std::fs::write(
+            &path,
+            r##"
+name = "Font Fallback"
+font_family = "Iosevka Term"
+"##,
+        )
+        .expect("theme file should be written");
+
+        let theme = load_theme(&path).expect("theme should load");
+        assert_eq!(theme.font_family, "Iosevka Term");
+        assert_eq!(theme.chrome_font_family, "Iosevka Term");
 
         let _ = std::fs::remove_file(path);
     }

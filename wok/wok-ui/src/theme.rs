@@ -202,7 +202,7 @@ impl Default for Theme {
             bracket_match: Color::new(0.545, 0.835, 0.792, 0.40), // #8bd5ca66
             syntax: SyntaxColors::default(),
             font_family: "JetBrainsMono Nerd Font Mono".to_string(),
-            chrome_font_family: "IBM Plex Mono".to_string(),
+            chrome_font_family: "JetBrainsMono Nerd Font Mono".to_string(),
             font_size: 15.0,
             opacity: 1.0,
             background_image: None,
