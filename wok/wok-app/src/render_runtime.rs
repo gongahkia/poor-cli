@@ -181,6 +181,21 @@ pub(crate) fn bottom_dock_rect(content: Rect, cell_height: f32) -> Rect {
     )
 }
 
+pub(crate) fn centered_overlay_rect(content: Rect) -> Rect {
+    let width = (content.w * 0.72)
+        .clamp(520.0, 1120.0)
+        .min((content.w - 32.0).max(260.0));
+    let height = (content.h * 0.72)
+        .clamp(280.0, 720.0)
+        .min((content.h - 32.0).max(200.0));
+    Rect::new(
+        content.x + (content.w - width) * 0.5,
+        content.y + (content.h - height) * 0.5,
+        width,
+        height,
+    )
+}
+
 pub(crate) fn timeline_rail_rect(viewport: Rect) -> Rect {
     Rect::new(viewport.x, viewport.y, 14.0_f32.min(viewport.w), viewport.h)
 }
@@ -4694,6 +4709,11 @@ pub(crate) fn spans_overlap(start_a: usize, end_a: usize, start_b: usize, end_b:
     start_a < end_b && start_b < end_a
 }
 
+fn block_row_has_rendered_content(terminal: &Terminal, block: &Block, absolute_row: usize) -> bool {
+    absolute_row == block.output_start_row
+        || !terminal.state.row_text(absolute_row).trim().is_empty()
+}
+
 pub(crate) fn collect_row_cells(
     terminal: &Terminal,
     absolute_row: usize,
@@ -4749,9 +4769,12 @@ pub(crate) fn rebuild_visible_row_batch(
         row_y,
         terminal_surface_alpha,
     );
-    if let Some(block) = blocks.iter().find(|block| {
+    let row_block = blocks.iter().find(|block| {
         absolute_row >= block.output_start_row && absolute_row <= block.output_end_row
-    }) {
+    });
+    let draw_block_chrome = row_block
+        .is_some_and(|block| block_row_has_rendered_content(terminal, block, absolute_row));
+    if let Some(block) = row_block.filter(|_| draw_block_chrome) {
         let block_bg = if selected_block_id == Some(block.id) {
             theme.block_selected_background
         } else {
@@ -4892,9 +4915,7 @@ pub(crate) fn rebuild_visible_row_batch(
         }
     }
 
-    if let Some(block) = blocks.iter().find(|block| {
-        absolute_row >= block.output_start_row && absolute_row <= block.output_end_row
-    }) {
+    if let Some(block) = row_block.filter(|_| draw_block_chrome) {
         let accent = block_accent_color(theme, block);
         let accent_alpha = block_accent_alpha(block, selected_block_id, render_time);
         let rail_width = if selected_block_id == Some(block.id) {
