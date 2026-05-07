@@ -16,7 +16,7 @@ The product is intentionally opinionated: no AI, no login, no cloud dependency. 
 | Search | Shipped | Workspace-global query renders in the bottom dock with regex/scope controls, saved queries, result-list navigation, match counts, and cross-pane result jumps |
 | Mouse selection | Shipped | Drag selection works; `copy_on_select` is honored |
 | Lua scripting | Shipped | Loads `~/.config/wok/init.lua`, supports keybindings, command aliases, structured hooks, `run_action`, `exec`, `notify`, and runtime state accessors |
-| Theme loading | Shipped | Ghostty Wok Dark is the default; `wok init` seeds editable themes, `theme_path` loads at startup, and themes can be changed live through `wok.theme.load(...)` / `wok.theme.set(...)` |
+| Theme loading | Shipped | Wok Clean Dark is the default; `wok init` seeds editable themes, `theme_path` loads at startup, and themes can be changed live through `wok.theme.load(...)` / `wok.theme.set(...)` |
 | Remaining limits | Honest gap | Plugins are still action/hook scoped rather than custom renderers, and the main runtime orchestration still lives in one large entrypoint instead of a fully split module tree |
 
 ## Run Locally

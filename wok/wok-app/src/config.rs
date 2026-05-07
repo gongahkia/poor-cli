@@ -502,10 +502,10 @@ impl Default for WokConfig {
             tab_bar_visible: true,
             tab_bar_side: ChromeSide::Top,
             tab_bar_orientation: TabBarOrientation::Horizontal,
-            tab_bar_size: Some(24.0),
-            status_bar_visible: false,
+            tab_bar_size: Some(22.0),
+            status_bar_visible: true,
             status_bar_side: ChromeSide::Bottom,
-            status_bar_size: Some(24.0),
+            status_bar_size: Some(22.0),
             timeline_rail_visible: false,
             window_opacity: 1.0,
             background_image: None,
@@ -1217,8 +1217,10 @@ mod tests {
         assert!(!config.pane_header_visible);
         assert_eq!(config.tab_bar_side, ChromeSide::Top);
         assert_eq!(config.tab_bar_orientation, TabBarOrientation::Horizontal);
-        assert!(!config.status_bar_visible);
+        assert_eq!(config.tab_bar_size, Some(22.0));
+        assert!(config.status_bar_visible);
         assert_eq!(config.status_bar_side, ChromeSide::Bottom);
+        assert_eq!(config.status_bar_size, Some(22.0));
         assert!(!config.timeline_rail_visible);
         assert!((config.window_opacity - 1.0).abs() < f32::EPSILON);
         assert_eq!(config.background_image, None);

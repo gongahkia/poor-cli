@@ -127,17 +127,17 @@ pub struct Theme {
 impl Default for SyntaxColors {
     fn default() -> Self {
         Self {
-            command: Color::rgb(0.478, 0.655, 1.0),    // #7aa7ff
-            argument: Color::rgb(0.843, 0.882, 0.875), // #d7e1df
-            flag: Color::rgb(0.780, 0.573, 0.918),     // #c792ea
-            path: Color::rgb(0.486, 0.969, 0.757),     // #7cf7c1
-            string: Color::rgb(0.627, 0.839, 0.420),   // #a0d66b
-            number: Color::rgb(1.0, 0.722, 0.424),     // #ffb86c
-            pipe: Color::rgb(0.498, 0.584, 0.580),     // #7f9594
-            redirect: Color::rgb(0.498, 0.584, 0.580), // #7f9594
-            variable: Color::rgb(0.941, 0.776, 0.455), // #f0c674
-            comment: Color::rgb(0.255, 0.314, 0.353),  // #41505a
-            error: Color::rgb(1.0, 0.420, 0.478),      // #ff6b7a
+            command: Color::rgb(0.541, 0.678, 0.957),  // #8aadf4
+            argument: Color::rgb(0.847, 0.871, 0.914), // #d8dee9
+            flag: Color::rgb(0.776, 0.627, 0.965),     // #c6a0f6
+            path: Color::rgb(0.545, 0.835, 0.792),     // #8bd5ca
+            string: Color::rgb(0.651, 0.855, 0.584),   // #a6da95
+            number: Color::rgb(0.933, 0.831, 0.624),   // #eed49f
+            pipe: Color::rgb(0.561, 0.608, 0.678),     // #8f9bad
+            redirect: Color::rgb(0.561, 0.608, 0.678), // #8f9bad
+            variable: Color::rgb(0.961, 0.741, 0.902), // #f5bde6
+            comment: Color::rgb(0.357, 0.400, 0.463),  // #5b6676
+            error: Color::rgb(0.929, 0.529, 0.588),    // #ed8796
         }
     }
 }
@@ -145,28 +145,28 @@ impl Default for SyntaxColors {
 impl Default for Theme {
     fn default() -> Self {
         Self {
-            name: "Ghostty Wok Dark".to_string(),
-            background: Color::rgb(0.063, 0.063, 0.063), // #101010
-            foreground: Color::rgb(0.949, 0.949, 0.949), // #f2f2f2
-            cursor: Color::rgb(0.961, 0.961, 0.961),     // #f5f5f5
-            vi_cursor_color: Color::rgb(0.796, 0.651, 0.969), // #cba6f7
-            selection: Color::new(0.227, 0.227, 0.227, 0.60), // #3a3a3a99
+            name: "Wok Clean Dark".to_string(),
+            background: Color::rgb(0.059, 0.078, 0.106), // #0f141b
+            foreground: Color::rgb(0.847, 0.871, 0.914), // #d8dee9
+            cursor: Color::rgb(0.541, 0.678, 0.957),     // #8aadf4
+            vi_cursor_color: Color::rgb(0.961, 0.741, 0.902), // #f5bde6
+            selection: Color::new(0.184, 0.231, 0.322, 0.67), // #2f3b52aa
             ansi_colors: default_ansi_colors(),
-            tab_bar_bg: Color::rgb(0.051, 0.051, 0.051), // #0d0d0d
-            tab_active_bg: Color::rgb(0.086, 0.086, 0.086), // #161616
-            tab_inactive_bg: Color::rgb(0.067, 0.067, 0.067), // #111111
-            tab_text: Color::rgb(0.902, 0.902, 0.902),   // #e6e6e6
-            status_bar_bg: Color::rgb(0.051, 0.051, 0.051), // #0d0d0d
-            status_bar_text: Color::rgb(0.604, 0.604, 0.604), // #9a9a9a
-            input_bg: Color::rgb(0.071, 0.071, 0.071),   // #121212
-            input_text: Color::rgb(0.949, 0.949, 0.949), // #f2f2f2
-            block_separator: Color::rgb(0.141, 0.141, 0.141), // #242424
-            block_success_accent: Color::rgb(0.651, 0.890, 0.631), // #a6e3a1
-            block_error_accent: Color::rgb(0.953, 0.545, 0.659), // #f38ba8
-            highlight_match: Color::new(0.537, 0.706, 0.980, 0.33), // #89b4fa55
-            highlight_current_match: Color::new(0.976, 0.886, 0.686, 0.40), // #f9e2af66
-            hyperlink_color: Color::rgb(0.537, 0.706, 0.980), // #89b4fa
-            bracket_match: Color::new(0.580, 0.886, 0.835, 0.40), // #94e2d566
+            tab_bar_bg: Color::rgb(0.043, 0.063, 0.090), // #0b1017
+            tab_active_bg: Color::rgb(0.090, 0.118, 0.165), // #171e2a
+            tab_inactive_bg: Color::rgb(0.063, 0.090, 0.125), // #101720
+            tab_text: Color::rgb(0.847, 0.871, 0.914),   // #d8dee9
+            status_bar_bg: Color::rgb(0.043, 0.063, 0.090), // #0b1017
+            status_bar_text: Color::rgb(0.561, 0.608, 0.678), // #8f9bad
+            input_bg: Color::rgb(0.067, 0.094, 0.129),   // #111821
+            input_text: Color::rgb(0.898, 0.914, 0.941), // #e5e9f0
+            block_separator: Color::rgb(0.133, 0.188, 0.267), // #223044
+            block_success_accent: Color::rgb(0.545, 0.835, 0.792), // #8bd5ca
+            block_error_accent: Color::rgb(0.929, 0.529, 0.588), // #ed8796
+            highlight_match: Color::new(0.541, 0.678, 0.957, 0.33), // #8aadf455
+            highlight_current_match: Color::new(0.933, 0.831, 0.624, 0.45), // #eed49f73
+            hyperlink_color: Color::rgb(0.541, 0.678, 0.957), // #8aadf4
+            bracket_match: Color::new(0.545, 0.835, 0.792, 0.40), // #8bd5ca66
             syntax: SyntaxColors::default(),
             font_family: "JetBrainsMono Nerd Font Mono".to_string(),
             chrome_font_family: "IBM Plex Mono".to_string(),
@@ -181,23 +181,23 @@ impl Default for Theme {
 fn default_ansi_colors() -> [Color; 16] {
     [
         // Normal colors
-        Color::rgb(0.114, 0.122, 0.129), // 0 Black   #1d1f21
-        Color::rgb(0.953, 0.545, 0.659), // 1 Red     #f38ba8
-        Color::rgb(0.651, 0.890, 0.631), // 2 Green   #a6e3a1
-        Color::rgb(0.976, 0.886, 0.686), // 3 Yellow  #f9e2af
-        Color::rgb(0.537, 0.706, 0.980), // 4 Blue    #89b4fa
-        Color::rgb(0.796, 0.651, 0.969), // 5 Magenta #cba6f7
-        Color::rgb(0.580, 0.886, 0.835), // 6 Cyan    #94e2d5
-        Color::rgb(0.804, 0.839, 0.957), // 7 White   #cdd6f4
+        Color::rgb(0.082, 0.106, 0.137), // 0 Black   #151b23
+        Color::rgb(0.929, 0.529, 0.588), // 1 Red     #ed8796
+        Color::rgb(0.651, 0.855, 0.584), // 2 Green   #a6da95
+        Color::rgb(0.933, 0.831, 0.624), // 3 Yellow  #eed49f
+        Color::rgb(0.541, 0.678, 0.957), // 4 Blue    #8aadf4
+        Color::rgb(0.776, 0.627, 0.965), // 5 Magenta #c6a0f6
+        Color::rgb(0.545, 0.835, 0.792), // 6 Cyan    #8bd5ca
+        Color::rgb(0.792, 0.827, 0.875), // 7 White   #cad3df
         // Bright colors
-        Color::rgb(0.424, 0.439, 0.525), // 8  Bright Black   #6c7086
-        Color::rgb(0.922, 0.627, 0.675), // 9  Bright Red     #eba0ac
-        Color::rgb(0.706, 0.949, 0.678), // 10 Bright Green   #b4f2ad
-        Color::rgb(0.988, 0.914, 0.741), // 11 Bright Yellow  #fce9bd
-        Color::rgb(0.608, 0.769, 1.0),   // 12 Bright Blue    #9bc4ff
-        Color::rgb(0.851, 0.718, 1.0),   // 13 Bright Magenta #d9b7ff
-        Color::rgb(0.651, 0.953, 0.890), // 14 Bright Cyan    #a6f3e3
-        Color::rgb(0.961, 0.961, 0.961), // 15 Bright White   #f5f5f5
+        Color::rgb(0.357, 0.400, 0.463), // 8  Bright Black   #5b6676
+        Color::rgb(0.961, 0.639, 0.678), // 9  Bright Red     #f5a3ad
+        Color::rgb(0.722, 0.906, 0.659), // 10 Bright Green   #b8e7a8
+        Color::rgb(0.953, 0.867, 0.690), // 11 Bright Yellow  #f3ddb0
+        Color::rgb(0.608, 0.737, 0.969), // 12 Bright Blue    #9bbcf7
+        Color::rgb(0.824, 0.702, 0.980), // 13 Bright Magenta #d2b3fa
+        Color::rgb(0.608, 0.882, 0.839), // 14 Bright Cyan    #9be1d6
+        Color::rgb(0.941, 0.957, 0.980), // 15 Bright White   #f0f4fa
     ]
 }
 
@@ -224,10 +224,10 @@ mod tests {
     }
 
     #[test]
-    fn test_default_theme_is_ghostty_wok_dark() {
+    fn test_default_theme_is_wok_clean_dark() {
         let theme = Theme::default();
-        assert_eq!(theme.name, "Ghostty Wok Dark");
-        assert!((theme.background.r - (16.0 / 255.0)).abs() < 0.01);
+        assert_eq!(theme.name, "Wok Clean Dark");
+        assert!((theme.background.r - (15.0 / 255.0)).abs() < 0.01);
     }
 
     #[test]

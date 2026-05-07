@@ -22,10 +22,10 @@ input_position = "bottom"
 command_entry_mode = "owned_primary"
 tab_bar_orientation = "horizontal"
 tab_bar_side = "top"
-tab_bar_size = 24.0
-status_bar_visible = false
+tab_bar_size = 22.0
+status_bar_visible = true
 status_bar_side = "bottom"
-status_bar_size = 24.0
+status_bar_size = 22.0
 timeline_rail_visible = false
 window_opacity = 1.0
 # background_image = "~/Pictures/wok-background.png"
@@ -107,7 +107,7 @@ area = "status"
 action = "new_floating_pane"
 
 # Built-in themes are written by `wok init` under ~/.config/wok/themes.
-# theme_path = "~/.config/wok/themes/ghostty-wok-dark.toml"
+# theme_path = "~/.config/wok/themes/wok-clean-dark.toml"
 
 # Command/task completion notifications are powered by regex triggers.
 # This default catches common CLI coding agents and sends a native notification
@@ -149,6 +149,7 @@ end)
 const BASH_SCRIPT: &str = include_str!("../../shell-integration/bash.sh");
 const ZSH_SCRIPT: &str = include_str!("../../shell-integration/zsh.zsh");
 const FISH_SCRIPT: &str = include_str!("../../shell-integration/fish.fish");
+const THEME_WOK_CLEAN_DARK: &str = include_str!("../../themes/wok-clean-dark.toml");
 const THEME_GHOSTTY_WOK_DARK: &str = include_str!("../../themes/ghostty-wok-dark.toml");
 const THEME_GRUVBOX_WOK_DARK: &str = include_str!("../../themes/gruvbox-wok-dark.toml");
 const THEME_GRUVBOX_WOK_DAY: &str = include_str!("../../themes/gruvbox-wok-day.toml");
@@ -1276,6 +1277,7 @@ fn init_at(config_dir: &Path, overwrite: bool) -> io::Result<InitStats> {
         &mut stats,
     )?;
     for (name, content) in [
+        ("wok-clean-dark.toml", THEME_WOK_CLEAN_DARK),
         ("ghostty-wok-dark.toml", THEME_GHOSTTY_WOK_DARK),
         ("gruvbox-wok-dark.toml", THEME_GRUVBOX_WOK_DARK),
         ("gruvbox-wok-day.toml", THEME_GRUVBOX_WOK_DAY),
@@ -1442,6 +1444,7 @@ mod tests {
         assert!(dir.join("shell").join("bash.sh").exists());
         assert!(dir.join("shell").join("zsh.zsh").exists());
         assert!(dir.join("shell").join("fish.fish").exists());
+        assert!(dir.join("themes").join("wok-clean-dark.toml").exists());
         assert!(dir.join("themes").join("ghostty-wok-dark.toml").exists());
         assert!(dir.join("themes").join("gruvbox-wok-dark.toml").exists());
         assert!(dir.join("themes").join("gruvbox-wok-day.toml").exists());

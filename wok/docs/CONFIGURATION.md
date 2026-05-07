@@ -33,10 +33,10 @@ cursor_blink = true
 tab_bar_visible = true
 tab_bar_orientation = "horizontal"
 tab_bar_side = "top"
-tab_bar_size = 24.0
-status_bar_visible = false
+tab_bar_size = 22.0
+status_bar_visible = true
 status_bar_side = "bottom"
-status_bar_size = 24.0
+status_bar_size = 22.0
 timeline_rail_visible = false
 window_opacity = 1.0
 background_image = "~/.config/wok/backgrounds/workspace.png"
@@ -67,7 +67,7 @@ close_on_shell_exit = true
 restore_session = true
 debug_overlay = false
 command_telemetry = false
-theme_path = "~/.config/wok/themes/ghostty-wok-dark.toml"
+theme_path = "~/.config/wok/themes/wok-clean-dark.toml"
 external_plugin_command = "node ~/.config/wok/plugins/bridge.js"
 
 [[mouse_bindings]]
@@ -101,10 +101,10 @@ action = "split_vertical"
 | `tab_bar_visible` | boolean | `true` | Active | Shows or hides the workspace tab bar |
 | `tab_bar_orientation` | string | `"horizontal"` | Active | Backward-compatible tab layout option: `"horizontal"` maps to `tab_bar_side = "top"`, `"vertical"` maps to `tab_bar_side = "left"` |
 | `tab_bar_side` | string | `"top"` | Active | Places the tab bar on any edge: `top`, `bottom`, `left`, or `right` |
-| `tab_bar_size` | float | `24.0` | Active | Optional tab bar thickness in physical pixels; v1 falls back to active font metrics for horizontal tabs and `180.0` for vertical tabs |
-| `status_bar_visible` | boolean | `false` | Active | Shows or hides the status bar |
+| `tab_bar_size` | float | `22.0` | Active | Optional tab bar thickness in physical pixels; v1 falls back to active font metrics for horizontal tabs and `180.0` for vertical tabs |
+| `status_bar_visible` | boolean | `true` | Active | Shows or hides the status bar |
 | `status_bar_side` | string | `"bottom"` | Active | Places the status bar on any edge: `top`, `bottom`, `left`, or `right`; vertical status bars render segments as a stacked list |
-| `status_bar_size` | float | `24.0` | Active | Optional status bar thickness in physical pixels; v1 falls back to active font metrics |
+| `status_bar_size` | float | `22.0` | Active | Optional status bar thickness in physical pixels; v1 falls back to active font metrics |
 | `timeline_rail_visible` | boolean | `false` | Active | Shows the opt-in block timeline rail along the left edge of each pane |
 | `window_opacity` | float | `1.0` | Active | Applies window/chrome opacity and blends terminal surfaces against the configured background |
 | `background_image` | string | none | Active | Loads a background image from config or theme and renders it behind the workspace chrome and panes |
@@ -141,8 +141,9 @@ action = "split_vertical"
 
 ## Themes
 
-The compiled default is `Ghostty Wok Dark`. Running `wok init` also writes these editable theme files to `~/.config/wok/themes/`:
+The compiled default is `Wok Clean Dark`. Running `wok init` also writes these editable theme files to `~/.config/wok/themes/`:
 
+- `wok-clean-dark.toml`
 - `ghostty-wok-dark.toml`
 - `gruvbox-wok-dark.toml`
 - `gruvbox-wok-day.toml`
