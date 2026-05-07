@@ -189,8 +189,8 @@ impl Default for Theme {
             block_separator: Color::rgb(0.133, 0.188, 0.267), // #223044
             block_success_accent: Color::rgb(0.545, 0.835, 0.792), // #8bd5ca
             block_error_accent: Color::rgb(0.929, 0.529, 0.588), // #ed8796
-            block_background: Color::new(0.067, 0.094, 0.129, 0.36), // #1118215c
-            block_selected_background: Color::new(0.184, 0.231, 0.322, 0.42), // #2f3b526b
+            block_background: Color::new(0.067, 0.094, 0.129, 0.08), // #11182114
+            block_selected_background: Color::new(0.184, 0.231, 0.322, 0.16), // #2f3b5229
             block_failed_accent: Color::rgb(0.929, 0.529, 0.588), // #ed8796
             block_running_accent: Color::rgb(0.933, 0.831, 0.624), // #eed49f
             command_center_background: Color::rgb(0.067, 0.094, 0.129), // #111821

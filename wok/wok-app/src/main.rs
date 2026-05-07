@@ -2250,11 +2250,7 @@ impl WokHandler {
         let typewriter_cps = self.config.typewriter_effect_cps;
         let typewriter_max_pending_cells = self.config.typewriter_effect_max_pending_cells;
         let visual_effect = VisualEffectState::from_config(&self.config, self.started_at.elapsed());
-        let dock_rect = bottom_dock_rect(
-            self.chrome_rects.content,
-            self.chrome_font.metrics.cell_height,
-        );
-        let inspector_rect = inspector_dock_rect(self.chrome_rects.content);
+        let centered_overlay = centered_overlay_rect(self.chrome_rects.content);
         let (tab_visible, tab_side, _) = self.effective_tab_chrome();
         let tab_bar_theme = self
             .active_pane()
@@ -2776,12 +2772,30 @@ impl WokHandler {
                 && pane.app.input_mode == InputMode::OwnedInput
                 && pane.app.input_editor.is_active
             {
+                let input_render_data = pane.app.input_editor.render_data();
+                if let Some(cursor_render_row) = visible_rows
+                    .iter()
+                    .position(|row| *row == cursor_row)
+                    .and_then(|idx| row_positions.get(idx))
+                    .and_then(|row| *row)
+                {
+                    render_owned_input_ghost_preview(
+                        render,
+                        &mut self.font,
+                        theme,
+                        viewport,
+                        &input_render_data,
+                        cursor_col,
+                        cursor_render_row,
+                        window_opacity,
+                    );
+                }
                 render_owned_input(
                     render,
                     &mut self.font,
                     theme,
                     pane.ui_rects.input,
-                    &pane.app.input_editor.render_data(),
+                    &input_render_data,
                     cursor_shape,
                     cursor_visible,
                     window_opacity,
@@ -2794,7 +2808,7 @@ impl WokHandler {
                         render,
                         &mut self.font,
                         theme,
-                        dock_rect,
+                        centered_overlay,
                         command_search,
                         cursor_shape,
                         cursor_visible,
@@ -2808,7 +2822,7 @@ impl WokHandler {
                     render,
                     &mut self.font,
                     theme,
-                    dock_rect,
+                    centered_overlay,
                     search,
                     window_opacity,
                 );
@@ -2981,7 +2995,7 @@ impl WokHandler {
                 render,
                 &mut self.chrome_font,
                 theme,
-                dock_rect,
+                self.chrome_rects.content,
                 title,
                 path,
                 help,
@@ -2996,7 +3010,7 @@ impl WokHandler {
                 render,
                 &mut self.font,
                 theme,
-                dock_rect,
+                self.chrome_rects.content,
                 title,
                 path,
                 help,
@@ -3011,7 +3025,7 @@ impl WokHandler {
                 render,
                 &mut self.chrome_font,
                 theme,
-                inspector_rect,
+                self.chrome_rects.content,
                 title,
                 path,
                 help,
@@ -3026,7 +3040,7 @@ impl WokHandler {
                 render,
                 &mut self.font,
                 theme,
-                dock_rect,
+                self.chrome_rects.content,
                 "Scratch",
                 path,
                 "Esc close  Mod+S save  Enter newline",

@@ -200,18 +200,6 @@ pub(crate) fn timeline_rail_rect(viewport: Rect) -> Rect {
     Rect::new(viewport.x, viewport.y, 14.0_f32.min(viewport.w), viewport.h)
 }
 
-pub(crate) fn inspector_dock_rect(content: Rect) -> Rect {
-    let width = (content.w * 0.28)
-        .clamp(280.0, 460.0)
-        .min((content.w * 0.48).max(0.0));
-    Rect::new(
-        content.x + (content.w - width).max(0.0),
-        content.y,
-        width,
-        content.h,
-    )
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum BlockFooterAction {
     Rerun,
@@ -1139,6 +1127,81 @@ pub(crate) fn render_owned_input(
                 ),
             );
         }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn render_owned_input_ghost_preview(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    theme: &Theme,
+    viewport: Rect,
+    input: &wok_input::editor::InputRenderData,
+    cursor_col: usize,
+    cursor_render_row: usize,
+    surface_opacity: f32,
+) {
+    if !matches!(input.position, wok_input::editor::InputPosition::Bottom) {
+        return;
+    }
+    if input.lines.iter().all(|line| line.trim().is_empty()) {
+        return;
+    }
+
+    let mut row_y = viewport.y + cursor_render_row as f32 * font.metrics.cell_height;
+    let max_rows = ((viewport.y + viewport.h - row_y) / font.metrics.cell_height)
+        .floor()
+        .max(0.0) as usize;
+    if max_rows == 0 {
+        return;
+    }
+
+    for (line_index, line) in input.lines.iter().take(max_rows).enumerate() {
+        if line.is_empty() {
+            row_y += font.metrics.cell_height;
+            continue;
+        }
+        let x = if line_index == 0 {
+            viewport.x + cursor_col as f32 * font.metrics.cell_width
+        } else {
+            viewport.x
+        };
+        let available_width = (viewport.x + viewport.w - x).max(font.metrics.cell_width);
+        let visible_line = fit_text_to_width(line, available_width, font.metrics.cell_width);
+        let text_width = visible_line.chars().count() as f32 * font.metrics.cell_width;
+
+        render.batch.push_bg_quad(
+            x,
+            row_y,
+            text_width + font.metrics.cell_width,
+            font.metrics.cell_height,
+            with_opacity(
+                [
+                    theme.highlight_current_match.r,
+                    theme.highlight_current_match.g,
+                    theme.highlight_current_match.b,
+                    0.08,
+                ],
+                surface_opacity,
+            ),
+        );
+        push_text(
+            render,
+            font,
+            x,
+            row_y,
+            &visible_line,
+            with_opacity(
+                [
+                    theme.foreground.r,
+                    theme.foreground.g,
+                    theme.foreground.b,
+                    0.46,
+                ],
+                surface_opacity,
+            ),
+        );
+        row_y += font.metrics.cell_height;
     }
 }
 
@@ -2290,6 +2353,17 @@ mod tests {
     }
 
     #[test]
+    fn centered_overlay_rect_is_centered_in_content() {
+        let content = Rect::new(40.0, 20.0, 1000.0, 700.0);
+        let overlay = centered_overlay_rect(content);
+
+        assert!(overlay.w < content.w);
+        assert!(overlay.h < content.h);
+        assert!((overlay.x - (content.x + (content.w - overlay.w) * 0.5)).abs() < f32::EPSILON);
+        assert!((overlay.y - (content.y + (content.h - overlay.h) * 0.5)).abs() < f32::EPSILON);
+    }
+
+    #[test]
     fn timeline_maps_rows_into_rail_bounds() {
         let rect = Rect::new(2.0, 10.0, 14.0, 100.0);
 
@@ -2348,17 +2422,6 @@ mod tests {
             .expect("footer strip should fit");
         assert!(strip.x >= viewport.x);
         assert!(strip.x + strip.w <= viewport.x + viewport.w);
-    }
-
-    #[test]
-    fn inspector_dock_rect_uses_right_side_of_content() {
-        let content = Rect::new(20.0, 10.0, 1000.0, 700.0);
-        let dock = inspector_dock_rect(content);
-
-        assert_eq!(dock.y, content.y);
-        assert_eq!(dock.h, content.h);
-        assert!((dock.x + dock.w - (content.x + content.w)).abs() < f32::EPSILON);
-        assert!(dock.w >= 280.0);
     }
 
     #[test]
@@ -4780,11 +4843,7 @@ pub(crate) fn rebuild_visible_row_batch(
         } else {
             theme.block_background
         };
-        let alpha = if selected_block_id == Some(block.id) {
-            block_bg.a.max(0.18)
-        } else {
-            block_bg.a
-        };
+        let alpha = block_bg.a;
         if alpha > 0.0 {
             batch.push_bg_quad(
                 viewport.x + 6.0,
