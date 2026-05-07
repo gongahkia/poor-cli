@@ -40,6 +40,25 @@ pub enum FrontendLayout {
     V2,
 }
 
+/// Command-center overlay placement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum CommandCenterPosition {
+    /// Centered modal overlay.
+    Center,
+    /// Top-aligned command surface.
+    Top,
+}
+
+impl CommandCenterPosition {
+    /// Stable config label.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Center => "center",
+            Self::Top => "top",
+        }
+    }
+}
+
 impl FrontendLayout {
     /// Stable config label.
     pub fn as_str(self) -> &'static str {
@@ -308,6 +327,18 @@ pub struct WokConfig {
     pub tab_bar_orientation: TabBarOrientation,
     /// Optional tab bar thickness in physical pixels.
     pub tab_bar_size: Option<f32>,
+    /// Whether to render tabs as a left workspace sidebar.
+    pub workspace_sidebar_visible: bool,
+    /// Optional workspace sidebar width in physical pixels.
+    pub workspace_sidebar_size: Option<f32>,
+    /// Whether to render compact per-pane surface tabs/header chrome.
+    pub pane_surface_tabs_visible: bool,
+    /// Whether to show sticky command block headers.
+    pub sticky_block_header_visible: bool,
+    /// Command-center overlay placement.
+    pub command_center_position: CommandCenterPosition,
+    /// Whether to show in-app notification badges.
+    pub notification_badges_visible: bool,
     /// Whether the status bar is visible.
     pub status_bar_visible: bool,
     /// Side where the status bar is rendered.
@@ -404,6 +435,12 @@ struct ConfigToml {
     tab_bar_side: Option<String>,
     tab_bar_orientation: Option<String>,
     tab_bar_size: Option<f32>,
+    workspace_sidebar_visible: Option<bool>,
+    workspace_sidebar_size: Option<f32>,
+    pane_surface_tabs_visible: Option<bool>,
+    sticky_block_header_visible: Option<bool>,
+    command_center_position: Option<String>,
+    notification_badges_visible: Option<bool>,
     status_bar_visible: Option<bool>,
     status_bar_side: Option<String>,
     status_bar_size: Option<f32>,
@@ -503,6 +540,12 @@ impl Default for WokConfig {
             tab_bar_side: ChromeSide::Top,
             tab_bar_orientation: TabBarOrientation::Horizontal,
             tab_bar_size: Some(22.0),
+            workspace_sidebar_visible: true,
+            workspace_sidebar_size: Some(180.0),
+            pane_surface_tabs_visible: true,
+            sticky_block_header_visible: true,
+            command_center_position: CommandCenterPosition::Center,
+            notification_badges_visible: true,
             status_bar_visible: true,
             status_bar_side: ChromeSide::Bottom,
             status_bar_size: Some(22.0),
@@ -646,6 +689,29 @@ impl WokConfig {
             if size.is_finite() && size > 0.0 {
                 config.tab_bar_size = Some(size);
             }
+        }
+        if let Some(visible) = toml_config.workspace_sidebar_visible {
+            config.workspace_sidebar_visible = visible;
+        }
+        if let Some(size) = toml_config.workspace_sidebar_size {
+            if size.is_finite() && size > 0.0 {
+                config.workspace_sidebar_size = Some(size);
+            }
+        }
+        if let Some(visible) = toml_config.pane_surface_tabs_visible {
+            config.pane_surface_tabs_visible = visible;
+        }
+        if let Some(visible) = toml_config.sticky_block_header_visible {
+            config.sticky_block_header_visible = visible;
+        }
+        if let Some(position) = toml_config.command_center_position {
+            config.command_center_position = match position.trim().to_ascii_lowercase().as_str() {
+                "top" => CommandCenterPosition::Top,
+                _ => CommandCenterPosition::Center,
+            };
+        }
+        if let Some(visible) = toml_config.notification_badges_visible {
+            config.notification_badges_visible = visible;
         }
         if let Some(v) = toml_config.status_bar_visible {
             config.status_bar_visible = v;
@@ -1141,6 +1207,12 @@ impl wok_settings::Settings for WokConfig {
                 field!("tab_bar_side", "ChromeSide"),
                 field!("tab_bar_orientation", "TabBarOrientation"),
                 field!("tab_bar_size", "Option<f32>"),
+                field!("workspace_sidebar_visible", "bool"),
+                field!("workspace_sidebar_size", "Option<f32>"),
+                field!("pane_surface_tabs_visible", "bool"),
+                field!("sticky_block_header_visible", "bool"),
+                field!("command_center_position", "CommandCenterPosition"),
+                field!("notification_badges_visible", "bool"),
                 field!("status_bar_visible", "bool"),
                 field!("status_bar_side", "ChromeSide"),
                 field!("status_bar_size", "Option<f32>"),
@@ -1218,6 +1290,12 @@ mod tests {
         assert_eq!(config.tab_bar_side, ChromeSide::Top);
         assert_eq!(config.tab_bar_orientation, TabBarOrientation::Horizontal);
         assert_eq!(config.tab_bar_size, Some(22.0));
+        assert!(config.workspace_sidebar_visible);
+        assert_eq!(config.workspace_sidebar_size, Some(180.0));
+        assert!(config.pane_surface_tabs_visible);
+        assert!(config.sticky_block_header_visible);
+        assert_eq!(config.command_center_position, CommandCenterPosition::Center);
+        assert!(config.notification_badges_visible);
         assert!(config.status_bar_visible);
         assert_eq!(config.status_bar_side, ChromeSide::Bottom);
         assert_eq!(config.status_bar_size, Some(22.0));

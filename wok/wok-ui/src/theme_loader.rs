@@ -44,6 +44,10 @@ struct ThemeToml {
     tab_active_bg: Option<String>,
     tab_inactive_bg: Option<String>,
     tab_text: Option<String>,
+    sidebar_background: Option<String>,
+    sidebar_foreground: Option<String>,
+    sidebar_active_background: Option<String>,
+    sidebar_badge: Option<String>,
     status_bar_bg: Option<String>,
     status_bar_text: Option<String>,
     input_bg: Option<String>,
@@ -51,6 +55,13 @@ struct ThemeToml {
     block_separator: Option<String>,
     block_success_accent: Option<String>,
     block_error_accent: Option<String>,
+    block_background: Option<String>,
+    block_selected_background: Option<String>,
+    block_failed_accent: Option<String>,
+    block_running_accent: Option<String>,
+    command_center_background: Option<String>,
+    command_center_border: Option<String>,
+    suggestion_background: Option<String>,
     highlight_match: Option<String>,
     highlight_current_match: Option<String>,
     hyperlink_color: Option<String>,
@@ -191,6 +202,18 @@ pub fn load_theme(path: &Path) -> Result<Theme, ThemeError> {
     if let Some(c) = toml_theme.tab_text {
         theme.tab_text = parse_hex_color(&c)?;
     }
+    if let Some(c) = toml_theme.sidebar_background {
+        theme.sidebar_background = parse_hex_color(&c)?;
+    }
+    if let Some(c) = toml_theme.sidebar_foreground {
+        theme.sidebar_foreground = parse_hex_color(&c)?;
+    }
+    if let Some(c) = toml_theme.sidebar_active_background {
+        theme.sidebar_active_background = parse_hex_color(&c)?;
+    }
+    if let Some(c) = toml_theme.sidebar_badge {
+        theme.sidebar_badge = parse_hex_color(&c)?;
+    }
     if let Some(c) = toml_theme.status_bar_bg {
         theme.status_bar_bg = parse_hex_color(&c)?;
     }
@@ -211,6 +234,27 @@ pub fn load_theme(path: &Path) -> Result<Theme, ThemeError> {
     }
     if let Some(c) = toml_theme.block_error_accent {
         theme.block_error_accent = parse_hex_color(&c)?;
+    }
+    if let Some(c) = toml_theme.block_background {
+        theme.block_background = parse_hex_color(&c)?;
+    }
+    if let Some(c) = toml_theme.block_selected_background {
+        theme.block_selected_background = parse_hex_color(&c)?;
+    }
+    if let Some(c) = toml_theme.block_failed_accent {
+        theme.block_failed_accent = parse_hex_color(&c)?;
+    }
+    if let Some(c) = toml_theme.block_running_accent {
+        theme.block_running_accent = parse_hex_color(&c)?;
+    }
+    if let Some(c) = toml_theme.command_center_background {
+        theme.command_center_background = parse_hex_color(&c)?;
+    }
+    if let Some(c) = toml_theme.command_center_border {
+        theme.command_center_border = parse_hex_color(&c)?;
+    }
+    if let Some(c) = toml_theme.suggestion_background {
+        theme.suggestion_background = parse_hex_color(&c)?;
     }
     if let Some(c) = toml_theme.highlight_match {
         theme.highlight_match = parse_hex_color(&c)?;
@@ -312,6 +356,13 @@ pub fn apply_theme_overrides<S: std::hash::BuildHasher>(
             "tab_bar_bg" => theme.tab_bar_bg = parse_hex_color(value)?,
             "tab_active_bg" => theme.tab_active_bg = parse_hex_color(value)?,
             "tab_inactive_bg" => theme.tab_inactive_bg = parse_hex_color(value)?,
+            "tab_text" => theme.tab_text = parse_hex_color(value)?,
+            "sidebar_background" => theme.sidebar_background = parse_hex_color(value)?,
+            "sidebar_foreground" => theme.sidebar_foreground = parse_hex_color(value)?,
+            "sidebar_active_background" => {
+                theme.sidebar_active_background = parse_hex_color(value)?;
+            }
+            "sidebar_badge" => theme.sidebar_badge = parse_hex_color(value)?,
             "status_bar_bg" => theme.status_bar_bg = parse_hex_color(value)?,
             "status_bar_text" => theme.status_bar_text = parse_hex_color(value)?,
             "input_bg" => theme.input_bg = parse_hex_color(value)?,
@@ -319,6 +370,17 @@ pub fn apply_theme_overrides<S: std::hash::BuildHasher>(
             "block_separator" => theme.block_separator = parse_hex_color(value)?,
             "block_success_accent" => theme.block_success_accent = parse_hex_color(value)?,
             "block_error_accent" => theme.block_error_accent = parse_hex_color(value)?,
+            "block_background" => theme.block_background = parse_hex_color(value)?,
+            "block_selected_background" => {
+                theme.block_selected_background = parse_hex_color(value)?;
+            }
+            "block_failed_accent" => theme.block_failed_accent = parse_hex_color(value)?,
+            "block_running_accent" => theme.block_running_accent = parse_hex_color(value)?,
+            "command_center_background" => {
+                theme.command_center_background = parse_hex_color(value)?;
+            }
+            "command_center_border" => theme.command_center_border = parse_hex_color(value)?,
+            "suggestion_background" => theme.suggestion_background = parse_hex_color(value)?,
             "highlight_match" => theme.highlight_match = parse_hex_color(value)?,
             "highlight_current_match" => theme.highlight_current_match = parse_hex_color(value)?,
             "hyperlink_color" => theme.hyperlink_color = parse_hex_color(value)?,

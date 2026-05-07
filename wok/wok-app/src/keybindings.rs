@@ -17,6 +17,22 @@ pub enum Action {
     PrevTab,
     /// Switch to tab N (1-indexed).
     SwitchToTab(u8),
+    /// Create a new workspace.
+    WorkspaceNew,
+    /// Focus the next workspace.
+    WorkspaceNext,
+    /// Focus the previous workspace.
+    WorkspacePrev,
+    /// Switch to workspace N (1-indexed).
+    WorkspaceSwitch(u8),
+    /// Create a new surface in the current pane.
+    SurfaceNew,
+    /// Focus the next surface.
+    SurfaceNext,
+    /// Focus the previous surface.
+    SurfacePrev,
+    /// Close the current surface.
+    SurfaceClose,
     /// Split the pane vertically.
     SplitVertical,
     /// Split the pane horizontally.
@@ -99,6 +115,12 @@ pub enum Action {
     BlockExportMarkdown,
     /// Export selected block metadata + output as JSON.
     BlockExportJson,
+    /// Open the selected block context menu.
+    BlockContextMenu,
+    /// Scroll to the selected block start.
+    BlockScrollTop,
+    /// Scroll to the selected block end.
+    BlockScrollBottom,
     /// Toggle the failure-trends panel for the active pane.
     ToggleFailureTrendsPanel,
     /// Toggle the workspace insights panel for the active pane.
@@ -219,6 +241,8 @@ pub enum Action {
     KeybindingEditor,
     /// Open the structured settings field discovery palette.
     SettingsDiscovery,
+    /// Open in-app notifications.
+    NotificationPopover,
 }
 
 /// A key combination (key + modifiers).
@@ -402,7 +426,7 @@ impl Default for KeybindingConfig {
                 key: KeyAction::Char('t'),
                 modifiers: pm,
             },
-            Action::NewTab,
+            Action::SurfaceNew,
         );
         bindings.insert(
             KeyCombo {
@@ -431,12 +455,26 @@ impl Default for KeybindingConfig {
             let ch = char::from(b'0' + i);
             bindings.insert(
                 KeyCombo {
-                    key: KeyAction::Char(ch),
-                    modifiers: pm,
-                },
-                Action::SwitchToTab(i),
+                key: KeyAction::Char(ch),
+                modifiers: pm,
+            },
+                Action::WorkspaceSwitch(i),
             );
         }
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char(']'),
+                modifiers: pm,
+            },
+            Action::SurfaceNext,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('['),
+                modifiers: pm,
+            },
+            Action::SurfacePrev,
+        );
 
         // Split panes
         bindings.insert(

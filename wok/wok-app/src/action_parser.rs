@@ -63,12 +63,23 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         let n: u8 = rest.trim().parse().ok()?;
         return (1..=9).contains(&n).then_some(Action::SwitchToTab(n));
     }
+    if let Some(rest) = action.strip_prefix("workspace_switch:") {
+        let n: u8 = rest.trim().parse().ok()?;
+        return (1..=9).contains(&n).then_some(Action::WorkspaceSwitch(n));
+    }
 
     match action {
         "new_tab" => Some(Action::NewTab),
         "close_tab" => Some(Action::CloseTab),
         "next_tab" => Some(Action::NextTab),
         "prev_tab" => Some(Action::PrevTab),
+        "workspace_new" | "new_workspace" => Some(Action::WorkspaceNew),
+        "workspace_next" | "next_workspace" => Some(Action::WorkspaceNext),
+        "workspace_prev" | "prev_workspace" | "workspace_previous" => Some(Action::WorkspacePrev),
+        "surface_new" | "new_surface" => Some(Action::SurfaceNew),
+        "surface_next" | "next_surface" => Some(Action::SurfaceNext),
+        "surface_prev" | "prev_surface" | "surface_previous" => Some(Action::SurfacePrev),
+        "surface_close" | "close_surface" => Some(Action::SurfaceClose),
         "split_vertical" => Some(Action::SplitVertical),
         "split_horizontal" => Some(Action::SplitHorizontal),
         "close_split" | "close_pane" => Some(Action::CloseSplit),
@@ -198,6 +209,9 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         "block_export_json" | "export_block_json" | "block_export_js" => {
             Some(Action::BlockExportJson)
         }
+        "block_context_menu" | "block_actions" => Some(Action::BlockContextMenu),
+        "block_scroll_top" | "block_top" => Some(Action::BlockScrollTop),
+        "block_scroll_bottom" | "block_bottom" => Some(Action::BlockScrollBottom),
         "toggle_failure_trends_panel" | "failure_trends_panel" | "failure_trends" => {
             Some(Action::ToggleFailureTrendsPanel)
         }
@@ -214,6 +228,7 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         "zoom_reset" => Some(Action::ZoomReset),
         "open_settings" | "settings" | "open_config" | "config" => Some(Action::OpenSettings),
         "reset_settings" | "settings_reset" | "reset_config" => Some(Action::ResetSettings),
+        "notification_popover" | "notifications" => Some(Action::NotificationPopover),
         "clear_screen" => Some(Action::ClearScreen),
         "send_eof" => Some(Action::SendEof),
         _ => None,

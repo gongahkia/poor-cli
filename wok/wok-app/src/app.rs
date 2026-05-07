@@ -398,6 +398,32 @@ impl WokApp {
             }
             Action::GitChanges => {}
             Action::GitWorktrees => {}
+            Action::WorkspaceNew => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::NewTab));
+            }
+            Action::WorkspaceNext => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::NextTab));
+            }
+            Action::WorkspacePrev => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::PrevTab));
+            }
+            Action::WorkspaceSwitch(index) => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::SwitchToTab(
+                    *index,
+                )));
+            }
+            Action::SurfaceNew => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::NewTab));
+            }
+            Action::SurfaceNext => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::NextTab));
+            }
+            Action::SurfacePrev => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::PrevTab));
+            }
+            Action::SurfaceClose => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::CloseTab));
+            }
             Action::SearchGlobal => {
                 effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenSearch));
             }
@@ -434,6 +460,10 @@ impl WokApp {
             | Action::InsertScratchSelectionIntoInput
             | Action::SendScratchSelectionToPane
             | Action::OpenWorkspaceBrowser
+            | Action::BlockContextMenu
+            | Action::BlockScrollTop
+            | Action::BlockScrollBottom
+            | Action::NotificationPopover
             | Action::ToggleSearchRegex
             | Action::CycleSearchScope => {}
             Action::NewFloatingPane => {
@@ -568,6 +598,7 @@ impl WokApp {
             | Action::KeybindingDiscovery
             | Action::KeybindingEditor
             | Action::SettingsDiscovery
+            | Action::NotificationPopover
             | Action::ToggleBlockFootStrip => {}
         }
 

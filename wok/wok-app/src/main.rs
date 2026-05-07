@@ -6609,6 +6609,11 @@ impl WokHandler {
             self.open_settings_discovery();
             return;
         }
+        if matches!(action, Action::NotificationPopover) {
+            self.status_message = Some("No unread in-app notifications".to_string());
+            self.needs_redraw = true;
+            return;
+        }
         if matches!(action, Action::GitChanges) {
             self.open_git_changes_palette();
             return;
@@ -6741,6 +6746,18 @@ impl WokHandler {
             }
             Action::OpenWorkspaceBrowser => {
                 self.open_workspace_browser_palette();
+                return;
+            }
+            Action::BlockContextMenu => {
+                self.open_block_inspector();
+                return;
+            }
+            Action::BlockScrollTop => {
+                self.scroll_selected_block_to_edge(true);
+                return;
+            }
+            Action::BlockScrollBottom => {
+                self.scroll_selected_block_to_edge(false);
                 return;
             }
             _ => {}

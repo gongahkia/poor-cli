@@ -88,6 +88,14 @@ pub struct Theme {
     pub tab_inactive_bg: Color,
     /// Tab text color.
     pub tab_text: Color,
+    /// Workspace sidebar background color.
+    pub sidebar_background: Color,
+    /// Workspace sidebar foreground color.
+    pub sidebar_foreground: Color,
+    /// Active workspace row background color.
+    pub sidebar_active_background: Color,
+    /// Workspace sidebar badge color.
+    pub sidebar_badge: Color,
     /// Status bar background color.
     pub status_bar_bg: Color,
     /// Status bar text color.
@@ -102,6 +110,20 @@ pub struct Theme {
     pub block_success_accent: Color,
     /// Block error accent color (nonzero exit code).
     pub block_error_accent: Color,
+    /// Command block background color.
+    pub block_background: Color,
+    /// Selected command block background color.
+    pub block_selected_background: Color,
+    /// Failed command block accent color.
+    pub block_failed_accent: Color,
+    /// Running command block accent color.
+    pub block_running_accent: Color,
+    /// Command center background color.
+    pub command_center_background: Color,
+    /// Command center border/accent color.
+    pub command_center_border: Color,
+    /// Suggestion list background color.
+    pub suggestion_background: Color,
     /// Search match highlight color.
     pub highlight_match: Color,
     /// Current search match highlight color.
@@ -156,6 +178,10 @@ impl Default for Theme {
             tab_active_bg: Color::rgb(0.090, 0.118, 0.165), // #171e2a
             tab_inactive_bg: Color::rgb(0.063, 0.090, 0.125), // #101720
             tab_text: Color::rgb(0.847, 0.871, 0.914),   // #d8dee9
+            sidebar_background: Color::rgb(0.043, 0.063, 0.090), // #0b1017
+            sidebar_foreground: Color::rgb(0.792, 0.827, 0.875), // #cad3df
+            sidebar_active_background: Color::rgb(0.090, 0.118, 0.165), // #171e2a
+            sidebar_badge: Color::rgb(0.929, 0.529, 0.588), // #ed8796
             status_bar_bg: Color::rgb(0.043, 0.063, 0.090), // #0b1017
             status_bar_text: Color::rgb(0.561, 0.608, 0.678), // #8f9bad
             input_bg: Color::rgb(0.067, 0.094, 0.129),   // #111821
@@ -163,6 +189,13 @@ impl Default for Theme {
             block_separator: Color::rgb(0.133, 0.188, 0.267), // #223044
             block_success_accent: Color::rgb(0.545, 0.835, 0.792), // #8bd5ca
             block_error_accent: Color::rgb(0.929, 0.529, 0.588), // #ed8796
+            block_background: Color::new(0.067, 0.094, 0.129, 0.36), // #1118215c
+            block_selected_background: Color::new(0.184, 0.231, 0.322, 0.42), // #2f3b526b
+            block_failed_accent: Color::rgb(0.929, 0.529, 0.588), // #ed8796
+            block_running_accent: Color::rgb(0.933, 0.831, 0.624), // #eed49f
+            command_center_background: Color::rgb(0.067, 0.094, 0.129), // #111821
+            command_center_border: Color::rgb(0.541, 0.678, 0.957), // #8aadf4
+            suggestion_background: Color::rgb(0.090, 0.118, 0.165), // #171e2a
             highlight_match: Color::new(0.541, 0.678, 0.957, 0.33), // #8aadf455
             highlight_current_match: Color::new(0.933, 0.831, 0.624, 0.45), // #eed49f73
             hyperlink_color: Color::rgb(0.541, 0.678, 0.957), // #8aadf4
