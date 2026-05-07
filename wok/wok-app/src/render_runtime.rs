@@ -291,20 +291,30 @@ pub(crate) fn render_pane_header(
 pub(crate) fn render_tab_bar(
     render: &mut RenderState,
     font: &mut FontSystem,
+    theme: &Theme,
     rect: Rect,
     tabs: &[(bool, String)],
     scroll_offset: f32,
     orientation: wok_app::config::TabBarOrientation,
     hovered_tab: Option<usize>,
     hovered_close: Option<usize>,
+    workspace_sidebar: bool,
     surface_opacity: f32,
 ) {
+    let background = if workspace_sidebar {
+        theme.sidebar_background
+    } else {
+        theme.tab_bar_bg
+    };
     render.batch.push_bg_quad(
         rect.x,
         rect.y,
         rect.w,
         rect.h,
-        with_opacity([0.08, 0.09, 0.13, 1.0], surface_opacity),
+        with_opacity(
+            [background.r, background.g, background.b, background.a],
+            surface_opacity,
+        ),
     );
     if tabs.is_empty() {
         return;
@@ -324,6 +334,8 @@ pub(crate) fn render_tab_bar(
                     hovered_tab == Some(index),
                     hovered_close == Some(index),
                     label,
+                    theme,
+                    workspace_sidebar,
                     surface_opacity,
                 );
                 x += tab_width;
@@ -342,6 +354,8 @@ pub(crate) fn render_tab_bar(
                     hovered_tab == Some(index),
                     hovered_close == Some(index),
                     label,
+                    theme,
+                    workspace_sidebar,
                     surface_opacity,
                 );
                 y += tab_height;
@@ -359,6 +373,8 @@ fn render_tab_bar_item(
     is_hovered: bool,
     _is_close_hovered: bool,
     label: &str,
+    theme: &Theme,
+    workspace_sidebar: bool,
     surface_opacity: f32,
 ) {
     let visible_left = item_rect.x.max(clip_rect.x);
@@ -369,20 +385,43 @@ fn render_tab_bar_item(
         return;
     }
 
-    let background = if is_active {
-        [0.14, 0.16, 0.22, 1.0]
+    let background = if workspace_sidebar && is_active {
+        theme.sidebar_active_background
+    } else if is_active {
+        theme.tab_active_bg
     } else if is_hovered {
-        [0.13, 0.14, 0.19, 1.0]
+        theme.tab_active_bg
     } else {
-        [0.10, 0.11, 0.15, 1.0]
+        theme.tab_inactive_bg
     };
     render.batch.push_bg_quad(
         visible_left,
         visible_top,
         visible_right - visible_left,
         visible_bottom - visible_top,
-        with_opacity(background, surface_opacity),
+        with_opacity(
+            [background.r, background.g, background.b, background.a],
+            surface_opacity,
+        ),
     );
+
+    if workspace_sidebar && is_active {
+        render.batch.push_bg_quad(
+            visible_left,
+            visible_top + 6.0,
+            3.0,
+            (visible_bottom - visible_top - 12.0).max(4.0),
+            with_opacity(
+                [
+                    theme.command_center_border.r,
+                    theme.command_center_border.g,
+                    theme.command_center_border.b,
+                    0.95,
+                ],
+                surface_opacity,
+            ),
+        );
+    }
 
     let text_x = (item_rect.x + TAB_TEXT_PAD_X).max(clip_rect.x + TAB_TEXT_PAD_X);
     let text_y =
@@ -396,7 +435,24 @@ fn render_tab_bar_item(
             text_x,
             text_y,
             &visible_label,
-            with_opacity([0.75, 0.79, 0.96, 1.0], surface_opacity),
+            with_opacity(
+                if workspace_sidebar {
+                    [
+                        theme.sidebar_foreground.r,
+                        theme.sidebar_foreground.g,
+                        theme.sidebar_foreground.b,
+                        theme.sidebar_foreground.a,
+                    ]
+                } else {
+                    [
+                        theme.tab_text.r,
+                        theme.tab_text.g,
+                        theme.tab_text.b,
+                        theme.tab_text.a,
+                    ]
+                },
+                surface_opacity,
+            ),
         );
     }
 }
@@ -1090,6 +1146,7 @@ pub(crate) fn render_command_palette(
     palette: &CommandPaletteState,
     cursor_shape: CursorShape,
     cursor_visible: bool,
+    position: wok_app::config::CommandCenterPosition,
     surface_opacity: f32,
 ) {
     let panel_width = (viewport.w * 0.92)
@@ -1100,7 +1157,12 @@ pub(crate) fn render_command_palette(
         .min((viewport.h - 24.0).max(180.0));
     let rect = Rect::new(
         viewport.x + (viewport.w - panel_width) * 0.5,
-        viewport.y + (viewport.h - panel_height) * 0.5,
+        match position {
+            wok_app::config::CommandCenterPosition::Center => {
+                viewport.y + (viewport.h - panel_height) * 0.5
+            }
+            wok_app::config::CommandCenterPosition::Top => viewport.y + 18.0,
+        },
         panel_width,
         panel_height,
     );
@@ -1118,7 +1180,12 @@ pub(crate) fn render_command_palette(
         rect.w,
         rect.h,
         with_opacity(
-            [theme.input_bg.r, theme.input_bg.g, theme.input_bg.b, 0.98],
+            [
+                theme.command_center_background.r,
+                theme.command_center_background.g,
+                theme.command_center_background.b,
+                0.98,
+            ],
             surface_opacity,
         ),
     );
@@ -1129,9 +1196,9 @@ pub(crate) fn render_command_palette(
         1.0,
         with_opacity(
             [
-                theme.highlight_current_match.r,
-                theme.highlight_current_match.g,
-                theme.highlight_current_match.b,
+                theme.command_center_border.r,
+                theme.command_center_border.g,
+                theme.command_center_border.b,
                 0.9,
             ],
             surface_opacity,
@@ -1146,7 +1213,7 @@ pub(crate) fn render_command_palette(
     let input_line = input.lines.first().cloned().unwrap_or_default();
     let prefix = "Command Palette: ";
     let help_text = fit_text_to_width(
-        "Run an action, workflow, alias, or recent command",
+        "Actions  Workflows  Files  Sessions  Settings  Themes  Recent",
         inner_width,
         font.metrics.cell_width,
     );
@@ -4682,6 +4749,29 @@ pub(crate) fn rebuild_visible_row_batch(
         row_y,
         terminal_surface_alpha,
     );
+    if let Some(block) = blocks.iter().find(|block| {
+        absolute_row >= block.output_start_row && absolute_row <= block.output_end_row
+    }) {
+        let block_bg = if selected_block_id == Some(block.id) {
+            theme.block_selected_background
+        } else {
+            theme.block_background
+        };
+        let alpha = if selected_block_id == Some(block.id) {
+            block_bg.a.max(0.18)
+        } else {
+            block_bg.a
+        };
+        if alpha > 0.0 {
+            batch.push_bg_quad(
+                viewport.x + 6.0,
+                row_y,
+                (viewport.w - 6.0).max(0.0),
+                cell_height,
+                [block_bg.r, block_bg.g, block_bg.b, alpha],
+            );
+        }
+    }
     for col_idx in 0..total_cols {
         let cell = terminal.state.cell_at_absolute(absolute_row, col_idx);
         let x = viewport.x + col_idx as f32 * cell_width;
@@ -4955,9 +5045,9 @@ pub(crate) fn rebuild_visible_row_batch(
 
 fn block_accent_color(theme: &Theme, block: &Block) -> wok_ui::theme::Color {
     match block.exit_code {
-        None => theme.cursor,
+        None => theme.block_running_accent,
         Some(0) => theme.block_success_accent,
-        Some(_) => theme.block_error_accent,
+        Some(_) => theme.block_failed_accent,
     }
 }
 
@@ -4982,6 +5072,85 @@ pub(crate) fn running_block_accent_alpha(elapsed_secs: f32) -> f32 {
             .sin()
             .abs()
             * RUNNING_BLOCK_ALPHA_AMPLITUDE
+}
+
+pub(crate) fn sticky_block_header_visible(
+    block: &Block,
+    visible_start_row: usize,
+    visible_end_row: usize,
+) -> bool {
+    block.output_start_row < visible_start_row
+        && visible_start_row <= block.output_end_row
+        && visible_end_row >= block.output_start_row
+}
+
+pub(crate) fn render_sticky_block_header(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    theme: &Theme,
+    viewport: Rect,
+    block: &Block,
+    surface_opacity: f32,
+) {
+    let header_h = (font.metrics.cell_height + 10.0).max(26.0);
+    let accent = block_accent_color(theme, block);
+    render.batch.push_bg_quad(
+        viewport.x + 6.0,
+        viewport.y,
+        (viewport.w - 12.0).max(0.0),
+        header_h,
+        with_opacity(
+            [
+                theme.command_center_background.r,
+                theme.command_center_background.g,
+                theme.command_center_background.b,
+                0.94,
+            ],
+            surface_opacity,
+        ),
+    );
+    render.batch.push_bg_quad(
+        viewport.x + 6.0,
+        viewport.y,
+        4.0,
+        header_h,
+        with_opacity([accent.r, accent.g, accent.b, 0.96], surface_opacity),
+    );
+    let exit = match block.exit_code {
+        None => "running".to_string(),
+        Some(0) => "exit 0".to_string(),
+        Some(code) => format!("exit {code}"),
+    };
+    let duration = block
+        .duration
+        .map(|duration| format!("{}ms", duration.as_millis()))
+        .unwrap_or_else(|| "pending".to_string());
+    let cwd = if block.cwd.as_os_str().is_empty() {
+        String::new()
+    } else {
+        format!("  {}", block.cwd.display())
+    };
+    let label = fit_text_to_width(
+        &format!("{}  {}  {}{}", block.command_text, exit, duration, cwd),
+        (viewport.w - 28.0).max(font.metrics.cell_width),
+        font.metrics.cell_width,
+    );
+    push_text(
+        render,
+        font,
+        viewport.x + 16.0,
+        viewport.y + 5.0,
+        &label,
+        with_opacity(
+            [
+                theme.foreground.r,
+                theme.foreground.g,
+                theme.foreground.b,
+                theme.foreground.a,
+            ],
+            surface_opacity,
+        ),
+    );
 }
 
 #[allow(clippy::too_many_arguments)]

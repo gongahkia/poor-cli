@@ -463,7 +463,6 @@ impl WokApp {
             | Action::BlockContextMenu
             | Action::BlockScrollTop
             | Action::BlockScrollBottom
-            | Action::NotificationPopover
             | Action::ToggleSearchRegex
             | Action::CycleSearchScope => {}
             Action::NewFloatingPane => {

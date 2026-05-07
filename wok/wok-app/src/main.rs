@@ -1760,14 +1760,15 @@ impl WokHandler {
     }
 
     fn sync_workspace_layout(&mut self, size: PhysicalSize<u32>) {
+        let (tab_visible, tab_side, tab_size) = self.effective_tab_chrome();
         self.chrome_rects = compute_chrome_rects(
             size,
-            self.config.tab_bar_visible,
-            self.config.tab_bar_side,
+            tab_visible,
+            tab_side,
             self.config.status_bar_visible,
             self.config.status_bar_side,
             self.font.metrics.cell_height,
-            self.config.tab_bar_size,
+            tab_size,
             self.config.status_bar_size,
         );
         let active_pane_id = self.active_pane_id();
@@ -1790,7 +1791,7 @@ impl WokHandler {
                 Self::pane_input_lines(pane),
                 self.font.metrics.cell_height,
                 Self::show_input_surface(pane, focused),
-                self.config.pane_header_visible,
+                self.config.pane_header_visible || self.config.pane_surface_tabs_visible,
             );
             let (cols, rows) = self
                 .font
@@ -1819,19 +1820,37 @@ impl WokHandler {
         self.sync_media_preview_frame();
     }
 
+    fn effective_tab_chrome(&self) -> (bool, wok_app::config::ChromeSide, Option<f32>) {
+        if self.config.workspace_sidebar_visible {
+            (
+                true,
+                wok_app::config::ChromeSide::Left,
+                self.config.workspace_sidebar_size.or(Some(180.0)),
+            )
+        } else {
+            (
+                self.config.tab_bar_visible,
+                self.config.tab_bar_side,
+                self.config.tab_bar_size,
+            )
+        }
+    }
+
     fn clamp_tab_scroll(&mut self) {
         let tab_labels = self.tab_labels_for_render();
+        let (_, tab_side, _) = self.effective_tab_chrome();
         let max_scroll = tab_bar_max_scroll(
             self.chrome_rects.tab_bar,
             &tab_labels,
             self.font.metrics.cell_width,
-            self.config.tab_bar_side.tab_orientation(),
+            tab_side.tab_orientation(),
         );
         self.tab_scroll_offset = self.tab_scroll_offset.clamp(0.0, max_scroll);
     }
 
     fn ensure_active_tab_visible(&mut self) {
-        if !self.config.tab_bar_visible || self.workspace.tabs.is_empty() {
+        let (tab_visible, tab_side, _) = self.effective_tab_chrome();
+        if !tab_visible || self.workspace.tabs.is_empty() {
             self.tab_scroll_offset = 0.0;
             return;
         }
@@ -1841,12 +1860,12 @@ impl WokHandler {
             &tab_labels,
             self.workspace.active_tab,
             self.font.metrics.cell_width,
-            self.config.tab_bar_side.tab_orientation(),
+            tab_side.tab_orientation(),
         ) else {
             self.tab_scroll_offset = 0.0;
             return;
         };
-        let visible_extent = match self.config.tab_bar_side.tab_orientation() {
+        let visible_extent = match tab_side.tab_orientation() {
             wok_app::config::TabBarOrientation::Horizontal => self.chrome_rects.tab_bar.w,
             wok_app::config::TabBarOrientation::Vertical => self.chrome_rects.tab_bar.h,
         };
@@ -1859,7 +1878,8 @@ impl WokHandler {
     }
 
     fn tab_at_point(&self, x: f64, y: f64) -> Option<usize> {
-        if !self.config.tab_bar_visible || self.workspace.tabs.is_empty() {
+        let (tab_visible, tab_side, _) = self.effective_tab_chrome();
+        if !tab_visible || self.workspace.tabs.is_empty() {
             return None;
         }
         let rect = self.chrome_rects.tab_bar;
@@ -1879,12 +1899,13 @@ impl WokHandler {
             x as f32,
             y as f32,
             self.font.metrics.cell_width,
-            self.config.tab_bar_side.tab_orientation(),
+            tab_side.tab_orientation(),
         )
     }
 
     fn tab_close_at_point(&self, x: f64, y: f64) -> Option<usize> {
-        if !self.config.tab_bar_visible || self.workspace.tabs.is_empty() {
+        let (tab_visible, tab_side, _) = self.effective_tab_chrome();
+        if !tab_visible || self.workspace.tabs.is_empty() {
             return None;
         }
         let rect = self.chrome_rects.tab_bar;
@@ -1900,12 +1921,13 @@ impl WokHandler {
             x as f32,
             y as f32,
             self.font.metrics.cell_width,
-            self.config.tab_bar_side.tab_orientation(),
+            tab_side.tab_orientation(),
         )
     }
 
     fn scroll_tab_bar(&mut self, delta_x: f64, delta_y: f64) -> bool {
-        if !self.config.tab_bar_visible || self.workspace.tabs.is_empty() {
+        let (tab_visible, _, _) = self.effective_tab_chrome();
+        if !tab_visible || self.workspace.tabs.is_empty() {
             return false;
         }
         let delta = if delta_x.abs() > f64::EPSILON {
@@ -2233,6 +2255,10 @@ impl WokHandler {
             self.chrome_font.metrics.cell_height,
         );
         let inspector_rect = inspector_dock_rect(self.chrome_rects.content);
+        let (tab_visible, tab_side, _) = self.effective_tab_chrome();
+        let tab_bar_theme = self
+            .active_pane()
+            .map_or_else(Theme::default, |pane| pane.app.theme.clone());
         let Some(render) = self.render.as_mut() else {
             return;
         };
@@ -2507,6 +2533,33 @@ impl WokHandler {
                 render
                     .batch
                     .append_translated(row_batch, 0.0, smooth_scroll_y);
+            }
+
+            if self.config.sticky_block_header_visible {
+                if let (Some(selected_block_id), Some(visible_start), Some(visible_end)) = (
+                    selected_block_id,
+                    visible_rows.first().copied(),
+                    visible_rows.last().copied(),
+                ) {
+                    if let Some(block) = pane
+                        .app
+                        .block_manager
+                        .blocks
+                        .iter()
+                        .find(|block| block.id == selected_block_id)
+                    {
+                        if sticky_block_header_visible(block, visible_start, visible_end) {
+                            render_sticky_block_header(
+                                render,
+                                &mut self.chrome_font,
+                                theme,
+                                viewport,
+                                block,
+                                window_opacity,
+                            );
+                        }
+                    }
+                }
             }
 
             if self.config.timeline_rail_visible {
@@ -2875,16 +2928,18 @@ impl WokHandler {
             render_mouse_hover_affordance(render, hover, window_opacity);
         }
 
-        if self.config.tab_bar_visible {
+        if tab_visible {
             render_tab_bar(
                 render,
                 &mut self.chrome_font,
+                &tab_bar_theme,
                 self.chrome_rects.tab_bar,
                 &tab_labels,
                 self.tab_scroll_offset,
-                self.config.tab_bar_side.tab_orientation(),
+                tab_side.tab_orientation(),
                 hovered_tab,
                 hovered_tab_close,
+                self.config.workspace_sidebar_visible,
                 window_opacity,
             );
         }
@@ -2912,11 +2967,12 @@ impl WokHandler {
                 render,
                 &mut self.chrome_font,
                 theme,
-                dock_rect,
+                self.chrome_rects.content,
                 input,
                 palette,
                 cursor_shape,
                 cursor_visible,
+                self.config.command_center_position,
                 window_opacity,
             );
         }
@@ -3641,6 +3697,12 @@ impl WokHandler {
                 wok_app::config::TabBarOrientation::Vertical => "vertical",
             },
             "tab_bar_side": self.config.tab_bar_side.as_str(),
+            "workspace_sidebar_visible": self.config.workspace_sidebar_visible,
+            "workspace_sidebar_size": self.config.workspace_sidebar_size,
+            "pane_surface_tabs_visible": self.config.pane_surface_tabs_visible,
+            "sticky_block_header_visible": self.config.sticky_block_header_visible,
+            "command_center_position": self.config.command_center_position.as_str(),
+            "notification_badges_visible": self.config.notification_badges_visible,
             "status_bar_side": self.config.status_bar_side.as_str(),
             "timeline_rail_visible": self.config.timeline_rail_visible,
             "block_foot_visible": self.config.block_foot_visible,
@@ -9743,6 +9805,39 @@ impl WokHandler {
         Some(extract_block_output_text(&active_pane.terminal, selected))
     }
 
+    fn scroll_selected_block_to_edge(&mut self, top: bool) {
+        let Some(active_pane) = self.active_pane_mut() else {
+            return;
+        };
+        let Some(block) = active_pane.app.selected_or_latest_block().cloned() else {
+            self.status_message = Some("No block available".to_string());
+            self.needs_redraw = true;
+            return;
+        };
+        let screen_rows = active_pane.terminal.state.screen_lines().max(1);
+        let target_row = if top {
+            block.output_start_row
+        } else {
+            block
+                .output_end_row
+                .saturating_sub(screen_rows.saturating_sub(1))
+        };
+        let desired_offset = active_pane
+            .terminal
+            .state
+            .scrollback_len()
+            .saturating_sub(target_row);
+        let max_scroll = pane_max_scroll(active_pane);
+        active_pane
+            .viewport
+            .set_display_offset(desired_offset, max_scroll);
+        active_pane
+            .terminal
+            .state
+            .set_display_offset(active_pane.viewport.display_offset());
+        self.needs_redraw = true;
+    }
+
     fn open_context_menu_at(&mut self, pane_id: PaneId, x: f64, y: f64) -> bool {
         let Some(cell) = self.pixel_to_cell_in_pane(pane_id, x, y) else {
             return false;
@@ -10787,9 +10882,8 @@ impl WokHandler {
     }
 
     fn floating_pane_in_tab_bar_dock_zone(&self, pane_id: PaneId, x: f64, y: f64) -> bool {
-        if !self.config.tab_bar_visible
-            || self.chrome_rects.tab_bar.w <= 0.0
-            || self.chrome_rects.tab_bar.h <= 0.0
+        let (tab_visible, _, _) = self.effective_tab_chrome();
+        if !tab_visible || self.chrome_rects.tab_bar.w <= 0.0 || self.chrome_rects.tab_bar.h <= 0.0
         {
             return false;
         }
@@ -12061,6 +12155,30 @@ fn settings_form_fields() -> Vec<SettingsFormField> {
             kind: Raw,
         },
         SettingsFormField {
+            name: "workspace_sidebar_visible",
+            kind: Bool,
+        },
+        SettingsFormField {
+            name: "workspace_sidebar_size",
+            kind: Raw,
+        },
+        SettingsFormField {
+            name: "pane_surface_tabs_visible",
+            kind: Bool,
+        },
+        SettingsFormField {
+            name: "sticky_block_header_visible",
+            kind: Bool,
+        },
+        SettingsFormField {
+            name: "command_center_position",
+            kind: Enum(&["center", "top"]),
+        },
+        SettingsFormField {
+            name: "notification_badges_visible",
+            kind: Bool,
+        },
+        SettingsFormField {
             name: "status_bar_visible",
             kind: Bool,
         },
@@ -12356,6 +12474,12 @@ fn settings_field_display_value(config: &WokConfig, name: &str) -> String {
         }
         .to_string(),
         "tab_bar_size" => option_f32_display(config.tab_bar_size),
+        "workspace_sidebar_visible" => config.workspace_sidebar_visible.to_string(),
+        "workspace_sidebar_size" => option_f32_display(config.workspace_sidebar_size),
+        "pane_surface_tabs_visible" => config.pane_surface_tabs_visible.to_string(),
+        "sticky_block_header_visible" => config.sticky_block_header_visible.to_string(),
+        "command_center_position" => config.command_center_position.as_str().to_string(),
+        "notification_badges_visible" => config.notification_badges_visible.to_string(),
         "status_bar_visible" => config.status_bar_visible.to_string(),
         "status_bar_side" => config.status_bar_side.as_str().to_string(),
         "status_bar_size" => option_f32_display(config.status_bar_size),
@@ -12459,6 +12583,18 @@ fn toggle_settings_bool(config: &mut WokConfig, name: &str) -> bool {
         "pane_header_visible" => config.pane_header_visible = !config.pane_header_visible,
         "cursor_blink" => config.cursor_blink = !config.cursor_blink,
         "tab_bar_visible" => config.tab_bar_visible = !config.tab_bar_visible,
+        "workspace_sidebar_visible" => {
+            config.workspace_sidebar_visible = !config.workspace_sidebar_visible
+        }
+        "pane_surface_tabs_visible" => {
+            config.pane_surface_tabs_visible = !config.pane_surface_tabs_visible
+        }
+        "sticky_block_header_visible" => {
+            config.sticky_block_header_visible = !config.sticky_block_header_visible
+        }
+        "notification_badges_visible" => {
+            config.notification_badges_visible = !config.notification_badges_visible
+        }
         "status_bar_visible" => config.status_bar_visible = !config.status_bar_visible,
         "timeline_rail_visible" => config.timeline_rail_visible = !config.timeline_rail_visible,
         "block_foot_visible" => config.block_foot_visible = !config.block_foot_visible,
@@ -12541,6 +12677,13 @@ fn set_settings_enum(config: &mut WokConfig, name: &str, value: &str) -> bool {
                 wok_app::config::TabBarOrientation::Vertical
             } else {
                 wok_app::config::TabBarOrientation::Horizontal
+            };
+        }
+        "command_center_position" => {
+            config.command_center_position = if value == "top" {
+                wok_app::config::CommandCenterPosition::Top
+            } else {
+                wok_app::config::CommandCenterPosition::Center
             };
         }
         "status_bar_side" => config.status_bar_side = parse_settings_chrome_side(value),
@@ -12654,6 +12797,21 @@ fn copy_settings_field(from: &WokConfig, to: &mut WokConfig, name: &str) -> bool
         "tab_bar_visible" => to.tab_bar_visible = from.tab_bar_visible,
         "tab_bar_side" => to.tab_bar_side = from.tab_bar_side,
         "tab_bar_orientation" => to.tab_bar_orientation = from.tab_bar_orientation,
+        "tab_bar_size" => to.tab_bar_size = from.tab_bar_size,
+        "workspace_sidebar_visible" => {
+            to.workspace_sidebar_visible = from.workspace_sidebar_visible
+        }
+        "workspace_sidebar_size" => to.workspace_sidebar_size = from.workspace_sidebar_size,
+        "pane_surface_tabs_visible" => {
+            to.pane_surface_tabs_visible = from.pane_surface_tabs_visible
+        }
+        "sticky_block_header_visible" => {
+            to.sticky_block_header_visible = from.sticky_block_header_visible
+        }
+        "command_center_position" => to.command_center_position = from.command_center_position,
+        "notification_badges_visible" => {
+            to.notification_badges_visible = from.notification_badges_visible
+        }
         "status_bar_visible" => to.status_bar_visible = from.status_bar_visible,
         "status_bar_side" => to.status_bar_side = from.status_bar_side,
         "timeline_rail_visible" => to.timeline_rail_visible = from.timeline_rail_visible,
@@ -13806,6 +13964,13 @@ fn parse_palette_action(action: &str) -> Option<Action> {
             .filter(|value| *value > 0)
             .map(Action::SwitchToTab);
     }
+    if let Some(index) = normalized.strip_prefix("workspace_switch_") {
+        return index
+            .parse::<u8>()
+            .ok()
+            .filter(|value| *value > 0)
+            .map(Action::WorkspaceSwitch);
+    }
     parse_lua_action(&normalized)
 }
 
@@ -13816,6 +13981,14 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::NextTab => "next_tab".to_string(),
         Action::PrevTab => "prev_tab".to_string(),
         Action::SwitchToTab(index) => format!("switch_to_tab_{index}"),
+        Action::WorkspaceNew => "workspace_new".to_string(),
+        Action::WorkspaceNext => "workspace_next".to_string(),
+        Action::WorkspacePrev => "workspace_prev".to_string(),
+        Action::WorkspaceSwitch(index) => format!("workspace_switch:{index}"),
+        Action::SurfaceNew => "surface_new".to_string(),
+        Action::SurfaceNext => "surface_next".to_string(),
+        Action::SurfacePrev => "surface_prev".to_string(),
+        Action::SurfaceClose => "surface_close".to_string(),
         Action::SplitVertical => "split_vertical".to_string(),
         Action::SplitHorizontal => "split_horizontal".to_string(),
         Action::CloseSplit => "close_split".to_string(),
@@ -13857,6 +14030,9 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::BlockSaveWorkflow => "block_save_workflow".to_string(),
         Action::BlockExportMarkdown => "block_export_markdown".to_string(),
         Action::BlockExportJson => "block_export_json".to_string(),
+        Action::BlockContextMenu => "block_context_menu".to_string(),
+        Action::BlockScrollTop => "block_scroll_top".to_string(),
+        Action::BlockScrollBottom => "block_scroll_bottom".to_string(),
         Action::ToggleFailureTrendsPanel => "toggle_failure_trends_panel".to_string(),
         Action::ToggleWorkspaceInsightsPanel => "toggle_workspace_insights_panel".to_string(),
         Action::ToggleBlockFootStrip => "toggle_block_foot_strip".to_string(),
@@ -13919,6 +14095,7 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::SettingsDiscovery => "settings_discovery".to_string(),
         Action::GitChanges => "git_changes".to_string(),
         Action::GitWorktrees => "git_worktrees".to_string(),
+        Action::NotificationPopover => "notification_popover".to_string(),
     };
     Some(id)
 }
@@ -13926,6 +14103,7 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
 fn action_display_label(action: &Action) -> String {
     match action {
         Action::SwitchToTab(index) => format!("Switch To Tab {index}"),
+        Action::WorkspaceSwitch(index) => format!("Switch To Workspace {index}"),
         Action::SaveSession(name) => format!("Save Session ({name})"),
         Action::LoadSession(name) => format!("Load Session ({name})"),
         Action::GitChanges => "Git Changes".to_string(),
@@ -14009,7 +14187,14 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::OpenBlockInspector,
         Action::OpenBlockRerunHistory,
         Action::OpenBlockRerunComparison,
+        Action::BlockContextMenu,
+        Action::BlockScrollTop,
+        Action::BlockScrollBottom,
         Action::OpenWorkspaceBrowser,
+        Action::NotificationPopover,
+        Action::WorkspaceNew,
+        Action::WorkspaceNext,
+        Action::WorkspacePrev,
         Action::SplitVertical,
         Action::SplitHorizontal,
         Action::CloseSplit,
@@ -14028,6 +14213,10 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::CloseTab,
         Action::NextTab,
         Action::PrevTab,
+        Action::SurfaceNew,
+        Action::SurfaceNext,
+        Action::SurfacePrev,
+        Action::SurfaceClose,
         Action::NextLayout,
         Action::PrevLayout,
         Action::ToggleInputPosition,
@@ -14052,6 +14241,7 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::Paste,
         Action::SelectAll,
     ];
+    actions.extend((1..=9).map(Action::WorkspaceSwitch));
     actions.extend((1..=9).map(Action::SwitchToTab));
     actions
 }
@@ -14063,6 +14253,14 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::NextTab => "Move focus to the next tab",
         Action::PrevTab => "Move focus to the previous tab",
         Action::SwitchToTab(_) => "Jump directly to a numbered tab",
+        Action::WorkspaceNew => "Create a new workspace",
+        Action::WorkspaceNext => "Move focus to the next workspace",
+        Action::WorkspacePrev => "Move focus to the previous workspace",
+        Action::WorkspaceSwitch(_) => "Jump directly to a numbered workspace",
+        Action::SurfaceNew => "Create a new surface in the current pane",
+        Action::SurfaceNext => "Move focus to the next surface",
+        Action::SurfacePrev => "Move focus to the previous surface",
+        Action::SurfaceClose => "Close the current surface",
         Action::SplitVertical => "Split the active pane vertically",
         Action::SplitHorizontal => "Split the active pane horizontally",
         Action::CloseSplit => "Close the active split pane",
@@ -14104,6 +14302,9 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::BlockSaveWorkflow => "Save selected block command as a reusable workflow",
         Action::BlockExportMarkdown => "Export selected block metadata and output as Markdown",
         Action::BlockExportJson => "Export selected block metadata and output as JSON",
+        Action::BlockContextMenu => "Open actions for the selected block",
+        Action::BlockScrollTop => "Scroll to the top of the selected block",
+        Action::BlockScrollBottom => "Scroll to the bottom of the selected block",
         Action::ToggleFailureTrendsPanel => "Open failure trends analytics panel",
         Action::ToggleWorkspaceInsightsPanel => "Open workspace command insights panel",
         Action::ToggleBlockFootStrip => "Show or hide the selected block foot strip",
@@ -14166,6 +14367,7 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::SettingsDiscovery => "List every settings field with current value",
         Action::GitChanges => "List changed files in the active Git repository",
         Action::GitWorktrees => "Switch between Git worktrees for the active repository",
+        Action::NotificationPopover => "Open in-app notifications",
     };
 
     if keybinding.trim().is_empty() {

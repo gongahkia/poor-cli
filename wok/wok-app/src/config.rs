@@ -647,6 +647,9 @@ impl WokConfig {
             if matches!(config.ui_layout, FrontendLayout::V1) {
                 config.pane_header_visible = false;
                 config.command_entry_mode = CommandEntryMode::ShellNative;
+                config.workspace_sidebar_visible = false;
+                config.pane_surface_tabs_visible = false;
+                config.sticky_block_header_visible = false;
                 config.tab_bar_size = None;
                 config.status_bar_size = None;
             }
@@ -1294,7 +1297,10 @@ mod tests {
         assert_eq!(config.workspace_sidebar_size, Some(180.0));
         assert!(config.pane_surface_tabs_visible);
         assert!(config.sticky_block_header_visible);
-        assert_eq!(config.command_center_position, CommandCenterPosition::Center);
+        assert_eq!(
+            config.command_center_position,
+            CommandCenterPosition::Center
+        );
         assert!(config.notification_badges_visible);
         assert!(config.status_bar_visible);
         assert_eq!(config.status_bar_side, ChromeSide::Bottom);

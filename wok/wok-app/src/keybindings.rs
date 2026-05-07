@@ -455,9 +455,9 @@ impl Default for KeybindingConfig {
             let ch = char::from(b'0' + i);
             bindings.insert(
                 KeyCombo {
-                key: KeyAction::Char(ch),
-                modifiers: pm,
-            },
+                    key: KeyAction::Char(ch),
+                    modifiers: pm,
+                },
                 Action::WorkspaceSwitch(i),
             );
         }
@@ -1071,7 +1071,7 @@ mod tests {
             modifiers: platform_mod(),
         };
         let action = config.resolve(&combo, &Context::Terminal);
-        assert_eq!(action, Some(&Action::NewTab));
+        assert_eq!(action, Some(&Action::SurfaceNew));
     }
 
     #[test]

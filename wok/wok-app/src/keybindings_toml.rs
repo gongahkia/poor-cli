@@ -277,11 +277,28 @@ pub fn parse_action_id(id: &str) -> Option<Action> {
             .filter(|value| (1..=9).contains(value))
             .map(Action::SwitchToTab);
     }
+    if let Some(index) = id
+        .strip_prefix("workspace_switch:")
+        .or_else(|| id.strip_prefix("workspace_switch_"))
+    {
+        return index
+            .parse::<u8>()
+            .ok()
+            .filter(|value| (1..=9).contains(value))
+            .map(Action::WorkspaceSwitch);
+    }
     Some(match id {
         "new_tab" => Action::NewTab,
         "close_tab" => Action::CloseTab,
         "next_tab" => Action::NextTab,
         "prev_tab" => Action::PrevTab,
+        "workspace_new" => Action::WorkspaceNew,
+        "workspace_next" => Action::WorkspaceNext,
+        "workspace_prev" => Action::WorkspacePrev,
+        "surface_new" => Action::SurfaceNew,
+        "surface_next" => Action::SurfaceNext,
+        "surface_prev" => Action::SurfacePrev,
+        "surface_close" => Action::SurfaceClose,
         "split_vertical" => Action::SplitVertical,
         "split_horizontal" => Action::SplitHorizontal,
         "close_split" => Action::CloseSplit,
@@ -338,6 +355,9 @@ pub fn parse_action_id(id: &str) -> Option<Action> {
         "open_block_inspector" => Action::OpenBlockInspector,
         "open_block_rerun_history" => Action::OpenBlockRerunHistory,
         "open_block_rerun_comparison" => Action::OpenBlockRerunComparison,
+        "block_context_menu" => Action::BlockContextMenu,
+        "block_scroll_top" => Action::BlockScrollTop,
+        "block_scroll_bottom" => Action::BlockScrollBottom,
         "insert_scratch_selection_into_input" => Action::InsertScratchSelectionIntoInput,
         "send_scratch_selection_to_pane" => Action::SendScratchSelectionToPane,
         "open_workspace_browser" => Action::OpenWorkspaceBrowser,
@@ -358,6 +378,7 @@ pub fn parse_action_id(id: &str) -> Option<Action> {
         "keybinding_discovery" => Action::KeybindingDiscovery,
         "keybinding_editor" => Action::KeybindingEditor,
         "settings_discovery" => Action::SettingsDiscovery,
+        "notification_popover" => Action::NotificationPopover,
         _ => return None,
     })
 }

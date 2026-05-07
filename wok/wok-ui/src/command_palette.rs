@@ -210,15 +210,7 @@ impl CommandPaletteState {
 
     fn recompute(&mut self) {
         let mut query = self.query.trim().to_string();
-        let category_filter = if let Some(stripped) = query.strip_prefix('>') {
-            query = stripped.trim_start().to_string();
-            Some(PaletteCategory::Action)
-        } else if let Some(stripped) = query.strip_prefix('@') {
-            query = stripped.trim_start().to_string();
-            Some(PaletteCategory::Workflow)
-        } else {
-            None
-        };
+        let category_filter = peel_category_filter(&mut query);
 
         let query_lower = query.to_ascii_lowercase();
         let workflow_priority = !query.is_empty();
@@ -255,6 +247,41 @@ impl CommandPaletteState {
             self.selected_index = 0;
         }
     }
+}
+
+fn peel_category_filter(query: &mut String) -> Option<PaletteCategory> {
+    let trimmed = query.trim_start();
+    let filters = [
+        (">", PaletteCategory::Action),
+        ("action:", PaletteCategory::Action),
+        ("actions:", PaletteCategory::Action),
+        ("@", PaletteCategory::Workflow),
+        ("workflow:", PaletteCategory::Workflow),
+        ("workflows:", PaletteCategory::Workflow),
+        ("/", PaletteCategory::FilePath),
+        ("file:", PaletteCategory::FilePath),
+        ("files:", PaletteCategory::FilePath),
+        ("#", PaletteCategory::Workspace),
+        ("session:", PaletteCategory::Workspace),
+        ("sessions:", PaletteCategory::Workspace),
+        ("workspace:", PaletteCategory::Workspace),
+        ("workspaces:", PaletteCategory::Workspace),
+        ("setting:", PaletteCategory::SettingsField),
+        ("settings:", PaletteCategory::SettingsField),
+        ("theme:", PaletteCategory::Theme),
+        ("themes:", PaletteCategory::Theme),
+        ("recent:", PaletteCategory::RecentCommand),
+        ("history:", PaletteCategory::RecentCommand),
+    ];
+    let lower = trimmed.to_ascii_lowercase();
+    for (prefix, category) in filters {
+        if lower.starts_with(prefix) {
+            let stripped = &trimmed[prefix.len()..];
+            *query = stripped.trim_start().to_string();
+            return Some(category);
+        }
+    }
+    None
 }
 
 impl Default for CommandPaletteState {

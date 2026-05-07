@@ -34,6 +34,12 @@ tab_bar_visible = true
 tab_bar_orientation = "horizontal"
 tab_bar_side = "top"
 tab_bar_size = 22.0
+workspace_sidebar_visible = true
+workspace_sidebar_size = 180.0
+pane_surface_tabs_visible = true
+sticky_block_header_visible = true
+command_center_position = "center"
+notification_badges_visible = true
 status_bar_visible = true
 status_bar_side = "bottom"
 status_bar_size = 22.0
@@ -102,6 +108,12 @@ action = "split_vertical"
 | `tab_bar_orientation` | string | `"horizontal"` | Active | Backward-compatible tab layout option: `"horizontal"` maps to `tab_bar_side = "top"`, `"vertical"` maps to `tab_bar_side = "left"` |
 | `tab_bar_side` | string | `"top"` | Active | Places the tab bar on any edge: `top`, `bottom`, `left`, or `right` |
 | `tab_bar_size` | float | `22.0` | Active | Optional tab bar thickness in physical pixels; v1 falls back to active font metrics for horizontal tabs and `180.0` for vertical tabs |
+| `workspace_sidebar_visible` | boolean | `true` | Active | Renders top-level tabs as a left workspace sidebar; set to `false` to use the tab bar options above |
+| `workspace_sidebar_size` | float | `180.0` | Active | Width of the workspace sidebar in physical pixels |
+| `pane_surface_tabs_visible` | boolean | `true` | Active | Reserves compact per-pane surface/header chrome |
+| `sticky_block_header_visible` | boolean | `true` | Active | Shows a sticky selected-block command header while scrolled through long output |
+| `command_center_position` | string | `"center"` | Active | Places the command center overlay at `center` or `top` |
+| `notification_badges_visible` | boolean | `true` | Active | Enables in-app notification badge affordances |
 | `status_bar_visible` | boolean | `true` | Active | Shows or hides the status bar |
 | `status_bar_side` | string | `"bottom"` | Active | Places the status bar on any edge: `top`, `bottom`, `left`, or `right`; vertical status bars render segments as a stacked list |
 | `status_bar_size` | float | `22.0` | Active | Optional status bar thickness in physical pixels; v1 falls back to active font metrics |
