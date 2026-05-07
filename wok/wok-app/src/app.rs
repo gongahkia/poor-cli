@@ -534,6 +534,12 @@ impl WokApp {
             Action::FocusDown => {
                 effects.push(RuntimeEffect::Workspace(WorkspaceEffect::FocusDown));
             }
+            Action::FocusPrevPane => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::FocusPrevPane));
+            }
+            Action::FocusNextPane => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::FocusNextPane));
+            }
             Action::ResizeSplitLeft => {
                 effects.push(RuntimeEffect::Workspace(WorkspaceEffect::ResizeSplitLeft));
             }
@@ -561,7 +567,8 @@ impl WokApp {
             Action::ThemePicker
             | Action::KeybindingDiscovery
             | Action::KeybindingEditor
-            | Action::SettingsDiscovery => {}
+            | Action::SettingsDiscovery
+            | Action::ToggleBlockFootStrip => {}
         }
 
         effects
@@ -682,8 +689,9 @@ mod tests {
     #[test]
     fn test_command_palette_is_not_active_by_default() {
         let app = WokApp::new(WokConfig::default());
-        assert_eq!(app.input_mode, InputMode::ShellNative);
-        assert!(!app.input_editor.is_active);
+        assert_eq!(app.input_mode, InputMode::OwnedInput);
+        assert!(app.input_editor.is_active);
+        assert!(!app.command_palette.is_open);
     }
 
     #[test]

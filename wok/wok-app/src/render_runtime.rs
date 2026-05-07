@@ -1,6 +1,10 @@
 use super::*;
 use std::path::Path;
 
+const RUNNING_BLOCK_PULSE_HZ: f32 = 0.5;
+const RUNNING_BLOCK_ALPHA_BASE: f32 = 0.62;
+const RUNNING_BLOCK_ALPHA_AMPLITUDE: f32 = 0.18;
+
 #[derive(Clone, Copy)]
 pub(crate) struct VisualEffectState {
     pub mode: VisualEffectMode,
@@ -117,6 +121,7 @@ pub(crate) fn compute_pane_ui_rects(
     input_lines: usize,
     cell_height: f32,
     show_input: bool,
+    show_header: bool,
 ) -> UiRects {
     let line_count = input_lines.clamp(1, 8) as f32;
     let input_height = if show_input {
@@ -124,27 +129,39 @@ pub(crate) fn compute_pane_ui_rects(
     } else {
         0.0
     };
+    let header_height = if show_header {
+        (cell_height + 4.0)
+            .ceil()
+            .min((container.h * 0.18).max(0.0))
+    } else {
+        0.0
+    };
+    let body_y = container.y + header_height;
+    let body_h = (container.h - header_height).max(cell_height);
+    let header = Rect::new(container.x, container.y, container.w, header_height);
 
     match input_position {
         wok_input::editor::InputPosition::Top => UiRects {
+            header,
             viewport: Rect::new(
                 container.x,
-                container.y + input_height,
+                body_y + input_height,
                 container.w,
-                (container.h - input_height).max(cell_height),
+                (body_h - input_height).max(cell_height),
             ),
-            input: Rect::new(container.x, container.y, container.w, input_height),
+            input: Rect::new(container.x, body_y, container.w, input_height),
         },
         wok_input::editor::InputPosition::Bottom => UiRects {
+            header,
             viewport: Rect::new(
                 container.x,
-                container.y,
+                body_y,
                 container.w,
-                (container.h - input_height).max(cell_height),
+                (body_h - input_height).max(cell_height),
             ),
             input: Rect::new(
                 container.x,
-                container.y + container.h - input_height,
+                body_y + body_h - input_height,
                 container.w,
                 input_height,
             ),
@@ -180,8 +197,95 @@ pub(crate) fn inspector_dock_rect(content: Rect) -> Rect {
     )
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BlockFooterAction {
+    Rerun,
+    History,
+    Diff,
+    Copy,
+    Inspect,
+}
+
+impl BlockFooterAction {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Rerun => "rerun",
+            Self::History => "history",
+            Self::Diff => "diff",
+            Self::Copy => "copy",
+            Self::Inspect => "inspect",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct BlockFooterActionRect {
+    pub action: BlockFooterAction,
+    pub rect: Rect,
+}
+
 pub(crate) fn pane_max_scroll(pane: &PaneRuntime) -> f32 {
     pane.terminal.state.scrollback_len() as f32
+}
+
+pub(crate) fn render_pane_header(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    theme: &Theme,
+    rect: Rect,
+    label: &str,
+    focused: bool,
+    surface_opacity: f32,
+) {
+    if rect.w <= 0.0 || rect.h <= 0.0 {
+        return;
+    }
+    render.batch.push_bg_quad(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        with_opacity(
+            [
+                theme.tab_bar_bg.r,
+                theme.tab_bar_bg.g,
+                theme.tab_bar_bg.b,
+                0.88,
+            ],
+            surface_opacity,
+        ),
+    );
+    let accent = if focused {
+        theme.highlight_current_match
+    } else {
+        theme.block_separator
+    };
+    render.batch.push_bg_quad(
+        rect.x,
+        rect.y + rect.h - 1.0,
+        rect.w,
+        1.0,
+        with_opacity([accent.r, accent.g, accent.b, 0.85], surface_opacity),
+    );
+    let visible = fit_text_to_width(label, rect.w - 16.0, font.metrics.cell_width);
+    if !visible.is_empty() {
+        push_text(
+            render,
+            font,
+            rect.x + 8.0,
+            rect.y + ((rect.h - font.metrics.cell_height) * 0.5).max(0.0),
+            &visible,
+            with_opacity(
+                [
+                    theme.status_bar_text.r,
+                    theme.status_bar_text.g,
+                    theme.status_bar_text.b,
+                    0.96,
+                ],
+                surface_opacity,
+            ),
+        );
+    }
 }
 
 pub(crate) fn render_tab_bar(
@@ -2112,6 +2216,59 @@ mod tests {
     }
 
     #[test]
+    fn running_block_accent_alpha_stays_inside_motion_budget() {
+        assert!((running_block_accent_alpha(0.0) - 0.62).abs() < f32::EPSILON);
+        assert!((running_block_accent_alpha(0.5) - 0.80).abs() < 0.001);
+        assert!((running_block_accent_alpha(1.0) - 0.62).abs() < 0.001);
+        for elapsed in [0.0, 0.25, 0.5, 0.75, 1.0, 2.25] {
+            let alpha = running_block_accent_alpha(elapsed);
+            assert!((0.62..=0.80).contains(&alpha));
+        }
+    }
+
+    #[test]
+    fn block_footer_action_rects_are_ordered_and_inside_viewport() {
+        let block = Block {
+            id: 1,
+            prompt_text: String::new(),
+            command_text: "cargo test".to_string(),
+            output_start_row: 2,
+            output_end_row: 4,
+            exit_code: Some(0),
+            start_time: Instant::now(),
+            end_time: Some(Instant::now()),
+            duration: None,
+            is_collapsed: false,
+            scroll_offset: 0,
+            cwd: PathBuf::from("/repo"),
+            git_branch: Some("main".to_string()),
+            git_dirty: Some(false),
+            is_bookmarked: false,
+            trigger_highlights: Vec::new(),
+        };
+        let viewport = Rect::new(20.0, 30.0, 720.0, 300.0);
+        let rects = block_footer_action_rects(&block, viewport, 78.0, 10.0, 20.0);
+
+        assert_eq!(
+            rects.iter().map(|entry| entry.action).collect::<Vec<_>>(),
+            vec![
+                BlockFooterAction::Rerun,
+                BlockFooterAction::History,
+                BlockFooterAction::Diff,
+                BlockFooterAction::Copy,
+                BlockFooterAction::Inspect,
+            ]
+        );
+        assert!(rects.windows(2).all(|pair| pair[0].rect.x < pair[1].rect.x));
+        assert!(rects.iter().all(|entry| entry.rect.x >= viewport.x
+            && entry.rect.x + entry.rect.w <= viewport.x + viewport.w));
+        let strip = block_footer_strip_rect(&block, viewport, 78.0, 10.0, 20.0)
+            .expect("footer strip should fit");
+        assert!(strip.x >= viewport.x);
+        assert!(strip.x + strip.w <= viewport.x + viewport.w);
+    }
+
+    #[test]
     fn inspector_dock_rect_uses_right_side_of_content() {
         let content = Rect::new(20.0, 10.0, 1000.0, 700.0);
         let dock = inspector_dock_rect(content);
@@ -2588,34 +2745,24 @@ pub(crate) fn render_search_overlay(
     render: &mut RenderState,
     font: &mut FontSystem,
     theme: &Theme,
-    viewport: Rect,
+    rect: Rect,
     search: &wok_ui::search::GlobalSearch,
     surface_opacity: f32,
 ) {
-    let width = (viewport.w * 0.38).clamp(220.0, 420.0);
-    let height = font.metrics.cell_height * 2.0 + 16.0;
-    let x = viewport.x + viewport.w - width - 12.0;
-    let y = viewport.y + 12.0;
-
     render.batch.push_bg_quad(
-        x,
-        y,
-        width,
-        height,
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
         with_opacity(
-            [
-                theme.tab_bar_bg.r,
-                theme.tab_bar_bg.g,
-                theme.tab_bar_bg.b,
-                0.96,
-            ],
+            [theme.input_bg.r, theme.input_bg.g, theme.input_bg.b, 0.98],
             surface_opacity,
         ),
     );
     render.batch.push_bg_quad(
-        x,
-        y,
-        width,
+        rect.x,
+        rect.y,
+        rect.w,
         1.0,
         with_opacity(
             [
@@ -2628,12 +2775,22 @@ pub(crate) fn render_search_overlay(
         ),
     );
 
+    let padding_x = 12.0;
+    let padding_y = 8.0;
+    let base_x = rect.x + padding_x;
+    let mut row_y = rect.y + padding_y;
+    let inner_width = (rect.w - padding_x * 2.0).max(font.metrics.cell_width);
+    let query = fit_text_to_width(
+        &format!("Search: {}", search.search_input),
+        inner_width * 0.66,
+        font.metrics.cell_width,
+    );
     push_text(
         render,
         font,
-        x + 10.0,
-        y + 6.0,
-        &format!("Search: {}", search.search_input),
+        base_x,
+        row_y,
+        &query,
         with_opacity(
             [
                 theme.foreground.r,
@@ -2644,21 +2801,28 @@ pub(crate) fn render_search_overlay(
             surface_opacity,
         ),
     );
+    let status = fit_text_to_width(
+        &format!(
+            "{}  mode:{}  scope:{}",
+            search.match_count_display(),
+            search.mode.label(),
+            search.scope.label()
+        ),
+        inner_width * 0.34,
+        font.metrics.cell_width,
+    );
+    let status_x = right_aligned_text_x(
+        rect.x + rect.w - padding_x,
+        &status,
+        font.metrics.cell_width,
+    )
+    .max(base_x);
     push_text(
         render,
         font,
-        x + 10.0,
-        y + 6.0 + font.metrics.cell_height,
-        &fit_text_to_width(
-            &format!(
-                "{}  mode:{} scope:{}",
-                search.match_count_display(),
-                search.mode.label(),
-                search.scope.label()
-            ),
-            width - 20.0,
-            font.metrics.cell_width,
-        ),
+        status_x,
+        row_y,
+        &status,
         with_opacity(
             [
                 theme.status_bar_text.r,
@@ -2669,6 +2833,108 @@ pub(crate) fn render_search_overlay(
             surface_opacity,
         ),
     );
+    row_y += font.metrics.cell_height + 8.0;
+
+    if let Some(error) = search.error.as_ref() {
+        push_text(
+            render,
+            font,
+            base_x,
+            row_y,
+            &fit_text_to_width(error, inner_width, font.metrics.cell_width),
+            with_opacity(
+                [
+                    theme.block_error_accent.r,
+                    theme.block_error_accent.g,
+                    theme.block_error_accent.b,
+                    0.95,
+                ],
+                surface_opacity,
+            ),
+        );
+        return;
+    }
+
+    if search.matches.is_empty() {
+        push_text(
+            render,
+            font,
+            base_x,
+            row_y,
+            "No matches",
+            with_opacity(
+                [
+                    theme.status_bar_text.r,
+                    theme.status_bar_text.g,
+                    theme.status_bar_text.b,
+                    0.85,
+                ],
+                surface_opacity,
+            ),
+        );
+        return;
+    }
+
+    let row_height = font.metrics.cell_height + 4.0;
+    let visible_rows = ((rect.y + rect.h - row_y - 8.0) / row_height)
+        .floor()
+        .max(1.0) as usize;
+    let mut start = search.current.saturating_sub(visible_rows / 2);
+    if start + visible_rows > search.matches.len() {
+        start = search.matches.len().saturating_sub(visible_rows);
+    }
+    let end = (start + visible_rows).min(search.matches.len());
+
+    for (offset, found) in search.matches[start..end].iter().enumerate() {
+        let absolute = start + offset;
+        if absolute == search.current {
+            render.batch.push_bg_quad(
+                rect.x + 8.0,
+                row_y - 2.0,
+                rect.w - 16.0,
+                font.metrics.cell_height + 4.0,
+                with_opacity(
+                    [
+                        theme.selection.r,
+                        theme.selection.g,
+                        theme.selection.b,
+                        0.22,
+                    ],
+                    surface_opacity,
+                ),
+            );
+        }
+        let source = if found.is_command { "cmd" } else { "out" };
+        let block = found
+            .block_id
+            .map(|id| format!(" b{id}"))
+            .unwrap_or_default();
+        let label = fit_text_to_width(
+            &format!(
+                "{source}  pane {}  tab {}  row {}{}  col {}..{}",
+                found.pane_id, found.tab_id, found.row, block, found.col_start, found.col_end
+            ),
+            inner_width,
+            font.metrics.cell_width,
+        );
+        push_text(
+            render,
+            font,
+            base_x,
+            row_y,
+            &label,
+            with_opacity(
+                [
+                    theme.foreground.r,
+                    theme.foreground.g,
+                    theme.foreground.b,
+                    0.95,
+                ],
+                surface_opacity,
+            ),
+        );
+        row_y += row_height;
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4394,6 +4660,7 @@ pub(crate) fn rebuild_visible_row_batch(
     visual_effect: Option<VisualEffectState>,
     typewriter: Option<&TypewriterState>,
     render_time: Instant,
+    block_foot_visible: bool,
 ) {
     batch.clear();
     let Some(render_row) = render_row else {
@@ -4664,6 +4931,23 @@ pub(crate) fn rebuild_visible_row_batch(
                 row_y,
                 cell_width,
                 cell_height,
+                selected_block_id == Some(block.id),
+            );
+        }
+        if block_foot_visible
+            && selected_block_id == Some(block.id)
+            && absolute_row == block.output_end_row
+        {
+            render_block_footer_strip(
+                batch,
+                render,
+                font,
+                theme,
+                block,
+                viewport,
+                row_y,
+                cell_width,
+                cell_height,
             );
         }
     }
@@ -4686,9 +4970,18 @@ fn block_accent_alpha(block: &Block, selected_block_id: Option<u64>, render_time
             .checked_duration_since(block.start_time)
             .unwrap_or_else(|| block.start_time.elapsed())
             .as_secs_f32();
-        return 0.62 + (elapsed * std::f32::consts::TAU * 0.5).sin().abs() * 0.18;
+        return running_block_accent_alpha(elapsed);
     }
     0.88
+}
+
+pub(crate) fn running_block_accent_alpha(elapsed_secs: f32) -> f32 {
+    let elapsed_secs = elapsed_secs.max(0.0);
+    RUNNING_BLOCK_ALPHA_BASE
+        + (elapsed_secs * std::f32::consts::TAU * RUNNING_BLOCK_PULSE_HZ)
+            .sin()
+            .abs()
+            * RUNNING_BLOCK_ALPHA_AMPLITUDE
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4704,8 +4997,13 @@ fn render_block_header_chip(
     row_y: f32,
     cell_width: f32,
     cell_height: f32,
+    selected: bool,
 ) {
-    let meta = block_header_meta(block);
+    let meta = if selected {
+        format!("{} | copy rerun inspect pin", block_header_meta(block))
+    } else {
+        block_header_meta(block)
+    };
     let chip_width =
         ((meta.chars().count() as f32 * cell_width) + 12.0).min((viewport.w * 0.42).max(0.0));
     if chip_width < cell_width * 6.0 || viewport.w < 180.0 {
@@ -4780,6 +5078,152 @@ fn block_header_meta(block: &Block) -> String {
         .map(format_duration_short)
         .unwrap_or_else(|| "now".to_string());
     format!("{cwd} | {branch} | {exit} | {duration}")
+}
+
+fn render_block_footer_strip(
+    batch: &mut QuadBatch,
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    theme: &Theme,
+    block: &Block,
+    viewport: Rect,
+    row_y: f32,
+    cell_width: f32,
+    cell_height: f32,
+) {
+    let Some(strip_rect) = block_footer_strip_rect(block, viewport, row_y, cell_width, cell_height)
+    else {
+        return;
+    };
+    batch.push_bg_quad(
+        strip_rect.x,
+        strip_rect.y,
+        strip_rect.w,
+        strip_rect.h,
+        [theme.input_bg.r, theme.input_bg.g, theme.input_bg.b, 0.84],
+    );
+
+    for action_rect in block_footer_action_rects(block, viewport, row_y, cell_width, cell_height) {
+        batch.push_bg_quad(
+            action_rect.rect.x,
+            action_rect.rect.y,
+            action_rect.rect.w,
+            action_rect.rect.h,
+            [
+                theme.selection.r,
+                theme.selection.g,
+                theme.selection.b,
+                0.22,
+            ],
+        );
+        push_text_to_batch(
+            render,
+            batch,
+            font,
+            action_rect.rect.x + 5.0,
+            row_y,
+            action_rect.action.label(),
+            [
+                theme.status_bar_text.r,
+                theme.status_bar_text.g,
+                theme.status_bar_text.b,
+                0.96,
+            ],
+        );
+    }
+
+    let label = block_footer_status_label(block);
+    let action_end = block_footer_action_rects(block, viewport, row_y, cell_width, cell_height)
+        .last()
+        .map(|entry| entry.rect.x + entry.rect.w)
+        .unwrap_or(strip_rect.x + 6.0);
+    let label_x = action_end + 8.0;
+    let visible = fit_text_to_width(
+        &label,
+        (strip_rect.x + strip_rect.w - label_x - 6.0).max(0.0),
+        cell_width,
+    );
+    push_text_to_batch(
+        render,
+        batch,
+        font,
+        label_x,
+        row_y,
+        &visible,
+        [
+            theme.status_bar_text.r,
+            theme.status_bar_text.g,
+            theme.status_bar_text.b,
+            0.95,
+        ],
+    );
+}
+
+pub(crate) fn block_footer_strip_rect(
+    block: &Block,
+    viewport: Rect,
+    row_y: f32,
+    cell_width: f32,
+    cell_height: f32,
+) -> Option<Rect> {
+    let actions = block_footer_action_rects(block, viewport, row_y, cell_width, cell_height);
+    let last_action = actions.last()?;
+    let status_width = block_footer_status_label(block).chars().count() as f32 * cell_width;
+    let x = viewport.x + 8.0;
+    let end = (last_action.rect.x + last_action.rect.w + 8.0 + status_width + 8.0)
+        .min(viewport.x + viewport.w - 8.0);
+    let width = (end - x).max(0.0);
+    (width >= cell_width * 12.0).then_some(Rect::new(
+        x,
+        row_y + (cell_height * 0.14),
+        width,
+        (cell_height * 0.76).max(1.0),
+    ))
+}
+
+pub(crate) fn block_footer_action_rects(
+    _block: &Block,
+    viewport: Rect,
+    row_y: f32,
+    cell_width: f32,
+    cell_height: f32,
+) -> Vec<BlockFooterActionRect> {
+    let max_x = viewport.x + viewport.w - 14.0;
+    let mut x = viewport.x + 14.0;
+    let y = row_y + (cell_height * 0.18);
+    let height = (cell_height * 0.68).max(1.0);
+    let mut rects = Vec::new();
+    for action in [
+        BlockFooterAction::Rerun,
+        BlockFooterAction::History,
+        BlockFooterAction::Diff,
+        BlockFooterAction::Copy,
+        BlockFooterAction::Inspect,
+    ] {
+        let width = action.label().chars().count() as f32 * cell_width + 10.0;
+        if x + width > max_x {
+            break;
+        }
+        rects.push(BlockFooterActionRect {
+            action,
+            rect: Rect::new(x, y, width, height),
+        });
+        x += width + 4.0;
+    }
+    rects
+}
+
+fn block_footer_status_label(block: &Block) -> String {
+    let status = match block.exit_code {
+        None => "running".to_string(),
+        Some(code) => format!("exit {code}"),
+    };
+    let dirty = match block.git_dirty {
+        Some(true) => "dirty",
+        Some(false) => "clean",
+        None => "git ?",
+    };
+    format!("{status}  {dirty}")
 }
 
 fn format_duration_short(duration: std::time::Duration) -> String {

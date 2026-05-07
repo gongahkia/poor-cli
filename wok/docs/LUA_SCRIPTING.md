@@ -119,7 +119,7 @@ Search & palette: `search_global`, `open_search_results`, `save_current_search`,
 
 Block navigation: `block_prev`, `block_next`, `block_copy`, `block_copy_command`, `block_copy_output`, `block_collapse`, `block_toggle_bookmark`, `block_prev_bookmark`, `block_next_bookmark`, `block_prev_failed`, `block_next_failed`, `block_find`, `block_filter`, `block_diff`, `block_rerun`, `block_rerun_in_split`, `block_save_workflow`, `block_export_markdown`, `block_export_json`
 
-Layout / panels: `next_layout`, `prev_layout`, `toggle_failure_trends_panel`, `toggle_workspace_insights_panel`, `toggle_broadcast`
+Layout / panels: `next_layout`, `prev_layout`, `focus_prev_pane`, `focus_next_pane`, `toggle_block_foot_strip`, `toggle_failure_trends_panel`, `toggle_workspace_insights_panel`, `toggle_broadcast`
 
 Input & terminal: `toggle_input_position`, `toggle_typewriter_effect`, `cycle_visual_effect`, `close_media_preview`, `toggle_media_preview_playback`, `seek_media_preview_backward`, `seek_media_preview_forward`, `slow_media_preview_playback`, `fast_media_preview_playback`, `step_media_preview_backward`, `step_media_preview_forward`, `toggle_media_preview_mute`, `preview_path_under_cursor`, `open_path_under_cursor`, `copy_path_under_cursor`, `reveal_path_under_cursor`, `tail_path_under_cursor`, `open_scratch_buffer`, `open_scratch_palette`, `insert_scratch_selection_into_input`, `send_scratch_selection_to_pane`, `toggle_search_regex`, `cycle_search_scope`, `zoom_in`, `zoom_out`, `zoom_reset`, `clear_screen`, `send_eof`
 

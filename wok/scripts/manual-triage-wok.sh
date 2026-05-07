@@ -81,10 +81,15 @@ cat > "$OUT/config.toml" <<'CONFIG'
 shell = "zsh"
 font_family = "Menlo"
 font_size = 24.0
+ui_layout = "v2"
+command_entry_mode = "owned_primary"
 scrollback_lines = 20000
 input_position = "bottom"
 tab_bar_orientation = "horizontal"
 tab_bar_side = "top"
+pane_header_visible = true
+timeline_rail_visible = true
+block_foot_visible = true
 status_bar_visible = true
 status_bar_side = "bottom"
 window_opacity = 1.0

@@ -76,6 +76,8 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         "focus_right" => Some(Action::FocusRight),
         "focus_up" => Some(Action::FocusUp),
         "focus_down" => Some(Action::FocusDown),
+        "focus_prev_pane" | "prev_pane" => Some(Action::FocusPrevPane),
+        "focus_next_pane" | "next_pane" => Some(Action::FocusNextPane),
         "search_global" | "toggle_search" | "search" => Some(Action::SearchGlobal),
         "enter_vi_mode" | "vi_mode" => Some(Action::EnterViMode),
         "command_palette" | "palette" => Some(Action::CommandPalette),
@@ -201,6 +203,9 @@ pub(crate) fn parse_lua_action(action: &str) -> Option<Action> {
         }
         "toggle_workspace_insights_panel" | "workspace_insights_panel" | "workspace_insights" => {
             Some(Action::ToggleWorkspaceInsightsPanel)
+        }
+        "toggle_block_foot_strip" | "block_foot_strip" | "block_footer" => {
+            Some(Action::ToggleBlockFootStrip)
         }
         "git_changes" | "git_status" | "changed_files" => Some(Action::GitChanges),
         "git_worktrees" | "git_worktree" | "worktree_switcher" => Some(Action::GitWorktrees),

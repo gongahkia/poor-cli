@@ -97,6 +97,8 @@ pub enum PaletteAction {
     Dismiss,
     /// Change the active pane working directory.
     ChangeDirectory(String),
+    /// Execute a typed palette command using the active palette query as args.
+    TypedCommand(String),
 }
 
 /// One command palette entry.

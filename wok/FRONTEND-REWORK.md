@@ -1,6 +1,6 @@
 # Wok Frontend Rework Plan
 
-Status: proposal · Owner: TBD · Target: incremental rollout across `wok-ui`, `wok-renderer`, `wok-app`.
+Status: implemented with residual polish · Owner: Wok · Landed behind `ui_layout = "v2"` defaults across `wok-ui`, `wok-renderer`, `wok-app`.
 
 Wok's "frontend" is the wgpu-rendered chrome (winit + `wok-renderer`), not HTML. Reference points map to layout/interaction language, not CSS. The wedge stays sharp: local-first, no AI, no cloud, no login. Block-oriented review remains the product.
 
@@ -164,7 +164,7 @@ Rule: if it animates while the user is typing, it's a bug.
 6. **Inspector dock (right) + search-as-dock.** Bigger; touches scroll model and split layout.
 7. **Pane-first tab redesign.** Touches `WokHandler` orchestration; ship last to avoid churn.
 
-Each step should land behind a config flag where feasible (`ui.layout = "v2"` etc.) so users can opt in during stabilization.
+Implementation note: v2 is the default. `ui_layout = "v1"` restores the legacy shell-native/input/header sizing defaults, while individual knobs such as `command_entry_mode`, `pane_header_visible`, `timeline_rail_visible`, `tab_bar_size`, and `status_bar_size` remain configurable.
 
 ---
 
@@ -185,3 +185,12 @@ Each step should land behind a config flag where feasible (`ui.layout = "v2"` et
 - Block navigation (rail + `Mod-Up/Down` + search jump) feels equivalent and consistent.
 - No regression in first-paint latency or steady-state frame time vs. current build.
 - Zero AI affordances visible anywhere in the chrome.
+
+---
+
+## 14. Residual Polish
+
+Do not remove this file until these are either implemented or explicitly cut:
+
+- Motion budget has explicit running-block pulse constants and unit coverage; it still needs screenshot-backed runtime visual signoff for exact fade/halo/tween feel.
+- Selected-block footer affordances are now rendered as discrete hoverable/clickable actions; final pixel-level approval still needs a successful manual screenshot pass.

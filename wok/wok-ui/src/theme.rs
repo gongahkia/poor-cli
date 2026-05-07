@@ -168,7 +168,7 @@ impl Default for Theme {
             hyperlink_color: Color::rgb(0.478, 0.655, 1.0), // #7aa7ff
             bracket_match: Color::new(0.486, 0.969, 0.757, 0.33), // #7cf7c155
             syntax: SyntaxColors::default(),
-            font_family: "JetBrains Mono".to_string(),
+            font_family: "Monaspace Neon".to_string(),
             chrome_font_family: "IBM Plex Mono".to_string(),
             font_size: 24.0,
             opacity: 1.0,

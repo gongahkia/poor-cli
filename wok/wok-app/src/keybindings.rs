@@ -31,6 +31,10 @@ pub enum Action {
     FocusUp,
     /// Focus the pane below.
     FocusDown,
+    /// Cycle focus to the previous pane.
+    FocusPrevPane,
+    /// Cycle focus to the next pane.
+    FocusNextPane,
     /// Resize split left.
     ResizeSplitLeft,
     /// Resize split right.
@@ -103,6 +107,8 @@ pub enum Action {
     GitChanges,
     /// Open Git worktrees for the active repository.
     GitWorktrees,
+    /// Toggle the selected block foot action strip.
+    ToggleBlockFootStrip,
     /// Global terminal search.
     SearchGlobal,
     /// Enter vi navigation mode.
@@ -446,6 +452,20 @@ impl Default for KeybindingConfig {
             },
             Action::FocusDown,
         );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('p'),
+                modifiers: pms,
+            },
+            Action::FocusPrevPane,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('n'),
+                modifiers: pms,
+            },
+            Action::FocusNextPane,
+        );
 
         // Clipboard
         bindings.insert(
@@ -594,6 +614,13 @@ impl Default for KeybindingConfig {
             KeyCombo {
                 key: KeyAction::Char('i'),
                 modifiers: pma,
+            },
+            Action::ToggleBlockFootStrip,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('i'),
+                modifiers: Modifiers { shift: true, ..pma },
             },
             Action::ToggleWorkspaceInsightsPanel,
         );
@@ -1069,11 +1096,49 @@ mod tests {
         let config = KeybindingConfig::default();
         let combo = KeyCombo {
             key: KeyAction::Char('i'),
-            modifiers: platform_mod_alt(),
+            modifiers: Modifiers {
+                shift: true,
+                ..platform_mod_alt()
+            },
         };
         assert_eq!(
             config.resolve(&combo, &Context::Terminal),
             Some(&Action::ToggleWorkspaceInsightsPanel)
+        );
+    }
+
+    #[test]
+    fn test_frontend_rework_bindings_exist() {
+        let config = KeybindingConfig::default();
+        assert_eq!(
+            config.resolve(
+                &KeyCombo {
+                    key: KeyAction::Char('p'),
+                    modifiers: platform_mod_shift(),
+                },
+                &Context::Terminal,
+            ),
+            Some(&Action::FocusPrevPane)
+        );
+        assert_eq!(
+            config.resolve(
+                &KeyCombo {
+                    key: KeyAction::Char('n'),
+                    modifiers: platform_mod_shift(),
+                },
+                &Context::Terminal,
+            ),
+            Some(&Action::FocusNextPane)
+        );
+        assert_eq!(
+            config.resolve(
+                &KeyCombo {
+                    key: KeyAction::Char('i'),
+                    modifiers: platform_mod_alt(),
+                },
+                &Context::Terminal,
+            ),
+            Some(&Action::ToggleBlockFootStrip)
         );
     }
 

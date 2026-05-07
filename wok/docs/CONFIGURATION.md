@@ -20,21 +20,23 @@ remove sessions, themes, shell integration, workflows, or `init.lua`.
 
 ```toml
 shell = "zsh"
-font_family = "JetBrains Mono"
+font_family = "Monaspace Neon"
 chrome_font_family = "IBM Plex Mono"
 font_size = 24.0
+ui_layout = "v2"
+pane_header_visible = true
 input_position = "bottom"
-command_entry_mode = "shell_native"
+command_entry_mode = "owned_primary"
 scrollback_lines = 10000
 cursor_style = "block"
 cursor_blink = true
 tab_bar_visible = true
 tab_bar_orientation = "horizontal"
 tab_bar_side = "top"
-tab_bar_size = 36.0
+tab_bar_size = 24.0
 status_bar_visible = true
 status_bar_side = "bottom"
-status_bar_size = 36.0
+status_bar_size = 24.0
 timeline_rail_visible = false
 window_opacity = 1.0
 background_image = "~/.config/wok/backgrounds/workspace.png"
@@ -46,6 +48,7 @@ background_position = "center"
 # terminal_background_opacity = 0.72
 pane_border_width = 1.0
 focused_pane_border_width = 2.0
+block_foot_visible = false
 floating_pane_title_height = 18.0
 recent_keys_visible = true
 recent_keys_position = "bottom_right"
@@ -85,21 +88,23 @@ action = "split_vertical"
 | Option | Type | Default | Runtime Status | Description |
 | --- | --- | --- | --- | --- |
 | `shell` | string | auto-detected | Active | Shell to use: `bash`, `zsh`, `fish`, `powershell`, or `wsl:<distro>` |
-| `font_family` | string | `"Menlo"` on macOS, `"JetBrains Mono"` elsewhere | Active | Selects the font family used for glyph rasterization and cell metric measurement |
+| `font_family` | string | `"Monaspace Neon"` | Active | Selects the font family used for glyph rasterization and cell metric measurement |
 | `chrome_font_family` | string | `"IBM Plex Mono"` | Active | Selects the separate mono family used for tab, status, palette, and other chrome labels |
 | `font_size` | float | `24.0` | Active | Font size in points |
+| `ui_layout` | string | `"v2"` | Active | Selects frontend chrome generation. `v2` enables the pane-first rework defaults; `v1` restores legacy shell-native/input/header sizing defaults |
+| `pane_header_visible` | boolean | `true` | Active | Reserves a compact pane header line showing pane id, cwd basename, branch, and running state |
 | `input_position` | string | `"bottom"` | Active | Places the owned input bar above or below the viewport |
-| `command_entry_mode` | string | `"shell_native"` | Active | Chooses prompt-time command entry routing: `shell_native` keeps shell-side editing, `owned_primary` routes idle prompt input into Wok's editor with pane-first history recall and `Ctrl+R` command search |
+| `command_entry_mode` | string | `"owned_primary"` | Active | Chooses prompt-time command entry routing: `shell_native` keeps shell-side editing, `owned_primary` routes idle prompt input into Wok's editor with pane-first history recall and `Ctrl+R` command search |
 | `scrollback_lines` | integer | `10000` | Active | Number of scrollback lines to retain |
 | `cursor_style` | string | `"block"` | Active | Chooses the cursor shape for both the terminal viewport and owned input bar: `block`, `bar`, or `underline` |
 | `cursor_blink` | boolean | `true` | Active | Enables the timed cursor blink cadence for the viewport and input bar |
 | `tab_bar_visible` | boolean | `true` | Active | Shows or hides the workspace tab bar |
 | `tab_bar_orientation` | string | `"horizontal"` | Active | Backward-compatible tab layout option: `"horizontal"` maps to `tab_bar_side = "top"`, `"vertical"` maps to `tab_bar_side = "left"` |
 | `tab_bar_side` | string | `"top"` | Active | Places the tab bar on any edge: `top`, `bottom`, `left`, or `right` |
-| `tab_bar_size` | float | auto | Active | Optional tab bar thickness in physical pixels; defaults to the active font metrics for horizontal tabs and `180.0` for vertical tabs |
+| `tab_bar_size` | float | `24.0` | Active | Optional tab bar thickness in physical pixels; v1 falls back to active font metrics for horizontal tabs and `180.0` for vertical tabs |
 | `status_bar_visible` | boolean | `true` | Active | Shows or hides the status bar |
 | `status_bar_side` | string | `"bottom"` | Active | Places the status bar on any edge: `top`, `bottom`, `left`, or `right`; vertical status bars render segments as a stacked list |
-| `status_bar_size` | float | auto | Active | Optional status bar thickness in physical pixels; defaults to the active font metrics |
+| `status_bar_size` | float | `24.0` | Active | Optional status bar thickness in physical pixels; v1 falls back to active font metrics |
 | `timeline_rail_visible` | boolean | `false` | Active | Shows the opt-in block timeline rail along the left edge of each pane |
 | `window_opacity` | float | `1.0` | Active | Applies window/chrome opacity and blends terminal surfaces against the configured background |
 | `background_image` | string | none | Active | Loads a background image from config or theme and renders it behind the workspace chrome and panes |
@@ -111,6 +116,7 @@ action = "split_vertical"
 | `terminal_background_opacity` | float | auto | Active | Optional terminal pane fill opacity from `0.0` to `1.0`; by default panes become slightly translucent only when a background image is loaded |
 | `pane_border_width` | float | `1.0` | Active | Split pane border width in physical pixels; use `0.0` to hide inactive borders |
 | `focused_pane_border_width` | float | `2.0` | Active | Focused split pane accent border width in physical pixels; use `0.0` to hide it |
+| `block_foot_visible` | boolean | `false` | Active | Shows the optional selected-block foot strip with rerun/history/diff/copy/inspect affordances; `Mod-Alt-I` toggles it |
 | `floating_pane_title_height` | float | `18.0` | Active | Floating pane title strip height in physical pixels |
 | `recent_keys_visible` | boolean | `true` | Active | Shows a local in-app recent-key visualizer; keys are not persisted |
 | `recent_keys_position` | string | `"bottom_right"` | Active | Places the recent-key visualizer at `top_left`, `top_right`, `bottom_left`, or `bottom_right` |

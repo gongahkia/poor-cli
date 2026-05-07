@@ -251,6 +251,12 @@ impl WokHandler {
                     self.refresh_global_search();
                 }
             }
+            WorkspaceEffect::FocusPrevPane => {
+                self.cycle_active_pane(false);
+            }
+            WorkspaceEffect::FocusNextPane => {
+                self.cycle_active_pane(true);
+            }
             WorkspaceEffect::ResizeSplitLeft => {
                 self.workspace
                     .resize_active_split(wok_ui::splits::SplitDirection::Horizontal, -0.05);
@@ -335,6 +341,34 @@ impl WokHandler {
             }
             WorkspaceEffect::NextLayout => self.apply_layout_preset_cycle(true),
             WorkspaceEffect::PrevLayout => self.apply_layout_preset_cycle(false),
+        }
+    }
+
+    fn cycle_active_pane(&mut self, forward: bool) {
+        let search = self.active_search_state();
+        let pane_ids = self.workspace.active_pane_ids();
+        if pane_ids.len() < 2 {
+            return;
+        }
+        let current = self.active_pane_id().unwrap_or(pane_ids[0]);
+        let current_index = pane_ids
+            .iter()
+            .position(|pane_id| *pane_id == current)
+            .unwrap_or(0);
+        let next_index = if forward {
+            (current_index + 1) % pane_ids.len()
+        } else if current_index == 0 {
+            pane_ids.len() - 1
+        } else {
+            current_index - 1
+        };
+        self.workspace.focus_pane(pane_ids[next_index]);
+        if let Some(window) = &self.window {
+            self.sync_workspace_layout(window.inner_size());
+        }
+        if let Some(search) = search {
+            self.install_search_state_on_active_pane(search);
+            self.refresh_global_search();
         }
     }
 }

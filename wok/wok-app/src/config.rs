@@ -31,6 +31,25 @@ pub enum CommandEntryMode {
     OwnedPrimary,
 }
 
+/// Frontend chrome/layout generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum FrontendLayout {
+    /// Original chrome defaults.
+    V1,
+    /// Pane-first frontend rework.
+    V2,
+}
+
+impl FrontendLayout {
+    /// Stable config label.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::V1 => "v1",
+            Self::V2 => "v2",
+        }
+    }
+}
+
 /// Tab bar layout direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 pub enum TabBarOrientation {
@@ -271,6 +290,10 @@ pub struct WokConfig {
     pub input_position: InputPosition,
     /// Command-entry routing mode.
     pub command_entry_mode: CommandEntryMode,
+    /// Frontend chrome/layout generation.
+    pub ui_layout: FrontendLayout,
+    /// Whether to reserve a compact header line for each pane.
+    pub pane_header_visible: bool,
     /// Scrollback line count.
     pub scrollback_lines: usize,
     /// Cursor display style.
@@ -313,6 +336,8 @@ pub struct WokConfig {
     pub pane_border_width: f32,
     /// Focused split pane border width.
     pub focused_pane_border_width: f32,
+    /// Whether selected blocks render the optional foot action strip.
+    pub block_foot_visible: bool,
     /// Floating pane title height.
     pub floating_pane_title_height: f32,
     /// Whether command output is revealed character-by-character.
@@ -370,6 +395,8 @@ struct ConfigToml {
     font_size: Option<f32>,
     input_position: Option<String>,
     command_entry_mode: Option<String>,
+    ui_layout: Option<String>,
+    pane_header_visible: Option<bool>,
     scrollback_lines: Option<usize>,
     cursor_style: Option<String>,
     cursor_blink: Option<bool>,
@@ -391,6 +418,7 @@ struct ConfigToml {
     terminal_background_opacity: Option<f32>,
     pane_border_width: Option<f32>,
     focused_pane_border_width: Option<f32>,
+    block_foot_visible: Option<bool>,
     floating_pane_title_height: Option<f32>,
     typewriter_effect_enabled: Option<bool>,
     typewriter_effect_cps: Option<f32>,
@@ -465,17 +493,19 @@ impl Default for WokConfig {
             chrome_font_family: default_chrome_font_family().to_string(),
             font_size: 24.0,
             input_position: InputPosition::Bottom,
-            command_entry_mode: CommandEntryMode::ShellNative,
+            command_entry_mode: CommandEntryMode::OwnedPrimary,
+            ui_layout: FrontendLayout::V2,
+            pane_header_visible: true,
             scrollback_lines: 10_000,
             cursor_style: CursorStyle::Block,
             cursor_blink: true,
             tab_bar_visible: true,
             tab_bar_side: ChromeSide::Top,
             tab_bar_orientation: TabBarOrientation::Horizontal,
-            tab_bar_size: None,
+            tab_bar_size: Some(24.0),
             status_bar_visible: true,
             status_bar_side: ChromeSide::Bottom,
-            status_bar_size: None,
+            status_bar_size: Some(24.0),
             timeline_rail_visible: false,
             window_opacity: 1.0,
             background_image: None,
@@ -487,6 +517,7 @@ impl Default for WokConfig {
             terminal_background_opacity: None,
             pane_border_width: 1.0,
             focused_pane_border_width: 2.0,
+            block_foot_visible: false,
             floating_pane_title_height: 18.0,
             typewriter_effect_enabled: false,
             typewriter_effect_cps: 180.0,
@@ -518,11 +549,11 @@ impl Default for WokConfig {
 fn default_font_family() -> &'static str {
     #[cfg(target_os = "macos")]
     {
-        "Menlo"
+        "Monaspace Neon"
     }
     #[cfg(not(target_os = "macos"))]
     {
-        "JetBrains Mono"
+        "Monaspace Neon"
     }
 }
 
@@ -571,6 +602,21 @@ impl WokConfig {
                 "owned_primary" => CommandEntryMode::OwnedPrimary,
                 _ => CommandEntryMode::ShellNative,
             };
+        }
+        if let Some(layout) = toml_config.ui_layout {
+            config.ui_layout = match layout.trim().to_ascii_lowercase().as_str() {
+                "v1" | "classic" | "legacy" => FrontendLayout::V1,
+                _ => FrontendLayout::V2,
+            };
+            if matches!(config.ui_layout, FrontendLayout::V1) {
+                config.pane_header_visible = false;
+                config.command_entry_mode = CommandEntryMode::ShellNative;
+                config.tab_bar_size = None;
+                config.status_bar_size = None;
+            }
+        }
+        if let Some(visible) = toml_config.pane_header_visible {
+            config.pane_header_visible = visible;
         }
         if let Some(s) = toml_config.scrollback_lines {
             config.scrollback_lines = s;
@@ -654,6 +700,9 @@ impl WokConfig {
         }
         if let Some(width) = toml_config.focused_pane_border_width {
             config.focused_pane_border_width = finite_non_negative(width).unwrap_or(0.0);
+        }
+        if let Some(visible) = toml_config.block_foot_visible {
+            config.block_foot_visible = visible;
         }
         if let Some(height) = toml_config.floating_pane_title_height {
             config.floating_pane_title_height = finite_non_negative(height).unwrap_or(0.0);
@@ -1090,6 +1139,8 @@ impl wok_settings::Settings for WokConfig {
                 field!("font_size", "f32"),
                 field!("input_position", "InputPosition"),
                 field!("command_entry_mode", "CommandEntryMode"),
+                field!("ui_layout", "FrontendLayout"),
+                field!("pane_header_visible", "bool"),
                 field!("scrollback_lines", "usize"),
                 field!("cursor_style", "CursorStyle"),
                 field!("cursor_blink", "bool"),
@@ -1111,6 +1162,7 @@ impl wok_settings::Settings for WokConfig {
                 field!("terminal_background_opacity", "Option<f32>"),
                 field!("pane_border_width", "f32"),
                 field!("focused_pane_border_width", "f32"),
+                field!("block_foot_visible", "bool"),
                 field!("floating_pane_title_height", "f32"),
                 field!("typewriter_effect_enabled", "bool"),
                 field!("typewriter_effect_cps", "f32"),
@@ -1167,7 +1219,9 @@ mod tests {
         assert_eq!(config.scrollback_lines, 10_000);
         assert_eq!(config.cursor_style, CursorStyle::Block);
         assert_eq!(config.input_position, InputPosition::Bottom);
-        assert_eq!(config.command_entry_mode, CommandEntryMode::ShellNative);
+        assert_eq!(config.command_entry_mode, CommandEntryMode::OwnedPrimary);
+        assert_eq!(config.ui_layout, FrontendLayout::V2);
+        assert!(config.pane_header_visible);
         assert_eq!(config.tab_bar_side, ChromeSide::Top);
         assert_eq!(config.tab_bar_orientation, TabBarOrientation::Horizontal);
         assert_eq!(config.status_bar_side, ChromeSide::Bottom);
@@ -1182,6 +1236,7 @@ mod tests {
         assert_eq!(config.terminal_background_opacity, None);
         assert!((config.pane_border_width - 1.0).abs() < f32::EPSILON);
         assert!((config.focused_pane_border_width - 2.0).abs() < f32::EPSILON);
+        assert!(!config.block_foot_visible);
         assert!((config.floating_pane_title_height - 18.0).abs() < f32::EPSILON);
         assert!(!config.typewriter_effect_enabled);
         assert!((config.typewriter_effect_cps - 180.0).abs() < f32::EPSILON);
@@ -1269,9 +1324,23 @@ action = "new_floating_pane"
     }
 
     #[test]
-    fn test_command_entry_mode_defaults_to_shell_native() {
+    fn test_command_entry_mode_defaults_to_owned_primary_for_v2() {
         let config = WokConfig::default();
+        assert_eq!(config.command_entry_mode, CommandEntryMode::OwnedPrimary);
+        assert_eq!(config.ui_layout, FrontendLayout::V2);
+    }
+
+    #[test]
+    fn test_v1_layout_restores_shell_native_defaults() {
+        let path =
+            std::env::temp_dir().join(format!("wok-config-v1-layout-{}.toml", std::process::id()));
+        std::fs::write(&path, "ui_layout = \"v1\"\n").expect("config should be written");
+
+        let config = WokConfig::load_from(&path).expect("config should load");
+        std::fs::remove_file(&path).ok();
+        assert_eq!(config.ui_layout, FrontendLayout::V1);
         assert_eq!(config.command_entry_mode, CommandEntryMode::ShellNative);
+        assert!(!config.pane_header_visible);
     }
 
     #[test]

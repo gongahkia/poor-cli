@@ -102,6 +102,10 @@ pub enum WorkspaceEffect {
     FocusUp,
     /// Focus the pane below.
     FocusDown,
+    /// Cycle focus to the previous pane in active-tab order.
+    FocusPrevPane,
+    /// Cycle focus to the next pane in active-tab order.
+    FocusNextPane,
     /// Resize the focused split to the left.
     ResizeSplitLeft,
     /// Resize the focused split to the right.

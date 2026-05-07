@@ -306,6 +306,7 @@ struct RenderState {
 /// Window sub-rectangles used by the single-pane runtime.
 #[derive(Clone, Copy, PartialEq)]
 struct UiRects {
+    header: Rect,
     viewport: Rect,
     input: Rect,
 }
@@ -313,6 +314,7 @@ struct UiRects {
 impl Default for UiRects {
     fn default() -> Self {
         Self {
+            header: Rect::new(0.0, 0.0, 0.0, 0.0),
             viewport: Rect::new(0.0, 0.0, 0.0, 0.0),
             input: Rect::new(0.0, 0.0, 0.0, 0.0),
         }
@@ -602,6 +604,25 @@ struct FilePreviewState {
     truncated: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum InspectorDockTab {
+    Inspect,
+    RerunHistory,
+    Diff,
+    Media,
+}
+
+impl InspectorDockTab {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Inspect => "Inspect",
+            Self::RerunHistory => "Rerun History",
+            Self::Diff => "Diff",
+            Self::Media => "Media",
+        }
+    }
+}
+
 struct ScratchBufferState {
     path: PathBuf,
     editor: InputEditor,
@@ -789,6 +810,7 @@ struct SplitDividerDragState {
 enum MouseHoverState {
     Tab(usize),
     TabClose(usize),
+    BlockFooterAction(BlockFooterAction, Rect),
     SplitDivider(Rect),
     FloatingTitle(Rect),
     FloatingResize(Rect),
@@ -1108,6 +1130,8 @@ struct WokHandler {
     settings_editor: Option<SettingsEditorState>,
     file_preview: Option<FilePreviewState>,
     inspector_dock: Option<FilePreviewState>,
+    inspector_dock_tab: InspectorDockTab,
+    inspector_dock_pinned: bool,
     scratch_buffer: Option<ScratchBufferState>,
     context_menu: Option<ContextMenuState>,
     failure_trend_bucket_ms: u64,
@@ -1177,6 +1201,29 @@ fn status_mode_label(app: &WokApp) -> &'static str {
             InputMode::ShellNative => "shell",
         }
     }
+}
+
+fn pane_header_label(pane_id: PaneId, pane: &PaneRuntime, focused: bool) -> String {
+    let cwd = pane
+        .current_cwd
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("~");
+    let branch = pane
+        .app
+        .block_manager
+        .blocks
+        .last()
+        .and_then(|block| block.git_branch.as_deref())
+        .unwrap_or("-");
+    let running = pane
+        .app
+        .block_manager
+        .active_output_block_id()
+        .map_or("", |_| " run");
+    let focus = if focused { ">" } else { " " };
+    format!("{focus} pane {pane_id}  {cwd}  {branch}") + running
 }
 
 fn contextual_status_bindings(handler: &WokHandler, pane: &PaneRuntime) -> Vec<&'static str> {
@@ -1290,6 +1337,8 @@ impl WokHandler {
             settings_editor: None,
             file_preview: None,
             inspector_dock: None,
+            inspector_dock_tab: InspectorDockTab::Inspect,
+            inspector_dock_pinned: false,
             scratch_buffer: None,
             context_menu: None,
             failure_trend_bucket_ms: DEFAULT_FAILURE_TREND_BUCKET_MS,
@@ -1580,6 +1629,7 @@ impl WokHandler {
             1,
             self.font.metrics.cell_height,
             false,
+            self.config.pane_header_visible,
         );
         let (cols, rows) = self
             .font
@@ -1703,6 +1753,7 @@ impl WokHandler {
                 Self::pane_input_lines(pane),
                 self.font.metrics.cell_height,
                 Self::show_input_surface(pane, focused),
+                self.config.pane_header_visible,
             );
             let (cols, rows) = self
                 .font
@@ -2086,7 +2137,7 @@ impl WokHandler {
             (
                 self.active_pane()
                     .map_or_else(Theme::default, |pane| pane.app.theme.clone()),
-                preview.title.clone(),
+                self.inspector_dock_title(preview),
                 preview.path.clone(),
                 preview.help.clone(),
                 preview.editor.render_data(),
@@ -2206,6 +2257,18 @@ impl WokHandler {
                     terminal_surface_alpha,
                 ),
             );
+            if self.config.pane_header_visible {
+                let header_label = pane_header_label(pane_id, pane, focused);
+                render_pane_header(
+                    render,
+                    &mut self.chrome_font,
+                    theme,
+                    pane.ui_rects.header,
+                    &header_label,
+                    focused,
+                    window_opacity,
+                );
+            }
 
             if let Some(replay_mode) = pane.replay_mode.as_ref() {
                 if let Some(snapshot) = pane.replay_store.snapshot(replay_mode.snapshot_index) {
@@ -2383,6 +2446,7 @@ impl WokHandler {
                         visual_effect,
                         typewriter,
                         render_time,
+                        self.config.block_foot_visible,
                     );
                 }
                 row_cache.dirty.clear();
@@ -3537,6 +3601,8 @@ impl WokHandler {
             "font_family": self.config.font_family.clone(),
             "chrome_font_family": self.config.chrome_font_family.clone(),
             "font_size": self.font.font_size,
+            "ui_layout": self.config.ui_layout.as_str(),
+            "pane_header_visible": self.config.pane_header_visible,
             "scrollback_lines": self.config.scrollback_lines,
             "input_position": match self.config.input_position {
                 wok_app::config::InputPosition::Top => "top",
@@ -3551,6 +3617,7 @@ impl WokHandler {
             "tab_bar_side": self.config.tab_bar_side.as_str(),
             "status_bar_side": self.config.status_bar_side.as_str(),
             "timeline_rail_visible": self.config.timeline_rail_visible,
+            "block_foot_visible": self.config.block_foot_visible,
             "recent_keys_visible": self.config.recent_keys.visible,
             "recent_keys_position": self.config.recent_keys.position.as_str(),
             "typewriter_effect_enabled": self.config.typewriter_effect_enabled,
@@ -4232,6 +4299,68 @@ impl WokHandler {
         });
     }
 
+    fn inspector_dock_title(&self, preview: &FilePreviewState) -> String {
+        let pin = if self.inspector_dock_pinned {
+            " pinned"
+        } else {
+            ""
+        };
+        format!(
+            "{} [{} | {} | {} | {}{}]",
+            preview.title,
+            InspectorDockTab::Inspect.label(),
+            InspectorDockTab::RerunHistory.label(),
+            InspectorDockTab::Diff.label(),
+            InspectorDockTab::Media.label(),
+            pin
+        )
+    }
+
+    fn set_inspector_dock_tab(&mut self, tab: InspectorDockTab) {
+        self.inspector_dock_tab = tab;
+        match tab {
+            InspectorDockTab::Inspect => self.open_block_inspector(),
+            InspectorDockTab::RerunHistory => self.open_block_rerun_history(),
+            InspectorDockTab::Diff => self.open_block_rerun_comparison(),
+            InspectorDockTab::Media => {
+                self.open_inspector_media_state();
+            }
+        }
+    }
+
+    fn open_inspector_media_state(&mut self) {
+        self.inspector_dock_tab = InspectorDockTab::Media;
+        let content = self.media_preview.as_ref().map_or_else(
+            || {
+                "# Media Preview\n\nNo media preview is open.\n\nUse a `Preview ...` palette entry for images, GIFs, or MP4s.".to_string()
+            },
+            |preview| {
+                format!(
+                    "# Media Preview\n\nkind: {}\npath: {}\n\nControls: Space play/pause, Left/Right seek, Mod-Alt-M mute.",
+                    preview.kind().label(),
+                    preview.path().display()
+                )
+            },
+        );
+        self.open_inspector_dock_state(
+            "Media Preview",
+            PathBuf::from("media-preview.md"),
+            content,
+            "Esc close  Tab switch  P pin",
+        );
+        self.needs_redraw = true;
+    }
+
+    fn cycle_inspector_dock_tab(&mut self) {
+        let next = match self.inspector_dock_tab {
+            InspectorDockTab::Inspect => InspectorDockTab::RerunHistory,
+            InspectorDockTab::RerunHistory => InspectorDockTab::Diff,
+            InspectorDockTab::Diff => InspectorDockTab::Media,
+            InspectorDockTab::Media => InspectorDockTab::Inspect,
+        };
+        self.set_inspector_dock_tab(next);
+    }
+
     fn open_scratch_buffer(&mut self) {
         self.open_scratch_buffer_named("default");
     }
@@ -4397,6 +4526,7 @@ impl WokHandler {
     }
 
     fn open_block_inspector(&mut self) {
+        self.inspector_dock_tab = InspectorDockTab::Inspect;
         let Some((path, content)) = self.active_pane().and_then(|pane| {
             let block = pane.app.selected_or_latest_block()?;
             let output = extract_block_output_text(&pane.terminal, block);
@@ -4437,6 +4567,7 @@ impl WokHandler {
     }
 
     fn open_block_rerun_history(&mut self) {
+        self.inspector_dock_tab = InspectorDockTab::RerunHistory;
         let Some(command) = self
             .active_pane()
             .and_then(|pane| pane.app.selected_or_latest_block())
@@ -4487,6 +4618,7 @@ impl WokHandler {
     }
 
     fn open_block_rerun_comparison(&mut self) {
+        self.inspector_dock_tab = InspectorDockTab::Diff;
         let Some(command) = self
             .active_pane()
             .and_then(|pane| pane.app.selected_or_latest_block())
@@ -5816,6 +5948,46 @@ impl WokHandler {
                 self.needs_redraw = true;
                 return true;
             }
+            KeyAction::Tab => {
+                self.cycle_inspector_dock_tab();
+                return true;
+            }
+            KeyAction::Char('1')
+                if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+            {
+                self.set_inspector_dock_tab(InspectorDockTab::Inspect);
+                return true;
+            }
+            KeyAction::Char('2')
+                if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+            {
+                self.set_inspector_dock_tab(InspectorDockTab::RerunHistory);
+                return true;
+            }
+            KeyAction::Char('3')
+                if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+            {
+                self.set_inspector_dock_tab(InspectorDockTab::Diff);
+                return true;
+            }
+            KeyAction::Char('4')
+                if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+            {
+                self.set_inspector_dock_tab(InspectorDockTab::Media);
+                return true;
+            }
+            KeyAction::Char('p')
+                if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+            {
+                self.inspector_dock_pinned = !self.inspector_dock_pinned;
+                self.status_message = Some(if self.inspector_dock_pinned {
+                    "Inspector dock pinned to selection".to_string()
+                } else {
+                    "Inspector dock unpinned".to_string()
+                });
+                self.needs_redraw = true;
+                return true;
+            }
             KeyAction::Copy => {
                 let text = self
                     .inspector_dock
@@ -6302,6 +6474,23 @@ impl WokHandler {
             self.needs_redraw = true;
             return;
         }
+        if matches!(action, Action::ToggleBlockFootStrip) {
+            self.config.block_foot_visible = !self.config.block_foot_visible;
+            for pane in self.panes.values_mut() {
+                pane.app.config.block_foot_visible = self.config.block_foot_visible;
+                pane.row_cache.invalidate();
+            }
+            self.status_message = Some(format!(
+                "Block foot strip {}",
+                if self.config.block_foot_visible {
+                    "on"
+                } else {
+                    "off"
+                }
+            ));
+            self.needs_redraw = true;
+            return;
+        }
 
         if self.active_pane().is_some_and(|pane| {
             pane.terminal.state.is_alt_screen()
@@ -6346,6 +6535,25 @@ impl WokHandler {
             .active_pane_mut()
             .map_or_else(ActionEffects::new, |pane| pane.app.handle_action(&action));
         self.apply_action_effects(effects);
+        if self.inspector_dock_pinned
+            && self.inspector_dock.is_some()
+            && matches!(
+                action,
+                Action::BlockPrev
+                    | Action::BlockNext
+                    | Action::BlockPrevBookmark
+                    | Action::BlockNextBookmark
+                    | Action::BlockPrevFailed
+                    | Action::BlockNextFailed
+            )
+        {
+            match self.inspector_dock_tab {
+                InspectorDockTab::Inspect => self.open_block_inspector(),
+                InspectorDockTab::RerunHistory => self.open_block_rerun_history(),
+                InspectorDockTab::Diff => self.open_block_rerun_comparison(),
+                InspectorDockTab::Media => {}
+            }
+        }
         self.needs_redraw = true;
     }
 
@@ -7256,6 +7464,18 @@ impl WokHandler {
                             }
                             self.change_active_pane_directory(&path);
                         }
+                        PaletteAction::TypedCommand(command_id) => {
+                            let query = self
+                                .active_pane()
+                                .map(|pane| pane.app.input_editor.buffer.text())
+                                .unwrap_or_default();
+                            if !self.execute_typed_palette_command(&command_id, &query) {
+                                self.status_message = Some(format!(
+                                    "Type an argument for {}",
+                                    typed_palette_command_label(&command_id)
+                                ));
+                            }
+                        }
                     }
                 } else {
                     let query = self
@@ -8097,6 +8317,8 @@ impl WokHandler {
         m.insert("font_size", format!("{}", c.font_size));
         m.insert("input_position", format!("{:?}", c.input_position));
         m.insert("command_entry_mode", format!("{:?}", c.command_entry_mode));
+        m.insert("ui_layout", c.ui_layout.as_str().to_string());
+        m.insert("pane_header_visible", c.pane_header_visible.to_string());
         m.insert("scrollback_lines", c.scrollback_lines.to_string());
         m.insert("cursor_style", format!("{:?}", c.cursor_style));
         m.insert("cursor_blink", c.cursor_blink.to_string());
@@ -8158,6 +8380,7 @@ impl WokHandler {
             "focused_pane_border_width",
             format!("{}", c.focused_pane_border_width),
         );
+        m.insert("block_foot_visible", c.block_foot_visible.to_string());
         m.insert(
             "floating_pane_title_height",
             format!("{}", c.floating_pane_title_height),
@@ -8657,6 +8880,7 @@ impl WokHandler {
         }
 
         let mut inserted_action_ids = HashSet::new();
+        entries.extend(typed_palette_command_entries());
         for action in palette_actions_catalog() {
             let Some(action_id) = action_to_palette_id(&action) else {
                 continue;
@@ -8934,6 +9158,12 @@ impl WokHandler {
             return;
         }
 
+        if let Some((command_id, _argument)) = parse_typed_palette_query(trimmed) {
+            if self.execute_typed_palette_command(command_id, trimmed) {
+                return;
+            }
+        }
+
         let workflow_name = trimmed.strip_prefix('@').unwrap_or(trimmed).trim();
         if let Some(workflow) = self.workflow_store.by_name(workflow_name).cloned() {
             if let Some(active_pane) = self.active_pane_mut() {
@@ -8975,6 +9205,39 @@ impl WokHandler {
                 self.run_plugin_hook("command_submitted", &payload);
             }
         }
+    }
+
+    fn execute_typed_palette_command(&mut self, command_id: &str, query: &str) -> bool {
+        let Some(argument) = typed_palette_argument(command_id, query) else {
+            return false;
+        };
+        if let Some(active_pane) = self.active_pane_mut() {
+            active_pane.app.close_command_palette();
+            active_pane.app.input_mode = InputMode::OwnedInput;
+        }
+        match command_id {
+            "search" => {
+                if let Some(active_pane) = self.active_pane_mut() {
+                    active_pane.app.global_search.activate();
+                    active_pane.app.global_search.search_input = argument;
+                }
+                self.refresh_global_search();
+                self.scroll_to_current_search_match();
+            }
+            "save_session" => self.handle_action(Action::SaveSession(argument)),
+            "load_session" => self.handle_action(Action::LoadSession(argument)),
+            "scratch" => self.open_scratch_buffer_named(&argument),
+            "preview" => self.preview_file_path(PathBuf::from(argument)),
+            "open" => self.open_path_externally(&PathBuf::from(argument)),
+            "tail" => self.tail_path_in_split(&PathBuf::from(argument)),
+            "cd" => self.change_active_pane_directory(&argument),
+            _ => return false,
+        }
+        if let Some(window) = &self.window {
+            self.sync_workspace_layout(window.inner_size());
+        }
+        self.needs_redraw = true;
+        true
     }
 
     fn focus_pane_at_point(&mut self, x: f64, y: f64) -> bool {
@@ -9928,6 +10191,38 @@ impl WokHandler {
         true
     }
 
+    fn handle_selected_block_footer_action_press(
+        &mut self,
+        button: MouseButton,
+        x: f64,
+        y: f64,
+    ) -> bool {
+        if button != MouseButton::Left {
+            return false;
+        }
+        let Some((pane_id, action, _rect)) = self.selected_block_footer_action_at(x, y) else {
+            return false;
+        };
+        let search = self.active_search_state();
+        if self.workspace.focus_pane(pane_id) {
+            if let Some(window) = &self.window {
+                self.sync_workspace_layout(window.inner_size());
+            }
+        }
+        if let Some(search) = search {
+            self.install_search_state_on_active_pane(search);
+            self.refresh_global_search();
+        }
+        match action {
+            BlockFooterAction::Rerun => self.handle_action(Action::BlockRerun),
+            BlockFooterAction::History => self.handle_action(Action::OpenBlockRerunHistory),
+            BlockFooterAction::Diff => self.handle_action(Action::OpenBlockRerunComparison),
+            BlockFooterAction::Copy => self.handle_action(Action::BlockCopy),
+            BlockFooterAction::Inspect => self.handle_action(Action::OpenBlockInspector),
+        }
+        true
+    }
+
     fn focus_block_in_pane(&mut self, pane_id: PaneId, block_id: u64, row: usize) {
         if self.workspace.focus_pane(pane_id) {
             if let Some(window) = &self.window {
@@ -9950,6 +10245,14 @@ impl WokHandler {
                 .terminal
                 .state
                 .set_display_offset(active_pane.viewport.display_offset());
+        }
+        if self.inspector_dock_pinned && self.inspector_dock.is_some() {
+            match self.inspector_dock_tab {
+                InspectorDockTab::Inspect => self.open_block_inspector(),
+                InspectorDockTab::RerunHistory => self.open_block_rerun_history(),
+                InspectorDockTab::Diff => self.open_block_rerun_comparison(),
+                InspectorDockTab::Media => {}
+            }
         }
         self.needs_redraw = true;
     }
@@ -10042,6 +10345,9 @@ impl WokHandler {
         if let Some(tab_index) = self.tab_at_point(x, y) {
             return Some(MouseHoverState::Tab(tab_index));
         }
+        if let Some((_pane_id, action, rect)) = self.selected_block_footer_action_at(x, y) {
+            return Some(MouseHoverState::BlockFooterAction(action, rect));
+        }
 
         if let Some(pane_id) =
             self.workspace
@@ -10085,6 +10391,41 @@ impl WokHandler {
         }
 
         None
+    }
+
+    fn selected_block_footer_action_at(
+        &self,
+        x: f64,
+        y: f64,
+    ) -> Option<(PaneId, BlockFooterAction, Rect)> {
+        if !self.config.block_foot_visible {
+            return None;
+        }
+        let pane_id =
+            self.workspace
+                .pane_at_point(self.chrome_rects.content, x as f32, y as f32)?;
+        let pane = self.panes.get(&pane_id)?;
+        let selected_block = pane
+            .app
+            .block_navigator
+            .selected_block(&pane.app.block_manager)?;
+        let visible_start = pane.terminal.state.visible_start_row();
+        let visible_end = visible_start + pane.terminal.state.screen_lines();
+        if !(visible_start..visible_end).contains(&selected_block.output_end_row) {
+            return None;
+        }
+        let render_row = selected_block.output_end_row.saturating_sub(visible_start);
+        let row_y = pane.ui_rects.viewport.y + render_row as f32 * self.font.metrics.cell_height;
+        block_footer_action_rects(
+            selected_block,
+            pane.ui_rects.viewport,
+            row_y,
+            self.font.metrics.cell_width,
+            self.font.metrics.cell_height,
+        )
+        .into_iter()
+        .find(|entry| point_in_rect(entry.rect, x, y))
+        .map(|entry| (pane_id, entry.action, entry.rect))
     }
 
     fn update_mouse_hover(&mut self, x: f64, y: f64) -> Option<MouseHoverState> {
@@ -10689,6 +11030,9 @@ impl AppHandler for WokHandler {
                     return;
                 }
                 if self.handle_timeline_rail_mouse_press(button, x, y) {
+                    return;
+                }
+                if self.handle_selected_block_footer_action_press(button, x, y) {
                     return;
                 }
                 if button == MouseButton::Left && self.start_split_divider_drag_at(x, y) {
@@ -12367,6 +12711,8 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::FocusRight => "focus_right".to_string(),
         Action::FocusUp => "focus_up".to_string(),
         Action::FocusDown => "focus_down".to_string(),
+        Action::FocusPrevPane => "focus_prev_pane".to_string(),
+        Action::FocusNextPane => "focus_next_pane".to_string(),
         Action::ResizeSplitLeft => "resize_split_left".to_string(),
         Action::ResizeSplitRight => "resize_split_right".to_string(),
         Action::ResizeSplitUp => "resize_split_up".to_string(),
@@ -12401,6 +12747,7 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::BlockExportJson => "block_export_json".to_string(),
         Action::ToggleFailureTrendsPanel => "toggle_failure_trends_panel".to_string(),
         Action::ToggleWorkspaceInsightsPanel => "toggle_workspace_insights_panel".to_string(),
+        Action::ToggleBlockFootStrip => "toggle_block_foot_strip".to_string(),
         Action::SearchGlobal => "search_global".to_string(),
         Action::EnterViMode => "enter_vi_mode".to_string(),
         Action::CommandPalette => "command_palette".to_string(),
@@ -12503,6 +12850,7 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::BlockSaveWorkflow,
         Action::BlockExportMarkdown,
         Action::BlockExportJson,
+        Action::ToggleBlockFootStrip,
         Action::ToggleFailureTrendsPanel,
         Action::ToggleWorkspaceInsightsPanel,
         Action::GitChanges,
@@ -12516,6 +12864,8 @@ fn palette_actions_catalog() -> Vec<Action> {
         Action::BlockNextBookmark,
         Action::BlockCopy,
         Action::BlockCopyCommand,
+        Action::FocusPrevPane,
+        Action::FocusNextPane,
         Action::BlockCopyOutput,
         Action::BlockCollapse,
         Action::ToggleBroadcast,
@@ -12608,6 +12958,8 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::FocusRight => "Move focus to the pane on the right",
         Action::FocusUp => "Move focus to the pane above",
         Action::FocusDown => "Move focus to the pane below",
+        Action::FocusPrevPane => "Cycle focus to the previous pane",
+        Action::FocusNextPane => "Cycle focus to the next pane",
         Action::ResizeSplitLeft => "Grow the active pane to the left",
         Action::ResizeSplitRight => "Grow the active pane to the right",
         Action::ResizeSplitUp => "Grow the active pane upward",
@@ -12642,6 +12994,7 @@ fn action_palette_description(action: &Action, keybinding: &str) -> String {
         Action::BlockExportJson => "Export selected block metadata and output as JSON",
         Action::ToggleFailureTrendsPanel => "Open failure trends analytics panel",
         Action::ToggleWorkspaceInsightsPanel => "Open workspace command insights panel",
+        Action::ToggleBlockFootStrip => "Show or hide the selected block foot strip",
         Action::SearchGlobal => "Search text across the workspace",
         Action::EnterViMode => "Enable vi-style navigation mode",
         Action::CommandPalette => "Open action/workflow palette (`>` filters actions)",
@@ -13279,6 +13632,105 @@ fn palette_uses_static_entries(palette: &CommandPaletteState) -> bool {
     })
 }
 
+fn typed_palette_command_entries() -> Vec<PaletteEntry> {
+    [
+        (
+            "search",
+            "Search <query>",
+            "Run workspace search for typed query",
+        ),
+        (
+            "save_session",
+            "Save Session <name>",
+            "Save workspace snapshot with typed name",
+        ),
+        (
+            "load_session",
+            "Load Session <name>",
+            "Load workspace snapshot with typed name",
+        ),
+        (
+            "scratch",
+            "Open Scratch <name>",
+            "Open or create a named scratch buffer",
+        ),
+        (
+            "preview",
+            "Preview Path <path>",
+            "Preview a typed filesystem path",
+        ),
+        (
+            "open",
+            "Open Path <path>",
+            "Open a typed filesystem path externally",
+        ),
+        (
+            "tail",
+            "Tail Path <path>",
+            "Tail a typed path in a new split",
+        ),
+        (
+            "cd",
+            "Change Directory <path>",
+            "Change active pane directory",
+        ),
+    ]
+    .into_iter()
+    .map(|(id, label, description)| PaletteEntry {
+        label: label.to_string(),
+        description: description.to_string(),
+        category: PaletteCategory::Action,
+        score: 0.0,
+        action: PaletteAction::TypedCommand(id.to_string()),
+    })
+    .collect()
+}
+
+fn typed_palette_command_label(command_id: &str) -> &'static str {
+    match command_id {
+        "search" => "Search",
+        "save_session" => "Save Session",
+        "load_session" => "Load Session",
+        "scratch" => "Open Scratch",
+        "preview" => "Preview Path",
+        "open" => "Open Path",
+        "tail" => "Tail Path",
+        "cd" => "Change Directory",
+        _ => "typed command",
+    }
+}
+
+fn typed_palette_argument(command_id: &str, query: &str) -> Option<String> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let argument = parse_typed_palette_query(trimmed)
+        .and_then(|(parsed_id, argument)| (parsed_id == command_id).then_some(argument))
+        .unwrap_or(trimmed);
+    let argument = argument.trim();
+    (!argument.is_empty()).then(|| argument.to_string())
+}
+
+fn parse_typed_palette_query(query: &str) -> Option<(&'static str, &str)> {
+    let trimmed = query.trim();
+    let (head, tail) = trimmed
+        .split_once(char::is_whitespace)
+        .map_or((trimmed, ""), |(head, tail)| (head, tail.trim_start()));
+    let command = match head.to_ascii_lowercase().replace('-', "_").as_str() {
+        "search" | "find" => "search",
+        "save" | "save_session" | "snapshot" => "save_session",
+        "load" | "load_session" | "workspace" => "load_session",
+        "scratch" | "open_scratch" => "scratch",
+        "preview" | "preview_path" => "preview",
+        "open" | "open_path" => "open",
+        "tail" | "tail_path" => "tail",
+        "cd" | "chdir" => "cd",
+        _ => return None,
+    };
+    (!tail.is_empty()).then_some((command, tail))
+}
+
 fn point_in_rect(rect: Rect, x: f64, y: f64) -> bool {
     rect.w > 0.0
         && rect.h > 0.0
@@ -13346,6 +13798,7 @@ fn render_mouse_hover_affordance(
         MouseHoverState::SplitDivider(rect) => (rect, [0.86, 0.78, 0.30, 0.72]),
         MouseHoverState::FloatingTitle(rect) => (rect, [0.45, 0.58, 0.95, 0.18]),
         MouseHoverState::FloatingResize(rect) => (rect, [0.86, 0.78, 0.30, 0.55]),
+        MouseHoverState::BlockFooterAction(_action, rect) => (rect, [0.86, 0.78, 0.30, 0.30]),
         MouseHoverState::Tab(_) | MouseHoverState::TabClose(_) => return,
     };
     render.batch.push_bg_quad(
@@ -14406,6 +14859,59 @@ mod tests {
         assert!(catalog.contains(&Action::OpenBlockInspector));
         assert!(catalog.contains(&Action::OpenBlockRerunComparison));
         assert!(catalog.contains(&Action::OpenWorkspaceBrowser));
+    }
+
+    #[test]
+    fn test_typed_palette_command_entries_are_discoverable() {
+        let entries = typed_palette_command_entries();
+
+        assert!(entries.iter().any(|entry| {
+            entry.label == "Search <query>"
+                && entry.action == PaletteAction::TypedCommand("search".to_string())
+        }));
+        assert!(entries.iter().any(|entry| {
+            entry.label == "Change Directory <path>"
+                && entry.action == PaletteAction::TypedCommand("cd".to_string())
+        }));
+    }
+
+    #[test]
+    fn test_typed_palette_query_parser_supports_aliases() {
+        assert_eq!(
+            parse_typed_palette_query("search cargo test"),
+            Some(("search", "cargo test"))
+        );
+        assert_eq!(
+            parse_typed_palette_query("find renderer"),
+            Some(("search", "renderer"))
+        );
+        assert_eq!(
+            parse_typed_palette_query("save demo"),
+            Some(("save_session", "demo"))
+        );
+        assert_eq!(
+            parse_typed_palette_query("preview-path ./image.png"),
+            Some(("preview", "./image.png"))
+        );
+        assert_eq!(parse_typed_palette_query("search"), None);
+        assert_eq!(parse_typed_palette_query("unknown value"), None);
+    }
+
+    #[test]
+    fn test_typed_palette_argument_accepts_direct_or_prefixed_text() {
+        assert_eq!(
+            typed_palette_argument("search", "cargo check"),
+            Some("cargo check".to_string())
+        );
+        assert_eq!(
+            typed_palette_argument("search", "search cargo check"),
+            Some("cargo check".to_string())
+        );
+        assert_eq!(
+            typed_palette_argument("save_session", "save release-demo"),
+            Some("release-demo".to_string())
+        );
+        assert_eq!(typed_palette_argument("search", "   "), None);
     }
 
     #[test]

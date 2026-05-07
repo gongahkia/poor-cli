@@ -17,14 +17,20 @@
 ---@class wok.Config
 ---@field shell string                       Shell name ("bash"/"zsh"/"fish"/"powershell"/"wsl:<distro>")
 ---@field font_family string
+---@field chrome_font_family string
 ---@field font_size number
+---@field ui_layout "v1" | "v2"
+---@field pane_header_visible boolean
 ---@field scrollback_lines integer
 ---@field input_position "top" | "bottom"
+---@field command_entry_mode "shell_native" | "owned_primary"
 ---@field theme_path string?
 ---@field window_opacity number              0.0–1.0
 ---@field tab_bar_orientation "horizontal" | "vertical"
 ---@field tab_bar_side "top" | "bottom" | "left" | "right"
 ---@field status_bar_side "top" | "bottom" | "left" | "right"
+---@field timeline_rail_visible boolean
+---@field block_foot_visible boolean
 ---@field recent_keys_visible boolean
 ---@field recent_keys_position string
 ---@field close_on_shell_exit boolean
