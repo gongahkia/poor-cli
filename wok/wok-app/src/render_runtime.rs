@@ -2364,6 +2364,16 @@ mod tests {
     }
 
     #[test]
+    fn prompt_guide_chars_are_not_block_content() {
+        for ch in ['│', '┃', '║', '▏', '┊'] {
+            assert!(is_prompt_guide_char(ch));
+        }
+        for ch in ['a', '$', '.', '1'] {
+            assert!(!is_prompt_guide_char(ch));
+        }
+    }
+
+    #[test]
     fn timeline_maps_rows_into_rail_bounds() {
         let rect = Rect::new(2.0, 10.0, 14.0, 100.0);
 
@@ -4773,8 +4783,36 @@ pub(crate) fn spans_overlap(start_a: usize, end_a: usize, start_b: usize, end_b:
 }
 
 fn block_row_has_rendered_content(terminal: &Terminal, block: &Block, absolute_row: usize) -> bool {
-    absolute_row == block.output_start_row
-        || !terminal.state.row_text(absolute_row).trim().is_empty()
+    absolute_row == block.output_start_row || row_has_block_content(terminal, absolute_row)
+}
+
+fn row_has_block_content(terminal: &Terminal, absolute_row: usize) -> bool {
+    (0..terminal.state.columns()).any(|col| {
+        let ch = terminal.state.cell_at_absolute(absolute_row, col).character;
+        ch != ' ' && ch != '\0' && !is_prompt_guide_char(ch)
+    })
+}
+
+fn is_prompt_guide_char(ch: char) -> bool {
+    matches!(
+        ch,
+        '│' | '┃'
+            | '║'
+            | '▏'
+            | '▎'
+            | '▍'
+            | '▌'
+            | '▋'
+            | '▊'
+            | '▉'
+            | '▐'
+            | '╎'
+            | '╏'
+            | '┆'
+            | '┇'
+            | '┊'
+            | '┋'
+    )
 }
 
 pub(crate) fn collect_row_cells(
