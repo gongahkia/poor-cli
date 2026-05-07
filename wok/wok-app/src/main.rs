@@ -179,6 +179,17 @@ enum CliCommand {
         #[arg(long, default_value_t = 1.0)]
         speed: f64,
     },
+    /// Record bytes from stdin into a `.wokcast` file for later replay.
+    Record {
+        /// Output wokcast path.
+        file: std::path::PathBuf,
+        /// Terminal columns stored in the cast header.
+        #[arg(long, default_value_t = 80)]
+        cols: u16,
+        /// Terminal rows stored in the cast header.
+        #[arg(long, default_value_t = 24)]
+        rows: u16,
+    },
     /// Guided 4-step onboarding: detect shell → seed config → install → smoke.
     Onboard {
         /// Target shell: auto, bash, zsh, or fish.
@@ -592,6 +603,32 @@ struct FailureTrendEntry {
 struct SettingsEditorState {
     path: PathBuf,
     editor: InputEditor,
+    form: Option<SettingsFormState>,
+}
+
+#[derive(Clone)]
+struct SettingsFormState {
+    fields: Vec<SettingsFormField>,
+    selected: usize,
+    draft: WokConfig,
+    original: WokConfig,
+    dirty: bool,
+}
+
+#[derive(Clone)]
+struct SettingsFormField {
+    name: &'static str,
+    kind: SettingsControlKind,
+}
+
+#[derive(Clone, Copy)]
+enum SettingsControlKind {
+    Bool,
+    Enum(&'static [&'static str]),
+    F32 { min: f32, max: f32, step: f32 },
+    Usize { min: usize, max: usize, step: usize },
+    Text,
+    Raw,
 }
 
 struct FilePreviewState {
@@ -2103,11 +2140,21 @@ impl WokHandler {
             })
         });
         let settings_editor_overlay = self.settings_editor.as_ref().map(|settings| {
+            let (title, help) = if settings.form.is_some() {
+                (
+                    "Settings Form",
+                    "Up/Down select  Left/Right change  A apply  D discard  R reset  T TOML",
+                )
+            } else {
+                ("Settings", "Esc close  Mod+S save  Enter newline")
+            };
             (
                 self.active_pane()
                     .map_or_else(Theme::default, |pane| pane.app.theme.clone()),
                 settings.path.clone(),
                 settings.editor.render_data(),
+                title,
+                help,
             )
         });
         let file_preview_overlay = self.file_preview.as_ref().map(|preview| {
@@ -2873,15 +2920,15 @@ impl WokHandler {
                 window_opacity,
             );
         }
-        if let Some((theme, path, input)) = settings_editor_overlay.as_ref() {
+        if let Some((theme, path, input, title, help)) = settings_editor_overlay.as_ref() {
             render_settings_editor(
                 render,
                 &mut self.chrome_font,
                 theme,
                 dock_rect,
-                "Settings",
+                title,
                 path,
-                "Esc close  Mod+S save  Enter newline",
+                help,
                 input,
                 cursor_shape,
                 cursor_visible,
@@ -3489,27 +3536,6 @@ impl WokHandler {
             .values()
             .filter(|pane| !pane.terminal.exited)
             .count()
-    }
-
-    /// Toggle the active pane's "show only failed" block filter using
-    /// `wok_blocks::filter::failed_only`. Reports the resulting count.
-    fn toggle_failed_only_filter(&mut self) {
-        let Some(pane_id) = self.active_pane_id() else {
-            self.status_message = Some("no active pane".to_string());
-            return;
-        };
-        let blocks_snapshot: Vec<_> = self
-            .panes
-            .get(&pane_id)
-            .map(|p| p.app.block_manager.blocks.clone())
-            .unwrap_or_default();
-        let filter = wok_blocks::filter::failed_only();
-        let matched = wok_blocks::filter::apply(&blocks_snapshot, &filter);
-        if matched.is_empty() {
-            self.status_message = Some("no failed blocks in this pane".to_string());
-        } else {
-            self.status_message = Some(format!("{} failed block(s) in this pane", matched.len()));
-        }
     }
 
     fn handle_shell_exit_transitions(&mut self, exited_pane_ids: &[PaneId]) -> bool {
@@ -5674,10 +5700,60 @@ impl WokHandler {
     }
 
     fn open_settings(&mut self) {
-        self.open_settings_at_field(None);
+        self.open_settings_form(None);
     }
 
     fn open_settings_at_field(&mut self, field_name: Option<&str>) {
+        self.open_settings_form(field_name);
+    }
+
+    fn open_settings_form(&mut self, field_name: Option<&str>) {
+        match ensure_settings_file() {
+            Ok(path) => {
+                self.close_bottom_dock_surfaces();
+                let fields = settings_form_fields();
+                let selected = field_name
+                    .and_then(|name| fields.iter().position(|field| field.name == name))
+                    .unwrap_or(0);
+                let original = self.config.clone();
+                let form = SettingsFormState {
+                    fields,
+                    selected,
+                    draft: original.clone(),
+                    original,
+                    dirty: false,
+                };
+                let mut editor = InputEditor::new(
+                    self.config.shell.clone(),
+                    wok_input::editor::InputPosition::Bottom,
+                );
+                refresh_settings_form_editor(&mut editor, &form);
+                editor.is_active = true;
+                self.settings_editor = Some(SettingsEditorState {
+                    path: path.clone(),
+                    editor,
+                    form: Some(form.clone()),
+                });
+                self.status_message = Some(if let Some(field_name) = field_name {
+                    format!(
+                        "Settings form opened at '{field_name}' (Left/Right change, A apply, D discard, T TOML)"
+                    )
+                } else {
+                    format!(
+                        "Settings form opened: {} (Left/Right change, A apply, D discard, T TOML)",
+                        path.display()
+                    )
+                });
+                self.needs_redraw = true;
+            }
+            Err(error) => {
+                warn!("failed to prepare settings file: {error}");
+                self.status_message = Some(format!("Settings unavailable: {error}"));
+            }
+        }
+    }
+
+    fn open_settings_toml_at_field(&mut self, field_name: Option<&str>) {
         match ensure_settings_file() {
             Ok(path) => match std::fs::read_to_string(&path) {
                 Ok(content) => {
@@ -5700,6 +5776,7 @@ impl WokHandler {
                     self.settings_editor = Some(SettingsEditorState {
                         path: path.clone(),
                         editor,
+                        form: None,
                     });
                     self.status_message = Some(if let Some(field_name) = field_name {
                         format!(
@@ -5725,6 +5802,24 @@ impl WokHandler {
         }
     }
 
+    fn switch_settings_form_to_toml(&mut self) {
+        let field_name = self
+            .settings_editor
+            .as_ref()
+            .and_then(|settings| settings.form.as_ref())
+            .and_then(|form| form.fields.get(form.selected))
+            .map(|field| field.name.to_string());
+        let original = self
+            .settings_editor
+            .as_ref()
+            .and_then(|settings| settings.form.as_ref())
+            .map(|form| form.original.clone());
+        if let Some(original) = original {
+            self.apply_runtime_config_preview(&original);
+        }
+        self.open_settings_toml_at_field(field_name.as_deref());
+    }
+
     fn reset_settings_to_defaults(&mut self) {
         match setup_ops::reset_config_file() {
             Ok(path) => {
@@ -5732,7 +5827,12 @@ impl WokHandler {
                 self.reload_configuration();
                 if let Some(settings) = self.settings_editor.as_mut() {
                     if settings.path == path {
-                        if let Some(content) = content {
+                        if let Some(form) = settings.form.as_mut() {
+                            form.original = self.config.clone();
+                            form.draft = self.config.clone();
+                            form.dirty = false;
+                            refresh_settings_form_editor(&mut settings.editor, form);
+                        } else if let Some(content) = content {
                             settings.editor.buffer.set_text(&content);
                         }
                     } else {
@@ -5752,6 +5852,14 @@ impl WokHandler {
     }
 
     fn save_settings_editor(&mut self) {
+        if self
+            .settings_editor
+            .as_ref()
+            .is_some_and(|settings| settings.form.is_some())
+        {
+            self.apply_settings_form();
+            return;
+        }
         let Some(settings) = self.settings_editor.as_ref() else {
             return;
         };
@@ -5768,6 +5876,116 @@ impl WokHandler {
                 self.status_message = Some(format!("Failed to save settings: {error}"));
             }
         }
+    }
+
+    fn apply_settings_form(&mut self) {
+        let Some((path, form)) = self.settings_editor.as_ref().and_then(|settings| {
+            settings
+                .form
+                .as_ref()
+                .map(|form| (settings.path.clone(), form.clone()))
+        }) else {
+            return;
+        };
+        match write_settings_form_draft(&path, &form.original, &form.draft) {
+            Ok(()) => {
+                self.reload_configuration();
+                if let Some(settings) = self.settings_editor.as_mut() {
+                    if let Some(form) = settings.form.as_mut() {
+                        form.original = self.config.clone();
+                        form.draft = self.config.clone();
+                        form.dirty = false;
+                        refresh_settings_form_editor(&mut settings.editor, form);
+                    }
+                }
+                self.status_message = Some(format!("Applied settings ({})", path.display()));
+                self.needs_redraw = true;
+            }
+            Err(error) => {
+                warn!(
+                    "failed to apply settings form '{}': {error}",
+                    path.display()
+                );
+                self.status_message = Some(format!("Failed to apply settings: {error}"));
+                self.needs_redraw = true;
+            }
+        }
+    }
+
+    fn discard_settings_form(&mut self) {
+        let Some(original) = self
+            .settings_editor
+            .as_ref()
+            .and_then(|settings| settings.form.as_ref())
+            .map(|form| form.original.clone())
+        else {
+            return;
+        };
+        self.apply_runtime_config_preview(&original);
+        self.settings_editor = None;
+        self.status_message = Some("Discarded settings preview".to_string());
+        self.needs_redraw = true;
+    }
+
+    fn update_settings_form_selection(&mut self, delta: isize) {
+        if let Some(settings) = self.settings_editor.as_mut() {
+            if let Some(form) = settings.form.as_mut() {
+                let len = form.fields.len();
+                if len > 0 {
+                    form.selected = (form.selected as isize + delta)
+                        .clamp(0, len.saturating_sub(1) as isize)
+                        as usize;
+                    refresh_settings_form_editor(&mut settings.editor, form);
+                    self.needs_redraw = true;
+                }
+            }
+        }
+    }
+
+    fn adjust_settings_form_field(&mut self, direction: isize) {
+        let mut next_config = None;
+        if let Some(settings) = self.settings_editor.as_mut() {
+            if let Some(form) = settings.form.as_mut() {
+                if let Some(field) = form.fields.get(form.selected).cloned() {
+                    if adjust_settings_draft_field(&mut form.draft, &field, direction) {
+                        form.dirty = form.draft_signature() != form.original_signature();
+                        refresh_settings_form_editor(&mut settings.editor, form);
+                        next_config = Some(form.draft.clone());
+                    } else {
+                        self.status_message =
+                            Some(format!("{} is raw-only; press T to edit TOML", field.name));
+                    }
+                }
+            }
+        }
+        if let Some(config) = next_config {
+            self.apply_runtime_config_preview(&config);
+            self.status_message = Some("Previewing settings draft".to_string());
+        }
+        self.needs_redraw = true;
+    }
+
+    fn reset_selected_settings_field(&mut self) {
+        let defaults = WokConfig::default();
+        let mut next_config = None;
+        if let Some(settings) = self.settings_editor.as_mut() {
+            if let Some(form) = settings.form.as_mut() {
+                if let Some(field) = form.fields.get(form.selected).cloned() {
+                    if copy_settings_field(&defaults, &mut form.draft, field.name) {
+                        form.dirty = form.draft_signature() != form.original_signature();
+                        refresh_settings_form_editor(&mut settings.editor, form);
+                        next_config = Some(form.draft.clone());
+                    } else {
+                        self.status_message =
+                            Some(format!("{} cannot reset from the form", field.name));
+                    }
+                }
+            }
+        }
+        if let Some(config) = next_config {
+            self.apply_runtime_config_preview(&config);
+        }
+        self.needs_redraw = true;
     }
 
     fn copy_settings_selection_to_clipboard(&mut self) {
@@ -6099,6 +6317,61 @@ impl WokHandler {
             return false;
         }
 
+        if self
+            .settings_editor
+            .as_ref()
+            .is_some_and(|settings| settings.form.is_some())
+        {
+            match event.action {
+                KeyAction::Escape => {
+                    self.discard_settings_form();
+                    return true;
+                }
+                KeyAction::ArrowUp => {
+                    self.update_settings_form_selection(-1);
+                    return true;
+                }
+                KeyAction::ArrowDown => {
+                    self.update_settings_form_selection(1);
+                    return true;
+                }
+                KeyAction::ArrowLeft => {
+                    self.adjust_settings_form_field(-1);
+                    return true;
+                }
+                KeyAction::ArrowRight | KeyAction::Enter | KeyAction::Char(' ') => {
+                    self.adjust_settings_form_field(1);
+                    return true;
+                }
+                KeyAction::Char('a') | KeyAction::Char('A') => {
+                    self.apply_settings_form();
+                    return true;
+                }
+                KeyAction::Char('d') | KeyAction::Char('D') => {
+                    self.discard_settings_form();
+                    return true;
+                }
+                KeyAction::Char('r') | KeyAction::Char('R') => {
+                    self.reset_selected_settings_field();
+                    return true;
+                }
+                KeyAction::Char('t') | KeyAction::Char('T') => {
+                    self.switch_settings_form_to_toml();
+                    return true;
+                }
+                KeyAction::Char('s') | KeyAction::Char('S')
+                    if platform_modifier_active(event.modifiers) =>
+                {
+                    self.apply_settings_form();
+                    return true;
+                }
+                _ => {
+                    self.needs_redraw = true;
+                    return true;
+                }
+            }
+        }
+
         match event.action {
             KeyAction::Escape => {
                 self.settings_editor = None;
@@ -6187,6 +6460,42 @@ impl WokHandler {
         }
         self.needs_redraw = true;
         true
+    }
+
+    fn apply_runtime_config_preview(&mut self, config: &WokConfig) {
+        self.config = config.clone();
+        self.trigger_engine = trigger_engine_from_config(config);
+        self.layout_presets = default_layout_presets();
+        self.layout_presets.extend(config.layout_presets.clone());
+        self.layout_index = self
+            .layout_index
+            .min(self.layout_presets.len().saturating_sub(1));
+        self.font = FontSystem::new(&config.font_family, config.font_size);
+        self.chrome_font = FontSystem::new(&config.chrome_font_family, config.font_size);
+        if let Some(render) = self.render.as_mut() {
+            render.atlas.clear();
+        }
+        for pane in self.panes.values_mut() {
+            pane.app.config = config.clone();
+            pane.app
+                .input_editor
+                .set_position(match config.input_position {
+                    wok_app::config::InputPosition::Top => wok_input::editor::InputPosition::Top,
+                    wok_app::config::InputPosition::Bottom => {
+                        wok_input::editor::InputPosition::Bottom
+                    }
+                });
+            pane.app.zoom = wok_ui::zoom::ZoomManager::new(config.font_size);
+            pane.row_cache.invalidate();
+        }
+        self.invalidate_all_row_caches();
+        self.sync_background_renderer(None);
+        if let Some(window) = &self.window {
+            self.sync_workspace_layout(window.inner_size());
+        }
+        self.refresh_plugin_config();
+        self.refresh_plugin_snapshot();
+        self.needs_redraw = true;
     }
 
     fn reload_configuration(&mut self) {
@@ -6281,11 +6590,6 @@ impl WokHandler {
         }
         if matches!(action, Action::BlockExportMarkdown) {
             self.export_selected_block_bundle(BlockExportFormat::Markdown);
-            self.needs_redraw = true;
-            return;
-        }
-        if matches!(action, Action::BlockFilter) {
-            self.toggle_failed_only_filter();
             self.needs_redraw = true;
             return;
         }
@@ -11616,6 +11920,34 @@ fn upsert_toml_string_key(existing: &str, key: &str, value: &str) -> String {
     out
 }
 
+fn upsert_top_level_toml_value(existing: &str, key: &str, value: &str) -> String {
+    let new_line = format!("{key} = {value}");
+    let mut out = String::with_capacity(existing.len() + new_line.len() + 1);
+    let mut replaced = false;
+    let key_eq_prefix = format!("{key} =");
+    let key_eq_compact = format!("{key}=");
+    for line in existing.lines() {
+        let trimmed = line.trim_start();
+        if !replaced
+            && (trimmed.starts_with(&key_eq_prefix) || trimmed.starts_with(&key_eq_compact))
+        {
+            out.push_str(&new_line);
+            replaced = true;
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    if !replaced {
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str(&new_line);
+        out.push('\n');
+    }
+    out
+}
+
 fn ensure_settings_file() -> std::io::Result<PathBuf> {
     let config_dir = WokConfig::config_dir();
     std::fs::create_dir_all(&config_dir)?;
@@ -11624,6 +11956,769 @@ fn ensure_settings_file() -> std::io::Result<PathBuf> {
         return setup_ops::reset_config_file();
     }
     Ok(path)
+}
+
+impl SettingsFormState {
+    fn draft_signature(&self) -> String {
+        settings_config_signature(&self.draft)
+    }
+
+    fn original_signature(&self) -> String {
+        settings_config_signature(&self.original)
+    }
+}
+
+fn settings_form_fields() -> Vec<SettingsFormField> {
+    use SettingsControlKind::*;
+    vec![
+        SettingsFormField {
+            name: "shell",
+            kind: Enum(&["bash", "zsh", "fish", "powershell"]),
+        },
+        SettingsFormField {
+            name: "theme_path",
+            kind: Raw,
+        },
+        SettingsFormField {
+            name: "font_family",
+            kind: Text,
+        },
+        SettingsFormField {
+            name: "chrome_font_family",
+            kind: Text,
+        },
+        SettingsFormField {
+            name: "font_size",
+            kind: F32 {
+                min: 10.0,
+                max: 48.0,
+                step: 1.0,
+            },
+        },
+        SettingsFormField {
+            name: "input_position",
+            kind: Enum(&["top", "bottom"]),
+        },
+        SettingsFormField {
+            name: "command_entry_mode",
+            kind: Enum(&["shell_native", "owned_primary"]),
+        },
+        SettingsFormField {
+            name: "ui_layout",
+            kind: Enum(&["v1", "v2"]),
+        },
+        SettingsFormField {
+            name: "pane_header_visible",
+            kind: Bool,
+        },
+        SettingsFormField {
+            name: "scrollback_lines",
+            kind: Usize {
+                min: 1_000,
+                max: 200_000,
+                step: 1_000,
+            },
+        },
+        SettingsFormField {
+            name: "cursor_style",
+            kind: Enum(&["block", "bar", "underline"]),
+        },
+        SettingsFormField {
+            name: "cursor_blink",
+            kind: Bool,
+        },
+        SettingsFormField {
+            name: "tab_bar_visible",
+            kind: Bool,
+        },
+        SettingsFormField {
+            name: "tab_bar_side",
+            kind: Enum(&["top", "bottom", "left", "right"]),
+        },
+        SettingsFormField {
+            name: "tab_bar_orientation",
+            kind: Enum(&["horizontal", "vertical"]),
+        },
+        SettingsFormField {
+            name: "tab_bar_size",
+            kind: Raw,
+        },
+        SettingsFormField {
+            name: "status_bar_visible",
+            kind: Bool,
+        },
+        SettingsFormField {
+            name: "status_bar_side",
+            kind: Enum(&["top", "bottom", "left", "right"]),
+        },
+        SettingsFormField {
+            name: "status_bar_size",
+            kind: Raw,
+        },
+        SettingsFormField {
+            name: "timeline_rail_visible",
+            kind: Bool,
+        },
+        SettingsFormField {
+            name: "window_opacity",
+            kind: F32 {
+                min: 0.2,
+                max: 1.0,
+                step: 0.05,
+            },
+        },
+        SettingsFormField {
+            name: "background_image",
+            kind: Raw,
+        },
+        SettingsFormField {
+            name: "background_opacity",
+            kind: F32 {
+                min: 0.0,
+                max: 1.0,
+                step: 0.05,
+            },
+        },
+        SettingsFormField {
+            name: "background_fit",
+            kind: Enum(&["stretch", "cover", "contain", "center"]),
+        },
+        SettingsFormField {
+            name: "background_position",
+            kind: Enum(&[
+                "center",
+                "top_left",
+                "top_right",
+                "bottom_left",
+                "bottom_right",
+            ]),
+        },
+        SettingsFormField {
+            name: "background_width",
+            kind: Raw,
+        },
+        SettingsFormField {
+            name: "background_height",
+            kind: Raw,
+        },
+        SettingsFormField {
+            name: "terminal_background_opacity",
+            kind: Raw,
+        },
+        SettingsFormField {
+            name: "pane_border_width",
+            kind: F32 {
+                min: 0.0,
+                max: 8.0,
+                step: 0.5,
+            },
+        },
+        SettingsFormField {
+            name: "focused_pane_border_width",
+            kind: F32 {
+                min: 0.0,
+                max: 12.0,
+                step: 0.5,
+            },
+        },
+        SettingsFormField {
+            name: "block_foot_visible",
+            kind: Bool,
+        },
+        SettingsFormField {
+            name: "floating_pane_title_height",
+            kind: F32 {
+                min: 0.0,
+                max: 40.0,
+                step: 1.0,
+            },
+        },
+        SettingsFormField {
+            name: "typewriter_effect_enabled",
+            kind: Bool,
+        },
+        SettingsFormField {
+            name: "typewriter_effect_cps",
+            kind: F32 {
+                min: 20.0,
+                max: 2_000.0,
+                step: 20.0,
+            },
+        },
+        SettingsFormField {
+            name: "typewriter_effect_max_pending_cells",
+            kind: Usize {
+                min: 100,
+                max: 100_000,
+                step: 100,
+            },
+        },
+        SettingsFormField {
+            name: "visual_effect",
+            kind: Enum(&[
+                "none",
+                "rainbow",
+                "rainbow_static",
+                "wavy",
+                "glitch",
+                "crt",
+                "bloom",
+                "cookie",
+            ]),
+        },
+        SettingsFormField {
+            name: "visual_effect_intensity",
+            kind: F32 {
+                min: 0.0,
+                max: 1.0,
+                step: 0.05,
+            },
+        },
+        SettingsFormField {
+            name: "visual_effect_animated",
+            kind: Bool,
+        },
+        SettingsFormField {
+            name: "external_plugin_command",
+            kind: Raw,
+        },
+        SettingsFormField {
+            name: "copy_on_select",
+            kind: Bool,
+        },
+        SettingsFormField {
+            name: "confirm_close_with_running_process",
+            kind: Bool,
+        },
+        SettingsFormField {
+            name: "close_on_shell_exit",
+            kind: Bool,
+        },
+        SettingsFormField {
+            name: "restore_session",
+            kind: Bool,
+        },
+        SettingsFormField {
+            name: "debug_overlay",
+            kind: Bool,
+        },
+        SettingsFormField {
+            name: "command_telemetry",
+            kind: Bool,
+        },
+        SettingsFormField {
+            name: "recent_keys",
+            kind: Raw,
+        },
+        SettingsFormField {
+            name: "mouse_bindings",
+            kind: Raw,
+        },
+        SettingsFormField {
+            name: "triggers",
+            kind: Raw,
+        },
+        SettingsFormField {
+            name: "layout_presets",
+            kind: Raw,
+        },
+    ]
+}
+
+fn refresh_settings_form_editor(editor: &mut InputEditor, form: &SettingsFormState) {
+    let mut lines = vec![
+        format!(
+            "{} settings draft",
+            if form.dirty { "Unsaved" } else { "Clean" }
+        ),
+        "Use arrows to edit controls; raw-only rows open in TOML with T.".to_string(),
+        String::new(),
+    ];
+    for (idx, field) in form.fields.iter().enumerate() {
+        let selected = if idx == form.selected { ">" } else { " " };
+        let value = settings_field_display_value(&form.draft, field.name);
+        let control = settings_control_display(field.kind, &value);
+        lines.push(format!("{selected} {:32} {control}", field.name));
+    }
+    let text = lines.join("\n");
+    let selected_line = form.selected + 3;
+    let cursor_pos = text
+        .lines()
+        .take(selected_line)
+        .map(|line| line.chars().count() + 1)
+        .sum::<usize>();
+    editor.buffer.set_text(&text);
+    let len = editor.buffer.len();
+    if let Some(cursor) = editor.buffer.cursors_mut().first_mut() {
+        cursor.position = cursor_pos.min(len);
+        cursor.anchor = None;
+    }
+}
+
+fn settings_control_display(kind: SettingsControlKind, value: &str) -> String {
+    match kind {
+        SettingsControlKind::Bool => {
+            let checked = if value == "true" { "x" } else { " " };
+            format!("[{checked}] {value}")
+        }
+        SettingsControlKind::Enum(variants) => {
+            format!("<{}> ({})", value, variants.join("/"))
+        }
+        SettingsControlKind::F32 { min, max, .. } => {
+            let parsed = value.parse::<f32>().unwrap_or(min);
+            let ratio = ((parsed - min) / (max - min)).clamp(0.0, 1.0);
+            slider_display(ratio, value)
+        }
+        SettingsControlKind::Usize { min, max, .. } => {
+            let parsed = value.parse::<usize>().unwrap_or(min);
+            let ratio =
+                ((parsed.saturating_sub(min)) as f32 / (max - min).max(1) as f32).clamp(0.0, 1.0);
+            slider_display(ratio, value)
+        }
+        SettingsControlKind::Text => format!("\"{value}\" (T to edit text)"),
+        SettingsControlKind::Raw => format!("{value} (raw TOML)"),
+    }
+}
+
+fn slider_display(ratio: f32, value: &str) -> String {
+    let width = 12usize;
+    let filled = (ratio * width as f32).round() as usize;
+    format!(
+        "[{}{}] {value}",
+        "#".repeat(filled),
+        "-".repeat(width.saturating_sub(filled))
+    )
+}
+
+fn settings_config_signature(config: &WokConfig) -> String {
+    settings_form_fields()
+        .iter()
+        .map(|field| {
+            format!(
+                "{}={}",
+                field.name,
+                settings_field_display_value(config, field.name)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn settings_field_display_value(config: &WokConfig, name: &str) -> String {
+    match name {
+        "shell" => config.shell.to_string(),
+        "theme_path" => option_path_display(config.theme_path.as_ref()),
+        "font_family" => config.font_family.clone(),
+        "chrome_font_family" => config.chrome_font_family.clone(),
+        "font_size" => clean_f32(config.font_size),
+        "input_position" => match config.input_position {
+            wok_app::config::InputPosition::Top => "top",
+            wok_app::config::InputPosition::Bottom => "bottom",
+        }
+        .to_string(),
+        "command_entry_mode" => match config.command_entry_mode {
+            wok_app::config::CommandEntryMode::ShellNative => "shell_native",
+            wok_app::config::CommandEntryMode::OwnedPrimary => "owned_primary",
+        }
+        .to_string(),
+        "ui_layout" => config.ui_layout.as_str().to_string(),
+        "pane_header_visible" => config.pane_header_visible.to_string(),
+        "scrollback_lines" => config.scrollback_lines.to_string(),
+        "cursor_style" => match config.cursor_style {
+            wok_app::config::CursorStyle::Block => "block",
+            wok_app::config::CursorStyle::Bar => "bar",
+            wok_app::config::CursorStyle::Underline => "underline",
+        }
+        .to_string(),
+        "cursor_blink" => config.cursor_blink.to_string(),
+        "tab_bar_visible" => config.tab_bar_visible.to_string(),
+        "tab_bar_side" => config.tab_bar_side.as_str().to_string(),
+        "tab_bar_orientation" => match config.tab_bar_orientation {
+            wok_app::config::TabBarOrientation::Horizontal => "horizontal",
+            wok_app::config::TabBarOrientation::Vertical => "vertical",
+        }
+        .to_string(),
+        "tab_bar_size" => option_f32_display(config.tab_bar_size),
+        "status_bar_visible" => config.status_bar_visible.to_string(),
+        "status_bar_side" => config.status_bar_side.as_str().to_string(),
+        "status_bar_size" => option_f32_display(config.status_bar_size),
+        "timeline_rail_visible" => config.timeline_rail_visible.to_string(),
+        "window_opacity" => clean_f32(config.window_opacity),
+        "background_image" => option_path_display(config.background_image.as_ref()),
+        "background_opacity" => clean_f32(config.background_opacity),
+        "background_fit" => match config.background_fit {
+            wok_app::config::BackgroundFit::Stretch => "stretch",
+            wok_app::config::BackgroundFit::Cover => "cover",
+            wok_app::config::BackgroundFit::Contain => "contain",
+            wok_app::config::BackgroundFit::Center => "center",
+        }
+        .to_string(),
+        "background_position" => match config.background_position {
+            wok_app::config::BackgroundPosition::Center => "center",
+            wok_app::config::BackgroundPosition::TopLeft => "top_left",
+            wok_app::config::BackgroundPosition::TopRight => "top_right",
+            wok_app::config::BackgroundPosition::BottomLeft => "bottom_left",
+            wok_app::config::BackgroundPosition::BottomRight => "bottom_right",
+        }
+        .to_string(),
+        "background_width" => option_f32_display(config.background_width),
+        "background_height" => option_f32_display(config.background_height),
+        "terminal_background_opacity" => option_f32_display(config.terminal_background_opacity),
+        "pane_border_width" => clean_f32(config.pane_border_width),
+        "focused_pane_border_width" => clean_f32(config.focused_pane_border_width),
+        "block_foot_visible" => config.block_foot_visible.to_string(),
+        "floating_pane_title_height" => clean_f32(config.floating_pane_title_height),
+        "typewriter_effect_enabled" => config.typewriter_effect_enabled.to_string(),
+        "typewriter_effect_cps" => clean_f32(config.typewriter_effect_cps),
+        "typewriter_effect_max_pending_cells" => {
+            config.typewriter_effect_max_pending_cells.to_string()
+        }
+        "visual_effect" => config.visual_effect.as_str().to_string(),
+        "visual_effect_intensity" => clean_f32(config.visual_effect_intensity),
+        "visual_effect_animated" => config.visual_effect_animated.to_string(),
+        "external_plugin_command" => config
+            .external_plugin_command
+            .clone()
+            .unwrap_or_else(|| "none".to_string()),
+        "copy_on_select" => config.copy_on_select.to_string(),
+        "confirm_close_with_running_process" => {
+            config.confirm_close_with_running_process.to_string()
+        }
+        "close_on_shell_exit" => config.close_on_shell_exit.to_string(),
+        "restore_session" => config.restore_session.to_string(),
+        "debug_overlay" => config.debug_overlay.to_string(),
+        "command_telemetry" => config.command_telemetry.to_string(),
+        "recent_keys" => format!("{:?}", config.recent_keys),
+        "mouse_bindings" => format!("{} entries", config.mouse_bindings.len()),
+        "triggers" => format!("{} entries", config.triggers.len()),
+        "layout_presets" => format!("{} entries", config.layout_presets.len()),
+        _ => "unknown".to_string(),
+    }
+}
+
+fn option_path_display(path: Option<&PathBuf>) -> String {
+    path.map(|p| p.display().to_string())
+        .unwrap_or_else(|| "none".to_string())
+}
+
+fn option_f32_display(value: Option<f32>) -> String {
+    value.map(clean_f32).unwrap_or_else(|| "auto".to_string())
+}
+
+fn clean_f32(value: f32) -> String {
+    let rounded = (value * 100.0).round() / 100.0;
+    if (rounded.fract()).abs() < f32::EPSILON {
+        format!("{rounded:.0}")
+    } else {
+        format!("{rounded:.2}")
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string()
+    }
+}
+
+fn adjust_settings_draft_field(
+    config: &mut WokConfig,
+    field: &SettingsFormField,
+    direction: isize,
+) -> bool {
+    match field.kind {
+        SettingsControlKind::Bool => toggle_settings_bool(config, field.name),
+        SettingsControlKind::Enum(variants) => {
+            cycle_settings_enum(config, field.name, variants, direction)
+        }
+        SettingsControlKind::F32 { min, max, step } => {
+            adjust_settings_f32(config, field.name, min, max, step, direction)
+        }
+        SettingsControlKind::Usize { min, max, step } => {
+            adjust_settings_usize(config, field.name, min, max, step, direction)
+        }
+        SettingsControlKind::Text | SettingsControlKind::Raw => false,
+    }
+}
+
+fn toggle_settings_bool(config: &mut WokConfig, name: &str) -> bool {
+    match name {
+        "pane_header_visible" => config.pane_header_visible = !config.pane_header_visible,
+        "cursor_blink" => config.cursor_blink = !config.cursor_blink,
+        "tab_bar_visible" => config.tab_bar_visible = !config.tab_bar_visible,
+        "status_bar_visible" => config.status_bar_visible = !config.status_bar_visible,
+        "timeline_rail_visible" => config.timeline_rail_visible = !config.timeline_rail_visible,
+        "block_foot_visible" => config.block_foot_visible = !config.block_foot_visible,
+        "typewriter_effect_enabled" => {
+            config.typewriter_effect_enabled = !config.typewriter_effect_enabled
+        }
+        "visual_effect_animated" => config.visual_effect_animated = !config.visual_effect_animated,
+        "copy_on_select" => config.copy_on_select = !config.copy_on_select,
+        "confirm_close_with_running_process" => {
+            config.confirm_close_with_running_process = !config.confirm_close_with_running_process
+        }
+        "close_on_shell_exit" => config.close_on_shell_exit = !config.close_on_shell_exit,
+        "restore_session" => config.restore_session = !config.restore_session,
+        "debug_overlay" => config.debug_overlay = !config.debug_overlay,
+        "command_telemetry" => config.command_telemetry = !config.command_telemetry,
+        _ => return false,
+    }
+    true
+}
+
+fn cycle_settings_enum(
+    config: &mut WokConfig,
+    name: &str,
+    variants: &[&str],
+    direction: isize,
+) -> bool {
+    let current = settings_field_display_value(config, name);
+    let Some(index) = variants.iter().position(|value| *value == current) else {
+        return false;
+    };
+    let len = variants.len() as isize;
+    let next = variants[((index as isize + direction).rem_euclid(len)) as usize];
+    set_settings_enum(config, name, next)
+}
+
+fn set_settings_enum(config: &mut WokConfig, name: &str, value: &str) -> bool {
+    match name {
+        "shell" => {
+            config.shell = match value {
+                "zsh" => ShellType::Zsh,
+                "fish" => ShellType::Fish,
+                "powershell" => ShellType::PowerShell,
+                _ => ShellType::Bash,
+            };
+        }
+        "input_position" => {
+            config.input_position = if value == "top" {
+                wok_app::config::InputPosition::Top
+            } else {
+                wok_app::config::InputPosition::Bottom
+            };
+        }
+        "command_entry_mode" => {
+            config.command_entry_mode = if value == "owned_primary" {
+                wok_app::config::CommandEntryMode::OwnedPrimary
+            } else {
+                wok_app::config::CommandEntryMode::ShellNative
+            };
+        }
+        "ui_layout" => {
+            config.ui_layout = if value == "v1" {
+                wok_app::config::FrontendLayout::V1
+            } else {
+                wok_app::config::FrontendLayout::V2
+            };
+        }
+        "cursor_style" => {
+            config.cursor_style = match value {
+                "bar" => wok_app::config::CursorStyle::Bar,
+                "underline" => wok_app::config::CursorStyle::Underline,
+                _ => wok_app::config::CursorStyle::Block,
+            };
+        }
+        "tab_bar_side" => {
+            config.tab_bar_side = parse_settings_chrome_side(value);
+            config.tab_bar_orientation = config.tab_bar_side.tab_orientation();
+        }
+        "tab_bar_orientation" => {
+            config.tab_bar_orientation = if value == "vertical" {
+                wok_app::config::TabBarOrientation::Vertical
+            } else {
+                wok_app::config::TabBarOrientation::Horizontal
+            };
+        }
+        "status_bar_side" => config.status_bar_side = parse_settings_chrome_side(value),
+        "background_fit" => {
+            config.background_fit = match value {
+                "cover" => wok_app::config::BackgroundFit::Cover,
+                "contain" => wok_app::config::BackgroundFit::Contain,
+                "center" => wok_app::config::BackgroundFit::Center,
+                _ => wok_app::config::BackgroundFit::Stretch,
+            };
+        }
+        "background_position" => {
+            config.background_position = match value {
+                "top_left" => wok_app::config::BackgroundPosition::TopLeft,
+                "top_right" => wok_app::config::BackgroundPosition::TopRight,
+                "bottom_left" => wok_app::config::BackgroundPosition::BottomLeft,
+                "bottom_right" => wok_app::config::BackgroundPosition::BottomRight,
+                _ => wok_app::config::BackgroundPosition::Center,
+            };
+        }
+        "visual_effect" => {
+            config.visual_effect = match value {
+                "rainbow" => VisualEffectMode::Rainbow,
+                "rainbow_static" => VisualEffectMode::RainbowStatic,
+                "wavy" => VisualEffectMode::Wavy,
+                "glitch" => VisualEffectMode::Glitch,
+                "crt" => VisualEffectMode::Crt,
+                "bloom" => VisualEffectMode::Bloom,
+                "cookie" => VisualEffectMode::Cookie,
+                _ => VisualEffectMode::None,
+            };
+        }
+        _ => return false,
+    }
+    true
+}
+
+fn parse_settings_chrome_side(value: &str) -> wok_app::config::ChromeSide {
+    match value {
+        "top" => wok_app::config::ChromeSide::Top,
+        "left" => wok_app::config::ChromeSide::Left,
+        "right" => wok_app::config::ChromeSide::Right,
+        _ => wok_app::config::ChromeSide::Bottom,
+    }
+}
+
+fn adjust_settings_f32(
+    config: &mut WokConfig,
+    name: &str,
+    min: f32,
+    max: f32,
+    step: f32,
+    direction: isize,
+) -> bool {
+    let delta = step * direction as f32;
+    let set = |value: &mut f32| {
+        *value = (*value + delta).clamp(min, max);
+    };
+    match name {
+        "font_size" => set(&mut config.font_size),
+        "window_opacity" => set(&mut config.window_opacity),
+        "background_opacity" => set(&mut config.background_opacity),
+        "pane_border_width" => set(&mut config.pane_border_width),
+        "focused_pane_border_width" => set(&mut config.focused_pane_border_width),
+        "floating_pane_title_height" => set(&mut config.floating_pane_title_height),
+        "typewriter_effect_cps" => set(&mut config.typewriter_effect_cps),
+        "visual_effect_intensity" => set(&mut config.visual_effect_intensity),
+        _ => return false,
+    }
+    true
+}
+
+fn adjust_settings_usize(
+    config: &mut WokConfig,
+    name: &str,
+    min: usize,
+    max: usize,
+    step: usize,
+    direction: isize,
+) -> bool {
+    let adjust = |value: &mut usize| {
+        if direction < 0 {
+            *value = value.saturating_sub(step).max(min);
+        } else {
+            *value = value.saturating_add(step).min(max);
+        }
+    };
+    match name {
+        "scrollback_lines" => adjust(&mut config.scrollback_lines),
+        "typewriter_effect_max_pending_cells" => {
+            adjust(&mut config.typewriter_effect_max_pending_cells)
+        }
+        _ => return false,
+    }
+    true
+}
+
+fn copy_settings_field(from: &WokConfig, to: &mut WokConfig, name: &str) -> bool {
+    match name {
+        "shell" => to.shell = from.shell.clone(),
+        "font_family" => to.font_family = from.font_family.clone(),
+        "chrome_font_family" => to.chrome_font_family = from.chrome_font_family.clone(),
+        "font_size" => to.font_size = from.font_size,
+        "input_position" => to.input_position = from.input_position,
+        "command_entry_mode" => to.command_entry_mode = from.command_entry_mode,
+        "ui_layout" => to.ui_layout = from.ui_layout,
+        "pane_header_visible" => to.pane_header_visible = from.pane_header_visible,
+        "scrollback_lines" => to.scrollback_lines = from.scrollback_lines,
+        "cursor_style" => to.cursor_style = from.cursor_style,
+        "cursor_blink" => to.cursor_blink = from.cursor_blink,
+        "tab_bar_visible" => to.tab_bar_visible = from.tab_bar_visible,
+        "tab_bar_side" => to.tab_bar_side = from.tab_bar_side,
+        "tab_bar_orientation" => to.tab_bar_orientation = from.tab_bar_orientation,
+        "status_bar_visible" => to.status_bar_visible = from.status_bar_visible,
+        "status_bar_side" => to.status_bar_side = from.status_bar_side,
+        "timeline_rail_visible" => to.timeline_rail_visible = from.timeline_rail_visible,
+        "window_opacity" => to.window_opacity = from.window_opacity,
+        "background_opacity" => to.background_opacity = from.background_opacity,
+        "background_fit" => to.background_fit = from.background_fit,
+        "background_position" => to.background_position = from.background_position,
+        "pane_border_width" => to.pane_border_width = from.pane_border_width,
+        "focused_pane_border_width" => {
+            to.focused_pane_border_width = from.focused_pane_border_width
+        }
+        "block_foot_visible" => to.block_foot_visible = from.block_foot_visible,
+        "floating_pane_title_height" => {
+            to.floating_pane_title_height = from.floating_pane_title_height
+        }
+        "typewriter_effect_enabled" => {
+            to.typewriter_effect_enabled = from.typewriter_effect_enabled
+        }
+        "typewriter_effect_cps" => to.typewriter_effect_cps = from.typewriter_effect_cps,
+        "typewriter_effect_max_pending_cells" => {
+            to.typewriter_effect_max_pending_cells = from.typewriter_effect_max_pending_cells
+        }
+        "visual_effect" => to.visual_effect = from.visual_effect,
+        "visual_effect_intensity" => to.visual_effect_intensity = from.visual_effect_intensity,
+        "visual_effect_animated" => to.visual_effect_animated = from.visual_effect_animated,
+        "copy_on_select" => to.copy_on_select = from.copy_on_select,
+        "confirm_close_with_running_process" => {
+            to.confirm_close_with_running_process = from.confirm_close_with_running_process
+        }
+        "close_on_shell_exit" => to.close_on_shell_exit = from.close_on_shell_exit,
+        "restore_session" => to.restore_session = from.restore_session,
+        "debug_overlay" => to.debug_overlay = from.debug_overlay,
+        "command_telemetry" => to.command_telemetry = from.command_telemetry,
+        _ => return false,
+    }
+    true
+}
+
+fn write_settings_form_draft(
+    path: &Path,
+    original: &WokConfig,
+    draft: &WokConfig,
+) -> std::io::Result<()> {
+    let mut content = std::fs::read_to_string(path).unwrap_or_default();
+    for field in settings_form_fields() {
+        if !matches!(
+            field.kind,
+            SettingsControlKind::Bool
+                | SettingsControlKind::Enum(_)
+                | SettingsControlKind::F32 { .. }
+                | SettingsControlKind::Usize { .. }
+        ) {
+            continue;
+        }
+        let original_value = settings_field_display_value(original, field.name);
+        let draft_value = settings_field_display_value(draft, field.name);
+        if original_value != draft_value {
+            content = upsert_top_level_toml_value(
+                &content,
+                field.name,
+                &settings_field_toml_value(draft, field.name),
+            );
+        }
+    }
+    std::fs::write(path, content)
+}
+
+fn settings_field_toml_value(config: &WokConfig, name: &str) -> String {
+    match name {
+        "shell"
+        | "input_position"
+        | "command_entry_mode"
+        | "ui_layout"
+        | "cursor_style"
+        | "tab_bar_side"
+        | "tab_bar_orientation"
+        | "status_bar_side"
+        | "background_fit"
+        | "background_position"
+        | "visual_effect" => format!("{:?}", settings_field_display_value(config, name)),
+        _ => settings_field_display_value(config, name),
+    }
 }
 
 fn settings_field_cursor_position(content: &str, field_name: &str) -> Option<usize> {

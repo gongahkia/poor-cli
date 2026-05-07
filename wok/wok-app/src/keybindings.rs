@@ -305,7 +305,17 @@ impl KeybindingConfig {
     ) -> usize {
         let n = overrides.len();
         for ov in overrides {
-            self.bindings.insert(ov.combo, ov.action);
+            let contexts = contexts_from_toml_when(&ov.when);
+            if contexts.is_empty() {
+                self.bindings.insert(ov.combo, ov.action);
+            } else {
+                for context in contexts {
+                    self.context_bindings
+                        .entry(context)
+                        .or_default()
+                        .insert(ov.combo.clone(), ov.action.clone());
+                }
+            }
         }
         n
     }
@@ -323,6 +333,27 @@ impl KeybindingConfig {
         let count = self.apply_toml_overrides(overrides);
         Ok((count, warnings))
     }
+}
+
+fn contexts_from_toml_when(tags: &[String]) -> Vec<Context> {
+    if tags.is_empty()
+        || tags
+            .iter()
+            .any(|tag| matches!(tag.trim().to_ascii_lowercase().as_str(), "any" | "global"))
+    {
+        return Vec::new();
+    }
+    tags.iter()
+        .filter_map(|tag| match tag.trim().to_ascii_lowercase().as_str() {
+            "terminal" => Some(Context::Terminal),
+            "input_editor" | "editor" | "input" => Some(Context::InputEditor),
+            "block_selected" | "block" => Some(Context::BlockSelected),
+            "search_active" | "search" => Some(Context::SearchActive),
+            "quick_select" => Some(Context::QuickSelect),
+            "vi_mode" | "vim" => Some(Context::ViMode),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Get the platform modifier (Cmd on macOS, Ctrl elsewhere).
@@ -1301,6 +1332,29 @@ mod tests {
                 &Context::Terminal,
             ),
             Some(&Action::OpenScratchBuffer)
+        );
+    }
+
+    #[test]
+    fn toml_when_overrides_are_context_scoped() {
+        let mut config = KeybindingConfig::default();
+        let combo = KeyCombo {
+            key: KeyAction::Char('k'),
+            modifiers: platform_mod(),
+        };
+        config.apply_toml_overrides(vec![crate::keybindings_toml::BindingOverride {
+            combo: combo.clone(),
+            action: Action::CommandSearch,
+            when: vec!["input_editor".to_string()],
+        }]);
+
+        assert_eq!(
+            config.resolve(&combo, &Context::InputEditor),
+            Some(&Action::CommandSearch)
+        );
+        assert_ne!(
+            config.resolve(&combo, &Context::Terminal),
+            Some(&Action::CommandSearch)
         );
     }
 }

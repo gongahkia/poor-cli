@@ -87,7 +87,7 @@ Crate landed w/ `classify(buf) -> Classification { kind: InputKind, hints: Hints
 New crate `wok-integration`. `Builder::new().dims(c, r).scrollback(n).step(...).run() -> Harness`. Steps: `PtyOutput(bytes)`, `SendInput(bytes)`, `InjectEvent(SemanticEvent)`, `Resize { cols, rows }`, `Assert(Arc<dyn Fn(&Harness)->Result>)`. Wraps a real `TerminalState` + `BlockManager`, scripts feed semantic events for end-to-end block-detection coverage. `MockPty` records user input + queues scripted output. 6 unit tests including a 3-block scenario (`echo a / false / pwd` → 3 blocks, exit codes preserved). Real PTY adapters + virtual fs + fixed clock deferred — current scope covers parse → state → block-manager which is the hot path; shell-bootstrap goldens land when consumers do.
 
 ### ~~P4.2 wokcast format~~ ✅ done (codec)
-`wok-terminal/src/cast.rs` lands w/ `CastWriter` + `CastReader` for a newline-delimited record format: header `# wokcast v1 cols=… rows=… started=…` + records `<elapsed_us> <base64_chunk>`. Comment/blank lines skipped on read; unknown header keys ignored (forward-compat). `schedule(&mut reader, speed) -> Vec<(Duration, Vec<u8>)>` produces relative-delay playback plans; `speed=0.0` collapses to instant for deterministic tests. 8 unit tests including round-trip + malformed input. Existing `replay.rs` (in-memory cell snapshots) is untouched — different concern. PTY tap into the writer + `wok record/replay` CLI subcommands deferred to a wiring PR.
+`wok-terminal/src/cast.rs` lands w/ `CastWriter` + `CastReader` for a newline-delimited record format: header `# wokcast v1 cols=… rows=… started=…` + records `<elapsed_us> <base64_chunk>`. Comment/blank lines skipped on read; unknown header keys ignored (forward-compat). `schedule(&mut reader, speed) -> Vec<(Duration, Vec<u8>)>` produces relative-delay playback plans; `speed=0.0` collapses to instant for deterministic tests. 8 unit tests including round-trip + malformed input. `wok record <file>` now records stdin into a wokcast and `wok replay <file>` plays it back. Existing `replay.rs` (in-memory cell snapshots) is untouched — different concern. A true PTY tap into running panes remains the next recorder upgrade.
 
 ---
 
@@ -97,7 +97,7 @@ New crate `wok-integration`. `Builder::new().dims(c, r).scrollback(n).step(...).
 `wok-channels` (Dev/Dogfood/Preview/Stable, picked at build via `WOK_CHANNEL`) and `wok-features` (FeatureFlag enum w/ dogfood/preview/release ring arrays + `WOK_FLAGS=+X,-Y` overrides). 4 starter flags reserved for later phases (UnifiedInput, SumTreeScrollback, ProviderCompletion, BlockFiltering); arrays empty until landed. 7+5 tests.
 
 ### ~~P5.3 doctor channel + flags~~ ✅ done
-Doctor now prints `channel: dev` and `feature_flags: on=[…] off=[…]`. Remaining doctor work (parser conformance, GPU adapter, font fallback chain, sumtree backend) deferred until those subsystems land.
+Doctor now prints `channel: dev` and `feature_flags: on=[…] off=[…]`, validates keybindings, reports shell capability data, checks font config, and runs iTerm 1337 + sixel parser self-checks. GPU adapter and sumtree backend checks remain deferred until those subsystems expose cheap headless diagnostics.
 
 ---
 
@@ -107,14 +107,14 @@ Doctor now prints `channel: dev` and `feature_flags: on=[…] off=[…]`. Remain
 New crate `wok-ui-core` distilling the entity-handle pattern (no `warpui_core` dep). `App` owns a type-erased `HashMap<EntityId, Rc<RefCell<dyn Any>>>` arena; `new_entity<T>(value) -> Handle<T>` returns a refcounted typed handle. `Handle::{read, write}` borrow w/ closure scope. `Entity<T>` is a copy-able id w/ compile-time T witness. `App::dispatch(entity, |&mut T, &mut Context|)` runs a handler and returns queued follow-up `Box<dyn Action>`s. `Context::new_entity` and `Context::emit` available inside the scope. `View::render() -> Element` w/ `Element::{Text, Container { tag, children }}`. Drop semantics: `App::drop_entity` invalidates new lookups but outstanding handles keep value alive (via Rc). 9 tests including dispatch on dropped entity = noop, handle clone shares storage, render produces tree, nested entity creation in handler. Migration of `WokHandler` substates is the follow-up; this crate gives them a target.
 
 ### ~~P6.2 Keymap framework~~ ✅ done (resolver)
-New crate `wok-keymap`. Types: `Stroke { Key, Mods }`, `Key { Char, Enter, Esc, Tab, Backspace, Space }`, `Mods { ctrl, shift, alt, super_ }`, `Binding { sequence, action: &'static str, when: ContextPredicate }`, `ContextPredicate { Any, All, AnyOf, None_ }`, `Context = HashSet<&'static str>`. `Keymap::resolve(buffer, ctx) -> Resolution { Match { action, sequence_len } | Pending | None }`. Arbitration: a longer pending binding blocks a short exact match until disambiguated; same-length bindings are last-wins. 9 tests covering chord disambiguation, context masking, modifier-aware strokes, all four predicate kinds. TOML parser (`when:` opt-in) + migration from `wok-app/keybindings.rs` deferred to a follow-up.
+New crate `wok-keymap`. Types: `Stroke { Key, Mods }`, `Key { Char, Enter, Esc, Tab, Backspace, Space }`, `Mods { ctrl, shift, alt, super_ }`, `Binding { sequence, action: &'static str, when: ContextPredicate }`, `ContextPredicate { Any, All, AnyOf, None_ }`, `Context = HashSet<&'static str>`. `Keymap::resolve(buffer, ctx) -> Resolution { Match { action, sequence_len } | Pending | None }`. Arbitration: a longer pending binding blocks a short exact match until disambiguated; same-length bindings are last-wins. 9 tests covering chord disambiguation, context masking, modifier-aware strokes, all four predicate kinds. TOML `when` tags now populate context-scoped bindings in `wok-app`; multi-stroke chord defaults remain a future migration.
 
 ---
 
 ## P7 — Product polish
 
-### ~~P7.1 Block filtering~~ ✅ done (predicate combinators)
-`wok-blocks/src/filter.rs` lands w/ `BlockFilter` (clone+send+sync `Arc<dyn Fn(&Block)->bool>`) and `and`/`or`/`not`/`any`/`none`. Built-ins: `failed_only`, `succeeded_only`, `running_only`, `matching_regex`, `cwd_under`, `since_id`, `command_contains`, `bookmarked_only`. `apply(blocks, &filter) -> Vec<usize>` returns matching indices in order. 13 tests including AND/OR/NOT, regex compile error, path-prefix, since-id strict-greater. Renderer integration + viewport sumtree caching deferred — they ride P2.3 once the scrollback mirror lands.
+### ~~P7.1 Block filtering~~ ✅ done
+`wok-blocks/src/filter.rs` lands w/ `BlockFilter` (clone+send+sync `Arc<dyn Fn(&Block)->bool>`) and `and`/`or`/`not`/`any`/`none`. Built-ins: `failed_only`, `succeeded_only`, `running_only`, `matching_regex`, `cwd_under`, `since_id`, `command_contains`, `bookmarked_only`. `apply(blocks, &filter) -> Vec<usize>` returns matching indices in order. 13 tests including AND/OR/NOT, regex compile error, path-prefix, since-id strict-greater. Runtime now routes `Action::BlockFilter` into the rendered block filter overlay instead of stopping at a status-count action.
 
 ### ~~P7.2 Block share~~ ✅ done (formatter)
 `wok-blocks/src/share.rs` lands w/ `format_markdown(&Block, &[String], OutputMode)` + `OutputMode::{Plain, Ansi}` + `strip_csi(&str)`. Emits self-contained `.md`: id, cwd, git branch (+`*` if dirty), exit code, duration, fenced cmd (`sh`), fenced output (`text` or `ansi`). Output text supplied by caller (Block records grid rows, not bytes; the terminal grid is the source). 9 unit tests. Keybind wiring + actual file write deferred to action layer.
@@ -134,8 +134,8 @@ New crate `wok-vim` w/ pure state machine. Inputs: `Stroke { Char(c), Esc, Enter
 - Generic `modal.rs` deferred — too vague to port without a UI fwk decision (lands w/ P6.1).
 - UI integration (mounting in menu/quit flows) follows the existing wok-ui adapter pattern; deferred to a feature PR.
 
-### ~~P7.7 Inline image audit~~ ✅ done (iTerm 1337 parser added)
-Audit: `wok-renderer/inline_images.rs` is the protocol-agnostic store. Decoders: sixel ✓ (`wok-terminal/src/sixel.rs`), kitty graphics ✓ (`wok-terminal/src/terminal.rs::parse_kitty_apc`), iTerm OSC 1337 ✗. Gap closed by adding `wok-terminal/src/iterm_image.rs` w/ `parse(payload) -> ItermImagePayload { name, size, width/height: DisplayDim, preserve_aspect, inline, bytes }`. Handles `auto`/`<n>`/`<n>px`/`<n>%` dims, base64 name + bytes, forward-compat key skipping. 8 tests. Wiring into the OSC dispatcher in `terminal.rs` deferred (no consumer yet).
+### ~~P7.7 Inline image audit~~ ✅ done
+Audit: `wok-renderer/inline_images.rs` is the protocol-agnostic store. Decoders: sixel ✓ (`wok-terminal/src/sixel.rs`), kitty graphics ✓ (`wok-terminal/src/terminal.rs::parse_kitty_apc`), iTerm OSC 1337 ✓ (`wok-terminal/src/iterm_image.rs` + OSC dispatcher wiring). Handles `auto`/`<n>`/`<n>px`/`<n>%` dims, base64 name + bytes, forward-compat key skipping, and forwards decoded RGBA placements into the app inline-image store.
 
 ### ~~P7.8 wok bug-report~~ ✅ done (directory bundle)
 `wok bug-report [--output <dir>]` writes a directory `bug-<unix_ms>/` (default in cwd) containing: `doctor.json`, copies of `config.toml`/`init.lua` (if present), `channel.txt`, `flags.txt`, `system.txt`, and a `README.txt`. No upload, no network. tar.gz packing intentionally deferred (no tar/gz dep on wok-app yet — directory is just as shareable). Last-N PTY bytes also deferred until P4.2 recorder lands. 2 unit tests + manual smoke verified output.
@@ -200,59 +200,9 @@ Hot-reload via `wok-watcher::PathWatcher` polled per frame. `KeybindingConfig::a
 
 ---
 
-## P10 — Settings: structured editor (current = TOML buffer + discovery palette)
+## P10 — Settings: structured editor ✅ done
 
-`Action::OpenSettings` opens `config.toml` in a text buffer editor (Mod+S to save). Commit `25e2ae8` adds `Action::SettingsDiscovery` — a structured *view* (palette listing every field + current value + type) that jumps to the TOML editor on select. The form-with-controls work below is still open.
-
-### P10.1 Schema-driven form (still open)
-- `wok_settings::Settings` schema is already implemented for `WokConfig`; the discovery palette uses it.
-- Build a renderer that walks the schema and emits a control per field type:
-  - `bool` → toggle
-  - `f32`/`usize` → numeric input + slider
-  - enum → dropdown (requires the enum to expose its variants — add `pub fn variants() -> &'static [&'static str]` per enum)
-  - `Option<PathBuf>` → file picker + clear button
-  - `Vec<TriggerConfig>` etc → "edit raw" escape hatch back to TOML buffer
-- "Reset to default" per field.
-- "Open as TOML" escape hatch keeps power-user workflow.
-
-### P10.2 Live preview (still open)
-- Settings changes apply to a temp `WokConfig` clone first; "Apply" persists. "Discard" reverts.
-
----
-
-## P11 — Distribution + release ops
-
-Zero of these exist. None of the product matters until users can download a signed binary.
-
-### P11.1 Signed macOS .dmg
-- `cargo bundle --target aarch64-apple-darwin --target x86_64-apple-darwin` → universal binary.
-- Code-sign w/ Developer ID Application cert; notarize via `xcrun notarytool`; staple ticket.
-- `create-dmg` for the disk image w/ background + drag-to-Applications shortcut.
-- Test that downloading + double-clicking from a browser produces no Gatekeeper warning.
-
-### P11.2 Linux packages
-- `.deb` via `cargo-deb` — Ubuntu 22.04+ / Debian 12+.
-- `.rpm` via `cargo-generate-rpm` — Fedora 40+ / RHEL 9.
-- AppImage for distros without packaging.
-- `flatpak` and `snap` are stretch goals.
-
-### P11.3 Windows installer
-- `wix`-based `.msi` w/ Authenticode signature (EV cert preferred for SmartScreen).
-- Standalone `.exe` via `cargo-wix`.
-
-### P11.4 Homebrew tap
-- `homebrew-wok` repo with a `wok.rb` formula pointing at signed release tarballs.
-- `brew install wok/tap/wok` Just Works.
-
-### P11.5 Auto-update
-- `tauri-plugin-updater` style: check a `latest.json` manifest at startup, download + verify signature, prompt restart.
-- Opt-out via `[updates] check = false` in config.
-
-### P11.6 Crash reporting (opt-in)
-- `sentry-rust` integration; `[telemetry] crash_reports = false` is the default per charter.
-- First-run dialog: "Send anonymous crash reports to help fix bugs? [Yes] [No]" — choice is sticky.
-
----
+`Action::OpenSettings` now opens a generated settings form. Bool fields render as toggles, numeric fields render as sliders, enums render as dropdown-style controls, and complex/path/text fields keep an "edit raw TOML" escape hatch. Edits apply to a draft `WokConfig` for live preview; `A`/`Mod+S` persists, `D`/`Esc` discards, `R` resets the selected supported field to default, and `T` opens the raw TOML buffer.
 
 ## P12 — Pitch + positioning
 
@@ -289,48 +239,13 @@ Each weakness from the strategic audit becomes a concrete ticket here.
 
 | Weakness | Ticket | Owner of fix |
 |---|---|---|
-| No signed builds | P11.1 / P11.3 | release engineering |
-| No installers | P11.1–P11.4 | release engineering |
-| No auto-update | P11.5 | release engineering + UI |
-| No crash reports | P11.6 (opt-in) | infra |
 | macOS-first only | P8 | platform owners |
-| Settings = TOML buffer only | P10 partial — discovery palette ✅ `25e2ae8`; form controls + live preview open | UI |
-| Keybindings hardcoded | P9 partial — TOML overrides ✅ `7d5fea9`; editor UI w/ stroke capture open | UI + config |
+| Settings = TOML buffer only | P10 form controls + live preview/apply/discard landed | UI |
+| Keybindings hardcoded | P9 TOML overrides + editor UI w/ stroke capture landed | UI + config |
 | No theme picker | ~~done 2787829~~ ✅ | — |
 | Lua API surface narrow | ~~done~~ ✅ — see P15 | — |
 | No Lua plugin SDK | ~~done~~ ✅ — see P15 | — |
 | Framework crates not wired | ~~done~~ ✅ — see P16 | — |
-| No marketplace for Lua plugins | P14.1 (new) | infra |
-| No "first 60 seconds" demo | P14.2 (new) | onboarding + docs |
-| No website / landing page | P14.3 (new) | marketing |
-| No demo video | P14.4 (new) | marketing |
-| No competitor benchmarks | P14.5 (new) | benchmarking |
-
----
-
-## P14 — Marketing + community
-
-### P14.1 Lua plugin marketplace
-- Plugins live in a single `wok-plugins` GitHub org; one repo per plugin.
-- `wok plugin install <github_user/plugin_repo>` clones into `~/.config/wok/plugins/`.
-- `wok plugin list` lists installed; `wok plugin update [name]` pulls.
-- No central registry; just GitHub. Discovery via `awesome-wok` README.
-
-### P14.2 First 60 seconds demo
-- Extend `wok onboard` with an optional fifth step: "Show me what's cool."
-- Plays a wokcast that demonstrates: hot config reload, theme switch via palette, block bookmarking, Lua plugin loading, recording a `.wokcast`.
-
-### P14.3 Landing page (wok.sh or similar)
-- One page. Hero screenshot. Three differentiators. One 30-second video. Download buttons (macOS / Linux / Windows). Pricing block. "View on GitHub" link.
-- Static site (Astro / 11ty / plain HTML). Deploy to Cloudflare Pages or Netlify.
-
-### P14.4 Demo video
-- 30 seconds. Screen recording, no narration, captions only. Show: install → onboard → use blocks → switch theme via palette → record + replay a session.
-
-### P14.5 Competitor benchmarks
-- vs iTerm2, Wezterm, Alacritty, Ghostty, Warp.
-- Metrics: cold start, scrollback render at 100k lines, paste 10MB, fork+exec latency, memory at idle / under load.
-- Publish in `docs/BENCHMARKS.md` with reproducer scripts.
 
 ---
 
@@ -373,17 +288,17 @@ Once the framework crates landed, each had to be wired into `main.rs` to actuall
 | Wiring | Commit | What user sees |
 |---|---|---|
 | iTerm 1337 inline images | `8abc669` | `imgcat`-style scripts now render in-terminal |
-| Doctor shell capabilities | `8abc669` | `wok doctor` shows OSC 133 + integration support per shell |
-| `wok replay <file>` CLI | `8abc669` | wokcast files play back to stdout |
+| Doctor shell capabilities + parser/font self-checks | `8abc669` + current | `wok doctor` shows OSC 133 support, feature flags, font config, iTerm 1337 parser, and sixel parser status |
+| `wok record/replay <file>` CLI | `8abc669` + current | stdin can be recorded to wokcast files; wokcast files play back to stdout |
 | Live `config.toml` reload | `8abc669` | Edit config while wok runs → "config.toml reloaded" status |
 | `share::strip_csi` in markdown export | `b1f58c1` | Block export `.md` is ANSI-clean |
 | Paste/heredoc submit hint | `7fd29e6` | Status bar warns on big paste / heredoc |
 | ProviderCompletion flag | `2b1d5f0` | `WOK_FLAGS=+ProviderCompletion` swaps to fuzzy-ranked completions |
 | QuitWarning state machine | `42ab6c7` | Close-with-running-shells confirm shows live process count |
-| BlockFilter failed count | `b2c0522` | Action shows "N failed blocks in pane" |
+| BlockFilter renderer overlay | `b2c0522` + current | Action opens the block filter overlay instead of only reporting a failed-block count |
 | ScrollbackMirror per-block push | `38b2b33` | Sumtree mirror populated on every block boundary |
 | Vim state machine on InputEditor | `f2ebbf4` | `vim_enabled` field (key routing wiring still open) |
-| Chord keymap parallel to flat | `395a213` | `KeybindingConfig::resolve_chord` available; bindings still empty by default |
+| Keybinding context migration | `395a213` + current | TOML `when` tags now populate context-scoped bindings; chord resolver remains available for future multi-stroke bindings |
 | InputSurface accessors on palette/search | `e78e488` | `to_input_surface()` helpers ready for unified-input migration |
 | `ui_core::App` mount on WokHandler | `d8c7545` | Empty entity arena ready for incremental main.rs decomposition |
-| Theme picker / keybind discovery / settings discovery palettes | `2787829` + `25e2ae8` | Three new palette-driven UIs for theme switch, binding discovery, settings field discovery |
+| Theme picker / keybind discovery / settings form | `2787829` + `25e2ae8` + current | Theme switch, binding discovery/editor, and settings form with live preview/apply/discard |

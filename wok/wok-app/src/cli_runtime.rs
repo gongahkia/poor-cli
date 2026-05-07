@@ -37,6 +37,10 @@ pub(crate) fn dispatch_cli_command(cli: &Cli) -> Result<CliAction, Box<dyn Error
             run_wokcast_replay(&file, speed)?;
             Ok(CliAction::ExitOk)
         }
+        Some(CliCommand::Record { file, cols, rows }) => {
+            run_wokcast_record(&file, cols, rows)?;
+            Ok(CliAction::ExitOk)
+        }
         Some(CliCommand::Onboard {
             shell,
             no_install,
@@ -195,6 +199,28 @@ fn run_wokcast_replay(file: &std::path::Path, speed: f64) -> Result<(), Box<dyn 
         out.write_all(&bytes)?;
         out.flush()?;
     }
+    Ok(())
+}
+
+fn run_wokcast_record(file: &std::path::Path, cols: u16, rows: u16) -> Result<(), Box<dyn Error>> {
+    use std::io::{stdin, Read};
+    use std::time::Instant;
+    use wok_terminal::cast::CastWriter;
+
+    let f = std::fs::File::create(file)?;
+    let mut writer = CastWriter::new(f, cols, rows);
+    let started = Instant::now();
+    let mut input = stdin().lock();
+    let mut buffer = [0u8; 8192];
+    loop {
+        let n = input.read(&mut buffer)?;
+        if n == 0 {
+            break;
+        }
+        let elapsed_us = started.elapsed().as_micros().min(u128::from(u64::MAX)) as u64;
+        writer.write_chunk(elapsed_us, &buffer[..n])?;
+    }
+    writer.flush()?;
     Ok(())
 }
 

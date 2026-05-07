@@ -1052,6 +1052,61 @@ fn doctor_checks_at(config_dir: &Path) -> Vec<DoctorCheck> {
         }),
     }
 
+    let config = WokConfig::load();
+    let font_detail = format!(
+        "terminal='{}' chrome='{}' size={}",
+        config.font_family, config.chrome_font_family, config.font_size
+    );
+    checks.push(DoctorCheck {
+        label: "font_config".to_string(),
+        status: if config.font_family.trim().is_empty()
+            || config.chrome_font_family.trim().is_empty()
+            || !config.font_size.is_finite()
+            || config.font_size <= 0.0
+        {
+            CheckStatus::Fail
+        } else {
+            CheckStatus::Ok
+        },
+        detail: font_detail,
+    });
+
+    match wok_terminal::iterm_image::parse("File=inline=1:WA==") {
+        Ok(payload) if payload.inline && payload.bytes == b"X" => checks.push(DoctorCheck {
+            label: "parser_iterm_1337".to_string(),
+            status: CheckStatus::Ok,
+            detail: "inline image envelope parseable".to_string(),
+        }),
+        Ok(_) => checks.push(DoctorCheck {
+            label: "parser_iterm_1337".to_string(),
+            status: CheckStatus::Fail,
+            detail: "self-check decoded unexpected payload".to_string(),
+        }),
+        Err(error) => checks.push(DoctorCheck {
+            label: "parser_iterm_1337".to_string(),
+            status: CheckStatus::Fail,
+            detail: format!("self-check failed: {error}"),
+        }),
+    }
+
+    match wok_terminal::sixel::parse_sixel_dcs("q#1;2;100;0;0~") {
+        Ok(image) if image.width > 0 && image.height > 0 => checks.push(DoctorCheck {
+            label: "parser_sixel".to_string(),
+            status: CheckStatus::Ok,
+            detail: format!("{}x{} sample decoded", image.width, image.height),
+        }),
+        Ok(_) => checks.push(DoctorCheck {
+            label: "parser_sixel".to_string(),
+            status: CheckStatus::Fail,
+            detail: "self-check decoded empty image".to_string(),
+        }),
+        Err(error) => checks.push(DoctorCheck {
+            label: "parser_sixel".to_string(),
+            status: CheckStatus::Fail,
+            detail: format!("self-check failed: {error}"),
+        }),
+    }
+
     checks.push(DoctorCheck {
         label: "channel".to_string(),
         status: CheckStatus::Ok,
