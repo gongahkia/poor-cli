@@ -1,304 +1,224 @@
-# TODO — Adopt-from-Warp Plan
+# TODO - Current Backlog
 
-[Inference] Plan derived from a structural diff of `warp/` (vendored AGPL reference) vs current wok crates. All ports are clean-room reimplementations under MIT unless noted. Warp source is **reference only**; do not paste AGPL code.
+This file tracks work that is still actionable. Completed phase history has been
+removed from this TODO; use `CHANGELOG.md`, docs, and git history for shipped
+details.
 
-## 0. Ground rules
+## Operating Principles
 
-- *License:* wok = MIT. warp = AGPL-3.0 (except `warpui_core`/`warpui` = MIT). Never paste from AGPL crates. `warpui*` may be vendored verbatim.
-- *Scope guard:* charter is local-first, no AI, no cloud, no login. Reject any port that drags net I/O, auth, telemetry-by-default, or LLM glue.
-- *Crate hygiene:* one new crate per concern. Keep `wok-app/main.rs` (currently 325k) shrinking, not growing.
-- *Testing gate:* every port lands w/ unit tests + at least one integration scenario via the new harness (Phase 4).
-- *Bench gate:* PTY/render/scrollback ports require before/after `criterion` numbers in `wok-app/benches/`.
-- *Feature flags:* gate every behavior swap behind a flag (Phase 5) until soaked.
+- Keep Wok MIT and clean-room. Do not paste from AGPL reference code.
+- Preserve the product charter: local-first, no AI, no login, no cloud dependency,
+  and no telemetry by default.
+- Treat `wok-app/src/main.rs` as an integration shell, not the place where new
+  behavior grows.
+- Add product logic in focused modules or crates first, then wire it into
+  `main.rs` through a small adapter patch.
+- Prefer pure state machines for complex behavior. They should accept plain input,
+  return typed output/effects, and have unit tests before UI/event-loop wiring.
+- Use the existing action/effect pipeline for user-visible behavior:
+  `Action` -> pane/workspace handler -> typed runtime effect.
+- Expose automation through stable actions, Lua hooks, and JSON-RPC methods rather
+  than exposing mutable internal renderer/layout state.
+- Gate risky behavior swaps behind feature flags until they have soaked.
+- Add integration or smoke coverage for every feature that crosses PTY, rendering,
+  session, shell integration, or RPC boundaries.
 
-## 1. Phase ordering rationale
+## Known Limitations And Workarounds
 
-Foundations → state → input → UI fwk → product polish. Each phase is shippable alone and reverts cleanly via flag.
+### Runtime orchestration density
 
-```
-P1 foundations (command, watcher, fuzzy_match, sum_tree)
-  → P2 state (settings_value derive, escape_seq parser, history index)
-  → P3 input (input_classifier, completion engine, universal input)
-  → P4 testing (integration harness, recorder/replay)
-  → P5 release discipline (feature flags, channels, doctor++)
-  → P6 UI fwk decomposition (entity-handle, keymap rewrite)
-  → P7 product polish (block filtering, share, vim crate, onboarding)
-```
+`wok-app/src/main.rs` still owns too much orchestration. The workaround is to make
+it thinner incrementally:
 
----
+- Move reusable logic into `workspace_runtime`, `render_runtime`, `remote_runtime`,
+  `cli_runtime`, or a new focused module.
+- Move domain logic into the owning crate (`wok-blocks`, `wok-input`, `wok-ui`,
+  `wok-terminal`, `wok-git`) before adding app glue.
+- Keep new `main.rs` changes adapter-shaped: route input, call a helper, apply
+  typed effects, request redraw.
+- If an integration patch becomes large, extract another runtime module before
+  continuing.
 
-## P1 — Foundations (low risk, high leverage)
+### Plugin boundary
 
-### ~~P1.1 wok-process~~ ✅ done
-Crate landed w/ `Cmd` builder, `run`/`run_with`/`spawn_detached`/`sh`/`open_url`/`notify`. Migrated `wok-ui/links.rs`, `wok-app/perf_metrics.rs`, `wok-app/main.rs` system notifications, `wok-app/plugin_host.rs::shell_command`. PTY spawning stays in `wok-terminal` (uses `portable-pty::CommandBuilder`, not `std::process::Command`). Async wrapper deferred until first consumer needs it.
+Plugins are currently action/hook scoped. They should be used for keybindings,
+command aliases, lifecycle hooks, `run_action`, shell command injection,
+notifications, status updates, and external bridge effects.
 
-### ~~P1.2 wok-fuzzy~~ ✅ done
-Crate landed w/ `score(query, candidate) -> Option<Score>` + `match_many`. Substring tier (prefix > mid), subsequence tier w/ boundary (`_-/. :\` + camelCase) + contiguity + position bonuses. 11 tests. `wok-ui/command_palette.rs` migrated. `quick_select.rs` doesn't fuzzy-rank (label-pick), no migration needed. Future consumer: `wok-input/completion.rs` re-rank in P3.2.
+Do not design third-party extensions that require arbitrary mutation of Wok's
+workspace, renderer, or layout internals. If a plugin needs a new capability, add a
+bounded action, Lua API, or JSON-RPC method.
 
-### ~~P1.3 wok-watcher~~ ✅ done
-Crate landed w/ `PathWatcher::{new,with_debounce,swap,path,poll}`. Drains notify events, coalesces by debounce window. `wok-ui/theme_watcher.rs` reduced to thin adapter. `poll()` signature changed `&self → &mut self`; one call site in main.rs updated. Config-reload + lua-reload subscribers deferred to first consumer.
+Custom panels, docks, and render surfaces should remain built-in until Wok has a
+deliberate renderer/layout plugin API.
 
-### ~~P1.4 wok-sumtree~~ ✅ done
-B-tree (fanout 8) w/ `Item`/`Summary` traits. API: `push`/`extend`/`get`/`len`/`summary`/`iter`/`seek_by`. Splits root upward on overflow; cached child counts make `get` truly O(log n). 7 unit tests + criterion benches.
+## P1 - Runtime Decomposition
 
-Bench numbers (release, 100k items, 1024 ops):
-- `get` random: vec ≈ 0.3 ns/op, sumtree ≈ 17 ns/op — Vec wins for raw indexed access (expected; sumtree has overhead).
-- `seek_by` row-lookup: sumtree ≈ 24 ns/op, scales O(log n). Vec equivalent can't do this in O(log n); the bench's vec_linear column is unreliable (LLVM elides the constant inner loop).
-- Push (sequential append): negligible difference.
+Goal: keep shrinking `wok-app/src/main.rs` while preserving behavior.
 
-Conclusion: migrate scrollback to sumtree only where soft-wrapped line→logical row needs the seek_by win. Raw indexed access stays on Vec.
+- Extract action catalog and palette-entry construction out of `main.rs`.
+- Extract Git/worktree command-palette and RPC helpers into a focused runtime
+  module.
+- Extract settings editor state/update/render preparation away from the top-level
+  handler.
+- Extract file/media preview orchestration into a runtime module that owns preview
+  state transitions.
+- Migrate suitable `WokHandler` substates into `wok-ui-core` entities once doing so
+  removes real coupling.
+- Add tests around each extracted module before deleting the old inline logic.
 
----
+Acceptance:
 
-## P2 — State and parsing
+- `main.rs` loses meaningful lines with no behavior loss.
+- Extracted modules have direct unit tests where practical.
+- `cargo test --workspace` passes after each slice.
 
-### ~~P2.1 wok-settings + WokConfig schema~~ ✅ done
-**Framework (earlier):** `wok-settings` crate w/ `Settings` trait, `SettingsSchema`, `SettingsStore<T>` (Defaults < UserToml < Overrides), `replace()` returning a `ChangedField` diff. `wok-settings-derive` proc-macro emits the impl. Self-derive supported via `extern crate self as wok_settings;`.
+## P2 - End-To-End Smoke Coverage
 
-**Migration:** `WokConfig` now has a manual `wok_settings::Settings` impl in `wok-app/src/config.rs` that mirrors all 36 top-level TOML keys w/ stringified types. Manual rather than derived because the struct contains custom enums (ShellType, ChromeSide, BackgroundFit, …) that aren't all `Serialize` — derive would require a wider-scope refactor. Live-reload diffing can now name changed fields. 2 schema tests (known fields present, names unique). Adapter loader shim deferred — current `WokConfig::load` already implements the layered defaults+TOML behaviour the framework would otherwise wrap.
+Goal: catch regressions that unit tests cannot see.
 
-### ~~P2.2 Parser split~~ ✅ done (extraction)
-Pure parser helpers extracted from `wok-terminal/src/terminal.rs` into a new `parser.rs` module: `find_osc_terminator`, `find_apc_terminator`, `find_dcs_terminator`, `find_csi_terminator`, `parse_kitty_keyboard_control`, `decode_kitty_image_data`, `parse_kitty_file_path`, `parse_osc8_params`, `sixel_display_size`, plus the `KittyKeyboardControl` enum. All `pub(crate)` so the dispatch loop in `terminal.rs` is unchanged. Tests moved + expanded: 14 parser tests (vs 6 before) covering OSC BEL/ST + EOF, APC ST-only, DCS dual-terminator, CSI final byte ranges, OSC 8 blank-token skipping, kitty RGB→RGBA padding, short-payload + unknown-format errors. Wider corpus (SGR 38;2/5, OSC 4/10/11/52, mode 2026/2027) deferred — they live in the dispatch loop and would require splitting more state-touching code.
+- Add smoke coverage for launch -> run command -> block created -> failed block
+  navigation.
+- Add shell marker goldens for Bash, Zsh, Fish, PowerShell, and WSL wrappers.
+- Add session restore smoke for tabs, splits, transcript text, block timeline,
+  collapsed state, and cwd.
+- Add RPC smoke for `wok.get_panes`, `wok.send_text`, `wok.get_blocks`, and
+  `wok.run_action`.
+- Add daemon attach/detach smoke that verifies per-pane snapshot sync after pane
+  creation and closure.
+- Add at least one headless or screenshot-backed UI smoke for search/palette/dock
+  layout if a reliable harness is available.
 
-### ~~P2.3 Scrollback mirror~~ ✅ done (mirror data structure)
-`wok-blocks/src/scrollback_mirror.rs` lands. `LineSnapshot { absolute_row, block_id: Option<BlockId>, visible, is_boundary }` is a `SumTree::Item`; `LineSummary { total, visible, boundaries }` is its `Summary`. `ScrollbackMirror::{len, summary, push, get, nth_boundary, nth_visible, block_at_row}` — `nth_boundary` and `nth_visible` are O(log n) via `seek_by` over the boundaries/visible projections, validated against a 10k-line corpus. `block_at_row` is currently linear (real O(log n) needs a sorted secondary index — follow-up). 7 tests. The `alacritty_terminal::Grid` is still the source of truth for bytes; this mirror is metadata only and updates from `BlockManager` + viewport scroll wire in a follow-up PR (gated behind `FeatureFlag::SumTreeScrollback`).
+Acceptance:
 
-### ~~P2.4 block model split~~ ✅ done
-Split into: `block_id.rs` (`BlockId = u64` alias + `BlockIdGenerator` w/ `new`/`after`/`peek`/`next_id`), `block_index.rs` (`BlockIndex` w/ id→pos HashMap, O(1) lookup), `block_manager.rs` (state machine, uses generator + index). `block.rs` slimmed to record-only + re-exports `BlockManager` so external imports `wok_blocks::block::BlockManager` keep working. `restore_blocks` now rebuilds index. 25 tests pass (16 retained + 9 new across split modules).
+- Smoke tests run in CI or are clearly marked as local/manual when they require a
+  GUI.
+- Failures produce enough context to identify shell, pane id, and command block
+  state.
 
----
+## P3 - Input And Keymap Migration
 
-## P3 — Input and completion
+Goal: finish wiring the framework pieces that are already present.
 
-### ~~P3.1 wok-input-classifier~~ ✅ done (framework)
-Crate landed w/ `classify(buf) -> Classification { kind: InputKind, hints: Hints }` and `kind(buf) -> InputKind` shortcut. Variants: `Empty | Heredoc | Paste | Shell | PossiblyNl`. Hints carry bytes/lines/has_crlf/has_nul. Heuristics in priority order: empty → heredoc (`<<` / `<<-` outside single quotes, w/ tag) → paste (≥4096 bytes or multi-line non-shell) → shell (known cmd, abs/relative path, top-level metas `|&;><$\``) → NL prose (≥3 words, no metas, no leading path). 13 tests. Consumers (`wok-input/editor.rs` paste bracketing, `wok-blocks/triggers.rs` boundary hints) wired in a follow-up PR.
+- Complete `InputSurface` migration for palette/search/find/input surfaces.
+- Decide whether `ProviderCompletion` should remain flag-gated or become default.
+- Wire `wok-vim` key routing into owned input mode behind a config/feature flag.
+- Use `wok-keymap` chord resolution for multi-stroke bindings once conflicts and
+  timeout behavior are specified.
+- Add paste/heredoc classifier behavior where it materially improves command
+  submission safety.
 
-### ~~P3.2 Completion engine~~ ✅ done (multi-provider runtime)
-`wok-input/src/provider_runtime.rs` lands w/ `RankedRunner` (panic-isolated provider chain + dedup + fuzzy rerank via wok-fuzzy + max_results truncation), plus two new built-ins: `HistoryProvider` (prefix match against past commands) and `AliasProvider` (first-token only). Existing `completion.rs` providers (`PathCompletionProvider`, `CommandCompletionProvider`, `EnvVarCompletionProvider`) work unchanged with the new runner. 6 tests including panic isolation, dedup, truncation, empty-word passthrough. Fig-spec loader still deferred (filesystem-only loader fits in a follow-up). Migration flag swap (`FeatureFlag::ProviderCompletion`) lands when consumers switch over.
+Acceptance:
 
-### ~~P3.3 Universal input surface~~ ✅ done (framework)
-`wok-input/src/surface.rs` lands w/ `InputSurface { mode, slots: HashMap<SurfaceMode, ModeSlot> }`. `SurfaceMode::{Shell, Palette, Search, Find}` — each gets its own buffer + cursor (preserved across mode switches). API: `set_mode`, `text`, `cursor`, `set_text`, `insert_char`, `backspace`, `move_cursor`, `submit`, `cancel`. Returns `SurfaceAction::{Changed, Submit, Cancel, ModeChanged}`. Multi-byte safe — `backspace`/`move_cursor` step to char boundaries. 11 tests. Migration of existing `wok-app/input.rs`/`command_palette.rs`/`search.rs` consumers is the invasive part — lands behind `FeatureFlag::UnifiedInput` (already registered in `wok-features`) once views are factored.
+- Existing owned-primary input behavior stays compatible.
+- Multibyte editing, completion, history recall, and cancel/submit flows have tests.
 
----
+## P4 - Blocks, Scrollback, And Replay
 
-## P4 — Testing and replay
+Goal: harden the block model and recorder path beyond unit-level coverage.
 
-### ~~P4.1 Integration harness~~ ✅ done (skeleton)
-New crate `wok-integration`. `Builder::new().dims(c, r).scrollback(n).step(...).run() -> Harness`. Steps: `PtyOutput(bytes)`, `SendInput(bytes)`, `InjectEvent(SemanticEvent)`, `Resize { cols, rows }`, `Assert(Arc<dyn Fn(&Harness)->Result>)`. Wraps a real `TerminalState` + `BlockManager`, scripts feed semantic events for end-to-end block-detection coverage. `MockPty` records user input + queues scripted output. 6 unit tests including a 3-block scenario (`echo a / false / pwd` → 3 blocks, exit codes preserved). Real PTY adapters + virtual fs + fixed clock deferred — current scope covers parse → state → block-manager which is the hot path; shell-bootstrap goldens land when consumers do.
+- Add a sorted secondary index or equivalent for `ScrollbackMirror::block_at_row`
+  if row lookup becomes hot.
+- Decide where `SumTreeScrollback` should be enabled by default, if anywhere.
+- Add before/after benchmarks for any scrollback or block lookup behavior swap.
+- Add a true PTY tap for recording running panes, not only stdin `wokcast` input.
+- Extend replay tests to cover resize, alternate screen, inline images, and block
+  markers.
+- Finish action-layer file output for block markdown/JSON export if not already
+  wired for all intended surfaces.
 
-### ~~P4.2 wokcast format~~ ✅ done (codec)
-`wok-terminal/src/cast.rs` lands w/ `CastWriter` + `CastReader` for a newline-delimited record format: header `# wokcast v1 cols=… rows=… started=…` + records `<elapsed_us> <base64_chunk>`. Comment/blank lines skipped on read; unknown header keys ignored (forward-compat). `schedule(&mut reader, speed) -> Vec<(Duration, Vec<u8>)>` produces relative-delay playback plans; `speed=0.0` collapses to instant for deterministic tests. 8 unit tests including round-trip + malformed input. `wok record <file>` now records stdin into a wokcast and `wok replay <file>` plays it back. Existing `replay.rs` (in-memory cell snapshots) is untouched — different concern. A true PTY tap into running panes remains the next recorder upgrade.
+Acceptance:
 
----
+- Block boundaries remain stable after scroll, resize, search jumps, and session
+  restore.
+- Recorder/replay artifacts are deterministic enough for regression testing.
 
-## P5 — Release discipline
+## P5 - Remote Control And Automation
 
-### ~~P5.1 / P5.2 feature flags + channels~~ ✅ done
-`wok-channels` (Dev/Dogfood/Preview/Stable, picked at build via `WOK_CHANNEL`) and `wok-features` (FeatureFlag enum w/ dogfood/preview/release ring arrays + `WOK_FLAGS=+X,-Y` overrides). 4 starter flags reserved for later phases (UnifiedInput, SumTreeScrollback, ProviderCompletion, BlockFiltering); arrays empty until landed. 7+5 tests.
+Goal: make automation richer without exposing internals.
 
-### ~~P5.3 doctor channel + flags~~ ✅ done
-Doctor now prints `channel: dev` and `feature_flags: on=[…] off=[…]`, validates keybindings, reports shell capability data, checks font config, and runs iTerm 1337 + sixel parser self-checks. GPU adapter and sumtree backend checks remain deferred until those subsystems expose cheap headless diagnostics.
+- Add bounded RPC/Lua capabilities only when they map to stable actions or stable
+  read-only snapshots.
+- Keep destructive RPC methods confirmation-gated.
+- Add schema tests whenever `REMOTE_RPC_SCHEMA_V1.json` changes.
+- Add Lua examples for common local workflows: failed-command notification,
+  workspace save/load, Git status, scratch-to-pane, and block export.
+- Keep the plugin bridge effect-only unless a deliberate extension API is designed.
 
----
+Acceptance:
 
-## P6 — UI framework decomposition
+- External automation can compose Wok workflows through actions and snapshots.
+- No plugin path can bypass the core action/workspace pipeline.
 
-### ~~P6.1 wok-ui-core skeleton~~ ✅ done (framework)
-New crate `wok-ui-core` distilling the entity-handle pattern (no `warpui_core` dep). `App` owns a type-erased `HashMap<EntityId, Rc<RefCell<dyn Any>>>` arena; `new_entity<T>(value) -> Handle<T>` returns a refcounted typed handle. `Handle::{read, write}` borrow w/ closure scope. `Entity<T>` is a copy-able id w/ compile-time T witness. `App::dispatch(entity, |&mut T, &mut Context|)` runs a handler and returns queued follow-up `Box<dyn Action>`s. `Context::new_entity` and `Context::emit` available inside the scope. `View::render() -> Element` w/ `Element::{Text, Container { tag, children }}`. Drop semantics: `App::drop_entity` invalidates new lookups but outstanding handles keep value alive (via Rc). 9 tests including dispatch on dropped entity = noop, handle clone shares storage, render produces tree, nested entity creation in handler. Migration of `WokHandler` substates is the follow-up; this crate gives them a target.
+## P6 - Platform Hardening
 
-### ~~P6.2 Keymap framework~~ ✅ done (resolver)
-New crate `wok-keymap`. Types: `Stroke { Key, Mods }`, `Key { Char, Enter, Esc, Tab, Backspace, Space }`, `Mods { ctrl, shift, alt, super_ }`, `Binding { sequence, action: &'static str, when: ContextPredicate }`, `ContextPredicate { Any, All, AnyOf, None_ }`, `Context = HashSet<&'static str>`. `Keymap::resolve(buffer, ctx) -> Resolution { Match { action, sequence_len } | Pending | None }`. Arbitration: a longer pending binding blocks a short exact match until disambiguated; same-length bindings are last-wins. 9 tests covering chord disambiguation, context masking, modifier-aware strokes, all four predicate kinds. TOML `when` tags now populate context-scoped bindings in `wok-app`; multi-stroke chord defaults remain a future migration.
+Goal: improve confidence outside the best local demo path.
 
----
+- Soak Bash, Zsh, Fish, PowerShell, and WSL shell bootstrap behavior.
+- Add doctor checks for cheap GPU adapter diagnostics.
+- Add doctor checks for scrollback backend/feature-flag state when exposed.
+- Review macOS, Linux, and Windows packaging readiness separately.
+- Keep startup/reset/onboard flows idempotent and rollback-safe.
+- Ensure platform-specific process, notification, open/reveal, and shell behaviors
+  degrade clearly when unavailable.
 
-## P7 — Product polish
+Acceptance:
 
-### ~~P7.1 Block filtering~~ ✅ done
-`wok-blocks/src/filter.rs` lands w/ `BlockFilter` (clone+send+sync `Arc<dyn Fn(&Block)->bool>`) and `and`/`or`/`not`/`any`/`none`. Built-ins: `failed_only`, `succeeded_only`, `running_only`, `matching_regex`, `cwd_under`, `since_id`, `command_contains`, `bookmarked_only`. `apply(blocks, &filter) -> Vec<usize>` returns matching indices in order. 13 tests including AND/OR/NOT, regex compile error, path-prefix, since-id strict-greater. Runtime now routes `Action::BlockFilter` into the rendered block filter overlay instead of stopping at a status-count action.
+- `wok doctor` explains setup problems without requiring source-level debugging.
+- Platform-specific failures do not corrupt managed config or shell startup files.
 
-### ~~P7.2 Block share~~ ✅ done (formatter)
-`wok-blocks/src/share.rs` lands w/ `format_markdown(&Block, &[String], OutputMode)` + `OutputMode::{Plain, Ansi}` + `strip_csi(&str)`. Emits self-contained `.md`: id, cwd, git branch (+`*` if dirty), exit code, duration, fenced cmd (`sh`), fenced output (`text` or `ansi`). Output text supplied by caller (Block records grid rows, not bytes; the terminal grid is the source). 9 unit tests. Keybind wiring + actual file write deferred to action layer.
+## P7 - Product Positioning
 
-### ~~P7.3 wok-vim state machine~~ ✅ done (framework)
-New crate `wok-vim` w/ pure state machine. Inputs: `Stroke { Char(c), Esc, Enter, Backspace }`. Outputs: `Vec<Edit>` (`ApplyMotion`, `ApplyOperator`, `ApplyLinewise`, `InsertChar`, `BackspaceChar`, `InsertNewline`, `OpenLineBelow/Above`, `DeleteCharUnderCursor`, `PasteAfter/Before`, `Undo`, `EnterMode`). Modes: Normal/Insert/Visual/VisualLine/OpPending. Verbs: `i I a A o O x p P u v V`. Operators: `d c y` w/ linewise `dd cc yy`. Motions: `h j k l 0 $ w b e f<c> F<c> t<c> T<c>`. Counts (multi-digit) and `"<a..z>` registers. 22 tests covering operator+motion matrix, counts, registers, mode transitions. Existing `wok-ui/vi_mode.rs` (terminal-output navigation) is a *different* feature and is left untouched — wok-vim targets the editor-buffer use case that hasn't shipped yet.
+Wok's niche is part of the product, not just implementation detail: blocks and a
+modern workspace terminal without AI, cloud sync, login, or telemetry by default.
 
-### ~~P7.4 Bootstrap capability matrix~~ ✅ done (data table)
-`wok-terminal/src/shell_capabilities.rs` — static `ShellCapability { name, osc133, prompt_var, history_file, profile_path, alias_file, has_integration }` array covering bash, zsh, fish, ash, dash, ksh, csh, tcsh, nu, xonsh, elvish, powershell. APIs: `lookup`, `integrated_shell_names`, `osc133_capable_names`. 7 unit tests including invariant `has_integration → osc133`. Decoupled from `ShellType` enum on purpose — wider detection + doctor reporting can wire it in a follow-up without rippling to ipc/jsonrpc/cli code.
+### Taglines To A/B
 
-### ~~P7.5 Onboarding flow~~ ✅ done
-`wok onboard [--shell auto|bash|zsh|fish] [--no-install] [--overwrite]` runs 4 steps with `[N/4]` plain-text output: (1) detect shell, (2) seed config + theme + integration scripts under `~/.config/wok` (idempotent via existing `init_at`), (3) wire managed-block markers into the user's startup file (skippable with `--no-install`), (4) smoke check that the installed integration script advertises OSC 133 `;A` and `;D` markers — fail/warn/ok report. Re-running is safe (uses managed-block markers + `--overwrite` opt-in). Smoke is content-based (no PTY harness needed). 3 unit tests + manual CLI smoke verified.
+1. "The terminal that stays out of your way - and off the network."
+2. "Blocks. Hot reload. Zero telemetry. No AI."
+3. "A modern terminal for people who don't want their shell history in the cloud."
 
-### ~~P7.6 safe-triangle + quit-warning~~ ✅ done (algorithms)
-- `wok-ui/src/safe_triangle.rs` — pure 2-D geometry. `intent_preserved(apex, cursor, Rect)` returns `true` iff the cursor is still inside the triangle from the previous pointer position to the target's near edge. Auxiliary: `Rect`, `Side`, `approach_side`. 7 tests.
-- `wok-ui/src/quit_warning.rs` — pure state machine `QuitWarning` w/ `on_quit_request`/`on_running_children`/`confirm`/`dismiss`/`should_show`/`should_quit`. Effects `{Quit, Show, Hide, NoChange}`. 8 tests.
-- Generic `modal.rs` deferred — too vague to port without a UI fwk decision (lands w/ P6.1).
-- UI integration (mounting in menu/quit flows) follows the existing wok-ui adapter pattern; deferred to a feature PR.
+### Target Audiences
 
-### ~~P7.7 Inline image audit~~ ✅ done
-Audit: `wok-renderer/inline_images.rs` is the protocol-agnostic store. Decoders: sixel ✓ (`wok-terminal/src/sixel.rs`), kitty graphics ✓ (`wok-terminal/src/terminal.rs::parse_kitty_apc`), iTerm OSC 1337 ✓ (`wok-terminal/src/iterm_image.rs` + OSC dispatcher wiring). Handles `auto`/`<n>`/`<n>px`/`<n>%` dims, base64 name + bytes, forward-compat key skipping, and forwards decoded RGBA placements into the app inline-image store.
+1. Privacy-conscious developers: security researchers, infosec, journalists, and
+   people avoiding cloud terminal history.
+2. Regulated industries: finance, healthcare, defense, and teams where cloud sync
+   is a compliance issue.
+3. Power users tired of bloat: people who want block workflows without an assistant
+   or account system.
+4. Lua/scripting users: people who want a programmable local terminal.
 
-### ~~P7.8 wok bug-report~~ ✅ done (directory bundle)
-`wok bug-report [--output <dir>]` writes a directory `bug-<unix_ms>/` (default in cwd) containing: `doctor.json`, copies of `config.toml`/`init.lua` (if present), `channel.txt`, `flags.txt`, `system.txt`, and a `README.txt`. No upload, no network. tar.gz packing intentionally deferred (no tar/gz dep on wok-app yet — directory is just as shareable). Last-N PTY bytes also deferred until P4.2 recorder lands. 2 unit tests + manual smoke verified output.
+### Anti-Positioning
 
----
+- Not for people who want AI command suggestions.
+- Not for teams that need shared cloud shell sessions.
+- Not a generic clone of another terminal; it is a local-first alternative for a
+  specific user.
 
-## Explicit non-goals (do not port)
+### Differentiators To Lead With
 
-- AI / agents / MCP / LLM glue (`crates/ai`, `app/src/ai*`, `app/src/ai_assistant`, `agent_*`, `prompt/`, `predict/`).
-- Cloud sync / Drive / auth / billing / GraphQL / Firebase / `warp_server_client` / `remote_server`.
-- WASM target (`serve-wasm`, `*_wasm`).
-- Telemetry-by-default (`warpui_core/telemetry`, `app_focus_telemetry`).
-- Crash reporting upload, autoupdate.
-- Voice input, computer-use, prevent-sleep, antivirus integration.
-- Notebooks, code review UI, voltron, share-block cloud bits.
-- Diesel/SQLite persistence — keep wok's TOML snapshots; revisit only if scrollback persistence becomes a feature.
+- Local-first by design; every core feature works offline.
+- Command blocks are the workflow wedge.
+- Lua scripting and JSON-RPC provide automation without cloud services.
+- Config, themes, keybindings, and scripts are local files.
+- Feature flags and channels allow risky work to soak before promotion.
 
-## Workstream sizing (rough)
+## Non-Goals
 
-| Phase | LOC est | Risk | Order |
-|---|---|---|---|
-| P1.1 wok-process | 1–2k | low | 1 |
-| P1.2 wok-fuzzy | <500 | low | 1 |
-| P1.3 wok-watcher | <500 | low | 1 |
-| P1.4 wok-sumtree | 1–2k | med | 2 |
-| P2.1 wok-settings + derive | 2–3k | med | 2 |
-| P2.2 parser split | refactor | med | 3 |
-| P2.3 sumtree scrollback | 1k + bench | high | 4 |
-| P2.4 block split | refactor | low | 2 |
-| P3.1 input classifier | <500 | low | 3 |
-| P3.2 completion rewrite | 2–3k | med | 4 |
-| P3.3 universal input | 3–4k | high | 5 |
-| P4.1 integration harness | 2–3k | med | 3 |
-| P4.2 recorder upgrade | <1k | low | 4 |
-| P5 release discipline | <1k | low | 2 |
-| P6.1 wok-ui-core | 3–5k | high | 5 |
-| P6.2 keymap rewrite | 2–3k | med | 5 |
-| P7 polish | varies | low–med | 6 |
+- AI, agents, MCP, LLM glue, or command prediction.
+- Cloud sync, accounts, billing, GraphQL/Firebase-style service backends, or
+  hosted shell history.
+- Telemetry by default.
+- Crash-report upload or autoupdate.
+- WASM target support unless a concrete local-first use case appears.
+- Voice input, notebook features, code-review UI, or cloud share-block features.
+- SQLite/Diesel persistence unless scrollback persistence proves it needs a real
+  database.
 
 ## Tracking
 
-Per item: open issue w/ label `port:warp`, link this section, attach acceptance criteria. Land behind a flag in P5 once available; flip default in next release if soak ≥ 2 weeks w/o regressions.
-
-## Open questions
-
-- Relicense to AGPL to allow direct lifts? [Speculation] cleaner but loses the MIT pitch in README. Default = no.
-- Adopt `warpui_core` wholesale (MIT-compatible) vs distill? Default = distill (P6.1) to avoid pulling its text/clipboard/keymap that conflict w/ wok's.
-- Keep Lua scripting alongside a future entity-handle plugin model, or migrate? [Inference] keep both; Lua = user-side, entities = internal decomposition.
-
----
-
-## P9 — Configurable keybindings (TOML override layer)
-
-### ~~P9.1 TOML schema~~ ✅ done (commit `7d5fea9`)
-`~/.config/wok/keybindings.toml` schema lands. `[[binding]]` entries with `keys`, `action`, optional `when`. Modifier syntax: `cmd|super|meta|win`, `ctrl|control`, `alt|opt|option`, `shift`. Final token is a single char or named key (`enter`, `pgup`, `f1..f12`, etc.). Action ids come from `parse_lua_action` (canonical strings shared with the Lua API). 8 loader unit tests.
-
-### ~~P9.2 Loader + merge~~ ✅ done
-Hot-reload via `wok-watcher::PathWatcher` polled per frame. `KeybindingConfig::apply_toml_overrides` upserts user entries on top of defaults; user wins on conflict. Unknown action names log warnings + drop only that entry. `wok doctor` now validates `keybindings.toml` and reports parse failures or dropped-entry warnings. Live reload now rebuilds each pane from defaults + Lua/plugin bindings + TOML, so bindings removed from the file disappear without restart.
-
-### ~~P9.3 Editor UI~~ ✅ done
-`Action::KeybindingEditor` opens an editable palette: each action shows the current/default binding, "Bind" captures the next key press into `~/.config/wok/keybindings.toml`, and "Reset" removes the user override for that action. The existing read-only `Action::KeybindingDiscovery` palette remains available for quick reference.
-
----
-
-## P10 — Settings: structured editor ✅ done
-
-`Action::OpenSettings` now opens a generated settings form. Bool fields render as toggles, numeric fields render as sliders, enums render as dropdown-style controls, and complex/path/text fields keep an "edit raw TOML" escape hatch. Edits apply to a draft `WokConfig` for live preview; `A`/`Mod+S` persists, `D`/`Esc` discards, `R` resets the selected supported field to default, and `T` opens the raw TOML buffer.
-
-## P12 — Pitch + positioning
-
-Wok rejects AI, cloud, telemetry-by-default by charter. That niche is real but needs to be marketed *as the niche*.
-
-### Three taglines to A/B
-1. **"The terminal that stays out of your way — and off the network."**
-2. **"Blocks. Hot reload. Zero telemetry. No AI."**
-3. **"A modern terminal for people who don't want their shell history in the cloud."**
-
-### Target audiences (ranked)
-1. **Privacy-conscious devs** — security researchers, infosec, journalists, people who switched from Warp after the cloud-history incident.
-2. **Regulated industries** — finance, healthcare, defense — orgs where cloud sync is a compliance violation.
-3. **Power users tired of bloat** — "I want blocks like Warp but I don't want an AI assistant or sign-in screen."
-4. **Lua/scripting fans** — Wok's Lua plugin model is more open than Warp's workflow YAML.
-
-### Anti-positioning (what wok is NOT)
-- Not for people who want AI command suggestions.
-- Not for teams that need shared shell sessions across machines.
-- Not a Warp replacement — a Warp *alternative for a specific user*.
-
-### Differentiators to lead with
-1. **Hot reload everything** — config.toml, themes, Lua plugins. No restart.
-2. **Lua plugin model** — full programmatic control over the terminal.
-3. **Zero network** — disable Wi-Fi, run wok, every feature works.
-4. **Local-first sessions** — all state in `~/.config/wok` and `~/.local/share/wok`. Backup is a `tar`.
-5. **Channel + flag system** — ship features behind flags, soak in dogfood, promote to stable.
-
----
-
-## P13 — Weaknesses → functional improvements
-
-Each weakness from the strategic audit becomes a concrete ticket here.
-
-| Weakness | Ticket | Owner of fix |
-|---|---|---|
-| macOS-first only | P8 | platform owners |
-| Settings = TOML buffer only | P10 form controls + live preview/apply/discard landed | UI |
-| Keybindings hardcoded | P9 TOML overrides + editor UI w/ stroke capture landed | UI + config |
-| No theme picker | ~~done 2787829~~ ✅ | — |
-| Lua API surface narrow | ~~done~~ ✅ — see P15 | — |
-| No Lua plugin SDK | ~~done~~ ✅ — see P15 | — |
-| Framework crates not wired | ~~done~~ ✅ — see P16 | — |
-
----
-
-## P15 — Lua plugin SDK + API stability ✅ done
-
-Tracked retroactively because it shipped as an epic outside the original P1–P14 scope.
-
-### ~~P15.1 Lua API expansion~~ ✅
-Eight namespaces added to scripting.rs across `94242d2` … `00781e0`:
-- `wok.tabs.{new,close,next,prev,switch}`
-- `wok.panes.{split_*,close,focus_*,*_floating}`
-- `wok.history.{entries,search}`
-- `wok.window.{set_title,toggle_fullscreen,set_opacity}`
-- `wok.fs.{read,write,exists,list}` (sandboxed to `~/.config/wok/data` + `~/.local/share/wok`)
-- `wok.clipboard.{copy,paste}`, `wok.pane_api.{send_input,info}`, `wok.blocks.list`
-
-Total Lua surface: ~50 functions across 18 namespaces.
-
-### ~~P15.2 Plugin SDK assets~~ ✅
-- `docs/LUA_SCRIPTING.md` (commit `d6fd763`) — full prose API reference.
-- `docs/wok.d.lua` (commits `9611802` + `14fb0e8`) — LuaCATS type defs w/ 86 `---@since 1.0.0` annotations.
-- `docs/examples/{minimal,full,powerful}.lua` — copy-paste starters.
-- `wok-app/tests/lua_hook_payloads.rs` (commits `587ebd7` + `f266c6b`) — 12 hook payload schema tests.
-- `docs/LUA_API_STABILITY.md` (commit `76b2ec1`) — versioning policy + deprecation workflow.
-- `wok.api_version = "1.0.0"` constant exposed to Lua.
-- `CHANGELOG.md` (commit `681240d`) — 1.0.0 baseline.
-- `.github/scripts/lua_api_lint.sh` + CI job (commit `413ce39`) — enforces `---@since` on every public surface.
-
-### ~~P15.3 Open extensions~~ ✅ done
-- Runtime warns once per session when deprecated Lua aliases are used (`wok.keymap` → `wok.bind_key`, `wok.action` → `wok.run_action`).
-- CI runs `shellcheck` on `.github/scripts/lua_api_lint.sh`.
-- CHANGELOG release links now point at `github.com/gongahkia/wok`.
-
----
-
-## P16 — Tier-A wirings ✅ done
-
-Once the framework crates landed, each had to be wired into `main.rs` to actually ship behavior. Tracked retroactively.
-
-| Wiring | Commit | What user sees |
-|---|---|---|
-| iTerm 1337 inline images | `8abc669` | `imgcat`-style scripts now render in-terminal |
-| Doctor shell capabilities + parser/font self-checks | `8abc669` + current | `wok doctor` shows OSC 133 support, feature flags, font config, iTerm 1337 parser, and sixel parser status |
-| `wok record/replay <file>` CLI | `8abc669` + current | stdin can be recorded to wokcast files; wokcast files play back to stdout |
-| Live `config.toml` reload | `8abc669` | Edit config while wok runs → "config.toml reloaded" status |
-| `share::strip_csi` in markdown export | `b1f58c1` | Block export `.md` is ANSI-clean |
-| Paste/heredoc submit hint | `7fd29e6` | Status bar warns on big paste / heredoc |
-| ProviderCompletion flag | `2b1d5f0` | `WOK_FLAGS=+ProviderCompletion` swaps to fuzzy-ranked completions |
-| QuitWarning state machine | `42ab6c7` | Close-with-running-shells confirm shows live process count |
-| BlockFilter renderer overlay | `b2c0522` + current | Action opens the block filter overlay instead of only reporting a failed-block count |
-| ScrollbackMirror per-block push | `38b2b33` | Sumtree mirror populated on every block boundary |
-| Vim state machine on InputEditor | `f2ebbf4` | `vim_enabled` field (key routing wiring still open) |
-| Keybinding context migration | `395a213` + current | TOML `when` tags now populate context-scoped bindings; chord resolver remains available for future multi-stroke bindings |
-| InputSurface accessors on palette/search | `e78e488` | `to_input_surface()` helpers ready for unified-input migration |
-| `ui_core::App` mount on WokHandler | `d8c7545` | Empty entity arena ready for incremental main.rs decomposition |
-| Theme picker / keybind discovery / settings form | `2787829` + `25e2ae8` + current | Theme switch, binding discovery/editor, and settings form with live preview/apply/discard |
+- Open issues should link to the relevant section here and include acceptance
+  criteria.
+- Large behavior swaps should name their feature flag and soak plan.
+- PRs should keep completed implementation notes out of this file; move shipped
+  details to docs or changelog instead.
