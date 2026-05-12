@@ -1,7 +1,7 @@
 # TODO - Current Backlog
 
 This file tracks work that is still actionable. Completed phase history has been
-removed from this TODO; use `CHANGELOG.md`, docs, and git history for shipped
+removed from this TODO; use `CHANGELOG.md`, docs, and git history for shippedq
 details.
 
 ## Operating Principles
