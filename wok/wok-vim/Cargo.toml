@@ -1,9 +1,0 @@
-[package]
-name = "wok-vim"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-description = "Pure vim state machine: (Mode, Operator, Motion, Count, Register) -> Vec<Edit>"
-
-[dependencies]

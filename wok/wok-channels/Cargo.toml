@@ -1,7 +1,0 @@
-[package]
-name = "wok-channels"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-description = "Release channel metadata for Wok"

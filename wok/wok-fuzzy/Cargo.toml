@@ -1,7 +1,0 @@
-[package]
-name = "wok-fuzzy"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-description = "Ranked subsequence fuzzy matching for Wok"
