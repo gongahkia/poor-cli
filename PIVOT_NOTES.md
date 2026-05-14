@@ -13,6 +13,7 @@
 - D2 rendering is deferred pending a local or WASM renderer; the Junas component opens `play.d2lang.com`.
 - Compromise.js entity extraction is deferred until Dude has a pasted-text input flow that needs local entity detection.
 - Graphviz keeps a component scaffold, but `@viz-js/viz` is not added until relationship graphs ship.
+- `sg_business_dossier` currently exposes requested `sectorHints` and selected modules, but not an inferred-sector label. The Dude UI skips a "Sector inferred" badge until the envelope exposes that explicitly.
 - User accounts, saved searches, monitoring, alerts, payments, bulk lookups, public API access, and AI synthesis remain out of scope for v1.
 
 ## Open Decisions

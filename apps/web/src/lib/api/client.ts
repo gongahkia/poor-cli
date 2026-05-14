@@ -4,6 +4,17 @@ type ErrorPayload = {
   error?: unknown;
 };
 
+type ToolResponse<T> = {
+  content?: unknown;
+  data?: {
+    record?: T;
+  };
+};
+
+type CallToolOptions = {
+  signal?: AbortSignal;
+};
+
 const getGatewayBaseUrl = () => {
   const configuredUrl = import.meta.env.VITE_REST_GATEWAY_URL?.trim();
   return (configuredUrl || DEFAULT_REST_GATEWAY_URL).replace(/\/+$/, "");
@@ -18,7 +29,11 @@ const readJson = async <T>(response: Response): Promise<T> => {
   return JSON.parse(body) as T;
 };
 
-export async function callTool<T>(toolName: string, params: object): Promise<T> {
+export async function callTool<T>(
+  toolName: string,
+  params: object,
+  options: CallToolOptions = {},
+): Promise<T> {
   const normalizedToolName = toolName.trim();
   if (!normalizedToolName) {
     throw new Error("Tool name is required.");
@@ -32,6 +47,7 @@ export async function callTool<T>(toolName: string, params: object): Promise<T> 
         "Content-Type": "application/json",
       },
       method: "POST",
+      signal: options.signal,
     },
   );
 
@@ -46,5 +62,18 @@ export async function callTool<T>(toolName: string, params: object): Promise<T> 
     throw new Error(message);
   }
 
-  return readJson<T>(response);
+  const payload = await readJson<ToolResponse<T> | T>(response);
+  if (
+    payload !== null
+    && typeof payload === "object"
+    && "data" in payload
+    && payload.data !== undefined
+    && typeof payload.data === "object"
+    && payload.data !== null
+    && "record" in payload.data
+  ) {
+    return payload.data.record as T;
+  }
+
+  return payload as T;
 }
