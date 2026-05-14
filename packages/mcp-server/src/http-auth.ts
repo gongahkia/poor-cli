@@ -198,7 +198,7 @@ export class HttpAuthController {
       resource: this.resourceServerUrl.href,
       authorization_servers: this.#issuer === undefined ? undefined : [this.#issuer],
       scopes_supported: this.requiredScopes.length === 0 ? undefined : this.requiredScopes,
-      resource_name: "Singapore Public Data MCP",
+      resource_name: "Dude Singapore Due Diligence MCP",
       resource_documentation: "https://github.com/gongahkia/sg-skills",
     };
   }

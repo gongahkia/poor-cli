@@ -1,4 +1,14 @@
-# sg-apis-mcp
+# Dude
+
+Singapore due diligence in 30 seconds
+
+> Status: in flux during pivot from sg-apis-mcp.
+
+Dude is a zero-install, web-first Singapore due diligence app for public-registry-backed counterparty checks on SG entities. The product surface is shifting toward a consumer-grade web workflow, while the underlying `sg-apis-mcp` server, npm package, and stable `sg_*` tool contracts remain intact.
+
+## MCP Server Underneath
+
+The current MCP server is still published and documented as `sg-apis-mcp`. The quickstart, capability matrix, and stable surface below remain accurate for the underlying data server.
 
 Give your Agents context on Singapore.
 

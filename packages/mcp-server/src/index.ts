@@ -164,7 +164,7 @@ const main = async (): Promise<void> => {
       await httpServer.close();
     };
 
-    logger.info("sg-apis-mcp HTTP server started", {
+    logger.info("Dude HTTP MCP server started", {
       host,
       port,
       transport: transportMode,
@@ -182,7 +182,7 @@ const main = async (): Promise<void> => {
       await instance.close();
     };
 
-    logger.info("sg-apis-mcp stdio server started", {
+    logger.info("Dude stdio MCP server started", {
       transport: transportMode,
       toolsets: [...enabledToolsets],
     });

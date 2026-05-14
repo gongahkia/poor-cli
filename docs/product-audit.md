@@ -4,7 +4,7 @@
 
 Actual value prop: yes, but narrow.
 
-This repo already has real utility for developers building Singapore-focused agents because it offers one deterministic MCP surface over 38 cataloged public-data and advisory families, bounded brief artifacts, transparent blocker behavior, and a verified local build path. That is enough to be useful. It is not yet enough to feel like a broad Singapore developer platform.
+The underlying MCP server already has real utility for developers building Singapore-focused agents because it offers one deterministic MCP surface over 38 cataloged public-data and advisory families, bounded brief artifacts, transparent blocker behavior, and a verified local build path. That is enough to be useful. The Dude pivot adds a web-first due diligence surface on top instead of trying to become a broad Singapore developer platform.
 
 ## Who Gets Value Today
 
@@ -47,7 +47,7 @@ This repo already has real utility for developers building Singapore-focused age
 
 ## Current Limits
 
-- The repo is still an infrastructure product for developers, not an end-user analytics product.
+- The MCP layer is still infrastructure for developers; Dude is the emerging end-user diligence surface.
 - The best user stories are bounded and operational. It still does not aim to answer arbitrary Singapore research questions.
 - Coverage is strong in a few verticals, but horizontal breadth is still selective.
 - The package is credible as a building block, not yet as the single default server for every Singapore civic workflow.
@@ -61,7 +61,7 @@ This repo already has real utility for developers building Singapore-focused age
 
 ## Recommendation
 
-Keep positioning the repo as the honest Singapore public-data MCP server for developers. Expand breadth through adjacent high-demand public datasets, not by turning `sg_query` into a fake general planner.
+Keep the MCP layer positioned as the honest Singapore public-data server for developers, while Dude becomes the web-first counterparty diligence surface. Expand breadth through adjacent high-demand public datasets, not by turning `sg_query` into a fake general planner.
 
 ## Expansion Outcome (2026-03-30)
 

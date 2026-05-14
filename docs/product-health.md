@@ -1,6 +1,6 @@
 # Product Health
 
-This page is the public entrypoint for product-health, governance, and adoption evidence. The main README should stay focused on what the MCP server does, how agents use it, and how builders integrate it.
+This page is the public entrypoint for product-health, governance, and adoption evidence. During the Dude pivot, the main README should keep the web-product framing clear while preserving what the MCP server does, how agents use it, and how builders integrate it.
 
 ## Evaluation
 

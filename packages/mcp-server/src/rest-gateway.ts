@@ -98,7 +98,7 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`sg-apis REST gateway listening on http://localhost:${PORT}`);
+  console.log(`Dude REST gateway listening on http://localhost:${PORT}`);
   console.log(`tools: ${enabledTools.length}/${ALL_TOOL_DEFINITIONS.length} (toolsets: ${[...enabledToolsets].join(",")})`);
   console.log(`try: curl -X POST http://localhost:${PORT}/api/v1/sg_nea_forecast_2hr -d '{"area":"Bedok"}'`);
 });
