@@ -21,6 +21,7 @@ const DATASTORE_BASE_URL = "https://data.gov.sg/api/action";
 const DOWNLOAD_BASE_URL = "https://api-open.data.gov.sg/v1/public/api";
 
 type DatastoreQueryOptions = {
+  readonly q?: string;
   readonly limit?: number;
   readonly offset?: number;
   readonly sort?: string;
@@ -172,6 +173,40 @@ const scheduleLocalIndexRefresh = (datasets: readonly DatagovDataset[]): void =>
     .finally(() => {
       indexWarmPromise = null;
     });
+};
+
+const splitIlikeFilters = (
+  filters: Readonly<Record<string, unknown>> | undefined,
+): { readonly filters?: Readonly<Record<string, unknown>>; readonly q?: string } => {
+  if (filters === undefined) {
+    return {};
+  }
+
+  const exactFilters: Record<string, unknown> = {};
+  const qTerms: string[] = [];
+
+  for (const [key, value] of Object.entries(filters)) {
+    if (
+      value !== null
+      && typeof value === "object"
+      && !Array.isArray(value)
+      && "ilike" in value
+      && typeof (value as { readonly ilike?: unknown }).ilike === "string"
+    ) {
+      const term = (value as { readonly ilike: string }).ilike.trim();
+      if (term !== "") {
+        qTerms.push(term);
+      }
+      continue;
+    }
+
+    exactFilters[key] = value;
+  }
+
+  return {
+    ...(Object.keys(exactFilters).length === 0 ? {} : { filters: exactFilters }),
+    ...(qTerms.length === 0 ? {} : { q: qTerms.join(" ") }),
+  };
 };
 
 const fetchDatasetsPage = async (page: number): Promise<DatagovV2ListResponse> => {
@@ -688,6 +723,9 @@ export const queryDatastoreResult = async <TRecord extends Readonly<Record<strin
     if (options.sort !== undefined) {
       url.searchParams.set("sort", options.sort);
     }
+    if (options.q !== undefined) {
+      url.searchParams.set("q", options.q);
+    }
     if (options.filters !== undefined && Object.keys(options.filters).length > 0) {
       url.searchParams.set("filters", JSON.stringify(options.filters));
     }
@@ -807,10 +845,16 @@ export const queryDatastoreExactMatches = async <TRecord extends Readonly<Record
   const matches: TRecord[] = [];
   let offset = options.offset ?? 0;
   let total = Number.POSITIVE_INFINITY;
+  const normalizedFilters = splitIlikeFilters(options.filters);
+  const q = [options.q, normalizedFilters.q]
+    .filter((value): value is string => value !== undefined && value.trim() !== "")
+    .join(" ");
 
   while (offset < total && matches.length < matchLimit) {
     const result = await queryDatastoreResult<TRecord>(resourceId, {
-      ...options,
+      ...(options.sort === undefined ? {} : { sort: options.sort }),
+      ...(normalizedFilters.filters === undefined ? {} : { filters: normalizedFilters.filters }),
+      ...(q === "" ? {} : { q }),
       limit: pageSize,
       offset,
     });

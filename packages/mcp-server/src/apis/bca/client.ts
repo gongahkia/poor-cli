@@ -30,7 +30,14 @@ const normalizeFilter = (value: string | undefined): string | undefined => {
   return normalized === "" ? undefined : normalized;
 };
 
-const normalizeCompare = (value: string): string => value.trim().toLowerCase();
+const normalizeCompare = (value: string): string =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
 const exactMatches = (actual: string, expected: string | undefined): boolean => {
   return expected === undefined || normalizeCompare(actual) === normalizeCompare(expected);
