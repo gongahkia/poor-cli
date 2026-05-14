@@ -1,13 +1,18 @@
 import type { jsPDF as JsPdfInstance } from "jspdf";
 import {
+  buildDiligenceSnapshot,
+  confidenceLabel,
   formatRecordValue,
   getDossierRecordGroups,
+  riskSeverityLabel,
 } from "@/lib/dossier";
+import type { WebPresence } from "@/lib/api/client";
 import type { BriefArtifact, BriefSummaryItem } from "@/types/dossier";
 
 type ExportDossierPdfOptions = {
   filename?: string;
   generatedAt?: Date;
+  webPresence?: WebPresence;
 };
 
 type PdfDoc = InstanceType<typeof JsPdfInstance>;
@@ -117,6 +122,53 @@ export async function exportDossierPdf(
   y = addSectionTitle(doc, "Summary", y);
   y = addSummaryRows(doc, brief.summary, y, maxWidth) + 4;
 
+  const snapshot = buildDiligenceSnapshot(brief);
+  y = ensurePage(doc, y);
+  y = addSectionTitle(doc, "Diligence Snapshot", y);
+  y = addSummaryRows(
+    doc,
+    [
+      { label: "Status", value: snapshot.status },
+      { label: "UEN", value: snapshot.uen },
+      { label: "Entity type", value: snapshot.entityType },
+      { label: "Entity age", value: snapshot.age },
+      { label: "Address", value: snapshot.address },
+      { label: "Primary SSIC", value: snapshot.primarySsic },
+      { label: "Matched modules", value: snapshot.matchedModules },
+      { label: "Confidence", value: snapshot.confidence },
+    ],
+    y,
+    maxWidth,
+  ) + 4;
+
+  y = ensurePage(doc, y);
+  y = addSectionTitle(doc, "Risk Signals", y);
+  y = addSummaryRows(
+    doc,
+    (brief.riskFlags ?? []).length === 0
+      ? [{ label: "Risk flags", value: "No risk flags returned." }]
+      : (brief.riskFlags ?? []).map((flag) => ({
+          label: `${riskSeverityLabel(flag)} - ${flag.code}`,
+          value: `${flag.message} (${flag.source})`,
+        })),
+    y,
+    maxWidth,
+  ) + 4;
+
+  y = ensurePage(doc, y);
+  y = addSectionTitle(doc, "Match Confidence", y);
+  y = addSummaryRows(
+    doc,
+    (brief.matchConfidence ?? []).length === 0
+      ? [{ label: "Confidence", value: "No confidence details returned." }]
+      : (brief.matchConfidence ?? []).map((match) => ({
+          label: match.source,
+          value: `${confidenceLabel(match.confidence)}${match.matchedOn === null ? "" : ` on ${match.matchedOn}`}`,
+        })),
+    y,
+    maxWidth,
+  ) + 4;
+
   y = ensurePage(doc, y);
   y = addSectionTitle(doc, "Evidence", y);
   y = addSummaryRows(doc, brief.evidence, y, maxWidth) + 4;
@@ -140,10 +192,43 @@ export async function exportDossierPdf(
   }
 
   y = ensurePage(doc, y);
+  y = addSectionTitle(doc, "Web Presence", y);
+  y = addSummaryRows(
+    doc,
+    options.webPresence === undefined
+      ? [{ label: "Web discovery", value: "Not included in this export." }]
+      : [
+          { label: "Evidence status", value: "Web discovery, not registry evidence." },
+          { label: "TinyFish configured", value: options.webPresence.configured ? "yes" : "no" },
+          { label: "Possible official website", value: options.webPresence.possibleOfficialWebsite },
+          ...options.webPresence.results.map((result) => ({
+            label: result.siteName ?? result.url,
+            value: `${result.title} - ${result.url}`,
+          })),
+        ],
+    y,
+    maxWidth,
+  ) + 4;
+
+  y = ensurePage(doc, y);
   y = addSectionTitle(doc, "Gaps", y);
   y = addSummaryRows(
     doc,
     brief.gaps.map((gap) => ({ label: gap.code, value: gap.message, source: "Gap" })),
+    y,
+    maxWidth,
+  ) + 4;
+
+  y = ensurePage(doc, y);
+  y = addSectionTitle(doc, "What To Check Next", y);
+  y = addSummaryRows(
+    doc,
+    (brief.nextChecks ?? []).length === 0
+      ? [{ label: "Next checks", value: "No follow-up checks returned." }]
+      : (brief.nextChecks ?? []).map((check) => ({
+          label: check.tool,
+          value: `${check.reason}; input: ${JSON.stringify(check.input)}`,
+        })),
     y,
     maxWidth,
   ) + 4;

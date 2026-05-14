@@ -32,6 +32,18 @@ npm install && npm run try
 
 `npm run try` builds the server and runs the no-credential public smoke (`sg_health_check` plus release-blocking public flows). It is the fastest way to confirm the package boots and the no-auth surface is reachable on your machine before wiring credentials. Use `npm run quick-start` for the full live smoke once OneMap/URA/LTA keys are configured.
 
+## Local Dude Web Dev
+
+Copy [`.env.example`](./.env.example) to `.env` for server-side secrets. Real `.env` files are gitignored.
+
+```bash
+cp .env.example .env
+# fill TINYFISH_API_KEY and OPENAI_API_KEY if you have them
+npm run dev:local
+```
+
+`npm run dev:local` loads root `.env` into the REST gateway only. Browser-visible Vite settings stay in `apps/web/.env`, and secrets must not use the `VITE_` prefix.
+
 ## Start Here For Builders
 
 1. Run `npm run try` for a no-credential boot check, then read [docs/ship-in-2-days.md](./docs/ship-in-2-days.md) for the fastest path from clone to a UI-ready brief artifact.

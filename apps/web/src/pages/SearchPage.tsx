@@ -1,4 +1,5 @@
 import { DiligenceSearch } from "@/components/search/DiligenceSearch";
+import { GatewayStatus } from "@/components/status/GatewayStatus";
 
 export function SearchPage() {
   return (
@@ -21,6 +22,8 @@ export function SearchPage() {
             <li>Every fact shows its source and when we last verified it</li>
           </ul>
         </section>
+
+        <GatewayStatus />
       </section>
     </main>
   );

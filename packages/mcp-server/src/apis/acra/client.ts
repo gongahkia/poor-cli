@@ -2,7 +2,7 @@ import type {
   AcraEntityRecord,
   AcraNormalizedEntityRecord,
 } from "@sg-apis/shared";
-import { queryDatastoreExactMatches } from "../datagov/client.js";
+import { queryDatastoreExactMatches, queryDatastoreResult } from "../datagov/client.js";
 import { searchTinyFish } from "../tinyfish/client.js";
 
 const ACRA_SHARD_RESOURCE_IDS = {
@@ -68,12 +68,27 @@ const ACRA_SHARD_SEARCH_ORDER: readonly AcraShardKey[] = [
 ];
 
 const ACRA_UEN_ONLY_SHARD_DELAY_MS = process.env["NODE_ENV"] === "test" ? 0 : 1200;
+const ACRA_ENTITY_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const ACRA_SUGGESTION_CACHE_TTL_MS = 10 * 60 * 1000;
 
 type AcraFilterParams = {
   readonly entityName?: string | undefined;
   readonly uen?: string | undefined;
   readonly limit?: number | undefined;
 };
+
+export type AcraEntitySuggestion = {
+  readonly id: string;
+  readonly label: string;
+  readonly description: string;
+  readonly uen: string;
+  readonly entityName: string;
+  readonly status: string;
+  readonly entityTypeDescription: string;
+};
+
+const entityCache = new Map<string, { readonly expiresAt: number; readonly rows: readonly AcraNormalizedEntityRecord[] }>();
+const suggestionCache = new Map<string, { readonly expiresAt: number; readonly rows: readonly AcraEntitySuggestion[] }>();
 
 const normalizeFilter = (value: string | undefined): string | undefined => {
   const normalized = value?.trim();
@@ -102,6 +117,35 @@ const exactMatches = (actual: string, expected: string | undefined): boolean => 
 };
 
 const getQueryLimit = (limit?: number): number => Math.min(Math.max(limit ?? 10, 1), 50);
+const getSuggestionLimit = (limit?: number): number => Math.min(Math.max(limit ?? 6, 1), 10);
+
+const isLikelyUen = (value: string): boolean =>
+  /^(?:\d{8,9}[a-z]|[a-z]\d{2}[a-z]{2}\d{4}[a-z])$/i.test(value.trim());
+
+const buildEntityCacheKey = (params: AcraFilterParams): string =>
+  JSON.stringify({
+    entityName: normalizeFilter(params.entityName)?.toLowerCase() ?? null,
+    uen: normalizeFilter(params.uen)?.toUpperCase() ?? null,
+    limit: params.limit ?? null,
+  });
+
+const readEntityCache = (key: string): readonly AcraNormalizedEntityRecord[] | null => {
+  const cached = entityCache.get(key);
+  if (cached === undefined || cached.expiresAt <= Date.now()) {
+    if (cached !== undefined) {
+      entityCache.delete(key);
+    }
+    return null;
+  }
+  return cached.rows;
+};
+
+const writeEntityCache = (key: string, rows: readonly AcraNormalizedEntityRecord[]): void => {
+  if (rows.length === 0) {
+    return;
+  }
+  entityCache.set(key, { expiresAt: Date.now() + ACRA_ENTITY_CACHE_TTL_MS, rows });
+};
 
 const wait = async (ms: number): Promise<void> => {
   if (ms <= 0) {
@@ -193,9 +237,56 @@ const buildDatastoreFilters = (params: AcraFilterParams): Readonly<Record<string
     : { uen: normalizeFilter(params.uen)!.toUpperCase() }),
 });
 
+const toNormalizedEntity = (row: AcraEntityRecord): AcraNormalizedEntityRecord => ({
+  uen: row.uen,
+  issuanceAgencyId: row.issuance_agency_id,
+  entityName: row.entity_name,
+  entityTypeDescription: row.entity_type_description,
+  businessConstitutionDescription: normalizeNullLike(row.business_constitution_description),
+  companyTypeDescription: normalizeNullLike(row.company_type_description),
+  pafConstitutionDescription: normalizeNullLike(row.paf_constitution_description),
+  entityStatusDescription: row.entity_status_description,
+  registrationIncorporationDate: row.registration_incorporation_date,
+  uenIssueDate: row.uen_issue_date,
+  addressType: row.address_type,
+  block: normalizeNullLike(row.block),
+  streetName: normalizeNullLike(row.street_name),
+  levelNo: normalizeNullLike(row.level_no),
+  unitNo: normalizeNullLike(row.unit_no),
+  buildingName: normalizeNullLike(row.building_name),
+  postalCode: normalizeNullLike(row.postal_code),
+  otherAddressLine1: normalizeNullLike(row.other_address_line1),
+  otherAddressLine2: normalizeNullLike(row.other_address_line2),
+  accountDueDate: normalizeNullLike(row.account_due_date),
+  annualReturnDate: normalizeNullLike(row.annual_return_date),
+  primarySsicCode: row.primary_ssic_code,
+  primarySsicDescription: normalizeNullLike(row.primary_ssic_description),
+  primaryUserDescribedActivity: normalizeNullLike(row.primary_user_described_activity),
+  secondarySsicCode: normalizeNullLike(row.secondary_ssic_code),
+  secondarySsicDescription: normalizeNullLike(row.secondary_ssic_description),
+  secondaryUserDescribedActivity: normalizeNullLike(row.secondary_user_described_activity),
+  noOfOfficers: Number.isFinite(Number(row.no_of_officers)) ? Number(row.no_of_officers) : null,
+});
+
+const toSuggestion = (row: AcraEntityRecord): AcraEntitySuggestion => ({
+  id: row.uen,
+  label: row.entity_name,
+  description: `${row.uen} - ${row.entity_status_description} - ${row.entity_type_description}`,
+  uen: row.uen,
+  entityName: row.entity_name,
+  status: row.entity_status_description,
+  entityTypeDescription: row.entity_type_description,
+});
+
 export const getAcraEntities = async (
   params: AcraFilterParams,
 ): Promise<readonly AcraNormalizedEntityRecord[]> => {
+  const cacheKey = buildEntityCacheKey(params);
+  const cachedRows = readEntityCache(cacheKey);
+  if (cachedRows !== null) {
+    return cachedRows;
+  }
+
   const entityName = normalizeFilter(params.entityName);
   const uen = normalizeFilter(params.uen)?.toUpperCase();
   const isUenOnlySearch = uen !== undefined && entityName === undefined;
@@ -225,34 +316,60 @@ export const getAcraEntities = async (
     matches.push(...rows);
   }
 
-  return matches.map((row) => ({
-    uen: row.uen,
-    issuanceAgencyId: row.issuance_agency_id,
-    entityName: row.entity_name,
-    entityTypeDescription: row.entity_type_description,
-    businessConstitutionDescription: normalizeNullLike(row.business_constitution_description),
-    companyTypeDescription: normalizeNullLike(row.company_type_description),
-    pafConstitutionDescription: normalizeNullLike(row.paf_constitution_description),
-    entityStatusDescription: row.entity_status_description,
-    registrationIncorporationDate: row.registration_incorporation_date,
-    uenIssueDate: row.uen_issue_date,
-    addressType: row.address_type,
-    block: normalizeNullLike(row.block),
-    streetName: normalizeNullLike(row.street_name),
-    levelNo: normalizeNullLike(row.level_no),
-    unitNo: normalizeNullLike(row.unit_no),
-    buildingName: normalizeNullLike(row.building_name),
-    postalCode: normalizeNullLike(row.postal_code),
-    otherAddressLine1: normalizeNullLike(row.other_address_line1),
-    otherAddressLine2: normalizeNullLike(row.other_address_line2),
-    accountDueDate: normalizeNullLike(row.account_due_date),
-    annualReturnDate: normalizeNullLike(row.annual_return_date),
-    primarySsicCode: row.primary_ssic_code,
-    primarySsicDescription: normalizeNullLike(row.primary_ssic_description),
-    primaryUserDescribedActivity: normalizeNullLike(row.primary_user_described_activity),
-    secondarySsicCode: normalizeNullLike(row.secondary_ssic_code),
-    secondarySsicDescription: normalizeNullLike(row.secondary_ssic_description),
-    secondaryUserDescribedActivity: normalizeNullLike(row.secondary_user_described_activity),
-    noOfOfficers: Number.isFinite(Number(row.no_of_officers)) ? Number(row.no_of_officers) : null,
-  }));
+  const normalizedRows = matches.map(toNormalizedEntity);
+  writeEntityCache(cacheKey, normalizedRows);
+  return normalizedRows;
+};
+
+export const searchAcraEntitySuggestions = async (
+  query: string,
+  limit?: number,
+): Promise<readonly AcraEntitySuggestion[]> => {
+  const normalizedQuery = normalizeFilter(query);
+  const suggestionLimit = getSuggestionLimit(limit);
+  if (normalizedQuery === undefined || normalizedQuery.length < 2) {
+    return [];
+  }
+
+  const cacheKey = JSON.stringify({ query: normalizedQuery.toLowerCase(), limit: suggestionLimit });
+  const cached = suggestionCache.get(cacheKey);
+  if (cached !== undefined && cached.expiresAt > Date.now()) {
+    return cached.rows;
+  }
+
+  if (isLikelyUen(normalizedQuery)) {
+    const rows = await getAcraEntities({ uen: normalizedQuery, limit: 1 });
+    const suggestions = rows.map((row) => ({
+      id: row.uen,
+      label: row.entityName,
+      description: `${row.uen} - ${row.entityStatusDescription} - ${row.entityTypeDescription}`,
+      uen: row.uen,
+      entityName: row.entityName,
+      status: row.entityStatusDescription,
+      entityTypeDescription: row.entityTypeDescription,
+    }));
+    suggestionCache.set(cacheKey, { expiresAt: Date.now() + ACRA_SUGGESTION_CACHE_TTL_MS, rows: suggestions });
+    return suggestions;
+  }
+
+  const resourceId = ACRA_SHARD_RESOURCE_IDS[getShardKeyForEntityName(normalizedQuery)];
+  const result = await queryDatastoreResult<AcraEntityRecord>(resourceId, {
+    q: normalizedQuery,
+    limit: Math.max(suggestionLimit * 3, 10),
+  });
+  const queryCompare = normalizeCompare(normalizedQuery);
+  const suggestions = result.records
+    .filter((row) => {
+      const nameCompare = normalizeCompare(row.entity_name);
+      return nameCompare.includes(queryCompare)
+        || queryCompare.includes(nameCompare)
+        || row.uen.toUpperCase().includes(normalizedQuery.toUpperCase());
+    })
+    .slice(0, suggestionLimit)
+    .map(toSuggestion);
+
+  if (suggestions.length > 0) {
+    suggestionCache.set(cacheKey, { expiresAt: Date.now() + ACRA_SUGGESTION_CACHE_TTL_MS, rows: suggestions });
+  }
+  return suggestions;
 };

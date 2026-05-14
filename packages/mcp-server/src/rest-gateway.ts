@@ -5,6 +5,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import { createLogger } from "@sg-apis/shared";
+import { searchAcraEntitySuggestions } from "./apis/acra/client.js";
+import { getWebPresence, isTinyFishSearchConfigured } from "./apis/tinyfish/client.js";
 import { ALL_TOOL_DEFINITIONS } from "./tools/tool-set.js";
 import { isToolEnabled } from "./tools/tool-metadata.js";
 const PORT = Number(process.env["PORT"] ?? 3000);
@@ -38,6 +40,48 @@ const readBody = (req: IncomingMessage): Promise<string> =>
     req.on("end", () => resolve(Buffer.concat(chunks).toString()));
     req.on("error", reject);
   });
+
+const sendJson = (res: ServerResponse, status: number, body: unknown): void => {
+  res.writeHead(status);
+  res.end(JSON.stringify(body));
+};
+
+const getQueryValue = (url: URL, key: string): string => url.searchParams.get(key)?.trim() ?? "";
+
+const summarizeBusinessInput = (input: unknown): Record<string, unknown> => {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) {
+    return {};
+  }
+  const record = input as Record<string, unknown>;
+  return {
+    ...(typeof record["uen"] === "string" ? { uen: record["uen"] } : {}),
+    ...(typeof record["entityName"] === "string" ? { entityName: record["entityName"] } : {}),
+  };
+};
+
+const summarizeBusinessDossier = (record: unknown): Record<string, unknown> => {
+  if (record === null || typeof record !== "object" || Array.isArray(record)) {
+    return {};
+  }
+  const dossier = record as {
+    readonly gaps?: readonly { readonly code?: string }[];
+    readonly records?: {
+      readonly resolution?: {
+        readonly matchedModules?: readonly string[];
+        readonly unmatchedModules?: readonly string[];
+      };
+    };
+  };
+  const gaps = dossier.gaps ?? [];
+  return {
+    matchedModules: dossier.records?.resolution?.matchedModules ?? [],
+    unmatchedModules: dossier.records?.resolution?.unmatchedModules ?? [],
+    gapCodes: gaps.map((gap) => gap.code).filter(Boolean),
+    upstreamFailures: gaps
+      .map((gap) => gap.code)
+      .filter((code): code is string => typeof code === "string" && code.includes("UNAVAILABLE")),
+  };
+};
 
 const getOrigin = (req: IncomingMessage): string | undefined => {
   const origin = req.headers.origin;
@@ -95,7 +139,61 @@ const server = createServer(async (req, res) => {
   // GET /api/v1/health
   if (req.method === "GET" && url.pathname === "/api/v1/health") {
     requestLogger.info("health check");
-    res.end(JSON.stringify({ status: "ok", tools: enabledTools.length }));
+    res.end(JSON.stringify({
+      status: "ok",
+      tools: enabledTools.length,
+      services: {
+        gateway: "reachable",
+        acra: "available-via-datagov",
+        tinyfish: {
+          configured: isTinyFishSearchConfigured(),
+          mode: "web-discovery-only",
+        },
+      },
+    }));
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/v1/dude/search-suggestions") {
+    const query = getQueryValue(url, "q");
+    if (query.length < 2) {
+      sendJson(res, 200, { query, suggestions: [] });
+      return;
+    }
+    try {
+      const startedAt = Date.now();
+      const suggestions = await searchAcraEntitySuggestions(query, 6);
+      requestLogger.info("search suggestions finished", {
+        query,
+        suggestions: suggestions.length,
+        durationMs: Date.now() - startedAt,
+      });
+      sendJson(res, 200, { query, suggestions });
+    } catch (err) {
+      requestLogger.warn("search suggestions failed", {
+        query,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      sendJson(res, 200, { query, suggestions: [], warning: "Search suggestions are temporarily unavailable." });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/v1/dude/web-presence") {
+    const query = getQueryValue(url, "query");
+    if (query === "") {
+      sendJson(res, 400, { error: "query is required" });
+      return;
+    }
+    const startedAt = Date.now();
+    const presence = await getWebPresence(query);
+    requestLogger.info("web presence finished", {
+      query,
+      configured: presence.configured,
+      results: presence.results.length,
+      durationMs: Date.now() - startedAt,
+    });
+    sendJson(res, 200, presence);
     return;
   }
 
@@ -112,13 +210,21 @@ const server = createServer(async (req, res) => {
     try {
       const body = await readBody(req);
       const input = body === "" ? {} : JSON.parse(body);
-      requestLogger.info("invoking tool", { tool: tool.name });
+      const startedAt = Date.now();
+      requestLogger.info("invoking tool", {
+        tool: tool.name,
+        ...(tool.name === "sg_business_dossier" ? summarizeBusinessInput(input) : {}),
+      });
       const result = await tool.handler(input);
       const status = result.isError ? 400 : 200;
       requestLogger.info("tool invocation finished", {
         tool: tool.name,
         status,
         isError: result.isError === true,
+        durationMs: Date.now() - startedAt,
+        ...(tool.name === "sg_business_dossier"
+          ? summarizeBusinessDossier(result.structuredContent?.["record"])
+          : {}),
       });
       res.writeHead(status);
       res.end(JSON.stringify({

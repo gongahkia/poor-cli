@@ -1,18 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
+import { ConfidenceSection } from "@/components/dossier/ConfidenceSection";
 import { EvidenceSection } from "@/components/dossier/EvidenceSection";
 import { GapsSection } from "@/components/dossier/GapsSection";
 import { LimitsSection } from "@/components/dossier/LimitsSection";
+import { NextChecksSection } from "@/components/dossier/NextChecksSection";
 import { ProvenanceSection } from "@/components/dossier/ProvenanceSection";
+import { RiskSection } from "@/components/dossier/RiskSection";
+import { SnapshotSection } from "@/components/dossier/SnapshotSection";
+import { WebPresenceSection, type WebPresenceState } from "@/components/dossier/WebPresenceSection";
+import { GatewayStatus } from "@/components/status/GatewayStatus";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { callTool } from "@/lib/api/client";
+import { callTool, getGatewayJson, type WebPresence } from "@/lib/api/client";
 import {
   buildBusinessDossierInput,
   buildSummaryLine,
+  getSummaryString,
   isNotFoundDossier,
   sanitizeFilenamePart,
+  UEN_PATTERN,
 } from "@/lib/dossier";
 import { exportDossierPdf } from "@/lib/export/pdf";
 import type { BusinessDossier } from "@/types/dossier";
@@ -76,6 +84,7 @@ export function CounterpartyPage() {
           />
         ) : state.status === "not-found" ? (
           <DossierProblem
+            dossier={state.dossier}
             identifier={decodedIdentifier}
             message={`We didn't find a Singapore registry record for ${decodedIdentifier}.`}
           />
@@ -121,16 +130,33 @@ function DossierLoading({ identifier }: { identifier: string }) {
   );
 }
 
-function DossierProblem({ identifier, message }: { identifier: string; message: string }) {
+function DossierProblem({
+  dossier,
+  identifier,
+  message,
+}: {
+  dossier?: BusinessDossier;
+  identifier: string;
+  message: string;
+}) {
   return (
-    <div className="rounded-lg border border-border bg-card p-8 shadow-sm">
-      <p className="text-sm font-medium text-muted-foreground">Counterparty</p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-normal text-foreground">{identifier}</h1>
-      <p className="mt-4 text-base leading-7 text-muted-foreground">{message}</p>
-      <Button asChild className="mt-6">
-        <Link to="/">Try another search</Link>
-      </Button>
-    </div>
+    <>
+      <div className="rounded-lg border border-border bg-card p-8 shadow-sm">
+        <p className="text-sm font-medium text-muted-foreground">Counterparty</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-normal text-foreground">{identifier}</h1>
+        <p className="mt-4 text-base leading-7 text-muted-foreground">{message}</p>
+        <Button asChild className="mt-6">
+          <Link to="/">Try another search</Link>
+        </Button>
+      </div>
+      {dossier === undefined ? null : (
+        <>
+          <GapsSection dossier={dossier} />
+          <ProvenanceSection dossier={dossier} />
+          <LimitsSection dossier={dossier} />
+        </>
+      )}
+    </>
   );
 }
 
@@ -142,10 +168,15 @@ function DossierSuccess({
   identifier: string;
 }) {
   const resolution = dossier.records.resolution;
+  const navigate = useNavigate();
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
+  const [webPresenceState, setWebPresenceState] = useState<WebPresenceState>({ status: "loading" });
   const copiedTimer = useRef<number | null>(null);
+  const canonicalUen = getSummaryString(dossier, "UEN");
+  const entityName = getSummaryString(dossier, "Entity");
+  const webPresenceQuery = [entityName, canonicalUen].filter(Boolean).join(" ");
 
   useEffect(() => {
     return () => {
@@ -155,6 +186,46 @@ function DossierSuccess({
     };
   }, []);
 
+  useEffect(() => {
+    if (
+      canonicalUen !== null
+      && UEN_PATTERN.test(canonicalUen)
+      && canonicalUen.toUpperCase() !== identifier.trim().toUpperCase()
+    ) {
+      navigate(`/c/${encodeURIComponent(canonicalUen)}`, { replace: true });
+    }
+  }, [canonicalUen, identifier, navigate]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (webPresenceQuery === "") {
+      setWebPresenceState({ status: "error", message: "No entity name or UEN was available for web discovery." });
+      return () => controller.abort();
+    }
+
+    setWebPresenceState({ status: "loading" });
+    void getGatewayJson<WebPresence>(
+      "/api/v1/dude/web-presence",
+      { query: webPresenceQuery },
+      { signal: controller.signal },
+    )
+      .then((presence) => {
+        if (!controller.signal.aborted) {
+          setWebPresenceState({ status: "success", presence });
+        }
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setWebPresenceState({
+            status: "error",
+            message: error instanceof Error ? error.message : "Web discovery is temporarily unavailable.",
+          });
+        }
+      });
+
+    return () => controller.abort();
+  }, [webPresenceQuery]);
+
   const handleExportPdf = async () => {
     setIsExporting(true);
     setExportError(null);
@@ -162,6 +233,7 @@ function DossierSuccess({
       const today = new Date().toISOString().slice(0, 10);
       await exportDossierPdf(dossier, {
         filename: `dude-diligence-${sanitizeFilenamePart(identifier)}-${today}.pdf`,
+        webPresence: webPresenceState.status === "success" ? webPresenceState.presence : undefined,
       });
     } catch (error) {
       setExportError(error instanceof Error ? error.message : "PDF export failed.");
@@ -239,10 +311,16 @@ function DossierSuccess({
         </dl>
       </section>
 
+      <SnapshotSection dossier={dossier} />
+      <RiskSection dossier={dossier} />
+      <ConfidenceSection dossier={dossier} />
       <EvidenceSection dossier={dossier} />
+      <WebPresenceSection state={webPresenceState} />
+      <NextChecksSection dossier={dossier} />
       <GapsSection dossier={dossier} />
       <ProvenanceSection dossier={dossier} />
       <LimitsSection dossier={dossier} />
+      <GatewayStatus />
     </>
   );
 }

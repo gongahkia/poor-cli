@@ -3,6 +3,8 @@ import type {
   BriefSummaryItem,
   BusinessDossier,
   BusinessDossierModule,
+  MatchConfidence,
+  RiskFlag,
 } from "@/types/dossier";
 
 export type DossierRecordGroup = {
@@ -89,6 +91,11 @@ export function formatRecordValue(key: string, value: unknown): string {
 
 export function getSummaryValue(summary: BriefSummaryItem[], label: string): unknown {
   return summary.find((item) => item.label.toLowerCase() === label.toLowerCase())?.value;
+}
+
+export function getSummaryString(dossier: BusinessDossier, label: string): string | null {
+  const value = getSummaryValue(dossier.summary, label);
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
 }
 
 export function buildSummaryLine(dossier: BusinessDossier): string {
@@ -185,4 +192,126 @@ export function getFreshnessForSource(
 ): BriefFreshnessItem | undefined {
   const normalizedSource = source.toLowerCase();
   return freshness.find((item) => item.source.toLowerCase().includes(normalizedSource));
+}
+
+export type DiligenceSnapshot = {
+  entityName: string | null;
+  uen: string | null;
+  status: string | null;
+  entityType: string | null;
+  age: string | null;
+  address: string | null;
+  primarySsic: string | null;
+  matchedModules: string;
+  confidence: string | null;
+};
+
+const firstRecord = (value: unknown): Record<string, unknown> | null =>
+  Array.isArray(value) && value[0] !== null && typeof value[0] === "object" && !Array.isArray(value[0])
+    ? value[0] as Record<string, unknown>
+    : null;
+
+export function getPrimaryAcraRecord(dossier: BusinessDossier): Record<string, unknown> | null {
+  return firstRecord(dossier.records.acra);
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+}
+
+function getEntityAge(registrationDate: string | null): string | null {
+  if (registrationDate === null) {
+    return null;
+  }
+  const date = new Date(registrationDate);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  const years = Math.max(0, new Date().getFullYear() - date.getFullYear());
+  return years === 1 ? "1 year" : `${years} years`;
+}
+
+function getAddress(record: Record<string, unknown> | null): string | null {
+  if (record === null) {
+    return null;
+  }
+  const parts = [
+    asString(record["block"]),
+    asString(record["streetName"]),
+    asString(record["buildingName"]),
+    asString(record["postalCode"]) === null ? null : `Singapore ${asString(record["postalCode"])}`,
+  ].filter(Boolean);
+  return parts.length === 0 ? null : parts.join(", ");
+}
+
+export function getDossierConfidence(dossier: BusinessDossier): { level: string; score?: number; rationale?: string } | null {
+  const value = dossier.records.quality?.["dossierConfidence"];
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const level = asString(record["level"]);
+  if (level === null) {
+    return null;
+  }
+  const score = typeof record["score"] === "number" ? record["score"] : undefined;
+  const rationale = asString(record["rationale"]) ?? undefined;
+  return { level, ...(score === undefined ? {} : { score }), ...(rationale === undefined ? {} : { rationale }) };
+}
+
+export function buildDiligenceSnapshot(dossier: BusinessDossier): DiligenceSnapshot {
+  const acra = getPrimaryAcraRecord(dossier);
+  const confidence = getDossierConfidence(dossier);
+  const primarySsicCode = asString(acra?.["primarySsicCode"]);
+  const primarySsicDescription = asString(acra?.["primarySsicDescription"]);
+  return {
+    entityName: asString(acra?.["entityName"]) ?? getSummaryString(dossier, "Entity"),
+    uen: asString(acra?.["uen"]) ?? getSummaryString(dossier, "UEN"),
+    status: asString(acra?.["entityStatusDescription"]) ?? getSummaryString(dossier, "Entity status"),
+    entityType: asString(acra?.["entityTypeDescription"]),
+    age: getEntityAge(asString(acra?.["registrationIncorporationDate"])),
+    address: getAddress(acra),
+    primarySsic: primarySsicCode === null
+      ? null
+      : `${primarySsicCode}${primarySsicDescription === null ? "" : ` - ${primarySsicDescription}`}`,
+    matchedModules: dossier.records.resolution?.matchedModules?.join(", ") || "none",
+    confidence: confidence === null
+      ? null
+      : `${confidence.level}${confidence.score === undefined ? "" : ` (${Math.round(confidence.score * 100)}%)`}`,
+  };
+}
+
+export function getSectorBadges(dossier: BusinessDossier): string[] {
+  const acra = getPrimaryAcraRecord(dossier);
+  const ssic = asString(acra?.["primarySsicCode"]);
+  const modules = dossier.records.resolution?.selectedModules ?? [];
+  const badges = new Set<string>();
+
+  if (ssic?.startsWith("41") || ssic?.startsWith("42") || ssic?.startsWith("43")) badges.add("construction");
+  if (ssic?.startsWith("46")) badges.add("wholesale");
+  if (ssic?.startsWith("47")) badges.add("retail");
+  if (ssic?.startsWith("55")) badges.add("hospitality");
+  if (ssic?.startsWith("64")) badges.add("finance");
+  if (ssic?.startsWith("68")) badges.add("real estate");
+  if (ssic?.startsWith("71")) badges.add("architecture / engineering");
+  if (ssic?.startsWith("86")) badges.add("healthcare");
+  if (modules.includes("gebiz")) badges.add("procurement");
+  if (modules.includes("hsa")) badges.add("healthcare");
+  if (modules.includes("hlb")) badges.add("hospitality");
+  if (modules.includes("boa")) badges.add("architecture");
+
+  return Array.from(badges);
+}
+
+export function riskSeverityLabel(flag: RiskFlag): string {
+  if (flag.severity === "high") return "High";
+  if (flag.severity === "medium") return "Medium";
+  return "Low";
+}
+
+export function confidenceLabel(confidence: MatchConfidence["confidence"]): string {
+  if (confidence === "name-exact") return "Name exact";
+  if (confidence === "name-fuzzy") return "Name fuzzy";
+  if (confidence === "no-match") return "No match";
+  return "Exact";
 }

@@ -15,6 +15,45 @@ type CallToolOptions = {
   signal?: AbortSignal;
 };
 
+export type GatewayHealth = {
+  status: "ok" | string;
+  tools: number;
+  services?: {
+    gateway?: string;
+    acra?: string;
+    tinyfish?: {
+      configured: boolean;
+      mode: string;
+    };
+  };
+};
+
+export type ApiSearchSuggestion = {
+  id: string;
+  label: string;
+  description: string;
+  uen: string;
+  entityName: string;
+  status: string;
+  entityTypeDescription: string;
+};
+
+export type WebPresenceResult = {
+  title: string;
+  snippet: string;
+  url: string;
+  siteName: string | null;
+  position: number;
+};
+
+export type WebPresence = {
+  query: string;
+  configured: boolean;
+  results: WebPresenceResult[];
+  possibleOfficialWebsite: string | null;
+  limits: string[];
+};
+
 const getGatewayBaseUrl = () => {
   const configuredUrl = import.meta.env.VITE_REST_GATEWAY_URL?.trim();
   return (configuredUrl || DEFAULT_REST_GATEWAY_URL).replace(/\/+$/, "");
@@ -76,4 +115,36 @@ export async function callTool<T>(
   }
 
   return payload as T;
+}
+
+export async function getGatewayJson<T>(
+  path: string,
+  params: Record<string, string> = {},
+  options: CallToolOptions = {},
+): Promise<T> {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const url = new URL(`${getGatewayBaseUrl()}${normalizedPath}`);
+  for (const [key, value] of Object.entries(params)) {
+    if (value.trim() !== "") {
+      url.searchParams.set(key, value);
+    }
+  }
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    signal: options.signal,
+  });
+
+  if (!response.ok) {
+    const payload = await readJson<ErrorPayload>(response).catch(
+      (): ErrorPayload => ({}),
+    );
+    const message =
+      typeof payload.error === "string"
+        ? payload.error
+        : `REST gateway request failed with status ${response.status}.`;
+    throw new Error(message);
+  }
+
+  return readJson<T>(response);
 }
