@@ -2,7 +2,7 @@
 
 Observed on 2026-03-30.
 
-This note benchmarks `sg-apis-mcp` against current MCP ecosystem conventions so expansion decisions stay grounded in real developer adoption patterns, not internal assumptions.
+This note benchmarks the underlying MCP server against current MCP ecosystem conventions so expansion decisions stay grounded in real developer adoption patterns, not internal assumptions.
 
 ## Primary Sources Used
 
@@ -39,7 +39,7 @@ Production-facing MCP servers such as Firecrawl explicitly market logging covera
 
 ## Current Repo Position (Before This Expansion)
 
-`sg-apis-mcp` was already strong on deterministic contracts and bounded workflows, but still had adoption risks:
+The MCP layer was already strong on deterministic contracts and bounded workflows, but still had adoption risks:
 
 - runtime error pathways could complete without enough structured logs for fast triage
 - verify flow had an avoidable network dependency in restricted environments

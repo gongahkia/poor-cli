@@ -2,15 +2,15 @@
 
 ## Title
 
-Official Singapore public data for agents with deterministic contracts
+Dude: Singapore due diligence over deterministic public-data contracts
 
 ## Status
 
-Accepted for the current product shape.
+Accepted for the underlying MCP server. Product framing is in flux during the Dude pivot.
 
 ## Context
 
-This repo is not a general Singapore analyst copilot. It is a tool-first MCP server for agent builders who need reliable, explicit interfaces over 38 catalog families.
+Dude is not a general Singapore analyst copilot. The current foundation is a tool-first MCP server for agent builders and web workflows that need reliable, explicit interfaces over 38 catalog families.
 
 The product boundary is:
 

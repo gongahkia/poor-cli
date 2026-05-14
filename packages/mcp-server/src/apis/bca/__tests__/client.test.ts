@@ -90,6 +90,7 @@ describe("BCA client", () => {
 
     const result = await getBcaRegisteredContractors({
       companyName: "abc construction pte ltd",
+      uenNo: "201912345K",
       workhead: "CW01",
       grade: "C3",
       limit: 10,
@@ -108,7 +109,7 @@ describe("BCA client", () => {
       expect.objectContaining({
         matchLimit: 10,
         filters: {
-          company_name: { ilike: "abc construction pte ltd" },
+          uen_no: "201912345K",
           workhead: { ilike: "CW01" },
           grade: { ilike: "C3" },
         },

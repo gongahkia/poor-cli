@@ -1,4 +1,14 @@
-# sg-apis-mcp
+# Dude
+
+Singapore due diligence in 30 seconds
+
+> Status: in flux during pivot from sg-apis-mcp.
+
+Dude is a zero-install, web-first Singapore due diligence app for public-registry-backed counterparty checks on SG entities. The product surface is shifting toward a consumer-grade web workflow, while the underlying `sg-apis-mcp` server, npm package, and stable `sg_*` tool contracts remain intact.
+
+## MCP Server Underneath
+
+The current MCP server is still published and documented as `sg-apis-mcp`. The quickstart, capability matrix, and stable surface below remain accurate for the underlying data server.
 
 Give your Agents context on Singapore.
 
@@ -21,6 +31,18 @@ npm install && npm run try
 ```
 
 `npm run try` builds the server and runs the no-credential public smoke (`sg_health_check` plus release-blocking public flows). It is the fastest way to confirm the package boots and the no-auth surface is reachable on your machine before wiring credentials. Use `npm run quick-start` for the full live smoke once OneMap/URA/LTA keys are configured.
+
+## Local Dude Web Dev
+
+Copy [`.env.example`](./.env.example) to `.env` for server-side secrets. Real `.env` files are gitignored.
+
+```bash
+cp .env.example .env
+# fill TINYFISH_API_KEY and OPENAI_API_KEY if you have them
+npm run dev:local
+```
+
+`npm run dev:local` loads root `.env` into the REST gateway only. Browser-visible Vite settings stay in `apps/web/.env`, and secrets must not use the `VITE_` prefix.
 
 ## Start Here For Builders
 
@@ -418,6 +440,7 @@ Copy [`.env.example`](./.env.example) and set the credentials you actually need:
 - `SG_API_ONEMAP_PASSWORD`
 - `SG_API_URA_KEY`
 - `SG_API_LTA_KEY`
+- `TINYFISH_API_KEY` optional; enables server-side TinyFish Search as a UEN discovery hint before official ACRA exact matching
 
 The keystore helpers are still available for local use:
 

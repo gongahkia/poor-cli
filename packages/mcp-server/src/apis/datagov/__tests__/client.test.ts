@@ -546,6 +546,63 @@ describe("data.gov.sg client", () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
+  it("omits offset on the first exact-match datastore page", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        result: {
+          fields: [],
+          total: 1,
+          limit: 1,
+          records: [{ uen: "196800306E" }],
+        },
+      }),
+    });
+
+    const matches = await queryDatastoreExactMatches<{ uen: string }>(
+      "resource-id",
+      {
+        matchLimit: 1,
+        pageSize: 1,
+        filters: { uen: "196800306E" },
+        exactMatch: (row) => row.uen === "196800306E",
+      },
+    );
+
+    expect(matches).toEqual([{ uen: "196800306E" }]);
+    const firstUrl = new URL(String(mockFetch.mock.calls[0]?.[0]));
+    expect(firstUrl.searchParams.has("offset")).toBe(false);
+  });
+
+  it("normalizes ilike filters into punctuation-safe text search", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        result: {
+          fields: [],
+          total: 0,
+          limit: 1,
+          records: [],
+        },
+      }),
+    });
+
+    await queryDatastoreExactMatches<{ company_name: string }>(
+      "resource-id",
+      {
+        matchLimit: 1,
+        pageSize: 1,
+        filters: { company_name: { ilike: "DBS BANK LTD." } },
+        exactMatch: (row) => row.company_name === "DBS BANK LTD.",
+      },
+    );
+
+    const firstUrl = new URL(String(mockFetch.mock.calls[0]?.[0]));
+    expect(firstUrl.searchParams.get("q")).toBe("DBS BANK LTD");
+  });
+
   it("handles API error response", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,

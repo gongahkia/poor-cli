@@ -383,21 +383,35 @@ export const buildBusinessDossierArtifact = async (
   const matchedModules = new Set<BusinessDossierModule>();
 
   const shouldSearchAcra = selectedModuleSet.has("acra") && (params.entityName !== undefined || params.uen !== undefined);
+  if (shouldSearchAcra) searchedModules.add("acra");
+
+  const acraRecords = shouldSearchAcra
+    ? await safeRead(
+        "ACRA_UNAVAILABLE",
+        "ACRA lookup failed",
+        () => getAcraEntities({ entityName: params.entityName, uen: params.uen, limit: 5 }),
+        gaps,
+      )
+    : null;
+  const acra = acraRecords ?? [];
+  const resolvedEntityName = params.entityName
+    ?? (typeof acra[0]?.entityName === "string" ? acra[0].entityName : undefined);
+  const searchParams: BusinessDossierParams = { ...params, entityName: resolvedEntityName };
+
   const shouldSearchBca = selectedModuleSet.has("bca")
-    && (params.entityName !== undefined || params.uen !== undefined || params.classCode !== undefined || params.workhead !== undefined || params.grade !== undefined);
+    && (searchParams.entityName !== undefined || searchParams.uen !== undefined || searchParams.classCode !== undefined || searchParams.workhead !== undefined || searchParams.grade !== undefined);
   const shouldSearchCea = selectedModuleSet.has("cea")
     && (
-      params.salespersonName !== undefined
-      || params.registrationNo !== undefined
-      || params.estateAgentName !== undefined
-      || params.estateAgentLicenseNo !== undefined
+      searchParams.salespersonName !== undefined
+      || searchParams.registrationNo !== undefined
+      || searchParams.estateAgentName !== undefined
+      || searchParams.estateAgentLicenseNo !== undefined
     );
-  const shouldSearchGebiz = selectedModuleSet.has("gebiz") && params.entityName !== undefined;
-  const shouldSearchBoa = selectedModuleSet.has("boa") && (params.entityName !== undefined || params.registrationNo !== undefined);
-  const shouldSearchHsa = selectedModuleSet.has("hsa") && params.entityName !== undefined;
-  const shouldSearchHlb = selectedModuleSet.has("hlb") && params.entityName !== undefined;
+  const shouldSearchGebiz = selectedModuleSet.has("gebiz") && searchParams.entityName !== undefined;
+  const shouldSearchBoa = selectedModuleSet.has("boa") && (searchParams.entityName !== undefined || searchParams.registrationNo !== undefined);
+  const shouldSearchHsa = selectedModuleSet.has("hsa") && searchParams.entityName !== undefined;
+  const shouldSearchHlb = selectedModuleSet.has("hlb") && searchParams.entityName !== undefined;
 
-  if (shouldSearchAcra) searchedModules.add("acra");
   if (shouldSearchBca) searchedModules.add("bca");
   if (shouldSearchCea) searchedModules.add("cea");
   if (shouldSearchGebiz) searchedModules.add("gebiz");
@@ -406,7 +420,6 @@ export const buildBusinessDossierArtifact = async (
   if (shouldSearchHlb) searchedModules.add("hlb");
 
   const [
-    acraRecords,
     bcaLicensedBuilders,
     bcaRegisteredContractors,
     ceaSalespersons,
@@ -417,22 +430,14 @@ export const buildBusinessDossierArtifact = async (
     hsaHealthProductLicensees,
     hlbHotels,
   ] = await Promise.all([
-    shouldSearchAcra
-      ? safeRead(
-          "ACRA_UNAVAILABLE",
-          "ACRA lookup failed",
-          () => getAcraEntities({ entityName: params.entityName, uen: params.uen, limit: 5 }),
-          gaps,
-        )
-      : Promise.resolve(null),
     shouldSearchBca
       ? safeRead(
           "BCA_BUILDERS_UNAVAILABLE",
           "BCA licensed-builder lookup failed",
           () => getBcaLicensedBuilders({
-            companyName: params.entityName,
-            uenNo: params.uen,
-            classCode: params.classCode,
+            companyName: searchParams.entityName,
+            uenNo: searchParams.uen,
+            classCode: searchParams.classCode,
             limit: 5,
           }),
           gaps,
@@ -443,10 +448,10 @@ export const buildBusinessDossierArtifact = async (
           "BCA_CONTRACTORS_UNAVAILABLE",
           "BCA registered-contractor lookup failed",
           () => getBcaRegisteredContractors({
-            companyName: params.entityName,
-            uenNo: params.uen,
-            workhead: params.workhead,
-            grade: params.grade,
+            companyName: searchParams.entityName,
+            uenNo: searchParams.uen,
+            workhead: searchParams.workhead,
+            grade: searchParams.grade,
             limit: 5,
           }),
           gaps,
@@ -457,10 +462,10 @@ export const buildBusinessDossierArtifact = async (
           "CEA_UNAVAILABLE",
           "CEA lookup failed",
           () => getCeaSalespersons({
-            salespersonName: params.salespersonName,
-            registrationNo: params.registrationNo,
-            estateAgentName: params.estateAgentName,
-            estateAgentLicenseNo: params.estateAgentLicenseNo,
+            salespersonName: searchParams.salespersonName,
+            registrationNo: searchParams.registrationNo,
+            estateAgentName: searchParams.estateAgentName,
+            estateAgentLicenseNo: searchParams.estateAgentLicenseNo,
             limit: 5,
           }),
           gaps,
@@ -470,7 +475,7 @@ export const buildBusinessDossierArtifact = async (
       ? safeRead(
           "GEBIZ_UNAVAILABLE",
           "GeBIZ lookup failed",
-          () => getGeBIZTenders({ supplierName: params.entityName, limit: 10 }),
+          () => getGeBIZTenders({ supplierName: searchParams.entityName, limit: 10 }),
           gaps,
         )
       : Promise.resolve(null),
@@ -479,13 +484,13 @@ export const buildBusinessDossierArtifact = async (
           "BOA_ARCHITECTS_UNAVAILABLE",
           "BOA architects lookup failed",
           async () => {
-            if (params.registrationNo !== undefined) {
-              return getBoaArchitects({ registrationNo: params.registrationNo, limit: 5 });
+            if (searchParams.registrationNo !== undefined) {
+              return getBoaArchitects({ registrationNo: searchParams.registrationNo, limit: 5 });
             }
-            const byFirm = await getBoaArchitects({ firmName: params.entityName, limit: 5 });
-            return byFirm.length > 0 || params.entityName === undefined
+            const byFirm = await getBoaArchitects({ firmName: searchParams.entityName, limit: 5 });
+            return byFirm.length > 0 || searchParams.entityName === undefined
               ? byFirm
-              : getBoaArchitects({ name: params.entityName, limit: 5 });
+              : getBoaArchitects({ name: searchParams.entityName, limit: 5 });
           },
           gaps,
         )
@@ -494,7 +499,7 @@ export const buildBusinessDossierArtifact = async (
       ? safeRead(
           "BOA_FIRMS_UNAVAILABLE",
           "BOA architecture-firm lookup failed",
-          () => getBoaArchitectureFirms({ firmName: params.entityName, limit: 5 }),
+          () => getBoaArchitectureFirms({ firmName: searchParams.entityName, limit: 5 }),
           gaps,
         )
       : Promise.resolve(null),
@@ -502,7 +507,7 @@ export const buildBusinessDossierArtifact = async (
       ? safeRead(
           "HSA_PHARMACIES_UNAVAILABLE",
           "HSA pharmacy lookup failed",
-          () => getHsaLicensedPharmacies({ pharmacyName: params.entityName, limit: 5 }),
+          () => getHsaLicensedPharmacies({ pharmacyName: searchParams.entityName, limit: 5 }),
           gaps,
         )
       : Promise.resolve(null),
@@ -510,7 +515,7 @@ export const buildBusinessDossierArtifact = async (
       ? safeRead(
           "HSA_LICENSEES_UNAVAILABLE",
           "HSA health-product licensee lookup failed",
-          () => getHsaHealthProductLicensees({ companyName: params.entityName, limit: 10 }),
+          () => getHsaHealthProductLicensees({ companyName: searchParams.entityName, limit: 10 }),
           gaps,
         )
       : Promise.resolve(null),
@@ -519,17 +524,16 @@ export const buildBusinessDossierArtifact = async (
           "HLB_UNAVAILABLE",
           "HLB hotel lookup failed",
           async () => {
-            const byKeeper = await getHlbHotels({ keeperName: params.entityName, limit: 5 });
-            return byKeeper.length > 0 || params.entityName === undefined
+            const byKeeper = await getHlbHotels({ keeperName: searchParams.entityName, limit: 5 });
+            return byKeeper.length > 0 || searchParams.entityName === undefined
               ? byKeeper
-              : getHlbHotels({ name: params.entityName, limit: 5 });
+              : getHlbHotels({ name: searchParams.entityName, limit: 5 });
           },
           gaps,
         )
       : Promise.resolve(null),
   ]);
 
-  const acra = acraRecords ?? [];
   const builders = bcaLicensedBuilders ?? [];
   const contractors = bcaRegisteredContractors ?? [];
   const salespersons = ceaSalespersons ?? [];
@@ -586,12 +590,12 @@ export const buildBusinessDossierArtifact = async (
     ...(shouldSearchBca
       ? [
           resolveEntityMatchConfidence("BCA licensed builders", builders, {
-            exactInputs: params.uen === undefined ? [] : [{ value: params.uen, fields: ["uenNo"] }],
-            nameInputs: params.entityName === undefined ? [] : [{ value: params.entityName, fields: ["companyName"] }],
+            exactInputs: searchParams.uen === undefined ? [] : [{ value: searchParams.uen, fields: ["uenNo"] }],
+            nameInputs: searchParams.entityName === undefined ? [] : [{ value: searchParams.entityName, fields: ["companyName"] }],
           }),
           resolveEntityMatchConfidence("BCA registered contractors", contractors, {
-            exactInputs: params.uen === undefined ? [] : [{ value: params.uen, fields: ["uenNo"] }],
-            nameInputs: params.entityName === undefined ? [] : [{ value: params.entityName, fields: ["companyName"] }],
+            exactInputs: searchParams.uen === undefined ? [] : [{ value: searchParams.uen, fields: ["uenNo"] }],
+            nameInputs: searchParams.entityName === undefined ? [] : [{ value: searchParams.entityName, fields: ["companyName"] }],
           }),
         ]
       : []),
@@ -609,38 +613,38 @@ export const buildBusinessDossierArtifact = async (
       : []),
     ...(shouldSearchGebiz
       ? [resolveEntityMatchConfidence("GeBIZ", tenders as readonly Readonly<Record<string, unknown>>[], {
-          nameInputs: params.entityName === undefined ? [] : [{ value: params.entityName, fields: ["supplierName"] }],
+          nameInputs: searchParams.entityName === undefined ? [] : [{ value: searchParams.entityName, fields: ["supplierName"] }],
         })]
       : []),
     ...(shouldSearchBoa
       ? [
           resolveEntityMatchConfidence("BOA architects", architects as readonly Readonly<Record<string, unknown>>[], {
-            exactInputs: params.registrationNo === undefined ? [] : [{ value: params.registrationNo, fields: ["registrationNo"] }],
-            nameInputs: params.entityName === undefined ? [] : [
-              { value: params.entityName, fields: ["architectName"] },
-              { value: params.entityName, fields: ["firmName"] },
+            exactInputs: searchParams.registrationNo === undefined ? [] : [{ value: searchParams.registrationNo, fields: ["registrationNo"] }],
+            nameInputs: searchParams.entityName === undefined ? [] : [
+              { value: searchParams.entityName, fields: ["architectName"] },
+              { value: searchParams.entityName, fields: ["firmName"] },
             ],
           }),
           resolveEntityMatchConfidence("BOA architecture firms", architectureFirms as readonly Readonly<Record<string, unknown>>[], {
-            nameInputs: params.entityName === undefined ? [] : [{ value: params.entityName, fields: ["firmName"] }],
+            nameInputs: searchParams.entityName === undefined ? [] : [{ value: searchParams.entityName, fields: ["firmName"] }],
           }),
         ]
       : []),
     ...(shouldSearchHsa
       ? [
           resolveEntityMatchConfidence("HSA licensed pharmacies", pharmacies as readonly Readonly<Record<string, unknown>>[], {
-            nameInputs: params.entityName === undefined ? [] : [{ value: params.entityName, fields: ["pharmacyName"] }],
+            nameInputs: searchParams.entityName === undefined ? [] : [{ value: searchParams.entityName, fields: ["pharmacyName"] }],
           }),
           resolveEntityMatchConfidence("HSA health product licensees", licensees as readonly Readonly<Record<string, unknown>>[], {
-            nameInputs: params.entityName === undefined ? [] : [{ value: params.entityName, fields: ["companyName"] }],
+            nameInputs: searchParams.entityName === undefined ? [] : [{ value: searchParams.entityName, fields: ["companyName"] }],
           }),
         ]
       : []),
     ...(shouldSearchHlb
       ? [resolveEntityMatchConfidence("HLB hotels", hotels as readonly Readonly<Record<string, unknown>>[], {
-          nameInputs: params.entityName === undefined ? [] : [
-            { value: params.entityName, fields: ["name"] },
-            { value: params.entityName, fields: ["keeperName"] },
+          nameInputs: searchParams.entityName === undefined ? [] : [
+            { value: searchParams.entityName, fields: ["name"] },
+            { value: searchParams.entityName, fields: ["keeperName"] },
           ],
         })]
       : []),
@@ -657,7 +661,7 @@ export const buildBusinessDossierArtifact = async (
   const primaryHotel = hotels[0];
   const primaryTender = tenders[0];
   const riskFlags = [
-    ...buildBusinessRiskFlags(params, searchedModules, acra, builders, contractors, licensees),
+    ...buildBusinessRiskFlags(searchParams, searchedModules, acra, builders, contractors, licensees),
     ...(searchedModules.size > 0 && matchedModules.size === 0
       ? [{
           code: "NO_MODULE_MATCHES",
@@ -677,7 +681,7 @@ export const buildBusinessDossierArtifact = async (
   ] satisfies readonly RiskFlag[];
   const matchRationale = buildMatchRationale(matchConfidence);
   const dossierConfidence = resolveDossierConfidence(matchConfidence);
-  const nextChecks = buildBusinessNextChecks(params, selectedModules);
+  const nextChecks = buildBusinessNextChecks(searchParams, selectedModules);
   const handoffMarkdown = buildDossierHandoffMarkdown(params, {
     selectedModules,
     searchedModules: Array.from(searchedModules),
