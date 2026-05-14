@@ -1,0 +1,76 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: junas
+      POSTGRES_USER: junas
+      POSTGRES_PASSWORD: junas
+    ports: ["5432:5432"]
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U junas"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports: ["9200:9200"]
+    volumes: [es_data:/usr/share/elasticsearch/data]
+
+  qdrant:
+    image: qdrant/qdrant:v1.8.4
+    ports: ["6333:6333"]
+    volumes: [qdrant_data:/qdrant/storage]
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports: ["8000:8000"]
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_started
+      qdrant:
+        condition: service_started
+      redis:
+        condition: service_started
+    volumes:
+      - ./vendor-data:/app/vendor-data
+      - model_cache:/app/models
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports: ["3000:3000"]
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    depends_on: [api]
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A api.celery_app worker --loglevel=info
+    env_file: .env
+    depends_on: [redis, postgres]
+    volumes:
+      - model_cache:/app/models
+
+volumes:
+  postgres_data:
+  es_data:
+  qdrant_data:
+  model_cache:
