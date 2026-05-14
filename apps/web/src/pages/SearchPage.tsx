@@ -1,3 +1,5 @@
+import { DiligenceSearch } from "@/components/search/DiligenceSearch";
+
 export function SearchPage() {
   return (
     <main className="min-h-screen bg-background px-6 py-16">
@@ -9,11 +11,7 @@ export function SearchPage() {
           </h1>
         </div>
 
-        <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
-          <p className="text-sm text-muted-foreground">
-            Search form wiring lands in this phase.
-          </p>
-        </div>
+        <DiligenceSearch />
       </section>
     </main>
   );
