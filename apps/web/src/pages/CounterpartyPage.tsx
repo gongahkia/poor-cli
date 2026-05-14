@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { EvidenceSection } from "@/components/dossier/EvidenceSection";
+import { GapsSection } from "@/components/dossier/GapsSection";
+import { LimitsSection } from "@/components/dossier/LimitsSection";
+import { ProvenanceSection } from "@/components/dossier/ProvenanceSection";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { callTool } from "@/lib/api/client";
@@ -179,6 +182,9 @@ function DossierSuccess({
       </section>
 
       <EvidenceSection dossier={dossier} />
+      <GapsSection dossier={dossier} />
+      <ProvenanceSection dossier={dossier} />
+      <LimitsSection dossier={dossier} />
     </>
   );
 }
