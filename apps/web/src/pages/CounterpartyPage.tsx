@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
+import { EvidenceSection } from "@/components/dossier/EvidenceSection";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { callTool } from "@/lib/api/client";
@@ -176,6 +177,8 @@ function DossierSuccess({
           ))}
         </dl>
       </section>
+
+      <EvidenceSection dossier={dossier} />
     </>
   );
 }
