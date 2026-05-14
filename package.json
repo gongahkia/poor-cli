@@ -1,5 +1,5 @@
 {
-  "name": "sg-skills",
+  "name": "@gongahkia/dude",
   "private": true,
   "engines": {
     "node": ">=20",
