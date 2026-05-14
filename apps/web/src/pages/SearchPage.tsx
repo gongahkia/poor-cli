@@ -12,6 +12,15 @@ export function SearchPage() {
         </div>
 
         <DiligenceSearch />
+
+        <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
+          <h2 className="text-base font-semibold text-foreground">How this works</h2>
+          <ul className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
+            <li>Paste a Singapore company name or UEN</li>
+            <li>We pull from ACRA, BCA, BOA, CEA, HSA, GeBIZ, HLB</li>
+            <li>Every fact shows its source and when we last verified it</li>
+          </ul>
+        </section>
       </section>
     </main>
   );
