@@ -849,10 +849,12 @@ export const queryDatastoreExactMatches = async <TRecord extends Readonly<Record
   const q = [options.q, normalizedFilters.q]
     .filter((value): value is string => value !== undefined && value.trim() !== "")
     .join(" ");
+  const maxPages = q === "" ? Number.POSITIVE_INFINITY : 3;
+  let pagesRead = 0;
 
-  while (offset < total && matches.length < matchLimit) {
+  while (offset < total && matches.length < matchLimit && pagesRead < maxPages) {
     const result = await queryDatastoreResult<TRecord>(resourceId, {
-      ...(options.sort === undefined ? {} : { sort: options.sort }),
+      ...(options.sort === undefined || q !== "" ? {} : { sort: options.sort }),
       ...(normalizedFilters.filters === undefined ? {} : { filters: normalizedFilters.filters }),
       ...(q === "" ? {} : { q }),
       limit: pageSize,
@@ -874,6 +876,7 @@ export const queryDatastoreExactMatches = async <TRecord extends Readonly<Record
 
     total = result.total;
     offset += result.records.length;
+    pagesRead += 1;
   }
 
   return matches;
