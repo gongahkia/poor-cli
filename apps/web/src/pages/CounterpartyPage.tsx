@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { EvidenceSection } from "@/components/dossier/EvidenceSection";
@@ -144,6 +144,16 @@ function DossierSuccess({
   const resolution = dossier.records.resolution;
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
+  const copiedTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimer.current !== null) {
+        window.clearTimeout(copiedTimer.current);
+      }
+    };
+  }, []);
 
   const handleExportPdf = async () => {
     setIsExporting(true);
@@ -157,6 +167,19 @@ function DossierSuccess({
       setExportError(error instanceof Error ? error.message : "PDF export failed.");
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopyStatus("copied");
+      if (copiedTimer.current !== null) {
+        window.clearTimeout(copiedTimer.current);
+      }
+      copiedTimer.current = window.setTimeout(() => setCopyStatus("idle"), 2000);
+    } catch {
+      setCopyStatus("error");
     }
   };
 
@@ -185,6 +208,14 @@ function DossierSuccess({
           <Button disabled={isExporting} onClick={handleExportPdf} type="button">
             {isExporting ? "Exporting" : "Export PDF"}
           </Button>
+          <Button onClick={handleCopyLink} type="button" variant="outline">
+            Copy link
+          </Button>
+          {copyStatus === "copied" ? (
+            <p className="text-sm text-muted-foreground">Copied</p>
+          ) : copyStatus === "error" ? (
+            <p className="text-sm text-destructive">Copy failed</p>
+          ) : null}
           {exportError !== null ? (
             <p className="text-sm text-destructive">{exportError}</p>
           ) : null}
