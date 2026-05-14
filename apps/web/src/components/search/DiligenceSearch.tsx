@@ -50,6 +50,12 @@ export function DiligenceSearch() {
               setError(null);
             }
           }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
           placeholder="Company name or UEN"
           value={query}
         />
