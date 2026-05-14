@@ -1,4 +1,8 @@
 import type { jsPDF as JsPdfInstance } from "jspdf";
+import {
+  formatRecordValue,
+  getDossierRecordGroups,
+} from "@/lib/dossier";
 import type { BriefArtifact, BriefSummaryItem } from "@/types/dossier";
 
 type ExportDossierPdfOptions = {
@@ -55,6 +59,31 @@ function addSummaryRows(doc: PdfDoc, rows: BriefSummaryItem[], y: number, maxWid
   return y;
 }
 
+function addRecordRows(
+  doc: PdfDoc,
+  records: Record<string, unknown>[],
+  y: number,
+  maxWidth: number,
+): number {
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(51, 65, 85);
+
+  if (records.length === 0) {
+    return addWrappedText(doc, "No matching records returned.", 22, y, maxWidth - 4) + 2;
+  }
+
+  for (const record of records) {
+    y = ensurePage(doc, y);
+    const fields = Object.entries(record)
+      .map(([key, value]) => `${key}: ${formatRecordValue(key, value)}`)
+      .join("; ");
+    y = addWrappedText(doc, fields, 22, y, maxWidth - 4) + 3;
+  }
+
+  return y;
+}
+
 export async function exportDossierPdf(
   brief: BriefArtifact,
   options: ExportDossierPdfOptions = {},
@@ -91,6 +120,24 @@ export async function exportDossierPdf(
   y = ensurePage(doc, y);
   y = addSectionTitle(doc, "Evidence", y);
   y = addSummaryRows(doc, brief.evidence, y, maxWidth) + 4;
+  for (const group of getDossierRecordGroups(brief)) {
+    y = ensurePage(doc, y);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(15, 23, 42);
+    doc.text(group.label, 22, y);
+    y += 6;
+
+    for (const table of group.tables) {
+      y = ensurePage(doc, y);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(71, 85, 105);
+      doc.text(table.label, 22, y);
+      y += 5;
+      y = addRecordRows(doc, table.records, y, maxWidth) + 2;
+    }
+  }
 
   y = ensurePage(doc, y);
   y = addSectionTitle(doc, "Gaps", y);

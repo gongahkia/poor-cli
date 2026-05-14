@@ -31,6 +31,14 @@ export function buildBusinessDossierInput(identifier: string): { uen: string } |
   return UEN_PATTERN.test(trimmed) ? { uen: trimmed.toUpperCase() } : { entityName: trimmed };
 }
 
+export function sanitizeFilenamePart(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "counterparty";
+}
+
 export function formatLabel(value: string): string {
   return value
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")

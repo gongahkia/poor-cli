@@ -12,7 +12,9 @@ import {
   buildBusinessDossierInput,
   buildSummaryLine,
   isNotFoundDossier,
+  sanitizeFilenamePart,
 } from "@/lib/dossier";
+import { exportDossierPdf } from "@/lib/export/pdf";
 import type { BusinessDossier } from "@/types/dossier";
 
 type DossierState =
@@ -140,6 +142,23 @@ function DossierSuccess({
   identifier: string;
 }) {
   const resolution = dossier.records.resolution;
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const handleExportPdf = async () => {
+    setIsExporting(true);
+    setExportError(null);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      await exportDossierPdf(dossier, {
+        filename: `dude-diligence-${sanitizeFilenamePart(identifier)}-${today}.pdf`,
+      });
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : "PDF export failed.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   return (
     <>
@@ -160,6 +179,14 @@ function DossierSuccess({
             <span className="rounded-md bg-muted px-2.5 py-1">
               Matched: {resolution.matchedModules.join(", ") || "none"}
             </span>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button disabled={isExporting} onClick={handleExportPdf} type="button">
+            {isExporting ? "Exporting" : "Export PDF"}
+          </Button>
+          {exportError !== null ? (
+            <p className="text-sm text-destructive">{exportError}</p>
           ) : null}
         </div>
       </header>
