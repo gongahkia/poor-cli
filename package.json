@@ -6,7 +6,8 @@
     "npm": ">=10"
   },
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "apps/*"
   ],
   "scripts": {
     "build": "tsc --build",
