@@ -184,6 +184,11 @@ const splitIlikeFilters = (
 
   const exactFilters: Record<string, unknown> = {};
   const qTerms: string[] = [];
+  const normalizeQTerm = (term: string): string =>
+    term
+      .replace(/[^a-z0-9]+/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
 
   for (const [key, value] of Object.entries(filters)) {
     if (
@@ -193,7 +198,7 @@ const splitIlikeFilters = (
       && "ilike" in value
       && typeof (value as { readonly ilike?: unknown }).ilike === "string"
     ) {
-      const term = (value as { readonly ilike: string }).ilike.trim();
+      const term = normalizeQTerm((value as { readonly ilike: string }).ilike);
       if (term !== "") {
         qTerms.push(term);
       }
@@ -858,7 +863,7 @@ export const queryDatastoreExactMatches = async <TRecord extends Readonly<Record
       ...(normalizedFilters.filters === undefined ? {} : { filters: normalizedFilters.filters }),
       ...(q === "" ? {} : { q }),
       limit: pageSize,
-      offset,
+      ...(offset === 0 ? {} : { offset }),
     });
 
     for (const row of result.records) {

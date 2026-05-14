@@ -428,6 +428,7 @@ Copy [`.env.example`](./.env.example) and set the credentials you actually need:
 - `SG_API_ONEMAP_PASSWORD`
 - `SG_API_URA_KEY`
 - `SG_API_LTA_KEY`
+- `TINYFISH_API_KEY` optional; enables server-side TinyFish Search as a UEN discovery hint before official ACRA exact matching
 
 The keystore helpers are still available for local use:
 

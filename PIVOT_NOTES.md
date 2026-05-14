@@ -16,7 +16,11 @@
 - `sg_business_dossier` currently exposes requested `sectorHints` and selected modules, but not an inferred-sector label. The Dude UI skips a "Sector inferred" badge until the envelope exposes that explicitly.
 - User accounts, saved searches, monitoring, alerts, payments, bulk lookups, public API access, and AI synthesis remain out of scope for v1.
 
+## Post-Phase 7 Triage
+
+- UEN-only ACRA lookups now avoid sorted 50-row scans and use one-row exact pages across shards. This prevents broad UEN searches from failing before the correct entity-name shard is reached.
+- `TINYFISH_API_KEY` can be set server-side to use TinyFish Search as an optional web discovery hint for UEN-to-name shard selection. TinyFish results are not treated as evidence; official ACRA exact UEN matching remains the source of record.
+
 ## Open Decisions
 
-- Root npm package rename is still pending Phase 5 package-name selection.
 - GitHub repository rename remains manual and out of scope for Codex.

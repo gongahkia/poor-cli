@@ -3,6 +3,7 @@ import type {
   AcraNormalizedEntityRecord,
 } from "@sg-apis/shared";
 import { queryDatastoreExactMatches } from "../datagov/client.js";
+import { searchTinyFish } from "../tinyfish/client.js";
 
 const ACRA_SHARD_RESOURCE_IDS = {
   A: "d_8575e84912df3c28995b8e6e0e05205a",
@@ -66,6 +67,8 @@ const ACRA_SHARD_SEARCH_ORDER: readonly AcraShardKey[] = [
   "OTHERS",
 ];
 
+const ACRA_UEN_ONLY_SHARD_DELAY_MS = process.env["NODE_ENV"] === "test" ? 0 : 1200;
+
 type AcraFilterParams = {
   readonly entityName?: string | undefined;
   readonly uen?: string | undefined;
@@ -100,6 +103,13 @@ const exactMatches = (actual: string, expected: string | undefined): boolean => 
 
 const getQueryLimit = (limit?: number): number => Math.min(Math.max(limit ?? 10, 1), 50);
 
+const wait = async (ms: number): Promise<void> => {
+  if (ms <= 0) {
+    return;
+  }
+  await new Promise<void>((resolve) => setTimeout(resolve, ms));
+};
+
 const getShardKeyForEntityName = (entityName: string): AcraShardKey => {
   const firstCharacter = entityName.trim().charAt(0).toUpperCase();
   if (/^[A-Z]$/.test(firstCharacter)) {
@@ -117,6 +127,63 @@ const getResourceIdsForParams = (params: AcraFilterParams): readonly string[] =>
   return ACRA_SHARD_SEARCH_ORDER.map((key) => ACRA_SHARD_RESOURCE_IDS[key]);
 };
 
+const extractCandidateNamesFromSearchText = (text: string, uen: string): readonly string[] => {
+  const uenPattern = uen.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const withoutUen = text
+    .replace(new RegExp(`\\(?\\b${uenPattern}\\b\\)?`, "gi"), " ")
+    .replace(/\bSingapore\b/gi, " ")
+    .replace(/\bUEN\b/gi, " ");
+
+  const candidates = [
+    withoutUen.split(" - ")[0] ?? "",
+    withoutUen.split(" | ")[0] ?? "",
+    withoutUen.split(":")[0] ?? "",
+  ]
+    .map((value) =>
+      value
+        .replace(/\s+/g, " ")
+        .replace(/^[^a-z0-9]+|[^a-z0-9. &'/-]+$/gi, "")
+        .trim(),
+    )
+    .filter((value) => /^[a-z0-9]/i.test(value) && value.length >= 3);
+
+  return Array.from(new Set(candidates));
+};
+
+const getTinyFishShardHints = async (uen: string): Promise<readonly AcraShardKey[]> => {
+  const results = await searchTinyFish(`"${uen}" Singapore UEN company ACRA`, {
+    location: "SG",
+    language: "en",
+  });
+  const hints: AcraShardKey[] = [];
+  const seen = new Set<AcraShardKey>();
+
+  for (const result of results.slice(0, 5)) {
+    for (const candidate of extractCandidateNamesFromSearchText(
+      `${result.title} ${result.snippet}`,
+      uen,
+    )) {
+      const shardKey = getShardKeyForEntityName(candidate);
+      if (!seen.has(shardKey)) {
+        seen.add(shardKey);
+        hints.push(shardKey);
+      }
+    }
+  }
+
+  return hints;
+};
+
+const getResourceIdsForUenOnly = async (uen: string): Promise<readonly string[]> => {
+  const hintedShardKeys = await getTinyFishShardHints(uen);
+  const orderedShardKeys = [
+    ...hintedShardKeys,
+    ...ACRA_SHARD_SEARCH_ORDER.filter((key) => !hintedShardKeys.includes(key)),
+  ];
+
+  return orderedShardKeys.map((key) => ACRA_SHARD_RESOURCE_IDS[key]);
+};
+
 const buildDatastoreFilters = (params: AcraFilterParams): Readonly<Record<string, unknown>> => ({
   ...(params.entityName === undefined
     ? {}
@@ -129,19 +196,27 @@ const buildDatastoreFilters = (params: AcraFilterParams): Readonly<Record<string
 export const getAcraEntities = async (
   params: AcraFilterParams,
 ): Promise<readonly AcraNormalizedEntityRecord[]> => {
-  const matchLimit = getQueryLimit(params.limit);
-  const resourceIds = getResourceIdsForParams(params);
+  const entityName = normalizeFilter(params.entityName);
+  const uen = normalizeFilter(params.uen)?.toUpperCase();
+  const isUenOnlySearch = uen !== undefined && entityName === undefined;
+  const matchLimit = isUenOnlySearch ? 1 : getQueryLimit(params.limit);
+  const resourceIds = isUenOnlySearch
+    ? await getResourceIdsForUenOnly(uen)
+    : getResourceIdsForParams(params);
   const matches: AcraEntityRecord[] = [];
 
-  for (const resourceId of resourceIds) {
+  for (const [index, resourceId] of resourceIds.entries()) {
     if (matches.length >= matchLimit) {
       break;
+    }
+    if (isUenOnlySearch && index > 0) {
+      await wait(ACRA_UEN_ONLY_SHARD_DELAY_MS);
     }
 
     const rows = await queryDatastoreExactMatches<AcraEntityRecord>(resourceId, {
       matchLimit: matchLimit - matches.length,
       filters: buildDatastoreFilters(params),
-      sort: "entity_name asc",
+      ...(isUenOnlySearch ? { pageSize: 1 } : { sort: "entity_name asc" }),
       exactMatch: (row) =>
         exactMatches(row.entity_name, params.entityName)
         && exactMatches(row.uen, params.uen),

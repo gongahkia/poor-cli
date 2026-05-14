@@ -175,6 +175,7 @@ Runtime config file: `~/.sg-apis/config.json`
 Override any default via environment variables:
 - `SG_APIS_LOG_LEVEL` — debug, info, warn, error
 - `SG_APIS_CACHE_TTL_DAILY` — override daily TTL in seconds
+- `TINYFISH_API_KEY` — optional server-side key for TinyFish Search UEN discovery hints; official registry rows remain the evidence source
 
 ## Monitoring
 

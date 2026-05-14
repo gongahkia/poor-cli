@@ -52,25 +52,31 @@ const getQueryLimit = (limit?: number): number => Math.min(Math.max(limit ?? 25,
 
 const buildLicensedBuilderFilters = (
   params: BcaLicensedBuilderFilterParams,
-): Readonly<Record<string, unknown>> => ({
-  ...(params.companyName === undefined
-    ? {}
-    : { company_name: { ilike: normalizeFilter(params.companyName)! } }),
-  ...(params.uenNo === undefined ? {} : { uen_no: { ilike: normalizeFilter(params.uenNo)! } }),
-  ...(params.className === undefined ? {} : { class: { ilike: normalizeFilter(params.className)! } }),
-  ...(params.classCode === undefined ? {} : { class_code: { ilike: normalizeFilter(params.classCode)! } }),
-});
+): Readonly<Record<string, unknown>> => {
+  const uenNo = normalizeFilter(params.uenNo);
+  return {
+    ...(params.companyName === undefined || uenNo !== undefined
+      ? {}
+      : { company_name: { ilike: normalizeFilter(params.companyName)! } }),
+    ...(uenNo === undefined ? {} : { uen_no: uenNo.toUpperCase() }),
+    ...(params.className === undefined ? {} : { class: { ilike: normalizeFilter(params.className)! } }),
+    ...(params.classCode === undefined ? {} : { class_code: { ilike: normalizeFilter(params.classCode)! } }),
+  };
+};
 
 const buildRegisteredContractorFilters = (
   params: BcaRegisteredContractorFilterParams,
-): Readonly<Record<string, unknown>> => ({
-  ...(params.companyName === undefined
-    ? {}
-    : { company_name: { ilike: normalizeFilter(params.companyName)! } }),
-  ...(params.uenNo === undefined ? {} : { uen_no: { ilike: normalizeFilter(params.uenNo)! } }),
-  ...(params.workhead === undefined ? {} : { workhead: { ilike: normalizeFilter(params.workhead)! } }),
-  ...(params.grade === undefined ? {} : { grade: { ilike: normalizeFilter(params.grade)! } }),
-});
+): Readonly<Record<string, unknown>> => {
+  const uenNo = normalizeFilter(params.uenNo);
+  return {
+    ...(params.companyName === undefined || uenNo !== undefined
+      ? {}
+      : { company_name: { ilike: normalizeFilter(params.companyName)! } }),
+    ...(uenNo === undefined ? {} : { uen_no: uenNo.toUpperCase() }),
+    ...(params.workhead === undefined ? {} : { workhead: { ilike: normalizeFilter(params.workhead)! } }),
+    ...(params.grade === undefined ? {} : { grade: { ilike: normalizeFilter(params.grade)! } }),
+  };
+};
 
 export const getBcaLicensedBuilders = async (
   params: BcaLicensedBuilderFilterParams,
