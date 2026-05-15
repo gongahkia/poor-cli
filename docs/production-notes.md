@@ -176,15 +176,18 @@ Override any default via environment variables:
 - `SG_APIS_LOG_LEVEL` — debug, info, warn, error
 - `SG_APIS_CACHE_TTL_DAILY` — override daily TTL in seconds
 - `TINYFISH_API_KEY` — optional server-side key for TinyFish Search UEN discovery hints; official registry rows remain the evidence source
-- `OPENAI_API_KEY` — reserved for the future server-side AI synthesis tier; not used by the v1 free-read UI
+- `DUDE_AI_PROVIDER` — optional analyst memo provider, defaults to `openai`; supported values are `openai`, `anthropic`, and `google`
+- `DUDE_AI_MODEL` — optional analyst memo model override; provider-specific overrides are `DUDE_OPENAI_MODEL`, `DUDE_ANTHROPIC_MODEL`, and `DUDE_GOOGLE_MODEL`
+- `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY` — optional server-side analyst memo credentials; missing credentials return a structured unavailable state
 
-The Dude web app expects secrets only on the REST gateway process. Do not expose `TINYFISH_API_KEY` or `OPENAI_API_KEY` as `VITE_*` variables.
+The Dude web app expects secrets only on the REST gateway process. Do not expose `TINYFISH_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GOOGLE_API_KEY` as `VITE_*` variables.
 
 Operational readiness endpoints:
 
 - `GET /api/v1/health` returns gateway status, enabled tool count, ACRA route availability, and whether TinyFish Search is configured.
 - `GET /api/v1/dude/search-suggestions?q=<term>` returns bounded ACRA suggestions for the web search box.
 - `GET /api/v1/dude/web-presence?query=<entity>` returns TinyFish web discovery results when `TINYFISH_API_KEY` is configured. These results are not registry evidence.
+- `POST /api/v1/dude/memo` returns a grounded analyst memo or a structured unavailable/error state. It accepts a dossier envelope or an identifier to resolve through `sg_business_dossier`.
 
 ## Monitoring
 

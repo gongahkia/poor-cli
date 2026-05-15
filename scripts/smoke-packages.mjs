@@ -183,7 +183,7 @@ try {
   try {
     await client.connect(transport);
 
-    if (client.getServerVersion()?.name !== "sg-apis-mcp") {
+    if (client.getServerVersion()?.name !== "dude") {
       throw new Error(`Unexpected MCP server name: ${JSON.stringify(client.getServerVersion())}${formatServerLogs()}`);
     }
 

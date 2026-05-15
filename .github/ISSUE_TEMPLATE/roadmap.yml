@@ -1,0 +1,39 @@
+name: Roadmap
+description: Track a product or platform outcome with child implementation tasks.
+title: "[Roadmap] "
+labels: ["kind:roadmap"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What user or platform outcome should exist when this roadmap item is done?
+    validations:
+      required: true
+  - type: textarea
+    id: child_tasks
+    attributes:
+      label: Child Tasks
+      description: Link implementation issues or list concrete child tasks.
+      placeholder: "- #123\n- #124"
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: What must be true before this roadmap item can close?
+      placeholder: "- [ ] ..."
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Compatibility Constraints
+      value: |
+        - Do not rename or break existing `sg_*` tool names or schemas.
+        - Do not rename `packages/mcp-server/package.json`; it remains `sg-apis-mcp`.
+        - Do not change `SG_API_*`, `SG_APIS_*`, or `sg://...` contracts.
+        - Keep outputs grounded in public data, provenance, freshness, gaps, and limits.
+    validations:
+      required: true

@@ -16,8 +16,14 @@ import { getCeaSalespersons } from "../apis/cea/client.js";
 import { getGeBIZTenders } from "../apis/gebiz/client.js";
 import { getHlbHotels } from "../apis/hlb/client.js";
 import { getHsaHealthProductLicensees, getHsaLicensedPharmacies } from "../apis/hsa/client.js";
-import type { BusinessDossierModule, BusinessSectorHint } from "./entity-resolution.js";
-import { resolveEntityMatchConfidence, selectBusinessDossierModules } from "./entity-resolution.js";
+import type { BusinessDossierModule, BusinessSectorHint, InferredBusinessSector } from "./entity-resolution.js";
+import {
+  ALL_BUSINESS_DOSSIER_MODULES,
+  getBusinessModulesForSector,
+  inferBusinessSectorsFromAcra,
+  resolveEntityMatchConfidence,
+  selectBusinessDossierModules,
+} from "./entity-resolution.js";
 
 type BusinessDossierParams = Readonly<{
   entityName?: string | undefined;
@@ -35,6 +41,18 @@ type BusinessDossierParams = Readonly<{
 
 const toGap = (code: string, message: string): EvidenceGap => ({ code, message });
 const toLimit = (code: string, message: string): BriefLimit => ({ code, message });
+const PROVENANCE_SOURCE_URLS: Record<string, string> = {
+  sg_acra_entities: "https://www.acra.gov.sg/resources/open-data-initiative/",
+  sg_bca_licensed_builders: "https://developers.data.gov.sg/datasets?resultId=d_19573c579879be15623f2e1e3854926d",
+  sg_bca_registered_contractors: "https://developers.data.gov.sg/datasets?resultId=d_dcda79be4aded5f9e769b8e23ff69b47",
+  sg_cea_salespersons: "https://developers.data.gov.sg/datasets?resultId=d_07c63be0f37e6e59c07a4ddc2fd87fcb",
+  sg_gebiz_tenders: "https://developers.data.gov.sg/datasets?resultId=d_c9bea4c28194866ab2e1313e6be430d6",
+  sg_boa_architects: "https://developers.data.gov.sg/datasets?resultId=d_d77de0f78ca589a5c61da7a60fdee6ba",
+  sg_boa_architecture_firms: "https://developers.data.gov.sg/datasets?resultId=d_d5c0a4ffd076a3e40d772275619bbb66",
+  sg_hsa_licensed_pharmacies: "https://www.hsa.gov.sg/e-services/infosearch",
+  sg_hsa_health_product_licensees: "https://www.hsa.gov.sg/e-services/infosearch",
+  sg_hlb_hotels: "https://www.hlb.gov.sg/",
+};
 
 const safeRead = async <T>(
   code: string,
@@ -56,13 +74,19 @@ const toProvenance = (
   coverage: string,
   authRequired: boolean,
   recordCount: number,
-): BriefProvenanceItem => ({
-  source,
-  tool,
-  coverage,
-  authRequired,
-  recordCount,
-});
+): BriefProvenanceItem => {
+  const sourceUrl = PROVENANCE_SOURCE_URLS[tool];
+
+  return {
+    source,
+    tool,
+    coverage,
+    authRequired,
+    recordCount,
+    ...(sourceUrl === undefined ? {} : { sourceUrl }),
+    evidenceType: "official_registry",
+  };
+};
 
 const toFreshness = (
   source: string,
@@ -261,10 +285,97 @@ const buildBusinessLimits = (
   selectedModules: readonly BusinessDossierModule[],
 ): readonly BriefLimit[] => [
   toLimit("EXACT_AND_BOUNDED_MATCHING", "Registry matching prioritizes exact identifiers, then exact normalized names, then bounded fuzzy-name checks."),
-  toLimit("NO_CORPORATE_GRAPH", "This dossier does not infer subsidiaries, shareholders, officers, or beneficial ownership relationships."),
+  toLimit("NO_CORPORATE_GRAPH", "This dossier does not infer directors, officers, shareholders, beneficial owners, subsidiaries, parent entities, or corporate control graphs."),
   toLimit("PUBLIC_DATA_ONLY", "The dossier only uses official public registries and datasets currently exposed through this server."),
   toLimit("PUBLIC_REGISTRY_SCOPE", `This dossier is limited to the selected module set: ${selectedModules.join(", ")}.`),
 ];
+
+type ModuleReason = Readonly<{
+  module: BusinessDossierModule;
+  status: "matched" | "unmatched" | "unsearched" | "skipped";
+  selectedBy: readonly ("default" | "explicit_module" | "sector_hint" | "inferred_sector")[];
+  searched: boolean;
+  matched: boolean;
+  reason: string;
+  sectorHints?: readonly BusinessSectorHint[];
+  inferredSectors?: readonly BusinessSectorHint[];
+}>;
+
+const formatModuleTriggers = (triggers: readonly ModuleReason["selectedBy"][number][]): string => {
+  if (triggers.length === 0) return "no selector";
+  return triggers.map((trigger) => {
+    if (trigger === "default") return "default identity lookup";
+    if (trigger === "explicit_module") return "explicit modules input";
+    if (trigger === "sector_hint") return "supplied sector hint";
+    return "ACRA SSIC inference";
+  }).join(", ");
+};
+
+const buildModuleReasons = (params: Readonly<{
+  requestedModules: readonly BusinessDossierModule[] | undefined;
+  suppliedSectorHints: readonly BusinessSectorHint[];
+  inferredSectors: readonly InferredBusinessSector[];
+  selectedModules: readonly BusinessDossierModule[];
+  searchedModules: readonly BusinessDossierModule[];
+  matchedModules: readonly BusinessDossierModule[];
+  unmatchedModules: readonly BusinessDossierModule[];
+  unsearchedModules: readonly BusinessDossierModule[];
+}>): readonly ModuleReason[] => {
+  const selectedModuleSet = new Set(params.selectedModules);
+  const searchedModuleSet = new Set(params.searchedModules);
+  const matchedModuleSet = new Set(params.matchedModules);
+  const unmatchedModuleSet = new Set(params.unmatchedModules);
+  const unsearchedModuleSet = new Set(params.unsearchedModules);
+  const requestedModuleSet = params.requestedModules === undefined ? null : new Set(params.requestedModules);
+
+  return ALL_BUSINESS_DOSSIER_MODULES.map((module) => {
+    const suppliedSectorHints = params.suppliedSectorHints.filter((sectorHint) =>
+      getBusinessModulesForSector(sectorHint).includes(module),
+    );
+    const inferredSectors = params.inferredSectors
+      .filter((sector) => sector.modules.includes(module))
+      .map((sector) => sector.sector);
+    const selectedBy: ModuleReason["selectedBy"][number][] = [];
+
+    if (module === "acra" && params.requestedModules === undefined) selectedBy.push("default");
+    if (requestedModuleSet?.has(module) === true) selectedBy.push("explicit_module");
+    if (suppliedSectorHints.length > 0) selectedBy.push("sector_hint");
+    if (params.requestedModules === undefined && inferredSectors.length > 0) selectedBy.push("inferred_sector");
+
+    const selected = selectedModuleSet.has(module);
+    const searched = searchedModuleSet.has(module);
+    const matched = matchedModuleSet.has(module);
+    const status: ModuleReason["status"] = matched
+      ? "matched"
+      : unmatchedModuleSet.has(module)
+        ? "unmatched"
+        : unsearchedModuleSet.has(module)
+          ? "unsearched"
+          : "skipped";
+    const triggerText = formatModuleTriggers(selectedBy);
+    const explicitScopeNote = params.requestedModules === undefined || inferredSectors.length === 0 || selected
+      ? ""
+      : " ACRA SSIC suggested this sector, but explicit modules constrained the dossier scope.";
+    const reason = selected
+      ? searched
+        ? matched
+          ? `Selected by ${triggerText}; lookup ran and returned public records.`
+          : `Selected by ${triggerText}; lookup ran but returned no matching public records.`
+        : `Selected by ${triggerText}; lookup was not run because the supplied identifiers do not satisfy this module's search inputs.`
+      : `Skipped because it was not selected by the default identity path, explicit modules, supplied sector hints, or active inferred-sector scope.${explicitScopeNote}`;
+
+    return {
+      module,
+      status,
+      selectedBy,
+      searched,
+      matched,
+      reason,
+      ...(suppliedSectorHints.length === 0 ? {} : { sectorHints: suppliedSectorHints }),
+      ...(inferredSectors.length === 0 ? {} : { inferredSectors }),
+    };
+  });
+};
 
 const buildMatchRationale = (confidence: readonly MatchConfidence[]): readonly Readonly<Record<string, unknown>>[] => {
   return confidence.map((entry) => {
@@ -301,33 +412,98 @@ const buildMatchRationale = (confidence: readonly MatchConfidence[]): readonly R
   });
 };
 
-const resolveDossierConfidence = (confidence: readonly MatchConfidence[]): Readonly<Record<string, unknown>> => {
+type DossierCoverage = Readonly<{
+  selectedModules: readonly BusinessDossierModule[];
+  searchedModules: readonly BusinessDossierModule[];
+  matchedModules: readonly BusinessDossierModule[];
+  unmatchedModules: readonly BusinessDossierModule[];
+  unsearchedModules: readonly BusinessDossierModule[];
+}>;
+
+const confidenceRank = (value: MatchConfidence["confidence"]): number => {
+  if (value === "exact") return 1;
+  if (value === "name-exact") return 0.8;
+  if (value === "name-fuzzy") return 0.5;
+  return 0;
+};
+
+const confidenceLevel = (score: number): "high" | "medium" | "low" =>
+  score >= 0.8 ? "high" : score >= 0.5 ? "medium" : "low";
+
+const roundScore = (score: number): number => Math.round(score * 100) / 100;
+
+const compareIdentitySignals = (a: MatchConfidence, b: MatchConfidence): number => {
+  const sourcePriority = (source: string): number => source === "ACRA" ? 1 : 0;
+  const scoreDelta = confidenceRank(b.confidence) - confidenceRank(a.confidence);
+  if (scoreDelta !== 0) return scoreDelta;
+  return sourcePriority(b.source) - sourcePriority(a.source);
+};
+
+const resolveDossierConfidence = (
+  confidence: readonly MatchConfidence[],
+  coverage: DossierCoverage,
+): Readonly<Record<string, unknown>> => {
   if (confidence.length === 0) {
     return {
       level: "low",
       score: 0,
       rationale: "No confidence signals were generated because no searchable module had qualifying input.",
+      identity: {
+        level: "low",
+        score: 0,
+        primarySource: null,
+        matchedOn: null,
+        rationale: "No searchable identity source returned a match signal.",
+      },
+      coverage: {
+        selectedModules: coverage.selectedModules,
+        searchedModules: coverage.searchedModules,
+        matchedModules: coverage.matchedModules,
+        unmatchedModules: coverage.unmatchedModules,
+        unsearchedModules: coverage.unsearchedModules,
+        score: 0,
+        rationale: "No selected modules were searched because the supplied identifiers did not qualify for any lookup.",
+      },
     };
   }
 
-  const rank = (value: MatchConfidence["confidence"]): number => {
-    if (value === "exact") return 1;
-    if (value === "name-exact") return 0.8;
-    if (value === "name-fuzzy") return 0.5;
-    return 0;
-  };
+  const identitySignals = confidence
+    .filter((entry) => entry.source === "ACRA" || entry.confidence === "exact")
+    .sort(compareIdentitySignals);
+  const bestIdentitySignal = identitySignals[0] ?? [...confidence].sort(compareIdentitySignals)[0];
+  const identityScore = bestIdentitySignal === undefined ? 0 : confidenceRank(bestIdentitySignal.confidence);
+  const roundedIdentityScore = roundScore(identityScore);
+  const identityLevel = confidenceLevel(roundedIdentityScore);
+  const searchedCount = coverage.searchedModules.length;
+  const coverageScore = searchedCount === 0 ? 0 : coverage.matchedModules.length / searchedCount;
+  const roundedCoverageScore = roundScore(coverageScore);
 
-  const score = confidence.reduce((sum, entry) => sum + rank(entry.confidence), 0) / confidence.length;
-  const roundedScore = Math.round(score * 100) / 100;
-  const level = roundedScore >= 0.8 ? "high" : roundedScore >= 0.5 ? "medium" : "low";
   return {
-    level,
-    score: roundedScore,
-    rationale: level === "high"
-      ? "Most matched modules resolved via exact identifier or exact-name matches."
-      : level === "medium"
-        ? "Evidence contains mixed exact and fuzzy confidence signals; direct verification is recommended."
-        : "Match confidence is weak or missing across searched modules.",
+    level: identityLevel,
+    score: roundedIdentityScore,
+    rationale: identityLevel === "high"
+      ? `Identity confidence is high from ${bestIdentitySignal?.source ?? "the strongest source"}; coverage breadth is tracked separately.`
+      : identityLevel === "medium"
+        ? "Identity confidence is based on bounded name matching; coverage breadth is tracked separately."
+        : "Identity confidence is weak or missing across searched modules; coverage breadth is tracked separately.",
+    identity: {
+      level: identityLevel,
+      score: roundedIdentityScore,
+      primarySource: bestIdentitySignal?.source ?? null,
+      matchedOn: bestIdentitySignal?.matchedOn ?? null,
+      rationale: bestIdentitySignal === undefined || bestIdentitySignal.confidence === "no-match"
+        ? "No official identity source returned a match."
+        : `${bestIdentitySignal.source} returned a ${bestIdentitySignal.confidence} match${bestIdentitySignal.matchedOn === null ? "" : ` on ${bestIdentitySignal.matchedOn}`}.`,
+    },
+    coverage: {
+      selectedModules: coverage.selectedModules,
+      searchedModules: coverage.searchedModules,
+      matchedModules: coverage.matchedModules,
+      unmatchedModules: coverage.unmatchedModules,
+      unsearchedModules: coverage.unsearchedModules,
+      score: roundedCoverageScore,
+      rationale: `${coverage.matchedModules.length} of ${searchedCount} searched modules returned evidence; ${coverage.unsearchedModules.length} selected modules were not searchable from the supplied input.`,
+    },
   };
 };
 
@@ -377,12 +553,13 @@ export const buildBusinessDossierArtifact = async (
 ): Promise<BriefArtifact> => {
   const observedAt = new Date().toISOString();
   const gaps: EvidenceGap[] = [];
-  const selectedModules = selectBusinessDossierModules(params.modules, params.sectorHints);
-  const selectedModuleSet = new Set<BusinessDossierModule>(selectedModules);
+  const suppliedSectorHints = params.sectorHints ?? [];
+  const initialSelectedModules = selectBusinessDossierModules(params.modules, suppliedSectorHints);
+  const initialSelectedModuleSet = new Set<BusinessDossierModule>(initialSelectedModules);
   const searchedModules = new Set<BusinessDossierModule>();
   const matchedModules = new Set<BusinessDossierModule>();
 
-  const shouldSearchAcra = selectedModuleSet.has("acra") && (params.entityName !== undefined || params.uen !== undefined);
+  const shouldSearchAcra = initialSelectedModuleSet.has("acra") && (params.entityName !== undefined || params.uen !== undefined);
   if (shouldSearchAcra) searchedModules.add("acra");
 
   const acraRecords = shouldSearchAcra
@@ -397,6 +574,13 @@ export const buildBusinessDossierArtifact = async (
   const resolvedEntityName = params.entityName
     ?? (typeof acra[0]?.entityName === "string" ? acra[0].entityName : undefined);
   const searchParams: BusinessDossierParams = { ...params, entityName: resolvedEntityName };
+  const inferredSectors = inferBusinessSectorsFromAcra(acra);
+  const inferredSectorHints = inferredSectors.map((sector) => sector.sector);
+  const effectiveSectorHints = params.modules === undefined
+    ? Array.from(new Set<BusinessSectorHint>([...suppliedSectorHints, ...inferredSectorHints]))
+    : suppliedSectorHints;
+  const selectedModules = selectBusinessDossierModules(params.modules, effectiveSectorHints);
+  const selectedModuleSet = new Set<BusinessDossierModule>(selectedModules);
 
   const shouldSearchBca = selectedModuleSet.has("bca")
     && (searchParams.entityName !== undefined || searchParams.uen !== undefined || searchParams.classCode !== undefined || searchParams.workhead !== undefined || searchParams.grade !== undefined);
@@ -579,6 +763,18 @@ export const buildBusinessDossierArtifact = async (
 
   const unmatchedModules = selectedModules.filter((module) => searchedModules.has(module) && !matchedModules.has(module));
   const unsearchedModules = selectedModules.filter((module) => !searchedModules.has(module));
+  const searchedModuleList = Array.from(searchedModules);
+  const matchedModuleList = Array.from(matchedModules);
+  const moduleReasons = buildModuleReasons({
+    requestedModules: params.modules,
+    suppliedSectorHints,
+    inferredSectors,
+    selectedModules,
+    searchedModules: searchedModuleList,
+    matchedModules: matchedModuleList,
+    unmatchedModules,
+    unsearchedModules,
+  });
 
   const matchConfidence: MatchConfidence[] = [
     ...(shouldSearchAcra
@@ -680,12 +876,18 @@ export const buildBusinessDossierArtifact = async (
       : []),
   ] satisfies readonly RiskFlag[];
   const matchRationale = buildMatchRationale(matchConfidence);
-  const dossierConfidence = resolveDossierConfidence(matchConfidence);
+  const dossierConfidence = resolveDossierConfidence(matchConfidence, {
+    selectedModules,
+    searchedModules: searchedModuleList,
+    matchedModules: matchedModuleList,
+    unmatchedModules,
+    unsearchedModules,
+  });
   const nextChecks = buildBusinessNextChecks(searchParams, selectedModules);
   const handoffMarkdown = buildDossierHandoffMarkdown(params, {
     selectedModules,
-    searchedModules: Array.from(searchedModules),
-    matchedModules: Array.from(matchedModules),
+    searchedModules: searchedModuleList,
+    matchedModules: matchedModuleList,
     unmatchedModules,
     riskFlags,
     nextChecks,
@@ -707,7 +909,10 @@ export const buildBusinessDossierArtifact = async (
     ],
     evidence: [
       { label: "Selected modules", value: selectedModules.length, source: "Resolver" },
+      { label: "Searched modules", value: searchedModules.size, source: "Resolver" },
       { label: "Matched modules", value: matchedModules.size, source: "Resolver" },
+      { label: "Unsearched modules", value: unsearchedModules.length, source: "Resolver" },
+      { label: "Inferred sectors", value: inferredSectors.length, source: "Resolver" },
       { label: "ACRA matches", value: acra.length, source: "ACRA" },
       { label: "BCA licensed-builder matches", value: builders.length, source: "BCA" },
       { label: "BCA contractor matches", value: contractors.length, source: "BCA" },
@@ -731,10 +936,13 @@ export const buildBusinessDossierArtifact = async (
         requestedRegistrationNo: params.registrationNo ?? null,
         selectedModules,
         sectorHints: params.sectorHints ?? [],
-        searchedModules: Array.from(searchedModules),
-        matchedModules: Array.from(matchedModules),
+        effectiveSectorHints,
+        inferredSectors,
+        searchedModules: searchedModuleList,
+        matchedModules: matchedModuleList,
         unmatchedModules,
         unsearchedModules,
+        moduleReasons,
       },
       quality: {
         dossierConfidence,
@@ -756,66 +964,66 @@ export const buildBusinessDossierArtifact = async (
     },
     gaps,
     provenance: [
-      ...(selectedModuleSet.has("acra")
+      ...(searchedModules.has("acra")
         ? [toProvenance("ACRA", "sg_acra_entities", "Exact-match company and UEN registry evidence.", false, acra.length)]
         : []),
-      ...(selectedModuleSet.has("bca")
+      ...(searchedModules.has("bca")
         ? [
             toProvenance("BCA", "sg_bca_licensed_builders", "Licensed-builder registry evidence for the named entity or class code.", false, builders.length),
             toProvenance("BCA", "sg_bca_registered_contractors", "Registered-contractor registry evidence for the named entity, workhead, or grade.", false, contractors.length),
           ]
         : []),
-      ...(selectedModuleSet.has("cea")
+      ...(searchedModules.has("cea")
         ? [toProvenance("CEA", "sg_cea_salespersons", "Salesperson and estate-agent registry evidence for the supplied identifiers.", false, salespersons.length)]
         : []),
-      ...(selectedModuleSet.has("gebiz")
+      ...(searchedModules.has("gebiz")
         ? [toProvenance("GeBIZ", "sg_gebiz_tenders", "Government procurement award history for the named supplier.", false, tenders.length)]
         : []),
-      ...(selectedModuleSet.has("boa")
+      ...(searchedModules.has("boa")
         ? [
             toProvenance("BOA", "sg_boa_architects", "Board of Architects architect registry evidence for the supplied firm or registration identifier.", false, architects.length),
             toProvenance("BOA", "sg_boa_architecture_firms", "Board of Architects architecture-firm registry evidence for the supplied firm identifier.", false, architectureFirms.length),
           ]
         : []),
-      ...(selectedModuleSet.has("hsa")
+      ...(searchedModules.has("hsa")
         ? [
             toProvenance("HSA", "sg_hsa_licensed_pharmacies", "Licensed pharmacy evidence for the named entity.", false, pharmacies.length),
             toProvenance("HSA", "sg_hsa_health_product_licensees", "Health-product licensing evidence for the named company.", false, licensees.length),
           ]
         : []),
-      ...(selectedModuleSet.has("hlb")
+      ...(searchedModules.has("hlb")
         ? [toProvenance("HLB", "sg_hlb_hotels", "Hotels Licensing Board hotel and keeper evidence for the named entity.", false, hotels.length)]
         : []),
     ],
     freshness: [
-      ...(selectedModuleSet.has("acra")
+      ...(searchedModules.has("acra")
         ? [toFreshness("ACRA", observedAt, getFirstTimestamp(acra, ["annualReturnDate", "accountDueDate", "registrationIncorporationDate"]))]
         : []),
-      ...(selectedModuleSet.has("bca")
+      ...(searchedModules.has("bca")
         ? [
             toFreshness("BCA licensed builders", observedAt, getFirstTimestamp(builders, ["expiryDate"])),
             toFreshness("BCA registered contractors", observedAt, getFirstTimestamp(contractors, ["expiryDate"])),
           ]
         : []),
-      ...(selectedModuleSet.has("cea")
+      ...(searchedModules.has("cea")
         ? [toFreshness("CEA", observedAt, getFirstTimestamp(salespersons, ["registrationEndDate", "registrationStartDate"]))]
         : []),
-      ...(selectedModuleSet.has("gebiz")
+      ...(searchedModules.has("gebiz")
         ? [toFreshness("GeBIZ", observedAt, getFirstTimestamp(tenders as readonly Readonly<Record<string, unknown>>[], ["awardDate"]))]
         : []),
-      ...(selectedModuleSet.has("boa")
+      ...(searchedModules.has("boa")
         ? [
             toFreshness("BOA architects", observedAt, null),
             toFreshness("BOA architecture firms", observedAt, null),
           ]
         : []),
-      ...(selectedModuleSet.has("hsa")
+      ...(searchedModules.has("hsa")
         ? [
             toFreshness("HSA licensed pharmacies", observedAt, null),
             toFreshness("HSA health product licensees", observedAt, getFirstTimestamp(licensees as readonly Readonly<Record<string, unknown>>[], ["expiryDate"])),
           ]
         : []),
-      ...(selectedModuleSet.has("hlb")
+      ...(searchedModules.has("hlb")
         ? [toFreshness("HLB hotels", observedAt, getFirstTimestamp(hotels as readonly Readonly<Record<string, unknown>>[], ["lastUpdatedAt"]))]
         : []),
     ],

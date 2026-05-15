@@ -144,6 +144,8 @@ export type BriefProvenanceItem = {
   readonly coverage: string;
   readonly authRequired: boolean;
   readonly recordCount: number;
+  readonly sourceUrl?: string;
+  readonly evidenceType?: "official_registry" | "web_discovery" | "operational_metadata";
 };
 
 export type BriefFreshnessItem = {

@@ -87,6 +87,12 @@ export type AcraEntitySuggestion = {
   readonly entityTypeDescription: string;
 };
 
+export type AcraLookupReadiness = {
+  readonly resourceId: string;
+  readonly recordCount: number;
+  readonly fieldCount: number;
+};
+
 const entityCache = new Map<string, { readonly expiresAt: number; readonly rows: readonly AcraNormalizedEntityRecord[] }>();
 const suggestionCache = new Map<string, { readonly expiresAt: number; readonly rows: readonly AcraEntitySuggestion[] }>();
 
@@ -372,4 +378,23 @@ export const searchAcraEntitySuggestions = async (
     suggestionCache.set(cacheKey, { expiresAt: Date.now() + ACRA_SUGGESTION_CACHE_TTL_MS, rows: suggestions });
   }
   return suggestions;
+};
+
+export const probeAcraLookupReadiness = async (): Promise<AcraLookupReadiness> => {
+  const resourceId = ACRA_SHARD_RESOURCE_IDS.A;
+  const result = await queryDatastoreResult<AcraEntityRecord>(resourceId, { limit: 1 });
+  const record = result.records[0];
+
+  if (record === undefined) {
+    throw new Error("ACRA readiness probe returned no rows.");
+  }
+  if (typeof record.uen !== "string" || typeof record.entity_name !== "string") {
+    throw new Error("ACRA readiness probe returned an unexpected row shape.");
+  }
+
+  return {
+    resourceId,
+    recordCount: result.records.length,
+    fieldCount: result.fields.length,
+  };
 };

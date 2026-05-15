@@ -1,0 +1,10 @@
+.git
+.env
+.env.*
+!.env.deploy.example
+node_modules
+packages/*/dist
+apps/web/dist
+artifacts
+.build-benchmark
+npm-debug.log*

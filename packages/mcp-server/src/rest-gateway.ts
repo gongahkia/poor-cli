@@ -6,11 +6,27 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { randomUUID } from "node:crypto";
 import { createLogger } from "@sg-apis/shared";
 import { searchAcraEntitySuggestions } from "./apis/acra/client.js";
-import { getWebPresence, isTinyFishSearchConfigured } from "./apis/tinyfish/client.js";
+import { getWebPresence } from "./apis/tinyfish/client.js";
+import { buildBulkDossierResponse } from "./dude/bulk-dossiers.js";
+import { generateAnalystMemo, type AnalystMemoDossier } from "./dude/analyst-memo.js";
+import {
+  getGatewayMetricsSnapshot,
+  recordGatewayRequest,
+  recordUpstreamFailures,
+} from "./gateway/metrics.js";
+import { getGatewayHealthPayload } from "./gateway/readiness.js";
+import {
+  buildRateLimitResponse,
+  checkTrafficLimit,
+  getClientId,
+  getTrafficPolicy,
+} from "./gateway/traffic-control.js";
 import { ALL_TOOL_DEFINITIONS } from "./tools/tool-set.js";
+import { handleBusinessDossier } from "./tools/brief-tools.js";
 import { isToolEnabled } from "./tools/tool-metadata.js";
 const PORT = Number(process.env["PORT"] ?? 3000);
 const DEFAULT_DEV_WEB_ORIGIN = "http://localhost:5173";
+const gatewayStartedAt = new Date();
 const logger = createLogger("rest-gateway");
 import { resolveEnabledToolsets } from "./tools/toolset-profiles.js";
 
@@ -33,10 +49,50 @@ const allowedCorsOrigins = new Set(
 
 logger.info("gateway started", { toolsets: [...enabledToolsets], tools: enabledTools.length, total: ALL_TOOL_DEFINITIONS.length });
 
-const readBody = (req: IncomingMessage): Promise<string> =>
+const MAX_SEARCH_QUERY_LENGTH = 96;
+const MAX_WEB_PRESENCE_QUERY_LENGTH = 160;
+const MAX_MEMO_IDENTIFIER_LENGTH = 128;
+const UEN_PATTERN = /^(?:\d{8,9}[a-z]|[a-z]\d{2}[a-z]{2}\d{4}[a-z])$/i;
+
+class RequestBodyTooLargeError extends Error {
+  readonly statusCode = 413;
+
+  constructor(readonly maxBytes: number) {
+    super(`Request body exceeds ${maxBytes} bytes.`);
+    this.name = "RequestBodyTooLargeError";
+  }
+}
+
+class BadRequestError extends Error {
+  readonly statusCode = 400;
+
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "BadRequestError";
+  }
+}
+
+const readBody = (req: IncomingMessage, maxBytes: number): Promise<string> =>
   new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
+    let totalBytes = 0;
+    let rejected = false;
+    req.on("data", (c: Buffer) => {
+      if (rejected) {
+        return;
+      }
+      totalBytes += c.byteLength;
+      if (totalBytes > maxBytes) {
+        rejected = true;
+        reject(new RequestBodyTooLargeError(maxBytes));
+        req.resume();
+        return;
+      }
+      chunks.push(c);
+    });
     req.on("end", () => resolve(Buffer.concat(chunks).toString()));
     req.on("error", reject);
   });
@@ -48,20 +104,83 @@ const sendJson = (res: ServerResponse, status: number, body: unknown): void => {
 
 const getQueryValue = (url: URL, key: string): string => url.searchParams.get(key)?.trim() ?? "";
 
+const buildLimitMessage = (
+  name: string,
+  limit: number,
+): { readonly error: { readonly code: string; readonly message: string } } => ({
+  error: {
+    code: "INPUT_TOO_LARGE",
+    message: `${name} must be ${limit} characters or fewer.`,
+  },
+});
+
+const summarizeQueryInput = (value: string): Record<string, unknown> => ({
+  queryLength: value.length,
+  queryLooksLikeUen: /^(?:\d{8,9}[a-z]|[a-z]\d{2}[a-z]{2}\d{4}[a-z])$/i.test(value),
+});
+
 const summarizeBusinessInput = (input: unknown): Record<string, unknown> => {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
     return {};
   }
   const record = input as Record<string, unknown>;
+  const modules = Array.isArray(record["modules"])
+    ? record["modules"].filter((module): module is string => typeof module === "string")
+    : [];
+  const entityName = typeof record["entityName"] === "string" ? record["entityName"].trim() : "";
   return {
-    ...(typeof record["uen"] === "string" ? { uen: record["uen"] } : {}),
-    ...(typeof record["entityName"] === "string" ? { entityName: record["entityName"] } : {}),
+    hasUen: typeof record["uen"] === "string" && record["uen"].trim() !== "",
+    ...(typeof record["uen"] === "string" ? { uen: record["uen"].trim().toUpperCase() } : {}),
+    ...(entityName === "" ? {} : { entityNameLength: entityName.length }),
+    ...(modules.length === 0 ? {} : { modules }),
   };
 };
 
-const summarizeBusinessDossier = (record: unknown): Record<string, unknown> => {
-  if (record === null || typeof record !== "object" || Array.isArray(record)) {
+const summarizeMemoInput = (input: unknown): Record<string, unknown> => {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) {
     return {};
+  }
+  const record = input as Record<string, unknown>;
+  const identifier = typeof record["identifier"] === "string" ? record["identifier"].trim() : "";
+  const dossier = record["dossier"];
+  const webPresence = record["webPresence"];
+  return {
+    hasDossier: dossier !== null && typeof dossier === "object" && !Array.isArray(dossier),
+    ...(identifier === "" ? {} : {
+      identifierLength: identifier.length,
+      identifierLooksLikeUen: UEN_PATTERN.test(identifier),
+    }),
+    hasWebPresenceLimits: webPresence !== null
+      && typeof webPresence === "object"
+      && !Array.isArray(webPresence)
+      && Array.isArray((webPresence as Record<string, unknown>)["limits"]),
+  };
+};
+
+const summarizeBulkInput = (input: unknown): Record<string, unknown> => {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) {
+    return {};
+  }
+  const record = input as Record<string, unknown>;
+  const items = record["items"];
+  return {
+    requestedCount: Array.isArray(items) ? items.length : 0,
+  };
+};
+
+const summarizeBusinessDossier = (record: unknown): {
+  readonly matchedModules: readonly string[];
+  readonly unmatchedModules: readonly string[];
+  readonly gapCodes: readonly string[];
+  readonly upstreamFailures: readonly string[];
+} => {
+  if (record === null || typeof record !== "object" || Array.isArray(record)) {
+    return {
+      matchedModules: [],
+      unmatchedModules: [],
+      gapCodes: [],
+      upstreamFailures: [],
+    };
   }
   const dossier = record as {
     readonly gaps?: readonly { readonly code?: string }[];
@@ -73,19 +192,76 @@ const summarizeBusinessDossier = (record: unknown): Record<string, unknown> => {
     };
   };
   const gaps = dossier.gaps ?? [];
+  const gapCodes = gaps
+    .map((gap) => gap.code)
+    .filter((code): code is string => typeof code === "string");
   return {
     matchedModules: dossier.records?.resolution?.matchedModules ?? [],
     unmatchedModules: dossier.records?.resolution?.unmatchedModules ?? [],
-    gapCodes: gaps.map((gap) => gap.code).filter(Boolean),
-    upstreamFailures: gaps
-      .map((gap) => gap.code)
-      .filter((code): code is string => typeof code === "string" && code.includes("UNAVAILABLE")),
+    gapCodes,
+    upstreamFailures: gapCodes.filter((code) => code.includes("UNAVAILABLE")),
   };
 };
 
 const getOrigin = (req: IncomingMessage): string | undefined => {
   const origin = req.headers.origin;
   return typeof origin === "string" ? origin : undefined;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+const isDossier = (value: unknown): value is AnalystMemoDossier =>
+  isRecord(value)
+  && typeof value["title"] === "string"
+  && Array.isArray(value["summary"])
+  && Array.isArray(value["evidence"])
+  && isRecord(value["records"])
+  && Array.isArray(value["gaps"])
+  && Array.isArray(value["provenance"])
+  && Array.isArray(value["freshness"])
+  && Array.isArray(value["limits"]);
+
+const buildBusinessDossierInputFromIdentifier = (identifier: string): { readonly uen: string } | { readonly entityName: string } =>
+  UEN_PATTERN.test(identifier)
+    ? { uen: identifier.toUpperCase() }
+    : { entityName: identifier };
+
+const resolveMemoDossier = async (input: Record<string, unknown>): Promise<AnalystMemoDossier> => {
+  if (isDossier(input["dossier"])) {
+    return input["dossier"];
+  }
+
+  const identifier = typeof input["identifier"] === "string" ? input["identifier"].trim() : "";
+  if (identifier === "") {
+    throw new BadRequestError("MEMO_DOSSIER_REQUIRED", "Provide a dossier envelope or an identifier to resolve one.");
+  }
+  if (identifier.length > MAX_MEMO_IDENTIFIER_LENGTH) {
+    throw new BadRequestError("INPUT_TOO_LARGE", `Memo identifier must be ${MAX_MEMO_IDENTIFIER_LENGTH} characters or fewer.`);
+  }
+
+  const result = await handleBusinessDossier(buildBusinessDossierInputFromIdentifier(identifier));
+  const record = result.structuredContent?.["record"];
+  if (!isDossier(record)) {
+    throw new BadRequestError("MEMO_DOSSIER_RESOLUTION_FAILED", "Unable to resolve a business dossier for analyst memo generation.");
+  }
+  return record;
+};
+
+const sanitizeWebPresenceForMemo = (
+  value: unknown,
+): { readonly configured: boolean; readonly limits: readonly string[] } | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const configured = value["configured"];
+  const limits = value["limits"];
+  return {
+    configured: configured === true,
+    limits: Array.isArray(limits)
+      ? limits.filter((item): item is string => typeof item === "string" && item.trim() !== "").map((item) => item.trim())
+      : [],
+  };
 };
 
 const applyCorsHeaders = (req: IncomingMessage, res: ServerResponse): boolean => {
@@ -108,11 +284,30 @@ const applyCorsHeaders = (req: IncomingMessage, res: ServerResponse): boolean =>
 };
 
 const server = createServer(async (req, res) => {
+  const requestStartedAt = Date.now();
   const requestId = randomUUID();
-  const requestLogger = logger.child({ requestId, method: req.method, path: req.url ?? "/" });
   const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
+  const method = req.method ?? "UNKNOWN";
+  const route = url.pathname;
+  const requestLogger = logger.child({ requestId, method, route });
+  let safeInputSummary: Record<string, unknown> = {};
   const isApiRoute = url.pathname.startsWith("/api/v1/");
   const corsAllowed = isApiRoute ? applyCorsHeaders(req, res) : false;
+
+  res.on("finish", () => {
+    const durationMs = Date.now() - requestStartedAt;
+    recordGatewayRequest({
+      method,
+      route,
+      status: res.statusCode,
+      durationMs,
+    });
+    requestLogger.info("request finished", {
+      status: res.statusCode,
+      durationMs,
+      ...(Object.keys(safeInputSummary).length === 0 ? {} : { input: safeInputSummary }),
+    });
+  });
 
   if (req.method === "OPTIONS" && isApiRoute) {
     if (!corsAllowed && getOrigin(req)) {
@@ -129,6 +324,20 @@ const server = createServer(async (req, res) => {
   res.setHeader("Content-Type", "application/json");
   requestLogger.debug("incoming request");
 
+  const trafficPolicy = getTrafficPolicy(method, route);
+  const trafficLimit = checkTrafficLimit({
+    clientId: getClientId(req),
+    policy: trafficPolicy,
+  });
+  res.setHeader("X-RateLimit-Limit", String(trafficPolicy.maxRequests));
+  res.setHeader("X-RateLimit-Remaining", String(trafficLimit.remaining));
+  res.setHeader("X-RateLimit-Reset", String(Math.ceil(trafficLimit.resetAt / 1000)));
+  if (!trafficLimit.allowed) {
+    res.setHeader("Retry-After", String(trafficLimit.retryAfterSeconds));
+    sendJson(res, 429, buildRateLimitResponse(trafficPolicy, trafficLimit));
+    return;
+  }
+
   // GET /api/v1/tools — list enabled tools only
   if (req.method === "GET" && url.pathname === "/api/v1/tools") {
     requestLogger.info("listing tools", { toolCount: enabledTools.length });
@@ -139,23 +348,28 @@ const server = createServer(async (req, res) => {
   // GET /api/v1/health
   if (req.method === "GET" && url.pathname === "/api/v1/health") {
     requestLogger.info("health check");
-    res.end(JSON.stringify({
-      status: "ok",
-      tools: enabledTools.length,
-      services: {
-        gateway: "reachable",
-        acra: "available-via-datagov",
-        tinyfish: {
-          configured: isTinyFishSearchConfigured(),
-          mode: "web-discovery-only",
-        },
-      },
-    }));
+    const health = await getGatewayHealthPayload({
+      toolCount: enabledTools.length,
+      startedAt: gatewayStartedAt,
+    });
+    res.end(JSON.stringify(health));
+    return;
+  }
+
+  // GET /api/v1/metrics
+  if (req.method === "GET" && url.pathname === "/api/v1/metrics") {
+    requestLogger.info("metrics snapshot");
+    res.end(JSON.stringify(getGatewayMetricsSnapshot({ startedAt: gatewayStartedAt })));
     return;
   }
 
   if (req.method === "GET" && url.pathname === "/api/v1/dude/search-suggestions") {
     const query = getQueryValue(url, "q");
+    safeInputSummary = summarizeQueryInput(query);
+    if (query.length > MAX_SEARCH_QUERY_LENGTH) {
+      sendJson(res, 400, buildLimitMessage("Search query", MAX_SEARCH_QUERY_LENGTH));
+      return;
+    }
     if (query.length < 2) {
       sendJson(res, 200, { query, suggestions: [] });
       return;
@@ -164,14 +378,14 @@ const server = createServer(async (req, res) => {
       const startedAt = Date.now();
       const suggestions = await searchAcraEntitySuggestions(query, 6);
       requestLogger.info("search suggestions finished", {
-        query,
+        ...summarizeQueryInput(query),
         suggestions: suggestions.length,
         durationMs: Date.now() - startedAt,
       });
       sendJson(res, 200, { query, suggestions });
     } catch (err) {
       requestLogger.warn("search suggestions failed", {
-        query,
+        ...summarizeQueryInput(query),
         error: err instanceof Error ? err.message : String(err),
       });
       sendJson(res, 200, { query, suggestions: [], warning: "Search suggestions are temporarily unavailable." });
@@ -181,6 +395,11 @@ const server = createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/api/v1/dude/web-presence") {
     const query = getQueryValue(url, "query");
+    safeInputSummary = summarizeQueryInput(query);
+    if (query.length > MAX_WEB_PRESENCE_QUERY_LENGTH) {
+      sendJson(res, 400, buildLimitMessage("Web discovery query", MAX_WEB_PRESENCE_QUERY_LENGTH));
+      return;
+    }
     if (query === "") {
       sendJson(res, 400, { error: "query is required" });
       return;
@@ -188,12 +407,127 @@ const server = createServer(async (req, res) => {
     const startedAt = Date.now();
     const presence = await getWebPresence(query);
     requestLogger.info("web presence finished", {
-      query,
+      ...summarizeQueryInput(query),
       configured: presence.configured,
       results: presence.results.length,
       durationMs: Date.now() - startedAt,
     });
     sendJson(res, 200, presence);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/v1/dude/memo") {
+    try {
+      const body = await readBody(req, trafficPolicy.maxBodyBytes);
+      const input = body === "" ? {} : JSON.parse(body);
+      if (!isRecord(input)) {
+        throw new BadRequestError("INVALID_MEMO_INPUT", "Memo request body must be a JSON object.");
+      }
+      safeInputSummary = summarizeMemoInput(input);
+      const startedAt = Date.now();
+      const dossier = await resolveMemoDossier(input);
+      const webPresence = sanitizeWebPresenceForMemo(input["webPresence"]);
+      const memo = await generateAnalystMemo({
+        dossier,
+        ...(webPresence === undefined ? {} : { webPresence }),
+      });
+      requestLogger.info("analyst memo finished", {
+        ...safeInputSummary,
+        status: memo.status,
+        configured: memo.configured,
+        provider: memo.provider,
+        durationMs: Date.now() - startedAt,
+      });
+      sendJson(res, 200, memo);
+    } catch (err) {
+      if (err instanceof RequestBodyTooLargeError) {
+        requestLogger.warn("memo request body too large", { maxBytes: err.maxBytes });
+        sendJson(res, err.statusCode, {
+          error: {
+            code: "REQUEST_BODY_TOO_LARGE",
+            message: `Request body must be ${err.maxBytes} bytes or smaller.`,
+          },
+        });
+        return;
+      }
+      if (err instanceof BadRequestError) {
+        requestLogger.warn("invalid memo request", { code: err.code });
+        sendJson(res, err.statusCode, {
+          error: {
+            code: err.code,
+            message: err.message,
+          },
+        });
+        return;
+      }
+      if (err instanceof SyntaxError) {
+        requestLogger.warn("invalid memo json body");
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_JSON",
+            message: "Request body must be valid JSON.",
+          },
+        });
+        return;
+      }
+      requestLogger.error("analyst memo failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      sendJson(res, 500, {
+        error: {
+          code: "MEMO_GENERATION_FAILED",
+          message: "Analyst memo generation failed.",
+        },
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/v1/dude/bulk-dossiers") {
+    try {
+      const body = await readBody(req, trafficPolicy.maxBodyBytes);
+      const input = body === "" ? {} : JSON.parse(body);
+      safeInputSummary = summarizeBulkInput(input);
+      const startedAt = Date.now();
+      const response = await buildBulkDossierResponse(input, handleBusinessDossier);
+      requestLogger.info("bulk dossiers finished", {
+        ...safeInputSummary,
+        executedCount: response.executedCount,
+        parseErrors: response.parseErrors.length,
+        durationMs: Date.now() - startedAt,
+      });
+      sendJson(res, 200, response);
+    } catch (err) {
+      if (err instanceof RequestBodyTooLargeError) {
+        requestLogger.warn("bulk request body too large", { maxBytes: err.maxBytes });
+        sendJson(res, err.statusCode, {
+          error: {
+            code: "REQUEST_BODY_TOO_LARGE",
+            message: `Request body must be ${err.maxBytes} bytes or smaller.`,
+          },
+        });
+        return;
+      }
+      if (err instanceof SyntaxError) {
+        requestLogger.warn("invalid bulk json body");
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_JSON",
+            message: "Request body must be valid JSON.",
+          },
+        });
+        return;
+      }
+      requestLogger.error("bulk dossiers failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      sendJson(res, 500, {
+        error: {
+          code: "BULK_DOSSIERS_FAILED",
+          message: "Bulk dossier execution failed.",
+        },
+      });
+    }
     return;
   }
 
@@ -208,23 +542,29 @@ const server = createServer(async (req, res) => {
       return;
     }
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, trafficPolicy.maxBodyBytes);
       const input = body === "" ? {} : JSON.parse(body);
       const startedAt = Date.now();
+      const inputSummary = tool.name === "sg_business_dossier" ? summarizeBusinessInput(input) : {};
+      safeInputSummary = { tool: tool.name, ...inputSummary };
       requestLogger.info("invoking tool", {
         tool: tool.name,
-        ...(tool.name === "sg_business_dossier" ? summarizeBusinessInput(input) : {}),
+        ...inputSummary,
       });
       const result = await tool.handler(input);
       const status = result.isError ? 400 : 200;
+      const dossierSummary = tool.name === "sg_business_dossier"
+        ? summarizeBusinessDossier(result.structuredContent?.["record"])
+        : undefined;
+      if (dossierSummary !== undefined) {
+        recordUpstreamFailures(tool.name, dossierSummary.upstreamFailures);
+      }
       requestLogger.info("tool invocation finished", {
         tool: tool.name,
         status,
         isError: result.isError === true,
         durationMs: Date.now() - startedAt,
-        ...(tool.name === "sg_business_dossier"
-          ? summarizeBusinessDossier(result.structuredContent?.["record"])
-          : {}),
+        ...(dossierSummary ?? {}),
       });
       res.writeHead(status);
       res.end(JSON.stringify({
@@ -232,6 +572,26 @@ const server = createServer(async (req, res) => {
         ...(result.structuredContent ? { data: result.structuredContent } : {}),
       }));
     } catch (err) {
+      if (err instanceof RequestBodyTooLargeError) {
+        requestLogger.warn("request body too large", { maxBytes: err.maxBytes });
+        sendJson(res, err.statusCode, {
+          error: {
+            code: "REQUEST_BODY_TOO_LARGE",
+            message: `Request body must be ${err.maxBytes} bytes or smaller.`,
+          },
+        });
+        return;
+      }
+      if (err instanceof SyntaxError) {
+        requestLogger.warn("invalid json body");
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_JSON",
+            message: "Request body must be valid JSON.",
+          },
+        });
+        return;
+      }
       requestLogger.error("tool invocation failed", {
         error: err instanceof Error ? err.message : String(err),
       });

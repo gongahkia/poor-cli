@@ -149,12 +149,15 @@ sg_msf_social_service_offices { "name": "Social Service Office @ Queenstown" }
 ### Business Diligence Expansion
 
 ```text
+sg_business_dossier { "uen": "201912345K" }
 sg_query { "query": "Architecture firm diligence for DP Architects", "mode": "execute" }
 sg_business_dossier { "entityName": "DP Architects", "modules": ["acra", "boa", "gebiz"], "sectorHints": ["architecture", "procurement"] }
 sg_boa_architecture_firms { "firmName": "DP Architects" }
 sg_hsa_health_product_licensees { "companyName": "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD." }
 sg_hlb_hotels { "name": "Marina Bay Sands" }
 ```
+
+The default UEN/company dossier is an ACRA identity check. Sector modules are searched only when the caller supplies `modules`, supplies `sectorHints`, or ACRA SSIC evidence supports an inferred sector. Read `records.resolution.moduleReasons` before treating an empty module as a registry no-match; skipped modules were not queried.
 
 ## New Data Families
 

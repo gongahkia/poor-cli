@@ -6,7 +6,7 @@ Dude: Singapore due diligence over deterministic public-data contracts
 
 ## Status
 
-Accepted for the underlying MCP server. Product framing is in flux during the Dude pivot.
+Accepted for the underlying MCP server. Dude is the web product layered on the stable `sg-apis-mcp` runtime.
 
 ## Context
 

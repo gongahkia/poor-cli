@@ -642,6 +642,19 @@
                   "radiusKm": {
                     "type": "number"
                   },
+                  "modules": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "pa",
+                        "sportsg",
+                        "ecda",
+                        "msf",
+                        "hawker"
+                      ]
+                    }
+                  },
                   "format": {
                     "type": "string",
                     "enum": [
@@ -1497,6 +1510,136 @@
         }
       }
     },
+    "/api/v1/sg_grant_eligibility": {
+      "post": {
+        "summary": "Compute HDB/CPF housing grant eligibility (EHG, Family, Singles, Proximity, Step-Up) from a household profile. Deterministic; uses embedded versioned rules. Banks do not issue HDB grants.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "object",
+                    "properties": {
+                      "applicants": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "age": {
+                              "type": "integer"
+                            },
+                            "citizenship": {
+                              "type": "string",
+                              "enum": [
+                                "citizen",
+                                "pr",
+                                "foreigner"
+                              ]
+                            },
+                            "monthlyIncomeSgd": {
+                              "type": "number"
+                            },
+                            "employmentMonths": {
+                              "type": "integer"
+                            },
+                            "firstTimer": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "age",
+                            "citizenship",
+                            "monthlyIncomeSgd"
+                          ]
+                        }
+                      },
+                      "maritalStatus": {
+                        "type": "string",
+                        "enum": [
+                          "single",
+                          "married",
+                          "joint_singles",
+                          "fiance_fiancee"
+                        ]
+                      },
+                      "flatMode": {
+                        "type": "string",
+                        "enum": [
+                          "bto",
+                          "resale"
+                        ]
+                      },
+                      "flatSize": {
+                        "type": "string",
+                        "enum": [
+                          "2_room",
+                          "3_room",
+                          "4_room",
+                          "5_room",
+                          "executive"
+                        ]
+                      },
+                      "proximityToParents": {
+                        "type": "string",
+                        "enum": [
+                          "live_with",
+                          "near",
+                          "neither"
+                        ]
+                      },
+                      "upgradingFromTwoRoomBtoNonMature": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "applicants",
+                      "maritalStatus",
+                      "flatMode",
+                      "flatSize"
+                    ]
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "required": [
+                  "profile"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
     "/api/v1/sg_hawker_centres": {
       "post": {
         "summary": "Search hawker centres in Singapore with optional proximity filtering by coordinates and radius.",
@@ -1827,6 +1970,208 @@
                     "type": "string"
                   }
                 },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_housing_affordability": {
+      "post": {
+        "summary": "Integrated BTO/resale affordability check: TDSR (55%) + MSR (30%) + LTV cap, downpayment cash/CPF split, BSD, grants, and verdict (fits/tight/over_budget).",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "object",
+                    "properties": {
+                      "applicants": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "age": {
+                              "type": "integer"
+                            },
+                            "citizenship": {
+                              "type": "string",
+                              "enum": [
+                                "citizen",
+                                "pr",
+                                "foreigner"
+                              ]
+                            },
+                            "monthlyIncomeSgd": {
+                              "type": "number"
+                            },
+                            "employmentMonths": {
+                              "type": "integer"
+                            },
+                            "firstTimer": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "age",
+                            "citizenship",
+                            "monthlyIncomeSgd"
+                          ]
+                        }
+                      },
+                      "maritalStatus": {
+                        "type": "string",
+                        "enum": [
+                          "single",
+                          "married",
+                          "joint_singles",
+                          "fiance_fiancee"
+                        ]
+                      },
+                      "flatMode": {
+                        "type": "string",
+                        "enum": [
+                          "bto",
+                          "resale"
+                        ]
+                      },
+                      "flatSize": {
+                        "type": "string",
+                        "enum": [
+                          "2_room",
+                          "3_room",
+                          "4_room",
+                          "5_room",
+                          "executive"
+                        ]
+                      },
+                      "proximityToParents": {
+                        "type": "string",
+                        "enum": [
+                          "live_with",
+                          "near",
+                          "neither"
+                        ]
+                      },
+                      "upgradingFromTwoRoomBtoNonMature": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "applicants",
+                      "maritalStatus",
+                      "flatMode",
+                      "flatSize"
+                    ]
+                  },
+                  "targetPriceSgd": {
+                    "type": "number"
+                  },
+                  "tenureYears": {
+                    "type": "integer"
+                  },
+                  "cashOnHandSgd": {
+                    "type": "number"
+                  },
+                  "cpfOaBalanceSgd": {
+                    "type": "number"
+                  },
+                  "otherMonthlyDebtSgd": {
+                    "type": "number"
+                  },
+                  "soraValue": {
+                    "type": "number"
+                  },
+                  "bankPackages": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "bank": {
+                          "type": "string"
+                        },
+                        "packageName": {
+                          "type": "string"
+                        },
+                        "rateBasis": {
+                          "type": "string",
+                          "enum": [
+                            "sora_1m",
+                            "sora_3m",
+                            "fixed",
+                            "board_rate"
+                          ]
+                        },
+                        "spreadBps": {
+                          "type": "number"
+                        },
+                        "fixedRate": {
+                          "type": "number"
+                        },
+                        "lockInYears": {
+                          "type": "integer"
+                        },
+                        "thereafterSpreadBps": {
+                          "type": "number"
+                        },
+                        "notes": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "bank",
+                        "packageName",
+                        "rateBasis"
+                      ]
+                    }
+                  },
+                  "loanType": {
+                    "type": "string",
+                    "enum": [
+                      "hdb",
+                      "bank"
+                    ]
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "required": [
+                  "profile",
+                  "targetPriceSgd",
+                  "tenureYears",
+                  "cashOnHandSgd",
+                  "cpfOaBalanceSgd"
+                ],
                 "additionalProperties": false
               }
             }
@@ -2193,6 +2538,122 @@
                 },
                 "required": [
                   "query"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_loan_compare": {
+      "post": {
+        "summary": "Compare HDB concessionary loan vs caller-supplied bank packages. Pass live SORA from sg_mas_interest_rates. Outputs monthly instalment, blended interest estimate, and best-by-year-1/lifetime.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "priceSgd": {
+                    "type": "number"
+                  },
+                  "downpaymentSgd": {
+                    "type": "number"
+                  },
+                  "tenureYears": {
+                    "type": "integer"
+                  },
+                  "soraValue": {
+                    "type": "number"
+                  },
+                  "soraTenor": {
+                    "type": "string",
+                    "enum": [
+                      "1m",
+                      "3m"
+                    ]
+                  },
+                  "bankPackages": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "bank": {
+                          "type": "string"
+                        },
+                        "packageName": {
+                          "type": "string"
+                        },
+                        "rateBasis": {
+                          "type": "string",
+                          "enum": [
+                            "sora_1m",
+                            "sora_3m",
+                            "fixed",
+                            "board_rate"
+                          ]
+                        },
+                        "spreadBps": {
+                          "type": "number"
+                        },
+                        "fixedRate": {
+                          "type": "number"
+                        },
+                        "lockInYears": {
+                          "type": "integer"
+                        },
+                        "thereafterSpreadBps": {
+                          "type": "number"
+                        },
+                        "notes": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "bank",
+                        "packageName",
+                        "rateBasis"
+                      ]
+                    }
+                  },
+                  "includeHdbLoan": {
+                    "type": "boolean"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "required": [
+                  "priceSgd",
+                  "downpaymentSgd",
+                  "tenureYears"
                 ],
                 "additionalProperties": false
               }
@@ -4215,6 +4676,75 @@
                 },
                 "required": [
                   "requestId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_resale_price_compare": {
+      "post": {
+        "summary": "Benchmark a target resale unit against recent transactions in the same town/flat-type via data.gov.sg HDB resale dataset. Outputs median/IQR, variance %, and verdict.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "town": {
+                    "type": "string"
+                  },
+                  "flatType": {
+                    "type": "string"
+                  },
+                  "askingPriceSgd": {
+                    "type": "number"
+                  },
+                  "storeyBand": {
+                    "type": "string"
+                  },
+                  "remainingLeaseYears": {
+                    "type": "integer"
+                  },
+                  "lookbackMonths": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "required": [
+                  "town",
+                  "flatType",
+                  "askingPriceSgd"
                 ],
                 "additionalProperties": false
               }

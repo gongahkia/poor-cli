@@ -36,7 +36,7 @@ Claude Desktop or Codex-style clients:
   "mcpServers": {
     "sg-apis-mcp": {
       "command": "node",
-      "args": ["/absolute/path/to/sg-skills/packages/mcp-server/dist/index.js"]
+      "args": ["/absolute/path/to/dude/packages/mcp-server/dist/index.js"]
     }
   }
 }
@@ -45,7 +45,7 @@ Claude Desktop or Codex-style clients:
 Claude Code:
 
 ```bash
-claude mcp add sg-apis-mcp -- node /absolute/path/to/sg-skills/packages/mcp-server/dist/index.js
+claude mcp add sg-apis-mcp -- node /absolute/path/to/dude/packages/mcp-server/dist/index.js
 ```
 
 Published-package snippet after the first npm release:

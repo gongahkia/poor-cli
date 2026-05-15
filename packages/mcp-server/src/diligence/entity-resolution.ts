@@ -9,10 +9,25 @@ export type BusinessSectorHint =
   | "hospitality"
   | "procurement";
 
-export const DEFAULT_BUSINESS_DOSSIER_MODULES: readonly BusinessDossierModule[] = [
+export type InferredBusinessSector = Readonly<{
+  sector: BusinessSectorHint;
+  source: "ACRA";
+  evidence: string;
+  modules: readonly BusinessDossierModule[];
+}>;
+
+export const ALL_BUSINESS_DOSSIER_MODULES: readonly BusinessDossierModule[] = [
   "acra",
   "bca",
   "cea",
+  "gebiz",
+  "boa",
+  "hsa",
+  "hlb",
+] as const;
+
+export const DEFAULT_BUSINESS_DOSSIER_MODULES: readonly BusinessDossierModule[] = [
+  "acra",
 ] as const;
 
 const MODULES_BY_SECTOR: Readonly<Record<BusinessSectorHint, readonly BusinessDossierModule[]>> = {
@@ -23,6 +38,10 @@ const MODULES_BY_SECTOR: Readonly<Record<BusinessSectorHint, readonly BusinessDo
   hospitality: ["hlb"],
   procurement: ["gebiz"],
 };
+
+export const getBusinessModulesForSector = (
+  sectorHint: BusinessSectorHint,
+): readonly BusinessDossierModule[] => MODULES_BY_SECTOR[sectorHint];
 
 export const selectBusinessDossierModules = (
   modules: readonly BusinessDossierModule[] | undefined,
@@ -37,6 +56,83 @@ export const selectBusinessDossierModules = (
   }
 
   return Array.from(selected);
+};
+
+const getRecordString = (
+  record: Readonly<Record<string, unknown>>,
+  field: string,
+): string | null => {
+  const value = record[field];
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+};
+
+const inferSectorHintsFromSsic = (
+  code: string | null,
+  description: string | null,
+): readonly BusinessSectorHint[] => {
+  const hints = new Set<BusinessSectorHint>();
+  const normalizedCode = code ?? "";
+  const normalizedDescription = normalizeBusinessName(description ?? "");
+
+  if (/^(41|42|43)/.test(normalizedCode)) hints.add("construction");
+  if (/^(711|71)/.test(normalizedCode) || normalizedDescription.includes("architect")) hints.add("architecture");
+  if (/^(55)/.test(normalizedCode) || normalizedDescription.includes("hotel")) hints.add("hospitality");
+  if (/^(68)/.test(normalizedCode) || normalizedDescription.includes("real estate")) hints.add("real_estate");
+  if (
+    /^(86|4646|4772)/.test(normalizedCode)
+    || normalizedDescription.includes("health")
+    || normalizedDescription.includes("medical")
+    || normalizedDescription.includes("pharmaceutical")
+    || normalizedDescription.includes("pharmacy")
+  ) {
+    hints.add("healthcare");
+  }
+
+  return Array.from(hints);
+};
+
+export const inferBusinessSectorsFromAcra = (
+  records: readonly Readonly<Record<string, unknown>>[],
+): readonly InferredBusinessSector[] => {
+  const inferred = new Map<BusinessSectorHint, InferredBusinessSector>();
+
+  for (const record of records) {
+    const ssicPairs = [
+      {
+        code: getRecordString(record, "primarySsicCode"),
+        description: getRecordString(record, "primarySsicDescription"),
+        label: "primary SSIC",
+      },
+      {
+        code: getRecordString(record, "secondarySsicCode"),
+        description: getRecordString(record, "secondarySsicDescription"),
+        label: "secondary SSIC",
+      },
+    ] as const;
+
+    for (const ssic of ssicPairs) {
+      for (const sector of inferSectorHintsFromSsic(ssic.code, ssic.description)) {
+        if (inferred.has(sector)) continue;
+        const evidenceParts = [
+          ssic.label,
+          ssic.code === null ? null : ssic.code,
+          ssic.description === null ? null : ssic.description,
+        ].filter(Boolean);
+        inferred.set(sector, {
+          sector,
+          source: "ACRA",
+          evidence: evidenceParts.join(": "),
+          modules: MODULES_BY_SECTOR[sector],
+        });
+      }
+    }
+  }
+
+  return Array.from(inferred.values());
 };
 
 export const normalizeBusinessName = (value: string | undefined): string => {
@@ -94,18 +190,6 @@ export const isBoundedFuzzyBusinessNameMatch = (
 
   const denominator = Math.max(expectedSet.size, actualSet.size);
   return denominator > 0 && overlap / denominator >= 0.75;
-};
-
-const getRecordString = (
-  record: Readonly<Record<string, unknown>>,
-  field: string,
-): string | null => {
-  const value = record[field];
-  if (typeof value !== "string") {
-    return null;
-  }
-  const trimmed = value.trim();
-  return trimmed === "" ? null : trimmed;
 };
 
 type ExactInput = {

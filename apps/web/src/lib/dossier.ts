@@ -181,8 +181,9 @@ export function getDossierRecordGroups(dossier: BusinessDossier): DossierRecordG
   ];
 
   return groups.filter((group) => {
-    const selected = dossier.records.resolution?.selectedModules;
-    return selected === undefined || selected.includes(group.module);
+    const visibleModules = dossier.records.resolution?.searchedModules
+      ?? dossier.records.resolution?.selectedModules;
+    return visibleModules === undefined || visibleModules.includes(group.module);
   });
 }
 
@@ -206,6 +207,28 @@ export type DiligenceSnapshot = {
   confidence: string | null;
 };
 
+export type DossierConfidence = {
+  level: string;
+  score?: number;
+  rationale?: string;
+  identity?: {
+    level?: string;
+    score?: number;
+    primarySource?: string | null;
+    matchedOn?: string | null;
+    rationale?: string;
+  };
+  coverage?: {
+    selectedModules?: string[];
+    searchedModules?: string[];
+    matchedModules?: string[];
+    unmatchedModules?: string[];
+    unsearchedModules?: string[];
+    score?: number;
+    rationale?: string;
+  };
+};
+
 const firstRecord = (value: unknown): Record<string, unknown> | null =>
   Array.isArray(value) && value[0] !== null && typeof value[0] === "object" && !Array.isArray(value[0])
     ? value[0] as Record<string, unknown>
@@ -217,6 +240,18 @@ export function getPrimaryAcraRecord(dossier: BusinessDossier): Record<string, u
 
 function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+}
+
+function asStringArray(value: unknown): string[] | undefined {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : undefined;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }
 
 function getEntityAge(registrationDate: string | null): string | null {
@@ -244,19 +279,49 @@ function getAddress(record: Record<string, unknown> | null): string | null {
   return parts.length === 0 ? null : parts.join(", ");
 }
 
-export function getDossierConfidence(dossier: BusinessDossier): { level: string; score?: number; rationale?: string } | null {
+export function getDossierConfidence(dossier: BusinessDossier): DossierConfidence | null {
   const value = dossier.records.quality?.["dossierConfidence"];
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+  const record = asRecord(value);
+  if (record === null) {
     return null;
   }
-  const record = value as Record<string, unknown>;
   const level = asString(record["level"]);
   if (level === null) {
     return null;
   }
   const score = typeof record["score"] === "number" ? record["score"] : undefined;
   const rationale = asString(record["rationale"]) ?? undefined;
-  return { level, ...(score === undefined ? {} : { score }), ...(rationale === undefined ? {} : { rationale }) };
+  const identity = asRecord(record["identity"]);
+  const coverage = asRecord(record["coverage"]);
+  return {
+    level,
+    ...(score === undefined ? {} : { score }),
+    ...(rationale === undefined ? {} : { rationale }),
+    ...(identity === null
+      ? {}
+      : {
+          identity: {
+            level: asString(identity["level"]) ?? undefined,
+            score: typeof identity["score"] === "number" ? identity["score"] : undefined,
+            primarySource: asString(identity["primarySource"]),
+            matchedOn: asString(identity["matchedOn"]),
+            rationale: asString(identity["rationale"]) ?? undefined,
+          },
+        }),
+    ...(coverage === null
+      ? {}
+      : {
+          coverage: {
+            selectedModules: asStringArray(coverage["selectedModules"]),
+            searchedModules: asStringArray(coverage["searchedModules"]),
+            matchedModules: asStringArray(coverage["matchedModules"]),
+            unmatchedModules: asStringArray(coverage["unmatchedModules"]),
+            unsearchedModules: asStringArray(coverage["unsearchedModules"]),
+            score: typeof coverage["score"] === "number" ? coverage["score"] : undefined,
+            rationale: asString(coverage["rationale"]) ?? undefined,
+          },
+        }),
+  };
 }
 
 export function buildDiligenceSnapshot(dossier: BusinessDossier): DiligenceSnapshot {

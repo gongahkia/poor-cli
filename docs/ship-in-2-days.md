@@ -9,7 +9,7 @@ The point of this doc is not feature inventory. It is to prove the repo is shipp
 ### 1. Boot the server (no credentials)
 
 ```bash
-git clone https://github.com/<org>/sg-skills && cd sg-skills
+git clone https://github.com/<org>/dude && cd dude
 npm install
 npm run try
 ```
