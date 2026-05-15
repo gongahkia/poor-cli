@@ -9,7 +9,7 @@ export function ConfidenceSection({ dossier }: { dossier: BusinessDossier }) {
   const searchedCount = coverage?.searchedModules?.length;
 
   return (
-    <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
+    <section className="min-w-0 rounded-lg border border-border bg-card p-4 shadow-sm sm:p-5">
       <h2 className="text-xl font-semibold tracking-normal text-foreground">Match Confidence</h2>
       {confidence !== null ? (
         <div className="mt-2 space-y-2 text-sm leading-6 text-muted-foreground">
@@ -35,11 +35,11 @@ export function ConfidenceSection({ dossier }: { dossier: BusinessDossier }) {
         <div className="mt-4 grid gap-2">
           {matches.map((match) => (
             <div
-              className="flex flex-col gap-1 rounded-md border border-border p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+              className="flex min-w-0 flex-col gap-1 rounded-md border border-border p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
               key={`${match.source}-${match.matchedOn ?? "none"}`}
             >
-              <span className="font-medium text-foreground">{match.source}</span>
-              <span className="text-muted-foreground">
+              <span className="min-w-0 break-words font-medium text-foreground">{match.source}</span>
+              <span className="break-words text-muted-foreground sm:text-right">
                 {confidenceLabel(match.confidence)}
                 {match.matchedOn === null ? "" : ` on ${match.matchedOn}`}
               </span>

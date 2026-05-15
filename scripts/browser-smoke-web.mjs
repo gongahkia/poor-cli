@@ -425,6 +425,19 @@ const writeDiagnostics = async (page, name) => {
   writeFileSync(resolve(artifactDir, "servers.log"), serverMessages.join("\n") + "\n");
 };
 
+const assertNoDocumentOverflow = async (page, label) => {
+  const metrics = await page.evaluate(() => ({
+    bodyScrollWidth: document.body.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+
+  const overflow = Math.max(metrics.scrollWidth, metrics.bodyScrollWidth) - metrics.clientWidth;
+  if (overflow > 1) {
+    throw new Error(`${label} overflows horizontally by ${overflow}px (${JSON.stringify(metrics)})`);
+  }
+};
+
 let mockGateway = null;
 let vite = null;
 let browser = null;
@@ -461,6 +474,10 @@ try {
   await page.getByText("ACRA public search fixture").first().waitFor({ state: "visible" });
   await page.getByRole("heading", { name: "Analyst Memo" }).waitFor({ state: "visible" });
   await page.getByText("DBS BANK LTD is present in the ACRA fixture summary.").waitFor({ state: "visible" });
+  await assertNoDocumentOverflow(page, "Dossier desktop layout");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await assertNoDocumentOverflow(page, "Dossier mobile layout");
+  await page.setViewportSize({ width: 1280, height: 900 });
 
   await page.getByRole("button", { name: "Copy link" }).click();
   await page.getByText("Copied").waitFor({ state: "visible" });

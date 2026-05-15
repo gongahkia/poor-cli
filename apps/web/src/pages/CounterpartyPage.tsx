@@ -86,8 +86,8 @@ export function CounterpartyPage() {
   }, [decodedIdentifier]);
 
   return (
-    <main className="min-h-screen bg-background px-6 py-12">
-      <section className="mx-auto w-full max-w-3xl space-y-6">
+    <main className="min-h-screen overflow-x-hidden bg-background px-4 py-8 sm:px-6 sm:py-12">
+      <section className="mx-auto w-full max-w-6xl min-w-0 space-y-5">
         {state.status === "loading" ? (
           <DossierLoading identifier={decodedIdentifier} />
         ) : state.status === "error" ? (
@@ -156,7 +156,7 @@ function DossierProblem({
     <>
       <div className="rounded-lg border border-border bg-card p-8 shadow-sm">
         <p className="text-sm font-medium text-muted-foreground">Counterparty</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-normal text-foreground">{identifier}</h1>
+        <h1 className="mt-2 break-words text-3xl font-semibold tracking-normal text-foreground">{identifier}</h1>
         <p className="mt-4 text-base leading-7 text-muted-foreground">{message}</p>
         <Button asChild className="mt-6">
           <Link to="/">Try another search</Link>
@@ -353,7 +353,7 @@ function DossierSuccess({
       <header className="space-y-4">
         <div className="space-y-2">
           <p className="text-sm font-medium text-muted-foreground">Counterparty</p>
-          <h1 className="text-3xl font-semibold tracking-normal text-foreground">{dossier.title}</h1>
+          <h1 className="break-words text-3xl font-semibold tracking-normal text-foreground">{dossier.title}</h1>
           <p className="text-lg leading-8 text-muted-foreground">{buildSummaryLine(dossier)}</p>
           {coverageLine === null ? null : (
             <p className="text-sm leading-6 text-muted-foreground">
@@ -361,24 +361,24 @@ function DossierSuccess({
             </p>
           )}
         </div>
-        <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
-          <span className="rounded-md bg-muted px-2.5 py-1 font-mono text-foreground">{identifier}</span>
+        <div className="flex min-w-0 flex-wrap gap-2 text-sm text-muted-foreground">
+          <span className="max-w-full break-all rounded-md bg-muted px-2.5 py-1 font-mono text-foreground">{identifier}</span>
           {resolution?.searchedModules !== undefined ? (
-            <span className="rounded-md bg-muted px-2.5 py-1">
+            <span className="max-w-full break-words rounded-md bg-muted px-2.5 py-1">
               Searched: {resolution.searchedModules.join(", ") || "none"}
             </span>
           ) : resolution?.selectedModules !== undefined ? (
-            <span className="rounded-md bg-muted px-2.5 py-1">
+            <span className="max-w-full break-words rounded-md bg-muted px-2.5 py-1">
               Selected: {resolution.selectedModules.join(", ")}
             </span>
           ) : null}
           {resolution?.unsearchedModules !== undefined && resolution.unsearchedModules.length > 0 ? (
-            <span className="rounded-md bg-muted px-2.5 py-1">
+            <span className="max-w-full break-words rounded-md bg-muted px-2.5 py-1">
               Not searched: {resolution.unsearchedModules.join(", ")}
             </span>
           ) : null}
           {resolution?.matchedModules !== undefined ? (
-            <span className="rounded-md bg-muted px-2.5 py-1">
+            <span className="max-w-full break-words rounded-md bg-muted px-2.5 py-1">
               Matched: {resolution.matchedModules.join(", ") || "none"}
             </span>
           ) : null}
@@ -422,13 +422,13 @@ function DossierSuccess({
         </div>
       </header>
 
-      <section className="rounded-lg border border-border bg-card p-6 shadow-sm">
+      <section className="min-w-0 rounded-lg border border-border bg-card p-4 shadow-sm sm:p-6">
         <h2 className="text-base font-semibold text-foreground">Summary</h2>
-        <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+        <dl className="mt-4 grid gap-3 sm:grid-cols-[repeat(2,minmax(0,1fr))]">
           {dossier.summary.map((item) => (
-            <div key={`${item.label}-${item.source ?? ""}`} className="rounded-md border border-border p-3">
+            <div key={`${item.label}-${item.source ?? ""}`} className="min-w-0 rounded-md border border-border p-3">
               <dt className="text-xs font-medium uppercase text-muted-foreground">{item.label}</dt>
-              <dd className="mt-1 text-sm text-foreground">
+              <dd className="mt-1 break-words text-sm text-foreground">
                 {item.value === null || item.value === undefined || item.value === "" ? "-" : String(item.value)}
               </dd>
               {item.source !== undefined && item.source !== null ? (

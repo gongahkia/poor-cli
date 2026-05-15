@@ -18,22 +18,22 @@ function MarkdownRendererInner({ content }: MarkdownRendererProps) {
 
           if (isBlock) {
             return (
-              <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs">
+              <pre className="max-w-full overflow-x-auto rounded-md bg-muted p-3 text-xs">
                 <code className={className}>{text}</code>
               </pre>
             );
           }
 
           return (
-            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm" {...props}>
+            <code className="break-words rounded bg-muted px-1.5 py-0.5 font-mono text-sm" {...props}>
               {children}
             </code>
           );
         },
         table({ children }) {
           return (
-            <div className="overflow-x-auto">
-              <table className="min-w-full border-collapse border border-border text-sm">{children}</table>
+            <div className="max-w-full overflow-x-auto">
+              <table className="w-max min-w-full border-collapse border border-border text-sm">{children}</table>
             </div>
           );
         },

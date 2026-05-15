@@ -20,18 +20,18 @@ export function SnapshotSection({ dossier }: { dossier: BusinessDossier }) {
   ] as const;
 
   return (
-    <section className="rounded-lg border border-border bg-card p-6 shadow-sm">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
+    <section className="min-w-0 rounded-lg border border-border bg-card p-4 shadow-sm sm:p-6">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <h2 className="text-xl font-semibold tracking-normal text-foreground">Diligence Snapshot</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             A compact readout from the official registry evidence returned for this search.
           </p>
         </div>
         {sectors.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex min-w-0 flex-wrap gap-2 sm:justify-end">
             {sectors.map((sector) => (
-              <span className="rounded-md bg-muted px-2.5 py-1 text-xs text-muted-foreground" key={sector}>
+              <span className="max-w-full break-words rounded-md bg-muted px-2.5 py-1 text-xs text-muted-foreground" key={sector}>
                 {sector}
               </span>
             ))}
@@ -39,11 +39,11 @@ export function SnapshotSection({ dossier }: { dossier: BusinessDossier }) {
         ) : null}
       </div>
 
-      <dl className="mt-5 grid gap-3 sm:grid-cols-2">
+      <dl className="mt-5 grid gap-3 sm:grid-cols-[repeat(2,minmax(0,1fr))]">
         {rows.map(([label, value]) => (
-          <div className="rounded-md border border-border p-3" key={label}>
+          <div className="min-w-0 rounded-md border border-border p-3" key={label}>
             <dt className="text-xs font-medium uppercase text-muted-foreground">{label}</dt>
-            <dd className="mt-1 text-sm leading-6 text-foreground">
+            <dd className="mt-1 break-words text-sm leading-6 text-foreground">
               {formatRecordValue(label, value)}
             </dd>
           </div>

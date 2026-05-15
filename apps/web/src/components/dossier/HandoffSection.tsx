@@ -19,9 +19,9 @@ export function HandoffSection({ dossier }: { dossier: BusinessDossier }) {
   }
 
   return (
-    <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
+    <section className="min-w-0 rounded-lg border border-border bg-card p-4 shadow-sm sm:p-5">
       <h2 className="text-xl font-semibold tracking-normal text-foreground">Agent Handoff</h2>
-      <div className="prose prose-sm mt-4 max-w-none text-muted-foreground prose-headings:text-foreground prose-strong:text-foreground">
+      <div className="prose prose-sm mt-4 max-w-none break-words text-muted-foreground prose-headings:text-foreground prose-strong:text-foreground">
         <Suspense fallback={<p className="text-sm text-muted-foreground">Loading handoff...</p>}>
           <MarkdownRenderer content={markdown} />
         </Suspense>

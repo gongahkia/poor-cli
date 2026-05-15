@@ -4,7 +4,7 @@ export function NextChecksSection({ dossier }: { dossier: BusinessDossier }) {
   const checks = dossier.nextChecks ?? [];
 
   return (
-    <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
+    <section className="min-w-0 rounded-lg border border-border bg-card p-4 shadow-sm sm:p-5">
       <h2 className="text-xl font-semibold tracking-normal text-foreground">What To Check Next</h2>
       {checks.length === 0 ? (
         <p className="mt-3 text-sm text-muted-foreground">
@@ -13,12 +13,12 @@ export function NextChecksSection({ dossier }: { dossier: BusinessDossier }) {
       ) : (
         <ol className="mt-4 space-y-3">
           {checks.map((check, index) => (
-            <li className="rounded-md border border-border p-3" key={`${check.tool}-${index}`}>
-              <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
-                <h3 className="text-sm font-medium text-foreground">{check.reason}</h3>
-                <span className="font-mono text-xs text-muted-foreground">{check.tool}</span>
+            <li className="min-w-0 rounded-md border border-border p-3" key={`${check.tool}-${index}`}>
+              <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+                <h3 className="min-w-0 break-words text-sm font-medium text-foreground">{check.reason}</h3>
+                <span className="break-all font-mono text-xs text-muted-foreground">{check.tool}</span>
               </div>
-              <p className="mt-2 truncate font-mono text-xs text-muted-foreground" title={JSON.stringify(check.input)}>
+              <p className="mt-2 break-all font-mono text-xs leading-5 text-muted-foreground" title={JSON.stringify(check.input)}>
                 {JSON.stringify(check.input)}
               </p>
             </li>
