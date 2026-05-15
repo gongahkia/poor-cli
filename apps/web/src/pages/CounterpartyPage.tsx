@@ -5,6 +5,7 @@ import { AnalystMemoSection, type AnalystMemoState } from "@/components/dossier/
 import { ConfidenceSection } from "@/components/dossier/ConfidenceSection";
 import { EvidenceSection } from "@/components/dossier/EvidenceSection";
 import { GapsSection } from "@/components/dossier/GapsSection";
+import { HandoffSection } from "@/components/dossier/HandoffSection";
 import { LimitsSection } from "@/components/dossier/LimitsSection";
 import { NextChecksSection } from "@/components/dossier/NextChecksSection";
 import { ProvenanceSection } from "@/components/dossier/ProvenanceSection";
@@ -445,6 +446,7 @@ function DossierSuccess({
       <EvidenceSection dossier={dossier} />
       <WebPresenceSection state={webPresenceState} />
       <NextChecksSection dossier={dossier} />
+      <HandoffSection dossier={dossier} />
       <GapsSection dossier={dossier} />
       <ProvenanceSection dossier={dossier} />
       <LimitsSection dossier={dossier} />

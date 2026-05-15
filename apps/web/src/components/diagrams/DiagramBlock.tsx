@@ -1,4 +1,3 @@
-import { GraphvizDiagram } from "./GraphvizDiagram";
 import { MermaidDiagram } from "./MermaidDiagram";
 
 type DiagramBlockProps = {
@@ -11,10 +10,6 @@ export function DiagramBlock({ language, code }: DiagramBlockProps) {
 
   if (normalizedLanguage === "mermaid" || normalizedLanguage === "diagram") {
     return <MermaidDiagram chart={code} />;
-  }
-
-  if (normalizedLanguage === "graphviz" || normalizedLanguage === "dot") {
-    return <GraphvizDiagram chart={code} />;
   }
 
   return (

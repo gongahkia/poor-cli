@@ -10,7 +10,7 @@ type MarkdownRendererProps = {
   content: string;
 };
 
-const DIAGRAM_LANGUAGES = new Set(["mermaid", "diagram", "graphviz", "dot"]);
+const DIAGRAM_LANGUAGES = new Set(["mermaid", "diagram"]);
 
 function MarkdownRendererInner({ content }: MarkdownRendererProps) {
   return (
