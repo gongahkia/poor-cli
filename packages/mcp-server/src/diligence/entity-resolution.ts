@@ -11,8 +11,6 @@ export type BusinessSectorHint =
 
 export const DEFAULT_BUSINESS_DOSSIER_MODULES: readonly BusinessDossierModule[] = [
   "acra",
-  "bca",
-  "cea",
 ] as const;
 
 const MODULES_BY_SECTOR: Readonly<Record<BusinessSectorHint, readonly BusinessDossierModule[]>> = {

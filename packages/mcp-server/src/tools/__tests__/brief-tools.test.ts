@@ -196,11 +196,11 @@ describe("brief tools", () => {
     expectBriefQualityContract(payload, {
       title: "Business Dossier",
       requiredRecords: ["resolution", "quality", "handoff"],
-      requiredTools: ["sg_acra_entities", "sg_bca_licensed_builders", "sg_bca_registered_contractors"],
+      requiredTools: ["sg_acra_entities"],
       requiredLimitCodes: ["PUBLIC_REGISTRY_SCOPE"],
     });
-    expect(payload.provenance).toHaveLength(4);
-    expect(payload.freshness).toHaveLength(4);
+    expect(payload.provenance).toHaveLength(1);
+    expect(payload.freshness).toHaveLength(1);
     expect(payload.limits.length).toBeGreaterThan(0);
     expect((payload.records["quality"] as Record<string, unknown>)["dossierConfidence"]).toMatchObject({
       level: "high",
@@ -247,6 +247,114 @@ describe("brief tools", () => {
     });
   });
 
+  it("defaults plain UEN dossiers to ACRA only and does not imply CEA coverage", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([
+      {
+        entityName: "ABC CONSTRUCTION PTE LTD",
+        uen: "201912345K",
+        entityStatusDescription: "Live Company",
+      },
+    ] as never);
+
+    const jsonResult = await handleBusinessDossier({
+      uen: "201912345K",
+      format: "json",
+    });
+    const payload = parseBrief(getText(jsonResult));
+    const resolution = payload.records["resolution"] as Record<string, unknown>;
+    const quality = payload.records["quality"] as Record<string, unknown>;
+
+    expect(resolution).toMatchObject({
+      selectedModules: ["acra"],
+      searchedModules: ["acra"],
+      matchedModules: ["acra"],
+      unmatchedModules: [],
+      unsearchedModules: [],
+    });
+    expect(payload.provenance.map((item) => item.tool)).toEqual(["sg_acra_entities"]);
+    expect(payload.freshness.map((item) => item.source)).toEqual(["ACRA"]);
+    expect(payload.gaps.map((gap) => gap.code)).not.toContain("CEA_NO_MATCH");
+    expect(payload.matchConfidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "ACRA", confidence: "exact", matchedOn: "uen" }),
+      ]),
+    );
+    expect(quality["dossierConfidence"]).toMatchObject({
+      level: "high",
+      score: 1,
+      identity: {
+        level: "high",
+        score: 1,
+        primarySource: "ACRA",
+        matchedOn: "uen",
+      },
+      coverage: {
+        selectedModules: ["acra"],
+        searchedModules: ["acra"],
+        matchedModules: ["acra"],
+        unmatchedModules: [],
+        unsearchedModules: [],
+        score: 1,
+      },
+    });
+  });
+
+  it("keeps exact ACRA identity confidence high when explicit BCA coverage has no match", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([
+      {
+        entityName: "ABC CONSTRUCTION PTE LTD",
+        uen: "201912345K",
+        entityStatusDescription: "Live Company",
+      },
+    ] as never);
+    vi.mocked(getBcaLicensedBuilders).mockResolvedValue([] as never);
+    vi.mocked(getBcaRegisteredContractors).mockResolvedValue([] as never);
+
+    const jsonResult = await handleBusinessDossier({
+      uen: "201912345K",
+      modules: ["acra", "bca"],
+      format: "json",
+    });
+    const payload = parseBrief(getText(jsonResult));
+    const resolution = payload.records["resolution"] as Record<string, unknown>;
+    const quality = payload.records["quality"] as Record<string, unknown>;
+
+    expect(resolution).toMatchObject({
+      selectedModules: ["acra", "bca"],
+      searchedModules: ["acra", "bca"],
+      matchedModules: ["acra"],
+      unmatchedModules: ["bca"],
+    });
+    expect(quality["dossierConfidence"]).toMatchObject({
+      level: "high",
+      score: 1,
+      identity: {
+        level: "high",
+        score: 1,
+        primarySource: "ACRA",
+        matchedOn: "uen",
+      },
+      coverage: {
+        searchedModules: ["acra", "bca"],
+        matchedModules: ["acra"],
+        unmatchedModules: ["bca"],
+        score: 0.5,
+      },
+    });
+    expect(payload.matchConfidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "ACRA", confidence: "exact", matchedOn: "uen" }),
+        expect.objectContaining({ source: "BCA licensed builders", confidence: "no-match" }),
+        expect.objectContaining({ source: "BCA registered contractors", confidence: "no-match" }),
+      ]),
+    );
+    expect(payload.riskFlags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "PARTIAL_MODULE_COVERAGE", severity: "medium", source: "Resolver" }),
+      ]),
+    );
+  });
+
   it("supports explicit module selection, sector hints, and unmatched module reporting", async () => {
     vi.mocked(getAcraEntities).mockResolvedValue([
       {
@@ -275,6 +383,7 @@ describe("brief tools", () => {
     });
     const payload = parseBrief(getText(jsonResult));
     const resolution = payload.records["resolution"] as Record<string, unknown>;
+    const quality = payload.records["quality"] as Record<string, unknown>;
 
     expect(resolution).toMatchObject({
       selectedModules: ["acra", "boa", "gebiz"],
@@ -293,6 +402,15 @@ describe("brief tools", () => {
         expect.objectContaining({ source: "GeBIZ", confidence: "no-match" }),
       ]),
     );
+    expect(quality["dossierConfidence"]).toMatchObject({
+      level: "high",
+      coverage: {
+        selectedModules: ["acra", "boa", "gebiz"],
+        matchedModules: ["acra", "boa"],
+        unmatchedModules: ["gebiz"],
+        score: 0.67,
+      },
+    });
     expect(payload.riskFlags).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: "PARTIAL_MODULE_COVERAGE", severity: "medium", source: "Resolver" }),
@@ -311,12 +429,27 @@ describe("brief tools", () => {
       format: "json",
     });
     const payload = parseBrief(getText(jsonResult));
+    const quality = payload.records["quality"] as Record<string, unknown>;
 
     expect(payload.riskFlags).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: "NO_MODULE_MATCHES", severity: "high", source: "Resolver" }),
       ]),
     );
+    expect(quality["dossierConfidence"]).toMatchObject({
+      level: "low",
+      score: 0,
+      identity: {
+        level: "low",
+        score: 0,
+        primarySource: "ACRA",
+      },
+      coverage: {
+        matchedModules: [],
+        unmatchedModules: ["acra", "bca"],
+        score: 0,
+      },
+    });
   });
 
   it("does not emit ACRA no-match risk flags when the dossier only searched hotel evidence", async () => {
@@ -383,6 +516,7 @@ describe("brief tools", () => {
 
     const jsonResult = await handleBusinessDossier({
       uen: "201912345K",
+      modules: ["acra", "bca"],
       format: "json",
     });
     const payload = parseBrief(getText(jsonResult));

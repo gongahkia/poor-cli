@@ -47,6 +47,11 @@
       "backupOwner": "maintainer:governance"
     },
     {
+      "name": "Housing Advisor",
+      "primaryOwner": "maintainer:diligence",
+      "backupOwner": "maintainer:governance"
+    },
+    {
       "name": "CEA",
       "primaryOwner": "maintainer:data-surface",
       "backupOwner": "maintainer:governance"

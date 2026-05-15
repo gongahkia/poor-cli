@@ -265,9 +265,18 @@ function DossierSuccess({
         </div>
         <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
           <span className="rounded-md bg-muted px-2.5 py-1 font-mono text-foreground">{identifier}</span>
-          {resolution?.selectedModules !== undefined ? (
+          {resolution?.searchedModules !== undefined ? (
             <span className="rounded-md bg-muted px-2.5 py-1">
-              Modules selected: {resolution.selectedModules.join(", ")}
+              Searched: {resolution.searchedModules.join(", ") || "none"}
+            </span>
+          ) : resolution?.selectedModules !== undefined ? (
+            <span className="rounded-md bg-muted px-2.5 py-1">
+              Selected: {resolution.selectedModules.join(", ")}
+            </span>
+          ) : null}
+          {resolution?.unsearchedModules !== undefined && resolution.unsearchedModules.length > 0 ? (
+            <span className="rounded-md bg-muted px-2.5 py-1">
+              Not searched: {resolution.unsearchedModules.join(", ")}
             </span>
           ) : null}
           {resolution?.matchedModules !== undefined ? (
