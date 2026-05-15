@@ -285,7 +285,7 @@ const buildBusinessLimits = (
   selectedModules: readonly BusinessDossierModule[],
 ): readonly BriefLimit[] => [
   toLimit("EXACT_AND_BOUNDED_MATCHING", "Registry matching prioritizes exact identifiers, then exact normalized names, then bounded fuzzy-name checks."),
-  toLimit("NO_CORPORATE_GRAPH", "This dossier does not infer subsidiaries, shareholders, officers, or beneficial ownership relationships."),
+  toLimit("NO_CORPORATE_GRAPH", "This dossier does not infer directors, officers, shareholders, beneficial owners, subsidiaries, parent entities, or corporate control graphs."),
   toLimit("PUBLIC_DATA_ONLY", "The dossier only uses official public registries and datasets currently exposed through this server."),
   toLimit("PUBLIC_REGISTRY_SCOPE", `This dossier is limited to the selected module set: ${selectedModules.join(", ")}.`),
 ];

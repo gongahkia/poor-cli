@@ -1,5 +1,11 @@
-import { MarkdownRenderer } from "@/components/markdown/MarkdownRenderer";
+import { lazy, Suspense } from "react";
+
 import type { BusinessDossier } from "@/types/dossier";
+
+const MarkdownRenderer = lazy(async () => {
+  const module = await import("@/components/markdown/MarkdownRenderer");
+  return { default: module.MarkdownRenderer };
+});
 
 const getHandoffMarkdown = (dossier: BusinessDossier): string | null => {
   const markdown = dossier.records.handoff?.["markdown"];
@@ -16,7 +22,9 @@ export function HandoffSection({ dossier }: { dossier: BusinessDossier }) {
     <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
       <h2 className="text-xl font-semibold tracking-normal text-foreground">Agent Handoff</h2>
       <div className="prose prose-sm mt-4 max-w-none text-muted-foreground prose-headings:text-foreground prose-strong:text-foreground">
-        <MarkdownRenderer content={markdown} />
+        <Suspense fallback={<p className="text-sm text-muted-foreground">Loading handoff...</p>}>
+          <MarkdownRenderer content={markdown} />
+        </Suspense>
       </div>
     </section>
   );

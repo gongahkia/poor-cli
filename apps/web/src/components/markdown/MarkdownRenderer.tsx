@@ -1,31 +1,20 @@
 import { memo } from "react";
 import ReactMarkdown from "react-markdown";
-import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import "katex/dist/katex.min.css";
-import { DiagramBlock } from "@/components/diagrams/DiagramBlock";
 
 type MarkdownRendererProps = {
   content: string;
 };
 
-const DIAGRAM_LANGUAGES = new Set(["mermaid", "diagram"]);
-
 function MarkdownRendererInner({ content }: MarkdownRendererProps) {
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkMath]}
-      rehypePlugins={[rehypeKatex]}
+      remarkPlugins={[remarkGfm]}
       components={{
         code({ className, children, ...props }) {
           const text = String(children).replace(/\n$/, "");
           const language = /language-(\w+)/.exec(className ?? "")?.[1] ?? "";
           const isBlock = language !== "" || text.includes("\n");
-
-          if (isBlock && DIAGRAM_LANGUAGES.has(language)) {
-            return <DiagramBlock language={language} code={text} />;
-          }
 
           if (isBlock) {
             return (

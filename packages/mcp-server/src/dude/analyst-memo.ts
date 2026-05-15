@@ -392,10 +392,11 @@ const groundModelMemo = (
     ...riskRating.citationIds,
   ]);
   const usedCitations = citations.filter((item) => usedCitationIds.has(item.id));
-  const modelLimits = asStringArray(modelMemo.limits);
-  const limits = modelLimits.length === 0
-    ? dossier.limits
-    : modelLimits.map((message, index) => ({ code: `AI_LIMIT_${index + 1}`, message }));
+  const modelLimits = asStringArray(modelMemo.limits).map((message, index) => ({
+    code: `AI_LIMIT_${index + 1}`,
+    message,
+  }));
+  const limits = [...dossier.limits, ...modelLimits];
 
   return {
     citations: usedCitations.length === 0 ? citations.slice(0, 5) : usedCitations,

@@ -2,7 +2,7 @@
 
 Singapore due diligence in 30 seconds
 
-> Status: in flux during pivot from sg-apis-mcp.
+> Status: Dude is the web product; `sg-apis-mcp` remains the stable MCP package/runtime.
 
 Dude is a zero-install, web-first Singapore due diligence app for public-registry-backed counterparty checks on SG entities. The product surface is shifting toward a consumer-grade web workflow, while the underlying `sg-apis-mcp` server, npm package, and stable `sg_*` tool contracts remain intact.
 
@@ -78,13 +78,13 @@ The value is not hidden magic. The value is:
 - provenance, freshness, and limits surfaced directly in brief artifacts
 - caching, rate limiting, auth handling, packaging, and parity checks already done
 
-If you are evaluating whether the repo is actually useful for developers, start with [docs/agent-builder-quickstart.md](./docs/agent-builder-quickstart.md) and the product-health index at [docs/product-health.md](./docs/product-health.md).
+If you are evaluating whether the repo is actually useful for developers, start with [docs/agent-builder-quickstart.md](./docs/agent-builder-quickstart.md), [docs/public-data-limits.md](./docs/public-data-limits.md), and the product-health index at [docs/product-health.md](./docs/product-health.md). Naming and Git remote expectations are documented in [docs/naming-and-remotes.md](./docs/naming-and-remotes.md).
 
 ## Capability Matrix
 
 | Need | Best entrypoint | Better than raw API calls because | Auth | Freshness surface | Intentionally unsupported |
 | --- | --- | --- | --- | --- | --- |
-| Business Registry Diligence | `sg_business_dossier` or `sg_query` | Default company/UEN searches verify identity against ACRA first; BCA, CEA, BOA, HSA, HLB, and GeBIZ run only when selected explicitly or inferred from official SSIC/sector evidence | None | observed-at and upstream registry timestamps are returned per searched source | broad corporate graph analysis |
+| Business Registry Diligence | `sg_business_dossier` or `sg_query` | Default company/UEN searches verify identity against ACRA first; BCA, CEA, BOA, HSA, HLB, and GeBIZ run only when selected explicitly or inferred from official SSIC/sector evidence | None | observed-at and upstream registry timestamps are returned per searched source | ownership/director/shareholder/control graph inference |
 | Architecture Firm Diligence | `sg_business_dossier` or `sg_query` | BOA, ACRA, and optional GeBIZ evidence stay bounded to architecture-firm diligence with match confidence and unmatched-module reporting | None | observed-at and upstream registry timestamps are returned per source | generic architecture-market analysis |
 | Healthcare Supplier Diligence | `sg_business_dossier` or `sg_query` | HSA, ACRA, and optional GeBIZ evidence stay bounded to healthcare supplier diligence with licensing-focused continuation hints | None | observed-at and upstream licence timestamps are returned per source | open-ended healthcare research |
 | Hotel Operator Lookup | `sg_hlb_hotels` or `sg_query` | HLB hotel and keeper facts stay bounded to hospitality diligence without widening into travel planning | None | observed-at plus HLB dataset timestamps are returned when available | hotel ranking or recommendation |
@@ -196,7 +196,7 @@ Local stdio MCP config:
   "mcpServers": {
     "sg-apis-mcp": {
       "command": "node",
-      "args": ["/absolute/path/to/sg-skills/packages/mcp-server/dist/index.js"]
+      "args": ["/absolute/path/to/dude/packages/mcp-server/dist/index.js"]
     }
   }
 }
@@ -221,7 +221,7 @@ Claude Desktop setup:
 Claude Code:
 
 ```bash
-claude mcp add sg-apis-mcp -- node /absolute/path/to/sg-skills/packages/mcp-server/dist/index.js
+claude mcp add sg-apis-mcp -- node /absolute/path/to/dude/packages/mcp-server/dist/index.js
 ```
 
 Local HTTP MCP server:
