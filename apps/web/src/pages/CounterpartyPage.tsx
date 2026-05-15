@@ -177,6 +177,12 @@ function DossierSuccess({
   const canonicalUen = getSummaryString(dossier, "UEN");
   const entityName = getSummaryString(dossier, "Entity");
   const webPresenceQuery = [entityName, canonicalUen].filter(Boolean).join(" ");
+  const searchedCount = resolution?.searchedModules?.length ?? 0;
+  const matchedCount = resolution?.matchedModules?.length ?? 0;
+  const inferredSectorCount = resolution?.inferredSectors?.length ?? 0;
+  const coverageLine = resolution === undefined
+    ? null
+    : `${matchedCount} of ${searchedCount} searched modules returned evidence${inferredSectorCount === 0 ? "" : `; ${inferredSectorCount} sector ${inferredSectorCount === 1 ? "hint was" : "hints were"} inferred from ACRA SSIC`}.`;
 
   useEffect(() => {
     return () => {
@@ -262,6 +268,11 @@ function DossierSuccess({
           <p className="text-sm font-medium text-muted-foreground">Counterparty</p>
           <h1 className="text-3xl font-semibold tracking-normal text-foreground">{dossier.title}</h1>
           <p className="text-lg leading-8 text-muted-foreground">{buildSummaryLine(dossier)}</p>
+          {coverageLine === null ? null : (
+            <p className="text-sm leading-6 text-muted-foreground">
+              {coverageLine} Skipped modules were not queried and are not negative evidence.
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
           <span className="rounded-md bg-muted px-2.5 py-1 font-mono text-foreground">{identifier}</span>

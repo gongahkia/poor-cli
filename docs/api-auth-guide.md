@@ -166,7 +166,7 @@ Common failure modes:
 
 | Workflow | Sources | Required auth |
 | --- | --- | --- |
-| Business Registry Diligence | ACRA, BCA, CEA, optional BOA, HSA, HLB, GeBIZ | None |
+| Business Registry Diligence | ACRA by default; BCA, CEA, BOA, HSA, HLB, and GeBIZ only when explicit or inferred from sector evidence | None |
 | Architecture Firm Diligence | BOA, ACRA, optional GeBIZ | None |
 | Healthcare Supplier Diligence | HSA, ACRA, optional GeBIZ | None |
 | Hotel Operator Lookup | HLB, optional ACRA | None |

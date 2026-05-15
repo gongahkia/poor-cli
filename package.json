@@ -21,7 +21,7 @@
     "benchmarks:snapshot": "node ./scripts/generate-benchmark-snapshot.mjs",
     "kpis:dashboard": "node ./scripts/generate-kpi-dashboard.mjs",
     "dev": "concurrently -n gateway,web -c cyan,green \"npm:dev:gateway\" \"npm:dev:web\"",
-    "dev:gateway": "tsx packages/mcp-server/src/rest-gateway.ts",
+    "dev:gateway": "node --env-file-if-exists=.env node_modules/tsx/dist/cli.mjs packages/mcp-server/src/rest-gateway.ts",
     "dev:gateway:local": "node --env-file-if-exists=.env node_modules/tsx/dist/cli.mjs packages/mcp-server/src/rest-gateway.ts",
     "dev:local": "concurrently -n gateway,web -c cyan,green \"npm:dev:gateway:local\" \"npm:dev:web\"",
     "dev:web": "npm run dev -w apps/web",

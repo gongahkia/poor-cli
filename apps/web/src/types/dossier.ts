@@ -15,6 +15,8 @@ export type BriefProvenanceItem = {
   coverage: string;
   authRequired: boolean;
   recordCount: number;
+  sourceUrl?: string;
+  evidenceType?: "official_registry" | "web_discovery" | "operational_metadata";
 };
 
 export type BriefFreshnessItem = {
@@ -51,6 +53,24 @@ export type BusinessDossierModule =
   | "hsa"
   | "hlb";
 
+export type BusinessDossierModuleReason = {
+  module: BusinessDossierModule;
+  status: "matched" | "unmatched" | "unsearched" | "skipped";
+  selectedBy: ("default" | "explicit_module" | "sector_hint" | "inferred_sector")[];
+  searched: boolean;
+  matched: boolean;
+  reason: string;
+  sectorHints?: string[];
+  inferredSectors?: string[];
+};
+
+export type InferredBusinessSector = {
+  sector: string;
+  source: string;
+  evidence: string;
+  modules: BusinessDossierModule[];
+};
+
 export type RiskFlag = {
   code: string;
   severity: "high" | "medium" | "low";
@@ -77,10 +97,13 @@ export type BusinessDossierResolution = {
   requestedRegistrationNo?: string | null;
   selectedModules?: BusinessDossierModule[];
   sectorHints?: string[];
+  effectiveSectorHints?: string[];
+  inferredSectors?: InferredBusinessSector[];
   searchedModules?: BusinessDossierModule[];
   matchedModules?: BusinessDossierModule[];
   unmatchedModules?: BusinessDossierModule[];
   unsearchedModules?: BusinessDossierModule[];
+  moduleReasons?: BusinessDossierModuleReason[];
 };
 
 export type BusinessDossierRecords = {

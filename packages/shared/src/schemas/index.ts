@@ -32,6 +32,8 @@ const BriefProvenanceItemSchema = z.object({
   coverage: z.string().min(1),
   authRequired: z.boolean(),
   recordCount: z.number().int().min(0),
+  sourceUrl: z.string().url().optional(),
+  evidenceType: z.enum(["official_registry", "web_discovery", "operational_metadata"]).optional(),
 }).strict();
 const BriefFreshnessItemSchema = z.object({
   source: z.string().min(1),

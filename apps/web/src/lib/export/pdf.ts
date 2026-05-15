@@ -2,12 +2,13 @@ import type { jsPDF as JsPdfInstance } from "jspdf";
 import {
   buildDiligenceSnapshot,
   confidenceLabel,
+  formatTimestamp,
   formatRecordValue,
   getDossierRecordGroups,
   riskSeverityLabel,
 } from "@/lib/dossier";
 import type { WebPresence } from "@/lib/api/client";
-import type { BriefArtifact, BriefSummaryItem } from "@/types/dossier";
+import type { BriefArtifact, BriefProvenanceItem, BriefSummaryItem } from "@/types/dossier";
 
 type ExportDossierPdfOptions = {
   filename?: string;
@@ -16,6 +17,12 @@ type ExportDossierPdfOptions = {
 };
 
 type PdfDoc = InstanceType<typeof JsPdfInstance>;
+
+const EVIDENCE_TYPE_LABELS: Record<NonNullable<BriefProvenanceItem["evidenceType"]>, string> = {
+  official_registry: "Official registry evidence",
+  operational_metadata: "Operational metadata",
+  web_discovery: "Web discovery",
+};
 
 function stringifyValue(value: unknown): string {
   if (value === null || value === undefined || value === "") {
@@ -62,6 +69,10 @@ function addSummaryRows(doc: PdfDoc, rows: BriefSummaryItem[], y: number, maxWid
   }
 
   return y;
+}
+
+function getEvidenceTypeLabel(item: BriefProvenanceItem): string {
+  return EVIDENCE_TYPE_LABELS[item.evidenceType ?? "official_registry"];
 }
 
 function addRecordRows(
@@ -198,7 +209,7 @@ export async function exportDossierPdf(
     options.webPresence === undefined
       ? [{ label: "Web discovery", value: "Not included in this export." }]
       : [
-          { label: "Evidence status", value: "Web discovery, not registry evidence." },
+          { label: "Evidence type", value: "Web discovery, not registry evidence." },
           { label: "TinyFish configured", value: options.webPresence.configured ? "yes" : "no" },
           { label: "Possible official website", value: options.webPresence.possibleOfficialWebsite },
           ...options.webPresence.results.map((result) => ({
@@ -239,7 +250,13 @@ export async function exportDossierPdf(
     doc,
     brief.provenance.map((item) => ({
       label: item.source,
-      value: `${item.tool}; ${item.coverage}; records: ${item.recordCount}`,
+      value: [
+        getEvidenceTypeLabel(item),
+        item.tool,
+        item.coverage,
+        `records: ${item.recordCount}`,
+        item.sourceUrl === undefined ? null : `source: ${item.sourceUrl}`,
+      ].filter(Boolean).join("; "),
       source: item.authRequired ? "Auth required" : "No auth",
     })),
     y,
@@ -252,7 +269,10 @@ export async function exportDossierPdf(
     doc,
     brief.freshness.map((item) => ({
       label: item.source,
-      value: `Observed ${item.observedAt}; upstream ${item.upstreamTimestamp ?? "not available"}`,
+      value: [
+        `Checked by Dude: ${formatTimestamp(item.observedAt) ?? item.observedAt}`,
+        `Source record date: ${formatTimestamp(item.upstreamTimestamp ?? null) ?? "Not provided"}`,
+      ].join("; "),
     })),
     y,
     maxWidth,

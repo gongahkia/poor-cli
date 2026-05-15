@@ -200,6 +200,10 @@ describe("brief tools", () => {
       requiredLimitCodes: ["PUBLIC_REGISTRY_SCOPE"],
     });
     expect(payload.provenance).toHaveLength(1);
+    expect(payload.provenance[0]).toMatchObject({
+      evidenceType: "official_registry",
+      sourceUrl: "https://www.acra.gov.sg/resources/open-data-initiative/",
+    });
     expect(payload.freshness).toHaveLength(1);
     expect(payload.limits.length).toBeGreaterThan(0);
     expect((payload.records["quality"] as Record<string, unknown>)["dossierConfidence"]).toMatchObject({
@@ -272,6 +276,10 @@ describe("brief tools", () => {
       unsearchedModules: [],
     });
     expect(payload.provenance.map((item) => item.tool)).toEqual(["sg_acra_entities"]);
+    expect(payload.provenance[0]).toMatchObject({
+      evidenceType: "official_registry",
+      sourceUrl: "https://www.acra.gov.sg/resources/open-data-initiative/",
+    });
     expect(payload.freshness.map((item) => item.source)).toEqual(["ACRA"]);
     expect(payload.gaps.map((gap) => gap.code)).not.toContain("CEA_NO_MATCH");
     expect(payload.matchConfidence).toEqual(
@@ -351,6 +359,82 @@ describe("brief tools", () => {
     expect(payload.riskFlags).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: "PARTIAL_MODULE_COVERAGE", severity: "medium", source: "Resolver" }),
+      ]),
+    );
+  });
+
+  it("infers sector modules from ACRA SSIC evidence and explains module reasons", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([
+      {
+        entityName: "ABC CONSTRUCTION PTE LTD",
+        uen: "201912345K",
+        entityStatusDescription: "Live Company",
+        primarySsicCode: "41001",
+        primarySsicDescription: "GENERAL CONTRACTORS",
+      },
+    ] as never);
+    vi.mocked(getBcaLicensedBuilders).mockResolvedValue([
+      {
+        companyName: "ABC CONSTRUCTION PTE LTD",
+        classCode: "GB1",
+        expiryDate: "2026-12-31",
+      },
+    ] as never);
+    vi.mocked(getBcaRegisteredContractors).mockResolvedValue([] as never);
+
+    const jsonResult = await handleBusinessDossier({
+      entityName: "ABC CONSTRUCTION PTE LTD",
+      format: "json",
+    });
+    const payload = parseBrief(getText(jsonResult));
+    const resolution = payload.records["resolution"] as Record<string, unknown>;
+
+    expect(resolution).toMatchObject({
+      selectedModules: ["acra", "bca"],
+      effectiveSectorHints: ["construction"],
+      inferredSectors: [
+        expect.objectContaining({
+          sector: "construction",
+          source: "ACRA",
+          evidence: expect.stringContaining("41001"),
+          modules: ["bca"],
+        }),
+      ],
+      searchedModules: ["acra", "bca"],
+      matchedModules: ["acra", "bca"],
+    });
+    expect(resolution["moduleReasons"]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          module: "acra",
+          status: "matched",
+          selectedBy: ["default"],
+          searched: true,
+          matched: true,
+        }),
+        expect.objectContaining({
+          module: "bca",
+          status: "matched",
+          selectedBy: ["inferred_sector"],
+          inferredSectors: ["construction"],
+          searched: true,
+          matched: true,
+        }),
+        expect.objectContaining({
+          module: "cea",
+          status: "skipped",
+          searched: false,
+          matched: false,
+        }),
+      ]),
+    );
+    expect(payload.provenance).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tool: "sg_bca_licensed_builders",
+          evidenceType: "official_registry",
+          sourceUrl: "https://developers.data.gov.sg/datasets?resultId=d_19573c579879be15623f2e1e3854926d",
+        }),
       ]),
     );
   });

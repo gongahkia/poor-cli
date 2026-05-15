@@ -42,7 +42,7 @@ cp .env.example .env
 npm run dev:local
 ```
 
-`npm run dev:local` loads root `.env` into the REST gateway only. Browser-visible Vite settings stay in `apps/web/.env`, and secrets must not use the `VITE_` prefix.
+`npm run dev` and `npm run dev:local` load root `.env` into the REST gateway only. Browser-visible Vite settings stay in `apps/web/.env`, and secrets must not use the `VITE_` prefix. Restart the gateway after changing `.env`; `/api/v1/health` reports whether the running gateway process actually has `TINYFISH_API_KEY` loaded.
 
 ## Start Here For Builders
 
@@ -82,7 +82,7 @@ If you are evaluating whether the repo is actually useful for developers, start 
 
 | Need | Best entrypoint | Better than raw API calls because | Auth | Freshness surface | Intentionally unsupported |
 | --- | --- | --- | --- | --- | --- |
-| Business Registry Diligence | `sg_business_dossier` or `sg_query` | ACRA, BCA, and CEA are combined into one brief and can extend explicitly into GeBIZ, BOA, HSA, and HLB with `modules` and `sectorHints` | None | observed-at and upstream registry timestamps are returned per source | broad corporate graph analysis |
+| Business Registry Diligence | `sg_business_dossier` or `sg_query` | Default company/UEN searches verify identity against ACRA first; BCA, CEA, BOA, HSA, HLB, and GeBIZ run only when selected explicitly or inferred from official SSIC/sector evidence | None | observed-at and upstream registry timestamps are returned per searched source | broad corporate graph analysis |
 | Architecture Firm Diligence | `sg_business_dossier` or `sg_query` | BOA, ACRA, and optional GeBIZ evidence stay bounded to architecture-firm diligence with match confidence and unmatched-module reporting | None | observed-at and upstream registry timestamps are returned per source | generic architecture-market analysis |
 | Healthcare Supplier Diligence | `sg_business_dossier` or `sg_query` | HSA, ACRA, and optional GeBIZ evidence stay bounded to healthcare supplier diligence with licensing-focused continuation hints | None | observed-at and upstream licence timestamps are returned per source | open-ended healthcare research |
 | Hotel Operator Lookup | `sg_hlb_hotels` or `sg_query` | HLB hotel and keeper facts stay bounded to hospitality diligence without widening into travel planning | None | observed-at plus HLB dataset timestamps are returned when available | hotel ranking or recommendation |
@@ -489,12 +489,14 @@ Additional bounded workflow names exposed in the catalog:
 
 ```text
 sg_query { "query": "Registry diligence for UEN 201912345K", "mode": "execute" }
-sg_business_dossier { "uen": "201912345K", "modules": ["acra", "bca", "cea"], "format": "json" }
+sg_business_dossier { "uen": "201912345K", "format": "json" }
 sg_acra_entities { "uen": "201912345K", "format": "json" }
 sg_bca_licensed_builders { "companyName": "ABC CONSTRUCTION PTE LTD", "format": "json" }
 sg_bca_registered_contractors { "companyName": "ABC CONSTRUCTION PTE LTD", "format": "json" }
 sg_cea_salespersons { "registrationNo": "R123456A", "format": "json" }
 ```
+
+Plain `sg_business_dossier` calls start with ACRA identity evidence. Add `modules` or `sectorHints`, or rely on ACRA SSIC inference, when you want sector registries such as BCA, CEA, BOA, HSA, HLB, or GeBIZ searched. A skipped module is a scope limit, not a negative registry result.
 
 ### Architecture Firm Diligence
 
@@ -606,7 +608,7 @@ sg_onemap_convert_coords { "from": "SVY21", "x": 28001, "y": 38744, "format": "j
 
 | Workflow | Raw upstream path | MCP path | What the repo adds |
 | --- | --- | --- | --- |
-| Business Registry Diligence | call `sg_acra_entities`, `sg_bca_licensed_builders`, `sg_bca_registered_contractors`, and `sg_cea_salespersons`, then normalize exact-match misses and module selection yourself | `sg_business_dossier` or `sg_query` | one envelope, explicit coverage, sector-aware module selection, exact-match gaps, freshness markers, and scope limits |
+| Business Registry Diligence | call `sg_acra_entities`, then decide whether BCA, CEA, BOA, HSA, HLB, or GeBIZ are relevant and reconcile missing rows yourself | `sg_business_dossier` or `sg_query` | one envelope, explicit searched/skipped coverage, sector-aware module selection, exact-match gaps, freshness markers, and scope limits |
 | Architecture Firm Diligence | call BOA architect and firm registries, then decide whether to add ACRA and GeBIZ evidence | `sg_business_dossier` or `sg_query` | one bounded architecture-focused artifact with BOA-first evidence, match confidence, and procurement-only continuation |
 | Healthcare Supplier Diligence | call HSA licensee rows, optional pharmacy rows, ACRA, and GeBIZ separately, then reconcile exact and fuzzy matches yourself | `sg_business_dossier` or `sg_query` | one bounded healthcare supplier artifact with licensing emphasis, unmatched-module reporting, and next checks |
 | Hotel Operator Lookup | call `sg_hlb_hotels`, then optionally widen into company evidence yourself | `sg_hlb_hotels` or `sg_query` | one bounded hotel-operator lookup path with keeper facts, room counts, and explicit hospitality scope |

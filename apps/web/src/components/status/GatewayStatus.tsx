@@ -39,14 +39,13 @@ export function GatewayStatus() {
   }
 
   const tinyfishConfigured = state.health.services?.tinyfish?.configured === true;
+  const tinyfishStatus = tinyfishConfigured ? "TinyFish key loaded" : "TinyFish key missing";
 
   return (
     <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
       <span className="rounded-md bg-muted px-2 py-1">Gateway online</span>
       <span className="rounded-md bg-muted px-2 py-1">ACRA route ready</span>
-      <span className="rounded-md bg-muted px-2 py-1">
-        TinyFish {tinyfishConfigured ? "configured" : "not configured"}
-      </span>
+      <span className="rounded-md bg-muted px-2 py-1">{tinyfishStatus}</span>
     </div>
   );
 }
