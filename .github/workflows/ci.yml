@@ -29,6 +29,23 @@ jobs:
         env:
           SG_APIS_LOG_LEVEL: error
 
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run web browser smoke
+        run: npm run test:smoke:web
+        env:
+          SG_APIS_LOG_LEVEL: error
+
+      - name: Upload web browser smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-browser-smoke-${{ github.run_id }}
+          path: output/playwright/
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Generate benchmark evidence snapshot
         run: npm run benchmarks:snapshot -- --output artifacts/benchmarks/latest.json --history-dir artifacts/benchmarks/history
         env:

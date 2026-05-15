@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -26,8 +27,19 @@ const testEnv = {
   SG_APIS_LOG_LEVEL: process.env.SG_APIS_LOG_LEVEL ?? "error",
 };
 
+const workspaceHasScript = (workspace, scriptName) => {
+  const packageJson = JSON.parse(readFileSync(resolve(root, workspace, "package.json"), "utf8"));
+  return typeof packageJson.scripts?.[scriptName] === "string";
+};
+
 run("lint", ["run", "lint"]);
 run("build", ["run", "build"]);
+run("web build", ["run", "build", "-w", "apps/web"]);
+if (workspaceHasScript("apps/web", "test")) {
+  run("web test", ["test", "-w", "apps/web"], testEnv);
+} else {
+  process.stdout.write("\n==> web test (skipped: apps/web has no test script yet)\n");
+}
 runNodeScript("diagnostics", "./scripts/dev-diagnostics.mjs");
 runNodeScript("server metadata parity", "./scripts/check-server-metadata.mjs");
 runNodeScript("live surface check", "./scripts/check-live-surface.mjs");
@@ -35,6 +47,7 @@ runNodeScript("openapi parity", "./scripts/check-openapi.mjs");
 runNodeScript("docs parity", "./scripts/check-docs-parity.mjs");
 runNodeScript("governance policy", "./scripts/check-governance.mjs");
 runNodeScript("housing rules freshness", "./scripts/check-housing-rules-freshness.mjs");
+runNodeScript("web deployment config", "./scripts/check-web-deployment.mjs");
 run("template smoke", ["run", "test:smoke:templates"], testEnv);
 run("outcomes smoke", ["run", "test:smoke:outcomes"], testEnv);
 run("profile smoke", ["run", "test:smoke:profiles"], testEnv);

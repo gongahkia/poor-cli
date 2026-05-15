@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 
+import { AnalystMemoSection, type AnalystMemoState } from "@/components/dossier/AnalystMemoSection";
 import { ConfidenceSection } from "@/components/dossier/ConfidenceSection";
 import { EvidenceSection } from "@/components/dossier/EvidenceSection";
 import { GapsSection } from "@/components/dossier/GapsSection";
@@ -13,7 +14,17 @@ import { WebPresenceSection, type WebPresenceState } from "@/components/dossier/
 import { GatewayStatus } from "@/components/status/GatewayStatus";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { callTool, getGatewayJson, type WebPresence } from "@/lib/api/client";
+import { callTool, getGatewayJson, postGatewayJson, type WebPresence } from "@/lib/api/client";
+import {
+  buildDossierExportSummary,
+  exportSingleDossierCsv,
+  exportSingleDossierJson,
+} from "@/lib/export/structured";
+import {
+  isShortlisted,
+  removeShortlistEntry,
+  saveShortlistEntry,
+} from "@/lib/shortlist";
 import {
   buildBusinessDossierInput,
   buildSummaryLine,
@@ -23,6 +34,7 @@ import {
   UEN_PATTERN,
 } from "@/lib/dossier";
 import { exportDossierPdf } from "@/lib/export/pdf";
+import type { AnalystMemoResponse } from "@/types/analyst-memo";
 import type { BusinessDossier } from "@/types/dossier";
 
 type DossierState =
@@ -169,13 +181,18 @@ function DossierSuccess({
 }) {
   const resolution = dossier.records.resolution;
   const navigate = useNavigate();
+  const location = useLocation();
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
   const [webPresenceState, setWebPresenceState] = useState<WebPresenceState>({ status: "loading" });
+  const [memoState, setMemoState] = useState<AnalystMemoState>({ status: "loading" });
+  const [shortlisted, setShortlisted] = useState(false);
   const copiedTimer = useRef<number | null>(null);
+  const sharedMemoState = useMemo(() => new URLSearchParams(location.search).get("memo"), [location.search]);
   const canonicalUen = getSummaryString(dossier, "UEN");
   const entityName = getSummaryString(dossier, "Entity");
+  const shortlistIdentifier = canonicalUen ?? entityName ?? identifier;
   const webPresenceQuery = [entityName, canonicalUen].filter(Boolean).join(" ");
   const searchedCount = resolution?.searchedModules?.length ?? 0;
   const matchedCount = resolution?.matchedModules?.length ?? 0;
@@ -191,6 +208,10 @@ function DossierSuccess({
       }
     };
   }, []);
+
+  useEffect(() => {
+    setShortlisted(isShortlisted(shortlistIdentifier));
+  }, [shortlistIdentifier]);
 
   useEffect(() => {
     if (
@@ -232,6 +253,60 @@ function DossierSuccess({
     return () => controller.abort();
   }, [webPresenceQuery]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    if (webPresenceState.status === "loading") {
+      setMemoState({ status: "loading" });
+      return () => controller.abort();
+    }
+
+    setMemoState({ status: "loading" });
+    const webPresence = webPresenceState.status === "success" ? webPresenceState.presence : undefined;
+    void postGatewayJson<AnalystMemoResponse>(
+      "/api/v1/dude/memo",
+      {
+        dossier,
+        ...(webPresence === undefined ? {} : { webPresence }),
+      },
+      { signal: controller.signal },
+    )
+      .then((memo) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        if (memo.status === "ready") {
+          setMemoState({ status: "ready", memo });
+        } else if (memo.status === "unavailable") {
+          setMemoState({ status: "unavailable", memo });
+        } else {
+          setMemoState({ status: "error", message: memo.reason.message, memo });
+        }
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setMemoState({
+            status: "error",
+            message: error instanceof Error ? error.message : "Analyst memo request failed.",
+          });
+        }
+      });
+
+    return () => controller.abort();
+  }, [dossier, webPresenceState]);
+
+  useEffect(() => {
+    const nextMemoState = memoState.status === "loading" ? "pending" : memoState.status;
+    const params = new URLSearchParams(location.search);
+    if (params.get("memo") === nextMemoState) {
+      return;
+    }
+    params.set("memo", nextMemoState);
+    navigate({
+      pathname: location.pathname,
+      search: `?${params.toString()}`,
+    }, { replace: true });
+  }, [location.pathname, location.search, memoState.status, navigate]);
+
   const handleExportPdf = async () => {
     setIsExporting(true);
     setExportError(null);
@@ -239,7 +314,8 @@ function DossierSuccess({
       const today = new Date().toISOString().slice(0, 10);
       await exportDossierPdf(dossier, {
         filename: `dude-diligence-${sanitizeFilenamePart(identifier)}-${today}.pdf`,
-        webPresence: webPresenceState.status === "success" ? webPresenceState.presence : undefined,
+        ...(memoState.status === "ready" ? { analystMemo: memoState.memo } : {}),
+        ...(webPresenceState.status === "success" ? { webPresence: webPresenceState.presence } : {}),
       });
     } catch (error) {
       setExportError(error instanceof Error ? error.message : "PDF export failed.");
@@ -259,6 +335,16 @@ function DossierSuccess({
     } catch {
       setCopyStatus("error");
     }
+  };
+
+  const handleToggleShortlist = () => {
+    if (shortlisted) {
+      removeShortlistEntry(shortlistIdentifier);
+      setShortlisted(false);
+      return;
+    }
+    saveShortlistEntry(buildDossierExportSummary(dossier));
+    setShortlisted(true);
   };
 
   return (
@@ -303,6 +389,27 @@ function DossierSuccess({
           <Button onClick={handleCopyLink} type="button" variant="outline">
             Copy link
           </Button>
+          <Button
+            onClick={() => exportSingleDossierCsv(dossier)}
+            type="button"
+            variant="outline"
+          >
+            Export CSV
+          </Button>
+          <Button
+            onClick={() => exportSingleDossierJson({
+              dossier,
+              ...(memoState.status === "ready" ? { analystMemo: memoState.memo } : {}),
+              ...(webPresenceState.status === "success" ? { webPresence: webPresenceState.presence } : {}),
+            })}
+            type="button"
+            variant="outline"
+          >
+            Export JSON
+          </Button>
+          <Button onClick={handleToggleShortlist} type="button" variant="outline">
+            {shortlisted ? "Remove saved" : "Save"}
+          </Button>
           {copyStatus === "copied" ? (
             <p className="text-sm text-muted-foreground">Copied</p>
           ) : copyStatus === "error" ? (
@@ -333,6 +440,7 @@ function DossierSuccess({
 
       <SnapshotSection dossier={dossier} />
       <RiskSection dossier={dossier} />
+      <AnalystMemoSection sharedState={sharedMemoState} state={memoState} />
       <ConfidenceSection dossier={dossier} />
       <EvidenceSection dossier={dossier} />
       <WebPresenceSection state={webPresenceState} />

@@ -24,6 +24,7 @@ export function DiligenceSearch() {
   const [status, setStatus] = useState<SearchStatus>("idle");
   const [suggestionStatus, setSuggestionStatus] = useState<SuggestionStatus>("idle");
   const [suggestions, setSuggestions] = useState<ApiSearchSuggestion[]>([]);
+  const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
   const isSubmitting = status === "submitting";
@@ -33,6 +34,7 @@ export function DiligenceSearch() {
     if (trimmed.length < 2) {
       setSuggestions([]);
       setSuggestionStatus("idle");
+      setSuggestionError(null);
       return;
     }
 
@@ -48,12 +50,14 @@ export function DiligenceSearch() {
           if (!controller.signal.aborted) {
             setSuggestions(response.suggestions);
             setSuggestionStatus("ready");
+            setSuggestionError(null);
           }
         })
-        .catch(() => {
+        .catch((error: unknown) => {
           if (!controller.signal.aborted) {
             setSuggestions([]);
             setSuggestionStatus("error");
+            setSuggestionError(error instanceof Error ? error.message : "Suggestions are temporarily unavailable.");
           }
         });
     }, 250);
@@ -176,7 +180,9 @@ export function DiligenceSearch() {
             </div>
           </div>
         ) : suggestionStatus === "error" ? (
-          <p className="text-sm text-muted-foreground">Suggestions are temporarily unavailable. Search still works.</p>
+          <p className="text-sm text-muted-foreground">
+            {suggestionError ?? "Suggestions are temporarily unavailable."} Search still works.
+          </p>
         ) : (
           <p className="text-sm text-muted-foreground">No counterparty selected.</p>
         )}

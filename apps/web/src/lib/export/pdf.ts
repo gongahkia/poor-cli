@@ -8,9 +8,11 @@ import {
   riskSeverityLabel,
 } from "@/lib/dossier";
 import type { WebPresence } from "@/lib/api/client";
+import type { AnalystMemoReady } from "@/types/analyst-memo";
 import type { BriefArtifact, BriefProvenanceItem, BriefSummaryItem } from "@/types/dossier";
 
 type ExportDossierPdfOptions = {
+  analystMemo?: AnalystMemoReady;
   filename?: string;
   generatedAt?: Date;
   webPresence?: WebPresence;
@@ -179,6 +181,63 @@ export async function exportDossierPdf(
     y,
     maxWidth,
   ) + 4;
+
+  y = ensurePage(doc, y);
+  y = addSectionTitle(doc, "Analyst Memo", y);
+  if (options.analystMemo === undefined) {
+    y = addSummaryRows(
+      doc,
+      [{ label: "Memo", value: "Not included in this export." }],
+      y,
+      maxWidth,
+    ) + 4;
+  } else {
+    const memo = options.analystMemo;
+    y = addSummaryRows(
+      doc,
+      [
+        { label: "Provider", value: `${memo.provider} / ${memo.model}` },
+        { label: "Generated", value: formatTimestamp(memo.generatedAt) ?? memo.generatedAt },
+        { label: "Risk rating", value: `${memo.riskRating.level}: ${memo.riskRating.rationale}` },
+      ],
+      y,
+      maxWidth,
+    ) + 2;
+    y = addSummaryRows(
+      doc,
+      memo.evidenceMemo.map((item, index) => ({
+        label: `Memo point ${index + 1}`,
+        value: `${item.text} [${item.citationIds.join(", ")}]`,
+      })),
+      y,
+      maxWidth,
+    ) + 2;
+    y = addSummaryRows(
+      doc,
+      [
+        ...memo.decisionAid.nextSteps.map((step, index) => ({
+          label: `Decision aid ${index + 1}`,
+          value: step,
+        })),
+        ...memo.decisionAid.confidenceBlockers.map((blocker, index) => ({
+          label: `Confidence blocker ${index + 1}`,
+          value: blocker,
+        })),
+        { label: "Non-advisory limit", value: memo.decisionAid.nonAdvisoryReminder },
+      ],
+      y,
+      maxWidth,
+    ) + 2;
+    y = addSummaryRows(
+      doc,
+      memo.citations.map((citation) => ({
+        label: citation.id,
+        value: `${citation.label}; ${citation.source}; ${citation.text}`,
+      })),
+      y,
+      maxWidth,
+    ) + 4;
+  }
 
   y = ensurePage(doc, y);
   y = addSectionTitle(doc, "Evidence", y);

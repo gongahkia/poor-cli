@@ -9,3 +9,4 @@ dist/
 *.tsbuildinfo
 CLAUDE.md
 artifacts/release/
+output/

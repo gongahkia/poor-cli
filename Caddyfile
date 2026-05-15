@@ -1,8 +1,13 @@
 {$PUBLIC_HOSTNAME} {
   encode zstd gzip
 
+  @api path /api/v1 /api/v1/*
+  reverse_proxy @api dude-gateway:3000
+
   @mcp path /mcp /healthz /icon.svg /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/*
   reverse_proxy @mcp sg-apis-mcp:3000
 
-  respond "Not Found" 404
+  root * /srv/dude
+  try_files {path} /index.html
+  file_server
 }

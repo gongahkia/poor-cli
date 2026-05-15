@@ -34,6 +34,11 @@ export type WebPresence = {
   readonly limits: readonly string[];
 };
 
+export type TinyFishSearchReadiness = {
+  readonly configured: boolean;
+  readonly resultCount?: number;
+};
+
 const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
 const DIRECTORY_HOST_PARTS = [
   "acra.gov.sg",
@@ -60,6 +65,30 @@ const getTinyFishApiKey = (): string | undefined => {
 };
 
 export const isTinyFishSearchConfigured = (): boolean => getTinyFishApiKey() !== undefined;
+
+export const probeTinyFishSearchReadiness = async (): Promise<TinyFishSearchReadiness> => {
+  const apiKey = getTinyFishApiKey();
+  if (apiKey === undefined) {
+    return { configured: false };
+  }
+
+  const url = new URL(TINYFISH_SEARCH_URL);
+  url.searchParams.set("query", "Singapore company UEN ACRA");
+  url.searchParams.set("location", "SG");
+  url.searchParams.set("language", "en");
+
+  const response = await httpGet<TinyFishSearchResponse>(url.toString(), {
+    apiName: "tinyfish",
+    headers: { "X-API-Key": apiKey },
+    retries: 0,
+    timeout: 5000,
+  });
+
+  return {
+    configured: true,
+    resultCount: response.results.length,
+  };
+};
 
 export const searchTinyFish = async (
   query: string,

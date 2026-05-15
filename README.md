@@ -38,11 +38,13 @@ Copy [`.env.example`](./.env.example) to `.env` for server-side secrets. Real `.
 
 ```bash
 cp .env.example .env
-# fill TINYFISH_API_KEY and OPENAI_API_KEY if you have them
+# fill TINYFISH_API_KEY and one AI provider key if you have them
 npm run dev:local
 ```
 
 `npm run dev` and `npm run dev:local` load root `.env` into the REST gateway only. Browser-visible Vite settings stay in `apps/web/.env`, and secrets must not use the `VITE_` prefix. Restart the gateway after changing `.env`; `/api/v1/health` reports whether the running gateway process actually has `TINYFISH_API_KEY` loaded.
+
+The analyst memo endpoint defaults to `DUDE_AI_PROVIDER=openai` and reads server-only credentials from `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GOOGLE_API_KEY`. Missing credentials return a structured unavailable memo state; the base dossier still loads.
 
 ## Start Here For Builders
 
@@ -341,14 +343,14 @@ SG_APIS_CONTAINER_IMAGE=ghcr.io/gongahkia/sg-apis-mcp:latest npm run test:smoke:
 
 ### Remote Docker VPS
 
-The repo now includes a single-node Docker VPS bundle for the public Streamable HTTP surface:
+The repo includes a single-node Docker VPS bundle for Dude's web app, REST gateway, and the public Streamable HTTP MCP surface:
 
 - [`compose.yaml`](./compose.yaml)
 - [`Caddyfile`](./Caddyfile)
 - [`.env.deploy.example`](./.env.deploy.example)
 - [`docs/deployment.md`](./docs/deployment.md)
 
-This deployment keeps artifacts in SQLite on a persistent Docker volume and proxies `/mcp`, `/healthz`, `/.well-known/oauth-protected-resource*`, and `/icon.svg` through Caddy.
+This deployment serves the Vite web app at `/`, proxies `/api/v1/*` to the REST gateway, keeps `/mcp` available for MCP clients, and persists SQLite state on a Docker volume.
 
 ### Quickstart
 
