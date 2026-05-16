@@ -64,6 +64,13 @@ The analyst memo endpoint defaults to `DUDE_AI_PROVIDER=openai` and reads server
 
 Roadmap planning files live under [docs/roadmap](./docs/roadmap) so the repository root stays focused on the runtime, install path, and agent-facing instructions.
 
+## Contributing And Governance
+
+- [CONTRIBUTING.md](./CONTRIBUTING.md) covers local setup, contribution rules, and country-pack contribution workflow.
+- [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) defines collaboration expectations and enforcement.
+- [docs/maintainer-governance.md](./docs/maintainer-governance.md) documents maintainer roles, decision process, release process, and security reporting.
+- [SECURITY.md](./SECURITY.md) explains private vulnerability reporting.
+
 ## Skills & Agents
 
 This repo ships **two surfaces in one**: Dude MCP and a meta-prompt surface that teaches agents how to use it deterministically.
