@@ -88,7 +88,7 @@ export function DiligenceSearch() {
     const identifier = query.trim();
     if (!identifier) {
       setStatus("error");
-      setError("Enter a company name or UEN.");
+      setError("Enter a client or counterparty company name or UEN.");
       return;
     }
 
@@ -112,7 +112,7 @@ export function DiligenceSearch() {
     <div className="space-y-5">
       <form className="flex flex-col gap-3 sm:flex-row" onSubmit={handleSubmit}>
         <Input
-          aria-label="Company name or UEN"
+          aria-label="Client or counterparty company name or UEN"
           autoComplete="off"
           className="h-12 text-base"
           disabled={isSubmitting}
@@ -129,7 +129,7 @@ export function DiligenceSearch() {
               event.currentTarget.form?.requestSubmit();
             }
           }}
-          placeholder="Company name or UEN"
+          placeholder="Client or counterparty company name or UEN"
           value={query}
         />
         <Button className="h-12 px-6" disabled={isSubmitting} type="submit">

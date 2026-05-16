@@ -1,10 +1,12 @@
 # Dude
 
-Singapore due diligence in 30 seconds
+Client CDD onboarding for Singapore corp-services teams
 
 > Status: Dude is the product; Dude MCP is its backend/runtime.
 
-Dude is a zero-install, web-first Singapore due diligence app for public-registry-backed counterparty checks on SG entities. The backend/runtime is **Dude MCP**, published as `@dude/mcp` with the `dude-mcp` executable. Stable `sg_*` tool contracts remain intact.
+Dude is a zero-install, web-first Singapore client and counterparty CDD app for public-registry-backed checks on SG entities. The backend/runtime is **Dude MCP**, published as `@dude/mcp` with the `dude-mcp` executable. Stable `sg_*` tool contracts remain intact.
+
+Start with the corp-services workflow in [docs/product/corp-services-cdd.md](./docs/product/corp-services-cdd.md). It defines the first-run path from new-client intake to audit-ready dossier export, the modules that already support the flow, the remaining platform gaps, and the explicit non-advice boundaries.
 
 ## Dude MCP Backend
 
