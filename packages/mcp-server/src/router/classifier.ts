@@ -48,6 +48,24 @@ import {
 } from "./extractors.js";
 export type { IntentResult } from "./extractors.js";
 
+type KnownMacroTable = {
+  readonly tableId: string;
+  readonly variables: readonly string[];
+};
+
+const resolveKnownMacroTable = (lower: string): KnownMacroTable | null => {
+  if (/\bcpi\b/.test(lower) && /\bindex\b/.test(lower)) {
+    return { tableId: "M213751", variables: ["All Items"] };
+  }
+  if (/\bcpi\b|inflation/.test(lower)) {
+    return { tableId: "M213781", variables: ["All Items"] };
+  }
+  if (/\bgdp\b/.test(lower)) {
+    return { tableId: "M015631", variables: ["GDP At Current Market Prices"] };
+  }
+  return null;
+};
+
 export const classifyIntent = (query: string): IntentResult => {
   const lower = query.toLowerCase();
   const params: Record<string, unknown> = {};
@@ -266,6 +284,7 @@ export const classifyIntent = (query: string): IntentResult => {
 
   const aliasedTool = resolveAlias(lower);
   const macroSignals = countMacroSignals(lower);
+  const knownMacroTable = resolveKnownMacroTable(lower);
 
   if (/macro\s*(snapshot|overview|brief)|economic\s*(snapshot|overview|brief)|macro\s*data/i.test(lower) || macroSignals >= 3) {
     return {
@@ -359,6 +378,10 @@ export const classifyIntent = (query: string): IntentResult => {
     || /singstat\s+table|tablebuilder\s+table|show\s+me\s+the\s+singstat\s+table/i.test(lower)
     || (tableId !== null && /singstat|tablebuilder|table\s+[a-z]\d{6}/i.test(lower))
   ) {
+    if (knownMacroTable !== null) {
+      params["tableId"] = knownMacroTable.tableId;
+      params["variables"] = knownMacroTable.variables;
+    }
     return buildIntentResult("economic", "direct_tool", 0.88, params, "sg_singstat_table");
   }
 
@@ -613,6 +636,12 @@ export const classifyIntent = (query: string): IntentResult => {
     return buildIntentResult("dataset", "direct_tool", 0.84, params, "sg_datagov_browse");
   }
 
+  if (knownMacroTable !== null) {
+    params["tableId"] = knownMacroTable.tableId;
+    params["variables"] = knownMacroTable.variables;
+    return buildIntentResult("economic", "direct_tool", 0.9, params, "sg_singstat_table");
+  }
+
   if (aliasedTool?.includes("singstat") || /gdp|cpi|inflation|unemployment|trade|economy|economic/i.test(lower)) {
     return buildIntentResult("economic", "direct_tool", 0.85, params, "sg_singstat_search");
   }
@@ -833,6 +862,7 @@ export const resolveToolInput = (
         tool,
         input: {
           ...(params["tableId"] !== undefined ? { tableId: params["tableId"] } : {}),
+          ...(params["variables"] !== undefined ? { variables: params["variables"] } : {}),
         },
       };
     case "sg_singstat_timeseries":

@@ -120,7 +120,7 @@ vi.mock("../../apis/law/client.js", () => ({
 
 import { query as masQuery } from "../../apis/mas/client.js";
 import { geocode, getPopulationData, getRoute } from "../../apis/onemap/client.js";
-import { searchDatasets as singstatSearch } from "../../apis/singstat/client.js";
+import { getTableData, searchDatasets as singstatSearch } from "../../apis/singstat/client.js";
 import { uraFetch } from "../../apis/ura/client.js";
 import {
   getDataset,
@@ -166,6 +166,7 @@ const runQuery = async (input: Readonly<Record<string, unknown>>) => {
 describe("sg_query workflows", () => {
   beforeEach(() => {
     vi.mocked(singstatSearch).mockReset();
+    vi.mocked(getTableData).mockReset();
     vi.mocked(masQuery).mockReset();
     vi.mocked(geocode).mockReset();
     vi.mocked(getRoute).mockReset();
@@ -218,6 +219,94 @@ describe("sg_query workflows", () => {
       toolsUsed: ["sg_macro_brief"],
     });
     expect(vi.mocked(masQuery)).not.toHaveBeenCalled();
+  });
+
+  it("routes CPI prompts to the validated CPI table instead of generic SingStat search", async () => {
+    const result = await runQuery({
+      query: "Show me the SingStat table for CPI inflation",
+      mode: "plan",
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toMatchObject({
+      status: "planned",
+      workflow: "direct_tool",
+      toolsUsed: ["sg_singstat_table"],
+      steps: [
+        expect.objectContaining({
+          tool: "sg_singstat_table",
+          input: {
+            tableId: "M213781",
+            variables: ["All Items"],
+          },
+        }),
+      ],
+    });
+  });
+
+  it("executes CPI prompts against the validated CPI table", async () => {
+    vi.mocked(getTableData).mockResolvedValue({
+      rows: [{ period: "2026 Feb", variable: "All Items", value: 1.6, unit: "percent" }],
+      metadata: {
+        title: "CPI YoY",
+        frequency: "Monthly",
+        source: "SingStat",
+        lastUpdated: "2026-03-01",
+      },
+      total: 1,
+    });
+
+    const result = await runQuery({
+      query: "Show me the SingStat table for CPI inflation",
+      mode: "execute",
+      format: "json",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(getTableData).toHaveBeenCalledWith("M213781", { variables: ["All Items"] });
+    expect(singstatSearch).not.toHaveBeenCalled();
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "direct_tool",
+      toolsUsed: ["sg_singstat_table"],
+    });
+  });
+
+  it("routes GDP prompts to the validated GDP table", async () => {
+    const result = await runQuery({
+      query: "Show me the SingStat table for GDP",
+      mode: "plan",
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toMatchObject({
+      status: "planned",
+      workflow: "direct_tool",
+      toolsUsed: ["sg_singstat_table"],
+      steps: [
+        expect.objectContaining({
+          tool: "sg_singstat_table",
+          input: {
+            tableId: "M015631",
+            variables: ["GDP At Current Market Prices"],
+          },
+        }),
+      ],
+    });
+  });
+
+  it("keeps ambiguous multi-signal macro prompts on the macro brief", async () => {
+    const result = await runQuery({
+      query: "Give me GDP, CPI, SORA and exchange-rate macro data",
+      mode: "plan",
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toMatchObject({
+      status: "planned",
+      workflow: "macro_brief",
+      toolsUsed: ["sg_macro_brief"],
+    });
   });
 
   it("returns optional context IDs when requested", async () => {
@@ -703,7 +792,7 @@ describe("sg_query workflows", () => {
 
   it("includes recipeId on a blocked response when the workflow maps to a known recipe", async () => {
     const result = await runQuery({
-      query: "Show me the SingStat table for GDP",
+      query: "Show me the SingStat table for unemployment",
       mode: "execute",
     });
     const sc = result.structuredContent as Record<string, unknown>;
@@ -782,9 +871,9 @@ describe("sg_query workflows", () => {
     expect(JSON.stringify(result.structuredContent)).toContain("source coordinate system");
   });
 
-  it("returns a clear blocker for SingStat table requests without a table ID", async () => {
+  it("returns a clear blocker for unknown SingStat table requests without a table ID", async () => {
     const result = await runQuery({
-      query: "Show me the SingStat table for GDP",
+      query: "Show me the SingStat table for unemployment",
       mode: "execute",
     });
 
