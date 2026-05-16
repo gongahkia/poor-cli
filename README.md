@@ -69,6 +69,7 @@ Roadmap planning files live under [docs/roadmap](./docs/roadmap) so the reposito
 - [CONTRIBUTING.md](./CONTRIBUTING.md) covers local setup, contribution rules, and country-pack contribution workflow.
 - [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) defines collaboration expectations and enforcement.
 - [docs/maintainer-governance.md](./docs/maintainer-governance.md) documents maintainer roles, decision process, release process, and security reporting.
+- [docs/license-strategy.md](./docs/license-strategy.md) records the current MIT decision and licence migration criteria.
 - [SECURITY.md](./SECURITY.md) explains private vulnerability reporting.
 
 ## Skills & Agents

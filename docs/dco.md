@@ -17,7 +17,7 @@ Use DCO sign-off for all external contributions.
 
 - A CLA adds legal and administrative overhead before there is a foundation, company-controlled contributor programme, or dual-licensing plan.
 - A CLA does not solve upstream public-data licensing constraints; those still need source-specific review.
-- If the project later changes licence strategy or moves to a foundation, the maintainer team can revisit this decision with the project's documented licensing criteria.
+- If the project later changes licence strategy or moves to a foundation, the maintainer team can revisit this decision with the criteria in [license-strategy.md](./license-strategy.md).
 
 ## How Contributors Comply
 
