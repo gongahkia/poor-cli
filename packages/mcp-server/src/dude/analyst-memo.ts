@@ -1,5 +1,5 @@
 import type { AiProvider, GenerateResult } from "../ai/providers.js";
-import { generateText, resolveAiProviderConfig, type ProviderConfig } from "../ai/providers.js";
+import { generateText, ProviderRequestError, resolveAiProviderConfig, type ProviderConfig } from "../ai/providers.js";
 
 type SummaryItem = {
   readonly label: string;
@@ -160,6 +160,12 @@ const SYSTEM_PROMPT = [
   "Decision aid items must be operational next checks and confidence blockers, not legal, tax, investment, or licensed-advisor advice.",
   "Return strict JSON only.",
 ].join("\n");
+
+const PROVIDER_KEY_ENV: Record<AiProvider, string> = {
+  anthropic: "ANTHROPIC_API_KEY",
+  google: "GOOGLE_API_KEY",
+  openai: "OPENAI_API_KEY",
+};
 
 const stringifyValue = (value: unknown): string => {
   if (value === null || value === undefined || value === "") return "not available";
@@ -423,6 +429,24 @@ const buildUnavailable = (
   status: "unavailable",
 });
 
+const buildProviderAuthUnavailable = (
+  config: Extract<ProviderConfig, { readonly configured: true }>,
+  dossier: AnalystMemoDossier,
+  generatedAt: string,
+): AnalystMemoUnavailable => ({
+  configured: false,
+  gaps: dossier.gaps,
+  generatedAt,
+  limits: dossier.limits,
+  model: config.model,
+  provider: config.provider,
+  reason: {
+    code: "AI_PROVIDER_AUTH_FAILED",
+    message: `${config.provider} credentials were rejected by the provider. Check ${PROVIDER_KEY_ENV[config.provider]} on the REST gateway process.`,
+  },
+  status: "unavailable",
+});
+
 export const generateAnalystMemo = async (
   params: {
     readonly dossier: AnalystMemoDossier;
@@ -447,6 +471,10 @@ export const generateAnalystMemo = async (
       temperature: 0.1,
     }, config);
   } catch (error) {
+    if (error instanceof ProviderRequestError && (error.status === 401 || error.status === 403)) {
+      return buildProviderAuthUnavailable(config, params.dossier, generatedAt);
+    }
+
     return {
       configured: true,
       gaps: params.dossier.gaps,

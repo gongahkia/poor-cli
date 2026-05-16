@@ -7,6 +7,19 @@ type ProviderDefinition = {
   readonly generate: ProviderGenerate;
 };
 
+export class ProviderRequestError extends Error {
+  readonly provider: AiProvider;
+  readonly status: number;
+
+  constructor(provider: AiProvider, status: number) {
+    const label = provider === "openai" ? "OpenAI" : provider === "anthropic" ? "Anthropic" : "Google";
+    super(`${label} request failed: ${status}`);
+    this.name = "ProviderRequestError";
+    this.provider = provider;
+    this.status = status;
+  }
+}
+
 type ProviderConfigUnavailable = {
   readonly configured: false;
   readonly provider: AiProvider;
@@ -56,7 +69,7 @@ const generateAnthropic = async (input: ProviderGenerateInput): Promise<Generate
   });
 
   if (!response.ok) {
-    throw new Error(`Anthropic request failed: ${response.status}`);
+    throw new ProviderRequestError("anthropic", response.status);
   }
 
   const payload = await response.json() as AnthropicResponse;
@@ -88,7 +101,7 @@ const generateGoogle = async (input: ProviderGenerateInput): Promise<GenerateRes
   });
 
   if (!response.ok) {
-    throw new Error(`Google request failed: ${response.status}`);
+    throw new ProviderRequestError("google", response.status);
   }
 
   const payload = await response.json() as GoogleResponse;
@@ -122,7 +135,7 @@ const generateOpenAI = async (input: ProviderGenerateInput): Promise<GenerateRes
   });
 
   if (!response.ok) {
-    throw new Error(`OpenAI request failed: ${response.status}`);
+    throw new ProviderRequestError("openai", response.status);
   }
 
   const payload = await response.json() as OpenAIResponse;

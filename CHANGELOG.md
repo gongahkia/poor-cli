@@ -12,6 +12,10 @@ This project follows semver for published packages and keeps public contract cha
 - ASEAN paid-data licensing assumptions for Malaysia, Indonesia, Thailand, Vietnam, and the Philippines.
 - Standard compliance-use and non-advice clauses wired into dossier exports.
 
+### Fixed
+
+- Analyst memo provider 401/403 responses now render as a configuration-unavailable state instead of a red memo failure.
+
 ### Schema Changes
 
 - Added explicit public contract IDs for `brief-envelope/v1`, `business-dossier/v1`, and `country-pack/v1`.
