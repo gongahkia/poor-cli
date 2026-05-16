@@ -15,7 +15,7 @@ This project follows semver for published packages and keeps public contract cha
 ### Schema Changes
 
 - Added explicit public contract IDs for `brief-envelope/v1`, `business-dossier/v1`, and `country-pack/v1`.
-- Added `CountryPackEnvelopeSchema` and a fixture-backed country-pack template for `country-pack/v1`.
+- Added `CountryPackEnvelopeSchema` and a sample country-pack template for `country-pack/v1`.
 - Added schema governance checks so versioned contract docs and changelog sections stay aligned.
 
 ### Breaking Changes

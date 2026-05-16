@@ -49,7 +49,7 @@ A community-contributed Vietnam pack must prove the following before adapter cod
 
 1. A completed `country-pack/v1` envelope with `packId: "vn"`.
 2. Source terms review covering public-only use, attribution, caching, rate limits, automated access, and commercial hosted use.
-3. A fixture-backed parser for manually saved official pages before any live network adapter.
+3. A recorded-source parser for manually saved official pages before any live network adapter.
 4. Tests for exact match, no match, ambiguous match, stale source, and upstream failure.
 5. Output envelope with evidence, records, gaps, provenance, freshness, and limits.
 6. Explicit public-data limits for ownership/control, advisory use, paid data, and legal status interpretation.

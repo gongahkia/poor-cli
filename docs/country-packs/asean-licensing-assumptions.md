@@ -75,7 +75,7 @@ Assumptions:
 
 Public-only boundary:
 
-- A Thailand pack can begin with manual examples, source links, and fixture-backed parsing.
+- A Thailand pack can begin with manual examples, source links, and recorded-source parsing.
 - Public-preview live lookup requires documented DBD terms, rate-limit behavior, and no bypass of CAPTCHA or bot controls.
 
 Partner-required boundary:

@@ -65,6 +65,6 @@
   "contributionNotes": [
     "Replace template identifiers with the target country code.",
     "Add source terms before implementing adapters.",
-    "Add fixture-backed tests for successful, no-match, ambiguous-match, and upstream-failure paths."
+    "Add recorded-source tests for successful, no-match, ambiguous-match, and upstream-failure paths."
   ]
 }
