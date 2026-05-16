@@ -14,6 +14,7 @@ This project follows semver for published packages and keeps public contract cha
 
 ### Fixed
 
+- Removed the repetitive Business Dossier limits card from the visible dossier page while retaining limits in exports and API payloads.
 - Web Presence results now render a clickable "Read more" action instead of leaving trailing snippet text that looks interactive.
 - Search suggestions no longer show a misleading "No counterparty selected" state while a dossier search is still valid.
 - Analyst memo provider 401/403 responses now render as a configuration-unavailable state instead of a red memo failure.
