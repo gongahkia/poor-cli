@@ -24,6 +24,32 @@ describe("WebPresenceSection", () => {
 
     expect(html).toContain("DBS Bank Singapore");
     expect(html).toContain("Web discovery is supplemental.");
+    expect(html).toContain("Read more");
+    expect(html).toContain("href=\"https://www.dbs.com.sg/\"");
+  });
+
+  it("moves trailing read-more snippet copy into the clickable result action", () => {
+    const html = renderToStaticMarkup(<WebPresenceSection state={{
+      presence: {
+        configured: true,
+        limits: [],
+        possibleOfficialWebsite: null,
+        query: "P M A SATHAR AND COMPANY",
+        results: [{
+          position: 1,
+          siteName: "Singapore Business Directory",
+          snippet: "Operating Status Live as on 13 ...Read more",
+          title: "P M A SATHAR AND COMPANY (03591300B) - Singapore",
+          url: "https://example.com/company",
+        }],
+      },
+      status: "success",
+    }} />);
+
+    expect(html).toContain("Operating Status Live as on 13");
+    expect(html).not.toContain("...Read more");
+    expect(html).toContain("aria-label=\"Read more: P M A SATHAR AND COMPANY");
+    expect(html).toContain("href=\"https://example.com/company\"");
   });
 
   it("renders unconfigured and error states", () => {
