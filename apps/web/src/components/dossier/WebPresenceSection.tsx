@@ -1,3 +1,5 @@
+import { ExternalLink } from "lucide-react";
+
 import { Skeleton } from "@/components/ui/skeleton";
 import type { WebPresence } from "@/lib/api/client";
 
@@ -5,6 +7,14 @@ type WebPresenceState =
   | { status: "loading" }
   | { status: "success"; presence: WebPresence }
   | { status: "error"; message: string };
+
+const TRAILING_READ_MORE_PATTERN = /\s*(?:\.{3}|…)?\s*Read more\.?$/i;
+
+const getDisplaySnippet = (snippet: string): string => {
+  const trimmed = snippet.trim();
+  const cleaned = trimmed.replace(TRAILING_READ_MORE_PATTERN, "").trim();
+  return cleaned || trimmed;
+};
 
 export function WebPresenceSection({ state }: { state: WebPresenceState }) {
   return (
@@ -48,22 +58,35 @@ export function WebPresenceSection({ state }: { state: WebPresenceState }) {
             <p className="text-sm text-muted-foreground">No web results were returned.</p>
           ) : (
             <div className="grid min-w-0 gap-3">
-              {state.presence.results.map((result) => (
-                <article className="min-w-0 rounded-md border border-border p-3" key={`${result.position}-${result.url}`}>
-                  <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+              {state.presence.results.map((result) => {
+                const displaySnippet = getDisplaySnippet(result.snippet);
+                return (
+                  <article className="min-w-0 rounded-md border border-border p-3" key={`${result.position}-${result.url}`}>
+                    <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+                      <a
+                        className="min-w-0 break-words font-medium text-foreground underline-offset-4 hover:underline"
+                        href={result.url}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        {result.title}
+                      </a>
+                      <span className="shrink-0 text-xs text-muted-foreground">{result.siteName ?? "web"}</span>
+                    </div>
+                    <p className="mt-2 line-clamp-2 break-words text-sm leading-6 text-muted-foreground">{displaySnippet}</p>
                     <a
-                      className="min-w-0 break-words font-medium text-foreground underline-offset-4 hover:underline"
+                      aria-label={`Read more: ${result.title}`}
+                      className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-foreground underline-offset-4 hover:underline"
                       href={result.url}
                       rel="noreferrer"
                       target="_blank"
                     >
-                      {result.title}
+                      Read more
+                      <ExternalLink aria-hidden="true" className="h-3 w-3" />
                     </a>
-                    <span className="shrink-0 text-xs text-muted-foreground">{result.siteName ?? "web"}</span>
-                  </div>
-                  <p className="mt-2 line-clamp-2 break-words text-sm leading-6 text-muted-foreground">{result.snippet}</p>
-                </article>
-              ))}
+                  </article>
+                );
+              })}
             </div>
           )}
 
