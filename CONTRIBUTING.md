@@ -8,6 +8,7 @@ Thanks for helping improve Dude and Dude MCP. This repository is an evidence-fir
 2. State whether the change affects the MCP tool surface, web app, docs, examples, country-pack plans, or release infrastructure.
 3. Keep the change scoped. Do not mix unrelated feature work, formatting churn, and generated artifacts.
 4. Run the smallest useful test first, then `npm run verify` before release-sized changes.
+5. Sign off commits using the project DCO policy in [docs/dco.md](./docs/dco.md).
 
 ## Local Setup
 
@@ -53,10 +54,12 @@ Maintainers may reject country-pack work that lacks licensing notes, source fres
 - New user-facing text does not imply unsupported advisory conclusions.
 - Generated files are reproducible from committed scripts.
 - Security-sensitive changes include a review note and do not expose secrets through `VITE_` variables or logs.
+- Commits include a DCO `Signed-off-by:` trailer, or the pull request documents a maintainer override.
 
 ## Related Docs
 
 - [Detailed contributor guide](./docs/contributing.md)
 - [Maintainer governance](./docs/maintainer-governance.md)
+- [DCO sign-off policy](./docs/dco.md)
 - [Code of conduct](./CODE_OF_CONDUCT.md)
 - [Security reporting](./SECURITY.md)

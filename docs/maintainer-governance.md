@@ -21,6 +21,7 @@ The current owner map lives in [ownership-matrix.json](./ownership-matrix.json).
 - Public contract changes require one area maintainer and one core maintainer approval.
 - New data families, country packs, or paid-data integrations require documented source licensing, public-data limits, and no-match behavior before implementation approval.
 - Security-sensitive, privacy-sensitive, or hosted-tier changes require governance maintainer review.
+- External contributions require DCO sign-off unless a maintainer override is documented under [docs/dco.md](./dco.md).
 - If maintainers disagree, the project owner decides after the tradeoff is documented in the issue or pull request.
 
 ## Release Process
