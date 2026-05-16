@@ -45,6 +45,7 @@ runNodeScript("server metadata parity", "./scripts/check-server-metadata.mjs");
 runNodeScript("live surface check", "./scripts/check-live-surface.mjs");
 runNodeScript("openapi parity", "./scripts/check-openapi.mjs");
 runNodeScript("docs parity", "./scripts/check-docs-parity.mjs");
+runNodeScript("schema governance", "./scripts/check-schema-governance.mjs");
 runNodeScript("governance policy", "./scripts/check-governance.mjs");
 runNodeScript("housing rules freshness", "./scripts/check-housing-rules-freshness.mjs");
 runNodeScript("web deployment config", "./scripts/check-web-deployment.mjs");

@@ -21,7 +21,7 @@ Repository secrets required by `.github/workflows/publish.yml`:
 
 - `NPM_TOKEN` with publish access for `@dude/shared` and `@dude/mcp`
 
-1. Update `CHANGELOG.md`.
+1. Update `CHANGELOG.md`, including `Schema Changes`, `Breaking Changes`, or `Deprecations` when public contracts change.
 2. Bump versions in:
    - `packages/shared/package.json`
    - `packages/mcp-server/package.json`
@@ -53,6 +53,7 @@ Confirm:
 
 - `docs/ownership-matrix.json` covers every API family and workflow in the built catalog.
 - `docs/governance-checklist.md` and `docs/deprecation-policy.md` are current.
+- `docs/schema-versioning.md` and `CHANGELOG.md` are current for public schema changes.
 - quarterly reporting template and known-issues notes are current for the release window.
 
 Generate release-window evidence artifacts manually (if not using `release:preflight`):

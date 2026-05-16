@@ -8,7 +8,7 @@ Use this checklist before any tagged release.
 2. `node ./scripts/check-governance.mjs` passes.
 3. `docs/ownership-matrix.json` has named owners for every API family and workflow in the built catalog.
 4. No unresolved high-severity vulnerability is accepted for release.
-5. Brief schema changes include backward-compatibility notes and migration notes where needed.
+5. Brief schema changes include backward-compatibility notes, migration notes where needed, and a `CHANGELOG.md` entry under `Schema Changes`, `Breaking Changes`, or `Deprecations`.
 6. Benchmark, ecosystem, and KPI dashboard evidence snapshots are generated for the release window.
 7. Known issues and incident notes are updated for new risk posture.
 

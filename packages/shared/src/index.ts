@@ -18,6 +18,13 @@ export { createLogger } from "./logger.js";
 export { subscribeLogEntries } from "./logger.js";
 export type { LogEntry, LogLevel, Logger } from "./logger.js";
 export { getRateLimiter, RateLimiter } from "./rate-limiter.js";
+export {
+  BRIEF_ENVELOPE_SCHEMA_VERSION,
+  BUSINESS_DOSSIER_SCHEMA_VERSION,
+  COUNTRY_PACK_SCHEMA_VERSION,
+  SCHEMA_VERSIONS,
+} from "./schema-version.js";
+export type { SchemaSurface, SchemaVersion } from "./schema-version.js";
 export { resolveStatePath } from "./state-dir.js";
 export { resetRateLimiters } from "./rate-limiter.js";
 export { validateInput } from "./schemas/index.js";
