@@ -1,4 +1,4 @@
-import type { CivicDirectoryRecord, EcdaVacancyStatus, GeoFeature } from "@sg-apis/shared";
+import type { CivicDirectoryRecord, EcdaVacancyStatus, GeoFeature } from "@dude/shared";
 
 export type DirectoryFilterParams = {
   readonly name?: string | undefined;

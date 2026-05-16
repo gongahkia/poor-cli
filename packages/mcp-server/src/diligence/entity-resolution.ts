@@ -1,4 +1,4 @@
-import type { MatchConfidence } from "@sg-apis/shared";
+import type { MatchConfidence } from "@dude/shared";
 
 export type BusinessDossierModule = "acra" | "bca" | "cea" | "gebiz" | "boa" | "hsa" | "hlb";
 export type BusinessSectorHint =

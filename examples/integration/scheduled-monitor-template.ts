@@ -1,4 +1,4 @@
-// Scheduled monitoring integration template for sg-apis-mcp.
+// Scheduled monitoring integration template for Dude MCP.
 // Demonstrates periodic polling of bounded operations workflows with explicit
 // escalation mapping for completed, blocked, unsupported, and failed outcomes.
 //

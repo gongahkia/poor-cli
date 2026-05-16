@@ -1,5 +1,5 @@
-import { validateInput, SingStatSearchSchema, SingStatTableSchema, SingStatTimeseriesSchema, SingStatCompareSchema, SingStatBrowseSchema, formatResponse, resolveOutputFormat } from "@sg-apis/shared";
-import type { ToolResult } from "@sg-apis/shared";
+import { validateInput, SingStatSearchSchema, SingStatTableSchema, SingStatTimeseriesSchema, SingStatCompareSchema, SingStatBrowseSchema, formatResponse, resolveOutputFormat } from "@dude/shared";
+import type { ToolResult } from "@dude/shared";
 import { searchDatasets, getTableData, getTimeSeries } from "../apis/singstat/client.js";
 import { compareIndicators } from "../apis/singstat/compare.js";
 import { buildArtifactResult, shouldUseArtifact } from "./artifacts.js";

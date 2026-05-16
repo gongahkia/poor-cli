@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BriefArtifactSchema, MasDataset, type ToolResult } from "@sg-apis/shared";
+import { BriefArtifactSchema, MasDataset, type ToolResult } from "@dude/shared";
 
 vi.mock("../../apis/acra/client.js", () => ({
   getAcraEntities: vi.fn(),

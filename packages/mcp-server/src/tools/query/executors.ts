@@ -1,4 +1,4 @@
-import type { ToolResult } from "@sg-apis/shared";
+import type { ToolResult } from "@dude/shared";
 import { handleAcraEntities } from "../acra-tools.js";
 import {
   handleBcaLicensedBuilders,

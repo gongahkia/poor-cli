@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { QuerySchema, resolveOutputFormat, validateInput } from "@sg-apis/shared";
-import type { ContextIds, OutputFormat, ToolResult } from "@sg-apis/shared";
-import { createLogger } from "@sg-apis/shared";
+import { QuerySchema, resolveOutputFormat, validateInput } from "@dude/shared";
+import type { ContextIds, OutputFormat, ToolResult } from "@dude/shared";
+import { createLogger } from "@dude/shared";
 import { toToolErrorPayload } from "../middleware/error-handler.js";
 import { planQuery } from "../router/planner.js";
 import type { QueryExecutionContext, QueryPlan, QueryStep } from "../router/planner.js";

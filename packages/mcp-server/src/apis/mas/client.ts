@@ -1,5 +1,5 @@
-import { ApiError, MasDataset, getRateLimiter, getTimeout } from "@sg-apis/shared";
-import type { MasDatasetKey, MasQueryParams, MasRecord } from "@sg-apis/shared";
+import { ApiError, MasDataset, getRateLimiter, getTimeout } from "@dude/shared";
+import type { MasDatasetKey, MasQueryParams, MasRecord } from "@dude/shared";
 import { withCache, buildCacheKey } from "../../middleware/cache-middleware.js";
 
 type MasDatasetSlug = typeof MasDataset[MasDatasetKey];

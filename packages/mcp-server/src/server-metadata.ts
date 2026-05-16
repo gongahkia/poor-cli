@@ -2,14 +2,14 @@ import { readFileSync } from "node:fs";
 
 export const SERVER_NAME = "dude";
 export const SERVER_VERSION = "0.1.0";
-export const SERVER_TITLE = "Dude Singapore Due Diligence MCP";
+export const SERVER_TITLE = "Dude MCP";
 export const SERVER_DESCRIPTION =
-  "Dude's Singapore public-data MCP server for bounded due-diligence workflows across official datasets, registries, maps, and realtime signals.";
-export const SERVER_WEBSITE_URL = "https://github.com/gongahkia/sg-skills";
+  "Dude MCP is Dude's backend runtime for bounded Singapore public-data and due-diligence workflows across official datasets, registries, maps, and realtime signals.";
+export const SERVER_WEBSITE_URL = "https://github.com/gongahkia/dude";
 export const SERVER_INSTRUCTIONS = [
   "Prefer sg_query for bounded natural-language workflows, then drop to direct sg_* tools when you have exact identifiers.",
   "Use sg://recipes, sg://playbooks, and sg://workflows for discovery before inventing new multi-step flows.",
-  "This server is read-mostly. Ops tools mutate only local cache, config, or keystore state.",
+  "Dude MCP is read-mostly. Ops tools mutate only local cache, config, or keystore state.",
 ].join(" ");
 
 let cachedIconDataUri: string | undefined;

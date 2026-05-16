@@ -1,5 +1,5 @@
-import { validateInput, KeySetSchema, KeyDeleteSchema, Keystore, formatResponse } from "@sg-apis/shared";
-import type { ToolResult } from "@sg-apis/shared";
+import { validateInput, KeySetSchema, KeyDeleteSchema, Keystore, formatResponse } from "@dude/shared";
+import type { ToolResult } from "@dude/shared";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 
 const keystore = new Keystore();

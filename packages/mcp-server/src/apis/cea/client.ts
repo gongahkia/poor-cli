@@ -1,7 +1,7 @@
 import type {
   CeaNormalizedSalespersonRecord,
   CeaSalespersonRecord,
-} from "@sg-apis/shared";
+} from "@dude/shared";
 import { queryDatastoreExactMatches } from "../datagov/client.js";
 
 const SALESPEOPLE_RESOURCE_ID = "d_07c63be0f37e6e59c07a4ddc2fd87fcb";

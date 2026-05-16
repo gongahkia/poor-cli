@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { Cache, getCacheTtl } from "@sg-apis/shared";
-import type { TTLKey } from "@sg-apis/shared";
+import { Cache, getCacheTtl } from "@dude/shared";
+import type { TTLKey } from "@dude/shared";
 
 let cacheInstance: Cache | null = null;
 

@@ -3,7 +3,7 @@ import type {
   BoaArchitectureFirmRecord,
   BoaNormalizedArchitectRecord,
   BoaNormalizedArchitectureFirmRecord,
-} from "@sg-apis/shared";
+} from "@dude/shared";
 import { downloadDatasetCsvRows } from "../datagov/client.js";
 import { toNullableString } from "../civic/utils.js";
 

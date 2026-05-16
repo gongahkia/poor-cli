@@ -1,4 +1,4 @@
-import type { HlbHotelRecord } from "@sg-apis/shared";
+import type { HlbHotelRecord } from "@dude/shared";
 import { downloadDatasetGeoJson } from "../datagov/client.js";
 import { applyDirectoryFilters, normalizePostalCode, parseFmelTimestamp, toNullableString, toNumberOrNull } from "../civic/utils.js";
 

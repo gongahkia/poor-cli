@@ -1,5 +1,5 @@
-import { formatResponse, NlbLibrariesSchema, resolveOutputFormat } from "@sg-apis/shared";
-import type { OutputFormat, ToolResult } from "@sg-apis/shared";
+import { formatResponse, NlbLibrariesSchema, resolveOutputFormat } from "@dude/shared";
+import type { OutputFormat, ToolResult } from "@dude/shared";
 import { getNlbLibraries } from "../apis/nlb/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 

@@ -6,7 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const root = resolve(import.meta.dirname, "..");
-const tempDir = mkdtempSync(join(tmpdir(), "sg-apis-registry-smoke-"));
+const tempDir = mkdtempSync(join(tmpdir(), "dude-mcp-registry-smoke-"));
 const runtimeEnv = { ...process.env };
 
 const serverPkg = JSON.parse(readFileSync(resolve(root, "packages/mcp-server/package.json"), "utf8"));
@@ -47,14 +47,14 @@ const waitForRegistryVersion = async (packageName, version) => {
 };
 
 try {
-  await waitForRegistryVersion("@sg-apis/shared", sharedVersion);
-  await waitForRegistryVersion("sg-apis-mcp", serverVersion);
+  await waitForRegistryVersion("@dude/shared", sharedVersion);
+  await waitForRegistryVersion("@dude/mcp", serverVersion);
 
   writeFileSync(
     join(tempDir, "package.json"),
     JSON.stringify(
       {
-        name: "sg-apis-registry-smoke",
+        name: "dude-mcp-registry-smoke",
         private: true,
         type: "module",
       },
@@ -67,14 +67,14 @@ try {
     [
       "install",
       "--no-package-lock",
-      `@sg-apis/shared@${sharedVersion}`,
-      `sg-apis-mcp@${serverVersion}`,
+      `@dude/shared@${sharedVersion}`,
+      `@dude/mcp@${serverVersion}`,
     ],
     tempDir,
   );
 
   const transport = new StdioClientTransport({
-    command: join(tempDir, "node_modules", ".bin", "sg-apis-mcp"),
+    command: join(tempDir, "node_modules", ".bin", "dude-mcp"),
     cwd: tempDir,
     env: {
       ...runtimeEnv,
@@ -85,7 +85,7 @@ try {
   });
 
   const client = new Client(
-    { name: "sg-apis-registry-smoke", version: serverVersion },
+    { name: "dude-mcp-registry-smoke", version: serverVersion },
     { capabilities: {} },
   );
 

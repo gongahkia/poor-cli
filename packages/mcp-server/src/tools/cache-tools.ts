@@ -1,5 +1,5 @@
-import { validateInput, CacheClearSchema, formatResponse } from "@sg-apis/shared";
-import type { ToolResult } from "@sg-apis/shared";
+import { validateInput, CacheClearSchema, formatResponse } from "@dude/shared";
+import type { ToolResult } from "@dude/shared";
 import { getCache } from "../middleware/cache-middleware.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 

@@ -29,7 +29,7 @@ Support tiers are intentionally explicit so teams know what is verified versus b
 
 | Deployment Shape | Transport | Server Auth | Upstream Auth Handling | Recommended Smoke |
 | --- | --- | --- | --- | --- |
-| Local developer run (`npx -y sg-apis-mcp`) | stdio | none | env or keystore per upstream | `npm run quick-start` |
+| Local developer run (`npx -y @dude/mcp`) | stdio | none | env or keystore per upstream | `npm run quick-start` |
 | Registry/package install | stdio | none | env or keystore per upstream | `npm run test:smoke:registry` |
 | Containerized remote (`/mcp`) | streamable HTTP | `none` / `mixed` / `all` | env or keystore per upstream | `npm run test:smoke:container` + `npm run test:smoke:remote` |
 | REST gateway sidecar | HTTP JSON | optional bearer | env or keystore per upstream | gateway toolset tests + targeted live smoke |

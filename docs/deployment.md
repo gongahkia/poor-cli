@@ -1,6 +1,6 @@
 # Remote Deployment
 
-This repo ships a single-node Docker VPS deployment bundle for Dude as a web product and for the public Streamable HTTP MCP surface.
+This repo ships a single-node Docker VPS deployment bundle for Dude as a web product and for Dude MCP's public Streamable HTTP surface.
 
 ## Topology
 
@@ -8,9 +8,9 @@ This repo ships a single-node Docker VPS deployment bundle for Dude as a web pro
 - `dude-assets` copies the Vite production build into a shared static asset volume
 - `caddy` serves the web app from `/` and falls back to `index.html` for client-side routes
 - `dude-gateway` serves the REST gateway under `/api/v1`
-- `sg-apis-mcp` remains available as the MCP server over `/mcp`
+- `dude-mcp` serves Dude MCP over `/mcp`
 - `/.well-known/oauth-protected-resource*`, `/healthz`, and `/icon.svg` are proxied to the same server
-- All persistent state (cache, keys, config, artifacts) lives under `SG_APIS_STATE_DIR` (`/var/lib/sg-apis` in the container) on the `sg_apis_state` Docker volume
+- All persistent state (cache, keys, config, artifacts) lives under `SG_APIS_STATE_DIR` (`/var/lib/sg-apis` in the container) on the `dude_mcp_state` Docker volume
 
 ## Files
 
@@ -47,8 +47,8 @@ docker compose --env-file .env.deploy up -d
 | --- | --- | --- |
 | `/` and app routes | `caddy` static files | Serves `apps/web/dist` from the Docker image via the `dude_web_assets` volume. |
 | `/api/v1/*` | `dude-gateway` | REST gateway for the web app, including `/api/v1/health`, `/api/v1/metrics`, and tool POST routes. |
-| `/mcp` | `sg-apis-mcp` | Streamable HTTP MCP endpoint. |
-| `/healthz`, `/icon.svg`, `/.well-known/oauth-protected-resource*` | `sg-apis-mcp` | MCP deployment metadata and health. |
+| `/mcp` | `dude-mcp` | Streamable HTTP MCP endpoint. |
+| `/healthz`, `/icon.svg`, `/.well-known/oauth-protected-resource*` | `dude-mcp` | MCP deployment metadata and health. |
 
 ## Operations
 
@@ -73,13 +73,13 @@ curl -fsS https://<public-hostname>/.well-known/oauth-protected-resource/mcp
 SQLite artifact inspection:
 
 ```bash
-docker compose exec sg-apis-mcp sh -lc 'sqlite3 /var/lib/sg-apis/artifacts.db "select kind, tool_name, created_at, expires_at from artifacts order by created_at desc limit 20;"'
+docker compose exec dude-mcp sh -lc 'sqlite3 /var/lib/sg-apis/artifacts.db "select kind, tool_name, created_at, expires_at from artifacts order by created_at desc limit 20;"'
 ```
 
 Manual artifact cleanup:
 
 ```bash
-docker compose exec sg-apis-mcp sh -lc 'sqlite3 /var/lib/sg-apis/artifacts.db "delete from artifacts where expires_at <= strftime(''%s'',''now'') * 1000;"'
+docker compose exec dude-mcp sh -lc 'sqlite3 /var/lib/sg-apis/artifacts.db "delete from artifacts where expires_at <= strftime(''%s'',''now'') * 1000;"'
 ```
 
 The server also performs artifact cleanup on startup and once per hour.

@@ -1,4 +1,4 @@
-import { ApiError } from "@sg-apis/shared";
+import { ApiError } from "@dude/shared";
 import { probeAcraLookupReadiness } from "../apis/acra/client.js";
 import { probeTinyFishSearchReadiness } from "../apis/tinyfish/client.js";
 import { probeDatagovDatastoreHealth } from "../tools/health-check.js";

@@ -3,7 +3,7 @@ import type {
   BcaNormalizedLicensedBuilderRecord,
   BcaNormalizedRegisteredContractorRecord,
   BcaRegisteredContractorRecord,
-} from "@sg-apis/shared";
+} from "@dude/shared";
 import { queryDatastoreExactMatches } from "../datagov/client.js";
 
 const LICENSED_BUILDERS_RESOURCE_ID = "d_19573c579879be15623f2e1e3854926d";

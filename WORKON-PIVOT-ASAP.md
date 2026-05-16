@@ -79,7 +79,7 @@ Three candidate jobs to be done that fit the existing tech:
 - **Publish to npm** as `@dude/mcp`, `@dude/sdk`. The current `private: true` + unpublished state blocks every funnel.
 - **List on every MCP registry that matters.** modelcontextprotocol.io reference list, Smithery (already have `smithery.yaml`), Glama (already have `glama.json`), MCP-Hive, Awesome-MCP, mcp.so. Each is a backlink + discovery.
 - **Governance out of solo control.** CONTRIBUTING.md with explicit "we accept country packs" pattern, CODE_OF_CONDUCT.md, 2–3 person maintainer team (seed with friends if needed), CLA or DCO, monthly office-hours call.
-- **Donate to a neutral home.** Propose `sg-apis-mcp` as community package under Agentic AI Foundation (AAIF), an Asia-Pacific MCP working group, or Open Government Products. Fastest credibility unlock vs. "solo Singaporean repo."
+- **Donate to a neutral home.** Propose `dude-mcp` as community package under Agentic AI Foundation (AAIF), an Asia-Pacific MCP working group, or Open Government Products. Fastest credibility unlock vs. "solo Singaporean repo."
 - **Licence revisit.** MIT is fine; consider Apache-2.0 for the patent grant if any enterprise asks. Or BSL → Apache (Sentry / Cal.com pattern) if a hosted tier needs protection.
 - **Public roadmap on GitHub Projects.** Surface `docs/roadmap` as Issues with `good-first-issue` labels.
 - **Reference deployments.** Three named users (a corp-secretarial firm, an SME, a journalist) publicly saying they use it. Logos on README convert more than any feature.

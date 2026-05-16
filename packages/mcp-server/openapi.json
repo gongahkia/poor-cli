@@ -1,9 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "sg-apis-mcp REST Gateway",
+    "title": "Dude MCP REST Gateway",
     "version": "0.1.0",
-    "description": "REST interface for Singapore public data tools. Each tool is exposed as a POST endpoint."
+    "description": "REST interface for Dude MCP Singapore public-data tools. Each tool is exposed as a POST endpoint."
   },
   "servers": [
     {
@@ -690,7 +690,7 @@
     },
     "/api/v1/sg_config_get": {
       "post": {
-        "summary": "Show current sg-apis-mcp configuration including cache TTLs, rate limits, and timeouts.",
+        "summary": "Show current Dude MCP configuration including cache TTLs, rate limits, and timeouts.",
         "tags": [
           "operational"
         ],
@@ -728,7 +728,7 @@
     },
     "/api/v1/sg_config_set": {
       "post": {
-        "summary": "Update sg-apis-mcp configuration. Changes persist in $SG_APIS_STATE_DIR/config.json (default ~/.sg-apis/config.json).",
+        "summary": "Update Dude MCP configuration. Changes persist in $SG_APIS_STATE_DIR/config.json (default ~/.sg-apis/config.json).",
         "tags": [
           "operational"
         ],

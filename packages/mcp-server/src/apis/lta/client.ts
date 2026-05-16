@@ -1,4 +1,4 @@
-import { ApiError, Keystore, httpGet } from "@sg-apis/shared";
+import { ApiError, Keystore, httpGet } from "@dude/shared";
 import type {
   DatagovTrafficImagesResponse,
   LtaBusArrivalResponse,
@@ -13,7 +13,7 @@ import type {
   LtaRoadEventsResponse,
   LtaTrafficIncidentsResponse,
   LtaTrainAlertsResponse,
-} from "@sg-apis/shared";
+} from "@dude/shared";
 import { withCache, buildCacheKey } from "../../middleware/cache-middleware.js";
 
 const BASE_URL = "https://datamall2.mytransport.sg/ltaodataservice";

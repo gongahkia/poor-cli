@@ -1,4 +1,4 @@
-import { ApiError } from "@sg-apis/shared";
+import { ApiError } from "@dude/shared";
 
 const parseDisabledSet = (envKey: string): ReadonlySet<string> => {
   const raw = process.env[envKey];

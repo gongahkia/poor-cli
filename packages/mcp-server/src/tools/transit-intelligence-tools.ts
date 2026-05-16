@@ -17,8 +17,8 @@ import {
   formatResponse,
   resolveOutputFormat,
   validateInput,
-} from "@sg-apis/shared";
-import type { BriefArtifact, OutputFormat, ToolResult } from "@sg-apis/shared";
+} from "@dude/shared";
+import type { BriefArtifact, OutputFormat, ToolResult } from "@dude/shared";
 import {
   getBusArrivals,
   getBusStopLookups,

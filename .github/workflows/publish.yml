@@ -52,12 +52,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Publish @sg-apis/shared
+      - name: Publish @dude/shared
         run: npm publish --workspace packages/shared --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish sg-apis-mcp
+      - name: Publish @dude/mcp
         run: npm publish --workspace packages/mcp-server --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -108,10 +108,10 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/sg-apis-mcp:${{ steps.tags.outputs.tag }}
-            ghcr.io/${{ github.repository_owner }}/sg-apis-mcp:latest
+            ghcr.io/${{ github.repository_owner }}/dude-mcp:${{ steps.tags.outputs.tag }}
+            ghcr.io/${{ github.repository_owner }}/dude-mcp:latest
 
       - name: Container smoke
         run: npm run test:smoke:container
         env:
-          SG_APIS_CONTAINER_IMAGE: ghcr.io/${{ github.repository_owner }}/sg-apis-mcp:${{ steps.tags.outputs.tag }}
+          SG_APIS_CONTAINER_IMAGE: ghcr.io/${{ github.repository_owner }}/dude-mcp:${{ steps.tags.outputs.tag }}

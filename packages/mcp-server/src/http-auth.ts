@@ -1,6 +1,6 @@
 import { createRemoteJWKSet, jwtVerify, type JWTPayload, errors as joseErrors } from "jose";
 import type { IncomingMessage } from "node:http";
-import type { Logger } from "@sg-apis/shared";
+import type { Logger } from "@dude/shared";
 import type { ToolSet } from "./tools/tool-definition.js";
 
 export type HttpAuthMode = "none" | "mixed" | "all";
@@ -199,7 +199,7 @@ export class HttpAuthController {
       authorization_servers: this.#issuer === undefined ? undefined : [this.#issuer],
       scopes_supported: this.requiredScopes.length === 0 ? undefined : this.requiredScopes,
       resource_name: "Dude Singapore Due Diligence MCP",
-      resource_documentation: "https://github.com/gongahkia/sg-skills",
+      resource_documentation: "https://github.com/gongahkia/dude",
     };
   }
 

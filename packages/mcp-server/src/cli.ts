@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // sg-data CLI: quick lookups without full MCP setup
 // usage: sg-data <command> [args]
-import { createLogger, Keystore } from "@sg-apis/shared";
-import type { ToolResult } from "@sg-apis/shared";
+import { createLogger, Keystore } from "@dude/shared";
+import type { ToolResult } from "@dude/shared";
 import { handleBusinessDossier, handleEnvironmentBrief, handleMacroBrief, handlePropertyBrief, handleTransportBrief } from "./tools/brief-tools.js";
 import { handleHdbResalePrices } from "./tools/hdb-tools.js";
 import { handleLtaBusArrivals } from "./tools/lta-tools.js";

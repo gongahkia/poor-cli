@@ -1,5 +1,5 @@
-import { validateInput, MasExchangeRateSchema, MasInterestRateSchema, MasFinancialStatsSchema, MasDataset, formatResponse, resolveOutputFormat } from "@sg-apis/shared";
-import type { OutputFormat, ToolResult } from "@sg-apis/shared";
+import { validateInput, MasExchangeRateSchema, MasInterestRateSchema, MasFinancialStatsSchema, MasDataset, formatResponse, resolveOutputFormat } from "@dude/shared";
+import type { OutputFormat, ToolResult } from "@dude/shared";
 import { query } from "../apis/mas/client.js";
 import { normalizeMasRecord } from "../apis/mas/normalizer.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";

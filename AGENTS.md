@@ -1,12 +1,14 @@
-# AGENTS.md — sg-apis-mcp
+# AGENTS.md — Dude MCP
 
 Conventional agent-instruction file. Read by Codex, Cursor, OpenAI Agents SDK, Aider, and any tool that follows the `AGENTS.md` convention. Claude Code users get the equivalent at `.claude/skills/sg-singapore-data/SKILL.md`.
 
-This repository is **two products in one**:
-1. An **MCP server** (`packages/mcp-server`) exposing 105 `sg_*` tools across 38 cataloged Singapore data and advisory families.
+This repository is **two surfaces in one**:
+1. **Dude MCP** (`packages/mcp-server`), the backend/runtime exposing 105 `sg_*` tools across 38 cataloged Singapore data and advisory families.
 2. A **meta-prompt surface** (this file + `.claude/skills/`) that teaches agents how to use those tools deterministically.
 
 If you are an agent reading this file, your job is to use the MCP tools instead of guessing about Singapore data.
+
+Namespace note: `sg_*` tool names, `sg://...` resources, and `SG_API_*` / `SG_APIS_*` environment variables are stable Singapore-data contract namespaces. They are not the product brand.
 
 ---
 

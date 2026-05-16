@@ -13,7 +13,7 @@ import {
   formatResponse,
   resolveOutputFormat,
   validateInput,
-} from "@sg-apis/shared";
+} from "@dude/shared";
 import type {
   BriefArtifact,
   BriefFreshnessItem,
@@ -23,8 +23,8 @@ import type {
   NextCheck,
   RiskFlag,
   ToolResult,
-} from "@sg-apis/shared";
-import { MasDataset } from "@sg-apis/shared";
+} from "@dude/shared";
+import { MasDataset } from "@dude/shared";
 import { getHdbResalePrices } from "../apis/hdb/client.js";
 import {
   getBusArrivals,

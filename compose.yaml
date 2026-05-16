@@ -1,6 +1,6 @@
 services:
   dude-assets:
-    image: ghcr.io/gongahkia/sg-apis-mcp:${SG_APIS_IMAGE_TAG:-latest}
+    image: ghcr.io/gongahkia/dude-mcp:${SG_APIS_IMAGE_TAG:-latest}
     restart: "no"
     entrypoint: ["sh", "-lc"]
     command: ["rm -rf /srv/dude/* && cp -R /app/apps/web/dist/. /srv/dude/"]
@@ -8,7 +8,7 @@ services:
       - dude_web_assets:/srv/dude
 
   dude-gateway:
-    image: ghcr.io/gongahkia/sg-apis-mcp:${SG_APIS_IMAGE_TAG:-latest}
+    image: ghcr.io/gongahkia/dude-mcp:${SG_APIS_IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -32,12 +32,12 @@ services:
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
     entrypoint: ["node", "packages/mcp-server/dist/rest-gateway.js"]
     volumes:
-      - sg_apis_state:/var/lib/sg-apis
+      - dude_mcp_state:/var/lib/sg-apis
     expose:
       - "3000"
 
-  sg-apis-mcp:
-    image: ghcr.io/gongahkia/sg-apis-mcp:${SG_APIS_IMAGE_TAG:-latest}
+  dude-mcp:
+    image: ghcr.io/gongahkia/dude-mcp:${SG_APIS_IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       SG_APIS_HTTP_AUTH_MODE: ${SG_APIS_HTTP_AUTH_MODE:-mixed}
@@ -57,7 +57,7 @@ services:
       TINYFISH_API_KEY: ${TINYFISH_API_KEY:-}
     command: ["--transport", "http", "--host", "0.0.0.0", "--port", "3000"]
     volumes:
-      - sg_apis_state:/var/lib/sg-apis
+      - dude_mcp_state:/var/lib/sg-apis
     expose:
       - "3000"
 
@@ -69,7 +69,7 @@ services:
         condition: service_completed_successfully
       dude-gateway:
         condition: service_started
-      sg-apis-mcp:
+      dude-mcp:
         condition: service_started
     ports:
       - "80:80"
@@ -83,7 +83,7 @@ services:
       - caddy_config:/config
 
 volumes:
-  sg_apis_state:
+  dude_mcp_state:
   dude_web_assets:
   caddy_data:
   caddy_config:

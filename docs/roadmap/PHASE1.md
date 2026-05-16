@@ -4,7 +4,7 @@
 
 - Repository surface: 69 tools across 29 Singapore data families.
 - Preferred interface: `sg_query` routes 20 families with bounded workflows.
-- Snapshot signal: `sg-apis-mcp` package is not currently resolvable on npm.
+- Snapshot signal: `@dude/mcp` package is not currently resolvable on npm.
 - Snapshot signal: 17 tools have no direct test-file reference.
 - Snapshot signal: dependency audit shows 6 vulnerabilities (3 moderate, 3 high).
 
@@ -89,4 +89,3 @@ This phase is about making the product installable, credible, and safe enough fo
   - Mitigation: add release-candidate lane with full smoke matrix.
 - Risk: test expansion increases CI runtime too much.
   - Mitigation: parallelize suites and split fast vs extended jobs.
-

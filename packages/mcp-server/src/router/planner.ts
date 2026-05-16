@@ -1,4 +1,4 @@
-import { ApiError } from "@sg-apis/shared";
+import { ApiError } from "@dude/shared";
 import { DEFAULT_CIVIC_RADIUS_KM } from "../apis/civic/utils.js";
 import { classifyIntent, resolveToolInput } from "./classifier.js";
 import { PLANNING_AREAS, toTitleCase } from "./domain-constants.js";

@@ -156,9 +156,9 @@ export const generateOpenApiSpec = async () => {
   return {
     openapi: "3.1.0",
     info: {
-      title: "sg-apis-mcp REST Gateway",
+      title: "Dude MCP REST Gateway",
       version: pkgJson.version,
-      description: "REST interface for Singapore public data tools. Each tool is exposed as a POST endpoint.",
+      description: "REST interface for Dude MCP Singapore public-data tools. Each tool is exposed as a POST endpoint.",
     },
     servers: [{ url: "http://localhost:3000", description: "Local REST gateway" }],
     paths: {

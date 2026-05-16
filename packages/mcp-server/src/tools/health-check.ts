@@ -1,5 +1,5 @@
-import { formatResponse, Keystore, MasDataset } from "@sg-apis/shared";
-import type { CredentialSource, ToolResult, HealthStatus } from "@sg-apis/shared";
+import { formatResponse, Keystore, MasDataset } from "@dude/shared";
+import type { CredentialSource, ToolResult, HealthStatus } from "@dude/shared";
 import { getHdbResalePrices } from "../apis/hdb/client.js";
 import { getBusArrivals } from "../apis/lta/client.js";
 import { query as queryMas } from "../apis/mas/client.js";

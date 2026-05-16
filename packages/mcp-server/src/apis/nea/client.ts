@@ -1,4 +1,4 @@
-import { ApiError, httpGet } from "@sg-apis/shared";
+import { ApiError, httpGet } from "@dude/shared";
 import type {
   NeaForecastResponse,
   NeaNormalizedAirQuality,
@@ -7,7 +7,7 @@ import type {
   NeaPm25Response,
   NeaPsiResponse,
   NeaRainfallResponse,
-} from "@sg-apis/shared";
+} from "@dude/shared";
 import { withCache, buildCacheKey } from "../../middleware/cache-middleware.js";
 
 const BASE_URL = "https://api-open.data.gov.sg/v2/real-time/api";

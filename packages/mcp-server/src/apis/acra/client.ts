@@ -1,7 +1,7 @@
 import type {
   AcraEntityRecord,
   AcraNormalizedEntityRecord,
-} from "@sg-apis/shared";
+} from "@dude/shared";
 import { queryDatastoreExactMatches, queryDatastoreResult } from "../datagov/client.js";
 import { searchTinyFish } from "../tinyfish/client.js";
 

@@ -1,6 +1,8 @@
 # Production Notes
 
-Operational guidance for teams deploying sg-apis-mcp in production.
+Operational guidance for teams deploying Dude MCP in production.
+
+Dude MCP is the backend/runtime for Dude. The `sg_*`, `sg://...`, and `SG_API_*` / `SG_APIS_*` names below are stable Singapore-data contract namespaces, not product branding.
 
 The same runtime contract is also exposed as the machine-readable `sg://runtime` resource for MCP clients that want to cache operational assumptions instead of scraping docs. Adoption-oriented latency, cache-tier, and credibility expectations for the headline workflows are also exposed through `sg://benchmarks`.
 

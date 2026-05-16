@@ -1,4 +1,4 @@
-import type { QueryBlocker, ToolResult } from "@sg-apis/shared";
+import type { QueryBlocker, ToolResult } from "@dude/shared";
 
 export type QueryExecutionContext = {
   readonly results: ReadonlyMap<
