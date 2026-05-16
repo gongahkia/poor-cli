@@ -54,3 +54,7 @@ npm run test -- packages/shared/src/__tests__/country-pack-schema.test.ts
 5. Update roadmap and licensing docs when the pack changes ASEAN expansion assumptions.
 
 Country-pack contributions that omit provenance, freshness, gaps, limits, auth, or licensing metadata should not be merged.
+
+## Feasibility Notes
+
+- [Vietnam feasibility and community-contribution path](./country-packs/vietnam-feasibility.md)

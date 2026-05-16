@@ -8,6 +8,7 @@ This project follows semver for published packages and keeps public contract cha
 
 - Corp-services CDD onboarding workflow docs and first-run positioning.
 - Contributor governance files, DCO sign-off policy, and licence strategy record.
+- Vietnam country-pack feasibility note and community-contribution path.
 
 ### Schema Changes
 
