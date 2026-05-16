@@ -23,7 +23,7 @@ It is not:
 
 - `sg_business_dossier` includes a `NO_CORPORATE_GRAPH` limit in the returned limits envelope.
 - `/api/v1/dude/memo` instructs the AI provider not to add ownership, director, shareholder, or control claims unless present in the dossier.
-- The web dossier page and structured exports carry the original `limits`, `gaps`, `provenance`, and `freshness` fields forward.
+- The web dossier page and structured exports carry the original `limits`, `gaps`, `provenance`, and `freshness` fields forward, plus standard compliance-use and non-advice clauses.
 
 ## Example
 

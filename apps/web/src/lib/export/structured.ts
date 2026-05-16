@@ -3,6 +3,10 @@ import {
   getSummaryString,
   sanitizeFilenamePart,
 } from "@/lib/dossier";
+import {
+  buildComplianceUseLimitations,
+  buildComplianceUseSummary,
+} from "@/lib/compliance";
 import type { AnalystMemoReady } from "@/types/analyst-memo";
 import type { BulkDossierRow, ShortlistEntry } from "@/types/bulk";
 import type { BusinessDossier } from "@/types/dossier";
@@ -58,14 +62,15 @@ export function buildDossierExportSummary(dossier: BusinessDossier): ShortlistEn
   };
 }
 
-const singleDossierRow = (dossier: BusinessDossier): Record<string, unknown> => {
+export const buildSingleDossierCsvRow = (dossier: BusinessDossier, generatedAt = new Date().toISOString()): Record<string, unknown> => {
   const summary = buildDossierExportSummary(dossier);
   return {
+    complianceUseNotice: buildComplianceUseSummary(),
     confidence: summary.confidence,
     entity: summary.entity,
     entityStatus: summary.entityStatus,
     gapCodes: summary.gapCodes.join(";"),
-    generatedAt: new Date().toISOString(),
+    generatedAt,
     limits: dossier.limits.map((limit) => `${limit.code}: ${limit.message}`).join(";"),
     provenance: summary.provenanceSources.join(";"),
     risk: summary.risk,
@@ -73,6 +78,22 @@ const singleDossierRow = (dossier: BusinessDossier): Record<string, unknown> => 
     uen: summary.uen,
   };
 };
+
+export function buildSingleDossierJsonPayload(params: {
+  dossier: BusinessDossier;
+  analystMemo?: AnalystMemoReady;
+  generatedAt?: string;
+  webPresence?: WebPresence;
+}): Record<string, unknown> {
+  return {
+    analystMemo: params.analystMemo ?? null,
+    complianceUse: buildComplianceUseLimitations(),
+    dossier: params.dossier,
+    generatedAt: params.generatedAt ?? new Date().toISOString(),
+    limits: params.dossier.limits,
+    webPresence: params.webPresence ?? null,
+  };
+}
 
 export function exportSingleDossierJson(params: {
   dossier: BusinessDossier;
@@ -83,23 +104,18 @@ export function exportSingleDossierJson(params: {
   downloadText(
     `dude-diligence-${identifier}.json`,
     "application/json",
-    JSON.stringify({
-      analystMemo: params.analystMemo ?? null,
-      dossier: params.dossier,
-      generatedAt: new Date().toISOString(),
-      limits: params.dossier.limits,
-      webPresence: params.webPresence ?? null,
-    }, null, 2),
+    JSON.stringify(buildSingleDossierJsonPayload(params), null, 2),
   );
 }
 
 export function exportSingleDossierCsv(dossier: BusinessDossier): void {
   const identifier = sanitizeFilenamePart(getSummaryString(dossier, "UEN") ?? dossier.title);
-  downloadText(`dude-diligence-${identifier}.csv`, "text/csv", toCsv([singleDossierRow(dossier)]));
+  downloadText(`dude-diligence-${identifier}.csv`, "text/csv", toCsv([buildSingleDossierCsvRow(dossier)]));
 }
 
 const bulkRowsForExport = (rows: readonly BulkDossierRow[]): Record<string, unknown>[] =>
   rows.map((row) => ({
+    complianceUseNotice: buildComplianceUseSummary(),
     confidence: row.confidence,
     entity: row.entity,
     entityStatus: row.entityStatus,
@@ -118,7 +134,7 @@ export function exportBulkJson(rows: readonly BulkDossierRow[], generatedAt = ne
   downloadText(
     `dude-bulk-diligence-${generatedAt.slice(0, 10)}.json`,
     "application/json",
-    JSON.stringify({ generatedAt, rows }, null, 2),
+    JSON.stringify({ complianceUse: buildComplianceUseLimitations(), generatedAt, rows }, null, 2),
   );
 }
 
@@ -135,12 +151,13 @@ export function exportShortlistJson(entries: readonly ShortlistEntry[]): void {
   downloadText(
     `dude-shortlist-${generatedAt.slice(0, 10)}.json`,
     "application/json",
-    JSON.stringify({ generatedAt, entries }, null, 2),
+    JSON.stringify({ complianceUse: buildComplianceUseLimitations(), generatedAt, entries }, null, 2),
   );
 }
 
 export function exportShortlistCsv(entries: readonly ShortlistEntry[]): void {
   const rows = entries.map((entry) => ({
+    complianceUseNotice: buildComplianceUseSummary(),
     confidence: entry.confidence,
     entity: entry.entity,
     entityStatus: entry.entityStatus,

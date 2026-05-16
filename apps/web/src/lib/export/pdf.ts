@@ -7,6 +7,7 @@ import {
   getDossierRecordGroups,
   riskSeverityLabel,
 } from "@/lib/dossier";
+import { complianceUseLimitations } from "@/lib/compliance";
 import type { WebPresence } from "@/lib/api/client";
 import type { AnalystMemoReady } from "@/types/analyst-memo";
 import type { BriefArtifact, BriefProvenanceItem, BriefSummaryItem } from "@/types/dossier";
@@ -339,12 +340,16 @@ export async function exportDossierPdf(
 
   y = ensurePage(doc, y);
   y = addSectionTitle(doc, "Limits", y);
-  addSummaryRows(
+  y = addSummaryRows(
     doc,
     brief.limits.map((limit) => ({ label: limit.code, value: limit.message })),
     y,
     maxWidth,
-  );
+  ) + 4;
+
+  y = ensurePage(doc, y);
+  y = addSectionTitle(doc, "Compliance Use Notice", y);
+  addSummaryRows(doc, [...complianceUseLimitations], y, maxWidth);
 
   doc.save(options.filename ?? "dude-diligence-brief.pdf");
 }

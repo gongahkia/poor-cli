@@ -72,6 +72,7 @@ Roadmap planning files live under [docs/roadmap](./docs/roadmap) so the reposito
 - [docs/license-strategy.md](./docs/license-strategy.md) records the current MIT decision and licence migration criteria.
 - [docs/schema-versioning.md](./docs/schema-versioning.md) defines public contract IDs and schema-change release rules.
 - [docs/country-packs.md](./docs/country-packs.md) defines the `country-pack/v1` envelope and contribution template.
+- [docs/compliance-use-clauses.md](./docs/compliance-use-clauses.md) maps compliance-use and non-advice language across web, exports, docs, and API-facing artifacts.
 - [SECURITY.md](./SECURITY.md) explains private vulnerability reporting.
 
 ## Skills & Agents
