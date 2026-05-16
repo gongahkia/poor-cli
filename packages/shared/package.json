@@ -1,7 +1,7 @@
 {
-  "name": "@sg-apis/shared",
+  "name": "@dude/shared",
   "version": "0.1.0",
-  "description": "Shared runtime utilities and types for sg-apis-mcp",
+  "description": "Shared runtime utilities and types for Dude MCP",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",

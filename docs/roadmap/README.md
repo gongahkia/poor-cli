@@ -8,3 +8,10 @@ These files are planning artifacts. They are kept out of the repository root so 
 - [Phase 3: Workflow Depth and Singapore Use-Case Expansion](./PHASE3.md)
 - [Phase 4: Developer Experience, Ecosystem Positioning, and Adoption Scale](./PHASE4.md)
 - [Phase 5: Continuous Governance and Long-Term Product Discipline](./PHASE5.md)
+
+Product workflow docs:
+
+- [Primary corp-services CDD onboarding](../product/corp-services-cdd.md)
+- [Secondary vendor onboarding and procurement intelligence lanes](../product/secondary-workflows.md)
+- [ASEAN paid-data licensing assumptions](../country-packs/asean-licensing-assumptions.md)
+- [Vietnam country-pack feasibility](../country-packs/vietnam-feasibility.md)

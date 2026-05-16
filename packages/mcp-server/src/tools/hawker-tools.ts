@@ -1,5 +1,5 @@
-import { formatResponse, HawkerCentresInputSchema, HawkerCentresSchema, HawkerClosuresSchema, resolveOutputFormat } from "@sg-apis/shared";
-import type { OutputFormat, ToolResult } from "@sg-apis/shared";
+import { formatResponse, HawkerCentresInputSchema, HawkerCentresSchema, HawkerClosuresSchema, resolveOutputFormat } from "@dude/shared";
+import type { OutputFormat, ToolResult } from "@dude/shared";
 import { getHawkerCentres } from "../apis/hawker/client.js";
 import { getHawkerClosures } from "../apis/hawker/closures-client.js";
 import { toDirectoryGeoFeatures } from "../apis/civic/utils.js";

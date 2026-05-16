@@ -5,8 +5,8 @@ import {
   HousingResaleCompareSchema,
   formatResponse,
   validateInput,
-} from "@sg-apis/shared";
-import type { ToolResult } from "@sg-apis/shared";
+} from "@dude/shared";
+import type { ToolResult } from "@dude/shared";
 import { computeAffordability } from "../housing/affordability.js";
 import { computeGrantEligibility } from "../housing/grants.js";
 import type { HouseholdProfile } from "../housing/grants.js";

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ToolResult } from "@sg-apis/shared";
+import type { ToolResult } from "@dude/shared";
 
 vi.mock("../../apis/coe/client.js", () => ({ getCoeBiddingResults: vi.fn() }));
 vi.mock("../../apis/iras/client.js", () => ({ getIrasTaxCollection: vi.fn() }));

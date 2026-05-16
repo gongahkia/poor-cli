@@ -13,7 +13,7 @@ COPY apps/web apps/web
 RUN npm run build && npm run build -w apps/web
 
 FROM node:20-slim
-LABEL io.modelcontextprotocol.server.name="io.github.gongahkia/sg-apis-mcp"
+LABEL io.modelcontextprotocol.server.name="io.github.gongahkia/dude-mcp"
 WORKDIR /app
 COPY --from=build /app/package.json /app/package-lock.json ./
 COPY --from=build /app/packages/shared/package.json packages/shared/

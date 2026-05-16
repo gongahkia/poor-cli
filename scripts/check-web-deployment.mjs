@@ -30,7 +30,7 @@ assertIncludes("compose.yaml", compose, "dude-gateway:");
 assertIncludes("compose.yaml", compose, "dude-assets:");
 assertIncludes("compose.yaml", compose, "DUDE_WEB_ORIGIN_ALLOWLIST");
 assertIncludes("compose.yaml", compose, "packages/mcp-server/dist/rest-gateway.js");
-assertIncludes("compose.yaml", compose, "sg-apis-mcp:");
+assertIncludes("compose.yaml", compose, "dude-mcp:");
 assertIncludes("compose.yaml", compose, "dude_web_assets:");
 
 const deploymentDocs = read("docs/deployment.md");

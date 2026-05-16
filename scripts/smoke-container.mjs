@@ -6,7 +6,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 const root = resolve(import.meta.dirname, "..");
 const runtimeEnv = { ...process.env };
 const configuredImage = process.env["SG_APIS_CONTAINER_IMAGE"]?.trim();
-const localImage = `sg-apis-mcp-smoke:${Date.now()}`;
+const localImage = `dude-mcp-smoke:${Date.now()}`;
 const imageRef = configuredImage && configuredImage.length > 0 ? configuredImage : localImage;
 const removeImageAfter = configuredImage === undefined || configuredImage.length === 0;
 
@@ -62,7 +62,7 @@ try {
 
   const transport = new StdioClientTransport({
     command: "docker",
-    args: ["run", "--rm", "-i", "-e", "HOME=/tmp/sg-apis-mcp", "-e", "SG_APIS_LOG_LEVEL=error", imageRef],
+    args: ["run", "--rm", "-i", "-e", "HOME=/tmp/dude-mcp", "-e", "SG_APIS_LOG_LEVEL=error", imageRef],
     cwd: root,
     env: runtimeEnv,
     stderr: "pipe",
@@ -84,7 +84,7 @@ try {
   await client.connect(transport);
 
   const serverVersion = client.getServerVersion();
-  assert(serverVersion?.name === "sg-apis-mcp", `Unexpected container server identity: ${JSON.stringify(serverVersion)}${formatServerLogs()}`);
+  assert(serverVersion?.name === "dude", `Unexpected container server identity: ${JSON.stringify(serverVersion)}${formatServerLogs()}`);
 
   const [toolsResult, resourcesResult, promptsResult, templatesResult] = await Promise.all([
     client.listTools(),

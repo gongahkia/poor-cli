@@ -4,7 +4,7 @@
 
 Actual value prop: yes, but narrow.
 
-The underlying MCP server already has real utility for developers building Singapore-focused agents because it offers one deterministic MCP surface over 38 cataloged public-data and advisory families, bounded brief artifacts, transparent blocker behavior, and a verified local build path. That is enough to be useful. The Dude pivot adds a web-first due diligence surface on top instead of trying to become a broad Singapore developer platform.
+Dude MCP already has real utility for developers building Singapore-focused agents because it offers one deterministic MCP surface over 38 cataloged public-data and advisory families, bounded brief artifacts, transparent blocker behavior, and a verified local build path. That is enough to be useful. Dude adds a web-first due diligence surface on top instead of trying to become a broad Singapore developer platform.
 
 ## Who Gets Value Today
 

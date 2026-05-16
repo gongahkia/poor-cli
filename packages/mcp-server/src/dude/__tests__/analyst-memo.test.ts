@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { ProviderRequestError } from "../../ai/providers.js";
 import { generateAnalystMemo, type AnalystMemoDossier } from "../analyst-memo.js";
 
 const fixtureDossier: AnalystMemoDossier = {
@@ -56,6 +57,33 @@ describe("analyst memo generation", () => {
       provider: "openai",
       reason: {
         code: "AI_PROVIDER_UNCONFIGURED",
+      },
+      status: "unavailable",
+    });
+  });
+
+  it("returns memo unavailable instead of a hard error when provider credentials are rejected", async () => {
+    const memo = await generateAnalystMemo(
+      { dossier: fixtureDossier },
+      {
+        env: {
+          DUDE_AI_PROVIDER: "openai",
+          OPENAI_API_KEY: "stale-server-key",
+        } as NodeJS.ProcessEnv,
+        generate: async () => {
+          throw new ProviderRequestError("openai", 401);
+        },
+        generatedAt: new Date("2026-05-15T00:00:00.000Z"),
+      },
+    );
+
+    expect(memo).toMatchObject({
+      configured: false,
+      generatedAt: "2026-05-15T00:00:00.000Z",
+      provider: "openai",
+      reason: {
+        code: "AI_PROVIDER_AUTH_FAILED",
+        message: expect.stringContaining("OPENAI_API_KEY"),
       },
       status: "unavailable",
     });

@@ -1,4 +1,4 @@
-import { ApiError } from "@sg-apis/shared";
+import { ApiError } from "@dude/shared";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   clearToolInvocationAuditStoreForTests,

@@ -4,7 +4,7 @@
 // env: PORT (default 3000), SG_APIS_TOOLSETS, SG_APIS_TOOL_PROFILE (default public profile)
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
-import { createLogger } from "@sg-apis/shared";
+import { createLogger } from "@dude/shared";
 import { searchAcraEntitySuggestions } from "./apis/acra/client.js";
 import { getWebPresence } from "./apis/tinyfish/client.js";
 import { buildBulkDossierResponse } from "./dude/bulk-dossiers.js";

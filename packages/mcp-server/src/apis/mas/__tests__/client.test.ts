@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { MasDataset } from "@sg-apis/shared";
+import { MasDataset } from "@dude/shared";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
-vi.mock("@sg-apis/shared", async () => {
-  const actual = await vi.importActual<typeof import("@sg-apis/shared")>("@sg-apis/shared");
+vi.mock("@dude/shared", async () => {
+  const actual = await vi.importActual<typeof import("@dude/shared")>("@dude/shared");
   return {
     ...actual,
     getRateLimiter: () => ({ acquire: vi.fn().mockResolvedValue(undefined) }),

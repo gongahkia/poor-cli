@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Queue consumer integration template for sg-apis-mcp.
+"""Queue consumer integration template for Dude MCP.
 
 Demonstrates deterministic queue action mapping from sg_query outcomes:
 - completed -> ack

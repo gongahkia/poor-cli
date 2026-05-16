@@ -1,4 +1,4 @@
-import type { SportSgFacilityRecord, SportSgFacilityType } from "@sg-apis/shared";
+import type { SportSgFacilityRecord, SportSgFacilityType } from "@dude/shared";
 import { downloadDatasetGeoJson } from "../datagov/client.js";
 import {
   applyDirectoryFilters,

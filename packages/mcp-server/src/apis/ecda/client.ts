@@ -1,4 +1,4 @@
-import type { EcdaChildcareCentreRecord, EcdaVacancyStatus } from "@sg-apis/shared";
+import type { EcdaChildcareCentreRecord, EcdaVacancyStatus } from "@dude/shared";
 import { downloadDatasetCsvRows, downloadDatasetGeoJson } from "../datagov/client.js";
 import {
   applyDirectoryFilters,

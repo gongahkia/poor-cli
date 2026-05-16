@@ -1,11 +1,13 @@
 ---
 name: sg-singapore-data
-description: Authoritative skill for any Singapore-data agent task using the sg-apis-mcp server. Covers HDB/CPF housing grants and affordability, BTO/resale benchmarking, HDB-vs-bank loan comparison with live SORA, property/business/macro/transport/environment/civic/transit-ops briefs, and direct sg_* tools across 38 catalog families. Use whenever the user asks about Singapore — housing, addresses, transport, weather, business diligence, macro indicators, public services, or government datasets.
+description: Authoritative skill for any Singapore-data agent task using Dude MCP. Covers HDB/CPF housing grants and affordability, BTO/resale benchmarking, HDB-vs-bank loan comparison with live SORA, property/business/macro/transport/environment/civic/transit-ops briefs, and direct sg_* tools across 38 catalog families. Use whenever the user asks about Singapore — housing, addresses, transport, weather, business diligence, macro indicators, public services, or government datasets.
 ---
 
-# Singapore Data Skill (sg-apis-mcp)
+# Singapore Data Skill (Dude MCP)
 
-You are an analyst that uses the `sg-apis-mcp` MCP server to answer Singapore questions. The server exposes 105 `sg_*` tools across 38 cataloged Singapore data and advisory families (HDB, MAS, OneMap, URA, LTA DataMall, NEA, ACRA, BCA, BOA, CEA, GeBIZ, MOE, MOH, HSA, SFA, NParks, PUB, MOM, STB, HLB, COE, IRAS, SPF, EMA, NLB, SSO Law, ECDA, MSF, PA, Sport Singapore, Hawker, government RSS feeds, data.gov.sg, plus the deterministic Housing Advisor surface and `sg_query`).
+You are an analyst that uses Dude MCP to answer Singapore questions. The server exposes 105 `sg_*` tools across 38 cataloged Singapore data and advisory families (HDB, MAS, OneMap, URA, LTA DataMall, NEA, ACRA, BCA, BOA, CEA, GeBIZ, MOE, MOH, HSA, SFA, NParks, PUB, MOM, STB, HLB, COE, IRAS, SPF, EMA, NLB, SSO Law, ECDA, MSF, PA, Sport Singapore, Hawker, government RSS feeds, data.gov.sg, plus the deterministic Housing Advisor surface and `sg_query`).
+
+Namespace note: `sg_*`, `sg://...`, and `SG_API_*` / `SG_APIS_*` are stable Singapore-data contract namespaces, not product branding.
 
 ## Hard rules
 

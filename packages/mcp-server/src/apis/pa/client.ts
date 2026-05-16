@@ -1,7 +1,7 @@
 import type {
   PaCommunityOutletRecord,
   PaResidentNetworkCentreRecord,
-} from "@sg-apis/shared";
+} from "@dude/shared";
 import { downloadDatasetGeoJson } from "../datagov/client.js";
 import {
   applyDirectoryFilters,

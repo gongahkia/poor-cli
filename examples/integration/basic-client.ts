@@ -1,4 +1,4 @@
-// Truthful TypeScript MCP client example for sg-apis-mcp.
+// Truthful TypeScript MCP client example for Dude MCP.
 // Run after `npm run build`:
 //   npx tsx examples/integration/basic-client.ts
 import { dirname, resolve } from "node:path";
@@ -182,7 +182,7 @@ const main = async () => {
       throw new Error("Expected recipe catalog entries were not found.");
     }
 
-    console.log(`connected to sg-apis-mcp`);
+    console.log(`connected to Dude MCP`);
     console.log(`cached ${recipeCache.size} recipes from sg://recipes`);
     console.log(`cached ${playbooks.length} playbooks from sg://playbooks`);
     console.log(`runtime statuses: ${(runtime.queryStatusContract ?? []).map((entry) => `${entry.status}:${entry.isError ? "error" : "ok"}`).join(", ")}`);

@@ -27,7 +27,7 @@ export function SearchPage() {
           <div className="space-y-3">
             <p className="text-sm font-medium text-muted-foreground">Dude</p>
             <h1 className="text-4xl font-semibold tracking-normal text-foreground sm:text-5xl">
-              Singapore due diligence in 30 seconds
+              Client CDD onboarding for Singapore teams
             </h1>
           </div>
           <div className="flex justify-start md:justify-end">
@@ -97,17 +97,18 @@ function SearchHelpDialog() {
         <DialogHeader>
           <DialogTitle>Help</DialogTitle>
           <DialogDescription>
-            Quick reference for searches.
+            Quick reference for client intake searches.
           </DialogDescription>
         </DialogHeader>
 
         <section>
           <h2 className="text-sm font-semibold text-foreground">How this works</h2>
           <ul className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
-            <li>Paste a Singapore company name or UEN</li>
+            <li>Paste a Singapore client or counterparty company name or UEN</li>
             <li>Default company searches verify identity against ACRA first</li>
             <li>Sector registries run only when selected or inferred from official SSIC evidence</li>
             <li>Every result shows searched modules, source provenance, freshness, gaps, and limits</li>
+            <li>Use the dossier for analyst review, not legal, tax, credit, or licensed compliance advice</li>
           </ul>
         </section>
       </DialogContent>

@@ -9,7 +9,7 @@ const run = (cmd) => {
 const PUBLIC_ONLY = process.argv.includes("--public");
 const AUTO_DIAGNOSTICS = !process.argv.includes("--no-diagnostics-on-fail");
 
-console.log("=== sg-apis-mcp quick start ===\n");
+console.log("=== Dude MCP quick start ===\n");
 
 console.log("[1/2] building...");
 try {

@@ -15,8 +15,8 @@ vi.mock("node:os", async () => {
   };
 });
 
-vi.mock("@sg-apis/shared", async () => {
-  const actual = await vi.importActual<typeof import("@sg-apis/shared")>("@sg-apis/shared");
+vi.mock("@dude/shared", async () => {
+  const actual = await vi.importActual<typeof import("@dude/shared")>("@dude/shared");
   return {
     ...actual,
     getRateLimiter: () => ({ acquire: vi.fn().mockResolvedValue(undefined) }),

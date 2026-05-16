@@ -28,6 +28,8 @@ export function DiligenceSearch() {
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
   const isSubmitting = status === "submitting";
+  const trimmedQuery = query.trim();
+  const canLookupSuggestions = trimmedQuery.length >= 2;
 
   useEffect(() => {
     const trimmed = query.trim();
@@ -39,8 +41,11 @@ export function DiligenceSearch() {
     }
 
     const controller = new AbortController();
+    setSuggestions([]);
+    setSuggestionStatus("loading");
+    setSuggestionError(null);
+
     const timer = window.setTimeout(() => {
-      setSuggestionStatus("loading");
       void getGatewayJson<SuggestionResponse>(
         "/api/v1/dude/search-suggestions",
         { q: trimmed },
@@ -85,10 +90,10 @@ export function DiligenceSearch() {
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    const identifier = query.trim();
+    const identifier = trimmedQuery;
     if (!identifier) {
       setStatus("error");
-      setError("Enter a company name or UEN.");
+      setError("Enter a client or counterparty company name or UEN.");
       return;
     }
 
@@ -103,6 +108,8 @@ export function DiligenceSearch() {
     }
   };
 
+  const shouldShowSearchPanel = isSubmitting || error !== null || canLookupSuggestions || suggestionStatus !== "idle";
+
   const handleSuggestionClick = (suggestion: ApiSearchSuggestion) => {
     setQuery(suggestion.entityName);
     navigate(`/c/${encodeURIComponent(suggestion.uen)}`);
@@ -112,7 +119,7 @@ export function DiligenceSearch() {
     <div className="space-y-5">
       <form className="flex flex-col gap-3 sm:flex-row" onSubmit={handleSubmit}>
         <Input
-          aria-label="Company name or UEN"
+          aria-label="Client or counterparty company name or UEN"
           autoComplete="off"
           className="h-12 text-base"
           disabled={isSubmitting}
@@ -129,7 +136,7 @@ export function DiligenceSearch() {
               event.currentTarget.form?.requestSubmit();
             }
           }}
-          placeholder="Company name or UEN"
+          placeholder="Client or counterparty company name or UEN"
           value={query}
         />
         <Button className="h-12 px-6" disabled={isSubmitting} type="submit">
@@ -144,49 +151,51 @@ export function DiligenceSearch() {
         </Button>
       </form>
 
-      <div
-        aria-live="polite"
-        className="rounded-lg border border-border bg-card p-6 shadow-sm"
-      >
-        {isSubmitting ? (
-          <div className="space-y-3">
-            <Skeleton className="h-4 w-36" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-2/3" />
-          </div>
-        ) : error ? (
-          <p className="text-sm text-destructive">{error}</p>
-        ) : suggestionStatus === "loading" ? (
-          <div className="space-y-3">
-            <Skeleton className="h-4 w-40" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-4/5" />
-          </div>
-        ) : rankedSuggestions.length > 0 ? (
-          <div>
-            <p className="text-xs font-medium uppercase text-muted-foreground">Official ACRA matches</p>
-            <div className="mt-3 grid gap-2">
-              {rankedSuggestions.map((suggestion) => (
-                <button
-                  className="rounded-md border border-border p-3 text-left transition hover:bg-muted"
-                  key={suggestion.uen}
-                  onClick={() => handleSuggestionClick(suggestion)}
-                  type="button"
-                >
-                  <span className="block text-sm font-medium text-foreground">{suggestion.label}</span>
-                  <span className="mt-1 block text-xs text-muted-foreground">{suggestion.description}</span>
-                </button>
-              ))}
+      {shouldShowSearchPanel ? (
+        <div
+          aria-live="polite"
+          className="rounded-lg border border-border bg-card p-6 shadow-sm"
+        >
+          {isSubmitting ? (
+            <div className="space-y-3">
+              <Skeleton className="h-4 w-36" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-2/3" />
             </div>
-          </div>
-        ) : suggestionStatus === "error" ? (
-          <p className="text-sm text-muted-foreground">
-            {suggestionError ?? "Suggestions are temporarily unavailable."} Search still works.
-          </p>
-        ) : (
-          <p className="text-sm text-muted-foreground">No counterparty selected.</p>
-        )}
-      </div>
+          ) : error ? (
+            <p className="text-sm text-destructive">{error}</p>
+          ) : suggestionStatus === "loading" ? (
+            <div className="space-y-3">
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-4/5" />
+            </div>
+          ) : rankedSuggestions.length > 0 ? (
+            <div>
+              <p className="text-xs font-medium uppercase text-muted-foreground">Official ACRA matches</p>
+              <div className="mt-3 grid gap-2">
+                {rankedSuggestions.map((suggestion) => (
+                  <button
+                    className="rounded-md border border-border p-3 text-left transition hover:bg-muted"
+                    key={suggestion.uen}
+                    onClick={() => handleSuggestionClick(suggestion)}
+                    type="button"
+                  >
+                    <span className="block text-sm font-medium text-foreground">{suggestion.label}</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">{suggestion.description}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : suggestionStatus === "error" ? (
+            <p className="text-sm text-muted-foreground">
+              {suggestionError ?? "Suggestions are temporarily unavailable."} Search still works.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">Ready to search for "{trimmedQuery}".</p>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

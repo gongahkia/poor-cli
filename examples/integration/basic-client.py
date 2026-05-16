@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal stdlib-only MCP client example for sg-apis-mcp.
+"""Minimal stdlib-only MCP client example for Dude MCP.
 
 Run after `npm run build`:
   python3 examples/integration/basic-client.py
@@ -164,7 +164,7 @@ def main() -> None:
         playbooks = read_json_resource(client, "sg://playbooks")
         health = call_tool_payload(client, "sg_health_check", {})
 
-        print("connected to sg-apis-mcp")
+        print("connected to Dude MCP")
         print(f"cached {len(recipes)} recipes from sg://recipes")
         print(f"cached {len(playbooks)} playbooks from sg://playbooks")
         print(

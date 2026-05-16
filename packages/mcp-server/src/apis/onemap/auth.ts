@@ -1,4 +1,4 @@
-import { Keystore, ApiError, createLogger } from "@sg-apis/shared";
+import { Keystore, ApiError, createLogger } from "@dude/shared";
 
 const logger = createLogger("onemap-auth");
 

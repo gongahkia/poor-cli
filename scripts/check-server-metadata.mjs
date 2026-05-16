@@ -43,7 +43,7 @@ if (npmPackage?.identifier !== serverPkg.name) {
 }
 
 const ociPackage = serverMetadata.packages.find((pkg) => pkg.registryType === "oci");
-if (ociPackage?.identifier !== "ghcr.io/gongahkia/sg-apis-mcp") {
+if (ociPackage?.identifier !== "ghcr.io/gongahkia/dude-mcp") {
   throw new Error("server.json OCI package identifier must match the published GHCR image.");
 }
 

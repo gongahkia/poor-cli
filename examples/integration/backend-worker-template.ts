@@ -1,4 +1,4 @@
-// Backend worker integration template for sg-apis-mcp.
+// Backend worker integration template for Dude MCP.
 // Demonstrates explicit handling for blocked / unsupported / failed outcomes.
 //
 // Run after `npm run build`:

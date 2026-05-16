@@ -1,4 +1,4 @@
-import { ApiError, ValidationError } from "@sg-apis/shared";
+import { ApiError, ValidationError } from "@dude/shared";
 import { describe, expect, it } from "vitest";
 import { toToolErrorPayload, wrapHandler } from "../error-handler.js";
 

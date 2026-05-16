@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.gongahkia/sg-apis-mcp",
-  "title": "Singapore Public Data",
-  "description": "Official Singapore public-data MCP server with 105 sg_* tools across 38 catalog families, bounded workflow planning, deterministic housing checks, and provenance-aware brief artifacts.",
+  "name": "io.github.gongahkia/dude-mcp",
+  "title": "Dude MCP",
+  "description": "Dude MCP backend for Singapore public-data and due-diligence workflows, with 105 sg_* tools across 38 catalog families, bounded workflow planning, deterministic housing checks, and provenance-aware brief artifacts.",
   "version": "0.1.0",
   "repository": {
-    "url": "https://github.com/gongahkia/sg-skills",
+    "url": "https://github.com/gongahkia/dude",
     "source": "github"
   },
   "packages": [
     {
       "registryType": "npm",
-      "identifier": "sg-apis-mcp",
+      "identifier": "@dude/mcp",
       "version": "0.1.0",
       "transport": {
         "type": "stdio"
@@ -19,7 +19,7 @@
     },
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/gongahkia/sg-apis-mcp",
+      "identifier": "ghcr.io/gongahkia/dude-mcp",
       "version": "0.1.0",
       "transport": {
         "type": "stdio"

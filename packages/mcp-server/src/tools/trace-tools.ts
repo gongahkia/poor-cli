@@ -1,5 +1,5 @@
-import { ApiError, formatResponse, resolveOutputFormat, validateInput } from "@sg-apis/shared";
-import type { ToolResult } from "@sg-apis/shared";
+import { ApiError, formatResponse, resolveOutputFormat, validateInput } from "@dude/shared";
+import type { ToolResult } from "@dude/shared";
 import { z } from "zod";
 import {
   getToolInvocationAuditByRequestId,

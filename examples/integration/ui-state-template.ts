@@ -1,4 +1,4 @@
-// UI integration template for sg-apis-mcp.
+// UI integration template for Dude MCP.
 // Demonstrates how a frontend state layer can handle blocked / unsupported / failed
 // outcomes from sg_query without treating every non-completed status as a crash.
 

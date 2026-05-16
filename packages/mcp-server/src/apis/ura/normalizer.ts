@@ -1,4 +1,4 @@
-import type { UraRawTransaction, NormalizedTransaction } from "@sg-apis/shared";
+import type { UraRawTransaction, NormalizedTransaction } from "@dude/shared";
 
 const SALE_TYPE_MAP: Readonly<Record<string, string>> = {
   "1": "New Sale",

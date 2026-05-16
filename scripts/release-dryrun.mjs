@@ -1,6 +1,6 @@
 // release:dryrun - publish-equivalent proof without touching the npm registry.
 // 1. npm pack each publishable workspace into artifacts/release/<commit>.
-// 2. Install the tarballs into a fresh temp project (simulates `npx sg-apis-mcp`).
+// 2. Install the tarballs into a fresh temp project (simulates `npx @dude/mcp`).
 // 3. Boot the server bin, list tools, and read sg://recipes.
 // 4. Write a release-receipt.json so a maintainer can see exactly what would publish.
 import { execFileSync } from "node:child_process";
@@ -19,7 +19,7 @@ const commitSha = (() => {
   }
 })();
 const releaseDir = resolve(root, "artifacts", "release", commitSha);
-const tempDir = mkdtempSync(join(tmpdir(), "sg-apis-release-"));
+const tempDir = mkdtempSync(join(tmpdir(), "dude-mcp-release-"));
 const npmCacheDir = join(tempDir, "npm-cache");
 const env = { ...process.env, NPM_CONFIG_CACHE: npmCacheDir, npm_config_cache: npmCacheDir };
 
@@ -44,13 +44,13 @@ const main = async () => {
   const serverPack = pack("packages/mcp-server");
 
   process.stdout.write("Installing packed tarballs into temp project...\n");
-  writeFileSync(join(tempDir, "package.json"), JSON.stringify({ name: "sg-apis-release-dryrun", private: true, type: "module" }, null, 2));
+  writeFileSync(join(tempDir, "package.json"), JSON.stringify({ name: "dude-mcp-release-dryrun", private: true, type: "module" }, null, 2));
   run(["install", "--no-package-lock", sharedPack.archived], tempDir);
   run(["install", "--no-package-lock", serverPack.archived], tempDir);
 
   process.stdout.write("Booting server bin and probing surface...\n");
   const transport = new StdioClientTransport({
-    command: join(tempDir, "node_modules", ".bin", "sg-apis-mcp"),
+    command: join(tempDir, "node_modules", ".bin", "dude-mcp"),
     cwd: tempDir,
     env: { ...env, HOME: tempDir, SG_APIS_LOG_LEVEL: "error" },
     stderr: "pipe",

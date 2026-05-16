@@ -32,7 +32,7 @@ body:
       label: Compatibility Constraints
       value: |
         - Do not rename or break existing `sg_*` tool names or schemas.
-        - Do not rename `packages/mcp-server/package.json`; it remains `sg-apis-mcp`.
+        - Do not rename `@dude/mcp` package/runtime identity without a compatibility plan.
         - Do not change `SG_API_*`, `SG_APIS_*`, or `sg://...` contracts.
         - Keep outputs grounded in public data, provenance, freshness, gaps, and limits.
     validations:

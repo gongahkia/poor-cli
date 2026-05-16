@@ -8,7 +8,7 @@ This repo ships a meta-prompt surface alongside the MCP server so an agent insta
 - [`.claude/skills/sg-singapore-data/SKILL.md`](../.claude/skills/sg-singapore-data/SKILL.md) — Claude Code skill with the same content scoped to the Skill loader.
 - In-server MCP prompts (`prompts/list`) expose ~25 recipes and 3 persona playbooks defined in `RECIPE_CATALOG` / `PLAYBOOK_CATALOG`.
 
-If you are building an agent on top of `sg-apis-mcp`, point it at `AGENTS.md` (Codex-style stacks) or the Claude skill (Anthropic stacks) and let it route through `sg_query` or direct tools.
+If you are building an agent on top of Dude MCP (`@dude/mcp`), point it at `AGENTS.md` (Codex-style stacks) or the Claude skill (Anthropic stacks) and let it route through `sg_query` or direct tools.
 
 ## Housing Advisor Surface
 

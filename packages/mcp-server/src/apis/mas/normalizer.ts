@@ -1,4 +1,4 @@
-import type { MasRecord, NormalizedMasRecord } from "@sg-apis/shared";
+import type { MasRecord, NormalizedMasRecord } from "@dude/shared";
 
 export const normalizeMasDate = (dateStr: string): string => {
   if (/^\d{4}-\d{2}$/.test(dateStr)) {

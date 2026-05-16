@@ -1,8 +1,8 @@
 {
-  "name": "sg-apis-mcp",
+  "name": "@dude/mcp",
   "version": "0.1.0",
-  "mcpName": "io.github.gongahkia/sg-apis-mcp",
-  "description": "Official Singapore public data MCP server for agents across SingStat, MAS, OneMap, URA, LTA DataMall, Transit Intelligence, NEA, HDB, Housing Advisor, CEA, BCA, BOA, ACRA, PA, Sport Singapore, ECDA, MSF Family Services, MSF Student Care Services, MSF Social Service Offices, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, HSA, SFA, Government RSS Feeds, NParks, PUB, MOM, STB, HLB, COE, IRAS, SPF, EMA, NLB, SSO Law, and data.gov.sg",
+  "mcpName": "io.github.gongahkia/dude-mcp",
+  "description": "Dude MCP backend for bounded Singapore public-data and due-diligence workflows across SingStat, MAS, OneMap, URA, LTA DataMall, Transit Intelligence, NEA, HDB, Housing Advisor, CEA, BCA, BOA, ACRA, PA, Sport Singapore, ECDA, MSF Family Services, MSF Student Care Services, MSF Social Service Offices, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, HSA, SFA, Government RSS Feeds, NParks, PUB, MOM, STB, HLB, COE, IRAS, SPF, EMA, NLB, SSO Law, and data.gov.sg.",
   "license": "MIT",
   "type": "module",
   "files": [
@@ -14,6 +14,7 @@
     "!dist/**/mock-server/**"
   ],
   "bin": {
+    "dude-mcp": "./dist/index.js",
     "sg-apis-mcp": "./dist/index.js",
     "sg-data": "./dist/cli.js"
   },
@@ -29,7 +30,7 @@
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^1.3.2",
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "@sg-apis/shared": "0.1.0",
+    "@dude/shared": "0.1.0",
     "better-sqlite3": "^11.0.0",
     "jose": "^6.1.2",
     "zod": "^3.23.0"

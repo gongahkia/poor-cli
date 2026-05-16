@@ -1,14 +1,20 @@
 # Dude
 
-Singapore due diligence in 30 seconds
+Client CDD onboarding for Singapore corp-services teams
 
-> Status: Dude is the web product; `sg-apis-mcp` remains the stable MCP package/runtime.
+> Status: Dude is the product; Dude MCP is its backend/runtime.
 
-Dude is a zero-install, web-first Singapore due diligence app for public-registry-backed counterparty checks on SG entities. The product surface is shifting toward a consumer-grade web workflow, while the underlying `sg-apis-mcp` server, npm package, and stable `sg_*` tool contracts remain intact.
+Dude is a zero-install, web-first Singapore client and counterparty CDD app for public-registry-backed checks on SG entities. The backend/runtime is **Dude MCP**, published as `@dude/mcp` with the `dude-mcp` executable. Stable `sg_*` tool contracts remain intact.
 
-## MCP Server Underneath
+Start with the corp-services workflow in [docs/product/corp-services-cdd.md](./docs/product/corp-services-cdd.md). It defines the first-run path from new-client intake to audit-ready dossier export, the modules that already support the flow, the remaining platform gaps, and the explicit non-advice boundaries.
 
-The current MCP server is still published and documented as `sg-apis-mcp`. The quickstart, capability matrix, and stable surface below remain accurate for the underlying data server.
+## Dude MCP Backend
+
+The quickstart, capability matrix, and stable surface below document Dude MCP, the bounded Singapore public-data runtime that powers Dude and can also be installed directly by agent builders.
+
+Namespace note: `sg_*` tools, `sg://...` resources, and `SG_API_*` / `SG_APIS_*` environment variables are stable Singapore-data contract namespaces. They are not product branding and should not be renamed casually.
+
+Legacy compatibility: older local client configs may still call the `sg-apis-mcp` executable. `@dude/mcp` keeps that executable as a compatibility alias to `dude-mcp`; new package installs and docs should use `@dude/mcp`.
 
 Give your Agents context on Singapore.
 
@@ -58,9 +64,20 @@ The analyst memo endpoint defaults to `DUDE_AI_PROVIDER=openai` and reads server
 
 Roadmap planning files live under [docs/roadmap](./docs/roadmap) so the repository root stays focused on the runtime, install path, and agent-facing instructions.
 
+## Contributing And Governance
+
+- [CONTRIBUTING.md](./CONTRIBUTING.md) covers local setup, contribution rules, and country-pack contribution workflow.
+- [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) defines collaboration expectations and enforcement.
+- [docs/maintainer-governance.md](./docs/maintainer-governance.md) documents maintainer roles, decision process, release process, and security reporting.
+- [docs/license-strategy.md](./docs/license-strategy.md) records the current MIT decision and licence migration criteria.
+- [docs/schema-versioning.md](./docs/schema-versioning.md) defines public contract IDs and schema-change release rules.
+- [docs/country-packs.md](./docs/country-packs.md) defines the `country-pack/v1` envelope and contribution template.
+- [docs/compliance-use-clauses.md](./docs/compliance-use-clauses.md) maps compliance-use and non-advice language across web, exports, docs, and API-facing artifacts.
+- [SECURITY.md](./SECURITY.md) explains private vulnerability reporting.
+
 ## Skills & Agents
 
-This repo ships **two products in one**: an MCP server *and* a meta-prompt surface that teaches agents how to use it deterministically.
+This repo ships **two surfaces in one**: Dude MCP and a meta-prompt surface that teaches agents how to use it deterministically.
 
 - [AGENTS.md](./AGENTS.md) — conventional agent-instruction file (Codex, Cursor, OpenAI Agents SDK, Aider).
 - [.claude/skills/sg-singapore-data/SKILL.md](./.claude/skills/sg-singapore-data/SKILL.md) — Claude Code skill covering the full `sg_*` surface, including the deterministic Housing Advisor flow (BTO/resale affordability, HDB grants, HDB-vs-bank loan comparison, resale price benchmarking).
@@ -194,7 +211,7 @@ Local stdio MCP config:
 ```json
 {
   "mcpServers": {
-    "sg-apis-mcp": {
+    "dude-mcp": {
       "command": "node",
       "args": ["/absolute/path/to/dude/packages/mcp-server/dist/index.js"]
     }
@@ -204,11 +221,11 @@ Local stdio MCP config:
 
 VS Code setup:
 
-- add the `mcpServers.sg-apis-mcp` block above to your MCP settings JSON
+- add the `mcpServers.dude-mcp` block above to your MCP settings JSON
 
 Cursor setup:
 
-- add the same `mcpServers.sg-apis-mcp` block to Cursor's MCP configuration
+- add the same `mcpServers.dude-mcp` block to Cursor's MCP configuration
 
 Codex setup:
 
@@ -216,12 +233,12 @@ Codex setup:
 
 Claude Desktop setup:
 
-- add the same `mcpServers.sg-apis-mcp` block to `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS
+- add the same `mcpServers.dude-mcp` block to `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS
 
 Claude Code:
 
 ```bash
-claude mcp add sg-apis-mcp -- node /absolute/path/to/dude/packages/mcp-server/dist/index.js
+claude mcp add dude-mcp -- node /absolute/path/to/dude/packages/mcp-server/dist/index.js
 ```
 
 Local HTTP MCP server:
@@ -236,7 +253,7 @@ Remote HTTP MCP server:
 SG_APIS_HTTP_AUTH_MODE=mixed \
 SG_APIS_REMOTE_BASE_URL=https://mcp.example.com/mcp \
 SG_APIS_OIDC_ISSUER=https://issuer.example.com \
-SG_APIS_OIDC_AUDIENCE=sg-apis-mcp \
+SG_APIS_OIDC_AUDIENCE=dude-mcp \
 node packages/mcp-server/dist/index.js --transport http --host 0.0.0.0 --port 3000
 ```
 
@@ -287,7 +304,7 @@ The server also exposes OAuth protected-resource metadata at `/.well-known/oauth
 Use this after a public npm release:
 
 ```bash
-npx -y sg-apis-mcp
+npx -y @dude/mcp
 ```
 
 Published-package client config:
@@ -295,9 +312,9 @@ Published-package client config:
 ```json
 {
   "mcpServers": {
-    "sg-apis-mcp": {
+    "dude-mcp": {
       "command": "npx",
-      "args": ["-y", "sg-apis-mcp"]
+      "args": ["-y", "@dude/mcp"]
     }
   }
 }
@@ -308,7 +325,7 @@ Published-package client config:
 GHCR image:
 
 ```bash
-docker run --rm -i ghcr.io/gongahkia/sg-apis-mcp:latest
+docker run --rm -i ghcr.io/gongahkia/dude-mcp:latest
 ```
 
 GHCR HTTP mode:
@@ -318,8 +335,8 @@ docker run --rm -p 3000:3000 \
   -e SG_APIS_HTTP_AUTH_MODE=mixed \
   -e SG_APIS_REMOTE_BASE_URL=https://mcp.example.com/mcp \
   -e SG_APIS_OIDC_ISSUER=https://issuer.example.com \
-  -e SG_APIS_OIDC_AUDIENCE=sg-apis-mcp \
-  ghcr.io/gongahkia/sg-apis-mcp:latest \
+  -e SG_APIS_OIDC_AUDIENCE=dude-mcp \
+  ghcr.io/gongahkia/dude-mcp:latest \
   --transport http --host 0.0.0.0 --port 3000
 ```
 
@@ -338,7 +355,7 @@ SG_APIS_REMOTE_URL=https://mcp.example.com/mcp npm run test:smoke:remote
 To validate a published image instead of a local build:
 
 ```bash
-SG_APIS_CONTAINER_IMAGE=ghcr.io/gongahkia/sg-apis-mcp:latest npm run test:smoke:container
+SG_APIS_CONTAINER_IMAGE=ghcr.io/gongahkia/dude-mcp:latest npm run test:smoke:container
 ```
 
 ### Remote Docker VPS

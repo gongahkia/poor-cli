@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Backend worker integration template for sg-apis-mcp.
+"""Backend worker integration template for Dude MCP.
 
 Demonstrates explicit handling for completed / blocked / unsupported / failed
 sg_query outcomes in Python services.

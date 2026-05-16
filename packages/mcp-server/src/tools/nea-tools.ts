@@ -5,8 +5,8 @@ import {
   formatResponse,
   resolveOutputFormat,
   validateInput,
-} from "@sg-apis/shared";
-import type { OutputFormat, ToolResult } from "@sg-apis/shared";
+} from "@dude/shared";
+import type { OutputFormat, ToolResult } from "@dude/shared";
 import { getAirQuality, getForecast2Hr, getRainfall } from "../apis/nea/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 

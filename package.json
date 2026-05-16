@@ -14,6 +14,8 @@
     "test": "vitest run",
     "lint": "eslint packages/*/src/**/*.ts",
     "verify": "node ./scripts/verify.mjs",
+    "dco:check": "node ./scripts/check-dco.mjs",
+    "schema:check": "node ./scripts/check-schema-governance.mjs",
     "governance:check": "node ./scripts/check-governance.mjs",
     "diagnostics": "node ./scripts/dev-diagnostics.mjs",
     "housing:rules:check": "node ./scripts/check-housing-rules-freshness.mjs",

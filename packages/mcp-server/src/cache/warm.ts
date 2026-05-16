@@ -1,4 +1,4 @@
-import { createLogger } from "@sg-apis/shared";
+import { createLogger } from "@dude/shared";
 
 const logger = createLogger("cache-warm");
 
@@ -18,7 +18,7 @@ export const warmCache = async (): Promise<WarmResult> => {
       name: "mas_exchange_rates",
       fn: async () => {
         const { query } = await import("../apis/mas/client.js");
-        const { MasDataset } = await import("@sg-apis/shared");
+        const { MasDataset } = await import("@dude/shared");
         await query(MasDataset.EXCHANGE_RATES, { limit: 10 });
       },
     },

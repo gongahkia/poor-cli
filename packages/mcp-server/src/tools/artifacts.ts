@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
-import { resolveStatePath } from "@sg-apis/shared";
-import type { ToolResult, ToolResultResourceLinkContent } from "@sg-apis/shared";
+import { resolveStatePath } from "@dude/shared";
+import type { ToolResult, ToolResultResourceLinkContent } from "@dude/shared";
 
 const JSON_MIME_TYPE = "application/json";
 export const ARTIFACT_RESOURCE_BASE_URI = "sg://artifacts";

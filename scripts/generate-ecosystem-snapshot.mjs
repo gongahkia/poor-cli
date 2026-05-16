@@ -25,7 +25,7 @@ const GITHUB_REPOSITORIES = [
 const NPM_PACKAGES = [
   "@altronis/sgdata-mcp",
   "sg-property-mcp",
-  "sg-apis-mcp",
+  "@dude/mcp",
 ];
 
 const STACKOVERFLOW_TAG = "model-context-protocol";
@@ -124,7 +124,7 @@ const fetchJson = async (url, headers = {}) => {
     const response = await fetch(url, {
       headers: {
         Accept: "application/json",
-        "User-Agent": "sg-apis-mcp-ecosystem-snapshot",
+        "User-Agent": "dude-mcp-ecosystem-snapshot",
         ...headers,
       },
       signal: controller.signal,

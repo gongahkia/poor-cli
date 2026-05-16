@@ -2,7 +2,7 @@
 
 Observed on 2026-03-30.
 
-This note benchmarks the underlying MCP server against current MCP ecosystem conventions so expansion decisions stay grounded in real developer adoption patterns, not internal assumptions.
+This note benchmarks Dude MCP against current MCP ecosystem conventions so expansion decisions stay grounded in real developer adoption patterns, not internal assumptions.
 
 ## Primary Sources Used
 

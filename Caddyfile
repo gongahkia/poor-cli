@@ -5,7 +5,7 @@
   reverse_proxy @api dude-gateway:3000
 
   @mcp path /mcp /healthz /icon.svg /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/*
-  reverse_proxy @mcp sg-apis-mcp:3000
+  reverse_proxy @mcp dude-mcp:3000
 
   root * /srv/dude
   try_files {path} /index.html

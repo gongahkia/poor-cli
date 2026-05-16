@@ -3,7 +3,7 @@ import type {
   HsaLicensedPharmacyRecord,
   HsaNormalizedHealthProductLicenseeRecord,
   HsaNormalizedLicensedPharmacyRecord,
-} from "@sg-apis/shared";
+} from "@dude/shared";
 import { downloadDatasetCsvRows } from "../datagov/client.js";
 import { normalizePostalCode, toNullableString } from "../civic/utils.js";
 

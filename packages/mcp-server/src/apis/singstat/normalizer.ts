@@ -1,4 +1,4 @@
-import type { SingStatTableResponse, NormalizedRow } from "@sg-apis/shared";
+import type { SingStatTableResponse, NormalizedRow } from "@dude/shared";
 
 export const normalizeTableData = (raw: SingStatTableResponse): NormalizedRow[] => {
   return raw.Data.row.flatMap((row) =>

@@ -6,7 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const root = resolve(import.meta.dirname, "..");
-const tempDir = mkdtempSync(join(tmpdir(), "sg-apis-smoke-"));
+const tempDir = mkdtempSync(join(tmpdir(), "dude-mcp-smoke-"));
 const npmCacheDir = join(tempDir, "npm-cache");
 const smokeEnv = {
   ...process.env,
@@ -136,7 +136,7 @@ try {
     join(tempDir, "package.json"),
     JSON.stringify(
       {
-        name: "sg-apis-smoke",
+        name: "dude-mcp-smoke",
         private: true,
         type: "module",
       },
@@ -148,12 +148,12 @@ try {
   run(["install", "--no-package-lock", sharedTarball], tempDir);
   run(["install", "--no-package-lock", serverTarball], tempDir);
 
-  JSON.parse(readFileSync(join(tempDir, "node_modules", "sg-apis-mcp", "package.json"), "utf8"));
-  JSON.parse(readFileSync(join(tempDir, "node_modules", "@sg-apis", "shared", "package.json"), "utf8"));
-  JSON.parse(readFileSync(join(tempDir, "node_modules", "sg-apis-mcp", "openapi.json"), "utf8"));
+  JSON.parse(readFileSync(join(tempDir, "node_modules", "@dude", "mcp", "package.json"), "utf8"));
+  JSON.parse(readFileSync(join(tempDir, "node_modules", "@dude", "shared", "package.json"), "utf8"));
+  JSON.parse(readFileSync(join(tempDir, "node_modules", "@dude", "mcp", "openapi.json"), "utf8"));
 
   const transport = new StdioClientTransport({
-    command: join(tempDir, "node_modules", ".bin", "sg-apis-mcp"),
+    command: join(tempDir, "node_modules", ".bin", "dude-mcp"),
     cwd: tempDir,
     env: {
       ...runtimeEnv,
@@ -169,7 +169,7 @@ try {
 
   const client = new Client(
     {
-      name: "sg-apis-smoke",
+      name: "dude-mcp-smoke",
       version: "0.1.0",
     },
     { capabilities: {} },
@@ -336,6 +336,33 @@ try {
     throw error;
   } finally {
     await client.close().catch(() => undefined);
+  }
+
+  const compatTransport = new StdioClientTransport({
+    command: join(tempDir, "node_modules", ".bin", "sg-apis-mcp"),
+    cwd: tempDir,
+    env: {
+      ...runtimeEnv,
+      HOME: tempDir,
+      SG_APIS_LOG_LEVEL: "error",
+    },
+    stderr: "pipe",
+  });
+  const compatClient = new Client(
+    {
+      name: "dude-mcp-compat-smoke",
+      version: "0.1.0",
+    },
+    { capabilities: {} },
+  );
+
+  try {
+    await compatClient.connect(compatTransport);
+    if (compatClient.getServerVersion()?.name !== "dude") {
+      throw new Error(`Compatibility bin returned unexpected MCP server name: ${JSON.stringify(compatClient.getServerVersion())}`);
+    }
+  } finally {
+    await compatClient.close().catch(() => undefined);
   }
 
   process.stdout.write("packaging smoke test passed\n");

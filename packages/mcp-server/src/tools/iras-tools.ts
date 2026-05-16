@@ -1,5 +1,5 @@
-import { formatResponse, IrasTaxCollectionSchema, resolveOutputFormat } from "@sg-apis/shared";
-import type { OutputFormat, ToolResult } from "@sg-apis/shared";
+import { formatResponse, IrasTaxCollectionSchema, resolveOutputFormat } from "@dude/shared";
+import type { OutputFormat, ToolResult } from "@dude/shared";
 import { getIrasTaxCollection } from "../apis/iras/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 
