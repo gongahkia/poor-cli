@@ -71,6 +71,7 @@ Roadmap planning files live under [docs/roadmap](./docs/roadmap) so the reposito
 - [docs/maintainer-governance.md](./docs/maintainer-governance.md) documents maintainer roles, decision process, release process, and security reporting.
 - [docs/license-strategy.md](./docs/license-strategy.md) records the current MIT decision and licence migration criteria.
 - [docs/schema-versioning.md](./docs/schema-versioning.md) defines public contract IDs and schema-change release rules.
+- [docs/country-packs.md](./docs/country-packs.md) defines the `country-pack/v1` envelope and contribution template.
 - [SECURITY.md](./SECURITY.md) explains private vulnerability reporting.
 
 ## Skills & Agents

@@ -154,6 +154,7 @@ export {
   ConfigSetSchema,
   QuerySchema,
   ContextIdsSchema,
+  CountryPackEnvelopeSchema,
   ToolErrorPayloadSchema,
   QueryBlockerSchema,
   QueryPlannedStepSchema,

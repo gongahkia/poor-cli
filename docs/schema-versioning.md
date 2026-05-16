@@ -8,7 +8,7 @@ This repo treats public payload shapes as contracts. Schema changes are allowed,
 | --- | --- | --- |
 | Brief envelope | `brief-envelope/v1` | Shared `title`, `summary`, `evidence`, `records`, `gaps`, `provenance`, `freshness`, and `limits` structure returned by brief-style tools. |
 | Business dossier | `business-dossier/v1` | Counterparty dossier records, evidence, confidence, risk flags, next checks, web presence, and module gap semantics. |
-| Country pack | `country-pack/v1` | Country-pack adapter envelope, auth metadata, licensing assumptions, source freshness, public-data limits, and contribution fixtures. |
+| Country pack | `country-pack/v1` | Country-pack adapter envelope, auth metadata, licensing assumptions, source freshness, public-data limits, and contribution fixtures. The enforced schema is `CountryPackEnvelopeSchema`. |
 
 The code-level registry lives in `packages/shared/src/schema-version.ts` and is exported by `@dude/shared`.
 

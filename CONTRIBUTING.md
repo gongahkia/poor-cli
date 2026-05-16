@@ -59,6 +59,7 @@ Maintainers may reject country-pack work that lacks licensing notes, source fres
 ## Related Docs
 
 - [Detailed contributor guide](./docs/contributing.md)
+- [Country-pack contract and contribution guide](./docs/country-packs.md)
 - [Maintainer governance](./docs/maintainer-governance.md)
 - [DCO sign-off policy](./docs/dco.md)
 - [Code of conduct](./CODE_OF_CONDUCT.md)

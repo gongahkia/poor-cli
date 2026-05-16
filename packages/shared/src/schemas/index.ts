@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { ZodSchema } from "zod";
 import { ValidationError } from "../errors.js";
+import { COUNTRY_PACK_SCHEMA_VERSION } from "../schema-version.js";
 
 const OutputFormatSchema = z.enum(["json", "markdown", "csv", "geojson"]);
 const IsoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -682,6 +683,60 @@ export const BriefArtifactSchema = z.object({
   riskFlags: z.array(RiskFlagSchema).optional(),
   matchConfidence: z.array(MatchConfidenceSchema).optional(),
   nextChecks: z.array(NextCheckSchema).optional(),
+}).strict();
+
+const CountryPackAuthSchema = z.object({
+  required: z.boolean(),
+  kind: z.enum(["none", "api_key", "oauth", "session", "partner_license"]),
+  envVars: z.array(z.string().min(1)),
+  notes: z.string().min(1),
+}).strict();
+
+const CountryPackLicensingSchema = z.object({
+  upstreamTermsUrl: z.string().url().nullable(),
+  redistribution: z.enum(["public_allowed", "attribution_required", "partner_required", "restricted", "unknown"]),
+  commercialUse: z.enum(["allowed", "partner_required", "restricted", "unknown"]),
+  attributionRequired: z.boolean(),
+  notes: z.string().min(1),
+}).strict();
+
+const CountryPackFreshnessSchema = z.object({
+  observedAt: z.string().min(1),
+  upstreamTimestamp: z.string().min(1).nullable(),
+  refreshCadence: z.string().min(1),
+  staleAfterDays: z.number().int().positive(),
+}).strict();
+
+const CountryPackToolSchema = z.object({
+  name: z.string().regex(/^[a-z]{2}_[a-z0-9_]+$/),
+  family: z.string().min(1),
+  purpose: z.string().min(1),
+  outputContract: z.string().min(1),
+  authRequired: z.boolean(),
+  publicDataLimits: z.array(BriefLimitSchema).min(1),
+}).strict();
+
+export const CountryPackEnvelopeSchema = z.object({
+  schemaVersion: z.literal(COUNTRY_PACK_SCHEMA_VERSION),
+  packId: z.string().regex(/^[a-z]{2}$/),
+  country: z.object({
+    name: z.string().min(1),
+    iso2: z.string().length(2),
+    iso3: z.string().length(3),
+  }).strict(),
+  status: z.enum(["proposal", "skeleton", "public_preview", "stable", "blocked"]),
+  summary: z.string().min(1),
+  auth: CountryPackAuthSchema,
+  licensing: CountryPackLicensingSchema,
+  freshness: CountryPackFreshnessSchema,
+  publicDataLimits: z.array(BriefLimitSchema).min(1),
+  tools: z.array(CountryPackToolSchema),
+  examples: z.array(z.object({
+    title: z.string().min(1),
+    input: z.record(z.unknown()),
+    expectedGaps: z.array(EvidenceGapSchema),
+  }).strict()),
+  contributionNotes: z.array(z.string().min(1)),
 }).strict();
 
 export const AcraEntitiesSchema = AcraEntitiesBaseSchema.refine(

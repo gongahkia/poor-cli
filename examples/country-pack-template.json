@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "country-pack/v1",
+  "packId": "xx",
+  "country": {
+    "name": "Example Country",
+    "iso2": "XX",
+    "iso3": "XXX"
+  },
+  "status": "skeleton",
+  "summary": "Template country pack for contributors. Replace all example values before proposing a real pack.",
+  "auth": {
+    "required": false,
+    "kind": "none",
+    "envVars": [],
+    "notes": "Document whether official sources require API keys, sessions, partner credentials, or no authentication."
+  },
+  "licensing": {
+    "upstreamTermsUrl": null,
+    "redistribution": "unknown",
+    "commercialUse": "unknown",
+    "attributionRequired": false,
+    "notes": "Document public-only, attribution, redistribution, commercial-use, caching, and partner-licence constraints."
+  },
+  "freshness": {
+    "observedAt": "2026-05-16T00:00:00Z",
+    "upstreamTimestamp": null,
+    "refreshCadence": "unknown until source review is complete",
+    "staleAfterDays": 90
+  },
+  "publicDataLimits": [
+    {
+      "code": "TEMPLATE_ONLY",
+      "message": "This template is not a live country pack and does not prove source availability."
+    }
+  ],
+  "tools": [
+    {
+      "name": "xx_registry_lookup",
+      "family": "registry",
+      "purpose": "Example bounded public registry lookup.",
+      "outputContract": "brief-envelope/v1",
+      "authRequired": false,
+      "publicDataLimits": [
+        {
+          "code": "NO_PRIVATE_OWNERSHIP_DATA",
+          "message": "Do not infer ownership, control, directors, or beneficial owners unless the official public source returns those fields."
+        }
+      ]
+    }
+  ],
+  "examples": [
+    {
+      "title": "No-match path",
+      "input": {
+        "query": "Example Pte Ltd"
+      },
+      "expectedGaps": [
+        {
+          "code": "NO_MATCH",
+          "message": "The source returned no exact public-registry match for the submitted query."
+        }
+      ]
+    }
+  ],
+  "contributionNotes": [
+    "Replace template identifiers with the target country code.",
+    "Add source terms before implementing adapters.",
+    "Add fixture-backed tests for successful, no-match, ambiguous-match, and upstream-failure paths."
+  ]
+}
