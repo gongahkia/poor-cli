@@ -2,6 +2,8 @@
 
 Dude's primary product workflow is client and counterparty customer due diligence for Singapore corp-secretarial, accounting, and compliance operations teams. The first-run job is not broad research; it is a bounded public-data dossier that can be saved into a client file, reviewed by an analyst, and exported with provenance, freshness, gaps, and limits intact.
 
+Vendor onboarding and procurement intelligence are documented as secondary lanes in [secondary-workflows.md](./secondary-workflows.md). They reuse the same evidence discipline but should not displace the CDD first-run flow.
+
 ## Target Workflow
 
 1. **New-client intake**
