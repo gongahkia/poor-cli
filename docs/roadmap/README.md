@@ -13,4 +13,5 @@ Product workflow docs:
 
 - [Primary corp-services CDD onboarding](../product/corp-services-cdd.md)
 - [Secondary vendor onboarding and procurement intelligence lanes](../product/secondary-workflows.md)
+- [ASEAN paid-data licensing assumptions](../country-packs/asean-licensing-assumptions.md)
 - [Vietnam country-pack feasibility](../country-packs/vietnam-feasibility.md)

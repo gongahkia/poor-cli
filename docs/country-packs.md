@@ -57,4 +57,5 @@ Country-pack contributions that omit provenance, freshness, gaps, limits, auth, 
 
 ## Feasibility Notes
 
+- [ASEAN paid-data licensing assumptions](./country-packs/asean-licensing-assumptions.md)
 - [Vietnam feasibility and community-contribution path](./country-packs/vietnam-feasibility.md)

@@ -4,6 +4,8 @@ Status: feasibility-only, lowest priority.
 
 Checked on: 2026-05-16.
 
+ASEAN-wide licensing assumptions are tracked in [asean-licensing-assumptions.md](./asean-licensing-assumptions.md).
+
 ## Sources Reviewed
 
 - [National Business Registration Portal](https://dangkykinhdoanh.gov.vn/en/pages/default.aspx), operated by Vietnam's business registration authorities.
