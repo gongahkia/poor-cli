@@ -6,7 +6,6 @@ import { ConfidenceSection } from "@/components/dossier/ConfidenceSection";
 import { EvidenceSection } from "@/components/dossier/EvidenceSection";
 import { GapsSection } from "@/components/dossier/GapsSection";
 import { HandoffSection } from "@/components/dossier/HandoffSection";
-import { LimitsSection } from "@/components/dossier/LimitsSection";
 import { NextChecksSection } from "@/components/dossier/NextChecksSection";
 import { ProvenanceSection } from "@/components/dossier/ProvenanceSection";
 import { RiskSection } from "@/components/dossier/RiskSection";
@@ -166,7 +165,6 @@ function DossierProblem({
         <>
           <GapsSection dossier={dossier} />
           <ProvenanceSection dossier={dossier} />
-          <LimitsSection dossier={dossier} />
         </>
       )}
     </>
@@ -449,7 +447,6 @@ function DossierSuccess({
       <HandoffSection dossier={dossier} />
       <GapsSection dossier={dossier} />
       <ProvenanceSection dossier={dossier} />
-      <LimitsSection dossier={dossier} />
       <GatewayStatus />
     </>
   );

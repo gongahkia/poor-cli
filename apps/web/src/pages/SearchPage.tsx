@@ -107,7 +107,7 @@ function SearchHelpDialog() {
             <li>Paste a Singapore client or counterparty company name or UEN</li>
             <li>Default company searches verify identity against ACRA first</li>
             <li>Sector registries run only when selected or inferred from official SSIC evidence</li>
-            <li>Every result shows searched modules, source provenance, freshness, gaps, and limits</li>
+            <li>Every result shows searched modules, source provenance, freshness, and gaps</li>
             <li>Use the dossier for analyst review, not legal, tax, credit, or licensed compliance advice</li>
           </ul>
         </section>
