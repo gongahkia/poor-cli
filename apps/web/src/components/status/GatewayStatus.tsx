@@ -251,11 +251,16 @@ function HealthRow({
           </div>
           <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">{detail}</p>
           {metadata.length > 0 ? (
-            <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+            <dl className="mt-2 flex flex-wrap gap-1.5">
               {metadata.map((item) => (
-                <div className="min-w-0 rounded-lg bg-muted/45 px-2.5 py-2" key={`${item.label}-${item.value}`}>
-                  <dt className="text-[10px] font-semibold uppercase tracking-normal text-muted-foreground">{item.label}</dt>
-                  <dd className="mt-0.5 break-words font-mono text-[11px] leading-4 text-foreground">{item.value}</dd>
+                <div
+                  className="inline-flex max-w-full items-baseline gap-1.5 rounded-full bg-muted/55 px-2.5 py-1"
+                  key={`${item.label}-${item.value}`}
+                >
+                  <dt className="shrink-0 text-[10px] font-semibold uppercase tracking-normal text-muted-foreground">
+                    {item.label}
+                  </dt>
+                  <dd className="min-w-0 break-words font-mono text-[11px] leading-4 text-foreground">{item.value}</dd>
                 </div>
               ))}
             </dl>
