@@ -78,6 +78,7 @@ Roadmap planning files live under [docs/roadmap](./docs/roadmap) so the reposito
 - [docs/privacy-dpo-readiness.md](./docs/privacy-dpo-readiness.md) drafts the PDPA notification, DPO, privacy, retention, and DPIA readiness pack for hosted beta.
 - [docs/data-processing-agreement-template.md](./docs/data-processing-agreement-template.md) provides the draft DPA template for hosted customer onboarding, subject to legal review.
 - [docs/soc2-type1-roadmap.md](./docs/soc2-type1-roadmap.md) records the SOC 2 Type I readiness gap analysis, control backlog, cost estimate, and buyer trigger.
+- [docs/mas-outsourcing-readiness.md](./docs/mas-outsourcing-readiness.md) maps hosted BCP, incident, subprocessor, data residency, and control gaps for FI-adjacent MAS outsourcing reviews.
 - [docs/product/hosted-onboarding.md](./docs/product/hosted-onboarding.md) links the hosted customer packet for sales and onboarding review.
 - [SECURITY.md](./SECURITY.md) explains private vulnerability reporting.
 

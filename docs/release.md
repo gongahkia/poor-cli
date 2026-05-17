@@ -101,6 +101,7 @@ Before a hosted paid release or beta:
 - ACRA-derived paid enrichment is blocked unless [ACRA licensing track](./acra-licensing-track.md) records an approved ACRA API Marketplace, authorised ISP, partner, or sub-licence path.
 - OneMap-backed redistribution is blocked until Developer Agreement rights are reviewed.
 - URA-backed workflows must preserve attribution, source freshness, and any API-page-specific limits.
+- FI-adjacent sales require the [MAS outsourcing readiness pack](./mas-outsourcing-readiness.md) and cannot proceed until hosted BCP, incident, subprocessor, data residency, and audit-log gaps are accepted or remediated.
 - Sales/onboarding packets must include [hosted-onboarding.md](./product/hosted-onboarding.md), the DPA, PDPA/DPO readiness pack, and commercial data use review.
 
 ## Publish Order

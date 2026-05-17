@@ -35,6 +35,7 @@ requireFile(resolve(root, "docs/commercial-data-use.md"));
 requireFile(resolve(root, "docs/privacy-dpo-readiness.md"));
 requireFile(resolve(root, "docs/data-processing-agreement-template.md"));
 requireFile(resolve(root, "docs/soc2-type1-roadmap.md"));
+requireFile(resolve(root, "docs/mas-outsourcing-readiness.md"));
 requireFile(resolve(root, "docs/product/hosted-onboarding.md"));
 requireFile(resolve(root, "docs/kpi-thresholds.md"));
 requireFile(resolve(root, "config/kpi-thresholds.example.json"));
@@ -236,10 +237,21 @@ ensureIncludes(resolve(root, "docs/soc2-type1-roadmap.md"), [
   "AICPA",
 ]);
 
+ensureIncludes(resolve(root, "docs/mas-outsourcing-readiness.md"), [
+  "Business Continuity And Operational Resilience",
+  "Incident Response",
+  "Subprocessors And Subcontracting",
+  "Data Residency And Customer Information",
+  "Required Controls Before FI-Adjacent Sales",
+  "Data Processing Agreement template",
+  "soc2-type1-roadmap.md",
+]);
+
 ensureIncludes(resolve(root, "docs/product/hosted-onboarding.md"), [
   "Data Processing Agreement template",
   "PDPA notification and DPO readiness pack",
   "SOC 2 Type I readiness roadmap",
+  "MAS outsourcing readiness pack",
   "Commercial data use review",
 ]);
 

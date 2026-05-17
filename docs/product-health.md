@@ -27,6 +27,7 @@ This page is the public entrypoint for product-health, governance, and adoption 
 - [PDPA notification and DPO readiness](./privacy-dpo-readiness.md) — hosted beta privacy notice, DPO contact, retention, and DPIA checklist.
 - [Data Processing Agreement template](./data-processing-agreement-template.md) — draft hosted customer DPA requiring legal review.
 - [SOC 2 Type I readiness roadmap](./soc2-type1-roadmap.md) — hosted assurance gap analysis, control backlog, cost estimate, and buyer trigger.
+- [MAS outsourcing readiness pack](./mas-outsourcing-readiness.md) — BCP, incident response, subprocessors, data residency, and FI-adjacent control gaps.
 - [KPI thresholds](./kpi-thresholds.md) — dashboard policy and breach handling.
 - [Quarterly product health template](./quarterly-product-health-template.md) — recurring review format.
 - [Deprecation policy](./deprecation-policy.md) — migration and removal rules.
