@@ -1,6 +1,6 @@
 import { ChangeEvent, type KeyboardEvent, type ReactNode, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Bell, ChevronRight, ClipboardList, Copy, FolderSearch, History, RotateCw } from "lucide-react";
+import { Bell, ChevronRight, ClipboardList, Copy, ExternalLink, FolderSearch, History, Pencil, RotateCw, Trash2 } from "lucide-react";
 
 import { useToast } from "@/components/notifications/ToastProvider";
 import { Button } from "@/components/ui/button";
@@ -8,12 +8,14 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { addWatchlistItem, appendAuditEvent, listAuditEvents, listDossierRecords, loadWorkspaceStore, recordWatchlistCheck, saveWorkspaceStore } from "@/lib/workspace-store";
-import type { WorkspaceAuditEvent, WorkspaceAuditEventType } from "@/lib/workspace-store";
+import type { WorkspaceAuditEvent, WorkspaceAuditEventType, WorkspaceDossierRecord, WorkspaceFolder } from "@/lib/workspace-store";
 import { resolveActiveSession } from "@/lib/workspace";
 
 const DEFAULT_WATCHLIST_MODULES = ["acra", "gebiz", "bca", "boa", "cea", "hsa", "hlb"];
@@ -21,6 +23,7 @@ const DEFAULT_WATCHLIST_MODULES = ["acra", "gebiz", "bca", "boa", "cea", "hsa", 
 const auditEventLabels: Record<WorkspaceAuditEventType, string> = {
   search: "Search",
   dossier_generation: "Dossier generation",
+  dossier_update: "Dossier update",
   memo_generation: "Memo generation",
   export: "Export",
   watchlist_change: "Watchlist change",
@@ -34,6 +37,20 @@ const formatJson = (value: unknown): string => JSON.stringify(value, null, 2) ??
 
 const keyActivatesRow = (event: KeyboardEvent<HTMLTableRowElement>): boolean =>
   event.key === "Enter" || event.key === " ";
+
+const getDossierRoute = (record: WorkspaceDossierRecord): string =>
+  `/c/${encodeURIComponent(record.uen ?? record.identifier)}`;
+
+const getDossierLabel = (record: WorkspaceDossierRecord): string =>
+  record.entityName ?? record.uen ?? record.identifier;
+
+type DossierEditForm = {
+  title: string;
+  entityName: string;
+  uen: string;
+  identifier: string;
+  folderId: string;
+};
 
 export function WorkspacePage() {
   return (
@@ -62,6 +79,14 @@ export function WorkspacePanel({
   const [folderId, setFolderId] = useState<string>("all");
   const [eventType, setEventType] = useState<WorkspaceAuditEventType | "all">("all");
   const [selectedAuditEvent, setSelectedAuditEvent] = useState<WorkspaceAuditEvent | null>(null);
+  const [editingDossier, setEditingDossier] = useState<WorkspaceDossierRecord | null>(null);
+  const [dossierEditForm, setDossierEditForm] = useState<DossierEditForm>({
+    title: "",
+    entityName: "",
+    uen: "",
+    identifier: "",
+    folderId: "inbox",
+  });
   const [watchIdentifier, setWatchIdentifier] = useState("");
   const [channel, setChannel] = useState<"in_app" | "email" | "webhook">("in_app");
   const session = resolveActiveSession();
@@ -121,6 +146,105 @@ export function WorkspacePanel({
     notify({ title: "Watchlist check queued", tone: "info" });
   };
 
+  const handleCopyDossierLink = async (record: WorkspaceDossierRecord) => {
+    const route = getDossierRoute(record);
+    const url = typeof window === "undefined" ? route : new URL(route, window.location.origin).toString();
+    try {
+      await navigator.clipboard.writeText(url);
+      notify({ title: "Dossier link copied", description: getDossierLabel(record), tone: "success" });
+    } catch {
+      notify({ title: "Copy failed", description: "The browser could not write the dossier link to the clipboard.", tone: "error" });
+    }
+  };
+
+  const startEditingDossier = (record: WorkspaceDossierRecord) => {
+    setEditingDossier(record);
+    setDossierEditForm({
+      title: record.title,
+      entityName: record.entityName ?? "",
+      uen: record.uen ?? "",
+      identifier: record.identifier,
+      folderId: record.folderId,
+    });
+  };
+
+  const handleSaveDossierEdit = () => {
+    if (editingDossier === null) return;
+
+    const identifier = dossierEditForm.identifier.trim();
+    if (identifier === "") {
+      notify({ title: "Identifier required", description: "Saved dossiers need a company name or UEN.", tone: "error" });
+      return;
+    }
+
+    const updatedAt = new Date().toISOString();
+    const nextStore = {
+      ...store,
+      dossiers: store.dossiers.map((record) => {
+        if (record.id !== editingDossier.id || record.workspaceId !== session.workspaceId) {
+          return record;
+        }
+        return {
+          ...record,
+          title: dossierEditForm.title.trim() || record.title,
+          entityName: dossierEditForm.entityName.trim() || null,
+          uen: dossierEditForm.uen.trim() || null,
+          identifier,
+          folderId: dossierEditForm.folderId,
+          updatedAt,
+          updatedBy: session.actorId,
+        };
+      }),
+    };
+    const audited = appendAuditEvent(nextStore, session, {
+      eventType: "dossier_update",
+      permission: "dossier:write",
+      input: { recordId: editingDossier.id, before: {
+        title: editingDossier.title,
+        entityName: editingDossier.entityName,
+        uen: editingDossier.uen,
+        identifier: editingDossier.identifier,
+        folderId: editingDossier.folderId,
+      } },
+      output: { status: "updated", recordId: editingDossier.id, after: {
+        title: dossierEditForm.title.trim() || editingDossier.title,
+        entityName: dossierEditForm.entityName.trim() || null,
+        uen: dossierEditForm.uen.trim() || null,
+        identifier,
+        folderId: dossierEditForm.folderId,
+      } },
+      metadata: { action: "edit_saved_dossier" },
+    });
+    commitStore(audited);
+    setEditingDossier(null);
+    notify({ title: "Dossier updated", description: identifier, tone: "success" });
+  };
+
+  const handleDeleteDossier = (record: WorkspaceDossierRecord) => {
+    const label = getDossierLabel(record);
+    if (typeof window !== "undefined" && !window.confirm(`Delete saved dossier for ${label}? This only removes it from the workspace library.`)) {
+      return;
+    }
+
+    const nextStore = {
+      ...store,
+      dossiers: store.dossiers.filter((savedRecord) => (
+        savedRecord.id !== record.id || savedRecord.workspaceId !== session.workspaceId
+      )),
+    };
+    const audited = appendAuditEvent(nextStore, session, {
+      eventType: "dossier_update",
+      permission: "dossier:write",
+      input: { recordId: record.id, identifier: record.identifier, uen: record.uen },
+      output: { status: "deleted", recordId: record.id },
+      provenance: record.provenance,
+      freshness: record.freshness,
+      metadata: { action: "delete_saved_dossier" },
+    });
+    commitStore(audited);
+    notify({ title: "Dossier removed", description: label, tone: "success" });
+  };
+
   return (
       <section className={`w-full space-y-6 ${className ?? ""}`}>
         <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -166,7 +290,7 @@ export function WorkspacePanel({
                   <th className="w-32 px-3 py-2">UEN</th>
                   <th className="w-36 px-3 py-2">Folder</th>
                   <th className="w-44 px-3 py-2">Updated</th>
-                  <th className="w-28 px-3 py-2">Actions</th>
+                  <th className="w-44 px-3 py-2">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -180,9 +304,55 @@ export function WorkspacePanel({
                     <td className="px-3 py-3">{folders.find((folder) => folder.id === record.folderId)?.name ?? "Inbox"}</td>
                     <td className="px-3 py-3 text-muted-foreground">{new Date(record.updatedAt).toLocaleString()}</td>
                     <td className="px-3 py-3">
-                      <Link className="font-medium underline-offset-4 hover:underline" to={`/c/${encodeURIComponent(record.uen ?? record.identifier)}`}>
-                        Open
-                      </Link>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          asChild
+                          className="h-8 w-8"
+                          size="icon"
+                          title={`Open dossier for ${getDossierLabel(record)}`}
+                          variant="ghost"
+                        >
+                          <Link
+                            aria-label={`Open dossier for ${getDossierLabel(record)}`}
+                            to={getDossierRoute(record)}
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </Link>
+                        </Button>
+                        <Button
+                          aria-label={`Copy dossier link for ${getDossierLabel(record)}`}
+                          className="h-8 w-8"
+                          onClick={() => void handleCopyDossierLink(record)}
+                          size="icon"
+                          title={`Copy dossier link for ${getDossierLabel(record)}`}
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          aria-label={`Edit saved dossier for ${getDossierLabel(record)}`}
+                          className="h-8 w-8"
+                          onClick={() => startEditingDossier(record)}
+                          size="icon"
+                          title={`Edit saved dossier for ${getDossierLabel(record)}`}
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          aria-label={`Delete saved dossier for ${getDossierLabel(record)}`}
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={() => handleDeleteDossier(record)}
+                          size="icon"
+                          title={`Delete saved dossier for ${getDossierLabel(record)}`}
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -280,6 +450,7 @@ export function WorkspacePanel({
               <option value="all">All events</option>
               <option value="search">Search</option>
               <option value="dossier_generation">Dossier generation</option>
+              <option value="dossier_update">Dossier update</option>
               <option value="memo_generation">Memo generation</option>
               <option value="export">Export</option>
               <option value="watchlist_change">Watchlist change</option>
@@ -346,6 +517,20 @@ export function WorkspacePanel({
               setSelectedAuditEvent(null);
             }
           }}
+        />
+
+        <DossierEditDialog
+          folders={folders}
+          form={dossierEditForm}
+          onFormChange={setDossierEditForm}
+          onOpenChange={(open) => {
+            if (!open) {
+              setEditingDossier(null);
+            }
+          }}
+          onSave={handleSaveDossierEdit}
+          open={editingDossier !== null}
+          record={editingDossier}
         />
 
         {alerts.length === 0 ? null : (
@@ -464,6 +649,113 @@ function AuditEventDialog({
             </div>
           </div>
         )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DossierEditDialog({
+  folders,
+  form,
+  onFormChange,
+  onOpenChange,
+  onSave,
+  open,
+  record,
+}: {
+  folders: WorkspaceFolder[];
+  form: DossierEditForm;
+  onFormChange: (form: DossierEditForm) => void;
+  onOpenChange: (open: boolean) => void;
+  onSave: () => void;
+  open: boolean;
+  record: WorkspaceDossierRecord | null;
+}) {
+  const updateField = <Key extends keyof DossierEditForm>(
+    key: Key,
+    value: DossierEditForm[Key],
+  ) => onFormChange({ ...form, [key]: value });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-xl">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSave();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Edit saved dossier</DialogTitle>
+            <DialogDescription>
+              Update workspace metadata only. Official registry evidence inside the dossier is unchanged.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="mt-5 grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="dossier-edit-title">Record title</Label>
+              <Input
+                id="dossier-edit-title"
+                onChange={(event) => updateField("title", event.target.value)}
+                placeholder="Business Dossier"
+                value={form.title}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="dossier-edit-entity">Display entity name</Label>
+              <Input
+                id="dossier-edit-entity"
+                onChange={(event) => updateField("entityName", event.target.value)}
+                placeholder={record?.entityName ?? "Company name"}
+                value={form.entityName}
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="dossier-edit-uen">UEN</Label>
+                <Input
+                  id="dossier-edit-uen"
+                  onChange={(event) => updateField("uen", event.target.value)}
+                  placeholder="197700546G"
+                  value={form.uen}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="dossier-edit-identifier">Lookup identifier</Label>
+                <Input
+                  id="dossier-edit-identifier"
+                  onChange={(event) => updateField("identifier", event.target.value)}
+                  placeholder="Company name or UEN"
+                  required
+                  value={form.identifier}
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="dossier-edit-folder">Folder</Label>
+              <select
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                id="dossier-edit-folder"
+                onChange={(event) => updateField("folderId", event.target.value)}
+                value={form.folderId}
+              >
+                {folders.map((folder) => (
+                  <option key={folder.id} value={folder.id}>{folder.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <DialogFooter className="mt-6">
+            <Button onClick={() => onOpenChange(false)} type="button" variant="outline">
+              Cancel
+            </Button>
+            <Button type="submit">
+              Save changes
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

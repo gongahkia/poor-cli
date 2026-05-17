@@ -40,6 +40,7 @@ export type WorkspaceDossierRecord = {
 export type WorkspaceAuditEventType =
   | "search"
   | "dossier_generation"
+  | "dossier_update"
   | "memo_generation"
   | "export"
   | "watchlist_change"
