@@ -18,6 +18,7 @@
     "schema:check": "node ./scripts/check-schema-governance.mjs",
     "governance:check": "node ./scripts/check-governance.mjs",
     "diagnostics": "node ./scripts/dev-diagnostics.mjs",
+    "registry:metadata:check": "node ./scripts/check-registry-metadata.mjs",
     "housing:rules:check": "node ./scripts/check-housing-rules-freshness.mjs",
     "deployment:web:check": "node ./scripts/check-web-deployment.mjs",
     "browser-extension:check": "node ./scripts/check-browser-extension-prototype.mjs",
