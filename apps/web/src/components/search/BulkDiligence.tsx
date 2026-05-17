@@ -155,7 +155,7 @@ export function BulkDiligence() {
 
       <div className="mt-4 grid gap-3">
         <textarea
-          className="min-h-36 resize-y rounded-[20px] border border-border bg-muted/25 px-4 py-3 text-base leading-6 text-foreground shadow-inner outline-none transition focus:border-ring focus:bg-background focus-visible:ring-2 focus-visible:ring-ring/15"
+          className="min-h-36 resize-y rounded-[20px] border border-border bg-muted/25 px-4 py-3 text-base leading-6 text-foreground shadow-inner outline-none transition focus:border-ring focus:bg-background focus-visible:ring-0"
           onChange={(event) => setInput(event.target.value)}
           placeholder={"03591300B\nDBS BANK"}
           value={input}

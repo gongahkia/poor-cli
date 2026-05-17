@@ -69,7 +69,7 @@ function SearchToolsDialog() {
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-5xl overflow-y-auto rounded-[28px] border-border bg-background p-1 shadow-2xl">
-        <div className="rounded-[24px] border border-border/80 bg-muted/35 p-5 sm:p-6">
+        <div className="rounded-[24px] bg-muted/35 p-5 sm:p-6">
           <DialogHeader className="pr-10">
             <DialogTitle>Workspace tools</DialogTitle>
             <DialogDescription>

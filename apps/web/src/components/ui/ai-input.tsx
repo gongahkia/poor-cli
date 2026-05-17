@@ -114,8 +114,8 @@ export function AiInput({
 
   return (
     <div className="w-full">
-      <div className="relative rounded-[24px] border border-border bg-background p-1 shadow-sm transition-shadow focus-within:shadow-md">
-        <div className="relative overflow-hidden rounded-[20px] border border-border/80 bg-muted/35">
+      <div className="relative rounded-[24px] bg-background shadow-sm transition-shadow focus-within:shadow-md">
+        <div className="relative overflow-hidden rounded-[24px] border border-border bg-muted/35">
           <div
             className="overflow-y-auto"
             style={{ maxHeight: `${MAX_HEIGHT}px` }}
