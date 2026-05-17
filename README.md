@@ -90,6 +90,7 @@ Roadmap planning files live under [docs/roadmap](./docs/roadmap) so the reposito
 - [docs/accreditation-track.md](./docs/accreditation-track.md) inventories GeBIZ, SGTech, SMEs Go Digital, IMDA Accreditation, SecureTech, and AGIL/Green Lane ambiguity for market-access readiness.
 - [docs/diligence-case-study-content-engine.md](./docs/diligence-case-study-content-engine.md) defines the SG diligence case-study format, editorial calendar, review guardrails, and draft-ready examples.
 - [docs/certified-consulting-partner-program.md](./docs/certified-consulting-partner-program.md) defines the future partner profile, training, certification, rev-share, onboarding docs, candidate targets, and pilot gate.
+- [docs/professional-body-event-outreach-plan.md](./docs/professional-body-event-outreach-plan.md) defines ACCA, ISCA, SCCA, and SAL event outreach targets, abstract, owner map, tracker, and deadlines/follow-ups.
 - [docs/product/hosted-onboarding.md](./docs/product/hosted-onboarding.md) links the hosted customer packet for sales and onboarding review.
 - [SECURITY.md](./SECURITY.md) explains private vulnerability reporting.
 
