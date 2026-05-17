@@ -286,9 +286,9 @@ export function WorkspacePanel({
               <option value="bulk_run">Bulk run</option>
             </select>
           </div>
-          <div className="mt-4 overflow-x-auto rounded-lg border border-border">
+          <div className="mt-4 max-h-[60vh] overflow-auto rounded-lg border border-border">
             <table className="min-w-[840px] w-full table-fixed text-left text-sm">
-              <thead className="bg-muted text-xs uppercase text-muted-foreground">
+              <thead className="sticky top-0 z-10 bg-muted text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="w-44 px-3 py-2">Time</th>
                   <th className="w-40 px-3 py-2">Event</th>
