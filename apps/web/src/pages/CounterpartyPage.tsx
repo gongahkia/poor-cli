@@ -38,6 +38,7 @@ import {
 } from "@/lib/dossier";
 import { exportDossierPdf } from "@/lib/export/pdf";
 import { exportPdpaReportPdf } from "@/lib/export/pdpa";
+import { persistAuditEvent, persistDossierRecord } from "@/lib/workspace-store";
 import type { AnalystMemoResponse } from "@/types/analyst-memo";
 import type { BusinessDossier, BusinessDossierModule } from "@/types/dossier";
 
@@ -220,6 +221,21 @@ function DossierSuccess({
   }, [initialDossier]);
 
   useEffect(() => {
+    persistDossierRecord({ identifier, dossier });
+    persistAuditEvent({
+      eventType: "dossier_generation",
+      input: { identifier },
+      output: dossier,
+      provenance: dossier.provenance,
+      freshness: dossier.freshness,
+      metadata: {
+        matchedModules: dossier.records.resolution?.matchedModules ?? [],
+        gapCount: dossier.gaps.length,
+      },
+    });
+  }, [dossier, identifier]);
+
+  useEffect(() => {
     return () => {
       if (copiedTimer.current !== null) {
         window.clearTimeout(copiedTimer.current);
@@ -325,6 +341,27 @@ function DossierSuccess({
     }, { replace: true });
   }, [location.pathname, location.search, memoState.status, navigate]);
 
+  useEffect(() => {
+    if (memoState.status === "loading") return;
+    persistDossierRecord({
+      identifier,
+      dossier,
+      analystMemo: memoState.status === "ready" || memoState.status === "unavailable" ? memoState.memo : undefined,
+      webPresence: webPresenceState.status === "success" ? webPresenceState.presence : undefined,
+    });
+    persistAuditEvent({
+      eventType: "memo_generation",
+      input: { identifier, memoState: memoState.status },
+      output: memoState,
+      provenance: dossier.provenance,
+      freshness: dossier.freshness,
+      metadata: {
+        providerStatus: memoState.status,
+        webPresenceStatus: webPresenceState.status,
+      },
+    });
+  }, [dossier, identifier, memoState, webPresenceState]);
+
   const handleExportPdf = async () => {
     setIsExporting(true);
     setExportError(null);
@@ -334,6 +371,14 @@ function DossierSuccess({
         filename: `dude-diligence-${sanitizeFilenamePart(identifier)}-${today}.pdf`,
         ...(memoState.status === "ready" ? { analystMemo: memoState.memo } : {}),
         ...(webPresenceState.status === "success" ? { webPresence: webPresenceState.presence } : {}),
+      });
+      persistAuditEvent({
+        eventType: "export",
+        permission: "export:run",
+        input: { identifier, format: "pdf" },
+        output: { filename: `dude-diligence-${sanitizeFilenamePart(identifier)}-${today}.pdf` },
+        provenance: dossier.provenance,
+        freshness: dossier.freshness,
       });
       notify({ title: "PDF export started", description: dossier.title, tone: "success" });
     } catch (error) {
@@ -348,6 +393,14 @@ function DossierSuccess({
   const handleExportCsv = async () => {
     try {
       await exportSingleDossierCsv(dossier);
+      persistAuditEvent({
+        eventType: "export",
+        permission: "export:run",
+        input: { identifier, format: "csv" },
+        output: { title: dossier.title },
+        provenance: dossier.provenance,
+        freshness: dossier.freshness,
+      });
       notify({ title: "CSV export started", description: dossier.title, tone: "success" });
     } catch (error) {
       notify({
@@ -364,6 +417,14 @@ function DossierSuccess({
         dossier,
         ...(memoState.status === "ready" ? { analystMemo: memoState.memo } : {}),
         ...(webPresenceState.status === "success" ? { webPresence: webPresenceState.presence } : {}),
+      });
+      persistAuditEvent({
+        eventType: "export",
+        permission: "export:run",
+        input: { identifier, format: "json" },
+        output: { title: dossier.title },
+        provenance: dossier.provenance,
+        freshness: dossier.freshness,
       });
       notify({ title: "JSON export started", description: dossier.title, tone: "success" });
     } catch (error) {
@@ -382,6 +443,14 @@ function DossierSuccess({
       await exportPdpaReportPdf(dossier, {
         filename: `dude-pdpa-checklist-${sanitizeFilenamePart(identifier)}-${today}.pdf`,
         reviewedItemIds,
+      });
+      persistAuditEvent({
+        eventType: "export",
+        permission: "export:run",
+        input: { identifier, format: "pdpa_pdf", reviewedItemIds },
+        output: { filename: `dude-pdpa-checklist-${sanitizeFilenamePart(identifier)}-${today}.pdf` },
+        provenance: dossier.provenance,
+        freshness: dossier.freshness,
       });
       notify({ title: "PDPA report export started", description: dossier.title, tone: "success" });
     } catch (error) {
@@ -433,6 +502,14 @@ function DossierSuccess({
       });
       const nextDossier = await callTool<BusinessDossier>("sg_business_dossier", followUpInput);
       setDossier(nextDossier);
+      persistAuditEvent({
+        eventType: "search",
+        input: followUpInput,
+        output: nextDossier,
+        provenance: nextDossier.provenance,
+        freshness: nextDossier.freshness,
+        metadata: { module: request.module },
+      });
       notify({
         title: `${request.module.toUpperCase()} follow-up complete`,
         description: "Dossier evidence, provenance, freshness, gaps, and limits were refreshed.",

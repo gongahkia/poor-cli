@@ -120,6 +120,7 @@ export type BusinessDossierRecords = {
   hsaLicensedPharmacies?: Record<string, unknown>[];
   hsaHealthProductLicensees?: Record<string, unknown>[];
   hlbHotels?: Record<string, unknown>[];
+  externalDiligence?: Record<string, unknown>[];
 };
 
 export type BusinessDossier = BriefArtifact;

@@ -6,6 +6,7 @@ import { DiligenceSearch } from "@/components/search/DiligenceSearch";
 import { ShortlistPanel } from "@/components/search/ShortlistPanel";
 import { GatewayStatus } from "@/components/status/GatewayStatus";
 import { Button } from "@/components/ui/button";
+import { WorkspaceBadge } from "@/components/workspace/WorkspaceBadge";
 import {
   Dialog,
   DialogContent,
@@ -20,6 +21,7 @@ export function SearchPage() {
   return (
     <main className="relative min-h-dvh bg-background px-6">
       <div className="absolute right-4 top-4 flex items-center gap-2 sm:right-6 sm:top-6">
+        <WorkspaceBadge />
         <SystemStatusDialog />
         <BackendLogsDialog />
         <SearchHelpDialog />
