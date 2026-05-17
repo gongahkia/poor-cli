@@ -1,5 +1,6 @@
 import { Activity, CircleHelp } from "lucide-react";
 
+import { BackendLogsDialog } from "@/components/debug/BackendLogsDialog";
 import { BulkDiligence } from "@/components/search/BulkDiligence";
 import { DiligenceSearch } from "@/components/search/DiligenceSearch";
 import { ShortlistPanel } from "@/components/search/ShortlistPanel";
@@ -20,6 +21,7 @@ export function SearchPage() {
     <main className="relative min-h-screen bg-background px-6 py-12 sm:py-16">
       <div className="absolute right-4 top-4 flex items-center gap-2 sm:right-6 sm:top-6">
         <SystemStatusDialog />
+        <BackendLogsDialog />
         <SearchHelpDialog />
       </div>
       <section className="mx-auto flex w-full max-w-5xl flex-col gap-8">

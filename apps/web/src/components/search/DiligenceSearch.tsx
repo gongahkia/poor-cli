@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { useToast } from "@/components/notifications/ToastProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -27,6 +28,7 @@ export function DiligenceSearch() {
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { notify } = useToast();
   const isSubmitting = status === "submitting";
   const trimmedQuery = query.trim();
   const canLookupSuggestions = trimmedQuery.length >= 2;
@@ -94,6 +96,11 @@ export function DiligenceSearch() {
     if (!identifier) {
       setStatus("error");
       setError("Enter a client or counterparty company name or UEN.");
+      notify({
+        title: "Search needs an identifier",
+        description: "Enter a Singapore company name or UEN before opening a dossier.",
+        tone: "warning",
+      });
       return;
     }
 
@@ -101,10 +108,13 @@ export function DiligenceSearch() {
     setError(null);
 
     try {
+      notify({ title: "Opening dossier", description: identifier, tone: "info" });
       navigate(`/c/${encodeURIComponent(identifier)}`);
     } catch (err) {
       setStatus("error");
-      setError(err instanceof Error ? err.message : "Navigation failed.");
+      const message = err instanceof Error ? err.message : "Navigation failed.";
+      setError(message);
+      notify({ title: "Search failed", description: message, tone: "error" });
     }
   };
 
@@ -112,6 +122,7 @@ export function DiligenceSearch() {
 
   const handleSuggestionClick = (suggestion: ApiSearchSuggestion) => {
     setQuery(suggestion.entityName);
+    notify({ title: "Opening official match", description: `${suggestion.entityName} · ${suggestion.uen}`, tone: "info" });
     navigate(`/c/${encodeURIComponent(suggestion.uen)}`);
   };
 

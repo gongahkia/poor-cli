@@ -1,6 +1,7 @@
 import { ChangeEvent, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
+import { useToast } from "@/components/notifications/ToastProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { parseBulkInput } from "@/lib/bulk";
@@ -55,6 +56,7 @@ export function BulkDiligence() {
   const [filter, setFilter] = useState<FilterMode>("all");
   const [sort, setSort] = useState<SortMode>("risk");
   const parsed = useMemo(() => parseBulkInput(input), [input]);
+  const { notify } = useToast();
   const visibleRows = useMemo(
     () => sortRows(filterRows(result?.rows ?? [], filter), sort),
     [filter, result?.rows, sort],
@@ -64,6 +66,7 @@ export function BulkDiligence() {
     const file = event.target.files?.[0];
     if (file === undefined) return;
     setInput(await file.text());
+    notify({ title: "File loaded", description: file.name, tone: "success" });
   };
 
   const runBulk = async () => {
@@ -76,9 +79,36 @@ export function BulkDiligence() {
       });
       setResult(response);
       setStatus("idle");
+      notify({
+        title: "Bulk check complete",
+        description: `${response.executedCount} rows executed; ${response.parseErrors.length} parse errors.`,
+        tone: response.parseErrors.length > 0 ? "warning" : "success",
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Bulk check failed.");
+      const message = err instanceof Error ? err.message : "Bulk check failed.";
+      setError(message);
       setStatus("error");
+      notify({ title: "Bulk check failed", description: message, tone: "error" });
+    }
+  };
+
+  const exportCsv = () => {
+    try {
+      if (result === null) return;
+      exportBulkCsv(result.rows, result.generatedAt);
+      notify({ title: "CSV export started", description: `${result.rows.length} rows.`, tone: "success" });
+    } catch (error) {
+      notify({ title: "CSV export failed", description: error instanceof Error ? error.message : "Unable to export CSV.", tone: "error" });
+    }
+  };
+
+  const exportJson = () => {
+    try {
+      if (result === null) return;
+      exportBulkJson(result.rows, result.generatedAt);
+      notify({ title: "JSON export started", description: `${result.rows.length} rows.`, tone: "success" });
+    } catch (error) {
+      notify({ title: "JSON export failed", description: error instanceof Error ? error.message : "Unable to export JSON.", tone: "error" });
     }
   };
 
@@ -158,10 +188,10 @@ export function BulkDiligence() {
               </select>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => exportBulkCsv(result.rows, result.generatedAt)} type="button" variant="outline">
+              <Button onClick={exportCsv} type="button" variant="outline">
                 Export CSV
               </Button>
-              <Button onClick={() => exportBulkJson(result.rows, result.generatedAt)} type="button" variant="outline">
+              <Button onClick={exportJson} type="button" variant="outline">
                 Export JSON
               </Button>
             </div>
@@ -211,6 +241,7 @@ export function BulkDiligence() {
                             onClick={() => {
                               if (row.dossier !== undefined) {
                                 saveShortlistEntry(buildDossierExportSummary(row.dossier));
+                                notify({ title: "Saved to shortlist", description: row.entity ?? row.input, tone: "success" });
                               }
                             }}
                             type="button"

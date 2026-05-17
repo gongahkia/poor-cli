@@ -26,6 +26,8 @@ Relevant env vars:
 - `SG_APIS_KPI_THRESHOLDS_PATH`
 - `SG_APIS_STATE_DIR`
 - `SG_APIS_ARTIFACT_DB_PATH`
+- `DUDE_DEBUG_LOGS` / `SG_APIS_DEBUG_LOGS`
+- `DUDE_DEBUG_LOG_PATH` / `SG_APIS_DEBUG_LOG_PATH`
 - `SG_APIS_AUDIT_MAX_ENTRIES`
 - `SG_APIS_AUDIT_RETENTION_SEC`
 - `SG_APIS_OIDC_ISSUER`
@@ -176,6 +178,8 @@ Runtime config file: `~/.sg-apis/config.json`
 
 Override any default via environment variables:
 - `SG_APIS_LOG_LEVEL` — debug, info, warn, error
+- `DUDE_DEBUG_LOGS` or `SG_APIS_DEBUG_LOGS` — set to `1`, `true`, `yes`, or `on` to store local redacted gateway logs and expose `GET /api/v1/debug/logs`; this also enables debug-level logging unless `SG_APIS_LOG_LEVEL` is explicitly set
+- `DUDE_DEBUG_LOG_PATH` or `SG_APIS_DEBUG_LOG_PATH` — optional absolute path for the debug NDJSON log file; defaults to `$SG_APIS_STATE_DIR/debug/rest-gateway.ndjson`
 - `SG_APIS_CACHE_TTL_DAILY` — override daily TTL in seconds
 - `TINYFISH_API_KEY` — optional server-side key for TinyFish Search UEN discovery hints; official registry rows remain the evidence source
 - `DUDE_AI_PROVIDER` — optional analyst memo provider, defaults to `openai`; supported values are `openai`, `anthropic`, and `google`
@@ -187,6 +191,7 @@ The Dude web app expects secrets only on the REST gateway process. Do not expose
 Operational readiness endpoints:
 
 - `GET /api/v1/health` returns gateway status, enabled tool count, ACRA route availability, and whether TinyFish Search is configured.
+- `GET /api/v1/debug/logs` returns recent local backend log entries only when debug logging is enabled.
 - `GET /api/v1/dude/search-suggestions?q=<term>` returns bounded ACRA suggestions for the web search box.
 - `GET /api/v1/dude/web-presence?query=<entity>` returns TinyFish web discovery results when `TINYFISH_API_KEY` is configured. These results are not registry evidence.
 - `POST /api/v1/dude/memo` returns a grounded analyst memo or a structured unavailable/error state. It accepts a dossier envelope or an identifier to resolve through `sg_business_dossier`.

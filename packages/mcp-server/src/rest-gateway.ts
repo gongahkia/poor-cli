@@ -14,6 +14,7 @@ import {
   recordGatewayRequest,
   recordUpstreamFailures,
 } from "./gateway/metrics.js";
+import { initDebugLogStore } from "./gateway/debug-log-store.js";
 import { getGatewayHealthPayload } from "./gateway/readiness.js";
 import {
   buildRateLimitResponse,
@@ -27,6 +28,7 @@ import { isToolEnabled } from "./tools/tool-metadata.js";
 const PORT = Number(process.env["PORT"] ?? 3000);
 const DEFAULT_DEV_WEB_ORIGIN = "http://localhost:5173";
 const gatewayStartedAt = new Date();
+const debugLogStore = initDebugLogStore();
 const logger = createLogger("rest-gateway");
 import { resolveEnabledToolsets } from "./tools/toolset-profiles.js";
 
@@ -47,7 +49,13 @@ const allowedCorsOrigins = new Set(
     .filter(Boolean),
 );
 
-logger.info("gateway started", { toolsets: [...enabledToolsets], tools: enabledTools.length, total: ALL_TOOL_DEFINITIONS.length });
+logger.info("gateway started", {
+  toolsets: [...enabledToolsets],
+  tools: enabledTools.length,
+  total: ALL_TOOL_DEFINITIONS.length,
+  debugLogsEnabled: debugLogStore.enabled,
+  ...(debugLogStore.logPath === undefined ? {} : { debugLogPath: debugLogStore.logPath }),
+});
 
 const MAX_SEARCH_QUERY_LENGTH = 96;
 const MAX_WEB_PRESENCE_QUERY_LENGTH = 160;
@@ -360,6 +368,26 @@ const server = createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname === "/api/v1/metrics") {
     requestLogger.info("metrics snapshot");
     res.end(JSON.stringify(getGatewayMetricsSnapshot({ startedAt: gatewayStartedAt })));
+    return;
+  }
+
+  // GET /api/v1/debug/logs
+  if (req.method === "GET" && url.pathname === "/api/v1/debug/logs") {
+    const limitParam = Number(url.searchParams.get("limit") ?? "");
+    const level = url.searchParams.get("level")?.trim().toLowerCase();
+    const snapshot = debugLogStore.getSnapshot(Number.isFinite(limitParam) && limitParam > 0 ? limitParam : undefined);
+    const entries = level === undefined || level === ""
+      ? snapshot.entries
+      : snapshot.entries.filter((entry) => entry.level === level);
+    requestLogger.info("debug log snapshot", {
+      enabled: snapshot.enabled,
+      returnedEntries: entries.length,
+      totalEntries: snapshot.totalEntries,
+    });
+    sendJson(res, 200, {
+      ...snapshot,
+      entries,
+    });
     return;
   }
 

@@ -14,11 +14,17 @@ import {
 
 describe("config runtime accessors", () => {
   const originalHome = process.env["HOME"];
+  const originalDudeDebugLogs = process.env["DUDE_DEBUG_LOGS"];
+  const originalSgApisDebugLogs = process.env["SG_APIS_DEBUG_LOGS"];
+  const originalSgApisLogLevel = process.env["SG_APIS_LOG_LEVEL"];
   let tempHome: string;
 
   beforeEach(() => {
     tempHome = mkdtempSync(join(tmpdir(), "sg-apis-config-"));
     process.env["HOME"] = tempHome;
+    delete process.env["DUDE_DEBUG_LOGS"];
+    delete process.env["SG_APIS_DEBUG_LOGS"];
+    delete process.env["SG_APIS_LOG_LEVEL"];
     resetConfigCache();
   });
 
@@ -27,6 +33,21 @@ describe("config runtime accessors", () => {
       delete process.env["HOME"];
     } else {
       process.env["HOME"] = originalHome;
+    }
+    if (originalDudeDebugLogs === undefined) {
+      delete process.env["DUDE_DEBUG_LOGS"];
+    } else {
+      process.env["DUDE_DEBUG_LOGS"] = originalDudeDebugLogs;
+    }
+    if (originalSgApisDebugLogs === undefined) {
+      delete process.env["SG_APIS_DEBUG_LOGS"];
+    } else {
+      process.env["SG_APIS_DEBUG_LOGS"] = originalSgApisDebugLogs;
+    }
+    if (originalSgApisLogLevel === undefined) {
+      delete process.env["SG_APIS_LOG_LEVEL"];
+    } else {
+      process.env["SG_APIS_LOG_LEVEL"] = originalSgApisLogLevel;
     }
 
     resetConfigCache();
@@ -66,6 +87,21 @@ describe("config runtime accessors", () => {
     expect(parseMutableConfigValue("timeouts.mas", "1500")).toBe(1500);
     expect(parseMutableConfigValue("rateLimits.mas.refillPerSecond", "1.5")).toBe(1.5);
     expect(parseMutableConfigValue("defaultFormat", "csv")).toBe("csv");
+  });
+
+  it("enables debug log level when debug log storage is enabled", () => {
+    process.env["DUDE_DEBUG_LOGS"] = "1";
+    resetConfigCache();
+
+    expect(loadConfig().logLevel).toBe("debug");
+  });
+
+  it("keeps explicit log level above debug storage default", () => {
+    process.env["DUDE_DEBUG_LOGS"] = "1";
+    process.env["SG_APIS_LOG_LEVEL"] = "warn";
+    resetConfigCache();
+
+    expect(loadConfig().logLevel).toBe("warn");
   });
 
   it("rejects unsupported or invalid config values", () => {

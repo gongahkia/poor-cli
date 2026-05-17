@@ -11,6 +11,7 @@ import { ProvenanceSection } from "@/components/dossier/ProvenanceSection";
 import { RiskSection } from "@/components/dossier/RiskSection";
 import { SnapshotSection } from "@/components/dossier/SnapshotSection";
 import { WebPresenceSection, type WebPresenceState } from "@/components/dossier/WebPresenceSection";
+import { useToast } from "@/components/notifications/ToastProvider";
 import { GatewayStatus } from "@/components/status/GatewayStatus";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -47,12 +48,14 @@ export function CounterpartyPage() {
   const { identifier = "" } = useParams<{ identifier: string }>();
   const decodedIdentifier = useMemo(() => identifier.trim(), [identifier]);
   const [state, setState] = useState<DossierState>({ status: "loading" });
+  const { notify } = useToast();
 
   useEffect(() => {
     const controller = new AbortController();
 
     if (!decodedIdentifier) {
       setState({ status: "error", message: "No counterparty identifier was provided." });
+      notify({ title: "Dossier request missing identifier", tone: "error" });
       return () => controller.abort();
     }
 
@@ -79,10 +82,15 @@ export function CounterpartyPage() {
           status: "error",
           message: error instanceof Error ? error.message : "The diligence request failed.",
         });
+        notify({
+          title: "Dossier request failed",
+          description: error instanceof Error ? error.message : "The diligence request failed.",
+          tone: "error",
+        });
       });
 
     return () => controller.abort();
-  }, [decodedIdentifier]);
+  }, [decodedIdentifier, notify]);
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-background px-4 py-8 sm:px-6 sm:py-12">
@@ -187,6 +195,7 @@ function DossierSuccess({
   const [webPresenceState, setWebPresenceState] = useState<WebPresenceState>({ status: "loading" });
   const [memoState, setMemoState] = useState<AnalystMemoState>({ status: "loading" });
   const [shortlisted, setShortlisted] = useState(false);
+  const { notify } = useToast();
   const copiedTimer = useRef<number | null>(null);
   const sharedMemoState = useMemo(() => new URLSearchParams(location.search).get("memo"), [location.search]);
   const canonicalUen = getSummaryString(dossier, "UEN");
@@ -316,8 +325,11 @@ function DossierSuccess({
         ...(memoState.status === "ready" ? { analystMemo: memoState.memo } : {}),
         ...(webPresenceState.status === "success" ? { webPresence: webPresenceState.presence } : {}),
       });
+      notify({ title: "PDF export started", description: dossier.title, tone: "success" });
     } catch (error) {
-      setExportError(error instanceof Error ? error.message : "PDF export failed.");
+      const message = error instanceof Error ? error.message : "PDF export failed.";
+      setExportError(message);
+      notify({ title: "PDF export failed", description: message, tone: "error" });
     } finally {
       setIsExporting(false);
     }
@@ -327,12 +339,14 @@ function DossierSuccess({
     try {
       await navigator.clipboard.writeText(window.location.href);
       setCopyStatus("copied");
+      notify({ title: "Link copied", description: "Dossier URL copied to clipboard.", tone: "success" });
       if (copiedTimer.current !== null) {
         window.clearTimeout(copiedTimer.current);
       }
       copiedTimer.current = window.setTimeout(() => setCopyStatus("idle"), 2000);
     } catch {
       setCopyStatus("error");
+      notify({ title: "Copy failed", description: "The browser could not copy the dossier URL.", tone: "error" });
     }
   };
 
@@ -340,10 +354,12 @@ function DossierSuccess({
     if (shortlisted) {
       removeShortlistEntry(shortlistIdentifier);
       setShortlisted(false);
+      notify({ title: "Removed saved dossier", description: shortlistIdentifier, tone: "info" });
       return;
     }
     saveShortlistEntry(buildDossierExportSummary(dossier));
     setShortlisted(true);
+    notify({ title: "Saved dossier", description: shortlistIdentifier, tone: "success" });
   };
 
   return (
@@ -389,18 +405,32 @@ function DossierSuccess({
             Copy link
           </Button>
           <Button
-            onClick={() => exportSingleDossierCsv(dossier)}
+            onClick={() => {
+              try {
+                exportSingleDossierCsv(dossier);
+                notify({ title: "CSV export started", description: dossier.title, tone: "success" });
+              } catch (error) {
+                notify({ title: "CSV export failed", description: error instanceof Error ? error.message : "Unable to export CSV.", tone: "error" });
+              }
+            }}
             type="button"
             variant="outline"
           >
             Export CSV
           </Button>
           <Button
-            onClick={() => exportSingleDossierJson({
-              dossier,
-              ...(memoState.status === "ready" ? { analystMemo: memoState.memo } : {}),
-              ...(webPresenceState.status === "success" ? { webPresence: webPresenceState.presence } : {}),
-            })}
+            onClick={() => {
+              try {
+                exportSingleDossierJson({
+                  dossier,
+                  ...(memoState.status === "ready" ? { analystMemo: memoState.memo } : {}),
+                  ...(webPresenceState.status === "success" ? { webPresence: webPresenceState.presence } : {}),
+                });
+                notify({ title: "JSON export started", description: dossier.title, tone: "success" });
+              } catch (error) {
+                notify({ title: "JSON export failed", description: error instanceof Error ? error.message : "Unable to export JSON.", tone: "error" });
+              }
+            }}
             type="button"
             variant="outline"
           >

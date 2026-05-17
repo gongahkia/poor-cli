@@ -32,6 +32,9 @@ const DEFAULT_CONFIG: Config = {
 
 let cachedConfig: Config | null = null;
 
+const isTruthyEnv = (value: string | undefined): boolean =>
+  value !== undefined && /^(1|true|yes|on)$/i.test(value.trim());
+
 const loadFileConfig = (): Partial<Config> => {
   const configPath = resolveStatePath("config.json");
   try {
@@ -44,6 +47,7 @@ const loadFileConfig = (): Partial<Config> => {
 
 const applyEnvOverrides = (config: Config): Config => {
   const logLevel = process.env["SG_APIS_LOG_LEVEL"];
+  const debugLogsEnabled = isTruthyEnv(process.env["DUDE_DEBUG_LOGS"]) || isTruthyEnv(process.env["SG_APIS_DEBUG_LOGS"]);
   const dailyTtl = process.env["SG_APIS_CACHE_TTL_DAILY"];
   const parsedDailyTtl = dailyTtl !== undefined && dailyTtl !== "" ? Number(dailyTtl) : undefined;
 
@@ -52,6 +56,8 @@ const applyEnvOverrides = (config: Config): Config => {
     logLevel:
       logLevel !== undefined && logLevel !== "" && LOG_LEVELS.has(logLevel as Config["logLevel"])
         ? (logLevel as Config["logLevel"])
+        : debugLogsEnabled
+          ? "debug"
         : config.logLevel,
     cache: {
       ...config.cache,

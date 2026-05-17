@@ -74,6 +74,24 @@ export type WebPresence = {
   limits: string[];
 };
 
+export type BackendLogEntry = {
+  ts: string;
+  level: "debug" | "info" | "warn" | "error" | string;
+  module: string;
+  msg: string;
+  [key: string]: unknown;
+};
+
+export type DebugLogsResponse = {
+  enabled: boolean;
+  observedAt: string;
+  entries: BackendLogEntry[];
+  totalEntries: number;
+  maxEntries: number;
+  logPath?: string;
+  limits: string[];
+};
+
 const getGatewayBaseUrl = () => {
   const configuredUrl = import.meta.env.VITE_REST_GATEWAY_URL?.trim();
   return (configuredUrl || DEFAULT_REST_GATEWAY_URL).replace(/\/+$/, "");
