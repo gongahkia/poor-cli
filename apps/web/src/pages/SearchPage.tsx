@@ -18,14 +18,14 @@ import { DUDE_LANDING_EMOJI_URL } from "@/lib/brand/dude";
 
 export function SearchPage() {
   return (
-    <main className="relative min-h-screen bg-background px-6 py-12 sm:py-16">
+    <main className="relative min-h-dvh bg-background px-6">
       <div className="absolute right-4 top-4 flex items-center gap-2 sm:right-6 sm:top-6">
         <SystemStatusDialog />
         <BackendLogsDialog />
         <SearchHelpDialog />
       </div>
-      <section className="mx-auto flex w-full max-w-5xl flex-col gap-8">
-        <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_64px] md:items-end">
+      <section className="mx-auto grid min-h-dvh w-full max-w-5xl grid-rows-[minmax(0,1fr)_auto_minmax(0,1fr)] py-16">
+        <div className="grid items-end gap-6 pb-8 md:grid-cols-[minmax(0,1fr)_64px]">
           <div className="space-y-3">
             <p className="text-sm font-medium text-muted-foreground">Dude</p>
             <h1 className="text-4xl font-semibold tracking-normal text-foreground sm:text-5xl">
@@ -43,7 +43,10 @@ export function SearchPage() {
           </div>
         </div>
 
-        <DiligenceSearch secondaryAction={<SearchToolsDialog />} />
+        <div className="mx-auto w-full max-w-4xl">
+          <DiligenceSearch secondaryAction={<SearchToolsDialog />} />
+        </div>
+        <div aria-hidden="true" />
       </section>
     </main>
   );
