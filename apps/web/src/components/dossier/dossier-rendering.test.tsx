@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
+import { AnalystMemoSection } from "@/components/dossier/AnalystMemoSection";
 import { EvidenceSection } from "@/components/dossier/EvidenceSection";
 import { GapsSection } from "@/components/dossier/GapsSection";
 import { HandoffSection } from "@/components/dossier/HandoffSection";
@@ -195,5 +196,56 @@ describe("dossier rendering", () => {
     expect(html).toContain("Section 24 / Protection Obligation");
     expect(html).toContain("Section 26 / Transfer Limitation Obligation");
     expect(html).toContain("Export PDPA report");
+  });
+
+  it("renders the analyst memo as a formatted note with collapsed references", () => {
+    const html = renderToStaticMarkup(
+      <AnalystMemoSection
+        sharedState="ready"
+        state={{
+          status: "ready",
+          memo: {
+            status: "ready",
+            configured: true,
+            provider: "openai",
+            model: "gpt-4o",
+            generatedAt: "2026-05-17T14:56:00.000Z",
+            evidenceMemo: [{
+              text: "Entity: DBS PTE. LTD. is dissolved under Members Voluntary Winding Up.",
+              citationIds: ["summary-1", "summary-3"],
+            }],
+            riskRating: {
+              level: "high",
+              rationale: "The entity is not active.",
+              citationIds: ["risk-1"],
+              confidenceBlockers: ["Registry matching is bounded."],
+            },
+            decisionAid: {
+              nextSteps: ["Retrieve full ACRA entity details."],
+              confidenceBlockers: ["Registry matching is bounded."],
+              nonAdvisoryReminder: "Operational follow-up only.",
+            },
+            citations: [
+              { id: "summary-1", label: "Entity", source: "ACRA", text: "Entity: DBS PTE. LTD." },
+              {
+                id: "risk-1",
+                label: "ENTITY_NOT_ACTIVE",
+                source: "ACRA",
+                text: "Entity status is not Live or Registered.",
+              },
+            ],
+            gaps: [],
+            limits: [],
+            rejectedClaims: [],
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Evidence-backed findings");
+    expect(html).toContain("Action checklist");
+    expect(html).toContain("Evidence references (2)");
+    expect(html).toContain("Entity Not Active");
+    expect(html).not.toContain("<h3 class=\"text-sm font-semibold text-foreground\">Citations</h3>");
   });
 });
