@@ -144,25 +144,32 @@ export function BulkDiligence() {
   };
 
   return (
-    <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
+    <section className="rounded-[22px] border border-border/90 bg-background p-4 shadow-sm sm:p-5">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-base font-semibold text-foreground">Bulk checks</h2>
           <p className="mt-1 text-sm text-muted-foreground">Paste up to 200 UENs or company names, one per row, or upload a CSV.</p>
         </div>
-        <span className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">Workspace-backed</span>
+        <span className="w-fit rounded-full border border-border bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground">Workspace-backed</span>
       </div>
 
       <div className="mt-4 grid gap-3">
         <textarea
-          className="min-h-28 resize-y rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="min-h-36 resize-y rounded-[20px] border border-border bg-muted/25 px-4 py-3 text-base leading-6 text-foreground shadow-inner outline-none transition focus:border-ring focus:bg-background focus-visible:ring-2 focus-visible:ring-ring/15"
           onChange={(event) => setInput(event.target.value)}
           placeholder={"03591300B\nDBS BANK"}
           value={input}
         />
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <Input accept=".csv,text/csv,text/plain" aria-label="Upload CSV" className="max-w-sm" onChange={handleFile} type="file" />
+          <Input
+            accept=".csv,text/csv,text/plain"
+            aria-label="Upload CSV"
+            className="h-12 max-w-sm rounded-[18px] border-border bg-background px-3 text-sm file:mr-3 file:rounded-full file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium"
+            onChange={handleFile}
+            type="file"
+          />
           <Button
+            className="h-12 rounded-[18px] px-5"
             disabled={status === "running" || parsed.items.length === 0 || parsed.errors.length > 0}
             onClick={runBulk}
             type="button"
@@ -173,10 +180,10 @@ export function BulkDiligence() {
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-        <span className="rounded-md bg-muted px-2 py-1">{parsed.items.length} valid rows</span>
-        <span className="rounded-md bg-muted px-2 py-1">{parsed.errors.length} parse errors</span>
+        <span className="rounded-full border border-border bg-muted/60 px-3 py-1">{parsed.items.length} valid rows</span>
+        <span className="rounded-full border border-border bg-muted/60 px-3 py-1">{parsed.errors.length} parse errors</span>
         {result === null ? null : (
-          <span className="rounded-md bg-muted px-2 py-1">{result.executedCount} executed</span>
+          <span className="rounded-full border border-border bg-muted/60 px-3 py-1">{result.executedCount} executed</span>
         )}
       </div>
 
@@ -204,7 +211,7 @@ export function BulkDiligence() {
                 ["Gaps", riskSummary.gaps],
                 ["Upstream", riskSummary.upstreamFailures],
               ].map(([label, value]) => (
-                <div className="rounded-md border border-border p-3" key={label}>
+                <div className="rounded-[18px] border border-border bg-background p-3" key={label}>
                   <p className="text-xs uppercase text-muted-foreground">{label}</p>
                   <p className="mt-1 text-xl font-semibold text-foreground">{value}</p>
                 </div>
@@ -214,7 +221,7 @@ export function BulkDiligence() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap gap-2">
               <select
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                className="h-10 rounded-[14px] border border-input bg-background px-3 text-sm"
                 onChange={(event) => setFilter(event.target.value as FilterMode)}
                 value={filter}
               >
@@ -225,7 +232,7 @@ export function BulkDiligence() {
                 <option value="error">Errors</option>
               </select>
               <select
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                className="h-10 rounded-[14px] border border-input bg-background px-3 text-sm"
                 onChange={(event) => setSort(event.target.value as SortMode)}
                 value={sort}
               >
@@ -253,7 +260,7 @@ export function BulkDiligence() {
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-lg border border-border">
+          <div className="overflow-x-auto rounded-[20px] border border-border bg-background">
             <table className="min-w-[980px] w-full table-fixed text-left text-sm">
               <thead className="bg-muted text-xs uppercase text-muted-foreground">
                 <tr>

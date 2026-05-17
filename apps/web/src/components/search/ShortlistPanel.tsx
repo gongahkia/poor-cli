@@ -27,20 +27,20 @@ export function ShortlistPanel() {
   }, []);
 
   return (
-    <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
+    <section className="rounded-[22px] border border-border/90 bg-background p-4 shadow-sm sm:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-base font-semibold text-foreground">Local shortlist</h2>
           <p className="mt-1 text-sm text-muted-foreground">Saved in this browser only.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button disabled={entries.length === 0} onClick={() => exportShortlistCsv(entries)} type="button" variant="outline">
+          <Button className="h-11 rounded-[16px]" disabled={entries.length === 0} onClick={() => exportShortlistCsv(entries)} type="button" variant="outline">
             Export CSV
           </Button>
-          <Button disabled={entries.length === 0} onClick={() => void exportShortlistJson(entries)} type="button" variant="outline">
+          <Button className="h-11 rounded-[16px]" disabled={entries.length === 0} onClick={() => void exportShortlistJson(entries)} type="button" variant="outline">
             Export JSON
           </Button>
-          <Button disabled={entries.length === 0} onClick={() => setEntries(clearShortlist())} type="button" variant="outline">
+          <Button className="h-11 rounded-[16px]" disabled={entries.length === 0} onClick={() => setEntries(clearShortlist())} type="button" variant="outline">
             Clear
           </Button>
         </div>
@@ -51,7 +51,7 @@ export function ShortlistPanel() {
       ) : (
         <div className="mt-4 grid gap-2">
           {entries.map((entry) => (
-            <article className="rounded-md border border-border p-3" key={entry.canonicalIdentifier}>
+            <article className="rounded-[18px] border border-border bg-muted/20 p-3" key={entry.canonicalIdentifier}>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <Link
@@ -71,9 +71,9 @@ export function ShortlistPanel() {
                 </button>
               </div>
               <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                <span className="rounded-md bg-muted px-2 py-1">Risk: {entry.risk}</span>
-                <span className="rounded-md bg-muted px-2 py-1">Confidence: {entry.confidence ?? "-"}</span>
-                <span className="rounded-md bg-muted px-2 py-1">Gaps: {entry.gapCodes.length}</span>
+                <span className="rounded-full border border-border bg-background px-2.5 py-1">Risk: {entry.risk}</span>
+                <span className="rounded-full border border-border bg-background px-2.5 py-1">Confidence: {entry.confidence ?? "-"}</span>
+                <span className="rounded-full border border-border bg-background px-2.5 py-1">Gaps: {entry.gapCodes.length}</span>
               </div>
             </article>
           ))}

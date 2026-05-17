@@ -68,17 +68,19 @@ function SearchToolsDialog() {
           <span>Tools</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-5xl overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Workspace tools</DialogTitle>
-          <DialogDescription>
-            Bulk checks and saved counterparties stay available without competing with the primary search.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-5xl overflow-y-auto rounded-[28px] border-border bg-background p-1 shadow-2xl">
+        <div className="rounded-[24px] border border-border/80 bg-muted/35 p-5 sm:p-6">
+          <DialogHeader className="pr-10">
+            <DialogTitle>Workspace tools</DialogTitle>
+            <DialogDescription>
+              Bulk checks and saved counterparties stay available without competing with the primary search.
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
-          <BulkDiligence />
-          <ShortlistPanel />
+          <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+            <BulkDiligence />
+            <ShortlistPanel />
+          </div>
         </div>
       </DialogContent>
     </Dialog>
