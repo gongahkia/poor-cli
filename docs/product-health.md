@@ -24,6 +24,7 @@ This page is the public entrypoint for product-health, governance, and adoption 
 - [Audit retention policy](./audit-retention-policy.md) — trace and request-retention policy.
 - [Commercial data use review](./commercial-data-use.md) — OneMap and URA commercial-use posture, runtime warnings, and source limits.
 - [PDPA notification and DPO readiness](./privacy-dpo-readiness.md) — hosted beta privacy notice, DPO contact, retention, and DPIA checklist.
+- [Data Processing Agreement template](./data-processing-agreement-template.md) — draft hosted customer DPA requiring legal review.
 - [KPI thresholds](./kpi-thresholds.md) — dashboard policy and breach handling.
 - [Quarterly product health template](./quarterly-product-health-template.md) — recurring review format.
 - [Deprecation policy](./deprecation-policy.md) — migration and removal rules.

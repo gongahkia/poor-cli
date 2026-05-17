@@ -130,5 +130,5 @@ Complete this checklist before any hosted beta workspace processes real or custo
 ## Limits
 
 - This pack does not decide whether a specific deployment complies with the PDPA.
-- This pack does not replace a separate DPA template once that template is adopted and reviewed.
+- This pack does not replace the DPA template in [data-processing-agreement-template.md](./data-processing-agreement-template.md) once that template is adopted and reviewed.
 - This pack does not authorise collection of unnecessary personal data for diligence.

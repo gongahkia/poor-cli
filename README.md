@@ -75,6 +75,8 @@ Roadmap planning files live under [docs/roadmap](./docs/roadmap) so the reposito
 - [docs/compliance-use-clauses.md](./docs/compliance-use-clauses.md) maps compliance-use and non-advice language across web, exports, docs, and API-facing artifacts.
 - [docs/commercial-data-use.md](./docs/commercial-data-use.md) records OneMap and URA commercial-use controls for OSS, self-host, and hosted paid workflows.
 - [docs/privacy-dpo-readiness.md](./docs/privacy-dpo-readiness.md) drafts the PDPA notification, DPO, privacy, retention, and DPIA readiness pack for hosted beta.
+- [docs/data-processing-agreement-template.md](./docs/data-processing-agreement-template.md) provides the draft DPA template for hosted customer onboarding, subject to legal review.
+- [docs/product/hosted-onboarding.md](./docs/product/hosted-onboarding.md) links the hosted customer packet for sales and onboarding review.
 - [SECURITY.md](./SECURITY.md) explains private vulnerability reporting.
 
 ## Skills & Agents

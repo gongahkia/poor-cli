@@ -32,6 +32,8 @@ requireFile(resolve(root, "docs/deprecation-policy.md"));
 requireFile(resolve(root, "docs/audit-retention-policy.md"));
 requireFile(resolve(root, "docs/commercial-data-use.md"));
 requireFile(resolve(root, "docs/privacy-dpo-readiness.md"));
+requireFile(resolve(root, "docs/data-processing-agreement-template.md"));
+requireFile(resolve(root, "docs/product/hosted-onboarding.md"));
 requireFile(resolve(root, "docs/kpi-thresholds.md"));
 requireFile(resolve(root, "config/kpi-thresholds.example.json"));
 requireFile(resolve(root, "docs/quarterly-product-health-template.md"));
@@ -201,6 +203,21 @@ ensureIncludes(resolve(root, "docs/privacy-dpo-readiness.md"), [
   "Privacy Notice Skeleton",
   "Retention Summary",
   "DPIA Checklist Before Hosted Beta",
+]);
+
+ensureIncludes(resolve(root, "docs/data-processing-agreement-template.md"), [
+  "Data-Intermediary Obligations",
+  "Subprocessors",
+  "Retention, Return, And Deletion",
+  "Security Incident And Breach Notification",
+  "Audit Cooperation",
+  "Legal Review Gate",
+]);
+
+ensureIncludes(resolve(root, "docs/product/hosted-onboarding.md"), [
+  "Data Processing Agreement template",
+  "PDPA notification and DPO readiness pack",
+  "Commercial data use review",
 ]);
 
 ensureIncludes(resolve(root, "docs/kpi-thresholds.md"), [

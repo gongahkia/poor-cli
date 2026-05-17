@@ -54,6 +54,7 @@ Vendor onboarding and procurement intelligence are documented as secondary lanes
 - Watchlists and alert rules for status changes after onboarding.
 - Hosted privacy, DPA, retention, and incident-response documents.
 - Hosted PDPA notification, DPO, privacy, retention, and DPIA readiness controls in [privacy-dpo-readiness.md](../privacy-dpo-readiness.md).
+- Hosted customer onboarding should route buyers through [hosted-onboarding.md](./hosted-onboarding.md), including the DPA in [data-processing-agreement-template.md](../data-processing-agreement-template.md).
 - Licensed or authorised-partner path for any paid redistribution of ACRA-derived commercial diligence outputs.
 - OneMap and URA commercial-use controls in [commercial-data-use.md](../commercial-data-use.md) must remain satisfied before hosted paid workflows rely on those sources.
 
