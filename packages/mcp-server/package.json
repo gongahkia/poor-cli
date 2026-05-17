@@ -14,9 +14,9 @@
     "!dist/**/mock-server/**"
   ],
   "bin": {
-    "dude-mcp": "./dist/index.js",
-    "sg-apis-mcp": "./dist/index.js",
-    "sg-data": "./dist/cli.js"
+    "dude-mcp": "dist/index.js",
+    "sg-apis-mcp": "dist/index.js",
+    "sg-data": "dist/cli.js"
   },
   "scripts": {
     "prepublishOnly": "tsc --build"
