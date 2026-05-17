@@ -22,6 +22,7 @@
     "deployment:web:check": "node ./scripts/check-web-deployment.mjs",
     "ecosystem:snapshot": "node ./scripts/generate-ecosystem-snapshot.mjs",
     "benchmarks:snapshot": "node ./scripts/generate-benchmark-snapshot.mjs",
+    "status:public": "node ./scripts/generate-public-status.mjs",
     "kpis:dashboard": "node ./scripts/generate-kpi-dashboard.mjs",
     "dev": "concurrently -n gateway,web -c cyan,green \"npm:dev:gateway\" \"npm:dev:web\"",
     "dev:gateway": "node --env-file-if-exists=.env node_modules/tsx/dist/cli.mjs packages/mcp-server/src/rest-gateway.ts",

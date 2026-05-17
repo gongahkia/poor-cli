@@ -98,6 +98,15 @@ Container smoke still validates the default MCP stdio image behavior:
 npm run test:smoke:container
 ```
 
+Public benchmark/status artifacts:
+
+```bash
+npm run benchmarks:snapshot
+npm run status:public
+```
+
+The generated JSON lives at `artifacts/status/public-status.json`; the human-readable page lives at `docs/status/public-status.md`. Publish those artifacts from CI or static hosting when you need a public uptime/freshness page.
+
 ## GitHub Actions Deploy Job
 
 The manual deploy job expects these repository secrets:

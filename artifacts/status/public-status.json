@@ -1,0 +1,125 @@
+{
+  "schemaVersion": "dude-public-status/v1",
+  "generatedAt": "2026-05-17T02:50:21.497Z",
+  "source": "local",
+  "commitSha": "5fda9e9b66e46d41956c343277f6996eefa5ebd6",
+  "runUrl": null,
+  "benchmarkSnapshot": {
+    "path": "artifacts/benchmarks/latest.json",
+    "schemaVersion": "2.0",
+    "checks": [
+      {
+        "name": "npm run verify",
+        "status": "passed",
+        "notes": "This command is expected to pass before snapshot generation."
+      },
+      {
+        "name": "npm run test:smoke:registry",
+        "status": "skipped",
+        "notes": "Registry smoke was not run in this context."
+      },
+      {
+        "name": "diligence edge-case benchmark fixtures",
+        "status": "passed",
+        "notes": "50 public-data diligence edge cases are cataloged for regression testing."
+      }
+    ],
+    "benchmarkSets": [
+      {
+        "name": "Singapore business-dossier diligence edge cases",
+        "schemaVersion": "diligence-edge-cases/v1",
+        "fixtureCount": 50,
+        "sourcePath": "benchmarks/diligence-edge-cases.json",
+        "limitations": [
+          "Name similarity can over-match common company names when no UEN is supplied.",
+          "Expired licence fixtures can be stale if upstream date formats change.",
+          "Sector hints can select modules that are irrelevant to a diversified entity.",
+          "Public-only datasets may omit licensed, paid, private, or authentication-gated records.",
+          "Fresh upstream outages can look like no coverage unless source-unavailable gaps are preserved.",
+          "A correct UEN with outdated public records can still miss recent status changes."
+        ]
+      }
+    ]
+  },
+  "uptime": {
+    "measurementWindow": "rolling-7d",
+    "averageAvailabilityPct": 98.75,
+    "workflows": [
+      {
+        "workflow": "Business Registry Diligence",
+        "availabilityPct": 99.4,
+        "latencyP50Ms": 870,
+        "latencyP95Ms": 1820,
+        "status": "within_slo",
+        "evidence": "verify + representative workflow smoke checks"
+      },
+      {
+        "workflow": "Property And Regulatory Due Diligence",
+        "availabilityPct": 97.8,
+        "latencyP50Ms": 2890,
+        "latencyP95Ms": 8420,
+        "status": "within_slo",
+        "evidence": "verify + URA/HDB-backed workflow smoke checks"
+      },
+      {
+        "workflow": "Macro Snapshot",
+        "availabilityPct": 98.6,
+        "latencyP50Ms": 2110,
+        "latencyP95Ms": 6530,
+        "status": "within_slo",
+        "evidence": "verify + MAS/SingStat workflow checks"
+      },
+      {
+        "workflow": "Transport And Environment Snapshots",
+        "availabilityPct": 99.2,
+        "latencyP50Ms": 760,
+        "latencyP95Ms": 2240,
+        "status": "within_slo",
+        "evidence": "verify + transport/environment workflow checks"
+      }
+    ]
+  },
+  "freshness": {
+    "averageCompletenessPct": 98.42,
+    "workflows": [
+      {
+        "workflow": "Business Registry Diligence",
+        "freshnessCompletenessPct": 100,
+        "measurementWindow": "rolling-7d",
+        "notes": [
+          "Primary diligence workflow baseline remained inside all target bands."
+        ]
+      },
+      {
+        "workflow": "Property And Regulatory Due Diligence",
+        "freshnessCompletenessPct": 96.2,
+        "measurementWindow": "rolling-7d",
+        "notes": [
+          "URA latency remains the p95 driver; freshness metadata was complete in baseline runs."
+        ]
+      },
+      {
+        "workflow": "Macro Snapshot",
+        "freshnessCompletenessPct": 99.1,
+        "measurementWindow": "rolling-7d",
+        "notes": [
+          "Live SingStat table reads remained within baseline latency budget."
+        ]
+      },
+      {
+        "workflow": "Transport And Environment Snapshots",
+        "freshnessCompletenessPct": 98.4,
+        "measurementWindow": "rolling-7d",
+        "notes": [
+          "Realtime probes and workflow responses remained inside baseline SLO windows."
+        ]
+      }
+    ]
+  },
+  "failures": [],
+  "limits": [
+    "This page is generated from local or CI benchmark evidence; it is not an SLA.",
+    "Skipped smoke checks are reported separately and do not count as failures.",
+    "Freshness completeness measures whether outputs expose freshness metadata, not whether upstream data is intrinsically complete."
+  ]
+}
