@@ -1,4 +1,4 @@
-import { riskSeverityLabel } from "@/lib/dossier";
+import { riskCodeLabel, riskSeverityLabel } from "@/lib/dossier";
 import type { BusinessDossier, RiskFlag } from "@/types/dossier";
 
 const severityClassName: Record<RiskFlag["severity"], string> = {
@@ -28,8 +28,8 @@ export function RiskSection({ dossier }: { dossier: BusinessDossier }) {
                 <h3 className="break-words text-sm font-semibold">{flag.message}</h3>
                 <span className="shrink-0 text-xs font-medium">{riskSeverityLabel(flag)}</span>
               </div>
-              <p className="mt-2 break-words font-mono text-xs opacity-80">
-                {flag.code} · {flag.source}
+              <p className="mt-2 break-words text-xs opacity-80" title={flag.code}>
+                {riskCodeLabel(flag.code)} · {flag.source}
               </p>
             </article>
           ))}

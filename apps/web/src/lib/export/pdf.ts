@@ -5,6 +5,7 @@ import {
   formatTimestamp,
   formatRecordValue,
   getDossierRecordGroups,
+  riskCodeLabel,
   riskSeverityLabel,
 } from "@/lib/dossier";
 import { complianceUseLimitations } from "@/lib/compliance";
@@ -170,7 +171,7 @@ export async function exportDossierPdf(
     (brief.riskFlags ?? []).length === 0
       ? [{ label: "Risk flags", value: "No risk flags returned." }]
       : (brief.riskFlags ?? []).map((flag) => ({
-          label: `${riskSeverityLabel(flag)} - ${flag.code}`,
+          label: `${riskSeverityLabel(flag)} - ${riskCodeLabel(flag.code)}`,
           value: `${flag.message} (${flag.source})`,
         })),
     y,

@@ -109,6 +109,22 @@ describe("dossier rendering", () => {
     expect(renderToStaticMarkup(<RiskSection dossier={dossier} />)).toContain("No risk flags were returned");
   });
 
+  it("renders risk codes as readable labels", () => {
+    const html = renderToStaticMarkup(<RiskSection dossier={{
+      ...dossier,
+      riskFlags: [{
+        code: "ENTITY_NOT_ACTIVE",
+        message: "Entity status is not live.",
+        severity: "high",
+        source: "ACRA",
+      }],
+    }} />);
+
+    expect(html).toContain("Entity not active");
+    expect(html).toContain("ACRA");
+    expect(html).not.toContain(">ENTITY_NOT_ACTIVE");
+  });
+
   it("renders the PDPA checklist with analyst actions and export affordance", () => {
     const html = renderToStaticMarkup(<PdpaChecklistSection dossier={dossier} onExportReport={() => undefined} />);
     expect(html).toContain("PDPA vendor diligence");

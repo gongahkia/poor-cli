@@ -475,6 +475,41 @@ export function riskSeverityLabel(flag: RiskFlag): string {
   return "Low";
 }
 
+const RISK_CODE_ACRONYMS = new Set([
+  "acra",
+  "api",
+  "bca",
+  "boa",
+  "cpf",
+  "hdb",
+  "hlb",
+  "hsa",
+  "http",
+  "lta",
+  "mas",
+  "mom",
+  "nea",
+  "uen",
+  "ura",
+]);
+
+export function riskCodeLabel(code: string): string {
+  const words = code.split(/[_\s-]+/).filter((word) => word.length > 0);
+  if (words.length === 0) {
+    return "Risk signal";
+  }
+
+  return words
+    .map((word, index) => {
+      const lower = word.toLowerCase();
+      if (RISK_CODE_ACRONYMS.has(lower)) {
+        return lower.toUpperCase();
+      }
+      return index === 0 ? `${lower.charAt(0).toUpperCase()}${lower.slice(1)}` : lower;
+    })
+    .join(" ");
+}
+
 export function confidenceLabel(confidence: MatchConfidence["confidence"]): string {
   if (confidence === "name-exact") return "Name exact";
   if (confidence === "name-fuzzy") return "Name fuzzy";
