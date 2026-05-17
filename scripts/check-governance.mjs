@@ -38,6 +38,7 @@ requireFile(resolve(root, "docs/soc2-type1-roadmap.md"));
 requireFile(resolve(root, "docs/mas-outsourcing-readiness.md"));
 requireFile(resolve(root, "docs/npm-publish-readiness.md"));
 requireFile(resolve(root, "docs/psg-application-track.md"));
+requireFile(resolve(root, "docs/diligence-case-study-content-engine.md"));
 requireFile(resolve(root, "docs/product/hosted-onboarding.md"));
 requireFile(resolve(root, "docs/kpi-thresholds.md"));
 requireFile(resolve(root, "config/kpi-thresholds.example.json"));
@@ -263,6 +264,15 @@ ensureIncludes(resolve(root, "docs/psg-application-track.md"), [
   "five qualifying SME customers",
   "Vendor Management Portal",
   "Do not claim Dude is PSG pre-approved",
+]);
+
+ensureIncludes(resolve(root, "docs/diligence-case-study-content-engine.md"), [
+  "provenance",
+  "freshness",
+  "gaps",
+  "limits",
+  "Review Guardrails",
+  "Draft-Ready Example",
 ]);
 
 ensureIncludes(resolve(root, "docs/product/hosted-onboarding.md"), [

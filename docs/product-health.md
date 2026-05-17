@@ -9,6 +9,10 @@ This page is the public entrypoint for product-health, governance, and adoption 
 - [Market conventions audit](./market-conventions-audit.md) — MCP ecosystem expectations and positioning.
 - [Ecosystem snapshot](./ecosystem-snapshot.md) — generated ecosystem evidence and comparison context.
 
+## Distribution
+
+- [SG diligence case-study content engine](./diligence-case-study-content-engine.md) — weekly case-study format, eight-week calendar, review guardrails, and draft-ready examples.
+
 ## Operations
 
 - [Operating expectations](./operating-expectations.md) — single-page adoption-grade per-family latency, cache TTL, SLO posture, partial-failure semantics.
