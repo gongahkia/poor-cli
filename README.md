@@ -76,6 +76,7 @@ Roadmap planning files live under [docs/roadmap](./docs/roadmap) so the reposito
 - [docs/acra-licensing-track.md](./docs/acra-licensing-track.md) tracks the ACRA API Marketplace or authorised-ISP path required before paid hosted ACRA-derived enrichment.
 - [docs/commercial-data-use.md](./docs/commercial-data-use.md) records OneMap and URA commercial-use controls for OSS, self-host, and hosted paid workflows.
 - [docs/privacy-dpo-readiness.md](./docs/privacy-dpo-readiness.md) drafts the PDPA notification, DPO, privacy, retention, and DPIA readiness pack for hosted beta.
+- [docs/pdpa-vendor-diligence-checklist.md](./docs/pdpa-vendor-diligence-checklist.md) maps dossier evidence to PDPA vendor-review checklist items, PDPC citations, and the PDPA report export.
 - [docs/data-processing-agreement-template.md](./docs/data-processing-agreement-template.md) provides the draft DPA template for hosted customer onboarding, subject to legal review.
 - [docs/soc2-type1-roadmap.md](./docs/soc2-type1-roadmap.md) records the SOC 2 Type I readiness gap analysis, control backlog, cost estimate, and buyer trigger.
 - [docs/mas-outsourcing-readiness.md](./docs/mas-outsourcing-readiness.md) maps hosted BCP, incident, subprocessor, data residency, and control gaps for FI-adjacent MAS outsourcing reviews.

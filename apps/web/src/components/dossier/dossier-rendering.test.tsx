@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { EvidenceSection } from "@/components/dossier/EvidenceSection";
 import { GapsSection } from "@/components/dossier/GapsSection";
+import { PdpaChecklistSection } from "@/components/dossier/PdpaChecklistSection";
 import { RiskSection } from "@/components/dossier/RiskSection";
 import type { BusinessDossier } from "@/types/dossier";
 
@@ -106,5 +107,13 @@ describe("dossier rendering", () => {
 
   it("renders risk empty state", () => {
     expect(renderToStaticMarkup(<RiskSection dossier={dossier} />)).toContain("No risk flags were returned");
+  });
+
+  it("renders the PDPA checklist with analyst actions and export affordance", () => {
+    const html = renderToStaticMarkup(<PdpaChecklistSection dossier={dossier} onExportReport={() => undefined} />);
+    expect(html).toContain("PDPA vendor diligence");
+    expect(html).toContain("Section 24 / Protection Obligation");
+    expect(html).toContain("Section 26 / Transfer Limitation Obligation");
+    expect(html).toContain("Export PDPA report");
   });
 });

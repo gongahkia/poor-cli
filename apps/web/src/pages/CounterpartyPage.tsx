@@ -7,6 +7,7 @@ import { EvidenceSection, type ModuleFollowUpRequest } from "@/components/dossie
 import { GapsSection } from "@/components/dossier/GapsSection";
 import { HandoffSection } from "@/components/dossier/HandoffSection";
 import { NextChecksSection } from "@/components/dossier/NextChecksSection";
+import { PdpaChecklistSection } from "@/components/dossier/PdpaChecklistSection";
 import { ProvenanceSection } from "@/components/dossier/ProvenanceSection";
 import { RiskSection } from "@/components/dossier/RiskSection";
 import { SnapshotSection } from "@/components/dossier/SnapshotSection";
@@ -36,6 +37,7 @@ import {
   UEN_PATTERN,
 } from "@/lib/dossier";
 import { exportDossierPdf } from "@/lib/export/pdf";
+import { exportPdpaReportPdf } from "@/lib/export/pdpa";
 import type { AnalystMemoResponse } from "@/types/analyst-memo";
 import type { BusinessDossier, BusinessDossierModule } from "@/types/dossier";
 
@@ -192,6 +194,7 @@ function DossierSuccess({
   const navigate = useNavigate();
   const location = useLocation();
   const [isExporting, setIsExporting] = useState(false);
+  const [isPdpaExporting, setIsPdpaExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
   const [rerunningModule, setRerunningModule] = useState<BusinessDossierModule | null>(null);
@@ -372,6 +375,26 @@ function DossierSuccess({
     }
   };
 
+  const handleExportPdpaReport = async (reviewedItemIds: readonly string[]) => {
+    setIsPdpaExporting(true);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      await exportPdpaReportPdf(dossier, {
+        filename: `dude-pdpa-checklist-${sanitizeFilenamePart(identifier)}-${today}.pdf`,
+        reviewedItemIds,
+      });
+      notify({ title: "PDPA report export started", description: dossier.title, tone: "success" });
+    } catch (error) {
+      notify({
+        title: "PDPA report export failed",
+        description: error instanceof Error ? error.message : "Unable to export PDPA report.",
+        tone: "error",
+      });
+    } finally {
+      setIsPdpaExporting(false);
+    }
+  };
+
   const handleCopyLink = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
@@ -517,6 +540,11 @@ function DossierSuccess({
       <RiskSection dossier={dossier} />
       <AnalystMemoSection sharedState={sharedMemoState} state={memoState} />
       <ConfidenceSection dossier={dossier} />
+      <PdpaChecklistSection
+        dossier={dossier}
+        isExporting={isPdpaExporting}
+        onExportReport={(reviewedItemIds) => void handleExportPdpaReport(reviewedItemIds)}
+      />
       <EvidenceSection dossier={dossier} onModuleFollowUp={handleModuleFollowUp} runningModule={rerunningModule} />
       <WebPresenceSection state={webPresenceState} />
       <NextChecksSection dossier={dossier} />
