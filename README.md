@@ -79,6 +79,7 @@ Roadmap planning files live under [docs/roadmap](./docs/roadmap) so the reposito
 - [docs/data-processing-agreement-template.md](./docs/data-processing-agreement-template.md) provides the draft DPA template for hosted customer onboarding, subject to legal review.
 - [docs/soc2-type1-roadmap.md](./docs/soc2-type1-roadmap.md) records the SOC 2 Type I readiness gap analysis, control backlog, cost estimate, and buyer trigger.
 - [docs/mas-outsourcing-readiness.md](./docs/mas-outsourcing-readiness.md) maps hosted BCP, incident, subprocessor, data residency, and control gaps for FI-adjacent MAS outsourcing reviews.
+- [docs/dude-cloud-security-architecture.md](./docs/dude-cloud-security-architecture.md) defines the hosted topology, tenancy model, secrets, logging/audit, backups, retention, data-residency, subprocessor, SOC 2, and MAS control plan.
 - [docs/npm-publish-readiness.md](./docs/npm-publish-readiness.md) records the `@dude/mcp` package dry-run evidence and the exact npm publish blocker.
 - [docs/status/public-status.md](./docs/status/public-status.md) is the generated public benchmark and uptime status page, backed by [artifacts/status/public-status.json](./artifacts/status/public-status.json).
 - [docs/psg-application-track.md](./docs/psg-application-track.md) records the PSG vendor pre-approval path, material checklist, timeline, and first-application blocker.
