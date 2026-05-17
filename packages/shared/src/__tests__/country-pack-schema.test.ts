@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -12,6 +12,18 @@ describe("country-pack envelope schema", () => {
     const fixture = JSON.parse(readFileSync(resolve(root, "examples/country-pack-template.json"), "utf8"));
 
     expect(CountryPackEnvelopeSchema.safeParse(fixture).success).toBe(true);
+  });
+
+  it("accepts all contributed country-pack skeleton fixtures", () => {
+    const fixturesDir = resolve(root, "examples/country-packs");
+    const fixtureNames = readdirSync(fixturesDir).filter((name) => name.endsWith(".json")).sort();
+
+    expect(fixtureNames.length).toBeGreaterThan(0);
+    for (const fixtureName of fixtureNames) {
+      const fixture = JSON.parse(readFileSync(resolve(fixturesDir, fixtureName), "utf8"));
+      const result = CountryPackEnvelopeSchema.safeParse(fixture);
+      expect(result.success, `${fixtureName}: ${result.success ? "" : result.error.message}`).toBe(true);
+    }
   });
 
   it("requires licensing, freshness, and public-data-limit metadata", () => {
