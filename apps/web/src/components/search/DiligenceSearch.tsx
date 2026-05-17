@@ -1,5 +1,6 @@
 import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { AlertCircle, CornerDownLeft } from "lucide-react";
 
 import { useToast } from "@/components/notifications/ToastProvider";
 import { AiInput } from "@/components/ui/ai-input";
@@ -136,6 +137,7 @@ export function DiligenceSearch({ secondaryAction }: DiligenceSearchProps = {}) 
     <SearchDropdownContent
       error={error}
       isSubmitting={isSubmitting}
+      onRunSearch={runSearch}
       onSuggestionClick={handleSuggestionClick}
       rankedSuggestions={rankedSuggestions}
       suggestionError={suggestionError}
@@ -173,6 +175,7 @@ export function DiligenceSearch({ secondaryAction }: DiligenceSearchProps = {}) 
 function SearchDropdownContent({
   error,
   isSubmitting,
+  onRunSearch,
   onSuggestionClick,
   rankedSuggestions,
   suggestionError,
@@ -181,6 +184,7 @@ function SearchDropdownContent({
 }: {
   error: string | null;
   isSubmitting: boolean;
+  onRunSearch: () => void;
   onSuggestionClick: (suggestion: ApiSearchSuggestion) => void;
   rankedSuggestions: ApiSearchSuggestion[];
   suggestionError: string | null;
@@ -239,10 +243,24 @@ function SearchDropdownContent({
 
   if (suggestionStatus === "error") {
     return (
-      <div aria-live="polite" className="px-4 py-4">
-        <p className="text-sm text-muted-foreground">
-          {suggestionError ?? "Suggestions are temporarily unavailable."} Search still works.
-        </p>
+      <div aria-live="polite" className="px-4 py-4" title={suggestionError ?? undefined}>
+        <div className="flex min-w-0 items-start gap-3 rounded-[16px] border border-border bg-muted/35 p-3">
+          <AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-foreground">Suggestions unavailable</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              Live ACRA suggestions could not be loaded. You can still open a dossier for "{trimmedQuery}".
+            </p>
+          </div>
+          <button
+            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground shadow-sm transition hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={onRunSearch}
+            type="button"
+          >
+            Search
+            <CornerDownLeft aria-hidden="true" className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
     );
   }
