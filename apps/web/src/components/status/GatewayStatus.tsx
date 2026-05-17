@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle } from "lucide-react";
+import {
+  AlertTriangle,
+  Building2,
+  Database,
+  Globe2,
+  KeyRound,
+  Server,
+  type LucideIcon,
+} from "lucide-react";
 
 import { getGatewayJson, type GatewayHealth, type GatewayServiceReadiness } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
@@ -37,6 +45,20 @@ const dotClasses: Record<HealthTone, string> = {
   warn: "bg-amber-500",
   bad: "bg-destructive",
   neutral: "bg-muted-foreground",
+};
+
+const panelRowClasses: Record<HealthTone, string> = {
+  good: "border-border bg-card text-foreground",
+  warn: "border-amber-200 bg-amber-50/60 text-amber-950",
+  bad: "border-destructive/30 bg-destructive/5 text-destructive",
+  neutral: "border-border bg-muted/40 text-muted-foreground",
+};
+
+const statePillClasses: Record<HealthTone, string> = {
+  good: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  warn: "border-amber-200 bg-amber-50 text-amber-800",
+  bad: "border-destructive/25 bg-destructive/10 text-destructive",
+  neutral: "border-border bg-background text-muted-foreground",
 };
 
 const providerKeyEnv: Record<string, string> = {
@@ -140,6 +162,40 @@ function getAnalystMemoKeyDetail(service: GatewayAnalystMemoReadiness | undefine
   return `${baseDetail} Required env: ${requiredEnvVar}. Provider: ${providerLabel}; model: ${model}. Keep this server-side in the ${credentialLocation}; browser VITE_* keys are not used for memo generation.`;
 }
 
+function getServiceMessage(
+  service: GatewayServiceReadiness | undefined,
+  fallback: string,
+): string {
+  return service?.message ?? fallback;
+}
+
+function getServiceMetadata(service: GatewayServiceReadiness | undefined): { label: string; value: string }[] {
+  return [
+    formatLatency(service?.latencyMs) === null ? null : { label: "Probe", value: formatLatency(service?.latencyMs) ?? "" },
+    service?.errorCode === undefined ? null : { label: "Code", value: service.errorCode },
+  ].filter((item): item is { label: string; value: string } => item !== null);
+}
+
+function getAnalystMemoMetadata(
+  service: GatewayAnalystMemoReadiness | undefined,
+): { label: string; value: string }[] {
+  const provider = getProviderName(service);
+  const providerLabel = providerLabels[provider] ?? provider;
+  const model = service?.model ?? readServiceDetail(service, "model") ?? "configured model";
+  const requiredEnvVar = getProviderKeyEnv(service);
+  const credentialLocation =
+    readServiceDetail(service, "credentialLocation") ?? "REST gateway process environment";
+
+  return [
+    ...getServiceMetadata(service),
+    { label: "Required env", value: requiredEnvVar },
+    { label: "Provider", value: providerLabel },
+    { label: "Model", value: model },
+    { label: "Stored in", value: credentialLocation },
+    { label: "Browser env", value: "VITE_* keys are not used for memo generation." },
+  ];
+}
+
 export function getGatewayReadinessIssues(health: GatewayHealth): GatewayReadinessIssue[] {
   const services = [
     {
@@ -181,25 +237,44 @@ export function getGatewayReadinessIssues(health: GatewayHealth): GatewayReadine
 
 function HealthRow({
   detail,
+  icon: Icon,
   label,
+  metadata = [],
   state,
   tone,
 }: {
   detail: string;
+  icon?: LucideIcon;
   label: string;
+  metadata?: { label: string; value: string }[];
   state: string;
   tone: HealthTone;
 }) {
   return (
-    <article className={cn("rounded-lg border p-3", toneClasses[tone])}>
-      <div className="flex items-start gap-3">
-        <span className={cn("mt-1 h-2.5 w-2.5 rounded-full", dotClasses[tone])} />
+    <article className={cn("rounded-xl border p-3 shadow-sm", panelRowClasses[tone])}>
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="relative mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-background">
+          {Icon === undefined ? null : <Icon aria-hidden="true" className="h-4 w-4 text-muted-foreground" />}
+          <span className={cn("absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-background", dotClasses[tone])} />
+        </span>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
-            <h3 className="text-sm font-semibold">{label}</h3>
-            <p className="text-xs font-medium uppercase">{state}</p>
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <h3 className="min-w-0 break-words text-sm font-semibold">{label}</h3>
+            <span className={cn("w-fit shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-normal", statePillClasses[tone])}>
+              {state}
+            </span>
           </div>
-          <p className="mt-1 text-xs leading-5 opacity-80">{detail}</p>
+          <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">{detail}</p>
+          {metadata.length > 0 ? (
+            <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+              {metadata.map((item) => (
+                <div className="min-w-0 rounded-lg bg-muted/45 px-2.5 py-2" key={`${item.label}-${item.value}`}>
+                  <dt className="text-[10px] font-semibold uppercase tracking-normal text-muted-foreground">{item.label}</dt>
+                  <dd className="mt-0.5 break-words font-mono text-[11px] leading-4 text-foreground">{item.value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : null}
         </div>
       </div>
     </article>
@@ -364,37 +439,70 @@ export function GatewayStatusPanel({ health }: { health: GatewayHealth }) {
   const analystMemo = health.services?.analystMemo;
 
   return (
-    <div className="grid gap-2">
+    <div className="space-y-3">
+      <div className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-muted/35 p-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground">
+            {health.readiness === "ready" ? "All checked services are ready" : "Some services need attention"}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            {uptime}; {health.tools} tools enabled.
+          </p>
+        </div>
+        <span className={cn(
+          "w-fit rounded-full border px-2.5 py-1 text-xs font-semibold uppercase",
+          health.readiness === "ready" ? statePillClasses.good : statePillClasses.warn,
+        )}>
+          {health.readiness ?? health.status}
+        </span>
+      </div>
       <HealthRow
-        detail={`${getReadinessDetail(gateway, "HTTP gateway is reachable.")} ${uptime}; ${health.tools} tools enabled.`}
+        detail={getServiceMessage(gateway, "HTTP gateway is reachable.")}
+        icon={Server}
         label="Gateway"
+        metadata={[
+          { label: "Uptime", value: uptime.replace(/^Uptime /, "") },
+          { label: "Tools", value: String(health.tools) },
+          ...getServiceMetadata(gateway),
+        ]}
         state={health.readiness === "ready" ? "Ready" : getReadinessState(gateway?.status)}
         tone={getReadinessTone(gateway?.status)}
       />
       <HealthRow
-        detail={getReadinessDetail(
+        detail={getServiceMessage(
           datagovDatastore,
           "data.gov.sg datastore did not report readiness.",
         )}
+        icon={Database}
         label="data.gov.sg datastore"
+        metadata={getServiceMetadata(datagovDatastore)}
         state={getReadinessState(datagovDatastore?.status)}
         tone={getReadinessTone(datagovDatastore?.status)}
       />
       <HealthRow
-        detail={getReadinessDetail(acraLookup, "ACRA lookup path did not report readiness.")}
+        detail={getServiceMessage(acraLookup, "ACRA lookup path did not report readiness.")}
+        icon={Building2}
         label="ACRA lookup"
+        metadata={getServiceMetadata(acraLookup)}
         state={getReadinessState(acraLookup?.status)}
         tone={getReadinessTone(acraLookup?.status)}
       />
       <HealthRow
-        detail={getReadinessDetail(tinyfish, "Optional web discovery did not report readiness.")}
+        detail={getServiceMessage(tinyfish, "Optional web discovery did not report readiness.")}
+        icon={Globe2}
         label="TinyFish"
+        metadata={getServiceMetadata(tinyfish)}
         state={getReadinessState(tinyfish?.status)}
         tone={getReadinessTone(tinyfish?.status)}
       />
       <HealthRow
-        detail={getAnalystMemoKeyDetail(analystMemo)}
+        detail={getServiceMessage(
+          analystMemo,
+          `Set ${getProviderKeyEnv(analystMemo)} on the REST gateway process to enable analyst memo generation.`,
+        )}
+        icon={KeyRound}
         label={getAnalystMemoKeyLabel(analystMemo)}
+        metadata={getAnalystMemoMetadata(analystMemo)}
         state={getReadinessState(analystMemo?.status)}
         tone={getReadinessTone(analystMemo?.status)}
       />
