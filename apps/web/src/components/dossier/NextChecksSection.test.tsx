@@ -18,7 +18,8 @@ describe("NextChecksSection", () => {
             jurisdictionCode: "sg",
             uen: "197700546G",
           },
-          reason: "Cross-link the entity to OpenCorporates identifiers without inferring ownership or control.",
+          reason:
+            "Cross-link the entity to OpenCorporates identifiers without inferring ownership or control.",
           tool: "sg_opencorporates_links",
         },
       ],
@@ -34,6 +35,10 @@ describe("NextChecksSection", () => {
     expect(html).toContain("Jurisdiction Code");
     expect(html).toContain("UEN");
     expect(html).toContain("197700546G");
+    expect(html).toContain("To-do 01");
+    expect(html).toContain("Pending");
+    expect(html).toContain("Inputs to use");
+    expect(html).toContain("1 open todo");
     expect(html).not.toContain("{&quot;");
   });
 });
