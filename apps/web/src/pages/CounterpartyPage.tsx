@@ -10,8 +10,6 @@ import type { PeopleDiscoveryState } from "@/components/dossier/PeopleDiscoveryS
 import { ProvenanceSection } from "@/components/dossier/ProvenanceSection";
 import type { WebPresenceState } from "@/components/dossier/WebPresenceSection";
 import { useToast } from "@/components/notifications/ToastProvider";
-import type { AgentPlanTask } from "@/components/ui/agent-plan";
-import { AgentPlan } from "@/components/ui/agent-plan-loader";
 import { Button } from "@/components/ui/button";
 import { callTool, getGatewayJson, postGatewayJson, type PeopleDiscovery, type WebPresence } from "@/lib/api/client";
 import {
@@ -151,91 +149,17 @@ export function CounterpartyPage() {
 }
 
 function DossierLoading({ identifier }: { identifier: string }) {
-  const tasks: AgentPlanTask[] = [
-    {
-      id: "identity",
-      title: "Resolve the counterparty identity",
-      description: "Route the submitted name or UEN into the Singapore business dossier workflow.",
-      status: "in-progress",
-      priority: "high",
-      subtasks: [
-        {
-          id: "prepare-input",
-          title: "Prepare dossier input",
-          description: `Normalizing "${identifier}" before calling the dossier tool.`,
-          status: "completed",
-          priority: "high",
-          tools: ["dude-web"],
-        },
-        {
-          id: "call-dossier",
-          title: "Call Singapore business dossier",
-          description: "Requesting the bounded company diligence workflow from the MCP gateway.",
-          status: "in-progress",
-          priority: "high",
-          tools: ["sg_business_dossier"],
-        },
-        {
-          id: "match-acra",
-          title: "Match official ACRA records",
-          description: "Looking for exact company and UEN evidence before expanding into sector checks.",
-          status: "pending",
-          priority: "high",
-          tools: ["sg_acra_entities"],
-        },
-      ],
-    },
-    {
-      id: "sector-scope",
-      title: "Evaluate sector module scope",
-      description: "Use ACRA SSIC evidence and supplied identifiers to decide which official sources can run.",
-      status: "pending",
-      priority: "medium",
-      subtasks: [
-        {
-          id: "sector-hints",
-          title: "Infer sector hints",
-          description: "Derive finance, building, real estate, procurement, health, legal, or licensing context when evidence supports it.",
-          status: "pending",
-          priority: "medium",
-          tools: ["sg_business_dossier"],
-        },
-        {
-          id: "sector-modules",
-          title: "Queue eligible official modules",
-          description: "Run only the modules with enough scope or identifiers, and record skipped checks as non-negative evidence.",
-          status: "pending",
-          priority: "medium",
-          tools: ["sg_bca_*", "sg_cea_*", "sg_gebiz_tenders", "sg_boa_*", "sg_hsa_*", "sg_hlb_*"],
-        },
-      ],
-    },
-    {
-      id: "assemble-output",
-      title: "Assemble the dossier",
-      description: "Prepare evidence, gaps, freshness, provenance, and analyst follow-ups for review.",
-      status: "pending",
-      priority: "high",
-      subtasks: [
-        {
-          id: "evidence",
-          title: "Group matched records",
-          description: "Collect public registry rows by source and keep empty modules out of matched evidence.",
-          status: "pending",
-          priority: "high",
-          tools: ["sg_business_dossier"],
-        },
-        {
-          id: "provenance",
-          title: "Surface provenance and limits",
-          description: "Attach source freshness, gaps, and usage limits so the output remains auditable.",
-          status: "pending",
-          priority: "high",
-          tools: ["sg_business_dossier"],
-        },
-      ],
-    },
-  ];
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const isSlow = elapsedSeconds >= 4;
+
+  useEffect(() => {
+    const startedAt = Date.now();
+    const interval = window.setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, []);
 
   return (
     <>
@@ -245,10 +169,38 @@ function DossierLoading({ identifier }: { identifier: string }) {
         <p className="font-mono text-sm text-muted-foreground">{identifier}</p>
       </div>
 
-      <AgentPlan
-        description="Dude is calling official Singapore data tools and assembling the evidence-backed dossier."
-        tasks={tasks}
-      />
+      <section className="min-w-0 rounded-lg border border-border bg-card p-5 shadow-sm sm:p-6">
+        <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin text-muted-foreground" />
+              <h2 className="text-base font-semibold tracking-normal text-foreground">Loading dossier</h2>
+            </div>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+              Requesting <span className="font-mono text-foreground">sg_business_dossier</span> from the REST gateway.
+              Source-level evidence, skipped modules, freshness, and gaps will appear after this request returns.
+            </p>
+          </div>
+          <span className="w-fit shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+            {elapsedSeconds}s
+          </span>
+        </div>
+
+        <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-muted">
+          <div className="h-full w-1/3 rounded-full bg-foreground/60 motion-safe:animate-[loading-bar_1.2s_ease-in-out_infinite]" />
+        </div>
+
+        {isSlow ? (
+          <p className="mt-4 text-sm leading-6 text-muted-foreground">
+            This is taking longer than usual. The gateway may be waiting on upstream Singapore data sources; no individual
+            module step is shown until the dossier response is available.
+          </p>
+        ) : (
+          <p className="mt-4 text-xs leading-5 text-muted-foreground">
+            This loading state reflects one live gateway request, not simulated per-module progress.
+          </p>
+        )}
+      </section>
     </>
   );
 }
