@@ -25,6 +25,7 @@ import {
 import { ALL_TOOL_DEFINITIONS } from "./tools/tool-set.js";
 import { handleBusinessDossier } from "./tools/brief-tools.js";
 import { isToolEnabled } from "./tools/tool-metadata.js";
+import { WorkspaceApiAccessError, assertWorkspaceApiAccess, parseWorkspaceApiSession, type WorkspacePermission } from "./workspace/access-control.js";
 const PORT = Number(process.env["PORT"] ?? 3000);
 const DEFAULT_DEV_WEB_ORIGIN_ALLOWLIST = "http://localhost:5173,http://127.0.0.1:5173";
 const gatewayStartedAt = new Date();
@@ -64,6 +65,7 @@ const MAX_SEARCH_QUERY_LENGTH = 96;
 const MAX_WEB_PRESENCE_QUERY_LENGTH = 160;
 const MAX_MEMO_IDENTIFIER_LENGTH = 128;
 const UEN_PATTERN = /^(?:\d{8,9}[a-z]|[a-z]\d{2}[a-z]{2}\d{4}[a-z])$/i;
+const WORKSPACE_AUTH_REQUIRED = process.env["DUDE_WORKSPACE_AUTH_REQUIRED"] === "true";
 
 class RequestBodyTooLargeError extends Error {
   readonly statusCode = 413;
@@ -85,6 +87,24 @@ class BadRequestError extends Error {
     this.name = "BadRequestError";
   }
 }
+
+const requireWorkspaceAccess = (
+  req: IncomingMessage,
+  permission: WorkspacePermission,
+): ReturnType<typeof parseWorkspaceApiSession> => {
+  const session = parseWorkspaceApiSession(req.headers, { authRequired: WORKSPACE_AUTH_REQUIRED });
+  assertWorkspaceApiAccess(session, permission);
+  return session;
+};
+
+const sendWorkspaceAccessError = (res: ServerResponse, error: WorkspaceApiAccessError): void => {
+  sendJson(res, error.statusCode, {
+    error: {
+      code: error.code,
+      message: error.message,
+    },
+  });
+};
 
 const readBody = (req: IncomingMessage, maxBytes: number): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -376,6 +396,15 @@ const server = createServer(async (req, res) => {
 
   // GET /api/v1/debug/logs
   if (req.method === "GET" && url.pathname === "/api/v1/debug/logs") {
+    try {
+      requireWorkspaceAccess(req, "debug:read");
+    } catch (err) {
+      if (err instanceof WorkspaceApiAccessError) {
+        sendWorkspaceAccessError(res, err);
+        return;
+      }
+      throw err;
+    }
     const limitParam = Number(url.searchParams.get("limit") ?? "");
     const level = url.searchParams.get("level")?.trim().toLowerCase();
     const snapshot = debugLogStore.getSnapshot(Number.isFinite(limitParam) && limitParam > 0 ? limitParam : undefined);
@@ -395,6 +424,15 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/api/v1/dude/search-suggestions") {
+    try {
+      requireWorkspaceAccess(req, "search:run");
+    } catch (err) {
+      if (err instanceof WorkspaceApiAccessError) {
+        sendWorkspaceAccessError(res, err);
+        return;
+      }
+      throw err;
+    }
     const query = getQueryValue(url, "q");
     safeInputSummary = summarizeQueryInput(query);
     if (query.length > MAX_SEARCH_QUERY_LENGTH) {
@@ -425,6 +463,15 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/api/v1/dude/web-presence") {
+    try {
+      requireWorkspaceAccess(req, "dossier:read");
+    } catch (err) {
+      if (err instanceof WorkspaceApiAccessError) {
+        sendWorkspaceAccessError(res, err);
+        return;
+      }
+      throw err;
+    }
     const query = getQueryValue(url, "query");
     safeInputSummary = summarizeQueryInput(query);
     if (query.length > MAX_WEB_PRESENCE_QUERY_LENGTH) {
@@ -449,6 +496,7 @@ const server = createServer(async (req, res) => {
 
   if (req.method === "POST" && url.pathname === "/api/v1/dude/memo") {
     try {
+      requireWorkspaceAccess(req, "memo:generate");
       const body = await readBody(req, trafficPolicy.maxBodyBytes);
       const input = body === "" ? {} : JSON.parse(body);
       if (!isRecord(input)) {
@@ -471,6 +519,11 @@ const server = createServer(async (req, res) => {
       });
       sendJson(res, 200, memo);
     } catch (err) {
+      if (err instanceof WorkspaceApiAccessError) {
+        requestLogger.warn("memo workspace access denied", { code: err.code });
+        sendWorkspaceAccessError(res, err);
+        return;
+      }
       if (err instanceof RequestBodyTooLargeError) {
         requestLogger.warn("memo request body too large", { maxBytes: err.maxBytes });
         sendJson(res, err.statusCode, {
@@ -516,6 +569,7 @@ const server = createServer(async (req, res) => {
 
   if (req.method === "POST" && url.pathname === "/api/v1/dude/bulk-dossiers") {
     try {
+      requireWorkspaceAccess(req, "bulk:run");
       const body = await readBody(req, trafficPolicy.maxBodyBytes);
       const input = body === "" ? {} : JSON.parse(body);
       safeInputSummary = summarizeBulkInput(input);
@@ -529,6 +583,11 @@ const server = createServer(async (req, res) => {
       });
       sendJson(res, 200, response);
     } catch (err) {
+      if (err instanceof WorkspaceApiAccessError) {
+        requestLogger.warn("bulk workspace access denied", { code: err.code });
+        sendWorkspaceAccessError(res, err);
+        return;
+      }
       if (err instanceof RequestBodyTooLargeError) {
         requestLogger.warn("bulk request body too large", { maxBytes: err.maxBytes });
         sendJson(res, err.statusCode, {
@@ -573,6 +632,7 @@ const server = createServer(async (req, res) => {
       return;
     }
     try {
+      requireWorkspaceAccess(req, tool.name === "sg_business_dossier" ? "search:run" : "dossier:read");
       const body = await readBody(req, trafficPolicy.maxBodyBytes);
       const input = body === "" ? {} : JSON.parse(body);
       const startedAt = Date.now();
@@ -603,6 +663,11 @@ const server = createServer(async (req, res) => {
         ...(result.structuredContent ? { data: result.structuredContent } : {}),
       }));
     } catch (err) {
+      if (err instanceof WorkspaceApiAccessError) {
+        requestLogger.warn("tool workspace access denied", { code: err.code });
+        sendWorkspaceAccessError(res, err);
+        return;
+      }
       if (err instanceof RequestBodyTooLargeError) {
         requestLogger.warn("request body too large", { maxBytes: err.maxBytes });
         sendJson(res, err.statusCode, {
