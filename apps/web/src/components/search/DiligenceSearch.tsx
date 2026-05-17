@@ -2,8 +2,7 @@ import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useToast } from "@/components/notifications/ToastProvider";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { AiInput } from "@/components/ui/ai-input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   getGatewayJson,
@@ -93,9 +92,7 @@ export function DiligenceSearch({ secondaryAction }: DiligenceSearchProps = {}) 
       .filter((suggestion): suggestion is ApiSearchSuggestion => suggestion !== undefined);
   }, [query, suggestions]);
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
+  const runSearch = () => {
     const identifier = trimmedQuery;
     if (!identifier) {
       setStatus("error");
@@ -122,6 +119,11 @@ export function DiligenceSearch({ secondaryAction }: DiligenceSearchProps = {}) 
     }
   };
 
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    runSearch();
+  };
+
   const shouldShowSearchPanel = isSubmitting || error !== null || canLookupSuggestions || suggestionStatus !== "idle";
 
   const handleSuggestionClick = (suggestion: ApiSearchSuggestion) => {
@@ -132,41 +134,24 @@ export function DiligenceSearch({ secondaryAction }: DiligenceSearchProps = {}) 
 
   return (
     <div className="space-y-5">
-      <form className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]" onSubmit={handleSubmit}>
-        <Input
+      <form onSubmit={handleSubmit}>
+        <AiInput
           aria-label="Client or counterparty company name or UEN"
           autoComplete="off"
-          className="h-12 text-base"
           disabled={isSubmitting}
-          onChange={(event) => {
-            setQuery(event.target.value);
+          isSubmitting={isSubmitting}
+          onSubmit={runSearch}
+          onValueChange={(nextQuery) => {
+            setQuery(nextQuery);
             if (status === "error") {
               setStatus("idle");
               setError(null);
             }
           }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              event.currentTarget.form?.requestSubmit();
-            }
-          }}
           placeholder="Company name or UEN"
+          secondaryAction={secondaryAction}
           value={query}
         />
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:flex">
-          <Button className="h-12 px-6 sm:min-w-24" disabled={isSubmitting} type="submit">
-            {isSubmitting ? (
-              <span className="flex items-center gap-2">
-                <span className="h-4 w-4 rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground animate-spin" />
-                Loading
-              </span>
-            ) : (
-              "Search"
-            )}
-          </Button>
-          {secondaryAction}
-        </div>
       </form>
 
       {shouldShowSearchPanel ? (
