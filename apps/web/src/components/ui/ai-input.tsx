@@ -5,11 +5,9 @@ import {
   useEffect,
   useRef,
 } from "react";
-import { Building2, Search, Send } from "lucide-react";
+import { Search } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
 
 interface UseAutoResizeTextareaProps {
   minHeight: number;
@@ -116,33 +114,35 @@ export function AiInput({
     <div className="w-full">
       <div className="relative rounded-[24px] bg-background shadow-sm transition-shadow focus-within:shadow-md">
         <div className="relative overflow-hidden rounded-[24px] border border-border bg-muted/35">
-          <div
-            className="overflow-y-auto"
-            style={{ maxHeight: `${MAX_HEIGHT}px` }}
-          >
-            <div className="relative">
-              <Textarea
-                aria-label={ariaLabel}
-                autoComplete={autoComplete}
-                className="min-h-14 resize-none rounded-none border-0 bg-transparent px-4 py-4 pr-12 text-base leading-6 text-foreground shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
-                disabled={disabled}
-                onChange={(event) => {
-                  onValueChange(event.target.value);
-                  adjustHeight();
-                }}
-                onKeyDown={handleKeyDown}
-                placeholder=""
-                ref={textareaRef}
-                rows={1}
-                value={value}
-              />
-              {!value ? (
-                <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-2 text-base text-muted-foreground">
-                  <Search className="h-4 w-4" />
-                  <span>{placeholder}</span>
-                </div>
-              ) : null}
+          <div className="flex items-start gap-3 px-4 py-3">
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-0 top-4 h-4 w-4 text-muted-foreground" />
+              <div
+                className="overflow-y-auto"
+                style={{ maxHeight: `${MAX_HEIGHT}px` }}
+              >
+                <Textarea
+                  aria-label={ariaLabel}
+                  autoComplete={autoComplete}
+                  className="min-h-12 resize-none rounded-none border-0 bg-transparent py-3 pl-7 pr-2 text-base leading-6 text-foreground shadow-none placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
+                  disabled={disabled}
+                  onChange={(event) => {
+                    onValueChange(event.target.value);
+                    adjustHeight();
+                  }}
+                  onKeyDown={handleKeyDown}
+                  placeholder={placeholder}
+                  ref={textareaRef}
+                  rows={1}
+                  value={value}
+                />
+              </div>
             </div>
+            {secondaryAction ? (
+              <div className="shrink-0 self-center">
+                {secondaryAction}
+              </div>
+            ) : null}
           </div>
 
           {dropdownContent ? (
@@ -150,38 +150,6 @@ export function AiInput({
               {dropdownContent}
             </div>
           ) : null}
-
-          <div className="flex min-h-14 items-center justify-between gap-3 border-t border-border/70 bg-background/65 px-3 py-2">
-            <div className="flex min-w-0 items-center gap-2 px-1">
-              <span className="inline-flex min-w-0 items-center gap-2 text-xs font-medium text-muted-foreground">
-                <Building2 className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">ACRA identity lookup</span>
-              </span>
-            </div>
-
-            <div className="flex shrink-0 items-center gap-2">
-              {secondaryAction}
-              <Button
-                aria-label="Search company name or UEN"
-                className={cn(
-                  "h-10 w-10 rounded-full",
-                  value.trim()
-                    ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                    : "bg-muted text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-                disabled={disabled || isSubmitting}
-                onClick={handleSubmit}
-                size="icon"
-                type="button"
-              >
-                {isSubmitting ? (
-                  <span className="h-4 w-4 rounded-full border-2 border-current/35 border-t-current animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-          </div>
         </div>
       </div>
     </div>
