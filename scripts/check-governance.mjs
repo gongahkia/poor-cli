@@ -36,6 +36,7 @@ requireFile(resolve(root, "docs/privacy-dpo-readiness.md"));
 requireFile(resolve(root, "docs/data-processing-agreement-template.md"));
 requireFile(resolve(root, "docs/soc2-type1-roadmap.md"));
 requireFile(resolve(root, "docs/mas-outsourcing-readiness.md"));
+requireFile(resolve(root, "docs/npm-publish-readiness.md"));
 requireFile(resolve(root, "docs/product/hosted-onboarding.md"));
 requireFile(resolve(root, "docs/kpi-thresholds.md"));
 requireFile(resolve(root, "config/kpi-thresholds.example.json"));
@@ -245,6 +246,14 @@ ensureIncludes(resolve(root, "docs/mas-outsourcing-readiness.md"), [
   "Required Controls Before FI-Adjacent Sales",
   "Data Processing Agreement template",
   "soc2-type1-roadmap.md",
+]);
+
+ensureIncludes(resolve(root, "docs/npm-publish-readiness.md"), [
+  "@dude/mcp",
+  "npm run release:dryrun",
+  "npm publish --workspace packages/mcp-server --access public --dry-run",
+  "NPM_TOKEN",
+  "npm view @dude/mcp version",
 ]);
 
 ensureIncludes(resolve(root, "docs/product/hosted-onboarding.md"), [

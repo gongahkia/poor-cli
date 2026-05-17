@@ -4,7 +4,7 @@ Client CDD onboarding for Singapore corp-services teams
 
 > Status: Dude is the product; Dude MCP is its backend/runtime.
 
-Dude is a zero-install, web-first Singapore client and counterparty CDD app for public-registry-backed checks on SG entities. The backend/runtime is **Dude MCP**, published as `@dude/mcp` with the `dude-mcp` executable. Stable `sg_*` tool contracts remain intact.
+Dude is a zero-install, web-first Singapore client and counterparty CDD app for public-registry-backed checks on SG entities. The backend/runtime is **Dude MCP**, packaged for npm publication as `@dude/mcp` with the `dude-mcp` executable. Stable `sg_*` tool contracts remain intact.
 
 Start with the corp-services workflow in [docs/product/corp-services-cdd.md](./docs/product/corp-services-cdd.md). It defines the first-run path from new-client intake to audit-ready dossier export, the modules that already support the flow, the remaining platform gaps, and the explicit non-advice boundaries.
 
@@ -79,6 +79,7 @@ Roadmap planning files live under [docs/roadmap](./docs/roadmap) so the reposito
 - [docs/data-processing-agreement-template.md](./docs/data-processing-agreement-template.md) provides the draft DPA template for hosted customer onboarding, subject to legal review.
 - [docs/soc2-type1-roadmap.md](./docs/soc2-type1-roadmap.md) records the SOC 2 Type I readiness gap analysis, control backlog, cost estimate, and buyer trigger.
 - [docs/mas-outsourcing-readiness.md](./docs/mas-outsourcing-readiness.md) maps hosted BCP, incident, subprocessor, data residency, and control gaps for FI-adjacent MAS outsourcing reviews.
+- [docs/npm-publish-readiness.md](./docs/npm-publish-readiness.md) records the `@dude/mcp` package dry-run evidence and the exact npm publish blocker.
 - [docs/product/hosted-onboarding.md](./docs/product/hosted-onboarding.md) links the hosted customer packet for sales and onboarding review.
 - [SECURITY.md](./SECURITY.md) explains private vulnerability reporting.
 
@@ -308,7 +309,7 @@ The server also exposes OAuth protected-resource metadata at `/.well-known/oauth
 
 ### Published npm Install
 
-Use this after a public npm release:
+Use this after a public npm release. Until `npm view @dude/mcp version` returns a semver version, treat [docs/npm-publish-readiness.md](./docs/npm-publish-readiness.md) as the current publish status.
 
 ```bash
 npx -y @dude/mcp

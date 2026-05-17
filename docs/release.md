@@ -74,6 +74,18 @@ For quarterly governance updates, generate a report draft from the latest artifa
 npm run quarterly:report
 ```
 
+### npm Publish Readiness
+
+Before the first public npm release, review [npm-publish-readiness.md](./npm-publish-readiness.md). It records the `@dude/mcp` definition of success, local dry-run evidence, and the current external blocker.
+
+For package-level proof without touching the registry:
+
+```bash
+npm run test:smoke:packaging
+npm run release:dryrun
+npm publish --workspace packages/mcp-server --access public --dry-run
+```
+
 6. Run the live validation pass:
 
 ```bash
