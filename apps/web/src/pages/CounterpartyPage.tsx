@@ -67,7 +67,7 @@ function DossierActionButton({
   return (
     <Button
       aria-label={label}
-      className="group h-10 w-10 justify-start overflow-hidden px-0 transition-[width,padding] duration-200 ease-out hover:w-36 hover:px-3 focus-visible:w-36 focus-visible:px-3"
+      className="group h-10 w-10 justify-start gap-2 overflow-hidden px-0 transition-[width,padding] duration-200 ease-out hover:w-36 hover:px-3 focus-visible:w-36 focus-visible:px-3"
       disabled={disabled}
       onClick={onClick}
       title={label}
