@@ -238,7 +238,9 @@ const checkAnalystMemoReadiness = async (): Promise<
       observedAt: toObservedAt(),
       latencyMs: Date.now() - startedAt,
       details: {
+        credentialLocation: "REST gateway process environment",
         provider: config.provider,
+        requiredEnvVar: PROVIDER_KEY_ENV[config.provider],
         model: config.model,
       },
     };
@@ -264,7 +266,9 @@ const checkAnalystMemoReadiness = async (): Promise<
       observedAt: toObservedAt(),
       latencyMs: Date.now() - startedAt,
       details: {
+        credentialLocation: "REST gateway process environment",
         provider: config.provider,
+        requiredEnvVar: PROVIDER_KEY_ENV[config.provider],
         model: config.model,
       },
     };
@@ -277,7 +281,9 @@ const checkAnalystMemoReadiness = async (): Promise<
       observedAt: toObservedAt(),
       latencyMs: Date.now() - startedAt,
       details: {
+        credentialLocation: "REST gateway process environment",
         provider: config.provider,
+        requiredEnvVar: PROVIDER_KEY_ENV[config.provider],
         model: config.model,
       },
       ...sanitizeProviderReadinessError(error, config.provider),

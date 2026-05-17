@@ -23,6 +23,8 @@ export type GatewayReadinessIssue = {
   tone: HealthTone;
 };
 
+type GatewayAnalystMemoReadiness = NonNullable<GatewayHealth["services"]>["analystMemo"];
+
 const toneClasses: Record<HealthTone, string> = {
   good: "border-emerald-200 bg-emerald-50 text-emerald-950",
   warn: "border-amber-200 bg-amber-50 text-amber-950",
@@ -35,6 +37,18 @@ const dotClasses: Record<HealthTone, string> = {
   warn: "bg-amber-500",
   bad: "bg-destructive",
   neutral: "bg-muted-foreground",
+};
+
+const providerKeyEnv: Record<string, string> = {
+  anthropic: "ANTHROPIC_API_KEY",
+  google: "GOOGLE_API_KEY",
+  openai: "OPENAI_API_KEY",
+};
+
+const providerLabels: Record<string, string> = {
+  anthropic: "Anthropic",
+  google: "Google",
+  openai: "OpenAI",
 };
 
 function formatUptime(seconds: number | undefined): string {
@@ -92,6 +106,40 @@ function getReadinessDetail(
   return parts.join(" ");
 }
 
+function readServiceDetail(service: GatewayServiceReadiness | undefined, key: string): string | undefined {
+  const value = service?.details?.[key];
+  return typeof value === "string" && value.trim() !== "" ? value : undefined;
+}
+
+function getProviderName(service: GatewayAnalystMemoReadiness | undefined): string {
+  return service?.provider ?? readServiceDetail(service, "provider") ?? "openai";
+}
+
+function getProviderKeyEnv(service: GatewayAnalystMemoReadiness | undefined): string {
+  const provider = getProviderName(service);
+  return readServiceDetail(service, "requiredEnvVar") ?? providerKeyEnv[provider] ?? "OPENAI_API_KEY";
+}
+
+function getAnalystMemoKeyLabel(service: GatewayAnalystMemoReadiness | undefined): string {
+  const provider = getProviderName(service);
+  return `${providerLabels[provider] ?? "AI provider"} key`;
+}
+
+function getAnalystMemoKeyDetail(service: GatewayAnalystMemoReadiness | undefined): string {
+  const provider = getProviderName(service);
+  const providerLabel = providerLabels[provider] ?? provider;
+  const model = service?.model ?? readServiceDetail(service, "model") ?? "configured model";
+  const requiredEnvVar = getProviderKeyEnv(service);
+  const credentialLocation =
+    readServiceDetail(service, "credentialLocation") ?? "REST gateway process environment";
+  const baseDetail = getReadinessDetail(
+    service,
+    `Set ${requiredEnvVar} on the REST gateway process to enable analyst memo generation.`,
+  );
+
+  return `${baseDetail} Required env: ${requiredEnvVar}. Provider: ${providerLabel}; model: ${model}. Keep this server-side in the ${credentialLocation}; browser VITE_* keys are not used for memo generation.`;
+}
+
 export function getGatewayReadinessIssues(health: GatewayHealth): GatewayReadinessIssue[] {
   const services = [
     {
@@ -113,9 +161,9 @@ export function getGatewayReadinessIssues(health: GatewayHealth): GatewayReadine
       service: health.services?.tinyfish,
     },
     {
-      fallback: "Analyst memo provider did not report readiness.",
+      fallback: `Set ${getProviderKeyEnv(health.services?.analystMemo)} on the REST gateway process to enable analyst memo generation.`,
       key: "analystMemo",
-      label: "Analyst memo",
+      label: getAnalystMemoKeyLabel(health.services?.analystMemo),
       service: health.services?.analystMemo,
     },
   ];
@@ -293,46 +341,7 @@ export function GatewayStatus({ variant = "chips" }: GatewayStatusProps) {
   const analystMemo = state.health.services?.analystMemo;
 
   if (variant === "panel") {
-    return (
-      <div className="grid gap-2">
-        <HealthRow
-          detail={`${getReadinessDetail(gateway, "HTTP gateway is reachable.")} ${uptime}; ${state.health.tools} tools enabled.`}
-          label="Gateway"
-          state={state.health.readiness === "ready" ? "Ready" : getReadinessState(gateway?.status)}
-          tone={getReadinessTone(gateway?.status)}
-        />
-        <HealthRow
-          detail={getReadinessDetail(
-            datagovDatastore,
-            "data.gov.sg datastore did not report readiness.",
-          )}
-          label="data.gov.sg datastore"
-          state={getReadinessState(datagovDatastore?.status)}
-          tone={getReadinessTone(datagovDatastore?.status)}
-        />
-        <HealthRow
-          detail={getReadinessDetail(acraLookup, "ACRA lookup path did not report readiness.")}
-          label="ACRA lookup"
-          state={getReadinessState(acraLookup?.status)}
-          tone={getReadinessTone(acraLookup?.status)}
-        />
-        <HealthRow
-          detail={getReadinessDetail(tinyfish, "Optional web discovery did not report readiness.")}
-          label="TinyFish"
-          state={getReadinessState(tinyfish?.status)}
-          tone={getReadinessTone(tinyfish?.status)}
-        />
-        <HealthRow
-          detail={getReadinessDetail(
-            analystMemo,
-            "Analyst memo provider did not report readiness.",
-          )}
-          label="Analyst memo"
-          state={getReadinessState(analystMemo?.status)}
-          tone={getReadinessTone(analystMemo?.status)}
-        />
-      </div>
-    );
+    return <GatewayStatusPanel health={state.health} />;
   }
 
   return (
@@ -341,7 +350,54 @@ export function GatewayStatus({ variant = "chips" }: GatewayStatusProps) {
       <StatusChip label="data.gov.sg" service={datagovDatastore} />
       <StatusChip label="ACRA" service={acraLookup} />
       <StatusChip label="TinyFish" service={tinyfish} />
-      <StatusChip label="Memo" service={analystMemo} />
+      <StatusChip label={getAnalystMemoKeyLabel(analystMemo)} service={analystMemo} />
+    </div>
+  );
+}
+
+export function GatewayStatusPanel({ health }: { health: GatewayHealth }) {
+  const uptime = formatUptime(health.runtime?.uptimeSeconds);
+  const gateway = health.services?.gateway;
+  const datagovDatastore = health.services?.datagovDatastore;
+  const acraLookup = health.services?.acraLookup;
+  const tinyfish = health.services?.tinyfish;
+  const analystMemo = health.services?.analystMemo;
+
+  return (
+    <div className="grid gap-2">
+      <HealthRow
+        detail={`${getReadinessDetail(gateway, "HTTP gateway is reachable.")} ${uptime}; ${health.tools} tools enabled.`}
+        label="Gateway"
+        state={health.readiness === "ready" ? "Ready" : getReadinessState(gateway?.status)}
+        tone={getReadinessTone(gateway?.status)}
+      />
+      <HealthRow
+        detail={getReadinessDetail(
+          datagovDatastore,
+          "data.gov.sg datastore did not report readiness.",
+        )}
+        label="data.gov.sg datastore"
+        state={getReadinessState(datagovDatastore?.status)}
+        tone={getReadinessTone(datagovDatastore?.status)}
+      />
+      <HealthRow
+        detail={getReadinessDetail(acraLookup, "ACRA lookup path did not report readiness.")}
+        label="ACRA lookup"
+        state={getReadinessState(acraLookup?.status)}
+        tone={getReadinessTone(acraLookup?.status)}
+      />
+      <HealthRow
+        detail={getReadinessDetail(tinyfish, "Optional web discovery did not report readiness.")}
+        label="TinyFish"
+        state={getReadinessState(tinyfish?.status)}
+        tone={getReadinessTone(tinyfish?.status)}
+      />
+      <HealthRow
+        detail={getAnalystMemoKeyDetail(analystMemo)}
+        label={getAnalystMemoKeyLabel(analystMemo)}
+        state={getReadinessState(analystMemo?.status)}
+        tone={getReadinessTone(analystMemo?.status)}
+      />
     </div>
   );
 }

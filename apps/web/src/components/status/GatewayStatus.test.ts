@@ -1,6 +1,8 @@
+import { createElement } from "react";
 import { describe, expect, it } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
 
-import { getGatewayReadinessIssues } from "@/components/status/GatewayStatus";
+import { GatewayStatusPanel, getGatewayReadinessIssues } from "@/components/status/GatewayStatus";
 import type { GatewayHealth } from "@/lib/api/client";
 
 const baseHealth: GatewayHealth = {
@@ -52,7 +54,7 @@ describe("getGatewayReadinessIssues", () => {
     expect(issues).toEqual([
       expect.objectContaining({
         key: "analystMemo",
-        label: "Analyst memo",
+        label: "OpenAI key",
         state: "Failing",
         tone: "bad",
       }),
@@ -63,5 +65,39 @@ describe("getGatewayReadinessIssues", () => {
 
   it("keeps the landing page quiet when all visible services are ready", () => {
     expect(getGatewayReadinessIssues(baseHealth)).toEqual([]);
+  });
+
+  it("documents the server-side OpenAI key in the status panel", () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        GatewayStatusPanel,
+        {
+          health: {
+            ...baseHealth,
+            services: {
+              ...baseHealth.services,
+              analystMemo: {
+                configured: true,
+                details: {
+                  credentialLocation: "REST gateway process environment",
+                  model: "gpt-4o",
+                  provider: "openai",
+                  requiredEnvVar: "OPENAI_API_KEY",
+                },
+                message: "Analyst memo provider accepted the readiness probe.",
+                model: "gpt-4o",
+                provider: "openai",
+                status: "ready",
+              },
+            },
+          },
+        },
+      ),
+    );
+
+    expect(html).toContain("OpenAI key");
+    expect(html).toContain("OPENAI_API_KEY");
+    expect(html).toContain("REST gateway process environment");
+    expect(html).toContain("browser VITE_* keys are not used");
   });
 });
