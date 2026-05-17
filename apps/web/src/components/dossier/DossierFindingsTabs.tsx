@@ -67,7 +67,7 @@ function SummarySection({ dossier }: { dossier: BusinessDossier }) {
 }
 
 const tabTriggerClassName =
-  "group min-w-0 flex-1 flex-col gap-1 px-2 py-3 text-xs data-[state=active]:bg-background data-[state=active]:shadow-none";
+  "group min-w-0 flex-1 flex-col gap-1 border border-transparent px-2 py-3 text-xs data-[state=active]:border-border data-[state=active]:bg-card data-[state=active]:shadow-sm";
 
 export function DossierFindingsTabs({
   dossier,
