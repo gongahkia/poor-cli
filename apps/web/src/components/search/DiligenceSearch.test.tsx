@@ -18,6 +18,7 @@ describe("DiligenceSearch", () => {
     expect(html).toContain("Client or counterparty company name or UEN");
     expect(html).toContain("ACRA identity lookup");
     expect(html).toContain("Search company name or UEN");
+    expect(html).not.toContain("rounded-full border border-border bg-background px-3 py-1.5");
     expect(html).not.toContain("No counterparty selected");
   });
 });
