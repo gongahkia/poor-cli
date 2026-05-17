@@ -1,9 +1,21 @@
-import { ChangeEvent, useMemo, useState } from "react";
+import { ChangeEvent, useId, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import {
+  AlertCircle,
+  BookmarkPlus,
+  CheckCircle2,
+  Database,
+  ExternalLink,
+  FileJson,
+  FileSpreadsheet,
+  Loader2,
+  Play,
+  RotateCw,
+  Upload,
+} from "lucide-react";
 
 import { useToast } from "@/components/notifications/ToastProvider";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { parseBulkInput } from "@/lib/bulk";
 import {
   buildDossierExportSummary,
@@ -56,6 +68,8 @@ export function BulkDiligence() {
   const [result, setResult] = useState<BulkDossierResponse | null>(null);
   const [filter, setFilter] = useState<FilterMode>("all");
   const [sort, setSort] = useState<SortMode>("risk");
+  const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
+  const fileInputId = useId();
   const parsed = useMemo(() => parseBulkInput(input), [input]);
   const { notify } = useToast();
   const visibleRows = useMemo(
@@ -67,6 +81,7 @@ export function BulkDiligence() {
   const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file === undefined) return;
+    setSelectedFileName(file.name);
     setInput(await file.text());
     notify({ title: "File loaded", description: file.name, tone: "success" });
   };
@@ -150,7 +165,10 @@ export function BulkDiligence() {
           <h2 className="text-base font-semibold text-foreground">Bulk checks</h2>
           <p className="mt-1 text-sm text-muted-foreground">Paste up to 200 UENs or company names, one per row, or upload a CSV.</p>
         </div>
-        <span className="w-fit rounded-full border border-border bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground">Workspace-backed</span>
+        <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-border bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground">
+          <Database aria-hidden="true" className="h-3.5 w-3.5" />
+          Workspace-backed
+        </span>
       </div>
 
       <div className="mt-4 grid gap-3">
@@ -161,29 +179,63 @@ export function BulkDiligence() {
           value={input}
         />
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <Input
-            accept=".csv,text/csv,text/plain"
-            aria-label="Upload CSV"
-            className="h-12 max-w-sm rounded-[18px] border-border bg-background px-3 text-sm file:mr-3 file:rounded-full file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium"
-            onChange={handleFile}
-            type="file"
-          />
+          <div className="flex h-12 min-w-0 max-w-sm items-center gap-3 rounded-[18px] border border-border bg-background px-3 text-sm">
+            <input
+              accept=".csv,text/csv,text/plain"
+              aria-label="Upload CSV"
+              className="sr-only"
+              id={fileInputId}
+              onChange={handleFile}
+              type="file"
+            />
+            <label
+              className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-muted px-3 py-1.5 font-medium text-foreground transition-colors hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              htmlFor={fileInputId}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  document.getElementById(fileInputId)?.click();
+                }
+              }}
+              tabIndex={0}
+            >
+              <Upload aria-hidden="true" className="h-4 w-4" />
+              Upload CSV
+            </label>
+            <span className="min-w-0 truncate text-muted-foreground">
+              {selectedFileName ?? "No file chosen"}
+            </span>
+          </div>
           <Button
-            className="h-12 rounded-[18px] px-5"
+            className="h-12 gap-2 rounded-[18px] px-5"
             disabled={status === "running" || parsed.items.length === 0 || parsed.errors.length > 0}
             onClick={runBulk}
             type="button"
           >
+            {status === "running" ? (
+              <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+            ) : (
+              <Play aria-hidden="true" className="h-4 w-4" />
+            )}
             {status === "running" ? "Running" : "Run bulk check"}
           </Button>
         </div>
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-        <span className="rounded-full border border-border bg-muted/60 px-3 py-1">{parsed.items.length} valid rows</span>
-        <span className="rounded-full border border-border bg-muted/60 px-3 py-1">{parsed.errors.length} parse errors</span>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/60 px-3 py-1">
+          <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />
+          {parsed.items.length} valid rows
+        </span>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/60 px-3 py-1">
+          <AlertCircle aria-hidden="true" className="h-3.5 w-3.5" />
+          {parsed.errors.length} parse errors
+        </span>
         {result === null ? null : (
-          <span className="rounded-full border border-border bg-muted/60 px-3 py-1">{result.executedCount} executed</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/60 px-3 py-1">
+            <Play aria-hidden="true" className="h-3.5 w-3.5" />
+            {result.executedCount} executed
+          </span>
         )}
       </div>
 
@@ -244,18 +296,22 @@ export function BulkDiligence() {
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
+                className="gap-2"
                 disabled={status === "running" || !result.rows.some((row) => row.status === "error" || row.upstreamFailure)}
                 onClick={() => void retryFailedRows()}
                 type="button"
                 variant="outline"
               >
+                <RotateCw aria-hidden="true" className="h-4 w-4" />
                 Retry failed
               </Button>
-              <Button onClick={() => void exportCsv()} type="button" variant="outline">
-                Export CSV
+              <Button aria-label="Export bulk CSV" onClick={() => void exportCsv()} size="icon" title="Export CSV" type="button" variant="outline">
+                <FileSpreadsheet aria-hidden="true" className="h-4 w-4" />
+                <span className="sr-only">Export CSV</span>
               </Button>
-              <Button onClick={() => void exportJson()} type="button" variant="outline">
-                Export JSON
+              <Button aria-label="Export bulk JSON" onClick={() => void exportJson()} size="icon" title="Export JSON" type="button" variant="outline">
+                <FileJson aria-hidden="true" className="h-4 w-4" />
+                <span className="sr-only">Export JSON</span>
               </Button>
             </div>
           </div>
@@ -294,13 +350,14 @@ export function BulkDiligence() {
                     <td className="px-3 py-3">
                       <div className="flex flex-col gap-2">
                         {row.canonicalIdentifier === null ? null : (
-                          <Link className="text-xs font-medium underline-offset-4 hover:underline" to={`/c/${encodeURIComponent(row.canonicalIdentifier)}`}>
+                          <Link className="inline-flex items-center gap-1 text-xs font-medium underline-offset-4 hover:underline" to={`/c/${encodeURIComponent(row.canonicalIdentifier)}`}>
+                            <ExternalLink aria-hidden="true" className="h-3 w-3" />
                             Open
                           </Link>
                         )}
                         {row.dossier === undefined ? null : (
                           <button
-                            className="text-left text-xs font-medium underline-offset-4 hover:underline"
+                            className="inline-flex items-center gap-1 text-left text-xs font-medium underline-offset-4 hover:underline"
                             onClick={() => {
                               if (row.dossier !== undefined) {
                                 saveShortlistEntry(buildDossierExportSummary(row.dossier));
@@ -309,6 +366,7 @@ export function BulkDiligence() {
                             }}
                             type="button"
                           >
+                            <BookmarkPlus aria-hidden="true" className="h-3 w-3" />
                             Save
                           </button>
                         )}

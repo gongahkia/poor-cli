@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { FileJson, FileSpreadsheet, Trash2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -34,14 +35,44 @@ export function ShortlistPanel() {
           <p className="mt-1 text-sm text-muted-foreground">Saved in this browser only.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button className="h-11 rounded-[16px]" disabled={entries.length === 0} onClick={() => exportShortlistCsv(entries)} type="button" variant="outline">
-            Export CSV
+          <Button
+            aria-label="Export shortlist CSV"
+            className="h-11 rounded-[16px]"
+            disabled={entries.length === 0}
+            onClick={() => exportShortlistCsv(entries)}
+            size="icon"
+            title="Export CSV"
+            type="button"
+            variant="outline"
+          >
+            <FileSpreadsheet aria-hidden="true" className="h-4 w-4" />
+            <span className="sr-only">Export CSV</span>
           </Button>
-          <Button className="h-11 rounded-[16px]" disabled={entries.length === 0} onClick={() => void exportShortlistJson(entries)} type="button" variant="outline">
-            Export JSON
+          <Button
+            aria-label="Export shortlist JSON"
+            className="h-11 rounded-[16px]"
+            disabled={entries.length === 0}
+            onClick={() => void exportShortlistJson(entries)}
+            size="icon"
+            title="Export JSON"
+            type="button"
+            variant="outline"
+          >
+            <FileJson aria-hidden="true" className="h-4 w-4" />
+            <span className="sr-only">Export JSON</span>
           </Button>
-          <Button className="h-11 rounded-[16px]" disabled={entries.length === 0} onClick={() => setEntries(clearShortlist())} type="button" variant="outline">
-            Clear
+          <Button
+            aria-label="Clear shortlist"
+            className="h-11 rounded-[16px]"
+            disabled={entries.length === 0}
+            onClick={() => setEntries(clearShortlist())}
+            size="icon"
+            title="Clear shortlist"
+            type="button"
+            variant="outline"
+          >
+            <Trash2 aria-hidden="true" className="h-4 w-4" />
+            <span className="sr-only">Clear</span>
           </Button>
         </div>
       </div>
@@ -63,10 +94,12 @@ export function ShortlistPanel() {
                   <p className="mt-1 font-mono text-xs text-muted-foreground">{entry.uen ?? entry.canonicalIdentifier}</p>
                 </div>
                 <button
-                  className="text-xs font-medium text-muted-foreground underline-offset-4 hover:underline"
+                  aria-label={`Remove ${entry.entity ?? entry.canonicalIdentifier}`}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground underline-offset-4 hover:underline"
                   onClick={() => setEntries(removeShortlistEntry(entry.canonicalIdentifier))}
                   type="button"
                 >
+                  <X aria-hidden="true" className="h-3 w-3" />
                   Remove
                 </button>
               </div>
