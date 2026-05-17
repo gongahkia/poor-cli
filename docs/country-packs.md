@@ -35,6 +35,24 @@ Country packs must make these fields explicit before adapter code is accepted:
 - `freshness.upstreamTimestamp`: the source's own timestamp when available.
 - `publicDataLimits`: always state unsupported private, paid, ownership, or advisory scope.
 
+## Runtime Registration Boundary
+
+The shipped Singapore surface is registered through the SG country pack:
+
+- `packages/mcp-server/src/country-packs/sg.ts` owns the `sg` pack metadata and tool-definition list.
+- `packages/mcp-server/src/country-packs/registry.ts` exposes the pack registry.
+- `packages/mcp-server/src/tools/tool-set.ts` hydrates tools from country packs and preserves the public `sg_*` contracts.
+
+New country packs should follow this boundary rather than adding bespoke imports directly to `tool-set.ts`. A pack must define:
+
+- namespace and country metadata;
+- tool definitions exposed by that pack;
+- resource URIs if the pack adds resources;
+- auth environment variables or keystore boundaries;
+- governance metadata for licensing, freshness, public-data limits, and owner roles.
+
+The current SG pack is intentionally stable. Country-pack refactors must not rename `sg_*` tools, remove `sg://...` resources, or weaken the existing brief envelope semantics.
+
 ## Template
 
 Start from [examples/country-pack-template.json](../examples/country-pack-template.json).
@@ -50,8 +68,9 @@ npm run test -- packages/shared/src/__tests__/country-pack-schema.test.ts
 1. Open a proposal issue with country, source links, auth needs, licensing assumptions, and public-data limits.
 2. Add or update a country-pack envelope fixture.
 3. Add mocked tests for success, no-match, ambiguous-match, and upstream-failure behavior.
-4. Add adapter code only after the source terms and public-data boundaries are documented.
-5. Update roadmap and licensing docs when the pack changes ASEAN expansion assumptions.
+4. Add runtime registration through a country-pack module and registry entry.
+5. Add adapter code only after the source terms and public-data boundaries are documented.
+6. Update roadmap and licensing docs when the pack changes ASEAN expansion assumptions.
 
 Country-pack contributions that omit provenance, freshness, gaps, limits, auth, or licensing metadata should not be merged.
 

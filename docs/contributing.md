@@ -2,7 +2,7 @@
 
 ## Scope First
 
-The repo currently prioritizes depth and contract honesty across 38 catalog families, with `sg_query` acting as a bounded preferred interface and seven additive brief tools creating the main user-facing artifacts.
+The repo currently prioritizes depth and contract honesty across 39 catalog families, with `sg_query` acting as a bounded preferred interface and seven additive brief tools creating the main user-facing artifacts.
 
 Before adding a new family, ask whether the user goal is better served by:
 
@@ -12,10 +12,9 @@ Before adding a new family, ask whether the user goal is better served by:
 
 ## Current Public Shape
 
-- 86 direct data tools across 38 catalog families
+- 90 direct data and diligence tools across 39 catalog families
 - 7 additive brief tools
-- 17 operational tools
-- 1 health check tool
+- 11 runtime and operational tools, including health checks
 - 1 bounded preferred interface, `sg_query`
 
 The direct tools are the stable low-level contract. Additive briefs are allowed only when they remain deterministic and inspectable.
@@ -26,7 +25,7 @@ The direct tools are the stable low-level contract. Additive briefs are allowed 
 2. Add shared schemas in `packages/shared/src/schemas/index.ts`.
 3. Create the upstream client in `packages/mcp-server/src/apis/<family>/client.ts`.
 4. Create direct tool definitions in `packages/mcp-server/src/tools/<family>-tools.ts`.
-5. Register the definitions in `packages/mcp-server/src/tools/tool-set.ts` as a `RegisteredToolDefinition[]`.
+5. Register the definitions through the owning country pack in `packages/mcp-server/src/country-packs/`.
 6. Update public catalogs in `packages/mcp-server/src/tools/catalog.ts`.
 7. Keep `sg://apis`, `sg://tools`, `sg://workflows`, `sg://recipes`, `sg://runtime`, `sg://playbooks`, and `sg://benchmarks` truthful.
 8. Add tests for schemas, clients, tools, routing, and catalog parity.
