@@ -1,6 +1,7 @@
 import { ExternalLink, Search } from "lucide-react";
 
-import { Skeleton } from "@/components/ui/skeleton";
+import type { AgentPlanTask } from "@/components/ui/agent-plan";
+import { AgentPlan } from "@/components/ui/agent-plan-loader";
 import {
   getDisplaySnippet,
   getFaviconUrl,
@@ -14,6 +15,34 @@ type PeopleDiscoveryState =
   | { status: "error"; message: string };
 
 export function PeopleDiscoverySection({ state }: { state: PeopleDiscoveryState }) {
+  const loadingTasks: AgentPlanTask[] = [
+    {
+      id: "people-follow-up",
+      title: "Search people follow-up references",
+      description: "Find public snippets that may identify directors, executives, or operational contacts.",
+      status: "in-progress",
+      priority: "medium",
+      subtasks: [
+        {
+          id: "tinyfish-people",
+          title: "Call TinyFish Search",
+          description: "Searching people-oriented terms for the entity while keeping roles unverified until analyst review.",
+          status: "in-progress",
+          priority: "medium",
+          tools: ["TinyFish Search"],
+        },
+        {
+          id: "suggest-actions",
+          title: "Prepare follow-up actions",
+          description: "Turn snippets into review prompts without treating them as registry evidence.",
+          status: "pending",
+          priority: "medium",
+          tools: ["dude-web"],
+        },
+      ],
+    },
+  ];
+
   return (
     <section className="min-w-0 rounded-lg border border-border bg-card p-4 shadow-sm sm:p-5">
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -27,11 +56,12 @@ export function PeopleDiscoverySection({ state }: { state: PeopleDiscoveryState 
       </div>
 
       {state.status === "loading" ? (
-        <div className="mt-4 space-y-3">
-          <Skeleton className="h-4 w-2/3" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-5/6" />
-        </div>
+        <AgentPlan
+          className="mt-4"
+          description="Dude is looking for public people references that can guide analyst outreach."
+          tasks={loadingTasks}
+          title="Dude is finding people leads"
+        />
       ) : state.status === "error" ? (
         <p className="mt-4 break-words text-sm text-muted-foreground">{state.message}</p>
       ) : !state.discovery.configured ? (

@@ -15,8 +15,9 @@ import { SnapshotSection } from "@/components/dossier/SnapshotSection";
 import { WebPresenceSection, type WebPresenceState } from "@/components/dossier/WebPresenceSection";
 import { useToast } from "@/components/notifications/ToastProvider";
 import { GatewayStatus } from "@/components/status/GatewayStatus";
+import type { AgentPlanTask } from "@/components/ui/agent-plan";
+import { AgentPlan } from "@/components/ui/agent-plan-loader";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { callTool, getGatewayJson, postGatewayJson, type PeopleDiscovery, type WebPresence } from "@/lib/api/client";
 import {
   buildDossierExportSummary,
@@ -122,6 +123,92 @@ export function CounterpartyPage() {
 }
 
 function DossierLoading({ identifier }: { identifier: string }) {
+  const tasks: AgentPlanTask[] = [
+    {
+      id: "identity",
+      title: "Resolve the counterparty identity",
+      description: "Route the submitted name or UEN into the Singapore business dossier workflow.",
+      status: "in-progress",
+      priority: "high",
+      subtasks: [
+        {
+          id: "prepare-input",
+          title: "Prepare dossier input",
+          description: `Normalizing "${identifier}" before calling the dossier tool.`,
+          status: "completed",
+          priority: "high",
+          tools: ["dude-web"],
+        },
+        {
+          id: "call-dossier",
+          title: "Call Singapore business dossier",
+          description: "Requesting the bounded company diligence workflow from the MCP gateway.",
+          status: "in-progress",
+          priority: "high",
+          tools: ["sg_business_dossier"],
+        },
+        {
+          id: "match-acra",
+          title: "Match official ACRA records",
+          description: "Looking for exact company and UEN evidence before expanding into sector checks.",
+          status: "pending",
+          priority: "high",
+          tools: ["sg_acra_entities"],
+        },
+      ],
+    },
+    {
+      id: "sector-scope",
+      title: "Evaluate sector module scope",
+      description: "Use ACRA SSIC evidence and supplied identifiers to decide which official sources can run.",
+      status: "pending",
+      priority: "medium",
+      subtasks: [
+        {
+          id: "sector-hints",
+          title: "Infer sector hints",
+          description: "Derive finance, building, real estate, procurement, health, legal, or licensing context when evidence supports it.",
+          status: "pending",
+          priority: "medium",
+          tools: ["sg_business_dossier"],
+        },
+        {
+          id: "sector-modules",
+          title: "Queue eligible official modules",
+          description: "Run only the modules with enough scope or identifiers, and record skipped checks as non-negative evidence.",
+          status: "pending",
+          priority: "medium",
+          tools: ["sg_bca_*", "sg_cea_*", "sg_gebiz_tenders", "sg_boa_*", "sg_hsa_*", "sg_hlb_*"],
+        },
+      ],
+    },
+    {
+      id: "assemble-output",
+      title: "Assemble the dossier",
+      description: "Prepare evidence, gaps, freshness, provenance, and analyst follow-ups for review.",
+      status: "pending",
+      priority: "high",
+      subtasks: [
+        {
+          id: "evidence",
+          title: "Group matched records",
+          description: "Collect public registry rows by source and keep empty modules out of matched evidence.",
+          status: "pending",
+          priority: "high",
+          tools: ["sg_business_dossier"],
+        },
+        {
+          id: "provenance",
+          title: "Surface provenance and limits",
+          description: "Attach source freshness, gaps, and usage limits so the output remains auditable.",
+          status: "pending",
+          priority: "high",
+          tools: ["sg_business_dossier"],
+        },
+      ],
+    },
+  ];
+
   return (
     <>
       <div className="space-y-3">
@@ -130,27 +217,10 @@ function DossierLoading({ identifier }: { identifier: string }) {
         <p className="font-mono text-sm text-muted-foreground">{identifier}</p>
       </div>
 
-      <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
-        <div className="space-y-4">
-          <Skeleton className="h-5 w-2/3" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-5/6" />
-        </div>
-      </div>
-
-      <div className="grid gap-4">
-        {[0, 1, 2].map((item) => (
-          <div className="rounded-lg border border-border bg-card p-5 shadow-sm" key={item}>
-            <Skeleton className="mb-4 h-5 w-28" />
-            <Skeleton className="h-20 w-full" />
-          </div>
-        ))}
-      </div>
-
-      <div className="rounded-lg border border-border bg-card p-5 shadow-sm">
-        <Skeleton className="mb-3 h-4 w-40" />
-        <Skeleton className="h-4 w-full" />
-      </div>
+      <AgentPlan
+        description="Dude is calling official Singapore data tools and assembling the evidence-backed dossier."
+        tasks={tasks}
+      />
     </>
   );
 }

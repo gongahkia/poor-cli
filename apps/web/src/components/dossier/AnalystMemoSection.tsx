@@ -1,4 +1,5 @@
-import { Skeleton } from "@/components/ui/skeleton";
+import type { AgentPlanTask } from "@/components/ui/agent-plan";
+import { AgentPlan } from "@/components/ui/agent-plan-loader";
 import { formatTimestamp } from "@/lib/dossier";
 import type { AnalystMemoCitation, AnalystMemoReady, AnalystMemoResponse } from "@/types/analyst-memo";
 
@@ -61,6 +62,50 @@ export function AnalystMemoSection({
   state: AnalystMemoState;
 }) {
   const sharedStateLabel = getSharedStateLabel(sharedState);
+  const loadingTasks: AgentPlanTask[] = [
+    {
+      id: "memo-context",
+      title: "Collect memo context",
+      description: "Read dossier evidence, freshness, gaps, limits, and optional web discovery results.",
+      status: "completed",
+      priority: "high",
+      subtasks: [
+        {
+          id: "dossier-evidence",
+          title: "Load cited dossier evidence",
+          description: "Gather official registry evidence and source limits before asking for synthesis.",
+          status: "completed",
+          priority: "high",
+          tools: ["sg_business_dossier"],
+        },
+      ],
+    },
+    {
+      id: "memo-synthesis",
+      title: "Draft analyst memo",
+      description: "Ask the configured memo provider to synthesize only from cited evidence.",
+      status: "in-progress",
+      priority: "high",
+      subtasks: [
+        {
+          id: "memo-call",
+          title: "Call memo endpoint",
+          description: "Generating evidence notes, risk rating, next steps, and confidence blockers.",
+          status: "in-progress",
+          priority: "high",
+          tools: ["dude memo"],
+        },
+        {
+          id: "citation-check",
+          title: "Check citation structure",
+          description: "Ensure returned claims keep citation IDs and non-advisory reminders attached.",
+          status: "pending",
+          priority: "high",
+          tools: ["dude-web"],
+        },
+      ],
+    },
+  ];
 
   return (
     <section className="min-w-0 rounded-lg border border-border bg-card p-4 shadow-sm sm:p-5">
@@ -77,11 +122,12 @@ export function AnalystMemoSection({
       </div>
 
       {state.status === "loading" ? (
-        <div className="mt-4 space-y-3">
-          <Skeleton className="h-4 w-48" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-5/6" />
-        </div>
+        <AgentPlan
+          className="mt-4"
+          description="Dude is synthesizing a memo from cited dossier evidence."
+          tasks={loadingTasks}
+          title="Dude is drafting the memo"
+        />
       ) : state.status === "unavailable" ? (
         <div className="mt-4 min-w-0 rounded-md border border-border bg-muted/40 p-3">
           <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">

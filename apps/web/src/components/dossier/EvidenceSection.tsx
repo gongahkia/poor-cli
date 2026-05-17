@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 
 import { RecordTable } from "@/components/dossier/RecordTable";
+import type { AgentPlanTask } from "@/components/ui/agent-plan";
+import { AgentPlan } from "@/components/ui/agent-plan-loader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -142,6 +144,33 @@ function ModuleFollowUpForm({
   const config = BUSINESS_MODULE_FOLLOW_UPS[module];
   const [value, setValue] = useState(defaultValue);
   const [error, setError] = useState<string | null>(null);
+  const loadingTasks: AgentPlanTask[] = [
+    {
+      id: `${module}-follow-up`,
+      title: `Run ${BUSINESS_MODULE_LABELS[module]} follow-up`,
+      description: "Refresh the dossier with explicit sector context or identifiers.",
+      status: "in-progress",
+      priority: "high",
+      subtasks: [
+        {
+          id: "build-input",
+          title: "Build follow-up request",
+          description: "Attach the current dossier, selected module, and analyst-supplied lookup value.",
+          status: "completed",
+          priority: "high",
+          tools: ["dude-web"],
+        },
+        {
+          id: "call-dossier",
+          title: "Call Singapore business dossier",
+          description: "Rerun the bounded dossier tool and merge refreshed evidence, gaps, and provenance.",
+          status: "in-progress",
+          priority: "high",
+          tools: ["sg_business_dossier"],
+        },
+      ],
+    },
+  ];
 
   useEffect(() => {
     setValue(defaultValue);
@@ -182,6 +211,14 @@ function ModuleFollowUpForm({
         </Button>
       </div>
       {error === null ? null : <p className="text-xs text-destructive">{error}</p>}
+      {isRunning ? (
+        <AgentPlan
+          className="mt-3"
+          description="Dude is calling the selected official module and refreshing the dossier."
+          tasks={loadingTasks}
+          title="Dude is rerunning this check"
+        />
+      ) : null}
     </form>
   );
 }

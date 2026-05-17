@@ -1,6 +1,7 @@
 import { ExternalLink } from "lucide-react";
 
-import { Skeleton } from "@/components/ui/skeleton";
+import type { AgentPlanTask } from "@/components/ui/agent-plan";
+import { AgentPlan } from "@/components/ui/agent-plan-loader";
 import {
   getDisplaySnippet,
   getFaviconUrl,
@@ -14,6 +15,34 @@ type WebPresenceState =
   | { status: "error"; message: string };
 
 export function WebPresenceSection({ state }: { state: WebPresenceState }) {
+  const loadingTasks: AgentPlanTask[] = [
+    {
+      id: "web-presence",
+      title: "Search public web presence",
+      description: "Use web snippets to find possible official sites and public references.",
+      status: "in-progress",
+      priority: "medium",
+      subtasks: [
+        {
+          id: "tinyfish",
+          title: "Call TinyFish Search",
+          description: "Fetching bounded search results for the entity name and UEN.",
+          status: "in-progress",
+          priority: "medium",
+          tools: ["TinyFish Search"],
+        },
+        {
+          id: "official-site",
+          title: "Identify possible official website",
+          description: "Promote only plausible official-site matches while keeping web discovery separate from registry evidence.",
+          status: "pending",
+          priority: "medium",
+          tools: ["dude-web"],
+        },
+      ],
+    },
+  ];
+
   return (
     <section className="min-w-0 rounded-lg border border-border bg-card p-4 shadow-sm sm:p-5">
       <div>
@@ -24,11 +53,12 @@ export function WebPresenceSection({ state }: { state: WebPresenceState }) {
       </div>
 
       {state.status === "loading" ? (
-        <div className="mt-4 space-y-3">
-          <Skeleton className="h-4 w-2/3" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-5/6" />
-        </div>
+        <AgentPlan
+          className="mt-4"
+          description="Dude is checking web references in parallel with the dossier view."
+          tasks={loadingTasks}
+          title="Dude is searching the web"
+        />
       ) : state.status === "error" ? (
         <p className="mt-4 break-words text-sm text-muted-foreground">{state.message}</p>
       ) : !state.presence.configured ? (
