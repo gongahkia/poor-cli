@@ -26,7 +26,7 @@ export function SearchPage() {
         <BackendLogsDialog />
         <SearchHelpDialog />
       </div>
-      <section className="mx-auto grid min-h-dvh w-full max-w-5xl grid-rows-[minmax(0,1fr)_auto_minmax(0,1fr)] py-16">
+      <section className="mx-auto grid min-h-dvh w-full max-w-4xl grid-rows-[minmax(0,1fr)_auto_minmax(0,1fr)] py-16">
         <div className="grid items-end gap-6 pb-8 md:grid-cols-[minmax(0,1fr)_64px]">
           <div className="space-y-3">
             <p className="text-sm font-medium text-muted-foreground">Dude</p>
@@ -45,7 +45,7 @@ export function SearchPage() {
           </div>
         </div>
 
-        <div className="mx-auto w-full max-w-4xl">
+        <div className="w-full">
           <DiligenceSearch secondaryAction={<SearchToolsDialog />} />
         </div>
         <div aria-hidden="true" />
