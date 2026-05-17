@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { AnalystMemoSection, type AnalystMemoState } from "@/components/dossier/AnalystMemoSection";
 import { ConfidenceSection } from "@/components/dossier/ConfidenceSection";
-import { EvidenceSection } from "@/components/dossier/EvidenceSection";
+import { EvidenceSection, type ModuleFollowUpRequest } from "@/components/dossier/EvidenceSection";
 import { GapsSection } from "@/components/dossier/GapsSection";
 import { HandoffSection } from "@/components/dossier/HandoffSection";
 import { NextChecksSection } from "@/components/dossier/NextChecksSection";
@@ -28,6 +28,7 @@ import {
 } from "@/lib/shortlist";
 import {
   buildBusinessDossierInput,
+  buildBusinessDossierFollowUpInput,
   buildSummaryLine,
   getSummaryString,
   isNotFoundDossier,
@@ -36,7 +37,7 @@ import {
 } from "@/lib/dossier";
 import { exportDossierPdf } from "@/lib/export/pdf";
 import type { AnalystMemoResponse } from "@/types/analyst-memo";
-import type { BusinessDossier } from "@/types/dossier";
+import type { BusinessDossier, BusinessDossierModule } from "@/types/dossier";
 
 type DossierState =
   | { status: "loading" }
@@ -180,18 +181,20 @@ function DossierProblem({
 }
 
 function DossierSuccess({
-  dossier,
+  dossier: initialDossier,
   identifier,
 }: {
   dossier: BusinessDossier;
   identifier: string;
 }) {
+  const [dossier, setDossier] = useState(initialDossier);
   const resolution = dossier.records.resolution;
   const navigate = useNavigate();
   const location = useLocation();
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
+  const [rerunningModule, setRerunningModule] = useState<BusinessDossierModule | null>(null);
   const [webPresenceState, setWebPresenceState] = useState<WebPresenceState>({ status: "loading" });
   const [memoState, setMemoState] = useState<AnalystMemoState>({ status: "loading" });
   const [shortlisted, setShortlisted] = useState(false);
@@ -208,6 +211,10 @@ function DossierSuccess({
   const coverageLine = resolution === undefined
     ? null
     : `${matchedCount} of ${searchedCount} searched modules returned evidence${inferredSectorCount === 0 ? "" : `; ${inferredSectorCount} sector ${inferredSectorCount === 1 ? "hint was" : "hints were"} inferred from ACRA SSIC`}.`;
+
+  useEffect(() => {
+    setDossier(initialDossier);
+  }, [initialDossier]);
 
   useEffect(() => {
     return () => {
@@ -392,6 +399,33 @@ function DossierSuccess({
     notify({ title: "Saved dossier", description: shortlistIdentifier, tone: "success" });
   };
 
+  const handleModuleFollowUp = async (request: ModuleFollowUpRequest) => {
+    setRerunningModule(request.module);
+    try {
+      const followUpInput = buildBusinessDossierFollowUpInput({
+        dossier,
+        identifier,
+        module: request.module,
+        value: request.value,
+      });
+      const nextDossier = await callTool<BusinessDossier>("sg_business_dossier", followUpInput);
+      setDossier(nextDossier);
+      notify({
+        title: `${request.module.toUpperCase()} follow-up complete`,
+        description: "Dossier evidence, provenance, freshness, gaps, and limits were refreshed.",
+        tone: "success",
+      });
+    } catch (error) {
+      notify({
+        title: `${request.module.toUpperCase()} follow-up failed`,
+        description: error instanceof Error ? error.message : "Unable to rerun this module.",
+        tone: "error",
+      });
+    } finally {
+      setRerunningModule(null);
+    }
+  };
+
   return (
     <>
       <header className="space-y-4">
@@ -483,7 +517,7 @@ function DossierSuccess({
       <RiskSection dossier={dossier} />
       <AnalystMemoSection sharedState={sharedMemoState} state={memoState} />
       <ConfidenceSection dossier={dossier} />
-      <EvidenceSection dossier={dossier} />
+      <EvidenceSection dossier={dossier} onModuleFollowUp={handleModuleFollowUp} runningModule={rerunningModule} />
       <WebPresenceSection state={webPresenceState} />
       <NextChecksSection dossier={dossier} />
       <HandoffSection dossier={dossier} />

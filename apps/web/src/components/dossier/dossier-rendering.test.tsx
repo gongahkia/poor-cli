@@ -67,6 +67,43 @@ describe("dossier rendering", () => {
     expect(gapHtml).toContain("official source unavailable");
   });
 
+  it("renders actionable follow-ups for skipped sector modules", () => {
+    const html = renderToStaticMarkup(<EvidenceSection
+      dossier={{
+        ...dossier,
+        records: {
+          resolution: {
+            matchedModules: ["acra"],
+            moduleReasons: [
+              {
+                matched: true,
+                module: "acra",
+                reason: "ACRA matched.",
+                searched: true,
+                selectedBy: ["default"],
+                status: "matched",
+              },
+              {
+                matched: false,
+                module: "bca",
+                reason: "Skipped because construction context was not selected.",
+                searched: false,
+                selectedBy: [],
+                status: "skipped",
+              },
+            ],
+            searchedModules: ["acra"],
+          },
+        },
+        summary: [{ label: "Entity", value: "DBS BANK LTD" }],
+      }}
+      onModuleFollowUp={() => undefined}
+    />);
+
+    expect(html).toContain("Construction company name or UEN");
+    expect(html).toContain("Run BCA follow-up");
+  });
+
   it("renders risk empty state", () => {
     expect(renderToStaticMarkup(<RiskSection dossier={dossier} />)).toContain("No risk flags were returned");
   });

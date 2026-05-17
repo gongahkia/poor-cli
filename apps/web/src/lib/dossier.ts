@@ -27,10 +27,111 @@ export const BUSINESS_MODULE_LABELS: Record<BusinessDossierModule, string> = {
 };
 
 export const UEN_PATTERN = /^(?:\d{8,9}[a-z]|[a-z]\d{2}[a-z]{2}\d{4}[a-z])$/i;
+export type FollowUpBusinessModule = Exclude<BusinessDossierModule, "acra">;
+
+export const BUSINESS_MODULE_FOLLOW_UPS: Record<FollowUpBusinessModule, {
+  helperText: string;
+  inputLabel: string;
+  placeholder: string;
+  sectorHint: string;
+}> = {
+  bca: {
+    helperText: "Needs construction context plus a company name, UEN, class code, workhead, or grade.",
+    inputLabel: "Construction company name or UEN",
+    placeholder: "Example Builders Pte Ltd",
+    sectorHint: "construction",
+  },
+  boa: {
+    helperText: "Needs architecture context plus a firm, architect name, or registration number.",
+    inputLabel: "Architecture firm, architect, or registration no.",
+    placeholder: "Example Architects LLP",
+    sectorHint: "architecture",
+  },
+  cea: {
+    helperText: "Needs real-estate context plus a salesperson registration number, agent licence, or estate-agent name.",
+    inputLabel: "CEA registration, licence, or estate-agent name",
+    placeholder: "R123456A or Example Realty Pte Ltd",
+    sectorHint: "real_estate",
+  },
+  gebiz: {
+    helperText: "Needs procurement context plus the supplier or entity name used in GeBIZ awards.",
+    inputLabel: "GeBIZ supplier name",
+    placeholder: "Example Supplier Pte Ltd",
+    sectorHint: "procurement",
+  },
+  hlb: {
+    helperText: "Needs hospitality context plus a hotel, keeper, or entity name.",
+    inputLabel: "Hotel or keeper name",
+    placeholder: "Example Hotel Pte Ltd",
+    sectorHint: "hospitality",
+  },
+  hsa: {
+    helperText: "Needs healthcare context plus a company or pharmacy name.",
+    inputLabel: "Healthcare company or pharmacy name",
+    placeholder: "Example Health Pte Ltd",
+    sectorHint: "healthcare",
+  },
+};
 
 export function buildBusinessDossierInput(identifier: string): { uen: string } | { entityName: string } {
   const trimmed = identifier.trim();
   return UEN_PATTERN.test(trimmed) ? { uen: trimmed.toUpperCase() } : { entityName: trimmed };
+}
+
+export function buildBusinessDossierFollowUpInput(params: {
+  dossier: BusinessDossier;
+  identifier: string;
+  module: FollowUpBusinessModule;
+  value: string;
+}): Record<string, unknown> {
+  const value = params.value.trim();
+  if (value === "") {
+    throw new Error("Follow-up input is required.");
+  }
+
+  const base = buildBusinessDossierInput(params.identifier);
+  const summaryUen = getSummaryString(params.dossier, "UEN");
+  const summaryEntity = getSummaryString(params.dossier, "Entity");
+  const input: Record<string, unknown> = {
+    ...base,
+    modules: Array.from(new Set<BusinessDossierModule>(["acra", params.module])),
+    sectorHints: [BUSINESS_MODULE_FOLLOW_UPS[params.module].sectorHint],
+  };
+
+  if (summaryUen !== null && UEN_PATTERN.test(summaryUen)) {
+    input.uen = summaryUen.toUpperCase();
+  }
+  if (summaryEntity !== null) {
+    input.entityName = summaryEntity;
+  }
+
+  if (params.module === "cea") {
+    if (/^r\d+/i.test(value)) {
+      input.registrationNo = value.toUpperCase();
+    } else if (/^l\d+/i.test(value)) {
+      input.estateAgentLicenseNo = value.toUpperCase();
+    } else {
+      input.estateAgentName = value;
+    }
+    return input;
+  }
+
+  if (params.module === "boa") {
+    if (/^[a-z]?\d{2,}[a-z]?$/i.test(value)) {
+      input.registrationNo = value.toUpperCase();
+    } else {
+      input.entityName = value;
+    }
+    return input;
+  }
+
+  if (params.module === "bca" && UEN_PATTERN.test(value)) {
+    input.uen = value.toUpperCase();
+    return input;
+  }
+
+  input.entityName = value;
+  return input;
 }
 
 export function sanitizeFilenamePart(value: string): string {

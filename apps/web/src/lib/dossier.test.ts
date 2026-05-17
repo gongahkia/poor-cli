@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildBusinessDossierInput,
+  buildBusinessDossierFollowUpInput,
   buildDiligenceSnapshot,
   getSectorBadges,
   getSummaryString,
@@ -44,6 +45,38 @@ describe("dossier helpers", () => {
   it("detects UENs and entity-name inputs", () => {
     expect(buildBusinessDossierInput("03591300B")).toEqual({ uen: "03591300B" });
     expect(buildBusinessDossierInput("DBS BANK")).toEqual({ entityName: "DBS BANK" });
+  });
+
+  it("builds bounded sector-module follow-up inputs", () => {
+    expect(buildBusinessDossierFollowUpInput({
+      dossier,
+      identifier: "03591300B",
+      module: "bca",
+      value: "Example Builders Pte Ltd",
+    })).toMatchObject({
+      entityName: "Example Builders Pte Ltd",
+      modules: ["acra", "bca"],
+      sectorHints: ["construction"],
+      uen: "03591300B",
+    });
+
+    expect(buildBusinessDossierFollowUpInput({
+      dossier,
+      identifier: "DBS BANK LTD",
+      module: "cea",
+      value: "L3000001A",
+    })).toMatchObject({
+      estateAgentLicenseNo: "L3000001A",
+      modules: ["acra", "cea"],
+      sectorHints: ["real_estate"],
+    });
+
+    expect(() => buildBusinessDossierFollowUpInput({
+      dossier,
+      identifier: "DBS BANK LTD",
+      module: "hsa",
+      value: " ",
+    })).toThrow("Follow-up input is required.");
   });
 
   it("extracts summary and snapshot values", () => {

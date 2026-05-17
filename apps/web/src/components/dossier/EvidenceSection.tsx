@@ -1,12 +1,28 @@
+import { useEffect, useState } from "react";
+
 import { RecordTable } from "@/components/dossier/RecordTable";
-import { BUSINESS_MODULE_LABELS, formatLabel, formatRecordValue } from "@/lib/dossier";
-import { getDossierRecordGroups } from "@/lib/dossier";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  BUSINESS_MODULE_FOLLOW_UPS,
+  BUSINESS_MODULE_LABELS,
+  formatLabel,
+  formatRecordValue,
+  getDossierRecordGroups,
+  getSummaryString,
+  type FollowUpBusinessModule,
+} from "@/lib/dossier";
 import type {
   BusinessDossier,
   BusinessDossierModule,
   BusinessDossierModuleReason,
   EvidenceGap,
 } from "@/types/dossier";
+
+export type ModuleFollowUpRequest = {
+  module: FollowUpBusinessModule;
+  value: string;
+};
 
 const GAP_MODULE_MATCHERS: readonly [BusinessDossierModule, RegExp][] = [
   ["acra", /^ACRA_/],
@@ -59,13 +75,23 @@ function moduleStatus(
 }
 
 function ModuleStatusCard({
+  defaultFollowUpValue,
   gaps,
+  isRunning = false,
+  onModuleFollowUp,
   reason,
 }: {
+  defaultFollowUpValue: string;
   gaps: EvidenceGap[];
+  isRunning?: boolean;
+  onModuleFollowUp?: (request: ModuleFollowUpRequest) => void;
   reason: BusinessDossierModuleReason;
 }) {
   const status = moduleStatus(reason, gaps);
+  const followUpModule = reason.module === "acra" ? null : reason.module;
+  const showFollowUp = followUpModule !== null
+    && onModuleFollowUp !== undefined
+    && (reason.status === "skipped" || reason.status === "unsearched");
 
   return (
     <article className={`min-w-0 rounded-lg border p-3 text-sm shadow-sm sm:p-4 ${status.className}`}>
@@ -90,13 +116,90 @@ function ModuleStatusCard({
           ))}
         </div>
       ) : null}
+      {showFollowUp ? (
+        <ModuleFollowUpForm
+          defaultValue={defaultFollowUpValue}
+          isRunning={isRunning}
+          module={followUpModule}
+          onModuleFollowUp={onModuleFollowUp}
+        />
+      ) : null}
     </article>
   );
 }
 
-export function EvidenceSection({ dossier }: { dossier: BusinessDossier }) {
+function ModuleFollowUpForm({
+  defaultValue,
+  isRunning,
+  module,
+  onModuleFollowUp,
+}: {
+  defaultValue: string;
+  isRunning: boolean;
+  module: FollowUpBusinessModule;
+  onModuleFollowUp: (request: ModuleFollowUpRequest) => void;
+}) {
+  const config = BUSINESS_MODULE_FOLLOW_UPS[module];
+  const [value, setValue] = useState(defaultValue);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setValue(defaultValue);
+  }, [defaultValue]);
+
+  return (
+    <form
+      className="mt-4 space-y-2 rounded-md border border-border bg-background/80 p-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const trimmed = value.trim();
+        if (trimmed === "") {
+          setError("Enter the sector identifier or name needed for this lookup.");
+          return;
+        }
+        setError(null);
+        onModuleFollowUp({ module, value: trimmed });
+      }}
+    >
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-foreground" htmlFor={`module-follow-up-${module}`}>
+          {config.inputLabel}
+        </label>
+        <p className="text-xs leading-5 text-muted-foreground">{config.helperText}</p>
+      </div>
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
+        <Input
+          aria-label={`${BUSINESS_MODULE_LABELS[module]} follow-up input`}
+          className="min-w-0"
+          disabled={isRunning}
+          id={`module-follow-up-${module}`}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder={config.placeholder}
+          value={value}
+        />
+        <Button className="shrink-0" disabled={isRunning} size="sm" type="submit" variant="outline">
+          {isRunning ? "Running" : `Run ${BUSINESS_MODULE_LABELS[module]} follow-up`}
+        </Button>
+      </div>
+      {error === null ? null : <p className="text-xs text-destructive">{error}</p>}
+    </form>
+  );
+}
+
+export function EvidenceSection({
+  dossier,
+  onModuleFollowUp,
+  runningModule = null,
+}: {
+  dossier: BusinessDossier;
+  onModuleFollowUp?: (request: ModuleFollowUpRequest) => void;
+  runningModule?: BusinessDossierModule | null;
+}) {
   const groups = getDossierRecordGroups(dossier);
   const moduleReasons = dossier.records.resolution?.moduleReasons ?? [];
+  const defaultFollowUpValue = getSummaryString(dossier, "Entity")
+    ?? getSummaryString(dossier, "UEN")
+    ?? dossier.title;
   const unavailableModules = new Set(
     dossier.gaps
       .filter(isUnavailableGap)
@@ -143,7 +246,14 @@ export function EvidenceSection({ dossier }: { dossier: BusinessDossier }) {
           </div>
           <div className="grid gap-3 md:grid-cols-[repeat(2,minmax(0,1fr))]">
             {searchedReasons.map((item) => (
-              <ModuleStatusCard gaps={moduleGaps(item.module, dossier.gaps)} key={item.module} reason={item} />
+              <ModuleStatusCard
+                defaultFollowUpValue={defaultFollowUpValue}
+                gaps={moduleGaps(item.module, dossier.gaps)}
+                isRunning={runningModule === item.module}
+                key={item.module}
+                onModuleFollowUp={onModuleFollowUp}
+                reason={item}
+              />
             ))}
           </div>
         </div>
@@ -159,19 +269,14 @@ export function EvidenceSection({ dossier }: { dossier: BusinessDossier }) {
           </div>
           <div className="grid gap-2 sm:grid-cols-[repeat(2,minmax(0,1fr))]">
             {notSearchedReasons.map((item) => (
-              <div className="min-w-0 rounded-md border border-border bg-background px-3 py-2" key={item.module}>
-                <div className="flex min-w-0 items-center justify-between gap-2">
-                  <span className="min-w-0 truncate text-sm font-medium text-foreground">
-                    {BUSINESS_MODULE_LABELS[item.module]}
-                  </span>
-                  <span className="shrink-0 rounded-md bg-muted px-2 py-0.5 text-xs font-medium uppercase text-muted-foreground">
-                    {item.status === "unsearched" ? "Not searched" : "Skipped"}
-                  </span>
-                </div>
-                <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground" title={item.reason}>
-                  {item.reason}
-                </p>
-              </div>
+              <ModuleStatusCard
+                defaultFollowUpValue={defaultFollowUpValue}
+                gaps={moduleGaps(item.module, dossier.gaps)}
+                isRunning={runningModule === item.module}
+                key={item.module}
+                onModuleFollowUp={onModuleFollowUp}
+                reason={item}
+              />
             ))}
           </div>
         </div>
