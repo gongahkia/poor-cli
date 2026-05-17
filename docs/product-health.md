@@ -29,6 +29,7 @@ This page is the public entrypoint for product-health, governance, and adoption 
 - [SOC 2 Type I readiness roadmap](./soc2-type1-roadmap.md) — hosted assurance gap analysis, control backlog, cost estimate, and buyer trigger.
 - [MAS outsourcing readiness pack](./mas-outsourcing-readiness.md) — BCP, incident response, subprocessors, data residency, and FI-adjacent control gaps.
 - [npm publish readiness](./npm-publish-readiness.md) — `@dude/mcp` package metadata, dry-run evidence, and first-publish blocker.
+- [PSG application track](./psg-application-track.md) — vendor pre-approval requirements, materials, timeline, and first-application blocker.
 - [KPI thresholds](./kpi-thresholds.md) — dashboard policy and breach handling.
 - [Quarterly product health template](./quarterly-product-health-template.md) — recurring review format.
 - [Deprecation policy](./deprecation-policy.md) — migration and removal rules.

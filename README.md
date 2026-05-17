@@ -80,6 +80,7 @@ Roadmap planning files live under [docs/roadmap](./docs/roadmap) so the reposito
 - [docs/soc2-type1-roadmap.md](./docs/soc2-type1-roadmap.md) records the SOC 2 Type I readiness gap analysis, control backlog, cost estimate, and buyer trigger.
 - [docs/mas-outsourcing-readiness.md](./docs/mas-outsourcing-readiness.md) maps hosted BCP, incident, subprocessor, data residency, and control gaps for FI-adjacent MAS outsourcing reviews.
 - [docs/npm-publish-readiness.md](./docs/npm-publish-readiness.md) records the `@dude/mcp` package dry-run evidence and the exact npm publish blocker.
+- [docs/psg-application-track.md](./docs/psg-application-track.md) records the PSG vendor pre-approval path, material checklist, timeline, and first-application blocker.
 - [docs/product/hosted-onboarding.md](./docs/product/hosted-onboarding.md) links the hosted customer packet for sales and onboarding review.
 - [SECURITY.md](./SECURITY.md) explains private vulnerability reporting.
 

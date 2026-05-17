@@ -27,6 +27,7 @@ Send or publish these documents together:
 | [MAS outsourcing readiness pack](../mas-outsourcing-readiness.md) | Buyer-facing BCP, incident, subprocessor, data residency, and gap mapping for FI-adjacent diligence. |
 | [Commercial data use review](../commercial-data-use.md) | OneMap and URA commercial-use posture, attribution, redistribution, and runtime warning controls. |
 | [Compliance-use and non-advice clauses](../compliance-use-clauses.md) | Standard product-safety wording for web, exports, docs, and API-facing artifacts. |
+| [PSG application track](../psg-application-track.md) | Grant-assisted SME sales readiness, vendor pre-approval requirements, and current application blockers. |
 | [Corp-services CDD workflow](./corp-services-cdd.md) | Primary buyer workflow and current platform gaps. |
 
 ## Onboarding Gaps To Resolve Per Customer
