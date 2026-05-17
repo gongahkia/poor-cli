@@ -147,21 +147,6 @@ function getAnalystMemoKeyLabel(service: GatewayAnalystMemoReadiness | undefined
   return `${providerLabels[provider] ?? "AI provider"} key`;
 }
 
-function getAnalystMemoKeyDetail(service: GatewayAnalystMemoReadiness | undefined): string {
-  const provider = getProviderName(service);
-  const providerLabel = providerLabels[provider] ?? provider;
-  const model = service?.model ?? readServiceDetail(service, "model") ?? "configured model";
-  const requiredEnvVar = getProviderKeyEnv(service);
-  const credentialLocation =
-    readServiceDetail(service, "credentialLocation") ?? "REST gateway process environment";
-  const baseDetail = getReadinessDetail(
-    service,
-    `Set ${requiredEnvVar} on the REST gateway process to enable analyst memo generation.`,
-  );
-
-  return `${baseDetail} Required env: ${requiredEnvVar}. Provider: ${providerLabel}; model: ${model}. Keep this server-side in the ${credentialLocation}; browser VITE_* keys are not used for memo generation.`;
-}
-
 function getServiceMessage(
   service: GatewayServiceReadiness | undefined,
   fallback: string,
@@ -192,7 +177,7 @@ function getAnalystMemoMetadata(
     { label: "Provider", value: providerLabel },
     { label: "Model", value: model },
     { label: "Stored in", value: credentialLocation },
-    { label: "Browser env", value: "VITE_* keys are not used for memo generation." },
+    { label: "Browser env", value: "browser VITE_* keys are not used for memo generation." },
   ];
 }
 
