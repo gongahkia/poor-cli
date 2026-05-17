@@ -152,8 +152,8 @@ export function AiInput({
           ) : null}
 
           <div className="flex min-h-14 items-center justify-between gap-3 border-t border-border/70 bg-background/65 px-3 py-2">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="inline-flex min-w-0 items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground">
+            <div className="flex min-w-0 items-center gap-2 px-1">
+              <span className="inline-flex min-w-0 items-center gap-2 text-xs font-medium text-muted-foreground">
                 <Building2 className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">ACRA identity lookup</span>
               </span>
