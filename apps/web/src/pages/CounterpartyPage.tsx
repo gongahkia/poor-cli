@@ -2,20 +2,14 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { BookmarkCheck, BookmarkPlus, Braces, Copy, FileDown, Loader2, Table2 } from "lucide-react";
 
-import { AnalystMemoSection, type AnalystMemoState } from "@/components/dossier/AnalystMemoSection";
-import { ConfidenceSection } from "@/components/dossier/ConfidenceSection";
-import { EvidenceSection, type ModuleFollowUpRequest } from "@/components/dossier/EvidenceSection";
+import type { AnalystMemoState } from "@/components/dossier/AnalystMemoSection";
+import { DossierFindingsTabs } from "@/components/dossier/DossierFindingsTabs";
+import type { ModuleFollowUpRequest } from "@/components/dossier/EvidenceSection";
 import { GapsSection } from "@/components/dossier/GapsSection";
-import { HandoffSection } from "@/components/dossier/HandoffSection";
-import { NextChecksSection } from "@/components/dossier/NextChecksSection";
-import { PdpaChecklistSection } from "@/components/dossier/PdpaChecklistSection";
-import { PeopleDiscoverySection, type PeopleDiscoveryState } from "@/components/dossier/PeopleDiscoverySection";
+import type { PeopleDiscoveryState } from "@/components/dossier/PeopleDiscoverySection";
 import { ProvenanceSection } from "@/components/dossier/ProvenanceSection";
-import { RiskSection } from "@/components/dossier/RiskSection";
-import { SnapshotSection } from "@/components/dossier/SnapshotSection";
-import { WebPresenceSection, type WebPresenceState } from "@/components/dossier/WebPresenceSection";
+import type { WebPresenceState } from "@/components/dossier/WebPresenceSection";
 import { useToast } from "@/components/notifications/ToastProvider";
-import { GatewayStatus } from "@/components/status/GatewayStatus";
 import type { AgentPlanTask } from "@/components/ui/agent-plan";
 import { AgentPlan } from "@/components/ui/agent-plan-loader";
 import { Button } from "@/components/ui/button";
@@ -743,40 +737,17 @@ function DossierSuccess({
         </div>
       </header>
 
-      <section className="min-w-0 rounded-lg border border-border bg-card p-4 shadow-sm sm:p-6">
-        <h2 className="text-base font-semibold text-foreground">Summary</h2>
-        <dl className="mt-4 grid gap-3 sm:grid-cols-[repeat(2,minmax(0,1fr))]">
-          {dossier.summary.map((item) => (
-            <div key={`${item.label}-${item.source ?? ""}`} className="min-w-0 rounded-md border border-border p-3">
-              <dt className="text-xs font-medium uppercase text-muted-foreground">{item.label}</dt>
-              <dd className="mt-1 break-words text-sm text-foreground">
-                {item.value === null || item.value === undefined || item.value === "" ? "-" : String(item.value)}
-              </dd>
-              {item.source !== undefined && item.source !== null ? (
-                <dd className="mt-1 text-xs text-muted-foreground">Source: {item.source}</dd>
-              ) : null}
-            </div>
-          ))}
-        </dl>
-      </section>
-
-      <SnapshotSection dossier={dossier} />
-      <RiskSection dossier={dossier} />
-      <AnalystMemoSection sharedState={sharedMemoState} state={memoState} />
-      <ConfidenceSection dossier={dossier} />
-      <PdpaChecklistSection
+      <DossierFindingsTabs
         dossier={dossier}
-        isExporting={isPdpaExporting}
-        onExportReport={(reviewedItemIds) => void handleExportPdpaReport(reviewedItemIds)}
+        isPdpaExporting={isPdpaExporting}
+        memoState={memoState}
+        onExportPdpaReport={(reviewedItemIds) => void handleExportPdpaReport(reviewedItemIds)}
+        onModuleFollowUp={handleModuleFollowUp}
+        peopleDiscoveryState={peopleDiscoveryState}
+        rerunningModule={rerunningModule}
+        sharedMemoState={sharedMemoState}
+        webPresenceState={webPresenceState}
       />
-      <EvidenceSection dossier={dossier} onModuleFollowUp={handleModuleFollowUp} runningModule={rerunningModule} />
-      <WebPresenceSection state={webPresenceState} />
-      <PeopleDiscoverySection state={peopleDiscoveryState} />
-      <NextChecksSection dossier={dossier} />
-      <HandoffSection dossier={dossier} />
-      <GapsSection dossier={dossier} />
-      <ProvenanceSection dossier={dossier} />
-      <GatewayStatus />
     </>
   );
 }

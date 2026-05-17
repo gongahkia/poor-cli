@@ -92,13 +92,13 @@ export function DossierFindingsTabs({
   const auditCount = dossier.gaps.length + dossier.provenance.length + dossier.freshness.length;
   const tabs: FindingsTab[] = [
     {
-      count: Math.max(1, dossier.summary.length),
+      count: 5,
       icon: LayoutDashboard,
       label: "Overview",
       value: "overview",
     },
     {
-      count: Math.max(1, matchedModuleCount + searchedModuleCount),
+      count: Math.max(1, Math.max(matchedModuleCount, searchedModuleCount)),
       icon: Database,
       label: "Evidence",
       value: "evidence",

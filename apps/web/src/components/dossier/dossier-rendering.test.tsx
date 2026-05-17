@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { AnalystMemoSection } from "@/components/dossier/AnalystMemoSection";
+import { DossierFindingsTabs } from "@/components/dossier/DossierFindingsTabs";
 import { EvidenceSection } from "@/components/dossier/EvidenceSection";
 import { GapsSection } from "@/components/dossier/GapsSection";
 import { HandoffSection } from "@/components/dossier/HandoffSection";
@@ -196,6 +197,50 @@ describe("dossier rendering", () => {
     expect(html).toContain("Section 24 / Protection Obligation");
     expect(html).toContain("Section 26 / Transfer Limitation Obligation");
     expect(html).toContain("Export PDPA report");
+  });
+
+  it("segments dossier findings into icon tab groups", () => {
+    const html = renderToStaticMarkup(
+      <DossierFindingsTabs
+        dossier={{
+          ...dossier,
+          nextChecks: [{
+            input: { uen: "197700546G" },
+            reason: "Retrieve full ACRA entity details for deeper officer and status inspection.",
+            tool: "sg_acra_entities",
+          }],
+        }}
+        isPdpaExporting={false}
+        memoState={{
+          status: "unavailable",
+          memo: {
+            configured: false,
+            gaps: [],
+            generatedAt: "2026-05-17T14:56:00.000Z",
+            limits: [],
+            model: "gpt-4o",
+            provider: "openai",
+            reason: {
+              code: "not_configured",
+              message: "OpenAI key not configured.",
+            },
+            status: "unavailable",
+          },
+        }}
+        onExportPdpaReport={() => undefined}
+        onModuleFollowUp={() => undefined}
+        peopleDiscoveryState={{ status: "error", message: "No people results." }}
+        rerunningModule={null}
+        sharedMemoState={null}
+        webPresenceState={{ status: "error", message: "No web results." }}
+      />,
+    );
+
+    expect(html).toContain("Overview");
+    expect(html).toContain("Evidence");
+    expect(html).toContain("Actions");
+    expect(html).toContain("Audit");
+    expect(html).toContain("data-[state=active]");
   });
 
   it("renders the analyst memo as a formatted note with collapsed references", () => {
