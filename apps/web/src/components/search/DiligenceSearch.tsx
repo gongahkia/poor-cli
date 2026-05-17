@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useToast } from "@/components/notifications/ToastProvider";
@@ -20,7 +20,11 @@ type SuggestionResponse = {
   warning?: string;
 };
 
-export function DiligenceSearch() {
+type DiligenceSearchProps = {
+  secondaryAction?: ReactNode;
+};
+
+export function DiligenceSearch({ secondaryAction }: DiligenceSearchProps = {}) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<SearchStatus>("idle");
   const [suggestionStatus, setSuggestionStatus] = useState<SuggestionStatus>("idle");
@@ -128,7 +132,7 @@ export function DiligenceSearch() {
 
   return (
     <div className="space-y-5">
-      <form className="flex flex-col gap-3 sm:flex-row" onSubmit={handleSubmit}>
+      <form className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]" onSubmit={handleSubmit}>
         <Input
           aria-label="Client or counterparty company name or UEN"
           autoComplete="off"
@@ -150,16 +154,19 @@ export function DiligenceSearch() {
           placeholder="Company name or UEN"
           value={query}
         />
-        <Button className="h-12 px-6" disabled={isSubmitting} type="submit">
-          {isSubmitting ? (
-            <span className="flex items-center gap-2">
-              <span className="h-4 w-4 rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground animate-spin" />
-              Loading
-            </span>
-          ) : (
-            "Search"
-          )}
-        </Button>
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:flex">
+          <Button className="h-12 px-6 sm:min-w-24" disabled={isSubmitting} type="submit">
+            {isSubmitting ? (
+              <span className="flex items-center gap-2">
+                <span className="h-4 w-4 rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground animate-spin" />
+                Loading
+              </span>
+            ) : (
+              "Search"
+            )}
+          </Button>
+          {secondaryAction}
+        </div>
       </form>
 
       {shouldShowSearchPanel ? (

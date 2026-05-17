@@ -1,4 +1,4 @@
-import { Activity, CircleHelp } from "lucide-react";
+import { Activity, CircleHelp, SlidersHorizontal } from "lucide-react";
 
 import { BackendLogsDialog } from "@/components/debug/BackendLogsDialog";
 import { BulkDiligence } from "@/components/search/BulkDiligence";
@@ -43,13 +43,40 @@ export function SearchPage() {
           </div>
         </div>
 
-        <DiligenceSearch />
+        <DiligenceSearch secondaryAction={<SearchToolsDialog />} />
+      </section>
+    </main>
+  );
+}
+
+function SearchToolsDialog() {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button
+          aria-label="Open bulk checks and shortlist tools"
+          className="h-12 gap-2 px-4"
+          type="button"
+          variant="outline"
+        >
+          <SlidersHorizontal className="h-4 w-4" />
+          <span>Tools</span>
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-5xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Workspace tools</DialogTitle>
+          <DialogDescription>
+            Bulk checks and saved counterparties stay available without competing with the primary search.
+          </DialogDescription>
+        </DialogHeader>
+
         <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
           <BulkDiligence />
           <ShortlistPanel />
         </div>
-      </section>
-    </main>
+      </DialogContent>
+    </Dialog>
   );
 }
 
