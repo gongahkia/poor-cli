@@ -37,7 +37,7 @@ export function ShortlistPanel() {
           <Button disabled={entries.length === 0} onClick={() => exportShortlistCsv(entries)} type="button" variant="outline">
             Export CSV
           </Button>
-          <Button disabled={entries.length === 0} onClick={() => exportShortlistJson(entries)} type="button" variant="outline">
+          <Button disabled={entries.length === 0} onClick={() => void exportShortlistJson(entries)} type="button" variant="outline">
             Export JSON
           </Button>
           <Button disabled={entries.length === 0} onClick={() => setEntries(clearShortlist())} type="button" variant="outline">

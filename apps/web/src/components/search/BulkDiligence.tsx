@@ -92,20 +92,20 @@ export function BulkDiligence() {
     }
   };
 
-  const exportCsv = () => {
+  const exportCsv = async () => {
     try {
       if (result === null) return;
-      exportBulkCsv(result.rows, result.generatedAt);
+      await exportBulkCsv(result.rows, result.generatedAt);
       notify({ title: "CSV export started", description: `${result.rows.length} rows.`, tone: "success" });
     } catch (error) {
       notify({ title: "CSV export failed", description: error instanceof Error ? error.message : "Unable to export CSV.", tone: "error" });
     }
   };
 
-  const exportJson = () => {
+  const exportJson = async () => {
     try {
       if (result === null) return;
-      exportBulkJson(result.rows, result.generatedAt);
+      await exportBulkJson(result.rows, result.generatedAt);
       notify({ title: "JSON export started", description: `${result.rows.length} rows.`, tone: "success" });
     } catch (error) {
       notify({ title: "JSON export failed", description: error instanceof Error ? error.message : "Unable to export JSON.", tone: "error" });
@@ -188,10 +188,10 @@ export function BulkDiligence() {
               </select>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button onClick={exportCsv} type="button" variant="outline">
+              <Button onClick={() => void exportCsv()} type="button" variant="outline">
                 Export CSV
               </Button>
-              <Button onClick={exportJson} type="button" variant="outline">
+              <Button onClick={() => void exportJson()} type="button" variant="outline">
                 Export JSON
               </Button>
             </div>

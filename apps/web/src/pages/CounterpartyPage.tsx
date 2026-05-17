@@ -335,6 +335,36 @@ function DossierSuccess({
     }
   };
 
+  const handleExportCsv = async () => {
+    try {
+      await exportSingleDossierCsv(dossier);
+      notify({ title: "CSV export started", description: dossier.title, tone: "success" });
+    } catch (error) {
+      notify({
+        title: "CSV export failed",
+        description: error instanceof Error ? error.message : "Unable to export CSV.",
+        tone: "error",
+      });
+    }
+  };
+
+  const handleExportJson = async () => {
+    try {
+      await exportSingleDossierJson({
+        dossier,
+        ...(memoState.status === "ready" ? { analystMemo: memoState.memo } : {}),
+        ...(webPresenceState.status === "success" ? { webPresence: webPresenceState.presence } : {}),
+      });
+      notify({ title: "JSON export started", description: dossier.title, tone: "success" });
+    } catch (error) {
+      notify({
+        title: "JSON export failed",
+        description: error instanceof Error ? error.message : "Unable to export JSON.",
+        tone: "error",
+      });
+    }
+  };
+
   const handleCopyLink = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
@@ -405,32 +435,14 @@ function DossierSuccess({
             Copy link
           </Button>
           <Button
-            onClick={() => {
-              try {
-                exportSingleDossierCsv(dossier);
-                notify({ title: "CSV export started", description: dossier.title, tone: "success" });
-              } catch (error) {
-                notify({ title: "CSV export failed", description: error instanceof Error ? error.message : "Unable to export CSV.", tone: "error" });
-              }
-            }}
+            onClick={() => void handleExportCsv()}
             type="button"
             variant="outline"
           >
             Export CSV
           </Button>
           <Button
-            onClick={() => {
-              try {
-                exportSingleDossierJson({
-                  dossier,
-                  ...(memoState.status === "ready" ? { analystMemo: memoState.memo } : {}),
-                  ...(webPresenceState.status === "success" ? { webPresence: webPresenceState.presence } : {}),
-                });
-                notify({ title: "JSON export started", description: dossier.title, tone: "success" });
-              } catch (error) {
-                notify({ title: "JSON export failed", description: error instanceof Error ? error.message : "Unable to export JSON.", tone: "error" });
-              }
-            }}
+            onClick={() => void handleExportJson()}
             type="button"
             variant="outline"
           >

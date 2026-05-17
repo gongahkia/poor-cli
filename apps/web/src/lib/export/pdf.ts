@@ -8,6 +8,7 @@ import {
   riskSeverityLabel,
 } from "@/lib/dossier";
 import { complianceUseLimitations } from "@/lib/compliance";
+import { buildDossierExportManifest } from "@/lib/export/manifest";
 import type { WebPresence } from "@/lib/api/client";
 import type { AnalystMemoReady } from "@/types/analyst-memo";
 import type { BriefArtifact, BriefProvenanceItem, BriefSummaryItem } from "@/types/dossier";
@@ -110,6 +111,12 @@ export async function exportDossierPdf(
   const { default: jsPDF } = await import("jspdf");
   const doc = new jsPDF();
   const generatedAt = options.generatedAt ?? new Date();
+  const manifest = await buildDossierExportManifest({
+    dossier: brief,
+    generatedAt: generatedAt.toISOString(),
+    ...(options.analystMemo === undefined ? {} : { analystMemo: options.analystMemo }),
+    ...(options.webPresence === undefined ? {} : { webPresence: options.webPresence }),
+  });
   const pageWidth = doc.internal.pageSize.getWidth();
   const maxWidth = pageWidth - 40;
   let y = 20;
@@ -349,7 +356,23 @@ export async function exportDossierPdf(
 
   y = ensurePage(doc, y);
   y = addSectionTitle(doc, "Compliance Use Notice", y);
-  addSummaryRows(doc, [...complianceUseLimitations], y, maxWidth);
+  y = addSummaryRows(doc, [...complianceUseLimitations], y, maxWidth) + 4;
+
+  y = ensurePage(doc, y);
+  y = addSectionTitle(doc, "Export Manifest", y);
+  addSummaryRows(
+    doc,
+    [
+      { label: "Manifest schema", value: manifest.schemaVersion },
+      { label: "Dossier hash", value: manifest.dossierHash },
+      { label: "Signature", value: `${manifest.signature.algorithm}: ${manifest.signature.value}` },
+      { label: "Generated", value: manifest.generatedAt },
+      { label: "Tool version", value: manifest.toolVersion },
+      { label: "Signature note", value: manifest.signature.note },
+    ],
+    y,
+    maxWidth,
+  );
 
   doc.save(options.filename ?? "dude-diligence-brief.pdf");
 }

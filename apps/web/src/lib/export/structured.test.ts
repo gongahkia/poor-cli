@@ -18,11 +18,11 @@ const dossier: BusinessDossier = {
 };
 
 describe("structured dossier exports", () => {
-  it("includes compliance-use limitations in JSON exports", () => {
-    expect(buildSingleDossierJsonPayload({
+  it("includes compliance-use limitations and a manifest in JSON exports", async () => {
+    await expect(buildSingleDossierJsonPayload({
       dossier,
       generatedAt: "2026-05-16T00:00:00.000Z",
-    })).toMatchObject({
+    })).resolves.toMatchObject({
       complianceUse: {
         complianceUseNotice: expect.stringContaining("not legal"),
         pdpaRuleMappingNotice: expect.stringContaining("not a legal opinion"),
@@ -30,6 +30,14 @@ describe("structured dossier exports", () => {
       },
       generatedAt: "2026-05-16T00:00:00.000Z",
       limits: dossier.limits,
+      manifest: {
+        generatedAt: "2026-05-16T00:00:00.000Z",
+        schemaVersion: "dude-export-manifest/v1",
+        signature: {
+          algorithm: "sha256",
+          value: expect.any(String),
+        },
+      },
     });
   });
 

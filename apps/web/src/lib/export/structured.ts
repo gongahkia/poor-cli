@@ -11,6 +11,10 @@ import type { AnalystMemoReady } from "@/types/analyst-memo";
 import type { BulkDossierRow, ShortlistEntry } from "@/types/bulk";
 import type { BusinessDossier } from "@/types/dossier";
 import type { WebPresence } from "@/lib/api/client";
+import {
+  buildDossierExportManifest,
+  type DossierExportManifest,
+} from "@/lib/export/manifest";
 
 const downloadText = (filename: string, mimeType: string, text: string): void => {
   const blob = new Blob([text], { type: mimeType });
@@ -79,38 +83,58 @@ export const buildSingleDossierCsvRow = (dossier: BusinessDossier, generatedAt =
   };
 };
 
-export function buildSingleDossierJsonPayload(params: {
+export async function buildSingleDossierJsonPayload(params: {
   dossier: BusinessDossier;
   analystMemo?: AnalystMemoReady;
   generatedAt?: string;
   webPresence?: WebPresence;
-}): Record<string, unknown> {
+}): Promise<Record<string, unknown>> {
+  const generatedAt = params.generatedAt ?? new Date().toISOString();
+  const manifest = await buildDossierExportManifest({
+    dossier: params.dossier,
+    generatedAt,
+    ...(params.analystMemo === undefined ? {} : { analystMemo: params.analystMemo }),
+    ...(params.webPresence === undefined ? {} : { webPresence: params.webPresence }),
+  });
   return {
     analystMemo: params.analystMemo ?? null,
     complianceUse: buildComplianceUseLimitations(),
     dossier: params.dossier,
-    generatedAt: params.generatedAt ?? new Date().toISOString(),
+    generatedAt,
     limits: params.dossier.limits,
+    manifest,
     webPresence: params.webPresence ?? null,
   };
 }
 
-export function exportSingleDossierJson(params: {
+export async function exportSingleDossierJson(params: {
   dossier: BusinessDossier;
   analystMemo?: AnalystMemoReady;
   webPresence?: WebPresence;
-}): void {
+}): Promise<void> {
   const identifier = sanitizeFilenamePart(getSummaryString(params.dossier, "UEN") ?? params.dossier.title);
+  const payload = await buildSingleDossierJsonPayload(params);
   downloadText(
     `dude-diligence-${identifier}.json`,
     "application/json",
-    JSON.stringify(buildSingleDossierJsonPayload(params), null, 2),
+    JSON.stringify(payload, null, 2),
   );
 }
 
-export function exportSingleDossierCsv(dossier: BusinessDossier): void {
+export async function exportSingleDossierCsv(dossier: BusinessDossier): Promise<void> {
   const identifier = sanitizeFilenamePart(getSummaryString(dossier, "UEN") ?? dossier.title);
-  downloadText(`dude-diligence-${identifier}.csv`, "text/csv", toCsv([buildSingleDossierCsvRow(dossier)]));
+  const generatedAt = new Date().toISOString();
+  const manifest = await buildDossierExportManifest({ dossier, generatedAt });
+  downloadText(
+    `dude-diligence-${identifier}.csv`,
+    "text/csv",
+    toCsv([{
+      ...buildSingleDossierCsvRow(dossier, generatedAt),
+      manifestSchemaVersion: manifest.schemaVersion,
+      manifestSignature: manifest.signature.value,
+      dossierHash: manifest.dossierHash,
+    }]),
+  );
 }
 
 const bulkRowsForExport = (rows: readonly BulkDossierRow[]): Record<string, unknown>[] =>
@@ -130,28 +154,66 @@ const bulkRowsForExport = (rows: readonly BulkDossierRow[]): Record<string, unkn
     upstreamFailure: row.upstreamFailure,
   }));
 
-export function exportBulkJson(rows: readonly BulkDossierRow[], generatedAt = new Date().toISOString()): void {
+const buildBulkManifest = async (
+  rows: readonly BulkDossierRow[],
+  generatedAt: string,
+): Promise<Map<number, DossierExportManifest>> => {
+  const manifestEntries = await Promise.all(rows
+    .filter((row): row is BulkDossierRow & { dossier: BusinessDossier } => row.dossier !== undefined)
+    .map(async (row) => [
+      row.index,
+      await buildDossierExportManifest({ dossier: row.dossier, generatedAt }),
+    ] as const));
+  return new Map(manifestEntries);
+};
+
+export async function exportBulkJson(rows: readonly BulkDossierRow[], generatedAt = new Date().toISOString()): Promise<void> {
+  const manifestByIndex = await buildBulkManifest(rows, generatedAt);
   downloadText(
     `dude-bulk-diligence-${generatedAt.slice(0, 10)}.json`,
     "application/json",
-    JSON.stringify({ complianceUse: buildComplianceUseLimitations(), generatedAt, rows }, null, 2),
+    JSON.stringify({
+      complianceUse: buildComplianceUseLimitations(),
+      generatedAt,
+      manifests: Array.from(manifestByIndex, ([rowIndex, manifest]) => ({ rowIndex, manifest })),
+      rows,
+    }, null, 2),
   );
 }
 
-export function exportBulkCsv(rows: readonly BulkDossierRow[], generatedAt = new Date().toISOString()): void {
+export async function exportBulkCsv(rows: readonly BulkDossierRow[], generatedAt = new Date().toISOString()): Promise<void> {
+  const manifestByIndex = await buildBulkManifest(rows, generatedAt);
   downloadText(
     `dude-bulk-diligence-${generatedAt.slice(0, 10)}.csv`,
     "text/csv",
-    toCsv(bulkRowsForExport(rows)),
+    toCsv(bulkRowsForExport(rows).map((row, index) => {
+      const source = rows[index];
+      const manifest = source === undefined ? undefined : manifestByIndex.get(source.index);
+      return {
+        ...row,
+        dossierHash: manifest?.dossierHash ?? "",
+        manifestSignature: manifest?.signature.value ?? "",
+      };
+    })),
   );
 }
 
-export function exportShortlistJson(entries: readonly ShortlistEntry[]): void {
+export async function exportShortlistJson(entries: readonly ShortlistEntry[]): Promise<void> {
   const generatedAt = new Date().toISOString();
   downloadText(
     `dude-shortlist-${generatedAt.slice(0, 10)}.json`,
     "application/json",
-    JSON.stringify({ complianceUse: buildComplianceUseLimitations(), generatedAt, entries }, null, 2),
+    JSON.stringify({
+      complianceUse: buildComplianceUseLimitations(),
+      generatedAt,
+      manifest: {
+        schemaVersion: "dude-export-manifest/v1",
+        generatedAt,
+        entryCount: entries.length,
+        note: "Shortlist exports contain saved summaries only; full dossier manifests are attached to dossier and bulk dossier exports.",
+      },
+      entries,
+    }, null, 2),
   );
 }
 
