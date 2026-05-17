@@ -54,19 +54,19 @@ const statusLabel: Record<AgentPlanStatus, string> = {
 };
 
 const statusClassName: Record<AgentPlanStatus, string> = {
-  completed: "bg-emerald-50 text-emerald-700 border-emerald-100",
-  "in-progress": "bg-blue-50 text-blue-700 border-blue-100",
-  pending: "bg-muted text-muted-foreground border-border",
-  "need-help": "bg-amber-50 text-amber-800 border-amber-100",
-  failed: "bg-red-50 text-red-700 border-red-100",
+  completed: "border-border bg-muted/50 text-muted-foreground",
+  "in-progress": "border-border bg-muted/50 text-muted-foreground",
+  pending: "border-border bg-muted/50 text-muted-foreground",
+  "need-help": "border-border bg-muted/50 text-muted-foreground",
+  failed: "border-border bg-muted/50 text-muted-foreground",
 };
 
 const iconClassName: Record<AgentPlanStatus, string> = {
-  completed: "text-emerald-600",
-  "in-progress": "text-blue-600",
+  completed: "text-muted-foreground",
+  "in-progress": "text-muted-foreground",
   pending: "text-muted-foreground",
-  "need-help": "text-amber-600",
-  failed: "text-red-600",
+  "need-help": "text-muted-foreground",
+  failed: "text-muted-foreground",
 };
 
 function StatusIcon({ status, small = false }: { small?: boolean; status: AgentPlanStatus }) {

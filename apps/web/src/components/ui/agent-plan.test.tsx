@@ -32,4 +32,41 @@ describe("AgentPlan", () => {
     expect(html).toContain("Call Singapore business dossier");
     expect(html).toContain("sg_business_dossier");
   });
+
+  it("keeps status treatment neutral across working states", () => {
+    const tasks: AgentPlanTask[] = [
+      {
+        id: "completed",
+        title: "Prepare dossier input",
+        description: "Done.",
+        status: "completed",
+      },
+      {
+        id: "running",
+        title: "Call Singapore business dossier",
+        description: "Running.",
+        status: "in-progress",
+      },
+      {
+        id: "help",
+        title: "Clarify identifiers",
+        description: "Needs input.",
+        status: "need-help",
+      },
+      {
+        id: "failed",
+        title: "Read upstream record",
+        description: "Failed.",
+        status: "failed",
+      },
+    ];
+
+    const html = renderToStaticMarkup(<AgentPlan tasks={tasks} />);
+
+    expect(html).toContain("Complete");
+    expect(html).toContain("Running");
+    expect(html).toContain("Needs input");
+    expect(html).toContain("Failed");
+    expect(html).not.toMatch(/(?:blue|emerald|amber|red)-/);
+  });
 });
