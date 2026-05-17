@@ -21,6 +21,7 @@
     "housing:rules:check": "node ./scripts/check-housing-rules-freshness.mjs",
     "deployment:web:check": "node ./scripts/check-web-deployment.mjs",
     "browser-extension:check": "node ./scripts/check-browser-extension-prototype.mjs",
+    "sdk:pack:dryrun": "npm pack -w @dude/sdk --dry-run",
     "ecosystem:snapshot": "node ./scripts/generate-ecosystem-snapshot.mjs",
     "benchmarks:snapshot": "node ./scripts/generate-benchmark-snapshot.mjs",
     "status:public": "node ./scripts/generate-public-status.mjs",

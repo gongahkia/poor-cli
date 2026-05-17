@@ -1,0 +1,34 @@
+{
+  "name": "@dude/sdk",
+  "version": "0.1.0",
+  "description": "Typed REST client for Dude Cloud and self-hosted Dude MCP gateways",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "!dist/**/__tests__/**"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "prepublishOnly": "tsc --build",
+    "pack:dryrun": "npm pack --dry-run"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@dude/shared": "0.1.0",
+    "zod": "^3.23.0"
+  }
+}

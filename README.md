@@ -82,6 +82,7 @@ Roadmap planning files live under [docs/roadmap](./docs/roadmap) so the reposito
 - [docs/dude-cloud-security-architecture.md](./docs/dude-cloud-security-architecture.md) defines the hosted topology, tenancy model, secrets, logging/audit, backups, retention, data-residency, subprocessor, SOC 2, and MAS control plan.
 - [docs/dude-cloud-entitlements.md](./docs/dude-cloud-entitlements.md) defines OSS, self-host, hosted tier, seat, usage, support, source-gating, billing, and SLA boundaries.
 - [docs/npm-publish-readiness.md](./docs/npm-publish-readiness.md) records the `@dude/mcp` package dry-run evidence and the exact npm publish blocker.
+- [docs/sdk-publish-readiness.md](./docs/sdk-publish-readiness.md) records the `@dude/sdk` API scope, package dry-run path, and npm publish blockers.
 - [docs/status/public-status.md](./docs/status/public-status.md) is the generated public benchmark and uptime status page, backed by [artifacts/status/public-status.json](./artifacts/status/public-status.json).
 - [docs/psg-application-track.md](./docs/psg-application-track.md) records the PSG vendor pre-approval path, material checklist, timeline, and first-application blocker.
 - [docs/diligence-case-study-content-engine.md](./docs/diligence-case-study-content-engine.md) defines the SG diligence case-study format, editorial calendar, review guardrails, and draft-ready examples.
