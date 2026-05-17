@@ -37,7 +37,7 @@ This project follows semver for published packages and keeps public contract cha
 
 ### Added
 
-- Tool count increased from 63 to 105; API family count from 26 to 38; routed families from 17 to 21.
+- Tool count increased from 63 to 109; API family count from 26 to 39; routed families from 17 to 21.
 - BOA, HSA, and HLB direct tool families.
 - Architecture Firm Diligence.
 - Healthcare Supplier Diligence.

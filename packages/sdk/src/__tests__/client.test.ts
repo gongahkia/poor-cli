@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DudeApiError, DudeClient } from "../index.js";
+import type { DudeApiError } from "../index.js";
+import { DudeClient } from "../index.js";
 
 const okFetch = (handler: (url: string, init: RequestInit) => unknown): typeof fetch =>
   (async (url, init) => {

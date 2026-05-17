@@ -4,7 +4,7 @@
 
 Actual value prop: yes, but narrow.
 
-Dude MCP already has real utility for developers building Singapore-focused agents because it offers one deterministic MCP surface over 38 cataloged public-data and advisory families, bounded brief artifacts, transparent blocker behavior, and a verified local build path. That is enough to be useful. Dude adds a web-first due diligence surface on top instead of trying to become a broad Singapore developer platform.
+Dude MCP already has real utility for developers building Singapore-focused agents because it offers one deterministic MCP surface over 39 cataloged public-data and advisory families, bounded brief artifacts, transparent blocker behavior, and a verified local build path. That is enough to be useful. Dude adds a web-first due diligence surface on top instead of trying to become a broad Singapore developer platform.
 
 ## Who Gets Value Today
 
@@ -23,7 +23,7 @@ Dude MCP already has real utility for developers building Singapore-focused agen
 
 ## Developer Pain Points Observed
 
-- Discovery was thinner than the tool count suggested. A developer could see 105 tools, but not quickly tell which prompt shapes were supported.
+- Discovery was thinner than the tool count suggested. A developer could see 109 tools, but not quickly tell which prompt shapes were supported.
 - `sg_query` coverage lagged behind the direct surface for geospatial routing, reverse geocoding, coordinate conversion, SingStat drilldowns, data.gov collection browsing, and URA development charges.
 - Install confidence was weaker than it should have been because published tarballs included compiled test and mock artifacts.
 - The repo had strong internal structure but weaker newcomer positioning. A new developer still had to infer when to use `sg_query`, when to use direct tools, and how blocked responses should be handled.

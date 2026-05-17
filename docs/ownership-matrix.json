@@ -72,6 +72,11 @@
       "backupOwner": "maintainer:governance"
     },
     {
+      "name": "External Diligence",
+      "primaryOwner": "maintainer:diligence",
+      "backupOwner": "maintainer:governance"
+    },
+    {
       "name": "PA",
       "primaryOwner": "maintainer:data-surface",
       "backupOwner": "maintainer:governance"

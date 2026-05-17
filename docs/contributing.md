@@ -12,7 +12,7 @@ Before adding a new family, ask whether the user goal is better served by:
 
 ## Current Public Shape
 
-- 90 direct data and diligence tools across 39 catalog families
+- 90 direct data tools, including diligence tools, across 39 catalog families
 - 7 additive brief tools
 - 11 runtime and operational tools, including health checks
 - 1 bounded preferred interface, `sg_query`
@@ -24,8 +24,8 @@ The direct tools are the stable low-level contract. Additive briefs are allowed 
 1. Add shared types in `packages/shared/src/types/<family>.ts`.
 2. Add shared schemas in `packages/shared/src/schemas/index.ts`.
 3. Create the upstream client in `packages/mcp-server/src/apis/<family>/client.ts`.
-4. Create direct tool definitions in `packages/mcp-server/src/tools/<family>-tools.ts`.
-5. Register the definitions through the owning country pack in `packages/mcp-server/src/country-packs/`.
+4. Create direct tool definitions in `packages/mcp-server/src/tools/<family>-tools.ts` as a `RegisteredToolDefinition[]`.
+5. Register the definitions through the owning country pack in `packages/mcp-server/src/country-packs/`; `packages/mcp-server/src/tools/tool-set.ts` hydrates definitions from country packs.
 6. Update public catalogs in `packages/mcp-server/src/tools/catalog.ts`.
 7. Keep `sg://apis`, `sg://tools`, `sg://workflows`, `sg://recipes`, `sg://runtime`, `sg://playbooks`, and `sg://benchmarks` truthful.
 8. Add tests for schemas, clients, tools, routing, and catalog parity.

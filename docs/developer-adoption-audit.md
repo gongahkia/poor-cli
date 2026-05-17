@@ -23,7 +23,7 @@ This pass tightened adoption-critical runtime behavior:
 
 ## Evidence That The Repo Is Real
 
-- The codebase now exposes 38 catalog families and 105 registered `sg_*` tools.
+- The codebase now exposes 39 catalog families and 109 registered `sg_*` tools.
 - `npm run verify` is the repo-wide gate for lint, build, docs parity, tests, and packaging smoke.
 - The repo exposes machine-readable discovery resources through `sg://apis`, `sg://tools`, `sg://workflows`, `sg://recipes`, and `sg://runtime`.
 - The server has centralized cache, timeout, retry, rate-limit, and packaging checks instead of leaving those concerns to downstream consumers.

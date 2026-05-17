@@ -10,7 +10,7 @@ Accepted for Dude MCP. Dude is the product layered on a stable backend/runtime w
 
 ## Context
 
-Dude is not a general Singapore analyst copilot. The current foundation is a tool-first MCP server for agent builders and web workflows that need reliable, explicit interfaces over 38 catalog families.
+Dude is not a general Singapore analyst copilot. The current foundation is a tool-first MCP server for agent builders and web workflows that need reliable, explicit interfaces over 39 catalog families.
 
 The product boundary is:
 
@@ -36,7 +36,7 @@ Consequence:
 - new scope is added with honest direct tools first
 - additive briefs are allowed only when they return a bounded artifact, not hidden orchestration
 
-### 2. The repo goes deep on 38 catalog families
+### 2. The repo goes deep on 39 catalog families
 
 The current data and advisory families are:
 
@@ -53,6 +53,7 @@ The current data and advisory families are:
 - BCA
 - BOA
 - ACRA
+- External Diligence
 - PA
 - Sport Singapore
 - ECDA

@@ -122,6 +122,67 @@
         }
       }
     },
+    "/api/v1/sg_adverse_media_lite": {
+      "post": {
+        "summary": "Search bounded official Singapore public feeds for keyword evidence without open-web crawling or unsupported NLP claims.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "keyword": {
+                    "type": "string"
+                  },
+                  "feedIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "limitPerFeed": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "required": [
+                  "keyword"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
     "/api/v1/sg_bca_licensed_builders": {
       "post": {
         "summary": "Look up licensed builders by exact company name, UEN, builder class, or class code.",
@@ -434,6 +495,9 @@
                         "procurement"
                       ]
                     }
+                  },
+                  "includeExternalDiligence": {
+                    "type": "boolean"
                   },
                   "includeContextIds": {
                     "type": "boolean"
@@ -4319,6 +4383,67 @@
         }
       }
     },
+    "/api/v1/sg_opencorporates_links": {
+      "post": {
+        "summary": "Find OpenCorporates company cross-links for a Singapore entity without inferring ownership or control.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "entityName": {
+                    "type": "string"
+                  },
+                  "uen": {
+                    "type": "string"
+                  },
+                  "jurisdictionCode": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "required": [
+                  "entityName"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
     "/api/v1/sg_pa_community_outlets": {
       "post": {
         "summary": "Search People's Association community clubs and PAssion WaVe outlets with optional postal-code or proximity filters.",
@@ -4650,6 +4775,56 @@
         }
       }
     },
+    "/api/v1/sg_relationship_graph": {
+      "post": {
+        "summary": "Build a shallow relationship graph from supplied public dossier records with strict limits against ownership or control claims.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "records": {},
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "required": [
+                  "records"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
     "/api/v1/sg_request_lookup": {
       "post": {
         "summary": "Look up a local tool invocation audit record by requestId.",
@@ -4745,6 +4920,70 @@
                   "town",
                   "flatType",
                   "askingPriceSgd"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_sanctions_screen": {
+      "post": {
+        "summary": "Screen a company name and optional UEN against OpenSanctions candidate matches with provenance, freshness, gaps, and license-aware limits.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "uen": {
+                    "type": "string"
+                  },
+                  "threshold": {
+                    "type": "number"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "dataset": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "required": [
+                  "name"
                 ],
                 "additionalProperties": false
               }

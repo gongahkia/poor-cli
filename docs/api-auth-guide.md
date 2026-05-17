@@ -1,11 +1,12 @@
 # API Authentication Guide
 
-This repo has 4 authenticated upstreams:
+This repo has 5 authenticated upstreams:
 
 - OneMap
 - URA
 - LTA DataMall
 - Transit Intelligence
+- External Diligence
 
 The recommended precedence is:
 
@@ -164,11 +165,32 @@ Common failure modes:
 - live-dependent transit outputs degrade to bounded gaps when LTA is unavailable or rate-limited
 - policy replay works but cannot validate live plan deltas without current LTA feed health
 
+## External Diligence
+
+External Diligence covers optional OpenSanctions, OpenCorporates, official-feed adverse-media lite, and relationship-graph export helpers.
+
+Expected credentials:
+
+- source-specific API token or partner/licence approval when a third-party source requires it
+
+Operational notes:
+
+- external diligence is opt-in and must not be treated as default ACRA identity evidence
+- OpenSanctions and OpenCorporates use token/licence review paths before hosted production use
+- official-feed adverse-media lite remains bounded to official Singapore feeds and does not perform open-web crawling
+- relationship graph export is shallow and must not infer ownership, control, or beneficial-owner completeness
+
+Common failure modes:
+
+- missing or unapproved token: disable the optional external module or record a source gap
+- third-party rate limit or licence restriction: keep the dossier usable with public registry evidence and explicit gaps
+- no match: report a no-match or low-confidence external result as a coverage outcome, not proof that no risk exists
+
 ## Workflow Auth Map
 
 | Workflow | Sources | Required auth |
 | --- | --- | --- |
-| Business Registry Diligence | ACRA by default; BCA, CEA, BOA, HSA, HLB, and GeBIZ only when explicit or inferred from sector evidence | None |
+| Business Registry Diligence | ACRA by default; BCA, CEA, BOA, HSA, HLB, and GeBIZ only when explicit or inferred from sector evidence; optional External Diligence when enabled | None by default; external tokens/licence review for optional external sources |
 | Architecture Firm Diligence | BOA, ACRA, optional GeBIZ | None |
 | Healthcare Supplier Diligence | HSA, ACRA, optional GeBIZ | None |
 | Hotel Operator Lookup | HLB, optional ACRA | None |
