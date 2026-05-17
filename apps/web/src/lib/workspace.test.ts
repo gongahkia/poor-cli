@@ -64,6 +64,10 @@ describe("workspace access control", () => {
 
     expect(listDossierRecords(audited, state.activeSession)).toHaveLength(1);
     expect(listAuditEvents(audited, state.activeSession)).toHaveLength(1);
+    expect(listAuditEvents(audited, state.activeSession)[0]).toMatchObject({
+      inputSnapshot: { identifier: "03591300B" },
+      outputSnapshot: { title: "Business Dossier" },
+    });
     expect(listDossierRecords(audited, otherSession)).toHaveLength(0);
     expect(listAuditEvents(audited, otherSession)).toHaveLength(0);
   });

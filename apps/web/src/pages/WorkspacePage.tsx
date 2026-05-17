@@ -1,21 +1,46 @@
-import { ChangeEvent, useMemo, useState } from "react";
+import { ChangeEvent, type KeyboardEvent, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Bell, ClipboardList, FolderSearch, History, RotateCw } from "lucide-react";
+import { Bell, ChevronRight, ClipboardList, Copy, FolderSearch, History, RotateCw } from "lucide-react";
 
 import { useToast } from "@/components/notifications/ToastProvider";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { addWatchlistItem, appendAuditEvent, listAuditEvents, listDossierRecords, loadWorkspaceStore, recordWatchlistCheck, saveWorkspaceStore } from "@/lib/workspace-store";
-import type { WorkspaceAuditEventType } from "@/lib/workspace-store";
+import type { WorkspaceAuditEvent, WorkspaceAuditEventType } from "@/lib/workspace-store";
 import { resolveActiveSession } from "@/lib/workspace";
 
 const DEFAULT_WATCHLIST_MODULES = ["acra", "gebiz", "bca", "boa", "cea", "hsa", "hlb"];
+
+const auditEventLabels: Record<WorkspaceAuditEventType, string> = {
+  search: "Search",
+  dossier_generation: "Dossier generation",
+  memo_generation: "Memo generation",
+  export: "Export",
+  watchlist_change: "Watchlist change",
+  bulk_run: "Bulk run",
+};
+
+const formatAuditEventType = (eventType: WorkspaceAuditEventType): string =>
+  auditEventLabels[eventType] ?? eventType;
+
+const formatJson = (value: unknown): string => JSON.stringify(value, null, 2) ?? String(value);
+
+const keyActivatesRow = (event: KeyboardEvent<HTMLTableRowElement>): boolean =>
+  event.key === "Enter" || event.key === " ";
 
 export function WorkspacePage() {
   const [store, setStore] = useState(() => loadWorkspaceStore());
   const [query, setQuery] = useState("");
   const [folderId, setFolderId] = useState<string>("all");
   const [eventType, setEventType] = useState<WorkspaceAuditEventType | "all">("all");
+  const [selectedAuditEvent, setSelectedAuditEvent] = useState<WorkspaceAuditEvent | null>(null);
   const [watchIdentifier, setWatchIdentifier] = useState("");
   const [channel, setChannel] = useState<"in_app" | "email" | "webhook">("in_app");
   const session = resolveActiveSession();
@@ -223,7 +248,10 @@ export function WorkspacePage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
               <History className="h-4 w-4 text-muted-foreground" />
-              <h2 className="text-base font-semibold text-foreground">Audit log</h2>
+              <div>
+                <h2 className="text-base font-semibold text-foreground">Audit log</h2>
+                <p className="mt-1 text-xs text-muted-foreground">Click any row to inspect the event payload, provenance, and metadata.</p>
+              </div>
             </div>
             <select
               aria-label="Audit event type"
@@ -254,9 +282,27 @@ export function WorkspacePage() {
               </thead>
               <tbody>
                 {auditEvents.slice(0, 40).map((event) => (
-                  <tr className="border-t border-border align-top" key={event.id}>
+                  <tr
+                    aria-label={`View audit log for ${formatAuditEventType(event.eventType)} at ${new Date(event.occurredAt).toLocaleString()}`}
+                    className="group cursor-pointer border-t border-border align-top transition-colors hover:bg-muted/45 focus:bg-muted/45 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                    key={event.id}
+                    onClick={() => setSelectedAuditEvent(event)}
+                    onKeyDown={(keyboardEvent) => {
+                      if (keyActivatesRow(keyboardEvent)) {
+                        keyboardEvent.preventDefault();
+                        setSelectedAuditEvent(event);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                  >
                     <td className="px-3 py-3 text-muted-foreground">{new Date(event.occurredAt).toLocaleString()}</td>
-                    <td className="px-3 py-3">{event.eventType}</td>
+                    <td className="px-3 py-3">
+                      <span className="inline-flex items-center gap-1 font-medium text-foreground">
+                        {formatAuditEventType(event.eventType)}
+                        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100" />
+                      </span>
+                    </td>
                     <td className="px-3 py-3">{event.actorRole}</td>
                     <td className="px-3 py-3 font-mono text-xs">{event.inputFingerprint}</td>
                     <td className="px-3 py-3 font-mono text-xs">{event.outputHash}</td>
@@ -275,6 +321,15 @@ export function WorkspacePage() {
           </div>
         </section>
 
+        <AuditEventDialog
+          event={selectedAuditEvent}
+          onOpenChange={(open) => {
+            if (!open) {
+              setSelectedAuditEvent(null);
+            }
+          }}
+        />
+
         {alerts.length === 0 ? null : (
           <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
             <h2 className="text-base font-semibold text-foreground">Alert history</h2>
@@ -289,5 +344,150 @@ export function WorkspacePage() {
         )}
       </section>
     </main>
+  );
+}
+
+function AuditEventDialog({
+  event,
+  onOpenChange,
+}: {
+  event: WorkspaceAuditEvent | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { notify } = useToast();
+  const metadata = event?.metadata ?? {};
+  const freshness = event?.freshness ?? [];
+  const provenance = event?.provenance ?? [];
+
+  const copyAuditLog = async () => {
+    if (event === null) return;
+    try {
+      await navigator.clipboard.writeText(formatJson(event));
+      notify({ title: "Audit log copied", description: "The selected audit event was copied as JSON.", tone: "success" });
+    } catch {
+      notify({ title: "Copy failed", description: "The browser could not write the audit event to the clipboard.", tone: "error" });
+    }
+  };
+
+  return (
+    <Dialog open={event !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-4xl overflow-y-auto rounded-[28px] border-border bg-background p-1 shadow-2xl">
+        {event === null ? null : (
+          <div className="rounded-[24px] border border-border/80 bg-muted/30 p-5 sm:p-6">
+            <DialogHeader className="pr-10">
+              <DialogTitle>{formatAuditEventType(event.eventType)}</DialogTitle>
+              <DialogDescription>
+                Immutable workspace audit event from {new Date(event.occurredAt).toLocaleString()}.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 space-y-1 text-xs text-muted-foreground">
+                <p className="break-all font-mono">event {event.id}</p>
+                <p className="break-all font-mono">request {event.requestId}</p>
+              </div>
+              <Button onClick={copyAuditLog} size="sm" type="button" variant="outline">
+                <Copy className="mr-2 h-3.5 w-3.5" />
+                Copy JSON
+              </Button>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
+              <AuditSummaryTile label="Actor" value={`${event.actorRole} · ${event.actorId}`} />
+              <AuditSummaryTile label="Event type" value={formatAuditEventType(event.eventType)} />
+              <AuditSummaryTile label="Input fingerprint" value={event.inputFingerprint} mono />
+              <AuditSummaryTile label="Output hash" value={event.outputHash} mono />
+            </div>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-2">
+              <AuditJsonBlock
+                emptyText="Only the input fingerprint is available for older audit events."
+                title="Input snapshot"
+                value={event.inputSnapshot}
+              />
+              <AuditJsonBlock
+                emptyText="Only the output hash is available for older audit events."
+                title="Output snapshot"
+                value={event.outputSnapshot}
+              />
+              <AuditJsonBlock
+                emptyText="No metadata was recorded for this event."
+                title="Metadata"
+                value={Object.keys(metadata).length === 0 ? undefined : metadata}
+              />
+              <AuditJsonBlock
+                emptyText="No freshness entries were recorded for this event."
+                title="Freshness"
+                value={freshness.length === 0 ? undefined : freshness}
+              />
+            </div>
+
+            <div className="mt-5 rounded-[20px] border border-border bg-background p-4">
+              <h3 className="text-sm font-semibold text-foreground">Sources</h3>
+              {provenance.length === 0 ? (
+                <p className="mt-2 text-sm text-muted-foreground">No sources were recorded for this event.</p>
+              ) : (
+                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  {provenance.map((source, index) => (
+                    <div className="rounded-[16px] border border-border bg-muted/25 p-3" key={`${source.source}-${source.tool}-${index}`}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium text-foreground">{source.source}</p>
+                        <span className="rounded-full border border-border bg-background px-2 py-0.5 text-xs text-muted-foreground">
+                          {source.authRequired ? "auth required" : "public"}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-muted-foreground">{source.coverage}</p>
+                      <p className="mt-2 break-all font-mono text-xs text-muted-foreground">
+                        {source.tool} · {source.recordCount} records
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AuditSummaryTile({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="rounded-[18px] border border-border bg-background p-3">
+      <p className="text-xs font-semibold uppercase tracking-normal text-muted-foreground">{label}</p>
+      <p className={`mt-2 break-all text-sm text-foreground ${mono ? "font-mono" : ""}`}>{value}</p>
+    </div>
+  );
+}
+
+function AuditJsonBlock({
+  title,
+  value,
+  emptyText,
+}: {
+  title: string;
+  value: unknown;
+  emptyText: string;
+}) {
+  return (
+    <section className="rounded-[20px] border border-border bg-background p-4">
+      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+      {value === undefined ? (
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">{emptyText}</p>
+      ) : (
+        <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-[16px] bg-muted/45 p-3 text-xs leading-5 text-muted-foreground">
+          {formatJson(value)}
+        </pre>
+      )}
+    </section>
   );
 }

@@ -56,6 +56,8 @@ export type WorkspaceAuditEvent = {
   requestId: string;
   inputFingerprint: string;
   outputHash: string;
+  inputSnapshot?: unknown;
+  outputSnapshot?: unknown;
   provenance: BusinessDossier["provenance"];
   freshness: BusinessDossier["freshness"];
   metadata: Record<string, unknown>;
@@ -135,6 +137,49 @@ const stableStringify = (value: unknown): string => {
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
   const record = value as Record<string, unknown>;
   return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`).join(",")}}`;
+};
+
+const snapshotAuditValue = (
+  value: unknown,
+  depth = 0,
+  seen = new WeakSet<object>(),
+): unknown => {
+  if (value === null || typeof value === "number" || typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    return value.length > 900 ? `${value.slice(0, 900)}... [truncated ${value.length - 900} chars]` : value;
+  }
+  if (typeof value === "undefined") return "[undefined]";
+  if (typeof value === "function" || typeof value === "symbol" || typeof value === "bigint") {
+    return `[${typeof value}]`;
+  }
+  if (depth >= 5) return "[truncated nested value]";
+
+  if (typeof value === "object") {
+    if (seen.has(value)) return "[circular]";
+    seen.add(value);
+  }
+
+  if (Array.isArray(value)) {
+    const maxItems = 8;
+    const items = value.slice(0, maxItems).map((item) => snapshotAuditValue(item, depth + 1, seen));
+    return value.length > maxItems
+      ? [...items, { omittedItems: value.length - maxItems }]
+      : items;
+  }
+
+  const record = value as Record<string, unknown>;
+  const entries = Object.entries(record);
+  const maxKeys = 24;
+  const snapshot = Object.fromEntries(
+    entries.slice(0, maxKeys).map(([key, entryValue]) => [
+      key,
+      snapshotAuditValue(entryValue, depth + 1, seen),
+    ]),
+  );
+  if (entries.length > maxKeys) {
+    snapshot["omittedKeys"] = entries.length - maxKeys;
+  }
+  return snapshot;
 };
 
 export const hashValue = (value: unknown): string => {
@@ -292,6 +337,8 @@ export const appendAuditEvent = (
     requestId: input.requestId ?? makeId("req", input.input),
     inputFingerprint: hashValue(input.input),
     outputHash: hashValue(input.output),
+    inputSnapshot: snapshotAuditValue(input.input),
+    outputSnapshot: snapshotAuditValue(input.output),
     provenance: input.provenance ?? [],
     freshness: input.freshness ?? [],
     metadata: input.metadata ?? {},
