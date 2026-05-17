@@ -132,13 +132,26 @@ export function DiligenceSearch({ secondaryAction }: DiligenceSearchProps = {}) 
     navigate(`/c/${encodeURIComponent(suggestion.uen)}`);
   };
 
+  const dropdownContent = shouldShowSearchPanel ? (
+    <SearchDropdownContent
+      error={error}
+      isSubmitting={isSubmitting}
+      onSuggestionClick={handleSuggestionClick}
+      rankedSuggestions={rankedSuggestions}
+      suggestionError={suggestionError}
+      suggestionStatus={suggestionStatus}
+      trimmedQuery={trimmedQuery}
+    />
+  ) : null;
+
   return (
-    <div className="space-y-5">
+    <div>
       <form onSubmit={handleSubmit}>
         <AiInput
           aria-label="Client or counterparty company name or UEN"
           autoComplete="off"
           disabled={isSubmitting}
+          dropdownContent={dropdownContent}
           isSubmitting={isSubmitting}
           onSubmit={runSearch}
           onValueChange={(nextQuery) => {
@@ -153,52 +166,90 @@ export function DiligenceSearch({ secondaryAction }: DiligenceSearchProps = {}) 
           value={query}
         />
       </form>
+    </div>
+  );
+}
 
-      {shouldShowSearchPanel ? (
-        <div
-          aria-live="polite"
-          className="rounded-lg border border-border bg-card p-6 shadow-sm"
-        >
-          {isSubmitting ? (
-            <div className="space-y-3">
-              <Skeleton className="h-4 w-36" />
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-2/3" />
-            </div>
-          ) : error ? (
-            <p className="text-sm text-destructive">{error}</p>
-          ) : suggestionStatus === "loading" ? (
-            <div className="space-y-3">
-              <Skeleton className="h-4 w-40" />
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-4/5" />
-            </div>
-          ) : rankedSuggestions.length > 0 ? (
-            <div>
-              <p className="text-xs font-medium uppercase text-muted-foreground">Official ACRA matches</p>
-              <div className="mt-3 grid gap-2">
-                {rankedSuggestions.map((suggestion) => (
-                  <button
-                    className="rounded-md border border-border p-3 text-left transition hover:bg-muted"
-                    key={suggestion.uen}
-                    onClick={() => handleSuggestionClick(suggestion)}
-                    type="button"
-                  >
-                    <span className="block text-sm font-medium text-foreground">{suggestion.label}</span>
-                    <span className="mt-1 block text-xs text-muted-foreground">{suggestion.description}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : suggestionStatus === "error" ? (
-            <p className="text-sm text-muted-foreground">
-              {suggestionError ?? "Suggestions are temporarily unavailable."} Search still works.
-            </p>
-          ) : (
-            <p className="text-sm text-muted-foreground">Ready to search for "{trimmedQuery}".</p>
-          )}
+function SearchDropdownContent({
+  error,
+  isSubmitting,
+  onSuggestionClick,
+  rankedSuggestions,
+  suggestionError,
+  suggestionStatus,
+  trimmedQuery,
+}: {
+  error: string | null;
+  isSubmitting: boolean;
+  onSuggestionClick: (suggestion: ApiSearchSuggestion) => void;
+  rankedSuggestions: ApiSearchSuggestion[];
+  suggestionError: string | null;
+  suggestionStatus: SuggestionStatus;
+  trimmedQuery: string;
+}) {
+  if (isSubmitting) {
+    return (
+      <div aria-live="polite" className="space-y-3 px-4 py-4">
+        <Skeleton className="h-4 w-36" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-2/3" />
+      </div>
+    );
+  }
+
+  if (error !== null) {
+    return (
+      <div aria-live="polite" className="px-4 py-4">
+        <p className="text-sm text-destructive">{error}</p>
+      </div>
+    );
+  }
+
+  if (suggestionStatus === "loading") {
+    return (
+      <div aria-live="polite" className="space-y-3 px-4 py-4">
+        <Skeleton className="h-4 w-40" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-4/5" />
+      </div>
+    );
+  }
+
+  if (rankedSuggestions.length > 0) {
+    return (
+      <div aria-label="Official ACRA matches" aria-live="polite" className="max-h-80 overflow-y-auto px-3 py-3" role="listbox">
+        <p className="px-2 pb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">Official ACRA matches</p>
+        <div className="grid gap-1.5">
+          {rankedSuggestions.map((suggestion) => (
+            <button
+              className="rounded-[16px] border border-transparent px-3 py-3 text-left transition hover:border-border hover:bg-muted/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              key={suggestion.uen}
+              onClick={() => onSuggestionClick(suggestion)}
+              role="option"
+              type="button"
+            >
+              <span className="block text-sm font-medium text-foreground">{suggestion.label}</span>
+              <span className="mt-1 block text-xs text-muted-foreground">{suggestion.description}</span>
+            </button>
+          ))}
         </div>
-      ) : null}
+      </div>
+    );
+  }
+
+  if (suggestionStatus === "error") {
+    return (
+      <div aria-live="polite" className="px-4 py-4">
+        <p className="text-sm text-muted-foreground">
+          {suggestionError ?? "Suggestions are temporarily unavailable."} Search still works.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div aria-live="polite" className="px-4 py-4">
+      <p className="text-sm text-muted-foreground">Press Enter to search for "{trimmedQuery}".</p>
     </div>
   );
 }

@@ -68,6 +68,7 @@ type AiInputProps = {
   "aria-label": string;
   autoComplete?: string;
   disabled?: boolean;
+  dropdownContent?: ReactNode;
   isSubmitting?: boolean;
   onSubmit: () => void;
   onValueChange: (value: string) => void;
@@ -80,6 +81,7 @@ export function AiInput({
   "aria-label": ariaLabel,
   autoComplete = "off",
   disabled = false,
+  dropdownContent,
   isSubmitting = false,
   onSubmit,
   onValueChange,
@@ -142,6 +144,12 @@ export function AiInput({
               ) : null}
             </div>
           </div>
+
+          {dropdownContent ? (
+            <div className="border-t border-border/70 bg-background/85">
+              {dropdownContent}
+            </div>
+          ) : null}
 
           <div className="flex min-h-14 items-center justify-between gap-3 border-t border-border/70 bg-background/65 px-3 py-2">
             <div className="flex min-w-0 items-center gap-2">
