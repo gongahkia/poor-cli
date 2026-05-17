@@ -89,6 +89,7 @@ Roadmap planning files live under [docs/roadmap](./docs/roadmap) so the reposito
 - [docs/psg-application-track.md](./docs/psg-application-track.md) records the PSG vendor pre-approval path, material checklist, timeline, and first-application blocker.
 - [docs/accreditation-track.md](./docs/accreditation-track.md) inventories GeBIZ, SGTech, SMEs Go Digital, IMDA Accreditation, SecureTech, and AGIL/Green Lane ambiguity for market-access readiness.
 - [docs/diligence-case-study-content-engine.md](./docs/diligence-case-study-content-engine.md) defines the SG diligence case-study format, editorial calendar, review guardrails, and draft-ready examples.
+- [docs/certified-consulting-partner-program.md](./docs/certified-consulting-partner-program.md) defines the future partner profile, training, certification, rev-share, onboarding docs, candidate targets, and pilot gate.
 - [docs/product/hosted-onboarding.md](./docs/product/hosted-onboarding.md) links the hosted customer packet for sales and onboarding review.
 - [SECURITY.md](./SECURITY.md) explains private vulnerability reporting.
 
