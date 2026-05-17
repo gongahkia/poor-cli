@@ -26,7 +26,7 @@ import { ALL_TOOL_DEFINITIONS } from "./tools/tool-set.js";
 import { handleBusinessDossier } from "./tools/brief-tools.js";
 import { isToolEnabled } from "./tools/tool-metadata.js";
 const PORT = Number(process.env["PORT"] ?? 3000);
-const DEFAULT_DEV_WEB_ORIGIN = "http://localhost:5173";
+const DEFAULT_DEV_WEB_ORIGIN_ALLOWLIST = "http://localhost:5173,http://127.0.0.1:5173";
 const gatewayStartedAt = new Date();
 const debugLogStore = initDebugLogStore();
 const logger = createLogger("rest-gateway");
@@ -41,9 +41,12 @@ const enabledToolsets = resolveEnabledToolsets({
 });
 const enabledTools = ALL_TOOL_DEFINITIONS.filter((t) => isToolEnabled(t, enabledToolsets));
 const toolMap = new Map(enabledTools.map((t) => [t.name, t]));
+const configuredCorsOrigins = process.env["DUDE_WEB_ORIGIN_ALLOWLIST"] ?? "";
+const defaultCorsOrigins = process.env["NODE_ENV"] === "production"
+  ? ""
+  : DEFAULT_DEV_WEB_ORIGIN_ALLOWLIST;
 const allowedCorsOrigins = new Set(
-  (process.env["DUDE_WEB_ORIGIN_ALLOWLIST"] ??
-    (process.env["NODE_ENV"] === "production" ? "" : DEFAULT_DEV_WEB_ORIGIN))
+  `${defaultCorsOrigins},${configuredCorsOrigins}`
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean),

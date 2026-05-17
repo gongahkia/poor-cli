@@ -147,7 +147,7 @@ export function DiligenceSearch() {
               event.currentTarget.form?.requestSubmit();
             }
           }}
-          placeholder="Client or counterparty company name or UEN"
+          placeholder="Company name or UEN"
           value={query}
         />
         <Button className="h-12 px-6" disabled={isSubmitting} type="submit">

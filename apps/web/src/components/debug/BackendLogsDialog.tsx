@@ -28,11 +28,9 @@ const levelClasses: Record<string, string> = {
 };
 
 const readDetails = (entry: BackendLogEntry): string | null => {
-  const details = { ...entry };
-  delete details.ts;
-  delete details.level;
-  delete details.module;
-  delete details.msg;
+  const details = Object.fromEntries(
+    Object.entries(entry).filter(([key]) => !["ts", "level", "module", "msg"].includes(key)),
+  );
   const keys = Object.keys(details);
   if (keys.length === 0) {
     return null;
