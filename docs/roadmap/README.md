@@ -8,6 +8,8 @@ These files are planning artifacts. They are kept out of the repository root so 
 - [Phase 3: Workflow Depth and Singapore Use-Case Expansion](./PHASE3.md)
 - [Phase 4: Developer Experience, Ecosystem Positioning, and Adoption Scale](./PHASE4.md)
 - [Phase 5: Continuous Governance and Long-Term Product Discipline](./PHASE5.md)
+- [Pivot issue status](./pivot-issue-status.md)
+- [GitHub Project roadmap setup](./github-project-board.md)
 
 Product workflow docs:
 

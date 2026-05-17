@@ -69,10 +69,12 @@ Roadmap planning files live under [docs/roadmap](./docs/roadmap) so the reposito
 - [CONTRIBUTING.md](./CONTRIBUTING.md) covers local setup, contribution rules, and country-pack contribution workflow.
 - [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) defines collaboration expectations and enforcement.
 - [docs/maintainer-governance.md](./docs/maintainer-governance.md) documents maintainer roles, decision process, release process, and security reporting.
+- [docs/co-maintainer-recruitment.md](./docs/co-maintainer-recruitment.md) defines the co-maintainer recruitment profiles, access ladder, and current named-maintainer blocker.
 - [docs/license-strategy.md](./docs/license-strategy.md) records the current MIT decision and licence migration criteria.
 - [docs/neutral-home-donation-proposal.md](./docs/neutral-home-donation-proposal.md) evaluates foundation/fiscal-host donation paths, governance, trademark, package, maintainer, and next-step implications.
 - [docs/schema-versioning.md](./docs/schema-versioning.md) defines public contract IDs and schema-change release rules.
 - [docs/country-packs.md](./docs/country-packs.md) defines the `country-pack/v1` envelope and contribution template.
+- [docs/registry-directory-listings.md](./docs/registry-directory-listings.md) tracks MCP registry and directory metadata readiness, target submissions, and accepted URL fields.
 - [docs/compliance-use-clauses.md](./docs/compliance-use-clauses.md) maps compliance-use and non-advice language across web, exports, docs, and API-facing artifacts.
 - [docs/acra-licensing-track.md](./docs/acra-licensing-track.md) tracks the ACRA API Marketplace or authorised-ISP path required before paid hosted ACRA-derived enrichment.
 - [docs/commercial-data-use.md](./docs/commercial-data-use.md) records OneMap and URA commercial-use controls for OSS, self-host, and hosted paid workflows.
@@ -89,6 +91,10 @@ Roadmap planning files live under [docs/roadmap](./docs/roadmap) so the reposito
 - [docs/psg-application-track.md](./docs/psg-application-track.md) records the PSG vendor pre-approval path, material checklist, timeline, and first-application blocker.
 - [docs/accreditation-track.md](./docs/accreditation-track.md) inventories GeBIZ, SGTech, SMEs Go Digital, IMDA Accreditation, SecureTech, and AGIL/Green Lane ambiguity for market-access readiness.
 - [docs/diligence-case-study-content-engine.md](./docs/diligence-case-study-content-engine.md) defines the SG diligence case-study format, editorial calendar, review guardrails, and draft-ready examples.
+- [docs/reference-deployment-program.md](./docs/reference-deployment-program.md) defines the reference-deployment permission request, anonymized fallback, target segments, and adoption caveats.
+- [docs/affiliate-outreach-corp-services.md](./docs/affiliate-outreach-corp-services.md) prepares the corp-services affiliate outreach pitch, target workflows, pilot terms, and outreach tracker.
+- [docs/big-four-innovation-lab-pilot.md](./docs/big-four-innovation-lab-pilot.md) prepares the Big-4 innovation lab pilot scope, target map, one-page brief, and MOU terms.
+- [docs/private-beta-corp-secretarial.md](./docs/private-beta-corp-secretarial.md) defines the two-firm corp-secretarial beta plan, data boundaries, onboarding workflow, and feedback issue template.
 - [docs/certified-consulting-partner-program.md](./docs/certified-consulting-partner-program.md) defines the future partner profile, training, certification, rev-share, onboarding docs, candidate targets, and pilot gate.
 - [docs/professional-body-event-outreach-plan.md](./docs/professional-body-event-outreach-plan.md) defines ACCA, ISCA, SCCA, and SAL event outreach targets, abstract, owner map, tracker, and deadlines/follow-ups.
 - [docs/product/hosted-onboarding.md](./docs/product/hosted-onboarding.md) links the hosted customer packet for sales and onboarding review.

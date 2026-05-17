@@ -13,12 +13,12 @@ It consolidates:
 
 Primary goal: move from credible infrastructure to default Singapore MCP dependency for hackathon and enterprise developer workflows.
 
-## Current Baseline (April 20, 2026)
+## Current Baseline (May 17, 2026)
 
-- 69 tools across 29 data families.
-- `sg_query` routes 20 families.
-- Snapshot indicates package distribution and enterprise trust gaps remain key blockers.
-- Phase sequencing prioritizes reliability before breadth.
+- 109 `sg_*` tools across 39 catalog families.
+- `sg_query` routes 21 families.
+- The Singapore tool surface is registered through the stable `sg` country pack while preserving existing `sg_*` contracts.
+- Registry, governance, beta, and go-to-market roadmap items now separate repo-side readiness from external acceptance, outreach, and participant-recruitment blockers.
 
 ## Phase Timeline
 
@@ -165,4 +165,3 @@ Changes should be logged in release notes and reflected in phase documents.
 2. Stand up a single KPI dashboard artifact source in CI.
 3. Assign named owners to each role-based row in the owner matrix.
 4. Define gate-review meeting cadence (Gate A to Gate E).
-
