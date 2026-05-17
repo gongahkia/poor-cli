@@ -8,6 +8,7 @@ This is the sales and onboarding pointer for hosted Dude readiness. It is not a 
 - Complete the [Data Processing Agreement template](../data-processing-agreement-template.md) and get legal review before paid hosted use.
 - Complete the [ACRA licensing track](../acra-licensing-track.md) before enabling paid hosted ACRA-derived enrichment.
 - Complete the [commercial data use review](../commercial-data-use.md) for OneMap, URA, and any other source used in the customer's workflow.
+- Use the [SOC 2 Type I readiness roadmap](../soc2-type1-roadmap.md) when a hosted buyer asks for formal assurance evidence.
 - Confirm the customer understands Dude outputs are public-data evidence artifacts for analyst review, not legal, tax, credit, investment, AML, sanctions, or licensed compliance advice.
 - Confirm ordinary company/UEN diligence does not require the customer to upload NRIC, passport, bank-account, medical, payroll, or private shareholder/controller personal data.
 - Record the customer security contact, DPO contact, workspace admin, and breach-notification route before the workspace goes live.
@@ -21,6 +22,7 @@ Send or publish these documents together:
 | [Data Processing Agreement template](../data-processing-agreement-template.md) | Draft processor/data-intermediary terms covering instructions, subprocessors, retention, deletion, breach notification, and audit cooperation. |
 | [ACRA licensing track](../acra-licensing-track.md) | ACRA API Marketplace and authorised ISP blocker status for paid hosted diligence enrichment. |
 | [PDPA notification and DPO readiness pack](../privacy-dpo-readiness.md) | Draft notification copy, DPO contact surface, privacy notice skeleton, retention summary, and DPIA checklist. |
+| [SOC 2 Type I readiness roadmap](../soc2-type1-roadmap.md) | Gap analysis, control backlog, build-vs-tool path, cost estimate, and buyer trigger threshold for hosted assurance. |
 | [Commercial data use review](../commercial-data-use.md) | OneMap and URA commercial-use posture, attribution, redistribution, and runtime warning controls. |
 | [Compliance-use and non-advice clauses](../compliance-use-clauses.md) | Standard product-safety wording for web, exports, docs, and API-facing artifacts. |
 | [Corp-services CDD workflow](./corp-services-cdd.md) | Primary buyer workflow and current platform gaps. |

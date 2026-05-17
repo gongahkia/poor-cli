@@ -34,6 +34,7 @@ requireFile(resolve(root, "docs/acra-licensing-track.md"));
 requireFile(resolve(root, "docs/commercial-data-use.md"));
 requireFile(resolve(root, "docs/privacy-dpo-readiness.md"));
 requireFile(resolve(root, "docs/data-processing-agreement-template.md"));
+requireFile(resolve(root, "docs/soc2-type1-roadmap.md"));
 requireFile(resolve(root, "docs/product/hosted-onboarding.md"));
 requireFile(resolve(root, "docs/kpi-thresholds.md"));
 requireFile(resolve(root, "config/kpi-thresholds.example.json"));
@@ -227,9 +228,18 @@ ensureIncludes(resolve(root, "docs/data-processing-agreement-template.md"), [
   "Legal Review Gate",
 ]);
 
+ensureIncludes(resolve(root, "docs/soc2-type1-roadmap.md"), [
+  "Readiness Gap Analysis",
+  "Build-Vs-Tool Path",
+  "Control Backlog",
+  "Cost And Buyer Trigger",
+  "AICPA",
+]);
+
 ensureIncludes(resolve(root, "docs/product/hosted-onboarding.md"), [
   "Data Processing Agreement template",
   "PDPA notification and DPO readiness pack",
+  "SOC 2 Type I readiness roadmap",
   "Commercial data use review",
 ]);
 
