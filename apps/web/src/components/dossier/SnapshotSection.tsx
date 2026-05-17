@@ -3,8 +3,10 @@ import { ExternalLink, MapPin } from "lucide-react";
 import {
   buildDiligenceSnapshot,
   formatRecordValue,
+  getDossierConfidence,
   getSectorBadges,
 } from "@/lib/dossier";
+import { cn } from "@/lib/utils";
 import type { BusinessDossier } from "@/types/dossier";
 
 const buildMapQuery = (address: string, entityName: string | null): string =>
@@ -16,8 +18,35 @@ const buildGoogleMapsEmbedUrl = (query: string): string =>
 const buildGoogleMapsSearchUrl = (query: string): string =>
   `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 
+const confidencePillClassName = (score: number | undefined, level: string): string => {
+  const normalizedLevel = level.toLowerCase();
+  if (score !== undefined) {
+    if (score >= 0.8) {
+      return "border-emerald-200 bg-emerald-50 text-emerald-800";
+    }
+    if (score >= 0.55) {
+      return "border-amber-200 bg-amber-50 text-amber-800";
+    }
+    return "border-rose-200 bg-rose-50 text-rose-800";
+  }
+  if (normalizedLevel === "high") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  }
+  if (normalizedLevel === "medium") {
+    return "border-amber-200 bg-amber-50 text-amber-800";
+  }
+  if (normalizedLevel === "low") {
+    return "border-rose-200 bg-rose-50 text-rose-800";
+  }
+  return "border-border bg-muted text-muted-foreground";
+};
+
+const formatConfidencePill = (level: string, score: number | undefined): string =>
+  `Confidence: ${level}${score === undefined ? "" : ` (${Math.round(score * 100)}%)`}`;
+
 export function SnapshotSection({ dossier }: { dossier: BusinessDossier }) {
   const snapshot = buildDiligenceSnapshot(dossier);
+  const confidence = getDossierConfidence(dossier);
   const sectors = getSectorBadges(dossier);
   const mapQuery = snapshot.address === null ? null : buildMapQuery(snapshot.address, snapshot.entityName);
   const rows = [
@@ -28,7 +57,6 @@ export function SnapshotSection({ dossier }: { dossier: BusinessDossier }) {
     ["Address", snapshot.address],
     ["Primary SSIC", snapshot.primarySsic],
     ["Matched modules", snapshot.matchedModules],
-    ["Confidence", snapshot.confidence],
   ] as const;
 
   return (
@@ -40,8 +68,18 @@ export function SnapshotSection({ dossier }: { dossier: BusinessDossier }) {
             A compact readout from the official registry evidence returned for this search.
           </p>
         </div>
-        {sectors.length > 0 ? (
+        {sectors.length > 0 || confidence !== null ? (
           <div className="flex min-w-0 flex-wrap gap-2 sm:justify-end">
+            {confidence === null ? null : (
+              <span
+                className={cn(
+                  "max-w-full break-words rounded-full border px-2.5 py-1 text-xs font-medium",
+                  confidencePillClassName(confidence.score, confidence.level),
+                )}
+              >
+                {formatConfidencePill(confidence.level, confidence.score)}
+              </span>
+            )}
             {sectors.map((sector) => (
               <span className="max-w-full break-words rounded-md bg-muted px-2.5 py-1 text-xs text-muted-foreground" key={sector}>
                 {sector}

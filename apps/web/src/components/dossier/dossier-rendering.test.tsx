@@ -55,6 +55,25 @@ describe("dossier rendering", () => {
     expect(html).toContain("Map is based on the address returned in the dossier");
   });
 
+  it("renders snapshot confidence as a score-bound pill instead of a field card", () => {
+    const html = renderToStaticMarkup(<SnapshotSection dossier={{
+      ...dossier,
+      records: {
+        ...dossier.records,
+        quality: {
+          dossierConfidence: {
+            level: "high",
+            score: 0.92,
+          },
+        },
+      },
+    }} />);
+
+    expect(html).toContain("Confidence: high (92%)");
+    expect(html).toContain("bg-emerald-50");
+    expect(html).not.toContain(">Confidence</dt>");
+  });
+
   it("renders no-match and upstream-gap states", () => {
     const noMatchHtml = renderToStaticMarkup(<EvidenceSection dossier={{
       ...dossier,
