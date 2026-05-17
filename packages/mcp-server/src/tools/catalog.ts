@@ -1558,6 +1558,22 @@ export const RUNTIME_CATALOG: RuntimeCatalog = {
   ],
   sourceUseWarnings: [
     {
+      api: "ACRA",
+      observedAt: "2026-05-17",
+      posture: "review_before_hosted_paid_use",
+      termsUrls: [
+        "https://www.acra.gov.sg/about-us/data-policy-statement/",
+        "https://www.acra.gov.sg/resources/eservice-tools-portals/api-marketplace/",
+        "https://www.acra.gov.sg/resources/buying-business-information/bizfile-and-other-sources/",
+      ],
+      docs: ["docs/acra-licensing-track.md", "docs/commercial-data-use.md"],
+      warnings: [
+        "Paid hosted ACRA-derived commercial diligence outputs require API Marketplace terms, authorised ISP status, authorised ISP partner terms, or a written sub-licence path.",
+        "Do not redistribute paid Business Profile, People Profile, CCFP, Registers, residential-address data, or ISP-enriched outputs from hosted Dude without recorded permission.",
+        "Current OSS and self-host workflows may cite only public/no-auth evidence actually returned by the running workflow, with provenance, freshness, gaps, and limits preserved.",
+      ],
+    },
+    {
       api: "OneMap",
       observedAt: "2026-05-17",
       posture: "review_before_hosted_paid_use",

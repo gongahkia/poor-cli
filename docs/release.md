@@ -55,6 +55,7 @@ Confirm:
 - `docs/governance-checklist.md` and `docs/deprecation-policy.md` are current.
 - `docs/schema-versioning.md` and `CHANGELOG.md` are current for public schema changes.
 - quarterly reporting template and known-issues notes are current for the release window.
+- hosted paid releases do not enable ACRA-derived commercial enrichment unless [docs/acra-licensing-track.md](./acra-licensing-track.md) records an approved API Marketplace, authorised ISP, partner, or sub-licence path.
 
 Generate release-window evidence artifacts manually (if not using `release:preflight`):
 
@@ -92,6 +93,15 @@ npm run test:smoke:public
 ```
 
 Do not treat the public smoke pass as release evidence; publish and deploy readiness still requires `npm run test:smoke:live`.
+
+## Hosted Commercial Data Gates
+
+Before a hosted paid release or beta:
+
+- ACRA-derived paid enrichment is blocked unless [ACRA licensing track](./acra-licensing-track.md) records an approved ACRA API Marketplace, authorised ISP, partner, or sub-licence path.
+- OneMap-backed redistribution is blocked until Developer Agreement rights are reviewed.
+- URA-backed workflows must preserve attribution, source freshness, and any API-page-specific limits.
+- Sales/onboarding packets must include [hosted-onboarding.md](./product/hosted-onboarding.md), the DPA, PDPA/DPO readiness pack, and commercial data use review.
 
 ## Publish Order
 

@@ -73,6 +73,7 @@ Roadmap planning files live under [docs/roadmap](./docs/roadmap) so the reposito
 - [docs/schema-versioning.md](./docs/schema-versioning.md) defines public contract IDs and schema-change release rules.
 - [docs/country-packs.md](./docs/country-packs.md) defines the `country-pack/v1` envelope and contribution template.
 - [docs/compliance-use-clauses.md](./docs/compliance-use-clauses.md) maps compliance-use and non-advice language across web, exports, docs, and API-facing artifacts.
+- [docs/acra-licensing-track.md](./docs/acra-licensing-track.md) tracks the ACRA API Marketplace or authorised-ISP path required before paid hosted ACRA-derived enrichment.
 - [docs/commercial-data-use.md](./docs/commercial-data-use.md) records OneMap and URA commercial-use controls for OSS, self-host, and hosted paid workflows.
 - [docs/privacy-dpo-readiness.md](./docs/privacy-dpo-readiness.md) drafts the PDPA notification, DPO, privacy, retention, and DPIA readiness pack for hosted beta.
 - [docs/data-processing-agreement-template.md](./docs/data-processing-agreement-template.md) provides the draft DPA template for hosted customer onboarding, subject to legal review.

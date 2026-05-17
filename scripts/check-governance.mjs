@@ -30,6 +30,7 @@ requireFile(ownershipPath);
 requireFile(resolve(root, "docs/governance-checklist.md"));
 requireFile(resolve(root, "docs/deprecation-policy.md"));
 requireFile(resolve(root, "docs/audit-retention-policy.md"));
+requireFile(resolve(root, "docs/acra-licensing-track.md"));
 requireFile(resolve(root, "docs/commercial-data-use.md"));
 requireFile(resolve(root, "docs/privacy-dpo-readiness.md"));
 requireFile(resolve(root, "docs/data-processing-agreement-template.md"));
@@ -189,7 +190,19 @@ ensureIncludes(resolve(root, "docs/audit-retention-policy.md"), [
   "requestId",
 ]);
 
+ensureIncludes(resolve(root, "docs/acra-licensing-track.md"), [
+  "ACRA API Marketplace",
+  "Authorised ISP Shortlist",
+  "Release Blocker",
+  "sourceUseWarnings",
+  "CRIF BizInsights",
+  "DC Frontiers Pte. Ltd. (Handshakes)",
+  "Experian Credit Services Singapore Pte. Ltd.",
+  "Singapore Commercial Credit Bureau Pte. Ltd.",
+]);
+
 ensureIncludes(resolve(root, "docs/commercial-data-use.md"), [
+  "ACRA",
   "OneMap",
   "URA",
   "sourceUseWarnings",

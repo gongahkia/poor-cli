@@ -248,6 +248,12 @@ describe("resource catalog parity", () => {
     expect(RUNTIME_CATALOG.sourceUseWarnings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
+          api: "ACRA",
+          posture: "review_before_hosted_paid_use",
+          docs: expect.arrayContaining(["docs/acra-licensing-track.md"]),
+          warnings: expect.arrayContaining([expect.stringContaining("authorised ISP")]),
+        }),
+        expect.objectContaining({
           api: "OneMap",
           posture: "review_before_hosted_paid_use",
           docs: expect.arrayContaining(["docs/commercial-data-use.md"]),

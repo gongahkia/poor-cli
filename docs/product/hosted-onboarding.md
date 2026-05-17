@@ -6,6 +6,7 @@ This is the sales and onboarding pointer for hosted Dude readiness. It is not a 
 
 - Complete the [PDPA notification and DPO readiness pack](../privacy-dpo-readiness.md).
 - Complete the [Data Processing Agreement template](../data-processing-agreement-template.md) and get legal review before paid hosted use.
+- Complete the [ACRA licensing track](../acra-licensing-track.md) before enabling paid hosted ACRA-derived enrichment.
 - Complete the [commercial data use review](../commercial-data-use.md) for OneMap, URA, and any other source used in the customer's workflow.
 - Confirm the customer understands Dude outputs are public-data evidence artifacts for analyst review, not legal, tax, credit, investment, AML, sanctions, or licensed compliance advice.
 - Confirm ordinary company/UEN diligence does not require the customer to upload NRIC, passport, bank-account, medical, payroll, or private shareholder/controller personal data.
@@ -18,6 +19,7 @@ Send or publish these documents together:
 | Document | Purpose |
 | --- | --- |
 | [Data Processing Agreement template](../data-processing-agreement-template.md) | Draft processor/data-intermediary terms covering instructions, subprocessors, retention, deletion, breach notification, and audit cooperation. |
+| [ACRA licensing track](../acra-licensing-track.md) | ACRA API Marketplace and authorised ISP blocker status for paid hosted diligence enrichment. |
 | [PDPA notification and DPO readiness pack](../privacy-dpo-readiness.md) | Draft notification copy, DPO contact surface, privacy notice skeleton, retention summary, and DPIA checklist. |
 | [Commercial data use review](../commercial-data-use.md) | OneMap and URA commercial-use posture, attribution, redistribution, and runtime warning controls. |
 | [Compliance-use and non-advice clauses](../compliance-use-clauses.md) | Standard product-safety wording for web, exports, docs, and API-facing artifacts. |
@@ -29,7 +31,7 @@ Send or publish these documents together:
 - hosting region, backup region, support access countries, and subprocessor list;
 - workspace retention, deletion, export, audit, and incident-response settings;
 - whether analyst memo generation is enabled and which AI provider terms apply;
-- whether any customer-specific source licence, ACRA authorised-partner path, MAS outsourcing term, or sector requirement applies.
+- whether any customer-specific source licence, ACRA API Marketplace or authorised-ISP path, MAS outsourcing term, or sector requirement applies.
 
 ## Limits
 
