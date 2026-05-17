@@ -35,9 +35,12 @@ describe("NextChecksSection", () => {
     expect(html).toContain("Jurisdiction Code");
     expect(html).toContain("UEN");
     expect(html).toContain("197700546G");
+    expect(html).toContain("Dossier follow-up");
     expect(html).toContain("To-do 01");
     expect(html).toContain("Pending");
-    expect(html).toContain("Inputs to use");
+    expect(html).toContain("Reviewed by analyst");
+    expect(html).toContain("Inputs");
+    expect(html).toContain("Outcome");
     expect(html).toContain("1 open todo");
     expect(html).not.toContain("{&quot;");
   });
