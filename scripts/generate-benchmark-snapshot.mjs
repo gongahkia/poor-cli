@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -48,6 +48,7 @@ const generatedAt = process.env["SG_APIS_BENCHMARK_GENERATED_AT"] ?? new Date().
 const source = process.env["GITHUB_ACTIONS"] === "true" ? "github-actions" : "local";
 const registrySmokeStatus = process.env["SG_APIS_REGISTRY_SMOKE_STATUS"] === "passed" ? "passed" : "skipped";
 const defaultMeasurementWindow = process.env["SG_APIS_BENCHMARK_WINDOW"] ?? "rolling-7d";
+const diligenceBenchmark = JSON.parse(readFileSync(resolve(root, "benchmarks/diligence-edge-cases.json"), "utf8"));
 
 const toOptionalNumber = (value) => {
   if (value === undefined || value === "") {
@@ -146,6 +147,23 @@ const snapshot = {
       notes: registrySmokeStatus === "passed"
         ? "Registry smoke succeeded for this release-context snapshot."
         : "Registry smoke was not run in this context.",
+    },
+    {
+      name: "diligence edge-case benchmark fixtures",
+      status: Array.isArray(diligenceBenchmark.cases) && diligenceBenchmark.cases.length === 50 ? "passed" : "warning",
+      notes: `${Array.isArray(diligenceBenchmark.cases) ? diligenceBenchmark.cases.length : 0} public-data diligence edge cases are cataloged for regression testing.`,
+    },
+  ],
+  benchmarkSets: [
+    {
+      name: diligenceBenchmark.title,
+      schemaVersion: diligenceBenchmark.schemaVersion,
+      fixtureCount: Array.isArray(diligenceBenchmark.cases) ? diligenceBenchmark.cases.length : 0,
+      sourcePath: "benchmarks/diligence-edge-cases.json",
+      limitations: [
+        ...(Array.isArray(diligenceBenchmark.falsePositiveLimitations) ? diligenceBenchmark.falsePositiveLimitations : []),
+        ...(Array.isArray(diligenceBenchmark.falseNegativeLimitations) ? diligenceBenchmark.falseNegativeLimitations : []),
+      ],
     },
   ],
   sloMeasurements,
