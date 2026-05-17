@@ -10,6 +10,7 @@ import { configToolDefinitions } from "./config-tools.js";
 import { datagovToolDefinitions } from "./datagov-tools.js";
 import { ecdaToolDefinitions } from "./ecda-tools.js";
 import { emaToolDefinitions } from "./ema-tools.js";
+import { externalDiligenceToolDefinitions } from "./external-diligence-tools.js";
 import { gebizToolDefinitions } from "./gebiz-tools.js";
 import { govFeedToolDefinitions } from "./govfeeds-tools.js";
 import { hawkerToolDefinitions } from "./hawker-tools.js";
@@ -83,6 +84,7 @@ const RAW_TOOL_DEFINITIONS = [
   ...lawToolDefinitions,
   ...transitIntelligenceToolDefinitions,
   ...hlbToolDefinitions,
+  ...externalDiligenceToolDefinitions,
   ...briefToolDefinitions,
   ...healthCheckToolDefinitions,
   ...cacheToolDefinitions,

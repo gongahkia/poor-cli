@@ -25,6 +25,12 @@ import {
   selectBusinessDossierModules,
 } from "./entity-resolution.js";
 import {
+  buildAdverseMediaLiteArtifact,
+  buildOpenCorporatesLinksArtifact,
+  buildRelationshipGraphArtifact,
+  buildSanctionsScreenArtifact,
+} from "./external-diligence.js";
+import {
   SG_RISK_RULES_LAST_REVIEWED,
   SG_RISK_RULES_SCHEMA_VERSION,
   SG_RISK_RULES_SOURCE,
@@ -43,6 +49,7 @@ type BusinessDossierParams = Readonly<{
   grade?: string | undefined;
   modules?: readonly BusinessDossierModule[] | undefined;
   sectorHints?: readonly BusinessSectorHint[] | undefined;
+  includeExternalDiligence?: boolean | undefined;
 }>;
 
 const toGap = (code: string, message: string): EvidenceGap => ({ code, message });
@@ -278,6 +285,28 @@ const buildBusinessNextChecks = (
         input: { keeperName: params.entityName },
       });
     }
+  }
+  if (params.entityName !== undefined || params.uen !== undefined) {
+    checks.push({
+      tool: "sg_sanctions_screen",
+      reason: "Screen candidate sanctions/watchlist matches with OpenSanctions when a licensed API key is configured.",
+      input: { name: params.entityName ?? params.uen ?? "", ...(params.uen === undefined ? {} : { uen: params.uen }) },
+    });
+    checks.push({
+      tool: "sg_opencorporates_links",
+      reason: "Cross-link the entity to OpenCorporates identifiers without inferring ownership or control.",
+      input: { entityName: params.entityName ?? params.uen ?? "", ...(params.uen === undefined ? {} : { uen: params.uen }), jurisdictionCode: "sg" },
+    });
+    checks.push({
+      tool: "sg_adverse_media_lite",
+      reason: "Search bounded official Singapore public feeds for keyword evidence.",
+      input: { keyword: params.entityName ?? params.uen ?? "" },
+    });
+    checks.push({
+      tool: "sg_relationship_graph",
+      reason: "Build a shallow graph from supplied public dossier records with strict limits against ownership claims.",
+      input: { records: "Use this dossier's records object." },
+    });
   }
   checks.push({
     tool: "sg_datagov_search",
@@ -898,6 +927,46 @@ export const buildBusinessDossierArtifact = async (
     riskFlags,
     nextChecks,
   });
+  const externalQueryName = primaryAcra?.entityName ?? searchParams.entityName;
+  const externalUen = primaryAcra?.uen ?? params.uen;
+  const externalName = externalQueryName ?? externalUen;
+  const externalArtifacts = params.includeExternalDiligence === true && externalName !== undefined
+    ? await Promise.all([
+        buildSanctionsScreenArtifact({ name: externalName, ...(externalUen === undefined ? {} : { uen: externalUen }) }),
+        buildOpenCorporatesLinksArtifact({ entityName: externalName, ...(externalUen === undefined ? {} : { uen: externalUen }), jurisdictionCode: "sg" }),
+        buildAdverseMediaLiteArtifact({ keyword: externalName }),
+        buildRelationshipGraphArtifact({
+          records: {
+            acra,
+            bcaLicensedBuilders: builders,
+            bcaRegisteredContractors: contractors,
+            ceaSalespersons: salespersons,
+            gebizTenders: tenders,
+            boaArchitects: architects,
+            boaArchitectureFirms: architectureFirms,
+            hsaLicensedPharmacies: pharmacies,
+            hsaHealthProductLicensees: licensees,
+            hlbHotels: hotels,
+          },
+        }),
+      ])
+    : [];
+  const externalEvidence = externalArtifacts.flatMap((artifact) =>
+    artifact.evidence.map((item) => ({
+      ...item,
+      label: `${artifact.title}: ${item.label}`,
+    })),
+  );
+  const externalRecords = externalArtifacts.map((artifact) => ({
+    title: artifact.title,
+    summary: artifact.summary,
+    records: artifact.records,
+    gaps: artifact.gaps,
+    provenance: artifact.provenance,
+    freshness: artifact.freshness,
+    limits: artifact.limits,
+    riskFlags: artifact.riskFlags ?? [],
+  }));
 
   return {
     title: "Business Dossier",
@@ -933,6 +1002,7 @@ export const buildBusinessDossierArtifact = async (
       { label: "Builder expiry", value: primaryBuilder?.expiryDate ?? null, source: "BCA" },
       { label: "Hotel rooms", value: primaryHotel?.totalRooms ?? null, source: "HLB" },
       { label: "Top GeBIZ tender", value: primaryTender?.tenderNo ?? null, source: "GeBIZ" },
+      ...externalEvidence,
     ],
     records: {
       resolution: {
@@ -973,8 +1043,12 @@ export const buildBusinessDossierArtifact = async (
       hsaLicensedPharmacies: pharmacies,
       hsaHealthProductLicensees: licensees,
       hlbHotels: hotels,
+      externalDiligence: externalRecords,
     },
-    gaps,
+    gaps: [
+      ...gaps,
+      ...externalArtifacts.flatMap((artifact) => artifact.gaps),
+    ],
     provenance: [
       ...(searchedModules.has("acra")
         ? [toProvenance("ACRA", "sg_acra_entities", "Exact-match company and UEN registry evidence.", false, acra.length)]
@@ -1006,6 +1080,7 @@ export const buildBusinessDossierArtifact = async (
       ...(searchedModules.has("hlb")
         ? [toProvenance("HLB", "sg_hlb_hotels", "Hotels Licensing Board hotel and keeper evidence for the named entity.", false, hotels.length)]
         : []),
+      ...externalArtifacts.flatMap((artifact) => artifact.provenance),
     ],
     freshness: [
       ...(searchedModules.has("acra")
@@ -1038,9 +1113,16 @@ export const buildBusinessDossierArtifact = async (
       ...(searchedModules.has("hlb")
         ? [toFreshness("HLB hotels", observedAt, getFirstTimestamp(hotels as readonly Readonly<Record<string, unknown>>[], ["lastUpdatedAt"]))]
         : []),
+      ...externalArtifacts.flatMap((artifact) => artifact.freshness),
     ],
-    limits: buildBusinessLimits(selectedModules),
-    riskFlags,
+    limits: [
+      ...buildBusinessLimits(selectedModules),
+      ...externalArtifacts.flatMap((artifact) => artifact.limits),
+    ],
+    riskFlags: [
+      ...riskFlags,
+      ...externalArtifacts.flatMap((artifact) => artifact.riskFlags ?? []),
+    ],
     matchConfidence,
     nextChecks,
   };

@@ -22,9 +22,9 @@ Official Singapore public data for agents with deterministic contracts.
 
 ## Surface Snapshot
 
-The repo currently exposes 105 `sg_*` tools total across 38 catalog families.
+The repo currently exposes 109 `sg_*` tools total across 39 catalog families.
 
-- 86 direct data tools across the 38 API families
+- 90 direct data and diligence tools across the 39 API families
 - 7 additive brief tools plus the bounded `sg_query` router
 - 11 runtime and operational tools for keys, cache, config, health, tracing, and visualization
 
@@ -148,6 +148,7 @@ If you are evaluating whether the repo is actually useful for developers, start 
 | BCA | 2 | Curated licensed-builder and contractor registry lookup | None |
 | BOA | 2 | Curated architect and architecture-firm registry lookup | None |
 | ACRA | 1 | Curated exact-match company and UEN lookup over the official sharded registry | None |
+| External Diligence | 4 | OpenSanctions candidate screening, OpenCorporates cross-links, official-feed adverse-media lite, and shallow relationship graph export | API token/license review for OpenSanctions and OpenCorporates |
 | PA | 2 | Community clubs, PAssion WaVe outlets, and residents' network centres | None |
 | Sport Singapore | 1 | Public sports facility discovery across swimming complexes, sports halls, stadiums, and sport centres | None |
 | ECDA | 1 | Childcare discovery with joined location and vacancy signals | None |

@@ -324,6 +324,20 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
     ],
   },
   {
+    name: "External Diligence",
+    description: "Bounded external diligence adapters for sanctions candidate screening, company cross-links, official-feed adverse-media lite, and shallow graph export.",
+    tools: ["sg_sanctions_screen", "sg_opencorporates_links", "sg_adverse_media_lite", "sg_relationship_graph"],
+    authRequired: true,
+    rateLimit: "Depends on configured OpenSanctions/OpenCorporates plans; official-feed checks reuse Government RSS Feed limits.",
+    positioning: "Explicit add-on diligence surface for licensed external data and public-feed triage.",
+    preferredInterface: "sg_business_dossier",
+    scopeNotes: [
+      "OpenSanctions and OpenCorporates calls require configured API credentials and license review.",
+      "Adverse-media lite searches bounded official Singapore public feeds only.",
+      "Relationship graph edges do not infer ownership, control, or beneficial ownership.",
+    ],
+  },
+  {
     name: "PA",
     description: "People's Association civic directories for community clubs, PAssion WaVe outlets, and residents' network centres.",
     tools: ["sg_pa_community_outlets", "sg_pa_resident_network_centres"],

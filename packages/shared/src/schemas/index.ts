@@ -370,6 +370,7 @@ export const BusinessDossierBaseSchema = z.object({
   grade: z.string().min(1).optional(),
   modules: z.array(z.enum(["acra", "bca", "cea", "gebiz", "boa", "hsa", "hlb"])).min(1).optional(),
   sectorHints: z.array(z.enum(["construction", "real_estate", "architecture", "healthcare", "hospitality", "procurement"])).min(1).optional(),
+  includeExternalDiligence: z.boolean().optional(),
   includeContextIds: z.boolean().optional(),
   format: z.enum(["json", "markdown"]).optional(),
 }).strict();

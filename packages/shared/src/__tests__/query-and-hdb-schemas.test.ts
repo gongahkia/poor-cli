@@ -182,6 +182,7 @@ describe("query and HDB schema contracts", () => {
         workhead: "CW01",
         modules: ["acra", "bca", "gebiz"],
         sectorHints: ["construction", "procurement"],
+        includeExternalDiligence: true,
         format: "markdown",
       }).success,
     ).toBe(true);
