@@ -105,7 +105,7 @@ export function PdpaChecklistSection({
               <label className="mt-3 flex w-fit items-center gap-2 text-sm text-foreground">
                 <input
                   checked={isReviewed}
-                  className="h-4 w-4 rounded border-border"
+                  className="h-4 w-4 rounded border-border accent-slate-700"
                   onChange={() => toggleReviewed(item.id)}
                   type="checkbox"
                 />
