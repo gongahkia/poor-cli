@@ -11,6 +11,7 @@ This is the sales and onboarding pointer for hosted Dude readiness. It is not a 
 - Use the [SOC 2 Type I readiness roadmap](../soc2-type1-roadmap.md) when a hosted buyer asks for formal assurance evidence.
 - Use the [MAS outsourcing readiness pack](../mas-outsourcing-readiness.md) before FI-adjacent sales or bank vendor-risk reviews.
 - Confirm the hosted boundary, tenancy model, logging, backup, retention, and data-residency choices against the [Dude Cloud security architecture](../dude-cloud-security-architecture.md).
+- Confirm plan, seat, usage, support, source-gating, and billing boundaries against the [Dude Cloud entitlements plan](../dude-cloud-entitlements.md).
 - Confirm the customer understands Dude outputs are public-data evidence artifacts for analyst review, not legal, tax, credit, investment, AML, sanctions, or licensed compliance advice.
 - Confirm ordinary company/UEN diligence does not require the customer to upload NRIC, passport, bank-account, medical, payroll, or private shareholder/controller personal data.
 - Record the customer security contact, DPO contact, workspace admin, and breach-notification route before the workspace goes live.
@@ -27,6 +28,7 @@ Send or publish these documents together:
 | [SOC 2 Type I readiness roadmap](../soc2-type1-roadmap.md) | Gap analysis, control backlog, build-vs-tool path, cost estimate, and buyer trigger threshold for hosted assurance. |
 | [MAS outsourcing readiness pack](../mas-outsourcing-readiness.md) | Buyer-facing BCP, incident, subprocessor, data residency, and gap mapping for FI-adjacent diligence. |
 | [Dude Cloud security architecture](../dude-cloud-security-architecture.md) | Hosted topology, tenancy, secrets, logging/audit, backup, retention, data-residency, and subprocessor control plan. |
+| [Dude Cloud entitlements plan](../dude-cloud-entitlements.md) | OSS, self-host, hosted tier, seat, usage, support, source-gating, billing, and SLA boundaries. |
 | [Commercial data use review](../commercial-data-use.md) | OneMap and URA commercial-use posture, attribution, redistribution, and runtime warning controls. |
 | [Compliance-use and non-advice clauses](../compliance-use-clauses.md) | Standard product-safety wording for web, exports, docs, and API-facing artifacts. |
 | [PSG application track](../psg-application-track.md) | Grant-assisted SME sales readiness, vendor pre-approval requirements, and current application blockers. |
