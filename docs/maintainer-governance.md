@@ -15,6 +15,20 @@ This document defines how Dude maintainers make decisions, release changes, and 
 
 The current owner map lives in [ownership-matrix.json](./ownership-matrix.json). Placeholder owner IDs are acceptable until named maintainers are appointed, but every release-blocking surface must have a primary and backup role.
 
+The co-maintainer recruitment plan lives in [co-maintainer-recruitment.md](./co-maintainer-recruitment.md). Current state: no named co-maintainer has accepted yet. Until that changes, recruitment candidates must be treated as prospects, not maintainers, and no public maintainer list should imply consent.
+
+## Access Boundaries
+
+| Access level | Allowed before named acceptance | Requires owner approval |
+| --- | --- | --- |
+| Issue triage | Yes, for trusted contributors. | Removing labels, closing contentious issues, or moderating conduct. |
+| PR review | Yes, as non-blocking review. | Required-reviewer status or branch protection changes. |
+| Repository write | No. | Named area-maintainer appointment. |
+| Release credentials | No. | Separate release-maintainer approval and packaging runbook review. |
+| Security reports | No. | Security-process approval and private-report handling setup. |
+
+Co-maintainer onboarding starts with issue/PR review and can graduate only after useful contributions, owner approval, and documented scope.
+
 ## Decision Process
 
 - Small fixes may merge with one maintainer approval from the relevant area.
