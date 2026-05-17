@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { BookmarkCheck, BookmarkPlus, Braces, Copy, FileDown, Loader2, Table2 } from "lucide-react";
 
 import { AnalystMemoSection, type AnalystMemoState } from "@/components/dossier/AnalystMemoSection";
 import { ConfidenceSection } from "@/components/dossier/ConfidenceSection";
@@ -667,28 +668,68 @@ function DossierSuccess({
           ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <Button disabled={isExporting} onClick={handleExportPdf} type="button">
-            {isExporting ? "Exporting" : "Export PDF"}
-          </Button>
-          <Button onClick={handleCopyLink} type="button" variant="outline">
-            Copy link
+          <Button
+            aria-label={isExporting ? "Exporting PDF" : "Export PDF"}
+            disabled={isExporting}
+            onClick={handleExportPdf}
+            size="icon"
+            title={isExporting ? "Exporting PDF" : "Export PDF"}
+            type="button"
+          >
+            {isExporting ? (
+              <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin" />
+            ) : (
+              <FileDown aria-hidden="true" className="h-5 w-5" />
+            )}
+            <span className="sr-only">{isExporting ? "Exporting PDF" : "Export PDF"}</span>
           </Button>
           <Button
+            aria-label="Copy link"
+            onClick={handleCopyLink}
+            size="icon"
+            title="Copy link"
+            type="button"
+            variant="outline"
+          >
+            <Copy aria-hidden="true" className="h-5 w-5" />
+            <span className="sr-only">Copy link</span>
+          </Button>
+          <Button
+            aria-label="Export CSV"
             onClick={() => void handleExportCsv()}
+            size="icon"
+            title="Export CSV"
             type="button"
             variant="outline"
           >
-            Export CSV
+            <Table2 aria-hidden="true" className="h-5 w-5" />
+            <span className="sr-only">Export CSV</span>
           </Button>
           <Button
+            aria-label="Export JSON"
             onClick={() => void handleExportJson()}
+            size="icon"
+            title="Export JSON"
             type="button"
             variant="outline"
           >
-            Export JSON
+            <Braces aria-hidden="true" className="h-5 w-5" />
+            <span className="sr-only">Export JSON</span>
           </Button>
-          <Button onClick={handleToggleShortlist} type="button" variant="outline">
-            {shortlisted ? "Remove saved" : "Save"}
+          <Button
+            aria-label={shortlisted ? "Remove saved dossier" : "Save dossier"}
+            onClick={handleToggleShortlist}
+            size="icon"
+            title={shortlisted ? "Remove saved dossier" : "Save dossier"}
+            type="button"
+            variant="outline"
+          >
+            {shortlisted ? (
+              <BookmarkCheck aria-hidden="true" className="h-5 w-5" />
+            ) : (
+              <BookmarkPlus aria-hidden="true" className="h-5 w-5" />
+            )}
+            <span className="sr-only">{shortlisted ? "Remove saved dossier" : "Save dossier"}</span>
           </Button>
           {copyStatus === "copied" ? (
             <p className="text-sm text-muted-foreground">Copied</p>
