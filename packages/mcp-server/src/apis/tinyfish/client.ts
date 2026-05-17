@@ -34,6 +34,16 @@ export type WebPresence = {
   readonly limits: readonly string[];
 };
 
+export type PeopleDiscovery = {
+  readonly entityName: string;
+  readonly uen: string | null;
+  readonly query: string;
+  readonly configured: boolean;
+  readonly results: readonly WebSearchResult[];
+  readonly suggestedActions: readonly string[];
+  readonly limits: readonly string[];
+};
+
 export type TinyFishSearchReadiness = {
   readonly configured: boolean;
   readonly resultCount?: number;
@@ -208,6 +218,73 @@ export const getWebPresence = async (query: string): Promise<WebPresence> => {
       "Web discovery is not registry evidence.",
       "Results come from TinyFish Search snippets; verify important claims against official sources.",
       "TinyFish Fetch is not used to read full pages in this flow.",
+    ],
+  };
+};
+
+const getPeopleSearchName = (entityName: string): string => {
+  const cleaned = entityName
+    .replace(/\bprivate\s+limited\b/gi, "")
+    .replace(/\bpte\.?\s+ltd\.?\b/gi, "")
+    .replace(/\blimited\b/gi, "")
+    .replace(/\bltd\.?\b/gi, "")
+    .replace(/[.,]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return cleaned.length >= 3 ? cleaned : entityName;
+};
+
+export const getPeopleDiscovery = async (params: Readonly<{
+  entityName: string;
+  uen?: string | undefined;
+}>): Promise<PeopleDiscovery> => {
+  const entityName = params.entityName.trim();
+  const uen = params.uen?.trim() === "" ? undefined : params.uen?.trim();
+  const searchName = getPeopleSearchName(entityName);
+  const query = [
+    `"${searchName}"`,
+    "Singapore",
+    "employees leadership directors LinkedIn",
+  ].filter((part): part is string => part !== undefined && part.trim() !== "").join(" ");
+
+  const suggestedActions = [
+    "Review snippets for named people, role titles, and profile sources.",
+    "Verify each person's current role through official or company-controlled sources before relying on it.",
+    "Use an appropriate business purpose and channel before contacting any individual.",
+  ];
+
+  if (!isTinyFishSearchConfigured()) {
+    return {
+      entityName,
+      uen: uen ?? null,
+      query,
+      configured: false,
+      results: [],
+      suggestedActions,
+      limits: [
+        "TinyFish Search is not configured on the server.",
+        "People follow-up is supplemental and does not verify employment, authority, or current role.",
+      ],
+    };
+  }
+
+  const results = (await searchTinyFish(query, {
+    location: "SG",
+    language: "en",
+  })).slice(0, 6);
+
+  return {
+    entityName,
+    uen: uen ?? null,
+    query,
+    configured: true,
+    results,
+    suggestedActions,
+    limits: [
+      "Results come from TinyFish Search snippets, not full-page reads.",
+      "Candidate people references are not verified employees, officers, or authorized contacts.",
+      "Confirm role, recency, and outreach basis before using these results for follow-up.",
     ],
   };
 };

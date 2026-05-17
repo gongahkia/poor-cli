@@ -74,6 +74,16 @@ export type WebPresence = {
   limits: string[];
 };
 
+export type PeopleDiscovery = {
+  entityName: string;
+  uen: string | null;
+  query: string;
+  configured: boolean;
+  results: WebPresenceResult[];
+  suggestedActions: string[];
+  limits: string[];
+};
+
 export type BackendLogEntry = {
   ts: string;
   level: "debug" | "info" | "warn" | "error" | string;

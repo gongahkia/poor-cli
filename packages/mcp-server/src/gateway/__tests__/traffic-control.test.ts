@@ -32,6 +32,10 @@ describe("traffic control", () => {
       key: "web_presence",
       maxRequests: 30,
     });
+    expect(getTrafficPolicy("GET", "/api/v1/dude/people-discovery")).toMatchObject({
+      key: "people_discovery",
+      maxRequests: 30,
+    });
     expect(getTrafficPolicy("POST", "/api/v1/sg_business_dossier")).toMatchObject({
       key: "business_dossier",
       maxRequests: 40,

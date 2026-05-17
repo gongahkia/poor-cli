@@ -59,6 +59,14 @@ const WEB_PRESENCE_POLICY: TrafficPolicy = {
   maxBodyBytes: 0,
 };
 
+const PEOPLE_DISCOVERY_POLICY: TrafficPolicy = {
+  key: "people_discovery",
+  label: "people discovery",
+  windowMs: 5 * 60_000,
+  maxRequests: 30,
+  maxBodyBytes: 0,
+};
+
 const DOSSIER_POLICY: TrafficPolicy = {
   key: "business_dossier",
   label: "business dossier",
@@ -120,6 +128,9 @@ export const getTrafficPolicy = (method: string, pathname: string): TrafficPolic
   }
   if (method === "GET" && pathname === "/api/v1/dude/web-presence") {
     return WEB_PRESENCE_POLICY;
+  }
+  if (method === "GET" && pathname === "/api/v1/dude/people-discovery") {
+    return PEOPLE_DISCOVERY_POLICY;
   }
 
   const normalizedPath = pathname.toLowerCase().replace(/-/g, "_");

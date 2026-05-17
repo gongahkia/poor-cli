@@ -6,7 +6,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { randomUUID } from "node:crypto";
 import { createLogger } from "@dude/shared";
 import { searchAcraEntitySuggestions } from "./apis/acra/client.js";
-import { getWebPresence } from "./apis/tinyfish/client.js";
+import { getPeopleDiscovery, getWebPresence } from "./apis/tinyfish/client.js";
 import { buildBulkDossierResponse } from "./dude/bulk-dossiers.js";
 import { generateAnalystMemo, type AnalystMemoDossier } from "./dude/analyst-memo.js";
 import {
@@ -63,6 +63,7 @@ logger.info("gateway started", {
 
 const MAX_SEARCH_QUERY_LENGTH = 96;
 const MAX_WEB_PRESENCE_QUERY_LENGTH = 160;
+const MAX_PEOPLE_DISCOVERY_ENTITY_LENGTH = 128;
 const MAX_MEMO_IDENTIFIER_LENGTH = 128;
 const UEN_PATTERN = /^(?:\d{8,9}[a-z]|[a-z]\d{2}[a-z]{2}\d{4}[a-z])$/i;
 const WORKSPACE_AUTH_REQUIRED = process.env["DUDE_WORKSPACE_AUTH_REQUIRED"] === "true";
@@ -491,6 +492,42 @@ const server = createServer(async (req, res) => {
       durationMs: Date.now() - startedAt,
     });
     sendJson(res, 200, presence);
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/v1/dude/people-discovery") {
+    try {
+      requireWorkspaceAccess(req, "dossier:read");
+    } catch (err) {
+      if (err instanceof WorkspaceApiAccessError) {
+        sendWorkspaceAccessError(res, err);
+        return;
+      }
+      throw err;
+    }
+    const entityName = getQueryValue(url, "entityName");
+    const uen = getQueryValue(url, "uen");
+    safeInputSummary = summarizeQueryInput(entityName);
+    if (entityName.length > MAX_PEOPLE_DISCOVERY_ENTITY_LENGTH) {
+      sendJson(res, 400, buildLimitMessage("People discovery entity name", MAX_PEOPLE_DISCOVERY_ENTITY_LENGTH));
+      return;
+    }
+    if (entityName === "") {
+      sendJson(res, 400, { error: "entityName is required" });
+      return;
+    }
+    const startedAt = Date.now();
+    const discovery = await getPeopleDiscovery({
+      entityName,
+      ...(uen === "" ? {} : { uen }),
+    });
+    requestLogger.info("people discovery finished", {
+      ...summarizeQueryInput(entityName),
+      configured: discovery.configured,
+      results: discovery.results.length,
+      durationMs: Date.now() - startedAt,
+    });
+    sendJson(res, 200, discovery);
     return;
   }
 

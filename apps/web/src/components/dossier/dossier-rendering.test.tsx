@@ -5,6 +5,7 @@ import { EvidenceSection } from "@/components/dossier/EvidenceSection";
 import { GapsSection } from "@/components/dossier/GapsSection";
 import { PdpaChecklistSection } from "@/components/dossier/PdpaChecklistSection";
 import { RiskSection } from "@/components/dossier/RiskSection";
+import { SnapshotSection } from "@/components/dossier/SnapshotSection";
 import type { BusinessDossier } from "@/types/dossier";
 
 const dossier: BusinessDossier = {
@@ -14,7 +15,13 @@ const dossier: BusinessDossier = {
   limits: [],
   provenance: [],
   records: {
-    acra: [{ entityName: "DBS BANK LTD", uen: "03591300B" }],
+    acra: [{
+      buildingName: "Marina Bay Financial Centre",
+      entityName: "DBS BANK LTD",
+      postalCode: "018982",
+      streetName: "Marina Boulevard",
+      uen: "03591300B",
+    }],
     resolution: {
       matchedModules: ["acra"],
       moduleReasons: [{
@@ -38,6 +45,14 @@ describe("dossier rendering", () => {
     const html = renderToStaticMarkup(<EvidenceSection dossier={dossier} />);
     expect(html).toContain("DBS BANK LTD");
     expect(html).toContain("Matched");
+  });
+
+  it("renders a map link from the snapshot address", () => {
+    const html = renderToStaticMarkup(<SnapshotSection dossier={dossier} />);
+    expect(html).toContain("Location");
+    expect(html).toContain("https://www.google.com/maps/search/?api=1");
+    expect(html).toContain("https://www.google.com/maps?q=");
+    expect(html).toContain("Map is based on the address returned in the dossier");
   });
 
   it("renders no-match and upstream-gap states", () => {

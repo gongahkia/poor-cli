@@ -8,6 +8,7 @@ import { GapsSection } from "@/components/dossier/GapsSection";
 import { HandoffSection } from "@/components/dossier/HandoffSection";
 import { NextChecksSection } from "@/components/dossier/NextChecksSection";
 import { PdpaChecklistSection } from "@/components/dossier/PdpaChecklistSection";
+import { PeopleDiscoverySection, type PeopleDiscoveryState } from "@/components/dossier/PeopleDiscoverySection";
 import { ProvenanceSection } from "@/components/dossier/ProvenanceSection";
 import { RiskSection } from "@/components/dossier/RiskSection";
 import { SnapshotSection } from "@/components/dossier/SnapshotSection";
@@ -16,7 +17,7 @@ import { useToast } from "@/components/notifications/ToastProvider";
 import { GatewayStatus } from "@/components/status/GatewayStatus";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { callTool, getGatewayJson, postGatewayJson, type WebPresence } from "@/lib/api/client";
+import { callTool, getGatewayJson, postGatewayJson, type PeopleDiscovery, type WebPresence } from "@/lib/api/client";
 import {
   buildDossierExportSummary,
   exportSingleDossierCsv,
@@ -200,6 +201,7 @@ function DossierSuccess({
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
   const [rerunningModule, setRerunningModule] = useState<BusinessDossierModule | null>(null);
   const [webPresenceState, setWebPresenceState] = useState<WebPresenceState>({ status: "loading" });
+  const [peopleDiscoveryState, setPeopleDiscoveryState] = useState<PeopleDiscoveryState>({ status: "loading" });
   const [memoState, setMemoState] = useState<AnalystMemoState>({ status: "loading" });
   const [shortlisted, setShortlisted] = useState(false);
   const { notify } = useToast();
@@ -286,6 +288,39 @@ function DossierSuccess({
 
     return () => controller.abort();
   }, [webPresenceQuery]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (entityName === null) {
+      setPeopleDiscoveryState({ status: "error", message: "No entity name was available for people follow-up." });
+      return () => controller.abort();
+    }
+
+    setPeopleDiscoveryState({ status: "loading" });
+    void getGatewayJson<PeopleDiscovery>(
+      "/api/v1/dude/people-discovery",
+      {
+        entityName,
+        ...(canonicalUen === null ? {} : { uen: canonicalUen }),
+      },
+      { signal: controller.signal },
+    )
+      .then((discovery) => {
+        if (!controller.signal.aborted) {
+          setPeopleDiscoveryState({ status: "success", discovery });
+        }
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setPeopleDiscoveryState({
+            status: "error",
+            message: error instanceof Error ? error.message : "People follow-up is temporarily unavailable.",
+          });
+        }
+      });
+
+    return () => controller.abort();
+  }, [canonicalUen, entityName]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -624,6 +659,7 @@ function DossierSuccess({
       />
       <EvidenceSection dossier={dossier} onModuleFollowUp={handleModuleFollowUp} runningModule={rerunningModule} />
       <WebPresenceSection state={webPresenceState} />
+      <PeopleDiscoverySection state={peopleDiscoveryState} />
       <NextChecksSection dossier={dossier} />
       <HandoffSection dossier={dossier} />
       <GapsSection dossier={dossier} />

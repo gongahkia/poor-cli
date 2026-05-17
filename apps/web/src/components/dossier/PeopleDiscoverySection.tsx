@@ -1,4 +1,4 @@
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Search } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -6,21 +6,24 @@ import {
   getFaviconUrl,
   getSiteLabel,
 } from "@/lib/external-results";
-import type { WebPresence } from "@/lib/api/client";
+import type { PeopleDiscovery } from "@/lib/api/client";
 
-type WebPresenceState =
+type PeopleDiscoveryState =
   | { status: "loading" }
-  | { status: "success"; presence: WebPresence }
+  | { status: "success"; discovery: PeopleDiscovery }
   | { status: "error"; message: string };
 
-export function WebPresenceSection({ state }: { state: WebPresenceState }) {
+export function PeopleDiscoverySection({ state }: { state: PeopleDiscoveryState }) {
   return (
     <section className="min-w-0 rounded-lg border border-border bg-card p-4 shadow-sm sm:p-5">
-      <div>
-        <h2 className="text-xl font-semibold tracking-normal text-foreground">Web Presence</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Web discovery, not registry evidence.
-        </p>
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-xl font-semibold tracking-normal text-foreground">People Follow-up</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Candidate people references from TinyFish Search; verify roles before relying on them.
+          </p>
+        </div>
+        <Search aria-hidden="true" className="hidden h-5 w-5 shrink-0 text-muted-foreground sm:block" />
       </div>
 
       {state.status === "loading" ? (
@@ -31,32 +34,17 @@ export function WebPresenceSection({ state }: { state: WebPresenceState }) {
         </div>
       ) : state.status === "error" ? (
         <p className="mt-4 break-words text-sm text-muted-foreground">{state.message}</p>
-      ) : !state.presence.configured ? (
+      ) : !state.discovery.configured ? (
         <p className="mt-4 text-sm text-muted-foreground">
           TinyFish Search is not configured on this server.
         </p>
       ) : (
         <div className="mt-4 space-y-4">
-          {state.presence.possibleOfficialWebsite !== null ? (
-            <div className="min-w-0 rounded-md border border-border bg-muted/40 p-3">
-              <p className="text-xs font-medium uppercase text-muted-foreground">Possible official website</p>
-              <a
-                className="mt-1 block max-w-full break-all text-sm font-medium text-foreground underline-offset-4 hover:underline"
-                href={state.presence.possibleOfficialWebsite}
-                rel="noreferrer"
-                target="_blank"
-              >
-                {state.presence.possibleOfficialWebsite}
-              </a>
-            </div>
-          ) : null}
-
-          {state.presence.results.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No web results were returned.</p>
+          {state.discovery.results.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No people-oriented snippets were returned.</p>
           ) : (
             <div className="grid min-w-0 gap-3">
-              {state.presence.results.map((result) => {
-                const displaySnippet = getDisplaySnippet(result.snippet);
+              {state.discovery.results.map((result) => {
                 const siteLabel = getSiteLabel(result.siteName, result.url);
                 const faviconUrl = getFaviconUrl(result.url);
                 return (
@@ -88,15 +76,17 @@ export function WebPresenceSection({ state }: { state: WebPresenceState }) {
                       </div>
                       <span className="shrink-0 text-xs text-muted-foreground">{siteLabel}</span>
                     </div>
-                    <p className="mt-2 line-clamp-2 break-words text-sm leading-6 text-muted-foreground">{displaySnippet}</p>
+                    <p className="mt-2 line-clamp-2 break-words text-sm leading-6 text-muted-foreground">
+                      {getDisplaySnippet(result.snippet)}
+                    </p>
                     <a
-                      aria-label={`Read more: ${result.title}`}
+                      aria-label={`Review people result: ${result.title}`}
                       className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-foreground underline-offset-4 hover:underline"
                       href={result.url}
                       rel="noreferrer"
                       target="_blank"
                     >
-                      Read more
+                      Review result
                       <ExternalLink aria-hidden="true" className="h-3 w-3" />
                     </a>
                   </article>
@@ -105,8 +95,17 @@ export function WebPresenceSection({ state }: { state: WebPresenceState }) {
             </div>
           )}
 
+          <div className="rounded-md border border-border bg-muted/30 p-3">
+            <p className="text-xs font-semibold uppercase text-muted-foreground">Suggested follow-up</p>
+            <ul className="mt-2 space-y-1 text-sm leading-6 text-muted-foreground">
+              {state.discovery.suggestedActions.map((action) => (
+                <li className="break-words" key={action}>{action}</li>
+              ))}
+            </ul>
+          </div>
+
           <ul className="space-y-1 text-xs leading-5 text-muted-foreground">
-            {state.presence.limits.map((limit) => (
+            {state.discovery.limits.map((limit) => (
               <li className="break-words" key={limit}>{limit}</li>
             ))}
           </ul>
@@ -116,4 +115,4 @@ export function WebPresenceSection({ state }: { state: WebPresenceState }) {
   );
 }
 
-export type { WebPresenceState };
+export type { PeopleDiscoveryState };

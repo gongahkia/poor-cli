@@ -1,3 +1,5 @@
+import { ExternalLink, MapPin } from "lucide-react";
+
 import {
   buildDiligenceSnapshot,
   formatRecordValue,
@@ -5,9 +7,19 @@ import {
 } from "@/lib/dossier";
 import type { BusinessDossier } from "@/types/dossier";
 
+const buildMapQuery = (address: string, entityName: string | null): string =>
+  [entityName, address].filter((part): part is string => part !== null && part.trim() !== "").join(", ");
+
+const buildGoogleMapsEmbedUrl = (query: string): string =>
+  `https://www.google.com/maps?q=${encodeURIComponent(query)}&output=embed`;
+
+const buildGoogleMapsSearchUrl = (query: string): string =>
+  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+
 export function SnapshotSection({ dossier }: { dossier: BusinessDossier }) {
   const snapshot = buildDiligenceSnapshot(dossier);
   const sectors = getSectorBadges(dossier);
+  const mapQuery = snapshot.address === null ? null : buildMapQuery(snapshot.address, snapshot.entityName);
   const rows = [
     ["Status", snapshot.status],
     ["UEN", snapshot.uen],
@@ -49,6 +61,41 @@ export function SnapshotSection({ dossier }: { dossier: BusinessDossier }) {
           </div>
         ))}
       </dl>
+
+      {mapQuery === null ? null : (
+        <div className="mt-6 border-t border-border pt-5">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <MapPin aria-hidden="true" className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-base font-semibold text-foreground">Location</h3>
+              </div>
+              <p className="mt-2 break-words text-sm leading-6 text-muted-foreground">{snapshot.address}</p>
+            </div>
+            <a
+              className="inline-flex w-fit shrink-0 items-center gap-1 text-sm font-medium text-foreground underline-offset-4 hover:underline"
+              href={buildGoogleMapsSearchUrl(mapQuery)}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Open map
+              <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
+            </a>
+          </div>
+          <div className="mt-4 aspect-[16/9] w-full overflow-hidden rounded-md border border-border bg-muted sm:aspect-[21/8]">
+            <iframe
+              className="h-full w-full"
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+              src={buildGoogleMapsEmbedUrl(mapQuery)}
+              title={`Map for ${snapshot.entityName ?? "organisation location"}`}
+            />
+          </div>
+          <p className="mt-2 text-xs leading-5 text-muted-foreground">
+            Map is based on the address returned in the dossier; confirm exact premises before site visits or outreach.
+          </p>
+        </div>
+      )}
     </section>
   );
 }
