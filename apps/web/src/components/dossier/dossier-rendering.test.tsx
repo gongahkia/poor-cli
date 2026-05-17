@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { EvidenceSection } from "@/components/dossier/EvidenceSection";
 import { GapsSection } from "@/components/dossier/GapsSection";
+import { HandoffSection } from "@/components/dossier/HandoffSection";
 import { PdpaChecklistSection } from "@/components/dossier/PdpaChecklistSection";
 import { RiskSection } from "@/components/dossier/RiskSection";
 import { SnapshotSection } from "@/components/dossier/SnapshotSection";
@@ -157,6 +158,34 @@ describe("dossier rendering", () => {
     expect(html).toContain("Entity not active");
     expect(html).toContain("ACRA");
     expect(html).not.toContain(">ENTITY_NOT_ACTIVE");
+  });
+
+  it("renders the agent handoff as a collapsed copy artifact", () => {
+    const html = renderToStaticMarkup(<HandoffSection dossier={{
+      ...dossier,
+      records: {
+        ...dossier.records,
+        handoff: {
+          markdown: "Due Diligence Handoff\nRaw handoff body",
+        },
+      },
+      nextChecks: [{
+        input: { uen: "197700546G" },
+        reason: "Retrieve full ACRA entity details for deeper officer and status inspection.",
+        tool: "sg_acra_entities",
+      }],
+      riskFlags: [{
+        code: "ENTITY_NOT_ACTIVE",
+        message: "Entity status is not live.",
+        severity: "high",
+        source: "ACRA",
+      }],
+    }} />);
+
+    expect(html).toContain("Agent handoff");
+    expect(html).toContain("Copy a structured summary for another analyst or agent.");
+    expect(html).toContain("Copy handoff");
+    expect(html).not.toContain("Raw handoff body");
   });
 
   it("renders the PDPA checklist with analyst actions and export affordance", () => {
