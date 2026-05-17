@@ -12,6 +12,7 @@ import {
 } from "@/lib/export/structured";
 import { postGatewayJson } from "@/lib/api/client";
 import { saveShortlistEntry } from "@/lib/shortlist";
+import { persistAuditEvent, persistBulkJob, summarizeBulkRisk } from "@/lib/workspace-store";
 import type { BulkDossierResponse, BulkDossierRow } from "@/types/bulk";
 
 type FilterMode = "all" | "risk" | "upstream" | "no_match" | "error";
@@ -61,6 +62,7 @@ export function BulkDiligence() {
     () => sortRows(filterRows(result?.rows ?? [], filter), sort),
     [filter, result?.rows, sort],
   );
+  const riskSummary = useMemo(() => result === null ? null : summarizeBulkRisk(result), [result]);
 
   const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -69,18 +71,19 @@ export function BulkDiligence() {
     notify({ title: "File loaded", description: file.name, tone: "success" });
   };
 
-  const runBulk = async () => {
+  const executeBulk = async (items: { identifier: string }[], mode: "run" | "retry") => {
     setStatus("running");
     setError(null);
-    setResult(null);
+    if (mode === "run") setResult(null);
     try {
       const response = await postGatewayJson<BulkDossierResponse>("/api/v1/dude/bulk-dossiers", {
-        items: parsed.items,
+        items,
       });
       setResult(response);
+      persistBulkJob(response);
       setStatus("idle");
       notify({
-        title: "Bulk check complete",
+        title: mode === "retry" ? "Retry complete" : "Bulk check complete",
         description: `${response.executedCount} rows executed; ${response.parseErrors.length} parse errors.`,
         tone: response.parseErrors.length > 0 ? "warning" : "success",
       });
@@ -92,10 +95,31 @@ export function BulkDiligence() {
     }
   };
 
+  const runBulk = async () => executeBulk(parsed.items, "run");
+
+  const retryFailedRows = async () => {
+    if (result === null) return;
+    const retryItems = result.rows
+      .filter((row) => row.status === "error" || row.upstreamFailure)
+      .map((row) => ({ identifier: row.input }));
+    if (retryItems.length === 0) {
+      notify({ title: "No failed rows to retry", tone: "info" });
+      return;
+    }
+    await executeBulk(retryItems, "retry");
+  };
+
   const exportCsv = async () => {
     try {
       if (result === null) return;
       await exportBulkCsv(result.rows, result.generatedAt);
+      persistAuditEvent({
+        eventType: "export",
+        permission: "export:run",
+        input: { format: "bulk_csv", generatedAt: result.generatedAt },
+        output: { rows: result.rows.length },
+        metadata: { source: "bulk" },
+      });
       notify({ title: "CSV export started", description: `${result.rows.length} rows.`, tone: "success" });
     } catch (error) {
       notify({ title: "CSV export failed", description: error instanceof Error ? error.message : "Unable to export CSV.", tone: "error" });
@@ -106,6 +130,13 @@ export function BulkDiligence() {
     try {
       if (result === null) return;
       await exportBulkJson(result.rows, result.generatedAt);
+      persistAuditEvent({
+        eventType: "export",
+        permission: "export:run",
+        input: { format: "bulk_json", generatedAt: result.generatedAt },
+        output: { rows: result.rows.length },
+        metadata: { source: "bulk" },
+      });
       notify({ title: "JSON export started", description: `${result.rows.length} rows.`, tone: "success" });
     } catch (error) {
       notify({ title: "JSON export failed", description: error instanceof Error ? error.message : "Unable to export JSON.", tone: "error" });
@@ -117,9 +148,9 @@ export function BulkDiligence() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-base font-semibold text-foreground">Bulk checks</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Paste UENs or company names, one per row, or upload a CSV.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Paste up to 200 UENs or company names, one per row, or upload a CSV.</p>
         </div>
-        <span className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">No account</span>
+        <span className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">Workspace-backed</span>
       </div>
 
       <div className="mt-4 grid gap-3">
@@ -163,6 +194,23 @@ export function BulkDiligence() {
 
       {result === null ? null : (
         <div className="mt-5 space-y-4">
+          {riskSummary === null ? null : (
+            <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+              {[
+                ["High risk", riskSummary.high],
+                ["Medium", riskSummary.medium],
+                ["Low", riskSummary.low],
+                ["No risk", riskSummary.none],
+                ["Gaps", riskSummary.gaps],
+                ["Upstream", riskSummary.upstreamFailures],
+              ].map(([label, value]) => (
+                <div className="rounded-md border border-border p-3" key={label}>
+                  <p className="text-xs uppercase text-muted-foreground">{label}</p>
+                  <p className="mt-1 text-xl font-semibold text-foreground">{value}</p>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap gap-2">
               <select
@@ -188,6 +236,14 @@ export function BulkDiligence() {
               </select>
             </div>
             <div className="flex flex-wrap gap-2">
+              <Button
+                disabled={status === "running" || !result.rows.some((row) => row.status === "error" || row.upstreamFailure)}
+                onClick={() => void retryFailedRows()}
+                type="button"
+                variant="outline"
+              >
+                Retry failed
+              </Button>
               <Button onClick={() => void exportCsv()} type="button" variant="outline">
                 Export CSV
               </Button>

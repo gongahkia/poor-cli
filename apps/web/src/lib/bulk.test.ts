@@ -15,4 +15,15 @@ describe("parseBulkInput", () => {
     expect(parsed.items).toEqual([{ identifier: "03591300B" }]);
     expect(parsed.errors).toHaveLength(2);
   });
+
+  it("allows workspace-backed 200-row batches", () => {
+    const parsed = parseBulkInput(Array.from({ length: 200 }, (_, index) => `COMPANY ${index}`).join("\n"));
+    expect(parsed.items).toHaveLength(200);
+    expect(parsed.errors).toHaveLength(0);
+
+    expect(parseBulkInput(Array.from({ length: 201 }, (_, index) => `COMPANY ${index}`).join("\n")).errors)
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ message: "Only the first 200 rows can be checked in one batch." }),
+      ]));
+  });
 });

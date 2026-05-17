@@ -7,7 +7,7 @@ export type ParsedBulkInput = {
   }[];
 };
 
-const MAX_LOCAL_ROWS = 25;
+const MAX_LOCAL_ROWS = 200;
 
 const normalizeIdentifier = (value: string): string =>
   value

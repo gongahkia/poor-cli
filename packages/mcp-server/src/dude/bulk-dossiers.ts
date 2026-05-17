@@ -1,6 +1,6 @@
 import type { AnalystMemoDossier } from "./analyst-memo.js";
 
-export const MAX_BULK_DOSSIER_ITEMS = 25;
+export const MAX_BULK_DOSSIER_ITEMS = 200;
 const UEN_PATTERN = /^(?:\d{8,9}[a-z]|[a-z]\d{2}[a-z]{2}\d{4}[a-z])$/i;
 
 type ToolResult = {

@@ -64,4 +64,20 @@ describe("bulk dossiers", () => {
       upstreamFailure: true,
     });
   });
+
+  it("accepts up to 200 rows for workspace-backed bulk runs", () => {
+    const parsed = parseBulkDossierItems({
+      items: Array.from({ length: 200 }, (_, index) => `COMPANY ${index}`),
+    });
+    expect(parsed.items).toHaveLength(200);
+    expect(parsed.errors).toHaveLength(0);
+
+    expect(parseBulkDossierItems({
+      items: Array.from({ length: 201 }, (_, index) => `COMPANY ${index}`),
+    }).errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        message: "Only the first 200 rows can be executed in one batch.",
+      }),
+    ]));
+  });
 });
