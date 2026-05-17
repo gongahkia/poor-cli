@@ -20,7 +20,6 @@ import { SnapshotSection } from "@/components/dossier/SnapshotSection";
 import { WebPresenceSection, type WebPresenceState } from "@/components/dossier/WebPresenceSection";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { buildPdpaChecklist } from "@/lib/pdpa";
-import { cn } from "@/lib/utils";
 import type { BusinessDossier, BusinessDossierModule } from "@/types/dossier";
 
 type DossierFindingsTabsProps = {
@@ -67,12 +66,8 @@ function SummarySection({ dossier }: { dossier: BusinessDossier }) {
   );
 }
 
-function tabTriggerClassName(value: string): string {
-  return cn(
-    "group min-w-0 flex-1 flex-col gap-1 px-2 py-3 text-xs data-[state=active]:bg-background data-[state=active]:shadow-none",
-    value === "actions" && "data-[state=active]:bg-muted",
-  );
-}
+const tabTriggerClassName =
+  "group min-w-0 flex-1 flex-col gap-1 px-2 py-3 text-xs data-[state=active]:bg-background data-[state=active]:shadow-none";
 
 export function DossierFindingsTabs({
   dossier,
@@ -123,7 +118,7 @@ export function DossierFindingsTabs({
         {tabs.map((tab) => {
           const Icon = tab.icon;
           return (
-            <TabsTrigger className={tabTriggerClassName(tab.value)} key={tab.value} value={tab.value}>
+            <TabsTrigger className={tabTriggerClassName} key={tab.value} value={tab.value}>
               <span className="flex min-w-0 items-center gap-2">
                 <Icon aria-hidden="true" className="h-4 w-4 shrink-0 transition-opacity group-data-[state=inactive]:opacity-50" />
                 <span className="truncate">{tab.label}</span>
