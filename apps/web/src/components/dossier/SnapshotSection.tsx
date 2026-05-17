@@ -54,7 +54,6 @@ export function SnapshotSection({ dossier }: { dossier: BusinessDossier }) {
     ["UEN", snapshot.uen],
     ["Entity type", snapshot.entityType],
     ["Entity age", snapshot.age],
-    ["Address", snapshot.address],
     ["Primary SSIC", snapshot.primarySsic],
     ["Matched modules", snapshot.matchedModules],
   ] as const;

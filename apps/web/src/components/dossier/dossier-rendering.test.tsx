@@ -51,6 +51,7 @@ describe("dossier rendering", () => {
   it("renders a map link from the snapshot address", () => {
     const html = renderToStaticMarkup(<SnapshotSection dossier={dossier} />);
     expect(html).toContain("Location");
+    expect(html).not.toContain(">Address</dt>");
     expect(html).toContain("https://www.google.com/maps/search/?api=1");
     expect(html).toContain("https://www.google.com/maps?q=");
     expect(html).toContain("Map is based on the address returned in the dossier");
