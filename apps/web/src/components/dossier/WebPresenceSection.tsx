@@ -16,6 +16,24 @@ const getDisplaySnippet = (snippet: string): string => {
   return cleaned || trimmed;
 };
 
+const getSiteHost = (url: string): string | null => {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname;
+  } catch {
+    return null;
+  }
+};
+
+const getSiteLabel = (siteName: string | null, url: string): string => siteName ?? getSiteHost(url) ?? "web";
+
+const getFaviconUrl = (url: string): string | null => {
+  const host = getSiteHost(url);
+  return host === null
+    ? null
+    : `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`;
+};
+
 export function WebPresenceSection({ state }: { state: WebPresenceState }) {
   return (
     <section className="min-w-0 rounded-lg border border-border bg-card p-4 shadow-sm sm:p-5">
@@ -60,18 +78,36 @@ export function WebPresenceSection({ state }: { state: WebPresenceState }) {
             <div className="grid min-w-0 gap-3">
               {state.presence.results.map((result) => {
                 const displaySnippet = getDisplaySnippet(result.snippet);
+                const siteLabel = getSiteLabel(result.siteName, result.url);
+                const faviconUrl = getFaviconUrl(result.url);
                 return (
                   <article className="min-w-0 rounded-md border border-border p-3" key={`${result.position}-${result.url}`}>
-                    <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
-                      <a
-                        className="min-w-0 break-words font-medium text-foreground underline-offset-4 hover:underline"
-                        href={result.url}
-                        rel="noreferrer"
-                        target="_blank"
-                      >
-                        {result.title}
-                      </a>
-                      <span className="shrink-0 text-xs text-muted-foreground">{result.siteName ?? "web"}</span>
+                    <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex min-w-0 items-start gap-2">
+                        {faviconUrl === null ? null : (
+                          <img
+                            alt={`${siteLabel} logo`}
+                            className="mt-0.5 h-6 w-6 shrink-0 rounded-sm border border-border bg-background object-contain p-0.5"
+                            height="24"
+                            loading="lazy"
+                            onError={(event) => {
+                              event.currentTarget.style.display = "none";
+                            }}
+                            referrerPolicy="no-referrer"
+                            src={faviconUrl}
+                            width="24"
+                          />
+                        )}
+                        <a
+                          className="min-w-0 break-words font-medium text-foreground underline-offset-4 hover:underline"
+                          href={result.url}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          {result.title}
+                        </a>
+                      </div>
+                      <span className="shrink-0 text-xs text-muted-foreground">{siteLabel}</span>
                     </div>
                     <p className="mt-2 line-clamp-2 break-words text-sm leading-6 text-muted-foreground">{displaySnippet}</p>
                     <a

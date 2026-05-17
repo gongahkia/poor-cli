@@ -26,6 +26,8 @@ describe("WebPresenceSection", () => {
     expect(html).toContain("Web discovery is supplemental.");
     expect(html).toContain("Read more");
     expect(html).toContain("href=\"https://www.dbs.com.sg/\"");
+    expect(html).toContain("alt=\"DBS logo\"");
+    expect(html).toContain("https://www.google.com/s2/favicons?domain=www.dbs.com.sg&amp;sz=64");
   });
 
   it("moves trailing read-more snippet copy into the clickable result action", () => {
