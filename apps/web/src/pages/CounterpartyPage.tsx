@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { BookmarkCheck, BookmarkPlus, Braces, Copy, FileDown, Loader2, Table2 } from "lucide-react";
 
@@ -50,6 +50,39 @@ type DossierState =
   | { status: "success"; dossier: BusinessDossier }
   | { status: "not-found"; dossier: BusinessDossier }
   | { status: "error"; message: string };
+
+function DossierActionButton({
+  children,
+  disabled,
+  label,
+  onClick,
+  variant = "outline",
+}: {
+  children: ReactNode;
+  disabled?: boolean;
+  label: string;
+  onClick: () => void;
+  variant?: "default" | "outline";
+}) {
+  return (
+    <Button
+      aria-label={label}
+      className="group h-10 w-10 justify-start overflow-hidden px-0 transition-[width,padding] duration-200 ease-out hover:w-36 hover:px-3 focus-visible:w-36 focus-visible:px-3"
+      disabled={disabled}
+      onClick={onClick}
+      title={label}
+      type="button"
+      variant={variant}
+    >
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center transition-[height,width] duration-200 group-hover:h-auto group-hover:w-5 group-focus-visible:h-auto group-focus-visible:w-5">
+        {children}
+      </span>
+      <span className="max-w-0 overflow-hidden whitespace-nowrap text-sm opacity-0 transition-[max-width,opacity] duration-200 group-hover:max-w-24 group-hover:opacity-100 group-focus-visible:max-w-24 group-focus-visible:opacity-100">
+        {label}
+      </span>
+    </Button>
+  );
+}
 
 export function CounterpartyPage() {
   const { identifier = "" } = useParams<{ identifier: string }>();
@@ -668,69 +701,37 @@ function DossierSuccess({
           ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <Button
-            aria-label={isExporting ? "Exporting PDF" : "Export PDF"}
+          <DossierActionButton
             disabled={isExporting}
+            label={isExporting ? "Exporting PDF" : "Export PDF"}
             onClick={handleExportPdf}
-            size="icon"
-            title={isExporting ? "Exporting PDF" : "Export PDF"}
-            type="button"
+            variant="default"
           >
             {isExporting ? (
               <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin" />
             ) : (
               <FileDown aria-hidden="true" className="h-5 w-5" />
             )}
-            <span className="sr-only">{isExporting ? "Exporting PDF" : "Export PDF"}</span>
-          </Button>
-          <Button
-            aria-label="Copy link"
-            onClick={handleCopyLink}
-            size="icon"
-            title="Copy link"
-            type="button"
-            variant="outline"
-          >
+          </DossierActionButton>
+          <DossierActionButton label="Copy link" onClick={handleCopyLink}>
             <Copy aria-hidden="true" className="h-5 w-5" />
-            <span className="sr-only">Copy link</span>
-          </Button>
-          <Button
-            aria-label="Export CSV"
-            onClick={() => void handleExportCsv()}
-            size="icon"
-            title="Export CSV"
-            type="button"
-            variant="outline"
-          >
+          </DossierActionButton>
+          <DossierActionButton label="Export CSV" onClick={() => void handleExportCsv()}>
             <Table2 aria-hidden="true" className="h-5 w-5" />
-            <span className="sr-only">Export CSV</span>
-          </Button>
-          <Button
-            aria-label="Export JSON"
-            onClick={() => void handleExportJson()}
-            size="icon"
-            title="Export JSON"
-            type="button"
-            variant="outline"
-          >
+          </DossierActionButton>
+          <DossierActionButton label="Export JSON" onClick={() => void handleExportJson()}>
             <Braces aria-hidden="true" className="h-5 w-5" />
-            <span className="sr-only">Export JSON</span>
-          </Button>
-          <Button
-            aria-label={shortlisted ? "Remove saved dossier" : "Save dossier"}
+          </DossierActionButton>
+          <DossierActionButton
+            label={shortlisted ? "Remove saved" : "Save dossier"}
             onClick={handleToggleShortlist}
-            size="icon"
-            title={shortlisted ? "Remove saved dossier" : "Save dossier"}
-            type="button"
-            variant="outline"
           >
             {shortlisted ? (
               <BookmarkCheck aria-hidden="true" className="h-5 w-5" />
             ) : (
               <BookmarkPlus aria-hidden="true" className="h-5 w-5" />
             )}
-            <span className="sr-only">{shortlisted ? "Remove saved dossier" : "Save dossier"}</span>
-          </Button>
+          </DossierActionButton>
           {copyStatus === "copied" ? (
             <p className="text-sm text-muted-foreground">Copied</p>
           ) : copyStatus === "error" ? (
