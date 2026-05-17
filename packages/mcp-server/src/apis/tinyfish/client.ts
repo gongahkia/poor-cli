@@ -206,8 +206,8 @@ export const getWebPresence = async (query: string): Promise<WebPresence> => {
     possibleOfficialWebsite: choosePossibleOfficialWebsite(results),
     limits: [
       "Web discovery is not registry evidence.",
-      "Results come from live web search snippets; verify important claims against official sources.",
-      "TinyFish Fetch is not used in this flow.",
+      "Results come from TinyFish Search snippets; verify important claims against official sources.",
+      "TinyFish Fetch is not used to read full pages in this flow.",
     ],
   };
 };

@@ -9,6 +9,7 @@ import {
 } from "@/lib/dossier";
 import { complianceUseLimitations } from "@/lib/compliance";
 import { buildDossierExportManifest } from "@/lib/export/manifest";
+import { formatNextCheckInputSummary } from "@/lib/next-checks";
 import type { WebPresence } from "@/lib/api/client";
 import type { AnalystMemoReady } from "@/types/analyst-memo";
 import type { BriefArtifact, BriefProvenanceItem, BriefSummaryItem } from "@/types/dossier";
@@ -305,7 +306,7 @@ export async function exportDossierPdf(
       ? [{ label: "Next checks", value: "No follow-up checks returned." }]
       : (brief.nextChecks ?? []).map((check) => ({
           label: check.tool,
-          value: `${check.reason}; input: ${JSON.stringify(check.input)}`,
+          value: `${check.reason}; suggested input: ${formatNextCheckInputSummary(check.input)}`,
         })),
     y,
     maxWidth,
