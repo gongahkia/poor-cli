@@ -1,4 +1,4 @@
-import { ChangeEvent, type KeyboardEvent, useMemo, useState } from "react";
+import { ChangeEvent, type KeyboardEvent, type ReactNode, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Bell, ChevronRight, ClipboardList, Copy, FolderSearch, History, RotateCw } from "lucide-react";
 
@@ -36,6 +36,27 @@ const keyActivatesRow = (event: KeyboardEvent<HTMLTableRowElement>): boolean =>
   event.key === "Enter" || event.key === " ";
 
 export function WorkspacePage() {
+  return (
+    <main className="min-h-dvh bg-background px-4 py-8 sm:px-6 sm:py-10">
+      <WorkspacePanel
+        actions={(
+          <Button asChild variant="outline">
+            <Link to="/">Search</Link>
+          </Button>
+        )}
+        className="mx-auto max-w-6xl"
+      />
+    </main>
+  );
+}
+
+export function WorkspacePanel({
+  actions,
+  className,
+}: {
+  actions?: ReactNode;
+  className?: string;
+}) {
   const [store, setStore] = useState(() => loadWorkspaceStore());
   const [query, setQuery] = useState("");
   const [folderId, setFolderId] = useState<string>("all");
@@ -101,8 +122,7 @@ export function WorkspacePage() {
   };
 
   return (
-    <main className="min-h-dvh bg-background px-4 py-8 sm:px-6 sm:py-10">
-      <section className="mx-auto w-full max-w-6xl space-y-6">
+      <section className={`w-full space-y-6 ${className ?? ""}`}>
         <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-sm font-medium text-muted-foreground">{session.workspaceName}</p>
@@ -111,9 +131,7 @@ export function WorkspacePage() {
               Persisted dossiers, watchlists, bulk jobs, and immutable audit events for this workspace.
             </p>
           </div>
-          <Button asChild variant="outline">
-            <Link to="/">Search</Link>
-          </Button>
+          {actions}
         </header>
 
         <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
@@ -343,7 +361,6 @@ export function WorkspacePage() {
           </section>
         )}
       </section>
-    </main>
   );
 }
 
