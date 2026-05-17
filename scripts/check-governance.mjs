@@ -30,6 +30,7 @@ requireFile(ownershipPath);
 requireFile(resolve(root, "docs/governance-checklist.md"));
 requireFile(resolve(root, "docs/deprecation-policy.md"));
 requireFile(resolve(root, "docs/audit-retention-policy.md"));
+requireFile(resolve(root, "docs/commercial-data-use.md"));
 requireFile(resolve(root, "docs/kpi-thresholds.md"));
 requireFile(resolve(root, "config/kpi-thresholds.example.json"));
 requireFile(resolve(root, "docs/quarterly-product-health-template.md"));
@@ -183,6 +184,14 @@ ensureIncludes(resolve(root, "docs/audit-retention-policy.md"), [
   "SG_APIS_AUDIT_RETENTION_SEC",
   "traceId",
   "requestId",
+]);
+
+ensureIncludes(resolve(root, "docs/commercial-data-use.md"), [
+  "OneMap",
+  "URA",
+  "sourceUseWarnings",
+  "Singapore Open Data Licence",
+  "Developer Agreement",
 ]);
 
 ensureIncludes(resolve(root, "docs/kpi-thresholds.md"), [

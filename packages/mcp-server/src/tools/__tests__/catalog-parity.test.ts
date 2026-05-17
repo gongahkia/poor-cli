@@ -245,6 +245,22 @@ describe("resource catalog parity", () => {
     const result = await resourceHandlers.get(RESOURCE_URIS.runtime)!();
 
     expect(JSON.parse(result.contents[0]!.text!)).toEqual(RUNTIME_CATALOG);
+    expect(RUNTIME_CATALOG.sourceUseWarnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          api: "OneMap",
+          posture: "review_before_hosted_paid_use",
+          docs: expect.arrayContaining(["docs/commercial-data-use.md"]),
+          warnings: expect.arrayContaining([expect.stringContaining("redistribution")]),
+        }),
+        expect.objectContaining({
+          api: "URA",
+          posture: "allowed_with_controls",
+          docs: expect.arrayContaining(["docs/commercial-data-use.md"]),
+          warnings: expect.arrayContaining([expect.stringContaining("attribution")]),
+        }),
+      ]),
+    );
   });
 
   it("serves the playbook catalog through sg://playbooks", async () => {

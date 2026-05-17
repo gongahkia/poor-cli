@@ -22,6 +22,7 @@ This page is the public entrypoint for product-health, governance, and adoption 
 
 - [Governance checklist](./governance-checklist.md) — release and ownership gates.
 - [Audit retention policy](./audit-retention-policy.md) — trace and request-retention policy.
+- [Commercial data use review](./commercial-data-use.md) — OneMap and URA commercial-use posture, runtime warnings, and source limits.
 - [KPI thresholds](./kpi-thresholds.md) — dashboard policy and breach handling.
 - [Quarterly product health template](./quarterly-product-health-template.md) — recurring review format.
 - [Deprecation policy](./deprecation-policy.md) — migration and removal rules.

@@ -168,6 +168,7 @@ export const LIVE_API_SURFACE: readonly LiveSurfaceDefinition[] = [
     notes: [
       "Both the email and password must be configured before OneMap is considered live-ready.",
       "Civic and geospatial workflows rely on the same authenticated geocoding path.",
+      "Paid hosted use must read sg://runtime sourceUseWarnings because OneMap-backed redistribution remains blocked until Developer Agreement rights are reviewed.",
     ],
     healthNotes: [
       "Probed through the same authenticated runtime client used by live direct tools and workflow geocoding.",
@@ -208,6 +209,7 @@ export const LIVE_API_SURFACE: readonly LiveSurfaceDefinition[] = [
     notes: [
       "URA uses an API key that is exchanged for an access token at runtime.",
       "Planning-area and property workflows rely on the same authenticated runtime path.",
+      "Commercial URA-backed workflows must preserve Singapore Open Data Licence attribution and any API-page-specific limits.",
     ],
     healthNotes: [
       "Probed through the live URA runtime client rather than a bare token endpoint fetch.",

@@ -91,6 +91,14 @@ export type RuntimeCatalog = {
     readonly dependentFamilies?: readonly string[];
     readonly notes: readonly string[];
   }[];
+  readonly sourceUseWarnings: readonly {
+    readonly api: string;
+    readonly observedAt: string;
+    readonly posture: "review_before_hosted_paid_use" | "allowed_with_controls";
+    readonly termsUrls: readonly string[];
+    readonly docs: readonly string[];
+    readonly warnings: readonly string[];
+  }[];
   readonly credentialSourceRules: readonly string[];
   readonly latency: {
     readonly hardCapMs: number;
@@ -1545,6 +1553,35 @@ export const RUNTIME_CATALOG: RuntimeCatalog = {
       dependentFamilies: LIVE_API_SURFACE.find((surface) => surface.api === "data.gov.sg file downloads")?.dependentFamilies ?? [],
       notes: [
         "These families inherit the shared official file-download contract behind data.gov.sg instead of separate credentials.",
+      ],
+    },
+  ],
+  sourceUseWarnings: [
+    {
+      api: "OneMap",
+      observedAt: "2026-05-17",
+      posture: "review_before_hosted_paid_use",
+      termsUrls: ["https://www.onemap.gov.sg/legal/termsofuse.html"],
+      docs: ["docs/commercial-data-use.md"],
+      warnings: [
+        "OneMap API and Data use requires registered-developer acceptance of the Developer Agreement.",
+        "Public OneMap terms restrict storage, redistribution, public display, reproduction, modification, and integration of SLA Data except as expressly permitted.",
+        "Do not enable paid hosted redistribution of OneMap-backed raw data, cached lookups, maps, or route geometry until the Developer Agreement rights are reviewed.",
+      ],
+    },
+    {
+      api: "URA",
+      observedAt: "2026-05-17",
+      posture: "allowed_with_controls",
+      termsUrls: [
+        "https://www.ura.gov.sg/ms/eservices/Maps/API-terms-of-service",
+        "https://data.gov.sg/open-data-licence",
+      ],
+      docs: ["docs/commercial-data-use.md"],
+      warnings: [
+        "URA API use may be commercial or non-commercial, but individual API pages may add limits.",
+        "URA-backed outputs need Singapore Open Data Licence attribution and must not imply agency endorsement.",
+        "URA API credentials must remain server-side and confidential.",
       ],
     },
   ],

@@ -92,6 +92,7 @@ Operational notes:
 - there is no silent unauthenticated fallback
 - `sg_health_check` reports OneMap as `configured: true` only when both email and password are present
 - `sg_health_check` uses the same authenticated runtime path as the live OneMap tools
+- paid hosted use must read [commercial-data-use.md](./commercial-data-use.md) and `sg://runtime` `sourceUseWarnings`; OneMap-backed redistribution remains blocked until the Developer Agreement rights are reviewed
 
 Common failure modes:
 
@@ -113,6 +114,7 @@ Operational notes:
 - `sg_health_check` reports URA as `configured: true` only when the URA key is present
 - live planning-area and transaction lookups should be treated as key-backed production paths
 - `sg_health_check` uses the same authenticated runtime path as the live URA tools
+- commercial URA-backed workflows must preserve Singapore Open Data Licence attribution and any API-page-specific limits; see [commercial-data-use.md](./commercial-data-use.md)
 
 Common failure modes:
 

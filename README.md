@@ -73,6 +73,7 @@ Roadmap planning files live under [docs/roadmap](./docs/roadmap) so the reposito
 - [docs/schema-versioning.md](./docs/schema-versioning.md) defines public contract IDs and schema-change release rules.
 - [docs/country-packs.md](./docs/country-packs.md) defines the `country-pack/v1` envelope and contribution template.
 - [docs/compliance-use-clauses.md](./docs/compliance-use-clauses.md) maps compliance-use and non-advice language across web, exports, docs, and API-facing artifacts.
+- [docs/commercial-data-use.md](./docs/commercial-data-use.md) records OneMap and URA commercial-use controls for OSS, self-host, and hosted paid workflows.
 - [SECURITY.md](./SECURITY.md) explains private vulnerability reporting.
 
 ## Skills & Agents
