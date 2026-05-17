@@ -24,6 +24,12 @@ import {
   resolveEntityMatchConfidence,
   selectBusinessDossierModules,
 } from "./entity-resolution.js";
+import {
+  SG_RISK_RULES_LAST_REVIEWED,
+  SG_RISK_RULES_SCHEMA_VERSION,
+  SG_RISK_RULES_SOURCE,
+  SG_RISK_RULES_VERSION,
+} from "./risk-rules.js";
 
 type BusinessDossierParams = Readonly<{
   entityName?: string | undefined;
@@ -947,6 +953,12 @@ export const buildBusinessDossierArtifact = async (
       quality: {
         dossierConfidence,
         matchRationale,
+        riskRules: {
+          schemaVersion: SG_RISK_RULES_SCHEMA_VERSION,
+          version: SG_RISK_RULES_VERSION,
+          source: SG_RISK_RULES_SOURCE,
+          lastReviewed: SG_RISK_RULES_LAST_REVIEWED,
+        },
       },
       handoff: {
         markdown: handoffMarkdown,

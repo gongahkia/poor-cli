@@ -1,0 +1,92 @@
+schemaVersion: sg-risk-rules/v1
+version: 2026.05
+country: SG
+title: Singapore public-registry diligence risk rules
+lastReviewed: 2026-05-17
+scope:
+  - Business dossier public-data risk triage.
+  - Evidence gaps from official public registries.
+  - Deterministic rules only; no legal, tax, credit, or licensed-advisor opinion.
+limits:
+  - These rules flag public-data signals for review; they do not establish wrongdoing.
+  - Missing public data can indicate a source gap, auth boundary, or non-public register.
+  - Analysts must read dossier provenance, freshness, gaps, and limits before acting.
+rules:
+  - id: ENTITY_NOT_ACTIVE
+    severity: high
+    source: ACRA
+    description: ACRA entity status is not Live or Registered.
+    dataRequirements:
+      - ACRA entityStatusDescription.
+    successEvidence:
+      - Dossier riskFlags include ENTITY_NOT_ACTIVE when a matched ACRA status is inactive, cancelled, dissolved, or struck off.
+  - id: NO_ACRA_MATCH
+    severity: high
+    source: ACRA
+    description: ACRA was searched but no entity matched the supplied UEN or company name.
+    dataRequirements:
+      - User-supplied UEN or entityName.
+      - sg_acra_entities search result count.
+    successEvidence:
+      - Dossier riskFlags include NO_ACRA_MATCH when ACRA is selected and returns zero rows.
+  - id: BUILDER_LICENSE_EXPIRED
+    severity: high
+    source: BCA
+    description: BCA licensed-builder expiry date is earlier than the dossier run date.
+    dataRequirements:
+      - BCA licensed-builder expiryDate.
+    successEvidence:
+      - Dossier riskFlags include BUILDER_LICENSE_EXPIRED and the expired date.
+  - id: CONTRACTOR_EXPIRED
+    severity: medium
+    source: BCA
+    description: BCA contractor registration expiry date is earlier than the dossier run date.
+    dataRequirements:
+      - BCA registered-contractor expiryDate.
+    successEvidence:
+      - Dossier riskFlags include CONTRACTOR_EXPIRED and the expired date.
+  - id: HEALTH_PRODUCT_LICENCE_EXPIRED
+    severity: medium
+    source: HSA
+    description: HSA health-product licence expiry date is earlier than the dossier run date.
+    dataRequirements:
+      - HSA health-product licensee expiryDate.
+    successEvidence:
+      - Dossier riskFlags include HEALTH_PRODUCT_LICENCE_EXPIRED and the licence type.
+  - id: CROSS_SOURCE_NAME_DIVERGENCE
+    severity: medium
+    source: ACRA/cross-source
+    description: A matched sector source name materially differs from the ACRA canonical entity name.
+    dataRequirements:
+      - ACRA entityName.
+      - Sector registry companyName, firmName, or equivalent name field.
+    successEvidence:
+      - Dossier riskFlags include CROSS_SOURCE_NAME_DIVERGENCE with both compared names.
+  - id: PARTIAL_MODULE_COVERAGE
+    severity: medium
+    source: Resolver
+    description: At least one searched module matched and at least one searched module returned no matching public records.
+    dataRequirements:
+      - searchedModules.
+      - matchedModules.
+      - unmatchedModules.
+    successEvidence:
+      - Dossier riskFlags include PARTIAL_MODULE_COVERAGE with searched/matched counts.
+  - id: NO_MODULE_MATCHES
+    severity: high
+    source: Resolver
+    description: One or more modules were searched and none returned matched public evidence.
+    dataRequirements:
+      - searchedModules.
+      - matchedModules.
+    successEvidence:
+      - Dossier riskFlags include NO_MODULE_MATCHES when searchedModules is non-empty and matchedModules is empty.
+  - id: MODULE_INPUT_GAP
+    severity: low
+    source: Resolver
+    description: A selected module could not run because the dossier lacked the identifier or sector input required by that module.
+    dataRequirements:
+      - moduleReasons.
+      - unsearchedModules.
+    successEvidence:
+      - Dossier records.resolution.moduleReasons explain the missing input and follow-up path.
