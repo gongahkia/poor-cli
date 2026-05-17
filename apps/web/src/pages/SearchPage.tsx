@@ -4,7 +4,7 @@ import { BackendLogsDialog } from "@/components/debug/BackendLogsDialog";
 import { BulkDiligence } from "@/components/search/BulkDiligence";
 import { DiligenceSearch } from "@/components/search/DiligenceSearch";
 import { ShortlistPanel } from "@/components/search/ShortlistPanel";
-import { GatewayStatus } from "@/components/status/GatewayStatus";
+import { GatewayReadinessBanner, GatewayStatus } from "@/components/status/GatewayStatus";
 import { Button } from "@/components/ui/button";
 import { WorkspaceBadge } from "@/components/workspace/WorkspaceBadge";
 import {
@@ -45,8 +45,9 @@ export function SearchPage() {
           </div>
         </div>
 
-        <div className="w-full">
+        <div className="w-full space-y-4">
           <DiligenceSearch secondaryAction={<SearchToolsDialog />} />
+          <GatewayReadinessBanner />
         </div>
         <div aria-hidden="true" />
       </section>
@@ -73,7 +74,8 @@ function SearchToolsDialog() {
           <DialogHeader className="pr-10">
             <DialogTitle>Workspace tools</DialogTitle>
             <DialogDescription>
-              Bulk checks and saved counterparties stay available without competing with the primary search.
+              Bulk checks and saved counterparties stay available without competing with the primary
+              search.
             </DialogDescription>
           </DialogHeader>
 
@@ -104,9 +106,7 @@ function SystemStatusDialog() {
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>System status</DialogTitle>
-          <DialogDescription>
-            Gateway uptime and service readiness.
-          </DialogDescription>
+          <DialogDescription>Gateway uptime and service readiness.</DialogDescription>
         </DialogHeader>
 
         <GatewayStatus variant="panel" />
@@ -132,9 +132,7 @@ function SearchHelpDialog() {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Help</DialogTitle>
-          <DialogDescription>
-            Quick reference for client intake searches.
-          </DialogDescription>
+          <DialogDescription>Quick reference for client intake searches.</DialogDescription>
         </DialogHeader>
 
         <section>
@@ -142,9 +140,14 @@ function SearchHelpDialog() {
           <ul className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
             <li>Paste a Singapore client or counterparty company name or UEN</li>
             <li>Default company searches verify identity against ACRA first</li>
-            <li>Sector registries run only when selected or inferred from official SSIC evidence</li>
+            <li>
+              Sector registries run only when selected or inferred from official SSIC evidence
+            </li>
             <li>Every result shows searched modules, source provenance, freshness, and gaps</li>
-            <li>Use the dossier for analyst review, not legal, tax, credit, or licensed compliance advice</li>
+            <li>
+              Use the dossier for analyst review, not legal, tax, credit, or licensed compliance
+              advice
+            </li>
           </ul>
         </section>
       </DialogContent>

@@ -1,10 +1,7 @@
 import { useEffect, useState } from "react";
+import { AlertTriangle } from "lucide-react";
 
-import {
-  getGatewayJson,
-  type GatewayHealth,
-  type GatewayServiceReadiness,
-} from "@/lib/api/client";
+import { getGatewayJson, type GatewayHealth, type GatewayServiceReadiness } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
 type StatusState =
@@ -17,6 +14,14 @@ type GatewayStatusProps = {
 };
 
 type HealthTone = "good" | "warn" | "bad" | "neutral";
+
+export type GatewayReadinessIssue = {
+  detail: string;
+  key: string;
+  label: string;
+  state: string;
+  tone: HealthTone;
+};
 
 const toneClasses: Record<HealthTone, string> = {
   good: "border-emerald-200 bg-emerald-50 text-emerald-950",
@@ -87,6 +92,45 @@ function getReadinessDetail(
   return parts.join(" ");
 }
 
+export function getGatewayReadinessIssues(health: GatewayHealth): GatewayReadinessIssue[] {
+  const services = [
+    {
+      fallback: "data.gov.sg datastore did not report readiness.",
+      key: "datagovDatastore",
+      label: "data.gov.sg datastore",
+      service: health.services?.datagovDatastore,
+    },
+    {
+      fallback: "ACRA lookup path did not report readiness.",
+      key: "acraLookup",
+      label: "ACRA lookup",
+      service: health.services?.acraLookup,
+    },
+    {
+      fallback: "Optional web discovery did not report readiness.",
+      key: "tinyfish",
+      label: "TinyFish",
+      service: health.services?.tinyfish,
+    },
+    {
+      fallback: "Analyst memo provider did not report readiness.",
+      key: "analystMemo",
+      label: "Analyst memo",
+      service: health.services?.analystMemo,
+    },
+  ];
+
+  return services
+    .filter(({ service }) => service?.status === "failing" || service?.status === "unconfigured")
+    .map(({ fallback, key, label, service }) => ({
+      detail: getReadinessDetail(service, fallback),
+      key,
+      label,
+      state: getReadinessState(service?.status),
+      tone: getReadinessTone(service?.status),
+    }));
+}
+
 function HealthRow({
   detail,
   label,
@@ -130,7 +174,7 @@ function StatusChip({
   );
 }
 
-export function GatewayStatus({ variant = "chips" }: GatewayStatusProps) {
+export function useGatewayHealth(): StatusState {
   const [state, setState] = useState<StatusState>({ status: "loading" });
 
   useEffect(() => {
@@ -153,6 +197,78 @@ export function GatewayStatus({ variant = "chips" }: GatewayStatusProps) {
     return () => controller.abort();
   }, []);
 
+  return state;
+}
+
+export function GatewayReadinessBanner() {
+  const state = useGatewayHealth();
+
+  if (state.status === "loading") {
+    return null;
+  }
+
+  if (state.status === "offline") {
+    return (
+      <aside className={cn("rounded-2xl border px-4 py-3 shadow-sm", toneClasses.bad)}>
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">Gateway unavailable</p>
+            <p className="mt-1 text-sm leading-6 opacity-85">{state.message}</p>
+          </div>
+        </div>
+      </aside>
+    );
+  }
+
+  const issues = getGatewayReadinessIssues(state.health);
+  if (issues.length === 0) {
+    return null;
+  }
+
+  const hasFailingIssue = issues.some((issue) => issue.tone === "bad");
+  const primaryIssue = issues[0];
+
+  return (
+    <aside
+      className={cn(
+        "rounded-2xl border px-4 py-3 shadow-sm",
+        hasFailingIssue ? toneClasses.bad : toneClasses.warn,
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold">
+            {hasFailingIssue ? "Service issue before you search" : "Optional services need setup"}
+          </p>
+          <p className="mt-1 text-sm leading-6 opacity-85">
+            {issues.length === 1
+              ? `${primaryIssue.label}: ${primaryIssue.detail}`
+              : `${issues.length} services need attention before full output is available.`}
+          </p>
+          {issues.length > 1 ? (
+            <ul className="mt-2 grid gap-1.5 text-xs leading-5 opacity-85">
+              {issues.map((issue) => (
+                <li
+                  key={issue.key}
+                  className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between"
+                >
+                  <span className="font-medium">{issue.label}</span>
+                  <span className="sm:text-right">{issue.detail}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+export function GatewayStatus({ variant = "chips" }: GatewayStatusProps) {
+  const state = useGatewayHealth();
+
   if (state.status === "loading") {
     return <p className="text-xs text-muted-foreground">Checking gateway uptime...</p>;
   }
@@ -161,12 +277,7 @@ export function GatewayStatus({ variant = "chips" }: GatewayStatusProps) {
     if (variant === "panel") {
       return (
         <div className="grid gap-2">
-          <HealthRow
-            detail={state.message}
-            label="Gateway"
-            state="Offline"
-            tone="bad"
-          />
+          <HealthRow detail={state.message} label="Gateway" state="Offline" tone="bad" />
         </div>
       );
     }
@@ -179,6 +290,7 @@ export function GatewayStatus({ variant = "chips" }: GatewayStatusProps) {
   const datagovDatastore = state.health.services?.datagovDatastore;
   const acraLookup = state.health.services?.acraLookup;
   const tinyfish = state.health.services?.tinyfish;
+  const analystMemo = state.health.services?.analystMemo;
 
   if (variant === "panel") {
     return (
@@ -190,7 +302,10 @@ export function GatewayStatus({ variant = "chips" }: GatewayStatusProps) {
           tone={getReadinessTone(gateway?.status)}
         />
         <HealthRow
-          detail={getReadinessDetail(datagovDatastore, "data.gov.sg datastore did not report readiness.")}
+          detail={getReadinessDetail(
+            datagovDatastore,
+            "data.gov.sg datastore did not report readiness.",
+          )}
           label="data.gov.sg datastore"
           state={getReadinessState(datagovDatastore?.status)}
           tone={getReadinessTone(datagovDatastore?.status)}
@@ -207,6 +322,15 @@ export function GatewayStatus({ variant = "chips" }: GatewayStatusProps) {
           state={getReadinessState(tinyfish?.status)}
           tone={getReadinessTone(tinyfish?.status)}
         />
+        <HealthRow
+          detail={getReadinessDetail(
+            analystMemo,
+            "Analyst memo provider did not report readiness.",
+          )}
+          label="Analyst memo"
+          state={getReadinessState(analystMemo?.status)}
+          tone={getReadinessTone(analystMemo?.status)}
+        />
       </div>
     );
   }
@@ -217,6 +341,7 @@ export function GatewayStatus({ variant = "chips" }: GatewayStatusProps) {
       <StatusChip label="data.gov.sg" service={datagovDatastore} />
       <StatusChip label="ACRA" service={acraLookup} />
       <StatusChip label="TinyFish" service={tinyfish} />
+      <StatusChip label="Memo" service={analystMemo} />
     </div>
   );
 }

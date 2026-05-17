@@ -1,4 +1,10 @@
 import { ApiError } from "@dude/shared";
+import {
+  generateText,
+  ProviderRequestError,
+  resolveAiProviderConfig,
+  type AiProvider,
+} from "../ai/providers.js";
 import { probeAcraLookupReadiness } from "../apis/acra/client.js";
 import { probeTinyFishSearchReadiness } from "../apis/tinyfish/client.js";
 import { probeDatagovDatastoreHealth } from "../tools/health-check.js";
@@ -34,18 +40,28 @@ export type GatewayHealthPayload = {
       readonly configured: boolean;
       readonly mode: "web-discovery-only";
     };
+    readonly analystMemo: GatewayServiceReadiness & {
+      readonly configured: boolean;
+      readonly provider: AiProvider;
+      readonly model: string;
+    };
   };
 };
 
 const READINESS_CACHE_TTL_MS = 60_000;
 
-let cachedServiceReadiness:
-  | {
-      readonly expiresAt: number;
-      readonly services: Omit<GatewayHealthPayload["services"], "gateway">;
-    }
-  | null = null;
-let inFlightServiceReadiness: Promise<Omit<GatewayHealthPayload["services"], "gateway">> | null = null;
+const PROVIDER_KEY_ENV: Record<AiProvider, string> = {
+  anthropic: "ANTHROPIC_API_KEY",
+  google: "GOOGLE_API_KEY",
+  openai: "OPENAI_API_KEY",
+};
+
+let cachedServiceReadiness: {
+  readonly expiresAt: number;
+  readonly services: Omit<GatewayHealthPayload["services"], "gateway">;
+} | null = null;
+let inFlightServiceReadiness: Promise<Omit<GatewayHealthPayload["services"], "gateway">> | null =
+  null;
 
 const toObservedAt = (): string => new Date().toISOString();
 
@@ -78,7 +94,44 @@ const sanitizeReadinessError = (
   };
 };
 
-const runReadinessProbe = async <TDetails extends Readonly<Record<string, string | number | boolean>>>(
+const sanitizeProviderReadinessError = (
+  error: unknown,
+  provider: AiProvider,
+): Pick<GatewayServiceReadiness, "message" | "errorCode" | "retryable"> => {
+  if (error instanceof ProviderRequestError) {
+    if (error.status === 401 || error.status === 403) {
+      return {
+        message: `${provider} credentials were rejected by the provider. Check ${PROVIDER_KEY_ENV[provider]} on the REST gateway process.`,
+        errorCode: "AI_PROVIDER_AUTH_FAILED",
+        retryable: false,
+      };
+    }
+
+    if (error.status === 429) {
+      return {
+        message: `${provider} rate limit reached during the analyst memo readiness probe.`,
+        errorCode: "AI_PROVIDER_RATE_LIMITED",
+        retryable: true,
+      };
+    }
+
+    return {
+      message: `${provider} provider rejected the analyst memo readiness probe with HTTP ${error.status}.`,
+      errorCode: error.status >= 500 ? "AI_PROVIDER_UPSTREAM_FAILED" : "AI_PROVIDER_REQUEST_FAILED",
+      retryable: error.status >= 500,
+    };
+  }
+
+  return {
+    message: error instanceof Error ? error.message : "Analyst memo readiness probe failed.",
+    errorCode: error instanceof Error ? error.name : "AI_PROVIDER_READINESS_FAILED",
+    retryable: true,
+  };
+};
+
+const runReadinessProbe = async <
+  TDetails extends Readonly<Record<string, string | number | boolean>>,
+>(
   probe: () => Promise<TDetails>,
   readyMessage: (details: TDetails) => string,
 ): Promise<GatewayServiceReadiness> => {
@@ -126,8 +179,7 @@ const checkAcraLookupReadiness = async (): Promise<GatewayServiceReadiness> =>
         fieldCount: result.fieldCount,
       };
     },
-    (details) =>
-      `ACRA lookup path returned ${details.recordCount} row through data.gov.sg.`,
+    (details) => `ACRA lookup path returned ${details.recordCount} row through data.gov.sg.`,
   );
 
 const checkTinyFishReadiness = async (): Promise<GatewayHealthPayload["services"]["tinyfish"]> => {
@@ -169,7 +221,73 @@ const checkTinyFishReadiness = async (): Promise<GatewayHealthPayload["services"
   }
 };
 
-const resolveServiceReadiness = async (): Promise<Omit<GatewayHealthPayload["services"], "gateway">> => {
+const checkAnalystMemoReadiness = async (): Promise<
+  GatewayHealthPayload["services"]["analystMemo"]
+> => {
+  const startedAt = Date.now();
+  const config = resolveAiProviderConfig();
+
+  if (!config.configured) {
+    return {
+      status: "unconfigured",
+      configured: false,
+      provider: config.provider,
+      model: config.model,
+      message: config.reason.message,
+      errorCode: config.reason.code,
+      observedAt: toObservedAt(),
+      latencyMs: Date.now() - startedAt,
+      details: {
+        provider: config.provider,
+        model: config.model,
+      },
+    };
+  }
+
+  try {
+    await generateText(
+      {
+        maxTokens: 8,
+        prompt: "Return the single word ok.",
+        system: "You are a readiness probe. Return only the requested token.",
+        temperature: 0,
+      },
+      config,
+    );
+
+    return {
+      status: "ready",
+      configured: true,
+      provider: config.provider,
+      model: config.model,
+      message: "Analyst memo provider accepted the readiness probe.",
+      observedAt: toObservedAt(),
+      latencyMs: Date.now() - startedAt,
+      details: {
+        provider: config.provider,
+        model: config.model,
+      },
+    };
+  } catch (error) {
+    return {
+      status: "failing",
+      configured: true,
+      provider: config.provider,
+      model: config.model,
+      observedAt: toObservedAt(),
+      latencyMs: Date.now() - startedAt,
+      details: {
+        provider: config.provider,
+        model: config.model,
+      },
+      ...sanitizeProviderReadinessError(error, config.provider),
+    };
+  }
+};
+
+const resolveServiceReadiness = async (): Promise<
+  Omit<GatewayHealthPayload["services"], "gateway">
+> => {
   const now = Date.now();
   if (cachedServiceReadiness !== null && cachedServiceReadiness.expiresAt > now) {
     return cachedServiceReadiness.services;
@@ -182,12 +300,14 @@ const resolveServiceReadiness = async (): Promise<Omit<GatewayHealthPayload["ser
     checkDatagovDatastoreReadiness(),
     checkAcraLookupReadiness(),
     checkTinyFishReadiness(),
+    checkAnalystMemoReadiness(),
   ])
-    .then(([datagovDatastore, acraLookup, tinyfish]) => {
+    .then(([datagovDatastore, acraLookup, tinyfish, analystMemo]) => {
       const services = {
         datagovDatastore,
         acraLookup,
         tinyfish,
+        analystMemo,
       };
       cachedServiceReadiness = {
         expiresAt: Date.now() + READINESS_CACHE_TTL_MS,
@@ -210,7 +330,8 @@ export const getGatewayHealthPayload = async (params: {
   const services = await resolveServiceReadiness();
   const requiredReady =
     services.datagovDatastore.status === "ready" && services.acraLookup.status === "ready";
-  const optionalReady = services.tinyfish.status === "ready";
+  const optionalReady =
+    services.tinyfish.status === "ready" && services.analystMemo.status === "ready";
   const readiness: GatewayReadinessLevel = requiredReady
     ? optionalReady
       ? "ready"

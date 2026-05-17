@@ -34,6 +34,12 @@ export type GatewayHealth = {
       configured: boolean;
       mode: string;
     } & GatewayServiceReadiness;
+    analystMemo?: {
+      status?: "ready" | "unconfigured" | "failing" | string;
+      configured: boolean;
+      provider: string;
+      model: string;
+    } & GatewayServiceReadiness;
   };
 };
 
@@ -110,9 +116,10 @@ const getGatewayBaseUrl = () => {
 const buildGatewayUrl = (path: string, params: Record<string, string> = {}): string => {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   const baseUrl = getGatewayBaseUrl();
-  const url = baseUrl === ""
-    ? new URL(normalizedPath, window.location.origin)
-    : new URL(`${baseUrl}${normalizedPath}`);
+  const url =
+    baseUrl === ""
+      ? new URL(normalizedPath, window.location.origin)
+      : new URL(`${baseUrl}${normalizedPath}`);
 
   for (const [key, value] of Object.entries(params)) {
     if (value.trim() !== "") {
@@ -137,10 +144,10 @@ const getErrorPayloadMessage = (payload: ErrorPayload): string | null => {
     return payload.error;
   }
   if (
-    payload.error !== null
-    && typeof payload.error === "object"
-    && "message" in payload.error
-    && typeof payload.error.message === "string"
+    payload.error !== null &&
+    typeof payload.error === "object" &&
+    "message" in payload.error &&
+    typeof payload.error.message === "string"
   ) {
     return payload.error.message;
   }
@@ -174,23 +181,22 @@ export async function callTool<T>(
   );
 
   if (!response.ok) {
-    const payload = await readJson<ErrorPayload>(response).catch(
-      (): ErrorPayload => ({}),
-    );
-    const message = getErrorPayloadMessage(payload)
-      ?? `REST gateway request failed with status ${response.status}.`;
+    const payload = await readJson<ErrorPayload>(response).catch((): ErrorPayload => ({}));
+    const message =
+      getErrorPayloadMessage(payload) ??
+      `REST gateway request failed with status ${response.status}.`;
     throw new Error(message);
   }
 
   const payload = await readJson<ToolResponse<T> | T>(response);
   if (
-    payload !== null
-    && typeof payload === "object"
-    && "data" in payload
-    && payload.data !== undefined
-    && typeof payload.data === "object"
-    && payload.data !== null
-    && "record" in payload.data
+    payload !== null &&
+    typeof payload === "object" &&
+    "data" in payload &&
+    payload.data !== undefined &&
+    typeof payload.data === "object" &&
+    payload.data !== null &&
+    "record" in payload.data
   ) {
     return payload.data.record as T;
   }
@@ -212,11 +218,10 @@ export async function getGatewayJson<T>(
   });
 
   if (!response.ok) {
-    const payload = await readJson<ErrorPayload>(response).catch(
-      (): ErrorPayload => ({}),
-    );
-    const message = getErrorPayloadMessage(payload)
-      ?? `REST gateway request failed with status ${response.status}.`;
+    const payload = await readJson<ErrorPayload>(response).catch((): ErrorPayload => ({}));
+    const message =
+      getErrorPayloadMessage(payload) ??
+      `REST gateway request failed with status ${response.status}.`;
     throw new Error(message);
   }
 
@@ -239,11 +244,10 @@ export async function postGatewayJson<T>(
   });
 
   if (!response.ok) {
-    const payload = await readJson<ErrorPayload>(response).catch(
-      (): ErrorPayload => ({}),
-    );
-    const message = getErrorPayloadMessage(payload)
-      ?? `REST gateway request failed with status ${response.status}.`;
+    const payload = await readJson<ErrorPayload>(response).catch((): ErrorPayload => ({}));
+    const message =
+      getErrorPayloadMessage(payload) ??
+      `REST gateway request failed with status ${response.status}.`;
     throw new Error(message);
   }
 
