@@ -70,6 +70,7 @@ Roadmap planning files live under [docs/roadmap](./docs/roadmap) so the reposito
 - [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) defines collaboration expectations and enforcement.
 - [docs/maintainer-governance.md](./docs/maintainer-governance.md) documents maintainer roles, decision process, release process, and security reporting.
 - [docs/license-strategy.md](./docs/license-strategy.md) records the current MIT decision and licence migration criteria.
+- [docs/neutral-home-donation-proposal.md](./docs/neutral-home-donation-proposal.md) evaluates foundation/fiscal-host donation paths, governance, trademark, package, maintainer, and next-step implications.
 - [docs/schema-versioning.md](./docs/schema-versioning.md) defines public contract IDs and schema-change release rules.
 - [docs/country-packs.md](./docs/country-packs.md) defines the `country-pack/v1` envelope and contribution template.
 - [docs/compliance-use-clauses.md](./docs/compliance-use-clauses.md) maps compliance-use and non-advice language across web, exports, docs, and API-facing artifacts.
