@@ -28,6 +28,14 @@ export const BUSINESS_MODULE_LABELS: Record<BusinessDossierModule, string> = {
 
 export const UEN_PATTERN = /^(?:\d{8,9}[a-z]|[a-z]\d{2}[a-z]{2}\d{4}[a-z])$/i;
 export type FollowUpBusinessModule = Exclude<BusinessDossierModule, "acra">;
+export const ALL_FOLLOW_UP_BUSINESS_MODULES: readonly FollowUpBusinessModule[] = [
+  "bca",
+  "cea",
+  "gebiz",
+  "boa",
+  "hsa",
+  "hlb",
+] as const;
 
 export const BUSINESS_MODULE_FOLLOW_UPS: Record<FollowUpBusinessModule, {
   helperText: string;
@@ -131,6 +139,39 @@ export function buildBusinessDossierFollowUpInput(params: {
   }
 
   input.entityName = value;
+  return input;
+}
+
+export function buildBusinessDossierExpandedInput(params: {
+  dossier: BusinessDossier;
+  identifier: string;
+  modules?: readonly FollowUpBusinessModule[];
+  value: string;
+}): Record<string, unknown> {
+  const value = params.value.trim();
+  const modules = params.modules === undefined || params.modules.length === 0
+    ? ALL_FOLLOW_UP_BUSINESS_MODULES
+    : params.modules;
+  const base = buildBusinessDossierInput(params.identifier);
+  const summaryUen = getSummaryString(params.dossier, "UEN");
+  const summaryEntity = getSummaryString(params.dossier, "Entity");
+  const entityName = summaryEntity ?? (value !== "" && !UEN_PATTERN.test(value) ? value : null);
+  const input: Record<string, unknown> = {
+    ...base,
+    modules: Array.from(new Set<BusinessDossierModule>(["acra", ...modules])),
+    sectorHints: Array.from(new Set(modules.map((module) => BUSINESS_MODULE_FOLLOW_UPS[module].sectorHint))),
+  };
+
+  if (summaryUen !== null && UEN_PATTERN.test(summaryUen)) {
+    input.uen = summaryUen.toUpperCase();
+  }
+  if (entityName !== null) {
+    input.entityName = entityName;
+  }
+  if (modules.includes("cea") && entityName !== null) {
+    input.estateAgentName = entityName;
+  }
+
   return input;
 }
 

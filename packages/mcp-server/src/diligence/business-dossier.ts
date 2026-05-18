@@ -616,6 +616,12 @@ export const buildBusinessDossierArtifact = async (
     : suppliedSectorHints;
   const selectedModules = selectBusinessDossierModules(params.modules, effectiveSectorHints);
   const selectedModuleSet = new Set<BusinessDossierModule>(selectedModules);
+  const hasCeaSpecificInput = searchParams.salespersonName !== undefined
+    || searchParams.registrationNo !== undefined
+    || searchParams.estateAgentName !== undefined
+    || searchParams.estateAgentLicenseNo !== undefined;
+  const effectiveEstateAgentName = searchParams.estateAgentName
+    ?? (selectedModuleSet.has("cea") && !hasCeaSpecificInput ? searchParams.entityName : undefined);
 
   const shouldSearchBca = selectedModuleSet.has("bca")
     && (searchParams.entityName !== undefined || searchParams.uen !== undefined || searchParams.classCode !== undefined || searchParams.workhead !== undefined || searchParams.grade !== undefined);
@@ -623,7 +629,7 @@ export const buildBusinessDossierArtifact = async (
     && (
       searchParams.salespersonName !== undefined
       || searchParams.registrationNo !== undefined
-      || searchParams.estateAgentName !== undefined
+      || effectiveEstateAgentName !== undefined
       || searchParams.estateAgentLicenseNo !== undefined
     );
   const shouldSearchGebiz = selectedModuleSet.has("gebiz") && searchParams.entityName !== undefined;
@@ -683,7 +689,7 @@ export const buildBusinessDossierArtifact = async (
           () => getCeaSalespersons({
             salespersonName: searchParams.salespersonName,
             registrationNo: searchParams.registrationNo,
-            estateAgentName: searchParams.estateAgentName,
+            estateAgentName: effectiveEstateAgentName,
             estateAgentLicenseNo: searchParams.estateAgentLicenseNo,
             limit: 5,
           }),
@@ -838,7 +844,7 @@ export const buildBusinessDossierArtifact = async (
           ],
           nameInputs: [
             ...(params.salespersonName === undefined ? [] : [{ value: params.salespersonName, fields: ["salespersonName"] }]),
-            ...(params.estateAgentName === undefined ? [] : [{ value: params.estateAgentName, fields: ["estateAgentName"] }]),
+            ...(effectiveEstateAgentName === undefined ? [] : [{ value: effectiveEstateAgentName, fields: ["estateAgentName"] }]),
           ],
         })]
       : []),

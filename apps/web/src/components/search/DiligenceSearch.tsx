@@ -110,7 +110,6 @@ export function DiligenceSearch({ secondaryAction }: DiligenceSearchProps = {}) 
     setError(null);
 
     try {
-      notify({ title: "Opening dossier", description: identifier, tone: "info" });
       navigate(`/c/${encodeURIComponent(identifier)}`);
     } catch (err) {
       setStatus("error");
@@ -129,7 +128,6 @@ export function DiligenceSearch({ secondaryAction }: DiligenceSearchProps = {}) 
 
   const handleSuggestionClick = (suggestion: ApiSearchSuggestion) => {
     setQuery(suggestion.entityName);
-    notify({ title: "Opening official match", description: `${suggestion.entityName} · ${suggestion.uen}`, tone: "info" });
     navigate(`/c/${encodeURIComponent(suggestion.uen)}`);
   };
 

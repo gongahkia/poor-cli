@@ -125,6 +125,7 @@ const generateOpenAI = async (input: ProviderGenerateInput): Promise<GenerateRes
         { role: "user", content: input.prompt },
       ],
       model: input.model,
+      ...(input.responseFormat === "json_object" ? { response_format: { type: "json_object" } } : {}),
       temperature: input.temperature ?? 0.2,
     }),
     headers: {

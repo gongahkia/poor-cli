@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildBusinessDossierInput,
+  buildBusinessDossierExpandedInput,
   buildBusinessDossierFollowUpInput,
   buildDiligenceSnapshot,
   getSectorBadges,
@@ -77,6 +78,21 @@ describe("dossier helpers", () => {
       module: "hsa",
       value: " ",
     })).toThrow("Follow-up input is required.");
+  });
+
+  it("builds an expanded module rerun input with CEA company-name mapping", () => {
+    expect(buildBusinessDossierExpandedInput({
+      dossier,
+      identifier: "03591300B",
+      modules: ["bca", "cea", "gebiz"],
+      value: "DBS BANK LTD",
+    })).toMatchObject({
+      entityName: "DBS BANK LTD",
+      estateAgentName: "DBS BANK LTD",
+      modules: ["acra", "bca", "cea", "gebiz"],
+      sectorHints: ["construction", "real_estate", "procurement"],
+      uen: "03591300B",
+    });
   });
 
   it("extracts summary and snapshot values", () => {

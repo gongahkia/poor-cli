@@ -9,6 +9,7 @@ import { searchAcraEntitySuggestions } from "./apis/acra/client.js";
 import { getPeopleDiscovery, getWebPresence } from "./apis/tinyfish/client.js";
 import { buildBulkDossierResponse } from "./dude/bulk-dossiers.js";
 import { generateAnalystMemo, type AnalystMemoDossier } from "./dude/analyst-memo.js";
+import { generateInteractiveSummary } from "./dude/interactive-summary.js";
 import {
   getGatewayMetricsSnapshot,
   recordGatewayRequest,
@@ -617,6 +618,75 @@ const server = createServer(async (req, res) => {
         error: {
           code: "MEMO_GENERATION_FAILED",
           message: "Analyst memo generation failed.",
+        },
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/v1/dude/summary") {
+    try {
+      requireWorkspaceAccess(req, "memo:generate");
+      const body = await readBody(req, trafficPolicy.maxBodyBytes);
+      const input = body === "" ? {} : JSON.parse(body);
+      if (!isRecord(input)) {
+        throw new BadRequestError("INVALID_SUMMARY_INPUT", "Summary request body must be a JSON object.");
+      }
+      safeInputSummary = summarizeMemoInput(input);
+      const startedAt = Date.now();
+      const dossier = await resolveMemoDossier(input);
+      const summary = await generateInteractiveSummary({ dossier });
+      requestLogger.info("interactive summary finished", {
+        ...safeInputSummary,
+        status: summary.status,
+        configured: summary.configured,
+        provider: summary.provider,
+        durationMs: Date.now() - startedAt,
+      });
+      sendJson(res, 200, summary);
+    } catch (err) {
+      if (err instanceof WorkspaceApiAccessError) {
+        requestLogger.warn("summary workspace access denied", { code: err.code });
+        sendWorkspaceAccessError(res, err);
+        return;
+      }
+      if (err instanceof RequestBodyTooLargeError) {
+        requestLogger.warn("summary request body too large", { maxBytes: err.maxBytes });
+        sendJson(res, err.statusCode, {
+          error: {
+            code: "REQUEST_BODY_TOO_LARGE",
+            message: `Request body must be ${err.maxBytes} bytes or smaller.`,
+          },
+        });
+        return;
+      }
+      if (err instanceof BadRequestError) {
+        requestLogger.warn("invalid summary request", { code: err.code });
+        sendJson(res, err.statusCode, {
+          error: {
+            code: err.code,
+            message: err.message,
+          },
+        });
+        return;
+      }
+      if (err instanceof SyntaxError) {
+        requestLogger.warn("invalid summary json body");
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_JSON",
+            message: "Request body must be valid JSON.",
+          },
+        });
+        return;
+      }
+      requestLogger.error("interactive summary failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      sendJson(res, 500, {
+        error: {
+          code: "SUMMARY_GENERATION_FAILED",
+          message: "Interactive summary generation failed.",
         },
       });
     }

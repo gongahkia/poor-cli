@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { AnalystMemoSection } from "@/components/dossier/AnalystMemoSection";
+import { DossierHeaderLogo } from "@/components/dossier/DossierHeaderLogo";
 import { DossierFindingsTabs } from "@/components/dossier/DossierFindingsTabs";
 import { EvidenceSection } from "@/components/dossier/EvidenceSection";
 import { GapsSection } from "@/components/dossier/GapsSection";
@@ -44,6 +45,27 @@ const dossier: BusinessDossier = {
 };
 
 describe("dossier rendering", () => {
+  it("renders a known company logo in the dossier header", () => {
+    const html = renderToStaticMarkup(<DossierHeaderLogo dossier={{
+      ...dossier,
+      summary: [{ label: "Entity", source: "ACRA", value: "DBS FINANCE NOMINEES PTE LTD" }],
+    }} />);
+
+    expect(html).toContain("alt=\"DBS logo\"");
+    expect(html).toContain("https://logos-world.net/wp-content/uploads/2023/04/DBS-Logo.png");
+    expect(html).toContain("DBS FINANCE NOMINEES PTE LTD brand mark");
+  });
+
+  it("falls back to initials when no known company logo is mapped", () => {
+    const html = renderToStaticMarkup(<DossierHeaderLogo dossier={{
+      ...dossier,
+      summary: [{ label: "Entity", source: "ACRA", value: "Example Trading Pte Ltd" }],
+    }} />);
+
+    expect(html).toContain("ET");
+    expect(html).not.toContain("<img");
+  });
+
   it("renders success evidence rows", () => {
     const html = renderToStaticMarkup(<EvidenceSection dossier={dossier} />);
     expect(html).toContain("DBS BANK LTD");
@@ -104,6 +126,9 @@ describe("dossier rendering", () => {
       gaps: [{ code: "ACRA_UNAVAILABLE", message: "ACRA timed out." }],
     }} />);
     expect(gapHtml).toContain("official source unavailable");
+
+    const emptyGapHtml = renderToStaticMarkup(<GapsSection dossier={{ ...dossier, gaps: [] }} />);
+    expect(emptyGapHtml).toBe("");
   });
 
   it("renders actionable follow-ups for skipped sector modules", () => {
@@ -141,6 +166,7 @@ describe("dossier rendering", () => {
 
     expect(html).toContain("Construction company name or UEN");
     expect(html).toContain("Run BCA follow-up");
+    expect(html).toContain("Run all available checks");
   });
 
   it("renders risk empty state", () => {
@@ -240,7 +266,46 @@ describe("dossier rendering", () => {
     expect(html).toContain("Evidence");
     expect(html).toContain("Actions");
     expect(html).toContain("Audit");
+    expect(html).not.toContain("Missing");
+    expect(html).not.toContain("What we couldn&#x27;t find");
     expect(html).toContain("data-[state=active]");
+  });
+
+  it("adds the Missing tab only when lookup gaps exist", () => {
+    const html = renderToStaticMarkup(
+      <DossierFindingsTabs
+        dossier={{
+          ...dossier,
+          gaps: [{ code: "GEBIZ_NO_MATCH", message: "No GeBIZ awards returned." }],
+        }}
+        isPdpaExporting={false}
+        memoState={{
+          status: "unavailable",
+          memo: {
+            configured: false,
+            gaps: [],
+            generatedAt: "2026-05-17T14:56:00.000Z",
+            limits: [],
+            model: "gpt-4o",
+            provider: "openai",
+            reason: {
+              code: "not_configured",
+              message: "OpenAI key not configured.",
+            },
+            status: "unavailable",
+          },
+        }}
+        onExportPdpaReport={() => undefined}
+        onModuleFollowUp={() => undefined}
+        peopleDiscoveryState={{ status: "error", message: "No people results." }}
+        rerunningModule={null}
+        sharedMemoState={null}
+        webPresenceState={{ status: "error", message: "No web results." }}
+      />,
+    );
+
+    expect(html).toContain("Missing");
+    expect(html).toContain("lg:grid-cols-6");
   });
 
   it("renders the analyst memo as a formatted note with collapsed references", () => {

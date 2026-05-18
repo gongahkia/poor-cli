@@ -18,12 +18,10 @@ export function WorkspaceBadge() {
       <DialogTrigger asChild>
         <button
           aria-label="Open workspace"
-          className="inline-flex h-9 items-center gap-2 rounded-full border border-border bg-card px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-sm transition-colors hover:bg-muted"
           type="button"
         >
-          <Building2 className="h-4 w-4" />
-          <span className="hidden sm:inline">{session.workspaceName}</span>
-          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{session.role}</span>
+          <Building2 aria-hidden="true" className="h-4 w-4" />
         </button>
       </DialogTrigger>
       <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-6xl overflow-y-auto rounded-[28px] border-border bg-background p-1 shadow-2xl">

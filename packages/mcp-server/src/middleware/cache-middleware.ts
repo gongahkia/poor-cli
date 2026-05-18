@@ -18,12 +18,29 @@ export const closeCache = (): void => {
   }
 };
 
+const stableJsonValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map(stableJsonValue);
+  }
+
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Readonly<Record<string, unknown>>)
+        .filter(([, nestedValue]) => nestedValue !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, nestedValue]) => [key, stableJsonValue(nestedValue)]),
+    );
+  }
+
+  return value;
+};
+
 export const buildCacheKey = (
   apiName: string,
   operation: string,
   params: Readonly<Record<string, unknown>>,
 ): string => {
-  const sorted = JSON.stringify(params, Object.keys(params).sort());
+  const sorted = JSON.stringify(stableJsonValue(params));
   const hash = createHash("md5").update(sorted).digest("hex").slice(0, 8);
   return `${apiName}:${operation}:${hash}`;
 };

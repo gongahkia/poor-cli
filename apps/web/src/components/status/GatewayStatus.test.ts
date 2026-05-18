@@ -67,7 +67,7 @@ describe("getGatewayReadinessIssues", () => {
     expect(getGatewayReadinessIssues(baseHealth)).toEqual([]);
   });
 
-  it("documents the server-side OpenAI key in the status panel", () => {
+  it("keeps the analyst memo readiness metadata compact", () => {
     const html = renderToStaticMarkup(
       createElement(
         GatewayStatusPanel,
@@ -84,6 +84,7 @@ describe("getGatewayReadinessIssues", () => {
                   provider: "openai",
                   requiredEnvVar: "OPENAI_API_KEY",
                 },
+                latencyMs: 943,
                 message: "Analyst memo provider accepted the readiness probe.",
                 model: "gpt-4o",
                 provider: "openai",
@@ -96,8 +97,17 @@ describe("getGatewayReadinessIssues", () => {
     );
 
     expect(html).toContain("OpenAI key");
-    expect(html).toContain("OPENAI_API_KEY");
-    expect(html).toContain("REST gateway process environment");
-    expect(html).toContain("browser VITE_* keys are not used");
+    expect(html).toContain("Probe");
+    expect(html).toContain("943ms");
+    expect(html).toContain("Provider");
+    expect(html).toContain("OpenAI");
+    expect(html).toContain("Model");
+    expect(html).toContain("gpt-4o");
+    expect(html).not.toContain("Required env");
+    expect(html).not.toContain("OPENAI_API_KEY");
+    expect(html).not.toContain("Stored in");
+    expect(html).not.toContain("REST gateway process environment");
+    expect(html).not.toContain("Browser env");
+    expect(html).not.toContain("browser VITE_* keys are not used");
   });
 });

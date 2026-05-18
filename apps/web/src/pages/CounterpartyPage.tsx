@@ -3,8 +3,9 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { BookmarkCheck, BookmarkPlus, Braces, Copy, FileDown, Loader2, Table2 } from "lucide-react";
 
 import type { AnalystMemoState } from "@/components/dossier/AnalystMemoSection";
+import { DossierHeaderLogo } from "@/components/dossier/DossierHeaderLogo";
 import { DossierFindingsTabs } from "@/components/dossier/DossierFindingsTabs";
-import type { ModuleFollowUpRequest } from "@/components/dossier/EvidenceSection";
+import type { ModuleFollowUpRequest, RunningBusinessModule } from "@/components/dossier/EvidenceSection";
 import { GapsSection } from "@/components/dossier/GapsSection";
 import type { PeopleDiscoveryState } from "@/components/dossier/PeopleDiscoverySection";
 import { ProvenanceSection } from "@/components/dossier/ProvenanceSection";
@@ -24,6 +25,7 @@ import {
 } from "@/lib/shortlist";
 import {
   buildBusinessDossierInput,
+  buildBusinessDossierExpandedInput,
   buildBusinessDossierFollowUpInput,
   buildSummaryLine,
   getSummaryString,
@@ -35,7 +37,7 @@ import { exportDossierPdf } from "@/lib/export/pdf";
 import { exportPdpaReportPdf } from "@/lib/export/pdpa";
 import { persistAuditEvent, persistDossierRecord } from "@/lib/workspace-store";
 import type { AnalystMemoResponse } from "@/types/analyst-memo";
-import type { BusinessDossier, BusinessDossierModule } from "@/types/dossier";
+import type { BusinessDossier } from "@/types/dossier";
 
 type DossierState =
   | { status: "loading" }
@@ -172,10 +174,7 @@ function DossierLoading({ identifier }: { identifier: string }) {
       <section className="min-w-0 rounded-lg border border-border bg-card p-5 shadow-sm sm:p-6">
         <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin text-muted-foreground" />
-              <h2 className="text-base font-semibold tracking-normal text-foreground">Loading dossier</h2>
-            </div>
+            <h2 className="text-base font-semibold tracking-normal text-foreground">Loading dossier</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
               Requesting <span className="font-mono text-foreground">sg_business_dossier</span> from the REST gateway.
               Source-level evidence, skipped modules, freshness, and gaps will appear after this request returns.
@@ -249,7 +248,7 @@ function DossierSuccess({
   const [isPdpaExporting, setIsPdpaExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
-  const [rerunningModule, setRerunningModule] = useState<BusinessDossierModule | null>(null);
+  const [rerunningModule, setRerunningModule] = useState<RunningBusinessModule>(null);
   const [webPresenceState, setWebPresenceState] = useState<WebPresenceState>({ status: "loading" });
   const [peopleDiscoveryState, setPeopleDiscoveryState] = useState<PeopleDiscoveryState>({ status: "loading" });
   const [memoState, setMemoState] = useState<AnalystMemoState>({ status: "loading" });
@@ -261,12 +260,6 @@ function DossierSuccess({
   const entityName = getSummaryString(dossier, "Entity");
   const shortlistIdentifier = canonicalUen ?? entityName ?? identifier;
   const webPresenceQuery = [entityName, canonicalUen].filter(Boolean).join(" ");
-  const searchedCount = resolution?.searchedModules?.length ?? 0;
-  const matchedCount = resolution?.matchedModules?.length ?? 0;
-  const inferredSectorCount = resolution?.inferredSectors?.length ?? 0;
-  const coverageLine = resolution === undefined
-    ? null
-    : `${matchedCount} of ${searchedCount} searched modules returned evidence${inferredSectorCount === 0 ? "" : `; ${inferredSectorCount} sector ${inferredSectorCount === 1 ? "hint was" : "hints were"} inferred from ACRA SSIC`}.`;
 
   useEffect(() => {
     setDossier(initialDossier);
@@ -577,14 +570,21 @@ function DossierSuccess({
   };
 
   const handleModuleFollowUp = async (request: ModuleFollowUpRequest) => {
-    setRerunningModule(request.module);
+    setRerunningModule(request.kind === "all" ? "all" : request.module);
     try {
-      const followUpInput = buildBusinessDossierFollowUpInput({
-        dossier,
-        identifier,
-        module: request.module,
-        value: request.value,
-      });
+      const followUpInput = request.kind === "all"
+        ? buildBusinessDossierExpandedInput({
+            dossier,
+            identifier,
+            modules: request.modules,
+            value: request.value,
+          })
+        : buildBusinessDossierFollowUpInput({
+            dossier,
+            identifier,
+            module: request.module,
+            value: request.value,
+          });
       const nextDossier = await callTool<BusinessDossier>("sg_business_dossier", followUpInput);
       setDossier(nextDossier);
       persistAuditEvent({
@@ -593,16 +593,16 @@ function DossierSuccess({
         output: nextDossier,
         provenance: nextDossier.provenance,
         freshness: nextDossier.freshness,
-        metadata: { module: request.module },
+        metadata: { module: request.kind === "all" ? "all" : request.module },
       });
       notify({
-        title: `${request.module.toUpperCase()} follow-up complete`,
+        title: request.kind === "all" ? "All module checks complete" : `${request.module.toUpperCase()} follow-up complete`,
         description: "Dossier evidence, provenance, freshness, gaps, and limits were refreshed.",
         tone: "success",
       });
     } catch (error) {
       notify({
-        title: `${request.module.toUpperCase()} follow-up failed`,
+        title: request.kind === "all" ? "All module checks failed" : `${request.module.toUpperCase()} follow-up failed`,
         description: error instanceof Error ? error.message : "Unable to rerun this module.",
         tone: "error",
       });
@@ -614,15 +614,13 @@ function DossierSuccess({
   return (
     <>
       <header className="space-y-4">
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-muted-foreground">Counterparty</p>
-          <h1 className="break-words text-3xl font-semibold tracking-normal text-foreground">{dossier.title}</h1>
-          <p className="text-lg leading-8 text-muted-foreground">{buildSummaryLine(dossier)}</p>
-          {coverageLine === null ? null : (
-            <p className="text-sm leading-6 text-muted-foreground">
-              {coverageLine} Skipped modules were not queried and are not negative evidence.
-            </p>
-          )}
+        <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start">
+          <DossierHeaderLogo dossier={dossier} />
+          <div className="min-w-0 space-y-2">
+            <p className="text-sm font-medium text-muted-foreground">Counterparty</p>
+            <h1 className="break-words text-3xl font-semibold tracking-normal text-foreground">{dossier.title}</h1>
+            <p className="text-lg leading-8 text-muted-foreground">{buildSummaryLine(dossier)}</p>
+          </div>
         </div>
         <div className="flex min-w-0 flex-wrap gap-2 text-sm text-muted-foreground">
           <span className="max-w-full break-all rounded-md bg-muted px-2.5 py-1 font-mono text-foreground">{identifier}</span>

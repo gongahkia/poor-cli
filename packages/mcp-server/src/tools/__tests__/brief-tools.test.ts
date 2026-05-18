@@ -74,6 +74,7 @@ import {
   getBcaRegisteredContractors,
 } from "../../apis/bca/client.js";
 import { getBoaArchitects, getBoaArchitectureFirms } from "../../apis/boa/client.js";
+import { getCeaSalespersons } from "../../apis/cea/client.js";
 import { getGeBIZTenders } from "../../apis/gebiz/client.js";
 import { getHdbResalePrices } from "../../apis/hdb/client.js";
 import { getHlbHotels } from "../../apis/hlb/client.js";
@@ -143,6 +144,7 @@ describe("brief tools", () => {
     vi.mocked(getBcaRegisteredContractors).mockReset();
     vi.mocked(getBoaArchitects).mockReset();
     vi.mocked(getBoaArchitectureFirms).mockReset();
+    vi.mocked(getCeaSalespersons).mockReset();
     vi.mocked(getGeBIZTenders).mockReset();
     vi.mocked(getHdbResalePrices).mockReset();
     vi.mocked(getHlbHotels).mockReset();
@@ -498,6 +500,47 @@ describe("brief tools", () => {
     expect(payload.riskFlags).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: "PARTIAL_MODULE_COVERAGE", severity: "medium", source: "Resolver" }),
+      ]),
+    );
+  });
+
+  it("uses the company name as the CEA estate-agent search input when CEA is selected broadly", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([
+      {
+        entityName: "DESIGN LAB PTE LTD",
+        uen: "202012345K",
+        entityStatusDescription: "Live Company",
+      },
+    ] as never);
+    vi.mocked(getCeaSalespersons).mockResolvedValue([
+      {
+        estateAgentName: "DESIGN LAB PTE LTD",
+        estateAgentLicenseNo: "L3000001A",
+        salespersonName: "Jane Tan",
+      },
+    ] as never);
+
+    const jsonResult = await handleBusinessDossier({
+      entityName: "DESIGN LAB PTE LTD",
+      modules: ["acra", "cea"],
+      sectorHints: ["real_estate"],
+      format: "json",
+    });
+    const payload = parseBrief(getText(jsonResult));
+    const resolution = payload.records["resolution"] as Record<string, unknown>;
+
+    expect(getCeaSalespersons).toHaveBeenCalledWith(expect.objectContaining({
+      estateAgentName: "DESIGN LAB PTE LTD",
+      limit: 5,
+    }));
+    expect(resolution).toMatchObject({
+      selectedModules: ["acra", "cea"],
+      searchedModules: ["acra", "cea"],
+      matchedModules: ["acra", "cea"],
+    });
+    expect(payload.matchConfidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "CEA", confidence: "name-exact", matchedOn: "estateAgentName" }),
       ]),
     );
   });

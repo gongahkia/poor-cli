@@ -8,8 +8,7 @@ describe("WorkspaceBadge", () => {
     const html = renderToStaticMarkup(<WorkspaceBadge />);
 
     expect(html).toContain("Open workspace");
-    expect(html).toContain("Local workspace");
-    expect(html).toContain("admin");
+    expect(html).not.toContain(">admin<");
     expect(html).not.toContain("href=\"/workspace\"");
   });
 });

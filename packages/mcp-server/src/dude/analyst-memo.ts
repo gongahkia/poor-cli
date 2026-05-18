@@ -467,6 +467,7 @@ export const generateAnalystMemo = async (
     result = await (options.generate ?? generateText)({
       maxTokens: 1200,
       prompt,
+      responseFormat: "json_object",
       system: SYSTEM_PROMPT,
       temperature: 0.1,
     }, config);
