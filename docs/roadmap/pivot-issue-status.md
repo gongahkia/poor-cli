@@ -2,11 +2,24 @@
 
 This page records how roadmap parent issues are resolved when child work is either complete in the repository or intentionally moved into narrower external follow-up issues.
 
-Updated on 2026-05-17.
+Updated on 2026-05-18.
 
 ## Rule
 
 Close the original implementation issue when repo-side work is complete. If the remaining work requires a third-party approval, account permission, registry acceptance, outreach response, named participant, or other external action, open a new issue with `External blocker` in the title and link it from the closure note.
+
+## Corp-Services CDD Pivot
+
+Parent issue: `#97`.
+
+| Child | Repo-side status | External follow-up |
+| --- | --- | --- |
+| `#40` Macro brief CPI dataset resolution | Closed. | None. |
+| `#41` Primary corp-services CDD onboarding flow | Closed. | None. |
+| `#42` Vendor onboarding and procurement secondary workflows | Closed. | None. |
+| `#56` PDPA s.24/s.26 vendor-diligence checklist and report | Closed. | None. |
+
+Roadmap status: child work is complete, the README points builders to the primary corp-services CDD workflow, and the roadmap index links both the primary CDD lane and secondary workflow lane, so `#97` can close.
 
 ## OSS Distribution And Governance
 
