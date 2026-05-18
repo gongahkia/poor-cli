@@ -46,6 +46,40 @@ describe("BOA client", () => {
     ]);
   });
 
+  it("skips malformed architect rows without throwing", async () => {
+    vi.mocked(downloadDatasetCsvRows).mockResolvedValue([
+      {
+        reg_no: "A0001",
+        firm_me: "MISSING NAME PTE LTD",
+        firm_address: "1 MAIN STREET",
+        firm_phone: "61234567",
+      },
+      {
+        me: "MISSING REGISTRATION",
+        firm_me: "MISSING REGISTRATION PTE LTD",
+        firm_address: "2 MAIN STREET",
+        firm_phone: "69876543",
+      },
+      {
+        name: "SAFE ARCHITECT",
+        reg_no: "A0002",
+        firm_name: "SAFE FIRM PTE LTD",
+      },
+    ] as never);
+
+    const result = await getBoaArchitects({});
+
+    expect(result).toEqual([
+      {
+        architectName: "SAFE ARCHITECT",
+        registrationNo: "A0002",
+        firmName: "SAFE FIRM PTE LTD",
+        firmAddress: null,
+        firmPhone: null,
+      },
+    ]);
+  });
+
   it("normalizes architecture firm rows", async () => {
     vi.mocked(downloadDatasetCsvRows).mockResolvedValue([
       {
@@ -69,6 +103,32 @@ describe("BOA client", () => {
         firmPhone: "61234567",
         firmFax: null,
         firmEmail: "hello@designlab.sg",
+      },
+    ]);
+  });
+
+  it("skips malformed architecture firm rows and normalizes missing contacts", async () => {
+    vi.mocked(downloadDatasetCsvRows).mockResolvedValue([
+      {
+        firm_address: "1 MAIN STREET",
+        firm_phone: "61234567",
+        firm_fax: "",
+        firm_email: "missing-name@example.com",
+      },
+      {
+        firm_name: "SAFE FIRM PTE LTD",
+      },
+    ] as never);
+
+    const result = await getBoaArchitectureFirms({});
+
+    expect(result).toEqual([
+      {
+        firmName: "SAFE FIRM PTE LTD",
+        firmAddress: null,
+        firmPhone: null,
+        firmFax: null,
+        firmEmail: null,
       },
     ]);
   });
