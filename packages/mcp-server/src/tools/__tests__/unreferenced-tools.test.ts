@@ -171,6 +171,36 @@ describe("direct tests for previously un-referenced tools", () => {
         }),
       });
     });
+
+    it("returns safe metadata for empty air-quality results", async () => {
+      vi.mocked(getAirQuality).mockResolvedValue([] as never);
+
+      const result = await handleNeaAirQuality({ region: "east", format: "json" });
+
+      expect(result.structuredContent).toMatchObject({
+        records: [],
+        meta: expect.objectContaining({
+          requestedScope: { region: "east", date: null },
+          resolvedScope: { region: "east", rowCount: 0 },
+          upstreamTimestamp: null,
+        }),
+      });
+    });
+
+    it("normalizes undefined air-quality upstream results to an empty record set", async () => {
+      vi.mocked(getAirQuality).mockResolvedValue(undefined as never);
+
+      const result = await handleNeaAirQuality({ format: "json" });
+
+      expect(result.structuredContent).toMatchObject({
+        records: [],
+        meta: expect.objectContaining({
+          requestedScope: { region: null, date: null },
+          resolvedScope: { region: null, rowCount: 0 },
+          upstreamTimestamp: null,
+        }),
+      });
+    });
   });
 
   describe("sg_nea_rainfall", () => {
@@ -183,6 +213,36 @@ describe("direct tests for previously un-referenced tools", () => {
         records: [expect.objectContaining({ stationId: "S107" })],
         meta: expect.objectContaining({
           resolvedScope: expect.objectContaining({ stationId: "S107", stationName: "Tampines" }),
+        }),
+      });
+    });
+
+    it("returns safe metadata for empty rainfall results", async () => {
+      vi.mocked(getRainfall).mockResolvedValue([] as never);
+
+      const result = await handleNeaRainfall({ stationId: "S107", format: "json" });
+
+      expect(result.structuredContent).toMatchObject({
+        records: [],
+        meta: expect.objectContaining({
+          requestedScope: { stationId: "S107", date: null },
+          resolvedScope: { stationId: "S107", stationName: null, rowCount: 0 },
+          upstreamTimestamp: null,
+        }),
+      });
+    });
+
+    it("normalizes undefined rainfall upstream results to an empty record set", async () => {
+      vi.mocked(getRainfall).mockResolvedValue(undefined as never);
+
+      const result = await handleNeaRainfall({ format: "json" });
+
+      expect(result.structuredContent).toMatchObject({
+        records: [],
+        meta: expect.objectContaining({
+          requestedScope: { stationId: null, date: null },
+          resolvedScope: { stationId: null, stationName: null, rowCount: 0 },
+          upstreamTimestamp: null,
         }),
       });
     });

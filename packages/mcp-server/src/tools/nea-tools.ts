@@ -12,6 +12,10 @@ import type { RegisteredToolDefinition } from "./tool-definition.js";
 
 const getObservedAt = (): string => new Date().toISOString();
 
+const toRecordArray = (data: unknown): readonly Readonly<Record<string, unknown>>[] => {
+  return Array.isArray(data) ? data as readonly Readonly<Record<string, unknown>>[] : [];
+};
+
 const getForecastMeta = (
   params: Readonly<{ area?: string | undefined; date?: string | undefined }>,
   data: readonly Readonly<Record<string, unknown>>[],
@@ -84,7 +88,7 @@ const getRainfallMeta = (
 export const handleNeaForecast2Hr = async (
   params: Readonly<{ area?: string | undefined; date?: string | undefined; format?: OutputFormat | undefined }>,
 ): Promise<ToolResult> => {
-  const data = await getForecast2Hr(params.area, params.date);
+  const data = toRecordArray(await getForecast2Hr(params.area, params.date));
   const format = resolveOutputFormat(params.format);
   const text = formatResponse(data as unknown as Record<string, unknown>[], format);
   return {
@@ -99,7 +103,7 @@ export const handleNeaForecast2Hr = async (
 export const handleNeaAirQuality = async (
   params: Readonly<{ region?: string | undefined; date?: string | undefined; format?: OutputFormat | undefined }>,
 ): Promise<ToolResult> => {
-  const data = await getAirQuality(params.region, params.date);
+  const data = toRecordArray(await getAirQuality(params.region, params.date));
   const format = resolveOutputFormat(params.format);
   const text = formatResponse(data as unknown as Record<string, unknown>[], format);
   return {
@@ -114,7 +118,7 @@ export const handleNeaAirQuality = async (
 export const handleNeaRainfall = async (
   params: Readonly<{ stationId?: string | undefined; date?: string | undefined; format?: OutputFormat | undefined }>,
 ): Promise<ToolResult> => {
-  const data = await getRainfall(params.stationId, params.date);
+  const data = toRecordArray(await getRainfall(params.stationId, params.date));
   const format = resolveOutputFormat(params.format);
   const text = formatResponse(data as unknown as Record<string, unknown>[], format);
   return {
