@@ -21,6 +21,17 @@ export type WorkspaceApiSession = {
   readonly authenticated: boolean;
 };
 
+export type WorkspaceApiAuthPolicy = {
+  readonly authRequired: boolean;
+  readonly production: boolean;
+  readonly productionFailClosed: boolean;
+  readonly explicitWorkspaceAuth: boolean;
+  readonly explicitProductionLocalAuth: boolean;
+  readonly oidcProtectedHttpConfigured: boolean;
+  readonly message: string;
+  readonly details: Readonly<Record<string, string | boolean>>;
+};
+
 const ROLE_PERMISSIONS: Record<WorkspaceRole, readonly WorkspacePermission[]> = {
   admin: [
     "workspace:manage",
@@ -63,6 +74,58 @@ export class WorkspaceApiAccessError extends Error {
 
 const isWorkspaceRole = (value: string | undefined): value is WorkspaceRole =>
   value === "admin" || value === "analyst" || value === "viewer";
+
+const isTruthyEnv = (value: string | undefined): boolean =>
+  value !== undefined && /^(1|true|yes|on)$/i.test(value.trim());
+
+const hasText = (value: string | undefined): boolean =>
+  value !== undefined && value.trim() !== "";
+
+export const resolveWorkspaceApiAuthPolicy = (
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): WorkspaceApiAuthPolicy => {
+  const production = env["NODE_ENV"] === "production";
+  const explicitWorkspaceAuth = isTruthyEnv(env["DUDE_WORKSPACE_AUTH_REQUIRED"]);
+  const explicitProductionLocalAuth = isTruthyEnv(env["DUDE_ALLOW_INSECURE_PRODUCTION_LOCAL_AUTH"]);
+  const httpAuthMode = env["SG_APIS_HTTP_AUTH_MODE"]?.trim().toLowerCase() ?? "";
+  const oidcProtectedHttpConfigured =
+    (httpAuthMode === "mixed" || httpAuthMode === "all")
+    && hasText(env["SG_APIS_OIDC_ISSUER"])
+    && hasText(env["SG_APIS_OIDC_AUDIENCE"]);
+  const productionHasExplicitAuth =
+    explicitWorkspaceAuth || explicitProductionLocalAuth || oidcProtectedHttpConfigured;
+  const productionFailClosed = production && !productionHasExplicitAuth;
+  const authRequired =
+    explicitWorkspaceAuth
+    || productionFailClosed
+    || (production && oidcProtectedHttpConfigured && !explicitProductionLocalAuth);
+
+  const message = productionFailClosed
+    ? "Production REST gateway is fail-closed because no workspace auth, protected OIDC mode, or explicit local safe mode is configured."
+    : explicitProductionLocalAuth
+      ? "Production REST gateway local-admin fallback is explicitly enabled; use only behind private deployment controls."
+      : authRequired
+        ? "Workspace API auth is required for protected REST gateway routes."
+        : "Local REST gateway mode allows the development local-admin fallback.";
+
+  return {
+    authRequired,
+    production,
+    productionFailClosed,
+    explicitWorkspaceAuth,
+    explicitProductionLocalAuth,
+    oidcProtectedHttpConfigured,
+    message,
+    details: {
+      authRequired,
+      production,
+      productionFailClosed,
+      explicitWorkspaceAuth,
+      explicitProductionLocalAuth,
+      oidcProtectedHttpConfigured,
+    },
+  };
+};
 
 export const parseWorkspaceApiSession = (
   headers: { readonly get?: (name: string) => string | null } | { readonly [key: string]: string | string[] | undefined },

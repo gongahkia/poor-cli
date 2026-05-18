@@ -35,6 +35,8 @@ Relevant env vars:
 - `SG_APIS_OIDC_JWKS_URI`
 - `SG_APIS_OIDC_REQUIRED_SCOPES`
 - `SG_APIS_OIDC_CLOCK_SKEW_SEC`
+- `DUDE_WORKSPACE_AUTH_REQUIRED`
+- `DUDE_ALLOW_INSECURE_PRODUCTION_LOCAL_AUTH`
 
 `SG_APIS_TOOLSETS` accepts comma-separated toolset names. `SG_APIS_TOOL_PROFILE` applies canonical least-privilege presets and is recommended unless you need explicit manual control.
 
@@ -78,6 +80,8 @@ For any non-localhost HTTP deployment, use this baseline:
 - `SG_APIS_REMOTE_BASE_URL` set to the canonical externally reachable MCP URL
 
 Only use `mixed` during staged migration windows where unauthenticated public discovery is explicitly required. Keep `none` constrained to localhost development.
+
+The REST gateway has a separate workspace-header contract for `/api/v1/*` protected routes. In local development, missing workspace headers resolve to a local admin session. In `NODE_ENV=production`, that fallback is fail-closed unless `DUDE_WORKSPACE_AUTH_REQUIRED=true`, protected OIDC HTTP auth is configured for the MCP endpoint, or `DUDE_ALLOW_INSECURE_PRODUCTION_LOCAL_AUTH=true` is set for a private operator-controlled deployment. Without one of those explicit production choices, readiness reports the gateway as failing and protected REST routes require workspace headers instead of silently granting local-admin access.
 
 ## Latency Expectations
 

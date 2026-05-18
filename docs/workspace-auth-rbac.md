@@ -4,10 +4,11 @@ This is the implementation contract for issues #43 and #44.
 
 ## Architecture
 
-Dude supports two deployment modes:
+Dude supports three deployment modes:
 
 - Self-host local mode: no auth headers are required. The REST gateway resolves a local admin session so existing single-user deployments keep working.
 - Hosted/workspace mode: set `DUDE_WORKSPACE_AUTH_REQUIRED=true`. API requests must include `x-dude-workspace-id`, `x-dude-actor-id`, `x-dude-role`, and `x-dude-2fa-verified`.
+- Production fail-closed mode: with `NODE_ENV=production`, the REST gateway requires workspace headers unless workspace auth, protected OIDC HTTP config, or the explicit local safe-mode override is configured. Use `DUDE_ALLOW_INSECURE_PRODUCTION_LOCAL_AUTH=true` only for private, operator-controlled deployments where another layer already blocks public access.
 
 The shared role model is:
 
@@ -40,4 +41,4 @@ Secrets stay server-side in environment variables or the deployment secret manag
 
 - `apps/web/src/lib/workspace.test.ts` covers role denial and cross-workspace data isolation.
 - `apps/web/src/lib/auth-policy.ts` covers Google/Microsoft/OIDC/local provider allow-listing and 2FA failure paths.
-- `packages/mcp-server/src/workspace/__tests__/access-control.test.ts` covers API self-host fallback, hosted header requirements, and role denial.
+- `packages/mcp-server/src/workspace/__tests__/access-control.test.ts` covers API self-host fallback, production fail-closed behavior, hosted header requirements, and role denial.

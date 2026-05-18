@@ -25,7 +25,13 @@ import {
 import { ALL_TOOL_DEFINITIONS } from "./tools/tool-set.js";
 import { handleBusinessDossier } from "./tools/brief-tools.js";
 import { isToolEnabled } from "./tools/tool-metadata.js";
-import { WorkspaceApiAccessError, assertWorkspaceApiAccess, parseWorkspaceApiSession, type WorkspacePermission } from "./workspace/access-control.js";
+import {
+  WorkspaceApiAccessError,
+  assertWorkspaceApiAccess,
+  parseWorkspaceApiSession,
+  resolveWorkspaceApiAuthPolicy,
+  type WorkspacePermission,
+} from "./workspace/access-control.js";
 const PORT = Number(process.env["PORT"] ?? 3000);
 const DEFAULT_DEV_WEB_ORIGIN_ALLOWLIST = "http://localhost:5173,http://127.0.0.1:5173";
 const gatewayStartedAt = new Date();
@@ -52,12 +58,14 @@ const allowedCorsOrigins = new Set(
     .map((origin) => origin.trim())
     .filter(Boolean),
 );
+const workspaceAuthPolicy = resolveWorkspaceApiAuthPolicy();
 
 logger.info("gateway started", {
   toolsets: [...enabledToolsets],
   tools: enabledTools.length,
   total: ALL_TOOL_DEFINITIONS.length,
   debugLogsEnabled: debugLogStore.enabled,
+  workspaceAuth: workspaceAuthPolicy.details,
   ...(debugLogStore.logPath === undefined ? {} : { debugLogPath: debugLogStore.logPath }),
 });
 
@@ -66,7 +74,7 @@ const MAX_WEB_PRESENCE_QUERY_LENGTH = 160;
 const MAX_PEOPLE_DISCOVERY_ENTITY_LENGTH = 128;
 const MAX_MEMO_IDENTIFIER_LENGTH = 128;
 const UEN_PATTERN = /^(?:\d{8,9}[a-z]|[a-z]\d{2}[a-z]{2}\d{4}[a-z])$/i;
-const WORKSPACE_AUTH_REQUIRED = process.env["DUDE_WORKSPACE_AUTH_REQUIRED"] === "true";
+const WORKSPACE_AUTH_REQUIRED = workspaceAuthPolicy.authRequired;
 
 class RequestBodyTooLargeError extends Error {
   readonly statusCode = 413;
@@ -381,6 +389,12 @@ const server = createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname === "/api/v1/health") {
     requestLogger.info("health check");
     const health = await getGatewayHealthPayload({
+      gateway: {
+        status: workspaceAuthPolicy.productionFailClosed ? "failing" : "ready",
+        message: workspaceAuthPolicy.message,
+        observedAt: new Date().toISOString(),
+        details: workspaceAuthPolicy.details,
+      },
       toolCount: enabledTools.length,
       startedAt: gatewayStartedAt,
     });

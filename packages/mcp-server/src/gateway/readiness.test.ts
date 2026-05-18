@@ -68,4 +68,31 @@ describe("gateway readiness", () => {
     });
     expect(health.services.analystMemo.message).toContain("OPENAI_API_KEY");
   });
+
+  it("marks gateway readiness failing when production auth is fail-closed", async () => {
+    const health = await getGatewayHealthPayload({
+      gateway: {
+        status: "failing",
+        message: "Production REST gateway is fail-closed because no auth config is present.",
+        observedAt: "2026-05-18T00:00:00.000Z",
+        details: {
+          authRequired: true,
+          production: true,
+          productionFailClosed: true,
+        },
+      },
+      startedAt: new Date("2026-05-17T00:00:00.000Z"),
+      toolCount: 105,
+    });
+
+    expect(health.status).toBe("degraded");
+    expect(health.readiness).toBe("failing");
+    expect(health.services.gateway).toMatchObject({
+      status: "failing",
+      details: {
+        authRequired: true,
+        productionFailClosed: true,
+      },
+    });
+  });
 });

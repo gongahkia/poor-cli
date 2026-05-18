@@ -329,13 +329,24 @@ const resolveServiceReadiness = async (): Promise<
 };
 
 export const getGatewayHealthPayload = async (params: {
+  readonly gateway?: GatewayServiceReadiness;
   readonly toolCount: number;
   readonly startedAt: Date;
 }): Promise<GatewayHealthPayload> => {
   const observedAt = toObservedAt();
   const services = await resolveServiceReadiness();
+  const gateway = params.gateway ?? {
+    status: "ready" as const,
+    message: "HTTP gateway is reachable.",
+    observedAt,
+    details: {
+      toolCount: params.toolCount,
+    },
+  };
   const requiredReady =
-    services.datagovDatastore.status === "ready" && services.acraLookup.status === "ready";
+    gateway.status === "ready"
+    && services.datagovDatastore.status === "ready"
+    && services.acraLookup.status === "ready";
   const optionalReady =
     services.tinyfish.status === "ready" && services.analystMemo.status === "ready";
   const readiness: GatewayReadinessLevel = requiredReady
@@ -354,14 +365,7 @@ export const getGatewayHealthPayload = async (params: {
       observedAt,
     },
     services: {
-      gateway: {
-        status: "ready",
-        message: "HTTP gateway is reachable.",
-        observedAt,
-        details: {
-          toolCount: params.toolCount,
-        },
-      },
+      gateway,
       ...services,
     },
   };
