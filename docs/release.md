@@ -104,6 +104,8 @@ For local onboarding without credentials, run:
 npm run test:smoke:public
 ```
 
+The CI workflow runs the same no-credential path as `Run public no-credential smoke` so first-run public upstream failures are visible without reading the broader verify log.
+
 Do not treat the public smoke pass as release evidence; publish and deploy readiness still requires `npm run test:smoke:live`.
 
 ## Hosted Commercial Data Gates

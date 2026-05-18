@@ -42,15 +42,20 @@ const getHealthRecord = (records, api) => {
   return record;
 };
 
+const healthLabel = (record) =>
+  record.representativeTool === undefined
+    ? record.api
+    : `${record.api} via ${record.representativeTool}`;
+
 const ensureLiveHealth = (record) => {
   if (record.authRequired === true && record.configured !== true) {
-    throw new Error(`${record.api} is not configured for live use. Set env vars or keystore entries before running this smoke test.`);
+    throw new Error(`${healthLabel(record)} is not configured for live use. Set env vars or keystore entries before running this smoke test.`);
   }
   if (record.reachable !== true) {
-    throw new Error(`${record.api} live probe failed: ${record.error ?? "unreachable"}`);
+    throw new Error(`${healthLabel(record)} live probe failed: ${record.error ?? "unreachable"}`);
   }
   if (typeof record.error === "string" && record.error.trim() !== "") {
-    throw new Error(`${record.api} live probe returned an error: ${record.error}`);
+    throw new Error(`${healthLabel(record)} live probe returned an error: ${record.error}`);
   }
 };
 
@@ -189,8 +194,12 @@ const main = async () => {
     process.stdout.write(PUBLIC_ONLY ? "Running public MCP smoke flow...\n" : "Running live MCP smoke flow...\n");
 
     for (const smokeCase of targetCases) {
-      const payload = await callToolPayload(client, smokeCase.tool, smokeCase.arguments ?? {});
-      validateSmokePayload(smokeCase.name, payload, smokeCase.expectation ?? {});
+      try {
+        const payload = await callToolPayload(client, smokeCase.tool, smokeCase.arguments ?? {});
+        validateSmokePayload(smokeCase.name, payload, smokeCase.expectation ?? {});
+      } catch (error) {
+        throw new Error(`${smokeCase.name} via ${smokeCase.tool} failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
       process.stdout.write(`- ${smokeCase.name}: ok\n`);
     }
 

@@ -29,6 +29,11 @@ jobs:
         env:
           SG_APIS_LOG_LEVEL: error
 
+      - name: Run public no-credential smoke
+        run: npm run test:smoke:public
+        env:
+          SG_APIS_LOG_LEVEL: error
+
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 

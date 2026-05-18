@@ -80,7 +80,7 @@ Token refresh: OneMap and URA tokens are refreshed automatically on 401. The key
 
 | Checkpoint | What it proves | How to verify |
 |---|---|---|
-| Five-minute success | A new developer can boot and reach a no-auth tool on a clean machine. | `npm install && npm run try` |
+| Five-minute success | A new developer can boot and reach a no-auth tool on a clean machine. | `npm install && npm run try`; CI shows the same public path as `Run public no-credential smoke`. |
 | Bounded routing trust | Blocked, unsupported, and failed `sg_query` outcomes are obvious in app code. | Run examples under `examples/integration/` and inspect blocked-state responses. |
 | Artifact credibility | Public workflows return real live data, not placeholders. | `npm run test:smoke:public`; for credentialed flows, `npm run test:smoke:live`. |
 | Release-grade evidence | SLO snapshots and packaging smoke pass per release window. | `npm run release:preflight` plus `npm run benchmarks:snapshot`. |

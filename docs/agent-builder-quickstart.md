@@ -106,7 +106,7 @@ Before handing the server to an application team:
 
 - `npm run quick-start` is the credential-gated live quickstart for real OneMap, URA, LTA, data.gov datastore, and official file-download validation. On failure it auto-runs `npm run diagnostics` unless `--no-diagnostics-on-fail` is passed.
 - `npm run test:smoke:live` runs the same live validation flow without the build wrapper.
-- `npm run test:smoke:public` is the credential-free onboarding smoke for public upstreams and no-auth workflows.
+- `npm run test:smoke:public` is the credential-free onboarding smoke for public upstreams and no-auth workflows. CI exposes it as `Run public no-credential smoke`, and failures name the upstream family or `sg_*` tool that failed.
 
 ## Useful Starter Paths
 
