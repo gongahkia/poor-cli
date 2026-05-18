@@ -167,7 +167,7 @@ export const probeNeaHealth = async (): Promise<HealthProbeResult> => {
 };
 
 export const probeGovFeedsHealth = async (): Promise<HealthProbeResult> => {
-  const result = await getGovFeedItems({ feedId: "mpa_press_releases", limit: 1 });
+  const result = await getGovFeedItems({ feedId: "weather_2hr_forecast", limit: 1 });
   if (result.records.length === 0) {
     throw new Error("Government feeds probe returned no rows.");
   }

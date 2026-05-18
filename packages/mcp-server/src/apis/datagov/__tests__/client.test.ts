@@ -32,6 +32,7 @@ vi.mock("../../../middleware/cache-middleware.js", () => ({
 }));
 
 import {
+  downloadDatasetCsvRows,
   getDatasetMetadata,
   getDatasetResources,
   getDatasetRows,
@@ -239,6 +240,45 @@ describe("data.gov.sg client", () => {
       key: "month",
       title: "Month",
     });
+  });
+
+  it("downloads BOA-style CSV rows through the data.gov.sg file-download contract", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          code: 0,
+          data: {
+            url: "https://download.data.gov.sg/boa-architecture-firms.csv",
+            status: "DOWNLOAD_SUCCESS",
+          },
+          errorMsg: "",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () => "firm_me,firm_address,firm_phone\nDP ARCHITECTS PTE LTD,6 RAFFLES BOULEVARD,63380111\n",
+      });
+
+    const rows = await downloadDatasetCsvRows("d_d5c0a4ffd076a3e40d772275619bbb66", "DAILY");
+
+    expect(rows).toEqual([
+      {
+        firm_me: "DP ARCHITECTS PTE LTD",
+        firm_address: "6 RAFFLES BOULEVARD",
+        firm_phone: "63380111",
+      },
+    ]);
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      1,
+      "https://api-open.data.gov.sg/v1/public/api/datasets/d_d5c0a4ffd076a3e40d772275619bbb66/poll-download",
+      expect.any(Object),
+    );
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
+      "https://download.data.gov.sg/boa-architecture-firms.csv",
+      expect.any(Object),
+    );
   });
 
   it("reads bounded datastore rows with truthful pagination metadata", async () => {

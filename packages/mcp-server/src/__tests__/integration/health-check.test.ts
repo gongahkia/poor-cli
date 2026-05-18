@@ -36,11 +36,11 @@ vi.mock("../../apis/nea/client.js", () => ({
 vi.mock("../../apis/govfeeds/client.js", () => ({
   getGovFeedItems: vi.fn().mockResolvedValue({
     feed: {
-      id: "mpa_press_releases",
-      title: "MPA Press Releases",
-      family: "mpa",
-      sourceAgency: "Maritime and Port Authority of Singapore",
-      sourceUrl: "https://www.mpa.gov.sg/feeds/press-releases",
+      id: "weather_2hr_forecast",
+      title: "Weather 2-Hour Forecast Feed",
+      family: "weather",
+      sourceAgency: "Meteorological Service Singapore",
+      sourceUrl: "https://www.weather.gov.sg/files/rss/rss2HrForecast.xml",
     },
     observedAt: "2026-03-28T00:00:00Z",
     channelTitle: "Press Releases",
@@ -248,7 +248,7 @@ describe("Health Check", () => {
     expect(vi.mocked(getHdbResalePrices)).toHaveBeenCalledWith({ town: "Bedok", flatType: "4 ROOM", limit: 1 });
     expect(vi.mocked(getBoaArchitectureFirms)).toHaveBeenCalledWith({ limit: 1 });
     expect(vi.mocked(getForecast2Hr)).toHaveBeenCalledWith("Tampines");
-    expect(vi.mocked(getGovFeedItems)).toHaveBeenCalledWith({ feedId: "mpa_press_releases", limit: 1 });
+    expect(vi.mocked(getGovFeedItems)).toHaveBeenCalledWith({ feedId: "weather_2hr_forecast", limit: 1 });
   });
 
   it("reports mixed credential sources when env and keystore are both present", () => {

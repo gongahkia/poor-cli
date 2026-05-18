@@ -399,7 +399,7 @@ export const LIVE_API_SURFACE: readonly LiveSurfaceDefinition[] = [
     authRequired: false,
     envVars: [],
     keystoreKeys: [],
-    productionUrl: "https://www.mpa.gov.sg/feeds/press-releases",
+    productionUrl: "https://www.weather.gov.sg/files/rss/rss2HrForecast.xml",
     probeMode: "runtime_client",
     releaseBlocking: true,
     representativeTool: "sg_gov_feed_items",
@@ -425,7 +425,7 @@ export const LIVE_API_SURFACE: readonly LiveSurfaceDefinition[] = [
       releaseBlocking: true,
       tool: "sg_gov_feed_items",
       arguments: {
-        feedId: "mpa_press_releases",
+        feedId: "weather_2hr_forecast",
         limit: 1,
         format: "json",
       },
