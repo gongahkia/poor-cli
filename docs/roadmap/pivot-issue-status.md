@@ -21,6 +21,24 @@ Parent issue: `#97`.
 
 Roadmap status: child work is complete, the README points builders to the primary corp-services CDD workflow, and the roadmap index links both the primary CDD lane and secondary workflow lane, so `#97` can close.
 
+## Workspace Platform And Dude Cloud Foundations
+
+Parent issue: `#98`.
+
+| Child | Repo-side status | External follow-up |
+| --- | --- | --- |
+| `#43` Workspace accounts, multi-seat isolation, and RBAC | Closed. | None. |
+| `#44` Google/Microsoft SSO and 2FA posture | Closed. | None. |
+| `#45` Persist dossiers to workspace folders | Closed. | None. |
+| `#46` Signed export manifests for PDF, CSV, and JSON dossiers | Closed. | None. |
+| `#47` Audit log with actor, dataset version, and content hash | Closed. | None. |
+| `#48` Workspace-backed watchlists and alert rules | Closed. | None. |
+| `#49` Workspace-backed 200-row bulk CSV diligence | Closed. | None. |
+| `#50` Dude Cloud hosted-tier entitlements and billing boundaries | Closed. | None. |
+| `#51` Dude Cloud deployment and security architecture | Closed. | None. |
+
+Roadmap status: the platform-foundation child issues are complete and the product, hosted-security, SOC 2, MAS, export-manifest, and workspace docs now distinguish implemented repo primitives from remaining hosted operating evidence, so `#98` can close.
+
 ## OSS Distribution And Governance
 
 Parent issue: `#100`.

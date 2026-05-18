@@ -141,7 +141,7 @@ Do not accept these clauses without legal review and confirmation that the hoste
 ## Gaps
 
 - MAS Notice 658 source text needs manual primary-source validation because automated access returned maintenance.
-- Dude does not yet have hosted workspace/RBAC, immutable audit logs, signed export manifests, or approved subprocessor evidence.
+- Dude has repo-level workspace/RBAC, immutable audit-log, signed export-manifest, and watchlist primitives, but not hosted production evidence, approved subprocessor evidence, or FI-specific control attestations.
 - No final data residency, backup, RTO/RPO, or SLA commitment exists.
 - No SOC 2 readiness review or audit engagement exists.
 - No FI-adjacent customer contract has been reviewed against these controls.

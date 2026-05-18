@@ -12,7 +12,7 @@ Vendor onboarding helps an operations, finance, or DPO team decide what public e
 2. Resolve the entity through ACRA before running any sector module.
 3. Run sector modules only when justified by the service category or official registry evidence.
 4. Produce a vendor review packet with evidence, freshness, gaps, limits, and next checks.
-5. Attach the packet to the procurement or vendor-management record outside Dude until workspace persistence is implemented.
+5. Attach the packet to the procurement or vendor-management record, or save it to the workspace dossier folder when that workflow is enabled.
 
 ### Required Tools And Data Sources
 
@@ -28,7 +28,7 @@ Vendor onboarding helps an operations, finance, or DPO team decide what public e
 | Official public advisories and alerts | `sg_gov_feed_items` |
 | PDPA vendor checklist | Future checklist/report work tracked in [#56](https://github.com/gongahkia/dude/issues/56) |
 | Adverse-media lite | Future bounded public-feed integration tracked in [#54](https://github.com/gongahkia/dude/issues/54) |
-| Watchlists and change alerts | Future workspace alerting tracked in [#48](https://github.com/gongahkia/dude/issues/48) |
+| Watchlists and change alerts | Workspace watchlists and manual alert checks documented in [watchlist-alerts.md](../watchlist-alerts.md) |
 
 ### Non-Goals
 
@@ -47,7 +47,7 @@ Procurement intelligence helps a team monitor public tender and award signals ar
 2. Search GeBIZ and relevant official public feeds.
 3. Normalize matches into records with source URL, publication date, award value where available, and freshness.
 4. Mark unmatched or ambiguous entity names as review gaps.
-5. Export or hand off records to the team's CRM, procurement tracker, or workspace folder once persistence exists.
+5. Export or hand off records to the team's CRM, procurement tracker, or workspace dossier folder.
 
 ### Required Tools And Data Sources
 
@@ -57,7 +57,7 @@ Procurement intelligence helps a team monitor public tender and award signals ar
 | Entity identity checks | `sg_acra_entities`, `sg_business_dossier` |
 | Official RSS and circular monitoring | `sg_gov_feed_items` |
 | Sector classification | SSIC evidence from ACRA-backed records plus analyst-selected sector hints |
-| Bulk monitoring | Future workspace-backed bulk flow tracked in [#49](https://github.com/gongahkia/dude/issues/49) |
+| Bulk monitoring | Workspace-backed 200-row bulk flow with partial-failure and retry metadata |
 | Shallow relationship graph | Future relationship-graph work tracked in [#55](https://github.com/gongahkia/dude/issues/55) |
 | Public benchmark data | Future benchmark set tracked in [#58](https://github.com/gongahkia/dude/issues/58) |
 

@@ -42,16 +42,12 @@ Vendor onboarding and procurement intelligence are documented as secondary lanes
 | Cross-registry dossier | `sg_business_dossier` | Returns evidence, records, confidence, gaps, provenance, freshness, and limits. |
 | Sector-scoped checks | BCA, BOA, CEA, HSA, HLB, GeBIZ tools plus sector hints | Modules should be selected from official registry or analyst context, not guessed from marketing copy. |
 | Analyst memo | REST gateway analyst memo endpoint | Memo generation is secondary to the bounded dossier and must retain source gaps and limits. |
-| Exports | Web JSON, CSV, and PDF export helpers | Exports keep dossier fields but still need signed manifests before regulated buyer workflows. |
-| Bulk intake | Web bulk diligence flow | Useful for corp-services backlogs, but workspace-backed persistence and audit logs remain roadmap work. |
+| Exports | Web JSON, CSV, and PDF export helpers with signed manifests | Exports keep dossier fields and include local integrity manifests for downstream checks. |
+| Bulk intake | Workspace-backed 200-row bulk diligence flow | Useful for corp-services backlogs; partial failures, retries, manifests, and audit events remain visible to analysts. |
 
-## Gaps To Close Before Hosted CDD Operations
+## Remaining Hosted CDD Operations Gaps
 
-- Workspace accounts, RBAC, and cross-workspace isolation.
-- Persisted dossier folders for client files.
-- Immutable audit events with actor, source version, and content hash.
-- Signed export manifests for downstream verification.
-- Watchlists and alert rules for status changes after onboarding.
+- Production identity-provider configuration, admin access reviews, support-access approvals, and break-glass runbooks.
 - Hosted privacy, DPA, retention, and incident-response documents.
 - Hosted PDPA notification, DPO, privacy, retention, and DPIA readiness controls in [privacy-dpo-readiness.md](../privacy-dpo-readiness.md).
 - Hosted customer onboarding should route buyers through [hosted-onboarding.md](./hosted-onboarding.md), including the DPA in [data-processing-agreement-template.md](../data-processing-agreement-template.md).

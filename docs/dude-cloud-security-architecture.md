@@ -60,7 +60,7 @@ The required production tenancy model is workspace-scoped logical isolation:
 - support access uses time-boxed impersonation or break-glass approval and always emits immutable audit events;
 - workspace deletion triggers product deletion, export revocation where possible, and backup expiry according to the customer retention policy.
 
-Do not sell enterprise hosted work until issues for accounts/RBAC, SSO/2FA, persisted dossiers, and immutable audit logs are complete and tested.
+Do not sell enterprise hosted work until production identity configuration, admin access reviews, support-access approval, break-glass evidence, backup/restore evidence, and source-licensing gates are complete and tested.
 
 ## Data Classes
 

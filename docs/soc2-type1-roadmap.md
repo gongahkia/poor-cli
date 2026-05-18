@@ -34,7 +34,7 @@ Observed on 2026-05-17:
 | Governance | Maintainer governance, release guide, ownership matrix, security reporting, DPA, PDPA/DPO pack. | No hosted operating entity, control owner register, formal risk committee, or policy approval cadence. | Assign executive owner, security owner, DPO/privacy owner, change owner, vendor owner, and incident owner. |
 | Risk assessment | Product risk docs, public-data limits, commercial data-use blockers, source warnings. | No formal hosted risk register or recurring review evidence. | Create risk register with quarterly review and risk acceptance records. |
 | Asset inventory | Repo has deployment topology and API family ownership. | No hosted asset inventory for cloud resources, domains, databases, queues, logs, backups, and admin consoles. | Create asset inventory with owner, environment, data class, region, backup, and monitoring fields. |
-| Access control | Planned workspace/RBAC issues, deployment docs, server-side secrets guidance. | Workspace accounts/RBAC, SSO/2FA, admin access reviews, support access approvals, and break-glass logging are not implemented. | Implement workspace RBAC or scope audit after the platform foundation lands; enforce MFA for production/admin access. |
+| Access control | Workspace/RBAC implementation contract, SSO/2FA policy docs, deployment docs, server-side secrets guidance. | Hosted admin access reviews, support access approvals, break-glass evidence, and production IdP configuration are not yet evidenced. | Configure production identity controls, enforce MFA for production/admin access, and retain access-review and break-glass audit evidence. |
 | Change management | Release guide, verify pipeline, release preflight, changelog discipline. | No formal change tickets, approval evidence, emergency-change policy, or production deployment audit trail. | Use GitHub issues/PRs as change records; document approval and rollback evidence. |
 | Availability/BCP | Deployment guide, health checks, smoke tests, incident playbook. | No RTO/RPO, backup restore evidence, failover test, uptime page, or customer SLA definition. | Define RTO/RPO, run backup restore test, document uptime/incident metrics. |
 | Incident response | Incident playbook and security reporting route. | No hosted customer notification runbook, tabletop evidence, severity matrix, or contact tree. | Run tabletop and record actions; align breach notices with DPA and PDPA/DPO pack. |
@@ -122,7 +122,7 @@ Suggested index:
 ## Gaps
 
 - No hosted production system boundary is final.
-- Workspace/RBAC, persistence, audit logs, SSO/2FA, and watchlists are still roadmap issues.
+- Workspace/RBAC, persistence, audit logs, SSO/2FA policy, signed manifests, and watchlist primitives exist in the repo, but hosted production evidence is still missing.
 - No auditor has been selected and no Type I audit is scheduled.
 - Costs are estimates and require current quotes.
 
