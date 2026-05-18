@@ -25,6 +25,18 @@ Security reports are in scope when they affect:
 - export artifacts that may leak source data, secrets, or unsupported personal data
 - contributor, CI, or release workflows
 
+## Production Dependency Audit Policy
+
+CI and release preflight run:
+
+```bash
+npm run security:audit:prod
+```
+
+The gate evaluates `npm audit --omit=dev` so development-only advisories do not block runtime releases. High and critical production findings fail the gate unless they are fixed or explicitly allowlisted with rationale. Moderate findings require a tracking reference or allowlist entry.
+
+Allowlist entries live in `config/npm-audit-allowlist.json`. Each entry must include `package`, `severity`, `advisoryId` or `title`, `rationale`, and `tracking`. Empty or undocumented allowlist entries fail the gate.
+
 ## Out Of Scope
 
 - General legal, tax, investment, credit, or licensed-advisor questions.

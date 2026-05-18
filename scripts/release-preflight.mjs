@@ -20,6 +20,7 @@ const env = {
 };
 
 run("verify", ["run", "verify"], env);
+run("production dependency audit", ["run", "security:audit:prod"], env);
 run(
   "benchmark snapshot",
   ["run", "benchmarks:snapshot", "--", "--output", "artifacts/benchmarks/latest.json", "--history-dir", "artifacts/benchmarks/history"],

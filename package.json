@@ -20,6 +20,7 @@
     "diagnostics": "node ./scripts/dev-diagnostics.mjs",
     "registry:metadata:check": "node ./scripts/check-registry-metadata.mjs",
     "housing:rules:check": "node ./scripts/check-housing-rules-freshness.mjs",
+    "security:audit:prod": "node ./scripts/check-production-audit.mjs",
     "deployment:web:check": "node ./scripts/check-web-deployment.mjs",
     "browser-extension:check": "node ./scripts/check-browser-extension-prototype.mjs",
     "widget:check": "node ./scripts/check-embeddable-widget.mjs",

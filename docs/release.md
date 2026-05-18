@@ -41,6 +41,14 @@ npm run release:preflight
 
 `release:preflight` executes verify, fresh benchmark/ecosystem/KPI artifact generation, and release evidence checks in one pass.
 
+The release preflight and CI both run the production dependency audit gate:
+
+```bash
+npm run security:audit:prod
+```
+
+The gate runs `npm audit --omit=dev`. High and critical production findings fail unless they are fixed or explicitly allowlisted with a rationale. Moderate findings also require a tracking or allowlist entry so they do not disappear into release noise. Allowlist entries live in `config/npm-audit-allowlist.json` and must include the package, severity, advisory ID or title, rationale, and tracking reference.
+
 ### Governance Checklist
 
 Before tagging, run the explicit governance policy check (this is also part of `npm run verify`):
