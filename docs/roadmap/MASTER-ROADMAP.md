@@ -18,6 +18,7 @@ Primary goal: move from credible infrastructure to default Singapore MCP depende
 - 109 `sg_*` tools across 39 catalog families.
 - `sg_query` routes 21 families.
 - The Singapore tool surface is registered through the stable `sg` country pack while preserving existing `sg_*` contracts.
+- Country-pack expansion is documented through the `country-pack/v1` envelope, ASEAN skeleton fixtures for Malaysia, the Philippines, Indonesia, and Thailand, plus Vietnam feasibility and ASEAN paid-data licensing notes.
 - Registry, governance, beta, and go-to-market roadmap items now separate repo-side readiness from external acceptance, outreach, and participant-recruitment blockers.
 
 ## Phase Timeline

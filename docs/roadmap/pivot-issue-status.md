@@ -54,6 +54,23 @@ Parent issue: `#99`.
 
 Roadmap status: the external-diligence adapters, official-feed adverse-media lane, shallow relationship graph, risk rules pack, and diligence benchmark set are documented and referenced from the product workflow docs, so `#99` can close.
 
+## Country-Pack Architecture And ASEAN Expansion
+
+Parent issue: `#101`.
+
+| Child | Repo-side status | External follow-up |
+| --- | --- | --- |
+| `#73` Refactor server into country-pack architecture | Closed. | None. |
+| `#74` Define country-pack envelope contract and contribution guide | Closed. | None. |
+| `#75` Malaysia country-pack skeleton | Closed. | None. |
+| `#76` Philippines country-pack skeleton | Closed. | None. |
+| `#77` Indonesia country-pack skeleton | Closed. | None. |
+| `#78` Thailand public-only country-pack skeleton | Closed. | None. |
+| `#79` Vietnam feasibility and community-contribution path | Closed. | None. |
+| `#95` ASEAN paid-data licensing assumptions | Closed. | None. |
+
+Roadmap status: the country-pack runtime boundary, contribution envelope, ASEAN skeleton fixtures, Vietnam feasibility note, and paid-data licensing assumptions are complete and linked from the roadmap and contribution docs, so `#101` can close.
+
 ## OSS Distribution And Governance
 
 Parent issue: `#100`.
