@@ -67,4 +67,31 @@ describe("workspace API access control", () => {
       productionFailClosed: false,
     });
   });
+
+  it("limits debug log access to authenticated admins in hosted mode", () => {
+    expect(() => parseWorkspaceApiSession({}, { authRequired: true })).toThrow(WorkspaceApiAccessError);
+
+    const viewer = parseWorkspaceApiSession({
+      "x-dude-workspace-id": "workspace-a",
+      "x-dude-actor-id": "viewer-a",
+      "x-dude-role": "viewer",
+      "x-dude-2fa-verified": "true",
+    }, { authRequired: true });
+    const analyst = parseWorkspaceApiSession({
+      "x-dude-workspace-id": "workspace-a",
+      "x-dude-actor-id": "analyst-a",
+      "x-dude-role": "analyst",
+      "x-dude-2fa-verified": "true",
+    }, { authRequired: true });
+    const admin = parseWorkspaceApiSession({
+      "x-dude-workspace-id": "workspace-a",
+      "x-dude-actor-id": "admin-a",
+      "x-dude-role": "admin",
+      "x-dude-2fa-verified": "true",
+    }, { authRequired: true });
+
+    expect(() => assertWorkspaceApiAccess(viewer, "debug:read")).toThrow("viewer cannot perform debug:read");
+    expect(() => assertWorkspaceApiAccess(analyst, "debug:read")).toThrow("analyst cannot perform debug:read");
+    expect(() => assertWorkspaceApiAccess(admin, "debug:read")).not.toThrow();
+  });
 });

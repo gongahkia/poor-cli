@@ -14,7 +14,7 @@ import {
   recordGatewayRequest,
   recordUpstreamFailures,
 } from "./gateway/metrics.js";
-import { initDebugLogStore } from "./gateway/debug-log-store.js";
+import { buildDisabledDebugLogSnapshot, initDebugLogStore } from "./gateway/debug-log-store.js";
 import { getGatewayHealthPayload } from "./gateway/readiness.js";
 import {
   buildRateLimitResponse,
@@ -75,6 +75,8 @@ const MAX_PEOPLE_DISCOVERY_ENTITY_LENGTH = 128;
 const MAX_MEMO_IDENTIFIER_LENGTH = 128;
 const UEN_PATTERN = /^(?:\d{8,9}[a-z]|[a-z]\d{2}[a-z]{2}\d{4}[a-z])$/i;
 const WORKSPACE_AUTH_REQUIRED = workspaceAuthPolicy.authRequired;
+const DEBUG_LOGS_PRODUCTION_DISABLED_MESSAGE =
+  "Debug log access is disabled in production unless DUDE_WORKSPACE_AUTH_REQUIRED=true and the request has admin/debug permissions.";
 
 class RequestBodyTooLargeError extends Error {
   readonly statusCode = 413;
@@ -422,7 +424,10 @@ const server = createServer(async (req, res) => {
     }
     const limitParam = Number(url.searchParams.get("limit") ?? "");
     const level = url.searchParams.get("level")?.trim().toLowerCase();
-    const snapshot = debugLogStore.getSnapshot(Number.isFinite(limitParam) && limitParam > 0 ? limitParam : undefined);
+    const rawSnapshot = debugLogStore.getSnapshot(Number.isFinite(limitParam) && limitParam > 0 ? limitParam : undefined);
+    const snapshot = workspaceAuthPolicy.production && !workspaceAuthPolicy.explicitWorkspaceAuth
+      ? buildDisabledDebugLogSnapshot(DEBUG_LOGS_PRODUCTION_DISABLED_MESSAGE, rawSnapshot)
+      : rawSnapshot;
     const entries = level === undefined || level === ""
       ? snapshot.entries
       : snapshot.entries.filter((entry) => entry.level === level);

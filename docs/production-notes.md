@@ -195,7 +195,7 @@ The Dude web app expects secrets only on the REST gateway process. Do not expose
 Operational readiness endpoints:
 
 - `GET /api/v1/health` returns gateway status, enabled tool count, ACRA route availability, and whether TinyFish Search is configured.
-- `GET /api/v1/debug/logs` returns recent local backend log entries only when debug logging is enabled.
+- `GET /api/v1/debug/logs` returns recent local backend log entries only when debug logging is enabled. In production, the endpoint returns entries only when `DUDE_WORKSPACE_AUTH_REQUIRED=true` and the request has admin/debug permissions; otherwise it returns an access denial or a disabled debug-log snapshot.
 - `GET /api/v1/dude/search-suggestions?q=<term>` returns bounded ACRA suggestions for the web search box.
 - `GET /api/v1/dude/web-presence?query=<entity>` returns TinyFish web discovery results when `TINYFISH_API_KEY` is configured. These results are not registry evidence.
 - `POST /api/v1/dude/memo` returns a grounded analyst memo or a structured unavailable/error state. It accepts a dossier envelope or an identifier to resolve through `sg_business_dossier`.

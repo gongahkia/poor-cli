@@ -4,6 +4,7 @@ import { resolveStatePath, subscribeLogEntries, type LogEntry } from "@dude/shar
 
 export type DebugLogSnapshot = {
   readonly enabled: boolean;
+  readonly message: string;
   readonly observedAt: string;
   readonly entries: readonly LogEntry[];
   readonly totalEntries: number;
@@ -24,8 +25,12 @@ const MAX_RESPONSE_ENTRIES = 500;
 const DEBUG_LOG_LIMITS = [
   "Debug logs are redacted by key name before storage, but may still contain operational metadata.",
   "The endpoint is enabled only when DUDE_DEBUG_LOGS=1, SG_APIS_DEBUG_LOGS=1, or SG_APIS_LOG_LEVEL=debug.",
-  "Use this local debugging surface for development and incident triage; do not expose it on an unauthenticated public deployment.",
+  "In production, /api/v1/debug/logs requires explicit workspace auth and an admin/debug-capable session.",
 ] as const;
+const DEBUG_LOG_DISABLED_MESSAGE =
+  "Debug log storage is disabled. Set DUDE_DEBUG_LOGS=1, SG_APIS_DEBUG_LOGS=1, or SG_APIS_LOG_LEVEL=debug to collect local redacted gateway logs.";
+const DEBUG_LOG_ENABLED_MESSAGE =
+  "Debug log storage is enabled. Entries are redacted by key name, but may still contain operational metadata.";
 
 let activeStore: DebugLogStore | null = null;
 
@@ -96,6 +101,20 @@ export const readDebugLogEntries = (
   };
 };
 
+export const buildDisabledDebugLogSnapshot = (
+  message = DEBUG_LOG_DISABLED_MESSAGE,
+  source?: DebugLogSnapshot,
+): DebugLogSnapshot => ({
+  enabled: false,
+  message,
+  observedAt: new Date().toISOString(),
+  entries: [],
+  totalEntries: 0,
+  maxEntries: source?.maxEntries ?? MAX_RESPONSE_ENTRIES,
+  ...(source?.logPath === undefined ? {} : { logPath: source.logPath }),
+  limits: source?.limits ?? DEBUG_LOG_LIMITS,
+});
+
 const appendDebugEntry = (logPath: string, entry: LogEntry): void => {
   try {
     mkdirSync(dirname(logPath), { recursive: true });
@@ -114,14 +133,7 @@ export const initDebugLogStore = (): DebugLogStore => {
   if (!enabled) {
     activeStore = {
       enabled: false,
-      getSnapshot: () => ({
-        enabled: false,
-        observedAt: new Date().toISOString(),
-        entries: [],
-        totalEntries: 0,
-        maxEntries: MAX_RESPONSE_ENTRIES,
-        limits: DEBUG_LOG_LIMITS,
-      }),
+      getSnapshot: () => buildDisabledDebugLogSnapshot(),
     };
     return activeStore;
   }
@@ -137,6 +149,7 @@ export const initDebugLogStore = (): DebugLogStore => {
       const { entries, totalEntries } = readDebugLogEntries(logPath, normalizeLimit(limit));
       return {
         enabled: true,
+        message: DEBUG_LOG_ENABLED_MESSAGE,
         observedAt: new Date().toISOString(),
         entries,
         totalEntries,

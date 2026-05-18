@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import {
+  buildDisabledDebugLogSnapshot,
   isDebugLogFlagEnabled,
   readDebugLogEntries,
   resolveDebugLogPath,
@@ -45,5 +46,27 @@ describe("debug log store helpers", () => {
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
+  });
+
+  it("builds an explicit disabled response without exposing stored entries", () => {
+    const snapshot = buildDisabledDebugLogSnapshot(
+      "Debug log access is disabled for this production mode.",
+      {
+        enabled: true,
+        message: "Debug log storage is enabled.",
+        observedAt: "2026-05-18T00:00:00.000Z",
+        entries: [
+          { ts: "2026-05-18T00:00:00.000Z", level: "info", module: "gateway", msg: "stored" },
+        ],
+        totalEntries: 1,
+        maxEntries: 500,
+        limits: ["debug limits"],
+      },
+    );
+
+    expect(snapshot.enabled).toBe(false);
+    expect(snapshot.message).toContain("disabled");
+    expect(snapshot.entries).toEqual([]);
+    expect(snapshot.totalEntries).toBe(0);
   });
 });
