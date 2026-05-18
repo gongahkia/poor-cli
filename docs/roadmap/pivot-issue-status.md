@@ -39,6 +39,21 @@ Parent issue: `#98`.
 
 Roadmap status: the platform-foundation child issues are complete and the product, hosted-security, SOC 2, MAS, export-manifest, and workspace docs now distinguish implemented repo primitives from remaining hosted operating evidence, so `#98` can close.
 
+## Diligence Depth Integrations And SG Risk Rules
+
+Parent issue: `#99`.
+
+| Child | Repo-side status | External follow-up |
+| --- | --- | --- |
+| `#52` OpenSanctions screening tool | Closed. | None. |
+| `#53` OpenCorporates entity cross-links | Closed. | None. |
+| `#54` Adverse-media lite from bounded public feeds | Closed. | None. |
+| `#55` Shallow UBO and corporate relationship graph | Closed. | None. |
+| `#57` Open YAML SG risk rules pack | Closed. | None. |
+| `#58` Benchmark set for 50 diligence edge cases | Closed. | None. |
+
+Roadmap status: the external-diligence adapters, official-feed adverse-media lane, shallow relationship graph, risk rules pack, and diligence benchmark set are documented and referenced from the product workflow docs, so `#99` can close.
+
 ## OSS Distribution And Governance
 
 Parent issue: `#100`.

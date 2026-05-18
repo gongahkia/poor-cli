@@ -16,7 +16,7 @@ Vendor onboarding helps an operations, finance, or DPO team decide what public e
 
 ### Required Tools And Data Sources
 
-| Need | Current or planned surface |
+| Need | Current surface |
 | --- | --- |
 | Corporate identity | `sg_acra_entities`, `sg_business_dossier` |
 | Public procurement history | `sg_gebiz_tenders` |
@@ -26,8 +26,8 @@ Vendor onboarding helps an operations, finance, or DPO team decide what public e
 | Healthcare, pharmacy, import, wholesale, or manufacturing licences | `sg_hsa_*` tools |
 | Food establishment checks | `sg_sfa_food_establishments` |
 | Official public advisories and alerts | `sg_gov_feed_items` |
-| PDPA vendor checklist | Future checklist/report work tracked in [#56](https://github.com/gongahkia/dude/issues/56) |
-| Adverse-media lite | Future bounded public-feed integration tracked in [#54](https://github.com/gongahkia/dude/issues/54) |
+| PDPA vendor checklist | Public-data vendor checklist and report template in [pdpa-vendor-diligence-checklist.md](../pdpa-vendor-diligence-checklist.md) |
+| Adverse-media lite | `sg_adverse_media_lite` bounded to official public feeds |
 | Watchlists and change alerts | Workspace watchlists and manual alert checks documented in [watchlist-alerts.md](../watchlist-alerts.md) |
 
 ### Non-Goals
@@ -51,15 +51,15 @@ Procurement intelligence helps a team monitor public tender and award signals ar
 
 ### Required Tools And Data Sources
 
-| Need | Current or planned surface |
+| Need | Current surface |
 | --- | --- |
 | Tender and award discovery | `sg_gebiz_tenders` |
 | Entity identity checks | `sg_acra_entities`, `sg_business_dossier` |
 | Official RSS and circular monitoring | `sg_gov_feed_items` |
 | Sector classification | SSIC evidence from ACRA-backed records plus analyst-selected sector hints |
 | Bulk monitoring | Workspace-backed 200-row bulk flow with partial-failure and retry metadata |
-| Shallow relationship graph | Future relationship-graph work tracked in [#55](https://github.com/gongahkia/dude/issues/55) |
-| Public benchmark data | Future benchmark set tracked in [#58](https://github.com/gongahkia/dude/issues/58) |
+| Shallow relationship graph | `sg_relationship_graph` for supplied dossier records without ownership or control claims |
+| Public benchmark data | 50-case diligence benchmark set documented in [diligence-benchmarks.md](../diligence-benchmarks.md) |
 
 ### Non-Goals
 
