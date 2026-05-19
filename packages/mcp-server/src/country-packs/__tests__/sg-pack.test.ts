@@ -19,10 +19,15 @@ describe("Singapore country pack", () => {
   it("keeps all registered tools in the sg_* namespace", () => {
     const names = SINGAPORE_COUNTRY_PACK.toolDefinitions.map((definition) => definition.name);
 
-    expect(names).toHaveLength(109);
+    expect(names).toHaveLength(26);
     expect(names.every((name) => name.startsWith("sg_"))).toBe(true);
     expect(names).toContain("sg_business_dossier");
     expect(names).toContain("sg_query");
+    expect(names).toContain("sg_sanctions_screen");
+    expect(names).not.toContain("sg_property_brief");
+    expect(names).not.toContain("sg_macro_brief");
+    expect(names).not.toContain("sg_transport_brief");
+    expect(names).not.toContain("sg_datagov_search");
   });
 
   it("feeds the public tool-set registration without changing the hydrated surface", () => {
@@ -34,7 +39,7 @@ describe("Singapore country pack", () => {
 
   it("documents auth, resources, and governance metadata for new pack authors", () => {
     expect(SINGAPORE_COUNTRY_PACK.auth.envVars).toEqual(
-      expect.arrayContaining(["SG_API_ONEMAP_EMAIL", "SG_API_URA_KEY", "SG_API_LTA_KEY"]),
+      expect.arrayContaining(["OPENSANCTIONS_API_KEY", "OPENCORPORATES_API_TOKEN"]),
     );
     expect(SINGAPORE_COUNTRY_PACK.resources.map((resource) => resource.uri)).toEqual(
       expect.arrayContaining(["sg://apis", "sg://tools", "sg://runtime"]),

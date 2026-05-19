@@ -416,6 +416,6 @@ export class HttpAuthController {
 export const derivePublicHttpToolsets = (
   fullToolsets: ReadonlySet<ToolSet>,
 ): ReadonlySet<ToolSet> => {
-  const visible = ["public", "briefs", "query", "health", "diligence", "property"] as const satisfies readonly ToolSet[];
+  const visible = ["public", "briefs", "query", "health", "diligence"] as const satisfies readonly ToolSet[];
   return new Set(visible.filter((toolset) => fullToolsets.has(toolset)));
 };

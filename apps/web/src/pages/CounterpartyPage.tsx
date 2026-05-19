@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { BookmarkCheck, BookmarkPlus, Braces, Copy, FileDown, Loader2, Table2 } from "lucide-react";
+import { BookmarkCheck, BookmarkPlus, Braces, Copy, Loader2, Table2 } from "lucide-react";
 
 import type { AnalystMemoState } from "@/components/dossier/AnalystMemoSection";
 import { DossierHeaderLogo } from "@/components/dossier/DossierHeaderLogo";
@@ -38,6 +38,8 @@ import { exportPdpaReportPdf } from "@/lib/export/pdpa";
 import { persistAuditEvent, persistDossierRecord } from "@/lib/workspace-store";
 import type { AnalystMemoResponse } from "@/types/analyst-memo";
 import type { BusinessDossier } from "@/types/dossier";
+import { exportDossierDocx } from "@/lib/export/docx";
+import type { ReportExportFormat, ReportTemplate } from "@/lib/report-template";
 
 type DossierState =
   | { status: "loading" }
@@ -440,29 +442,45 @@ function DossierSuccess({
     });
   }, [dossier, identifier, memoState, webPresenceState]);
 
-  const handleExportPdf = async () => {
+  const handleExportReport = async (reportTemplate: ReportTemplate, format: ReportExportFormat) => {
     setIsExporting(true);
     setExportError(null);
     try {
       const today = new Date().toISOString().slice(0, 10);
-      await exportDossierPdf(dossier, {
-        filename: `dude-diligence-${sanitizeFilenamePart(identifier)}-${today}.pdf`,
+      const baseOptions = {
         ...(memoState.status === "ready" ? { analystMemo: memoState.memo } : {}),
+        reportTemplate,
         ...(webPresenceState.status === "success" ? { webPresence: webPresenceState.presence } : {}),
-      });
+      };
+      if (format === "pdf") {
+        await exportDossierPdf(dossier, {
+          ...baseOptions,
+          filename: `dude-cdd-report-${sanitizeFilenamePart(identifier)}-${today}.pdf`,
+        });
+      } else {
+        await exportDossierDocx(dossier, {
+          ...baseOptions,
+          filename: `dude-cdd-report-${sanitizeFilenamePart(identifier)}-${today}.docx`,
+        });
+      }
       persistAuditEvent({
         eventType: "export",
         permission: "export:run",
-        input: { identifier, format: "pdf" },
-        output: { filename: `dude-diligence-${sanitizeFilenamePart(identifier)}-${today}.pdf` },
+        input: {
+          format,
+          identifier,
+          reportSections: reportTemplate.sections,
+          writingStyle: reportTemplate.writingStyle,
+        },
+        output: { filename: `dude-cdd-report-${sanitizeFilenamePart(identifier)}-${today}.${format}` },
         provenance: dossier.provenance,
         freshness: dossier.freshness,
       });
-      notify({ title: "PDF export started", description: dossier.title, tone: "success" });
+      notify({ title: `${format.toUpperCase()} report export started`, description: dossier.title, tone: "success" });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "PDF export failed.";
+      const message = error instanceof Error ? error.message : "Report export failed.";
       setExportError(message);
-      notify({ title: "PDF export failed", description: message, tone: "error" });
+      notify({ title: "Report export failed", description: message, tone: "error" });
     } finally {
       setIsExporting(false);
     }
@@ -645,26 +663,8 @@ function DossierSuccess({
           ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <DossierActionButton
-            disabled={isExporting}
-            label={isExporting ? "Exporting PDF" : "Export PDF"}
-            onClick={handleExportPdf}
-            variant="default"
-          >
-            {isExporting ? (
-              <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin" />
-            ) : (
-              <FileDown aria-hidden="true" className="h-5 w-5" />
-            )}
-          </DossierActionButton>
           <DossierActionButton label="Copy link" onClick={handleCopyLink}>
             <Copy aria-hidden="true" className="h-5 w-5" />
-          </DossierActionButton>
-          <DossierActionButton label="Export CSV" onClick={() => void handleExportCsv()}>
-            <Table2 aria-hidden="true" className="h-5 w-5" />
-          </DossierActionButton>
-          <DossierActionButton label="Export JSON" onClick={() => void handleExportJson()}>
-            <Braces aria-hidden="true" className="h-5 w-5" />
           </DossierActionButton>
           <DossierActionButton
             label={shortlisted ? "Remove saved" : "Save dossier"}
@@ -681,10 +681,29 @@ function DossierSuccess({
           ) : copyStatus === "error" ? (
             <p className="text-sm text-destructive">Copy failed</p>
           ) : null}
+          {isExporting ? (
+            <p className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+              Exporting report
+            </p>
+          ) : null}
           {exportError !== null ? (
             <p className="text-sm text-destructive">{exportError}</p>
           ) : null}
         </div>
+        <details className="w-fit rounded-md border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
+          <summary className="cursor-pointer font-medium text-foreground">Advanced data exports</summary>
+          <div className="mt-3 flex gap-2">
+            <Button onClick={() => void handleExportCsv()} size="sm" type="button" variant="outline">
+              <Table2 aria-hidden="true" className="mr-2 h-4 w-4" />
+              CSV
+            </Button>
+            <Button onClick={() => void handleExportJson()} size="sm" type="button" variant="outline">
+              <Braces aria-hidden="true" className="mr-2 h-4 w-4" />
+              JSON
+            </Button>
+          </div>
+        </details>
       </header>
 
       <DossierFindingsTabs
@@ -692,6 +711,7 @@ function DossierSuccess({
         isPdpaExporting={isPdpaExporting}
         memoState={memoState}
         onExportPdpaReport={(reviewedItemIds) => void handleExportPdpaReport(reviewedItemIds)}
+        onExportReport={(template, format) => void handleExportReport(template, format)}
         onModuleFollowUp={handleModuleFollowUp}
         peopleDiscoveryState={peopleDiscoveryState}
         rerunningModule={rerunningModule}

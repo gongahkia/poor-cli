@@ -325,7 +325,7 @@ export const classifyIntent = (query: string): IntentResult => {
 
   if (
     BUSINESS_DILIGENCE_PATTERN.test(lower)
-    && /acra|company|entity|uen|salesperson|estate\s*agent|builder|contractor|bca|cea|gebiz|architect|pharmacy|health\s+product|hotel/i.test(lower)
+    && /business\s*diligence|business\s*dossier|company\s*dossier|counterparty\s*diligence|acra|company|entity|uen|salesperson|estate\s*agent|builder|contractor|bca|cea|gebiz|architect|pharmacy|health\s+product|hotel/i.test(lower)
   ) {
     if (!hasExpandedBusinessScope) {
       return {

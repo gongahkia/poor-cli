@@ -250,6 +250,13 @@ export type {
   BoaNormalizedArchitectureFirmRecord as BoaNormalizedArchitectureFirmRecordType,
 } from "./types/boa.js";
 export type {
+  ReportDocumentModel,
+  ReportExportFormat,
+  ReportSectionId,
+  ReportTemplate,
+  ReportWritingStyle,
+} from "./types/report.js";
+export type {
   CivicDirectoryRecord as CivicDirectoryRecordType,
   EcdaChildcareCentreRecord as EcdaChildcareCentreRecordType,
   EcdaVacancyStatus as EcdaVacancyStatusType,

@@ -188,9 +188,9 @@ const main = async () => {
     const opsTaxonomy = await readJsonResource<OpsTaxonomy>(client, "sg://ops-taxonomy");
     const jobs: readonly WorkerJob[] = [
       { id: "job-1", prompt: "Architecture firm diligence for DP Architects" },
-      { id: "job-2", prompt: "Find a social service office near me" },
+      { id: "job-2", prompt: "Run business diligence" },
       { id: "job-3", prompt: "Compare GDP and CPI in Singapore" },
-      { id: "job-4", prompt: "Find datasets about a definitely unknown topic" },
+      { id: "job-4", prompt: "Business dossier for ABC CONSTRUCTION PTE LTD" },
     ];
 
     for (const job of jobs) {

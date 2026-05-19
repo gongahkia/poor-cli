@@ -16,8 +16,8 @@ describe("REST gateway toolset filtering", () => {
     }
   });
 
-  it("includes public data tools in default toolsets", () => {
-    const publicTools = ALL_TOOL_DEFINITIONS.filter((t) => t.name === "sg_nea_forecast_2hr");
+  it("includes retained CDD registry tools in default toolsets", () => {
+    const publicTools = ALL_TOOL_DEFINITIONS.filter((t) => t.name === "sg_acra_entities");
     expect(publicTools.length).toBe(1);
     expect(isToolEnabled(publicTools[0]!, publicToolsets)).toBe(true);
   });

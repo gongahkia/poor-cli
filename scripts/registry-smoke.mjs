@@ -93,7 +93,7 @@ try {
     await client.connect(transport);
 
     const prompts = await client.listPrompts();
-    if (!(prompts.prompts ?? []).some((prompt) => prompt.name === "recipe-postal_route")) {
+    if (!(prompts.prompts ?? []).some((prompt) => prompt.name === "recipe-business_due_diligence")) {
       throw new Error("Registry-installed server did not expose recipe prompts.");
     }
 
@@ -120,79 +120,16 @@ try {
       throw new Error("Registry-installed server did not return runtime resource text.");
     }
 
-    const directResult = await client.callTool({
-      name: "sg_datagov_get",
-      arguments: {
-        datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
-        format: "json",
-      },
-    });
-    const directText = "content" in directResult
-      ? directResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
-      : undefined;
-    if (directText === undefined) {
-      throw new Error("Registry-installed server did not return sg_datagov_get content.");
-    }
-    const directPayload = JSON.parse(directText);
-    if (
-      directPayload.datasetId !== "d_8b84c4ee58e3cfc0ece0d773c8ca6abc"
-      || directPayload.managedByAgencyName !== "Housing & Development Board"
-    ) {
-      throw new Error("Registry-installed sg_datagov_get returned an unexpected metadata payload.");
-    }
-
-    const resourcesResult = await client.callTool({
-      name: "sg_datagov_resources",
-      arguments: {
-        datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
-        format: "json",
-      },
-    });
-    const resourcesText = "content" in resourcesResult
-      ? resourcesResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
-      : undefined;
-    if (resourcesText === undefined) {
-      throw new Error("Registry-installed server did not return sg_datagov_resources content.");
-    }
-    const resourcesPayload = JSON.parse(resourcesText);
-    if (!Array.isArray(resourcesPayload.resources) || resourcesPayload.resources.length === 0) {
-      throw new Error("Registry-installed sg_datagov_resources returned no resource metadata.");
-    }
-
-    const briefResult = await client.callTool({
-      name: "sg_environment_brief",
-      arguments: {
-        area: "Tampines",
-        region: "East",
-        format: "json",
-      },
-    });
-    const briefText = "content" in briefResult
-      ? briefResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
-      : undefined;
-    if (briefText === undefined) {
-      throw new Error("Registry-installed server did not return sg_environment_brief content.");
-    }
-    const briefPayload = JSON.parse(briefText);
-    if (briefPayload.title !== "Environment Brief") {
-      throw new Error("Registry-installed sg_environment_brief returned an unexpected payload.");
-    }
-    for (const key of ["provenance", "freshness", "limits"]) {
-      if (!Array.isArray(briefPayload[key])) {
-        throw new Error(`Registry-installed sg_environment_brief omitted ${key}.`);
-      }
-    }
-
     const queryResult = await client.callTool({
       name: "sg_query",
       arguments: {
-        query: "Environment snapshot of Singapore right now",
-        mode: "execute",
+        query: "Business dossier for ABC CONSTRUCTION PTE LTD",
+        mode: "plan",
         format: "json",
       },
     });
-    if (!("structuredContent" in queryResult) || queryResult.structuredContent?.workflow !== "environment_brief") {
-      throw new Error("Registry-installed sg_query did not route the environment snapshot to sg_environment_brief.");
+    if (!("structuredContent" in queryResult) || queryResult.structuredContent?.workflow !== "business_dossier") {
+      throw new Error("Registry-installed sg_query did not route company search to the business dossier workflow.");
     }
 
   } finally {

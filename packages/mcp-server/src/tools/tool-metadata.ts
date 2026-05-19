@@ -22,26 +22,11 @@ const MUTATING_TOOL_NAMES = new Set([
 
 const BRIEF_TOOL_NAMES = new Set([
   "sg_business_dossier",
-  "sg_property_brief",
-  "sg_macro_brief",
-  "sg_transport_brief",
-  "sg_environment_brief",
-  "sg_civic_brief",
-  "sg_transit_ops_brief",
 ]);
 
 const DILIGENCE_PROFILE_TOOL_NAMES = new Set([
   "sg_query",
   "sg_business_dossier",
-]);
-
-const PROPERTY_PROFILE_TOOL_NAMES = new Set([
-  "sg_query",
-  "sg_property_brief",
-  "sg_transport_brief",
-  "sg_environment_brief",
-  "sg_civic_brief",
-  "sg_transit_ops_brief",
 ]);
 
 const DILIGENCE_PROFILE_PREFIXES = [
@@ -52,33 +37,14 @@ const DILIGENCE_PROFILE_PREFIXES = [
   "sg_gebiz_",
   "sg_hsa_",
   "sg_hlb_",
-] as const;
-
-const PROPERTY_PROFILE_PREFIXES = [
-  "sg_ura_",
-  "sg_hdb_",
-  "sg_onemap_",
-  "sg_lta_",
-  "sg_nea_",
-  "sg_pa_",
-  "sg_sportsg_",
-  "sg_hawker_",
-  "sg_moe_",
-  "sg_moh_",
-  "sg_nparks_",
-  "sg_pub_",
-  "sg_msf_",
-  "sg_ecda_",
+  "sg_sanctions_",
+  "sg_opencorporates_",
+  "sg_adverse_",
+  "sg_relationship_",
 ] as const;
 
 const OUTPUT_SCHEMAS: Readonly<Record<string, z.ZodTypeAny>> = {
   sg_business_dossier: BRIEF_ARTIFACT_OUTPUT_SCHEMA,
-  sg_property_brief: BRIEF_ARTIFACT_OUTPUT_SCHEMA,
-  sg_macro_brief: BRIEF_ARTIFACT_OUTPUT_SCHEMA,
-  sg_transport_brief: BRIEF_ARTIFACT_OUTPUT_SCHEMA,
-  sg_environment_brief: BRIEF_ARTIFACT_OUTPUT_SCHEMA,
-  sg_civic_brief: BRIEF_ARTIFACT_OUTPUT_SCHEMA,
-  sg_transit_ops_brief: BRIEF_ARTIFACT_OUTPUT_SCHEMA,
   sg_query: QUERY_OUTPUT_SCHEMA,
 };
 
@@ -148,10 +114,6 @@ const isDiligenceProfileTool = (name: string): boolean => {
   return DILIGENCE_PROFILE_TOOL_NAMES.has(name) || matchesAnyPrefix(name, DILIGENCE_PROFILE_PREFIXES);
 };
 
-const isPropertyProfileTool = (name: string): boolean => {
-  return PROPERTY_PROFILE_TOOL_NAMES.has(name) || matchesAnyPrefix(name, PROPERTY_PROFILE_PREFIXES);
-};
-
 export const inferToolSets = (name: string): readonly ToolSet[] => {
   const toolsets: ToolSet[] = [];
 
@@ -176,10 +138,6 @@ export const inferToolSets = (name: string): readonly ToolSet[] => {
   if (isDiligenceProfileTool(name)) {
     toolsets.push("diligence");
   }
-  if (isPropertyProfileTool(name)) {
-    toolsets.push("property");
-  }
-
   return [...new Set(toolsets)];
 };
 

@@ -85,12 +85,7 @@ const quietLogger = {
   error: () => undefined,
   child: () => quietLogger,
 };
-const ALL_HTTP_TOOLSETS = new Set(["public", "briefs", "query", "health", "ops", "diligence", "property"] as const);
-
-const getTextResourceContent = (result: Awaited<ReturnType<Client["readResource"]>>): string => {
-  const first = result.contents[0];
-  return first !== undefined && "text" in first ? first.text : "";
-};
+const ALL_HTTP_TOOLSETS = new Set(["public", "briefs", "query", "health", "ops", "diligence"] as const);
 
 afterEach(async () => {
   while (createdClosers.length > 0) {
@@ -304,16 +299,17 @@ describe("MCP surface", () => {
     expect(prompts.prompts).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          name: "recipe-postal_route",
+          name: "recipe-business_due_diligence",
           arguments: expect.arrayContaining([
-            expect.objectContaining({ name: "originPostalCode", required: true }),
-            expect.objectContaining({ name: "routeMode", required: true }),
+            expect.objectContaining({ name: "entityName", required: true }),
+            expect.objectContaining({ name: "uen", required: false }),
           ]),
         }),
         expect.objectContaining({
-          name: "playbook-relocation_neighbourhood_brief",
+          name: "playbook-business_opportunity_scan",
           arguments: expect.arrayContaining([
-            expect.objectContaining({ name: "planningArea", required: true }),
+            expect.objectContaining({ name: "entityName", required: false }),
+            expect.objectContaining({ name: "outputFormat", required: false }),
           ]),
         }),
       ]),
@@ -327,26 +323,18 @@ describe("MCP surface", () => {
     }
 
     const recipePrompt = await client.getPrompt({
-      name: "recipe-postal_route",
+      name: "recipe-business_due_diligence",
       arguments: {
-        originPostalCode: "049178",
-        destinationPostalCode: "048616",
-        routeMode: "walk",
+        entityName: "DP Architects",
       },
     });
-    expect(JSON.stringify(recipePrompt.messages)).toContain("Walk from 049178 to 048616");
+    expect(JSON.stringify(recipePrompt.messages)).toContain("Business dossier for DP Architects");
 
     const completion = await client.complete({
-      ref: { type: "ref/prompt", name: "playbook-relocation_neighbourhood_brief" },
-      argument: { name: "planningArea", value: "Be" },
+      ref: { type: "ref/prompt", name: "playbook-business_opportunity_scan" },
+      argument: { name: "outputFormat", value: "j" },
     });
-    expect(completion.completion.values).toContain("Bedok");
-
-    const sectorCompletion = await client.complete({
-      ref: { type: "ref/prompt", name: "recipe-ura_development_charges" },
-      argument: { name: "sector", value: "B" },
-    });
-    expect(sectorCompletion.completion.values).toEqual(expect.arrayContaining(["B1", "B2"]));
+    expect(completion.completion.values).toContain("json");
   });
 
   it("lists root resources, templates, artifacts, and the UI resource", async () => {
@@ -380,57 +368,18 @@ describe("MCP surface", () => {
     );
   });
 
-  it("promotes large row outputs into artifact resources", async () => {
+  it("does not expose removed generic row drilldown tools", async () => {
     const { client } = await createConnectedInMemoryClient();
-    const result = await client.callTool({
-      name: "sg_datagov_rows",
-      arguments: { resourceId: "r_mock_rows", limit: 75 },
-    });
+    const tools = await client.listTools();
 
-    expect(result.content).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ type: "resource_link" }),
-      ]),
-    );
-    expect(result.structuredContent).toMatchObject({
-      preview: expect.objectContaining({
-        returned: 75,
-      }),
-      artifact: expect.objectContaining({
-        uri: expect.stringContaining("sg://artifacts/rows/"),
-      }),
-    });
-
-    const artifactUri = (result.structuredContent as Record<string, unknown>)["artifact"] as Record<string, unknown>;
-    const artifact = await client.readResource({ uri: artifactUri["uri"] as string });
-    expect(JSON.parse(getTextResourceContent(artifact))).toMatchObject({
-      payload: expect.objectContaining({
-        records: expect.any(Array),
-      }),
-    });
+    expect(tools.tools.map((tool) => tool.name)).not.toContain("sg_datagov_rows");
   });
 
-  it("attaches map UI metadata and normalized map payloads to geospatial outputs", async () => {
+  it("does not expose removed geospatial map tools", async () => {
     const { client } = await createConnectedInMemoryClient();
-    const result = await client.callTool({
-      name: "sg_onemap_geocode",
-      arguments: { searchVal: "048616", limit: 1 },
-    });
+    const tools = await client.listTools();
 
-    expect(result._meta).toMatchObject({
-      ui: { resourceUri: "ui://sg/map-preview" },
-    });
-    expect(result.structuredContent).toMatchObject({
-      mapPayload: expect.objectContaining({
-        sourceTool: "sg_onemap_geocode",
-        markers: expect.any(Array),
-        bounds: expect.any(Object),
-      }),
-    });
-
-    const uiResource = await client.readResource({ uri: "ui://sg/map-preview" });
-    expect(uiResource.contents[0]?.mimeType).toBe("text/html;profile=mcp-app");
-    expect(getTextResourceContent(uiResource)).toContain("Singapore Map Preview");
+    expect(tools.tools.map((tool) => tool.name)).not.toContain("sg_onemap_geocode");
   });
 
   it("serves the filtered mixed HTTP surface for unauthenticated sessions", async () => {

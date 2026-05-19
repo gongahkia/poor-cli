@@ -14,10 +14,10 @@ Observed on 2026-05-17.
 
 | Surface | Local file | Required state | Current status |
 | --- | --- | --- | --- |
-| Official MCP Registry | [server.json](../server.json) | Uses the 2025-12-11 schema, `io.github.gongahkia/dude-mcp`, npm + GHCR packages, and 109 tools / 39 families in the description. | Ready for submission after publisher namespace and package ownership checks. |
+| Official MCP Registry | [server.json](../server.json) | Uses the 2025-12-11 schema, `io.github.gongahkia/dude-mcp`, npm + GHCR packages, and CDD-only report/runtime wording. | Ready for submission after publisher namespace and package ownership checks. |
 | Smithery | [smithery.yaml](../smithery.yaml) | Uses `dude-mcp`, stdio transport, and the local npm/build/start install command. | Ready for local listing or bundle review; hosted URL listing needs a public `/mcp` endpoint. |
 | Glama | [glama.json](../glama.json) | Uses `dude-mcp`, stdio transport, the same install command, and canonical GitHub repository. | Ready for indexing or claim flow. |
-| README | [README.md](../README.md) | Surface snapshot says 109 `sg_*` tools across 39 catalog families. | Current. |
+| README | [README.md](../README.md) | Surface snapshot is CDD-only and lists retained CDD and ops tools. | Current. |
 
 Run this check before external submission:
 
@@ -47,16 +47,15 @@ npm run registry:metadata:check
 
 Short description:
 
-> Dude MCP is a Singapore public-data and due-diligence MCP runtime with 109 stable `sg_*` tools across 39 catalog families, bounded workflow planning, and provenance-aware brief artifacts.
+> Dude MCP is a Singapore company/UEN CDD runtime with cited registry evidence, supplemental analyst-review signals, report exports, and provenance-aware artifacts.
 
 Category candidates:
 
-- public data
 - Singapore
 - due diligence
 - compliance operations
-- government data
 - business registry
+- CDD reports
 
 Important caveat:
 

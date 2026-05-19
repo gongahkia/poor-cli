@@ -225,7 +225,7 @@ describe("dossier rendering", () => {
     expect(html).toContain("Export PDPA report");
   });
 
-  it("segments dossier findings into icon tab groups", () => {
+  it("renders the summary-first report shell with evidence pack sections", () => {
     const html = renderToStaticMarkup(
       <DossierFindingsTabs
         dossier={{
@@ -262,16 +262,17 @@ describe("dossier rendering", () => {
       />,
     );
 
-    expect(html).toContain("Overview");
-    expect(html).toContain("Evidence");
-    expect(html).toContain("Actions");
-    expect(html).toContain("Audit");
-    expect(html).not.toContain("Missing");
+    expect(html).toContain("CDD Summary");
+    expect(html).toContain("Report Builder");
+    expect(html).toContain("Evidence Pack");
+    expect(html).toContain("What To Check Next");
+    expect(html).toContain("Agent handoff");
+    expect(html).not.toContain("Overview");
     expect(html).not.toContain("What we couldn&#x27;t find");
-    expect(html).toContain("data-[state=active]");
+    expect(html).not.toContain("data-[state=active]");
   });
 
-  it("adds the Missing tab only when lookup gaps exist", () => {
+  it("adds missing evidence details to the evidence pack when lookup gaps exist", () => {
     const html = renderToStaticMarkup(
       <DossierFindingsTabs
         dossier={{
@@ -304,8 +305,10 @@ describe("dossier rendering", () => {
       />,
     );
 
-    expect(html).toContain("Missing");
-    expect(html).toContain("lg:grid-cols-6");
+    expect(html).toContain("Evidence Pack");
+    expect(html).toContain("What we couldn&#x27;t find");
+    expect(html).toContain("GEBIZ_NO_MATCH");
+    expect(html).not.toContain("lg:grid-cols-6");
   });
 
   it("renders the analyst memo as a formatted note with collapsed references", () => {

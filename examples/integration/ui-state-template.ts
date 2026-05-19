@@ -128,8 +128,8 @@ export const renderBannerText = (state: QueryViewState): string => {
 const demoOutcomes: readonly QueryOutcome[] = [
   {
     status: "blocked",
-    reason: "sg_query needs a planning area or Singapore postal code.",
-    blockers: [{ field: "planningArea", directTool: "sg_property_brief", suggestedPrompt: "Property due diligence for Bedok HDB resale" }],
+    reason: "sg_query needs a company name, entity name, UEN, salesperson, or estate-agent identifier to run registry diligence.",
+    blockers: [{ field: "entityName", directTool: "sg_business_dossier", suggestedPrompt: "Business dossier for DP Architects" }],
   },
   {
     status: "unsupported",
@@ -137,10 +137,10 @@ const demoOutcomes: readonly QueryOutcome[] = [
   },
   {
     status: "failed",
-    reason: "Transport brief execution failed.",
+    reason: "Business dossier execution failed.",
     failedStep: {
-      tool: "sg_lta_bus_arrivals",
-      error: { code: "TIMEOUT", message: "LTA request timed out." },
+      tool: "sg_business_dossier",
+      error: { code: "UPSTREAM_TIMEOUT", message: "ACRA request timed out." },
     },
   },
 ];

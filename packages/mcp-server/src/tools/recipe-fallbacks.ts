@@ -9,15 +9,8 @@
 // the empty fallbacks list and the unsupported-response markdown still shows
 // the nearest recipe prompt without a misleading direct-tool list.
 export const RECIPE_FALLBACK_TOOLS: Readonly<Record<string, readonly string[]>> = {
-  postal_route: ["sg_onemap_geocode", "sg_onemap_route"],
-  reverse_geocode: ["sg_onemap_reverse_geocode"],
-  coordinate_conversion: ["sg_onemap_convert_coords"],
-  singstat_drilldown: ["sg_singstat_browse", "sg_singstat_table", "sg_singstat_timeseries"],
-  data_gov_collection_browse: ["sg_datagov_browse", "sg_datagov_search", "sg_datagov_resources", "sg_datagov_rows"],
-  ura_development_charges: ["sg_ura_dev_charges"],
-  hdb_rental_check: ["sg_hdb_rental_prices"],
   business_due_diligence: ["sg_business_dossier", "sg_acra_entities", "sg_bca_licensed_builders"],
-  bus_stop_status: ["sg_lta_bus_arrivals", "sg_transport_brief"],
-  outdoor_event_check: ["sg_environment_brief", "sg_nea_forecast_2hr", "sg_nea_air_quality"],
-  community_club_near_postal_code: ["sg_onemap_geocode", "sg_pa_community_outlets"],
+  architecture_firm_diligence: ["sg_business_dossier", "sg_boa_architecture_firms", "sg_boa_architects"],
+  healthcare_supplier_diligence: ["sg_business_dossier", "sg_hsa_health_product_licensees", "sg_hsa_licensed_pharmacies"],
+  hotel_operator_lookup: ["sg_business_dossier", "sg_hlb_hotels"],
 };

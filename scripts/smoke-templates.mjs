@@ -17,7 +17,6 @@ const run = (label, command, args, extraEnv = {}) => {
 };
 
 run("ui state template", "npx", ["tsx", "examples/integration/ui-state-template.ts"]);
-run("scheduled monitor template (dry-run)", "npx", ["tsx", "examples/integration/scheduled-monitor-template.ts", "--dry-run"]);
 run(
   "success context IDs template",
   "npx",

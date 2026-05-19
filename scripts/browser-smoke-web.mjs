@@ -464,17 +464,18 @@ try {
   page.on("pageerror", (error) => consoleMessages.push(`[pageerror] ${error.stack ?? error.message}`));
 
   await page.goto("/", { waitUntil: "networkidle" });
-  await page.getByRole("heading", { name: /Client CDD onboarding/i }).waitFor({ state: "visible" });
-  await page.getByLabel("Company name or UEN").fill("DBS BANK");
+  await page.getByRole("heading", { name: /Search a Singapore company or UEN/i }).waitFor({ state: "visible" });
+  await page.getByLabel("Client or counterparty company name or UEN").fill("DBS BANK");
   const dbsSuggestion = page.getByRole("option", { name: /DBS BANK LTD/i });
   await dbsSuggestion.waitFor({ state: "visible" });
   await dbsSuggestion.click();
   await page.waitForURL(/\/c\/03591300B(?:\?memo=[a-z]+)?$/);
   await page.getByRole("heading", { name: "DBS BANK LTD" }).waitFor({ state: "visible" });
-  await page.getByRole("heading", { name: "Summary" }).waitFor({ state: "visible" });
+  await page.getByRole("heading", { name: "CDD Summary" }).waitFor({ state: "visible" });
+  await page.getByText("Report Builder").waitFor({ state: "visible" });
+  await page.getByRole("heading", { name: "Evidence Pack" }).waitFor({ state: "visible" });
   await page.getByRole("heading", { name: "Analyst Memo" }).waitFor({ state: "visible" });
-  await page.getByText("DBS BANK LTD is present in the ACRA fixture summary.").waitFor({ state: "visible" });
-  await page.getByRole("tab", { name: /Audit/i }).click();
+  await page.getByText("DBS BANK LTD is present in the ACRA fixture summary.").first().waitFor({ state: "visible" });
   await page.getByRole("heading", { name: "Provenance" }).waitFor({ state: "visible" });
   await page.getByText("ACRA public search fixture").first().waitFor({ state: "visible" });
   await assertNoDocumentOverflow(page, "Dossier desktop layout");

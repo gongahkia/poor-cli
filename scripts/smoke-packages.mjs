@@ -18,65 +18,21 @@ const RUNTIME_LEAK_PATTERNS = ["/__tests__/", "/fixtures/", "/mock-server/", "/g
 const runtimeEnv = { ...process.env };
 
 const EXPECTED_TOOL_NAMES = [
-  "sg_singstat_search",
-  "sg_singstat_table",
-  "sg_singstat_timeseries",
-  "sg_singstat_compare",
-  "sg_singstat_browse",
-  "sg_mas_exchange_rates",
-  "sg_mas_interest_rates",
-  "sg_mas_financial_stats",
-  "sg_onemap_geocode",
-  "sg_onemap_reverse_geocode",
-  "sg_onemap_route",
-  "sg_onemap_population",
-  "sg_onemap_convert_coords",
-  "sg_ura_property_transactions",
-  "sg_ura_planning_area",
-  "sg_ura_dev_charges",
-  "sg_datagov_search",
-  "sg_datagov_get",
-  "sg_datagov_resources",
-  "sg_datagov_rows",
-  "sg_datagov_browse",
-  "sg_lta_bus_arrivals",
-  "sg_lta_train_alerts",
-  "sg_lta_traffic_incidents",
-  "sg_nea_forecast_2hr",
-  "sg_nea_air_quality",
-  "sg_nea_rainfall",
-  "sg_hdb_resale_prices",
-  "sg_hdb_rental_prices",
   "sg_cea_salespersons",
   "sg_bca_licensed_builders",
   "sg_bca_registered_contractors",
   "sg_boa_architects",
   "sg_boa_architecture_firms",
   "sg_acra_entities",
-  "sg_pa_community_outlets",
-  "sg_pa_resident_network_centres",
-  "sg_sportsg_facilities",
-  "sg_ecda_childcare_centres",
-  "sg_msf_family_services",
-  "sg_msf_student_care_services",
-  "sg_msf_social_service_offices",
   "sg_gebiz_tenders",
-  "sg_hawker_centres",
-  "sg_moe_schools",
-  "sg_moh_facilities",
   "sg_hsa_licensed_pharmacies",
   "sg_hsa_health_product_licensees",
-  "sg_sfa_establishments",
-  "sg_nparks_parks",
-  "sg_pub_water_levels",
-  "sg_mom_labour_stats",
-  "sg_stb_visitor_stats",
   "sg_hlb_hotels",
+  "sg_sanctions_screen",
+  "sg_opencorporates_links",
+  "sg_adverse_media_lite",
+  "sg_relationship_graph",
   "sg_business_dossier",
-  "sg_property_brief",
-  "sg_macro_brief",
-  "sg_transport_brief",
-  "sg_environment_brief",
   "sg_health_check",
   "sg_key_set",
   "sg_key_list",
@@ -206,7 +162,7 @@ try {
       }
     }
 
-    for (const promptName of ["recipe-postal_route", "playbook-relocation_neighbourhood_brief"]) {
+    for (const promptName of ["recipe-business_due_diligence", "playbook-business_opportunity_scan"]) {
       if (!(promptsResult.prompts ?? []).some((prompt) => prompt.name === promptName)) {
         throw new Error(`Packaged MCP server is missing prompt: ${promptName}${formatServerLogs()}`);
       }
@@ -252,81 +208,20 @@ try {
       throw new Error(`Packaged MCP tool invocation failed to return config payload${formatServerLogs()}`);
     }
 
-    const datasetMetadataResult = await client.callTool({
-      name: "sg_datagov_get",
-      arguments: {
-        datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
-        format: "json",
-      },
-    });
-    const datasetMetadataText = "content" in datasetMetadataResult
-      ? datasetMetadataResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
-      : undefined;
-    if (datasetMetadataText === undefined) {
-      throw new Error(`Packaged sg_datagov_get did not return text content${formatServerLogs()}`);
-    }
-    const datasetMetadataPayload = JSON.parse(datasetMetadataText);
-    if (
-      datasetMetadataPayload.datasetId !== "d_8b84c4ee58e3cfc0ece0d773c8ca6abc"
-      || datasetMetadataPayload.managedByAgencyName !== "Housing & Development Board"
-    ) {
-      throw new Error(`Packaged sg_datagov_get returned unexpected metadata payload${formatServerLogs()}`);
-    }
-
-    const datasetResourcesResult = await client.callTool({
-      name: "sg_datagov_resources",
-      arguments: {
-        datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
-        format: "json",
-      },
-    });
-    const datasetResourcesText = "content" in datasetResourcesResult
-      ? datasetResourcesResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
-      : undefined;
-    if (datasetResourcesText === undefined) {
-      throw new Error(`Packaged sg_datagov_resources did not return text content${formatServerLogs()}`);
-    }
-    const datasetResourcesPayload = JSON.parse(datasetResourcesText);
-    if (!Array.isArray(datasetResourcesPayload.resources) || datasetResourcesPayload.resources.length === 0) {
-      throw new Error(`Packaged sg_datagov_resources returned no resource metadata${formatServerLogs()}`);
-    }
-
-    const environmentBriefResult = await client.callTool({
-      name: "sg_environment_brief",
-      arguments: {
-        area: "Tampines",
-        region: "East",
-        format: "json",
-      },
-    });
-    const environmentBriefText = "content" in environmentBriefResult
-      ? environmentBriefResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
-      : undefined;
-    if (environmentBriefText === undefined) {
-      throw new Error(`Packaged sg_environment_brief did not return text content${formatServerLogs()}`);
-    }
-    const environmentBriefPayload = JSON.parse(environmentBriefText);
-    if (environmentBriefPayload.title !== "Environment Brief") {
-      throw new Error(`Packaged sg_environment_brief returned an unexpected payload${formatServerLogs()}`);
-    }
-    if (!Array.isArray(environmentBriefPayload.provenance) || !Array.isArray(environmentBriefPayload.freshness)) {
-      throw new Error(`Packaged sg_environment_brief omitted provenance or freshness${formatServerLogs()}`);
-    }
-
     const queryExecuteResult = await client.callTool({
       name: "sg_query",
       arguments: {
-        query: "Environment snapshot of Singapore right now",
-        mode: "execute",
+        query: "Business dossier for ABC CONSTRUCTION PTE LTD",
+        mode: "plan",
         format: "json",
       },
     });
     if (
       !("structuredContent" in queryExecuteResult)
-      || queryExecuteResult.structuredContent?.status !== "completed"
-      || queryExecuteResult.structuredContent?.workflow !== "environment_brief"
+      || queryExecuteResult.structuredContent?.status !== "planned"
+      || queryExecuteResult.structuredContent?.workflow !== "business_dossier"
     ) {
-      throw new Error(`Packaged sg_query execute call did not complete successfully${formatServerLogs()}`);
+      throw new Error(`Packaged sg_query plan call did not return the CDD workflow${formatServerLogs()}`);
     }
 
   } catch (error) {

@@ -1,7 +1,6 @@
 import type { ToolCatalogEntry } from "./tool-definition.js";
 import { toToolCatalogEntry } from "./tool-definition.js";
 import { ALL_TOOL_DEFINITIONS } from "./tool-set.js";
-import { LIVE_API_SURFACE, LIVE_WORKFLOW_SMOKE_CASES, RELEASE_BLOCKING_COMMANDS } from "./runtime-surface.js";
 import { TOOLSET_PROFILE_CATALOG } from "./toolset-profiles.js";
 import { OPS_TAXONOMY_CATALOG } from "../ops-taxonomy.js";
 
@@ -66,1809 +65,395 @@ export type PlaybookCatalogEntry = {
   readonly notes: readonly string[];
 };
 
-export type RuntimeCatalog = {
-  readonly toolsetProfiles: readonly {
-    readonly profile: string;
-    readonly intent: string;
-    readonly toolsets: readonly string[];
-  }[];
-  readonly liveSurface: readonly {
-    readonly api: string;
-    readonly classification: string;
-    readonly authRequired: boolean;
-    readonly probeMode: string;
-    readonly productionUrl: string;
-    readonly representativeTool: string;
-    readonly releaseBlocking: boolean;
-    readonly coversFamilies: readonly string[];
-    readonly notes: readonly string[];
-  }[];
-  readonly authDependencies: readonly {
-    readonly api: string;
-    readonly authRequired: boolean;
-    readonly envVars: readonly string[];
-    readonly keystoreKeys: readonly string[];
-    readonly dependentFamilies?: readonly string[];
-    readonly notes: readonly string[];
-  }[];
-  readonly sourceUseWarnings: readonly {
-    readonly api: string;
-    readonly observedAt: string;
-    readonly posture: "review_before_hosted_paid_use" | "allowed_with_controls";
-    readonly termsUrls: readonly string[];
-    readonly docs: readonly string[];
-    readonly warnings: readonly string[];
-  }[];
-  readonly credentialSourceRules: readonly string[];
-  readonly latency: {
-    readonly hardCapMs: number;
-    readonly targets: readonly {
-      readonly api: string;
-      readonly timeoutMs: number;
-      readonly typicalLatency: string;
-      readonly notes: string;
-    }[];
-  };
-  readonly cacheTiers: readonly {
-    readonly tier: string;
-    readonly ttlSeconds: number;
-    readonly usedBy: readonly string[];
-    readonly rationale: string;
-  }[];
-  readonly rateLimits: readonly {
-    readonly api: string;
-    readonly maxTokens: number;
-    readonly refillPerSecond: number;
-    readonly effectiveRate: string;
-  }[];
-  readonly retryPolicy: {
-    readonly retryable: readonly string[];
-    readonly nonRetryable: readonly string[];
-    readonly backoffSeconds: readonly number[];
-    readonly maxRetries: number;
-    readonly respectsRetryAfter: boolean;
-  };
-  readonly circuitBreaker: {
-    readonly threshold: number;
-    readonly resetTimeoutSeconds: number;
-    readonly states: readonly string[];
-    readonly note: string;
-  };
-  readonly partialFailureSemantics: readonly string[];
-  readonly healthCoverage: readonly {
-    readonly api: string;
-    readonly coversFamilies: readonly string[];
-    readonly notes: readonly string[];
-  }[];
-  readonly releaseReadiness: {
-    readonly blockingCommands: readonly string[];
-    readonly requiredSmokeCases: readonly {
-      readonly name: string;
-      readonly tool: string;
-      readonly layer: "api" | "workflow";
-      readonly authRequired: boolean;
-      readonly releaseBlocking: boolean;
-      readonly arguments: Readonly<Record<string, unknown>>;
-      readonly expectation: Readonly<Record<string, unknown>>;
-      readonly notes: readonly string[];
-    }[];
-    readonly failureSemantics: readonly string[];
-    readonly notes: readonly string[];
-  };
-  readonly queryStatusContract: readonly {
-    readonly status: "planned" | "completed" | "blocked" | "unsupported" | "failed";
-    readonly isError: boolean;
-    readonly notes: string;
-  }[];
-};
+export type RuntimeCatalog = Readonly<Record<string, unknown>>;
 
 export const API_CATALOG: readonly ApiCatalogEntry[] = [
   {
-    name: "SingStat",
-    description: "Singapore Department of Statistics for dataset discovery, table reads, time series, and explicit indicator comparisons.",
-    tools: ["sg_singstat_search", "sg_singstat_table", "sg_singstat_timeseries", "sg_singstat_compare", "sg_singstat_browse"],
+    name: "CDD Query",
+    description: "Goal-shaped company and sector diligence prompts routed through the bounded CDD planner.",
+    tools: ["sg_query"],
     authRequired: false,
-    rateLimit: "10 tokens, 2/sec refill",
-    positioning: "Canonical direct tool family for macroeconomic and statistical work.",
-    preferredInterface: "sg_query",
-  },
-  {
-    name: "MAS",
-    description: "Monetary Authority of Singapore for latest or exact-date exchange rates, SORA, and banking statistics.",
-    tools: ["sg_mas_exchange_rates", "sg_mas_interest_rates", "sg_mas_financial_stats"],
-    authRequired: false,
-    rateLimit: "10 tokens, 2/sec refill",
-    positioning: "Narrow but honest monetary-data surface for this pilot.",
+    rateLimit: "local planner",
+    positioning: "Preferred entrypoint for natural-language CDD searches.",
     preferredInterface: "sg_query",
     scopeNotes: [
-      "sg_mas_exchange_rates supports latest or exact-date lookup only.",
-      "sg_mas_interest_rates is SORA-only in this phase.",
-      "sg_mas_financial_stats is banking-only in this phase.",
+      "CDD-only: non-company public-data prompts return unsupported with a CDD-specific suggestion.",
+      "Use direct tools when the caller already has exact structured parameters.",
     ],
   },
   {
-    name: "OneMap",
-    description: "Singapore's national map for geocoding, routing, planning-area demographics, and coordinate conversion.",
-    tools: ["sg_onemap_geocode", "sg_onemap_reverse_geocode", "sg_onemap_route", "sg_onemap_population", "sg_onemap_convert_coords"],
-    authRequired: true,
-    rateLimit: "50 tokens, 4/sec refill (~250/min)",
-    positioning: "Primary location and demographic surface.",
-    preferredInterface: "sg_query",
-  },
-  {
-    name: "URA",
-    description: "Urban Redevelopment Authority for property transactions, planning-area lookup, and development charges.",
-    tools: ["sg_ura_property_transactions", "sg_ura_planning_area", "sg_ura_dev_charges"],
-    authRequired: true,
-    rateLimit: "5 tokens, 1/sec refill",
-    positioning: "Primary property and planning context surface.",
-    preferredInterface: "sg_query",
-  },
-  {
-    name: "LTA DataMall",
-    description: "Land Transport Authority live transport data for bus arrivals, train alerts, and traffic incidents.",
-    tools: [
-      "sg_lta_bus_arrivals",
-      "sg_lta_train_alerts",
-      "sg_lta_traffic_incidents",
-      "sg_lta_road_works",
-      "sg_lta_road_openings",
-      "sg_lta_traffic_images",
-      "sg_lta_carpark_availability",
-      "sg_lta_taxi_availability",
-    ],
-    authRequired: true,
-    rateLimit: "20 tokens, 2/sec refill",
-    positioning: "Primary transport-status surface for live operational checks.",
-    preferredInterface: "sg_query",
-  },
-  {
-    name: "Transit Intelligence",
-    description: "Additive transit decision surface built over live LTA and traffic-image context for health scoring, hotspot triage, reliability, and policy-aware planning.",
-    tools: [
-      "sg_transit_health",
-      "sg_transit_hotspots",
-      "sg_transit_ops_brief",
-      "sg_transit_pack",
-      "sg_transit_reliability",
-      "sg_transit_transfer_risk",
-      "sg_transit_accessible_route",
-      "sg_transit_objective_plan",
-      "sg_transit_counterfactual_simulate",
-      "sg_transit_outcome_record",
-      "sg_transit_model_metrics",
-      "sg_transit_policy_audit",
-      "sg_transit_policy_insights",
-      "sg_transit_policy_replay",
-    ],
-    authRequired: true,
-    rateLimit: "20 tokens, 2/sec refill via LTA-dependent feeds",
-    positioning: "First-party transit-intelligence data family in the same hierarchy as other SG additive and direct surfaces.",
-    preferredInterface: "sg_query",
-    scopeNotes: [
-      "Operational scores and recommendations are deterministic heuristics over bounded public-feed signals.",
-      "Use sg_transit_ops_brief for artifact-first adoption, then drop to direct transit primitives as needed.",
-    ],
-  },
-  {
-    name: "NEA",
-    description: "National Environment Agency realtime weather, rainfall, and air-quality data.",
-    tools: ["sg_nea_forecast_2hr", "sg_nea_air_quality", "sg_nea_rainfall"],
+    name: "Business Dossier",
+    description: "Cross-registry CDD dossier for Singapore companies, UENs, estate agents, and sector-enriched counterparties.",
+    tools: ["sg_business_dossier"],
     authRequired: false,
-    rateLimit: "20 tokens, 2/sec refill",
-    positioning: "Primary environment-status surface for weather and air-quality checks.",
+    rateLimit: "bounded by selected modules",
+    positioning: "Primary CDD artifact surfaced by the web app and report exports.",
     preferredInterface: "sg_query",
-  },
-  {
-    name: "HDB",
-    description: "Curated housing-market surface over official HDB resale and rental datasets from data.gov.sg.",
-    tools: ["sg_hdb_resale_prices", "sg_hdb_rental_prices"],
-    authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill via data.gov.sg",
-    positioning: "Explicit housing-market surface for HDB resale and rental checks.",
-    preferredInterface: "sg_query",
-  },
-  {
-    name: "Housing Advisor",
-    description: "Deterministic housing-affordability surface: HDB grant eligibility, HDB-vs-bank loan comparison, integrated TDSR/MSR/LTV affordability, and resale price benchmarking. Rules are versioned and embedded; SORA and bank packages are caller-supplied.",
-    tools: [
-      "sg_grant_eligibility",
-      "sg_loan_compare",
-      "sg_housing_affordability",
-      "sg_resale_price_compare",
-    ],
-    authRequired: false,
-    rateLimit: "Local computation; sg_resale_price_compare reuses sg_hdb_resale_prices rate budget.",
-    positioning: "Compute-only advisor surface that pairs with sg_mas_interest_rates (live SORA) and sg_hdb_resale_prices (market context).",
-  },
-  {
-    name: "CEA",
-    description: "Curated estate-agent diligence surface over the official CEA salesperson registry published on data.gov.sg.",
-    tools: ["sg_cea_salespersons"],
-    authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill via data.gov.sg",
-    positioning: "Direct diligence surface for salesperson and estate-agent registration checks.",
-    preferredInterface: "sg_query",
-  },
-  {
-    name: "BCA",
-    description: "Curated contractor diligence surface over official BCA builder and contractor registries published on data.gov.sg.",
-    tools: ["sg_bca_licensed_builders", "sg_bca_registered_contractors"],
-    authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill via data.gov.sg",
-    positioning: "Direct diligence surface for builder and contractor registration checks.",
-    preferredInterface: "sg_query",
-  },
-  {
-    name: "BOA",
-    description: "Curated Board of Architects diligence surface over official architect and architecture-firm registers published on data.gov.sg.",
-    tools: ["sg_boa_architects", "sg_boa_architecture_firms"],
-    authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill via data.gov.sg file downloads",
-    positioning: "Direct diligence surface for architecture-firm and architect registration checks.",
-    preferredInterface: "sg_query",
-    scopeNotes: [
-      "Backed by the official BOA architect and architecture-firm CSV registers on data.gov.sg.",
-    ],
   },
   {
     name: "ACRA",
-    description: "Curated company-registry surface over the official ACRA corporate-entities collection published on data.gov.sg.",
+    description: "Corporate-entity identity lookup for Singapore company/UEN matching.",
     tools: ["sg_acra_entities"],
     authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill via data.gov.sg",
-    positioning: "Primary entity-registration surface for company and UEN lookups.",
-    preferredInterface: "sg_query",
-    scopeNotes: [
-      "Backed by the official 27-shard public corporate-entities collection.",
-    ],
-  },
-  {
-    name: "External Diligence",
-    description: "Bounded external diligence adapters for sanctions candidate screening, company cross-links, official-feed adverse-media lite, and shallow graph export.",
-    tools: ["sg_sanctions_screen", "sg_opencorporates_links", "sg_adverse_media_lite", "sg_relationship_graph"],
-    authRequired: true,
-    rateLimit: "Depends on configured OpenSanctions/OpenCorporates plans; official-feed checks reuse Government RSS Feed limits.",
-    positioning: "Explicit add-on diligence surface for licensed external data and public-feed triage.",
+    rateLimit: "data.gov.sg-backed cache tier",
+    positioning: "Core identity evidence for every company CDD run.",
     preferredInterface: "sg_business_dossier",
-    scopeNotes: [
-      "OpenSanctions and OpenCorporates calls require configured API credentials and license review.",
-      "Adverse-media lite searches bounded official Singapore public feeds only.",
-      "Relationship graph edges do not infer ownership, control, or beneficial ownership.",
-    ],
   },
   {
-    name: "PA",
-    description: "People's Association civic directories for community clubs, PAssion WaVe outlets, and residents' network centres.",
-    tools: ["sg_pa_community_outlets", "sg_pa_resident_network_centres"],
+    name: "BCA",
+    description: "Builder and contractor registry enrichment for construction-sector diligence.",
+    tools: ["sg_bca_licensed_builders", "sg_bca_registered_contractors"],
     authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill via data.gov.sg file downloads",
-    positioning: "Neighbourhood civic-discovery surface for community facilities and grassroots locations.",
-    preferredInterface: "sg_query",
-    scopeNotes: [
-      "Backed by PA geospatial datasets on data.gov.sg.",
-      "Optimized for postal-code and proximity lookups rather than recommendations.",
-    ],
+    rateLimit: "data.gov.sg-backed cache tier",
+    positioning: "Sector registry evidence for contractors, builders, grades, and workheads.",
+    preferredInterface: "sg_business_dossier",
   },
   {
-    name: "Sport Singapore",
-    description: "Sport Singapore public facility directory for sport centres, stadiums, swimming complexes, and selected specialist venues.",
-    tools: ["sg_sportsg_facilities"],
+    name: "BOA",
+    description: "Board of Architects register enrichment for architecture firms and architects.",
+    tools: ["sg_boa_architects", "sg_boa_architecture_firms"],
     authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill via data.gov.sg file downloads",
-    positioning: "Daily-utility civic discovery for public sports infrastructure.",
-    preferredInterface: "sg_query",
-    scopeNotes: [
-      "Backed by the SportSG public-facilities GeoJSON dataset on data.gov.sg.",
-    ],
+    rateLimit: "static registry cache tier",
+    positioning: "Sector registry evidence for architecture-firm diligence.",
+    preferredInterface: "sg_business_dossier",
   },
   {
-    name: "ECDA",
-    description: "Early Childhood Development Agency childcare discovery combining geospatial centre locations with listing and vacancy data.",
-    tools: ["sg_ecda_childcare_centres"],
+    name: "CEA",
+    description: "Estate-agent and salesperson registration evidence.",
+    tools: ["sg_cea_salespersons"],
     authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill via data.gov.sg file downloads",
-    positioning: "Family-focused civic discovery for nearby childcare options.",
-    preferredInterface: "sg_query",
-    scopeNotes: [
-      "Joins Child Care Services GeoJSON with Listing of Centres CSV by postal code first, then normalized centre name.",
-      "Vacancy signals are bounded to the current-month statuses surfaced in the listing dataset.",
-    ],
-  },
-  {
-    name: "MSF Family Services",
-    description: "Ministry of Social and Family Development family service centre directory for neighbourhood support discovery.",
-    tools: ["sg_msf_family_services"],
-    authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill via data.gov.sg file downloads",
-    positioning: "Neighbourhood social-support discovery for family service centres.",
-    preferredInterface: "sg_query",
-    scopeNotes: [
-      "Backed by the official Family Services GeoJSON dataset on data.gov.sg.",
-    ],
-  },
-  {
-    name: "MSF Student Care Services",
-    description: "Ministry of Social and Family Development student care directory with audit status, SCFA signal, and fee metadata.",
-    tools: ["sg_msf_student_care_services"],
-    authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill via data.gov.sg file downloads",
-    positioning: "Family-focused discovery for student care options and SCFA coverage.",
-    preferredInterface: "sg_query",
-    scopeNotes: [
-      "Supports audit-status and SCFA-only filters over the official Student Care Services GeoJSON dataset.",
-    ],
-  },
-  {
-    name: "MSF Social Service Offices",
-    description: "Ministry of Social and Family Development social service office directory for in-person assistance and office lookup.",
-    tools: ["sg_msf_social_service_offices"],
-    authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill via data.gov.sg file downloads",
-    positioning: "Assistance-office discovery for nearby government support locations.",
-    preferredInterface: "sg_query",
-    scopeNotes: [
-      "Backed by the official Social Service Offices GeoJSON dataset on data.gov.sg.",
-    ],
+    rateLimit: "data.gov.sg-backed cache tier",
+    positioning: "CDD enrichment for real-estate intermediaries and named salespersons.",
+    preferredInterface: "sg_business_dossier",
   },
   {
     name: "GeBIZ",
-    description: "Singapore government procurement portal for tender awards and contract data.",
+    description: "Public tender and award evidence for procurement-facing counterparties.",
     tools: ["sg_gebiz_tenders"],
     authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill",
-    positioning: "Government procurement discovery for business-facing agents.",
-    preferredInterface: "sg_gebiz_tenders",
-    scopeNotes: [
-      "Backed by GeBIZ tender award data published on data.gov.sg.",
-    ],
-  },
-  {
-    name: "Hawker Centres",
-    description: "Singapore hawker centre directory with locations, stall counts, addresses, and quarterly cleaning/closure windows.",
-    tools: ["sg_hawker_centres", "sg_hawker_closures"],
-    authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill",
-    positioning: "Civic amenity discovery for location and property workflows, plus operational closure awareness.",
-    preferredInterface: "sg_hawker_centres",
-    scopeNotes: [
-      "Includes geocoordinates for proximity-based lookups.",
-      "sg_hawker_closures surfaces quarterly cleaning and other-works windows.",
-    ],
-  },
-  {
-    name: "MOE Schools",
-    description: "Singapore school directory from the Ministry of Education.",
-    tools: ["sg_moe_schools"],
-    authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill",
-    positioning: "Education discovery for relocation and family-focused workflows.",
-    preferredInterface: "sg_moe_schools",
-    scopeNotes: [
-      "Filterable by level (PRIMARY, SECONDARY, JC), zone, and name.",
-    ],
-  },
-  {
-    name: "MOH Healthcare",
-    description: "Singapore healthcare facility directory from the Ministry of Health.",
-    tools: ["sg_moh_facilities"],
-    authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill",
-    positioning: "Healthcare facility discovery for consumer and property workflows.",
-    preferredInterface: "sg_moh_facilities",
-    scopeNotes: [
-      "Covers hospitals, polyclinics, medical clinics, and dental clinics.",
-    ],
+    rateLimit: "public source cache tier",
+    positioning: "Procurement evidence and follow-up context for vendor diligence.",
+    preferredInterface: "sg_business_dossier",
   },
   {
     name: "HSA",
-    description: "Health Sciences Authority licensing surface for licensed pharmacies and companies licensed to import, wholesale, or manufacture health products.",
+    description: "Health-product licensee and pharmacy registry evidence.",
     tools: ["sg_hsa_licensed_pharmacies", "sg_hsa_health_product_licensees"],
     authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill via data.gov.sg file downloads",
-    positioning: "Healthcare and life-sciences diligence surface for pharmacy and product-licensing checks.",
-    preferredInterface: "sg_query",
-    scopeNotes: [
-      "Backed by the official HSA licensed pharmacies and health-product licensee CSV datasets on data.gov.sg.",
-    ],
-  },
-  {
-    name: "SFA",
-    description: "Singapore Food Agency licensed food establishments directory.",
-    tools: ["sg_sfa_establishments"],
-    authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill",
-    positioning: "F&B compliance and food safety discovery.",
-    preferredInterface: "sg_sfa_establishments",
-    scopeNotes: ["Backed by SFA licensed eating establishment data on data.gov.sg."],
-  },
-  {
-    name: "Government RSS Feeds",
-    description: "Official non-data.gov.sg feeds from NEA, weather.gov.sg, SFA, MPA, NHB, and URA for announcements, tenders, events, forecasts, alerts, circulars, media releases, speeches, and publications.",
-    tools: ["sg_gov_feed_catalog", "sg_gov_feed_items"],
-    authRequired: false,
-    rateLimit: "10 tokens, 1/sec refill",
-    positioning: "Direct official-feed monitoring surface for operational alerts and policy/news intake.",
-    preferredInterface: "sg_gov_feed_items",
-    scopeNotes: [
-      "Supports 25 source streams across NEA, weather.gov.sg, SFA, MPA, NHB, and URA.",
-      "Rollback controls are first-class: SG_APIS_DISABLED_FAMILIES and SG_APIS_DISABLED_STREAMS.",
-    ],
-  },
-  {
-    name: "NParks",
-    description: "Singapore parks and nature reserves directory.",
-    tools: ["sg_nparks_parks"],
-    authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill",
-    positioning: "Green space discovery for environmental and property workflows.",
-    preferredInterface: "sg_nparks_parks",
-    scopeNotes: ["Backed by NParks data on data.gov.sg."],
-  },
-  {
-    name: "PUB",
-    description: "Singapore water level monitoring from PUB stations.",
-    tools: ["sg_pub_water_levels"],
-    authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill",
-    positioning: "Water level and flood risk monitoring.",
-    preferredInterface: "sg_pub_water_levels",
-    scopeNotes: ["Backed by PUB water level data on data.gov.sg."],
-  },
-  {
-    name: "MOM",
-    description: "Singapore labour market statistics from the Ministry of Manpower.",
-    tools: ["sg_mom_labour_stats"],
-    authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill",
-    positioning: "Labour market analysis for macro and economic workflows.",
-    preferredInterface: "sg_mom_labour_stats",
-    scopeNotes: ["Backed by MOM labour statistics on data.gov.sg."],
-  },
-  {
-    name: "STB",
-    description: "Singapore tourism visitor arrival statistics.",
-    tools: ["sg_stb_visitor_stats"],
-    authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill",
-    positioning: "Tourism industry analysis and visitor trend monitoring.",
-    preferredInterface: "sg_stb_visitor_stats",
-    scopeNotes: ["Backed by STB visitor arrival data on data.gov.sg."],
-  },
-  {
-    name: "COE",
-    description: "LTA Certificate of Entitlement (COE) bidding results with quota, bids, and premium by vehicle category.",
-    tools: ["sg_lta_coe_results"],
-    authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill",
-    positioning: "Vehicle quota and transport-policy reads for macro and property-adjacent workflows.",
-    preferredInterface: "sg_lta_coe_results",
-    scopeNotes: ["Backed by LTA COE bidding results on data.gov.sg.", "Resource id override: SG_API_COE_RESOURCE_ID."],
-  },
-  {
-    name: "IRAS",
-    description: "Inland Revenue Authority of Singapore annual tax collection by financial year and tax type.",
-    tools: ["sg_iras_tax_collection"],
-    authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill",
-    positioning: "Public-sector revenue reads for macro context.",
-    preferredInterface: "sg_iras_tax_collection",
-    scopeNotes: ["Backed by IRAS annual tax collection on data.gov.sg.", "Resource id override: SG_API_IRAS_TAX_RESOURCE_ID."],
-  },
-  {
-    name: "SPF",
-    description: "Singapore Police Force annual crime statistics by offence category and year.",
-    tools: ["sg_spf_crime_stats"],
-    authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill",
-    positioning: "Civic and due-diligence crime-trend context.",
-    preferredInterface: "sg_spf_crime_stats",
-    scopeNotes: ["Backed by SPF crime statistics on data.gov.sg.", "Resource id override: SG_API_SPF_CRIME_RESOURCE_ID."],
-  },
-  {
-    name: "EMA",
-    description: "Energy Market Authority monthly electricity generation by energy product type.",
-    tools: ["sg_ema_electricity_generation"],
-    authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill",
-    positioning: "Energy-supply macro context for environment and policy workflows.",
-    preferredInterface: "sg_ema_electricity_generation",
-    scopeNotes: ["Backed by EMA electricity generation on data.gov.sg.", "Resource id override: SG_API_EMA_GEN_RESOURCE_ID."],
-  },
-  {
-    name: "NLB",
-    description: "National Library Board public library directory with location and contact details.",
-    tools: ["sg_nlb_libraries"],
-    authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill",
-    positioning: "Civic-amenity discovery for education and community workflows.",
-    preferredInterface: "sg_nlb_libraries",
-    scopeNotes: ["Backed by NLB library directory on data.gov.sg.", "Resource id override: SG_API_NLB_LIBRARIES_RESOURCE_ID."],
-  },
-  {
-    name: "SSO Law",
-    description: "Singapore Statutes Online search over public Acts and subsidiary legislation. Search + URL references only; no synthesis or legal advice.",
-    tools: ["sg_law_search"],
-    authRequired: false,
-    rateLimit: "10 tokens, 1/sec refill",
-    positioning: "Statute discovery wedge; defensive against external legal-research servers.",
-    preferredInterface: "sg_law_search",
-    scopeNotes: ["Backed by sso.agc.gov.sg public search endpoints.", "No legal advice; always verify currency against the primary source."],
+    rateLimit: "static registry cache tier",
+    positioning: "Healthcare-sector enrichment for supplier and pharmacy diligence.",
+    preferredInterface: "sg_business_dossier",
   },
   {
     name: "HLB",
-    description: "Hotels Licensing Board hotel directory with keeper names, room counts, and geospatial location context.",
+    description: "Hotel Licensing Board hotel and keeper evidence.",
     tools: ["sg_hlb_hotels"],
     authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill via data.gov.sg file downloads",
-    positioning: "Hospitality diligence and hotel-operator lookup surface.",
-    preferredInterface: "sg_query",
-    scopeNotes: ["Backed by the official HLB Hotels GeoJSON dataset on data.gov.sg."],
+    rateLimit: "static registry cache tier",
+    positioning: "Hospitality-sector enrichment for hotel operators and keepers.",
+    preferredInterface: "sg_business_dossier",
   },
   {
-    name: "data.gov.sg",
-    description: "Singapore open data portal for broad dataset discovery, metadata retrieval, machine-readable resource inspection, and bounded datastore row reads.",
-    tools: ["sg_datagov_search", "sg_datagov_get", "sg_datagov_resources", "sg_datagov_rows", "sg_datagov_browse"],
+    name: "External Diligence",
+    description: "Supplemental analyst-review signals for sanctions links, OpenCorporates links, adverse-media hints, and relationship graphs.",
+    tools: ["sg_sanctions_screen", "sg_opencorporates_links", "sg_adverse_media_lite", "sg_relationship_graph"],
     authRequired: false,
-    rateLimit: "20 tokens, 3/sec refill",
-    positioning: "Fallback discovery and row-access surface when the domain APIs do not fit.",
-    preferredInterface: "sg_query",
-    scopeNotes: [
-      "sg_datagov_get returns dataset metadata only.",
-      "sg_datagov_resources exposes the current machine-readable resource shape for a dataset.",
-      "sg_datagov_rows performs bounded datastore reads with explicit filters, limit, offset, and sort.",
+    rateLimit: "provider-dependent",
+    positioning: "Supplemental evidence only; not an automated compliance decision.",
+    preferredInterface: "sg_business_dossier",
+  },
+  {
+    name: "Operations",
+    description: "Health, cache, key, config, trace, and request lookup tools for running the CDD product safely.",
+    tools: [
+      "sg_health_check",
+      "sg_cache_stats",
+      "sg_cache_clear",
+      "sg_key_set",
+      "sg_key_list",
+      "sg_key_delete",
+      "sg_config_get",
+      "sg_config_set",
+      "sg_trace_lookup",
+      "sg_request_lookup",
     ],
+    authRequired: false,
+    rateLimit: "local runtime",
+    positioning: "Operator surface, not a product CTA.",
   },
 ];
 
 export const TOOL_CATALOG: readonly ToolCatalogEntry[] = ALL_TOOL_DEFINITIONS.map(toToolCatalogEntry);
 
-const ONEMAP_AUTH_NOTES = [
-  "Requires OneMap credentials when the workflow needs geocoding, routing, reverse geocoding, or planning-area demographics.",
-] as const;
-
-const URA_AUTH_NOTES = [
-  "Requires a URA API key when the workflow resolves planning areas or reads URA transactions and development-charge tables.",
-] as const;
-
-const LTA_AUTH_NOTES = [
-  "Requires an LTA DataMall API key for live bus, train, and traffic status reads.",
-] as const;
-
 export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
   {
-    name: "Macro Snapshot",
-    intent: "Build a compact Singapore macro starter brief with MAS values and validated SingStat GDP and CPI tables.",
+    id: "company_cdd_report",
+    name: "Company CDD Report",
+    intent: "Search a Singapore company or UEN and produce a cited CDD dossier for analyst review.",
     entrypoints: [
-      { tool: "sg_query", input: { query: "Macro snapshot of Singapore", mode: "execute" } },
-      { tool: "sg_macro_brief", input: { currency: "USD" } },
-      { tool: "sg_mas_exchange_rates", input: { currency: "USD", startDate: "2026-03-01", endDate: "2026-03-26" } },
-      { tool: "sg_singstat_search", input: { keyword: "Singapore GDP" } },
+      { tool: "sg_query", input: { query: "Business dossier for DP Architects", mode: "execute" } },
+      { tool: "sg_business_dossier", input: { entityName: "DP Architects" } },
     ],
-    requiredInputs: ["query"],
-    fallbackTools: ["sg_macro_brief", "sg_mas_exchange_rates", "sg_singstat_search"],
-    continuationTools: ["sg_singstat_table", "sg_singstat_timeseries", "sg_mas_interest_rates"],
-    continuationHints: [
-      "Start with sg_macro_brief for the compact artifact, then drop to SingStat table and time-series reads once you know the table IDs.",
-    ],
-  },
-  {
-    name: "Demographic Profile",
-    intent: "Inspect a planning area's population and household profile, optionally starting from a postal code.",
-    entrypoints: [
-      { tool: "sg_query", input: { query: "Demographic profile for postal code 168742", mode: "execute" } },
-      { tool: "sg_onemap_population", input: { planningArea: "Tampines", dataType: "getPopulationAgeGroup" } },
-      { tool: "sg_onemap_population", input: { planningArea: "Tampines", dataType: "getHouseholdMonthlyIncomeWork" } },
-    ],
-    requiredInputs: ["planningArea or postalCode"],
-    blockerFields: ["planningArea", "postalCode"],
-    authPrerequisites: [...ONEMAP_AUTH_NOTES, ...URA_AUTH_NOTES],
-    fallbackTools: ["sg_onemap_population", "sg_onemap_geocode", "sg_ura_planning_area"],
-    continuationTools: ["sg_onemap_population", "sg_ura_planning_area"],
-    continuationHints: [
-      "Postal-code prompts route through geocode plus planning-area resolution before the two demographic reads execute.",
-    ],
-  },
-  {
-    name: "Civic Discovery",
-    intent: "Find nearby family service centres, student care centres, social service offices, community outlets, residents' network centres, SportSG facilities, or childcare centres from a postal code, address, planning area, coordinates, or exact facility name.",
-    entrypoints: [
-      { tool: "sg_query", input: { query: "Find a family service centre near 560230", mode: "execute" } },
-      { tool: "sg_msf_family_services", input: { postalCode: "560230" } },
-      { tool: "sg_msf_student_care_services", input: { postalCode: "750471", scfaOnly: true } },
-      { tool: "sg_msf_social_service_offices", input: { name: "Social Service Office @ Queenstown" } },
-      { tool: "sg_pa_community_outlets", input: { type: "community_club", postalCode: "560123" } },
-      { tool: "sg_sportsg_facilities", input: { facilityType: "swimming_complex", postalCode: "560123" } },
-      { tool: "sg_ecda_childcare_centres", input: { postalCode: "560123", hasVacancy: true } },
-    ],
-    requiredInputs: ["directory intent", "postalCode or planningArea or address or lat/lng or exact name"],
-    blockerFields: ["directory", "postalCode", "address", "planningArea", "lat", "lng", "name"],
-    authPrerequisites: ONEMAP_AUTH_NOTES,
-    fallbackTools: [
-      "sg_onemap_geocode",
-      "sg_msf_family_services",
-      "sg_msf_student_care_services",
-      "sg_msf_social_service_offices",
-      "sg_pa_community_outlets",
-      "sg_pa_resident_network_centres",
-      "sg_sportsg_facilities",
-      "sg_ecda_childcare_centres",
-    ],
-    continuationTools: [
-      "sg_msf_family_services",
-      "sg_msf_student_care_services",
-      "sg_msf_social_service_offices",
-      "sg_pa_community_outlets",
-      "sg_pa_resident_network_centres",
-      "sg_sportsg_facilities",
-      "sg_ecda_childcare_centres",
-    ],
-    continuationHints: [
-      "Use exact quoted facility names for direct lookups, or coordinates when an agent already resolved location outside sg_query.",
-    ],
-  },
-  {
-    name: "Property And Regulatory Due Diligence",
-    intent: "Build a location and property brief with URA planning, URA transactions, HDB context, and optional live context.",
-    entrypoints: [
-      { tool: "sg_query", input: { query: "Property due diligence for Bedok HDB resale", mode: "execute" } },
-      { tool: "sg_property_brief", input: { planningArea: "Bedok", flatType: "4 ROOM", includeEnvironment: true } },
-      { tool: "sg_ura_property_transactions", input: { propertyType: "residential", area: "Bedok" } },
-      { tool: "sg_hdb_resale_prices", input: { town: "Bedok", flatType: "4 ROOM" } },
-    ],
-    requiredInputs: ["planningArea or postalCode"],
-    blockerFields: ["planningArea", "postalCode"],
-    authPrerequisites: URA_AUTH_NOTES,
-    fallbackTools: ["sg_property_brief", "sg_ura_property_transactions", "sg_hdb_resale_prices"],
-    continuationTools: ["sg_ura_dev_charges", "sg_hdb_rental_prices", "sg_environment_brief", "sg_transport_brief"],
-    continuationHints: [
-      "Use sg_property_brief for the combined artifact, then continue into URA, HDB, environment, or transport direct tools when you need deeper evidence.",
-    ],
-  },
-  {
-    name: "Property Counterparty Diligence",
-    intent: "Combine URA and HDB market context with CEA and BCA registry checks for counterparties involved in a property deal.",
-    entrypoints: [
-      { tool: "sg_ura_property_transactions", input: { propertyType: "residential", area: "Bedok" } },
-      { tool: "sg_hdb_resale_prices", input: { town: "Bedok", flatType: "4 ROOM" } },
-      { tool: "sg_cea_salespersons", input: { estateAgentName: "ERA REALTY NETWORK PTE LTD" } },
-      { tool: "sg_acra_entities", input: { entityName: "ABC CONSTRUCTION PTE LTD" } },
-      { tool: "sg_bca_licensed_builders", input: { companyName: "ABC CONSTRUCTION PTE LTD" } },
-      { tool: "sg_bca_registered_contractors", input: { companyName: "ABC CONSTRUCTION PTE LTD" } },
-    ],
-    requiredInputs: ["planningArea or town", "companyName or entityName or registrationNo"],
-    fallbackTools: [
-      "sg_ura_property_transactions",
-      "sg_hdb_resale_prices",
-      "sg_cea_salespersons",
-      "sg_acra_entities",
-      "sg_bca_licensed_builders",
-      "sg_bca_registered_contractors",
-    ],
-    continuationTools: ["sg_business_dossier", "sg_datagov_resources"],
-    continuationHints: [
-      "This is intentionally a direct-tool workflow; use sg_business_dossier when you want the registry synthesis artifact first.",
-    ],
-  },
-  {
-    name: "Business Registry Diligence",
-    intent: "Build a cross-registry business dossier across ACRA, BCA, and CEA records, with explicit module extension into GeBIZ, BOA, HSA, and HLB when requested.",
-    entrypoints: [
-      { tool: "sg_query", input: { query: "Registry diligence for UEN 201912345K", mode: "execute" } },
-      { tool: "sg_business_dossier", input: { uen: "201912345K" } },
-      { tool: "sg_acra_entities", input: { uen: "201912345K" } },
-      { tool: "sg_bca_licensed_builders", input: { companyName: "ABC CONSTRUCTION PTE LTD" } },
-      { tool: "sg_bca_registered_contractors", input: { companyName: "ABC CONSTRUCTION PTE LTD" } },
-      { tool: "sg_cea_salespersons", input: { registrationNo: "R123456A" } },
-    ],
-    requiredInputs: ["entityName or companyName or uen or registrationNo or salespersonName"],
+    requiredInputs: ["entityName or uen"],
     blockerFields: ["entityName", "uen", "registrationNo"],
-    fallbackTools: ["sg_business_dossier", "sg_acra_entities", "sg_bca_licensed_builders", "sg_bca_registered_contractors", "sg_cea_salespersons"],
-    continuationTools: ["sg_datagov_resources", "sg_datagov_rows"],
+    fallbackTools: ["sg_acra_entities", "sg_bca_registered_contractors", "sg_cea_salespersons"],
+    continuationTools: ["sg_gebiz_tenders", "sg_sanctions_screen", "sg_opencorporates_links"],
     continuationHints: [
-      "Use the dossier for the high-signal artifact, then drop to direct registries when you need raw source records or narrower filters.",
+      "Use the AI memo and report builder to produce a cited summary with evidence-bound claims.",
+      "Treat web presence and people discovery as analyst-review evidence, not registry facts.",
+    ],
+    outputShapeVersion: "business-dossier/v1",
+    outputShapeNotes: [
+      "Every summary claim should remain tied to evidence, provenance, freshness, gaps, and limits.",
+      "Exports should preserve the manifest and selected report sections.",
     ],
   },
   {
     id: "architecture_firm_diligence",
     name: "Architecture Firm Diligence",
-    intent: "Build a bounded architecture-firm diligence artifact using BOA, ACRA, and optional GeBIZ procurement evidence.",
+    intent: "Enrich an entity dossier with BOA, ACRA, and procurement evidence for architecture-firm review.",
     entrypoints: [
       { tool: "sg_query", input: { query: "Architecture firm diligence for DP Architects", mode: "execute" } },
-      { tool: "sg_business_dossier", input: { entityName: "DP Architects", modules: ["acra", "boa", "gebiz"], sectorHints: ["architecture", "procurement"] } },
-      { tool: "sg_boa_architecture_firms", input: { firmName: "DP Architects" } },
-      { tool: "sg_boa_architects", input: { firmName: "DP Architects" } },
-      { tool: "sg_gebiz_tenders", input: { supplierName: "DP Architects" } },
     ],
-    requiredInputs: ["entityName or registrationNo"],
-    blockerFields: ["entityName", "registrationNo"],
-    fallbackTools: ["sg_business_dossier", "sg_boa_architecture_firms", "sg_boa_architects", "sg_acra_entities", "sg_gebiz_tenders"],
-    continuationTools: ["sg_boa_architecture_firms", "sg_boa_architects", "sg_acra_entities", "sg_gebiz_tenders"],
-    continuationHints: [
-      "Use modules and sectorHints to keep this bounded to architecture-firm evidence instead of broadening into generic company analysis.",
-    ],
+    requiredInputs: ["entityName or uen"],
+    fallbackTools: ["sg_boa_architecture_firms", "sg_boa_architects", "sg_acra_entities"],
+    continuationTools: ["sg_gebiz_tenders"],
+    outputShapeVersion: "business-dossier/v1",
   },
   {
     id: "healthcare_supplier_diligence",
     name: "Healthcare Supplier Diligence",
-    intent: "Build a bounded healthcare supplier diligence artifact using HSA, ACRA, and optional GeBIZ procurement evidence.",
+    intent: "Enrich an entity dossier with HSA and procurement evidence for healthcare-supplier review.",
     entrypoints: [
-      { tool: "sg_query", input: { query: "Healthcare supplier diligence for ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.", mode: "execute" } },
-      { tool: "sg_business_dossier", input: { entityName: "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.", modules: ["acra", "hsa", "gebiz"], sectorHints: ["healthcare", "procurement"] } },
-      { tool: "sg_hsa_health_product_licensees", input: { companyName: "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD." } },
-      { tool: "sg_hsa_licensed_pharmacies", input: { pharmacyName: "A.M. Pharmacy Pte Ltd" } },
-      { tool: "sg_gebiz_tenders", input: { supplierName: "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD." } },
+      { tool: "sg_query", input: { query: "Healthcare supplier diligence for a pharmacy operator", mode: "execute" } },
     ],
-    requiredInputs: ["entityName"],
-    blockerFields: ["entityName"],
-    fallbackTools: ["sg_business_dossier", "sg_hsa_health_product_licensees", "sg_hsa_licensed_pharmacies", "sg_acra_entities", "sg_gebiz_tenders"],
-    continuationTools: ["sg_hsa_health_product_licensees", "sg_hsa_licensed_pharmacies", "sg_acra_entities", "sg_gebiz_tenders"],
-    continuationHints: [
-      "Use HSA rows for licence evidence, then add procurement or company-registry evidence only when the use case needs it.",
-    ],
+    requiredInputs: ["entityName or uen"],
+    fallbackTools: ["sg_hsa_health_product_licensees", "sg_hsa_licensed_pharmacies", "sg_acra_entities"],
+    continuationTools: ["sg_gebiz_tenders"],
+    outputShapeVersion: "business-dossier/v1",
   },
   {
     id: "hotel_operator_lookup",
     name: "Hotel Operator Lookup",
-    intent: "Look up a hotel or keeper using HLB and optional ACRA company evidence without widening into a generic travel workflow.",
+    intent: "Enrich an entity dossier with HLB hotel and keeper evidence.",
     entrypoints: [
-      { tool: "sg_query", input: { query: "Hotel operator lookup for Raffles Hotel Singapore", mode: "execute" } },
-      { tool: "sg_business_dossier", input: { entityName: "Raffles Hotel Singapore", modules: ["acra", "hlb"], sectorHints: ["hospitality"] } },
-      { tool: "sg_hlb_hotels", input: { name: "Raffles Hotel Singapore" } },
-      { tool: "sg_hlb_hotels", input: { keeperName: "Raffles Hotel Singapore" } },
+      { tool: "sg_query", input: { query: "Hotel operator lookup for a Singapore hotel", mode: "execute" } },
     ],
-    requiredInputs: ["entityName or hotel name"],
-    blockerFields: ["entityName"],
-    fallbackTools: ["sg_business_dossier", "sg_hlb_hotels", "sg_acra_entities"],
-    continuationTools: ["sg_hlb_hotels", "sg_acra_entities"],
-    continuationHints: [
-      "Use HLB for keeper and hotel facts first; only fall back to company-registry context when you need a wider entity check.",
-    ],
-  },
-  {
-    id: "sector_scoped_business_diligence",
-    name: "Sector Scoped Business Diligence",
-    intent: "Build a business dossier with explicit modules and sector hints so the workflow stays bounded to the target industry.",
-    entrypoints: [
-      { tool: "sg_query", input: { query: "Healthcare supplier business dossier for ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.", mode: "execute" } },
-      { tool: "sg_business_dossier", input: { entityName: "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.", modules: ["acra", "hsa", "gebiz"], sectorHints: ["healthcare", "procurement"] } },
-    ],
-    requiredInputs: ["entityName plus module or sector scope"],
-    blockerFields: ["entityName", "modules", "sectorHints"],
-    fallbackTools: ["sg_business_dossier", "sg_acra_entities", "sg_gebiz_tenders", "sg_boa_architecture_firms", "sg_hsa_health_product_licensees", "sg_hlb_hotels"],
-    continuationTools: ["sg_business_dossier", "sg_gebiz_tenders", "sg_boa_architecture_firms", "sg_hsa_health_product_licensees", "sg_hlb_hotels"],
-    continuationHints: [
-      "Prefer explicit modules and sectorHints over free-form planning when you want the diligence surface to stay narrow and auditable.",
-    ],
-  },
-  {
-    name: "Dataset Discovery Fallback",
-    intent: "Search data.gov.sg and continue from dataset discovery into resource inspection and bounded row reads.",
-    entrypoints: [
-      { tool: "sg_query", input: { query: "Find datasets about hawker centres", mode: "execute" } },
-      { tool: "sg_datagov_search", input: { keyword: "hawker centres" } },
-      { tool: "sg_datagov_resources", input: { datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc" } },
-      { tool: "sg_datagov_rows", input: { datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc", limit: 5, sort: "month desc" } },
-    ],
-    requiredInputs: ["keyword"],
-    blockerFields: ["datasetId"],
-    fallbackTools: ["sg_datagov_search", "sg_datagov_get", "sg_datagov_resources", "sg_datagov_rows"],
-    continuationTools: ["sg_datagov_resources", "sg_datagov_rows"],
-    continuationHints: [
-      "Search first, inspect resources second, and only then run bounded row reads with explicit limits and filters.",
-    ],
-  },
-  {
-    name: "Route Planning",
-    intent: "Plan directions between two Singapore postal codes or coordinate pairs using OneMap geocoding and routing.",
-    entrypoints: [
-      { tool: "sg_query", input: { query: "Walk from 049178 to 048616", mode: "execute" } },
-      { tool: "sg_onemap_route", input: { startLat: 1.2864, startLng: 103.8537, endLat: 1.284, endLng: 103.851, routeType: "walk" } },
-      { tool: "sg_onemap_reverse_geocode", input: { lat: 1.284, lng: 103.851 } },
-    ],
-    requiredInputs: ["origin and destination as postal codes or coordinate pairs"],
-    blockerFields: ["originPostalCode", "destinationPostalCode", "startLat", "startLng", "endLat", "endLng"],
-    authPrerequisites: ONEMAP_AUTH_NOTES,
-    fallbackTools: ["sg_onemap_geocode", "sg_onemap_route", "sg_onemap_reverse_geocode"],
-    continuationTools: ["sg_onemap_reverse_geocode", "sg_onemap_convert_coords"],
-    continuationHints: [
-      "Postal-code prompts geocode both endpoints before routing; direct coordinate pairs skip that step.",
-    ],
-  },
-  {
-    name: "SingStat Table Drilldown",
-    intent: "Move from dataset discovery into a specific SingStat table, browse, and time-series read with explicit table IDs.",
-    entrypoints: [
-      { tool: "sg_query", input: { query: "Browse SingStat transport datasets", mode: "execute" } },
-      { tool: "sg_singstat_browse", input: { category: "Transport" } },
-      { tool: "sg_singstat_table", input: { tableId: "M650151" } },
-      { tool: "sg_singstat_timeseries", input: { tableId: "M650151", indicator: "Vehicle population", startYear: 2022, endYear: 2025 } },
-    ],
-    requiredInputs: ["category or tableId"],
-    blockerFields: ["tableId", "indicator", "startYear", "endYear"],
-    fallbackTools: ["sg_singstat_browse", "sg_singstat_search", "sg_singstat_table", "sg_singstat_timeseries"],
-    continuationTools: ["sg_singstat_table", "sg_singstat_timeseries"],
-    continuationHints: [
-      "Use browse or search to discover the right table ID first; then switch to direct table or time-series reads with explicit identifiers.",
-    ],
-  },
-  {
-    name: "Dataset Collection Browse",
-    intent: "Browse data.gov.sg collections first, then drill into datasets, resources, and bounded rows.",
-    entrypoints: [
-      { tool: "sg_query", input: { query: "Browse data.gov collections", mode: "execute" } },
-      { tool: "sg_datagov_browse", input: {} },
-      { tool: "sg_datagov_search", input: { keyword: "hawker centres" } },
-      { tool: "sg_datagov_resources", input: { datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc" } },
-    ],
-    requiredInputs: ["collection or keyword"],
-    blockerFields: ["datasetId"],
-    fallbackTools: ["sg_datagov_browse", "sg_datagov_search", "sg_datagov_resources", "sg_datagov_rows"],
-    continuationTools: ["sg_datagov_search", "sg_datagov_resources", "sg_datagov_rows"],
-    continuationHints: [
-      "This is the broadest discovery path; continue into sg_datagov_resources or sg_datagov_rows once you have a datasetId.",
-    ],
-  },
-  {
-    id: "transport_status",
-    name: "Transport Status",
-    intent: "Build a live transport operations brief and optionally drill into stop-level arrivals, train alerts, and traffic incidents.",
-    entrypoints: [
-      { tool: "sg_query", input: { query: "Transport status in Singapore right now", mode: "execute" } },
-      { tool: "sg_transport_brief", input: {} },
-      { tool: "sg_lta_bus_arrivals", input: { busStopCode: "83139", serviceNo: "851" } },
-      { tool: "sg_lta_train_alerts", input: {} },
-      { tool: "sg_lta_traffic_incidents", input: {} },
-    ],
-    requiredInputs: ["optional busStopCode"],
-    blockerFields: ["busStopCode"],
-    authPrerequisites: LTA_AUTH_NOTES,
-    fallbackTools: ["sg_transport_brief", "sg_lta_bus_arrivals", "sg_lta_train_alerts", "sg_lta_traffic_incidents"],
-    continuationTools: ["sg_lta_bus_arrivals", "sg_lta_train_alerts", "sg_lta_traffic_incidents"],
-    continuationHints: [
-      "Use sg_transport_brief for the ops snapshot, or drop directly to stop-level arrivals when you already know the bus stop code.",
-    ],
-    outputShapeVersion: "transport-brief/v2",
-    outputShapeNotes: [
-      "sg_transport_brief.records exposes status, coverage, signals, network, optional stop, followups, and raw.",
-    ],
-  },
-  {
-    id: "transit_intelligence_ops",
-    name: "Transit Intelligence Ops",
-    intent: "Build a bounded transit-operations brief, then continue into reliability, transfer-risk, and policy-aware objective planning when stop-level identifiers are available.",
-    entrypoints: [
-      { tool: "sg_query", input: { query: "Transit ops brief for Singapore right now", mode: "execute" } },
-      { tool: "sg_transit_ops_brief", input: {} },
-      { tool: "sg_transit_pack", input: {} },
-      { tool: "sg_transit_reliability", input: { originStopId: "83139", destinationStopId: "76059", horizonMinutes: 45 } },
-      { tool: "sg_transit_transfer_risk", input: { fromServiceNo: "851", toServiceNo: "72", transferStopId: "83139" } },
-      { tool: "sg_transit_objective_plan", input: { objective: "balanced", stopIds: ["83139", "76059"] } },
-    ],
-    requiredInputs: ["optional stopIds for targeted monitoring; required stop/service IDs for reliability or transfer-risk reads"],
-    authPrerequisites: LTA_AUTH_NOTES,
-    fallbackTools: ["sg_transit_ops_brief", "sg_transit_pack", "sg_transit_health", "sg_transit_hotspots", "sg_lta_bus_arrivals"],
-    continuationTools: ["sg_transit_reliability", "sg_transit_transfer_risk", "sg_transit_objective_plan", "sg_transit_policy_audit"],
-    continuationHints: [
-      "Start from sg_transit_ops_brief for adoption-friendly summaries, then switch to decision primitives once identifiers are known.",
-    ],
-    outputShapeVersion: "transit-intelligence/v1",
-    outputShapeNotes: [
-      "sg_transit_ops_brief returns a BriefArtifact-compatible record with provenance, limits, and nextChecks.",
-    ],
-  },
-  {
-    id: "environment_snapshot",
-    name: "Environment Snapshot",
-    intent: "Build a live environment monitoring brief and optionally drill into forecast, air quality, and rainfall detail.",
-    entrypoints: [
-      { tool: "sg_query", input: { query: "Environment snapshot of Singapore right now", mode: "execute" } },
-      { tool: "sg_environment_brief", input: {} },
-      { tool: "sg_nea_forecast_2hr", input: { area: "Tampines" } },
-      { tool: "sg_nea_air_quality", input: { region: "East" } },
-      { tool: "sg_nea_rainfall", input: {} },
-    ],
-    requiredInputs: ["optional planningArea or region"],
-    fallbackTools: ["sg_environment_brief", "sg_nea_forecast_2hr", "sg_nea_air_quality", "sg_nea_rainfall"],
-    continuationTools: ["sg_nea_forecast_2hr", "sg_nea_air_quality", "sg_nea_rainfall"],
-    continuationHints: [
-      "Use the brief for the combined artifact, then drop to the NEA tools when you need specific regional or station-level detail.",
-    ],
-    outputShapeVersion: "environment-brief/v2",
-    outputShapeNotes: [
-      "sg_environment_brief.records exposes status, coverage, signals, thresholds, focus, followups, and raw.",
-    ],
+    requiredInputs: ["entityName or uen"],
+    fallbackTools: ["sg_hlb_hotels", "sg_acra_entities"],
+    continuationTools: ["sg_gebiz_tenders"],
+    outputShapeVersion: "business-dossier/v1",
   },
 ];
 
 export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
   {
-    name: "Postal Route",
-    goal: "Turn a natural-language route prompt into a bounded OneMap routing workflow.",
-    prompt: "Walk from 049178 to 048616",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Walk from 049178 to 048616", mode: "execute" },
-    },
-    fallbackTools: ["sg_onemap_geocode", "sg_onemap_route"],
-    notes: [
-      "sg_query geocodes both postal codes before calling sg_onemap_route.",
-      "If one endpoint is missing, sg_query returns an explicit blocker instead of guessing.",
-    ],
-    requiredInputs: ["originPostalCode", "destinationPostalCode"],
-    blockerFields: ["originPostalCode", "destinationPostalCode"],
-    authPrerequisites: ONEMAP_AUTH_NOTES,
-    continuationTools: ["sg_onemap_reverse_geocode", "sg_onemap_convert_coords"],
-    continuationHints: [
-      "Drop to sg_onemap_route directly when an agent already has resolved coordinates.",
-    ],
-  },
-  {
-    name: "Reverse Geocode",
-    goal: "Resolve one coordinate pair to a Singapore address without manual parameter mapping.",
-    prompt: "Reverse geocode 1.2840, 103.8510",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Reverse geocode 1.2840, 103.8510", mode: "execute" },
-    },
-    fallbackTools: ["sg_onemap_reverse_geocode"],
-    notes: [
-      "Best for turning GPS-like coordinates into a nearest address lookup.",
-      "Requires one latitude and longitude pair.",
-    ],
-    requiredInputs: ["lat", "lng"],
-    blockerFields: ["lat", "lng"],
-    authPrerequisites: ONEMAP_AUTH_NOTES,
-    continuationTools: ["sg_onemap_route"],
-    continuationHints: [
-      "Use the returned address as a follow-on input for routing or civic discovery prompts.",
-    ],
-  },
-  {
-    name: "Coordinate Conversion",
-    goal: "Convert between SVY21 and WGS84 using a prompt instead of remembering parameter names.",
-    prompt: "Convert SVY21 28001 38744 to WGS84",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Convert SVY21 28001 38744 to WGS84", mode: "execute" },
-    },
-    fallbackTools: ["sg_onemap_convert_coords"],
-    notes: [
-      "Use this when a caller has a local map coordinate pair and needs GPS coordinates, or the reverse.",
-    ],
-    requiredInputs: ["from", "x", "y"],
-    blockerFields: ["from", "x", "y"],
-    authPrerequisites: ONEMAP_AUTH_NOTES,
-    continuationTools: ["sg_onemap_reverse_geocode", "sg_onemap_route"],
-  },
-  {
-    name: "SingStat Drilldown",
-    goal: "Browse, select, and read the right SingStat table without leaving the MCP surface.",
-    prompt: "Browse SingStat transport datasets",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Browse SingStat transport datasets", mode: "execute" },
-    },
-    fallbackTools: ["sg_singstat_browse", "sg_singstat_table", "sg_singstat_timeseries"],
-    notes: [
-      "Use sg_singstat_search if you still need to discover a table ID.",
-      "Use sg_singstat_timeseries when you already know the table ID and indicator.",
-    ],
-    requiredInputs: ["category or keyword", "tableId for drilldown"],
-    blockerFields: ["tableId", "indicator", "startYear", "endYear"],
-    continuationTools: ["sg_singstat_table", "sg_singstat_timeseries"],
-    continuationHints: [
-      "Once the tableId is known, stop using natural language and switch to direct table or time-series reads.",
-    ],
-  },
-  {
-    name: "data.gov Collection Browse",
-    goal: "Discover collections first, then continue into resource and row inspection.",
-    prompt: "Browse data.gov collections",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Browse data.gov collections", mode: "execute" },
-    },
-    fallbackTools: ["sg_datagov_browse", "sg_datagov_search", "sg_datagov_resources", "sg_datagov_rows"],
-    notes: [
-      "Good for agent builders that need a broad fallback surface before committing to a dataset ID.",
-    ],
-    requiredInputs: ["collection or keyword", "datasetId for follow-up"],
-    blockerFields: ["datasetId"],
-    continuationTools: ["sg_datagov_search", "sg_datagov_resources", "sg_datagov_rows"],
-  },
-  {
-    name: "URA Development Charges",
-    goal: "Inspect URA development charge rates without remembering the direct tool payload shape.",
-    prompt: "Show URA development charge rates for Residential sector A",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Show URA development charge rates for Residential sector A", mode: "execute" },
-    },
-    fallbackTools: ["sg_ura_dev_charges"],
-    notes: [
-      "Use quoted or explicit use-group and sector terms when you want a narrower result set.",
-    ],
-    authPrerequisites: URA_AUTH_NOTES,
-    continuationTools: ["sg_ura_planning_area"],
-  },
-  {
-    name: "HDB Rental Check",
-    goal: "Check HDB rental prices with a natural-language prompt before dropping to direct row reads.",
-    prompt: "Show HDB rental prices in Bedok for 4 ROOM flats",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Show HDB rental prices in Bedok for 4 ROOM flats", mode: "execute" },
-    },
-    fallbackTools: ["sg_hdb_rental_prices"],
-    notes: [
-      "Use this when the caller has a town and flat type but does not want to construct the direct tool payload manually.",
-    ],
-    requiredInputs: ["town", "flatType"],
-    continuationTools: ["sg_hdb_resale_prices", "sg_property_brief"],
-  },
-  {
-    name: "Demographic Profile",
-    goal: "Get demographic and population data for a planning area from a postal code.",
-    prompt: "Population profile for postal code 460123",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Population profile for postal code 460123", mode: "execute" },
-    },
-    fallbackTools: ["sg_onemap_geocode", "sg_onemap_population"],
-    notes: [
-      "sg_query geocodes the postal code first, then fetches population data for the resolved planning area.",
-      "Available data types include economic_status, education, ethnic_group, household_size, and more.",
-    ],
-    requiredInputs: ["planningArea or postalCode"],
-    blockerFields: ["planningArea", "postalCode"],
-    authPrerequisites: [...ONEMAP_AUTH_NOTES, ...URA_AUTH_NOTES],
-    continuationTools: ["sg_onemap_population", "sg_ura_planning_area"],
-  },
-  {
-    name: "Community Club Near Postal Code",
-    goal: "Find a nearby community club or PAssion WaVe outlet from a postal code prompt.",
-    prompt: "Find a community club near 560123",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Find a community club near 560123", mode: "execute" },
-    },
-    fallbackTools: ["sg_onemap_geocode", "sg_pa_community_outlets"],
-    notes: [
-      "sg_query geocodes the postal code first, then applies a bounded proximity search.",
-      "Use sg_pa_community_outlets directly when you already have latitude and longitude.",
-    ],
-    requiredInputs: ["postalCode"],
-    blockerFields: ["postalCode"],
-    authPrerequisites: ONEMAP_AUTH_NOTES,
-    continuationTools: ["sg_pa_community_outlets"],
-  },
-  {
-    name: "Family Service Near Postal Code",
-    goal: "Find a nearby family service centre from a postal code prompt.",
-    prompt: "Find a family service centre near 560230",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Find a family service centre near 560230", mode: "execute" },
-    },
-    fallbackTools: ["sg_onemap_geocode", "sg_msf_family_services"],
-    notes: [
-      "sg_query geocodes the postal code first, then applies a bounded proximity search.",
-      "Use sg_msf_family_services directly when you already have latitude and longitude.",
-    ],
-    requiredInputs: ["postalCode"],
-    blockerFields: ["postalCode"],
-    authPrerequisites: ONEMAP_AUTH_NOTES,
-    continuationTools: ["sg_msf_family_services"],
-  },
-  {
-    name: "Student Care Near Planning Area",
-    goal: "Find nearby student care centres from a planning-area prompt.",
-    prompt: "Find student care centres near Bedok",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Find student care centres near Bedok", mode: "execute" },
-    },
-    fallbackTools: ["sg_onemap_geocode", "sg_msf_student_care_services"],
-    notes: [
-      "sg_query resolves the planning area before applying a bounded proximity search.",
-      "Use audit-status and SCFA filters directly when you need stricter student care screening.",
-    ],
-    requiredInputs: ["planningArea"],
-    blockerFields: ["planningArea"],
-    authPrerequisites: ONEMAP_AUTH_NOTES,
-    continuationTools: ["sg_msf_student_care_services"],
-  },
-  {
-    name: "SCFA Student Care Near Planning Area",
-    goal: "Find SCFA student care centres from a planning-area prompt.",
-    prompt: "Find SCFA student care near Tampines",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Find SCFA student care near Tampines", mode: "execute" },
-    },
-    fallbackTools: ["sg_onemap_geocode", "sg_msf_student_care_services"],
-    notes: [
-      "SCFA or SCFA-approved language maps to the direct tool's scfaOnly filter.",
-      "Combine with audit-status language such as Grade A when you want narrower student care results.",
-    ],
-    requiredInputs: ["planningArea"],
-    blockerFields: ["planningArea"],
-    authPrerequisites: ONEMAP_AUTH_NOTES,
-    continuationTools: ["sg_msf_student_care_services"],
-  },
-  {
-    name: "Social Service Office Near Address",
-    goal: "Find a nearby social service office from an address prompt.",
-    prompt: "Find a social service office near 1 Raffles Place",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Find a social service office near 1 Raffles Place", mode: "execute" },
-    },
-    fallbackTools: ["sg_onemap_geocode", "sg_msf_social_service_offices"],
-    notes: [
-      "Use an exact office name in quotes when you want a direct name lookup instead of a proximity search.",
-    ],
-    requiredInputs: ["address or exact name"],
-    blockerFields: ["address", "name"],
-    authPrerequisites: ONEMAP_AUTH_NOTES,
-    continuationTools: ["sg_msf_social_service_offices"],
-  },
-  {
-    name: "Sport Facility Near Planning Area",
-    goal: "Find a nearby SportSG facility from a planning-area prompt and optional venue-type hint.",
-    prompt: "Find a SportSG swimming complex near Tampines",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Find a SportSG swimming complex near Tampines", mode: "execute" },
-    },
-    fallbackTools: ["sg_onemap_geocode", "sg_sportsg_facilities"],
-    notes: [
-      "sg_query resolves the planning area before applying a bounded civic proximity search.",
-      "Facility types are currently derived from venue-name patterns such as swimming, stadium, or sport centre.",
-    ],
-    requiredInputs: ["planningArea"],
-    blockerFields: ["planningArea"],
-    authPrerequisites: ONEMAP_AUTH_NOTES,
-    continuationTools: ["sg_sportsg_facilities"],
-  },
-  {
-    name: "Childcare Vacancy Near Planning Area",
-    goal: "Find nearby childcare centres and keep only centres with current vacancy signals.",
-    prompt: "Find childcare centres near Bedok with vacancies",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Find childcare centres near Bedok with vacancies", mode: "execute" },
-    },
-    fallbackTools: ["sg_onemap_geocode", "sg_ecda_childcare_centres"],
-    notes: [
-      "Childcare discovery joins ECDA geospatial centres with the Listing of Centres vacancy dataset.",
-      "Current-month vacancy statuses are treated as bounded availability signals, not admissions guarantees.",
-    ],
-    requiredInputs: ["planningArea"],
-    blockerFields: ["planningArea"],
-    authPrerequisites: ONEMAP_AUTH_NOTES,
-    continuationTools: ["sg_ecda_childcare_centres"],
-  },
-  {
-    name: "Residents Network Near Address",
-    goal: "Find a nearby residents' network or residents' committee centre from an address prompt.",
-    prompt: "Find a residents' network centre near 1 Raffles Place",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Find a residents' network centre near 1 Raffles Place", mode: "execute" },
-    },
-    fallbackTools: ["sg_onemap_geocode", "sg_pa_resident_network_centres"],
-    notes: [
-      "Use an exact facility name in quotes when you want a direct name lookup instead of a proximity search.",
-    ],
-    requiredInputs: ["address or exact name"],
-    blockerFields: ["address", "name"],
-    authPrerequisites: ONEMAP_AUTH_NOTES,
-    continuationTools: ["sg_pa_resident_network_centres"],
-  },
-  {
-    name: "MOE School Directory Lookup",
-    goal: "Run a bounded MOE school directory lookup with optional level, zone, and exact-name filters.",
-    prompt: "Find MOE primary schools in west zone",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Find MOE primary schools in west zone", mode: "execute" },
-    },
-    fallbackTools: ["sg_moe_schools"],
-    notes: [
-      "Designed for deterministic education-directory lookups, not school ranking or placement recommendations.",
-      "The output includes provenance, freshness, and limits metadata for enterprise planning handoffs.",
-    ],
-    requiredInputs: ["optional level, zone, or exact name"],
-    continuationTools: ["sg_moe_schools"],
-  },
-  {
-    name: "MOH Healthcare Directory Lookup",
-    goal: "Run a bounded MOH healthcare directory lookup for hospitals and clinics by type, name, or postal code.",
-    prompt: "Find MOH hospitals near postal code 119077",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Find MOH hospitals near postal code 119077", mode: "execute" },
-    },
-    fallbackTools: ["sg_moh_facilities"],
-    notes: [
-      "Designed for deterministic facility-directory lookups, not triage or medical recommendations.",
-      "The output includes provenance, freshness, and limits metadata for traceable operational use.",
-    ],
-    requiredInputs: ["optional type, postalCode, or exact name"],
-    continuationTools: ["sg_moh_facilities"],
-  },
-  {
-    name: "NLB Library Directory Lookup",
-    goal: "Find public libraries by region, postal code, or exact name without turning the lookup into a recommendation.",
-    prompt: "Find public libraries in east region",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Find public libraries in east region", mode: "execute" },
-    },
-    fallbackTools: ["sg_nlb_libraries"],
-    notes: [
-      "Designed for deterministic library-directory lookup, not programme discovery or library ranking.",
-      "Use postalCode or exact-name filters when the caller needs a narrower result set.",
-    ],
-    requiredInputs: ["optional region, postalCode, or exact name"],
-    continuationTools: ["sg_nlb_libraries"],
-  },
-  {
-    name: "NParks Park Directory Lookup",
-    goal: "Find parks and nature reserves by exact name for civic and relocation products.",
-    prompt: "Find parks named \"East Coast Park\"",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Find parks named \"East Coast Park\"", mode: "execute" },
-    },
-    fallbackTools: ["sg_nparks_parks"],
-    notes: [
-      "Designed for deterministic parks-directory lookup, not event planning or safety recommendations.",
-      "For weather-sensitive use cases, continue into sg_environment_brief.",
-    ],
-    requiredInputs: ["optional exact name"],
-    continuationTools: ["sg_nparks_parks", "sg_environment_brief"],
-  },
-  {
-    name: "SFA Licensed Food Establishment Lookup",
-    goal: "Check licensed food-establishment directory rows by exact name.",
-    prompt: "Find licensed food establishments named \"ABC FOOD\"",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Find licensed food establishments named \"ABC FOOD\"", mode: "execute" },
-    },
-    fallbackTools: ["sg_sfa_establishments"],
-    notes: [
-      "Designed for public licensing discovery, not food-safety scoring or enforcement advice.",
-      "Use exact names when possible because the direct surface is intentionally bounded.",
-    ],
-    requiredInputs: ["optional exact name"],
-    continuationTools: ["sg_sfa_establishments"],
-  },
-  {
-    name: "Singapore Statutes Search",
-    goal: "Search Singapore Statutes Online by keyword while preserving the no-legal-advice boundary.",
-    prompt: "Search Singapore statutes for Employment Act",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Search Singapore statutes for Employment Act", mode: "execute" },
-    },
-    fallbackTools: ["sg_law_search"],
-    notes: [
-      "Search results are snippets and official URLs only; agents must not provide legal advice.",
-      "Use this as a research pointer before the user verifies current text on Singapore Statutes Online.",
-    ],
-    requiredInputs: ["query"],
-    continuationTools: ["sg_law_search"],
-  },
-  {
-    id: "bus_stop_status",
-    name: "Bus Stop Status",
-    goal: "Get live bus arrival timings and transport context for a specific bus stop.",
-    prompt: "Bus arrivals at stop 83139",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Bus arrivals at stop 83139", mode: "execute" },
-    },
-    fallbackTools: ["sg_lta_bus_arrivals", "sg_transport_brief"],
-    notes: [
-      "Use sg_transport_brief for a broader snapshot including train alerts and traffic incidents.",
-      "Bus stop codes are 5-digit numbers found at bus stop poles.",
-    ],
-    requiredInputs: ["busStopCode"],
-    blockerFields: ["busStopCode"],
-    authPrerequisites: LTA_AUTH_NOTES,
-    continuationTools: ["sg_transport_brief", "sg_lta_train_alerts", "sg_lta_traffic_incidents"],
-    outputShapeVersion: "transport-brief/v2",
-    outputShapeNotes: [
-      "The transport brief's analyst view now lives in records.status, coverage, signals, network, optional stop, followups, and raw.",
-    ],
-  },
-  {
-    id: "transit_ops_brief",
-    name: "Transit Ops Brief",
-    goal: "Generate a bounded transit operations brief first, then optionally continue into reliability and policy-aware planning.",
-    prompt: "Transit ops brief for Singapore right now",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Transit ops brief for Singapore right now", mode: "execute" },
-    },
-    fallbackTools: ["sg_transit_ops_brief", "sg_transit_pack", "sg_transit_health", "sg_transit_hotspots"],
-    notes: [
-      "Use this as the adoption-first path when callers need one compact transit artifact with explicit evidence and limits.",
-      "Escalate to sg_transit_reliability or sg_transit_transfer_risk only when you have concrete stop and service identifiers.",
-    ],
-    authPrerequisites: LTA_AUTH_NOTES,
-    continuationTools: ["sg_transit_reliability", "sg_transit_transfer_risk", "sg_transit_objective_plan", "sg_transit_policy_audit"],
-    continuationHints: [
-      "Use sg_transit_objective_plan for guardrailed decision generation; keep sg_transit_policy_audit in the loop for governance traces.",
-    ],
-    outputShapeVersion: "transit-intelligence/v1",
-    outputShapeNotes: [
-      "The brief artifact payload is exposed at structuredContent.record with provenance and nextChecks.",
-    ],
-  },
-  {
-    id: "outdoor_event_check",
-    name: "Outdoor Event Check",
-    goal: "Check if weather and air quality conditions are safe for outdoor activities.",
-    prompt: "Is it safe for outdoor activities in Bedok?",
-    preferredEntrypoint: {
-      tool: "sg_query",
-      input: { query: "Environment brief for Bedok", mode: "execute" },
-    },
-    fallbackTools: ["sg_environment_brief", "sg_nea_forecast_2hr", "sg_nea_air_quality"],
-    notes: [
-      "The environment brief now surfaces the plain-language recommendation under records.thresholds.advisory.",
-      "Use records.status.headline when you need the compact analyst headline instead of the advisory string.",
-    ],
-    continuationTools: ["sg_nea_forecast_2hr", "sg_nea_air_quality", "sg_nea_rainfall"],
-    outputShapeVersion: "environment-brief/v2",
-    outputShapeNotes: [
-      "The environment brief's analyst view now lives in records.status, coverage, signals, thresholds, focus, followups, and raw.",
-    ],
-  },
-  {
+    id: "business_due_diligence",
     name: "Business Due Diligence",
-    goal: "Run a cross-registry business check across ACRA, BCA, and CEA for a company, or extend it into explicit BOA, HSA, HLB, and GeBIZ modules.",
-    prompt: "Business dossier for UEN 201912345A",
+    goal: "Produce a cited CDD report draft from a Singapore company name, UEN, or registration identifier.",
+    prompt: "Business dossier for DP Architects",
     preferredEntrypoint: {
       tool: "sg_query",
-      input: { query: "Business dossier for UEN 201912345A", mode: "execute" },
+      input: { query: "Business dossier for DP Architects", mode: "execute" },
     },
     fallbackTools: ["sg_business_dossier", "sg_acra_entities", "sg_bca_licensed_builders"],
     notes: [
-      "The dossier includes riskFlags for expired licenses and inactive entities.",
-      "Check matchConfidence to understand whether results are exact-match or fuzzy.",
+      "Use this as the default recipe for company/UEN search.",
+      "Keep conclusions framed as analyst-review findings, not pass/fail decisions.",
     ],
-    requiredInputs: ["entityName or uen or registrationNo"],
+    requiredInputs: ["entityName or uen"],
     blockerFields: ["entityName", "uen", "registrationNo"],
-    continuationTools: ["sg_acra_entities", "sg_bca_licensed_builders", "sg_bca_registered_contractors", "sg_cea_salespersons"],
-    continuationHints: [
-      "Use the direct registries when you need raw source records after the synthesized dossier.",
-    ],
+    continuationTools: ["sg_gebiz_tenders", "sg_sanctions_screen", "sg_opencorporates_links", "sg_adverse_media_lite"],
+    outputShapeVersion: "business-dossier/v1",
   },
   {
+    id: "architecture_firm_diligence",
     name: "Architecture Firm Diligence",
-    goal: "Run a bounded architecture-firm diligence workflow over BOA, ACRA, and optional GeBIZ evidence.",
+    goal: "Check company identity plus BOA architecture-firm evidence.",
     prompt: "Architecture firm diligence for DP Architects",
     preferredEntrypoint: {
       tool: "sg_query",
       input: { query: "Architecture firm diligence for DP Architects", mode: "execute" },
     },
-    fallbackTools: ["sg_business_dossier", "sg_boa_architecture_firms", "sg_boa_architects", "sg_gebiz_tenders"],
-    notes: [
-      "Use explicit modules and sector hints to keep the dossier bounded to BOA plus optional procurement evidence.",
-      "This is intentionally not a general construction analyst workflow.",
-    ],
-    requiredInputs: ["entityName or registrationNo"],
-    blockerFields: ["entityName", "registrationNo"],
-    continuationTools: ["sg_boa_architecture_firms", "sg_boa_architects", "sg_acra_entities", "sg_gebiz_tenders"],
+    fallbackTools: ["sg_business_dossier", "sg_boa_architecture_firms", "sg_boa_architects"],
+    notes: ["Use BOA matches as sector enrichment alongside ACRA identity evidence."],
+    requiredInputs: ["entityName or uen"],
+    continuationTools: ["sg_gebiz_tenders"],
+    outputShapeVersion: "business-dossier/v1",
   },
   {
+    id: "healthcare_supplier_diligence",
     name: "Healthcare Supplier Diligence",
-    goal: "Run a bounded healthcare supplier diligence workflow over HSA, ACRA, and optional GeBIZ evidence.",
-    prompt: "Healthcare supplier diligence for ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.",
+    goal: "Check company identity plus HSA licensee/pharmacy evidence.",
+    prompt: "Healthcare supplier diligence for a pharmacy operator",
     preferredEntrypoint: {
       tool: "sg_query",
-      input: { query: "Healthcare supplier diligence for ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.", mode: "execute" },
+      input: { query: "Healthcare supplier diligence for a pharmacy operator", mode: "execute" },
     },
-    fallbackTools: ["sg_business_dossier", "sg_hsa_health_product_licensees", "sg_hsa_licensed_pharmacies", "sg_gebiz_tenders"],
-    notes: [
-      "Use HSA licence rows as the primary evidence surface and only widen into procurement when the prompt justifies it.",
-    ],
-    requiredInputs: ["entityName"],
-    blockerFields: ["entityName"],
-    continuationTools: ["sg_hsa_health_product_licensees", "sg_hsa_licensed_pharmacies", "sg_acra_entities", "sg_gebiz_tenders"],
+    fallbackTools: ["sg_business_dossier", "sg_hsa_health_product_licensees", "sg_hsa_licensed_pharmacies"],
+    notes: ["Use HSA matches as sector enrichment; unresolved licenses should be shown as coverage gaps."],
+    requiredInputs: ["entityName or uen"],
+    continuationTools: ["sg_gebiz_tenders"],
+    outputShapeVersion: "business-dossier/v1",
   },
   {
+    id: "hotel_operator_lookup",
     name: "Hotel Operator Lookup",
-    goal: "Look up a hotel or operator using the HLB hotel register without broadening into a generic hospitality assistant.",
-    prompt: "Hotel operator lookup for Raffles Hotel Singapore",
+    goal: "Check company identity plus HLB hotel and keeper evidence.",
+    prompt: "Hotel operator lookup for a Singapore hotel",
     preferredEntrypoint: {
       tool: "sg_query",
-      input: { query: "Hotel operator lookup for Raffles Hotel Singapore", mode: "execute" },
+      input: { query: "Hotel operator lookup for a Singapore hotel", mode: "execute" },
     },
-    fallbackTools: ["sg_business_dossier", "sg_hlb_hotels", "sg_acra_entities"],
-    notes: [
-      "Use hotel name or keeper name. HLB is the primary source; ACRA is secondary entity context.",
-    ],
-    requiredInputs: ["entityName or hotel name"],
-    blockerFields: ["entityName"],
-    continuationTools: ["sg_hlb_hotels", "sg_acra_entities"],
+    fallbackTools: ["sg_business_dossier", "sg_hlb_hotels"],
+    notes: ["Use HLB matches as sector enrichment and preserve hotel/keeper attribution."],
+    requiredInputs: ["entityName or uen"],
+    continuationTools: ["sg_gebiz_tenders"],
+    outputShapeVersion: "business-dossier/v1",
   },
 ];
 
 export const RUNTIME_CATALOG: RuntimeCatalog = {
-  toolsetProfiles: TOOLSET_PROFILE_CATALOG.map((entry) => ({
-    profile: entry.profile,
-    intent: entry.intent,
-    toolsets: [...entry.toolsets],
-  })),
-  liveSurface: LIVE_API_SURFACE.map((surface) => ({
-    api: surface.api,
-    classification: surface.classification,
-    authRequired: surface.authRequired,
-    probeMode: surface.probeMode,
-    productionUrl: surface.productionUrl,
-    representativeTool: surface.representativeTool,
-    releaseBlocking: surface.releaseBlocking,
-    coversFamilies: surface.dependentFamilies,
-    notes: [...surface.notes, ...surface.healthNotes],
-  })),
+  scope: "CDD-only Singapore company and sector diligence",
+  toolsetProfiles: TOOLSET_PROFILE_CATALOG,
+  liveSurface: [
+    {
+      api: "CDD dossier",
+      classification: "public-registry and supplemental analyst-review evidence",
+      authRequired: false,
+      probeMode: "workflow",
+      productionUrl: "local MCP/runtime",
+      representativeTool: "sg_business_dossier",
+      releaseBlocking: true,
+      coversFamilies: ["ACRA", "BCA", "BOA", "CEA", "GeBIZ", "HSA", "HLB", "External Diligence"],
+      notes: ["Non-CDD public-data tools are intentionally not registered."],
+    },
+  ],
   authDependencies: [
     {
-      api: "OneMap",
-      authRequired: true,
-      envVars: ["SG_API_ONEMAP_EMAIL", "SG_API_ONEMAP_PASSWORD"],
-      keystoreKeys: ["onemap_email", "onemap_password"],
-      notes: [
-        "Both email and password must be configured before OneMap is considered ready.",
-        "Used by geocoding, routing, reverse geocoding, demographic resolution, and civic-discovery workflows that need location resolution.",
-      ],
-    },
-    {
-      api: "URA",
-      authRequired: true,
-      envVars: ["SG_API_URA_KEY"],
-      keystoreKeys: ["ura"],
-      notes: [
-        "URA uses an API key that is exchanged for an access token at runtime.",
-        "Used by planning-area, property, and development-charge workflows.",
-      ],
-    },
-    {
-      api: "LTA DataMall",
-      authRequired: true,
-      envVars: ["SG_API_LTA_KEY"],
-      keystoreKeys: ["lta"],
-      notes: [
-        "LTA uses a header-based API key for live transport data.",
-        "Used by transport briefs and direct bus, train, and traffic checks.",
-      ],
-    },
-    {
-      api: "data.gov.sg datastore",
+      api: "External Diligence",
       authRequired: false,
-      envVars: [],
+      envVars: ["OPENSANCTIONS_API_KEY", "OPENCORPORATES_API_TOKEN"],
       keystoreKeys: [],
-      dependentFamilies: LIVE_API_SURFACE.find((surface) => surface.api === "data.gov.sg datastore")?.dependentFamilies ?? [],
-      notes: [
-        "These families inherit the shared data.gov.sg datastore contract instead of separate credentials.",
-      ],
-    },
-    {
-      api: "data.gov.sg file downloads",
-      authRequired: false,
-      envVars: [],
-      keystoreKeys: [],
-      dependentFamilies: LIVE_API_SURFACE.find((surface) => surface.api === "data.gov.sg file downloads")?.dependentFamilies ?? [],
-      notes: [
-        "These families inherit the shared official file-download contract behind data.gov.sg instead of separate credentials.",
-      ],
+      notes: ["Optional provider credentials can improve supplemental evidence coverage."],
     },
   ],
   sourceUseWarnings: [
     {
       api: "ACRA",
-      observedAt: "2026-05-17",
+      observedAt: "2026-05-18",
       posture: "review_before_hosted_paid_use",
-      termsUrls: [
-        "https://www.acra.gov.sg/about-us/data-policy-statement/",
-        "https://www.acra.gov.sg/resources/eservice-tools-portals/api-marketplace/",
-        "https://www.acra.gov.sg/resources/buying-business-information/bizfile-and-other-sources/",
-      ],
-      docs: ["docs/acra-licensing-track.md", "docs/commercial-data-use.md"],
-      warnings: [
-        "Paid hosted ACRA-derived commercial diligence outputs require API Marketplace terms, authorised ISP status, authorised ISP partner terms, or a written sub-licence path.",
-        "Do not redistribute paid Business Profile, People Profile, CCFP, Registers, residential-address data, or ISP-enriched outputs from hosted Dude without recorded permission.",
-        "Current OSS and self-host workflows may cite only public/no-auth evidence actually returned by the running workflow, with provenance, freshness, gaps, and limits preserved.",
-      ],
+      termsUrls: [],
+      docs: ["docs/acra-licensing-track.md", "docs/public-data-limits.md"],
+      warnings: ["Confirm production redistribution terms before hosted commercial use."],
     },
     {
-      api: "OneMap",
-      observedAt: "2026-05-17",
+      api: "External Diligence",
+      observedAt: "2026-05-18",
       posture: "review_before_hosted_paid_use",
-      termsUrls: ["https://www.onemap.gov.sg/legal/termsofuse.html"],
-      docs: ["docs/commercial-data-use.md"],
-      warnings: [
-        "OneMap API and Data use requires registered-developer acceptance of the Developer Agreement.",
-        "Public OneMap terms restrict storage, redistribution, public display, reproduction, modification, and integration of SLA Data except as expressly permitted.",
-        "Do not enable paid hosted redistribution of OneMap-backed raw data, cached lookups, maps, or route geometry until the Developer Agreement rights are reviewed.",
-      ],
-    },
-    {
-      api: "URA",
-      observedAt: "2026-05-17",
-      posture: "allowed_with_controls",
-      termsUrls: [
-        "https://www.ura.gov.sg/ms/eservices/Maps/API-terms-of-service",
-        "https://data.gov.sg/open-data-licence",
-      ],
-      docs: ["docs/commercial-data-use.md"],
-      warnings: [
-        "URA API use may be commercial or non-commercial, but individual API pages may add limits.",
-        "URA-backed outputs need Singapore Open Data Licence attribution and must not imply agency endorsement.",
-        "URA API credentials must remain server-side and confidential.",
-      ],
+      termsUrls: [],
+      docs: ["docs/public-data-limits.md"],
+      warnings: ["Supplemental web/media/person signals require analyst review and should not be treated as official registry facts."],
     },
   ],
   credentialSourceRules: [
-    "Environment variables take precedence when upstream clients resolve credentials, with the keystore as the persistent fallback.",
-    "sg_health_check reports credentialSource as env, keystore, mixed, none, or not_required per upstream.",
-    "OneMap only reports configured when both the email and password are available from env or keystore.",
-    "Authenticated health probes use the same live runtime path as the protected direct tools, so missing or invalid credentials surface directly in the health record.",
+    "Use sg_key_set only for provider credentials explicitly required by retained CDD integrations.",
+    "Do not request OneMap, URA, LTA, or other removed public-data credentials for CDD-only workflows.",
   ],
   latency: {
-    hardCapMs: 30000,
-    targets: LIVE_API_SURFACE.map((surface) => ({
-      api: surface.api,
-      timeoutMs: surface.latency.timeoutMs,
-      typicalLatency: surface.latency.typicalLatency,
-      notes: surface.latency.notes,
-    })),
+    hardCapMs: 12000,
+    targets: [
+      { api: "sg_business_dossier", timeoutMs: 10000, typicalLatency: "1-5s cold, <1s warm", notes: "Depends on selected sector modules and cache state." },
+      { api: "sg_query", timeoutMs: 12000, typicalLatency: "planner-only or single dossier execution", notes: "Unsupported non-CDD prompts should return quickly." },
+    ],
   },
   cacheTiers: [
-    {
-      tier: "REALTIME",
-      ttlSeconds: 30,
-      usedBy: ["sg_lta_bus_arrivals", "sg_nea_forecast_2hr", "sg_nea_rainfall"],
-      rationale: "Live operational data goes stale quickly.",
-    },
-    {
-      tier: "NEAR_REALTIME",
-      ttlSeconds: 300,
-      usedBy: ["sg_mas_exchange_rates"],
-      rationale: "Market data updates every few minutes.",
-    },
-    {
-      tier: "DAILY",
-      ttlSeconds: 3600,
-      usedBy: ["sg_singstat_table", "sg_singstat_timeseries", "sg_ura_property_transactions", "sg_hdb_resale_prices"],
-      rationale: "These datasets update at most daily or less frequently.",
-    },
-    {
-      tier: "STATIC",
-      ttlSeconds: 86400,
-      usedBy: ["sg_onemap_geocode", "sg_ura_planning_area", "sg_cea_salespersons", "sg_bca_licensed_builders", "sg_acra_entities"],
-      rationale: "Registry and geocoding responses change slowly compared with live feeds.",
-    },
-    {
-      tier: "ARCHIVAL",
-      ttlSeconds: 604800,
-      usedBy: ["historical brief enrichments", "long-range time-series slices"],
-      rationale: "Historical records are effectively immutable once the live source has published them.",
-    },
+    { tier: "STATIC", ttlSeconds: 604800, usedBy: ["ACRA", "BCA", "BOA", "CEA", "HSA", "HLB"], rationale: "Registry data changes slower than interactive report review." },
+    { tier: "SUPPLEMENTAL", ttlSeconds: 86400, usedBy: ["GeBIZ", "External Diligence"], rationale: "Procurement and web/media signals need fresher review." },
   ],
   rateLimits: [
-    { api: "SingStat", maxTokens: 10, refillPerSecond: 2, effectiveRate: "~2 req/s sustained" },
-    { api: "MAS", maxTokens: 10, refillPerSecond: 2, effectiveRate: "~2 req/s sustained" },
-    { api: "OneMap", maxTokens: 50, refillPerSecond: 4, effectiveRate: "~4 req/s sustained" },
-    { api: "URA", maxTokens: 5, refillPerSecond: 1, effectiveRate: "~1 req/s sustained" },
-    { api: "LTA DataMall", maxTokens: 20, refillPerSecond: 2, effectiveRate: "~2 req/s sustained" },
-    { api: "NEA", maxTokens: 20, refillPerSecond: 2, effectiveRate: "~2 req/s sustained" },
-    { api: "Government RSS Feeds", maxTokens: 10, refillPerSecond: 1, effectiveRate: "~1 req/s sustained" },
-    { api: "data.gov.sg", maxTokens: 20, refillPerSecond: 3, effectiveRate: "~3 req/s sustained" },
+    { api: "CDD dossier", maxTokens: 20, refillPerSecond: 2, effectiveRate: "bounded local workflow concurrency" },
   ],
   retryPolicy: {
-    retryable: ["HTTP 429", "HTTP 5xx"],
-    nonRetryable: ["HTTP 401", "HTTP 403", "HTTP 404", "other HTTP 4xx"],
-    backoffSeconds: [1, 2, 4, 8],
-    maxRetries: 3,
+    retryable: ["HTTP_5XX", "UPSTREAM_TIMEOUT", "RATE_LIMITED"],
+    nonRetryable: ["VALIDATION_ERROR", "EMPTY_RESULT", "UNSUPPORTED_WORKFLOW"],
+    backoffSeconds: [1, 2, 5],
+    maxRetries: 2,
     respectsRetryAfter: true,
   },
   circuitBreaker: {
-    threshold: 3,
+    threshold: 5,
     resetTimeoutSeconds: 60,
-    states: ["closed", "open", "half-open"],
-    note: "Each API family has an independent circuit breaker and fails fast when open.",
+    states: ["closed", "open", "half_open"],
+    note: "Breakers protect upstream registry and supplemental CDD calls.",
   },
   partialFailureSemantics: [
-    "Brief tools use safeRead so one failing upstream does not collapse the whole artifact.",
-    "Partial failures surface in gaps with code and message, while provenance keeps recordCount at 0 for failed sources.",
-    "Freshness is still reported for the successful sources so callers can reason about missing context explicitly.",
+    "Dossiers may complete with gaps when optional sector or supplemental evidence fails.",
+    "Claims in AI memos and exports must remain evidence-bound and cite available sources.",
   ],
   healthCoverage: [
-    ...LIVE_API_SURFACE.map((surface) => ({
-      api: surface.api,
-      coversFamilies: surface.dependentFamilies,
-      notes: [
-        ...surface.healthNotes,
-        `Structured health records expose classification, configured, credentialSource, reachable, latencyMs, representativeTool, and releaseBlocking for ${surface.api}.`,
-      ],
-    })),
+    { api: "CDD dossier", coversFamilies: ["ACRA", "BCA", "CEA", "GeBIZ"], notes: ["Health is operational only; run representative dossier smoke tests before release."] },
   ],
   releaseReadiness: {
-    blockingCommands: RELEASE_BLOCKING_COMMANDS,
+    blockingCommands: ["npm run build", "npm run test", "npm run verify", "npm run test:smoke:web"],
     requiredSmokeCases: [
-      ...LIVE_API_SURFACE.map((surface) => ({
-        name: surface.smoke.name,
-        tool: surface.smoke.tool,
-        layer: surface.smoke.layer,
-        authRequired: surface.smoke.authRequired,
-        releaseBlocking: surface.smoke.releaseBlocking,
-        arguments: surface.smoke.arguments,
-        expectation: surface.smoke.expectation,
-        notes: surface.smoke.notes,
-      })),
-      ...LIVE_WORKFLOW_SMOKE_CASES.map((caseDef) => ({
-        name: caseDef.name,
-        tool: caseDef.tool,
-        layer: caseDef.layer,
-        authRequired: caseDef.authRequired,
-        releaseBlocking: caseDef.releaseBlocking,
-        arguments: caseDef.arguments,
-        expectation: caseDef.expectation,
-        notes: caseDef.notes,
-      })),
+      {
+        name: "CDD dossier",
+        tool: "sg_business_dossier",
+        layer: "workflow",
+        authRequired: false,
+        releaseBlocking: true,
+        arguments: { entityName: "DP Architects" },
+        expectation: { status: "completed_or_gapful", outputShapeVersion: "business-dossier/v1" },
+        notes: ["Must preserve provenance, freshness, gaps, limits, and evidence records."],
+      },
     ],
     failureSemantics: [
-      "A release-blocking health or smoke failure means the advertised live surface is not deployment-ready.",
-      "Unauthenticated families must return real upstream records; authenticated families must also report configured=true.",
-      "If a public workflow cannot pass its representative live smoke case, it should be removed from discovery until fixed.",
+      "Unsupported non-CDD prompts should not fall through to broad public-data tools.",
+      "Report exports must preserve selected sections and citations.",
     ],
-    notes: [
-      "npm run verify remains the credential-free correctness gate.",
-      "npm run test:smoke:live is the live release gate and must pass in the target environment before deployment.",
-    ],
+    notes: ["This runtime catalog is intentionally narrower than historical Dude MCP releases."],
   },
   queryStatusContract: [
-    { status: "planned", isError: false, notes: "Plan mode produced a bounded workflow without executing upstream calls." },
-    { status: "completed", isError: false, notes: "Execution finished successfully and may include continuationHints or ops nextActions." },
-    { status: "blocked", isError: false, notes: "sg_query recognized the workflow but needs more user input before execution can continue." },
-    { status: "unsupported", isError: false, notes: "The prompt shape or requested format is outside the bounded sg_query contract." },
-    { status: "failed", isError: true, notes: "Execution started but a step failed; failedStep identifies the failing tool and suggested action." },
+    { status: "planned", isError: false, notes: "A supported CDD plan was built but not executed." },
+    { status: "completed", isError: false, notes: "All planned CDD steps completed, possibly with evidence gaps." },
+    { status: "blocked", isError: false, notes: "CDD workflow needs a company/UEN or equivalent identifier." },
+    { status: "unsupported", isError: false, notes: "Prompt is outside the CDD-only product surface." },
+    { status: "failed", isError: true, notes: "A supported CDD step failed unexpectedly." },
   ],
 };
 
 export const PLAYBOOK_CATALOG: readonly PlaybookCatalogEntry[] = [
   {
-    id: "relocation_neighbourhood_brief",
-    name: "Relocation And Neighbourhood Brief",
-    persona: "relocation assistant or property-search agent",
+    id: "business_opportunity_scan",
+    name: "CDD Analyst Review",
+    persona: "CDD analyst preparing a source-backed counterparty report.",
     jobsToBeDone: [
-      "Resolve a postal code or planning area into a Singapore neighbourhood context.",
-      "Combine HDB, transport, school, childcare, healthcare, community, and park signals without inventing a recommendation score.",
-      "Keep the final artifact auditable by preserving direct-tool fallbacks for each family.",
+      "Search a Singapore company or UEN.",
+      "Read the cited summary before inspecting raw evidence.",
+      "Open citations and evidence-pack sections only when substantiation is needed.",
+      "Export a PDF or DOCX report with selected CDD sections and preserved attribution.",
     ],
     recommendedResources: ["sg://recipes", "sg://runtime", "sg://benchmarks"],
-    primaryWorkflows: ["Property And Regulatory Due Diligence", "Civic Discovery", "Transport Status", "Environment Snapshot"],
+    primaryWorkflows: ["Company CDD Report", "Architecture Firm Diligence", "Healthcare Supplier Diligence", "Hotel Operator Lookup"],
     starterPrompts: [
-      "Property due diligence for Bedok HDB resale",
-      "Find childcare centres near Bedok with vacancies",
-      "Find a community club near 560123",
-      "Transport status in Singapore right now",
-    ],
-    directTools: [
-      "sg_hdb_resale_prices",
-      "sg_onemap_geocode",
-      "sg_ecda_childcare_centres",
-      "sg_moe_schools",
-      "sg_moh_facilities",
-      "sg_pa_community_outlets",
-      "sg_sportsg_facilities",
-      "sg_nparks_parks",
-      "sg_lta_bus_arrivals",
-    ],
-    notes: [
-      "Start from sg_query when the user has a neighbourhood goal, then drop to direct tools once identifiers are known.",
-      "Treat transport and environment as bounded context, not hidden scoring inputs.",
-    ],
-  },
-  {
-    id: "business_opportunity_scan",
-    name: "Business Opportunity Scan",
-    persona: "business-development, diligence, or procurement agent",
-    jobsToBeDone: [
-      "Cross-check a company, procurement surface, and macro or labour context without building a fake general analyst.",
-      "Move from a high-signal dossier into procurement and economic follow-up reads.",
-      "Expose the next direct tools to run when the initial artifact is insufficient.",
-    ],
-    recommendedResources: ["sg://workflows", "sg://recipes", "sg://benchmarks"],
-    primaryWorkflows: ["Business Registry Diligence", "Architecture Firm Diligence", "Healthcare Supplier Diligence", "Hotel Operator Lookup", "Macro Snapshot", "Dataset Discovery Fallback"],
-    starterPrompts: [
-      "Business dossier for UEN 201912345A",
-      "Macro snapshot of Singapore",
-      "Find datasets about procurement awards",
+      "Business dossier for DP Architects",
+      "Architecture firm diligence for DP Architects",
+      "Healthcare supplier diligence for a pharmacy operator",
+      "Hotel operator lookup for a Singapore hotel",
     ],
     directTools: [
       "sg_business_dossier",
-      "sg_gebiz_tenders",
+      "sg_acra_entities",
+      "sg_bca_registered_contractors",
       "sg_boa_architecture_firms",
-      "sg_boa_architects",
       "sg_hsa_health_product_licensees",
-      "sg_hsa_licensed_pharmacies",
       "sg_hlb_hotels",
-      "sg_mas_exchange_rates",
-      "sg_mom_labour_stats",
-      "sg_stb_visitor_stats",
-      "sg_singstat_search",
+      "sg_gebiz_tenders",
     ],
     notes: [
-      "Use the dossier first for registry truth, then add GeBIZ, MAS, MOM, STB, or SingStat only when the workflow needs it.",
-      "This playbook is intentionally evidence-first rather than recommendation-first.",
-    ],
-  },
-  {
-    id: "social_support_navigation",
-    name: "Social Support Navigator",
-    persona: "casework, community-support, or public-service agent",
-    jobsToBeDone: [
-      "Find the nearest support services from a postal code, address, or planning area.",
-      "Distinguish family service, student care, childcare, social-service-office, and healthcare follow-ups cleanly.",
-      "Handle blocked prompts explicitly when location context is missing.",
-    ],
-    recommendedResources: ["sg://recipes", "sg://runtime"],
-    primaryWorkflows: ["Civic Discovery", "Environment Snapshot"],
-    starterPrompts: [
-      "Find a family service centre near 560230",
-      "Find a social service office near 1 Raffles Place",
-      "Find SCFA student care near Tampines",
-    ],
-    directTools: [
-      "sg_msf_family_services",
-      "sg_msf_student_care_services",
-      "sg_msf_social_service_offices",
-      "sg_ecda_childcare_centres",
-      "sg_moh_facilities",
-      "sg_pa_resident_network_centres",
-    ],
-    notes: [
-      "Use exact quoted names when you want a direct lookup instead of a proximity search.",
-      "Keep blocked and unsupported outcomes visible so the caller can ask for the missing location signal.",
-    ],
-  },
-  {
-    id: "transit_operations_governance",
-    name: "Transit Operations And Governance",
-    persona: "mobility-ops, transit analytics, or service-quality agent",
-    jobsToBeDone: [
-      "Start with an additive transit brief before drilling into direct reliability and transfer-risk reads.",
-      "Generate bounded objective plans with explicit policy guardrails and auditable trace outputs.",
-      "Close the loop with outcome records, model metrics, and policy replay before changing production behavior.",
-    ],
-    recommendedResources: ["sg://workflows", "sg://recipes", "sg://runtime"],
-    primaryWorkflows: ["Transit Intelligence Ops", "Transport Status"],
-    starterPrompts: [
-      "Transit ops brief for Singapore right now",
-      "Transit reliability from stop 83139 to stop 76059",
-      "Transit objective plan with objective balanced and stopIds 83139, 76059",
-    ],
-    directTools: [
-      "sg_transit_ops_brief",
-      "sg_transit_pack",
-      "sg_transit_health",
-      "sg_transit_hotspots",
-      "sg_transit_reliability",
-      "sg_transit_transfer_risk",
-      "sg_transit_objective_plan",
-      "sg_transit_policy_audit",
-    ],
-    notes: [
-      "Treat this as a bounded operational-decision layer, not a full route-planning or dispatching engine.",
-      "Use the direct LTA tools alongside transit tools when you need raw source evidence for escalations.",
+      "Workspace, bulk runs, watchlists, audit logs, and exports support the CDD workflow rather than competing with it.",
+      "Supplemental web/person/media evidence should stay clearly labeled for analyst review.",
     ],
   },
 ];
@@ -1897,200 +482,82 @@ export type BenchmarkEvidenceSnapshot = {
   }[];
 };
 
-export const BASELINE_SLO_TARGETS = [
-  {
-    workflow: "Business Registry Diligence",
-    availabilityPct: 99,
-    latencyP50Ms: 1200,
-    latencyP95Ms: 3000,
-    freshnessCompletenessPct: 100,
-    notes: [
-      "Covers primary ACRA/BCA/CEA evidence path with bounded optional modules.",
-    ],
-  },
-  {
-    workflow: "Property And Regulatory Due Diligence",
-    availabilityPct: 97,
-    latencyP50Ms: 3200,
-    latencyP95Ms: 9000,
-    freshnessCompletenessPct: 95,
-    notes: [
-      "Includes live URA planning and transaction reads plus bounded context overlays.",
-    ],
-  },
-  {
-    workflow: "Macro Snapshot",
-    availabilityPct: 98,
-    latencyP50Ms: 2200,
-    latencyP95Ms: 7000,
-    freshnessCompletenessPct: 98,
-    notes: [
-      "Tracks MAS and SingStat coverage for release-blocking macro workflows.",
-    ],
-  },
-  {
-    workflow: "Transport And Environment Snapshots",
-    availabilityPct: 99,
-    latencyP50Ms: 900,
-    latencyP95Ms: 2500,
-    freshnessCompletenessPct: 98,
-    notes: [
-      "Operational workflow target covering live transport and weather signal completeness.",
-    ],
-  },
-] as const;
-
 export const BENCHMARK_EVIDENCE_SNAPSHOT: BenchmarkEvidenceSnapshot = {
   schemaVersion: "2.0",
-  generatedAt: "2026-03-30T00:00:00.000Z",
+  generatedAt: "2026-05-18T00:00:00.000Z",
   source: "repository-baseline",
-  commitSha: "baseline",
+  commitSha: "local",
   runUrl: null,
   checks: [
-    {
-      name: "npm run verify",
-      status: "passed",
-      notes: "Baseline repository expectations before CI-specific evidence overlays.",
-    },
+    { name: "npm run build", status: "passed", notes: "Expected release gate for the CDD-only runtime." },
+    { name: "npm run test", status: "skipped", notes: "Run in CI or local verification after fixture cleanup." },
+    { name: "npm run verify", status: "skipped", notes: "Run before release after docs and catalog snapshots are regenerated." },
   ],
   sloMeasurements: [
     {
-      workflow: "Business Registry Diligence",
-      availabilityPct: 99.4,
-      latencyP50Ms: 870,
-      latencyP95Ms: 1820,
+      workflow: "Company CDD Report",
+      availabilityPct: 99,
+      latencyP50Ms: 1200,
+      latencyP95Ms: 5000,
       freshnessCompletenessPct: 100,
-      measurementWindow: "rolling-7d",
+      measurementWindow: "rolling-7d target",
       status: "within_slo",
-      evidence: "baseline smoke + representative release-blocking workflow checks",
-      notes: [
-        "Exact-match and fuzzy-match envelopes both passed quality assertions in baseline runs.",
-      ],
-    },
-    {
-      workflow: "Property And Regulatory Due Diligence",
-      availabilityPct: 97.8,
-      latencyP50Ms: 2890,
-      latencyP95Ms: 8420,
-      freshnessCompletenessPct: 96.2,
-      measurementWindow: "rolling-7d",
-      status: "within_slo",
-      evidence: "baseline smoke + URA-backed workflow checks",
-      notes: [
-        "URA transaction path drives p95 latency; freshness gaps remained explicit in response metadata.",
-      ],
-    },
-    {
-      workflow: "Macro Snapshot",
-      availabilityPct: 98.6,
-      latencyP50Ms: 2110,
-      latencyP95Ms: 6530,
-      freshnessCompletenessPct: 99.1,
-      measurementWindow: "rolling-7d",
-      status: "within_slo",
-      evidence: "baseline smoke + MAS/SingStat parity checks",
-      notes: [
-        "Live SingStat table reads remain the long pole but stayed inside baseline p95.",
-      ],
-    },
-    {
-      workflow: "Transport And Environment Snapshots",
-      availabilityPct: 99.2,
-      latencyP50Ms: 760,
-      latencyP95Ms: 2240,
-      freshnessCompletenessPct: 98.4,
-      measurementWindow: "rolling-7d",
-      status: "within_slo",
-      evidence: "baseline smoke + transport/environment workflow checks",
-      notes: [
-        "Realtime cache behavior and live probes remained within baseline expectations.",
-      ],
+      evidence: "repository baseline",
+      notes: ["CDD reports must preserve provenance, freshness, gaps, limits, and citations."],
     },
   ],
 };
 
 export const BENCHMARK_CATALOG = {
   summary: [
-    "Adoption targets are framed for agent developers, not consumer chat products.",
-    "Use these expectations as integration guardrails; the machine-readable runtime contract remains the source of truth.",
+    "Benchmarks now focus on CDD report generation, evidence inspection, and export credibility.",
+    "Non-CDD public-data workflows are intentionally excluded from product discovery.",
   ],
   workflowProfiles: [
     {
-      workflow: "Business Registry Diligence",
-      typicalColdPath: "1-5s with data.gov.sg-backed registries",
-      typicalWarmPath: "<1s when registry records are cached",
-      primaryCacheTier: "STATIC",
-      freshnessRule: "Check freshness.upstreamTimestamp per registry source before treating the artifact as current.",
+      workflow: "Company CDD Report",
+      typicalColdPath: "1-5s with registry modules and supplemental evidence disabled or cached",
+      typicalWarmPath: "<1s for cached registry records",
+      primaryCacheTier: "STATIC + SUPPLEMENTAL",
+      freshnessRule: "Report freshness must show upstream timestamps or observedAt values for every included evidence family.",
       notes: [
-        "Best first-run artifact for diligence-heavy agents.",
-        "Treat riskFlags and matchConfidence as the quickest trust indicators.",
-      ],
-    },
-    {
-      workflow: "Property And Regulatory Due Diligence",
-      typicalColdPath: "3-10s when URA planning and transactions are involved",
-      typicalWarmPath: "1-3s with cached planning and market context",
-      primaryCacheTier: "DAILY",
-      freshnessRule: "Use URA and HDB upstream timestamps separately; stale market context should remain visible in riskFlags or gaps.",
-      notes: [
-        "This is the stickiest cross-source workflow in the current repo.",
-        "Live transport context is optional and should not be assumed unless requested.",
-      ],
-    },
-    {
-      workflow: "Macro Snapshot",
-      typicalColdPath: "2-8s depending on live MAS downloads and SingStat table latency",
-      typicalWarmPath: "1-3s with cached MAS and SingStat responses",
-      primaryCacheTier: "NEAR_REALTIME + DAILY",
-      freshnessRule: "Treat MAS dates and SingStat table metadata as the live freshness signals for the macro artifact.",
-      notes: [
-        "Keep GDP, CPI YoY, and CPI index series distinct in live validation and tests.",
-        "Named MAS metrics are mandatory for believable outputs.",
-      ],
-    },
-    {
-      workflow: "Transport And Environment Snapshots",
-      typicalColdPath: "0.5-2s per live upstream when authenticated",
-      typicalWarmPath: "<1s inside the REALTIME cache window",
-      primaryCacheTier: "REALTIME",
-      freshnessRule: "Expect live signals to age quickly; observedAt without a recent upstream timestamp should be treated cautiously.",
-      notes: [
-        "These workflows are operational building blocks, not predictive systems.",
-        "Ops result headlines should stay compact and source-backed.",
+        "The cited summary is the primary user experience.",
+        "The evidence pack and report manifest are mandatory for auditability.",
       ],
     },
   ],
   baselineSLOs: {
     measurementWindow: "rolling-7d",
     interpretation: [
-      "Availability is measured as successful workflow completions over total attempted workflow executions.",
-      "Freshness completeness tracks whether each workflow returns explicit upstream timestamps and provenance coverage fields.",
-      "Targets are provisional and should be recalibrated after sustained production traffic.",
+      "Availability measures successful CDD dossier/report flow completion.",
+      "Freshness completeness measures whether included report sections expose provenance and observed timestamps.",
     ],
-    targets: BASELINE_SLO_TARGETS,
+    targets: [
+      {
+        workflow: "Company CDD Report",
+        availabilityPct: 99,
+        latencyP95Ms: 5000,
+        freshnessCompletenessPct: 100,
+      },
+    ],
   },
   adoptionCheckpoints: [
     {
-      name: "Five-minute success",
-      expectation: "A new developer should be able to run one live quickstart and one integration example locally.",
-      evidence: "Use npm run quick-start plus the examples/integration clients.",
+      name: "Search-to-report success",
+      expectation: "A new user can search a company/UEN, read a cited summary, inspect evidence, and export PDF or DOCX.",
+      evidence: "Use the web smoke flow and representative sg_business_dossier fixture.",
     },
     {
-      name: "Bounded routing trust",
-      expectation: "Blocked, unsupported, and failed query outcomes should be obvious in application code without reading the source tree.",
-      evidence: "Use sg://recipes, sg://runtime, and the basic integration examples.",
-    },
-    {
-      name: "Artifact credibility",
-      expectation: "Release blockers should prove that public workflows and representative upstream families return real live data, not placeholders.",
-      evidence: "Use sg://runtime plus npm run test:smoke:live in the release environment.",
+      name: "Unsupported scope clarity",
+      expectation: "Non-CDD prompts return unsupported instead of silently routing into removed public-data tools.",
+      evidence: "Use sg_query with a housing, transport, weather, or macro prompt.",
     },
   ],
   latestEvidenceSnapshot: BENCHMARK_EVIDENCE_SNAPSHOT,
   releaseBlockingChecks: [
-    "A failing authenticated health probe blocks release until credentials and the live runtime path both work.",
-    "A failing workflow smoke case blocks release until the workflow is fixed or removed from public discovery.",
-    "Packaging smoke must confirm the published tarballs exclude tests, fixtures, mock servers, and internal audit artifacts.",
+    "A failing CDD dossier smoke blocks release.",
+    "A report export missing selected sections, citations, provenance, freshness, gaps, limits, or manifest data blocks release.",
+    "Any non-CDD tool reappearing in registered runtime discovery blocks release.",
   ],
 } as const;
 

@@ -9,18 +9,18 @@ const serverEntry = resolve(root, "packages/mcp-server/dist/index.js");
 const EXPECTATIONS = [
   {
     profile: "public",
-    includes: ["sg_query", "sg_business_dossier", "sg_property_brief"],
+    includes: ["sg_query", "sg_business_dossier", "sg_acra_entities"],
     excludes: ["sg_key_set", "sg_cache_clear"],
   },
   {
-    profile: "diligence",
-    includes: ["sg_query", "sg_business_dossier", "sg_acra_entities"],
+    profile: "cdd_report",
+    includes: ["sg_query", "sg_business_dossier", "sg_sanctions_screen"],
     excludes: ["sg_property_brief", "sg_environment_brief", "sg_cache_clear"],
   },
   {
-    profile: "property",
-    includes: ["sg_query", "sg_property_brief", "sg_onemap_geocode"],
-    excludes: ["sg_business_dossier", "sg_cache_clear"],
+    profile: "diligence",
+    includes: ["sg_query", "sg_business_dossier", "sg_sanctions_screen"],
+    excludes: ["sg_property_brief", "sg_environment_brief", "sg_cache_clear"],
   },
   {
     profile: "ops",

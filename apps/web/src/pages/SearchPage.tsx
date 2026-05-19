@@ -31,7 +31,7 @@ export function SearchPage() {
           <div className="space-y-3">
             <p className="text-sm font-medium text-muted-foreground">Dude</p>
             <h1 className="text-4xl font-semibold tracking-normal text-foreground sm:text-5xl">
-              Client CDD onboarding for Singapore teams
+              Search a Singapore company or UEN. Get a cited CDD report for analyst review.
             </h1>
           </div>
           <div className="flex justify-start md:justify-end">
@@ -143,7 +143,7 @@ function SearchHelpDialog() {
             <li>
               Sector registries run only when selected or inferred from official SSIC evidence
             </li>
-            <li>Every result shows searched modules, source provenance, freshness, and gaps</li>
+            <li>Every report links summary claims to source evidence, freshness, and gaps</li>
             <li>
               Use the dossier for analyst review, not legal, tax, credit, or licensed compliance
               advice

@@ -1,203 +1,92 @@
-# Architecture Decision Record
+# Architecture
 
-## Title
+Dude is now a CDD-only product.
 
-Dude: Singapore due diligence over deterministic public-data contracts
+The system has two surfaces:
 
-## Status
+1. `packages/mcp-server`: the bounded runtime for Singapore company/UEN diligence tools.
+2. `apps/web`: the report-first analyst UI for search, cited summary review, evidence inspection, workspace workflows, and exports.
 
-Accepted for Dude MCP. Dude is the product layered on a stable backend/runtime with `sg_*`, `sg://...`, and `SG_APIS_*` Singapore-data contract namespaces.
+## Product Flow
 
-## Context
+```mermaid
+flowchart LR
+  Search["Company / UEN Search"] --> Dossier["Business Dossier"]
+  Dossier --> Memo["Cited AI Summary"]
+  Memo --> Evidence["Evidence Drawer / Evidence Pack"]
+  Dossier --> Builder["Report Builder"]
+  Builder --> PDF["PDF Export"]
+  Builder --> DOCX["DOCX Export"]
+  Dossier --> Workspace["Workspace: Saved Dossiers, Watchlists, Bulk Runs, Audit Logs"]
+```
 
-Dude is not a general Singapore analyst copilot. The current foundation is a tool-first MCP server for agent builders and web workflows that need reliable, explicit interfaces over 39 catalog families.
+The primary experience is not a tabbed public-data explorer. The first useful screen is the CDD summary with citations. Raw records, source details, provenance, gaps, limits, and supplemental evidence live in the Evidence Pack and drawer interactions.
 
-The product boundary is:
+## Runtime Scope
 
-- stable direct `sg_*` tools first
-- additive briefs where composition creates clear user value
-- a bounded preferred interface across 21 routed families
-- machine-readable catalogs through `sg://apis`, `sg://tools`, `sg://workflows`, `sg://recipes`, `sg://runtime`, `sg://playbooks`, and `sg://benchmarks`
+The MCP runtime exposes 26 `sg_*` tools across 11 CDD catalog families.
 
-That boundary keeps the repo useful without pretending to solve arbitrary analyst workflows.
+Retained CDD families:
 
-## Decisions
+- ACRA entity identity
+- BCA builders and contractors
+- BOA architects and architecture firms
+- CEA salespersons
+- GeBIZ tenders
+- HSA pharmacies and health-product licensees
+- HLB hotels
+- External diligence signals: sanctions, OpenCorporates links, adverse-media hints, relationship graph
+- Business dossier composition
+- Ops: health, cache, key, config, trace, request lookup
 
-### 1. Direct `sg_*` tools stay the stable low-level contract
+Removed from runtime/product discovery:
 
-Why:
+- property and housing
+- macro and financial statistics
+- transport and transit ops
+- weather/environment
+- civic amenities
+- generic data.gov drilldowns
+- visualization
+- law search
+- COE, IRAS, SPF, EMA, NLB, and similar broad public-data families
 
-- explicit schemas are easier to test, document, and defend
-- direct tools let callers compose intentionally
-- deterministic contracts matter more than hidden convenience
+## Query Planner
 
-Consequence:
+`sg_query` only plans or executes CDD entity and sector diligence workflows. Non-CDD prompts return an explicit unsupported response. This keeps the agent contract honest and avoids pretending Dude is a general Singapore data assistant.
 
-- new scope is added with honest direct tools first
-- additive briefs are allowed only when they return a bounded artifact, not hidden orchestration
+Supported workflow families:
 
-### 2. The repo goes deep on 39 catalog families
+- company CDD report
+- architecture firm diligence
+- healthcare supplier diligence
+- hotel operator lookup
+- sector-scoped business diligence
 
-The current data and advisory families are:
+## Report Model
 
-- SingStat
-- MAS
-- OneMap
-- URA
-- LTA DataMall
-- Transit Intelligence
-- NEA
-- HDB
-- Housing Advisor
-- CEA
-- BCA
-- BOA
-- ACRA
-- External Diligence
-- PA
-- Sport Singapore
-- ECDA
-- MSF Family Services
-- MSF Student Care Services
-- MSF Social Service Offices
-- GeBIZ
-- Hawker Centres
-- MOE Schools
-- MOH Healthcare
-- HSA
-- SFA
-- Government RSS Feeds
-- NParks
-- PUB
-- MOM
-- STB
-- HLB
-- COE
-- IRAS
-- SPF
-- EMA
-- NLB
-- SSO Law
-- data.gov.sg
+The web app uses a shared report model:
 
-Why:
+- `ReportTemplate`
+- `ReportSectionId`
+- `ReportWritingStyle`
+- `ReportExportFormat`
+- `ReportDocumentModel`
 
-- together they cover macro, finance, location, property, transport, environment, housing, dataset discovery, business diligence, procurement, civic amenities, education, healthcare, food safety, official announcements/alerts, parks, water, labour, and tourism
-- HDB, CEA, BCA, BOA, HSA, HLB, ACRA, the civic directories, and the later no-auth families deepen coverage without adding more credential surfaces (all route through data.gov.sg or the same no-auth file-download path)
-- every new upstream multiplies auth, rate-limit, schema, and support cost
+Report sections can be included/excluded and reordered. Writing style is constrained to controlled CDD presets. PDF and DOCX are first-class report exports; JSON and CSV are advanced data exports.
 
-Consequence:
+## Evidence Contract
 
-- family growth is driven by user stories, not agency count
-- data.gov.sg remains the broad fallback and row-access substrate
+CDD output must preserve:
 
-### 3. `sg_query` is a bounded usability layer, not a planner
+- cited findings
+- exact supporting evidence
+- provenance
+- freshness
+- gaps
+- limits
+- confidence blockers
+- next actions
+- report manifest data
 
-`sg_query` is the bounded preferred interface across 21 routed families.
-
-Why:
-
-- open-source users benefit from a natural-language entrypoint
-- transparent step metadata keeps the routing layer honest
-- keeping the workflow set bounded avoids fake coverage
-
-Consequence:
-
-- business-registry workflows can route to ACRA, CEA, BCA, BOA, HSA, HLB, and GeBIZ
-- macro workflows can collapse to `sg_macro_brief`
-- property workflows can collapse to `sg_property_brief`
-- civic discovery can geocode postal codes, addresses, or planning areas before calling MSF, PA, Sport Singapore, or ECDA directory tools
-- route planning can geocode postal codes before calling `sg_onemap_route`
-- reverse geocoding and coordinate conversion can route through direct OneMap handlers
-- SingStat table drilldowns can move from browse to table to time-series reads
-- data.gov collection browsing can continue into metadata, resources, and bounded rows
-- transport workflows can collapse to `sg_transport_brief`
-- environment workflows can collapse to `sg_environment_brief`
-- HDB rental checks and URA development-charge lookups can route directly with extracted parameters
-- `sg://playbooks` provides bounded workflow entrypoints for common agent-builder jobs without replacing direct-tool composition
-- `sg://benchmarks` publishes latency, cache, freshness, and adoption expectations so runtime behavior stays inspectable
-- only bounded two-planning-area comparisons are supported; arbitrary multi-step synthesis remains out of scope
-
-### 4. Additive brief tools must return bounded artifacts
-
-The allowed additive shape is a deterministic brief with:
-
-- `title`
-- `summary`
-- `evidence`
-- `records`
-- `gaps`
-- `provenance`
-- `freshness`
-- `limits`
-
-Why:
-
-- this is where the repo creates user-facing value beyond raw wrappers
-- the brief remains inspectable and source-linked through the underlying records
-- provenance, freshness, and limits make the product useful for real developer-facing workflows instead of shallow synthesis
-
-Consequence:
-
-- `sg_business_dossier`, `sg_property_brief`, `sg_macro_brief`, `sg_transport_brief`, `sg_environment_brief`, and `sg_civic_brief` are additive
-- they do not replace the direct `sg_*` tools
-- they are acceptable because they produce bounded artifacts instead of hidden planning behavior
-
-### 5. Runtime behavior is centralized and explicit
-
-The runtime combines:
-
-- config-driven timeouts
-- config-driven TTLs
-- upstream-specific rate limiting
-- cache and dedup layers
-- structured logging and workflow-level tracing
-- structured error handling
-
-Why:
-
-- Singapore public APIs differ widely in auth, latency, and rate limits
-- production callers need consistent behavior across families
-
-Consequence:
-
-- the server favors explicit failure over silent fallback
-- partial-source failures are surfaced in artifact gaps and logged with structured source context
-- OneMap credential behavior now matches the documented contract
-- the data.gov.sg warm-cache path is explicit and non-blocking
-
-## Runtime Model
-
-At a high level:
-
-- MCP requests enter the server over stdio
-- input schemas validate at the tool boundary
-- tool handlers call family clients or bounded brief handlers
-- clients apply auth, cache, dedup, timeout, and rate-limit behavior
-- results are returned as text plus structured content when available
-
-The warm-cache path is intentionally best-effort and non-blocking. Startup should not wait on prefetch work.
-
-## Interview Defense
-
-The shortest defensible answer is:
-
-"I kept the direct contracts explicit, then added a small number of bounded artifacts on top. The result is useful for agents without pretending to be a general planner."
-
-Key tradeoffs:
-
-- chose explicit direct tools over hidden orchestration
-- chose bounded briefs over vague multi-API synthesis
-- chose a bounded preferred interface over a free-form planner
-- chose curated user stories over low-signal surface expansion
-- chose truthful docs and parity checks over aspirational claims
-
-## Known Intentional Limits
-
-- `sg_query` is not a general planner
-- `sg_macro_brief` is a starter snapshot, not full analysis
-- `sg_business_dossier` is registry-focused, module-bounded, and entity-match oriented
-- `sg_property_brief` is bounded diligence context, not a recommendation engine
-- `sg_transport_brief` is an operations snapshot, not route planning or predictive dispatch
-- `sg_environment_brief` is a live monitoring brief, not severe-weather forecasting
-- data.gov.sg support is bounded to explicit metadata, resource inspection, and row reads rather than arbitrary data prep
+No component should turn missing public evidence into a positive clearance claim.

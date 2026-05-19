@@ -9,10 +9,8 @@ const { API_CATALOG, RECIPE_CATALOG, RUNTIME_CATALOG, TOOL_CATALOG, WORKFLOW_CAT
 
 const totalTools = TOOL_CATALOG.length;
 const familyCount = API_CATALOG.length;
-const directToolCount = API_CATALOG.reduce((sum, api) => sum + api.tools.length, 0);
 const routedFamilyCount = API_CATALOG.filter((api) => api.preferredInterface === "sg_query").length;
-const authFamilies = API_CATALOG.filter((api) => api.authRequired).map((api) => api.name);
-const publicFamilies = API_CATALOG.filter((api) => !api.authRequired).map((api) => api.name);
+const routedFamilyLabel = `${routedFamilyCount} sg_query-routed CDD ${routedFamilyCount === 1 ? "family" : "families"}`;
 const familyNames = API_CATALOG.map((api) => api.name);
 const workflowNames = WORKFLOW_CATALOG.map((workflow) => workflow.name);
 const recipeNames = RECIPE_CATALOG.map((recipe) => recipe.name);
@@ -42,250 +40,126 @@ const ensureExcludes = (path, snippets) => {
   }
 };
 
-ensureIncludes(readmeTarget, [
+const cddCoreSnippets = [
+  "Search a Singapore company or UEN. Get a cited CDD report for analyst review.",
   `${totalTools} \`sg_*\` tools total`,
-  `${familyCount} catalog families`,
-  `bounded preferred interface across ${routedFamilyCount} routed families`,
-  "Business Registry Diligence",
+  `${familyCount} CDD catalog families`,
+  routedFamilyLabel,
+  "sg_business_dossier",
   "sg_acra_entities",
+  "sg_boa_architecture_firms",
+  "sg_hsa_health_product_licensees",
+  "sg_hlb_hotels",
+  "sg_sanctions_screen",
   "sg://recipes",
   "sg://runtime",
   "sg://playbooks",
   "sg://benchmarks",
-  "docs/agent-builder-quickstart.md",
-  "docs/product-health.md",
-  "npm run diagnostics",
-  "Route Planning",
-  "SingStat Table Drilldown",
-  "Dataset Collection Browse",
+  "Report Builder",
+  "PDF or DOCX",
+];
+
+const removedSurfaceSnippets = [
+  "sg_property_brief",
+  "sg_macro_brief",
+  "sg_transport_brief",
+  "sg_environment_brief",
   "sg_civic_brief",
-  "docs/roadmap",
+  "sg_datagov_browse",
+  "sg_singstat_browse",
+  "sg_onemap_route",
+  "Property Due Diligence",
+  "Postal Route",
+  "SingStat Drilldown",
+  "HDB Rental Check",
+  "Dataset Collection Browse",
+];
+
+ensureIncludes(readmeTarget, [
+  ...cddCoreSnippets,
+  "agent-builder-quickstart.md",
+  "product-health.md",
   "Start Here For Builders",
   "examples/integration/basic-client.ts",
   "examples/integration/basic-client.py",
-  "comparisons are supported only for two-planning-area prompts",
-  "npm run test:smoke:public",
+  "npm run test:smoke:profiles",
   ...familyNames,
+  ...workflowNames,
 ]);
-ensureExcludes(readmeTarget, [
-  "CEA and BCA are direct-only in this tranche",
-  "ACRA is the next business-diligence candidate",
+ensureExcludes(readmeTarget, removedSurfaceSnippets);
+
+ensureIncludes("AGENTS.md", [
+  "CDD-only",
+  "sg_query",
+  "sg_business_dossier",
+  "Evidence Pack",
+  "Never invent CDD values",
 ]);
+ensureExcludes("AGENTS.md", ["Housing Advisor", "sg_housing_affordability", "sg_grant_eligibility"]);
 
 ensureIncludes("docs/architecture.md", [
-  `${familyCount} catalog families`,
-  `bounded preferred interface across ${routedFamilyCount} routed families`,
-  "business-registry workflows can route to ACRA, CEA, BCA, BOA, HSA, HLB, and GeBIZ",
-  "sg://recipes",
-  "sg://runtime",
-  "sg://playbooks",
-  "sg://benchmarks",
-  "route planning can geocode postal codes before calling `sg_onemap_route`",
-  "SingStat table drilldowns can move from browse to table to time-series reads",
-  "data.gov collection browsing can continue into metadata, resources, and bounded rows",
-  "only bounded two-planning-area comparisons are supported",
-  "sg_civic_brief",
-  ...familyNames,
+  `${familyCount} CDD catalog families`,
+  "company CDD report",
+  "architecture firm diligence",
+  "healthcare supplier diligence",
+  "hotel operator lookup",
+  "sector-scoped business diligence",
+  "ReportTemplate",
+  "ReportWritingStyle",
 ]);
-ensureExcludes("docs/architecture.md", [
-  "ACRA remains deferred",
-  "CEA and BCA remain direct-only in this tranche",
-]);
-
-ensureIncludes("docs/api-auth-guide.md", [
-  `${authFamilies.length} authenticated upstreams`,
-  ...authFamilies,
-  ...publicFamilies,
-  "HDB, CEA, BCA, BOA, HSA, HLB, and ACRA are intentionally covered through the shared data.gov.sg path or official file-download path",
-]);
-
-ensureIncludes("docs/contributing.md", [
-  `${familyCount} catalog families`,
-  "RegisteredToolDefinition[]",
-  "tool-set.ts",
-  "scripts/check-docs-parity.mjs",
-  `${directToolCount} direct data tools`,
-  "sg://recipes",
-  "sg://playbooks",
-  "sg://benchmarks",
-  "RECIPE_CATALOG",
-  "docs/agent-builder-quickstart.md",
-]);
-
-ensureIncludes("docs/product-audit.md", [
-  "Actual value prop: yes, but narrow.",
-  "sg://recipes",
-  "Civic amenities and directories",
-  "Education",
-  "Healthcare facilities",
-  "Procurement and tender discovery",
-]);
-
-ensureIncludes("docs/product-health.md", [
-  "Product audit",
-  "Developer adoption audit",
-  "Market conventions audit",
-  "Compatibility matrix",
-  "Known issues",
-  "Governance checklist",
-  "Audit retention policy",
-  "KPI thresholds",
-  "Quarterly product health template",
-  "Release guide",
-]);
-
-ensureIncludes("docs/roadmap/README.md", [
-  "Master roadmap",
-  "Phase 1",
-  "Phase 2",
-  "Phase 3",
-  "Phase 4",
-  "Phase 5",
-]);
+ensureExcludes("docs/architecture.md", removedSurfaceSnippets);
 
 ensureIncludes("docs/agent-builder-quickstart.md", [
+  "CDD-only",
   "sg://recipes",
   "sg://workflows",
   "sg://runtime",
-  "sg://playbooks",
-  "sg://benchmarks",
   "blocked",
   "unsupported",
   "failed",
-  "sg_onemap_route",
-  "sg_singstat_browse",
-  "sg_datagov_browse",
-  "npm run diagnostics",
-  "npm run test:smoke:templates",
-  "docs/troubleshooting.md",
-  "backend-worker-template.py",
-  "queue-consumer-template.py",
+  "sg_business_dossier",
+  "sg_boa_architecture_firms",
+  "npm run verify",
 ]);
+ensureExcludes("docs/agent-builder-quickstart.md", removedSurfaceSnippets);
 
 ensureIncludes("examples/README.md", [
+  "business-dossier.md",
   "architecture-firm-diligence.md",
   "healthcare-supplier-diligence.md",
   "hotel-operator-lookup.md",
   "sector-scoped-business-diligence.md",
-  "geospatial-routing.md",
-  "npm run quick-start",
-  "npm run test:smoke:live",
-  "npm run test:smoke:public",
-  "npm run test:smoke:templates",
+  "npm run diagnostics",
+  "npm run test:smoke:profiles",
   "sg://runtime",
   "sg://playbooks",
   "sg://benchmarks",
-  "failed outcomes",
   "sg_query completed, blocked, unsupported, and failed outcomes",
   "basic-client.py",
   "backend-worker-template.py",
   "queue-consumer-template.py",
-  "scheduled-monitor-template.ts",
 ]);
+ensureExcludes("examples/README.md", removedSurfaceSnippets);
 
-ensureIncludes("docs/production-notes.md", [
-  "sg://runtime",
-  "sg://benchmarks",
-  "npm run diagnostics",
-  "npm run kpis:dashboard",
-  "SG_APIS_AUDIT_RETENTION_SEC",
-  "SG_APIS_KPI_THRESHOLDS_PATH",
-]);
-
-ensureIncludes("docs/compatibility-matrix.md", [
-  "tier-1",
-  "tier-2",
-  "streamable HTTP",
-  "test:smoke:remote",
-  "test:smoke:container",
-]);
-
-ensureIncludes("docs/known-issues.md", [
-  "KI-001",
-  "OneMap auth",
-  "ecosystem:snapshot",
-  "Triage Rules",
-]);
-
-ensureIncludes("docs/release.md", [
-  "npm run release:preflight",
-  "npm run release:evidence",
-  "allow-kpi-breach",
-  "npm run quarterly:report",
-]);
-
-ensureIncludes("docs/governance-checklist.md", [
-  "npm run release:preflight",
-  "No new API family without a documented use case, maintainer owner, and test plan.",
-  "No release without passing verify, smoke, and policy checks.",
-]);
-
-ensureIncludes("docs/troubleshooting.md", [
-  "sg_trace_lookup",
-  "sg_request_lookup",
-  "npm run release:evidence",
-  "overallPolicyStatus",
-]);
-
-ensureIncludes("docs/kpi-thresholds.md", [
-  "kpi-dashboard/v1",
-  "SG_APIS_KPI_THRESHOLDS_PATH",
-  "overallPolicyStatus",
-  "allow-kpi-breach",
-]);
-
-ensureIncludes("docs/quarterly-product-health-template.md", [
-  "npm run quarterly:report",
-  "KPI Summary",
-  "Reliability And Security",
-]);
-
-ensureIncludes("config/kpi-thresholds.example.json", [
-  "\"schemaVersion\": \"kpi-thresholds/v1\"",
-  "\"maxBreachCount\"",
-  "\"minInstallSuccessRatePct\"",
-]);
-
-ensureIncludes("docs/contributing.md", [
-  "npm run diagnostics",
-  "do not silently drop source errors",
-]);
-
-ensureIncludes("examples/README.md", [
-  "npm run diagnostics",
-]);
-
-if (existsSync(resolve(root, "CHANGELOG.md"))) {
-  ensureIncludes("CHANGELOG.md", [
-    `Tool count increased from 63 to ${totalTools}; API family count from 26 to ${familyCount}; routed families from 17 to ${routedFamilyCount}.`,
-    "BOA, HSA, and HLB direct tool families",
-    "Architecture Firm Diligence",
-    "Healthcare Supplier Diligence",
-    "Hotel Operator Lookup",
-    "Sector Scoped Business Diligence",
-  ]);
-} else {
-  process.stdout.write("CHANGELOG.md not found, skipping changelog parity checks.\n");
+for (const path of ["smithery.yaml", "glama.json", "packages/mcp-server/package.json"]) {
+  ensureIncludes(path, familyNames);
 }
 
 if (!Array.isArray(RUNTIME_CATALOG.queryStatusContract) || RUNTIME_CATALOG.queryStatusContract.length !== 5) {
   throw new Error("Built runtime catalog is missing the full sg_query status contract.");
 }
 
-for (const workflowName of workflowNames) {
-  ensureIncludes(readmeTarget, [workflowName]);
-}
-
-for (const recipeName of ["Postal Route", "SingStat Drilldown", "HDB Rental Check"]) {
+for (const recipeName of [
+  "Business Due Diligence",
+  "Architecture Firm Diligence",
+  "Healthcare Supplier Diligence",
+  "Hotel Operator Lookup",
+]) {
   if (!recipeNames.includes(recipeName)) {
-    throw new Error(`Built recipe catalog is missing expected recipe: ${recipeName}`);
+    throw new Error(`Built recipe catalog is missing expected CDD recipe: ${recipeName}`);
   }
 }
 
-for (const path of ["smithery.yaml", "glama.json", "packages/mcp-server/package.json"]) {
-  ensureIncludes(path, familyNames);
-}
-
 process.stdout.write(
-  `Docs parity OK: ${totalTools} tools, ${familyCount} catalog families, ${authFamilies.length} authenticated families, ${routedFamilyCount} sg_query-routed families.\n`,
+  `Docs parity OK: ${totalTools} tools, ${familyCount} CDD catalog families, ${routedFamilyLabel}.\n`,
 );

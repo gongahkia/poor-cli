@@ -174,11 +174,11 @@ const main = async () => {
     const benchmarks = await readJsonResource<BenchmarkCatalog>(client, "sg://benchmarks");
     const health = await callToolPayload<{ records: readonly Readonly<Record<string, unknown>>[] }>(client, "sg_health_check", {});
     const recipeCache = new Map(recipes.map((recipe) => [recipe.name, recipe]));
-    const officeRecipe = recipeCache.get("Social Service Office Near Address");
-    const singStatRecipe = recipeCache.get("SingStat Drilldown");
-    const relocationPlaybook = playbooks.find((playbook) => playbook.id === "relocation_neighbourhood_brief");
+    const businessRecipe = recipeCache.get("Business Due Diligence");
+    const architectureRecipe = recipeCache.get("Architecture Firm Diligence");
+    const cddPlaybook = playbooks.find((playbook) => playbook.id === "business_opportunity_scan");
 
-    if (officeRecipe === undefined || singStatRecipe === undefined || relocationPlaybook === undefined) {
+    if (businessRecipe === undefined || architectureRecipe === undefined || cddPlaybook === undefined) {
       throw new Error("Expected recipe catalog entries were not found.");
     }
 
@@ -189,38 +189,37 @@ const main = async () => {
     console.log(`release gates: ${(runtime.releaseReadiness?.blockingCommands ?? []).join(", ")}`);
     console.log(`benchmark workflows: ${(benchmarks.workflowProfiles ?? []).map((profile) => `${profile.workflow}:${profile.primaryCacheTier}`).join(", ")}`);
     console.log(`health probes: ${(health.records ?? []).map((record) => `${record.api}:${record.reachable === true ? "up" : "down"}`).join(", ")}`);
-    console.log(`office fallback tools: ${officeRecipe.fallbackTools.join(", ")}`);
-    console.log(`singstat prompt shape: ${singStatRecipe.prompt}`);
-    console.log(`relocation playbook direct tools: ${relocationPlaybook.directTools.join(", ")}`);
+    console.log(`business fallback tools: ${businessRecipe.fallbackTools.join(", ")}`);
+    console.log(`architecture prompt shape: ${architectureRecipe.prompt}`);
+    console.log(`CDD playbook direct tools: ${cddPlaybook.directTools.join(", ")}`);
 
     const supportedOutcome = await callQuery(
       client,
-      "Find a social service office named \"Social Service Office @ Queenstown\"",
+      "Architecture firm diligence for DP Architects",
     );
     logQueryOutcome("covered prompt via sg_query", supportedOutcome);
 
-    const blockedOutcome = await callQuery(client, "Find a social service office near me");
+    const blockedOutcome = await callQuery(client, "Run business diligence");
     logQueryOutcome("blocked prompt", blockedOutcome);
 
     const unsupportedOutcome = await callQuery(client, "Compare GDP and CPI in Singapore");
     logQueryOutcome("unsupported prompt", unsupportedOutcome);
 
-    const failedOutcome = await callQuery(client, "Find datasets about a definitely unknown topic");
+    const failedOutcome: QueryOutcome = {
+      status: "failed",
+      workflow: "business_dossier",
+      reason: "Synthetic example for failed-state UI handling.",
+      failedStep: { tool: "sg_business_dossier" },
+    };
     logQueryOutcome("failed prompt", failedOutcome);
 
-    // For unsupported comparison prompts, fall back to an explicit discovery tool instead of guessing a workflow.
-    const directFallback = await callToolPayload<{ records?: readonly Readonly<Record<string, unknown>>[] }>(client, "sg_singstat_browse", {});
-    console.log("\ndirect tool fallback");
-    console.log(`tool: sg_singstat_browse`);
-    console.log(`records: ${directFallback.records?.length ?? 0}`);
-
-    const directOfficeLookup = await callToolPayload<DirectoryPayload>(client, "sg_msf_social_service_offices", {
-      name: "Social Service Office @ Queenstown",
+    const directLookup = await callToolPayload<DirectoryPayload>(client, "sg_acra_entities", {
+      entityName: "DP ARCHITECTS PTE LTD",
       format: "json",
     });
     console.log("\nexact-parameter direct lookup");
-    console.log(`tool: sg_msf_social_service_offices`);
-    console.log(`records: ${directOfficeLookup.records?.length ?? 0}`);
+    console.log(`tool: sg_acra_entities`);
+    console.log(`records: ${directLookup.records?.length ?? 0}`);
   } finally {
     await client.close();
   }

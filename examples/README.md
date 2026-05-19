@@ -1,23 +1,12 @@
 # Examples
 
-This folder contains outcome examples, additive brief walkthroughs, recipe-driven discovery flows, and sector-specific diligence workflows.
+This folder contains CDD workflow examples, recipe-driven discovery flows, and integration templates for the refocused Dude surface.
 
-- `outcome-relocation-assistant.md`
-- `outcome-sme-diligence-dashboard.md`
-- `outcome-school-childcare-finder.md`
-- `outcome-outdoor-event-checker.md`
-- `outcome-procurement-monitor.md`
 - `business-dossier.md`
 - `architecture-firm-diligence.md`
 - `healthcare-supplier-diligence.md`
 - `hotel-operator-lookup.md`
 - `sector-scoped-business-diligence.md`
-- `property-brief.md`
-- `macro-brief.md`
-- `transport-brief.md`
-- `environment-brief.md`
-- `civic-discovery.md`
-- `geospatial-routing.md`
 
 ## Local Client Snippets
 
@@ -78,7 +67,7 @@ npm run test:smoke:live
 For credential-free onboarding:
 
 ```bash
-npm run test:smoke:public
+npm run test:smoke:profiles
 ```
 
 ## Integration Example
@@ -99,7 +88,6 @@ Production templates:
 
 - `integration/backend-worker-template.ts` for queue or job-runner style execution with explicit blocked/unsupported/failed branching.
 - `integration/ui-state-template.ts` for frontend state adapters around `sg_query` status contracts.
-- `integration/scheduled-monitor-template.ts` for periodic transport/environment monitoring with escalation tiers.
 - `integration/success-context-ids-template.ts` for validating opt-in `structuredContent.contextIds` on successful tool responses.
 - `integration/backend-worker-template.py` for Python job-runner services that need deterministic `sg_query` status handling.
 - `integration/queue-consumer-template.py` for Python queue consumers with explicit ack/retry/dead-letter routing.
