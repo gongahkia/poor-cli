@@ -7,6 +7,21 @@ type BusinessDossierInput = Parameters<typeof handleBusinessDossier>[0];
 type AnalystMemoResponse = Awaited<ReturnType<typeof generateAnalystMemo>>;
 
 export type CddOrchestratorInput = BusinessDossierInput;
+export type CddOrchestratorStage = {
+  readonly id:
+    | "acra_identity"
+    | "sector_inference"
+    | "official_modules"
+    | "web_presence"
+    | "people_discovery"
+    | "relationship_graph"
+    | "supplemental_review"
+    | "ai_memo";
+  readonly label: string;
+  readonly status: "completed" | "skipped" | "blocked" | "unavailable";
+  readonly detail: string;
+  readonly tools: readonly string[];
+};
 
 export type CddOrchestratorResponse = {
   readonly dossier: AnalystMemoDossier;
@@ -23,6 +38,7 @@ export type CddOrchestratorResponse = {
     readonly officialModules: readonly string[];
     readonly supplementalTools: readonly string[];
     readonly reranDossierForWebSectorHints: boolean;
+    readonly stages: readonly CddOrchestratorStage[];
     readonly limits: readonly string[];
   };
 };
@@ -316,6 +332,129 @@ const resolveBusinessDossierRecord = async (
   return record;
 };
 
+const memoStageStatus = (memo: AnalystMemoResponse): CddOrchestratorStage["status"] => {
+  if (memo.status === "ready") return "completed";
+  if (memo.status === "unavailable") return "unavailable";
+  return "blocked";
+};
+
+const buildReadyStages = (params: Readonly<{
+  acraSectorHints: readonly BusinessSectorHint[];
+  effectiveSectorHints: readonly BusinessSectorHint[];
+  officialModules: readonly string[];
+  webPresence: WebPresence;
+  webSectorHints: readonly BusinessSectorHint[];
+  peopleDiscovery: PeopleDiscovery;
+  memo: AnalystMemoResponse;
+}>): readonly CddOrchestratorStage[] => [
+  {
+    detail: "Canonical entity resolved through ACRA before downstream CDD enrichment.",
+    id: "acra_identity",
+    label: "ACRA identity lookup",
+    status: "completed",
+    tools: ["sg_acra_entities"],
+  },
+  {
+    detail: [
+      `ACRA hints: ${params.acraSectorHints.join(", ") || "none"}.`,
+      `Web hints: ${params.webSectorHints.join(", ") || "none"}.`,
+      `Effective hints: ${params.effectiveSectorHints.join(", ") || "none"}.`,
+    ].join(" "),
+    id: "sector_inference",
+    label: "Sector inference",
+    status: "completed",
+    tools: ["ACRA SSIC", "TinyFish Search"],
+  },
+  {
+    detail: `Ran official module set: ${params.officialModules.join(", ") || "none"}.`,
+    id: "official_modules",
+    label: "Official sector modules",
+    status: "completed",
+    tools: params.officialModules.map((module) => module === "acra" ? "sg_acra_entities" : `sg_${module}`),
+  },
+  {
+    detail: params.webPresence.configured
+      ? `TinyFish web discovery returned ${params.webPresence.results.length} result(s).`
+      : "TinyFish web discovery is not configured.",
+    id: "web_presence",
+    label: "Web presence",
+    status: params.webPresence.configured ? "completed" : "unavailable",
+    tools: ["TinyFish Search"],
+  },
+  {
+    detail: params.peopleDiscovery.configured
+      ? `People discovery returned ${params.peopleDiscovery.results.length} candidate snippet(s).`
+      : "TinyFish people discovery is not configured.",
+    id: "people_discovery",
+    label: "People discovery",
+    status: params.peopleDiscovery.configured ? "completed" : "unavailable",
+    tools: ["TinyFish Search"],
+  },
+  {
+    detail: "Built from supplied public dossier records only; ownership or control is not inferred.",
+    id: "relationship_graph",
+    label: "Relationship graph",
+    status: "completed",
+    tools: ["sg_relationship_graph"],
+  },
+  {
+    detail: "Sanctions, OpenCorporates, adverse-media, and relationship graph evidence were included or surfaced as provider gaps.",
+    id: "supplemental_review",
+    label: "Supplemental review",
+    status: "completed",
+    tools: CDD_ORCHESTRATOR_SUPPLEMENTAL_TOOLS,
+  },
+  {
+    detail: params.memo.status === "ready"
+      ? "AI memo generated from cited dossier evidence."
+      : params.memo.reason.message,
+    id: "ai_memo",
+    label: "AI memo",
+    status: memoStageStatus(params.memo),
+    tools: ["dude memo"],
+  },
+];
+
+const buildIdentityBlockedStages = (reason: string, memo: AnalystMemoResponse): readonly CddOrchestratorStage[] => [
+  {
+    detail: reason,
+    id: "acra_identity",
+    label: "ACRA identity lookup",
+    status: "blocked",
+    tools: ["sg_acra_entities"],
+  },
+  {
+    detail: "Skipped because ACRA did not resolve a canonical entity.",
+    id: "sector_inference",
+    label: "Sector inference",
+    status: "skipped",
+    tools: ["ACRA SSIC", "TinyFish Search"],
+  },
+  {
+    detail: "Skipped because sector inference did not run.",
+    id: "official_modules",
+    label: "Official sector modules",
+    status: "skipped",
+    tools: ["sg_bca_*", "sg_boa_*", "sg_cea_salespersons", "sg_gebiz_tenders", "sg_hsa_*", "sg_hlb_hotels"],
+  },
+  {
+    detail: "Skipped until ACRA identity is resolved.",
+    id: "supplemental_review",
+    label: "Supplemental review",
+    status: "skipped",
+    tools: CDD_ORCHESTRATOR_SUPPLEMENTAL_TOOLS,
+  },
+  {
+    detail: memo.status === "ready"
+      ? "No-match memo generated from the identity-gated dossier."
+      : memo.reason.message,
+    id: "ai_memo",
+    label: "AI memo",
+    status: memoStageStatus(memo),
+    tools: ["dude memo"],
+  },
+];
+
 export const runCddOrchestrator = async (
   input: BusinessDossierInput,
 ): Promise<CddOrchestratorResponse> => {
@@ -349,6 +488,7 @@ export const runCddOrchestrator = async (
         officialModules: getResolutionStringArray(firstDossier, "selectedModules"),
         supplementalTools: CDD_ORCHESTRATOR_SUPPLEMENTAL_TOOLS,
         reranDossierForWebSectorHints: false,
+        stages: buildIdentityBlockedStages(reason, memo),
         limits: [
           reason,
           "No downstream sector module can be treated as matching the entity until ACRA identity is resolved.",
@@ -397,6 +537,15 @@ export const runCddOrchestrator = async (
       officialModules: getResolutionStringArray(finalDossier, "selectedModules"),
       supplementalTools: CDD_ORCHESTRATOR_SUPPLEMENTAL_TOOLS,
       reranDossierForWebSectorHints: hasNewWebSectorHint,
+      stages: buildReadyStages({
+        acraSectorHints,
+        effectiveSectorHints: getResolutionSectorHints(finalDossier, "effectiveSectorHints"),
+        memo,
+        officialModules: getResolutionStringArray(finalDossier, "selectedModules"),
+        peopleDiscovery,
+        webPresence,
+        webSectorHints,
+      }),
       limits: [
         "ACRA remains the identity gate; TinyFish web signals only add bounded sector hints.",
         "Supplemental sanctions, OpenCorporates, adverse-media, relationship graph, web presence, and people discovery outputs are analyst-review evidence.",

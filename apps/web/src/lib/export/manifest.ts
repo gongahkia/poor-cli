@@ -1,6 +1,7 @@
 import type { AnalystMemoReady } from "@/types/analyst-memo";
 import type { BusinessDossier } from "@/types/dossier";
 import type { WebPresence } from "@/lib/api/client";
+import type { CddOrchestrationTrace } from "@/types/orchestration";
 
 export type DossierExportManifest = {
   schemaVersion: "dude-export-manifest/v1";
@@ -19,7 +20,18 @@ export type DossierExportManifest = {
   }[];
   includedArtifacts: {
     analystMemo: boolean;
+    orchestrationTrace: boolean;
     webPresence: boolean;
+  };
+  orchestration?: {
+    status: CddOrchestrationTrace["status"];
+    strategy: string;
+    stages: {
+      id: string;
+      label: string;
+      status: string;
+      tools: string[];
+    }[];
   };
   signature: {
     algorithm: "sha256";
@@ -52,6 +64,7 @@ export async function buildDossierExportManifest(params: {
   analystMemo?: AnalystMemoReady;
   dossier: BusinessDossier;
   generatedAt?: string;
+  orchestration?: CddOrchestrationTrace;
   webPresence?: WebPresence;
 }): Promise<DossierExportManifest> {
   const generatedAt = params.generatedAt ?? new Date().toISOString();
@@ -59,6 +72,7 @@ export async function buildDossierExportManifest(params: {
   const signaturePayload = stableStringify({
     dossierHash,
     generatedAt,
+    orchestration: params.orchestration,
     provenance: params.dossier.provenance,
     sourceFreshness: params.dossier.freshness,
   });
@@ -81,8 +95,21 @@ export async function buildDossierExportManifest(params: {
     })),
     includedArtifacts: {
       analystMemo: params.analystMemo !== undefined,
+      orchestrationTrace: params.orchestration !== undefined,
       webPresence: params.webPresence !== undefined,
     },
+    ...(params.orchestration === undefined ? {} : {
+      orchestration: {
+        status: params.orchestration.status,
+        strategy: params.orchestration.strategy,
+        stages: (params.orchestration.stages ?? []).map((stage) => ({
+          id: stage.id,
+          label: stage.label,
+          status: stage.status,
+          tools: stage.tools,
+        })),
+      },
+    }),
     signature: {
       algorithm: "sha256",
       value: signature,

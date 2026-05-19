@@ -53,6 +53,13 @@ const orchestratorResponse = (record: AnalystMemoDossier): CddOrchestratorRespon
     status: "ready",
     strategy: "acra_then_sector_then_supplemental_memo",
     supplementalTools: ["sg_relationship_graph"],
+    stages: [{
+      detail: "Canonical entity resolved through ACRA before downstream CDD enrichment.",
+      id: "acra_identity",
+      label: "ACRA identity lookup",
+      status: "completed",
+      tools: ["sg_acra_entities"],
+    }],
     limits: ["Fixture orchestrator response."],
     webSectorHints: [],
   },

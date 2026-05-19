@@ -150,6 +150,11 @@ describe("CDD orchestrator", () => {
       peopleDiscovery: expect.objectContaining({ configured: false }),
       webPresence: expect.objectContaining({ configured: true }),
     });
+    expect(response.orchestration.stages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "acra_identity", status: "completed" }),
+      expect.objectContaining({ id: "official_modules", status: "completed" }),
+      expect.objectContaining({ id: "ai_memo", status: "unavailable" }),
+    ]));
     expect(vi.mocked(getAcraEntities)).toHaveBeenCalledTimes(2);
     expect(vi.mocked(getBoaArchitectureFirms)).toHaveBeenCalled();
   });
@@ -164,6 +169,10 @@ describe("CDD orchestrator", () => {
       webSectorHints: [],
       reranDossierForWebSectorHints: false,
     });
+    expect(response.orchestration.stages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "acra_identity", status: "blocked" }),
+      expect.objectContaining({ id: "official_modules", status: "skipped" }),
+    ]));
     expect(response.webPresence.limits).toEqual(expect.arrayContaining([
       expect.stringContaining("ACRA did not return a canonical entity record"),
     ]));

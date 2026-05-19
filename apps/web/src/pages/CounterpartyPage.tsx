@@ -32,6 +32,7 @@ import { exportPdpaReportPdf } from "@/lib/export/pdpa";
 import { persistAuditEvent, persistDossierRecord } from "@/lib/workspace-store";
 import type { AnalystMemoResponse } from "@/types/analyst-memo";
 import type { BusinessDossier } from "@/types/dossier";
+import type { CddOrchestrationTrace } from "@/types/orchestration";
 import { exportDossierDocx } from "@/lib/export/docx";
 import type { ReportExportFormat, ReportTemplate } from "@/lib/report-template";
 
@@ -47,17 +48,7 @@ type CddOrchestratorResponse = {
   peopleDiscovery: PeopleDiscovery;
   memo: AnalystMemoResponse;
   generatedAt: string;
-  orchestration: {
-    status: "ready" | "identity_not_resolved";
-    strategy: "acra_then_sector_then_supplemental_memo";
-    acraSectorHints: string[];
-    webSectorHints: string[];
-    effectiveSectorHints: string[];
-    officialModules: string[];
-    supplementalTools: string[];
-    reranDossierForWebSectorHints: boolean;
-    limits: string[];
-  };
+  orchestration: CddOrchestrationTrace;
 };
 
 const toWebPresenceState = (presence: WebPresence | undefined): WebPresenceState =>
@@ -316,9 +307,10 @@ function DossierSuccess({
       metadata: {
         matchedModules: dossier.records.resolution?.matchedModules ?? [],
         gapCount: dossier.gaps.length,
+        orchestration: orchestration.orchestration,
       },
     });
-  }, [dossier, identifier]);
+  }, [dossier, identifier, orchestration.orchestration]);
 
   useEffect(() => {
     return () => {
@@ -481,9 +473,10 @@ function DossierSuccess({
       metadata: {
         providerStatus: memoState.status,
         webPresenceStatus: webPresenceState.status,
+        orchestration: orchestration.orchestration,
       },
     });
-  }, [dossier, identifier, memoState, webPresenceState]);
+  }, [dossier, identifier, memoState, orchestration.orchestration, webPresenceState]);
 
   const handleExportReport = async (reportTemplate: ReportTemplate, format: ReportExportFormat) => {
     setIsExporting(true);
@@ -492,6 +485,7 @@ function DossierSuccess({
       const today = new Date().toISOString().slice(0, 10);
       const baseOptions = {
         ...(memoState.status === "ready" ? { analystMemo: memoState.memo } : {}),
+        orchestration: orchestration.orchestration,
         reportTemplate,
         ...(webPresenceState.status === "success" ? { webPresence: webPresenceState.presence } : {}),
       };
@@ -514,6 +508,7 @@ function DossierSuccess({
           identifier,
           reportSections: reportTemplate.sections,
           writingStyle: reportTemplate.writingStyle,
+          orchestration: orchestration.orchestration,
         },
         output: { filename: `dude-cdd-report-${sanitizeFilenamePart(identifier)}-${today}.${format}` },
         provenance: dossier.provenance,
@@ -531,11 +526,11 @@ function DossierSuccess({
 
   const handleExportCsv = async () => {
     try {
-      await exportSingleDossierCsv(dossier);
+      await exportSingleDossierCsv(dossier, { orchestration: orchestration.orchestration });
       persistAuditEvent({
         eventType: "export",
         permission: "export:run",
-        input: { identifier, format: "csv" },
+        input: { identifier, format: "csv", orchestration: orchestration.orchestration },
         output: { title: dossier.title },
         provenance: dossier.provenance,
         freshness: dossier.freshness,
@@ -555,12 +550,13 @@ function DossierSuccess({
       await exportSingleDossierJson({
         dossier,
         ...(memoState.status === "ready" ? { analystMemo: memoState.memo } : {}),
+        orchestration: orchestration.orchestration,
         ...(webPresenceState.status === "success" ? { webPresence: webPresenceState.presence } : {}),
       });
       persistAuditEvent({
         eventType: "export",
         permission: "export:run",
-        input: { identifier, format: "json" },
+        input: { identifier, format: "json", orchestration: orchestration.orchestration },
         output: { title: dossier.title },
         provenance: dossier.provenance,
         freshness: dossier.freshness,
@@ -734,6 +730,7 @@ function DossierSuccess({
         onExportPdpaReport={(reviewedItemIds) => void handleExportPdpaReport(reviewedItemIds)}
         onExportReport={(template, format) => void handleExportReport(template, format)}
         onModuleFollowUp={handleModuleFollowUp}
+        orchestration={orchestration.orchestration}
         peopleDiscoveryState={peopleDiscoveryState}
         rerunningModule={rerunningModule}
         sharedMemoState={sharedMemoState}

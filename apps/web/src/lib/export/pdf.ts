@@ -15,11 +15,13 @@ import { DEFAULT_REPORT_TEMPLATE, REPORT_SECTION_LABELS, REPORT_WRITING_STYLE_LA
 import type { WebPresence } from "@/lib/api/client";
 import type { AnalystMemoReady } from "@/types/analyst-memo";
 import type { BriefArtifact, BriefProvenanceItem, BriefSummaryItem } from "@/types/dossier";
+import type { CddOrchestrationTrace } from "@/types/orchestration";
 
 type ExportDossierPdfOptions = {
   analystMemo?: AnalystMemoReady;
   filename?: string;
   generatedAt?: Date;
+  orchestration?: CddOrchestrationTrace;
   reportTemplate?: ReportTemplate;
   webPresence?: WebPresence;
 };
@@ -121,6 +123,7 @@ export async function exportDossierPdf(
     dossier: brief,
     generatedAt: generatedAt.toISOString(),
     ...(options.analystMemo === undefined ? {} : { analystMemo: options.analystMemo }),
+    ...(options.orchestration === undefined ? {} : { orchestration: options.orchestration }),
     ...(options.webPresence === undefined ? {} : { webPresence: options.webPresence }),
   });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -404,6 +407,12 @@ export async function exportDossierPdf(
         { label: "Signature", value: `${manifest.signature.algorithm}: ${manifest.signature.value}` },
         { label: "Generated", value: manifest.generatedAt },
         { label: "Tool version", value: manifest.toolVersion },
+        { label: "Orchestration status", value: manifest.orchestration?.status ?? "Not included" },
+        { label: "Orchestration strategy", value: manifest.orchestration?.strategy ?? "Not included" },
+        {
+          label: "Orchestration stages",
+          value: manifest.orchestration?.stages.map((stage) => `${stage.label}: ${stage.status}`).join("; ") ?? "Not included",
+        },
         { label: "Signature note", value: manifest.signature.note },
       ],
       y,

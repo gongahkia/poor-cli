@@ -255,6 +255,24 @@ describe("dossier rendering", () => {
         }}
         onExportPdpaReport={() => undefined}
         onModuleFollowUp={() => undefined}
+        orchestration={{
+          acraSectorHints: [],
+          effectiveSectorHints: [],
+          officialModules: ["acra"],
+          reranDossierForWebSectorHints: false,
+          stages: [{
+            detail: "Canonical entity resolved through ACRA before downstream CDD enrichment.",
+            id: "acra_identity",
+            label: "ACRA identity lookup",
+            status: "completed",
+            tools: ["sg_acra_entities"],
+          }],
+          status: "ready",
+          strategy: "acra_then_sector_then_supplemental_memo",
+          supplementalTools: ["sg_relationship_graph"],
+          limits: [],
+          webSectorHints: [],
+        }}
         peopleDiscoveryState={{ status: "error", message: "No people results." }}
         rerunningModule={null}
         sharedMemoState={null}
@@ -264,6 +282,8 @@ describe("dossier rendering", () => {
 
     expect(html).toContain("CDD Summary");
     expect(html).toContain("Report Builder");
+    expect(html).toContain("CDD orchestrator trace");
+    expect(html).toContain("ACRA identity lookup");
     expect(html).toContain("Evidence Pack");
     expect(html).toContain("What To Check Next");
     expect(html).toContain("Agent handoff");

@@ -48,6 +48,7 @@ import { BUSINESS_MODULE_LABELS, getSummaryString, type FollowUpBusinessModule }
 import { cn } from "@/lib/utils";
 import type { AnalystMemoCitation, AnalystMemoReady } from "@/types/analyst-memo";
 import type { BusinessDossier, NextCheck } from "@/types/dossier";
+import type { CddOrchestrationTrace, CddOrchestratorStage } from "@/types/orchestration";
 
 type DossierFindingsTabsProps = {
   dossier: BusinessDossier;
@@ -56,6 +57,7 @@ type DossierFindingsTabsProps = {
   onExportPdpaReport: (reviewedItemIds: readonly string[]) => void;
   onExportReport?: (template: ReportTemplate, format: ReportExportFormat) => void;
   onModuleFollowUp: (request: ModuleFollowUpRequest) => void;
+  orchestration?: CddOrchestrationTrace;
   peopleDiscoveryState: PeopleDiscoveryState;
   rerunningModule: RunningBusinessModule;
   sharedMemoState: string | null;
@@ -93,6 +95,52 @@ type ConfidenceBlockerDetail = {
   label: string;
   source: string;
 };
+
+const stageToneClassName: Record<CddOrchestratorStage["status"], string> = {
+  blocked: "border-destructive/30 bg-destructive/5 text-destructive",
+  completed: "border-emerald-200 bg-emerald-50 text-emerald-900",
+  skipped: "border-border bg-muted/50 text-muted-foreground",
+  unavailable: "border-amber-200 bg-amber-50 text-amber-900",
+};
+
+function OrchestrationTracePanel({ orchestration }: { orchestration?: CddOrchestrationTrace }) {
+  if (orchestration === undefined) return null;
+  const stages = orchestration.stages ?? [];
+  return (
+    <section className="rounded-lg border border-border bg-card p-4 shadow-sm sm:p-5">
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold text-foreground">CDD orchestrator trace</h2>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            One run from ACRA identity through sector modules, supplemental review, and memo generation.
+          </p>
+        </div>
+        <span className="w-fit rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+          {orchestration.status === "ready" ? "Ready" : "Identity not resolved"}
+        </span>
+      </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {stages.map((stage) => (
+          <article className="rounded-md border border-border bg-background p-3" key={stage.id}>
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="text-sm font-semibold text-foreground">{stage.label}</h3>
+              <span className={cn(
+                "w-fit shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize",
+                stageToneClassName[stage.status],
+              )}>
+                {stage.status}
+              </span>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">{stage.detail}</p>
+          </article>
+        ))}
+      </div>
+      <p className="mt-3 text-xs text-muted-foreground">
+        Official modules: {orchestration.officialModules.join(", ") || "none"}. Supplemental tools: {orchestration.supplementalTools.join(", ") || "none"}.
+      </p>
+    </section>
+  );
+}
 
 const writingStyles: ReportWritingStyle[] = [
   "concise_analyst",
@@ -821,6 +869,7 @@ export function DossierFindingsTabs({
   onExportPdpaReport,
   onExportReport = () => undefined,
   onModuleFollowUp,
+  orchestration,
   peopleDiscoveryState,
   rerunningModule,
   sharedMemoState,
@@ -887,6 +936,8 @@ export function DossierFindingsTabs({
       ) : (
         <ReportBuilder onExportReport={onExportReport} />
       )}
+
+      <OrchestrationTracePanel orchestration={orchestration} />
 
       <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
         <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

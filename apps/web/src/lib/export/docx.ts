@@ -29,11 +29,13 @@ import {
 import type { WebPresence } from "@/lib/api/client";
 import type { AnalystMemoReady } from "@/types/analyst-memo";
 import type { BriefArtifact, BriefSummaryItem } from "@/types/dossier";
+import type { CddOrchestrationTrace } from "@/types/orchestration";
 
 type ExportDossierDocxOptions = {
   analystMemo?: AnalystMemoReady;
   filename?: string;
   generatedAt?: Date;
+  orchestration?: CddOrchestrationTrace;
   reportTemplate?: ReportTemplate;
   webPresence?: WebPresence;
 };
@@ -88,6 +90,7 @@ export async function exportDossierDocx(
     dossier,
     generatedAt: generatedAt.toISOString(),
     ...(options.analystMemo === undefined ? {} : { analystMemo: options.analystMemo }),
+    ...(options.orchestration === undefined ? {} : { orchestration: options.orchestration }),
     ...(options.webPresence === undefined ? {} : { webPresence: options.webPresence }),
   });
   const children: Paragraph[] = [
@@ -244,6 +247,9 @@ export async function exportDossierDocx(
       paragraph(`Signature: ${manifest.signature.algorithm}: ${manifest.signature.value}`),
       paragraph(`Generated: ${manifest.generatedAt}`),
       paragraph(`Tool version: ${manifest.toolVersion}`),
+      paragraph(`Orchestration status: ${manifest.orchestration?.status ?? "Not included"}`),
+      paragraph(`Orchestration strategy: ${manifest.orchestration?.strategy ?? "Not included"}`),
+      paragraph(`Orchestration stages: ${manifest.orchestration?.stages.map((stage) => `${stage.label}: ${stage.status}`).join("; ") ?? "Not included"}`),
       paragraph(`Signature note: ${manifest.signature.note}`),
     );
   }

@@ -10,6 +10,7 @@ import {
 import type { AnalystMemoReady } from "@/types/analyst-memo";
 import type { BulkDossierRow } from "@/types/bulk";
 import type { BusinessDossier } from "@/types/dossier";
+import type { CddOrchestrationTrace } from "@/types/orchestration";
 import type { WebPresence } from "@/lib/api/client";
 import {
   buildDossierExportManifest,
@@ -77,7 +78,11 @@ function buildDossierExportSummary(dossier: BusinessDossier): DossierExportSumma
   };
 }
 
-export const buildSingleDossierCsvRow = (dossier: BusinessDossier, generatedAt = new Date().toISOString()): Record<string, unknown> => {
+export const buildSingleDossierCsvRow = (
+  dossier: BusinessDossier,
+  generatedAt = new Date().toISOString(),
+  orchestration?: CddOrchestrationTrace,
+): Record<string, unknown> => {
   const summary = buildDossierExportSummary(dossier);
   return {
     complianceUseNotice: buildComplianceUseSummary(),
@@ -87,6 +92,8 @@ export const buildSingleDossierCsvRow = (dossier: BusinessDossier, generatedAt =
     gapCodes: summary.gapCodes.join(";"),
     generatedAt,
     limits: dossier.limits.map((limit) => `${limit.code}: ${limit.message}`).join(";"),
+    orchestrationStatus: orchestration?.status ?? "",
+    orchestrationStages: orchestration?.stages?.map((stage) => `${stage.label}:${stage.status}`).join(";") ?? "",
     provenance: summary.provenanceSources.join(";"),
     risk: summary.risk,
     riskFlags: summary.riskFlags.join(";"),
@@ -98,6 +105,7 @@ export async function buildSingleDossierJsonPayload(params: {
   dossier: BusinessDossier;
   analystMemo?: AnalystMemoReady;
   generatedAt?: string;
+  orchestration?: CddOrchestrationTrace;
   webPresence?: WebPresence;
 }): Promise<Record<string, unknown>> {
   const generatedAt = params.generatedAt ?? new Date().toISOString();
@@ -105,6 +113,7 @@ export async function buildSingleDossierJsonPayload(params: {
     dossier: params.dossier,
     generatedAt,
     ...(params.analystMemo === undefined ? {} : { analystMemo: params.analystMemo }),
+    ...(params.orchestration === undefined ? {} : { orchestration: params.orchestration }),
     ...(params.webPresence === undefined ? {} : { webPresence: params.webPresence }),
   });
   return {
@@ -114,6 +123,7 @@ export async function buildSingleDossierJsonPayload(params: {
     generatedAt,
     limits: params.dossier.limits,
     manifest,
+    orchestration: params.orchestration ?? null,
     webPresence: params.webPresence ?? null,
   };
 }
@@ -121,6 +131,7 @@ export async function buildSingleDossierJsonPayload(params: {
 export async function exportSingleDossierJson(params: {
   dossier: BusinessDossier;
   analystMemo?: AnalystMemoReady;
+  orchestration?: CddOrchestrationTrace;
   webPresence?: WebPresence;
 }): Promise<void> {
   const identifier = sanitizeFilenamePart(getSummaryString(params.dossier, "UEN") ?? params.dossier.title);
@@ -132,15 +143,22 @@ export async function exportSingleDossierJson(params: {
   );
 }
 
-export async function exportSingleDossierCsv(dossier: BusinessDossier): Promise<void> {
+export async function exportSingleDossierCsv(
+  dossier: BusinessDossier,
+  options: { orchestration?: CddOrchestrationTrace } = {},
+): Promise<void> {
   const identifier = sanitizeFilenamePart(getSummaryString(dossier, "UEN") ?? dossier.title);
   const generatedAt = new Date().toISOString();
-  const manifest = await buildDossierExportManifest({ dossier, generatedAt });
+  const manifest = await buildDossierExportManifest({
+    dossier,
+    generatedAt,
+    ...(options.orchestration === undefined ? {} : { orchestration: options.orchestration }),
+  });
   downloadText(
     `dude-diligence-${identifier}.csv`,
     "text/csv",
     toCsv([{
-      ...buildSingleDossierCsvRow(dossier, generatedAt),
+      ...buildSingleDossierCsvRow(dossier, generatedAt, options.orchestration),
       manifestSchemaVersion: manifest.schemaVersion,
       manifestSignature: manifest.signature.value,
       dossierHash: manifest.dossierHash,
@@ -157,6 +175,8 @@ const bulkRowsForExport = (rows: readonly BulkDossierRow[]): Record<string, unkn
     gapCodes: row.gapCodes.join(";"),
     input: row.input,
     matchedModules: row.matchedModules.join(";"),
+    orchestrationStatus: row.orchestration?.status ?? "",
+    orchestrationStages: row.orchestration?.stages?.map((stage) => `${stage.label}:${stage.status}`).join(";") ?? "",
     provenance: row.provenanceSources.join(";"),
     risk: row.risk,
     riskFlags: row.riskFlags.join(";"),
