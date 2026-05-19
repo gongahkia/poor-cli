@@ -6,6 +6,8 @@ import { handleBusinessDossier } from "../tools/brief-tools.js";
 type BusinessDossierInput = Parameters<typeof handleBusinessDossier>[0];
 type AnalystMemoResponse = Awaited<ReturnType<typeof generateAnalystMemo>>;
 
+export type CddOrchestratorInput = BusinessDossierInput;
+
 export type CddOrchestratorResponse = {
   readonly dossier: AnalystMemoDossier;
   readonly webPresence: WebPresence;

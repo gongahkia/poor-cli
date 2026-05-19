@@ -193,6 +193,16 @@ describe("sg_query CDD-only workflows", () => {
       status: "completed",
       workflow: "business_dossier",
       toolsUsed: ["sg_business_dossier"],
+      steps: [
+        expect.objectContaining({
+          structuredOutput: expect.objectContaining({
+            orchestration: expect.objectContaining({
+              strategy: "acra_then_sector_then_supplemental_memo",
+            }),
+            memo: expect.objectContaining({ status: "unavailable" }),
+          }),
+        }),
+      ],
     });
     expect(vi.mocked(getAcraEntities)).toHaveBeenCalledWith(
       expect.objectContaining({ entityName: "ABC CONSTRUCTION PTE LTD", limit: 5 }),
@@ -271,7 +281,15 @@ describe("sg_query CDD-only workflows", () => {
   });
 
   it("executes the hotel-operator lookup workflow with HLB scope", async () => {
-    vi.mocked(getAcraEntities).mockResolvedValue([] as never);
+    vi.mocked(getAcraEntities).mockResolvedValue([
+      {
+        entityName: "RAFFLES HOTEL SINGAPORE",
+        uen: "199002667Z",
+        entityStatusDescription: "Live Company",
+        primarySsicCode: "55101",
+        primarySsicDescription: "HOTELS",
+      },
+    ] as never);
     vi.mocked(getHlbHotels).mockResolvedValue([
       {
         name: "RAFFLES HOTEL SINGAPORE",

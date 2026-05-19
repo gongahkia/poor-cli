@@ -787,7 +787,7 @@ const server = createServer(async (req, res) => {
       const input = body === "" ? {} : JSON.parse(body);
       safeInputSummary = summarizeBulkInput(input);
       const startedAt = Date.now();
-      const response = await buildBulkDossierResponse(input, handleBusinessDossier);
+      const response = await buildBulkDossierResponse(input, runCddOrchestrator);
       requestLogger.info("bulk dossiers finished", {
         ...safeInputSummary,
         executedCount: response.executedCount,

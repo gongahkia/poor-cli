@@ -1,14 +1,10 @@
 import type { AnalystMemoDossier } from "./analyst-memo.js";
+import type { CddOrchestratorResponse } from "./cdd-orchestrator.js";
 
 export const MAX_BULK_DOSSIER_ITEMS = 200;
 const UEN_PATTERN = /^(?:\d{8,9}[a-z]|[a-z]\d{2}[a-z]{2}\d{4}[a-z])$/i;
 
-type ToolResult = {
-  readonly isError?: boolean;
-  readonly structuredContent?: Record<string, unknown>;
-};
-
-type DossierHandler = (input: { readonly uen: string } | { readonly entityName: string }) => Promise<ToolResult>;
+type DossierHandler = (input: { readonly uen: string } | { readonly entityName: string }) => Promise<CddOrchestratorResponse>;
 
 export type BulkParseError = {
   readonly index: number;
@@ -35,6 +31,10 @@ export type BulkDossierRow =
       readonly provenanceSources: readonly string[];
       readonly generatedAt: string;
       readonly dossier: AnalystMemoDossier;
+      readonly webPresence: CddOrchestratorResponse["webPresence"];
+      readonly peopleDiscovery: CddOrchestratorResponse["peopleDiscovery"];
+      readonly memo: CddOrchestratorResponse["memo"];
+      readonly orchestration: CddOrchestratorResponse["orchestration"];
     }
   | {
       readonly index: number;
@@ -185,9 +185,9 @@ export const buildBulkDossierResponse = async (
   for (const item of parsed.items) {
     try {
       const result = await handler(buildInput(item.identifier));
-      const record = result.structuredContent?.["record"];
-      if (result.isError || !isDossier(record)) {
-        throw new Error("Dossier handler did not return a structured dossier.");
+      const record = result.dossier;
+      if (!isDossier(record)) {
+        throw new Error("CDD orchestrator did not return a structured dossier.");
       }
       const resolution = asRecord(record.records["resolution"]);
       const matchedModules = getStringArray(resolution?.["matchedModules"]);
@@ -204,12 +204,16 @@ export const buildBulkDossierResponse = async (
         index: item.index,
         input: item.identifier,
         matchedModules,
+        memo: result.memo,
+        orchestration: result.orchestration,
+        peopleDiscovery: result.peopleDiscovery,
         provenanceSources: record.provenance.map((source) => source.source),
         risk: getRisk(record),
         riskFlags: (record.riskFlags ?? []).map((flag) => flag.code),
         status: matchedModules.length === 0 ? "not_found" : "success",
         uen,
         upstreamFailure: gapCodes.some((code) => /UNAVAILABLE|FAILED|TIMEOUT|RATE_LIMIT/i.test(code)),
+        webPresence: result.webPresence,
       });
     } catch (error) {
       rows.push({

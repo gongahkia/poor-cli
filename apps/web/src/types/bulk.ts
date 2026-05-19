@@ -1,4 +1,6 @@
 import type { BusinessDossier } from "@/types/dossier";
+import type { AnalystMemoResponse } from "@/types/analyst-memo";
+import type { PeopleDiscovery, WebPresence } from "@/lib/api/client";
 
 export type BulkDossierRow = {
   index: number;
@@ -17,6 +19,20 @@ export type BulkDossierRow = {
   provenanceSources: string[];
   generatedAt: string;
   dossier?: BusinessDossier;
+  webPresence?: WebPresence;
+  peopleDiscovery?: PeopleDiscovery;
+  memo?: AnalystMemoResponse;
+  orchestration?: {
+    status: "ready" | "identity_not_resolved";
+    strategy: string;
+    acraSectorHints: string[];
+    webSectorHints: string[];
+    effectiveSectorHints: string[];
+    officialModules: string[];
+    supplementalTools: string[];
+    reranDossierForWebSectorHints: boolean;
+    limits: string[];
+  };
   error?: {
     code: string;
     message: string;
