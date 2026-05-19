@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { BookmarkCheck, BookmarkPlus, Braces, Copy, Loader2, Table2 } from "lucide-react";
+import { Braces, Copy, Loader2, Table2 } from "lucide-react";
 
 import type { AnalystMemoState } from "@/components/dossier/AnalystMemoSection";
 import { DossierHeaderLogo } from "@/components/dossier/DossierHeaderLogo";
@@ -14,15 +14,9 @@ import { useToast } from "@/components/notifications/ToastProvider";
 import { Button } from "@/components/ui/button";
 import { callTool, getGatewayJson, postGatewayJson, type PeopleDiscovery, type WebPresence } from "@/lib/api/client";
 import {
-  buildDossierExportSummary,
   exportSingleDossierCsv,
   exportSingleDossierJson,
 } from "@/lib/export/structured";
-import {
-  isShortlisted,
-  removeShortlistEntry,
-  saveShortlistEntry,
-} from "@/lib/shortlist";
 import {
   buildBusinessDossierInput,
   buildBusinessDossierExpandedInput,
@@ -43,9 +37,47 @@ import type { ReportExportFormat, ReportTemplate } from "@/lib/report-template";
 
 type DossierState =
   | { status: "loading" }
-  | { status: "success"; dossier: BusinessDossier }
-  | { status: "not-found"; dossier: BusinessDossier }
+  | { status: "success"; dossier: BusinessDossier; orchestration: CddOrchestratorResponse }
+  | { status: "not-found"; dossier: BusinessDossier; orchestration: CddOrchestratorResponse }
   | { status: "error"; message: string };
+
+type CddOrchestratorResponse = {
+  dossier: BusinessDossier;
+  webPresence: WebPresence;
+  peopleDiscovery: PeopleDiscovery;
+  memo: AnalystMemoResponse;
+  generatedAt: string;
+  orchestration: {
+    status: "ready" | "identity_not_resolved";
+    strategy: "acra_then_sector_then_supplemental_memo";
+    acraSectorHints: string[];
+    webSectorHints: string[];
+    effectiveSectorHints: string[];
+    officialModules: string[];
+    supplementalTools: string[];
+    reranDossierForWebSectorHints: boolean;
+    limits: string[];
+  };
+};
+
+const toWebPresenceState = (presence: WebPresence | undefined): WebPresenceState =>
+  presence === undefined ? { status: "loading" } : { status: "success", presence };
+
+const toPeopleDiscoveryState = (discovery: PeopleDiscovery | undefined): PeopleDiscoveryState =>
+  discovery === undefined ? { status: "loading" } : { status: "success", discovery };
+
+const toAnalystMemoState = (memo: AnalystMemoResponse | undefined): AnalystMemoState => {
+  if (memo === undefined) {
+    return { status: "loading" };
+  }
+  if (memo.status === "ready") {
+    return { status: "ready", memo };
+  }
+  if (memo.status === "unavailable") {
+    return { status: "unavailable", memo };
+  }
+  return { status: "error", message: memo.reason.message, memo };
+};
 
 function DossierActionButton({
   children,
@@ -97,18 +129,18 @@ export function CounterpartyPage() {
 
     setState({ status: "loading" });
 
-    void callTool<BusinessDossier>(
-      "sg_business_dossier",
+    void postGatewayJson<CddOrchestratorResponse>(
+      "/api/v1/dude/cdd-orchestrator",
       buildBusinessDossierInput(decodedIdentifier),
       { signal: controller.signal },
     )
-      .then((dossier) => {
+      .then((orchestration) => {
         if (controller.signal.aborted) {
           return;
         }
-        setState(isNotFoundDossier(dossier)
-          ? { status: "not-found", dossier }
-          : { status: "success", dossier });
+        setState(isNotFoundDossier(orchestration.dossier)
+          ? { status: "not-found", dossier: orchestration.dossier, orchestration }
+          : { status: "success", dossier: orchestration.dossier, orchestration });
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) {
@@ -145,7 +177,7 @@ export function CounterpartyPage() {
             message={`We didn't find a Singapore registry record for ${decodedIdentifier}.`}
           />
         ) : (
-          <DossierSuccess identifier={decodedIdentifier} dossier={state.dossier} />
+          <DossierSuccess identifier={decodedIdentifier} dossier={state.dossier} orchestration={state.orchestration} />
         )}
       </section>
     </main>
@@ -178,8 +210,8 @@ function DossierLoading({ identifier }: { identifier: string }) {
           <div className="min-w-0">
             <h2 className="text-base font-semibold tracking-normal text-foreground">Loading dossier</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Requesting <span className="font-mono text-foreground">sg_business_dossier</span> from the REST gateway.
-              Source-level evidence, skipped modules, freshness, and gaps will appear after this request returns.
+              Running the CDD orchestrator: ACRA identity, inferred sector modules, supplemental evidence, and memo
+              generation will return together before the report opens.
             </p>
           </div>
           <span className="w-fit shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
@@ -193,12 +225,12 @@ function DossierLoading({ identifier }: { identifier: string }) {
 
         {isSlow ? (
           <p className="mt-4 text-sm leading-6 text-muted-foreground">
-            This is taking longer than usual. The gateway may be waiting on upstream Singapore data sources; no individual
-            module step is shown until the dossier response is available.
+            This is taking longer than usual. The gateway may be waiting on upstream Singapore data sources, TinyFish
+            discovery, or the configured memo provider.
           </p>
         ) : (
           <p className="mt-4 text-xs leading-5 text-muted-foreground">
-            This loading state reflects one live gateway request, not simulated per-module progress.
+            This loading state reflects one live orchestrator request, not simulated per-module progress.
           </p>
         )}
       </section>
@@ -238,9 +270,11 @@ function DossierProblem({
 function DossierSuccess({
   dossier: initialDossier,
   identifier,
+  orchestration,
 }: {
   dossier: BusinessDossier;
   identifier: string;
+  orchestration: CddOrchestratorResponse;
 }) {
   const [dossier, setDossier] = useState(initialDossier);
   const resolution = dossier.records.resolution;
@@ -251,21 +285,25 @@ function DossierSuccess({
   const [exportError, setExportError] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
   const [rerunningModule, setRerunningModule] = useState<RunningBusinessModule>(null);
-  const [webPresenceState, setWebPresenceState] = useState<WebPresenceState>({ status: "loading" });
-  const [peopleDiscoveryState, setPeopleDiscoveryState] = useState<PeopleDiscoveryState>({ status: "loading" });
-  const [memoState, setMemoState] = useState<AnalystMemoState>({ status: "loading" });
-  const [shortlisted, setShortlisted] = useState(false);
+  const [webPresenceState, setWebPresenceState] = useState<WebPresenceState>(() =>
+    toWebPresenceState(orchestration.webPresence));
+  const [peopleDiscoveryState, setPeopleDiscoveryState] = useState<PeopleDiscoveryState>(() =>
+    toPeopleDiscoveryState(orchestration.peopleDiscovery));
+  const [memoState, setMemoState] = useState<AnalystMemoState>(() => toAnalystMemoState(orchestration.memo));
   const { notify } = useToast();
   const copiedTimer = useRef<number | null>(null);
   const sharedMemoState = useMemo(() => new URLSearchParams(location.search).get("memo"), [location.search]);
   const canonicalUen = getSummaryString(dossier, "UEN");
   const entityName = getSummaryString(dossier, "Entity");
-  const shortlistIdentifier = canonicalUen ?? entityName ?? identifier;
   const webPresenceQuery = [entityName, canonicalUen].filter(Boolean).join(" ");
+  const isUsingInitialOrchestration = dossier === initialDossier;
 
   useEffect(() => {
     setDossier(initialDossier);
-  }, [initialDossier]);
+    setWebPresenceState(toWebPresenceState(orchestration.webPresence));
+    setPeopleDiscoveryState(toPeopleDiscoveryState(orchestration.peopleDiscovery));
+    setMemoState(toAnalystMemoState(orchestration.memo));
+  }, [initialDossier, orchestration]);
 
   useEffect(() => {
     persistDossierRecord({ identifier, dossier });
@@ -291,10 +329,6 @@ function DossierSuccess({
   }, []);
 
   useEffect(() => {
-    setShortlisted(isShortlisted(shortlistIdentifier));
-  }, [shortlistIdentifier]);
-
-  useEffect(() => {
     if (
       canonicalUen !== null
       && UEN_PATTERN.test(canonicalUen)
@@ -306,6 +340,9 @@ function DossierSuccess({
 
   useEffect(() => {
     const controller = new AbortController();
+    if (isUsingInitialOrchestration) {
+      return () => controller.abort();
+    }
     if (webPresenceQuery === "") {
       setWebPresenceState({ status: "error", message: "No entity name or UEN was available for web discovery." });
       return () => controller.abort();
@@ -332,10 +369,13 @@ function DossierSuccess({
       });
 
     return () => controller.abort();
-  }, [webPresenceQuery]);
+  }, [isUsingInitialOrchestration, webPresenceQuery]);
 
   useEffect(() => {
     const controller = new AbortController();
+    if (isUsingInitialOrchestration) {
+      return () => controller.abort();
+    }
     if (entityName === null) {
       setPeopleDiscoveryState({ status: "error", message: "No entity name was available for people follow-up." });
       return () => controller.abort();
@@ -365,10 +405,13 @@ function DossierSuccess({
       });
 
     return () => controller.abort();
-  }, [canonicalUen, entityName]);
+  }, [canonicalUen, entityName, isUsingInitialOrchestration]);
 
   useEffect(() => {
     const controller = new AbortController();
+    if (isUsingInitialOrchestration) {
+      return () => controller.abort();
+    }
     if (webPresenceState.status === "loading") {
       setMemoState({ status: "loading" });
       return () => controller.abort();
@@ -406,7 +449,7 @@ function DossierSuccess({
       });
 
     return () => controller.abort();
-  }, [dossier, webPresenceState]);
+  }, [dossier, isUsingInitialOrchestration, webPresenceState]);
 
   useEffect(() => {
     const nextMemoState = memoState.status === "loading" ? "pending" : memoState.status;
@@ -575,18 +618,6 @@ function DossierSuccess({
     }
   };
 
-  const handleToggleShortlist = () => {
-    if (shortlisted) {
-      removeShortlistEntry(shortlistIdentifier);
-      setShortlisted(false);
-      notify({ title: "Removed saved dossier", description: shortlistIdentifier, tone: "info" });
-      return;
-    }
-    saveShortlistEntry(buildDossierExportSummary(dossier));
-    setShortlisted(true);
-    notify({ title: "Saved dossier", description: shortlistIdentifier, tone: "success" });
-  };
-
   const handleModuleFollowUp = async (request: ModuleFollowUpRequest) => {
     setRerunningModule(request.kind === "all" ? "all" : request.module);
     try {
@@ -665,16 +696,6 @@ function DossierSuccess({
         <div className="flex flex-wrap items-center gap-3">
           <DossierActionButton label="Copy link" onClick={handleCopyLink}>
             <Copy aria-hidden="true" className="h-5 w-5" />
-          </DossierActionButton>
-          <DossierActionButton
-            label={shortlisted ? "Remove saved" : "Save dossier"}
-            onClick={handleToggleShortlist}
-          >
-            {shortlisted ? (
-              <BookmarkCheck aria-hidden="true" className="h-5 w-5" />
-            ) : (
-              <BookmarkPlus aria-hidden="true" className="h-5 w-5" />
-            )}
           </DossierActionButton>
           {copyStatus === "copied" ? (
             <p className="text-sm text-muted-foreground">Copied</p>

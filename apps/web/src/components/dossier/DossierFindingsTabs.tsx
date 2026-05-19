@@ -9,7 +9,7 @@ import {
   SearchCheck,
   ShieldAlert,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { AnalystMemoSection, type AnalystMemoState } from "@/components/dossier/AnalystMemoSection";
 import { ConfidenceSection } from "@/components/dossier/ConfidenceSection";
@@ -40,13 +40,14 @@ import {
   moveReportSection,
   toggleReportSection,
   type ReportExportFormat,
-  type ReportSectionId,
   type ReportTemplate,
   type ReportWritingStyle,
 } from "@/lib/report-template";
+import { callTool } from "@/lib/api/client";
+import { BUSINESS_MODULE_LABELS, getSummaryString, type FollowUpBusinessModule } from "@/lib/dossier";
 import { cn } from "@/lib/utils";
-import type { AnalystMemoCitation } from "@/types/analyst-memo";
-import type { BusinessDossier } from "@/types/dossier";
+import type { AnalystMemoCitation, AnalystMemoReady } from "@/types/analyst-memo";
+import type { BusinessDossier, NextCheck } from "@/types/dossier";
 
 type DossierFindingsTabsProps = {
   dossier: BusinessDossier;
@@ -64,7 +65,34 @@ type DossierFindingsTabsProps = {
 type EvidenceDialogState =
   | { kind: "citation"; citation: AnalystMemoCitation }
   | { kind: "pack"; title: string; description: string }
+  | {
+      kind: "followUp";
+      description: string;
+      error?: string;
+      input: Record<string, unknown>;
+      moduleRequest?: ModuleFollowUpRequest;
+      result?: unknown;
+      status: "idle" | "running" | "ready" | "error";
+      title: string;
+      tool: string;
+    }
   | null;
+
+type DossierReportTab = "summary" | "report";
+
+type SupportedFollowUpAction = {
+  description: string;
+  label: string;
+  linkPattern: RegExp;
+  module?: FollowUpBusinessModule;
+  tool: string;
+};
+
+type ConfidenceBlockerDetail = {
+  detail: string;
+  label: string;
+  source: string;
+};
 
 const writingStyles: ReportWritingStyle[] = [
   "concise_analyst",
@@ -72,6 +100,320 @@ const writingStyles: ReportWritingStyle[] = [
   "client_friendly_neutral",
   "internal_escalation",
 ];
+
+const dossierReportTabs: { id: DossierReportTab; label: string; description: string }[] = [
+  {
+    description: "Read the cited findings, risk context, blockers, and next actions.",
+    id: "summary",
+    label: "Summary",
+  },
+  {
+    description: "Choose sections, writing preset, and export the review artifact.",
+    id: "report",
+    label: "Report Builder",
+  },
+];
+
+const supportedFollowUpActions: readonly SupportedFollowUpAction[] = [
+  {
+    description: "Dude can rerun the retained ACRA entity lookup by UEN or company name for source-level registry rows.",
+    label: "ACRA entity details",
+    linkPattern: /full ACRA entity details|ACRA entity details|ACRA/i,
+    tool: "sg_acra_entities",
+  },
+  {
+    description: "Dude can run OpenSanctions candidate screening when the licensed API key is configured. Results are analyst-review candidates, not clearance.",
+    label: "OpenSanctions",
+    linkPattern: /OpenSanctions|sanctions\/watchlist|sanctions|watchlist/i,
+    tool: "sg_sanctions_screen",
+  },
+  {
+    description: "Dude can cross-link candidate OpenCorporates identifiers without treating them as ownership or control evidence.",
+    label: "OpenCorporates",
+    linkPattern: /OpenCorporates identifiers|OpenCorporates|Cross-link/i,
+    tool: "sg_opencorporates_links",
+  },
+  {
+    description: "Dude can search bounded official Singapore public feeds for keyword evidence. This is not general web monitoring or unsupported sentiment analysis.",
+    label: "official Singapore public feeds",
+    linkPattern: /official Singapore public feeds|keyword evidence|official public feeds|public feeds/i,
+    tool: "sg_adverse_media_lite",
+  },
+  {
+    description: "Dude can build a shallow graph from the supplied public dossier records, with strict limits against ownership or control claims.",
+    label: "shallow graph",
+    linkPattern: /shallow graph|relationship graph/i,
+    tool: "sg_relationship_graph",
+  },
+  {
+    description: "Dude can rerun the GeBIZ procurement module for tender-award evidence linked to this counterparty.",
+    label: "GeBIZ",
+    linkPattern: /GeBIZ|procurement/i,
+    module: "gebiz",
+    tool: "sg_gebiz_tenders",
+  },
+];
+
+const toolModuleFollowUps: Partial<Record<string, FollowUpBusinessModule>> = {
+  sg_bca_licensed_builders: "bca",
+  sg_bca_registered_contractors: "bca",
+  sg_boa_architects: "boa",
+  sg_boa_architecture_firms: "boa",
+  sg_cea_salespersons: "cea",
+  sg_gebiz_tenders: "gebiz",
+  sg_hlb_hotels: "hlb",
+  sg_hsa_health_product_licensees: "hsa",
+  sg_hsa_licensed_pharmacies: "hsa",
+};
+
+const genericBlockerPatterns = [
+  /^missing evidence that blocks confidence\.?$/i,
+  /^missing evidence or upstream gap\.?$/i,
+  /^missing evidence$/i,
+];
+
+function ensureSentence(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed === "") return trimmed;
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+function lowerFirst(value: string): string {
+  return value.length === 0 ? value : `${value[0].toLowerCase()}${value.slice(1)}`;
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return Array.from(new Set(values.filter((value) => value.trim() !== "").map((value) => value.trim())));
+}
+
+function getDefaultFollowUpValue(dossier: BusinessDossier): string {
+  return getSummaryString(dossier, "Entity")
+    ?? getSummaryString(dossier, "UEN")
+    ?? dossier.title;
+}
+
+function getDossierIdentity(dossier: BusinessDossier): { entity: string; uen: string | null; status: string | null } {
+  return {
+    entity: getSummaryString(dossier, "Entity") ?? dossier.title,
+    status: getSummaryString(dossier, "Entity status") ?? getSummaryString(dossier, "Status"),
+    uen: getSummaryString(dossier, "UEN"),
+  };
+}
+
+function buildSupportedToolInput(tool: string, dossier: BusinessDossier, nextCheck?: NextCheck): Record<string, unknown> {
+  const identity = getDossierIdentity(dossier);
+  const entityOrUen = identity.entity !== "" ? identity.entity : identity.uen ?? dossier.title;
+  if (tool === "sg_acra_entities") {
+    return identity.uen === null ? { entityName: identity.entity, limit: 10 } : { uen: identity.uen, limit: 10 };
+  }
+  if (tool === "sg_sanctions_screen") {
+    return { name: entityOrUen, ...(identity.uen === null ? {} : { uen: identity.uen }) };
+  }
+  if (tool === "sg_opencorporates_links") {
+    return {
+      entityName: entityOrUen,
+      jurisdictionCode: "sg",
+      ...(identity.uen === null ? {} : { uen: identity.uen }),
+    };
+  }
+  if (tool === "sg_adverse_media_lite") {
+    return { keyword: entityOrUen };
+  }
+  if (tool === "sg_relationship_graph") {
+    return { records: dossier.records };
+  }
+  return nextCheck?.input ?? {};
+}
+
+function extractFollowUpValue(input: Record<string, unknown> | undefined, fallback: string): string {
+  if (input !== undefined) {
+    for (const key of ["entityName", "companyName", "supplierName", "keeperName", "pharmacyName", "name", "uen"]) {
+      const value = input[key];
+      if (typeof value === "string" && value.trim() !== "") {
+        return value.trim();
+      }
+    }
+  }
+  return fallback;
+}
+
+function actionForTool(tool: string): SupportedFollowUpAction | null {
+  const known = supportedFollowUpActions.find((action) => action.tool === tool);
+  if (known !== undefined) return known;
+  const module = toolModuleFollowUps[tool];
+  if (module === undefined) return null;
+  return {
+    description: `Dude can rerun the ${BUSINESS_MODULE_LABELS[module]} sector module and refresh the dossier evidence pack.`,
+    label: BUSINESS_MODULE_LABELS[module],
+    linkPattern: new RegExp(BUSINESS_MODULE_LABELS[module], "i"),
+    module,
+    tool,
+  };
+}
+
+function normalizeText(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function findNextCheckForStep(step: string, dossier: BusinessDossier): NextCheck | undefined {
+  const normalizedStep = normalizeText(step);
+  return (dossier.nextChecks ?? []).find((check) => {
+    const normalizedReason = normalizeText(check.reason);
+    return normalizedReason === normalizedStep
+      || normalizedReason.includes(normalizedStep)
+      || normalizedStep.includes(normalizedReason)
+      || normalizedStep.includes(normalizeText(check.tool));
+  });
+}
+
+function findFollowUpAction(step: string, dossier: BusinessDossier): { action: SupportedFollowUpAction; nextCheck?: NextCheck } | null {
+  const nextCheck = findNextCheckForStep(step, dossier);
+  if (nextCheck !== undefined) {
+    const directAction = actionForTool(nextCheck.tool);
+    if (directAction !== null) return { action: directAction, nextCheck };
+  }
+  const patternAction = supportedFollowUpActions.find((action) => action.linkPattern.test(step));
+  return patternAction === undefined ? null : { action: patternAction, nextCheck };
+}
+
+function renderLinkedFollowUpText(
+  step: string,
+  action: SupportedFollowUpAction | null,
+  onClick: () => void,
+): ReactNode {
+  if (action === null) return step;
+  const match = action.linkPattern.exec(step);
+  if (match === null) return step;
+  const before = step.slice(0, match.index);
+  const linked = match[0];
+  const after = step.slice(match.index + linked.length);
+  return (
+    <>
+      {before}
+      <button
+        className="inline rounded-sm font-medium text-primary underline underline-offset-4 transition hover:text-primary/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+        onClick={onClick}
+        type="button"
+      >
+        {linked}
+      </button>
+      {after}
+    </>
+  );
+}
+
+function buildFollowUpDialogState(params: {
+  action: SupportedFollowUpAction;
+  dossier: BusinessDossier;
+  nextCheck?: NextCheck;
+  step: string;
+}): NonNullable<EvidenceDialogState> {
+  const input = buildSupportedToolInput(params.action.tool, params.dossier, params.nextCheck);
+  const module = params.action.module ?? toolModuleFollowUps[params.action.tool];
+  const moduleRequest = module === undefined
+    ? undefined
+    : {
+        module,
+        value: extractFollowUpValue(params.nextCheck?.input, getDefaultFollowUpValue(params.dossier)),
+      };
+
+  return {
+    description: `${params.action.description} Triggered from follow-up: ${params.step}`,
+    input,
+    kind: "followUp",
+    moduleRequest,
+    status: "idle",
+    title: params.action.label,
+    tool: params.action.tool,
+  };
+}
+
+function isGenericBlocker(value: string): boolean {
+  return genericBlockerPatterns.some((pattern) => pattern.test(value.trim()));
+}
+
+function pushUniqueBlocker(
+  rows: ConfidenceBlockerDetail[],
+  seen: Set<string>,
+  row: ConfidenceBlockerDetail,
+): void {
+  const key = `${row.label}:${row.detail}`;
+  if (seen.has(key)) return;
+  seen.add(key);
+  rows.push(row);
+}
+
+function buildConfidenceBlockers(dossier: BusinessDossier, memo: AnalystMemoReady): ConfidenceBlockerDetail[] {
+  const rows: ConfidenceBlockerDetail[] = [];
+  const seen = new Set<string>();
+  const memoBlockers = uniqueStrings([
+    ...memo.decisionAid.confidenceBlockers,
+    ...memo.riskRating.confidenceBlockers,
+  ]);
+  const hadGenericBlocker = memoBlockers.some(isGenericBlocker);
+
+  memoBlockers
+    .filter((blocker) => !isGenericBlocker(blocker))
+    .forEach((blocker) => pushUniqueBlocker(rows, seen, {
+      detail: blocker,
+      label: "Memo blocker",
+      source: "AI memo",
+    }));
+
+  dossier.gaps.forEach((gap) => pushUniqueBlocker(rows, seen, {
+    detail: gap.message,
+    label: gap.code,
+    source: "Dossier gap",
+  }));
+
+  (dossier.records.resolution?.moduleReasons ?? [])
+    .filter((reason) => reason.status === "skipped" || reason.status === "unsearched")
+    .forEach((reason) => pushUniqueBlocker(rows, seen, {
+      detail: reason.reason,
+      label: `${BUSINESS_MODULE_LABELS[reason.module]} ${reason.status}`,
+      source: "Resolver",
+    }));
+
+  if (rows.length === 0 && hadGenericBlocker) {
+    pushUniqueBlocker(rows, seen, {
+      detail: "The memo provider returned a generic blocker without source-specific detail. Review the Evidence Pack gaps, provenance, freshness, and limits before relying on this draft.",
+      label: "Generic model blocker",
+      source: "AI memo",
+    });
+  }
+
+  if (rows.length === 0 && dossier.limits.length > 0) {
+    dossier.limits.slice(0, 3).forEach((limit) => pushUniqueBlocker(rows, seen, {
+      detail: limit.message,
+      label: limit.code,
+      source: "Dossier limit",
+    }));
+  }
+
+  return rows.slice(0, 8);
+}
+
+function buildExecutiveOverview(dossier: BusinessDossier, memo: AnalystMemoReady): string {
+  const identity = getDossierIdentity(dossier);
+  const entityText = `${identity.entity}${identity.uen === null ? "" : ` (UEN ${identity.uen})`}`;
+  const statusText = identity.status === null ? "has returned public registry evidence" : `is recorded with status ${identity.status}`;
+  const sources = uniqueStrings(dossier.provenance.map((item) => item.source)).slice(0, 4);
+  const sourceText = sources.length === 0
+    ? "the returned dossier evidence"
+    : `${sources.join(", ")} evidence`;
+  const firstFinding = memo.evidenceMemo[0]?.text;
+  const secondFinding = memo.evidenceMemo[1]?.text;
+  const keyFindingText = firstFinding === undefined
+    ? "No cited narrative finding was returned by the memo provider."
+    : ensureSentence(firstFinding);
+  const secondFindingText = secondFinding === undefined ? "" : ` ${ensureSentence(secondFinding)}`;
+  const blockers = buildConfidenceBlockers(dossier, memo);
+  const blockerText = blockers.length === 0
+    ? "No specific confidence blocker was returned, but absence of public evidence should not be treated as a positive clearance claim."
+    : `The main confidence blockers are ${blockers.slice(0, 2).map((item) => `${item.label}: ${item.detail}`).join("; ")}.`;
+
+  return `${entityText} ${statusText}, and the current CDD draft is grounded in ${sourceText}. ${keyFindingText}${secondFindingText} The public-data risk rating is ${memo.riskRating.level} because ${lowerFirst(ensureSentence(memo.riskRating.rationale))} ${blockerText}`;
+}
 
 function SummaryFallback({ dossier }: { dossier: BusinessDossier }) {
   return (
@@ -125,6 +467,8 @@ function CitedSummary({
 
   const memo = memoState.memo;
   const citationById = new Map(memo.citations.map((citation) => [citation.id, citation]));
+  const executiveOverview = buildExecutiveOverview(dossier, memo);
+  const confidenceBlockers = buildConfidenceBlockers(dossier, memo);
 
   return (
     <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
@@ -141,7 +485,12 @@ function CitedSummary({
         </span>
       </div>
 
-      <div className="mt-5 grid gap-4">
+      <article className="mt-5 rounded-md border border-border bg-background p-4">
+        <p className="text-sm font-semibold text-muted-foreground">Executive overview</p>
+        <p className="mt-2 break-words text-base leading-7 text-foreground">{executiveOverview}</p>
+      </article>
+
+      <div className="mt-4 grid gap-4">
         {memo.evidenceMemo.length === 0 ? (
           <p className="rounded-md border border-border bg-muted/35 p-4 text-sm text-muted-foreground">
             No cited memo findings were returned.
@@ -193,23 +542,73 @@ function CitedSummary({
             <ListChecks className="mt-0.5 h-5 w-5 text-muted-foreground" />
             <div>
               <h3 className="text-sm font-semibold text-foreground">Required follow-up</h3>
-              <ul className="mt-2 space-y-2 text-sm leading-6 text-muted-foreground">
-                {memo.decisionAid.nextSteps.map((step) => <li key={step}>{step}</li>)}
-              </ul>
+              <ol className="mt-3 space-y-3 text-sm leading-6 text-muted-foreground">
+                {memo.decisionAid.nextSteps.map((step, index) => {
+                  const followUp = findFollowUpAction(step, dossier);
+                  const openFollowUp = () => {
+                    if (followUp !== null) {
+                      onOpenEvidence(buildFollowUpDialogState({
+                        action: followUp.action,
+                        dossier,
+                        nextCheck: followUp.nextCheck,
+                        step,
+                      }));
+                    }
+                  };
+                  return (
+                    <li className="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2" key={step}>
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-xs font-semibold text-foreground">
+                        {index + 1}
+                      </span>
+                      <span className="min-w-0 break-words">
+                        {renderLinkedFollowUpText(step, followUp?.action ?? null, openFollowUp)}
+                        {followUp === null ? null : (
+                          <span className="mt-1 block text-xs text-muted-foreground">
+                            Supported in Dude via{" "}
+                            <button
+                              className="font-mono text-primary underline underline-offset-4"
+                              onClick={openFollowUp}
+                              type="button"
+                            >
+                              {followUp.action.tool}
+                            </button>
+                            .
+                          </span>
+                        )}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
             </div>
           </div>
         </article>
       </div>
 
-      {memo.decisionAid.confidenceBlockers.length === 0 ? null : (
+      {confidenceBlockers.length === 0 ? null : (
         <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-4 text-amber-950">
           <div className="flex items-start gap-3">
             <AlertTriangle className="mt-0.5 h-5 w-5" />
             <div>
-              <h3 className="text-sm font-semibold">Confidence blockers</h3>
-              <ul className="mt-2 space-y-2 text-sm leading-6">
-                {memo.decisionAid.confidenceBlockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
-              </ul>
+              <h3 className="text-sm font-semibold">What is missing or limiting confidence</h3>
+              <ol className="mt-3 space-y-3 text-sm leading-6">
+                {confidenceBlockers.map((blocker, index) => (
+                  <li
+                    className="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2"
+                    key={`${blocker.label}-${blocker.detail}`}
+                  >
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full border border-amber-300 bg-white/70 text-xs font-semibold">
+                      {index + 1}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block break-words font-medium">
+                        {blocker.label} <span className="font-normal text-amber-800">({blocker.source})</span>
+                      </span>
+                      <span className="mt-0.5 block break-words text-amber-900">{blocker.detail}</span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
             </div>
           </div>
         </div>
@@ -339,10 +738,12 @@ function ReportBuilder({
 }
 
 function EvidenceDialog({
+  onRunFollowUp,
   state,
   onOpenChange,
 }: {
   onOpenChange: (open: boolean) => void;
+  onRunFollowUp: (state: Extract<NonNullable<EvidenceDialogState>, { kind: "followUp" }>) => void;
   state: EvidenceDialogState;
 }) {
   return (
@@ -361,12 +762,51 @@ function EvidenceDialog({
               </p>
             </article>
           </>
+        ) : state.kind === "pack" ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>{state.title}</DialogTitle>
+              <DialogDescription>{state.description}</DialogDescription>
+            </DialogHeader>
+          </>
         ) : (
           <>
             <DialogHeader>
               <DialogTitle>{state.title}</DialogTitle>
               <DialogDescription>{state.description}</DialogDescription>
             </DialogHeader>
+            <div className="space-y-4">
+              <div className="rounded-md border border-border bg-muted/30 p-3">
+                <p className="text-xs font-medium uppercase text-muted-foreground">Supported Dude tool</p>
+                <p className="mt-1 font-mono text-sm text-foreground">{state.tool}</p>
+              </div>
+              <div className="rounded-md border border-border bg-background p-3">
+                <p className="text-xs font-medium uppercase text-muted-foreground">Input</p>
+                <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">
+                  {JSON.stringify(state.input, null, 2)}
+                </pre>
+              </div>
+              {state.error === undefined ? null : (
+                <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                  {state.error}
+                </p>
+              )}
+              {state.result === undefined ? null : (
+                <div className="rounded-md border border-border bg-background p-3">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">Result</p>
+                  <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">
+                    {JSON.stringify(state.result, null, 2)}
+                  </pre>
+                </div>
+              )}
+              <Button
+                disabled={state.status === "running"}
+                onClick={() => onRunFollowUp(state)}
+                type="button"
+              >
+                {state.status === "running" ? "Running follow-up" : "Run follow-up in Dude"}
+              </Button>
+            </div>
           </>
         )}
       </DialogContent>
@@ -387,23 +827,79 @@ export function DossierFindingsTabs({
   webPresenceState,
 }: DossierFindingsTabsProps) {
   const [evidenceDialog, setEvidenceDialog] = useState<EvidenceDialogState>(null);
+  const [activeTab, setActiveTab] = useState<DossierReportTab>("summary");
   const evidenceStats = useMemo(() => ({
     gaps: dossier.gaps.length,
     provenance: dossier.provenance.length,
     records: Object.values(dossier.records)
       .reduce((sum, value) => sum + (Array.isArray(value) ? value.length : 0), 0),
   }), [dossier]);
+  const runFollowUp = async (state: Extract<NonNullable<EvidenceDialogState>, { kind: "followUp" }>) => {
+    if (state.moduleRequest !== undefined) {
+      setEvidenceDialog({ ...state, status: "running" });
+      await onModuleFollowUp(state.moduleRequest);
+      setEvidenceDialog({
+        ...state,
+        result: { message: "Dossier refresh requested. Updated evidence appears on this page when the module call completes." },
+        status: "ready",
+      });
+      return;
+    }
+
+    setEvidenceDialog({ ...state, status: "running" });
+    try {
+      const result = await callTool<unknown>(state.tool, state.input);
+      setEvidenceDialog({ ...state, result, status: "ready" });
+    } catch (error) {
+      setEvidenceDialog({
+        ...state,
+        error: error instanceof Error ? error.message : "Follow-up failed.",
+        status: "error",
+      });
+    }
+  };
 
   return (
     <div className="space-y-5">
-      <CitedSummary dossier={dossier} memoState={memoState} onOpenEvidence={setEvidenceDialog} />
+      <div className="rounded-lg border border-border bg-muted/35 p-1">
+        <div className="grid gap-1 sm:grid-cols-2" role="tablist" aria-label="Dossier report views">
+          {dossierReportTabs.map((tab) => (
+            <button
+              aria-selected={activeTab === tab.id}
+              className={cn(
+                "rounded-md px-4 py-3 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring",
+                activeTab === tab.id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:bg-background/60",
+              )}
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              role="tab"
+              type="button"
+            >
+              <span className="block text-sm font-semibold">{tab.label}</span>
+              <span className="mt-1 block text-xs leading-5">{tab.description}</span>
+            </button>
+          ))}
+        </div>
+      </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.55fr)]">
+      {activeTab === "summary" ? (
+        <CitedSummary dossier={dossier} memoState={memoState} onOpenEvidence={setEvidenceDialog} />
+      ) : (
         <ReportBuilder onExportReport={onExportReport} />
-        <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
-          <p className="text-sm font-medium text-muted-foreground">Evidence pack</p>
-          <h2 className="mt-1 text-xl font-semibold text-foreground">Available on demand</h2>
-          <div className="mt-4 grid grid-cols-3 gap-2 text-center text-sm">
+      )}
+
+      <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
+        <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="mt-0.5 h-5 w-5 text-muted-foreground" />
+            <div>
+              <h2 className="text-xl font-semibold text-foreground">Evidence Pack</h2>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                These details support the summary and report exports. Supplemental discovery is not official registry evidence.
+              </p>
+            </div>
+          </div>
+          <div className="grid w-full max-w-md grid-cols-3 gap-2 text-center text-sm">
             <div className="rounded-md border border-border p-3">
               <p className="text-lg font-semibold">{evidenceStats.records}</p>
               <p className="text-xs text-muted-foreground">records</p>
@@ -418,9 +914,9 @@ export function DossierFindingsTabs({
             </div>
           </div>
           <Button
-            className="mt-4 w-full"
+            className="w-fit shrink-0"
             onClick={() => setEvidenceDialog({
-              description: "Scroll the evidence pack below for raw rows, source attribution, gaps, and follow-up actions.",
+              description: "Scroll this evidence pack for raw rows, source attribution, gaps, and follow-up actions.",
               kind: "pack",
               title: "Evidence pack",
             })}
@@ -430,18 +926,6 @@ export function DossierFindingsTabs({
             <SearchCheck className="mr-2 h-4 w-4" />
             How evidence works
           </Button>
-        </section>
-      </div>
-
-      <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
-        <div className="flex items-start gap-3">
-          <CheckCircle2 className="mt-0.5 h-5 w-5 text-muted-foreground" />
-          <div>
-            <h2 className="text-xl font-semibold text-foreground">Evidence Pack</h2>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              These details support the summary and report exports. Supplemental discovery is not official registry evidence.
-            </p>
-          </div>
         </div>
         <div className="mt-5 space-y-5">
           <SnapshotSection dossier={dossier} />
@@ -466,6 +950,9 @@ export function DossierFindingsTabs({
       <EvidenceDialog
         onOpenChange={(open) => {
           if (!open) setEvidenceDialog(null);
+        }}
+        onRunFollowUp={(state) => {
+          void runFollowUp(state);
         }}
         state={evidenceDialog}
       />

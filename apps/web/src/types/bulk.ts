@@ -39,16 +39,3 @@ export type BulkDossierResponse = {
   rows: BulkDossierRow[];
   limits: string[];
 };
-
-export type ShortlistEntry = {
-  canonicalIdentifier: string;
-  entity: string | null;
-  uen: string | null;
-  entityStatus: string | null;
-  confidence: string | null;
-  risk: BulkDossierRow["risk"];
-  riskFlags: string[];
-  gapCodes: string[];
-  provenanceSources: string[];
-  savedAt: string;
-};

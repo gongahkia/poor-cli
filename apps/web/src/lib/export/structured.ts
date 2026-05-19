@@ -8,7 +8,7 @@ import {
   buildComplianceUseSummary,
 } from "@/lib/compliance";
 import type { AnalystMemoReady } from "@/types/analyst-memo";
-import type { BulkDossierRow, ShortlistEntry } from "@/types/bulk";
+import type { BulkDossierRow } from "@/types/bulk";
 import type { BusinessDossier } from "@/types/dossier";
 import type { WebPresence } from "@/lib/api/client";
 import {
@@ -40,7 +40,19 @@ const toCsv = (rows: Record<string, unknown>[]): string => {
   ].join("\n");
 };
 
-export function buildDossierExportSummary(dossier: BusinessDossier): ShortlistEntry {
+type DossierExportSummary = {
+  canonicalIdentifier: string;
+  confidence: string | null;
+  entity: string | null;
+  entityStatus: string | null;
+  gapCodes: string[];
+  provenanceSources: string[];
+  risk: BulkDossierRow["risk"];
+  riskFlags: string[];
+  uen: string | null;
+};
+
+function buildDossierExportSummary(dossier: BusinessDossier): DossierExportSummary {
   const confidence = getDossierConfidence(dossier);
   const riskFlags = dossier.riskFlags ?? [];
   const gapCodes = dossier.gaps.map((gap) => gap.code);
@@ -61,7 +73,6 @@ export function buildDossierExportSummary(dossier: BusinessDossier): ShortlistEn
           ? "low"
           : "none",
     riskFlags: riskFlags.map((flag) => flag.code),
-    savedAt: new Date().toISOString(),
     uen,
   };
 }
@@ -196,39 +207,4 @@ export async function exportBulkCsv(rows: readonly BulkDossierRow[], generatedAt
       };
     })),
   );
-}
-
-export async function exportShortlistJson(entries: readonly ShortlistEntry[]): Promise<void> {
-  const generatedAt = new Date().toISOString();
-  downloadText(
-    `dude-shortlist-${generatedAt.slice(0, 10)}.json`,
-    "application/json",
-    JSON.stringify({
-      complianceUse: buildComplianceUseLimitations(),
-      generatedAt,
-      manifest: {
-        schemaVersion: "dude-export-manifest/v1",
-        generatedAt,
-        entryCount: entries.length,
-        note: "Shortlist exports contain saved summaries only; full dossier manifests are attached to dossier and bulk dossier exports.",
-      },
-      entries,
-    }, null, 2),
-  );
-}
-
-export function exportShortlistCsv(entries: readonly ShortlistEntry[]): void {
-  const rows = entries.map((entry) => ({
-    complianceUseNotice: buildComplianceUseSummary(),
-    confidence: entry.confidence,
-    entity: entry.entity,
-    entityStatus: entry.entityStatus,
-    gapCodes: entry.gapCodes.join(";"),
-    provenance: entry.provenanceSources.join(";"),
-    risk: entry.risk,
-    riskFlags: entry.riskFlags.join(";"),
-    savedAt: entry.savedAt,
-    uen: entry.uen,
-  }));
-  downloadText(`dude-shortlist-${new Date().toISOString().slice(0, 10)}.csv`, "text/csv", toCsv(rows));
 }

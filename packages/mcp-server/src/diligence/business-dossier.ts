@@ -308,11 +308,6 @@ const buildBusinessNextChecks = (
       input: { records: "Use this dossier's records object." },
     });
   }
-  checks.push({
-    tool: "sg_datagov_search",
-    reason: "Search for adjacent official public datasets related to this entity and sector.",
-    input: { keyword: params.entityName ?? params.uen ?? "" },
-  });
   return checks;
 };
 

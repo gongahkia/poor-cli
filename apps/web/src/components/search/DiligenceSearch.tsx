@@ -1,14 +1,24 @@
-import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertCircle, CornerDownLeft } from "lucide-react";
+import { AlertCircle, CornerDownLeft, Upload } from "lucide-react";
 
 import { useToast } from "@/components/notifications/ToastProvider";
 import { AiInput } from "@/components/ui/ai-input";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   getGatewayJson,
   type ApiSearchSuggestion,
 } from "@/lib/api/client";
+import { parseBulkInput } from "@/lib/bulk";
 import { rankSearchSuggestions } from "@/lib/search/rank-search-suggestions";
 
 type SearchStatus = "idle" | "submitting" | "error";
@@ -21,11 +31,21 @@ type SuggestionResponse = {
 };
 
 type DiligenceSearchProps = {
+  onBulkSubmit?: () => void;
+  onValueChange?: (value: string) => void;
   secondaryAction?: ReactNode;
+  showCsvUpload?: boolean;
+  value?: string;
 };
 
-export function DiligenceSearch({ secondaryAction }: DiligenceSearchProps = {}) {
-  const [query, setQuery] = useState("");
+export function DiligenceSearch({
+  onBulkSubmit,
+  onValueChange,
+  secondaryAction,
+  showCsvUpload = true,
+  value,
+}: DiligenceSearchProps = {}) {
+  const [internalQuery, setInternalQuery] = useState("");
   const [status, setStatus] = useState<SearchStatus>("idle");
   const [suggestionStatus, setSuggestionStatus] = useState<SuggestionStatus>("idle");
   const [suggestions, setSuggestions] = useState<ApiSearchSuggestion[]>([]);
@@ -33,13 +53,23 @@ export function DiligenceSearch({ secondaryAction }: DiligenceSearchProps = {}) 
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { notify } = useToast();
+  const query = value ?? internalQuery;
   const isSubmitting = status === "submitting";
   const trimmedQuery = query.trim();
-  const canLookupSuggestions = trimmedQuery.length >= 2;
+  const parsedInput = useMemo(() => parseBulkInput(query), [query]);
+  const canLookupSuggestions = trimmedQuery.length >= 2 && parsedInput.items.length <= 1 && !trimmedQuery.includes("\n");
+
+  const updateQuery = (nextValue: string) => {
+    if (onValueChange !== undefined) {
+      onValueChange(nextValue);
+    } else {
+      setInternalQuery(nextValue);
+    }
+  };
 
   useEffect(() => {
     const trimmed = query.trim();
-    if (trimmed.length < 2) {
+    if (trimmed.length < 2 || parsedInput.items.length > 1 || trimmed.includes("\n")) {
       setSuggestions([]);
       setSuggestionStatus("idle");
       setSuggestionError(null);
@@ -77,7 +107,7 @@ export function DiligenceSearch({ secondaryAction }: DiligenceSearchProps = {}) 
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [query]);
+  }, [parsedInput.items.length, query]);
 
   const rankedSuggestions = useMemo(() => {
     const ranked = rankSearchSuggestions(
@@ -94,8 +124,7 @@ export function DiligenceSearch({ secondaryAction }: DiligenceSearchProps = {}) 
   }, [query, suggestions]);
 
   const runSearch = () => {
-    const identifier = trimmedQuery;
-    if (!identifier) {
+    if (!trimmedQuery) {
       setStatus("error");
       setError("Enter a client or counterparty company name or UEN.");
       notify({
@@ -105,6 +134,36 @@ export function DiligenceSearch({ secondaryAction }: DiligenceSearchProps = {}) 
       });
       return;
     }
+
+    if (parsedInput.errors.length > 0) {
+      setStatus("error");
+      setError("Fix the highlighted bulk rows before running diligence.");
+      notify({
+        title: "Bulk input has parse errors",
+        description: `${parsedInput.errors.length} rows need attention before a bulk run.`,
+        tone: "warning",
+      });
+      return;
+    }
+
+    if (parsedInput.items.length > 1) {
+      setStatus("idle");
+      setError(null);
+      if (onBulkSubmit !== undefined) {
+        onBulkSubmit();
+        notify({
+          title: "Bulk diligence started",
+          description: `${parsedInput.items.length} counterparties queued from the search bar.`,
+          tone: "info",
+        });
+      } else {
+        setStatus("error");
+        setError("Multiple rows need bulk execution support.");
+      }
+      return;
+    }
+
+    const identifier = parsedInput.items[0]?.identifier ?? trimmedQuery;
 
     setStatus("submitting");
     setError(null);
@@ -127,7 +186,7 @@ export function DiligenceSearch({ secondaryAction }: DiligenceSearchProps = {}) 
   const shouldShowSearchPanel = isSubmitting || error !== null || canLookupSuggestions || suggestionStatus !== "idle";
 
   const handleSuggestionClick = (suggestion: ApiSearchSuggestion) => {
-    setQuery(suggestion.entityName);
+    updateQuery(suggestion.entityName);
     navigate(`/c/${encodeURIComponent(suggestion.uen)}`);
   };
 
@@ -155,18 +214,119 @@ export function DiligenceSearch({ secondaryAction }: DiligenceSearchProps = {}) 
           isSubmitting={isSubmitting}
           onSubmit={runSearch}
           onValueChange={(nextQuery) => {
-            setQuery(nextQuery);
+            updateQuery(nextQuery);
             if (status === "error") {
               setStatus("idle");
               setError(null);
             }
           }}
-          placeholder="Company name or UEN"
-          secondaryAction={secondaryAction}
+          placeholder="Company name, UEN, or multiple rows"
+          secondaryAction={secondaryAction ?? (showCsvUpload ? (
+            <CsvUploadDialog
+              onBulkSubmit={onBulkSubmit}
+              onLoaded={(text) => {
+                updateQuery(text);
+                if (status === "error") {
+                  setStatus("idle");
+                  setError(null);
+                }
+              }}
+            />
+          ) : null)}
           value={query}
         />
       </form>
     </div>
+  );
+}
+
+function CsvUploadDialog({
+  onBulkSubmit,
+  onLoaded,
+}: {
+  onBulkSubmit?: () => void;
+  onLoaded: (text: string) => void;
+}) {
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [loadedText, setLoadedText] = useState("");
+  const [open, setOpen] = useState(false);
+  const parsed = useMemo(() => parseBulkInput(loadedText), [loadedText]);
+  const { notify } = useToast();
+
+  const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file === undefined) return;
+    const text = await file.text();
+    setFileName(file.name);
+    setLoadedText(text);
+    onLoaded(text);
+    notify({ title: "CSV loaded into search", description: file.name, tone: "success" });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button
+          aria-label="Upload CSV for bulk diligence"
+          className="h-12 gap-2 px-4"
+          type="button"
+          variant="outline"
+        >
+          <Upload className="h-4 w-4" />
+          <span>CSV</span>
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Upload counterparties</DialogTitle>
+          <DialogDescription>
+            Load a CSV or text file into the search bar. Use one company name or UEN per row, or include an identifier column.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 px-4 py-5 text-center transition hover:bg-muted/50">
+            <Upload aria-hidden="true" className="h-5 w-5 text-muted-foreground" />
+            <span className="mt-2 text-sm font-medium text-foreground">Choose CSV</span>
+            <span className="mt-1 text-xs text-muted-foreground">{fileName ?? "CSV, TXT, or newline-separated paste export"}</span>
+            <input
+              accept=".csv,text/csv,text/plain"
+              aria-label="Choose CSV file"
+              className="sr-only"
+              onChange={handleFile}
+              type="file"
+            />
+          </label>
+
+          {loadedText === "" ? null : (
+            <div className="rounded-md border border-border bg-background p-3 text-sm">
+              <p className="font-medium text-foreground">
+                {parsed.items.length} valid rows, {parsed.errors.length} parse errors
+              </p>
+              {parsed.errors.length === 0 ? (
+                <p className="mt-1 text-muted-foreground">Rows are now in the search bar. Press Enter or run the bulk check from here.</p>
+              ) : (
+                <p className="mt-1 text-destructive">Fix parse errors in the search bar before running.</p>
+              )}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setOpen(false)} type="button" variant="outline">Close</Button>
+            <Button
+              disabled={loadedText === "" || parsed.items.length === 0 || parsed.errors.length > 0 || onBulkSubmit === undefined}
+              onClick={() => {
+                onBulkSubmit?.();
+                setOpen(false);
+              }}
+              type="button"
+            >
+              Run bulk check
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

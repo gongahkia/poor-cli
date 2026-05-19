@@ -13,6 +13,7 @@ describe("WorkspacePanel", () => {
     );
 
     expect(html).toContain("Audit log");
+    expect(html).toContain("Actions");
     expect(html).toContain("max-h-[60vh] overflow-auto");
     expect(html).toContain("sticky top-0");
   });

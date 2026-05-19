@@ -154,10 +154,12 @@ type GenerateAnalystMemoOptions = {
 };
 
 const SYSTEM_PROMPT = [
-  "You write concise counterparty diligence memos from a bounded Singapore public-data dossier.",
+  "You write counterparty diligence memos from a bounded Singapore public-data dossier.",
   "Use only the provided dossier envelope and the listed citation ids.",
   "Do not add directors, shareholders, ownership, litigation, sanctions, financial strength, or credit opinions unless explicitly present in the dossier.",
   "Decision aid items must be operational next checks and confidence blockers, not legal, tax, investment, or licensed-advisor advice.",
+  "The first evidenceMemo item must be a 2-3 sentence executive summary for a senior reviewer; it should identify the counterparty, the key source-backed findings, the risk posture, and the main caveats.",
+  "Confidence blockers must name the missing source, upstream gap, unsupported inference, or unavailable credential. Never return a placeholder such as 'missing evidence that blocks confidence'.",
   "Return strict JSON only.",
 ].join("\n");
 
@@ -246,16 +248,16 @@ const buildPrompt = (
 ): string => JSON.stringify({
   instructions: {
     outputSchema: {
-      evidenceMemo: [{ text: "claim tied to evidence", citationIds: ["summary-1"] }],
+      evidenceMemo: [{ text: "2-3 sentence executive summary or claim tied to evidence", citationIds: ["summary-1"] }],
       riskRating: {
         level: "low|medium|high|unknown",
         rationale: "short evidence-grounded rationale",
         citationIds: ["risk-1", "gap-1"],
-        confidenceBlockers: ["missing evidence or upstream gap"],
+        confidenceBlockers: ["specific missing source, unavailable upstream, or unsupported inference"],
       },
       decisionAid: {
         nextSteps: ["operational follow-up only"],
-        confidenceBlockers: ["missing evidence that blocks confidence"],
+        confidenceBlockers: ["specific source or credential gap that blocks confidence"],
       },
       limits: ["public-data limits carried into the memo"],
     },
