@@ -261,7 +261,7 @@ export function WorkspacePanel({
             <p className="text-sm font-medium text-muted-foreground">{session.workspaceName}</p>
             <h1 className="mt-1 text-3xl font-semibold tracking-normal text-foreground">Workspace</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Persisted dossiers, watchlists, bulk jobs, and immutable audit events for this workspace.
+              Browser-local prototype storage for saved dossiers, watchlists, bulk jobs, and audit events. Data stays in this browser's localStorage unless exported or cleared.
             </p>
           </div>
           {actions}
@@ -447,7 +447,7 @@ export function WorkspacePanel({
               <History className="h-4 w-4 text-muted-foreground" />
               <div>
                 <h2 className="text-base font-semibold text-foreground">Audit log</h2>
-                <p className="mt-1 text-xs text-muted-foreground">Click any row or use actions to inspect payload, provenance, and metadata.</p>
+                <p className="mt-1 text-xs text-muted-foreground">Browser-local audit events; click any row or use actions to inspect payload, provenance, and metadata.</p>
               </div>
             </div>
             <select
@@ -623,7 +623,7 @@ function AuditEventDialog({
             <DialogHeader className="pr-10">
               <DialogTitle>{formatAuditEventType(event.eventType)}</DialogTitle>
               <DialogDescription>
-                Immutable workspace audit event from {new Date(event.occurredAt).toLocaleString()}.
+                Browser-local audit event from {new Date(event.occurredAt).toLocaleString()}; this is not server-retained audit evidence.
               </DialogDescription>
             </DialogHeader>
 

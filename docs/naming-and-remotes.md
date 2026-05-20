@@ -14,7 +14,7 @@ This repository presents **Dude** as the product and **Dude MCP** as its backend
 
 ## Product Names
 
-- Dude: the web app, REST gateway, bulk workflow, local shortlist, exports, and analyst memo surface.
+- Dude: the web app, REST gateway, bulk workflow, browser-local workspace tools, exports, and analyst memo surface.
 - Dude MCP: the MCP server and public Singapore data runtime that backs the web app and direct agent integrations.
 
 ## Namespace Note

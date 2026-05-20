@@ -206,7 +206,7 @@ export function BulkDiligence({
         </div>
         <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-border bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground">
           <Database aria-hidden="true" className="h-3.5 w-3.5" />
-          Workspace-backed
+          Browser-local job log
         </span>
       </div>
 

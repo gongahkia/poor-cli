@@ -27,7 +27,7 @@ export function WorkspaceBadge() {
       <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-6xl overflow-y-auto rounded-[28px] border-border bg-background p-1 shadow-2xl">
         <DialogTitle className="sr-only">{session.workspaceName}</DialogTitle>
         <DialogDescription className="sr-only">
-          Persisted dossiers, watchlists, bulk jobs, and audit events for this workspace.
+          Browser-local workspace storage for saved dossiers, watchlists, bulk jobs, and audit events.
         </DialogDescription>
         <div className="rounded-[24px] bg-muted/35 p-5 sm:p-6">
           <WorkspacePanel />

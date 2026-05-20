@@ -32,7 +32,7 @@ Vendor onboarding and procurement intelligence are documented as secondary lanes
 5. **Audit-ready export**
    - Export the report as PDF or DOCX with the source envelope intact. Use JSON or CSV only as advanced data exports.
    - Include generated-at time, source provenance, source freshness, unresolved gaps, and non-advice limitations.
-   - Store the dossier and export manifest in the workspace client folder when workspace storage is enabled.
+   - Store the dossier and export manifest in the workspace client folder when workspace storage is enabled. In the current web build, that storage is browser-local `localStorage`; hosted retention requires a configured workspace backend.
 
 ## Current Modules That Support The Workflow
 
@@ -43,7 +43,7 @@ Vendor onboarding and procurement intelligence are documented as secondary lanes
 | Sector-scoped checks | Orchestrated BCA, BOA, CEA, HSA, HLB, and GeBIZ modules from sector hints | Modules should be selected from ACRA/web signals or analyst context, not guessed from marketing copy. |
 | Analyst memo | CDD orchestrator memo stage | Memo generation is part of the report flow and must retain source gaps and limits. |
 | Exports | Web PDF and DOCX report helpers with signed manifests | Exports keep dossier fields and include local integrity manifests for downstream checks. |
-| Bulk intake | Workspace-backed 200-row bulk diligence flow | Useful for corp-services backlogs; partial failures, retries, manifests, and audit events remain visible to analysts. |
+| Bulk intake | Browser-local 200-row bulk diligence flow, with the same model intended for hosted workspaces | Useful for corp-services backlogs; partial failures, retries, manifests, and audit events remain visible to analysts in the current browser session. |
 
 ## Remaining Hosted CDD Operations Gaps
 

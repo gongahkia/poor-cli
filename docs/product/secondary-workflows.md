@@ -12,7 +12,7 @@ Vendor onboarding helps an operations, finance, or DPO team decide what public e
 2. Resolve the entity through ACRA before running any sector module.
 3. Run sector modules only when justified by the service category or official registry evidence.
 4. Produce a vendor review packet with evidence, freshness, gaps, limits, and next checks.
-5. Attach the packet to the procurement or vendor-management record, or save it to the workspace dossier folder when that workflow is enabled.
+5. Attach the packet to the procurement or vendor-management record, or save it to the workspace dossier folder when that workflow is enabled. In the current web build, workspace saves are browser-local until a hosted storage backend is configured.
 
 ### Required Tools And Data Sources
 
@@ -54,7 +54,7 @@ Procurement intelligence helps a team monitor public tender and award signals ar
 | Tender and award discovery | `sg_gebiz_tenders` |
 | Entity identity checks | CDD orchestrator with ACRA source evidence |
 | Sector classification | SSIC evidence from ACRA-backed records plus analyst-selected sector hints |
-| Bulk monitoring | Workspace-backed 200-row bulk flow with partial-failure and retry metadata |
+| Bulk monitoring | Browser-local 200-row bulk flow with partial-failure and retry metadata; hosted deployments can attach the same model to durable workspace storage |
 | Shallow relationship graph | `sg_relationship_graph` for supplied dossier records without ownership or control claims |
 | Public benchmark data | 50-case diligence benchmark set documented in [diligence-benchmarks.md](../diligence-benchmarks.md) |
 

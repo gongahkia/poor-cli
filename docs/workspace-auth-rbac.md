@@ -20,6 +20,8 @@ The shared role model is:
 
 Cross-workspace isolation is enforced in store helpers by filtering every dossier, audit event, watchlist item, alert, and bulk job by `workspaceId`. API access is denied when hosted-mode headers are missing or the role lacks the requested permission.
 
+The current web workspace store is still browser-local `localStorage`. The RBAC and workspace ids model the hosted contract, but they do not by themselves provide durable storage, server-side isolation, or immutable audit retention.
+
 ## SSO and 2FA
 
 Provider strategy:

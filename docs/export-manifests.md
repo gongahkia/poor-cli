@@ -1,6 +1,6 @@
 # Signed export manifests
 
-Dude attaches a local export manifest to dossier JSON, CSV, bulk JSON, bulk CSV, and PDF exports. The manifest is designed for downstream integrity checks and audit trails; it is not a third-party certificate or notarized signature.
+Dude attaches a local export manifest to dossier JSON, CSV, bulk JSON, bulk CSV, and PDF exports. The manifest is designed for downstream integrity checks and audit trails; it is not a third-party certificate, notarized signature, or proof of server-side retention.
 
 ## Manifest fields
 

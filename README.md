@@ -61,7 +61,7 @@ The web app is report-first:
 - Citations: click to open the supporting evidence.
 - Evidence Pack: raw registry records, provenance, freshness, gaps, limits, supplemental web/person evidence, PDPA checklist, and audit handoff.
 - Report Builder: include/exclude sections, reorder sections, choose a controlled writing style, then export PDF or DOCX.
-- Workspace: saved dossiers, watchlists, bulk runs, and audit logs remain subordinate CDD workflow tools.
+- Workspace: saved dossiers, watchlists, bulk runs, and audit logs remain subordinate CDD workflow tools. In the current web build, this workspace data is browser-local `localStorage`, not durable hosted storage.
 
 Controlled report styles:
 

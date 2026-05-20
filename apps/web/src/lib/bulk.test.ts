@@ -16,7 +16,7 @@ describe("parseBulkInput", () => {
     expect(parsed.errors).toHaveLength(2);
   });
 
-  it("allows workspace-backed 200-row batches", () => {
+  it("allows browser-local 200-row batches", () => {
     const parsed = parseBulkInput(Array.from({ length: 200 }, (_, index) => `COMPANY ${index}`).join("\n"));
     expect(parsed.items).toHaveLength(200);
     expect(parsed.errors).toHaveLength(0);
