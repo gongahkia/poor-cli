@@ -47,7 +47,7 @@ import { callTool } from "@/lib/api/client";
 import { BUSINESS_MODULE_LABELS, getSummaryString, type FollowUpBusinessModule } from "@/lib/dossier";
 import { cn } from "@/lib/utils";
 import type { AnalystMemoCitation, AnalystMemoReady } from "@/types/analyst-memo";
-import type { BusinessDossier, NextCheck } from "@/types/dossier";
+import type { BusinessDossier, BusinessDossierModule, NextCheck } from "@/types/dossier";
 import type { CddOrchestrationTrace, CddOrchestratorStage } from "@/types/orchestration";
 
 type DossierFindingsTabsProps = {
@@ -80,7 +80,7 @@ type EvidenceDialogState =
     }
   | null;
 
-type DossierReportTab = "summary" | "report";
+type DossierReportTab = "summary" | "evidence" | "report";
 
 type SupportedFollowUpAction = {
   description: string;
@@ -94,6 +94,17 @@ type ConfidenceBlockerDetail = {
   detail: string;
   label: string;
   source: string;
+};
+
+type OverviewSegment = {
+  citation?: AnalystMemoCitation;
+  text: string;
+};
+
+type EvidenceStats = {
+  gaps: number;
+  provenance: number;
+  records: number;
 };
 
 const stageToneClassName: Record<CddOrchestratorStage["status"], string> = {
@@ -154,6 +165,11 @@ const dossierReportTabs: { id: DossierReportTab; label: string; description: str
     description: "Read the cited findings, risk context, blockers, and next actions.",
     id: "summary",
     label: "Summary",
+  },
+  {
+    description: "Inspect records, provenance, freshness, gaps, limits, and source detail.",
+    id: "evidence",
+    label: "Evidence Pack",
   },
   {
     description: "Choose sections, writing preset, and export the review artifact.",
@@ -219,16 +235,6 @@ const genericBlockerPatterns = [
   /^missing evidence or upstream gap\.?$/i,
   /^missing evidence$/i,
 ];
-
-function ensureSentence(value: string): string {
-  const trimmed = value.trim();
-  if (trimmed === "") return trimmed;
-  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
-}
-
-function lowerFirst(value: string): string {
-  return value.length === 0 ? value : `${value[0].toLowerCase()}${value.slice(1)}`;
-}
 
 function uniqueStrings(values: readonly string[]): string[] {
   return Array.from(new Set(values.filter((value) => value.trim() !== "").map((value) => value.trim())));
@@ -441,26 +447,189 @@ function buildConfidenceBlockers(dossier: BusinessDossier, memo: AnalystMemoRead
   return rows.slice(0, 8);
 }
 
-function buildExecutiveOverview(dossier: BusinessDossier, memo: AnalystMemoReady): string {
-  const identity = getDossierIdentity(dossier);
-  const entityText = `${identity.entity}${identity.uen === null ? "" : ` (UEN ${identity.uen})`}`;
-  const statusText = identity.status === null ? "has returned public registry evidence" : `is recorded with status ${identity.status}`;
-  const sources = uniqueStrings(dossier.provenance.map((item) => item.source)).slice(0, 4);
-  const sourceText = sources.length === 0
-    ? "the returned dossier evidence"
-    : `${sources.join(", ")} evidence`;
-  const firstFinding = memo.evidenceMemo[0]?.text;
-  const secondFinding = memo.evidenceMemo[1]?.text;
-  const keyFindingText = firstFinding === undefined
-    ? "No cited narrative finding was returned by the memo provider."
-    : ensureSentence(firstFinding);
-  const secondFindingText = secondFinding === undefined ? "" : ` ${ensureSentence(secondFinding)}`;
-  const blockers = buildConfidenceBlockers(dossier, memo);
-  const blockerText = blockers.length === 0
-    ? "No specific confidence blocker was returned, but absence of public evidence should not be treated as a positive clearance claim."
-    : `The main confidence blockers are ${blockers.slice(0, 2).map((item) => `${item.label}: ${item.detail}`).join("; ")}.`;
+function stringifyCitationValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "Not available";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  return JSON.stringify(value);
+}
 
-  return `${entityText} ${statusText}, and the current CDD draft is grounded in ${sourceText}. ${keyFindingText}${secondFindingText} The public-data risk rating is ${memo.riskRating.level} because ${lowerFirst(ensureSentence(memo.riskRating.rationale))} ${blockerText}`;
+function addCitationIfMissing(
+  map: Map<string, AnalystMemoCitation>,
+  citation: AnalystMemoCitation,
+): void {
+  if (!map.has(citation.id)) {
+    map.set(citation.id, citation);
+  }
+}
+
+function buildCitationMap(dossier: BusinessDossier, memo: AnalystMemoReady): Map<string, AnalystMemoCitation> {
+  const map = new Map(memo.citations.map((citation) => [citation.id, citation]));
+  dossier.summary.forEach((item, index) => addCitationIfMissing(map, {
+    id: `summary-${index + 1}`,
+    label: item.label,
+    source: item.source ?? "summary",
+    text: `${item.label}: ${stringifyCitationValue(item.value)}`,
+  }));
+  dossier.evidence.forEach((item, index) => addCitationIfMissing(map, {
+    id: `evidence-${index + 1}`,
+    label: item.label,
+    source: item.source ?? "evidence",
+    text: `${item.label}: ${stringifyCitationValue(item.value)}`,
+  }));
+  (dossier.riskFlags ?? []).forEach((flag, index) => addCitationIfMissing(map, {
+    id: `risk-${index + 1}`,
+    label: flag.code,
+    source: flag.source,
+    text: `${flag.severity}: ${flag.message}`,
+  }));
+  dossier.gaps.forEach((gap, index) => addCitationIfMissing(map, {
+    id: `gap-${index + 1}`,
+    label: gap.code,
+    source: "gap",
+    text: gap.message,
+  }));
+  dossier.limits.forEach((limit, index) => addCitationIfMissing(map, {
+    id: `limit-${index + 1}`,
+    label: limit.code,
+    source: "limit",
+    text: limit.message,
+  }));
+  return map;
+}
+
+function findCitation(
+  citations: ReadonlyMap<string, AnalystMemoCitation>,
+  predicate: (citation: AnalystMemoCitation) => boolean,
+): AnalystMemoCitation | undefined {
+  return Array.from(citations.values()).find(predicate);
+}
+
+function findSummaryCitation(
+  citations: ReadonlyMap<string, AnalystMemoCitation>,
+  label: string,
+): AnalystMemoCitation | undefined {
+  return findCitation(citations, (citation) =>
+    citation.id.startsWith("summary-") && citation.label.toLowerCase() === label.toLowerCase());
+}
+
+function findGapCitation(
+  citations: ReadonlyMap<string, AnalystMemoCitation>,
+  pattern: RegExp,
+): AnalystMemoCitation | undefined {
+  return findCitation(citations, (citation) =>
+    citation.id.startsWith("gap-") && (pattern.test(citation.label) || pattern.test(citation.text)));
+}
+
+function formatModuleList(modules: readonly string[] | undefined): string {
+  if (modules === undefined || modules.length === 0) return "no official modules";
+  return modules.map((module) => BUSINESS_MODULE_LABELS[module as BusinessDossierModule] ?? module.toUpperCase()).join(", ");
+}
+
+function buildExecutiveOverviewSegments(
+  dossier: BusinessDossier,
+  memo: AnalystMemoReady,
+  citations: ReadonlyMap<string, AnalystMemoCitation>,
+): OverviewSegment[] {
+  const identity = getDossierIdentity(dossier);
+  const entityCitation = findSummaryCitation(citations, "Entity");
+  const uenCitation = findSummaryCitation(citations, "UEN");
+  const statusCitation = findSummaryCitation(citations, "Entity status") ?? findSummaryCitation(citations, "Status");
+  const riskCitation = memo.riskRating.citationIds
+    .map((id) => citations.get(id))
+    .find((citation): citation is AnalystMemoCitation => citation !== undefined)
+    ?? findCitation(citations, (citation) => citation.id.startsWith("risk-"));
+  const sanctionsGap = findGapCitation(citations, /opensanctions|sanctions|watchlist/i);
+  const corporatesGap = findGapCitation(citations, /opencorporates|corporates/i);
+  const matchedModules = dossier.records.resolution?.matchedModules ?? [];
+  const searchedModules = dossier.records.resolution?.searchedModules ?? [];
+  const blockers = buildConfidenceBlockers(dossier, memo);
+  const providerGaps = [sanctionsGap, corporatesGap].filter((citation): citation is AnalystMemoCitation => citation !== undefined);
+  const genericBlocker = blockers.find((blocker) => /API|credential|license|licence|configured/i.test(blocker.detail));
+  const segment = (text: string, citation?: AnalystMemoCitation): OverviewSegment => ({ citation, text });
+  const segments: OverviewSegment[] = [
+    segment(identity.entity, entityCitation),
+  ];
+
+  if (identity.uen !== null) {
+    segments.push(segment(" (UEN "), segment(identity.uen, uenCitation), segment(")"));
+  }
+
+  segments.push(segment(" is an ACRA-matched Singapore entity"));
+  if (identity.status !== null) {
+    segments.push(segment(", with ACRA recording its current status as "));
+    segments.push(segment(identity.status, statusCitation));
+  }
+  segments.push(segment(". "));
+  segments.push(segment("For analyst review, the practical issue is the status finding: this dossier should be treated as "));
+  segments.push(segment(`${memo.riskRating.level} risk`, riskCitation));
+  segments.push(segment(" for any new or ongoing engagement until the business context and intended use are confirmed. "));
+  segments.push(segment(`The current run is strongest on identity evidence: Dude searched ${formatModuleList(searchedModules)} and matched ${formatModuleList(matchedModules)}.`));
+
+  if (providerGaps.length > 0) {
+    segments.push(segment(" Supplemental screening is not yet complete because "));
+    providerGaps.forEach((citation, index) => {
+      if (index > 0) segments.push(segment(index === providerGaps.length - 1 ? " and " : ", "));
+      segments.push(segment(citation.label, citation));
+    });
+    segments.push(segment(" remain unavailable or require configured provider access."));
+  } else if (genericBlocker !== undefined) {
+    segments.push(segment(` ${genericBlocker.detail}`));
+  } else if (blockers.length > 0) {
+    segments.push(segment(` The main blocker is ${blockers[0].detail}`));
+  }
+
+  segments.push(segment(" Recommended follow-up is to verify the full ACRA record, then run any configured sanctions, OpenCorporates, adverse-media, and relationship-graph checks that are relevant to the engagement."));
+  return segments;
+}
+
+function buildEvidenceStats(dossier: BusinessDossier): EvidenceStats {
+  return {
+    gaps: dossier.gaps.length,
+    provenance: dossier.provenance.length,
+    records: Object.values(dossier.records)
+      .reduce((sum, value) => sum + (Array.isArray(value) ? value.length : 0), 0),
+  };
+}
+
+function EvidenceLink({
+  citation,
+  children,
+  onOpenEvidence,
+}: {
+  citation: AnalystMemoCitation;
+  children: ReactNode;
+  onOpenEvidence: (state: EvidenceDialogState) => void;
+}) {
+  return (
+    <button
+      className="inline break-words font-semibold text-foreground underline decoration-muted-foreground/40 underline-offset-4 transition hover:text-primary hover:decoration-primary"
+      data-citation-id={citation.id}
+      onClick={() => onOpenEvidence({ citation, kind: "citation" })}
+      type="button"
+    >
+      {children}
+    </button>
+  );
+}
+
+function EvidenceLinkedText({
+  onOpenEvidence,
+  segments,
+}: {
+  onOpenEvidence: (state: EvidenceDialogState) => void;
+  segments: readonly OverviewSegment[];
+}) {
+  return (
+    <>
+      {segments.map((segment, index) => segment.citation === undefined ? (
+        <span key={`${segment.text}-${index}`}>{segment.text}</span>
+      ) : (
+        <EvidenceLink citation={segment.citation} key={`${segment.text}-${segment.citation.id}-${index}`} onOpenEvidence={onOpenEvidence}>
+          {segment.text}
+        </EvidenceLink>
+      ))}
+    </>
+  );
 }
 
 function SummaryFallback({ dossier }: { dossier: BusinessDossier }) {
@@ -514,8 +683,8 @@ function CitedSummary({
   }
 
   const memo = memoState.memo;
-  const citationById = new Map(memo.citations.map((citation) => [citation.id, citation]));
-  const executiveOverview = buildExecutiveOverview(dossier, memo);
+  const citationById = buildCitationMap(dossier, memo);
+  const executiveOverview = buildExecutiveOverviewSegments(dossier, memo, citationById);
   const confidenceBlockers = buildConfidenceBlockers(dossier, memo);
 
   return (
@@ -535,7 +704,9 @@ function CitedSummary({
 
       <article className="mt-5 rounded-md border border-border bg-background p-4">
         <p className="text-sm font-semibold text-muted-foreground">Executive overview</p>
-        <p className="mt-2 break-words text-base leading-7 text-foreground">{executiveOverview}</p>
+        <p className="mt-2 break-words text-base leading-7 text-foreground">
+          <EvidenceLinkedText onOpenEvidence={onOpenEvidence} segments={executiveOverview} />
+        </p>
       </article>
 
       <div className="mt-4 grid gap-4">
@@ -785,6 +956,96 @@ function ReportBuilder({
   );
 }
 
+function EvidencePackTab({
+  dossier,
+  evidenceStats,
+  isPdpaExporting,
+  memoState,
+  onExportPdpaReport,
+  onModuleFollowUp,
+  onOpenEvidence,
+  orchestration,
+  peopleDiscoveryState,
+  rerunningModule,
+  sharedMemoState,
+  webPresenceState,
+}: {
+  dossier: BusinessDossier;
+  evidenceStats: EvidenceStats;
+  isPdpaExporting: boolean;
+  memoState: AnalystMemoState;
+  onExportPdpaReport: (reviewedItemIds: readonly string[]) => void;
+  onModuleFollowUp: (request: ModuleFollowUpRequest) => void;
+  onOpenEvidence: (state: EvidenceDialogState) => void;
+  orchestration?: CddOrchestrationTrace;
+  peopleDiscoveryState: PeopleDiscoveryState;
+  rerunningModule: RunningBusinessModule;
+  sharedMemoState: string | null;
+  webPresenceState: WebPresenceState;
+}) {
+  return (
+    <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
+      <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
+          <CheckCircle2 className="mt-0.5 h-5 w-5 text-muted-foreground" />
+          <div>
+            <h2 className="text-xl font-semibold text-foreground">Evidence Pack</h2>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              These details support the summary and report exports. Supplemental discovery is not official registry evidence.
+            </p>
+          </div>
+        </div>
+        <div className="grid w-full max-w-md grid-cols-3 gap-2 text-center text-sm">
+          <div className="rounded-md border border-border p-3">
+            <p className="text-lg font-semibold">{evidenceStats.records}</p>
+            <p className="text-xs text-muted-foreground">records</p>
+          </div>
+          <div className="rounded-md border border-border p-3">
+            <p className="text-lg font-semibold">{evidenceStats.provenance}</p>
+            <p className="text-xs text-muted-foreground">sources</p>
+          </div>
+          <div className="rounded-md border border-border p-3">
+            <p className="text-lg font-semibold">{evidenceStats.gaps}</p>
+            <p className="text-xs text-muted-foreground">gaps</p>
+          </div>
+        </div>
+        <Button
+          className="w-fit shrink-0"
+          onClick={() => onOpenEvidence({
+            description: "Scroll this evidence pack for raw rows, source attribution, gaps, and follow-up actions.",
+            kind: "pack",
+            title: "Evidence pack",
+          })}
+          type="button"
+          variant="outline"
+        >
+          <SearchCheck className="mr-2 h-4 w-4" />
+          How evidence works
+        </Button>
+      </div>
+      <div className="mt-5 space-y-5">
+        <OrchestrationTracePanel orchestration={orchestration} />
+        <SnapshotSection dossier={dossier} />
+        <RiskSection dossier={dossier} />
+        <ConfidenceSection dossier={dossier} />
+        <EvidenceSection dossier={dossier} onModuleFollowUp={onModuleFollowUp} runningModule={rerunningModule} />
+        <WebPresenceSection state={webPresenceState} />
+        <PeopleDiscoverySection state={peopleDiscoveryState} />
+        <PdpaChecklistSection
+          dossier={dossier}
+          isExporting={isPdpaExporting}
+          onExportReport={onExportPdpaReport}
+        />
+        <NextChecksSection dossier={dossier} />
+        <GapsSection dossier={dossier} />
+        <ProvenanceSection dossier={dossier} />
+        <HandoffSection dossier={dossier} />
+        <AnalystMemoSection sharedState={sharedMemoState} state={memoState} />
+      </div>
+    </section>
+  );
+}
+
 function EvidenceDialog({
   onRunFollowUp,
   state,
@@ -877,12 +1138,7 @@ export function DossierFindingsTabs({
 }: DossierFindingsTabsProps) {
   const [evidenceDialog, setEvidenceDialog] = useState<EvidenceDialogState>(null);
   const [activeTab, setActiveTab] = useState<DossierReportTab>("summary");
-  const evidenceStats = useMemo(() => ({
-    gaps: dossier.gaps.length,
-    provenance: dossier.provenance.length,
-    records: Object.values(dossier.records)
-      .reduce((sum, value) => sum + (Array.isArray(value) ? value.length : 0), 0),
-  }), [dossier]);
+  const evidenceStats = useMemo(() => buildEvidenceStats(dossier), [dossier]);
   const runFollowUp = async (state: Extract<NonNullable<EvidenceDialogState>, { kind: "followUp" }>) => {
     if (state.moduleRequest !== undefined) {
       setEvidenceDialog({ ...state, status: "running" });
@@ -911,7 +1167,7 @@ export function DossierFindingsTabs({
   return (
     <div className="space-y-5">
       <div className="rounded-lg border border-border bg-muted/35 p-1">
-        <div className="grid gap-1 sm:grid-cols-2" role="tablist" aria-label="Dossier report views">
+        <div className="grid gap-1 sm:grid-cols-3" role="tablist" aria-label="Dossier report views">
           {dossierReportTabs.map((tab) => (
             <button
               aria-selected={activeTab === tab.id}
@@ -933,70 +1189,24 @@ export function DossierFindingsTabs({
 
       {activeTab === "summary" ? (
         <CitedSummary dossier={dossier} memoState={memoState} onOpenEvidence={setEvidenceDialog} />
+      ) : activeTab === "evidence" ? (
+        <EvidencePackTab
+          dossier={dossier}
+          evidenceStats={evidenceStats}
+          isPdpaExporting={isPdpaExporting}
+          memoState={memoState}
+          onExportPdpaReport={onExportPdpaReport}
+          onModuleFollowUp={onModuleFollowUp}
+          onOpenEvidence={setEvidenceDialog}
+          orchestration={orchestration}
+          peopleDiscoveryState={peopleDiscoveryState}
+          rerunningModule={rerunningModule}
+          sharedMemoState={sharedMemoState}
+          webPresenceState={webPresenceState}
+        />
       ) : (
         <ReportBuilder onExportReport={onExportReport} />
       )}
-
-      <OrchestrationTracePanel orchestration={orchestration} />
-
-      <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
-        <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex items-start gap-3">
-            <CheckCircle2 className="mt-0.5 h-5 w-5 text-muted-foreground" />
-            <div>
-              <h2 className="text-xl font-semibold text-foreground">Evidence Pack</h2>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                These details support the summary and report exports. Supplemental discovery is not official registry evidence.
-              </p>
-            </div>
-          </div>
-          <div className="grid w-full max-w-md grid-cols-3 gap-2 text-center text-sm">
-            <div className="rounded-md border border-border p-3">
-              <p className="text-lg font-semibold">{evidenceStats.records}</p>
-              <p className="text-xs text-muted-foreground">records</p>
-            </div>
-            <div className="rounded-md border border-border p-3">
-              <p className="text-lg font-semibold">{evidenceStats.provenance}</p>
-              <p className="text-xs text-muted-foreground">sources</p>
-            </div>
-            <div className="rounded-md border border-border p-3">
-              <p className="text-lg font-semibold">{evidenceStats.gaps}</p>
-              <p className="text-xs text-muted-foreground">gaps</p>
-            </div>
-          </div>
-          <Button
-            className="w-fit shrink-0"
-            onClick={() => setEvidenceDialog({
-              description: "Scroll this evidence pack for raw rows, source attribution, gaps, and follow-up actions.",
-              kind: "pack",
-              title: "Evidence pack",
-            })}
-            type="button"
-            variant="outline"
-          >
-            <SearchCheck className="mr-2 h-4 w-4" />
-            How evidence works
-          </Button>
-        </div>
-        <div className="mt-5 space-y-5">
-          <SnapshotSection dossier={dossier} />
-          <RiskSection dossier={dossier} />
-          <ConfidenceSection dossier={dossier} />
-          <EvidenceSection dossier={dossier} onModuleFollowUp={onModuleFollowUp} runningModule={rerunningModule} />
-          <WebPresenceSection state={webPresenceState} />
-          <PeopleDiscoverySection state={peopleDiscoveryState} />
-          <PdpaChecklistSection
-            dossier={dossier}
-            isExporting={isPdpaExporting}
-            onExportReport={onExportPdpaReport}
-          />
-          <NextChecksSection dossier={dossier} />
-          <GapsSection dossier={dossier} />
-          <ProvenanceSection dossier={dossier} />
-          <HandoffSection dossier={dossier} />
-          <AnalystMemoSection sharedState={sharedMemoState} state={memoState} />
-        </div>
-      </section>
 
       <EvidenceDialog
         onOpenChange={(open) => {

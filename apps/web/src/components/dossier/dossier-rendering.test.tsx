@@ -281,18 +281,19 @@ describe("dossier rendering", () => {
     );
 
     expect(html).toContain("CDD Summary");
-    expect(html).toContain("Report Builder");
-    expect(html).toContain("CDD orchestrator trace");
-    expect(html).toContain("ACRA identity lookup");
+    expect(html).toContain("Summary");
     expect(html).toContain("Evidence Pack");
-    expect(html).toContain("What To Check Next");
-    expect(html).toContain("Agent handoff");
+    expect(html).toContain("Report Builder");
+    expect(html).not.toContain("CDD orchestrator trace");
+    expect(html).not.toContain("ACRA identity lookup");
+    expect(html).not.toContain("What To Check Next");
+    expect(html).not.toContain("Agent handoff");
     expect(html).not.toContain("Overview");
     expect(html).not.toContain("What we couldn&#x27;t find");
     expect(html).not.toContain("data-[state=active]");
   });
 
-  it("adds missing evidence details to the evidence pack when lookup gaps exist", () => {
+  it("keeps evidence pack details off the default summary tab", () => {
     const html = renderToStaticMarkup(
       <DossierFindingsTabs
         dossier={{
@@ -326,9 +327,91 @@ describe("dossier rendering", () => {
     );
 
     expect(html).toContain("Evidence Pack");
-    expect(html).toContain("What we couldn&#x27;t find");
-    expect(html).toContain("GEBIZ_NO_MATCH");
+    expect(html).not.toContain("What we couldn&#x27;t find");
+    expect(html).not.toContain("GEBIZ_NO_MATCH");
     expect(html).not.toContain("lg:grid-cols-6");
+  });
+
+  it("renders a human-readable executive overview with clickable evidence-backed facts", () => {
+    const html = renderToStaticMarkup(
+      <DossierFindingsTabs
+        dossier={{
+          ...dossier,
+          gaps: [{
+            code: "OPENSANCTIONS_UNAVAILABLE",
+            message: "OpenSanctions screening requires OPENSANCTIONS_API_KEY.",
+          }],
+          records: {
+            ...dossier.records,
+            resolution: {
+              matchedModules: ["acra"],
+              moduleReasons: [{
+                matched: true,
+                module: "acra",
+                reason: "ACRA matched.",
+                searched: true,
+                selectedBy: ["default"],
+                status: "matched",
+              }],
+              searchedModules: ["acra"],
+            },
+          },
+          riskFlags: [{
+            code: "ENTITY_NOT_ACTIVE",
+            message: "Entity status is not live.",
+            severity: "high",
+            source: "ACRA",
+          }],
+          summary: [
+            { label: "Entity", source: "ACRA", value: "DBS PTE. LTD." },
+            { label: "UEN", source: "ACRA", value: "197700546G" },
+            { label: "Entity status", source: "ACRA", value: "Dissolved - Members Voluntary Winding Up" },
+          ],
+        }}
+        isPdpaExporting={false}
+        memoState={{
+          status: "ready",
+          memo: {
+            status: "ready",
+            configured: true,
+            provider: "openai",
+            model: "gpt-4o",
+            generatedAt: "2026-05-17T14:56:00.000Z",
+            evidenceMemo: [{
+              text: "Registry status requires analyst review before any new engagement.",
+              citationIds: ["summary-3"],
+            }],
+            riskRating: {
+              level: "high",
+              rationale: "The entity is not active.",
+              citationIds: ["risk-1"],
+              confidenceBlockers: ["OpenSanctions API key is not configured."],
+            },
+            decisionAid: {
+              nextSteps: ["Retrieve full ACRA entity details for deeper officer and status inspection."],
+              confidenceBlockers: ["OpenSanctions API key is not configured."],
+              nonAdvisoryReminder: "Operational follow-up only.",
+            },
+            citations: [],
+            gaps: [],
+            limits: [],
+            rejectedClaims: [],
+          },
+        }}
+        onExportPdpaReport={() => undefined}
+        onModuleFollowUp={() => undefined}
+        peopleDiscoveryState={{ status: "error", message: "No people results." }}
+        rerunningModule={null}
+        sharedMemoState={null}
+        webPresenceState={{ status: "error", message: "No web results." }}
+      />,
+    );
+
+    expect(html).toContain("is an ACRA-matched Singapore entity");
+    expect(html).toContain("Dissolved - Members Voluntary Winding Up");
+    expect(html).toContain("data-citation-id=\"summary-3\"");
+    expect(html).toContain("Supplemental screening is not yet complete");
+    expect(html).not.toContain("No sanctions or adverse media were identified");
   });
 
   it("renders the analyst memo as a formatted note with collapsed references", () => {

@@ -573,6 +573,7 @@ try {
   await page.getByRole("heading", { name: "DBS BANK LTD" }).waitFor({ state: "visible" });
   await page.getByRole("heading", { name: "Cited executive summary" }).waitFor({ state: "visible" });
   await page.getByText("Report Builder").waitFor({ state: "visible" });
+  await page.getByRole("tab", { name: /Evidence Pack/i }).click();
   await page.getByRole("heading", { name: "Evidence Pack" }).waitFor({ state: "visible" });
   await page.getByRole("heading", { name: "Analyst Memo" }).waitFor({ state: "visible" });
   await page.getByText("DBS BANK LTD is present in the ACRA fixture summary.").first().waitFor({ state: "visible" });
