@@ -12,6 +12,7 @@ import { complianceUseLimitations } from "@/lib/compliance";
 import { buildDossierExportManifest } from "@/lib/export/manifest";
 import { formatNextCheckInputSummary } from "@/lib/next-checks";
 import { DEFAULT_REPORT_TEMPLATE, REPORT_SECTION_LABELS, REPORT_WRITING_STYLE_LABELS, type ReportSectionId, type ReportTemplate } from "@/lib/report-template";
+import { buildSourceUseWarnings } from "@/lib/source-use-warnings";
 import type { WebPresence } from "@/lib/api/client";
 import type { AnalystMemoReady } from "@/types/analyst-memo";
 import type { BriefArtifact, BriefProvenanceItem, BriefSummaryItem } from "@/types/dossier";
@@ -126,6 +127,10 @@ export async function exportDossierPdf(
     ...(options.orchestration === undefined ? {} : { orchestration: options.orchestration }),
     ...(options.webPresence === undefined ? {} : { webPresence: options.webPresence }),
   });
+  const sourceUseWarnings = buildSourceUseWarnings({
+    dossier: brief,
+    ...(options.webPresence === undefined ? {} : { webPresence: options.webPresence }),
+  });
   const pageWidth = doc.internal.pageSize.getWidth();
   const maxWidth = pageWidth - 40;
   let y = 20;
@@ -150,6 +155,20 @@ export async function exportDossierPdf(
   y += 5;
   doc.text(`Report style: ${REPORT_WRITING_STYLE_LABELS[template.writingStyle]}`, 20, y);
   y += 12;
+
+  if (sourceUseWarnings.length > 0) {
+    y = ensurePage(doc, y);
+    y = addSectionTitle(doc, "Source-use warnings", y);
+    y = addSummaryRows(
+      doc,
+      sourceUseWarnings.map((warning) => ({
+        label: warning.title,
+        value: `${warning.message} Triggered by: ${warning.triggeredBy.join(", ")}`,
+      })),
+      y,
+      maxWidth,
+    ) + 4;
+  }
 
   if (includes("executive_summary")) {
     y = ensurePage(doc, y);
@@ -412,6 +431,12 @@ export async function exportDossierPdf(
         {
           label: "Orchestration stages",
           value: manifest.orchestration?.stages.map((stage) => `${stage.label}: ${stage.status}`).join("; ") ?? "Not included",
+        },
+        {
+          label: "Source-use warnings",
+          value: manifest.sourceUseWarnings.length === 0
+            ? "None triggered"
+            : manifest.sourceUseWarnings.map((warning) => `${warning.title}: ${warning.triggeredBy.join(", ")}`).join("; "),
         },
         { label: "Signature note", value: manifest.signature.note },
       ],

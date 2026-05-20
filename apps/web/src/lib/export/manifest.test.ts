@@ -26,6 +26,12 @@ describe("export manifest", () => {
     expect(first.schemaVersion).toBe("dude-export-manifest/v1");
     expect(first.dossierHash).toBe(second.dossierHash);
     expect(first.signature.value).toBe(second.signature.value);
+    expect(first.sourceUseWarnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "acra_source_use",
+        message: expect.stringContaining("hosted paid redistribution"),
+      }),
+    ]));
     await expect(verifyDossierExportManifest({ dossier, manifest: first })).resolves.toBe(true);
   });
 

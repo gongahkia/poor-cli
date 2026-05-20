@@ -94,6 +94,16 @@ export async function exportPdpaReportPdf(
   doc.setTextColor(51, 65, 85);
   y = addWrappedText(doc, report.nonAdviceNotice, 22, y, maxWidth - 4) + 4;
 
+  if (report.sourceUseWarnings.length > 0) {
+    y = addSectionTitle(doc, "Source-use warnings", y);
+    y = addBullets(
+      doc,
+      report.sourceUseWarnings.map((warning) => `${warning.title}: ${warning.message} Triggered by: ${warning.triggeredBy.join(", ")}.`),
+      y,
+      maxWidth,
+    ) + 2;
+  }
+
   for (const item of report.items) {
     y = addSectionTitle(doc, item.title, y);
     doc.setFont("helvetica", "normal");

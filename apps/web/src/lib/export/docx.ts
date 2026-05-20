@@ -19,6 +19,7 @@ import {
 } from "@/lib/dossier";
 import { buildDossierExportManifest } from "@/lib/export/manifest";
 import { formatNextCheckInputSummary } from "@/lib/next-checks";
+import { buildSourceUseWarnings } from "@/lib/source-use-warnings";
 import {
   DEFAULT_REPORT_TEMPLATE,
   REPORT_SECTION_LABELS,
@@ -93,6 +94,10 @@ export async function exportDossierDocx(
     ...(options.orchestration === undefined ? {} : { orchestration: options.orchestration }),
     ...(options.webPresence === undefined ? {} : { webPresence: options.webPresence }),
   });
+  const sourceUseWarnings = buildSourceUseWarnings({
+    dossier,
+    ...(options.webPresence === undefined ? {} : { webPresence: options.webPresence }),
+  });
   const children: Paragraph[] = [
     new Paragraph({
       alignment: AlignmentType.LEFT,
@@ -103,6 +108,13 @@ export async function exportDossierDocx(
     paragraph(`Generated: ${generatedAt.toLocaleString("en-SG")}`),
     paragraph(`Report style: ${REPORT_WRITING_STYLE_LABELS[template.writingStyle]}`),
   ];
+
+  if (sourceUseWarnings.length > 0) {
+    children.push(heading("Source-use warnings"));
+    sourceUseWarnings.forEach((warning) => {
+      children.push(paragraph(`${warning.title}: ${warning.message} Triggered by: ${warning.triggeredBy.join(", ")}`, { bullet: true }));
+    });
+  }
 
   if (includes("executive_summary")) {
     children.push(heading(REPORT_SECTION_LABELS.executive_summary), ...rowsToParagraphs(dossier.summary));
@@ -250,6 +262,7 @@ export async function exportDossierDocx(
       paragraph(`Orchestration status: ${manifest.orchestration?.status ?? "Not included"}`),
       paragraph(`Orchestration strategy: ${manifest.orchestration?.strategy ?? "Not included"}`),
       paragraph(`Orchestration stages: ${manifest.orchestration?.stages.map((stage) => `${stage.label}: ${stage.status}`).join("; ") ?? "Not included"}`),
+      paragraph(`Source-use warnings: ${manifest.sourceUseWarnings.length === 0 ? "None triggered" : manifest.sourceUseWarnings.map((warning) => `${warning.title}: ${warning.triggeredBy.join(", ")}`).join("; ")}`),
       paragraph(`Signature note: ${manifest.signature.note}`),
     );
   }

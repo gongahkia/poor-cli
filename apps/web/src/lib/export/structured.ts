@@ -16,6 +16,11 @@ import {
   buildDossierExportManifest,
   type DossierExportManifest,
 } from "@/lib/export/manifest";
+import {
+  buildSourceUseWarnings,
+  buildSourceUseWarningsFromSources,
+  formatSourceUseWarnings,
+} from "@/lib/source-use-warnings";
 
 const downloadText = (filename: string, mimeType: string, text: string): void => {
   const blob = new Blob([text], { type: mimeType });
@@ -84,6 +89,7 @@ export const buildSingleDossierCsvRow = (
   orchestration?: CddOrchestrationTrace,
 ): Record<string, unknown> => {
   const summary = buildDossierExportSummary(dossier);
+  const sourceUseWarnings = buildSourceUseWarnings({ dossier });
   return {
     complianceUseNotice: buildComplianceUseSummary(),
     confidence: summary.confidence,
@@ -97,6 +103,7 @@ export const buildSingleDossierCsvRow = (
     provenance: summary.provenanceSources.join(";"),
     risk: summary.risk,
     riskFlags: summary.riskFlags.join(";"),
+    sourceUseWarnings: formatSourceUseWarnings(sourceUseWarnings),
     uen: summary.uen,
   };
 };
@@ -124,6 +131,7 @@ export async function buildSingleDossierJsonPayload(params: {
     limits: params.dossier.limits,
     manifest,
     orchestration: params.orchestration ?? null,
+    sourceUseWarnings: manifest.sourceUseWarnings,
     webPresence: params.webPresence ?? null,
   };
 }
@@ -167,23 +175,33 @@ export async function exportSingleDossierCsv(
 }
 
 const bulkRowsForExport = (rows: readonly BulkDossierRow[]): Record<string, unknown>[] =>
-  rows.map((row) => ({
-    complianceUseNotice: buildComplianceUseSummary(),
-    confidence: row.confidence,
-    entity: row.entity,
-    entityStatus: row.entityStatus,
-    gapCodes: row.gapCodes.join(";"),
-    input: row.input,
-    matchedModules: row.matchedModules.join(";"),
-    orchestrationStatus: row.orchestration?.status ?? "",
-    orchestrationStages: row.orchestration?.stages?.map((stage) => `${stage.label}:${stage.status}`).join(";") ?? "",
-    provenance: row.provenanceSources.join(";"),
-    risk: row.risk,
-    riskFlags: row.riskFlags.join(";"),
-    status: row.status,
-    uen: row.uen,
-    upstreamFailure: row.upstreamFailure,
-  }));
+  rows.map((row) => {
+    const warnings = row.dossier === undefined
+      ? buildSourceUseWarningsFromSources(row.provenanceSources)
+      : buildSourceUseWarnings({
+          dossier: row.dossier,
+          ...(row.peopleDiscovery === undefined ? {} : { peopleDiscovery: row.peopleDiscovery }),
+          ...(row.webPresence === undefined ? {} : { webPresence: row.webPresence }),
+        });
+    return {
+      complianceUseNotice: buildComplianceUseSummary(),
+      confidence: row.confidence,
+      entity: row.entity,
+      entityStatus: row.entityStatus,
+      gapCodes: row.gapCodes.join(";"),
+      input: row.input,
+      matchedModules: row.matchedModules.join(";"),
+      orchestrationStatus: row.orchestration?.status ?? "",
+      orchestrationStages: row.orchestration?.stages?.map((stage) => `${stage.label}:${stage.status}`).join(";") ?? "",
+      provenance: row.provenanceSources.join(";"),
+      risk: row.risk,
+      riskFlags: row.riskFlags.join(";"),
+      sourceUseWarnings: formatSourceUseWarnings(warnings),
+      status: row.status,
+      uen: row.uen,
+      upstreamFailure: row.upstreamFailure,
+    };
+  });
 
 const buildBulkManifest = async (
   rows: readonly BulkDossierRow[],
@@ -208,6 +226,13 @@ export async function exportBulkJson(rows: readonly BulkDossierRow[], generatedA
       generatedAt,
       manifests: Array.from(manifestByIndex, ([rowIndex, manifest]) => ({ rowIndex, manifest })),
       rows,
+      sourceUseWarnings: rows.flatMap((row) => row.dossier === undefined
+        ? buildSourceUseWarningsFromSources(row.provenanceSources)
+        : buildSourceUseWarnings({
+            dossier: row.dossier,
+            ...(row.peopleDiscovery === undefined ? {} : { peopleDiscovery: row.peopleDiscovery }),
+            ...(row.webPresence === undefined ? {} : { webPresence: row.webPresence }),
+          })),
     }, null, 2),
   );
 }

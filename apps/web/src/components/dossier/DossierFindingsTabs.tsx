@@ -22,6 +22,7 @@ import { PeopleDiscoverySection, type PeopleDiscoveryState } from "@/components/
 import { ProvenanceSection } from "@/components/dossier/ProvenanceSection";
 import { RiskSection } from "@/components/dossier/RiskSection";
 import { SnapshotSection } from "@/components/dossier/SnapshotSection";
+import { SourceUseWarningsSection } from "@/components/dossier/SourceUseWarningsSection";
 import { WebPresenceSection, type WebPresenceState } from "@/components/dossier/WebPresenceSection";
 import { Button } from "@/components/ui/button";
 import {
@@ -1025,6 +1026,11 @@ function EvidencePackTab({
       </div>
       <div className="mt-5 space-y-5">
         <OrchestrationTracePanel orchestration={orchestration} />
+        <SourceUseWarningsSection
+          dossier={dossier}
+          peopleDiscovery={peopleDiscoveryState.status === "success" ? peopleDiscoveryState.discovery : undefined}
+          webPresence={webPresenceState.status === "success" ? webPresenceState.presence : undefined}
+        />
         <SnapshotSection dossier={dossier} />
         <RiskSection dossier={dossier} />
         <ConfidenceSection dossier={dossier} />

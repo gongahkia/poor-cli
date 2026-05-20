@@ -71,5 +71,8 @@ describe("PDPA checklist", () => {
     expect(report.citations.map((citation) => citation.url)).toContain(pdpaCitations.commonLapses.url);
     expect(report.nonAdviceNotice).toContain("not legal advice");
     expect(report.generatedAt).toBe("2026-05-17T00:00:00.000Z");
+    expect(report.sourceUseWarnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "acra_source_use" }),
+    ]));
   });
 });

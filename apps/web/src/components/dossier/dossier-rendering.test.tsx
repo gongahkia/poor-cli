@@ -10,6 +10,7 @@ import { HandoffSection } from "@/components/dossier/HandoffSection";
 import { PdpaChecklistSection } from "@/components/dossier/PdpaChecklistSection";
 import { RiskSection } from "@/components/dossier/RiskSection";
 import { SnapshotSection } from "@/components/dossier/SnapshotSection";
+import { SourceUseWarningsSection } from "@/components/dossier/SourceUseWarningsSection";
 import type { BusinessDossier } from "@/types/dossier";
 
 const dossier: BusinessDossier = {
@@ -223,6 +224,23 @@ describe("dossier rendering", () => {
     expect(html).toContain("Section 24 / Protection Obligation");
     expect(html).toContain("Section 26 / Transfer Limitation Obligation");
     expect(html).toContain("Export PDPA report");
+  });
+
+  it("renders source-use warnings for ACRA and supplemental evidence", () => {
+    const html = renderToStaticMarkup(<SourceUseWarningsSection
+      dossier={{
+        ...dossier,
+        provenance: [
+          { authRequired: false, coverage: "Entity identity", recordCount: 1, source: "ACRA", tool: "sg_acra_entities" },
+          { authRequired: true, coverage: "Candidate screening", evidenceType: "web_discovery", recordCount: 1, source: "OpenSanctions", tool: "sg_sanctions_screen" },
+        ],
+      }}
+    />);
+
+    expect(html).toContain("Source-use warnings");
+    expect(html).toContain("hosted paid redistribution");
+    expect(html).toContain("analyst-review signals");
+    expect(html).not.toContain("Risk rating");
   });
 
   it("renders the summary-first report shell with evidence pack sections", () => {

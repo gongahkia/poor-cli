@@ -10,6 +10,7 @@ Dude attaches a local export manifest to dossier JSON, CSV, bulk JSON, bulk CSV,
 - `dossierHash`: deterministic SHA-256 hash of the dossier payload.
 - `sourceFreshness`: source-level observed timestamps copied from the dossier.
 - `provenance`: source, tool, and record counts copied from the dossier.
+- `sourceUseWarnings`: triggered ACRA and supplemental-provider source-use warnings that must stay with saved/exported CDD evidence.
 - `includedArtifacts`: whether analyst memo or web-presence context was included.
 - `signature`: deterministic SHA-256 signature over the manifest integrity payload.
 
