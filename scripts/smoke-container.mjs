@@ -10,6 +10,11 @@ const localImage = `dude-mcp-smoke:${Date.now()}`;
 const imageRef = configuredImage && configuredImage.length > 0 ? configuredImage : localImage;
 const removeImageAfter = configuredImage === undefined || configuredImage.length === 0;
 
+const failPreflight = (message) => {
+  process.stderr.write(`${message}\n`);
+  process.exit(1);
+};
+
 const docker = (args, options = {}) => {
   return execFileSync("docker", args, {
     cwd: root,
@@ -26,6 +31,28 @@ const dockerStreaming = (args) => {
   });
 };
 
+const assertDockerAvailable = () => {
+  try {
+    execFileSync("docker", ["--version"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch {
+    failPreflight("Docker is required for npm run test:smoke:container. Install Docker and make sure the docker CLI is on PATH.");
+  }
+
+  try {
+    execFileSync("docker", ["info"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch {
+    failPreflight("Docker is installed but the daemon is not reachable. Start Docker Desktop or the Docker daemon, then rerun npm run test:smoke:container.");
+  }
+};
+
 const assert = (condition, message) => {
   if (!condition) {
     throw new Error(message);
@@ -33,13 +60,17 @@ const assert = (condition, message) => {
 };
 
 let client;
+let imageReady = false;
 
 try {
+  assertDockerAvailable();
+
   if (configuredImage && configuredImage.length > 0) {
     dockerStreaming(["pull", imageRef]);
   } else {
     dockerStreaming(["build", "-t", imageRef, "."]);
   }
+  imageReady = true;
 
   const openapiMetadata = JSON.parse(
     docker([
@@ -105,8 +136,8 @@ try {
   assert(typeof recipesResource.description === "string" && recipesResource.description.length > 0, `Container sg://recipes is missing description metadata${formatServerLogs()}`);
 
   assert(
-    (promptsResult.prompts ?? []).some((prompt) => prompt.name === "recipe-postal_route"),
-    `Container image is missing recipe prompts${formatServerLogs()}`,
+    (promptsResult.prompts ?? []).some((prompt) => prompt.name === "recipe-business_due_diligence"),
+    `Container image is missing CDD recipe prompts${formatServerLogs()}`,
   );
   assert(
     (templatesResult.resourceTemplates ?? []).some((template) => template.uriTemplate === "sg://recipes/{id}"),
@@ -129,10 +160,13 @@ try {
   assert(configText !== undefined && configText.includes("\"cache\""), `Container sg_config_get did not return config content${formatServerLogs()}`);
 
   process.stdout.write("container smoke test passed\n");
+} catch (error) {
+  process.stderr.write(`container smoke failed: ${error instanceof Error ? error.message : String(error)}\n`);
+  process.exitCode = 1;
 } finally {
   await client?.close().catch(() => undefined);
 
-  if (removeImageAfter) {
+  if (removeImageAfter && imageReady) {
     try {
       docker(["image", "rm", "-f", imageRef]);
     } catch {

@@ -98,6 +98,8 @@ Container smoke still validates the default MCP stdio image behavior:
 npm run test:smoke:container
 ```
 
+This smoke requires the Docker CLI and a reachable Docker daemon. If Docker is unavailable, the script exits before pull/build with a short prerequisite message.
+
 Public benchmark/status artifacts:
 
 ```bash
