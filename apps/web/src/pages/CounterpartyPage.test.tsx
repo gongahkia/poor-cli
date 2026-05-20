@@ -18,5 +18,6 @@ describe("CounterpartyPage orchestrator loading", () => {
     expect(source).toContain("/api/v1/dude/web-presence");
     expect(source).toContain("/api/v1/dude/people-discovery");
     expect(source).toContain("/api/v1/dude/memo");
+    expect(source).toContain("...(peopleDiscovery === undefined ? {} : { peopleDiscovery })");
   });
 });

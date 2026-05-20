@@ -3,6 +3,7 @@ import type {
   CeaSalespersonRecord,
 } from "@dude/shared";
 import { queryDatastoreExactMatches } from "../datagov/client.js";
+import { scoreBusinessNameMatch } from "../../diligence/name-matching.js";
 
 const SALESPEOPLE_RESOURCE_ID = "d_07c63be0f37e6e59c07a4ddc2fd87fcb";
 
@@ -24,6 +25,9 @@ const normalizeCompare = (value: string): string => value.trim().toLowerCase();
 const exactMatches = (actual: string, expected: string | undefined): boolean => {
   return expected === undefined || normalizeCompare(actual) === normalizeCompare(expected);
 };
+
+const nameMatches = (actual: string, expected: string | undefined): boolean =>
+  expected === undefined || scoreBusinessNameMatch(expected, actual).matches;
 
 const buildDatastoreFilters = (params: CeaFilterParams): Readonly<Record<string, unknown>> => ({
   ...(params.salespersonName === undefined
@@ -50,9 +54,9 @@ export const getCeaSalespersons = async (
     filters: buildDatastoreFilters(params),
     sort: "salesperson_name asc",
     exactMatch: (row) =>
-      exactMatches(row.salesperson_name, params.salespersonName)
+      nameMatches(row.salesperson_name, params.salespersonName)
       && exactMatches(row.registration_no, params.registrationNo)
-      && exactMatches(row.estate_agent_name, params.estateAgentName)
+      && nameMatches(row.estate_agent_name, params.estateAgentName)
       && exactMatches(row.estate_agent_license_no, params.estateAgentLicenseNo),
   });
 

@@ -18,6 +18,15 @@ Read the CDD-scoped catalog resources at startup:
 
 `sg://recipes` is the best first resource for natural-language prompt routing.
 
+## Use Resolution And Reports For Structured Agent Calls
+
+Use `sg_resolve_counterparty` when the user gives shorthand or potentially ambiguous input such as `dbs`. If the response is `needs_confirmation`, ask the user to pick a candidate before calling `sg_cdd_report`.
+
+```text
+sg_resolve_counterparty { "identifier": "dbs" }
+sg_cdd_report { "identifier": "DP Architects" }
+```
+
 ## Use `sg_query` For Goal-Shaped CDD Prompts
 
 Examples:
@@ -33,7 +42,7 @@ Non-CDD prompts return `unsupported`. Do not retry them against removed public-d
 
 ## Use Direct Tools Only For Exact Compatibility Calls
 
-For product flows, prefer `sg_query` or the web/gateway CDD orchestrator. Direct `sg_business_dossier` and sector tools remain available for compatibility, debugging, and advanced callers that already have exact structured parameters.
+For product flows, prefer `sg_resolve_counterparty` plus `sg_cdd_report`, `sg_query`, or the web/gateway CDD orchestrator. Direct `sg_business_dossier` and sector tools remain available for compatibility, debugging, and advanced callers that already have exact structured parameters.
 
 ```text
 sg_acra_entities { "entityName": "DP Architects" }

@@ -22,6 +22,21 @@ describe("REST gateway toolset filtering", () => {
     expect(isToolEnabled(publicTools[0]!, publicToolsets)).toBe(true);
   });
 
+  it("includes supplemental CDD follow-up tools in default toolsets", () => {
+    const followUpTools = [
+      "sg_sanctions_screen",
+      "sg_opencorporates_links",
+      "sg_adverse_media_lite",
+      "sg_relationship_graph",
+    ];
+
+    for (const toolName of followUpTools) {
+      const tool = ALL_TOOL_DEFINITIONS.find((definition) => definition.name === toolName);
+      expect(tool, `${toolName} definition should exist`).toBeDefined();
+      expect(isToolEnabled(tool!, publicToolsets), `${toolName} should be enabled for web follow-ups`).toBe(true);
+    }
+  });
+
   it("includes brief tools in default toolsets", () => {
     const briefTools = ALL_TOOL_DEFINITIONS.filter((t) => t.name === "sg_business_dossier");
     expect(briefTools.length).toBe(1);

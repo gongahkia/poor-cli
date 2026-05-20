@@ -47,7 +47,7 @@ export const externalDiligenceToolDefinitions: readonly RegisteredToolDefinition
     surface: "canonical",
     positioning: "Bounded external diligence adapter; candidate screening only.",
     inputSchema: SanctionsScreenSchema.shape,
-    toolsets: ["diligence"],
+    toolsets: ["public", "diligence"],
     handler: async (input: unknown): Promise<ToolResult> => {
       const params = SanctionsScreenSchema.parse(input);
       return toBriefToolResult(await buildSanctionsScreenArtifact(params), params.format ?? "json");
@@ -59,7 +59,7 @@ export const externalDiligenceToolDefinitions: readonly RegisteredToolDefinition
     surface: "canonical",
     positioning: "Bounded external identifier cross-link adapter.",
     inputSchema: OpenCorporatesSchema.shape,
-    toolsets: ["diligence"],
+    toolsets: ["public", "diligence"],
     handler: async (input: unknown): Promise<ToolResult> => {
       const params = OpenCorporatesSchema.parse(input);
       return toBriefToolResult(await buildOpenCorporatesLinksArtifact(params), params.format ?? "json");
@@ -71,7 +71,7 @@ export const externalDiligenceToolDefinitions: readonly RegisteredToolDefinition
     surface: "canonical",
     positioning: "Official-feed adverse-media triage, not general media monitoring.",
     inputSchema: AdverseMediaLiteSchema.shape,
-    toolsets: ["diligence"],
+    toolsets: ["public", "diligence"],
     handler: async (input: unknown): Promise<ToolResult> => {
       const params = AdverseMediaLiteSchema.parse(input);
       return toBriefToolResult(await buildAdverseMediaLiteArtifact(params), params.format ?? "json");
@@ -83,7 +83,7 @@ export const externalDiligenceToolDefinitions: readonly RegisteredToolDefinition
     surface: "canonical",
     positioning: "Evidence-backed and heuristic graph export over supplied public data only.",
     inputSchema: RelationshipGraphSchema.shape,
-    toolsets: ["diligence"],
+    toolsets: ["public", "diligence"],
     handler: async (input: unknown): Promise<ToolResult> => {
       const params = RelationshipGraphSchema.parse(input);
       return toBriefToolResult(buildRelationshipGraphArtifact(params), params.format ?? "json");

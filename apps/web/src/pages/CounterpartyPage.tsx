@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { Braces, Copy, Loader2, Table2 } from "lucide-react";
+import { AlertCircle, Braces, Copy, Loader2, Table2 } from "lucide-react";
 
 import type { AnalystMemoState } from "@/components/dossier/AnalystMemoSection";
 import { DossierHeaderLogo } from "@/components/dossier/DossierHeaderLogo";
@@ -12,9 +12,15 @@ import { ProvenanceSection } from "@/components/dossier/ProvenanceSection";
 import type { WebPresenceState } from "@/components/dossier/WebPresenceSection";
 import { useToast } from "@/components/notifications/ToastProvider";
 import { Button } from "@/components/ui/button";
-import { getGatewayJson, postGatewayJson, type PeopleDiscovery, type WebPresence } from "@/lib/api/client";
 import {
-  buildBusinessDossierInput,
+  getGatewayJson,
+  postGatewayJson,
+  type CounterpartyResolutionCandidate,
+  type CounterpartyResolutionResult,
+  type PeopleDiscovery,
+  type WebPresence,
+} from "@/lib/api/client";
+import {
   buildBusinessDossierExpandedInput,
   buildBusinessDossierFollowUpInput,
   buildSummaryLine,
@@ -31,6 +37,7 @@ import type { ReportExportFormat, ReportTemplate } from "@/lib/report-template";
 
 type DossierState =
   | { status: "loading" }
+  | { status: "needs-confirmation"; resolution: CounterpartyResolutionResult }
   | { status: "success"; dossier: BusinessDossier; orchestration: CddOrchestratorResponse }
   | { status: "not-found"; dossier: BusinessDossier; orchestration: CddOrchestratorResponse }
   | { status: "error"; message: string };
@@ -41,7 +48,12 @@ type CddOrchestratorResponse = {
   peopleDiscovery: PeopleDiscovery;
   memo: AnalystMemoResponse;
   generatedAt: string;
+  resolution?: CounterpartyResolutionResult;
   orchestration: CddOrchestrationTrace;
+};
+
+type CounterpartyLocationState = {
+  resolution?: CounterpartyResolutionResult;
 };
 
 const toWebPresenceState = (presence: WebPresence | undefined): WebPresenceState =>
@@ -100,10 +112,13 @@ export function CounterpartyPage() {
   const { identifier = "" } = useParams<{ identifier: string }>();
   const decodedIdentifier = useMemo(() => identifier.trim(), [identifier]);
   const [state, setState] = useState<DossierState>({ status: "loading" });
+  const location = useLocation();
   const { notify } = useToast();
 
   useEffect(() => {
     const controller = new AbortController();
+    const routeState = location.state as CounterpartyLocationState | null;
+    const stateResolution = routeState?.resolution;
 
     if (!decodedIdentifier) {
       setState({ status: "error", message: "No counterparty identifier was provided." });
@@ -113,18 +128,50 @@ export function CounterpartyPage() {
 
     setState({ status: "loading" });
 
-    void postGatewayJson<CddOrchestratorResponse>(
-      "/api/v1/dude/cdd-orchestrator",
-      buildBusinessDossierInput(decodedIdentifier),
-      { signal: controller.signal },
-    )
+    const loadDossier = async () => {
+      const resolution = stateResolution?.selectedCandidate === null || stateResolution === undefined
+        ? await postGatewayJson<CounterpartyResolutionResult>(
+            "/api/v1/dude/resolve-counterparty",
+            { identifier: decodedIdentifier },
+            { signal: controller.signal },
+          )
+        : stateResolution;
+
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      if (resolution.status === "needs_confirmation") {
+        setState({ status: "needs-confirmation", resolution });
+        return;
+      }
+      if (resolution.status === "no_match" || resolution.selectedCandidate === null) {
+        setState({
+          status: "error",
+          message: `No retained CDD registry match was found for ${decodedIdentifier}.`,
+        });
+        return;
+      }
+
+      const orchestration = await postGatewayJson<CddOrchestratorResponse>(
+        "/api/v1/dude/cdd-orchestrator",
+        {
+          identifier: resolution.originalInput || decodedIdentifier,
+          confirmedCandidate: resolution.selectedCandidate,
+        },
+        { signal: controller.signal },
+      );
+      if (controller.signal.aborted) {
+        return;
+      }
+      setState(isNotFoundDossier(orchestration.dossier)
+        ? { status: "not-found", dossier: orchestration.dossier, orchestration }
+        : { status: "success", dossier: orchestration.dossier, orchestration });
+    };
+
+    void loadDossier()
       .then((orchestration) => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setState(isNotFoundDossier(orchestration.dossier)
-          ? { status: "not-found", dossier: orchestration.dossier, orchestration }
-          : { status: "success", dossier: orchestration.dossier, orchestration });
+        void orchestration;
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) {
@@ -142,13 +189,15 @@ export function CounterpartyPage() {
       });
 
     return () => controller.abort();
-  }, [decodedIdentifier, notify]);
+  }, [decodedIdentifier, location.state, notify]);
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-background px-4 py-8 sm:px-6 sm:py-12">
       <section className="mx-auto w-full max-w-6xl min-w-0 space-y-5">
         {state.status === "loading" ? (
           <DossierLoading identifier={decodedIdentifier} />
+        ) : state.status === "needs-confirmation" ? (
+          <ResolutionConfirmationPanel identifier={decodedIdentifier} resolution={state.resolution} />
         ) : state.status === "error" ? (
           <DossierProblem
             identifier={decodedIdentifier}
@@ -165,6 +214,71 @@ export function CounterpartyPage() {
         )}
       </section>
     </main>
+  );
+}
+
+function ResolutionConfirmationPanel({
+  identifier,
+  resolution,
+}: {
+  identifier: string;
+  resolution: CounterpartyResolutionResult;
+}) {
+  const navigate = useNavigate();
+  const candidateIdentifier = (candidate: CounterpartyResolutionCandidate): string =>
+    candidate.uen ?? candidate.entityName;
+
+  const handleCandidateClick = (candidate: CounterpartyResolutionCandidate) => {
+    navigate(`/c/${encodeURIComponent(candidateIdentifier(candidate))}`, {
+      state: {
+        resolution: {
+          ...resolution,
+          status: "resolved",
+          selectedCandidate: candidate,
+          candidates: [candidate],
+          confidenceBlockers: candidate.matchMethod === "typo"
+            ? ["The selected candidate relied on bounded typo matching; verify source rows before final decisions."]
+            : [],
+        } satisfies CounterpartyResolutionResult,
+      },
+      replace: true,
+    });
+  };
+
+  return (
+    <section className="rounded-lg border border-border bg-card p-6 shadow-sm">
+      <div className="flex min-w-0 items-start gap-3">
+        <AlertCircle aria-hidden="true" className="mt-1 h-5 w-5 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-muted-foreground">Counterparty</p>
+          <h1 className="mt-2 break-words text-3xl font-semibold tracking-normal text-foreground">Confirm official match</h1>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">
+            Multiple retained CDD registry candidates matched "{identifier}". Choose one before Dude runs the report.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-2">
+        {resolution.candidates.map((candidate) => (
+          <button
+            className="rounded-lg border border-border bg-background px-4 py-3 text-left transition hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            key={candidate.id}
+            onClick={() => handleCandidateClick(candidate)}
+            type="button"
+          >
+            <span className="block text-sm font-medium text-foreground">{candidate.label}</span>
+            <span className="mt-1 block text-xs text-muted-foreground">
+              {candidate.sourceRegistry} · {candidate.uen ?? candidate.officialIdentifier ?? "no official identifier"} · score {candidate.score}
+            </span>
+            <span className="mt-1 block text-xs text-muted-foreground">{candidate.matchReason}</span>
+          </button>
+        ))}
+      </div>
+
+      <Button asChild className="mt-6" variant="outline">
+        <Link to="/">Try another search</Link>
+      </Button>
+    </section>
   );
 }
 
@@ -263,6 +377,12 @@ function DossierSuccess({
   const [dossier, setDossier] = useState(initialDossier);
   const [currentOrchestration, setCurrentOrchestration] = useState(orchestration);
   const resolution = dossier.records.resolution;
+  const resolutionMetadata = resolution as (typeof resolution & {
+    originalInput?: string;
+    selectedCandidate?: { label?: string; sourceRegistry?: string; matchReason?: string };
+    matchMethod?: string | null;
+    matchScore?: number | null;
+  }) | undefined;
   const navigate = useNavigate();
   const location = useLocation();
   const [isExporting, setIsExporting] = useState(false);
@@ -403,13 +523,19 @@ function DossierSuccess({
       setMemoState({ status: "loading" });
       return () => controller.abort();
     }
+    if (peopleDiscoveryState.status === "loading") {
+      setMemoState({ status: "loading" });
+      return () => controller.abort();
+    }
 
     setMemoState({ status: "loading" });
+    const peopleDiscovery = peopleDiscoveryState.status === "success" ? peopleDiscoveryState.discovery : undefined;
     const webPresence = webPresenceState.status === "success" ? webPresenceState.presence : undefined;
     void postGatewayJson<AnalystMemoResponse>(
       "/api/v1/dude/memo",
       {
         dossier,
+        ...(peopleDiscovery === undefined ? {} : { peopleDiscovery }),
         ...(webPresence === undefined ? {} : { webPresence }),
       },
       { signal: controller.signal },
@@ -436,7 +562,7 @@ function DossierSuccess({
       });
 
     return () => controller.abort();
-  }, [dossier, isUsingOrchestratedDossier, webPresenceState]);
+  }, [dossier, isUsingOrchestratedDossier, peopleDiscoveryState, webPresenceState]);
 
   useEffect(() => {
     const nextMemoState = memoState.status === "loading" ? "pending" : memoState.status;
@@ -699,6 +825,14 @@ function DossierSuccess({
             </span>
           ) : null}
         </div>
+        {resolutionMetadata?.originalInput !== undefined && resolutionMetadata.selectedCandidate?.label !== undefined ? (
+          <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
+            Resolved "{resolutionMetadata.originalInput}" to {resolutionMetadata.selectedCandidate.label}
+            {resolutionMetadata.matchScore === null || resolutionMetadata.matchScore === undefined
+              ? "."
+              : ` (${resolutionMetadata.matchMethod ?? "match"}, score ${resolutionMetadata.matchScore}).`}
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-center gap-3">
           <DossierActionButton label="Copy link" onClick={handleCopyLink}>
             <Copy aria-hidden="true" className="h-5 w-5" />

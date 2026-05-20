@@ -1,4 +1,9 @@
 import type { MatchConfidence } from "@dude/shared";
+import {
+  isBusinessNameMatch,
+  normalizeBusinessNameForSearch,
+  tokenizeBusinessName as tokenizeMatchedBusinessName,
+} from "./name-matching.js";
 
 export type BusinessDossierModule = "acra" | "bca" | "cea" | "gebiz" | "boa" | "hsa" | "hlb";
 export type BusinessSectorHint =
@@ -136,18 +141,11 @@ export const inferBusinessSectorsFromAcra = (
 };
 
 export const normalizeBusinessName = (value: string | undefined): string => {
-  return (value ?? "")
-    .toLowerCase()
-    .replace(/&/g, " and ")
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return normalizeBusinessNameForSearch(value);
 };
 
 const tokenizeBusinessName = (value: string): readonly string[] => {
-  return normalizeBusinessName(value)
-    .split(" ")
-    .filter((token) => token.length >= 2);
+  return tokenizeMatchedBusinessName(value);
 };
 
 export const isBoundedFuzzyBusinessNameMatch = (
@@ -245,7 +243,7 @@ export const resolveEntityMatchConfidence = (
     for (const record of records) {
       for (const field of nameInput.fields) {
         const candidate = getRecordString(record, field);
-        if (candidate !== null && isBoundedFuzzyBusinessNameMatch(nameInput.value, candidate)) {
+        if (candidate !== null && isBusinessNameMatch(nameInput.value, candidate)) {
           return {
             source,
             confidence: "name-fuzzy",

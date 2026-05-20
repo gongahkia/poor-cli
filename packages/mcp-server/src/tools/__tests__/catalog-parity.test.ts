@@ -68,7 +68,8 @@ describe("tool catalog parity", () => {
 
     expect(new Set(catalogNames).size).toBe(catalogNames.length);
     expect(catalogNames.slice().sort()).toEqual(registeredTools.slice().sort());
-    expect(catalogNames).toHaveLength(26);
+    expect(catalogNames).toHaveLength(28);
+    expect(catalogNames).toEqual(expect.arrayContaining(["sg_cdd_report", "sg_resolve_counterparty"]));
     expect(catalogNames).not.toEqual(
       expect.arrayContaining(["sg_property_brief", "sg_macro_brief", "sg_transport_brief", "sg_datagov_search"]),
     );

@@ -59,8 +59,29 @@ export type AnalystMemoDossier = {
 };
 
 type WebPresenceForMemo = {
+  readonly query?: string;
   readonly configured: boolean;
+  readonly results?: readonly WebSearchResultForMemo[];
+  readonly possibleOfficialWebsite?: string | null;
   readonly limits: readonly string[];
+};
+
+type PeopleDiscoveryForMemo = {
+  readonly entityName: string;
+  readonly uen?: string | null;
+  readonly query: string;
+  readonly configured: boolean;
+  readonly results: readonly WebSearchResultForMemo[];
+  readonly suggestedActions: readonly string[];
+  readonly limits: readonly string[];
+};
+
+type WebSearchResultForMemo = {
+  readonly title: string;
+  readonly snippet: string;
+  readonly url: string;
+  readonly siteName: string | null;
+  readonly position: number;
 };
 
 type Citation = {
@@ -160,6 +181,7 @@ const SYSTEM_PROMPT = [
   "Write like an internal diligence team: concise, specific, non-repetitive, and oriented to what a reviewer should do next.",
   "Do not repeat the same registry fact in adjacent sentences. Prefer one integrated paragraph over a string of mechanically restated fields.",
   "Do not say 'no sanctions', 'no adverse media', or 'no active licences' unless the relevant provider actually returned searched evidence. If a provider is unavailable, frame it as a gap or blocker.",
+  "Web presence and people-discovery snippets are supplemental analyst-review evidence only; never treat them as official registry facts or verified employment/authority evidence.",
   "Decision aid items must be operational next checks and confidence blockers, not legal, tax, investment, or licensed-advisor advice.",
   "The first evidenceMemo item must be a polished 2-3 sentence executive summary for a senior reviewer; it should identify the counterparty, state the most material evidence-backed fact once, explain the risk posture, and call out the main caveats or missing checks.",
   "Confidence blockers must name the missing source, upstream gap, unsupported inference, or unavailable credential. Never return a placeholder such as 'missing evidence that blocks confidence'.",
@@ -185,7 +207,87 @@ const citation = (id: string, label: string, source: string, text: string): Cita
   text,
 });
 
-const buildCitations = (dossier: AnalystMemoDossier): readonly Citation[] => {
+const MEMO_RECORD_KEYS = [
+  "resolution",
+  "quality",
+  "acra",
+  "bcaLicensedBuilders",
+  "bcaRegisteredContractors",
+  "ceaSalespersons",
+  "gebizTenders",
+  "boaArchitects",
+  "boaArchitectureFirms",
+  "hsaLicensedPharmacies",
+  "hsaHealthProductLicensees",
+  "hlbHotels",
+  "externalDiligence",
+] as const;
+
+const MAX_PROMPT_ARRAY_ITEMS = 5;
+const MAX_PROMPT_OBJECT_KEYS = 24;
+const MAX_PROMPT_STRING_LENGTH = 1200;
+
+const boundPromptValue = (value: unknown, depth = 0): unknown => {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "string") {
+    return value.length > MAX_PROMPT_STRING_LENGTH
+      ? `${value.slice(0, MAX_PROMPT_STRING_LENGTH)}...`
+      : value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  if (depth >= 4) return "[nested value omitted]";
+  if (Array.isArray(value)) {
+    return value.slice(0, MAX_PROMPT_ARRAY_ITEMS).map((item) => boundPromptValue(item, depth + 1));
+  }
+  if (typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .slice(0, MAX_PROMPT_OBJECT_KEYS)
+        .map(([key, item]) => [key, boundPromptValue(item, depth + 1)]),
+    );
+  }
+  return String(value);
+};
+
+const buildMemoRecordsInput = (records: Record<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries(
+    MEMO_RECORD_KEYS
+      .filter((key) => records[key] !== undefined)
+      .map((key) => [key, boundPromptValue(records[key])]),
+  );
+
+const buildRecordCitations = (records: Record<string, unknown>): readonly Citation[] => {
+  const citations: Citation[] = [];
+  for (const key of MEMO_RECORD_KEYS) {
+    const value = records[key];
+    if (value === undefined) continue;
+    if (Array.isArray(value)) {
+      const recordCitationLimit = key === "externalDiligence" ? 5 : 2;
+      value.slice(0, recordCitationLimit).forEach((item, index) => {
+        citations.push(citation(
+          `record-${key}-${index + 1}`,
+          `${key} record ${index + 1}`,
+          key,
+          stringifyValue(boundPromptValue(item)),
+        ));
+      });
+      continue;
+    }
+    citations.push(citation(`record-${key}`, `${key} record`, key, stringifyValue(boundPromptValue(value))));
+  }
+  return citations;
+};
+
+const buildSupplementalCitationSource = (result: WebSearchResultForMemo): string =>
+  result.siteName ?? result.url;
+
+const buildCitations = (
+  dossier: AnalystMemoDossier,
+  supplemental: Readonly<{
+    webPresence?: WebPresenceForMemo;
+    peopleDiscovery?: PeopleDiscoveryForMemo;
+  }> = {},
+): readonly Citation[] => {
   const citations: Citation[] = [];
   dossier.summary.forEach((item, index) => {
     citations.push(citation(
@@ -241,13 +343,90 @@ const buildCitations = (dossier: AnalystMemoDossier): readonly Citation[] => {
       `${check.reason}; input: ${JSON.stringify(check.input)}`,
     ));
   });
+  citations.push(...buildRecordCitations(dossier.records));
+  if (supplemental.webPresence !== undefined) {
+    if (supplemental.webPresence.possibleOfficialWebsite !== undefined && supplemental.webPresence.possibleOfficialWebsite !== null) {
+      citations.push(citation(
+        "web-presence-official",
+        "Possible official website",
+        "TinyFish Search",
+        supplemental.webPresence.possibleOfficialWebsite,
+      ));
+    }
+    (supplemental.webPresence.results ?? []).slice(0, 5).forEach((result, index) => {
+      citations.push(citation(
+        `web-presence-${index + 1}`,
+        result.title,
+        buildSupplementalCitationSource(result),
+        `${result.title}: ${result.snippet} (${result.url})`,
+      ));
+    });
+    supplemental.webPresence.limits.forEach((limit, index) => {
+      citations.push(citation(`web-presence-limit-${index + 1}`, "Web presence limit", "TinyFish Search", limit));
+    });
+  }
+  if (supplemental.peopleDiscovery !== undefined) {
+    supplemental.peopleDiscovery.results.slice(0, 5).forEach((result, index) => {
+      citations.push(citation(
+        `people-discovery-${index + 1}`,
+        result.title,
+        buildSupplementalCitationSource(result),
+        `${result.title}: ${result.snippet} (${result.url})`,
+      ));
+    });
+    supplemental.peopleDiscovery.suggestedActions.forEach((action, index) => {
+      citations.push(citation(`people-discovery-action-${index + 1}`, "People discovery action", "TinyFish Search", action));
+    });
+    supplemental.peopleDiscovery.limits.forEach((limit, index) => {
+      citations.push(citation(`people-discovery-limit-${index + 1}`, "People discovery limit", "TinyFish Search", limit));
+    });
+  }
   return citations;
+};
+
+const buildWebPresencePromptInput = (webPresence: WebPresenceForMemo | undefined) => {
+  if (webPresence === undefined) return undefined;
+  return {
+    configured: webPresence.configured,
+    limits: webPresence.limits,
+    possibleOfficialWebsite: webPresence.possibleOfficialWebsite ?? null,
+    query: webPresence.query ?? null,
+    results: (webPresence.results ?? []).slice(0, 5).map((result, index) => ({
+      citationId: `web-presence-${index + 1}`,
+      position: result.position,
+      siteName: result.siteName,
+      snippet: result.snippet,
+      title: result.title,
+      url: result.url,
+    })),
+  };
+};
+
+const buildPeopleDiscoveryPromptInput = (peopleDiscovery: PeopleDiscoveryForMemo | undefined) => {
+  if (peopleDiscovery === undefined) return undefined;
+  return {
+    configured: peopleDiscovery.configured,
+    entityName: peopleDiscovery.entityName,
+    limits: peopleDiscovery.limits,
+    query: peopleDiscovery.query,
+    results: peopleDiscovery.results.slice(0, 5).map((result, index) => ({
+      citationId: `people-discovery-${index + 1}`,
+      position: result.position,
+      siteName: result.siteName,
+      snippet: result.snippet,
+      title: result.title,
+      url: result.url,
+    })),
+    suggestedActions: peopleDiscovery.suggestedActions,
+    uen: peopleDiscovery.uen ?? null,
+  };
 };
 
 const buildPrompt = (
   dossier: AnalystMemoDossier,
   citations: readonly Citation[],
   webPresence: WebPresenceForMemo | undefined,
+  peopleDiscovery: PeopleDiscoveryForMemo | undefined,
 ): string => JSON.stringify({
   instructions: {
     outputSchema: {
@@ -274,20 +453,17 @@ const buildPrompt = (
     nextChecks: dossier.nextChecks ?? [],
     provenance: dossier.provenance,
     records: {
-      resolution: dossier.records["resolution"],
-      quality: dossier.records["quality"],
+      ...buildMemoRecordsInput(dossier.records),
     },
     riskFlags: dossier.riskFlags ?? [],
     summary: dossier.summary,
     title: dossier.title,
   },
   citations,
-  webPresenceLimits: webPresence === undefined
-    ? undefined
-    : {
-        configured: webPresence.configured,
-        limits: webPresence.limits,
-      },
+  supplementalReview: {
+    peopleDiscovery: buildPeopleDiscoveryPromptInput(peopleDiscovery),
+    webPresence: buildWebPresencePromptInput(webPresence),
+  },
 });
 
 const parseJsonObject = (text: string): ModelMemo | null => {
@@ -456,6 +632,7 @@ export const generateAnalystMemo = async (
   params: {
     readonly dossier: AnalystMemoDossier;
     readonly webPresence?: WebPresenceForMemo;
+    readonly peopleDiscovery?: PeopleDiscoveryForMemo;
   },
   options: GenerateAnalystMemoOptions = {},
 ): Promise<AnalystMemoResponse> => {
@@ -465,8 +642,11 @@ export const generateAnalystMemo = async (
     return buildUnavailable(config, params.dossier, generatedAt);
   }
 
-  const citations = buildCitations(params.dossier);
-  const prompt = buildPrompt(params.dossier, citations, params.webPresence);
+  const citations = buildCitations(params.dossier, {
+    ...(params.peopleDiscovery === undefined ? {} : { peopleDiscovery: params.peopleDiscovery }),
+    ...(params.webPresence === undefined ? {} : { webPresence: params.webPresence }),
+  });
+  const prompt = buildPrompt(params.dossier, citations, params.webPresence, params.peopleDiscovery);
   let result: GenerateResult;
   try {
     result = await (options.generate ?? generateText)({

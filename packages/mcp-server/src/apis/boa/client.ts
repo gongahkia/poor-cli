@@ -6,6 +6,7 @@ import type {
 } from "@dude/shared";
 import { downloadDatasetCsvRows } from "../datagov/client.js";
 import { toNullableString } from "../civic/utils.js";
+import { scoreBusinessNameMatch } from "../../diligence/name-matching.js";
 
 const BOA_ARCHITECTS_DATASET_ID = "d_d77de0f78ca589a5c61da7a60fdee6ba";
 const BOA_ARCHITECTURE_FIRMS_DATASET_ID = "d_d5c0a4ffd076a3e40d772275619bbb66";
@@ -24,6 +25,9 @@ const normalizeCompare = (value: unknown): string => {
 const exactMatches = (actual: unknown, expected: string | undefined): boolean => {
   return expected === undefined || normalizeCompare(actual) === normalizeCompare(expected);
 };
+
+const nameMatches = (actual: unknown, expected: string | undefined): boolean =>
+  expected === undefined || scoreBusinessNameMatch(expected, normalizeString(actual)).matches;
 
 const getLimit = (value: number | undefined): number => Math.min(Math.max(value ?? 50, 1), 100);
 
@@ -93,9 +97,9 @@ export const getBoaArchitects = async (
     .map(normalizeArchitect)
     .filter((row): row is BoaNormalizedArchitectRecord => row !== null)
     .filter((row) =>
-      exactMatches(row.architectName, params.name)
+      nameMatches(row.architectName, params.name)
       && exactMatches(row.registrationNo, params.registrationNo)
-      && exactMatches(row.firmName, params.firmName),
+      && nameMatches(row.firmName, params.firmName),
     )
     .sort((left, right) => left.architectName.localeCompare(right.architectName))
     .slice(0, getLimit(params.limit));
@@ -114,7 +118,7 @@ export const getBoaArchitectureFirms = async (
     .map(normalizeArchitectureFirm)
     .filter((row): row is BoaNormalizedArchitectureFirmRecord => row !== null)
     .filter((row) =>
-      exactMatches(row.firmName, params.firmName)
+      nameMatches(row.firmName, params.firmName)
       && exactMatches(row.firmEmail, params.email)
       && exactMatches(row.firmPhone, params.phone),
     )

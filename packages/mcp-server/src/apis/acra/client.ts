@@ -4,6 +4,7 @@ import type {
 } from "@dude/shared";
 import { queryDatastoreExactMatches, queryDatastoreResult } from "../datagov/client.js";
 import { searchTinyFish } from "../tinyfish/client.js";
+import { rankBusinessNameCandidates, scoreBusinessNameMatch } from "../../diligence/name-matching.js";
 
 const ACRA_SHARD_RESOURCE_IDS = {
   A: "d_8575e84912df3c28995b8e6e0e05205a",
@@ -119,9 +120,11 @@ const normalizeNullLike = (value: string): string | null => {
   return normalized;
 };
 
-const exactMatches = (actual: string, expected: string | undefined): boolean => {
-  return expected === undefined || normalizeCompare(actual) === normalizeCompare(expected);
-};
+const exactMatches = (actual: string, expected: string | undefined): boolean =>
+  expected === undefined || normalizeCompare(actual) === normalizeCompare(expected);
+
+const nameMatches = (actual: string, expected: string | undefined): boolean =>
+  expected === undefined || scoreBusinessNameMatch(expected, actual).matches;
 
 const getQueryLimit = (limit?: number): number => Math.min(Math.max(limit ?? 10, 1), 50);
 const getSuggestionLimit = (limit?: number): number => Math.min(Math.max(limit ?? 6, 1), 10);
@@ -316,7 +319,7 @@ export const getAcraEntities = async (
       filters: buildDatastoreFilters(params),
       ...(isUenOnlySearch ? { pageSize: 1 } : { sort: "entity_name asc" }),
       exactMatch: (row) =>
-        exactMatches(row.entity_name, params.entityName)
+        nameMatches(row.entity_name, params.entityName)
         && exactMatches(row.uen, params.uen),
     });
 
@@ -365,13 +368,14 @@ export const searchAcraEntitySuggestions = async (
     limit: Math.max(suggestionLimit * 3, 10),
   });
   const queryCompare = normalizeCompare(normalizedQuery);
-  const suggestions = result.records
-    .filter((row) => {
-      const nameCompare = normalizeCompare(row.entity_name);
-      return nameCompare.includes(queryCompare)
-        || queryCompare.includes(nameCompare)
-        || row.uen.toUpperCase().includes(normalizedQuery.toUpperCase());
-    })
+  const suggestions = rankBusinessNameCandidates(
+    normalizedQuery,
+    result.records.filter((row) => row.uen.toUpperCase().includes(normalizedQuery.toUpperCase())
+      || normalizeCompare(row.entity_name).includes(queryCompare)
+      || queryCompare.includes(normalizeCompare(row.entity_name))
+      || scoreBusinessNameMatch(normalizedQuery, row.entity_name).matches),
+    (row) => [row.entity_name, row.uen],
+  )
     .slice(0, suggestionLimit)
     .map(toSuggestion);
 

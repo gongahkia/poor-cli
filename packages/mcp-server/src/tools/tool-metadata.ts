@@ -12,6 +12,12 @@ const QUERY_OUTPUT_SCHEMA = z.object({
   status: z.enum(["planned", "completed", "blocked", "unsupported", "failed"]),
   mode: z.enum(["execute", "plan"]),
 }).passthrough();
+const COUNTERPARTY_RESOLUTION_OUTPUT_SCHEMA = z.object({
+  status: z.enum(["resolved", "needs_confirmation", "no_match"]),
+}).passthrough();
+const CDD_REPORT_OUTPUT_SCHEMA = z.object({
+  status: z.string().optional(),
+}).passthrough();
 
 const MUTATING_TOOL_NAMES = new Set([
   "sg_cache_clear",
@@ -25,6 +31,8 @@ const BRIEF_TOOL_NAMES = new Set([
 ]);
 
 const DILIGENCE_PROFILE_TOOL_NAMES = new Set([
+  "sg_cdd_report",
+  "sg_resolve_counterparty",
   "sg_query",
   "sg_business_dossier",
 ]);
@@ -45,7 +53,9 @@ const DILIGENCE_PROFILE_PREFIXES = [
 
 const OUTPUT_SCHEMAS: Readonly<Record<string, z.ZodTypeAny>> = {
   sg_business_dossier: BRIEF_ARTIFACT_OUTPUT_SCHEMA,
+  sg_cdd_report: CDD_REPORT_OUTPUT_SCHEMA,
   sg_query: QUERY_OUTPUT_SCHEMA,
+  sg_resolve_counterparty: COUNTERPARTY_RESOLUTION_OUTPUT_SCHEMA,
 };
 
 const TITLE_TOKENS: Readonly<Record<string, string>> = {

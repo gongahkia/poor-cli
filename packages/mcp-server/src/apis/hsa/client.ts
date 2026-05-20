@@ -6,6 +6,7 @@ import type {
 } from "@dude/shared";
 import { downloadDatasetCsvRows } from "../datagov/client.js";
 import { normalizePostalCode, toNullableString } from "../civic/utils.js";
+import { scoreBusinessNameMatch } from "../../diligence/name-matching.js";
 
 const HSA_LICENSED_PHARMACIES_DATASET_ID = "d_bc50d72a9d61457964c6ea8d8ba7dce2";
 const HSA_HEALTH_PRODUCT_LICENSEES_DATASET_ID = "d_bf50ce0f3f42f69d7acd50635afa62da";
@@ -20,6 +21,9 @@ const normalizeCompare = (value: string | undefined): string => {
 const exactMatches = (actual: string, expected: string | undefined): boolean => {
   return expected === undefined || normalizeCompare(actual) === normalizeCompare(expected);
 };
+
+const nameMatches = (actual: string, expected: string | undefined): boolean =>
+  expected === undefined || scoreBusinessNameMatch(expected, actual).matches;
 
 const extractPostalCode = (address: string): string | null => {
   const embedded = address.match(/SG\((\d{6})\)/i)?.[1]
@@ -42,8 +46,8 @@ export const getHsaLicensedPharmacies = async (
   return rows
     .filter((row) => {
       const postalCode = extractPostalCode(row.pharmacy_address);
-      return exactMatches(row.pharmacy_name, params.pharmacyName)
-        && exactMatches(row.pharmacist_in_charge, params.pharmacistInCharge)
+      return nameMatches(row.pharmacy_name, params.pharmacyName)
+        && nameMatches(row.pharmacist_in_charge, params.pharmacistInCharge)
         && exactMatches(row.pharmacy_address, params.pharmacyAddress)
         && (params.postalCode === undefined || postalCode === normalizePostalCode(params.postalCode));
     })
@@ -69,7 +73,7 @@ export const getHsaHealthProductLicensees = async (
   const rows = await downloadDatasetCsvRows<HsaHealthProductLicenseeRecord>(HSA_HEALTH_PRODUCT_LICENSEES_DATASET_ID, "DAILY");
   return rows
     .filter((row) =>
-      exactMatches(row.company_name, params.companyName)
+      nameMatches(row.company_name, params.companyName)
       && exactMatches(row.license_type, params.licenseType)
       && exactMatches(row.activity_type, params.activityType)
       && exactMatches(row.dosage_form, params.dosageForm),

@@ -26,7 +26,7 @@ The primary experience is not a tabbed public-data explorer. The first useful sc
 
 ## Runtime Scope
 
-The MCP runtime exposes 26 `sg_*` tools across 11 CDD catalog families.
+The MCP runtime exposes 28 `sg_*` tools across 11 CDD catalog families.
 
 Retained CDD families:
 
@@ -38,6 +38,7 @@ Retained CDD families:
 - HSA pharmacies and health-product licensees
 - HLB hotels
 - External diligence signals: sanctions, OpenCorporates links, adverse-media hints, relationship graph
+- Safe counterparty resolution and structured CDD report orchestration
 - Business dossier composition
 - Ops: health, cache, key, config, trace, request lookup
 
@@ -55,7 +56,7 @@ Removed from runtime/product discovery:
 
 ## Query Planner
 
-`sg_query` only plans or executes CDD entity and sector diligence workflows, and execution uses the CDD orchestrator path. Non-CDD prompts return an explicit unsupported response. This keeps the agent contract honest and avoids pretending Dude is a general Singapore data assistant.
+`sg_query` only plans or executes CDD entity and sector diligence workflows, and execution uses the CDD orchestrator path. `sg_resolve_counterparty` is the structured preflight for fuzzy name normalization and ambiguous candidate confirmation; `sg_cdd_report` is the structured MCP report interface. Non-CDD prompts return an explicit unsupported response. This keeps the agent contract honest and avoids pretending Dude is a general Singapore data assistant.
 
 Supported workflow families:
 

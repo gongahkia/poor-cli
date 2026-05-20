@@ -16,7 +16,10 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   getGatewayJson,
+  postGatewayJson,
   type ApiSearchSuggestion,
+  type CounterpartyResolutionCandidate,
+  type CounterpartyResolutionResult,
 } from "@/lib/api/client";
 import { parseBulkInput } from "@/lib/bulk";
 import { rankSearchSuggestions } from "@/lib/search/rank-search-suggestions";
@@ -49,6 +52,7 @@ export function DiligenceSearch({
   const [status, setStatus] = useState<SearchStatus>("idle");
   const [suggestionStatus, setSuggestionStatus] = useState<SuggestionStatus>("idle");
   const [suggestions, setSuggestions] = useState<ApiSearchSuggestion[]>([]);
+  const [resolution, setResolution] = useState<CounterpartyResolutionResult | null>(null);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -123,7 +127,31 @@ export function DiligenceSearch({
       .filter((suggestion): suggestion is ApiSearchSuggestion => suggestion !== undefined);
   }, [query, suggestions]);
 
-  const runSearch = () => {
+  const candidateIdentifier = (candidate: CounterpartyResolutionCandidate): string =>
+    candidate.uen ?? candidate.entityName;
+
+  const navigateToCandidate = (
+    candidate: CounterpartyResolutionCandidate,
+    originalInput: string,
+    resolved?: CounterpartyResolutionResult,
+  ) => {
+    navigate(`/c/${encodeURIComponent(candidateIdentifier(candidate))}`, {
+      state: {
+        resolution: resolved ?? {
+          status: "resolved",
+          originalInput,
+          normalizedInput: originalInput.trim().toLowerCase(),
+          selectedCandidate: candidate,
+          candidates: [candidate],
+          confidenceBlockers: [],
+          sourcesSearched: [candidate.sourceRegistry],
+          limits: ["Candidate was selected before opening the dossier."],
+        } satisfies CounterpartyResolutionResult,
+      },
+    });
+  };
+
+  const runSearch = async () => {
     if (!trimmedQuery) {
       setStatus("error");
       setError("Enter a client or counterparty company name or UEN.");
@@ -167,9 +195,29 @@ export function DiligenceSearch({
 
     setStatus("submitting");
     setError(null);
+    setResolution(null);
 
     try {
-      navigate(`/c/${encodeURIComponent(identifier)}`);
+      const resolved = await postGatewayJson<CounterpartyResolutionResult>(
+        "/api/v1/dude/resolve-counterparty",
+        { identifier },
+      );
+      if (resolved.status === "resolved" && resolved.selectedCandidate !== null) {
+        navigateToCandidate(resolved.selectedCandidate, identifier, resolved);
+        return;
+      }
+      if (resolved.status === "needs_confirmation") {
+        setStatus("idle");
+        setResolution(resolved);
+        return;
+      }
+      setStatus("error");
+      setError(`No retained CDD registry match was found for "${identifier}".`);
+      notify({
+        title: "No registry match",
+        description: "Try a fuller Singapore company name or exact UEN.",
+        tone: "warning",
+      });
     } catch (err) {
       setStatus("error");
       const message = err instanceof Error ? err.message : "Navigation failed.";
@@ -180,10 +228,10 @@ export function DiligenceSearch({
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    runSearch();
+    void runSearch();
   };
 
-  const shouldShowSearchPanel = isSubmitting || error !== null || canLookupSuggestions || suggestionStatus !== "idle";
+  const shouldShowSearchPanel = isSubmitting || error !== null || resolution !== null || canLookupSuggestions || suggestionStatus !== "idle";
 
   const handleSuggestionClick = (suggestion: ApiSearchSuggestion) => {
     updateQuery(suggestion.entityName);
@@ -194,9 +242,11 @@ export function DiligenceSearch({
     <SearchDropdownContent
       error={error}
       isSubmitting={isSubmitting}
-      onRunSearch={runSearch}
+      onResolutionCandidateClick={(candidate) => navigateToCandidate(candidate, resolution?.originalInput ?? trimmedQuery)}
+      onRunSearch={() => void runSearch()}
       onSuggestionClick={handleSuggestionClick}
       rankedSuggestions={rankedSuggestions}
+      resolution={resolution}
       suggestionError={suggestionError}
       suggestionStatus={suggestionStatus}
       trimmedQuery={trimmedQuery}
@@ -212,9 +262,10 @@ export function DiligenceSearch({
           disabled={isSubmitting}
           dropdownContent={dropdownContent}
           isSubmitting={isSubmitting}
-          onSubmit={runSearch}
+          onSubmit={() => void runSearch()}
           onValueChange={(nextQuery) => {
             updateQuery(nextQuery);
+            setResolution(null);
             if (status === "error") {
               setStatus("idle");
               setError(null);
@@ -333,18 +384,22 @@ function CsvUploadDialog({
 function SearchDropdownContent({
   error,
   isSubmitting,
+  onResolutionCandidateClick,
   onRunSearch,
   onSuggestionClick,
   rankedSuggestions,
+  resolution,
   suggestionError,
   suggestionStatus,
   trimmedQuery,
 }: {
   error: string | null;
   isSubmitting: boolean;
+  onResolutionCandidateClick: (candidate: CounterpartyResolutionCandidate) => void;
   onRunSearch: () => void;
   onSuggestionClick: (suggestion: ApiSearchSuggestion) => void;
   rankedSuggestions: ApiSearchSuggestion[];
+  resolution: CounterpartyResolutionResult | null;
   suggestionError: string | null;
   suggestionStatus: SuggestionStatus;
   trimmedQuery: string;
@@ -363,6 +418,34 @@ function SearchDropdownContent({
     return (
       <div aria-live="polite" className="px-4 py-4">
         <p className="text-sm text-destructive">{error}</p>
+      </div>
+    );
+  }
+
+  if (resolution !== null && resolution.status === "needs_confirmation") {
+    return (
+      <div aria-label="Confirm counterparty match" aria-live="polite" className="max-h-96 overflow-y-auto px-3 py-3" role="listbox">
+        <p className="px-2 pb-1 text-xs font-medium uppercase tracking-normal text-muted-foreground">Confirm official match</p>
+        <p className="px-2 pb-3 text-xs leading-5 text-muted-foreground">
+          Multiple registry candidates matched "{resolution.originalInput}". Choose one before running CDD.
+        </p>
+        <div className="grid gap-1.5">
+          {resolution.candidates.map((candidate) => (
+            <button
+              className="rounded-[16px] border border-transparent px-3 py-3 text-left transition hover:border-border hover:bg-muted/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              key={candidate.id}
+              onClick={() => onResolutionCandidateClick(candidate)}
+              role="option"
+              type="button"
+            >
+              <span className="block text-sm font-medium text-foreground">{candidate.label}</span>
+              <span className="mt-1 block text-xs text-muted-foreground">
+                {candidate.sourceRegistry} · {candidate.uen ?? candidate.officialIdentifier ?? "no official identifier"} · score {candidate.score}
+              </span>
+              <span className="mt-1 block text-xs text-muted-foreground">{candidate.matchReason}</span>
+            </button>
+          ))}
+        </div>
       </div>
     );
   }

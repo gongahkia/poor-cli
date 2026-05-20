@@ -615,6 +615,115 @@
         }
       }
     },
+    "/api/v1/sg_cdd_report": {
+      "post": {
+        "summary": "Run the CDD orchestrator after safe counterparty resolution, returning dossier, memo, evidence, gaps, provenance, freshness, and limits.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "identifier": {
+                    "type": "string"
+                  },
+                  "entityName": {
+                    "type": "string"
+                  },
+                  "uen": {
+                    "type": "string"
+                  },
+                  "salespersonName": {
+                    "type": "string"
+                  },
+                  "registrationNo": {
+                    "type": "string"
+                  },
+                  "estateAgentName": {
+                    "type": "string"
+                  },
+                  "estateAgentLicenseNo": {
+                    "type": "string"
+                  },
+                  "classCode": {
+                    "type": "string"
+                  },
+                  "workhead": {
+                    "type": "string"
+                  },
+                  "grade": {
+                    "type": "string"
+                  },
+                  "modules": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "acra",
+                        "bca",
+                        "cea",
+                        "gebiz",
+                        "boa",
+                        "hsa",
+                        "hlb"
+                      ]
+                    }
+                  },
+                  "sectorHints": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "construction",
+                        "real_estate",
+                        "architecture",
+                        "healthcare",
+                        "hospitality",
+                        "procurement"
+                      ]
+                    }
+                  },
+                  "confirmedCandidate": {},
+                  "includeContextIds": {
+                    "type": "boolean"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
     "/api/v1/sg_cea_salespersons": {
       "post": {
         "summary": "Look up CEA salesperson registrations by exact salesperson, registration number, estate agent, or estate-agent licence number.",
@@ -1388,6 +1497,90 @@
                 },
                 "required": [
                   "requestId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_resolve_counterparty": {
+      "post": {
+        "summary": "Resolve a raw Singapore counterparty name or UEN into official CDD registry candidates before running a report.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "identifier": {
+                    "type": "string"
+                  },
+                  "modules": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "acra",
+                        "bca",
+                        "cea",
+                        "gebiz",
+                        "boa",
+                        "hsa",
+                        "hlb"
+                      ]
+                    }
+                  },
+                  "sectorHints": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "construction",
+                        "real_estate",
+                        "architecture",
+                        "healthcare",
+                        "hospitality",
+                        "procurement"
+                      ]
+                    }
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "required": [
+                  "identifier"
                 ],
                 "additionalProperties": false
               }

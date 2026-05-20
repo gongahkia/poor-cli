@@ -1,6 +1,7 @@
 import type { HlbHotelRecord } from "@dude/shared";
 import { downloadDatasetGeoJson } from "../datagov/client.js";
 import { applyDirectoryFilters, normalizePostalCode, parseFmelTimestamp, toNullableString, toNumberOrNull } from "../civic/utils.js";
+import { scoreBusinessNameMatch } from "../../diligence/name-matching.js";
 
 const HLB_HOTELS_DATASET_ID = "d_654e22f14e5bb817423f0e0c9ac4f632";
 const HLB_HOTELS_SOURCE_URL = "https://data.gov.sg/collections/140/view";
@@ -21,12 +22,8 @@ type HlbHotelFeature = {
   };
 };
 
-const normalizeCompare = (value: string | undefined): string => {
-  return (value ?? "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLowerCase();
-};
+const nameMatches = (actual: string | null | undefined, expected: string | undefined): boolean =>
+  expected === undefined || scoreBusinessNameMatch(expected, actual ?? "").matches;
 
 const normalizeHotel = (feature: HlbHotelFeature): HlbHotelRecord => {
   const coordinates = feature.geometry.coordinates ?? [];
@@ -61,13 +58,20 @@ export const getHlbHotels = async (
   }>,
 ): Promise<readonly HlbHotelRecord[]> => {
   const collection = await downloadDatasetGeoJson<HlbHotelFeature["properties"]>(HLB_HOTELS_DATASET_ID, "DAILY");
-  const normalizedKeeperName = normalizeCompare(params.keeperName);
   const records = collection.features
     .map((feature) => normalizeHotel(feature as unknown as HlbHotelFeature))
     .filter((record) =>
-      normalizedKeeperName === ""
-      || normalizeCompare(record.keeperName ?? "").includes(normalizedKeeperName),
+      nameMatches(record.keeperName, params.keeperName),
     );
 
-  return applyDirectoryFilters(records, params);
+  const directoryParams = {
+    ...(params.postalCode === undefined ? {} : { postalCode: params.postalCode }),
+    ...(params.lat === undefined ? {} : { lat: params.lat }),
+    ...(params.lng === undefined ? {} : { lng: params.lng }),
+    ...(params.radiusKm === undefined ? {} : { radiusKm: params.radiusKm }),
+    ...(params.limit === undefined ? {} : { limit: params.limit }),
+  };
+
+  return applyDirectoryFilters(records, directoryParams)
+    .filter((record) => nameMatches(record.name, params.name));
 };

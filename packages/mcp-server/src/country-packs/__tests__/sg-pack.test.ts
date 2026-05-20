@@ -19,8 +19,10 @@ describe("Singapore country pack", () => {
   it("keeps all registered tools in the sg_* namespace", () => {
     const names = SINGAPORE_COUNTRY_PACK.toolDefinitions.map((definition) => definition.name);
 
-    expect(names).toHaveLength(26);
+    expect(names).toHaveLength(28);
     expect(names.every((name) => name.startsWith("sg_"))).toBe(true);
+    expect(names).toContain("sg_cdd_report");
+    expect(names).toContain("sg_resolve_counterparty");
     expect(names).toContain("sg_business_dossier");
     expect(names).toContain("sg_query");
     expect(names).toContain("sg_sanctions_screen");

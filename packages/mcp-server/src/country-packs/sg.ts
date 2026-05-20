@@ -3,6 +3,7 @@ import { bcaToolDefinitions } from "../tools/bca-tools.js";
 import { boaToolDefinitions } from "../tools/boa-tools.js";
 import { briefToolDefinitions } from "../tools/brief-tools.js";
 import { cacheToolDefinitions } from "../tools/cache-tools.js";
+import { cddToolDefinitions } from "../tools/cdd-tools.js";
 import { ceaToolDefinitions } from "../tools/cea-tools.js";
 import { configToolDefinitions } from "../tools/config-tools.js";
 import { externalDiligenceToolDefinitions } from "../tools/external-diligence-tools.js";
@@ -24,6 +25,7 @@ const toolDefinitions = [
   ...hsaToolDefinitions,
   ...hlbToolDefinitions,
   ...externalDiligenceToolDefinitions,
+  ...cddToolDefinitions,
   ...briefToolDefinitions,
   ...healthCheckToolDefinitions,
   ...cacheToolDefinitions,

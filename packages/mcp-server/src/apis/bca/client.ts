@@ -5,6 +5,7 @@ import type {
   BcaRegisteredContractorRecord,
 } from "@dude/shared";
 import { queryDatastoreExactMatches } from "../datagov/client.js";
+import { scoreBusinessNameMatch } from "../../diligence/name-matching.js";
 
 const LICENSED_BUILDERS_RESOURCE_ID = "d_19573c579879be15623f2e1e3854926d";
 const REGISTERED_CONTRACTORS_RESOURCE_ID = "d_dcda79be4aded5f9e769b8e23ff69b47";
@@ -42,6 +43,9 @@ const normalizeCompare = (value: string): string =>
 const exactMatches = (actual: string, expected: string | undefined): boolean => {
   return expected === undefined || normalizeCompare(actual) === normalizeCompare(expected);
 };
+
+const nameMatches = (actual: string, expected: string | undefined): boolean =>
+  expected === undefined || scoreBusinessNameMatch(expected, actual).matches;
 
 const nullableString = (value: string): string | null => {
   const normalized = value.trim();
@@ -86,7 +90,7 @@ export const getBcaLicensedBuilders = async (
     filters: buildLicensedBuilderFilters(params),
     sort: "company_name asc",
     exactMatch: (row) =>
-      exactMatches(row.company_name, params.companyName)
+      nameMatches(row.company_name, params.companyName)
       && exactMatches(row.uen_no, params.uenNo)
       && exactMatches(row.class, params.className)
       && exactMatches(row.class_code, params.classCode),
@@ -118,7 +122,7 @@ export const getBcaRegisteredContractors = async (
     filters: buildRegisteredContractorFilters(params),
     sort: "company_name asc",
     exactMatch: (row) =>
-      exactMatches(row.company_name, params.companyName)
+      nameMatches(row.company_name, params.companyName)
       && exactMatches(row.uen_no, params.uenNo)
       && exactMatches(row.workhead, params.workhead)
       && exactMatches(row.grade, params.grade),

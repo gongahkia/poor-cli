@@ -6,13 +6,26 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { randomUUID } from "node:crypto";
 import { createLogger } from "@dude/shared";
 import { searchAcraEntitySuggestions } from "./apis/acra/client.js";
-import { getPeopleDiscovery, getWebPresence } from "./apis/tinyfish/client.js";
+import {
+  getPeopleDiscovery,
+  getWebPresence,
+  type PeopleDiscovery,
+  type WebPresence,
+  type WebSearchResult,
+} from "./apis/tinyfish/client.js";
 import { buildBulkDossierResponse } from "./dude/bulk-dossiers.js";
 import {
   CddOrchestratorBadRequestError,
   normalizeCddOrchestratorInput,
   runCddOrchestrator,
 } from "./dude/cdd-orchestrator.js";
+import {
+  buildConfirmedResolution,
+  buildDossierInputFromResolutionCandidate,
+  isResolutionCandidate,
+  resolveCounterparty,
+  type CounterpartyResolutionResult,
+} from "./dude/counterparty-resolver.js";
 import { generateAnalystMemo, type AnalystMemoDossier } from "./dude/analyst-memo.js";
 import { generateInteractiveSummary } from "./dude/interactive-summary.js";
 import {
@@ -192,6 +205,59 @@ const summarizeBusinessInput = (input: unknown): Record<string, unknown> => {
   };
 };
 
+const getStringField = (record: Record<string, unknown>, field: string): string | undefined => {
+  const value = record[field];
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
+};
+
+const getStringArrayField = (record: Record<string, unknown>, field: string): readonly string[] | undefined => {
+  const value = record[field];
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const strings = value.filter((item): item is string => typeof item === "string" && item.trim() !== "");
+  return strings.length === 0 ? undefined : strings;
+};
+
+const buildConfirmedDossierInput = (
+  body: Record<string, unknown>,
+): { readonly input: Record<string, unknown>; readonly resolution: CounterpartyResolutionResult } | null => {
+  const confirmedCandidate = body["confirmedCandidate"];
+  if (!isResolutionCandidate(confirmedCandidate)) {
+    return null;
+  }
+  const originalInput = getStringField(body, "identifier")
+    ?? getStringField(body, "entityName")
+    ?? confirmedCandidate.label;
+  const modules = getStringArrayField(body, "modules");
+  const sectorHints = getStringArrayField(body, "sectorHints");
+  return {
+    input: {
+      ...buildDossierInputFromResolutionCandidate(confirmedCandidate),
+      ...(modules === undefined ? {} : { modules }),
+      ...(sectorHints === undefined ? {} : { sectorHints }),
+      includeExternalDiligence: true,
+    },
+    resolution: buildConfirmedResolution(originalInput, confirmedCandidate),
+  };
+};
+
+const shouldResolveDossierInput = (
+  body: Record<string, unknown>,
+  dossierInput: Record<string, unknown>,
+): string | null => {
+  if (typeof dossierInput["uen"] === "string" && UEN_PATTERN.test(dossierInput["uen"])) {
+    return null;
+  }
+  return getStringField(body, "identifier")
+    ?? getStringField(dossierInput, "entityName")
+    ?? null;
+};
+
 const summarizeMemoInput = (input: unknown): Record<string, unknown> => {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
     return {};
@@ -200,16 +266,24 @@ const summarizeMemoInput = (input: unknown): Record<string, unknown> => {
   const identifier = typeof record["identifier"] === "string" ? record["identifier"].trim() : "";
   const dossier = record["dossier"];
   const webPresence = record["webPresence"];
+  const peopleDiscovery = record["peopleDiscovery"];
   return {
     hasDossier: dossier !== null && typeof dossier === "object" && !Array.isArray(dossier),
     ...(identifier === "" ? {} : {
       identifierLength: identifier.length,
       identifierLooksLikeUen: UEN_PATTERN.test(identifier),
     }),
+    hasPeopleDiscovery: peopleDiscovery !== null
+      && typeof peopleDiscovery === "object"
+      && !Array.isArray(peopleDiscovery),
     hasWebPresenceLimits: webPresence !== null
       && typeof webPresence === "object"
       && !Array.isArray(webPresence)
       && Array.isArray((webPresence as Record<string, unknown>)["limits"]),
+    hasWebPresenceResults: webPresence !== null
+      && typeof webPresence === "object"
+      && !Array.isArray(webPresence)
+      && Array.isArray((webPresence as Record<string, unknown>)["results"]),
   };
 };
 
@@ -304,19 +378,66 @@ const resolveMemoDossier = async (input: Record<string, unknown>): Promise<Analy
   return record;
 };
 
+const sanitizeString = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+};
+
+const sanitizeStringArray = (value: unknown): readonly string[] =>
+  Array.isArray(value)
+    ? value.map(sanitizeString).filter((item): item is string => item !== null)
+    : [];
+
+const sanitizeSearchResultsForMemo = (value: unknown): readonly WebSearchResult[] => {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item, index): WebSearchResult[] => {
+    if (!isRecord(item)) return [];
+    const url = sanitizeString(item["url"]);
+    if (url === null) return [];
+    const title = sanitizeString(item["title"]) ?? url;
+    return [{
+      position: typeof item["position"] === "number" && Number.isFinite(item["position"])
+        ? item["position"]
+        : index + 1,
+      siteName: sanitizeString(item["siteName"]),
+      snippet: sanitizeString(item["snippet"]) ?? "",
+      title,
+      url,
+    }];
+  });
+};
+
 const sanitizeWebPresenceForMemo = (
   value: unknown,
-): { readonly configured: boolean; readonly limits: readonly string[] } | undefined => {
+): WebPresence | undefined => {
   if (!isRecord(value)) {
     return undefined;
   }
-  const configured = value["configured"];
-  const limits = value["limits"];
   return {
-    configured: configured === true,
-    limits: Array.isArray(limits)
-      ? limits.filter((item): item is string => typeof item === "string" && item.trim() !== "").map((item) => item.trim())
-      : [],
+    configured: value["configured"] === true,
+    limits: sanitizeStringArray(value["limits"]),
+    possibleOfficialWebsite: sanitizeString(value["possibleOfficialWebsite"]),
+    query: sanitizeString(value["query"]) ?? "",
+    results: sanitizeSearchResultsForMemo(value["results"]),
+  };
+};
+
+const sanitizePeopleDiscoveryForMemo = (
+  value: unknown,
+): PeopleDiscovery | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const entityName = sanitizeString(value["entityName"]) ?? "";
+  return {
+    configured: value["configured"] === true,
+    entityName,
+    limits: sanitizeStringArray(value["limits"]),
+    query: sanitizeString(value["query"]) ?? entityName,
+    results: sanitizeSearchResultsForMemo(value["results"]),
+    suggestedActions: sanitizeStringArray(value["suggestedActions"]),
+    uen: sanitizeString(value["uen"]),
   };
 };
 
@@ -496,6 +617,83 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/v1/dude/resolve-counterparty") {
+    try {
+      requireWorkspaceAccess(req, "search:run");
+      const body = await readBody(req, trafficPolicy.maxBodyBytes);
+      const input = body === "" ? {} : JSON.parse(body);
+      if (!isRecord(input)) {
+        throw new BadRequestError("INVALID_RESOLUTION_INPUT", "Counterparty resolution request body must be a JSON object.");
+      }
+      const identifier = getStringField(input, "identifier");
+      if (identifier === undefined) {
+        throw new BadRequestError("RESOLUTION_IDENTIFIER_REQUIRED", "Provide a company name, UEN, or retained CDD registry name identifier.");
+      }
+      if (identifier.length > MAX_SEARCH_QUERY_LENGTH) {
+        sendJson(res, 400, buildLimitMessage("Counterparty identifier", MAX_SEARCH_QUERY_LENGTH));
+        return;
+      }
+      safeInputSummary = summarizeQueryInput(identifier);
+      const startedAt = Date.now();
+      const resolution = await resolveCounterparty({
+        identifier,
+        ...(getStringArrayField(input, "modules") === undefined ? {} : { modules: getStringArrayField(input, "modules") as never }),
+        ...(getStringArrayField(input, "sectorHints") === undefined ? {} : { sectorHints: getStringArrayField(input, "sectorHints") as never }),
+        ...(typeof input["limit"] === "number" ? { limit: input["limit"] } : {}),
+      });
+      requestLogger.info("counterparty resolution finished", {
+        ...safeInputSummary,
+        status: resolution.status,
+        candidates: resolution.candidates.length,
+        durationMs: Date.now() - startedAt,
+      });
+      sendJson(res, 200, resolution);
+    } catch (err) {
+      if (err instanceof WorkspaceApiAccessError) {
+        requestLogger.warn("counterparty resolution workspace access denied", { code: err.code });
+        sendWorkspaceAccessError(res, err);
+        return;
+      }
+      if (err instanceof RequestBodyTooLargeError) {
+        sendJson(res, err.statusCode, {
+          error: {
+            code: "REQUEST_BODY_TOO_LARGE",
+            message: `Request body must be ${err.maxBytes} bytes or smaller.`,
+          },
+        });
+        return;
+      }
+      if (err instanceof BadRequestError) {
+        sendJson(res, err.statusCode, {
+          error: {
+            code: err.code,
+            message: err.message,
+          },
+        });
+        return;
+      }
+      if (err instanceof SyntaxError) {
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_JSON",
+            message: "Request body must be valid JSON.",
+          },
+        });
+        return;
+      }
+      requestLogger.error("counterparty resolution failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      sendJson(res, 500, {
+        error: {
+          code: "COUNTERPARTY_RESOLUTION_FAILED",
+          message: "Counterparty resolution failed.",
+        },
+      });
+    }
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/v1/dude/cdd-orchestrator") {
     try {
       requireWorkspaceAccess(req, "search:run");
@@ -505,10 +703,43 @@ const server = createServer(async (req, res) => {
       if (!isRecord(input)) {
         throw new BadRequestError("INVALID_CDD_ORCHESTRATOR_INPUT", "CDD orchestrator request body must be a JSON object.");
       }
-      const dossierInput = normalizeCddOrchestratorInput(input);
+      const confirmed = buildConfirmedDossierInput(input);
+      let resolution: CounterpartyResolutionResult | undefined = confirmed?.resolution;
+      let dossierInput = confirmed?.input ?? normalizeCddOrchestratorInput(input);
+      const resolutionIdentifier = confirmed === null
+        ? shouldResolveDossierInput(input, dossierInput as Record<string, unknown>)
+        : null;
+      if (resolutionIdentifier !== null) {
+        const resolverResult = await resolveCounterparty({
+          identifier: resolutionIdentifier,
+          ...(getStringArrayField(input, "modules") === undefined ? {} : { modules: getStringArrayField(input, "modules") as never }),
+          ...(getStringArrayField(input, "sectorHints") === undefined ? {} : { sectorHints: getStringArrayField(input, "sectorHints") as never }),
+        });
+        if (resolverResult.status !== "resolved" || resolverResult.selectedCandidate === null) {
+          sendJson(res, 409, {
+            error: {
+              code: "COUNTERPARTY_RESOLUTION_REQUIRED",
+              message: resolverResult.status === "needs_confirmation"
+                ? "Multiple plausible registry candidates require confirmation before running CDD."
+                : "No retained CDD registry candidate matched the supplied identifier.",
+            },
+            resolution: resolverResult,
+          });
+          return;
+        }
+        resolution = resolverResult;
+        dossierInput = {
+          ...buildDossierInputFromResolutionCandidate(resolverResult.selectedCandidate),
+          ...(getStringArrayField(input, "modules") === undefined ? {} : { modules: getStringArrayField(input, "modules") }),
+          ...(getStringArrayField(input, "sectorHints") === undefined ? {} : { sectorHints: getStringArrayField(input, "sectorHints") }),
+          includeExternalDiligence: true,
+        };
+      }
       safeInputSummary = summarizeBusinessInput(dossierInput);
       const startedAt = Date.now();
-      const response = await runCddOrchestrator(dossierInput);
+      const response = await runCddOrchestrator(dossierInput, {
+        ...(resolution === undefined ? {} : { resolution }),
+      });
       const dossierSummary = summarizeBusinessDossier(response.dossier);
       recordUpstreamFailures("dude_cdd_orchestrator", dossierSummary.upstreamFailures);
       requestLogger.info("cdd orchestrator finished", {
@@ -657,9 +888,11 @@ const server = createServer(async (req, res) => {
       safeInputSummary = summarizeMemoInput(input);
       const startedAt = Date.now();
       const dossier = await resolveMemoDossier(input);
+      const peopleDiscovery = sanitizePeopleDiscoveryForMemo(input["peopleDiscovery"]);
       const webPresence = sanitizeWebPresenceForMemo(input["webPresence"]);
       const memo = await generateAnalystMemo({
         dossier,
+        ...(peopleDiscovery === undefined ? {} : { peopleDiscovery }),
         ...(webPresence === undefined ? {} : { webPresence }),
       });
       requestLogger.info("analyst memo finished", {

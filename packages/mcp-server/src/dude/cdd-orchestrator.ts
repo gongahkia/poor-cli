@@ -2,6 +2,7 @@ import { getPeopleDiscovery, getWebPresence, type PeopleDiscovery, type WebPrese
 import type { BusinessDossierModule, BusinessSectorHint } from "../diligence/entity-resolution.js";
 import { generateAnalystMemo, type AnalystMemoDossier } from "./analyst-memo.js";
 import { handleBusinessDossier } from "../tools/brief-tools.js";
+import type { CounterpartyResolutionResult } from "./counterparty-resolver.js";
 
 type BusinessDossierInput = Parameters<typeof handleBusinessDossier>[0];
 type AnalystMemoResponse = Awaited<ReturnType<typeof generateAnalystMemo>>;
@@ -29,6 +30,7 @@ export type CddOrchestratorResponse = {
   readonly peopleDiscovery: PeopleDiscovery;
   readonly memo: AnalystMemoResponse;
   readonly generatedAt: string;
+  readonly resolution?: CounterpartyResolutionResult;
   readonly orchestration: {
     readonly status: "ready" | "identity_not_resolved";
     readonly strategy: "acra_then_sector_then_supplemental_memo";
@@ -41,6 +43,10 @@ export type CddOrchestratorResponse = {
     readonly stages: readonly CddOrchestratorStage[];
     readonly limits: readonly string[];
   };
+};
+
+export type CddOrchestratorOptions = {
+  readonly resolution?: CounterpartyResolutionResult;
 };
 
 export class CddOrchestratorBadRequestError extends Error {
@@ -107,7 +113,68 @@ const isDossier = (value: unknown): value is AnalystMemoDossier =>
   && Array.isArray(value["gaps"])
   && Array.isArray(value["provenance"])
   && Array.isArray(value["freshness"])
-  && Array.isArray(value["limits"]);
+    && Array.isArray(value["limits"]);
+
+const withResolutionMetadata = (
+  dossier: AnalystMemoDossier,
+  resolution: CounterpartyResolutionResult | undefined,
+): AnalystMemoDossier => {
+  if (resolution === undefined) {
+    return dossier;
+  }
+
+  const selected = resolution.selectedCandidate;
+  const resolutionGap = selected !== null
+    && selected.matchMethod !== "exact_identifier"
+    && selected.matchMethod !== "exact_normalized"
+    && selected.matchMethod !== "legal_suffix_normalized"
+      ? [{
+          code: "RESOLUTION_FUZZY_MATCH",
+          message: `Input "${resolution.originalInput}" resolved to "${selected.label}" using ${selected.matchMethod}; confirm source rows before final decisions.`,
+        }]
+      : [];
+
+  return {
+    ...dossier,
+    records: {
+      ...dossier.records,
+      resolution: {
+        ...(isRecord(dossier.records["resolution"]) ? dossier.records["resolution"] : {}),
+        originalInput: resolution.originalInput,
+        normalizedInput: resolution.normalizedInput,
+        resolutionStatus: resolution.status,
+        selectedCandidate: selected,
+        candidates: resolution.candidates,
+        matchMethod: selected?.matchMethod ?? null,
+        matchScore: selected?.score ?? null,
+        confirmationRequired: resolution.status === "needs_confirmation",
+        confidenceBlockers: resolution.confidenceBlockers,
+        sourcesSearched: resolution.sourcesSearched,
+      },
+    },
+    gaps: [
+      ...dossier.gaps,
+      ...resolutionGap,
+      ...(
+        resolution.status === "needs_confirmation"
+          ? [{ code: "RESOLUTION_CONFIRMATION_REQUIRED", message: "Multiple plausible registry candidates require analyst confirmation before relying on this dossier." }]
+          : []
+      ),
+      ...(
+        resolution.status === "no_match"
+          ? [{ code: "RESOLUTION_NO_MATCH", message: "No retained CDD registry candidate matched the original input." }]
+          : []
+      ),
+    ],
+    limits: [
+      ...dossier.limits,
+      {
+        code: "SAFE_ENTITY_RESOLUTION",
+        message: "Raw user input is normalized against official registry candidates; ambiguous matches require confirmation and identifier fields remain exact-match only.",
+      },
+    ],
+  };
+};
 
 const isBusinessDossierModule = (value: unknown): value is BusinessDossierModule =>
   typeof value === "string" && (BUSINESS_DOSSIER_MODULES as readonly string[]).includes(value);
@@ -457,13 +524,14 @@ const buildIdentityBlockedStages = (reason: string, memo: AnalystMemoResponse): 
 
 export const runCddOrchestrator = async (
   input: BusinessDossierInput,
+  options: CddOrchestratorOptions = {},
 ): Promise<CddOrchestratorResponse> => {
   const generatedAt = new Date().toISOString();
   const baseInput: BusinessDossierInput = {
     ...input,
     includeExternalDiligence: true,
   };
-  const firstDossier = await resolveBusinessDossierRecord(baseInput);
+  const firstDossier = withResolutionMetadata(await resolveBusinessDossierRecord(baseInput), options.resolution);
   const webPresenceQuery = buildWebPresenceQuery(firstDossier, baseInput);
   const entityName = getDossierSummaryString(firstDossier, "Entity") ?? baseInput.entityName ?? webPresenceQuery;
   const uen = getDossierSummaryString(firstDossier, "UEN") ?? baseInput.uen ?? null;
@@ -479,6 +547,7 @@ export const runCddOrchestrator = async (
       peopleDiscovery: buildSkippedPeopleDiscovery({ entityName, uen, reason }),
       memo,
       generatedAt,
+      ...(options.resolution === undefined ? {} : { resolution: options.resolution }),
       orchestration: {
         status: "identity_not_resolved",
         strategy: "acra_then_sector_then_supplemental_memo",
@@ -506,10 +575,10 @@ export const runCddOrchestrator = async (
   ]);
   const hasNewWebSectorHint = webSectorHints.some((hint) => !acraSectorHints.includes(hint));
   const finalDossier = hasNewWebSectorHint
-    ? await resolveBusinessDossierRecord({
+    ? withResolutionMetadata(await resolveBusinessDossierRecord({
         ...baseInput,
         sectorHints: mergedSectorHints,
-      })
+      }), options.resolution)
     : firstDossier;
   const finalEntityName = getDossierSummaryString(finalDossier, "Entity") ?? entityName;
   const finalUen = getDossierSummaryString(finalDossier, "UEN") ?? uen;
@@ -519,6 +588,7 @@ export const runCddOrchestrator = async (
   });
   const memo = await generateAnalystMemo({
     dossier: finalDossier,
+    peopleDiscovery,
     webPresence,
   });
 
@@ -528,6 +598,7 @@ export const runCddOrchestrator = async (
     peopleDiscovery,
     memo,
     generatedAt,
+    ...(options.resolution === undefined ? {} : { resolution: options.resolution }),
     orchestration: {
       status: "ready",
       strategy: "acra_then_sector_then_supplemental_memo",

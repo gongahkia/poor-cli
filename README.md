@@ -43,10 +43,12 @@ Removed from the product/runtime surface: housing, property, macro, transport, t
 
 ## Retained Tools
 
-Current runtime surface: 26 `sg_*` tools total across 11 CDD catalog families, including 10 sg_query-routed CDD families. The web product and embedded integrations run through the CDD orchestrator; `sg_query` is the bounded preferred MCP interface for goal-shaped CDD prompts. Direct `sg_business_dossier` remains as a low-level compatibility API, not the normal product path.
+Current runtime surface: 28 `sg_*` tools total across 11 CDD catalog families, including safe counterparty resolution, structured CDD reports, and 10 sg_query-routed CDD families. The web product and embedded integrations run through the CDD orchestrator; `sg_cdd_report` is the structured MCP report interface and `sg_query` is the bounded natural-language interface for goal-shaped CDD prompts. Direct `sg_business_dossier` remains as a low-level compatibility API, not the normal product path.
 
 CDD tools:
 
+- `sg_resolve_counterparty` for safe fuzzy/normalized candidate resolution before report generation
+- `sg_cdd_report` for structured agent-facing CDD reports
 - `sg_query` for business/sector diligence prompts only
 - `sg_business_dossier` as an advanced compatibility API
 - `sg_acra_entities`
