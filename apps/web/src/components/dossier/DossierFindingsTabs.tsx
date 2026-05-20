@@ -14,12 +14,14 @@ import { useMemo, useState, type ReactNode } from "react";
 import { AnalystMemoSection, type AnalystMemoState } from "@/components/dossier/AnalystMemoSection";
 import { ConfidenceSection } from "@/components/dossier/ConfidenceSection";
 import { EvidenceSection, type ModuleFollowUpRequest, type RunningBusinessModule } from "@/components/dossier/EvidenceSection";
+import { FollowUpInputView, FollowUpResultView } from "@/components/dossier/FollowUpResultView";
 import { GapsSection } from "@/components/dossier/GapsSection";
 import { HandoffSection } from "@/components/dossier/HandoffSection";
 import { NextChecksSection } from "@/components/dossier/NextChecksSection";
 import { PdpaChecklistSection } from "@/components/dossier/PdpaChecklistSection";
 import { PeopleDiscoverySection, type PeopleDiscoveryState } from "@/components/dossier/PeopleDiscoverySection";
 import { ProvenanceSection } from "@/components/dossier/ProvenanceSection";
+import { ReportPreview } from "@/components/dossier/ReportPreview";
 import { RiskSection } from "@/components/dossier/RiskSection";
 import { SnapshotSection } from "@/components/dossier/SnapshotSection";
 import { SourceUseWarningsSection } from "@/components/dossier/SourceUseWarningsSection";
@@ -610,6 +612,7 @@ function getSupplementalEvidencePackSegments(
     .map((pack) => ({
       citation: findAnyCitation(citations, pack.pattern),
       label: pack.label,
+      pattern: pack.pattern,
     }))
     .filter((pack) => pack.citation !== undefined || dossier.records.externalDiligence?.some((record) =>
       typeof record.title === "string" && pack.pattern.test(record.title)));
@@ -978,9 +981,17 @@ function CitedSummary({
 }
 
 function ReportBuilder({
+  dossier,
+  memoState,
   onExportReport,
+  peopleDiscoveryState,
+  webPresenceState,
 }: {
+  dossier: BusinessDossier;
+  memoState: AnalystMemoState;
   onExportReport: (template: ReportTemplate, format: ReportExportFormat) => void;
+  peopleDiscoveryState: PeopleDiscoveryState;
+  webPresenceState: WebPresenceState;
 }) {
   const [template, setTemplate] = useState<ReportTemplate>(DEFAULT_REPORT_TEMPLATE);
 
@@ -1007,25 +1018,34 @@ function ReportBuilder({
       </div>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
-        <label className="block rounded-md border border-border bg-background p-4">
-          <span className="text-sm font-semibold text-foreground">Writing preset</span>
-          <select
-            aria-label="Report writing style"
-            className="mt-3 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            onChange={(event) => setTemplate((current) => ({
-              ...current,
-              writingStyle: event.target.value as ReportWritingStyle,
-            }))}
-            value={template.writingStyle}
-          >
-            {writingStyles.map((style) => (
-              <option key={style} value={style}>{REPORT_WRITING_STYLE_LABELS[style]}</option>
-            ))}
-          </select>
-          <span className="mt-2 block text-sm leading-6 text-muted-foreground">
-            {REPORT_WRITING_STYLE_DESCRIPTIONS[template.writingStyle]}
-          </span>
-        </label>
+        <div className="space-y-4">
+          <label className="block rounded-md border border-border bg-background p-4">
+            <span className="text-sm font-semibold text-foreground">Writing preset</span>
+            <select
+              aria-label="Report writing style"
+              className="mt-3 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              onChange={(event) => setTemplate((current) => ({
+                ...current,
+                writingStyle: event.target.value as ReportWritingStyle,
+              }))}
+              value={template.writingStyle}
+            >
+              {writingStyles.map((style) => (
+                <option key={style} value={style}>{REPORT_WRITING_STYLE_LABELS[style]}</option>
+              ))}
+            </select>
+            <span className="mt-2 block text-sm leading-6 text-muted-foreground">
+              {REPORT_WRITING_STYLE_DESCRIPTIONS[template.writingStyle]}
+            </span>
+          </label>
+          <ReportPreview
+            dossier={dossier}
+            memoState={memoState}
+            peopleDiscoveryState={peopleDiscoveryState}
+            template={template}
+            webPresenceState={webPresenceState}
+          />
+        </div>
 
         <div className="rounded-md border border-border bg-background p-4">
           <h3 className="text-sm font-semibold text-foreground">Sections</h3>
@@ -1235,25 +1255,13 @@ function EvidenceDialog({
                 <p className="text-xs font-medium uppercase text-muted-foreground">Supported Dude tool</p>
                 <p className="mt-1 font-mono text-sm text-foreground">{state.tool}</p>
               </div>
-              <div className="rounded-md border border-border bg-background p-3">
-                <p className="text-xs font-medium uppercase text-muted-foreground">Input</p>
-                <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">
-                  {JSON.stringify(state.input, null, 2)}
-                </pre>
-              </div>
+              <FollowUpInputView input={state.input} />
               {state.error === undefined ? null : (
                 <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
                   {state.error}
                 </p>
               )}
-              {state.result === undefined ? null : (
-                <div className="rounded-md border border-border bg-background p-3">
-                  <p className="text-xs font-medium uppercase text-muted-foreground">Result</p>
-                  <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">
-                    {JSON.stringify(state.result, null, 2)}
-                  </pre>
-                </div>
-              )}
+              {state.result === undefined ? null : <FollowUpResultView result={state.result} />}
               <Button
                 disabled={state.status === "running"}
                 onClick={() => onRunFollowUp(state)}
@@ -1357,7 +1365,13 @@ export function DossierFindingsTabs({
           webPresenceState={webPresenceState}
         />
       ) : (
-        <ReportBuilder onExportReport={onExportReport} />
+        <ReportBuilder
+          dossier={dossier}
+          memoState={memoState}
+          onExportReport={onExportReport}
+          peopleDiscoveryState={peopleDiscoveryState}
+          webPresenceState={webPresenceState}
+        />
       )}
 
       <EvidenceDialog
