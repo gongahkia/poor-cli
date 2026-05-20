@@ -106,6 +106,9 @@ describe("tool catalog parity", () => {
         expect.objectContaining({ name: "External Diligence", tools: ["sg_sanctions_screen", "sg_opencorporates_links", "sg_adverse_media_lite", "sg_relationship_graph"] }),
       ]),
     );
+    expect(API_CATALOG
+      .filter((api) => api.name !== "Operations")
+      .every((api) => api.preferredInterface === "sg_query")).toBe(true);
   });
 });
 

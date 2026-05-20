@@ -18,12 +18,12 @@ Removed from the product/runtime surface: housing, property, macro, transport, t
 
 ## Retained Tools
 
-Current runtime surface: 26 `sg_*` tools total across 11 CDD catalog families. `sg_query` is the bounded preferred interface across 2 sg_query-routed CDD families.
+Current runtime surface: 26 `sg_*` tools total across 11 CDD catalog families, including 10 sg_query-routed CDD families. The web product and embedded integrations run through the CDD orchestrator; `sg_query` is the bounded preferred MCP interface for goal-shaped CDD prompts. Direct `sg_business_dossier` remains as a low-level compatibility API, not the normal product path.
 
 CDD tools:
 
 - `sg_query` for business/sector diligence prompts only
-- `sg_business_dossier`
+- `sg_business_dossier` as an advanced compatibility API
 - `sg_acra_entities`
 - `sg_bca_licensed_builders`
 - `sg_bca_registered_contractors`
@@ -82,7 +82,7 @@ PDF and DOCX are the primary report outputs. JSON and CSV are advanced data expo
 ## CDD Catalog Families
 
 - CDD Query
-- Business Dossier
+- Business Dossier compatibility API
 - ACRA
 - BCA
 - BOA

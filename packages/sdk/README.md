@@ -33,19 +33,19 @@ const dude = createDudeClient({
   token: process.env.DUDE_API_TOKEN,
 });
 
-const dossier = await dude.businessDossier({
+const report = await dude.cddReport({
   uen: "201900001A",
   includeContextIds: true,
 });
 
-console.log(dossier.summary);
+console.log(report.dossier.summary);
 ```
 
-Generic tool calls are available when the caller already knows the stable `sg_*` contract:
+Generic tool calls and low-level compatibility APIs are available when the caller already knows the stable `sg_*` contract:
 
 ```ts
-const result = await dude.callTool("sg_nea_forecast_2hr", {
-  area: "Bedok",
+const dossier = await dude.businessDossier({
+  uen: "201900001A",
 });
 ```
 
@@ -58,7 +58,8 @@ const result = await dude.callTool("sg_nea_forecast_2hr", {
 | `client.health()` | Reads `/api/v1/health`. |
 | `client.listTools()` | Reads `/api/v1/tools`. |
 | `client.callTool<T>(toolName, input)` | Calls `POST /api/v1/<toolName>` and unwraps `data.record` if present. |
-| `client.businessDossier(input)` | Validates and calls `sg_business_dossier`. |
+| `client.cddReport(input)` | Validates input and calls the product CDD orchestrator. |
+| `client.businessDossier(input)` | Low-level compatibility method for `sg_business_dossier`. |
 | `client.query(input)` | Validates and calls `sg_query`. |
 | `DudeApiError` | Error type with `status` and raw `payload` from failed gateway responses. |
 

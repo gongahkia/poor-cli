@@ -4,7 +4,9 @@ This repository is now one product surface: Singapore counterparty due diligence
 
 Dude's job is to let a user search a Singapore company name or UEN, generate a cited CDD summary, inspect supporting evidence on demand, and export a report for analyst review.
 
-The `sg_*` namespace remains stable for compatibility, but the exposed runtime is CDD-only.
+The product and runtime posture is CDD-only.
+
+The `sg_*` namespace remains stable for compatibility, but the product path is the CDD orchestrator. Direct `sg_business_dossier` and sector tools are low-level compatibility APIs for advanced callers with exact structured parameters.
 
 ## Hard Rules
 
@@ -20,16 +22,16 @@ Never invent CDD values.
 
 | User asks about... | Preferred tool | Direct follow-ups |
 | --- | --- | --- |
-| Company/UEN CDD report | `sg_business_dossier` or `sg_query` | `sg_acra_entities`, `sg_gebiz_tenders`, sector tools |
+| Company/UEN CDD report | CDD orchestrator or `sg_query` | `sg_acra_entities`, `sg_gebiz_tenders`, sector tools |
 | Goal-shaped CDD prompt | `sg_query` | Only for business/sector diligence prompts |
-| ACRA identity | `sg_acra_entities` | `sg_business_dossier` |
-| Construction contractor/builder | `sg_business_dossier` | `sg_bca_licensed_builders`, `sg_bca_registered_contractors` |
-| Architecture firm | `sg_business_dossier` | `sg_boa_architecture_firms`, `sg_boa_architects` |
-| Estate agent/salesperson | `sg_business_dossier` | `sg_cea_salespersons` |
-| Healthcare supplier/pharmacy | `sg_business_dossier` | `sg_hsa_health_product_licensees`, `sg_hsa_licensed_pharmacies` |
-| Hotel operator/keeper | `sg_business_dossier` | `sg_hlb_hotels` |
-| Procurement evidence | `sg_business_dossier` | `sg_gebiz_tenders` |
-| Supplemental checks | `sg_business_dossier` | `sg_sanctions_screen`, `sg_opencorporates_links`, `sg_adverse_media_lite`, `sg_relationship_graph` |
+| ACRA identity | CDD orchestrator first, `sg_acra_entities` for exact source rows | `sg_business_dossier` compatibility API |
+| Construction contractor/builder | CDD orchestrator with construction hint | `sg_bca_licensed_builders`, `sg_bca_registered_contractors` |
+| Architecture firm | CDD orchestrator with architecture hint | `sg_boa_architecture_firms`, `sg_boa_architects` |
+| Estate agent/salesperson | CDD orchestrator with real-estate hint | `sg_cea_salespersons` |
+| Healthcare supplier/pharmacy | CDD orchestrator with healthcare hint | `sg_hsa_health_product_licensees`, `sg_hsa_licensed_pharmacies` |
+| Hotel operator/keeper | CDD orchestrator with hospitality hint | `sg_hlb_hotels` |
+| Procurement evidence | CDD orchestrator with procurement hint | `sg_gebiz_tenders` |
+| Supplemental checks | CDD orchestrator first | `sg_sanctions_screen`, `sg_opencorporates_links`, `sg_adverse_media_lite`, `sg_relationship_graph` |
 | Runtime ops | ops tools | health, cache, key, config, trace, request lookup |
 
 ## Product UX

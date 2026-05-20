@@ -11,8 +11,10 @@ The system has two surfaces:
 
 ```mermaid
 flowchart LR
-  Search["Company / UEN Search"] --> Dossier["Business Dossier"]
-  Dossier --> Memo["Cited AI Summary"]
+  Search["Company / UEN Search"] --> Orchestrator["CDD Orchestrator"]
+  Orchestrator --> Dossier["Enriched Dossier"]
+  Orchestrator --> Memo["Cited AI Summary"]
+  Orchestrator --> Trace["Stage Trace"]
   Memo --> Evidence["Evidence Drawer / Evidence Pack"]
   Dossier --> Builder["Report Builder"]
   Builder --> PDF["PDF Export"]
@@ -53,7 +55,7 @@ Removed from runtime/product discovery:
 
 ## Query Planner
 
-`sg_query` only plans or executes CDD entity and sector diligence workflows. Non-CDD prompts return an explicit unsupported response. This keeps the agent contract honest and avoids pretending Dude is a general Singapore data assistant.
+`sg_query` only plans or executes CDD entity and sector diligence workflows, and execution uses the CDD orchestrator path. Non-CDD prompts return an explicit unsupported response. This keeps the agent contract honest and avoids pretending Dude is a general Singapore data assistant.
 
 Supported workflow families:
 

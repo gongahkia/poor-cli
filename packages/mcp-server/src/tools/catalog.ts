@@ -70,7 +70,7 @@ export type RuntimeCatalog = Readonly<Record<string, unknown>>;
 export const API_CATALOG: readonly ApiCatalogEntry[] = [
   {
     name: "CDD Query",
-    description: "Goal-shaped company and sector diligence prompts routed through the bounded CDD planner.",
+    description: "Goal-shaped company and sector diligence prompts routed through the bounded CDD orchestrator path.",
     tools: ["sg_query"],
     authRequired: false,
     rateLimit: "local planner",
@@ -78,16 +78,16 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
     preferredInterface: "sg_query",
     scopeNotes: [
       "CDD-only: non-company public-data prompts return unsupported with a CDD-specific suggestion.",
-      "Use direct tools when the caller already has exact structured parameters.",
+      "Use direct tools only as low-level compatibility APIs when the caller already has exact structured parameters.",
     ],
   },
   {
     name: "Business Dossier",
-    description: "Cross-registry CDD dossier for Singapore companies, UENs, estate agents, and sector-enriched counterparties.",
+    description: "Low-level compatibility artifact for Singapore company and sector dossiers; product flows should use the CDD orchestrator.",
     tools: ["sg_business_dossier"],
     authRequired: false,
     rateLimit: "bounded by selected modules",
-    positioning: "Primary CDD artifact surfaced by the web app and report exports.",
+    positioning: "Advanced compatibility API behind the orchestrated CDD report flow.",
     preferredInterface: "sg_query",
   },
   {
@@ -96,8 +96,8 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
     tools: ["sg_acra_entities"],
     authRequired: false,
     rateLimit: "data.gov.sg-backed cache tier",
-    positioning: "Core identity evidence for every company CDD run.",
-    preferredInterface: "sg_business_dossier",
+    positioning: "Core identity evidence used by the CDD orchestrator for every company CDD run.",
+    preferredInterface: "sg_query",
   },
   {
     name: "BCA",
@@ -105,8 +105,8 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
     tools: ["sg_bca_licensed_builders", "sg_bca_registered_contractors"],
     authRequired: false,
     rateLimit: "data.gov.sg-backed cache tier",
-    positioning: "Sector registry evidence for contractors, builders, grades, and workheads.",
-    preferredInterface: "sg_business_dossier",
+    positioning: "Sector registry evidence automatically used by the orchestrator when construction signals are present.",
+    preferredInterface: "sg_query",
   },
   {
     name: "BOA",
@@ -114,8 +114,8 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
     tools: ["sg_boa_architects", "sg_boa_architecture_firms"],
     authRequired: false,
     rateLimit: "static registry cache tier",
-    positioning: "Sector registry evidence for architecture-firm diligence.",
-    preferredInterface: "sg_business_dossier",
+    positioning: "Sector registry evidence automatically used by the orchestrator when architecture signals are present.",
+    preferredInterface: "sg_query",
   },
   {
     name: "CEA",
@@ -123,8 +123,8 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
     tools: ["sg_cea_salespersons"],
     authRequired: false,
     rateLimit: "data.gov.sg-backed cache tier",
-    positioning: "CDD enrichment for real-estate intermediaries and named salespersons.",
-    preferredInterface: "sg_business_dossier",
+    positioning: "CDD enrichment automatically used by the orchestrator when real-estate signals are present.",
+    preferredInterface: "sg_query",
   },
   {
     name: "GeBIZ",
@@ -132,8 +132,8 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
     tools: ["sg_gebiz_tenders"],
     authRequired: false,
     rateLimit: "public source cache tier",
-    positioning: "Procurement evidence and follow-up context for vendor diligence.",
-    preferredInterface: "sg_business_dossier",
+    positioning: "Procurement evidence automatically used by the orchestrator when procurement exposure signals are present.",
+    preferredInterface: "sg_query",
   },
   {
     name: "HSA",
@@ -141,8 +141,8 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
     tools: ["sg_hsa_licensed_pharmacies", "sg_hsa_health_product_licensees"],
     authRequired: false,
     rateLimit: "static registry cache tier",
-    positioning: "Healthcare-sector enrichment for supplier and pharmacy diligence.",
-    preferredInterface: "sg_business_dossier",
+    positioning: "Healthcare-sector enrichment automatically used by the orchestrator when healthcare signals are present.",
+    preferredInterface: "sg_query",
   },
   {
     name: "HLB",
@@ -150,8 +150,8 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
     tools: ["sg_hlb_hotels"],
     authRequired: false,
     rateLimit: "static registry cache tier",
-    positioning: "Hospitality-sector enrichment for hotel operators and keepers.",
-    preferredInterface: "sg_business_dossier",
+    positioning: "Hospitality-sector enrichment automatically used by the orchestrator when hospitality signals are present.",
+    preferredInterface: "sg_query",
   },
   {
     name: "External Diligence",
@@ -159,8 +159,8 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
     tools: ["sg_sanctions_screen", "sg_opencorporates_links", "sg_adverse_media_lite", "sg_relationship_graph"],
     authRequired: false,
     rateLimit: "provider-dependent",
-    positioning: "Supplemental evidence only; not an automated compliance decision.",
-    preferredInterface: "sg_business_dossier",
+    positioning: "Supplemental evidence used by the orchestrator; not an automated compliance decision.",
+    preferredInterface: "sg_query",
   },
   {
     name: "Operations",
@@ -192,7 +192,6 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     intent: "Search a Singapore company or UEN and produce a cited CDD dossier for analyst review.",
     entrypoints: [
       { tool: "sg_query", input: { query: "Business dossier for DP Architects", mode: "execute" } },
-      { tool: "sg_business_dossier", input: { entityName: "DP Architects" } },
     ],
     requiredInputs: ["entityName or uen"],
     blockerFields: ["entityName", "uen", "registrationNo"],
@@ -323,7 +322,7 @@ export const RUNTIME_CATALOG: RuntimeCatalog = {
       authRequired: false,
       probeMode: "workflow",
       productionUrl: "local MCP/runtime",
-      representativeTool: "sg_business_dossier",
+      representativeTool: "sg_query",
       releaseBlocking: true,
       coversFamilies: ["ACRA", "BCA", "BOA", "CEA", "GeBIZ", "HSA", "HLB", "External Diligence"],
       notes: ["Non-CDD public-data tools are intentionally not registered."],
@@ -363,8 +362,8 @@ export const RUNTIME_CATALOG: RuntimeCatalog = {
   latency: {
     hardCapMs: 12000,
     targets: [
-      { api: "sg_business_dossier", timeoutMs: 10000, typicalLatency: "1-5s cold, <1s warm", notes: "Depends on selected sector modules and cache state." },
-      { api: "sg_query", timeoutMs: 12000, typicalLatency: "planner-only or single dossier execution", notes: "Unsupported non-CDD prompts should return quickly." },
+      { api: "CDD orchestrator", timeoutMs: 12000, typicalLatency: "ACRA-gated sector enrichment plus supplemental review and memo state", notes: "Product path for web, widgets, bulk, and report exports." },
+      { api: "sg_query", timeoutMs: 12000, typicalLatency: "planner-only or orchestrated CDD execution", notes: "Unsupported non-CDD prompts should return quickly." },
     ],
   },
   cacheTiers: [
@@ -399,11 +398,11 @@ export const RUNTIME_CATALOG: RuntimeCatalog = {
     requiredSmokeCases: [
       {
         name: "CDD dossier",
-        tool: "sg_business_dossier",
+        tool: "sg_query",
         layer: "workflow",
         authRequired: false,
         releaseBlocking: true,
-        arguments: { entityName: "DP Architects" },
+        arguments: { query: "Business dossier for DP Architects", mode: "execute" },
         expectation: { status: "completed_or_gapful", outputShapeVersion: "business-dossier/v1" },
         notes: ["Must preserve provenance, freshness, gaps, limits, and evidence records."],
       },
@@ -545,7 +544,7 @@ export const BENCHMARK_CATALOG = {
     {
       name: "Search-to-report success",
       expectation: "A new user can search a company/UEN, read a cited summary, inspect evidence, and export PDF or DOCX.",
-      evidence: "Use the web smoke flow and representative sg_business_dossier fixture.",
+      evidence: "Use the web smoke flow and representative CDD orchestrator fixture.",
     },
     {
       name: "Unsupported scope clarity",

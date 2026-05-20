@@ -12,7 +12,7 @@ import { ProvenanceSection } from "@/components/dossier/ProvenanceSection";
 import type { WebPresenceState } from "@/components/dossier/WebPresenceSection";
 import { useToast } from "@/components/notifications/ToastProvider";
 import { Button } from "@/components/ui/button";
-import { callTool, getGatewayJson, postGatewayJson, type PeopleDiscovery, type WebPresence } from "@/lib/api/client";
+import { getGatewayJson, postGatewayJson, type PeopleDiscovery, type WebPresence } from "@/lib/api/client";
 import {
   exportSingleDossierCsv,
   exportSingleDossierJson,
@@ -268,6 +268,7 @@ function DossierSuccess({
   orchestration: CddOrchestratorResponse;
 }) {
   const [dossier, setDossier] = useState(initialDossier);
+  const [currentOrchestration, setCurrentOrchestration] = useState(orchestration);
   const resolution = dossier.records.resolution;
   const navigate = useNavigate();
   const location = useLocation();
@@ -287,10 +288,11 @@ function DossierSuccess({
   const canonicalUen = getSummaryString(dossier, "UEN");
   const entityName = getSummaryString(dossier, "Entity");
   const webPresenceQuery = [entityName, canonicalUen].filter(Boolean).join(" ");
-  const isUsingInitialOrchestration = dossier === initialDossier;
+  const isUsingOrchestratedDossier = dossier === currentOrchestration.dossier;
 
   useEffect(() => {
     setDossier(initialDossier);
+    setCurrentOrchestration(orchestration);
     setWebPresenceState(toWebPresenceState(orchestration.webPresence));
     setPeopleDiscoveryState(toPeopleDiscoveryState(orchestration.peopleDiscovery));
     setMemoState(toAnalystMemoState(orchestration.memo));
@@ -307,10 +309,10 @@ function DossierSuccess({
       metadata: {
         matchedModules: dossier.records.resolution?.matchedModules ?? [],
         gapCount: dossier.gaps.length,
-        orchestration: orchestration.orchestration,
+        orchestration: currentOrchestration.orchestration,
       },
     });
-  }, [dossier, identifier, orchestration.orchestration]);
+  }, [dossier, identifier, currentOrchestration.orchestration]);
 
   useEffect(() => {
     return () => {
@@ -332,7 +334,7 @@ function DossierSuccess({
 
   useEffect(() => {
     const controller = new AbortController();
-    if (isUsingInitialOrchestration) {
+    if (isUsingOrchestratedDossier) {
       return () => controller.abort();
     }
     if (webPresenceQuery === "") {
@@ -361,11 +363,11 @@ function DossierSuccess({
       });
 
     return () => controller.abort();
-  }, [isUsingInitialOrchestration, webPresenceQuery]);
+  }, [isUsingOrchestratedDossier, webPresenceQuery]);
 
   useEffect(() => {
     const controller = new AbortController();
-    if (isUsingInitialOrchestration) {
+    if (isUsingOrchestratedDossier) {
       return () => controller.abort();
     }
     if (entityName === null) {
@@ -397,11 +399,11 @@ function DossierSuccess({
       });
 
     return () => controller.abort();
-  }, [canonicalUen, entityName, isUsingInitialOrchestration]);
+  }, [canonicalUen, entityName, isUsingOrchestratedDossier]);
 
   useEffect(() => {
     const controller = new AbortController();
-    if (isUsingInitialOrchestration) {
+    if (isUsingOrchestratedDossier) {
       return () => controller.abort();
     }
     if (webPresenceState.status === "loading") {
@@ -441,7 +443,7 @@ function DossierSuccess({
       });
 
     return () => controller.abort();
-  }, [dossier, isUsingInitialOrchestration, webPresenceState]);
+  }, [dossier, isUsingOrchestratedDossier, webPresenceState]);
 
   useEffect(() => {
     const nextMemoState = memoState.status === "loading" ? "pending" : memoState.status;
@@ -473,10 +475,10 @@ function DossierSuccess({
       metadata: {
         providerStatus: memoState.status,
         webPresenceStatus: webPresenceState.status,
-        orchestration: orchestration.orchestration,
+        orchestration: currentOrchestration.orchestration,
       },
     });
-  }, [dossier, identifier, memoState, orchestration.orchestration, webPresenceState]);
+  }, [dossier, identifier, memoState, currentOrchestration.orchestration, webPresenceState]);
 
   const handleExportReport = async (reportTemplate: ReportTemplate, format: ReportExportFormat) => {
     setIsExporting(true);
@@ -485,7 +487,7 @@ function DossierSuccess({
       const today = new Date().toISOString().slice(0, 10);
       const baseOptions = {
         ...(memoState.status === "ready" ? { analystMemo: memoState.memo } : {}),
-        orchestration: orchestration.orchestration,
+        orchestration: currentOrchestration.orchestration,
         reportTemplate,
         ...(webPresenceState.status === "success" ? { webPresence: webPresenceState.presence } : {}),
       };
@@ -508,7 +510,7 @@ function DossierSuccess({
           identifier,
           reportSections: reportTemplate.sections,
           writingStyle: reportTemplate.writingStyle,
-          orchestration: orchestration.orchestration,
+          orchestration: currentOrchestration.orchestration,
         },
         output: { filename: `dude-cdd-report-${sanitizeFilenamePart(identifier)}-${today}.${format}` },
         provenance: dossier.provenance,
@@ -526,11 +528,11 @@ function DossierSuccess({
 
   const handleExportCsv = async () => {
     try {
-      await exportSingleDossierCsv(dossier, { orchestration: orchestration.orchestration });
+      await exportSingleDossierCsv(dossier, { orchestration: currentOrchestration.orchestration });
       persistAuditEvent({
         eventType: "export",
         permission: "export:run",
-        input: { identifier, format: "csv", orchestration: orchestration.orchestration },
+        input: { identifier, format: "csv", orchestration: currentOrchestration.orchestration },
         output: { title: dossier.title },
         provenance: dossier.provenance,
         freshness: dossier.freshness,
@@ -550,13 +552,13 @@ function DossierSuccess({
       await exportSingleDossierJson({
         dossier,
         ...(memoState.status === "ready" ? { analystMemo: memoState.memo } : {}),
-        orchestration: orchestration.orchestration,
+        orchestration: currentOrchestration.orchestration,
         ...(webPresenceState.status === "success" ? { webPresence: webPresenceState.presence } : {}),
       });
       persistAuditEvent({
         eventType: "export",
         permission: "export:run",
-        input: { identifier, format: "json", orchestration: orchestration.orchestration },
+        input: { identifier, format: "json", orchestration: currentOrchestration.orchestration },
         output: { title: dossier.title },
         provenance: dossier.provenance,
         freshness: dossier.freshness,
@@ -582,7 +584,7 @@ function DossierSuccess({
       persistAuditEvent({
         eventType: "export",
         permission: "export:run",
-        input: { identifier, format: "pdpa_pdf", reviewedItemIds },
+        input: { identifier, format: "pdpa_pdf", reviewedItemIds, orchestration: currentOrchestration.orchestration },
         output: { filename: `dude-pdpa-checklist-${sanitizeFilenamePart(identifier)}-${today}.pdf` },
         provenance: dossier.provenance,
         freshness: dossier.freshness,
@@ -630,25 +632,35 @@ function DossierSuccess({
             module: request.module,
             value: request.value,
           });
-      const nextDossier = await callTool<BusinessDossier>("sg_business_dossier", followUpInput);
-      setDossier(nextDossier);
+      const nextOrchestration = await postGatewayJson<CddOrchestratorResponse>("/api/v1/dude/cdd-orchestrator", followUpInput);
+      setCurrentOrchestration(nextOrchestration);
+      setDossier(nextOrchestration.dossier);
+      setWebPresenceState(toWebPresenceState(nextOrchestration.webPresence));
+      setPeopleDiscoveryState(toPeopleDiscoveryState(nextOrchestration.peopleDiscovery));
+      setMemoState(toAnalystMemoState(nextOrchestration.memo));
       persistAuditEvent({
         eventType: "search",
-        input: followUpInput,
-        output: nextDossier,
-        provenance: nextDossier.provenance,
-        freshness: nextDossier.freshness,
-        metadata: { module: request.kind === "all" ? "all" : request.module },
+        input: {
+          ...followUpInput,
+          analystHint: request.kind === "all" ? "run_all_relevant_sector_modules" : `rerun_with_${request.module}_sector_hint`,
+        },
+        output: nextOrchestration.dossier,
+        provenance: nextOrchestration.dossier.provenance,
+        freshness: nextOrchestration.dossier.freshness,
+        metadata: {
+          module: request.kind === "all" ? "all" : request.module,
+          orchestration: nextOrchestration.orchestration,
+        },
       });
       notify({
-        title: request.kind === "all" ? "All module checks complete" : `${request.module.toUpperCase()} follow-up complete`,
-        description: "Dossier evidence, provenance, freshness, gaps, and limits were refreshed.",
+        title: request.kind === "all" ? "Orchestrated module refresh complete" : `${request.module.toUpperCase()} orchestrated follow-up complete`,
+        description: "The CDD orchestrator refreshed dossier evidence, supplemental review, memo state, provenance, freshness, gaps, and limits.",
         tone: "success",
       });
     } catch (error) {
       notify({
         title: request.kind === "all" ? "All module checks failed" : `${request.module.toUpperCase()} follow-up failed`,
-        description: error instanceof Error ? error.message : "Unable to rerun this module.",
+        description: error instanceof Error ? error.message : "Unable to rerun the orchestrator with this hint.",
         tone: "error",
       });
     } finally {
@@ -730,7 +742,7 @@ function DossierSuccess({
         onExportPdpaReport={(reviewedItemIds) => void handleExportPdpaReport(reviewedItemIds)}
         onExportReport={(template, format) => void handleExportReport(template, format)}
         onModuleFollowUp={handleModuleFollowUp}
-        orchestration={orchestration.orchestration}
+        orchestration={currentOrchestration.orchestration}
         peopleDiscoveryState={peopleDiscoveryState}
         rerunningModule={rerunningModule}
         sharedMemoState={sharedMemoState}

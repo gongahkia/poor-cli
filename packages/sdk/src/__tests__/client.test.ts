@@ -12,6 +12,42 @@ const okFetch = (handler: (url: string, init: RequestInit) => unknown): typeof f
   }) as typeof fetch;
 
 describe("DudeClient", () => {
+  it("calls the CDD orchestrator for product reports", async () => {
+    const seen: { url?: string; body?: unknown } = {};
+    const client = new DudeClient({
+      baseUrl: "https://dude.example",
+      fetch: okFetch((url, init) => {
+        seen.url = url;
+        seen.body = JSON.parse(String(init.body));
+
+        return {
+          dossier: {
+            title: "Business dossier",
+            summary: [],
+            evidence: [],
+            records: {},
+            gaps: [],
+            provenance: [],
+            freshness: [],
+            limits: [],
+          },
+          generatedAt: "2026-05-20T00:00:00.000Z",
+          memo: { status: "unavailable" },
+          orchestration: { status: "ready" },
+          peopleDiscovery: { configured: false },
+          webPresence: { configured: false },
+        };
+      }),
+    });
+
+    const report = await client.cddReport({ uen: "201900001A" });
+
+    expect(seen.url).toBe("https://dude.example/api/v1/dude/cdd-orchestrator");
+    expect(seen.body).toEqual({ uen: "201900001A" });
+    expect(report.dossier.title).toBe("Business dossier");
+    expect(report.orchestration).toEqual({ status: "ready" });
+  });
+
   it("calls the business dossier tool and unwraps gateway records", async () => {
     const seen: { url?: string; body?: unknown; authorization?: string | null } = {};
     const client = new DudeClient({

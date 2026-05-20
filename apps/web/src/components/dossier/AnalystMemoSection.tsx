@@ -135,10 +135,10 @@ export function AnalystMemoSection({
         {
           id: "dossier-evidence",
           title: "Load cited dossier evidence",
-          description: "Gather official registry evidence and source limits before asking for synthesis.",
+          description: "Use the orchestrated CDD envelope, official registry evidence, and source limits before asking for synthesis.",
           status: "completed",
           priority: "high",
-          tools: ["sg_business_dossier"],
+          tools: ["cdd-orchestrator"],
         },
       ],
     },

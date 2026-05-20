@@ -14,7 +14,7 @@ const checks = [
   ["Google Sheets raw function", entries.google.includes("function DUDE_DOSSIER(")],
   ["Google Sheets summary function", entries.google.includes("function DUDE_DOSSIER_SUMMARY(")],
   ["Google Sheets freshness function", entries.google.includes("function DUDE_DOSSIER_FRESHNESS(")],
-  ["Google Sheets gateway endpoint", entries.google.includes("/api/v1/sg_business_dossier")],
+  ["Google Sheets orchestrator endpoint", entries.google.includes("/api/v1/dude/cdd-orchestrator")],
   ["Google Sheets auth header", entries.google.includes("headers.Authorization")],
   ["Excel raw function", entries.excel.includes("async function DUDE_DOSSIER(")],
   ["Excel custom functions association", entries.excel.includes('CustomFunctions.associate("DUDE.DOSSIER"')],

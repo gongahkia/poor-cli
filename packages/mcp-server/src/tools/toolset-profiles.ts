@@ -74,7 +74,7 @@ export const TOOLSET_PROFILE_CATALOG = [
   },
   {
     profile: "cdd_report",
-    intent: "Full analyst report profile with public registries, business dossier briefs, sg_query routing, and supplemental diligence evidence.",
+    intent: "Full analyst report profile with public registries, orchestrated CDD reports, sg_query routing, and supplemental diligence evidence.",
     toolsets: TOOLSET_PROFILE_PRESETS.cdd_report,
   },
   {

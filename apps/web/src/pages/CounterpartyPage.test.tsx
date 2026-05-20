@@ -13,7 +13,7 @@ describe("CounterpartyPage orchestrator loading", () => {
   });
 
   it("keeps legacy supplemental fetches guarded away from the initial orchestrated load", () => {
-    const guardCount = source.match(/if \(isUsingInitialOrchestration\)/g)?.length ?? 0;
+    const guardCount = source.match(/if \(isUsingOrchestratedDossier\)/g)?.length ?? 0;
     expect(guardCount).toBeGreaterThanOrEqual(3);
     expect(source).toContain("/api/v1/dude/web-presence");
     expect(source).toContain("/api/v1/dude/people-discovery");

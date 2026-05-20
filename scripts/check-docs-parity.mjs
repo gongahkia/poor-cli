@@ -40,6 +40,32 @@ const ensureExcludes = (path, snippets) => {
   }
 };
 
+const ensureProductDocsUseOrchestratorPath = (paths) => {
+  const prohibited = [
+    {
+      pattern: /POST\s+\/api\/v1\/sg_business_dossier/,
+      message: "documents the direct dossier REST endpoint as a product entrypoint",
+    },
+    {
+      pattern: /calls? .*\/api\/v1\/sg_business_dossier/i,
+      message: "describes a product integration calling the direct dossier endpoint",
+    },
+    {
+      pattern: /Company\/UEN CDD report\s*\|\s*`sg_business_dossier`/i,
+      message: "routes company CDD reports directly to sg_business_dossier",
+    },
+  ];
+
+  for (const path of paths) {
+    const text = read(path);
+    for (const { pattern, message } of prohibited) {
+      if (pattern.test(text)) {
+        throw new Error(`${path} ${message}. Use the CDD orchestrator path and describe sg_business_dossier as low-level compatibility.`);
+      }
+    }
+  }
+};
+
 const cddCoreSnippets = [
   "Search a Singapore company or UEN. Get a cited CDD report for analyst review.",
   `${totalTools} \`sg_*\` tools total`,
@@ -90,6 +116,8 @@ ensureExcludes(readmeTarget, removedSurfaceSnippets);
 
 ensureIncludes("AGENTS.md", [
   "CDD-only",
+  "CDD orchestrator",
+  "low-level compatibility",
   "sg_query",
   "sg_business_dossier",
   "Evidence Pack",
@@ -122,6 +150,16 @@ ensureIncludes("docs/agent-builder-quickstart.md", [
   "npm run verify",
 ]);
 ensureExcludes("docs/agent-builder-quickstart.md", removedSurfaceSnippets);
+
+ensureProductDocsUseOrchestratorPath([
+  readmeTarget,
+  "AGENTS.md",
+  "docs/agent-builder-quickstart.md",
+  "docs/product/corp-services-cdd.md",
+  "docs/product/secondary-workflows.md",
+  "examples/embeddable-widget/README.md",
+  "examples/spreadsheet-addins/README.md",
+]);
 
 ensureIncludes("examples/README.md", [
   "business-dossier.md",

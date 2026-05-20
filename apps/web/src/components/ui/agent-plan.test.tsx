@@ -14,10 +14,10 @@ describe("AgentPlan", () => {
         subtasks: [
           {
             id: "tool",
-            title: "Call Singapore business dossier",
-            description: "Requesting the bounded MCP workflow.",
+            title: "Run CDD orchestrator",
+            description: "Requesting the ACRA-gated CDD workflow.",
             status: "in-progress",
-            tools: ["sg_business_dossier"],
+            tools: ["cdd-orchestrator"],
           },
         ],
       },
@@ -29,8 +29,8 @@ describe("AgentPlan", () => {
 
     expect(html).toContain("Dude is working");
     expect(html).toContain("Resolve the counterparty identity");
-    expect(html).toContain("Call Singapore business dossier");
-    expect(html).toContain("sg_business_dossier");
+    expect(html).toContain("Run CDD orchestrator");
+    expect(html).toContain("cdd-orchestrator");
   });
 
   it("keeps status treatment neutral across working states", () => {
@@ -43,7 +43,7 @@ describe("AgentPlan", () => {
       },
       {
         id: "running",
-        title: "Call Singapore business dossier",
+        title: "Run CDD orchestrator",
         description: "Running.",
         status: "in-progress",
       },

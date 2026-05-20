@@ -20,7 +20,7 @@ This directory contains prototype integrations for Google Sheets and Excel. They
 The prototypes call:
 
 ```http
-POST /api/v1/sg_business_dossier
+POST /api/v1/dude/cdd-orchestrator
 Content-Type: application/json
 
 { "uen": "201900001A" }
@@ -63,7 +63,7 @@ Best production pattern:
 
 - keep the spreadsheet talking to a customer-controlled proxy;
 - let the proxy inject Dude credentials server-side;
-- if direct browser/script auth is unavoidable, use a short-lived token scoped to `sg_business_dossier`, workspace, allowed origin, and low rate limits.
+- if direct browser/script auth is unavoidable, use a short-lived token scoped to the CDD orchestrator, workspace, allowed origin, and low rate limits.
 
 Avoid putting long-lived Dude tokens, upstream API keys, AI provider keys, or admin tokens in cells. Spreadsheet files are copied and exported often, so treat cell-visible secrets as compromised.
 

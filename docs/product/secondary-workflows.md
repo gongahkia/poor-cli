@@ -18,14 +18,12 @@ Vendor onboarding helps an operations, finance, or DPO team decide what public e
 
 | Need | Current surface |
 | --- | --- |
-| Corporate identity | `sg_acra_entities`, `sg_business_dossier` |
+| Corporate identity | CDD orchestrator with `sg_acra_entities` source evidence |
 | Public procurement history | `sg_gebiz_tenders` |
 | Contractor or builder licensing | `sg_bca_*` tools |
 | Architect or architecture-firm registration | `sg_boa_*` tools |
 | Real-estate salesperson or agency evidence | `sg_cea_salespersons` |
 | Healthcare, pharmacy, import, wholesale, or manufacturing licences | `sg_hsa_*` tools |
-| Food establishment checks | `sg_sfa_food_establishments` |
-| Official public advisories and alerts | `sg_gov_feed_items` |
 | PDPA vendor checklist | Public-data vendor checklist and report template in [pdpa-vendor-diligence-checklist.md](../pdpa-vendor-diligence-checklist.md) |
 | Adverse-media lite | `sg_adverse_media_lite` bounded to official public feeds |
 | Watchlists and change alerts | Workspace watchlists and manual alert checks documented in [watchlist-alerts.md](../watchlist-alerts.md) |
@@ -54,8 +52,7 @@ Procurement intelligence helps a team monitor public tender and award signals ar
 | Need | Current surface |
 | --- | --- |
 | Tender and award discovery | `sg_gebiz_tenders` |
-| Entity identity checks | `sg_acra_entities`, `sg_business_dossier` |
-| Official RSS and circular monitoring | `sg_gov_feed_items` |
+| Entity identity checks | CDD orchestrator with ACRA source evidence |
 | Sector classification | SSIC evidence from ACRA-backed records plus analyst-selected sector hints |
 | Bulk monitoring | Workspace-backed 200-row bulk flow with partial-failure and retry metadata |
 | Shallow relationship graph | `sg_relationship_graph` for supplied dossier records without ownership or control claims |

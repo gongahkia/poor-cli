@@ -31,16 +31,22 @@ sg_query { "query": "Hotel operator lookup for Marina Bay Sands", "mode": "execu
 
 Non-CDD prompts return `unsupported`. Do not retry them against removed public-data tools.
 
-## Use Direct Tools For Exact Inputs
+## Use Direct Tools Only For Exact Compatibility Calls
+
+For product flows, prefer `sg_query` or the web/gateway CDD orchestrator. Direct `sg_business_dossier` and sector tools remain available for compatibility, debugging, and advanced callers that already have exact structured parameters.
 
 ```text
-sg_business_dossier { "uen": "201912345K" }
-sg_business_dossier { "entityName": "DP Architects", "modules": ["acra", "boa", "gebiz"], "sectorHints": ["architecture", "procurement"] }
 sg_acra_entities { "entityName": "DP Architects" }
 sg_boa_architecture_firms { "firmName": "DP Architects" }
 sg_hsa_health_product_licensees { "companyName": "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD." }
 sg_hlb_hotels { "name": "Marina Bay Sands" }
 sg_gebiz_tenders { "supplierName": "ABC CONSTRUCTION PTE LTD" }
+```
+
+Compatibility example:
+
+```text
+sg_business_dossier { "uen": "201912345K" }
 ```
 
 ## Handle Outcomes
