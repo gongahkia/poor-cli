@@ -14,7 +14,7 @@ Observed on 2026-05-17.
 
 | Surface | Local file | Required state | Current status |
 | --- | --- | --- | --- |
-| Official MCP Registry | [server.json](../server.json) | Uses the 2025-12-11 schema, `io.github.gongahkia/dude-mcp`, npm + GHCR packages, and CDD-only report/runtime wording. | Ready for submission after publisher namespace and package ownership checks. |
+| Official MCP Registry | [server.json](../server.json) | Uses the 2025-12-11 schema, `io.github.gongahkia/dude-mcp`, GHCR package metadata, and CDD-only report/runtime wording. The npm package entry stays omitted until `@dude/mcp` is public. | Ready for submission after publisher namespace and package ownership checks. |
 | Smithery | [smithery.yaml](../smithery.yaml) | Uses `dude-mcp`, stdio transport, and the local npm/build/start install command. | Ready for local listing or bundle review; hosted URL listing needs a public `/mcp` endpoint. |
 | Glama | [glama.json](../glama.json) | Uses `dude-mcp`, stdio transport, the same install command, and canonical GitHub repository. | Ready for indexing or claim flow. |
 | README | [README.md](../README.md) | Surface snapshot is CDD-only and lists retained CDD and ops tools. | Current. |

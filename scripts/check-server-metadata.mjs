@@ -5,6 +5,10 @@ import { resolve } from "node:path";
 const root = resolve(import.meta.dirname, "..");
 const serverMetadata = JSON.parse(readFileSync(resolve(root, "server.json"), "utf8"));
 const serverPkg = JSON.parse(readFileSync(resolve(root, "packages/mcp-server/package.json"), "utf8"));
+const publishReadiness = readFileSync(resolve(root, "docs/npm-publish-readiness.md"), "utf8");
+const unpublishedReadinessMode =
+  publishReadiness.includes("no public version exists yet")
+  && publishReadiness.includes("Do not represent `@dude/mcp` as published");
 
 if (serverMetadata.$schema !== "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json") {
   throw new Error("server.json is missing the current MCP registry schema URL.");
@@ -38,7 +42,10 @@ if (Array.isArray(serverMetadata.remotes)) {
 }
 
 const npmPackage = serverMetadata.packages.find((pkg) => pkg.registryType === "npm");
-if (npmPackage?.identifier !== serverPkg.name) {
+if (npmPackage === undefined && !unpublishedReadinessMode) {
+  throw new Error("server.json may omit the npm package only while npm publish readiness docs state unpublished mode.");
+}
+if (npmPackage !== undefined && npmPackage.identifier !== serverPkg.name) {
   throw new Error("server.json npm package identifier must match the published npm package name.");
 }
 

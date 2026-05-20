@@ -13,6 +13,8 @@ The SDK is intentionally thin:
 
 ## Install
 
+After the package is public on npm:
+
 ```bash
 npm install @dude/sdk
 ```

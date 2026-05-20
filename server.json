@@ -10,14 +10,6 @@
   },
   "packages": [
     {
-      "registryType": "npm",
-      "identifier": "@dude/mcp",
-      "version": "0.1.0",
-      "transport": {
-        "type": "stdio"
-      }
-    },
-    {
       "registryType": "oci",
       "identifier": "ghcr.io/gongahkia/dude-mcp",
       "version": "0.1.0",
