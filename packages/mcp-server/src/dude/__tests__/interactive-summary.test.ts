@@ -27,6 +27,55 @@ const fixtureDossier: AnalystMemoDossier = {
     },
   ],
   records: {
+    acra: [
+      {
+        entityName: "DBS BANK LTD",
+        entityStatusDescription: "Live Company",
+        uen: "03591300B",
+      },
+    ],
+    externalDiligence: [
+      {
+        freshness: [{ observedAt: "2026-05-15T00:00:00.000Z", source: "OpenSanctions" }],
+        gaps: [{ code: "OPENSANCTIONS_API_KEY_REQUIRED", message: "OpenSanctions credentials are not configured." }],
+        limits: [{ code: "SUPPLEMENTAL_REVIEW", message: "Sanctions results require analyst review." }],
+        provenance: [{ authRequired: true, coverage: "Sanctions candidate screening.", recordCount: 0, source: "OpenSanctions", tool: "sg_sanctions_screen" }],
+        records: [],
+        riskFlags: [],
+        summary: [{ label: "Sanctions provider", value: "credential gap" }],
+        title: "Sanctions Screen",
+      },
+      {
+        freshness: [{ observedAt: "2026-05-15T00:00:00.000Z", source: "OpenCorporates" }],
+        gaps: [{ code: "OPENCORPORATES_API_TOKEN_REQUIRED", message: "OpenCorporates credentials are not configured." }],
+        limits: [{ code: "SUPPLEMENTAL_REVIEW", message: "OpenCorporates links require analyst review." }],
+        provenance: [{ authRequired: true, coverage: "OpenCorporates candidate links.", recordCount: 0, source: "OpenCorporates", tool: "sg_opencorporates_links" }],
+        records: [],
+        riskFlags: [],
+        summary: [{ label: "OpenCorporates provider", value: "credential gap" }],
+        title: "OpenCorporates Cross-Links",
+      },
+      {
+        freshness: [{ observedAt: "2026-05-15T00:00:00.000Z", source: "Official feeds" }],
+        gaps: [],
+        limits: [{ code: "OFFICIAL_FEEDS_ONLY", message: "Adverse media lite searches bounded official feeds only." }],
+        provenance: [{ authRequired: false, coverage: "Official-feed keyword search.", recordCount: 0, source: "Official feeds", tool: "sg_adverse_media_lite" }],
+        records: [],
+        riskFlags: [],
+        summary: [{ label: "Feed items matched", value: 0 }],
+        title: "Adverse Media Lite",
+      },
+      {
+        freshness: [{ observedAt: "2026-05-15T00:00:00.000Z", source: "Dude relationship graph" }],
+        gaps: [],
+        limits: [{ code: "RELATIONSHIP_GRAPH_LIMITED", message: "Graph is built only from returned dossier records." }],
+        provenance: [{ authRequired: false, coverage: "Relationship graph from retained module records.", recordCount: 1, source: "Dude relationship graph", tool: "sg_relationship_graph" }],
+        records: [{ nodes: [{ id: "entity:03591300B", label: "DBS BANK LTD" }], edges: [] }],
+        riskFlags: [],
+        summary: [{ label: "Relationship graph nodes", value: 1 }],
+        title: "Relationship Graph",
+      },
+    ],
     quality: { confidence: "high" },
     resolution: { matchedModules: ["acra"], searchedModules: ["acra", "gebiz"] },
   },
@@ -43,7 +92,41 @@ const fixtureDossier: AnalystMemoDossier = {
 describe("interactive summary generation", () => {
   it("returns unavailable when provider credentials are missing", async () => {
     const summary = await generateInteractiveSummary(
-      { dossier: fixtureDossier },
+      {
+        dossier: fixtureDossier,
+        peopleDiscovery: {
+          configured: true,
+          entityName: "DBS BANK LTD",
+          limits: ["People discovery is supplemental analyst-review evidence."],
+          query: "DBS BANK LTD leadership Singapore",
+          results: [
+            {
+              position: 1,
+              siteName: "example.com",
+              snippet: "Snippet mentioning DBS leadership context.",
+              title: "DBS leadership result",
+              url: "https://example.com/dbs-leadership",
+            },
+          ],
+          suggestedActions: ["Verify named persons against official filings before relying on authority."],
+          uen: "03591300B",
+        },
+        webPresence: {
+          configured: true,
+          limits: ["Web discovery is supplemental."],
+          possibleOfficialWebsite: "https://www.dbs.com",
+          query: "DBS BANK LTD 03591300B",
+          results: [
+            {
+              position: 1,
+              siteName: "dbs.com",
+              snippet: "DBS official website result.",
+              title: "DBS official site",
+              url: "https://www.dbs.com",
+            },
+          ],
+        },
+      },
       {
         env: {
           VITE_OPENAI_API_KEY: "browser-secret",
@@ -68,7 +151,41 @@ describe("interactive summary generation", () => {
 
   it("grounds one-sentence model segments to known UI targets", async () => {
     const summary = await generateInteractiveSummary(
-      { dossier: fixtureDossier },
+      {
+        dossier: fixtureDossier,
+        peopleDiscovery: {
+          configured: true,
+          entityName: "DBS BANK LTD",
+          limits: ["People discovery is supplemental analyst-review evidence."],
+          query: "DBS BANK LTD leadership Singapore",
+          results: [
+            {
+              position: 1,
+              siteName: "example.com",
+              snippet: "Snippet mentioning DBS leadership context.",
+              title: "DBS leadership result",
+              url: "https://example.com/dbs-leadership",
+            },
+          ],
+          suggestedActions: ["Verify named persons against official filings before relying on authority."],
+          uen: "03591300B",
+        },
+        webPresence: {
+          configured: true,
+          limits: ["Web discovery is supplemental."],
+          possibleOfficialWebsite: "https://www.dbs.com",
+          query: "DBS BANK LTD 03591300B",
+          results: [
+            {
+              position: 1,
+              siteName: "dbs.com",
+              snippet: "DBS official website result.",
+              title: "DBS official site",
+              url: "https://www.dbs.com",
+            },
+          ],
+        },
+      },
       {
         env: {
           DUDE_AI_PROVIDER: "openai",
@@ -77,6 +194,15 @@ describe("interactive summary generation", () => {
         generate: async (input, config) => {
           expect(input.prompt).toContain("overview.summary");
           expect(input.prompt).toContain("evidence.records");
+          expect(input.prompt).toContain("compositeEvidencePacks");
+          expect(input.prompt).toContain("externalDiligence");
+          expect(input.prompt).toContain("Sanctions Screen");
+          expect(input.prompt).toContain("OpenCorporates Cross-Links");
+          expect(input.prompt).toContain("Adverse Media Lite");
+          expect(input.prompt).toContain("Relationship Graph");
+          expect(input.prompt).toContain("supplementalReview");
+          expect(input.prompt).toContain("DBS official website result");
+          expect(input.prompt).toContain("Snippet mentioning DBS leadership context");
           return {
             model: config.model,
             provider: config.provider,

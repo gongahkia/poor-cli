@@ -94,6 +94,32 @@ type GenerateInteractiveSummaryOptions = {
   readonly generate?: GenerateText;
 };
 
+type WebPresenceForSummary = {
+  readonly query?: string;
+  readonly configured: boolean;
+  readonly results?: readonly WebSearchResultForSummary[];
+  readonly possibleOfficialWebsite?: string | null;
+  readonly limits: readonly string[];
+};
+
+type PeopleDiscoveryForSummary = {
+  readonly entityName: string;
+  readonly uen?: string | null;
+  readonly query: string;
+  readonly configured: boolean;
+  readonly results: readonly WebSearchResultForSummary[];
+  readonly suggestedActions: readonly string[];
+  readonly limits: readonly string[];
+};
+
+type WebSearchResultForSummary = {
+  readonly title: string;
+  readonly snippet: string;
+  readonly url: string;
+  readonly siteName: string | null;
+  readonly position: number;
+};
+
 const TARGET_LABELS: Record<SummaryTargetId, string> = {
   "actions.nextChecks": "Actions / Next checks",
   "actions.pdpa": "Actions / PDPA checklist",
@@ -116,6 +142,8 @@ const TARGET_LABELS: Record<SummaryTargetId, string> = {
 const SYSTEM_PROMPT = [
   "You write one-sentence interactive summaries for a Singapore public-data counterparty dossier UI.",
   "Use only the provided dossier envelope. Do not add directors, shareholders, litigation, sanctions, credit, legal, tax, or advisory claims unless present.",
+  "Build the sentence from every composite evidence pack present in the envelope: ACRA identity, selected official modules, supplemental diligence artifacts, web presence, people discovery, gaps, provenance, freshness, and limits.",
+  "Treat sanctions, OpenCorporates, adverse-media, relationship graph, web presence, and people-discovery content as supplemental analyst-review evidence; unavailable providers are confidence blockers, not negative findings.",
   "Return strict JSON only. The rendered text must be exactly one sentence.",
   "Bold-worthy segments must point to one of the provided target ids so the UI can navigate to the supporting section.",
 ].join("\n");
@@ -131,7 +159,154 @@ const summaryValue = (dossier: AnalystMemoDossier, label: string): string | null
   return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
 };
 
-const buildPrompt = (dossier: AnalystMemoDossier): string => JSON.stringify({
+const SUMMARY_RECORD_KEYS = [
+  "resolution",
+  "quality",
+  "acra",
+  "bcaLicensedBuilders",
+  "bcaRegisteredContractors",
+  "ceaSalespersons",
+  "gebizTenders",
+  "boaArchitects",
+  "boaArchitectureFirms",
+  "hsaLicensedPharmacies",
+  "hsaHealthProductLicensees",
+  "hlbHotels",
+  "externalDiligence",
+] as const;
+
+const MAX_PROMPT_ARRAY_ITEMS = 5;
+const MAX_PROMPT_OBJECT_KEYS = 24;
+const MAX_PROMPT_STRING_LENGTH = 1200;
+
+const boundPromptValue = (value: unknown, depth = 0): unknown => {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "string") {
+    return value.length > MAX_PROMPT_STRING_LENGTH
+      ? `${value.slice(0, MAX_PROMPT_STRING_LENGTH)}...`
+      : value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  if (depth >= 4) return "[nested value omitted]";
+  if (Array.isArray(value)) {
+    return value.slice(0, MAX_PROMPT_ARRAY_ITEMS).map((item) => boundPromptValue(item, depth + 1));
+  }
+  if (typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .slice(0, MAX_PROMPT_OBJECT_KEYS)
+        .map(([key, item]) => [key, boundPromptValue(item, depth + 1)]),
+    );
+  }
+  return String(value);
+};
+
+const buildSummaryRecordsInput = (records: Record<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries(
+    SUMMARY_RECORD_KEYS
+      .filter((key) => records[key] !== undefined)
+      .map((key) => [key, boundPromptValue(records[key])]),
+  );
+
+const asStringArray = (value: unknown): readonly string[] =>
+  Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim() !== "")
+    : [];
+
+const externalDiligenceTitles = (dossier: AnalystMemoDossier): readonly string[] => {
+  const externalDiligence = dossier.records["externalDiligence"];
+  if (!Array.isArray(externalDiligence)) return [];
+  return externalDiligence.flatMap((item): string[] => {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) return [];
+    const title = (item as Record<string, unknown>)["title"];
+    return typeof title === "string" && title.trim() !== "" ? [title.trim()] : [];
+  });
+};
+
+const buildCompositeEvidencePacks = (
+  dossier: AnalystMemoDossier,
+  supplemental: Readonly<{
+    peopleDiscovery?: PeopleDiscoveryForSummary;
+    webPresence?: WebPresenceForSummary;
+  }> = {},
+) => {
+  const resolution = dossier.records["resolution"] as Record<string, unknown> | undefined;
+  return {
+    officialModules: {
+      matched: asStringArray(resolution?.["matchedModules"]),
+      searched: asStringArray(resolution?.["searchedModules"]),
+      selected: asStringArray(resolution?.["selectedModules"]),
+      unsearched: asStringArray(resolution?.["unsearchedModules"]),
+    },
+    recordGroups: SUMMARY_RECORD_KEYS
+      .filter((key) => dossier.records[key] !== undefined)
+      .map((key) => ({
+        key,
+        count: Array.isArray(dossier.records[key]) ? dossier.records[key].length : 1,
+      })),
+    supplementalDiligence: externalDiligenceTitles(dossier),
+    supplementalDiscovery: {
+      peopleDiscovery: supplemental.peopleDiscovery === undefined ? null : {
+        configured: supplemental.peopleDiscovery.configured,
+        limits: supplemental.peopleDiscovery.limits,
+        query: supplemental.peopleDiscovery.query,
+        resultCount: supplemental.peopleDiscovery.results.length,
+        suggestedActions: supplemental.peopleDiscovery.suggestedActions,
+      },
+      webPresence: supplemental.webPresence === undefined ? null : {
+        configured: supplemental.webPresence.configured,
+        limits: supplemental.webPresence.limits,
+        possibleOfficialWebsite: supplemental.webPresence.possibleOfficialWebsite ?? null,
+        query: supplemental.webPresence.query ?? null,
+        resultCount: supplemental.webPresence.results?.length ?? 0,
+      },
+    },
+  };
+};
+
+const buildWebPresencePromptInput = (webPresence: WebPresenceForSummary | undefined) => {
+  if (webPresence === undefined) return undefined;
+  return {
+    configured: webPresence.configured,
+    limits: webPresence.limits,
+    possibleOfficialWebsite: webPresence.possibleOfficialWebsite ?? null,
+    query: webPresence.query ?? null,
+    results: (webPresence.results ?? []).slice(0, 5).map((result) => ({
+      position: result.position,
+      siteName: result.siteName,
+      snippet: result.snippet,
+      title: result.title,
+      url: result.url,
+    })),
+  };
+};
+
+const buildPeopleDiscoveryPromptInput = (peopleDiscovery: PeopleDiscoveryForSummary | undefined) => {
+  if (peopleDiscovery === undefined) return undefined;
+  return {
+    configured: peopleDiscovery.configured,
+    entityName: peopleDiscovery.entityName,
+    limits: peopleDiscovery.limits,
+    query: peopleDiscovery.query,
+    results: peopleDiscovery.results.slice(0, 5).map((result) => ({
+      position: result.position,
+      siteName: result.siteName,
+      snippet: result.snippet,
+      title: result.title,
+      url: result.url,
+    })),
+    suggestedActions: peopleDiscovery.suggestedActions,
+    uen: peopleDiscovery.uen ?? null,
+  };
+};
+
+const buildPrompt = (
+  dossier: AnalystMemoDossier,
+  supplemental: Readonly<{
+    peopleDiscovery?: PeopleDiscoveryForSummary;
+    webPresence?: WebPresenceForSummary;
+  }> = {},
+): string => JSON.stringify({
   instructions: {
     outputSchema: {
       segments: [
@@ -151,6 +326,7 @@ const buildPrompt = (dossier: AnalystMemoDossier): string => JSON.stringify({
       "Return 6 to 12 segments whose text concatenates into exactly one sentence.",
       "Set emphasized=true only for 3 to 5 important phrases.",
       "Every emphasized segment must use the target id for the most relevant supporting subsection.",
+      "The sentence must account for the available composite evidence packs, including supplemental diligence artifacts when present.",
       "Use audit.gaps only when dossier.gaps is non-empty; otherwise use audit.provenance for provenance, freshness, limits, or bounded coverage claims.",
       "Do not invent absent evidence. Say public-data coverage is limited when gaps or limits are important.",
     ],
@@ -163,13 +339,15 @@ const buildPrompt = (dossier: AnalystMemoDossier): string => JSON.stringify({
     limits: dossier.limits,
     nextChecks: dossier.nextChecks ?? [],
     provenance: dossier.provenance,
-    records: {
-      quality: dossier.records["quality"],
-      resolution: dossier.records["resolution"],
-    },
+    compositeEvidencePacks: buildCompositeEvidencePacks(dossier, supplemental),
+    records: buildSummaryRecordsInput(dossier.records),
     riskFlags: dossier.riskFlags ?? [],
     summary: dossier.summary,
     title: dossier.title,
+  },
+  supplementalReview: {
+    peopleDiscovery: buildPeopleDiscoveryPromptInput(supplemental.peopleDiscovery),
+    webPresence: buildWebPresencePromptInput(supplemental.webPresence),
   },
 });
 
@@ -234,6 +412,10 @@ const buildFallbackSegments = (dossier: AnalystMemoDossier): readonly SummarySeg
   const gapText = dossier.gaps.length > 0
     ? `${dossier.gaps.length} evidence gap${dossier.gaps.length === 1 ? "" : "s"}`
     : "provenance and freshness notes";
+  const supplementalTitles = externalDiligenceTitles(dossier);
+  const supplementalText = supplementalTitles.length > 0
+    ? supplementalTitles.map((title) => title.replace(/\s+/g, " ")).join(", ")
+    : null;
 
   return [
     { emphasized: false, targetId: "overview.summary", text: "The dossier identifies " },
@@ -244,6 +426,10 @@ const buildFallbackSegments = (dossier: AnalystMemoDossier): readonly SummarySeg
     ]),
     { emphasized: false, targetId: "evidence.records", text: " with " },
     { emphasized: true, targetId: "evidence.records", text: matchedModuleText },
+    ...(supplementalText === null ? [] : [
+      { emphasized: false as const, targetId: "audit.provenance" as const, text: " plus supplemental checks covering " },
+      { emphasized: true as const, targetId: "audit.provenance" as const, text: supplementalText },
+    ]),
     { emphasized: false, targetId: "overview.risk", text: ", " },
     { emphasized: true, targetId: "overview.risk", text: riskText },
     { emphasized: false, targetId: "audit.gaps", text: ", and " },
@@ -319,11 +505,16 @@ const buildProviderAuthUnavailable = (
 export const generateInteractiveSummary = async (
   params: {
     readonly dossier: AnalystMemoDossier;
+    readonly peopleDiscovery?: PeopleDiscoveryForSummary;
+    readonly webPresence?: WebPresenceForSummary;
   },
   options: GenerateInteractiveSummaryOptions = {},
 ): Promise<InteractiveSummaryResponse> => {
   const generatedAt = (options.generatedAt ?? new Date()).toISOString();
-  const userPrompt = buildPrompt(params.dossier);
+  const userPrompt = buildPrompt(params.dossier, {
+    ...(params.peopleDiscovery === undefined ? {} : { peopleDiscovery: params.peopleDiscovery }),
+    ...(params.webPresence === undefined ? {} : { webPresence: params.webPresence }),
+  });
   const prompt = buildCopyablePrompt(userPrompt);
   const config = resolveAiProviderConfig(options.env);
   if (!config.configured) {

@@ -291,10 +291,42 @@ describe("dossier rendering", () => {
           limits: [],
           webSectorHints: [],
         }}
-        peopleDiscoveryState={{ status: "error", message: "No people results." }}
+        peopleDiscoveryState={{
+          status: "success",
+          discovery: {
+            configured: true,
+            entityName: "DBS PTE. LTD.",
+            limits: ["People discovery is supplemental."],
+            query: "DBS PTE. LTD. leadership Singapore",
+            results: [{
+              position: 1,
+              siteName: "example.com",
+              snippet: "Leadership context.",
+              title: "DBS people result",
+              url: "https://example.com/people",
+            }],
+            suggestedActions: ["Verify named persons against official filings."],
+            uen: "197700546G",
+          },
+        }}
         rerunningModule={null}
         sharedMemoState={null}
-        webPresenceState={{ status: "error", message: "No web results." }}
+        webPresenceState={{
+          status: "success",
+          presence: {
+            configured: true,
+            limits: ["Web presence is supplemental."],
+            possibleOfficialWebsite: "https://www.dbs.com",
+            query: "DBS PTE. LTD. 197700546G",
+            results: [{
+              position: 1,
+              siteName: "dbs.com",
+              snippet: "Official web result.",
+              title: "DBS website",
+              url: "https://www.dbs.com",
+            }],
+          },
+        }}
       />,
     );
 
@@ -337,10 +369,42 @@ describe("dossier rendering", () => {
         }}
         onExportPdpaReport={() => undefined}
         onModuleFollowUp={() => undefined}
-        peopleDiscoveryState={{ status: "error", message: "No people results." }}
+        peopleDiscoveryState={{
+          status: "success",
+          discovery: {
+            configured: true,
+            entityName: "DBS PTE. LTD.",
+            limits: ["People discovery is supplemental."],
+            query: "DBS PTE. LTD. leadership Singapore",
+            results: [{
+              position: 1,
+              siteName: "example.com",
+              snippet: "Leadership context.",
+              title: "DBS people result",
+              url: "https://example.com/people",
+            }],
+            suggestedActions: ["Verify named persons against official filings."],
+            uen: "197700546G",
+          },
+        }}
         rerunningModule={null}
         sharedMemoState={null}
-        webPresenceState={{ status: "error", message: "No web results." }}
+        webPresenceState={{
+          status: "success",
+          presence: {
+            configured: true,
+            limits: ["Web presence is supplemental."],
+            possibleOfficialWebsite: "https://www.dbs.com",
+            query: "DBS PTE. LTD. 197700546G",
+            results: [{
+              position: 1,
+              siteName: "dbs.com",
+              snippet: "Official web result.",
+              title: "DBS website",
+              url: "https://www.dbs.com",
+            }],
+          },
+        }}
       />,
     );
 
@@ -355,12 +419,31 @@ describe("dossier rendering", () => {
       <DossierFindingsTabs
         dossier={{
           ...dossier,
+          evidence: [
+            ...dossier.evidence,
+            { label: "Sanctions Screen: Threshold", source: "OpenSanctions", value: 0.75 },
+            { label: "OpenCorporates Cross-Links: Ambiguous candidates", source: "OpenCorporates", value: 0 },
+            { label: "Adverse Media Lite: Confidence model", source: "Dude", value: "official_feed_keyword_match" },
+            { label: "Relationship Graph: ACRA records inspected", source: "ACRA", value: 1 },
+          ],
           gaps: [{
             code: "OPENSANCTIONS_UNAVAILABLE",
             message: "OpenSanctions screening requires OPENSANCTIONS_API_KEY.",
           }],
+          provenance: [
+            { authRequired: true, coverage: "Sanctions candidate screening.", recordCount: 0, source: "OpenSanctions", tool: "sg_sanctions_screen" },
+            { authRequired: true, coverage: "OpenCorporates candidate links.", recordCount: 0, source: "OpenCorporates", tool: "sg_opencorporates_links" },
+            { authRequired: false, coverage: "Official-feed keyword search.", recordCount: 0, source: "Official feeds", tool: "sg_adverse_media_lite" },
+            { authRequired: false, coverage: "Relationship graph from retained module records.", recordCount: 1, source: "Dude relationship graph", tool: "sg_relationship_graph" },
+          ],
           records: {
             ...dossier.records,
+            externalDiligence: [
+              { title: "Sanctions Screen" },
+              { title: "OpenCorporates Cross-Links" },
+              { title: "Adverse Media Lite" },
+              { title: "Relationship Graph" },
+            ],
             resolution: {
               matchedModules: ["acra"],
               moduleReasons: [{
@@ -418,16 +501,56 @@ describe("dossier rendering", () => {
         }}
         onExportPdpaReport={() => undefined}
         onModuleFollowUp={() => undefined}
-        peopleDiscoveryState={{ status: "error", message: "No people results." }}
+        peopleDiscoveryState={{
+          status: "success",
+          discovery: {
+            configured: true,
+            entityName: "DBS PTE. LTD.",
+            limits: ["People discovery is supplemental."],
+            query: "DBS PTE. LTD. leadership Singapore",
+            results: [{
+              position: 1,
+              siteName: "example.com",
+              snippet: "Leadership context.",
+              title: "DBS people result",
+              url: "https://example.com/people",
+            }],
+            suggestedActions: ["Verify named persons against official filings."],
+            uen: "197700546G",
+          },
+        }}
         rerunningModule={null}
         sharedMemoState={null}
-        webPresenceState={{ status: "error", message: "No web results." }}
+        webPresenceState={{
+          status: "success",
+          presence: {
+            configured: true,
+            limits: ["Web presence is supplemental."],
+            possibleOfficialWebsite: "https://www.dbs.com",
+            query: "DBS PTE. LTD. 197700546G",
+            results: [{
+              position: 1,
+              siteName: "dbs.com",
+              snippet: "Official web result.",
+              title: "DBS website",
+              url: "https://www.dbs.com",
+            }],
+          },
+        }}
       />,
     );
 
     expect(html).toContain("is an ACRA-matched Singapore entity");
     expect(html).toContain("Dissolved - Members Voluntary Winding Up");
     expect(html).toContain("data-citation-id=\"summary-3\"");
+    expect(html).toContain("executive view also incorporates supplemental evidence packs");
+    expect(html).toContain("sanctions screen");
+    expect(html).toContain("OpenCorporates links");
+    expect(html).toContain("adverse-media lite");
+    expect(html).toContain("relationship graph");
+    expect(html).toContain("Supplemental discovery inputs include");
+    expect(html).toContain("web presence");
+    expect(html).toContain("people discovery");
     expect(html).toContain("Supplemental screening is not yet complete");
     expect(html).not.toContain("No sanctions or adverse media were identified");
   });

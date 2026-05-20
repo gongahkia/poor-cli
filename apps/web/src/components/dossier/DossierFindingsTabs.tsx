@@ -463,7 +463,12 @@ function addCitationIfMissing(
   }
 }
 
-function buildCitationMap(dossier: BusinessDossier, memo: AnalystMemoReady): Map<string, AnalystMemoCitation> {
+function buildCitationMap(
+  dossier: BusinessDossier,
+  memo: AnalystMemoReady,
+  peopleDiscoveryState?: PeopleDiscoveryState,
+  webPresenceState?: WebPresenceState,
+): Map<string, AnalystMemoCitation> {
   const map = new Map(memo.citations.map((citation) => [citation.id, citation]));
   dossier.summary.forEach((item, index) => addCitationIfMissing(map, {
     id: `summary-${index + 1}`,
@@ -495,6 +500,56 @@ function buildCitationMap(dossier: BusinessDossier, memo: AnalystMemoReady): Map
     source: "limit",
     text: limit.message,
   }));
+  dossier.provenance.forEach((item, index) => addCitationIfMissing(map, {
+    id: `provenance-${index + 1}`,
+    label: item.source,
+    source: item.tool,
+    text: `${item.coverage} Records: ${item.recordCount}. Auth required: ${item.authRequired ? "yes" : "no"}.`,
+  }));
+  if (webPresenceState?.status === "success") {
+    const presence = webPresenceState.presence;
+    if (presence.possibleOfficialWebsite !== null) {
+      addCitationIfMissing(map, {
+        id: "web-presence-official",
+        label: "Possible official website",
+        source: "TinyFish Search",
+        text: presence.possibleOfficialWebsite,
+      });
+    }
+    presence.results.slice(0, 5).forEach((result, index) => addCitationIfMissing(map, {
+      id: `web-presence-${index + 1}`,
+      label: result.title,
+      source: result.siteName ?? result.url,
+      text: `${result.title}: ${result.snippet} (${result.url})`,
+    }));
+    presence.limits.forEach((limit, index) => addCitationIfMissing(map, {
+      id: `web-presence-limit-${index + 1}`,
+      label: "Web presence limit",
+      source: "TinyFish Search",
+      text: limit,
+    }));
+  }
+  if (peopleDiscoveryState?.status === "success") {
+    const discovery = peopleDiscoveryState.discovery;
+    discovery.results.slice(0, 5).forEach((result, index) => addCitationIfMissing(map, {
+      id: `people-discovery-${index + 1}`,
+      label: result.title,
+      source: result.siteName ?? result.url,
+      text: `${result.title}: ${result.snippet} (${result.url})`,
+    }));
+    discovery.suggestedActions.forEach((action, index) => addCitationIfMissing(map, {
+      id: `people-discovery-action-${index + 1}`,
+      label: "People discovery action",
+      source: "TinyFish Search",
+      text: action,
+    }));
+    discovery.limits.forEach((limit, index) => addCitationIfMissing(map, {
+      id: `people-discovery-limit-${index + 1}`,
+      label: "People discovery limit",
+      source: "TinyFish Search",
+      text: limit,
+    }));
+  }
   return map;
 }
 
@@ -521,15 +576,82 @@ function findGapCitation(
     citation.id.startsWith("gap-") && (pattern.test(citation.label) || pattern.test(citation.text)));
 }
 
+function findAnyCitation(
+  citations: ReadonlyMap<string, AnalystMemoCitation>,
+  pattern: RegExp,
+): AnalystMemoCitation | undefined {
+  return findCitation(citations, (citation) =>
+    pattern.test(citation.id) || pattern.test(citation.label) || pattern.test(citation.source) || pattern.test(citation.text));
+}
+
 function formatModuleList(modules: readonly string[] | undefined): string {
   if (modules === undefined || modules.length === 0) return "no official modules";
   return modules.map((module) => BUSINESS_MODULE_LABELS[module as BusinessDossierModule] ?? module.toUpperCase()).join(", ");
+}
+
+const SUPPLEMENTAL_EVIDENCE_PACKS: readonly {
+  readonly label: string;
+  readonly pattern: RegExp;
+}[] = [
+  { label: "sanctions screen", pattern: /sanctions|opensanctions|sg_sanctions_screen/i },
+  { label: "OpenCorporates links", pattern: /opencorporates|corporates|sg_opencorporates_links/i },
+  { label: "adverse-media lite", pattern: /adverse media|adverse-media|official[- ]feed|sg_adverse_media_lite/i },
+  { label: "relationship graph", pattern: /relationship graph|sg_relationship_graph/i },
+];
+
+function getSupplementalEvidencePackSegments(
+  dossier: BusinessDossier,
+  citations: ReadonlyMap<string, AnalystMemoCitation>,
+): readonly OverviewSegment[] {
+  if (!Array.isArray(dossier.records.externalDiligence) || dossier.records.externalDiligence.length === 0) {
+    return [];
+  }
+  const foundPacks = SUPPLEMENTAL_EVIDENCE_PACKS
+    .map((pack) => ({
+      citation: findAnyCitation(citations, pack.pattern),
+      label: pack.label,
+    }))
+    .filter((pack) => pack.citation !== undefined || dossier.records.externalDiligence?.some((record) =>
+      typeof record.title === "string" && pack.pattern.test(record.title)));
+
+  return foundPacks.map((pack, index) => {
+    const text = `${index === 0 ? "" : index === foundPacks.length - 1 ? " and " : ", "}${pack.label}`;
+    return pack.citation === undefined ? { text } : { citation: pack.citation, text };
+  });
+}
+
+function getSupplementalDiscoveryPackSegments(
+  peopleDiscoveryState: PeopleDiscoveryState | undefined,
+  webPresenceState: WebPresenceState | undefined,
+  citations: ReadonlyMap<string, AnalystMemoCitation>,
+): readonly OverviewSegment[] {
+  const packs: { label: string; citation?: AnalystMemoCitation }[] = [];
+  if (
+    webPresenceState?.status === "success"
+    && (webPresenceState.presence.configured || webPresenceState.presence.results.length > 0 || webPresenceState.presence.limits.length > 0)
+  ) {
+    const citation = findAnyCitation(citations, /web-presence|possible official website|web presence limit|tinyfish/i);
+    packs.push(citation === undefined ? { label: "web presence" } : { citation, label: "web presence" });
+  }
+  if (
+    peopleDiscoveryState?.status === "success"
+    && (peopleDiscoveryState.discovery.configured || peopleDiscoveryState.discovery.results.length > 0 || peopleDiscoveryState.discovery.limits.length > 0)
+  ) {
+    const citation = findAnyCitation(citations, /people-discovery|people discovery/i);
+    packs.push(citation === undefined ? { label: "people discovery" } : { citation, label: "people discovery" });
+  }
+  return packs.map((pack, index) => {
+    const text = `${index === 0 ? "" : index === packs.length - 1 ? " and " : ", "}${pack.label}`;
+    return pack.citation === undefined ? { text } : { citation: pack.citation, text };
+  });
 }
 
 function buildExecutiveOverviewSegments(
   dossier: BusinessDossier,
   memo: AnalystMemoReady,
   citations: ReadonlyMap<string, AnalystMemoCitation>,
+  peopleDiscoveryState?: PeopleDiscoveryState,
+  webPresenceState?: WebPresenceState,
 ): OverviewSegment[] {
   const identity = getDossierIdentity(dossier);
   const entityCitation = findSummaryCitation(citations, "Entity");
@@ -546,6 +668,8 @@ function buildExecutiveOverviewSegments(
   const blockers = buildConfidenceBlockers(dossier, memo);
   const providerGaps = [sanctionsGap, corporatesGap].filter((citation): citation is AnalystMemoCitation => citation !== undefined);
   const genericBlocker = blockers.find((blocker) => /API|credential|license|licence|configured/i.test(blocker.detail));
+  const supplementalPacks = getSupplementalEvidencePackSegments(dossier, citations);
+  const discoveryPacks = getSupplementalDiscoveryPackSegments(peopleDiscoveryState, webPresenceState, citations);
   const segment = (text: string, citation?: AnalystMemoCitation): OverviewSegment => ({ citation, text });
   const segments: OverviewSegment[] = [
     segment(identity.entity, entityCitation),
@@ -566,6 +690,18 @@ function buildExecutiveOverviewSegments(
   segments.push(segment(" for any new or ongoing engagement until the business context and intended use are confirmed. "));
   segments.push(segment(`The current run is strongest on identity evidence: Dude searched ${formatModuleList(searchedModules)} and matched ${formatModuleList(matchedModules)}.`));
 
+  if (supplementalPacks.length > 0) {
+    segments.push(segment(" The executive view also incorporates supplemental evidence packs for "));
+    segments.push(...supplementalPacks);
+    segments.push(segment("."));
+  }
+
+  if (discoveryPacks.length > 0) {
+    segments.push(segment(" Supplemental discovery inputs include "));
+    segments.push(...discoveryPacks);
+    segments.push(segment("."));
+  }
+
   if (providerGaps.length > 0) {
     segments.push(segment(" Supplemental screening is not yet complete because "));
     providerGaps.forEach((citation, index) => {
@@ -579,7 +715,7 @@ function buildExecutiveOverviewSegments(
     segments.push(segment(` The main blocker is ${blockers[0].detail}`));
   }
 
-  segments.push(segment(" Recommended follow-up is to verify the full ACRA record, then run any configured sanctions, OpenCorporates, adverse-media, and relationship-graph checks that are relevant to the engagement."));
+  segments.push(segment(" Recommended follow-up is to verify the full ACRA record, then review any source gaps, limits, and supplemental pack results that remain unresolved."));
   return segments;
 }
 
@@ -659,10 +795,14 @@ function CitedSummary({
   dossier,
   memoState,
   onOpenEvidence,
+  peopleDiscoveryState,
+  webPresenceState,
 }: {
   dossier: BusinessDossier;
   memoState: AnalystMemoState;
   onOpenEvidence: (state: EvidenceDialogState) => void;
+  peopleDiscoveryState: PeopleDiscoveryState;
+  webPresenceState: WebPresenceState;
 }) {
   if (memoState.status !== "ready") {
     return (
@@ -684,8 +824,8 @@ function CitedSummary({
   }
 
   const memo = memoState.memo;
-  const citationById = buildCitationMap(dossier, memo);
-  const executiveOverview = buildExecutiveOverviewSegments(dossier, memo, citationById);
+  const citationById = buildCitationMap(dossier, memo, peopleDiscoveryState, webPresenceState);
+  const executiveOverview = buildExecutiveOverviewSegments(dossier, memo, citationById, peopleDiscoveryState, webPresenceState);
   const confidenceBlockers = buildConfidenceBlockers(dossier, memo);
 
   return (
@@ -1194,7 +1334,13 @@ export function DossierFindingsTabs({
       </div>
 
       {activeTab === "summary" ? (
-        <CitedSummary dossier={dossier} memoState={memoState} onOpenEvidence={setEvidenceDialog} />
+        <CitedSummary
+          dossier={dossier}
+          memoState={memoState}
+          onOpenEvidence={setEvidenceDialog}
+          peopleDiscoveryState={peopleDiscoveryState}
+          webPresenceState={webPresenceState}
+        />
       ) : activeTab === "evidence" ? (
         <EvidencePackTab
           dossier={dossier}

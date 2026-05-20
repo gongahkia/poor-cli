@@ -352,10 +352,12 @@ const isDossier = (value: unknown): value is AnalystMemoDossier =>
   && Array.isArray(value["freshness"])
   && Array.isArray(value["limits"]);
 
-const buildBusinessDossierInputFromIdentifier = (identifier: string): { readonly uen: string } | { readonly entityName: string } =>
+const buildBusinessDossierInputFromIdentifier = (
+  identifier: string,
+): ({ readonly uen: string } | { readonly entityName: string }) & { readonly includeExternalDiligence: true } =>
   UEN_PATTERN.test(identifier)
-    ? { uen: identifier.toUpperCase() }
-    : { entityName: identifier };
+    ? { includeExternalDiligence: true, uen: identifier.toUpperCase() }
+    : { entityName: identifier, includeExternalDiligence: true };
 
 const resolveMemoDossier = async (input: Record<string, unknown>): Promise<AnalystMemoDossier> => {
   if (isDossier(input["dossier"])) {
@@ -963,7 +965,13 @@ const server = createServer(async (req, res) => {
       safeInputSummary = summarizeMemoInput(input);
       const startedAt = Date.now();
       const dossier = await resolveMemoDossier(input);
-      const summary = await generateInteractiveSummary({ dossier });
+      const peopleDiscovery = sanitizePeopleDiscoveryForMemo(input["peopleDiscovery"]);
+      const webPresence = sanitizeWebPresenceForMemo(input["webPresence"]);
+      const summary = await generateInteractiveSummary({
+        dossier,
+        ...(peopleDiscovery === undefined ? {} : { peopleDiscovery }),
+        ...(webPresence === undefined ? {} : { webPresence }),
+      });
       requestLogger.info("interactive summary finished", {
         ...safeInputSummary,
         status: summary.status,
