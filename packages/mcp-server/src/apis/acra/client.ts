@@ -70,6 +70,7 @@ const ACRA_SHARD_SEARCH_ORDER: readonly AcraShardKey[] = [
 const ACRA_UEN_ONLY_SHARD_DELAY_MS = process.env["NODE_ENV"] === "test" ? 0 : 1200;
 const ACRA_ENTITY_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const ACRA_SUGGESTION_CACHE_TTL_MS = 10 * 60 * 1000;
+const ACRA_READINESS_PROBE_PULL_LIMIT = 100;
 
 type AcraFilterParams = {
   readonly entityName?: string | undefined;
@@ -382,7 +383,9 @@ export const searchAcraEntitySuggestions = async (
 
 export const probeAcraLookupReadiness = async (): Promise<AcraLookupReadiness> => {
   const resourceId = ACRA_SHARD_RESOURCE_IDS.A;
-  const result = await queryDatastoreResult<AcraEntityRecord>(resourceId, { limit: 1 });
+  const result = await queryDatastoreResult<AcraEntityRecord>(resourceId, {
+    limit: ACRA_READINESS_PROBE_PULL_LIMIT,
+  });
   const record = result.records[0];
 
   if (record === undefined) {

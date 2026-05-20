@@ -1,5 +1,13 @@
-import { describe, it, expect } from "vitest";
-import { buildCacheKey } from "../cache-middleware.js";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import { buildCacheKey, closeCache, getCache, withCache } from "../cache-middleware.js";
+
+beforeEach(() => {
+  getCache().clear();
+});
+
+afterEach(() => {
+  closeCache();
+});
 
 describe("cache-middleware", () => {
   it("produces same cache key regardless of param order", () => {
@@ -52,5 +60,35 @@ describe("cache-middleware", () => {
     const key = buildCacheKey("singstat", "search", { keyword: "GDP" });
     expect(key).toContain("singstat");
     expect(key).toContain("search");
+  });
+
+  it("serves stale cache data when an upstream refresh fails", async () => {
+    getCache().set("datagov:datastore:test", JSON.stringify({ records: [{ uen: "197700546G" }] }), 0);
+
+    const result = await withCache(
+      "datagov:datastore:test",
+      "DAILY",
+      async () => {
+        throw new Error("data.gov.sg unavailable");
+      },
+    );
+
+    expect(result).toEqual({
+      cached: true,
+      stale: true,
+      data: { records: [{ uen: "197700546G" }] },
+    });
+  });
+
+  it("deduplicates concurrent refreshes for the same cache key", async () => {
+    const fetcher = vi.fn(async () => ({ records: [{ uen: "03591300B" }] }));
+
+    const [first, second] = await Promise.all([
+      withCache("datagov:datastore:dedupe", "DAILY", fetcher),
+      withCache("datagov:datastore:dedupe", "DAILY", fetcher),
+    ]);
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(first.data).toEqual(second.data);
   });
 });

@@ -1,6 +1,6 @@
 import { formatResponse, Keystore } from "@dude/shared";
 import type { CredentialSource, ToolResult, HealthStatus } from "@dude/shared";
-import { getAcraEntities } from "../apis/acra/client.js";
+import { probeAcraLookupReadiness } from "../apis/acra/client.js";
 import { getBoaArchitectureFirms } from "../apis/boa/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 import { LIVE_API_SURFACE } from "./runtime-surface.js";
@@ -56,8 +56,8 @@ const withHealthTimeout = async <T>(
 };
 
 export const probeDatagovDatastoreHealth = async (): Promise<HealthProbeResult> => {
-  const rows = await getAcraEntities({ entityName: "DP ARCHITECTS PTE LTD", limit: 1 });
-  if (rows.length === 0) {
+  const result = await probeAcraLookupReadiness();
+  if (result.recordCount === 0) {
     throw new Error("CDD datastore probe returned no ACRA rows.");
   }
   return OK_HEALTH_RESPONSE;

@@ -1,14 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../apis/acra/client.js", () => ({
-  getAcraEntities: vi.fn().mockResolvedValue([{ entityName: "DP ARCHITECTS PTE LTD", uen: "199100765E" }]),
+  probeAcraLookupReadiness: vi.fn().mockResolvedValue({
+    fieldCount: 8,
+    recordCount: 100,
+    resourceId: "acra-shard-a",
+  }),
 }));
 
 vi.mock("../../apis/boa/client.js", () => ({
   getBoaArchitectureFirms: vi.fn().mockResolvedValue([{ firmName: "DP ARCHITECTS PTE LTD" }]),
 }));
 
-import { getAcraEntities } from "../../apis/acra/client.js";
+import { probeAcraLookupReadiness } from "../../apis/acra/client.js";
 import { getBoaArchitectureFirms } from "../../apis/boa/client.js";
 import {
   checkApiHealth,
@@ -107,7 +111,7 @@ describe("Health Check", () => {
       statusText: "OK",
     });
 
-    expect(vi.mocked(getAcraEntities)).toHaveBeenCalledWith({ entityName: "DP ARCHITECTS PTE LTD", limit: 1 });
+    expect(vi.mocked(probeAcraLookupReadiness)).toHaveBeenCalled();
     expect(vi.mocked(getBoaArchitectureFirms)).toHaveBeenCalledWith({ limit: 1 });
   });
 
