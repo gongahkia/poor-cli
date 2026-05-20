@@ -838,7 +838,7 @@ describe("sg_query parity", () => {
     );
   });
 
-  it("matches the direct business dossier handler", async () => {
+  it("routes business dossier query execution through the CDD orchestrator envelope", async () => {
     vi.mocked(getAcraEntities).mockResolvedValue([
       {
         uen: "201912345K",
@@ -877,12 +877,27 @@ describe("sg_query parity", () => {
 
     const input = { entityName: "ABC CONSTRUCTION PTE LTD", format: "json" } as const;
 
-    const [queryResult, directResult] = await Promise.all([
-      executeQueryStep("sg_business_dossier", input),
-      handleBusinessDossier(input),
-    ]);
+    const queryResult = await executeQueryStep("sg_business_dossier", input);
+    const directResult = await handleBusinessDossier(input);
+    const queryText = queryResult.content[0]?.type === "text" ? queryResult.content[0].text : "{}";
+    const orchestration = JSON.parse(queryText) as Record<string, unknown>;
+    const orchestratedDossier = orchestration["dossier"] as Record<string, unknown>;
+    const directDossier = directResult.structuredContent?.["record"] as Record<string, unknown>;
 
-    expect(normalizeBriefResult(queryResult)).toEqual(normalizeBriefResult(directResult));
+    expect(orchestration).toMatchObject({
+      memo: expect.objectContaining({ status: "unavailable" }),
+      orchestration: expect.objectContaining({
+        status: "ready",
+        strategy: "acra_then_sector_then_supplemental_memo",
+      }),
+      webPresence: expect.objectContaining({ configured: false }),
+    });
+    expect((orchestration["orchestration"] as { stages?: unknown[] }).stages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "acra_identity", status: "completed" }),
+      expect.objectContaining({ id: "official_modules", status: "completed" }),
+    ]));
+    expect(orchestratedDossier["title"]).toBe(directDossier["title"]);
+    expect(orchestratedDossier["summary"]).toEqual(directDossier["summary"]);
   });
 
   it("matches the direct property brief handler", async () => {
