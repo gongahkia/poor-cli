@@ -71,6 +71,10 @@ Your agent should preserve:
 
 Do not infer that a company is safe, sanctioned-free, PDPA-compliant, or financially sound from missing public evidence.
 
+## First-Run Artifact Pack
+
+For evaluator review, see the [first-run CDD orchestrator artifact pack](./evaluator-artifacts/first-run-cdd-orchestrator/README.md). It is generated from `npm run test:smoke:web` and includes a fixture PDF report, structured JSON dossier export, source freshness, gaps, limits, provenance, report manifest data, and orchestrator stage trace. It is fixture evidence only; it does not replace live smoke.
+
 ## Local Verification
 
 ```bash

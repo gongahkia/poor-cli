@@ -12,6 +12,7 @@ This page is the public entrypoint for product-health, governance, and adoption 
 ## Evaluation
 
 - `Works today` [Product audit](./product-audit.md) — current value proposition, limits, and expansion priorities.
+- `Works today` [First-run CDD orchestrator artifact pack](./evaluator-artifacts/first-run-cdd-orchestrator/README.md) — committed evaluator snapshot from a passing no-auth orchestrator browser smoke; fixture-only and not a live-source substitute.
 - `Works today` [Developer adoption audit](./developer-adoption-audit.md) — integration readiness and adoption gaps.
 - `Works today` [Market conventions audit](./market-conventions-audit.md) — MCP ecosystem expectations and positioning.
 - `Works today` [Ecosystem snapshot](./ecosystem-snapshot.md) — generated ecosystem evidence and comparison context.

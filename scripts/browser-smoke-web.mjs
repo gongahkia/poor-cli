@@ -167,6 +167,60 @@ const dossierFixture = {
   ],
 };
 
+const orchestrationFixture = {
+  status: "ready",
+  strategy: "acra_then_sector_then_supplemental_memo",
+  acraSectorHints: [],
+  webSectorHints: [],
+  effectiveSectorHints: [],
+  officialModules: ["acra", "gebiz"],
+  supplementalTools: [
+    "sg_sanctions_screen",
+    "sg_opencorporates_links",
+    "sg_adverse_media_lite",
+    "sg_relationship_graph",
+  ],
+  reranDossierForWebSectorHints: false,
+  stages: [
+    {
+      detail: "Fixture gateway resolved DBS BANK to DBS BANK LTD / 03591300B through the orchestrator identity gate.",
+      id: "acra_identity",
+      label: "ACRA identity lookup",
+      status: "completed",
+      tools: ["sg_acra_entities"],
+    },
+    {
+      detail: "Fixture SSIC evidence classified the entity as finance, so no specialist BCA, BOA, CEA, HSA, or HLB sector module was justified.",
+      id: "sector_inference",
+      label: "Sector inference",
+      status: "completed",
+      tools: ["sg_business_dossier"],
+    },
+    {
+      detail: "ACRA and GeBIZ fixture modules ran; ACRA matched and GeBIZ returned an explicit no-match gap.",
+      id: "official_modules",
+      label: "Official module enrichment",
+      status: "completed",
+      tools: ["sg_acra_entities", "sg_gebiz_tenders"],
+    },
+    {
+      detail: "Fixture web and people discovery were included as supplemental analyst-review evidence; external provider checks remain represented as supplemental tools.",
+      id: "supplemental_review",
+      label: "Supplemental review",
+      status: "completed",
+      tools: ["sg_sanctions_screen", "sg_opencorporates_links", "sg_adverse_media_lite", "sg_relationship_graph"],
+    },
+    {
+      detail: "Fixture memo produced cited analyst-review findings from the returned dossier evidence.",
+      id: "ai_memo",
+      label: "AI memo",
+      status: "completed",
+      tools: ["dude_memo"],
+    },
+  ],
+  limits: ["Fixture orchestrator response mirrors the production CDD flow shape."],
+};
+
 const jsonResponse = (response, statusCode, payload) => {
   response.writeHead(statusCode, {
     "Access-Control-Allow-Headers": "Content-Type",
@@ -341,22 +395,7 @@ const createMockGateway = () => createServer(async (request, response) => {
         rejectedClaims: [],
       },
       generatedAt: "2026-05-15T00:00:00.000Z",
-      orchestration: {
-        status: "ready",
-        strategy: "acra_then_sector_then_supplemental_memo",
-        acraSectorHints: [],
-        webSectorHints: [],
-        effectiveSectorHints: [],
-        officialModules: ["acra", "gebiz"],
-        supplementalTools: [
-          "sg_sanctions_screen",
-          "sg_opencorporates_links",
-          "sg_adverse_media_lite",
-          "sg_relationship_graph",
-        ],
-        reranDossierForWebSectorHints: false,
-        limits: ["Fixture orchestrator response mirrors the production CDD flow shape."],
-      },
+      orchestration: orchestrationFixture,
     });
     return;
   }
@@ -601,12 +640,57 @@ try {
   }
   await download.saveAs(resolve(artifactDir, suggestedFilename));
 
+  const jsonDownloadPromise = page.waitForEvent("download", { timeout: 20000 });
+  await page.getByText("Advanced data exports").click();
+  await page.getByRole("button", { name: "JSON" }).click();
+  const jsonDownload = await jsonDownloadPromise;
+  const jsonFilename = jsonDownload.suggestedFilename();
+  if (!jsonFilename.endsWith(".json")) {
+    throw new Error(`JSON export used unexpected filename: ${jsonFilename}`);
+  }
+  await jsonDownload.saveAs(resolve(artifactDir, jsonFilename));
+
   await writeDiagnostics(page, "web-smoke-success");
+  const artifactManifest = {
+    schemaVersion: "dude-first-run-artifact-pack/v1",
+    observedAt: new Date().toISOString(),
+    command: "npm run test:smoke:web",
+    entrypoint: {
+      userInput: "DBS BANK",
+      resolvedUrl: "/c/03591300B?memo=ready",
+      orchestratorRoute: "POST /api/v1/dude/cdd-orchestrator",
+    },
+    boundary: {
+      mode: "fixture",
+      liveUpstreamCalls: false,
+      fixtureGateway: "scripts/browser-smoke-web.mjs",
+      fixtureEntity: "DBS BANK LTD",
+      fixtureUen: "03591300B",
+      note: "This pack proves the no-auth browser smoke and orchestrated CDD envelope shape. It does not replace live upstream smoke or prove current ACRA/GeBIZ source state.",
+    },
+    artifacts: [
+      { path: suggestedFilename, role: "first-class PDF CDD report export" },
+      { path: jsonFilename, role: "structured dossier export with manifest, provenance, freshness, gaps, limits, source-use warnings, and orchestration trace" },
+      { path: "web-smoke-success.png", role: "browser screenshot of the successful smoke flow" },
+    ],
+    sourceFreshness: dossierFixture.freshness,
+    provenance: dossierFixture.provenance,
+    gaps: dossierFixture.gaps,
+    limits: dossierFixture.limits,
+    orchestration: orchestrationFixture,
+    reportManifest: {
+      location: `${jsonFilename} -> manifest`,
+      note: "The PDF also includes the report manifest section generated by the web export path.",
+    },
+  };
+  writeFileSync(resolve(artifactDir, "first-run-artifact-manifest.json"), `${JSON.stringify(artifactManifest, null, 2)}\n`);
   process.stdout.write(JSON.stringify({
     ok: true,
     webBaseUrl,
     gatewayBaseUrl: `http://127.0.0.1:${gatewayPort}`,
     pdf: suggestedFilename,
+    json: jsonFilename,
+    manifest: "first-run-artifact-manifest.json",
     artifacts: "output/playwright",
   }, null, 2));
   process.stdout.write("\n");

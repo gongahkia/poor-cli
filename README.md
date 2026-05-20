@@ -175,6 +175,7 @@ Dude is an analyst-review system, not an automated compliance decision engine.
 
 - [Architecture](./docs/architecture.md)
 - [Agent builder quickstart](./docs/agent-builder-quickstart.md)
+- [First-run CDD artifact pack](./docs/evaluator-artifacts/first-run-cdd-orchestrator/README.md)
 - [Product health](./docs/product-health.md)
 - [CDD product notes](./docs/product/corp-services-cdd.md)
 - [Secondary workflows](./docs/product/secondary-workflows.md)
