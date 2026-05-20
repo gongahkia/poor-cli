@@ -67,7 +67,7 @@ export const externalDiligenceToolDefinitions: readonly RegisteredToolDefinition
   },
   {
     name: "sg_adverse_media_lite",
-    description: "Search bounded official Singapore public feeds for keyword evidence without open-web crawling or unsupported NLP claims.",
+    description: "Search bounded official Singapore public feeds for keyword evidence and source-backed triage labels without open-web crawling or unsupported NLP claims.",
     surface: "canonical",
     positioning: "Official-feed adverse-media triage, not general media monitoring.",
     inputSchema: AdverseMediaLiteSchema.shape,
@@ -79,9 +79,9 @@ export const externalDiligenceToolDefinitions: readonly RegisteredToolDefinition
   },
   {
     name: "sg_relationship_graph",
-    description: "Build a shallow relationship graph from supplied public dossier records with strict limits against ownership or control claims.",
+    description: "Build a shallow relationship graph from supplied public dossier records, including explicit source-declared relationships when present and strict limits against inference.",
     surface: "canonical",
-    positioning: "Evidence-backed and heuristic graph export over supplied public data only.",
+    positioning: "Evidence-backed, source-declared, and heuristic graph export over supplied public data only.",
     inputSchema: RelationshipGraphSchema.shape,
     toolsets: ["public", "diligence"],
     handler: async (input: unknown): Promise<ToolResult> => {

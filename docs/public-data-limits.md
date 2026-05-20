@@ -9,6 +9,8 @@ Dude uses Singapore public registry and public-data sources. Treat missing priva
 - Creditworthiness, financial strength, sanctions, litigation, legal exposure, tax positions, or investment suitability.
 - Private data from paid corporate registries, bank KYC files, internal procurement systems, or non-public filings.
 
+`sg_relationship_graph` may preserve explicit source-declared relationship edges if they are supplied in dossier records. Those edges are supplemental evidence for analyst review; Dude still does not infer the relationship from names, addresses, missing data, or graph shape.
+
 ## How To Read Missing Ownership Evidence
 
 If a dossier does not show shareholders or a corporate graph, the correct interpretation is:

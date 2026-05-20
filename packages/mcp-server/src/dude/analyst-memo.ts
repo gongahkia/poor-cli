@@ -223,9 +223,11 @@ const MEMO_RECORD_KEYS = [
   "externalDiligence",
 ] as const;
 
-const MAX_PROMPT_ARRAY_ITEMS = 5;
-const MAX_PROMPT_OBJECT_KEYS = 24;
-const MAX_PROMPT_STRING_LENGTH = 1200;
+const MAX_PROMPT_ARRAY_ITEMS = 8;
+const MAX_PROMPT_OBJECT_KEYS = 32;
+const MAX_PROMPT_STRING_LENGTH = 2400;
+const MAX_DIGEST_SAMPLE_ITEMS = 8;
+const MAX_DIGEST_FIELD_EXAMPLES = 4;
 
 const boundPromptValue = (value: unknown, depth = 0): unknown => {
   if (value === null || value === undefined) return value;
@@ -255,6 +257,57 @@ const buildMemoRecordsInput = (records: Record<string, unknown>): Record<string,
       .filter((key) => records[key] !== undefined)
       .map((key) => [key, boundPromptValue(records[key])]),
   );
+
+const digestExample = (value: unknown): string | null => {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "string") return value.length > 220 ? `${value.slice(0, 220)}...` : value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return `[array:${value.length}]`;
+  if (typeof value === "object") return "[object]";
+  return String(value);
+};
+
+const buildFieldCoverageDigest = (items: readonly unknown[]) => {
+  const fields = new Map<string, { present: number; examples: string[] }>();
+  for (const item of items) {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) continue;
+    for (const [field, value] of Object.entries(item as Record<string, unknown>)) {
+      const current = fields.get(field) ?? { examples: [], present: 0 };
+      const example = digestExample(value);
+      fields.set(field, {
+        examples: example === null || current.examples.includes(example) || current.examples.length >= MAX_DIGEST_FIELD_EXAMPLES
+          ? current.examples
+          : [...current.examples, example],
+        present: current.present + 1,
+      });
+    }
+  }
+  return Array.from(fields.entries())
+    .map(([field, value]) => ({ field, ...value }))
+    .sort((left, right) => right.present - left.present || left.field.localeCompare(right.field))
+    .slice(0, MAX_PROMPT_OBJECT_KEYS);
+};
+
+const buildRecordDigests = (records: Record<string, unknown>): readonly Record<string, unknown>[] =>
+  MEMO_RECORD_KEYS.flatMap((key) => {
+    const value = records[key];
+    if (value === undefined) return [];
+    if (!Array.isArray(value)) {
+      return [{
+        count: 1,
+        key,
+        sample: boundPromptValue(value),
+      }];
+    }
+    return [{
+      count: value.length,
+      fieldCoverage: buildFieldCoverageDigest(value),
+      key,
+      omittedCount: Math.max(value.length - MAX_DIGEST_SAMPLE_ITEMS, 0),
+      sample: value.slice(0, MAX_DIGEST_SAMPLE_ITEMS).map((item) => boundPromptValue(item)),
+      sampledCount: Math.min(value.length, MAX_DIGEST_SAMPLE_ITEMS),
+    }];
+  });
 
 const buildRecordCitations = (records: Record<string, unknown>): readonly Citation[] => {
   const citations: Citation[] = [];
@@ -452,6 +505,7 @@ const buildPrompt = (
     limits: dossier.limits,
     nextChecks: dossier.nextChecks ?? [],
     provenance: dossier.provenance,
+    recordDigests: buildRecordDigests(dossier.records),
     records: {
       ...buildMemoRecordsInput(dossier.records),
     },

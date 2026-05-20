@@ -35,6 +35,8 @@ Operational rules:
 - No general web crawling.
 - No sentiment, culpability, or adverse-event NLP inference.
 - Confidence means official-feed keyword occurrence only.
+- Returned triage labels are source-backed metadata only: matched feed, matched keyword terms, official notice type, and analyst-review requirement.
+- `sentiment`, `culpability`, and `adverseEventCategory` remain `not_assessed`.
 
 ## Relationship Graph
 
@@ -45,13 +47,16 @@ Permitted edges:
 - registered address from ACRA fields
 - shared registered address heuristic
 - normalized name-family heuristic
+- explicit source-declared relationships supplied in input records, such as declared director, shareholder, owner, controller, parent, subsidiary, or related-entity edges
 
 Explicitly not supported:
 
-- directors/officers
-- shareholders
-- UBOs
-- subsidiaries or parent entities
-- ownership or control claims
+- inferred directors/officers
+- inferred shareholders
+- inferred UBOs
+- inferred subsidiaries or parent entities
+- inferred ownership or control claims
+
+Source-declared relationship edges are represented only when a supplied source record explicitly declares the relationship, and must still be reviewed against the underlying record.
 
 Business dossiers can include external diligence by setting `includeExternalDiligence: true`; otherwise the direct tools remain explicit follow-ups in `nextChecks`.

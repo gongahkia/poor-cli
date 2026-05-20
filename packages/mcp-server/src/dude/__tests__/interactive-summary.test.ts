@@ -195,6 +195,8 @@ describe("interactive summary generation", () => {
           expect(input.prompt).toContain("overview.summary");
           expect(input.prompt).toContain("evidence.records");
           expect(input.prompt).toContain("compositeEvidencePacks");
+          expect(input.prompt).toContain("recordDigests");
+          expect(input.prompt).toContain("fieldCoverage");
           expect(input.prompt).toContain("externalDiligence");
           expect(input.prompt).toContain("Sanctions Screen");
           expect(input.prompt).toContain("OpenCorporates Cross-Links");

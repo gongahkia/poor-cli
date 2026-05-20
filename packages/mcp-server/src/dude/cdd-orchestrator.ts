@@ -458,7 +458,7 @@ const buildReadyStages = (params: Readonly<{
     tools: ["TinyFish Search"],
   },
   {
-    detail: "Built from supplied public dossier records only; ownership or control is not inferred.",
+    detail: "Built from supplied dossier records only; explicit source-declared relationships are shown when present, but ownership or control is not inferred.",
     id: "relationship_graph",
     label: "Relationship graph",
     status: "completed",

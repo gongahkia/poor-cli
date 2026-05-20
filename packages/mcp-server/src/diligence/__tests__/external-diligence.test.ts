@@ -145,7 +145,22 @@ describe("adverse media lite", () => {
     );
 
     expect(artifact.records.items).toEqual(expect.arrayContaining([
-      expect.objectContaining({ confidence: "official_feed_keyword_match" }),
+      expect.objectContaining({
+        confidence: "official_feed_keyword_match",
+        triage: expect.objectContaining({
+          adverseEventCategory: "not_assessed",
+          culpability: "not_assessed",
+          matchedFeed: "sfa_food_alerts",
+          matchedKeywords: expect.arrayContaining(["acme"]),
+          officialNoticeType: "official_food_alert_feed",
+          requiresAnalystReview: true,
+          sentiment: "not_assessed",
+        }),
+      }),
+    ]));
+    expect(artifact.evidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "Triage model", value: "feed_metadata_and_keyword_match_only" }),
+      expect.objectContaining({ label: "Unsupported assessments", value: "sentiment, culpability, adverse_event_category" }),
     ]));
     expect(artifact.limits.map((limit) => limit.code)).toContain("NO_UNSUPPORTED_NLP");
   });
@@ -167,6 +182,37 @@ describe("relationship graph", () => {
       "shared_registered_address",
       "name_family",
     ]));
-    expect(artifact.limits.map((limit) => limit.code)).toContain("NO_UBO_OR_CONTROL_INFERENCE");
+    expect(artifact.limits.map((limit) => limit.code)).toContain("NO_INFERRED_OWNERSHIP_OR_CONTROL");
+  });
+
+  it("represents explicit source-declared relationships without inferring control", () => {
+    const artifact = buildRelationshipGraphArtifact({
+      records: {
+        acra: [
+          { entityName: "ACME HOLDINGS PTE LTD", uen: "202400001A" },
+        ],
+        relationships: [
+          {
+            from: "ACME HOLDINGS PTE LTD",
+            to: "ACME OPERATING PTE LTD",
+            relationshipType: "declared_parent",
+            source: "Supplied registry extract",
+            evidence: "Registry extract states ACME HOLDINGS PTE LTD is the parent entity.",
+          },
+        ],
+      },
+    }, "2026-05-17T00:00:00.000Z");
+
+    const graph = artifact.records.graph as { edges: { confidence: string; kind: string }[] };
+    expect(graph.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        confidence: "source_declared",
+        kind: "declared_parent",
+      }),
+    ]));
+    expect(artifact.summary).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "Source-declared edges", value: 1 }),
+    ]));
+    expect(artifact.limits.map((limit) => limit.code)).toContain("DECLARED_RELATIONSHIPS_REQUIRE_SOURCE_REVIEW");
   });
 });

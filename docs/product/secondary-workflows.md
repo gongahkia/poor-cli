@@ -55,7 +55,7 @@ Procurement intelligence helps a team monitor public tender and award signals ar
 | Entity identity checks | CDD orchestrator with ACRA source evidence |
 | Sector classification | SSIC evidence from ACRA-backed records plus analyst-selected sector hints |
 | Bulk monitoring | Browser-local 200-row bulk flow with partial-failure and retry metadata; hosted deployments can attach the same model to durable workspace storage |
-| Shallow relationship graph | `sg_relationship_graph` for supplied dossier records without ownership or control claims |
+| Shallow relationship graph | `sg_relationship_graph` for supplied dossier records, with explicit source-declared relationship edges when present and no inferred ownership or control claims |
 | Public benchmark data | 50-case diligence benchmark set documented in [diligence-benchmarks.md](../diligence-benchmarks.md) |
 
 ### Non-Goals

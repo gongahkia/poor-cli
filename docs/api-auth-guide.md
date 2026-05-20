@@ -178,7 +178,7 @@ Operational notes:
 - external diligence is opt-in and must not be treated as default ACRA identity evidence
 - OpenSanctions and OpenCorporates use token/licence review paths before hosted production use
 - official-feed adverse-media lite remains bounded to official Singapore feeds and does not perform open-web crawling
-- relationship graph export is shallow and must not infer ownership, control, or beneficial-owner completeness
+- relationship graph export is shallow; it may carry explicit source-declared relationship edges when supplied, but must not infer ownership, control, or beneficial-owner completeness
 
 Common failure modes:
 

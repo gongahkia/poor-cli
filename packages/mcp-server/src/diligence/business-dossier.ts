@@ -304,7 +304,7 @@ const buildBusinessNextChecks = (
     });
     checks.push({
       tool: "sg_relationship_graph",
-      reason: "Build a shallow graph from supplied public dossier records with strict limits against ownership claims.",
+      reason: "Build a shallow graph from supplied dossier records, including explicit source-declared relationships when present, with strict limits against inferred ownership or control.",
       input: { records: "Use this dossier's records object." },
     });
   }

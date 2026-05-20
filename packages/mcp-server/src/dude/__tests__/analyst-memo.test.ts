@@ -185,6 +185,8 @@ describe("analyst memo generation", () => {
           expect(input.prompt).toContain("web-presence-1");
           expect(input.prompt).toContain("people-discovery-1");
           expect(input.prompt).toContain("record-acra-1");
+          expect(input.prompt).toContain("recordDigests");
+          expect(input.prompt).toContain("fieldCoverage");
           expect(input.prompt).toContain("externalDiligence");
           expect(input.prompt).toContain("Sanctions screen");
           expect(input.prompt).toContain("OpenCorporates links");

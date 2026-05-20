@@ -14,4 +14,6 @@ Success criteria:
 - source URLs and observed freshness are preserved per feed
 - feed failures become gaps instead of aborting the whole artifact
 - confidence is limited to `official_feed_keyword_match`
+- source-backed triage labels preserve matched feed, matched keyword terms, official notice type, and `requiresAnalystReview`
+- `sentiment`, `culpability`, and `adverseEventCategory` are explicitly returned as `not_assessed`
 - no sentiment, culpability, adverse-event classification, or unsupported NLP is performed

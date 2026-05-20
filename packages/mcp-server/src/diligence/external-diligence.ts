@@ -292,6 +292,30 @@ const DEFAULT_ADVERSE_FEEDS = [
   "ura_media_releases",
 ] as const;
 
+const keywordTerms = (keyword: string): readonly string[] => {
+  const normalized = keyword.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const parts = normalized.split(/\s+/).filter((part) => part.length > 1);
+  return Array.from(new Set([normalized, ...parts].filter(Boolean)));
+};
+
+const matchedKeywordTerms = (
+  keyword: string,
+  item: { readonly title?: string | null; readonly description?: string | null },
+): readonly string[] => {
+  const haystack = `${item.title ?? ""} ${item.description ?? ""}`.toLowerCase();
+  return keywordTerms(keyword).filter((term) => haystack.includes(term));
+};
+
+const officialNoticeType = (
+  feed: Awaited<ReturnType<FeedReader>>["feed"],
+): string => {
+  const idAndTitle = `${feed.id} ${feed.title}`.toLowerCase();
+  if (idAndTitle.includes("food") && idAndTitle.includes("alert")) return "official_food_alert_feed";
+  if (idAndTitle.includes("media") && idAndTitle.includes("release")) return "official_media_release_feed";
+  if (idAndTitle.includes("news")) return "official_news_update_feed";
+  return "official_public_feed_item";
+};
+
 export const buildAdverseMediaLiteArtifact = async (
   params: AdverseMediaLiteParams,
   options: {
@@ -322,6 +346,15 @@ export const buildAdverseMediaLiteArtifact = async (
         link: item.link,
         publishedAt: item.publishedAt,
         confidence: "official_feed_keyword_match",
+        triage: {
+          matchedFeed: result.feed.id,
+          matchedKeywords: matchedKeywordTerms(params.keyword, item),
+          officialNoticeType: officialNoticeType(result.feed),
+          requiresAnalystReview: true,
+          sentiment: "not_assessed",
+          culpability: "not_assessed",
+          adverseEventCategory: "not_assessed",
+        },
       })));
       freshness.push(toFreshness(result.feed.title, result.observedAt, result.records[0]?.publishedAt ?? null));
       provenance.push(toProvenance(result.feed.sourceAgency, "sg_adverse_media_lite", `Keyword search over ${result.feed.title}.`, false, result.records.length, result.feed.sourceUrl));
@@ -339,6 +372,9 @@ export const buildAdverseMediaLiteArtifact = async (
     ],
     evidence: [
       { label: "Confidence model", value: "official_feed_keyword_match", source: "Dude" },
+      { label: "Triage model", value: "feed_metadata_and_keyword_match_only", source: "Dude" },
+      { label: "Items requiring analyst review", value: records.length, source: "Dude" },
+      { label: "Unsupported assessments", value: "sentiment, culpability, adverse_event_category", source: "Dude" },
     ],
     records: {
       query: { keyword: params.keyword, feedIds },
@@ -349,7 +385,7 @@ export const buildAdverseMediaLiteArtifact = async (
     freshness: freshness.length === 0 ? [toFreshness("Official feeds", observedAt)] : freshness,
     limits: [
       toLimit("NO_GENERAL_WEB_SEARCH", "This is not open web adverse-media monitoring; it searches only configured official Singapore public feeds."),
-      toLimit("NO_UNSUPPORTED_NLP", "Confidence means keyword occurrence in an official feed item. The tool does not infer sentiment, culpability, or adverse-event categories."),
+      toLimit("NO_UNSUPPORTED_NLP", "Confidence and triage labels are based only on feed metadata and keyword occurrence. Sentiment, culpability, and adverse-event category remain not_assessed."),
     ],
   };
 };
@@ -362,16 +398,26 @@ export type RelationshipGraphParams = {
 type GraphNode = {
   readonly id: string;
   readonly label: string;
-  readonly kind: "company" | "address";
+  readonly kind: "company" | "address" | "entity" | "person";
   readonly source: string;
 };
 
 type GraphEdge = {
   readonly from: string;
   readonly to: string;
-  readonly kind: "registered_address" | "shared_registered_address" | "name_family";
+  readonly kind:
+    | "registered_address"
+    | "shared_registered_address"
+    | "name_family"
+    | "declared_shareholder"
+    | "declared_director"
+    | "declared_owner"
+    | "declared_controller"
+    | "declared_parent"
+    | "declared_subsidiary"
+    | "declared_related_entity";
   readonly evidence: string;
-  readonly confidence: "evidence" | "heuristic";
+  readonly confidence: "evidence" | "heuristic" | "source_declared";
 };
 
 const firstString = (record: Record<string, unknown>, keys: readonly string[]): string | null => {
@@ -395,11 +441,61 @@ const collectAcraGraphRecords = (records: Record<string, unknown>): readonly Rec
     return record === null ? [] : [record];
   });
 
+const explicitRelationshipKind = (value: unknown): GraphEdge["kind"] | null => {
+  if (typeof value !== "string") return null;
+  const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+  if (/shareholder|shareholding|share_owner/.test(normalized)) return "declared_shareholder";
+  if (/director|officer/.test(normalized)) return "declared_director";
+  if (/beneficial_owner|owner|ownership/.test(normalized)) return "declared_owner";
+  if (/controller|control/.test(normalized)) return "declared_controller";
+  if (/parent|holding_company/.test(normalized)) return "declared_parent";
+  if (/subsidiary|child/.test(normalized)) return "declared_subsidiary";
+  if (/related|affiliate|associate/.test(normalized)) return "declared_related_entity";
+  return null;
+};
+
+const nodeIdFromLabel = (label: string, kind: GraphNode["kind"] = "entity"): string =>
+  `${kind}:${normalizeName(label) || label.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+
+const explicitNode = (
+  relationship: Record<string, unknown>,
+  keys: readonly string[],
+  fallback: Record<string, unknown> | undefined,
+  kind: GraphNode["kind"] = "entity",
+): { readonly id: string; readonly label: string } | null => {
+  const value = firstString(relationship, keys)
+    ?? (fallback === undefined ? null : firstString(fallback, ["uen", "uenNo", "entityName", "companyName", "name"]));
+  if (value === null) return null;
+  return {
+    id: value.includes(":") ? value : nodeIdFromLabel(value, kind),
+    label: value,
+  };
+};
+
+const collectExplicitRelationshipRecords = (
+  records: Record<string, unknown>,
+): readonly { readonly relationship: Record<string, unknown>; readonly fallback?: Record<string, unknown>; readonly sourceGroup: string }[] => [
+  ...asArray(records["relationships"]).flatMap((item) => {
+    const relationship = asRecord(item);
+    return relationship === null ? [] : [{ relationship, sourceGroup: "relationships" }];
+  }),
+  ...Object.entries(records).flatMap(([sourceGroup, value]) =>
+    asArray(value).flatMap((item) => {
+      const record = asRecord(item);
+      if (record === null) return [];
+      return asArray(record["relationships"]).flatMap((relationshipItem) => {
+        const relationship = asRecord(relationshipItem);
+        return relationship === null ? [] : [{ fallback: record, relationship, sourceGroup }];
+      });
+    })),
+];
+
 export const buildRelationshipGraphArtifact = (
   params: RelationshipGraphParams,
   observedAt = nowIso(),
 ): BriefArtifact => {
   const acra = collectAcraGraphRecords(params.records);
+  const explicitRelationships = collectExplicitRelationshipRecords(params.records);
   const nodes = new Map<string, GraphNode>();
   const edges: GraphEdge[] = [];
   const byAddress = new Map<string, string[]>();
@@ -439,6 +535,47 @@ export const buildRelationshipGraphArtifact = (
     }
   }
 
+  for (const item of explicitRelationships) {
+    const kind = explicitRelationshipKind(
+      item.relationship["kind"] ?? item.relationship["type"] ?? item.relationship["relationshipType"] ?? item.relationship["relationship"] ?? item.relationship["role"],
+    );
+    if (kind === null) continue;
+    const from = explicitNode(
+      item.relationship,
+      ["fromId", "from", "sourceId", "sourceEntity", "sourceName", "entityName", "companyName"],
+      item.fallback,
+    );
+    const toKind: GraphNode["kind"] = kind === "declared_director" ? "person" : "entity";
+    const to = explicitNode(
+      item.relationship,
+      ["toId", "to", "targetId", "targetEntity", "targetName", "relatedEntityName", "personName", "name"],
+      undefined,
+      toKind,
+    );
+    if (from === null || to === null) continue;
+    const source = firstString(item.relationship, ["source", "sourceRegistry", "registry"]) ?? item.sourceGroup;
+    nodes.set(from.id, {
+      id: from.id,
+      kind: "entity",
+      label: from.label,
+      source,
+    });
+    nodes.set(to.id, {
+      id: to.id,
+      kind: toKind,
+      label: to.label,
+      source,
+    });
+    edges.push({
+      confidence: "source_declared",
+      evidence: firstString(item.relationship, ["evidence", "basis", "sourceText"])
+        ?? `Supplied ${source} record explicitly declares this ${kind.replace(/^declared_/, "").replace(/_/g, " ")} relationship; Dude did not infer it.`,
+      from: from.id,
+      kind,
+      to: to.id,
+    });
+  }
+
   for (const [addressId, companyIds] of byAddress.entries()) {
     if (companyIds.length < 2) continue;
     for (const companyId of companyIds) {
@@ -476,19 +613,22 @@ export const buildRelationshipGraphArtifact = (
     summary: [
       { label: "Nodes", value: graph.nodes.length, source: "Graph builder" },
       { label: "Edges", value: graph.edges.length, source: "Graph builder" },
+      { label: "Source-declared edges", value: graph.edges.filter((edge) => edge.confidence === "source_declared").length, source: "Graph builder" },
       { label: "Heuristic edges", value: graph.edges.filter((edge) => edge.confidence === "heuristic").length, source: "Graph builder" },
     ],
     evidence: [
       { label: "ACRA records inspected", value: acra.length, source: "ACRA" },
+      { label: "Explicit relationship records inspected", value: explicitRelationships.length, source: "Input records" },
     ],
     records: { graph },
-    gaps: acra.length === 0 ? [toGap("NO_GRAPH_RECORDS", "No ACRA records were supplied for relationship graph construction.")] : [],
+    gaps: acra.length === 0 && explicitRelationships.length === 0 ? [toGap("NO_GRAPH_RECORDS", "No ACRA or explicit relationship records were supplied for relationship graph construction.")] : [],
     provenance: [
-      toProvenance("ACRA", "sg_relationship_graph", "Graph edges derived from supplied public ACRA record fields.", false, acra.length, "https://www.acra.gov.sg/resources/open-data-initiative/"),
+      toProvenance("Supplied dossier records", "sg_relationship_graph", "Graph edges derived from supplied public ACRA fields and explicit source-declared relationship records.", false, acra.length + explicitRelationships.length, "https://www.acra.gov.sg/resources/open-data-initiative/"),
     ],
     freshness: [toFreshness("Relationship graph", observedAt)],
     limits: [
-      toLimit("NO_UBO_OR_CONTROL_INFERENCE", "The graph does not infer directors, shareholders, beneficial owners, subsidiaries, parent entities, or control."),
+      toLimit("NO_INFERRED_OWNERSHIP_OR_CONTROL", "The graph does not infer directors, shareholders, beneficial owners, subsidiaries, parent entities, or control. It represents those relationships only when supplied records explicitly declare them."),
+      toLimit("DECLARED_RELATIONSHIPS_REQUIRE_SOURCE_REVIEW", "Source-declared relationship edges must be reviewed against the underlying source record before relying on them."),
       toLimit("HEURISTIC_EDGES_REQUIRE_REVIEW", "Shared-address and name-family edges are triage heuristics, not proof of relationship."),
     ],
   };
