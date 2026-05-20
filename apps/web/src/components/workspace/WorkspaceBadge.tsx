@@ -1,4 +1,5 @@
 import { Building2 } from "lucide-react";
+import { lazy, Suspense } from "react";
 
 import {
   Dialog,
@@ -8,7 +9,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { resolveActiveSession } from "@/lib/workspace";
-import { WorkspacePanel } from "@/pages/WorkspacePage";
+
+const WorkspacePanel = lazy(() => import("@/pages/WorkspacePage").then((module) => ({ default: module.WorkspacePanel })));
 
 export function WorkspaceBadge() {
   const session = resolveActiveSession();
@@ -30,7 +32,9 @@ export function WorkspaceBadge() {
           Browser-local workspace storage for saved dossiers, watchlists, bulk jobs, and audit events.
         </DialogDescription>
         <div className="rounded-[24px] bg-muted/35 p-5 sm:p-6">
-          <WorkspacePanel />
+          <Suspense fallback={<p className="text-sm text-muted-foreground">Loading workspace...</p>}>
+            <WorkspacePanel />
+          </Suspense>
         </div>
       </DialogContent>
     </Dialog>

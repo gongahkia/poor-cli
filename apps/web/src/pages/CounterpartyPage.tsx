@@ -14,10 +14,6 @@ import { useToast } from "@/components/notifications/ToastProvider";
 import { Button } from "@/components/ui/button";
 import { getGatewayJson, postGatewayJson, type PeopleDiscovery, type WebPresence } from "@/lib/api/client";
 import {
-  exportSingleDossierCsv,
-  exportSingleDossierJson,
-} from "@/lib/export/structured";
-import {
   buildBusinessDossierInput,
   buildBusinessDossierExpandedInput,
   buildBusinessDossierFollowUpInput,
@@ -27,13 +23,10 @@ import {
   sanitizeFilenamePart,
   UEN_PATTERN,
 } from "@/lib/dossier";
-import { exportDossierPdf } from "@/lib/export/pdf";
-import { exportPdpaReportPdf } from "@/lib/export/pdpa";
 import { persistAuditEvent, persistDossierRecord } from "@/lib/workspace-store";
 import type { AnalystMemoResponse } from "@/types/analyst-memo";
 import type { BusinessDossier } from "@/types/dossier";
 import type { CddOrchestrationTrace } from "@/types/orchestration";
-import { exportDossierDocx } from "@/lib/export/docx";
 import type { ReportExportFormat, ReportTemplate } from "@/lib/report-template";
 
 type DossierState =
@@ -492,11 +485,13 @@ function DossierSuccess({
         ...(webPresenceState.status === "success" ? { webPresence: webPresenceState.presence } : {}),
       };
       if (format === "pdf") {
+        const { exportDossierPdf } = await import("@/lib/export/pdf");
         await exportDossierPdf(dossier, {
           ...baseOptions,
           filename: `dude-cdd-report-${sanitizeFilenamePart(identifier)}-${today}.pdf`,
         });
       } else {
+        const { exportDossierDocx } = await import("@/lib/export/docx");
         await exportDossierDocx(dossier, {
           ...baseOptions,
           filename: `dude-cdd-report-${sanitizeFilenamePart(identifier)}-${today}.docx`,
@@ -528,6 +523,7 @@ function DossierSuccess({
 
   const handleExportCsv = async () => {
     try {
+      const { exportSingleDossierCsv } = await import("@/lib/export/structured");
       await exportSingleDossierCsv(dossier, { orchestration: currentOrchestration.orchestration });
       persistAuditEvent({
         eventType: "export",
@@ -549,6 +545,7 @@ function DossierSuccess({
 
   const handleExportJson = async () => {
     try {
+      const { exportSingleDossierJson } = await import("@/lib/export/structured");
       await exportSingleDossierJson({
         dossier,
         ...(memoState.status === "ready" ? { analystMemo: memoState.memo } : {}),
@@ -577,6 +574,7 @@ function DossierSuccess({
     setIsPdpaExporting(true);
     try {
       const today = new Date().toISOString().slice(0, 10);
+      const { exportPdpaReportPdf } = await import("@/lib/export/pdpa");
       await exportPdpaReportPdf(dossier, {
         filename: `dude-pdpa-checklist-${sanitizeFilenamePart(identifier)}-${today}.pdf`,
         reviewedItemIds,

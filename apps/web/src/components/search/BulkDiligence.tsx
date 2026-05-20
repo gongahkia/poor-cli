@@ -16,10 +16,6 @@ import {
 import { useToast } from "@/components/notifications/ToastProvider";
 import { Button } from "@/components/ui/button";
 import { parseBulkInput } from "@/lib/bulk";
-import {
-  exportBulkCsv,
-  exportBulkJson,
-} from "@/lib/export/structured";
 import { postGatewayJson } from "@/lib/api/client";
 import { persistAuditEvent, persistBulkJob, summarizeBulkRisk } from "@/lib/workspace-store";
 import type { BulkDossierResponse, BulkDossierRow } from "@/types/bulk";
@@ -162,6 +158,7 @@ export function BulkDiligence({
   const exportCsv = async () => {
     try {
       if (result === null) return;
+      const { exportBulkCsv } = await import("@/lib/export/structured");
       await exportBulkCsv(result.rows, result.generatedAt);
       persistAuditEvent({
         eventType: "export",
@@ -179,6 +176,7 @@ export function BulkDiligence({
   const exportJson = async () => {
     try {
       if (result === null) return;
+      const { exportBulkJson } = await import("@/lib/export/structured");
       await exportBulkJson(result.rows, result.generatedAt);
       persistAuditEvent({
         eventType: "export",
