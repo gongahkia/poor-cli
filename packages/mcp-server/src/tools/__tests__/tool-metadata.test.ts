@@ -12,24 +12,23 @@ describe("tool metadata profile subsets", () => {
     expect(toolsets).not.toContain("property");
   });
 
-  it("tags property brief tools into the property profile", () => {
-    const toolsets = inferToolSets("sg_property_brief");
+  it("tags external diligence tools into the diligence profile", () => {
+    const toolsets = inferToolSets("sg_sanctions_screen");
 
-    expect(toolsets).toEqual(expect.arrayContaining(["briefs", "property"]));
-    expect(toolsets).not.toContain("diligence");
+    expect(toolsets).toEqual(expect.arrayContaining(["public", "diligence"]));
+    expect(toolsets).not.toContain("property");
   });
 
-  it("keeps sg_query available to both diligence and property profiles", () => {
-    expect(inferToolSets("sg_query")).toEqual(expect.arrayContaining(["query", "diligence", "property"]));
+  it("keeps sg_query available to the diligence profile", () => {
+    expect(inferToolSets("sg_query")).toEqual(expect.arrayContaining(["query", "diligence"]));
+    expect(inferToolSets("sg_query")).not.toContain("property");
   });
 
   it("matches profile-only filters through isToolEnabled", () => {
     const diligenceOnly = toToolsetSet(["diligence"]);
-    const propertyOnly = toToolsetSet(["property"]);
 
     expect(isToolEnabled({ toolsets: inferToolSets("sg_business_dossier") }, diligenceOnly)).toBe(true);
-    expect(isToolEnabled({ toolsets: inferToolSets("sg_business_dossier") }, propertyOnly)).toBe(false);
-    expect(isToolEnabled({ toolsets: inferToolSets("sg_property_brief") }, propertyOnly)).toBe(true);
+    expect(isToolEnabled({ toolsets: inferToolSets("sg_sanctions_screen") }, diligenceOnly)).toBe(true);
     expect(isToolEnabled({ toolsets: inferToolSets("sg_property_brief") }, diligenceOnly)).toBe(false);
   });
 });

@@ -3,6 +3,14 @@ import { dirname } from "node:path";
 import Database from "better-sqlite3";
 import { resolveStatePath } from "./state-dir.js";
 
+export type CacheEntry = {
+  readonly ageSeconds: number;
+  readonly cachedAt: number;
+  readonly expired: boolean;
+  readonly ttlSeconds: number;
+  readonly value: string;
+};
+
 export class Cache {
   private readonly db: Database.Database;
   private hits = 0;
@@ -25,7 +33,7 @@ export class Cache {
     `);
   }
 
-  get(key: string): string | null {
+  getEntry(key: string): CacheEntry | null {
     const row = this.db
       .prepare("SELECT value, cached_at, ttl_seconds FROM cache WHERE key = ?")
       .get(key) as { value: string; cached_at: number; ttl_seconds: number } | undefined;
@@ -36,14 +44,64 @@ export class Cache {
     }
 
     const now = Math.floor(Date.now() / 1000);
-    if (now - row.cached_at >= row.ttl_seconds) {
+    const ageSeconds = now - row.cached_at;
+    const expired = ageSeconds >= row.ttl_seconds;
+    if (expired) {
       this.misses++;
+    } else {
+      this.hits++;
+    }
+
+    return {
+      ageSeconds,
+      cachedAt: row.cached_at,
+      expired,
+      ttlSeconds: row.ttl_seconds,
+      value: row.value,
+    };
+  }
+
+  get(key: string): string | null {
+    const entry = this.getEntry(key);
+    if (entry === null) {
+      return null;
+    }
+    if (entry.expired) {
       this.db.prepare("DELETE FROM cache WHERE key = ?").run(key);
       return null;
     }
 
-    this.hits++;
-    return row.value;
+    return entry.value;
+  }
+
+  delete(key: string): void {
+    this.db.prepare("DELETE FROM cache WHERE key = ?").run(key);
+  }
+
+  compactExpired(): number {
+    const now = Math.floor(Date.now() / 1000);
+    const result = this.db.prepare("DELETE FROM cache WHERE ? - cached_at >= ttl_seconds").run(now);
+    return result.changes;
+  }
+
+  getFreshOrStale(key: string): CacheEntry | null {
+    return this.getEntry(key);
+  }
+
+  getFresh(key: string): string | null {
+    const entry = this.getEntry(key);
+    if (entry === null || entry.expired) {
+      return null;
+    }
+    return entry.value;
+  }
+
+  getStale(key: string): string | null {
+    const entry = this.getEntry(key);
+    if (entry === null || !entry.expired) {
+      return null;
+    }
+    return entry.value;
   }
 
   set(key: string, value: string, ttl: number): void {

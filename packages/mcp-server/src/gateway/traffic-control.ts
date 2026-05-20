@@ -83,6 +83,14 @@ const MEMO_POLICY: TrafficPolicy = {
   maxBodyBytes: 128 * KiB,
 };
 
+const SUMMARY_POLICY: TrafficPolicy = {
+  key: "summary",
+  label: "summary generation",
+  windowMs: 10 * 60_000,
+  maxRequests: 20,
+  maxBodyBytes: 128 * KiB,
+};
+
 const BULK_POLICY: TrafficPolicy = {
   key: "bulk",
   label: "bulk checks",
@@ -139,6 +147,9 @@ export const getTrafficPolicy = (method: string, pathname: string): TrafficPolic
   }
   if (normalizedPath.includes("memo")) {
     return MEMO_POLICY;
+  }
+  if (normalizedPath.includes("summary")) {
+    return SUMMARY_POLICY;
   }
   if (normalizedPath.includes("bulk")) {
     return BULK_POLICY;

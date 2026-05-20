@@ -7,6 +7,7 @@ export type GenerateInput = {
   readonly model?: string;
   readonly temperature?: number;
   readonly maxTokens?: number;
+  readonly responseFormat?: "json_object";
 };
 
 export type ProviderGenerateInput = GenerateInput & {

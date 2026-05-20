@@ -17,10 +17,10 @@ Vendor onboarding and procurement intelligence are documented as secondary lanes
    - Treat name-only matches as analyst-review items when multiple ACRA candidates are returned.
    - Preserve unmatched, ambiguous, or stale source states as `gaps` instead of silently dropping them.
 
-3. **Bounded module enrichment**
-   - Enrich only with modules justified by the counterparty profile or analyst selection.
-   - Architecture firms: BOA plus ACRA, with optional GeBIZ procurement evidence.
-   - Healthcare suppliers: HSA plus ACRA, with optional GeBIZ procurement evidence.
+3. **Orchestrated module enrichment**
+   - Let the CDD orchestrator infer sector hints from ACRA metadata and bounded web signals, then run justified sector modules before showing the dossier.
+   - Architecture firms: BOA plus ACRA, with GeBIZ procurement evidence when procurement exposure is relevant.
+   - Healthcare suppliers: HSA plus ACRA, with GeBIZ procurement evidence when procurement exposure is relevant.
    - Hotel operators: HLB plus ACRA where a corporate operator can be resolved.
    - Construction or real-estate services: BCA, CEA, or BOA where identifiers and sector evidence support the lookup.
 
@@ -30,20 +30,20 @@ Vendor onboarding and procurement intelligence are documented as secondary lanes
    - Record the review state and any next checks needed outside Dude.
 
 5. **Audit-ready export**
-   - Export the dossier as JSON, CSV, or PDF with the source envelope intact.
+   - Export the report as PDF or DOCX with the source envelope intact. Use JSON or CSV only as advanced data exports.
    - Include generated-at time, source provenance, source freshness, unresolved gaps, and non-advice limitations.
-   - Store the dossier and export manifest in the workspace client folder when workspace storage is enabled.
+   - Store the dossier and export manifest in the workspace client folder when workspace storage is enabled. In the current web build, that storage is browser-local `localStorage`; hosted retention requires a configured workspace backend.
 
 ## Current Modules That Support The Workflow
 
 | Workflow need | Current support | Notes |
 | --- | --- | --- |
-| Company or UEN identity resolution | `sg_acra_entities`, `sg_business_dossier`, web search suggestions | ACRA is the first module for client onboarding because UEN is the durable public identifier. |
-| Cross-registry dossier | `sg_business_dossier` | Returns evidence, records, confidence, gaps, provenance, freshness, and limits. |
-| Sector-scoped checks | BCA, BOA, CEA, HSA, HLB, GeBIZ tools plus sector hints | Modules should be selected from official registry or analyst context, not guessed from marketing copy. |
-| Analyst memo | REST gateway analyst memo endpoint | Memo generation is secondary to the bounded dossier and must retain source gaps and limits. |
-| Exports | Web JSON, CSV, and PDF export helpers with signed manifests | Exports keep dossier fields and include local integrity manifests for downstream checks. |
-| Bulk intake | Workspace-backed 200-row bulk diligence flow | Useful for corp-services backlogs; partial failures, retries, manifests, and audit events remain visible to analysts. |
+| Company or UEN identity resolution | CDD orchestrator with ACRA as the identity gate | ACRA is the first module for client onboarding because UEN is the durable public identifier. |
+| Cross-registry dossier | CDD orchestrator; `sg_business_dossier` remains a low-level compatibility API | Returns evidence, records, confidence, gaps, provenance, freshness, and limits. |
+| Sector-scoped checks | Orchestrated BCA, BOA, CEA, HSA, HLB, and GeBIZ modules from sector hints | Modules should be selected from ACRA/web signals or analyst context, not guessed from marketing copy. |
+| Analyst memo | CDD orchestrator memo stage | Memo generation is part of the report flow and must retain source gaps and limits. |
+| Exports | Web PDF and DOCX report helpers with signed manifests | Exports keep dossier fields and include local integrity manifests for downstream checks. |
+| Bulk intake | Browser-local 200-row bulk diligence flow, with the same model intended for hosted workspaces | Useful for corp-services backlogs; partial failures, retries, manifests, and audit events remain visible to analysts in the current browser session. |
 
 ## Remaining Hosted CDD Operations Gaps
 
@@ -52,7 +52,6 @@ Vendor onboarding and procurement intelligence are documented as secondary lanes
 - Hosted PDPA notification, DPO, privacy, retention, and DPIA readiness controls in [privacy-dpo-readiness.md](../privacy-dpo-readiness.md).
 - Hosted customer onboarding should route buyers through [hosted-onboarding.md](./hosted-onboarding.md), including the DPA in [data-processing-agreement-template.md](../data-processing-agreement-template.md).
 - Licensed or authorised-partner path for any paid redistribution of ACRA-derived commercial diligence outputs.
-- OneMap and URA commercial-use controls in [commercial-data-use.md](../commercial-data-use.md) must remain satisfied before hosted paid workflows rely on those sources.
 
 ## In Scope
 

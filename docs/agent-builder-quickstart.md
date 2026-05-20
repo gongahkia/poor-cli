@@ -1,189 +1,91 @@
 # Agent Builder Quickstart
 
-## Skills And AGENTS.md
+Dude MCP is now CDD-only.
 
-This repo ships a meta-prompt surface alongside the MCP server so an agent installing the server also gets curated instructions:
-
-- [`AGENTS.md`](../AGENTS.md) at repo root — Codex, Cursor, OpenAI Agents SDK, and Aider read this by convention. Covers tool routing, output contract, the housing-advisor flow, auth, anti-patterns, and a worked example.
-- [`.claude/skills/sg-singapore-data/SKILL.md`](../.claude/skills/sg-singapore-data/SKILL.md) — Claude Code skill with the same content scoped to the Skill loader.
-- In-server MCP prompts (`prompts/list`) expose ~25 recipes and 3 persona playbooks defined in `RECIPE_CATALOG` / `PLAYBOOK_CATALOG`.
-
-If you are building an agent on top of Dude MCP (`@dude/mcp`), point it at `AGENTS.md` (Codex-style stacks) or the Claude skill (Anthropic stacks) and let it route through `sg_query` or direct tools.
-
-## Housing Advisor Surface
-
-Four deterministic compute tools pair with the live data tools to turn the server into a Singapore housing advisor:
-
-- `sg_grant_eligibility` — EHG, Family, Singles, Proximity, Step-Up grants. Banks do not issue HDB grants.
-- `sg_loan_compare` — HDB concessionary vs caller-supplied bank packages; pass live SORA from `sg_mas_interest_rates`.
-- `sg_housing_affordability` — TDSR (55%) + MSR (30%) + LTV (75%) + downpayment cash/CPF split + BSD + grants verdict.
-- `sg_resale_price_compare` — benchmark a target resale unit against `sg_hdb_resale_prices`.
-
-Rules are versioned in `packages/mcp-server/src/housing/rules-2026.json` with `effectiveFrom`, `lastVerified`, and a `verificationLog` flagging which fields are confirmed against live HDB/MAS sources vs seed values. Re-verify each Singapore Budget (~Feb).
+Use it when your agent needs to search a Singapore company/UEN, generate a cited CDD dossier, inspect evidence, and export an analyst-review report.
 
 ## Start With Discovery
 
-Use the catalog resources before you build prompt routing logic:
+Read the CDD-scoped catalog resources at startup:
 
-- `sg://apis`: official family coverage, auth, rate limits, and positioning
-- `sg://tools`: direct tool inventory and schemas
-- `sg://workflows`: bounded workflow entrypoints and examples
-- `sg://recipes`: common prompt shapes mapped to the preferred entrypoint and fallback tools
-- `sg://runtime`: auth dependencies, credential-source rules, toolset profile presets, timeout/cache policy, health coverage, and `sg_query` status semantics
-- `sg://playbooks`: grouped workflow combinations for relocation, diligence, and social-support style agents
-- `sg://benchmarks`: latency, cache-tier, freshness, and credibility expectations for the strongest workflows
+- `sg://apis`
+- `sg://tools`
+- `sg://workflows`
+- `sg://recipes`
+- `sg://runtime`
+- `sg://playbooks`
+- `sg://benchmarks`
 
-If you only read one resource first, read `sg://recipes`.
+`sg://recipes` is the best first resource for natural-language prompt routing.
 
-## When To Use `sg_query`
+## Use `sg_query` For Goal-Shaped CDD Prompts
 
-Use `sg_query` when the caller starts with a goal instead of exact parameters:
-
-- `Walk from 049178 to 048616`
-- `Find a community club near 560123`
-- `Reverse geocode 1.2840, 103.8510`
-- `Convert SVY21 28001 38744 to WGS84`
-- `Browse SingStat transport datasets`
-- `Browse data.gov collections`
-- `Show URA development charge rates for Residential sector A`
-- `Architecture firm diligence for DP Architects`
-- `Healthcare supplier diligence for ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.`
-- `Hotel operator lookup for Marina Bay Sands`
-
-`sg_query` is the preferred interface for covered prompt shapes because it keeps the routing bounded and returns workflow metadata instead of hiding the steps.
-
-## When To Use Direct Tools
-
-Use direct `sg_*` tools when your application already has the required fields and wants a stable low-level contract:
-
-- `sg_onemap_route` when you already have start and end coordinates
-- `sg_singstat_table` when you already know the `tableId`
-- `sg_singstat_timeseries` when you already know the `tableId`, `indicator`, and year range
-- `sg_datagov_rows` when you already know the dataset and need bounded row reads
-- `sg_hdb_rental_prices` when you already have `town` and `flatType`
-
-The direct surface is the right choice when you are building your own planner, UI, or cache strategy.
-
-## How To Handle Blocked And Unsupported Results
-
-`sg_query` should not guess.
-
-Expect two important non-success outcomes:
-
-- blocked: the repo recognized the workflow, but a required field is missing
-- unsupported: the prompt does not map to a bounded supported workflow
-- failed: execution started, but a direct tool or workflow dependency failed
-
-Build your client around those outcomes:
-
-1. If the status is blocked, ask the user for the missing field shown in the blocker message.
-2. If the status is unsupported, drop to discovery through `sg://recipes`, `sg://playbooks`, `sg://workflows`, or direct tool selection.
-3. If the status is failed, inspect `failedStep`, surface the suggested action, and retry only after fixing the failing direct-tool input.
-4. If the workflow is completed, continue from the returned `structuredContent` and underlying direct-tool outputs.
-
-## Recommended Integration Pattern
-
-1. Read `sg://recipes`, `sg://runtime`, `sg://playbooks`, and `sg://benchmarks` at startup and cache them in your planner.
-2. Route covered natural-language prompts to `sg_query`.
-3. Route exact-parameter tasks to direct `sg_*` tools.
-4. Surface blocker messages directly to the caller instead of trying to infer missing data.
-5. Treat `blocked` and `unsupported` as non-error control-flow outcomes; only `failed` is an execution error.
-6. Keep the direct tool names visible in logs and traces so developers can debug routing decisions.
-
-The runnable reference implementation for this pattern is [`examples/integration/basic-client.ts`](../examples/integration/basic-client.ts). A minimal stdlib-only Python variant lives in [`examples/integration/basic-client.py`](../examples/integration/basic-client.py). For production-oriented patterns, start from [`examples/integration/backend-worker-template.ts`](../examples/integration/backend-worker-template.ts), [`examples/integration/ui-state-template.ts`](../examples/integration/ui-state-template.ts), and [`examples/integration/scheduled-monitor-template.ts`](../examples/integration/scheduled-monitor-template.ts), plus Python queue/service variants in [`examples/integration/backend-worker-template.py`](../examples/integration/backend-worker-template.py) and [`examples/integration/queue-consumer-template.py`](../examples/integration/queue-consumer-template.py). Validate templates with `npm run test:smoke:templates`.
-
-## Operational Defaults For Teams
-
-Before handing the server to an application team:
-
-1. Run `npm run build` and `npm run diagnostics` to validate catalog and resource contracts.
-2. Run `npm run verify` as the full gate. Use `npm run release:preflight` for release-window evidence generation plus gate enforcement.
-3. Set `SG_APIS_LOG_LEVEL=info` in production and `debug` in staging.
-4. Treat `sg_health_check`, `sg_cache_stats`, and `sg_config_get` as first-line operator tools.
-5. Use [`docs/troubleshooting.md`](./troubleshooting.md) as the standard incident runbook.
-
-## Live Smoke
-
-- `npm run quick-start` is the credential-gated live quickstart for real OneMap, URA, LTA, data.gov datastore, and official file-download validation. On failure it auto-runs `npm run diagnostics` unless `--no-diagnostics-on-fail` is passed.
-- `npm run test:smoke:live` runs the same live validation flow without the build wrapper.
-- `npm run test:smoke:public` is the credential-free onboarding smoke for public upstreams and no-auth workflows. CI exposes it as `Run public no-credential smoke`, and failures name the upstream family or `sg_*` tool that failed.
-
-## Useful Starter Paths
-
-### Geospatial
+Examples:
 
 ```text
-sg_query { "query": "Walk from 049178 to 048616", "mode": "execute" }
-sg_onemap_route { "startLat": 1.2864, "startLng": 103.8537, "endLat": 1.2840, "endLng": 103.8510, "routeType": "walk" }
-sg_onemap_reverse_geocode { "lat": 1.2840, "lng": 103.8510 }
-```
-
-### SingStat Drilldown
-
-```text
-sg_query { "query": "Browse SingStat transport datasets", "mode": "execute" }
-sg_singstat_browse { "category": "Transport" }
-sg_singstat_table { "tableId": "M650151" }
-sg_singstat_timeseries { "tableId": "M650151", "indicator": "Vehicle population", "startYear": 2022, "endYear": 2025 }
-```
-
-### data.gov.sg Drilldown
-
-```text
-sg_query { "query": "Browse data.gov collections", "mode": "execute" }
-sg_datagov_browse {}
-sg_datagov_search { "keyword": "hawker centres" }
-sg_datagov_resources { "datasetId": "d_8b84c4ee58e3cfc0ece0d773c8ca6abc" }
-sg_datagov_rows { "datasetId": "d_8b84c4ee58e3cfc0ece0d773c8ca6abc", "limit": 5, "sort": "month desc" }
-```
-
-### Civic Discovery
-
-```text
-sg_query { "query": "Find a family service centre near 560230", "mode": "execute" }
-sg_msf_family_services { "postalCode": "560230" }
-sg_msf_student_care_services { "postalCode": "750471", "scfaOnly": true }
-sg_msf_social_service_offices { "name": "Social Service Office @ Queenstown" }
-```
-
-### Business Diligence Expansion
-
-```text
-sg_business_dossier { "uen": "201912345K" }
+sg_query { "query": "Business dossier for DP Architects", "mode": "execute" }
 sg_query { "query": "Architecture firm diligence for DP Architects", "mode": "execute" }
-sg_business_dossier { "entityName": "DP Architects", "modules": ["acra", "boa", "gebiz"], "sectorHints": ["architecture", "procurement"] }
+sg_query { "query": "Healthcare supplier diligence for ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.", "mode": "execute" }
+sg_query { "query": "Hotel operator lookup for Marina Bay Sands", "mode": "execute" }
+```
+
+Non-CDD prompts return `unsupported`. Do not retry them against removed public-data tools.
+
+## Use Direct Tools Only For Exact Compatibility Calls
+
+For product flows, prefer `sg_query` or the web/gateway CDD orchestrator. Direct `sg_business_dossier` and sector tools remain available for compatibility, debugging, and advanced callers that already have exact structured parameters.
+
+```text
+sg_acra_entities { "entityName": "DP Architects" }
 sg_boa_architecture_firms { "firmName": "DP Architects" }
 sg_hsa_health_product_licensees { "companyName": "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD." }
 sg_hlb_hotels { "name": "Marina Bay Sands" }
+sg_gebiz_tenders { "supplierName": "ABC CONSTRUCTION PTE LTD" }
 ```
 
-The default UEN/company dossier is an ACRA identity check. Sector modules are searched only when the caller supplies `modules`, supplies `sectorHints`, or ACRA SSIC evidence supports an inferred sector. Read `records.resolution.moduleReasons` before treating an empty module as a registry no-match; skipped modules were not queried.
+Compatibility example:
 
-## New Data Families
+```text
+sg_business_dossier { "uen": "201912345K" }
+```
 
-Eighteen additional families are available as direct tools, all backed by data.gov.sg or the official no-auth file-download path:
+## Handle Outcomes
 
-- `sg_boa_architects` and `sg_boa_architecture_firms` — architect and architecture-firm registry checks
-- `sg_pa_community_outlets` and `sg_pa_resident_network_centres` — community clubs, PAssion WaVe outlets, and residents' network centres
-- `sg_sportsg_facilities` — public sport facilities by facility type, postal code, or proximity
-- `sg_ecda_childcare_centres` — childcare centres with joined vacancy signals
-- `sg_msf_family_services` — family service centres by name, postal code, or proximity
-- `sg_msf_student_care_services` — student care services with audit-status and SCFA filters
-- `sg_msf_social_service_offices` — social service offices by name, postal code, or proximity
-- `sg_gebiz_tenders` — government procurement tenders and awards
-- `sg_hawker_centres` — hawker centre directory with coordinates
-- `sg_moe_schools` — school directory by level, zone, name
-- `sg_moh_facilities` — hospitals, clinics, polyclinics
-- `sg_hsa_licensed_pharmacies` and `sg_hsa_health_product_licensees` — pharmacy and health-product licensing evidence
-- `sg_sfa_establishments` — licensed food establishments
-- `sg_nparks_parks` — parks and nature reserves
-- `sg_pub_water_levels` — water level station readings
-- `sg_mom_labour_stats` — labour market statistics
-- `sg_stb_visitor_stats` — tourism visitor arrivals
-- `sg_hlb_hotels` — hotel directory with keeper names and room counts
+- `completed`: render the cited summary and evidence pack.
+- `planned`: show the planned CDD steps or execute after user confirmation.
+- `blocked`: ask for the missing company/UEN/registration identifier.
+- `unsupported`: tell the caller Dude only supports CDD entity and sector diligence.
+- `failed`: surface the failed step and suggested action.
 
-These complement the property brief with amenity context and the business dossier with architecture, healthcare-supplier, hospitality, and procurement evidence.
+## Evidence Rules
 
-## Practical Rule
+Your agent should preserve:
 
-If your application needs auditability, use the direct tools. If your application needs onboarding speed for supported Singapore public-data prompts, start with `sg_query` plus `sg://recipes`, then use `sg://playbooks` and `sg://benchmarks` to choose the next bounded workflow and the right runtime expectations.
+- citations
+- provenance
+- freshness
+- gaps
+- limits
+- confidence blockers
+- next actions
+
+Do not infer that a company is safe, sanctioned-free, PDPA-compliant, or financially sound from missing public evidence.
+
+## First-Run Artifact Pack
+
+For evaluator review, see the [first-run CDD orchestrator artifact pack](./evaluator-artifacts/first-run-cdd-orchestrator/README.md). It is generated from `npm run test:smoke:web` and includes a fixture PDF report, structured JSON dossier export, source freshness, gaps, limits, provenance, report manifest data, and orchestrator stage trace. It is fixture evidence only; it does not replace live smoke.
+
+## Local Verification
+
+```bash
+npm run build
+npm run test
+npm run verify
+```
+
+For web UX changes, also run:
+
+```bash
+npm run build -w apps/web
+npm run test -w apps/web
+```

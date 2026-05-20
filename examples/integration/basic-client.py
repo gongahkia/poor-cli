@@ -186,33 +186,33 @@ def main() -> None:
             )
         )
 
-        supported = call_query(client, 'Find a social service office named "Social Service Office @ Queenstown"')
+        supported = call_query(client, "Architecture firm diligence for DP Architects")
         log_query_outcome("covered prompt via sg_query", supported)
 
-        blocked = call_query(client, "Find a social service office near me")
+        blocked = call_query(client, "Run business diligence")
         log_query_outcome("blocked prompt", blocked)
 
         unsupported = call_query(client, "Compare GDP and CPI in Singapore")
         log_query_outcome("unsupported prompt", unsupported)
 
-        failed = call_query(client, "Find datasets about a definitely unknown topic")
+        failed = {
+            "status": "failed",
+            "workflow": "business_dossier",
+            "reason": "Synthetic example for failed-state UI handling.",
+            "failedStep": {"tool": "sg_business_dossier"},
+        }
         log_query_outcome("failed prompt", failed)
-
-        direct_fallback = call_tool_payload(client, "sg_singstat_browse", {})
-        print("\ndirect tool fallback")
-        print("tool: sg_singstat_browse")
-        print(f"records: {len(direct_fallback.get('records', []))}")
 
         direct_lookup = call_tool_payload(
             client,
-            "sg_msf_social_service_offices",
+            "sg_acra_entities",
             {
-                "name": "Social Service Office @ Queenstown",
+                "entityName": "DP ARCHITECTS PTE LTD",
                 "format": "json",
             },
         )
         print("\nexact-parameter direct lookup")
-        print("tool: sg_msf_social_service_offices")
+        print("tool: sg_acra_entities")
         print(f"records: {len(direct_lookup.get('records', []))}")
     finally:
         client.close()

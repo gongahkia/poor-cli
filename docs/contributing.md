@@ -4,6 +4,16 @@
 
 The repo currently prioritizes depth and contract honesty across 39 catalog families, with `sg_query` acting as a bounded preferred interface and seven additive brief tools creating the main user-facing artifacts.
 
+## Package Manager
+
+Use npm for local development and CI parity. `package-lock.json` is the canonical lockfile, and the supported install path is:
+
+```bash
+npm install
+```
+
+Do not add pnpm-only workflows, lockfiles, or workspace metadata unless the repo also adds a maintained pnpm CI/test path in the same change.
+
 Before adding a new family, ask whether the user goal is better served by:
 
 - improving an existing direct contract

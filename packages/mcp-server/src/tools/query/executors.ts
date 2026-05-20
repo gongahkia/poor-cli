@@ -1,4 +1,4 @@
-import type { ToolResult } from "@dude/shared";
+import { formatResponse, type ToolResult } from "@dude/shared";
 import { handleAcraEntities } from "../acra-tools.js";
 import {
   handleBcaLicensedBuilders,
@@ -6,7 +6,6 @@ import {
 } from "../bca-tools.js";
 import { handleBoaArchitects, handleBoaArchitectureFirms } from "../boa-tools.js";
 import {
-  handleBusinessDossier,
   handleCivicBrief,
   handleEnvironmentBrief,
   handleMacroBrief,
@@ -91,8 +90,57 @@ import {
   handleUraPlanningArea,
   handleUraPropertyTransactions,
 } from "../ura-tools.js";
+import { runCddOrchestrator, type CddOrchestratorResponse } from "../../dude/cdd-orchestrator.js";
 
 export type ToolExecutor = (params: Readonly<Record<string, unknown>>) => Promise<ToolResult>;
+
+const renderCddOrchestratorMarkdown = (response: CddOrchestratorResponse): string => {
+  const summaryRows = response.dossier.summary.map((item) => ({
+    label: item.label,
+    value: item.value,
+    source: item.source,
+  }));
+  const gapRows = response.dossier.gaps.map((gap) => ({
+    code: gap.code,
+    message: gap.message,
+  }));
+  return [
+    `## ${response.dossier.title}`,
+    "",
+    "### Summary",
+    formatResponse(summaryRows as Record<string, unknown>[], "markdown"),
+    "",
+    "### Orchestration",
+    formatResponse([{
+      status: response.orchestration.status,
+      officialModules: response.orchestration.officialModules.join(", "),
+      acraSectorHints: response.orchestration.acraSectorHints.join(", "),
+      webSectorHints: response.orchestration.webSectorHints.join(", "),
+      memoStatus: response.memo.status,
+      webPresenceConfigured: response.webPresence.configured,
+      peopleDiscoveryConfigured: response.peopleDiscovery.configured,
+    }], "markdown"),
+    "",
+    "### Gaps",
+    gapRows.length === 0 ? "_No gaps reported._" : formatResponse(gapRows, "markdown"),
+  ].join("\n");
+};
+
+const toCddOrchestratorToolResult = (response: CddOrchestratorResponse, format: unknown): ToolResult => ({
+  content: [{
+    type: "text",
+    text: format === "json"
+      ? formatResponse(response as unknown as Record<string, unknown>, "json")
+      : renderCddOrchestratorMarkdown(response),
+  }],
+  structuredContent: {
+    record: response.dossier,
+    webPresence: response.webPresence,
+    peopleDiscovery: response.peopleDiscovery,
+    memo: response.memo,
+    orchestration: response.orchestration,
+  },
+});
 
 export const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
   sg_acra_entities: async (params) =>
@@ -108,7 +156,10 @@ export const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
   sg_cea_salespersons: async (params) =>
     handleCeaSalespersons(params as Parameters<typeof handleCeaSalespersons>[0]),
   sg_business_dossier: async (params) =>
-    handleBusinessDossier(params as Parameters<typeof handleBusinessDossier>[0]),
+    toCddOrchestratorToolResult(
+      await runCddOrchestrator(params as Parameters<typeof runCddOrchestrator>[0]),
+      params["format"],
+    ),
   sg_property_brief: async (params) =>
     handlePropertyBrief(params as Parameters<typeof handlePropertyBrief>[0]),
   sg_macro_brief: async (params) =>

@@ -48,6 +48,10 @@ describe("traffic control", () => {
       key: "memo",
       maxRequests: 20,
     });
+    expect(getTrafficPolicy("POST", "/api/v1/dude/summary")).toMatchObject({
+      key: "summary",
+      maxRequests: 20,
+    });
   });
 
   it("allows requests until the bucket is exhausted", () => {

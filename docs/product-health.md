@@ -1,40 +1,48 @@
 # Product Health
 
-This page is the public entrypoint for product-health, governance, and adoption evidence. During the Dude pivot, the main README should keep the web-product framing clear while preserving what the MCP server does, how agents use it, and how builders integrate it.
+This page is the public entrypoint for product-health, governance, and adoption evidence. It separates current working evidence from credentialed, unpublished, and hosted/commercial readiness tracks so planning docs are not mistaken for completed production claims.
+
+## Readiness Status
+
+- `Works today`: implemented in the local/self-hosted CDD product path and covered by smoke or repository tests.
+- `Requires credentials`: implemented, but only fully useful when the named provider key, licence, or source approval is configured.
+- `Unpublished`: prepared in the repo but not available through the public registry or marketplace yet.
+- `Hosted/commercial blocked`: planning or governance evidence only; do not treat as a production attestation, public listing, or customer-ready hosted control.
 
 ## Evaluation
 
-- [Product audit](./product-audit.md) — current value proposition, limits, and expansion priorities.
-- [Developer adoption audit](./developer-adoption-audit.md) — integration readiness and adoption gaps.
-- [Market conventions audit](./market-conventions-audit.md) — MCP ecosystem expectations and positioning.
-- [Ecosystem snapshot](./ecosystem-snapshot.md) — generated ecosystem evidence and comparison context.
+- `Works today` [Product audit](./product-audit.md) — current value proposition, limits, and expansion priorities.
+- `Works today` [First-run CDD orchestrator artifact pack](./evaluator-artifacts/first-run-cdd-orchestrator/README.md) — committed evaluator snapshot from a passing no-auth orchestrator browser smoke; fixture-only and not a live-source substitute.
+- `Works today` [Developer adoption audit](./developer-adoption-audit.md) — integration readiness and adoption gaps.
+- `Works today` [Market conventions audit](./market-conventions-audit.md) — MCP ecosystem expectations and positioning.
+- `Works today` [Ecosystem snapshot](./ecosystem-snapshot.md) — generated ecosystem evidence and comparison context.
 
 ## Distribution
 
-- [SG diligence case-study content engine](./diligence-case-study-content-engine.md) — weekly case-study format, eight-week calendar, review guardrails, and draft-ready examples.
+- `Hosted/commercial blocked` [SG diligence case-study content engine](./diligence-case-study-content-engine.md) — planning material for distribution content, not evidence of a live campaign.
 
 ## Operations
 
-- [Operating expectations](./operating-expectations.md) — single-page adoption-grade per-family latency, cache TTL, SLO posture, partial-failure semantics.
-- [Compatibility matrix](./compatibility-matrix.md) — supported clients, transports, and smoke checks.
-- [Known issues](./known-issues.md) — active limitations and triage rules.
-- [Production notes](./production-notes.md) — runtime, audit, KPI, and deployment guidance.
-- [Incident playbook](./incident-playbook.md) — response flow for production problems.
-- [Troubleshooting](./troubleshooting.md) — common failure modes and diagnostics.
+- `Works today` [Operating expectations](./operating-expectations.md) — self-host/local runtime latency, cache TTL, partial-failure semantics, and SLO posture.
+- `Works today` [Compatibility matrix](./compatibility-matrix.md) — supported clients, transports, and smoke checks.
+- `Works today` [Known issues](./known-issues.md) — active limitations and triage rules.
+- `Hosted/commercial blocked` [Production notes](./production-notes.md) — deployment guidance and controls to complete before hosted customer use.
+- `Hosted/commercial blocked` [Incident playbook](./incident-playbook.md) — response flow template; production evidence still depends on hosted operations.
+- `Works today` [Troubleshooting](./troubleshooting.md) — common local/self-host failure modes and diagnostics.
 
 ## Governance
 
-- [Governance checklist](./governance-checklist.md) — release and ownership gates.
-- [Audit retention policy](./audit-retention-policy.md) — trace and request-retention policy.
-- [ACRA licensing track](./acra-licensing-track.md) — API Marketplace, authorised ISP, and hosted paid enrichment blocker status.
-- [Commercial data use review](./commercial-data-use.md) — OneMap and URA commercial-use posture, runtime warnings, and source limits.
-- [PDPA notification and DPO readiness](./privacy-dpo-readiness.md) — hosted beta privacy notice, DPO contact, retention, and DPIA checklist.
-- [Data Processing Agreement template](./data-processing-agreement-template.md) — draft hosted customer DPA requiring legal review.
-- [SOC 2 Type I readiness roadmap](./soc2-type1-roadmap.md) — hosted assurance gap analysis, control backlog, cost estimate, and buyer trigger.
-- [MAS outsourcing readiness pack](./mas-outsourcing-readiness.md) — BCP, incident response, subprocessors, data residency, and FI-adjacent control gaps.
-- [npm publish readiness](./npm-publish-readiness.md) — `@dude/mcp` package metadata, dry-run evidence, and first-publish blocker.
-- [PSG application track](./psg-application-track.md) — vendor pre-approval requirements, materials, timeline, and first-application blocker.
-- [KPI thresholds](./kpi-thresholds.md) — dashboard policy and breach handling.
-- [Quarterly product health template](./quarterly-product-health-template.md) — recurring review format.
-- [Deprecation policy](./deprecation-policy.md) — migration and removal rules.
-- [Release guide](./release.md) — release-window commands and evidence.
+- `Works today` [Governance checklist](./governance-checklist.md) — release and ownership gates.
+- `Works today` [Audit retention policy](./audit-retention-policy.md) — local trace and request-retention policy.
+- `Requires credentials` [ACRA licensing track](./acra-licensing-track.md) — API Marketplace, authorised ISP, and hosted paid enrichment blocker status.
+- `Hosted/commercial blocked` [Commercial data use review](./commercial-data-use.md) — OneMap and URA commercial-use posture for removed non-CDD surfaces plus source-limit history.
+- `Hosted/commercial blocked` [PDPA notification and DPO readiness](./privacy-dpo-readiness.md) — hosted beta privacy notice, DPO contact, retention, and DPIA checklist.
+- `Hosted/commercial blocked` [Data Processing Agreement template](./data-processing-agreement-template.md) — draft hosted customer DPA requiring legal review.
+- `Hosted/commercial blocked` [SOC 2 Type I readiness roadmap](./soc2-type1-roadmap.md) — hosted assurance gap analysis, control backlog, cost estimate, and buyer trigger; not an attestation.
+- `Hosted/commercial blocked` [MAS outsourcing readiness pack](./mas-outsourcing-readiness.md) — BCP, incident response, subprocessors, data residency, and FI-adjacent control gaps.
+- `Unpublished` [npm publish readiness](./npm-publish-readiness.md) — `@dude/mcp` package metadata, dry-run evidence, and first-publish blocker.
+- `Hosted/commercial blocked` [PSG application track](./psg-application-track.md) — vendor pre-approval requirements, materials, timeline, and first-application blocker.
+- `Hosted/commercial blocked` [KPI thresholds](./kpi-thresholds.md) — dashboard policy and breach handling for future hosted operations.
+- `Works today` [Quarterly product health template](./quarterly-product-health-template.md) — recurring review format.
+- `Works today` [Deprecation policy](./deprecation-policy.md) — migration and removal rules.
+- `Works today` [Release guide](./release.md) — release-window commands and evidence.

@@ -1,6 +1,6 @@
 # Signed export manifests
 
-Dude attaches a local export manifest to dossier JSON, CSV, bulk JSON, bulk CSV, and PDF exports. The manifest is designed for downstream integrity checks and audit trails; it is not a third-party certificate or notarized signature.
+Dude attaches a local export manifest to dossier JSON, CSV, bulk JSON, bulk CSV, and PDF exports. The manifest is designed for downstream integrity checks and audit trails; it is not a third-party certificate, notarized signature, or proof of server-side retention.
 
 ## Manifest fields
 
@@ -10,6 +10,7 @@ Dude attaches a local export manifest to dossier JSON, CSV, bulk JSON, bulk CSV,
 - `dossierHash`: deterministic SHA-256 hash of the dossier payload.
 - `sourceFreshness`: source-level observed timestamps copied from the dossier.
 - `provenance`: source, tool, and record counts copied from the dossier.
+- `sourceUseWarnings`: triggered ACRA and supplemental-provider source-use warnings that must stay with saved/exported CDD evidence.
 - `includedArtifacts`: whether analyst memo or web-presence context was included.
 - `signature`: deterministic SHA-256 signature over the manifest integrity payload.
 

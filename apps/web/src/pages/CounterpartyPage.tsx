@@ -1,29 +1,21 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { BookmarkCheck, BookmarkPlus, Braces, Copy, FileDown, Loader2, Table2 } from "lucide-react";
+import { Braces, Copy, Loader2, Table2 } from "lucide-react";
 
 import type { AnalystMemoState } from "@/components/dossier/AnalystMemoSection";
+import { DossierHeaderLogo } from "@/components/dossier/DossierHeaderLogo";
 import { DossierFindingsTabs } from "@/components/dossier/DossierFindingsTabs";
-import type { ModuleFollowUpRequest } from "@/components/dossier/EvidenceSection";
+import type { ModuleFollowUpRequest, RunningBusinessModule } from "@/components/dossier/EvidenceSection";
 import { GapsSection } from "@/components/dossier/GapsSection";
 import type { PeopleDiscoveryState } from "@/components/dossier/PeopleDiscoverySection";
 import { ProvenanceSection } from "@/components/dossier/ProvenanceSection";
 import type { WebPresenceState } from "@/components/dossier/WebPresenceSection";
 import { useToast } from "@/components/notifications/ToastProvider";
 import { Button } from "@/components/ui/button";
-import { callTool, getGatewayJson, postGatewayJson, type PeopleDiscovery, type WebPresence } from "@/lib/api/client";
-import {
-  buildDossierExportSummary,
-  exportSingleDossierCsv,
-  exportSingleDossierJson,
-} from "@/lib/export/structured";
-import {
-  isShortlisted,
-  removeShortlistEntry,
-  saveShortlistEntry,
-} from "@/lib/shortlist";
+import { getGatewayJson, postGatewayJson, type PeopleDiscovery, type WebPresence } from "@/lib/api/client";
 import {
   buildBusinessDossierInput,
+  buildBusinessDossierExpandedInput,
   buildBusinessDossierFollowUpInput,
   buildSummaryLine,
   getSummaryString,
@@ -31,17 +23,45 @@ import {
   sanitizeFilenamePart,
   UEN_PATTERN,
 } from "@/lib/dossier";
-import { exportDossierPdf } from "@/lib/export/pdf";
-import { exportPdpaReportPdf } from "@/lib/export/pdpa";
 import { persistAuditEvent, persistDossierRecord } from "@/lib/workspace-store";
 import type { AnalystMemoResponse } from "@/types/analyst-memo";
-import type { BusinessDossier, BusinessDossierModule } from "@/types/dossier";
+import type { BusinessDossier } from "@/types/dossier";
+import type { CddOrchestrationTrace } from "@/types/orchestration";
+import type { ReportExportFormat, ReportTemplate } from "@/lib/report-template";
 
 type DossierState =
   | { status: "loading" }
-  | { status: "success"; dossier: BusinessDossier }
-  | { status: "not-found"; dossier: BusinessDossier }
+  | { status: "success"; dossier: BusinessDossier; orchestration: CddOrchestratorResponse }
+  | { status: "not-found"; dossier: BusinessDossier; orchestration: CddOrchestratorResponse }
   | { status: "error"; message: string };
+
+type CddOrchestratorResponse = {
+  dossier: BusinessDossier;
+  webPresence: WebPresence;
+  peopleDiscovery: PeopleDiscovery;
+  memo: AnalystMemoResponse;
+  generatedAt: string;
+  orchestration: CddOrchestrationTrace;
+};
+
+const toWebPresenceState = (presence: WebPresence | undefined): WebPresenceState =>
+  presence === undefined ? { status: "loading" } : { status: "success", presence };
+
+const toPeopleDiscoveryState = (discovery: PeopleDiscovery | undefined): PeopleDiscoveryState =>
+  discovery === undefined ? { status: "loading" } : { status: "success", discovery };
+
+const toAnalystMemoState = (memo: AnalystMemoResponse | undefined): AnalystMemoState => {
+  if (memo === undefined) {
+    return { status: "loading" };
+  }
+  if (memo.status === "ready") {
+    return { status: "ready", memo };
+  }
+  if (memo.status === "unavailable") {
+    return { status: "unavailable", memo };
+  }
+  return { status: "error", message: memo.reason.message, memo };
+};
 
 function DossierActionButton({
   children,
@@ -93,18 +113,18 @@ export function CounterpartyPage() {
 
     setState({ status: "loading" });
 
-    void callTool<BusinessDossier>(
-      "sg_business_dossier",
+    void postGatewayJson<CddOrchestratorResponse>(
+      "/api/v1/dude/cdd-orchestrator",
       buildBusinessDossierInput(decodedIdentifier),
       { signal: controller.signal },
     )
-      .then((dossier) => {
+      .then((orchestration) => {
         if (controller.signal.aborted) {
           return;
         }
-        setState(isNotFoundDossier(dossier)
-          ? { status: "not-found", dossier }
-          : { status: "success", dossier });
+        setState(isNotFoundDossier(orchestration.dossier)
+          ? { status: "not-found", dossier: orchestration.dossier, orchestration }
+          : { status: "success", dossier: orchestration.dossier, orchestration });
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) {
@@ -141,7 +161,7 @@ export function CounterpartyPage() {
             message={`We didn't find a Singapore registry record for ${decodedIdentifier}.`}
           />
         ) : (
-          <DossierSuccess identifier={decodedIdentifier} dossier={state.dossier} />
+          <DossierSuccess identifier={decodedIdentifier} dossier={state.dossier} orchestration={state.orchestration} />
         )}
       </section>
     </main>
@@ -172,13 +192,10 @@ function DossierLoading({ identifier }: { identifier: string }) {
       <section className="min-w-0 rounded-lg border border-border bg-card p-5 shadow-sm sm:p-6">
         <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin text-muted-foreground" />
-              <h2 className="text-base font-semibold tracking-normal text-foreground">Loading dossier</h2>
-            </div>
+            <h2 className="text-base font-semibold tracking-normal text-foreground">Loading dossier</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Requesting <span className="font-mono text-foreground">sg_business_dossier</span> from the REST gateway.
-              Source-level evidence, skipped modules, freshness, and gaps will appear after this request returns.
+              Running the CDD orchestrator: ACRA identity, inferred sector modules, supplemental evidence, and memo
+              generation will return together before the report opens.
             </p>
           </div>
           <span className="w-fit shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
@@ -192,12 +209,12 @@ function DossierLoading({ identifier }: { identifier: string }) {
 
         {isSlow ? (
           <p className="mt-4 text-sm leading-6 text-muted-foreground">
-            This is taking longer than usual. The gateway may be waiting on upstream Singapore data sources; no individual
-            module step is shown until the dossier response is available.
+            This is taking longer than usual. The gateway may be waiting on upstream Singapore data sources, TinyFish
+            discovery, or the configured memo provider.
           </p>
         ) : (
           <p className="mt-4 text-xs leading-5 text-muted-foreground">
-            This loading state reflects one live gateway request, not simulated per-module progress.
+            This loading state reflects one live orchestrator request, not simulated per-module progress.
           </p>
         )}
       </section>
@@ -237,11 +254,14 @@ function DossierProblem({
 function DossierSuccess({
   dossier: initialDossier,
   identifier,
+  orchestration,
 }: {
   dossier: BusinessDossier;
   identifier: string;
+  orchestration: CddOrchestratorResponse;
 }) {
   const [dossier, setDossier] = useState(initialDossier);
+  const [currentOrchestration, setCurrentOrchestration] = useState(orchestration);
   const resolution = dossier.records.resolution;
   const navigate = useNavigate();
   const location = useLocation();
@@ -249,28 +269,27 @@ function DossierSuccess({
   const [isPdpaExporting, setIsPdpaExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
-  const [rerunningModule, setRerunningModule] = useState<BusinessDossierModule | null>(null);
-  const [webPresenceState, setWebPresenceState] = useState<WebPresenceState>({ status: "loading" });
-  const [peopleDiscoveryState, setPeopleDiscoveryState] = useState<PeopleDiscoveryState>({ status: "loading" });
-  const [memoState, setMemoState] = useState<AnalystMemoState>({ status: "loading" });
-  const [shortlisted, setShortlisted] = useState(false);
+  const [rerunningModule, setRerunningModule] = useState<RunningBusinessModule>(null);
+  const [webPresenceState, setWebPresenceState] = useState<WebPresenceState>(() =>
+    toWebPresenceState(orchestration.webPresence));
+  const [peopleDiscoveryState, setPeopleDiscoveryState] = useState<PeopleDiscoveryState>(() =>
+    toPeopleDiscoveryState(orchestration.peopleDiscovery));
+  const [memoState, setMemoState] = useState<AnalystMemoState>(() => toAnalystMemoState(orchestration.memo));
   const { notify } = useToast();
   const copiedTimer = useRef<number | null>(null);
   const sharedMemoState = useMemo(() => new URLSearchParams(location.search).get("memo"), [location.search]);
   const canonicalUen = getSummaryString(dossier, "UEN");
   const entityName = getSummaryString(dossier, "Entity");
-  const shortlistIdentifier = canonicalUen ?? entityName ?? identifier;
   const webPresenceQuery = [entityName, canonicalUen].filter(Boolean).join(" ");
-  const searchedCount = resolution?.searchedModules?.length ?? 0;
-  const matchedCount = resolution?.matchedModules?.length ?? 0;
-  const inferredSectorCount = resolution?.inferredSectors?.length ?? 0;
-  const coverageLine = resolution === undefined
-    ? null
-    : `${matchedCount} of ${searchedCount} searched modules returned evidence${inferredSectorCount === 0 ? "" : `; ${inferredSectorCount} sector ${inferredSectorCount === 1 ? "hint was" : "hints were"} inferred from ACRA SSIC`}.`;
+  const isUsingOrchestratedDossier = dossier === currentOrchestration.dossier;
 
   useEffect(() => {
     setDossier(initialDossier);
-  }, [initialDossier]);
+    setCurrentOrchestration(orchestration);
+    setWebPresenceState(toWebPresenceState(orchestration.webPresence));
+    setPeopleDiscoveryState(toPeopleDiscoveryState(orchestration.peopleDiscovery));
+    setMemoState(toAnalystMemoState(orchestration.memo));
+  }, [initialDossier, orchestration]);
 
   useEffect(() => {
     persistDossierRecord({ identifier, dossier });
@@ -283,9 +302,10 @@ function DossierSuccess({
       metadata: {
         matchedModules: dossier.records.resolution?.matchedModules ?? [],
         gapCount: dossier.gaps.length,
+        orchestration: currentOrchestration.orchestration,
       },
     });
-  }, [dossier, identifier]);
+  }, [dossier, identifier, currentOrchestration.orchestration]);
 
   useEffect(() => {
     return () => {
@@ -294,10 +314,6 @@ function DossierSuccess({
       }
     };
   }, []);
-
-  useEffect(() => {
-    setShortlisted(isShortlisted(shortlistIdentifier));
-  }, [shortlistIdentifier]);
 
   useEffect(() => {
     if (
@@ -311,6 +327,9 @@ function DossierSuccess({
 
   useEffect(() => {
     const controller = new AbortController();
+    if (isUsingOrchestratedDossier) {
+      return () => controller.abort();
+    }
     if (webPresenceQuery === "") {
       setWebPresenceState({ status: "error", message: "No entity name or UEN was available for web discovery." });
       return () => controller.abort();
@@ -337,10 +356,13 @@ function DossierSuccess({
       });
 
     return () => controller.abort();
-  }, [webPresenceQuery]);
+  }, [isUsingOrchestratedDossier, webPresenceQuery]);
 
   useEffect(() => {
     const controller = new AbortController();
+    if (isUsingOrchestratedDossier) {
+      return () => controller.abort();
+    }
     if (entityName === null) {
       setPeopleDiscoveryState({ status: "error", message: "No entity name was available for people follow-up." });
       return () => controller.abort();
@@ -370,10 +392,13 @@ function DossierSuccess({
       });
 
     return () => controller.abort();
-  }, [canonicalUen, entityName]);
+  }, [canonicalUen, entityName, isUsingOrchestratedDossier]);
 
   useEffect(() => {
     const controller = new AbortController();
+    if (isUsingOrchestratedDossier) {
+      return () => controller.abort();
+    }
     if (webPresenceState.status === "loading") {
       setMemoState({ status: "loading" });
       return () => controller.abort();
@@ -411,7 +436,7 @@ function DossierSuccess({
       });
 
     return () => controller.abort();
-  }, [dossier, webPresenceState]);
+  }, [dossier, isUsingOrchestratedDossier, webPresenceState]);
 
   useEffect(() => {
     const nextMemoState = memoState.status === "loading" ? "pending" : memoState.status;
@@ -443,33 +468,54 @@ function DossierSuccess({
       metadata: {
         providerStatus: memoState.status,
         webPresenceStatus: webPresenceState.status,
+        orchestration: currentOrchestration.orchestration,
       },
     });
-  }, [dossier, identifier, memoState, webPresenceState]);
+  }, [dossier, identifier, memoState, currentOrchestration.orchestration, webPresenceState]);
 
-  const handleExportPdf = async () => {
+  const handleExportReport = async (reportTemplate: ReportTemplate, format: ReportExportFormat) => {
     setIsExporting(true);
     setExportError(null);
     try {
       const today = new Date().toISOString().slice(0, 10);
-      await exportDossierPdf(dossier, {
-        filename: `dude-diligence-${sanitizeFilenamePart(identifier)}-${today}.pdf`,
+      const baseOptions = {
         ...(memoState.status === "ready" ? { analystMemo: memoState.memo } : {}),
+        orchestration: currentOrchestration.orchestration,
+        reportTemplate,
         ...(webPresenceState.status === "success" ? { webPresence: webPresenceState.presence } : {}),
-      });
+      };
+      if (format === "pdf") {
+        const { exportDossierPdf } = await import("@/lib/export/pdf");
+        await exportDossierPdf(dossier, {
+          ...baseOptions,
+          filename: `dude-cdd-report-${sanitizeFilenamePart(identifier)}-${today}.pdf`,
+        });
+      } else {
+        const { exportDossierDocx } = await import("@/lib/export/docx");
+        await exportDossierDocx(dossier, {
+          ...baseOptions,
+          filename: `dude-cdd-report-${sanitizeFilenamePart(identifier)}-${today}.docx`,
+        });
+      }
       persistAuditEvent({
         eventType: "export",
         permission: "export:run",
-        input: { identifier, format: "pdf" },
-        output: { filename: `dude-diligence-${sanitizeFilenamePart(identifier)}-${today}.pdf` },
+        input: {
+          format,
+          identifier,
+          reportSections: reportTemplate.sections,
+          writingStyle: reportTemplate.writingStyle,
+          orchestration: currentOrchestration.orchestration,
+        },
+        output: { filename: `dude-cdd-report-${sanitizeFilenamePart(identifier)}-${today}.${format}` },
         provenance: dossier.provenance,
         freshness: dossier.freshness,
       });
-      notify({ title: "PDF export started", description: dossier.title, tone: "success" });
+      notify({ title: `${format.toUpperCase()} report export started`, description: dossier.title, tone: "success" });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "PDF export failed.";
+      const message = error instanceof Error ? error.message : "Report export failed.";
       setExportError(message);
-      notify({ title: "PDF export failed", description: message, tone: "error" });
+      notify({ title: "Report export failed", description: message, tone: "error" });
     } finally {
       setIsExporting(false);
     }
@@ -477,11 +523,12 @@ function DossierSuccess({
 
   const handleExportCsv = async () => {
     try {
-      await exportSingleDossierCsv(dossier);
+      const { exportSingleDossierCsv } = await import("@/lib/export/structured");
+      await exportSingleDossierCsv(dossier, { orchestration: currentOrchestration.orchestration });
       persistAuditEvent({
         eventType: "export",
         permission: "export:run",
-        input: { identifier, format: "csv" },
+        input: { identifier, format: "csv", orchestration: currentOrchestration.orchestration },
         output: { title: dossier.title },
         provenance: dossier.provenance,
         freshness: dossier.freshness,
@@ -498,15 +545,17 @@ function DossierSuccess({
 
   const handleExportJson = async () => {
     try {
+      const { exportSingleDossierJson } = await import("@/lib/export/structured");
       await exportSingleDossierJson({
         dossier,
         ...(memoState.status === "ready" ? { analystMemo: memoState.memo } : {}),
+        orchestration: currentOrchestration.orchestration,
         ...(webPresenceState.status === "success" ? { webPresence: webPresenceState.presence } : {}),
       });
       persistAuditEvent({
         eventType: "export",
         permission: "export:run",
-        input: { identifier, format: "json" },
+        input: { identifier, format: "json", orchestration: currentOrchestration.orchestration },
         output: { title: dossier.title },
         provenance: dossier.provenance,
         freshness: dossier.freshness,
@@ -525,6 +574,7 @@ function DossierSuccess({
     setIsPdpaExporting(true);
     try {
       const today = new Date().toISOString().slice(0, 10);
+      const { exportPdpaReportPdf } = await import("@/lib/export/pdpa");
       await exportPdpaReportPdf(dossier, {
         filename: `dude-pdpa-checklist-${sanitizeFilenamePart(identifier)}-${today}.pdf`,
         reviewedItemIds,
@@ -532,7 +582,7 @@ function DossierSuccess({
       persistAuditEvent({
         eventType: "export",
         permission: "export:run",
-        input: { identifier, format: "pdpa_pdf", reviewedItemIds },
+        input: { identifier, format: "pdpa_pdf", reviewedItemIds, orchestration: currentOrchestration.orchestration },
         output: { filename: `dude-pdpa-checklist-${sanitizeFilenamePart(identifier)}-${today}.pdf` },
         provenance: dossier.provenance,
         freshness: dossier.freshness,
@@ -564,46 +614,51 @@ function DossierSuccess({
     }
   };
 
-  const handleToggleShortlist = () => {
-    if (shortlisted) {
-      removeShortlistEntry(shortlistIdentifier);
-      setShortlisted(false);
-      notify({ title: "Removed saved dossier", description: shortlistIdentifier, tone: "info" });
-      return;
-    }
-    saveShortlistEntry(buildDossierExportSummary(dossier));
-    setShortlisted(true);
-    notify({ title: "Saved dossier", description: shortlistIdentifier, tone: "success" });
-  };
-
   const handleModuleFollowUp = async (request: ModuleFollowUpRequest) => {
-    setRerunningModule(request.module);
+    setRerunningModule(request.kind === "all" ? "all" : request.module);
     try {
-      const followUpInput = buildBusinessDossierFollowUpInput({
-        dossier,
-        identifier,
-        module: request.module,
-        value: request.value,
-      });
-      const nextDossier = await callTool<BusinessDossier>("sg_business_dossier", followUpInput);
-      setDossier(nextDossier);
+      const followUpInput = request.kind === "all"
+        ? buildBusinessDossierExpandedInput({
+            dossier,
+            identifier,
+            modules: request.modules,
+            value: request.value,
+          })
+        : buildBusinessDossierFollowUpInput({
+            dossier,
+            identifier,
+            module: request.module,
+            value: request.value,
+          });
+      const nextOrchestration = await postGatewayJson<CddOrchestratorResponse>("/api/v1/dude/cdd-orchestrator", followUpInput);
+      setCurrentOrchestration(nextOrchestration);
+      setDossier(nextOrchestration.dossier);
+      setWebPresenceState(toWebPresenceState(nextOrchestration.webPresence));
+      setPeopleDiscoveryState(toPeopleDiscoveryState(nextOrchestration.peopleDiscovery));
+      setMemoState(toAnalystMemoState(nextOrchestration.memo));
       persistAuditEvent({
         eventType: "search",
-        input: followUpInput,
-        output: nextDossier,
-        provenance: nextDossier.provenance,
-        freshness: nextDossier.freshness,
-        metadata: { module: request.module },
+        input: {
+          ...followUpInput,
+          analystHint: request.kind === "all" ? "run_all_relevant_sector_modules" : `rerun_with_${request.module}_sector_hint`,
+        },
+        output: nextOrchestration.dossier,
+        provenance: nextOrchestration.dossier.provenance,
+        freshness: nextOrchestration.dossier.freshness,
+        metadata: {
+          module: request.kind === "all" ? "all" : request.module,
+          orchestration: nextOrchestration.orchestration,
+        },
       });
       notify({
-        title: `${request.module.toUpperCase()} follow-up complete`,
-        description: "Dossier evidence, provenance, freshness, gaps, and limits were refreshed.",
+        title: request.kind === "all" ? "Orchestrated module refresh complete" : `${request.module.toUpperCase()} orchestrated follow-up complete`,
+        description: "The CDD orchestrator refreshed dossier evidence, supplemental review, memo state, provenance, freshness, gaps, and limits.",
         tone: "success",
       });
     } catch (error) {
       notify({
-        title: `${request.module.toUpperCase()} follow-up failed`,
-        description: error instanceof Error ? error.message : "Unable to rerun this module.",
+        title: request.kind === "all" ? "All module checks failed" : `${request.module.toUpperCase()} follow-up failed`,
+        description: error instanceof Error ? error.message : "Unable to rerun the orchestrator with this hint.",
         tone: "error",
       });
     } finally {
@@ -614,15 +669,13 @@ function DossierSuccess({
   return (
     <>
       <header className="space-y-4">
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-muted-foreground">Counterparty</p>
-          <h1 className="break-words text-3xl font-semibold tracking-normal text-foreground">{dossier.title}</h1>
-          <p className="text-lg leading-8 text-muted-foreground">{buildSummaryLine(dossier)}</p>
-          {coverageLine === null ? null : (
-            <p className="text-sm leading-6 text-muted-foreground">
-              {coverageLine} Skipped modules were not queried and are not negative evidence.
-            </p>
-          )}
+        <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start">
+          <DossierHeaderLogo dossier={dossier} />
+          <div className="min-w-0 space-y-2">
+            <p className="text-sm font-medium text-muted-foreground">Counterparty</p>
+            <h1 className="break-words text-3xl font-semibold tracking-normal text-foreground">{dossier.title}</h1>
+            <p className="text-lg leading-8 text-muted-foreground">{buildSummaryLine(dossier)}</p>
+          </div>
         </div>
         <div className="flex min-w-0 flex-wrap gap-2 text-sm text-muted-foreground">
           <span className="max-w-full break-all rounded-md bg-muted px-2.5 py-1 font-mono text-foreground">{identifier}</span>
@@ -647,46 +700,37 @@ function DossierSuccess({
           ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <DossierActionButton
-            disabled={isExporting}
-            label={isExporting ? "Exporting PDF" : "Export PDF"}
-            onClick={handleExportPdf}
-            variant="default"
-          >
-            {isExporting ? (
-              <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin" />
-            ) : (
-              <FileDown aria-hidden="true" className="h-5 w-5" />
-            )}
-          </DossierActionButton>
           <DossierActionButton label="Copy link" onClick={handleCopyLink}>
             <Copy aria-hidden="true" className="h-5 w-5" />
-          </DossierActionButton>
-          <DossierActionButton label="Export CSV" onClick={() => void handleExportCsv()}>
-            <Table2 aria-hidden="true" className="h-5 w-5" />
-          </DossierActionButton>
-          <DossierActionButton label="Export JSON" onClick={() => void handleExportJson()}>
-            <Braces aria-hidden="true" className="h-5 w-5" />
-          </DossierActionButton>
-          <DossierActionButton
-            label={shortlisted ? "Remove saved" : "Save dossier"}
-            onClick={handleToggleShortlist}
-          >
-            {shortlisted ? (
-              <BookmarkCheck aria-hidden="true" className="h-5 w-5" />
-            ) : (
-              <BookmarkPlus aria-hidden="true" className="h-5 w-5" />
-            )}
           </DossierActionButton>
           {copyStatus === "copied" ? (
             <p className="text-sm text-muted-foreground">Copied</p>
           ) : copyStatus === "error" ? (
             <p className="text-sm text-destructive">Copy failed</p>
           ) : null}
+          {isExporting ? (
+            <p className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+              Exporting report
+            </p>
+          ) : null}
           {exportError !== null ? (
             <p className="text-sm text-destructive">{exportError}</p>
           ) : null}
         </div>
+        <details className="w-fit rounded-md border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
+          <summary className="cursor-pointer font-medium text-foreground">Advanced data exports</summary>
+          <div className="mt-3 flex gap-2">
+            <Button onClick={() => void handleExportCsv()} size="sm" type="button" variant="outline">
+              <Table2 aria-hidden="true" className="mr-2 h-4 w-4" />
+              CSV
+            </Button>
+            <Button onClick={() => void handleExportJson()} size="sm" type="button" variant="outline">
+              <Braces aria-hidden="true" className="mr-2 h-4 w-4" />
+              JSON
+            </Button>
+          </div>
+        </details>
       </header>
 
       <DossierFindingsTabs
@@ -694,7 +738,9 @@ function DossierSuccess({
         isPdpaExporting={isPdpaExporting}
         memoState={memoState}
         onExportPdpaReport={(reviewedItemIds) => void handleExportPdpaReport(reviewedItemIds)}
+        onExportReport={(template, format) => void handleExportReport(template, format)}
         onModuleFollowUp={handleModuleFollowUp}
+        orchestration={currentOrchestration.orchestration}
         peopleDiscoveryState={peopleDiscoveryState}
         rerunningModule={rerunningModule}
         sharedMemoState={sharedMemoState}

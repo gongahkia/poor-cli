@@ -1,11 +1,11 @@
 # Embeddable Dossier Widget
 
-This example provides a zero-build web component and an iframe wrapper for embedding a bounded Dude business-dossier search in a client portal, intranet, or CMS page.
+This example provides a zero-build web component and an iframe wrapper for embedding the bounded Dude CDD orchestrator search in a client portal, intranet, or CMS page.
 
 ## Success Definition
 
 - A host page can embed a company name or UEN search without adopting the React app.
-- The widget calls the existing REST gateway endpoint `POST /api/v1/sg_business_dossier`.
+- The widget calls the product REST gateway endpoint `POST /api/v1/dude/cdd-orchestrator`.
 - API, auth, origin, and white-label theming behavior are documented.
 - The smoke check verifies the example files expose the expected integration contract.
 
@@ -64,7 +64,7 @@ For public or self-hosted gateways with no browser auth, no token is required.
 For hosted gateways:
 
 - prefer a backend proxy that injects credentials server-side;
-- if a browser token is unavoidable, issue a short-lived token scoped to `sg_business_dossier`, the allowed origin, and the customer workspace;
+- if a browser token is unavoidable, issue a short-lived token scoped to the CDD orchestrator, the allowed origin, and the customer workspace;
 - never embed upstream API keys, AI provider keys, admin tokens, or long-lived service tokens in HTML;
 - configure the REST gateway CORS allowlist with exact host origins, not `*`;
 - keep `gateway-url` same-origin when possible to avoid third-party cookie and CORS failure modes.

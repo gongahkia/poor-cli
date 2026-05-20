@@ -1,6 +1,6 @@
 import { ChangeEvent, type KeyboardEvent, type ReactNode, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Bell, ChevronRight, ClipboardList, Copy, ExternalLink, FolderSearch, History, Pencil, RotateCw, Trash2 } from "lucide-react";
+import { Bell, ChevronRight, ClipboardList, Copy, ExternalLink, Eye, FolderSearch, History, Pencil, RotateCw, Trash2 } from "lucide-react";
 
 import { useToast } from "@/components/notifications/ToastProvider";
 import { Button } from "@/components/ui/button";
@@ -157,6 +157,15 @@ export function WorkspacePanel({
     }
   };
 
+  const handleCopyAuditEvent = async (event: WorkspaceAuditEvent) => {
+    try {
+      await navigator.clipboard.writeText(formatJson(event));
+      notify({ title: "Audit event copied", description: formatAuditEventType(event.eventType), tone: "success" });
+    } catch {
+      notify({ title: "Copy failed", description: "The browser could not write the audit event to the clipboard.", tone: "error" });
+    }
+  };
+
   const startEditingDossier = (record: WorkspaceDossierRecord) => {
     setEditingDossier(record);
     setDossierEditForm({
@@ -252,7 +261,7 @@ export function WorkspacePanel({
             <p className="text-sm font-medium text-muted-foreground">{session.workspaceName}</p>
             <h1 className="mt-1 text-3xl font-semibold tracking-normal text-foreground">Workspace</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Persisted dossiers, watchlists, bulk jobs, and immutable audit events for this workspace.
+              Browser-local prototype storage for saved dossiers, watchlists, bulk jobs, and audit events. Data stays in this browser's localStorage unless exported or cleared.
             </p>
           </div>
           {actions}
@@ -438,7 +447,7 @@ export function WorkspacePanel({
               <History className="h-4 w-4 text-muted-foreground" />
               <div>
                 <h2 className="text-base font-semibold text-foreground">Audit log</h2>
-                <p className="mt-1 text-xs text-muted-foreground">Click any row to inspect the event payload, provenance, and metadata.</p>
+                <p className="mt-1 text-xs text-muted-foreground">Browser-local audit events; click any row or use actions to inspect payload, provenance, and metadata.</p>
               </div>
             </div>
             <select
@@ -458,7 +467,7 @@ export function WorkspacePanel({
             </select>
           </div>
           <div className="mt-4 max-h-[60vh] overflow-auto rounded-lg border border-border">
-            <table className="min-w-[840px] w-full table-fixed text-left text-sm">
+            <table className="min-w-[980px] w-full table-fixed text-left text-sm">
               <thead className="sticky top-0 z-10 bg-muted text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="w-44 px-3 py-2">Time</th>
@@ -467,6 +476,7 @@ export function WorkspacePanel({
                   <th className="w-32 px-3 py-2">Input</th>
                   <th className="w-32 px-3 py-2">Output</th>
                   <th className="w-44 px-3 py-2">Sources</th>
+                  <th className="w-28 px-3 py-2">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -498,11 +508,45 @@ export function WorkspacePanel({
                     <td className="px-3 py-3">
                       <p className="line-clamp-2">{event.provenance.map((item) => item.source).join(", ") || "-"}</p>
                     </td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-1">
+                        <Button
+                          aria-label={`Inspect audit event ${formatAuditEventType(event.eventType)} at ${new Date(event.occurredAt).toLocaleString()}`}
+                          className="h-8 w-8"
+                          onClick={(mouseEvent) => {
+                            mouseEvent.stopPropagation();
+                            setSelectedAuditEvent(event);
+                          }}
+                          onKeyDown={(keyboardEvent) => keyboardEvent.stopPropagation()}
+                          size="icon"
+                          title={`Inspect audit event ${formatAuditEventType(event.eventType)}`}
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          aria-label={`Copy audit event ${formatAuditEventType(event.eventType)} as JSON`}
+                          className="h-8 w-8"
+                          onClick={(mouseEvent) => {
+                            mouseEvent.stopPropagation();
+                            void handleCopyAuditEvent(event);
+                          }}
+                          onKeyDown={(keyboardEvent) => keyboardEvent.stopPropagation()}
+                          size="icon"
+                          title={`Copy audit event ${formatAuditEventType(event.eventType)} as JSON`}
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
                 {auditEvents.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-6 text-sm text-muted-foreground" colSpan={6}>No audit events recorded yet.</td>
+                    <td className="px-3 py-6 text-sm text-muted-foreground" colSpan={7}>No audit events recorded yet.</td>
                   </tr>
                 ) : null}
               </tbody>
@@ -579,7 +623,7 @@ function AuditEventDialog({
             <DialogHeader className="pr-10">
               <DialogTitle>{formatAuditEventType(event.eventType)}</DialogTitle>
               <DialogDescription>
-                Immutable workspace audit event from {new Date(event.occurredAt).toLocaleString()}.
+                Browser-local audit event from {new Date(event.occurredAt).toLocaleString()}; this is not server-retained audit evidence.
               </DialogDescription>
             </DialogHeader>
 

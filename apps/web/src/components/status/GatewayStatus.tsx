@@ -167,17 +167,12 @@ function getAnalystMemoMetadata(
   const provider = getProviderName(service);
   const providerLabel = providerLabels[provider] ?? provider;
   const model = service?.model ?? readServiceDetail(service, "model") ?? "configured model";
-  const requiredEnvVar = getProviderKeyEnv(service);
-  const credentialLocation =
-    readServiceDetail(service, "credentialLocation") ?? "REST gateway process environment";
+  const latency = formatLatency(service?.latencyMs);
 
   return [
-    ...getServiceMetadata(service),
-    { label: "Required env", value: requiredEnvVar },
+    ...(latency === null ? [] : [{ label: "Probe", value: latency }]),
     { label: "Provider", value: providerLabel },
     { label: "Model", value: model },
-    { label: "Stored in", value: credentialLocation },
-    { label: "Browser env", value: "browser VITE_* keys are not used for memo generation." },
   ];
 }
 

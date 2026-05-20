@@ -162,15 +162,15 @@ def run_jobs(jobs: list[QueueJob], outcomes: list[dict[str, Any]]) -> None:
 def run_dry() -> None:
     jobs = [
         QueueJob("job-1", "Architecture firm diligence for DP Architects"),
-        QueueJob("job-2", "Find a social service office near me"),
+        QueueJob("job-2", "Run business diligence"),
         QueueJob("job-3", "Compare GDP and CPI in Singapore"),
-        QueueJob("job-4", "Transport status in Singapore right now"),
+        QueueJob("job-4", "Business dossier for ABC CONSTRUCTION PTE LTD"),
     ]
     synthetic = [
         {"status": "completed"},
-        {"status": "blocked", "reason": "Need a planning area or postal code."},
+        {"status": "blocked", "reason": "Need a company name or UEN."},
         {"status": "unsupported", "reason": "Prompt outside bounded workflows."},
-        {"status": "failed", "failedStep": {"error": {"message": "LTA timed out", "retryable": True}}},
+        {"status": "failed", "failedStep": {"error": {"message": "ACRA timed out", "retryable": True}}},
     ]
     run_jobs(jobs, synthetic)
 
@@ -186,9 +186,9 @@ def run_live() -> None:
     try:
         jobs = [
             QueueJob("job-1", "Architecture firm diligence for DP Architects"),
-            QueueJob("job-2", "Find a social service office near me"),
+            QueueJob("job-2", "Run business diligence"),
             QueueJob("job-3", "Compare GDP and CPI in Singapore"),
-            QueueJob("job-4", "Find datasets about a definitely unknown topic"),
+            QueueJob("job-4", "Business dossier for ABC CONSTRUCTION PTE LTD"),
         ]
         outcomes = [query(client, job.prompt) for job in jobs]
         run_jobs(jobs, outcomes)

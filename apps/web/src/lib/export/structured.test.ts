@@ -7,12 +7,12 @@ import {
 import type { BusinessDossier } from "@/types/dossier";
 
 const dossier: BusinessDossier = {
-  evidence: [],
+  evidence: [{ label: "ACRA matches", source: "ACRA", value: 1 }],
   freshness: [],
   gaps: [{ code: "NO_MATCH", message: "No exact match." }],
   limits: [{ code: "PUBLIC_DATA_ONLY", message: "Public data only." }],
-  provenance: [],
-  records: {},
+  provenance: [{ authRequired: false, coverage: "Entity identity", recordCount: 1, source: "ACRA", tool: "sg_acra_entities" }],
+  records: { acra: [{ entityName: "Example Pte Ltd" }] },
   summary: [{ label: "Entity", value: "Example Pte Ltd" }],
   title: "Business Dossier",
 };
@@ -38,6 +38,10 @@ describe("structured dossier exports", () => {
           value: expect.any(String),
         },
       },
+      sourceUseWarnings: [expect.objectContaining({
+        id: "acra_source_use",
+        message: expect.stringContaining("hosted paid redistribution"),
+      })],
     });
   });
 
@@ -48,6 +52,7 @@ describe("structured dossier exports", () => {
       complianceUseNotice: expect.stringContaining("licensed compliance advice"),
       generatedAt: "2026-05-16T00:00:00.000Z",
       limits: "PUBLIC_DATA_ONLY: Public data only.",
+      sourceUseWarnings: expect.stringContaining("ACRA source-use review required"),
     });
   });
 });

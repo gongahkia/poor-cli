@@ -2,6 +2,8 @@
 
 This is the implementation contract for issues #45, #47, #48, and #49.
 
+The current web implementation stores this workspace model in browser `localStorage` under the active browser profile. That is suitable for local prototype and self-contained analyst review, but it is not durable hosted workspace storage or immutable server-side audit retention.
+
 ## Persisted Dossiers
 
 Single counterparty pages auto-save a workspace dossier record with:
@@ -11,11 +13,11 @@ Single counterparty pages auto-save a workspace dossier record with:
 - web-presence metadata when available
 - folder id, actor id, created/updated timestamps
 
-The workspace UI at `/workspace` provides dossier search, folder filtering, and links back to the canonical counterparty page.
+The workspace UI at `/workspace` provides dossier search, folder filtering, and links back to the canonical counterparty page. In the current web build, those records remain browser-local unless exported.
 
 ## Audit Events
 
-Audit events are append-only records with:
+Audit events are append-only within the browser-local store with:
 
 - `eventType`: search, dossier generation, memo generation, export, watchlist change, or bulk run
 - actor, role, workspace id, request id
@@ -23,7 +25,7 @@ Audit events are append-only records with:
 - provenance/freshness metadata
 - arbitrary structured metadata for event-specific context
 
-The workspace page exposes event-type filtering. The REST gateway also enforces workspace permissions for memo, bulk, debug logs, and direct tool calls.
+The workspace page exposes event-type filtering. The REST gateway also enforces workspace permissions for memo, bulk, debug logs, and direct tool calls. Hosted deployments need a server-side audit store before describing these events as durable retention evidence.
 
 ## Watchlists
 
@@ -38,7 +40,7 @@ The current local implementation records schedule metadata and a manual "check n
 
 ## Bulk Jobs
 
-Bulk diligence now supports 200 rows per workspace-backed job. The UI records:
+Bulk diligence now supports 200 rows per browser-local workspace job. The UI records:
 
 - requested/executed row counts
 - risk summary grid

@@ -20,6 +20,7 @@ const env = {
 };
 
 run("verify", ["run", "verify"], env);
+run("npm registry availability", ["run", "registry:availability:check"], env);
 run("production dependency audit", ["run", "security:audit:prod"], env);
 run(
   "benchmark snapshot",

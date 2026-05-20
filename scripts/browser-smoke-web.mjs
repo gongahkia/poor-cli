@@ -167,6 +167,60 @@ const dossierFixture = {
   ],
 };
 
+const orchestrationFixture = {
+  status: "ready",
+  strategy: "acra_then_sector_then_supplemental_memo",
+  acraSectorHints: [],
+  webSectorHints: [],
+  effectiveSectorHints: [],
+  officialModules: ["acra", "gebiz"],
+  supplementalTools: [
+    "sg_sanctions_screen",
+    "sg_opencorporates_links",
+    "sg_adverse_media_lite",
+    "sg_relationship_graph",
+  ],
+  reranDossierForWebSectorHints: false,
+  stages: [
+    {
+      detail: "Fixture gateway resolved DBS BANK to DBS BANK LTD / 03591300B through the orchestrator identity gate.",
+      id: "acra_identity",
+      label: "ACRA identity lookup",
+      status: "completed",
+      tools: ["sg_acra_entities"],
+    },
+    {
+      detail: "Fixture SSIC evidence classified the entity as finance, so no specialist BCA, BOA, CEA, HSA, or HLB sector module was justified.",
+      id: "sector_inference",
+      label: "Sector inference",
+      status: "completed",
+      tools: ["sg_business_dossier"],
+    },
+    {
+      detail: "ACRA and GeBIZ fixture modules ran; ACRA matched and GeBIZ returned an explicit no-match gap.",
+      id: "official_modules",
+      label: "Official module enrichment",
+      status: "completed",
+      tools: ["sg_acra_entities", "sg_gebiz_tenders"],
+    },
+    {
+      detail: "Fixture web and people discovery were included as supplemental analyst-review evidence; external provider checks remain represented as supplemental tools.",
+      id: "supplemental_review",
+      label: "Supplemental review",
+      status: "completed",
+      tools: ["sg_sanctions_screen", "sg_opencorporates_links", "sg_adverse_media_lite", "sg_relationship_graph"],
+    },
+    {
+      detail: "Fixture memo produced cited analyst-review findings from the returned dossier evidence.",
+      id: "ai_memo",
+      label: "AI memo",
+      status: "completed",
+      tools: ["dude_memo"],
+    },
+  ],
+  limits: ["Fixture orchestrator response mirrors the production CDD flow shape."],
+};
+
 const jsonResponse = (response, statusCode, payload) => {
   response.writeHead(statusCode, {
     "Access-Control-Allow-Headers": "Content-Type",
@@ -257,6 +311,91 @@ const createMockGateway = () => createServer(async (request, response) => {
       ],
       possibleOfficialWebsite: "https://www.dbs.com.sg/",
       limits: ["Fixture web discovery does not perform live search."],
+    });
+    return;
+  }
+
+  if (request.method === "POST" && requestUrl.pathname === "/api/v1/dude/cdd-orchestrator") {
+    const rawBody = await readRequestBody(request);
+    const body = rawBody.trim() === "" ? {} : JSON.parse(rawBody);
+    if (body.uen !== "03591300B" && body.entityName !== "DBS BANK LTD" && body.entityName !== "DBS BANK") {
+      jsonResponse(response, 404, {
+        error: {
+          code: "FIXTURE_NOT_FOUND",
+          message: "Browser smoke fixture only serves DBS BANK / 03591300B.",
+        },
+      });
+      return;
+    }
+    jsonResponse(response, 200, {
+      dossier: dossierFixture,
+      webPresence: {
+        query: "DBS BANK LTD 03591300B",
+        configured: true,
+        results: [
+          {
+            title: "DBS Bank Singapore",
+            snippet: "Fixture web result for browser smoke coverage.",
+            url: "https://www.dbs.com.sg/",
+            siteName: "DBS",
+            position: 1,
+          },
+        ],
+        possibleOfficialWebsite: "https://www.dbs.com.sg/",
+        limits: ["Fixture web discovery does not perform live search."],
+      },
+      peopleDiscovery: {
+        entityName: "DBS BANK LTD",
+        uen: "03591300B",
+        query: "\"DBS BANK\" Singapore employees leadership directors LinkedIn",
+        configured: true,
+        results: [],
+        suggestedActions: ["Review snippets for candidate people references before use."],
+        limits: ["Fixture people discovery does not perform live search."],
+      },
+      memo: {
+        status: "ready",
+        configured: true,
+        provider: "openai",
+        model: "fixture-model",
+        generatedAt: "2026-05-15T00:00:00.000Z",
+        evidenceMemo: [
+          {
+            text: "DBS BANK LTD is present in the ACRA fixture summary.",
+            citationIds: ["summary-1"],
+          },
+        ],
+        riskRating: {
+          level: "medium",
+          rationale: "The fixture includes partial module coverage for procurement evidence.",
+          citationIds: ["risk-1"],
+          confidenceBlockers: ["GeBIZ did not return a matching fixture record."],
+        },
+        decisionAid: {
+          nextSteps: ["Run direct procurement follow-up only if public-sector award history matters operationally."],
+          confidenceBlockers: ["The fixture covers only ACRA and GeBIZ modules."],
+          nonAdvisoryReminder: "Operational follow-up only; this is not legal, tax, credit, investment, or licensed-advisor advice.",
+        },
+        citations: [
+          {
+            id: "summary-1",
+            label: "Entity",
+            source: "ACRA fixture",
+            text: "Entity: DBS BANK LTD",
+          },
+          {
+            id: "risk-1",
+            label: "PARTIAL_MODULE_COVERAGE",
+            source: "Resolver fixture",
+            text: "medium: Matched 1 of 2 searched modules.",
+          },
+        ],
+        gaps: dossierFixture.gaps,
+        limits: dossierFixture.limits,
+        rejectedClaims: [],
+      },
+      generatedAt: "2026-05-15T00:00:00.000Z",
+      orchestration: orchestrationFixture,
     });
     return;
   }
@@ -464,17 +603,19 @@ try {
   page.on("pageerror", (error) => consoleMessages.push(`[pageerror] ${error.stack ?? error.message}`));
 
   await page.goto("/", { waitUntil: "networkidle" });
-  await page.getByRole("heading", { name: /Client CDD onboarding/i }).waitFor({ state: "visible" });
-  await page.getByLabel("Company name or UEN").fill("DBS BANK");
+  await page.getByRole("heading", { name: /Search a Singapore company or UEN/i }).waitFor({ state: "visible" });
+  await page.getByLabel("Client or counterparty company name or UEN").fill("DBS BANK");
   const dbsSuggestion = page.getByRole("option", { name: /DBS BANK LTD/i });
   await dbsSuggestion.waitFor({ state: "visible" });
   await dbsSuggestion.click();
   await page.waitForURL(/\/c\/03591300B(?:\?memo=[a-z]+)?$/);
   await page.getByRole("heading", { name: "DBS BANK LTD" }).waitFor({ state: "visible" });
-  await page.getByRole("heading", { name: "Summary" }).waitFor({ state: "visible" });
+  await page.getByRole("heading", { name: "Cited executive summary" }).waitFor({ state: "visible" });
+  await page.getByText("Report Builder").waitFor({ state: "visible" });
+  await page.getByRole("tab", { name: /Evidence Pack/i }).click();
+  await page.getByRole("heading", { name: "Evidence Pack" }).waitFor({ state: "visible" });
   await page.getByRole("heading", { name: "Analyst Memo" }).waitFor({ state: "visible" });
-  await page.getByText("DBS BANK LTD is present in the ACRA fixture summary.").waitFor({ state: "visible" });
-  await page.getByRole("tab", { name: /Audit/i }).click();
+  await page.getByText("DBS BANK LTD is present in the ACRA fixture summary.").first().waitFor({ state: "visible" });
   await page.getByRole("heading", { name: "Provenance" }).waitFor({ state: "visible" });
   await page.getByText("ACRA public search fixture").first().waitFor({ state: "visible" });
   await assertNoDocumentOverflow(page, "Dossier desktop layout");
@@ -490,6 +631,7 @@ try {
   }
 
   const downloadPromise = page.waitForEvent("download", { timeout: 20000 });
+  await page.getByRole("tab", { name: /Report Builder/i }).click();
   await page.getByRole("button", { name: "Export PDF" }).click();
   const download = await downloadPromise;
   const suggestedFilename = download.suggestedFilename();
@@ -498,12 +640,57 @@ try {
   }
   await download.saveAs(resolve(artifactDir, suggestedFilename));
 
+  const jsonDownloadPromise = page.waitForEvent("download", { timeout: 20000 });
+  await page.getByText("Advanced data exports").click();
+  await page.getByRole("button", { name: "JSON" }).click();
+  const jsonDownload = await jsonDownloadPromise;
+  const jsonFilename = jsonDownload.suggestedFilename();
+  if (!jsonFilename.endsWith(".json")) {
+    throw new Error(`JSON export used unexpected filename: ${jsonFilename}`);
+  }
+  await jsonDownload.saveAs(resolve(artifactDir, jsonFilename));
+
   await writeDiagnostics(page, "web-smoke-success");
+  const artifactManifest = {
+    schemaVersion: "dude-first-run-artifact-pack/v1",
+    observedAt: new Date().toISOString(),
+    command: "npm run test:smoke:web",
+    entrypoint: {
+      userInput: "DBS BANK",
+      resolvedUrl: "/c/03591300B?memo=ready",
+      orchestratorRoute: "POST /api/v1/dude/cdd-orchestrator",
+    },
+    boundary: {
+      mode: "fixture",
+      liveUpstreamCalls: false,
+      fixtureGateway: "scripts/browser-smoke-web.mjs",
+      fixtureEntity: "DBS BANK LTD",
+      fixtureUen: "03591300B",
+      note: "This pack proves the no-auth browser smoke and orchestrated CDD envelope shape. It does not replace live upstream smoke or prove current ACRA/GeBIZ source state.",
+    },
+    artifacts: [
+      { path: suggestedFilename, role: "first-class PDF CDD report export" },
+      { path: jsonFilename, role: "structured dossier export with manifest, provenance, freshness, gaps, limits, source-use warnings, and orchestration trace" },
+      { path: "web-smoke-success.png", role: "browser screenshot of the successful smoke flow" },
+    ],
+    sourceFreshness: dossierFixture.freshness,
+    provenance: dossierFixture.provenance,
+    gaps: dossierFixture.gaps,
+    limits: dossierFixture.limits,
+    orchestration: orchestrationFixture,
+    reportManifest: {
+      location: `${jsonFilename} -> manifest`,
+      note: "The PDF also includes the report manifest section generated by the web export path.",
+    },
+  };
+  writeFileSync(resolve(artifactDir, "first-run-artifact-manifest.json"), `${JSON.stringify(artifactManifest, null, 2)}\n`);
   process.stdout.write(JSON.stringify({
     ok: true,
     webBaseUrl,
     gatewayBaseUrl: `http://127.0.0.1:${gatewayPort}`,
     pdf: suggestedFilename,
+    json: jsonFilename,
+    manifest: "first-run-artifact-manifest.json",
     artifacts: "output/playwright",
   }, null, 2));
   process.stdout.write("\n");

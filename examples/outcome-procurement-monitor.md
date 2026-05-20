@@ -28,13 +28,7 @@ sg_gebiz_tenders {
 }
 ```
 
-3. Store only bounded evidence:
-
-```text
-sg_datagov_resources {
-  "datasetId": "<dataset-id-from-discovery>"
-}
-```
+3. Store only bounded evidence from the returned dossier, GeBIZ records, provenance, freshness, gaps, and limits.
 
 ## Product Shape
 

@@ -36,28 +36,26 @@ function gapClassName(code: string, message: string): string {
 }
 
 export function GapsSection({ dossier }: { dossier: BusinessDossier }) {
+  if (dossier.gaps.length === 0) {
+    return null;
+  }
+
   return (
     <section className="min-w-0 rounded-lg border border-border bg-muted/30 p-4 sm:p-5">
       <h2 className="text-xl font-semibold tracking-normal text-foreground">What we couldn't find</h2>
-      {dossier.gaps.length === 0 ? (
-        <p className="mt-3 text-sm text-muted-foreground">
-          No lookup gaps were returned by the selected modules.
-        </p>
-      ) : (
-        <ul className="mt-4 space-y-3">
-          {dossier.gaps.map((gap) => (
-            <li className={`min-w-0 rounded-md border p-3 ${gapClassName(gap.code, gap.message)}`} key={`${gap.code}-${gap.message}`}>
-              <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
-                <p className="break-all font-mono text-xs text-muted-foreground">{gap.code}</p>
-                <span className={gapKind(gap.code, gap.message) === "unavailable" ? "shrink-0 text-xs text-destructive" : "shrink-0 text-xs text-muted-foreground"}>
-                  {gapState(gap.code, gap.message)}
-                </span>
-              </div>
-              <p className="mt-1 break-words text-sm leading-6 text-foreground">{gap.message}</p>
-            </li>
-          ))}
-        </ul>
-      )}
+      <ul className="mt-4 space-y-3">
+        {dossier.gaps.map((gap) => (
+          <li className={`min-w-0 rounded-md border p-3 ${gapClassName(gap.code, gap.message)}`} key={`${gap.code}-${gap.message}`}>
+            <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+              <p className="break-all font-mono text-xs text-muted-foreground">{gap.code}</p>
+              <span className={gapKind(gap.code, gap.message) === "unavailable" ? "shrink-0 text-xs text-destructive" : "shrink-0 text-xs text-muted-foreground"}>
+                {gapState(gap.code, gap.message)}
+              </span>
+            </div>
+            <p className="mt-1 break-words text-sm leading-6 text-foreground">{gap.message}</p>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

@@ -20,6 +20,15 @@ describe("toolset profile resolution", () => {
     expect(new Set(TOOLSET_PROFILE_PRESETS.diligence)).toEqual(resolved);
   });
 
+  it("resolves predefined CDD report profile", () => {
+    const resolved = resolveEnabledToolsets({
+      transportMode: "http",
+      configuredProfile: "cdd_report",
+    });
+    expect(new Set(TOOLSET_PROFILE_PRESETS.cdd_report)).toEqual(resolved);
+    expect(resolved.has("property")).toBe(false);
+  });
+
   it("prioritizes explicit SG_APIS_TOOLSETS over profile presets", () => {
     const resolved = resolveEnabledToolsets({
       transportMode: "http",

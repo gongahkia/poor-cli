@@ -2,15 +2,17 @@ FROM node:20-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
+COPY packages/sdk/package.json packages/sdk/
 COPY packages/mcp-server/package.json packages/mcp-server/
 COPY packages/mcp-server/openapi.json packages/mcp-server/
 COPY apps/web/package.json apps/web/
 RUN npm ci
 COPY tsconfig.base.json tsconfig.json ./
 COPY packages/shared packages/shared
+COPY packages/sdk packages/sdk
 COPY packages/mcp-server packages/mcp-server
 COPY apps/web apps/web
-RUN npm run build && npm run build -w apps/web
+RUN npm run build -- --force && npm run build -w apps/web
 
 FROM node:20-slim
 LABEL io.modelcontextprotocol.server.name="io.github.gongahkia/dude-mcp"

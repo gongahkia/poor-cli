@@ -1,4 +1,7 @@
 import type { BusinessDossier } from "@/types/dossier";
+import type { AnalystMemoResponse } from "@/types/analyst-memo";
+import type { PeopleDiscovery, WebPresence } from "@/lib/api/client";
+import type { CddOrchestrationTrace } from "@/types/orchestration";
 
 export type BulkDossierRow = {
   index: number;
@@ -17,6 +20,10 @@ export type BulkDossierRow = {
   provenanceSources: string[];
   generatedAt: string;
   dossier?: BusinessDossier;
+  webPresence?: WebPresence;
+  peopleDiscovery?: PeopleDiscovery;
+  memo?: AnalystMemoResponse;
+  orchestration?: CddOrchestrationTrace;
   error?: {
     code: string;
     message: string;
@@ -38,17 +45,4 @@ export type BulkDossierResponse = {
   parseErrors: BulkParseError[];
   rows: BulkDossierRow[];
   limits: string[];
-};
-
-export type ShortlistEntry = {
-  canonicalIdentifier: string;
-  entity: string | null;
-  uen: string | null;
-  entityStatus: string | null;
-  confidence: string | null;
-  risk: BulkDossierRow["risk"];
-  riskFlags: string[];
-  gapCodes: string[];
-  provenanceSources: string[];
-  savedAt: string;
 };

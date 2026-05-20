@@ -6,6 +6,7 @@ import { AgentPlan } from "@/components/ui/agent-plan-loader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  ALL_FOLLOW_UP_BUSINESS_MODULES,
   BUSINESS_MODULE_FOLLOW_UPS,
   BUSINESS_MODULE_LABELS,
   formatLabel,
@@ -22,9 +23,16 @@ import type {
 } from "@/types/dossier";
 
 export type ModuleFollowUpRequest = {
+  kind?: "module";
   module: FollowUpBusinessModule;
   value: string;
+} | {
+  kind: "all";
+  modules: readonly FollowUpBusinessModule[];
+  value: string;
 };
+
+export type RunningBusinessModule = BusinessDossierModule | "all" | null;
 
 const GAP_MODULE_MATCHERS: readonly [BusinessDossierModule, RegExp][] = [
   ["acra", /^ACRA_/],
@@ -162,11 +170,11 @@ function ModuleFollowUpForm({
         },
         {
           id: "call-dossier",
-          title: "Call Singapore business dossier",
-          description: "Rerun the bounded dossier tool and merge refreshed evidence, gaps, and provenance.",
+          title: "Rerun CDD orchestrator",
+          description: "Refresh ACRA-gated sector evidence, supplemental review, memo state, gaps, and provenance.",
           status: "in-progress",
           priority: "high",
-          tools: ["sg_business_dossier"],
+          tools: ["cdd-orchestrator"],
         },
       ],
     },
@@ -230,7 +238,7 @@ export function EvidenceSection({
 }: {
   dossier: BusinessDossier;
   onModuleFollowUp?: (request: ModuleFollowUpRequest) => void;
-  runningModule?: BusinessDossierModule | null;
+  runningModule?: RunningBusinessModule;
 }) {
   const groups = getDossierRecordGroups(dossier);
   const moduleReasons = dossier.records.resolution?.moduleReasons ?? [];
@@ -245,6 +253,9 @@ export function EvidenceSection({
   );
   const searchedReasons = moduleReasons.filter((item) => item.searched || unavailableModules.has(item.module));
   const notSearchedReasons = moduleReasons.filter((item) => !item.searched && !unavailableModules.has(item.module));
+  const notSearchedFollowUpModules = Array.from(new Set(notSearchedReasons
+    .map((item) => item.module)
+    .filter((module): module is FollowUpBusinessModule => ALL_FOLLOW_UP_BUSINESS_MODULES.includes(module as FollowUpBusinessModule))));
   const groupsWithRecords = groups
     .map((group) => ({
       ...group,
@@ -256,12 +267,13 @@ export function EvidenceSection({
     <section className="min-w-0 space-y-4">
       <div>
         <h2 className="text-xl font-semibold tracking-normal text-foreground">Evidence</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Public registry records grouped by modules that were actually searched. Skipped modules remain available for explicit sector checks.
-        </p>
       </div>
 
-      <dl className="grid gap-3 sm:grid-cols-[repeat(3,minmax(0,1fr))]">
+      <dl
+        className="grid scroll-mt-6 gap-3 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70 sm:grid-cols-[repeat(3,minmax(0,1fr))]"
+        id="dossier-evidence-metrics"
+        tabIndex={-1}
+      >
         {dossier.evidence.map((item) => (
           <div className="min-w-0 rounded-lg border border-border bg-card p-3" key={`${item.label}-${item.source ?? ""}`}>
             <dt className="text-xs font-medium uppercase text-muted-foreground">{item.label}</dt>
@@ -274,7 +286,11 @@ export function EvidenceSection({
       </dl>
 
       {searchedReasons.length > 0 ? (
-        <div className="space-y-3">
+        <div
+          className="scroll-mt-6 space-y-3 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70"
+          id="dossier-evidence-searched"
+          tabIndex={-1}
+        >
           <div>
             <h3 className="text-base font-semibold text-foreground">Searched modules</h3>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -286,7 +302,7 @@ export function EvidenceSection({
               <ModuleStatusCard
                 defaultFollowUpValue={defaultFollowUpValue}
                 gaps={moduleGaps(item.module, dossier.gaps)}
-                isRunning={runningModule === item.module}
+                isRunning={runningModule === item.module || runningModule === "all"}
                 key={item.module}
                 onModuleFollowUp={onModuleFollowUp}
                 reason={item}
@@ -297,19 +313,41 @@ export function EvidenceSection({
       ) : null}
 
       {notSearchedReasons.length > 0 ? (
-        <div className="space-y-3">
-          <div>
-            <h3 className="text-base font-semibold text-foreground">Not searched</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              These modules were outside this dossier scope or lacked the identifiers needed for lookup.
-            </p>
+        <div
+          className="scroll-mt-6 space-y-3 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70"
+          id="dossier-evidence-not-searched"
+          tabIndex={-1}
+        >
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <h3 className="text-base font-semibold text-foreground">Not searched</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                These modules were outside this dossier scope or lacked the identifiers needed for lookup.
+              </p>
+            </div>
+            {onModuleFollowUp === undefined || notSearchedFollowUpModules.length === 0 ? null : (
+              <Button
+                className="w-fit shrink-0"
+                disabled={runningModule !== null}
+                onClick={() => onModuleFollowUp({
+                  kind: "all",
+                  modules: notSearchedFollowUpModules,
+                  value: defaultFollowUpValue,
+                })}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {runningModule === "all" ? "Running all checks" : "Run all available checks"}
+              </Button>
+            )}
           </div>
           <div className="grid gap-2 sm:grid-cols-[repeat(2,minmax(0,1fr))]">
             {notSearchedReasons.map((item) => (
               <ModuleStatusCard
                 defaultFollowUpValue={defaultFollowUpValue}
                 gaps={moduleGaps(item.module, dossier.gaps)}
-                isRunning={runningModule === item.module}
+                isRunning={runningModule === item.module || runningModule === "all"}
                 key={item.module}
                 onModuleFollowUp={onModuleFollowUp}
                 reason={item}
@@ -319,7 +357,11 @@ export function EvidenceSection({
         </div>
       ) : null}
 
-      <div className="space-y-3">
+      <div
+        className="scroll-mt-6 space-y-3 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70"
+        id="dossier-evidence-records"
+        tabIndex={-1}
+      >
         <div>
           <h3 className="text-base font-semibold text-foreground">Matched records</h3>
           <p className="mt-1 text-sm text-muted-foreground">

@@ -3,12 +3,6 @@ import {
   BriefArtifactSchema,
   BusinessDossierBaseSchema,
   BusinessDossierSchema,
-  CivicBriefSchema,
-  EnvironmentBriefSchema,
-  MacroBriefSchema,
-  PropertyBriefBaseSchema,
-  PropertyBriefSchema,
-  TransportBriefSchema,
   createLogger,
   formatResponse,
   resolveOutputFormat,
@@ -50,26 +44,9 @@ import { fetchNormalizedMasRecords } from "./mas-tools.js";
 import { buildMapPayloadFromPoints, withMapUiMetadata } from "./map-payload.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 import { lookupPlanningArea } from "./ura-tools.js";
-import { z } from "zod";
 
 const MAP_TOOL_META = withMapUiMetadata(undefined);
 const logger = createLogger("brief-tools");
-
-const TransportBriefInputSchema = {
-  busStopCode: z.string().min(5).optional(),
-  serviceNo: z.string().min(1).optional(),
-  includeContextIds: z.boolean().optional(),
-  format: z.enum(["json", "markdown"]).optional(),
-};
-
-const EnvironmentBriefInputSchema = {
-  area: z.string().min(1).optional(),
-  region: z.string().min(1).optional(),
-  stationId: z.string().min(1).optional(),
-  date: z.string().min(1).optional(),
-  includeContextIds: z.boolean().optional(),
-  format: z.enum(["json", "markdown"]).optional(),
-};
 
 const renderSectionRows = (rows: readonly Record<string, unknown>[]): string => {
   return rows.length === 0 ? "_No data_" : formatResponse(rows as Record<string, unknown>[], "markdown");
@@ -1183,6 +1160,7 @@ export const handleBusinessDossier = async (
     grade?: string | undefined;
     modules?: readonly ("acra" | "bca" | "cea" | "gebiz" | "boa" | "hsa" | "hlb")[] | undefined;
     sectorHints?: readonly ("construction" | "real_estate" | "architecture" | "healthcare" | "hospitality" | "procurement")[] | undefined;
+    includeExternalDiligence?: boolean | undefined;
     includeContextIds?: boolean | undefined;
     format?: "json" | "markdown" | undefined;
   }>,
@@ -2375,16 +2353,6 @@ const buildEnvironmentRiskFlags = (
   return list;
 };
 
-const CivicBriefInputSchema = {
-  postalCode: z.string().regex(/^\d{6}$/).optional(),
-  address: z.string().min(1).optional(),
-  lat: z.number().min(-90).max(90).optional(),
-  lng: z.number().min(-180).max(180).optional(),
-  radiusKm: z.number().positive().max(20).optional(),
-  modules: z.array(z.enum(["pa", "sportsg", "ecda", "msf", "hawker"])).min(1).optional(),
-  format: z.enum(["json", "markdown"]).optional(),
-};
-
 type CivicModule = "pa" | "sportsg" | "ecda" | "msf" | "hawker";
 type CivicSourceResult = { category: string; module: CivicModule; count: number; records: readonly Record<string, unknown>[] };
 
@@ -2550,51 +2518,5 @@ export const briefToolDefinitions: readonly RegisteredToolDefinition[] = [
     inputSchema: BusinessDossierBaseSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> =>
       handleBusinessDossier(validateInput(BusinessDossierSchema, input)),
-  },
-  {
-    name: "sg_property_brief",
-    description: "Build a location and property brief for one Singapore planning area, postal code, or address across OneMap, URA, HDB, and optional live context.",
-    surface: "canonical",
-    positioning: "High-value additive brief over the direct property, map, and environment tools.",
-    _meta: MAP_TOOL_META,
-    inputSchema: PropertyBriefBaseSchema.shape,
-    handler: async (input: unknown): Promise<ToolResult> =>
-      handlePropertyBrief(validateInput(PropertyBriefSchema, input)),
-  },
-  {
-    name: "sg_macro_brief",
-    description: "Build a compact Singapore macro starter brief using MAS market data and validated SingStat GDP and CPI tables.",
-    surface: "canonical",
-    positioning: "High-value additive brief over the direct MAS and SingStat tools.",
-    inputSchema: MacroBriefSchema.shape,
-    handler: async (input: unknown): Promise<ToolResult> =>
-      handleMacroBrief(validateInput(MacroBriefSchema, input)),
-  },
-  {
-    name: "sg_transport_brief",
-    description: "Build a live transport operations brief over LTA bus arrivals, train alerts, and traffic incidents.",
-    surface: "canonical",
-    positioning: "High-value additive brief over the direct LTA operational tools.",
-    inputSchema: TransportBriefInputSchema,
-    handler: async (input: unknown): Promise<ToolResult> =>
-      handleTransportBrief(validateInput(TransportBriefSchema, input)),
-  },
-  {
-    name: "sg_environment_brief",
-    description: "Build a live environment brief over NEA forecast, air-quality, and rainfall signals.",
-    surface: "canonical",
-    positioning: "High-value additive brief over the direct NEA monitoring tools.",
-    inputSchema: EnvironmentBriefInputSchema,
-    handler: async (input: unknown): Promise<ToolResult> =>
-      handleEnvironmentBrief(validateInput(EnvironmentBriefSchema, input)),
-  },
-  {
-    name: "sg_civic_brief",
-    description: "Build a unified civic facilities brief showing all community clubs, sports facilities, childcare centres, family services, student care, social service offices, and hawker centres near a Singapore location.",
-    surface: "canonical",
-    positioning: "High-value additive brief over the direct civic directory tools.",
-    inputSchema: CivicBriefInputSchema,
-    handler: async (input: unknown): Promise<ToolResult> =>
-      handleCivicBrief(validateInput(CivicBriefSchema, input)),
   },
 ];

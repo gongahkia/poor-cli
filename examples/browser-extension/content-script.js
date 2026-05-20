@@ -129,6 +129,12 @@
     });
 
   const readRecord = (payload) => {
+    if (payload && typeof payload === "object" && payload.data?.dossier) {
+      return payload.data.dossier;
+    }
+    if (payload && typeof payload === "object" && payload.dossier) {
+      return payload.dossier;
+    }
     if (payload && typeof payload === "object" && payload.data?.record) {
       return payload.data.record;
     }
@@ -164,7 +170,7 @@
     renderPopover(anchor, `<strong>Dude dossier</strong><p>Loading ${uen}...</p>`);
     try {
       const { gatewayUrl, webAppUrl } = await getSettings();
-      const response = await fetch(`${gatewayUrl}/api/v1/sg_business_dossier`, {
+      const response = await fetch(`${gatewayUrl}/api/v1/dude/cdd-orchestrator`, {
         body: JSON.stringify({ uen }),
         headers: { "Content-Type": "application/json" },
         method: "POST",

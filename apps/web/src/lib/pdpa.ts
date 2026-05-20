@@ -4,6 +4,7 @@ import {
   formatTimestamp,
   getSummaryString,
 } from "@/lib/dossier";
+import { buildSourceUseWarnings, type SourceUseWarning } from "@/lib/source-use-warnings";
 
 export type PdpaChecklistStatus = "evidence_available" | "analyst_action" | "blocked_by_gap";
 
@@ -33,6 +34,7 @@ export type PdpaChecklistReport = {
   items: PdpaChecklistItem[];
   citations: PdpaChecklistCitation[];
   nonAdviceNotice: string;
+  sourceUseWarnings: SourceUseWarning[];
 };
 
 export const pdpaCitations = {
@@ -248,6 +250,7 @@ export function buildPdpaChecklistReport(
     citations,
     nonAdviceNotice:
       "This checklist is a public-data diligence aid for analyst review. It is not legal advice, a PDPA compliance opinion, or a substitute for vendor contracts, counsel review, or DPO assessment.",
+    sourceUseWarnings: buildSourceUseWarnings({ dossier }),
   };
 }
 

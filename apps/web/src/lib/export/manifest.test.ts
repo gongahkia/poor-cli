@@ -26,6 +26,43 @@ describe("export manifest", () => {
     expect(first.schemaVersion).toBe("dude-export-manifest/v1");
     expect(first.dossierHash).toBe(second.dossierHash);
     expect(first.signature.value).toBe(second.signature.value);
+    expect(first.sourceUseWarnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "acra_source_use",
+        message: expect.stringContaining("hosted paid redistribution"),
+      }),
+    ]));
     await expect(verifyDossierExportManifest({ dossier, manifest: first })).resolves.toBe(true);
+  });
+
+  it("includes compact orchestrator trace metadata when supplied", async () => {
+    const manifest = await buildDossierExportManifest({
+      dossier,
+      generatedAt: "2026-05-17T00:00:00Z",
+      orchestration: {
+        acraSectorHints: [],
+        effectiveSectorHints: [],
+        officialModules: ["acra"],
+        reranDossierForWebSectorHints: false,
+        stages: [{
+          detail: "Canonical entity resolved.",
+          id: "acra_identity",
+          label: "ACRA identity lookup",
+          status: "completed",
+          tools: ["sg_acra_entities"],
+        }],
+        status: "ready",
+        strategy: "acra_then_sector_then_supplemental_memo",
+        supplementalTools: ["sg_relationship_graph"],
+        limits: [],
+        webSectorHints: [],
+      },
+    });
+
+    expect(manifest.includedArtifacts.orchestrationTrace).toBe(true);
+    expect(manifest.orchestration).toMatchObject({
+      status: "ready",
+      stages: [{ id: "acra_identity", status: "completed" }],
+    });
   });
 });

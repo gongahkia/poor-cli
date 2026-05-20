@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildBulkDossierResponse, parseBulkDossierItems } from "../bulk-dossiers.js";
 import type { AnalystMemoDossier } from "../analyst-memo.js";
+import type { CddOrchestratorResponse } from "../cdd-orchestrator.js";
 
 const dossier: AnalystMemoDossier = {
   evidence: [{ label: "Matched modules", source: "Resolver", value: 1 }],
@@ -28,6 +29,58 @@ const dossier: AnalystMemoDossier = {
   title: "Business Dossier",
 };
 
+const orchestratorResponse = (record: AnalystMemoDossier): CddOrchestratorResponse => ({
+  dossier: record,
+  generatedAt: "2026-05-15T00:00:00.000Z",
+  memo: {
+    configured: false,
+    gaps: record.gaps,
+    generatedAt: "2026-05-15T00:00:00.000Z",
+    limits: record.limits,
+    model: "gpt-4o",
+    provider: "openai",
+    reason: {
+      code: "AI_PROVIDER_NOT_CONFIGURED",
+      message: "AI provider is not configured.",
+    },
+    status: "unavailable",
+  },
+  orchestration: {
+    acraSectorHints: [],
+    effectiveSectorHints: [],
+    officialModules: ["acra"],
+    reranDossierForWebSectorHints: false,
+    status: "ready",
+    strategy: "acra_then_sector_then_supplemental_memo",
+    supplementalTools: ["sg_relationship_graph"],
+    stages: [{
+      detail: "Canonical entity resolved through ACRA before downstream CDD enrichment.",
+      id: "acra_identity",
+      label: "ACRA identity lookup",
+      status: "completed",
+      tools: ["sg_acra_entities"],
+    }],
+    limits: ["Fixture orchestrator response."],
+    webSectorHints: [],
+  },
+  peopleDiscovery: {
+    configured: false,
+    entityName: "DBS BANK LTD",
+    limits: ["TinyFish Search is not configured on the server."],
+    query: "\"DBS BANK\" Singapore employees leadership directors LinkedIn",
+    results: [],
+    suggestedActions: [],
+    uen: "03591300B",
+  },
+  webPresence: {
+    configured: false,
+    limits: ["TinyFish Search is not configured on the server."],
+    possibleOfficialWebsite: null,
+    query: "DBS BANK LTD 03591300B",
+    results: [],
+  },
+});
+
 describe("bulk dossiers", () => {
   it("normalizes row-level parse errors before execution", () => {
     const parsed = parseBulkDossierItems({
@@ -46,7 +99,7 @@ describe("bulk dossiers", () => {
       { items: ["03591300B", "FAIL"] },
       async (input) => {
         if ("entityName" in input) throw new Error("upstream failed");
-        return { structuredContent: { record: dossier } };
+        return orchestratorResponse(dossier);
       },
       "2026-05-15T00:00:00.000Z",
     );
@@ -57,6 +110,11 @@ describe("bulk dossiers", () => {
       entity: "DBS BANK LTD",
       risk: "medium",
       status: "success",
+    });
+    expect(response.rows[0]).toMatchObject({
+      memo: { status: "unavailable" },
+      orchestration: { strategy: "acra_then_sector_then_supplemental_memo" },
+      webPresence: { configured: false },
     });
     expect(response.rows[1]).toMatchObject({
       gapCodes: ["DOSSIER_FAILED"],

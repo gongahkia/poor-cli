@@ -8,7 +8,13 @@ import { createLogger } from "@dude/shared";
 import { searchAcraEntitySuggestions } from "./apis/acra/client.js";
 import { getPeopleDiscovery, getWebPresence } from "./apis/tinyfish/client.js";
 import { buildBulkDossierResponse } from "./dude/bulk-dossiers.js";
+import {
+  CddOrchestratorBadRequestError,
+  normalizeCddOrchestratorInput,
+  runCddOrchestrator,
+} from "./dude/cdd-orchestrator.js";
 import { generateAnalystMemo, type AnalystMemoDossier } from "./dude/analyst-memo.js";
+import { generateInteractiveSummary } from "./dude/interactive-summary.js";
 import {
   getGatewayMetricsSnapshot,
   recordGatewayRequest,
@@ -482,6 +488,88 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/v1/dude/cdd-orchestrator") {
+    try {
+      requireWorkspaceAccess(req, "search:run");
+      requireWorkspaceAccess(req, "memo:generate");
+      const body = await readBody(req, trafficPolicy.maxBodyBytes);
+      const input = body === "" ? {} : JSON.parse(body);
+      if (!isRecord(input)) {
+        throw new BadRequestError("INVALID_CDD_ORCHESTRATOR_INPUT", "CDD orchestrator request body must be a JSON object.");
+      }
+      const dossierInput = normalizeCddOrchestratorInput(input);
+      safeInputSummary = summarizeBusinessInput(dossierInput);
+      const startedAt = Date.now();
+      const response = await runCddOrchestrator(dossierInput);
+      const dossierSummary = summarizeBusinessDossier(response.dossier);
+      recordUpstreamFailures("dude_cdd_orchestrator", dossierSummary.upstreamFailures);
+      requestLogger.info("cdd orchestrator finished", {
+        ...safeInputSummary,
+        orchestrationStatus: response.orchestration.status,
+        acraSectorHints: response.orchestration.acraSectorHints,
+        webSectorHints: response.orchestration.webSectorHints,
+        effectiveSectorHints: response.orchestration.effectiveSectorHints,
+        officialModules: response.orchestration.officialModules,
+        supplementalTools: response.orchestration.supplementalTools,
+        reranDossierForWebSectorHints: response.orchestration.reranDossierForWebSectorHints,
+        memoStatus: response.memo.status,
+        webPresenceConfigured: response.webPresence.configured,
+        webPresenceResults: response.webPresence.results.length,
+        peopleDiscoveryConfigured: response.peopleDiscovery.configured,
+        peopleDiscoveryResults: response.peopleDiscovery.results.length,
+        durationMs: Date.now() - startedAt,
+        ...dossierSummary,
+      });
+      sendJson(res, 200, response);
+    } catch (err) {
+      if (err instanceof WorkspaceApiAccessError) {
+        requestLogger.warn("cdd orchestrator workspace access denied", { code: err.code });
+        sendWorkspaceAccessError(res, err);
+        return;
+      }
+      if (err instanceof RequestBodyTooLargeError) {
+        requestLogger.warn("cdd orchestrator request body too large", { maxBytes: err.maxBytes });
+        sendJson(res, err.statusCode, {
+          error: {
+            code: "REQUEST_BODY_TOO_LARGE",
+            message: `Request body must be ${err.maxBytes} bytes or smaller.`,
+          },
+        });
+        return;
+      }
+      if (err instanceof BadRequestError || err instanceof CddOrchestratorBadRequestError) {
+        requestLogger.warn("invalid cdd orchestrator request", { code: err.code });
+        sendJson(res, err.statusCode, {
+          error: {
+            code: err.code,
+            message: err.message,
+          },
+        });
+        return;
+      }
+      if (err instanceof SyntaxError) {
+        requestLogger.warn("invalid cdd orchestrator json body");
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_JSON",
+            message: "Request body must be valid JSON.",
+          },
+        });
+        return;
+      }
+      requestLogger.error("cdd orchestrator failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      sendJson(res, 500, {
+        error: {
+          code: "CDD_ORCHESTRATOR_FAILED",
+          message: "CDD orchestration failed.",
+        },
+      });
+    }
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/v1/dude/web-presence") {
     try {
       requireWorkspaceAccess(req, "dossier:read");
@@ -623,6 +711,75 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/v1/dude/summary") {
+    try {
+      requireWorkspaceAccess(req, "memo:generate");
+      const body = await readBody(req, trafficPolicy.maxBodyBytes);
+      const input = body === "" ? {} : JSON.parse(body);
+      if (!isRecord(input)) {
+        throw new BadRequestError("INVALID_SUMMARY_INPUT", "Summary request body must be a JSON object.");
+      }
+      safeInputSummary = summarizeMemoInput(input);
+      const startedAt = Date.now();
+      const dossier = await resolveMemoDossier(input);
+      const summary = await generateInteractiveSummary({ dossier });
+      requestLogger.info("interactive summary finished", {
+        ...safeInputSummary,
+        status: summary.status,
+        configured: summary.configured,
+        provider: summary.provider,
+        durationMs: Date.now() - startedAt,
+      });
+      sendJson(res, 200, summary);
+    } catch (err) {
+      if (err instanceof WorkspaceApiAccessError) {
+        requestLogger.warn("summary workspace access denied", { code: err.code });
+        sendWorkspaceAccessError(res, err);
+        return;
+      }
+      if (err instanceof RequestBodyTooLargeError) {
+        requestLogger.warn("summary request body too large", { maxBytes: err.maxBytes });
+        sendJson(res, err.statusCode, {
+          error: {
+            code: "REQUEST_BODY_TOO_LARGE",
+            message: `Request body must be ${err.maxBytes} bytes or smaller.`,
+          },
+        });
+        return;
+      }
+      if (err instanceof BadRequestError) {
+        requestLogger.warn("invalid summary request", { code: err.code });
+        sendJson(res, err.statusCode, {
+          error: {
+            code: err.code,
+            message: err.message,
+          },
+        });
+        return;
+      }
+      if (err instanceof SyntaxError) {
+        requestLogger.warn("invalid summary json body");
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_JSON",
+            message: "Request body must be valid JSON.",
+          },
+        });
+        return;
+      }
+      requestLogger.error("interactive summary failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      sendJson(res, 500, {
+        error: {
+          code: "SUMMARY_GENERATION_FAILED",
+          message: "Interactive summary generation failed.",
+        },
+      });
+    }
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/v1/dude/bulk-dossiers") {
     try {
       requireWorkspaceAccess(req, "bulk:run");
@@ -630,7 +787,7 @@ const server = createServer(async (req, res) => {
       const input = body === "" ? {} : JSON.parse(body);
       safeInputSummary = summarizeBulkInput(input);
       const startedAt = Date.now();
-      const response = await buildBulkDossierResponse(input, handleBusinessDossier);
+      const response = await buildBulkDossierResponse(input, runCddOrchestrator);
       requestLogger.info("bulk dossiers finished", {
         ...safeInputSummary,
         executedCount: response.executedCount,

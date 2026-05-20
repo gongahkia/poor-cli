@@ -24,6 +24,15 @@ export type {
 export type BusinessDossierInput = z.input<typeof BusinessDossierSchema>;
 export type QueryInput = z.input<typeof QuerySchema>;
 
+export type CddOrchestratorResponse = {
+  readonly dossier: BriefArtifact;
+  readonly generatedAt: string;
+  readonly memo: unknown;
+  readonly orchestration: unknown;
+  readonly peopleDiscovery: unknown;
+  readonly webPresence: unknown;
+};
+
 export type DudeClientHeaders =
   | HeadersInit
   | (() => HeadersInit | Promise<HeadersInit>);
@@ -208,6 +217,14 @@ export class DudeClient {
   ): Promise<BriefArtifact> {
     const parsed = BusinessDossierSchema.parse(input);
     return this.callTool<BriefArtifact>("sg_business_dossier", parsed, options);
+  }
+
+  async cddReport(
+    input: BusinessDossierInput,
+    options: RequestOptions = {},
+  ): Promise<CddOrchestratorResponse> {
+    const parsed = BusinessDossierSchema.parse(input);
+    return this.post<CddOrchestratorResponse>("/api/v1/dude/cdd-orchestrator", parsed, options);
   }
 
   async query(input: QueryInput, options: RequestOptions = {}): Promise<QueryOutcome> {

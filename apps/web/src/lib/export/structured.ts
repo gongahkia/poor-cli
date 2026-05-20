@@ -8,13 +8,19 @@ import {
   buildComplianceUseSummary,
 } from "@/lib/compliance";
 import type { AnalystMemoReady } from "@/types/analyst-memo";
-import type { BulkDossierRow, ShortlistEntry } from "@/types/bulk";
+import type { BulkDossierRow } from "@/types/bulk";
 import type { BusinessDossier } from "@/types/dossier";
+import type { CddOrchestrationTrace } from "@/types/orchestration";
 import type { WebPresence } from "@/lib/api/client";
 import {
   buildDossierExportManifest,
   type DossierExportManifest,
 } from "@/lib/export/manifest";
+import {
+  buildSourceUseWarnings,
+  buildSourceUseWarningsFromSources,
+  formatSourceUseWarnings,
+} from "@/lib/source-use-warnings";
 
 const downloadText = (filename: string, mimeType: string, text: string): void => {
   const blob = new Blob([text], { type: mimeType });
@@ -40,7 +46,19 @@ const toCsv = (rows: Record<string, unknown>[]): string => {
   ].join("\n");
 };
 
-export function buildDossierExportSummary(dossier: BusinessDossier): ShortlistEntry {
+type DossierExportSummary = {
+  canonicalIdentifier: string;
+  confidence: string | null;
+  entity: string | null;
+  entityStatus: string | null;
+  gapCodes: string[];
+  provenanceSources: string[];
+  risk: BulkDossierRow["risk"];
+  riskFlags: string[];
+  uen: string | null;
+};
+
+function buildDossierExportSummary(dossier: BusinessDossier): DossierExportSummary {
   const confidence = getDossierConfidence(dossier);
   const riskFlags = dossier.riskFlags ?? [];
   const gapCodes = dossier.gaps.map((gap) => gap.code);
@@ -61,13 +79,17 @@ export function buildDossierExportSummary(dossier: BusinessDossier): ShortlistEn
           ? "low"
           : "none",
     riskFlags: riskFlags.map((flag) => flag.code),
-    savedAt: new Date().toISOString(),
     uen,
   };
 }
 
-export const buildSingleDossierCsvRow = (dossier: BusinessDossier, generatedAt = new Date().toISOString()): Record<string, unknown> => {
+export const buildSingleDossierCsvRow = (
+  dossier: BusinessDossier,
+  generatedAt = new Date().toISOString(),
+  orchestration?: CddOrchestrationTrace,
+): Record<string, unknown> => {
   const summary = buildDossierExportSummary(dossier);
+  const sourceUseWarnings = buildSourceUseWarnings({ dossier });
   return {
     complianceUseNotice: buildComplianceUseSummary(),
     confidence: summary.confidence,
@@ -76,9 +98,12 @@ export const buildSingleDossierCsvRow = (dossier: BusinessDossier, generatedAt =
     gapCodes: summary.gapCodes.join(";"),
     generatedAt,
     limits: dossier.limits.map((limit) => `${limit.code}: ${limit.message}`).join(";"),
+    orchestrationStatus: orchestration?.status ?? "",
+    orchestrationStages: orchestration?.stages?.map((stage) => `${stage.label}:${stage.status}`).join(";") ?? "",
     provenance: summary.provenanceSources.join(";"),
     risk: summary.risk,
     riskFlags: summary.riskFlags.join(";"),
+    sourceUseWarnings: formatSourceUseWarnings(sourceUseWarnings),
     uen: summary.uen,
   };
 };
@@ -87,6 +112,7 @@ export async function buildSingleDossierJsonPayload(params: {
   dossier: BusinessDossier;
   analystMemo?: AnalystMemoReady;
   generatedAt?: string;
+  orchestration?: CddOrchestrationTrace;
   webPresence?: WebPresence;
 }): Promise<Record<string, unknown>> {
   const generatedAt = params.generatedAt ?? new Date().toISOString();
@@ -94,6 +120,7 @@ export async function buildSingleDossierJsonPayload(params: {
     dossier: params.dossier,
     generatedAt,
     ...(params.analystMemo === undefined ? {} : { analystMemo: params.analystMemo }),
+    ...(params.orchestration === undefined ? {} : { orchestration: params.orchestration }),
     ...(params.webPresence === undefined ? {} : { webPresence: params.webPresence }),
   });
   return {
@@ -103,6 +130,8 @@ export async function buildSingleDossierJsonPayload(params: {
     generatedAt,
     limits: params.dossier.limits,
     manifest,
+    orchestration: params.orchestration ?? null,
+    sourceUseWarnings: manifest.sourceUseWarnings,
     webPresence: params.webPresence ?? null,
   };
 }
@@ -110,6 +139,7 @@ export async function buildSingleDossierJsonPayload(params: {
 export async function exportSingleDossierJson(params: {
   dossier: BusinessDossier;
   analystMemo?: AnalystMemoReady;
+  orchestration?: CddOrchestrationTrace;
   webPresence?: WebPresence;
 }): Promise<void> {
   const identifier = sanitizeFilenamePart(getSummaryString(params.dossier, "UEN") ?? params.dossier.title);
@@ -121,15 +151,22 @@ export async function exportSingleDossierJson(params: {
   );
 }
 
-export async function exportSingleDossierCsv(dossier: BusinessDossier): Promise<void> {
+export async function exportSingleDossierCsv(
+  dossier: BusinessDossier,
+  options: { orchestration?: CddOrchestrationTrace } = {},
+): Promise<void> {
   const identifier = sanitizeFilenamePart(getSummaryString(dossier, "UEN") ?? dossier.title);
   const generatedAt = new Date().toISOString();
-  const manifest = await buildDossierExportManifest({ dossier, generatedAt });
+  const manifest = await buildDossierExportManifest({
+    dossier,
+    generatedAt,
+    ...(options.orchestration === undefined ? {} : { orchestration: options.orchestration }),
+  });
   downloadText(
     `dude-diligence-${identifier}.csv`,
     "text/csv",
     toCsv([{
-      ...buildSingleDossierCsvRow(dossier, generatedAt),
+      ...buildSingleDossierCsvRow(dossier, generatedAt, options.orchestration),
       manifestSchemaVersion: manifest.schemaVersion,
       manifestSignature: manifest.signature.value,
       dossierHash: manifest.dossierHash,
@@ -138,21 +175,33 @@ export async function exportSingleDossierCsv(dossier: BusinessDossier): Promise<
 }
 
 const bulkRowsForExport = (rows: readonly BulkDossierRow[]): Record<string, unknown>[] =>
-  rows.map((row) => ({
-    complianceUseNotice: buildComplianceUseSummary(),
-    confidence: row.confidence,
-    entity: row.entity,
-    entityStatus: row.entityStatus,
-    gapCodes: row.gapCodes.join(";"),
-    input: row.input,
-    matchedModules: row.matchedModules.join(";"),
-    provenance: row.provenanceSources.join(";"),
-    risk: row.risk,
-    riskFlags: row.riskFlags.join(";"),
-    status: row.status,
-    uen: row.uen,
-    upstreamFailure: row.upstreamFailure,
-  }));
+  rows.map((row) => {
+    const warnings = row.dossier === undefined
+      ? buildSourceUseWarningsFromSources(row.provenanceSources)
+      : buildSourceUseWarnings({
+          dossier: row.dossier,
+          ...(row.peopleDiscovery === undefined ? {} : { peopleDiscovery: row.peopleDiscovery }),
+          ...(row.webPresence === undefined ? {} : { webPresence: row.webPresence }),
+        });
+    return {
+      complianceUseNotice: buildComplianceUseSummary(),
+      confidence: row.confidence,
+      entity: row.entity,
+      entityStatus: row.entityStatus,
+      gapCodes: row.gapCodes.join(";"),
+      input: row.input,
+      matchedModules: row.matchedModules.join(";"),
+      orchestrationStatus: row.orchestration?.status ?? "",
+      orchestrationStages: row.orchestration?.stages?.map((stage) => `${stage.label}:${stage.status}`).join(";") ?? "",
+      provenance: row.provenanceSources.join(";"),
+      risk: row.risk,
+      riskFlags: row.riskFlags.join(";"),
+      sourceUseWarnings: formatSourceUseWarnings(warnings),
+      status: row.status,
+      uen: row.uen,
+      upstreamFailure: row.upstreamFailure,
+    };
+  });
 
 const buildBulkManifest = async (
   rows: readonly BulkDossierRow[],
@@ -177,6 +226,13 @@ export async function exportBulkJson(rows: readonly BulkDossierRow[], generatedA
       generatedAt,
       manifests: Array.from(manifestByIndex, ([rowIndex, manifest]) => ({ rowIndex, manifest })),
       rows,
+      sourceUseWarnings: rows.flatMap((row) => row.dossier === undefined
+        ? buildSourceUseWarningsFromSources(row.provenanceSources)
+        : buildSourceUseWarnings({
+            dossier: row.dossier,
+            ...(row.peopleDiscovery === undefined ? {} : { peopleDiscovery: row.peopleDiscovery }),
+            ...(row.webPresence === undefined ? {} : { webPresence: row.webPresence }),
+          })),
     }, null, 2),
   );
 }
@@ -196,39 +252,4 @@ export async function exportBulkCsv(rows: readonly BulkDossierRow[], generatedAt
       };
     })),
   );
-}
-
-export async function exportShortlistJson(entries: readonly ShortlistEntry[]): Promise<void> {
-  const generatedAt = new Date().toISOString();
-  downloadText(
-    `dude-shortlist-${generatedAt.slice(0, 10)}.json`,
-    "application/json",
-    JSON.stringify({
-      complianceUse: buildComplianceUseLimitations(),
-      generatedAt,
-      manifest: {
-        schemaVersion: "dude-export-manifest/v1",
-        generatedAt,
-        entryCount: entries.length,
-        note: "Shortlist exports contain saved summaries only; full dossier manifests are attached to dossier and bulk dossier exports.",
-      },
-      entries,
-    }, null, 2),
-  );
-}
-
-export function exportShortlistCsv(entries: readonly ShortlistEntry[]): void {
-  const rows = entries.map((entry) => ({
-    complianceUseNotice: buildComplianceUseSummary(),
-    confidence: entry.confidence,
-    entity: entry.entity,
-    entityStatus: entry.entityStatus,
-    gapCodes: entry.gapCodes.join(";"),
-    provenance: entry.provenanceSources.join(";"),
-    risk: entry.risk,
-    riskFlags: entry.riskFlags.join(";"),
-    savedAt: entry.savedAt,
-    uen: entry.uen,
-  }));
-  downloadText(`dude-shortlist-${new Date().toISOString().slice(0, 10)}.csv`, "text/csv", toCsv(rows));
 }

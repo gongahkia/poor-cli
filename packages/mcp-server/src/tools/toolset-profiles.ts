@@ -9,16 +9,15 @@ export const ALL_TOOLSETS = [
   "health",
   "ops",
   "diligence",
-  "property",
 ] as const satisfies readonly ToolSet[];
 
-export type ToolsetProfileName = "public" | "diligence" | "property" | "ops";
+export type ToolsetProfileName = "public" | "cdd_report" | "diligence" | "ops";
 
 export const TOOLSET_PROFILE_PRESETS: Readonly<Record<ToolsetProfileName, readonly ToolSet[]>> = {
   public: ["public", "briefs", "query", "health"],
+  cdd_report: ["public", "briefs", "query", "health", "diligence"],
   diligence: ["public", "query", "health", "diligence"],
-  property: ["public", "query", "health", "property"],
-  ops: ["public", "query", "health", "ops"],
+  ops: ["query", "health", "ops"],
 } as const;
 
 export const DEFAULT_TOOLSETS_BY_TRANSPORT: Readonly<Record<TransportMode, readonly ToolSet[]>> = {
@@ -30,12 +29,12 @@ const parseToolsetList = (configured: string): readonly ToolSet[] => {
   return configured
     .split(",")
     .map((value) => value.trim())
-    .filter((value): value is ToolSet => ALL_TOOLSETS.includes(value as ToolSet));
+    .filter((value): value is typeof ALL_TOOLSETS[number] => (ALL_TOOLSETS as readonly string[]).includes(value));
 };
 
 const parseProfile = (value: string): ToolsetProfileName | null => {
   const normalized = value.trim().toLowerCase();
-  if (normalized === "public" || normalized === "diligence" || normalized === "property" || normalized === "ops") {
+  if (normalized === "public" || normalized === "cdd_report" || normalized === "diligence" || normalized === "ops") {
     return normalized;
   }
   return null;
@@ -59,7 +58,7 @@ export const resolveEnabledToolsets = (options: {
   if (configuredProfile !== undefined && configuredProfile !== "") {
     const profile = parseProfile(configuredProfile);
     if (profile === null) {
-      throw new Error(`Unsupported tool profile "${configuredProfile}". Use public, diligence, property, or ops.`);
+      throw new Error(`Unsupported tool profile "${configuredProfile}". Use public, cdd_report, diligence, or ops.`);
     }
     return new Set(TOOLSET_PROFILE_PRESETS[profile]);
   }
@@ -70,22 +69,22 @@ export const resolveEnabledToolsets = (options: {
 export const TOOLSET_PROFILE_CATALOG = [
   {
     profile: "public",
-    intent: "Default host profile for broad read-only discovery plus bounded briefs and query routing.",
+    intent: "Default CDD profile for company search, cited dossier generation, public registry reads, and health checks.",
     toolsets: TOOLSET_PROFILE_PRESETS.public,
   },
   {
+    profile: "cdd_report",
+    intent: "Full analyst report profile with public registries, orchestrated CDD reports, sg_query routing, and supplemental diligence evidence.",
+    toolsets: TOOLSET_PROFILE_PRESETS.cdd_report,
+  },
+  {
     profile: "diligence",
-    intent: "Least-privilege profile for registry and compliance workflows.",
+    intent: "Least-privilege direct-tool profile for company/UEN diligence and supplemental review evidence.",
     toolsets: TOOLSET_PROFILE_PRESETS.diligence,
   },
   {
-    profile: "property",
-    intent: "Least-privilege profile for property, geospatial, transport, and environment workflows.",
-    toolsets: TOOLSET_PROFILE_PRESETS.property,
-  },
-  {
     profile: "ops",
-    intent: "Operational profile that enables cache, key, and config mutation tools.",
+    intent: "Operational profile for runtime health, cache, key, config, trace, request lookup, and sg_query diagnostics.",
     toolsets: TOOLSET_PROFILE_PRESETS.ops,
   },
 ] as const;

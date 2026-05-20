@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createLogger } from "@dude/shared";
-import { warmCache } from "./cache/warm.js";
+import { startCacheWarmScheduler, warmCache } from "./cache/warm.js";
 import { derivePublicHttpToolsets, HttpAuthController, type HttpAuthMode } from "./http-auth.js";
 import { startHttpServer, isLocalHost } from "./http-server.js";
 import { closeCache } from "./middleware/cache-middleware.js";
@@ -86,6 +86,7 @@ const parseClockSkewSec = (): number => {
 };
 
 let shutdownHandler: (() => Promise<void>) | undefined;
+let stopCacheWarmScheduler: (() => void) | undefined;
 
 const gracefulShutdown = async (): Promise<void> => {
   logger.info("Shutting down...");
@@ -96,6 +97,7 @@ const gracefulShutdown = async (): Promise<void> => {
   }, SHUTDOWN_TIMEOUT);
 
   try {
+    stopCacheWarmScheduler?.();
     closeCache();
     artifactStore.close();
     await shutdownHandler?.();
@@ -193,6 +195,7 @@ const main = async (): Promise<void> => {
       error: error instanceof Error ? error.message : String(error),
     });
   });
+  stopCacheWarmScheduler = startCacheWarmScheduler();
 };
 
 void main().catch((error: unknown) => {

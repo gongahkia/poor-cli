@@ -1,9 +1,9 @@
-import { Activity, CircleHelp, SlidersHorizontal } from "lucide-react";
+import { useState } from "react";
+import { Activity, CircleHelp } from "lucide-react";
 
 import { BackendLogsDialog } from "@/components/debug/BackendLogsDialog";
 import { BulkDiligence } from "@/components/search/BulkDiligence";
 import { DiligenceSearch } from "@/components/search/DiligenceSearch";
-import { ShortlistPanel } from "@/components/search/ShortlistPanel";
 import { GatewayReadinessBanner, GatewayStatus } from "@/components/status/GatewayStatus";
 import { Button } from "@/components/ui/button";
 import { WorkspaceBadge } from "@/components/workspace/WorkspaceBadge";
@@ -18,6 +18,9 @@ import {
 import { DUDE_LANDING_EMOJI_URL } from "@/lib/brand/dude";
 
 export function SearchPage() {
+  const [searchInput, setSearchInput] = useState("");
+  const [bulkRunSignal, setBulkRunSignal] = useState(0);
+
   return (
     <main className="relative min-h-dvh bg-background px-6">
       <div className="absolute right-4 top-4 flex items-center gap-2 sm:right-6 sm:top-6">
@@ -31,7 +34,7 @@ export function SearchPage() {
           <div className="space-y-3">
             <p className="text-sm font-medium text-muted-foreground">Dude</p>
             <h1 className="text-4xl font-semibold tracking-normal text-foreground sm:text-5xl">
-              Client CDD onboarding for Singapore teams
+              Search a Singapore company or UEN. Get a cited CDD report for analyst review.
             </h1>
           </div>
           <div className="flex justify-start md:justify-end">
@@ -46,46 +49,21 @@ export function SearchPage() {
         </div>
 
         <div className="w-full space-y-4">
-          <DiligenceSearch secondaryAction={<SearchToolsDialog />} />
+          <DiligenceSearch
+            onBulkSubmit={() => setBulkRunSignal((current) => current + 1)}
+            onValueChange={setSearchInput}
+            value={searchInput}
+          />
+          <BulkDiligence
+            headless
+            input={searchInput}
+            runSignal={bulkRunSignal}
+          />
           <GatewayReadinessBanner />
         </div>
         <div aria-hidden="true" />
       </section>
     </main>
-  );
-}
-
-function SearchToolsDialog() {
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button
-          aria-label="Open bulk checks and shortlist tools"
-          className="h-12 gap-2 px-4"
-          type="button"
-          variant="outline"
-        >
-          <SlidersHorizontal className="h-4 w-4" />
-          <span>Tools</span>
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-5xl overflow-y-auto rounded-[28px] border-border bg-background p-1 shadow-2xl">
-        <div className="rounded-[24px] bg-muted/35 p-5 sm:p-6">
-          <DialogHeader className="pr-10">
-            <DialogTitle>Workspace tools</DialogTitle>
-            <DialogDescription>
-              Bulk checks and saved counterparties stay available without competing with the primary
-              search.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
-            <BulkDiligence />
-            <ShortlistPanel />
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -143,7 +121,7 @@ function SearchHelpDialog() {
             <li>
               Sector registries run only when selected or inferred from official SSIC evidence
             </li>
-            <li>Every result shows searched modules, source provenance, freshness, and gaps</li>
+            <li>Every report links summary claims to source evidence, freshness, and gaps</li>
             <li>
               Use the dossier for analyst review, not legal, tax, credit, or licensed compliance
               advice

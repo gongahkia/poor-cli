@@ -307,7 +307,7 @@ class DudeDossierWidget extends HTMLElement {
       headers.set("Authorization", `Bearer ${this.authToken}`);
     }
 
-    const response = await fetch(`${gatewayUrl}/api/v1/sg_business_dossier`, {
+    const response = await fetch(`${gatewayUrl}/api/v1/dude/cdd-orchestrator`, {
       body: JSON.stringify(payload),
       headers,
       method: "POST",
@@ -320,7 +320,7 @@ class DudeDossierWidget extends HTMLElement {
       throw new Error(body?.error?.message || body?.message || `Dude gateway returned ${response.status}.`);
     }
 
-    return body?.data?.record ?? body;
+    return body?.data?.dossier ?? body?.dossier ?? body?.data?.record ?? body;
   }
 
   #renderDossier(dossier) {

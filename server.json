@@ -2,21 +2,13 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.gongahkia/dude-mcp",
   "title": "Dude MCP",
-  "description": "Dude MCP backend for Singapore public-data and due-diligence workflows, with 109 sg_* tools across 39 catalog families, bounded workflow planning, deterministic housing checks, and provenance-aware brief artifacts.",
+  "description": "Dude MCP backend for Singapore company/UEN CDD reports with cited registry evidence, supplemental analyst-review signals, report exports, and runtime ops tools.",
   "version": "0.1.0",
   "repository": {
     "url": "https://github.com/gongahkia/dude",
     "source": "github"
   },
   "packages": [
-    {
-      "registryType": "npm",
-      "identifier": "@dude/mcp",
-      "version": "0.1.0",
-      "transport": {
-        "type": "stdio"
-      }
-    },
     {
       "registryType": "oci",
       "identifier": "ghcr.io/gongahkia/dude-mcp",

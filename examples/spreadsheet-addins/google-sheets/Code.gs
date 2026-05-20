@@ -1,7 +1,7 @@
 const DUDE_DEFAULT_GATEWAY_URL = "http://localhost:3000";
 
 /**
- * Runs a Dude business dossier lookup and returns the raw JSON envelope.
+ * Runs a Dude CDD orchestrator lookup and returns the raw dossier JSON envelope.
  *
  * @param {string} identifier Company name or UEN.
  * @param {string=} gatewayUrl Dude REST gateway URL.
@@ -15,7 +15,7 @@ function DUDE_DOSSIER(identifier, gatewayUrl, token) {
 }
 
 /**
- * Runs a Dude business dossier lookup and returns a two-column summary table.
+ * Runs a Dude CDD orchestrator lookup and returns a two-column summary table.
  *
  * @param {string} identifier Company name or UEN.
  * @param {string=} gatewayUrl Dude REST gateway URL.
@@ -34,7 +34,7 @@ function DUDE_DOSSIER_SUMMARY(identifier, gatewayUrl, token) {
 }
 
 /**
- * Runs a Dude business dossier lookup and returns freshness/provenance rows.
+ * Runs a Dude CDD orchestrator lookup and returns freshness/provenance rows.
  *
  * @param {string} identifier Company name or UEN.
  * @param {string=} gatewayUrl Dude REST gateway URL.
@@ -70,7 +70,7 @@ function dudeFetchDossier_(identifier, gatewayUrl, token) {
     throw new Error("identifier is required");
   }
 
-  const url = `${String(gatewayUrl || DUDE_DEFAULT_GATEWAY_URL).replace(/\/+$/, "")}/api/v1/sg_business_dossier`;
+  const url = `${String(gatewayUrl || DUDE_DEFAULT_GATEWAY_URL).replace(/\/+$/, "")}/api/v1/dude/cdd-orchestrator`;
   const payload = dudeLooksLikeUen_(value)
     ? { uen: value.toUpperCase() }
     : { entityName: value };
@@ -94,7 +94,7 @@ function dudeFetchDossier_(identifier, gatewayUrl, token) {
     throw new Error(parsed?.error?.message || parsed?.message || `Dude gateway returned ${status}`);
   }
 
-  return parsed?.data?.record || parsed;
+  return parsed?.data?.dossier || parsed?.dossier || parsed?.data?.record || parsed;
 }
 
 function dudeLooksLikeUen_(value) {

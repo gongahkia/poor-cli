@@ -1,6 +1,8 @@
 import type { AnalystMemoReady } from "@/types/analyst-memo";
 import type { BusinessDossier } from "@/types/dossier";
 import type { WebPresence } from "@/lib/api/client";
+import { buildSourceUseWarnings, type SourceUseWarning } from "@/lib/source-use-warnings";
+import type { CddOrchestrationTrace } from "@/types/orchestration";
 
 export type DossierExportManifest = {
   schemaVersion: "dude-export-manifest/v1";
@@ -17,9 +19,21 @@ export type DossierExportManifest = {
     tool: string;
     recordCount: number;
   }[];
+  sourceUseWarnings: SourceUseWarning[];
   includedArtifacts: {
     analystMemo: boolean;
+    orchestrationTrace: boolean;
     webPresence: boolean;
+  };
+  orchestration?: {
+    status: CddOrchestrationTrace["status"];
+    strategy: string;
+    stages: {
+      id: string;
+      label: string;
+      status: string;
+      tools: string[];
+    }[];
   };
   signature: {
     algorithm: "sha256";
@@ -52,14 +66,21 @@ export async function buildDossierExportManifest(params: {
   analystMemo?: AnalystMemoReady;
   dossier: BusinessDossier;
   generatedAt?: string;
+  orchestration?: CddOrchestrationTrace;
   webPresence?: WebPresence;
 }): Promise<DossierExportManifest> {
   const generatedAt = params.generatedAt ?? new Date().toISOString();
   const dossierHash = await sha256Hex(stableStringify(params.dossier));
+  const sourceUseWarnings = buildSourceUseWarnings({
+    dossier: params.dossier,
+    ...(params.webPresence === undefined ? {} : { webPresence: params.webPresence }),
+  });
   const signaturePayload = stableStringify({
     dossierHash,
     generatedAt,
+    orchestration: params.orchestration,
     provenance: params.dossier.provenance,
+    sourceUseWarnings,
     sourceFreshness: params.dossier.freshness,
   });
   const signature = await sha256Hex(signaturePayload);
@@ -79,10 +100,24 @@ export async function buildDossierExportManifest(params: {
       tool: item.tool,
       recordCount: item.recordCount,
     })),
+    sourceUseWarnings,
     includedArtifacts: {
       analystMemo: params.analystMemo !== undefined,
+      orchestrationTrace: params.orchestration !== undefined,
       webPresence: params.webPresence !== undefined,
     },
+    ...(params.orchestration === undefined ? {} : {
+      orchestration: {
+        status: params.orchestration.status,
+        strategy: params.orchestration.strategy,
+        stages: (params.orchestration.stages ?? []).map((stage) => ({
+          id: stage.id,
+          label: stage.label,
+          status: stage.status,
+          tools: stage.tools,
+        })),
+      },
+    }),
     signature: {
       algorithm: "sha256",
       value: signature,

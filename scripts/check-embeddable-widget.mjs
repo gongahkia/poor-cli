@@ -15,7 +15,7 @@ const frame = entries["examples/embeddable-widget/widget-frame.html"];
 
 const checks = [
   ["defines custom element", widget.includes('customElements.define("dude-dossier-widget"')],
-  ["calls dossier endpoint", widget.includes("/api/v1/sg_business_dossier")],
+  ["calls orchestrator endpoint", widget.includes("/api/v1/dude/cdd-orchestrator")],
   ["supports gateway-url", widget.includes('"gateway-url"')],
   ["supports auth token", widget.includes("Authorization") && readme.includes("short-lived token")],
   ["supports module scoping", widget.includes('"modules"') && readme.includes("acra,bca,cea,gebiz,boa,hsa,hlb")],

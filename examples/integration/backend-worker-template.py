@@ -218,12 +218,12 @@ def run_dry() -> None:
             "job-2",
             {
                 "status": "blocked",
-                "reason": "Need one more location field.",
+                "reason": "Need one company or UEN identifier.",
                 "blockers": [
                     {
-                        "field": "planningArea",
-                        "directTool": "sg_property_brief",
-                        "suggestedPrompt": "Property due diligence for Bedok",
+                        "field": "entityName",
+                        "directTool": "sg_business_dossier",
+                        "suggestedPrompt": "Business dossier for DP Architects",
                     }
                 ],
             },
@@ -233,7 +233,7 @@ def run_dry() -> None:
             "job-4",
             {
                 "status": "failed",
-                "failedStep": {"tool": "sg_lta_bus_arrivals", "error": {"code": "UPSTREAM_TIMEOUT", "message": "LTA timed out"}},
+                "failedStep": {"tool": "sg_business_dossier", "error": {"code": "UPSTREAM_TIMEOUT", "message": "ACRA timed out"}},
             },
         ),
     ]
@@ -254,9 +254,9 @@ def run_live() -> None:
         ops_taxonomy = read_json_resource(client, "sg://ops-taxonomy")
         prompts = [
             ("job-1", "Architecture firm diligence for DP Architects"),
-            ("job-2", "Find a social service office near me"),
+            ("job-2", "Run business diligence"),
             ("job-3", "Compare GDP and CPI in Singapore"),
-            ("job-4", "Find datasets about a definitely unknown topic"),
+            ("job-4", "Business dossier for ABC CONSTRUCTION PTE LTD"),
         ]
         for job_id, prompt in prompts:
             outcome = call_query(client, prompt)

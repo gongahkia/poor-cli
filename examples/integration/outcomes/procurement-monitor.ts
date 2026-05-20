@@ -20,15 +20,6 @@ const main = async () => {
       const closing = tender["closingDate"] ?? tender["closing"] ?? "(no close date)";
       console.log(`  - ${title} | ${agency} | closes ${closing}`);
     }
-
-    // Surface government-feed signals so monitors can correlate procurement chatter with announcements.
-    const feeds = await callToolPayload<{ records?: readonly Record<string, unknown>[] }>(client, "sg_govfeeds_articles", {
-      limit: 10,
-    });
-    console.log(`\n=== Recent gov feed announcements (${feeds.records?.length ?? 0}) ===`);
-    for (const article of (feeds.records ?? []).slice(0, 5)) {
-      console.log(`  - ${article["title"] ?? "(untitled)"} (${article["publishedAt"] ?? "?"})`);
-    }
   } finally {
     await client.close();
   }
