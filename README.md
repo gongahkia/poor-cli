@@ -101,6 +101,8 @@ PDF and DOCX are the primary report outputs. JSON and CSV are advanced data expo
 
 ## Development
 
+The canonical package manager is npm. `package-lock.json` is the dependency source of truth; pnpm is not a supported install/test path for this repo right now.
+
 ```bash
 npm install
 npm run build
