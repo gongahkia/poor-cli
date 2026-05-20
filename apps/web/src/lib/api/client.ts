@@ -130,6 +130,42 @@ const buildGatewayUrl = (path: string, params: Record<string, string> = {}): str
   return baseUrl === "" ? `${url.pathname}${url.search}` : url.toString();
 };
 
+const getWebOrigin = (): string => {
+  if (typeof window === "undefined") {
+    return "the web app origin";
+  }
+
+  return window.location.origin;
+};
+
+const getGatewayOrigin = (url: string): string => {
+  if (typeof window === "undefined") {
+    return url;
+  }
+
+  return new URL(url, window.location.origin).origin;
+};
+
+const buildGatewayConnectionMessage = (url: string, error: unknown): string => {
+  const reason = error instanceof Error && error.message.trim() !== ""
+    ? ` (${error.message})`
+    : "";
+  const webOrigin = getWebOrigin();
+  return `Unable to reach REST gateway at ${getGatewayOrigin(url)} from ${webOrigin}. Start npm run dev:gateway and ensure DUDE_WEB_ORIGIN_ALLOWLIST includes ${webOrigin}.${reason}`;
+};
+
+const fetchGateway = async (url: string, init: RequestInit): Promise<Response> => {
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw error;
+    }
+
+    throw new Error(buildGatewayConnectionMessage(url, error));
+  }
+};
+
 const readJson = async <T>(response: Response): Promise<T> => {
   const body = await response.text();
   if (!body) {
@@ -168,8 +204,9 @@ export async function callTool<T>(
     throw new Error("Tool name is required.");
   }
 
-  const response = await fetch(
-    buildGatewayUrl(`/api/v1/${encodeURIComponent(normalizedToolName)}`),
+  const url = buildGatewayUrl(`/api/v1/${encodeURIComponent(normalizedToolName)}`);
+  const response = await fetchGateway(
+    url,
     {
       body: JSON.stringify(params),
       headers: {
@@ -212,7 +249,7 @@ export async function getGatewayJson<T>(
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   const url = buildGatewayUrl(normalizedPath, params);
 
-  const response = await fetch(url, {
+  const response = await fetchGateway(url, {
     method: "GET",
     signal: options.signal,
   });
@@ -234,7 +271,8 @@ export async function postGatewayJson<T>(
   options: CallToolOptions = {},
 ): Promise<T> {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  const response = await fetch(buildGatewayUrl(normalizedPath), {
+  const url = buildGatewayUrl(normalizedPath);
+  const response = await fetchGateway(url, {
     body: JSON.stringify(body),
     headers: {
       "Content-Type": "application/json",

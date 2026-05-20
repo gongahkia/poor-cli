@@ -25,4 +25,11 @@ describe("api client errors", () => {
     await expect(getGatewayJson("/api/v1/health")).rejects.toThrow("Gateway unavailable");
     await expect(postGatewayJson("/api/v1/dude/memo", {})).rejects.toThrow("Gateway unavailable");
   });
+
+  it("adds setup context for network and CORS fetch failures", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("Failed to fetch"));
+
+    await expect(getGatewayJson("/api/v1/health")).rejects.toThrow("DUDE_WEB_ORIGIN_ALLOWLIST");
+    await expect(getGatewayJson("/api/v1/health")).rejects.toThrow("Failed to fetch");
+  });
 });

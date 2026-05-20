@@ -148,6 +148,8 @@ Run the MCP gateway only:
 npm run dev:gateway
 ```
 
+The dev gateway allows Vite's common local origins (`localhost`/`127.0.0.1` on ports `5173`-`5175`) by default. If Vite starts on another port, restart the gateway with `DUDE_WEB_ORIGIN_ALLOWLIST=http://localhost:<port>` so `/api/v1/health` and `/api/v1/debug/logs` are not blocked by browser CORS.
+
 ## Runtime Discovery
 
 The runtime still exposes catalog resources, now scoped to CDD:

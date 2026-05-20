@@ -39,7 +39,14 @@ import {
   type WorkspacePermission,
 } from "./workspace/access-control.js";
 const PORT = Number(process.env["PORT"] ?? 3000);
-const DEFAULT_DEV_WEB_ORIGIN_ALLOWLIST = "http://localhost:5173,http://127.0.0.1:5173";
+const DEFAULT_DEV_WEB_ORIGIN_ALLOWLIST = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:5174",
+  "http://127.0.0.1:5174",
+  "http://localhost:5175",
+  "http://127.0.0.1:5175",
+].join(",");
 const gatewayStartedAt = new Date();
 const debugLogStore = initDebugLogStore();
 const logger = createLogger("rest-gateway");
@@ -71,6 +78,7 @@ logger.info("gateway started", {
   tools: enabledTools.length,
   total: ALL_TOOL_DEFINITIONS.length,
   debugLogsEnabled: debugLogStore.enabled,
+  corsOrigins: [...allowedCorsOrigins],
   workspaceAuth: workspaceAuthPolicy.details,
   ...(debugLogStore.logPath === undefined ? {} : { debugLogPath: debugLogStore.logPath }),
 });
