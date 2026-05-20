@@ -27,6 +27,8 @@ npm run build
 
 ## Usage
 
+Use the workspace package locally or a GitHub tarball from a tagged release until npm publication is complete. The import path below is the intended public package name after publication.
+
 ```ts
 import { createDudeClient } from "@dude/sdk";
 

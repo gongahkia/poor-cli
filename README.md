@@ -16,6 +16,31 @@ Dude is no longer a broad Singapore public-data explorer. The retained product j
 
 Removed from the product/runtime surface: housing, property, macro, transport, transit ops, weather, civic amenities, generic data.gov drilldowns, visualization, law search, COE, IRAS, SPF, EMA, NLB, and related broad examples.
 
+## Current Status
+
+### Works today
+
+- Web search for a Singapore company name or UEN through the CDD orchestrator.
+- ACRA-gated identity lookup, sector inference, official module enrichment where source evidence supports it, cited summary, Evidence Pack, and report builder.
+- Local browser workspace tools for saved dossiers, watchlists, bulk runs, audit events, JSON/CSV data exports, and PDF/DOCX report exports.
+- Self-hosted MCP/REST runtime with the retained CDD `sg_*` tools listed below.
+
+### Requires credentials
+
+- AI memo quality depends on a configured supported model provider key.
+- TinyFish-backed web presence and people-discovery evidence requires TinyFish configuration.
+- OpenSanctions and OpenCorporates supplemental checks require provider credentials and source-use review.
+
+### Unpublished
+
+- npm package installation is not public yet. Use this repository directly until the package is published and `npm run registry:availability:check` confirms the package is available.
+
+### Hosted/commercial blocked or planned
+
+- ACRA-derived hosted paid enrichment needs documented source-use rights before widening commercial redistribution.
+- OneMap/URA commercial-use notes remain governance history for removed non-CDD surfaces; they are not active product claims in the CDD runtime.
+- SOC 2, MAS outsourcing, PSG, Dude Cloud, partner, DPA, and hosted workspace materials are planning/readiness tracks, not completed production attestations.
+
 ## Retained Tools
 
 Current runtime surface: 26 `sg_*` tools total across 11 CDD catalog families, including 10 sg_query-routed CDD families. The web product and embedded integrations run through the CDD orchestrator; `sg_query` is the bounded preferred MCP interface for goal-shaped CDD prompts. Direct `sg_business_dossier` remains as a low-level compatibility API, not the normal product path.
