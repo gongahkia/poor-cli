@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { ReportPreview } from "@/components/dossier/ReportPreview";
-import { DEFAULT_REPORT_TEMPLATE } from "@/lib/report-template";
+import { DEFAULT_REPORT_TEMPLATE, updateReportReviewerMetadata } from "@/lib/report-template";
 import type { BusinessDossier } from "@/types/dossier";
 
 const dossier = {
@@ -79,6 +79,14 @@ const dossier = {
 
 describe("ReportPreview", () => {
   it("renders a generated document preview from the selected report template", () => {
+    const template = updateReportReviewerMetadata(DEFAULT_REPORT_TEMPLATE, {
+      caseStatus: "Pending reviewer sign-off",
+      internalReference: "CDD-2026-001",
+      preparedBy: "Analyst A",
+      reportPurpose: "Vendor onboarding review",
+      reviewDate: "2026-05-21",
+      reviewedBy: "Reviewer B",
+    });
     const html = renderToStaticMarkup(
       <ReportPreview
         dossier={dossier}
@@ -120,7 +128,7 @@ describe("ReportPreview", () => {
             uen: "197700546G",
           },
         }}
-        template={DEFAULT_REPORT_TEMPLATE}
+        template={template}
         webPresenceState={{
           status: "success",
           presence: {
@@ -137,6 +145,13 @@ describe("ReportPreview", () => {
     expect(html).toContain("Generated document preview");
     expect(html).toContain("Dude CDD review report");
     expect(html).toContain("DBS PTE. LTD.");
+    expect(html).toContain("Review metadata");
+    expect(html).toContain("Prepared by");
+    expect(html).toContain("Analyst A");
+    expect(html).toContain("Report readiness checklist");
+    expect(html).toContain("Readiness summary");
+    expect(html).toContain("Style intent");
+    expect(html).toContain("Vendor onboarding review");
     expect(html).toContain("Executive summary");
     expect(html).toContain("Source coverage");
     expect(html).toContain("OpenCorporates cross-links");
@@ -144,7 +159,7 @@ describe("ReportPreview", () => {
     expect(html).toContain("Sector workflow Public procurement suppliers");
     expect(html).toContain("Tender agency, category, or procurement terms");
     expect(html).toContain("Risk and confidence");
-    expect(html).toContain("Export manifest");
+    expect(html).toContain("Audit manifest appendix");
     expect(html).toContain("Hash, schema version, signature");
   });
 

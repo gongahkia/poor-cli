@@ -15,6 +15,7 @@ import type { BulkDossierRow } from "@/types/bulk";
 import type { BusinessDossier } from "@/types/dossier";
 import type { CddOrchestrationTrace } from "@/types/orchestration";
 import type { PeopleDiscovery, WebPresence } from "@/lib/api/client";
+import type { ReportTemplate } from "@/lib/report-template";
 import {
   buildDossierExportManifest,
   type DossierExportManifest,
@@ -125,6 +126,7 @@ export async function buildSingleDossierJsonPayload(params: {
   generatedAt?: string;
   orchestration?: CddOrchestrationTrace;
   peopleDiscovery?: PeopleDiscovery;
+  reportTemplate?: ReportTemplate;
   webPresence?: WebPresence;
 }): Promise<Record<string, unknown>> {
   const generatedAt = params.generatedAt ?? new Date().toISOString();
@@ -134,6 +136,7 @@ export async function buildSingleDossierJsonPayload(params: {
     ...(params.analystMemo === undefined ? {} : { analystMemo: params.analystMemo }),
     ...(params.orchestration === undefined ? {} : { orchestration: params.orchestration }),
     ...(params.peopleDiscovery === undefined ? {} : { peopleDiscovery: params.peopleDiscovery }),
+    ...(params.reportTemplate === undefined ? {} : { reportTemplate: params.reportTemplate }),
     ...(params.webPresence === undefined ? {} : { webPresence: params.webPresence }),
   });
   return {
@@ -146,6 +149,9 @@ export async function buildSingleDossierJsonPayload(params: {
     manifest,
     orchestration: params.orchestration ?? null,
     peopleDiscovery: params.peopleDiscovery ?? null,
+    reportReadiness: manifest.reportReadiness,
+    reportTemplate: manifest.reportTemplate,
+    reviewerMetadata: manifest.reviewerMetadata,
     sourceCoverage: params.dossier.sourceCoverage ?? [],
     sourceUseWarnings: manifest.sourceUseWarnings,
     webPresence: params.webPresence ?? null,
@@ -157,6 +163,7 @@ export async function exportSingleDossierJson(params: {
   analystMemo?: AnalystMemoReady;
   orchestration?: CddOrchestrationTrace;
   peopleDiscovery?: PeopleDiscovery;
+  reportTemplate?: ReportTemplate;
   webPresence?: WebPresence;
 }): Promise<void> {
   const identifier = sanitizeFilenamePart(getSummaryString(params.dossier, "UEN") ?? params.dossier.title);

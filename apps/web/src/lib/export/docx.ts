@@ -22,6 +22,7 @@ import {
   sourceCoverageStatusLabel,
 } from "@/lib/dossier";
 import { buildDossierExportManifest } from "@/lib/export/manifest";
+import { buildReportManifestRows, buildReportMetadataRows, buildReportReadinessRows } from "@/lib/report-export-content";
 import { followUpCategoryLabel, followUpPriorityLabel, formatAnalystFollowUpInputSummary, getAnalystFollowUps } from "@/lib/next-checks";
 import { buildSourceUseWarnings } from "@/lib/source-use-warnings";
 import {
@@ -33,7 +34,9 @@ import {
 import {
   DEFAULT_REPORT_TEMPLATE,
   REPORT_SECTION_LABELS,
+  REPORT_WRITING_STYLE_DESCRIPTIONS,
   REPORT_WRITING_STYLE_LABELS,
+  getReportReviewerMetadata,
   type ReportSectionId,
   type ReportTemplate,
 } from "@/lib/report-template";
@@ -104,6 +107,7 @@ export async function exportDossierDocx(
     ...(options.analystMemo === undefined ? {} : { analystMemo: options.analystMemo }),
     ...(options.orchestration === undefined ? {} : { orchestration: options.orchestration }),
     ...(options.peopleDiscovery === undefined ? {} : { peopleDiscovery: options.peopleDiscovery }),
+    reportTemplate: template,
     ...(options.webPresence === undefined ? {} : { webPresence: options.webPresence }),
   });
   const sourceUseWarnings = buildSourceUseWarnings({
@@ -111,6 +115,7 @@ export async function exportDossierDocx(
     ...(options.peopleDiscovery === undefined ? {} : { peopleDiscovery: options.peopleDiscovery }),
     ...(options.webPresence === undefined ? {} : { webPresence: options.webPresence }),
   });
+  const metadata = getReportReviewerMetadata(template);
   const children: Paragraph[] = [
     new Paragraph({
       alignment: AlignmentType.LEFT,
@@ -120,7 +125,20 @@ export async function exportDossierDocx(
     }),
     paragraph(`Generated: ${generatedAt.toLocaleString("en-SG")}`),
     paragraph(`Report style: ${REPORT_WRITING_STYLE_LABELS[template.writingStyle]}`),
+    paragraph(`Style intent: ${REPORT_WRITING_STYLE_DESCRIPTIONS[template.writingStyle]}`),
   ];
+
+  if (includes("review_metadata")) {
+    children.push(
+      heading(REPORT_SECTION_LABELS.review_metadata),
+      ...rowsToParagraphs(buildReportMetadataRows(template)),
+    );
+  }
+
+  if (includes("readiness_checklist")) {
+    children.push(heading(REPORT_SECTION_LABELS.readiness_checklist));
+    children.push(...rowsToParagraphs(buildReportReadinessRows(dossier, options.analystMemo)));
+  }
 
   if (sourceUseWarnings.length > 0) {
     children.push(heading("Source-use warnings"));
@@ -298,24 +316,13 @@ export async function exportDossierDocx(
   if (includes("manifest")) {
     children.push(
       heading(REPORT_SECTION_LABELS.manifest),
-      paragraph(`Manifest schema: ${manifest.schemaVersion}`),
-      paragraph(`Dossier hash: ${manifest.dossierHash}`),
-      paragraph(`Signature: ${manifest.signature.algorithm}: ${manifest.signature.value}`),
-      paragraph(`Generated: ${manifest.generatedAt}`),
-      paragraph(`Tool version: ${manifest.toolVersion}`),
-      paragraph(`Orchestration status: ${manifest.orchestration?.status ?? "Not included"}`),
-      paragraph(`Orchestration strategy: ${manifest.orchestration?.strategy ?? "Not included"}`),
-      paragraph(`Orchestration stages: ${manifest.orchestration?.stages.map((stage) => `${stage.label}: ${stage.status}`).join("; ") ?? "Not included"}`),
-      paragraph(`Source-use warnings: ${manifest.sourceUseWarnings.length === 0 ? "None triggered" : manifest.sourceUseWarnings.map((warning) => `${warning.title}: ${warning.triggeredBy.join(", ")}`).join("; ")}`),
-      paragraph(`Source coverage: ${manifest.sourceCoverage.length === 0 ? "Not included" : manifest.sourceCoverage.map((item) => `${item.label}: ${item.status}/${item.coverageLevel}`).join("; ")}`),
-      paragraph(`Analyst follow-ups: ${manifest.analystFollowUps.length === 0 ? "None included" : manifest.analystFollowUps.map((item) => `${item.priority}/${item.category}: ${item.action}`).join("; ")}`),
-      paragraph(`Signature note: ${manifest.signature.note}`),
+      ...rowsToParagraphs(buildReportManifestRows(manifest)),
     );
   }
 
   const doc = new Document({
-    creator: "Dude",
-    description: "Singapore counterparty due diligence report",
+    creator: metadata.preparedBy.trim() || "Dude",
+    description: metadata.reportPurpose.trim() || "Singapore counterparty due diligence report",
     sections: [{ children }],
     title: `${dossier.title} - Dude CDD report`,
   });

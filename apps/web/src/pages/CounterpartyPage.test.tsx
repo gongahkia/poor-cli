@@ -40,5 +40,10 @@ describe("CounterpartyPage CDD case workflow", () => {
     expect(source).toContain("exportDossierPdf");
     expect(source).toContain("exportDossierDocx");
     expect(source).toContain("REPORT_WRITING_STYLE_LABELS");
+    expect(source).toContain("REPORT_SECTION_PRESETS");
+    expect(source).toContain("Reviewer metadata");
+    expect(source).toContain("Report readiness checklist");
+    expect(source).toContain("preparedBy");
+    expect(source).toContain("internalReference");
   });
 });

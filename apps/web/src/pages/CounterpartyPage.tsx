@@ -17,11 +17,15 @@ import {
 } from "@/lib/dossier";
 import {
   DEFAULT_REPORT_TEMPLATE,
+  REPORT_SECTION_PRESETS,
   REPORT_WRITING_STYLE_LABELS,
+  applyReportSectionPreset,
+  updateReportReviewerMetadata,
   type ReportExportFormat,
   type ReportTemplate,
   type ReportWritingStyle,
 } from "@/lib/report-template";
+import { buildReportReadinessChecklist, reportReadinessSummary } from "@/lib/report-readiness";
 import {
   buildSupplementalEvidenceReviewItems,
   outcomeStateLabel,
@@ -488,13 +492,21 @@ function DossierView({
   onCaseRecordChange: (record: CddCaseRecord | null) => void;
   response: CddOrchestratorResponse;
 }) {
-  const [writingStyle, setWritingStyle] = useState<ReportWritingStyle>("concise_analyst");
+  const [reportTemplate, setReportTemplate] = useState<ReportTemplate>(DEFAULT_REPORT_TEMPLATE);
   const [exportFormat, setExportFormat] = useState<ReportExportFormat>("pdf");
   const [isExporting, setIsExporting] = useState(false);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const memo = response.memo;
+  const writingStyle = reportTemplate.writingStyle;
   const entityName = getSummaryString(dossier, "Entity") ?? dossier.title;
   const uen = getSummaryString(dossier, "UEN");
+  const reportReadinessItems = buildReportReadinessChecklist({
+    dossier,
+    ...(memo.status === "ready" ? { analystMemo: memo } : {}),
+  });
+  const reportReadinessWarnings = reportReadinessItems
+    .filter((item) => item.status === "warning")
+    .map((item) => `${item.label}: ${item.detail}`);
   const confidenceBlockers = uniqueStrings([
     ...(response.resolution?.confidenceBlockers ?? []),
     ...(memo.status === "ready" ? memo.riskRating.confidenceBlockers : []),
@@ -518,11 +530,6 @@ function DossierView({
     setIsExporting(true);
     setExportMessage(null);
     const today = new Date().toISOString().slice(0, 10);
-    const reportTemplate: ReportTemplate = {
-      ...DEFAULT_REPORT_TEMPLATE,
-      writingStyle,
-    };
-
     try {
       const filename = `dude-cdd-report-${sanitizeFilenamePart(identifier)}-${today}.${exportFormat}`;
       if (exportFormat === "pdf") {
@@ -675,11 +682,29 @@ function DossierView({
 
       <section>
         <h2>Export report</h2>
-        <p className="muted">Uses the existing PDF/DOCX export code with the standard CDD report sections.</p>
+        <p className="muted">
+          Builds a CDD analyst handoff with source facts, analyst notes, gaps, limits, appendices, and manifest data kept separate.
+        </p>
+        <h3>Section presets</h3>
+        <div className="case-grid">
+          {REPORT_SECTION_PRESETS.map((preset) => (
+            <button
+              disabled={reportTemplate.id === preset.id}
+              key={preset.id}
+              onClick={() => setReportTemplate((current) => applyReportSectionPreset(current, preset.id))}
+              type="button"
+            >
+              {preset.name}
+            </button>
+          ))}
+        </div>
         <label htmlFor="writing-style">Writing style</label>
         <select
           id="writing-style"
-          onChange={(event) => setWritingStyle(event.target.value as ReportWritingStyle)}
+          onChange={(event) => setReportTemplate((current) => ({
+            ...current,
+            writingStyle: event.target.value as ReportWritingStyle,
+          }))}
           value={writingStyle}
         >
           {writingStyles.map((style) => (
@@ -688,6 +713,32 @@ function DossierView({
             </option>
           ))}
         </select>
+        <h3>Reviewer metadata</h3>
+        <div className="case-grid">
+          {[
+            ["preparedBy", "Prepared by"],
+            ["reviewedBy", "Reviewed by"],
+            ["reviewDate", "Review date"],
+            ["caseStatus", "Case status"],
+            ["internalReference", "Internal reference"],
+            ["reportPurpose", "Report purpose"],
+          ].map(([field, label]) => (
+            <label htmlFor={`report-${field}`} key={field}>
+              {label}
+              <input
+                id={`report-${field}`}
+                onChange={(event) => setReportTemplate((current) =>
+                  updateReportReviewerMetadata(current, { [field]: event.target.value }),
+                )}
+                type={field === "reviewDate" ? "date" : "text"}
+                value={reportTemplate.metadata[field as keyof typeof reportTemplate.metadata]}
+              />
+            </label>
+          ))}
+        </div>
+        <h3>Report readiness checklist</h3>
+        <p className="muted">{reportReadinessSummary(reportReadinessItems)}</p>
+        <PlainList emptyText="No readiness warnings generated. This is not a clearance decision." items={reportReadinessWarnings} />
         <label htmlFor="export-format">Format</label>
         <select
           id="export-format"

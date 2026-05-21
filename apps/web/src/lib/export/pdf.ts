@@ -13,9 +13,18 @@ import {
   sourceCoverageStatusLabel,
 } from "@/lib/dossier";
 import { complianceUseLimitations } from "@/lib/compliance";
+import { buildReportManifestRows, buildReportMetadataRows, buildReportReadinessRows } from "@/lib/report-export-content";
 import { buildDossierExportManifest } from "@/lib/export/manifest";
 import { followUpCategoryLabel, followUpPriorityLabel, formatAnalystFollowUpInputSummary, getAnalystFollowUps } from "@/lib/next-checks";
-import { DEFAULT_REPORT_TEMPLATE, REPORT_SECTION_LABELS, REPORT_WRITING_STYLE_LABELS, type ReportSectionId, type ReportTemplate } from "@/lib/report-template";
+import {
+  DEFAULT_REPORT_TEMPLATE,
+  REPORT_SECTION_LABELS,
+  REPORT_WRITING_STYLE_DESCRIPTIONS,
+  REPORT_WRITING_STYLE_LABELS,
+  getReportReviewerMetadata,
+  type ReportSectionId,
+  type ReportTemplate,
+} from "@/lib/report-template";
 import { buildSourceUseWarnings } from "@/lib/source-use-warnings";
 import {
   buildSupplementalEvidenceReviewItems,
@@ -137,6 +146,7 @@ export async function exportDossierPdf(
     ...(options.analystMemo === undefined ? {} : { analystMemo: options.analystMemo }),
     ...(options.orchestration === undefined ? {} : { orchestration: options.orchestration }),
     ...(options.peopleDiscovery === undefined ? {} : { peopleDiscovery: options.peopleDiscovery }),
+    reportTemplate: template,
     ...(options.webPresence === undefined ? {} : { webPresence: options.webPresence }),
   });
   const sourceUseWarnings = buildSourceUseWarnings({
@@ -146,12 +156,13 @@ export async function exportDossierPdf(
   });
   const pageWidth = doc.internal.pageSize.getWidth();
   const maxWidth = pageWidth - 40;
+  const metadata = getReportReviewerMetadata(template);
   let y = 20;
 
   doc.setProperties({
     title: `${brief.title} - Dude diligence brief`,
-    subject: "Singapore counterparty due diligence brief",
-    author: "Dude",
+    subject: metadata.reportPurpose.trim() || "Singapore counterparty due diligence brief",
+    author: metadata.preparedBy.trim() || "Dude",
     creator: "Dude",
   });
 
@@ -167,7 +178,31 @@ export async function exportDossierPdf(
   doc.text(`Generated: ${generatedAt.toLocaleString("en-SG")}`, 20, y);
   y += 5;
   doc.text(`Report style: ${REPORT_WRITING_STYLE_LABELS[template.writingStyle]}`, 20, y);
+  y += 5;
+  y = addWrappedText(doc, `Style intent: ${REPORT_WRITING_STYLE_DESCRIPTIONS[template.writingStyle]}`, 20, y, maxWidth);
   y += 12;
+
+  if (includes("review_metadata")) {
+    y = ensurePage(doc, y);
+    y = addSectionTitle(doc, REPORT_SECTION_LABELS.review_metadata, y);
+    y = addSummaryRows(
+      doc,
+      buildReportMetadataRows(template),
+      y,
+      maxWidth,
+    ) + 4;
+  }
+
+  if (includes("readiness_checklist")) {
+    y = ensurePage(doc, y);
+    y = addSectionTitle(doc, REPORT_SECTION_LABELS.readiness_checklist, y);
+    y = addSummaryRows(
+      doc,
+      buildReportReadinessRows(brief, options.analystMemo),
+      y,
+      maxWidth,
+    ) + 4;
+  }
 
   if (sourceUseWarnings.length > 0) {
     y = ensurePage(doc, y);
@@ -476,43 +511,12 @@ export async function exportDossierPdf(
   if (includes("manifest")) {
     y = ensurePage(doc, y);
     y = addSectionTitle(doc, REPORT_SECTION_LABELS.manifest, y);
-    addSummaryRows(
+    y = addSummaryRows(
       doc,
-      [
-        { label: "Manifest schema", value: manifest.schemaVersion },
-        { label: "Dossier hash", value: manifest.dossierHash },
-        { label: "Signature", value: `${manifest.signature.algorithm}: ${manifest.signature.value}` },
-        { label: "Generated", value: manifest.generatedAt },
-        { label: "Tool version", value: manifest.toolVersion },
-        { label: "Orchestration status", value: manifest.orchestration?.status ?? "Not included" },
-        { label: "Orchestration strategy", value: manifest.orchestration?.strategy ?? "Not included" },
-        {
-          label: "Orchestration stages",
-          value: manifest.orchestration?.stages.map((stage) => `${stage.label}: ${stage.status}`).join("; ") ?? "Not included",
-        },
-        {
-          label: "Source-use warnings",
-          value: manifest.sourceUseWarnings.length === 0
-            ? "None triggered"
-            : manifest.sourceUseWarnings.map((warning) => `${warning.title}: ${warning.triggeredBy.join(", ")}`).join("; "),
-        },
-        {
-          label: "Source coverage",
-          value: manifest.sourceCoverage.length === 0
-            ? "Not included"
-            : manifest.sourceCoverage.map((item) => `${item.label}: ${item.status}/${item.coverageLevel}`).join("; "),
-        },
-        {
-          label: "Analyst follow-ups",
-          value: manifest.analystFollowUps.length === 0
-            ? "None included"
-            : manifest.analystFollowUps.map((item) => `${item.priority}/${item.category}: ${item.action}`).join("; "),
-        },
-        { label: "Signature note", value: manifest.signature.note },
-      ],
+      buildReportManifestRows(manifest),
       y,
       maxWidth,
-    );
+    ) + 4;
   }
 
   doc.save(options.filename ?? "dude-diligence-brief.pdf");

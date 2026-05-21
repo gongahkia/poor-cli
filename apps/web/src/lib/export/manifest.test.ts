@@ -4,6 +4,7 @@ import {
   buildDossierExportManifest,
   verifyDossierExportManifest,
 } from "@/lib/export/manifest";
+import { DEFAULT_REPORT_TEMPLATE, updateReportReviewerMetadata } from "@/lib/report-template";
 import type { BusinessDossier } from "@/types/dossier";
 
 const dossier: BusinessDossier = {
@@ -54,6 +55,13 @@ describe("export manifest", () => {
     expect(first.sourceCoverage).toEqual([
       expect.objectContaining({ family: "acra", status: "checked", coverageLevel: "full" }),
     ]);
+    expect(first.reportTemplate.sections.slice(0, 2)).toEqual(["review_metadata", "readiness_checklist"]);
+    expect(first.reviewerMetadata.reportPurpose).toBe("CDD analyst handoff");
+    expect(first.reportReadiness).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "claim_citations", status: "warning" }),
+    ]));
+    expect(first.provenance).toEqual([{ source: "ACRA", tool: "sg_acra_entities", recordCount: 1 }]);
+    expect(first.sourceFreshness).toEqual([{ source: "ACRA", observedAt: "2026-05-17T00:00:00Z", upstreamTimestamp: null }]);
     expect(first.analystFollowUps).toEqual([
       expect.objectContaining({
         category: "report_quality",
@@ -65,6 +73,12 @@ describe("export manifest", () => {
   });
 
   it("includes compact orchestrator trace metadata when supplied", async () => {
+    const reportTemplate = updateReportReviewerMetadata(DEFAULT_REPORT_TEMPLATE, {
+      caseStatus: "Reviewer assigned",
+      internalReference: "CDD-2026-042",
+      preparedBy: "Analyst A",
+      reviewedBy: "Reviewer B",
+    });
     const manifest = await buildDossierExportManifest({
       dossier,
       generatedAt: "2026-05-17T00:00:00Z",
@@ -86,9 +100,20 @@ describe("export manifest", () => {
         limits: [],
         webSectorHints: [],
       },
+      reportTemplate,
     });
 
     expect(manifest.includedArtifacts.orchestrationTrace).toBe(true);
+    expect(manifest.reviewerMetadata).toMatchObject({
+      caseStatus: "Reviewer assigned",
+      internalReference: "CDD-2026-042",
+      preparedBy: "Analyst A",
+      reviewedBy: "Reviewer B",
+    });
+    expect(manifest.reportTemplate).toMatchObject({
+      id: "cdd-standard",
+      writingStyle: "concise_analyst",
+    });
     expect(manifest.orchestration).toMatchObject({
       status: "ready",
       stages: [{ id: "acra_identity", status: "completed" }],
