@@ -2,7 +2,7 @@ import type { PeopleDiscovery, WebPresence } from "@/lib/api/client";
 import type { BusinessDossier } from "@/types/dossier";
 
 export type SourceUseWarning = {
-  id: "acra_source_use" | "supplemental_analyst_review";
+  id: "acra_source_use" | "supplemental_analyst_review" | "provider_credentials_license";
   title: string;
   message: string;
   triggeredBy: string[];
@@ -67,6 +67,33 @@ const collectSupplementalTriggers = ({
   return uniqueSorted(triggers);
 };
 
+const collectProviderCredentialLicenseTriggers = (dossier: BusinessDossier): string[] => {
+  const triggers: string[] = [];
+
+  for (const item of dossier.sourceCoverage ?? []) {
+    const credentialBlocked = item.status === "credential_blocked" || (item.requiredCredentials?.length ?? 0) > 0;
+    const licenceText = `${item.label} ${item.reason} ${item.tools.join(" ")}`;
+    if (credentialBlocked || /licen[cs]e|token|api[_\s-]?key|credential|commercial|provider/i.test(licenceText)) {
+      triggers.push(item.label);
+    }
+  }
+
+  for (const item of dossier.provenance) {
+    const text = `${item.source} ${item.tool} ${item.coverage}`;
+    if (item.authRequired || /opensanctions|opencorporates|token|api[_\s-]?key|licen[cs]e|commercial/i.test(text)) {
+      triggers.push(item.source);
+    }
+  }
+
+  for (const limit of dossier.limits) {
+    if (/licen[cs]e|token|api[_\s-]?key|credential|commercial|provider/i.test(`${limit.code} ${limit.message}`)) {
+      triggers.push(limit.code);
+    }
+  }
+
+  return uniqueSorted(triggers);
+};
+
 export function buildSourceUseWarnings(params: SourceUseWarningParams): SourceUseWarning[] {
   const warnings: SourceUseWarning[] = [];
 
@@ -86,6 +113,16 @@ export function buildSourceUseWarnings(params: SourceUseWarningParams): SourceUs
       title: "Supplemental evidence is analyst-review only",
       message: `${supplementalTriggers.join(", ")} outputs are supplemental analyst-review signals. They are not official registry facts, sanctions clearance, adverse-media clearance, or ownership/control determinations.`,
       triggeredBy: supplementalTriggers,
+    });
+  }
+
+  const providerTriggers = collectProviderCredentialLicenseTriggers(params.dossier);
+  if (providerTriggers.length > 0) {
+    warnings.push({
+      id: "provider_credentials_license",
+      title: "Provider credentials and licences may constrain coverage",
+      message: "Supplemental providers can require API credentials, paid plans, licence review, or usage-specific permissions. Missing credentials, rate limits, or plan limits are coverage blockers and should be documented before export or redistribution.",
+      triggeredBy: providerTriggers,
     });
   }
 

@@ -1,6 +1,6 @@
 import type { AnalystMemoReady } from "@/types/analyst-memo";
 import type { BusinessDossier } from "@/types/dossier";
-import type { WebPresence } from "@/lib/api/client";
+import type { PeopleDiscovery, WebPresence } from "@/lib/api/client";
 import { getAnalystFollowUps } from "@/lib/next-checks";
 import { buildSourceUseWarnings, type SourceUseWarning } from "@/lib/source-use-warnings";
 import type { CddOrchestrationTrace } from "@/types/orchestration";
@@ -39,6 +39,7 @@ export type DossierExportManifest = {
   includedArtifacts: {
     analystMemo: boolean;
     orchestrationTrace: boolean;
+    peopleDiscovery: boolean;
     webPresence: boolean;
   };
   orchestration?: {
@@ -83,22 +84,25 @@ export async function buildDossierExportManifest(params: {
   dossier: BusinessDossier;
   generatedAt?: string;
   orchestration?: CddOrchestrationTrace;
+  peopleDiscovery?: PeopleDiscovery;
   webPresence?: WebPresence;
 }): Promise<DossierExportManifest> {
   const generatedAt = params.generatedAt ?? new Date().toISOString();
   const dossierHash = await sha256Hex(stableStringify(params.dossier));
   const sourceUseWarnings = buildSourceUseWarnings({
     dossier: params.dossier,
+    ...(params.peopleDiscovery === undefined ? {} : { peopleDiscovery: params.peopleDiscovery }),
     ...(params.webPresence === undefined ? {} : { webPresence: params.webPresence }),
   });
   const analystFollowUps = getAnalystFollowUps(params.dossier);
   const signaturePayload = stableStringify({
     analystFollowUps,
     dossierHash,
-    generatedAt,
-    orchestration: params.orchestration,
-    provenance: params.dossier.provenance,
-    sourceCoverage: params.dossier.sourceCoverage ?? [],
+      generatedAt,
+      orchestration: params.orchestration,
+      peopleDiscovery: params.peopleDiscovery,
+      provenance: params.dossier.provenance,
+      sourceCoverage: params.dossier.sourceCoverage ?? [],
     sourceUseWarnings,
     sourceFreshness: params.dossier.freshness,
   });
@@ -138,6 +142,7 @@ export async function buildDossierExportManifest(params: {
     includedArtifacts: {
       analystMemo: params.analystMemo !== undefined,
       orchestrationTrace: params.orchestration !== undefined,
+      peopleDiscovery: params.peopleDiscovery !== undefined,
       webPresence: params.webPresence !== undefined,
     },
     ...(params.orchestration === undefined ? {} : {

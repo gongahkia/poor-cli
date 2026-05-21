@@ -14,7 +14,7 @@ import type { AnalystMemoReady } from "@/types/analyst-memo";
 import type { BulkDossierRow } from "@/types/bulk";
 import type { BusinessDossier } from "@/types/dossier";
 import type { CddOrchestrationTrace } from "@/types/orchestration";
-import type { WebPresence } from "@/lib/api/client";
+import type { PeopleDiscovery, WebPresence } from "@/lib/api/client";
 import {
   buildDossierExportManifest,
   type DossierExportManifest,
@@ -124,6 +124,7 @@ export async function buildSingleDossierJsonPayload(params: {
   analystMemo?: AnalystMemoReady;
   generatedAt?: string;
   orchestration?: CddOrchestrationTrace;
+  peopleDiscovery?: PeopleDiscovery;
   webPresence?: WebPresence;
 }): Promise<Record<string, unknown>> {
   const generatedAt = params.generatedAt ?? new Date().toISOString();
@@ -132,6 +133,7 @@ export async function buildSingleDossierJsonPayload(params: {
     generatedAt,
     ...(params.analystMemo === undefined ? {} : { analystMemo: params.analystMemo }),
     ...(params.orchestration === undefined ? {} : { orchestration: params.orchestration }),
+    ...(params.peopleDiscovery === undefined ? {} : { peopleDiscovery: params.peopleDiscovery }),
     ...(params.webPresence === undefined ? {} : { webPresence: params.webPresence }),
   });
   return {
@@ -143,6 +145,7 @@ export async function buildSingleDossierJsonPayload(params: {
     limits: params.dossier.limits,
     manifest,
     orchestration: params.orchestration ?? null,
+    peopleDiscovery: params.peopleDiscovery ?? null,
     sourceCoverage: params.dossier.sourceCoverage ?? [],
     sourceUseWarnings: manifest.sourceUseWarnings,
     webPresence: params.webPresence ?? null,
@@ -153,6 +156,7 @@ export async function exportSingleDossierJson(params: {
   dossier: BusinessDossier;
   analystMemo?: AnalystMemoReady;
   orchestration?: CddOrchestrationTrace;
+  peopleDiscovery?: PeopleDiscovery;
   webPresence?: WebPresence;
 }): Promise<void> {
   const identifier = sanitizeFilenamePart(getSummaryString(params.dossier, "UEN") ?? params.dossier.title);
@@ -229,7 +233,12 @@ const buildBulkManifest = async (
     .filter((row): row is BulkDossierRow & { dossier: BusinessDossier } => row.dossier !== undefined)
     .map(async (row) => [
       row.index,
-      await buildDossierExportManifest({ dossier: row.dossier, generatedAt }),
+      await buildDossierExportManifest({
+        dossier: row.dossier,
+        generatedAt,
+        ...(row.peopleDiscovery === undefined ? {} : { peopleDiscovery: row.peopleDiscovery }),
+        ...(row.webPresence === undefined ? {} : { webPresence: row.webPresence }),
+      }),
     ] as const));
   return new Map(manifestEntries);
 };

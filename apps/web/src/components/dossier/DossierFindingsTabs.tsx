@@ -25,6 +25,7 @@ import { ReportPreview } from "@/components/dossier/ReportPreview";
 import { RiskSection } from "@/components/dossier/RiskSection";
 import { SnapshotSection } from "@/components/dossier/SnapshotSection";
 import { SourceUseWarningsSection } from "@/components/dossier/SourceUseWarningsSection";
+import { SupplementalEvidencePanel } from "@/components/dossier/SupplementalEvidencePanel";
 import { WebPresenceSection, type WebPresenceState } from "@/components/dossier/WebPresenceSection";
 import { Button } from "@/components/ui/button";
 import {
@@ -1241,6 +1242,11 @@ function EvidencePackTab({
         <RiskSection dossier={dossier} />
         <ConfidenceSection dossier={dossier} />
         <EvidenceSection dossier={dossier} onModuleFollowUp={onModuleFollowUp} runningModule={rerunningModule} />
+        <SupplementalEvidencePanel
+          dossier={dossier}
+          peopleDiscovery={peopleDiscoveryState.status === "success" ? peopleDiscoveryState.discovery : undefined}
+          webPresence={webPresenceState.status === "success" ? webPresenceState.presence : undefined}
+        />
         <WebPresenceSection state={webPresenceState} />
         <PeopleDiscoverySection state={peopleDiscoveryState} />
         <PdpaChecklistSection

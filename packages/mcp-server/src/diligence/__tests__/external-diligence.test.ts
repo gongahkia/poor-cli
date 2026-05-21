@@ -167,7 +167,7 @@ describe("adverse media lite", () => {
 });
 
 describe("relationship graph", () => {
-  it("creates shared-address and sibling heuristic edges with strict limitations", () => {
+  it("keeps relationship graph edges source-declared and omits heuristic links", () => {
     const artifact = buildRelationshipGraphArtifact({
       records: {
         acra: [
@@ -177,12 +177,27 @@ describe("relationship graph", () => {
       },
     }, "2026-05-17T00:00:00.000Z");
 
-    const graph = artifact.records.graph as { edges: { kind: string }[] };
-    expect(graph.edges.map((edge) => edge.kind)).toEqual(expect.arrayContaining([
+    const graph = artifact.records.graph as { edges: { confidence: string; kind: string }[] };
+    expect(graph.edges).toEqual([
+      expect.objectContaining({
+        confidence: "source_declared",
+        kind: "registered_address",
+      }),
+      expect.objectContaining({
+        confidence: "source_declared",
+        kind: "registered_address",
+      }),
+    ]);
+    expect(graph.edges.map((edge) => edge.kind)).not.toEqual(expect.arrayContaining([
       "shared_registered_address",
       "name_family",
     ]));
+    expect(artifact.summary).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "Source-declared edges", value: 2 }),
+      expect.objectContaining({ label: "Inferred ownership/control edges", value: 0 }),
+    ]));
     expect(artifact.limits.map((limit) => limit.code)).toContain("NO_INFERRED_OWNERSHIP_OR_CONTROL");
+    expect(artifact.limits.map((limit) => limit.code)).toContain("NO_SHARED_ADDRESS_OR_NAME_FAMILY_INFERENCE");
   });
 
   it("represents explicit source-declared relationships without inferring control", () => {

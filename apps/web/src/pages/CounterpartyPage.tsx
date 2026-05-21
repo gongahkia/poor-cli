@@ -22,6 +22,12 @@ import {
   type ReportTemplate,
   type ReportWritingStyle,
 } from "@/lib/report-template";
+import {
+  buildSupplementalEvidenceReviewItems,
+  outcomeStateLabel,
+  providerStateLabel,
+  supplementalEvidenceCaveat,
+} from "@/lib/supplemental-evidence";
 import { followUpPriorityLabel, getAnalystFollowUps } from "@/lib/next-checks";
 import { resolveActiveSession } from "@/lib/workspace";
 import {
@@ -525,6 +531,7 @@ function DossierView({
           ...(memo.status === "ready" ? { analystMemo: memo } : {}),
           filename,
           orchestration: response.orchestration,
+          peopleDiscovery: response.peopleDiscovery,
           reportTemplate,
           webPresence: response.webPresence,
         });
@@ -534,6 +541,7 @@ function DossierView({
           ...(memo.status === "ready" ? { analystMemo: memo } : {}),
           filename,
           orchestration: response.orchestration,
+          peopleDiscovery: response.peopleDiscovery,
           reportTemplate,
           webPresence: response.webPresence,
         });
@@ -1220,13 +1228,46 @@ function ProvenanceFreshnessSection({ dossier }: { dossier: BusinessDossier }) {
 }
 
 function SupplementalEvidenceSection({ response }: { response: CddOrchestratorResponse }) {
+  const supplementalItems = buildSupplementalEvidenceReviewItems({
+    dossier: response.dossier,
+    peopleDiscovery: response.peopleDiscovery,
+    webPresence: response.webPresence,
+  });
+
   return (
     <section>
       <h2>Supplemental evidence</h2>
       <p className="muted">
-        Web presence and people-discovery results are supplemental analyst-review evidence, not official registry
-        clearance.
+        {supplementalEvidenceCaveat}
       </p>
+      {supplementalItems.length === 0 ? (
+        <p className="muted">No supplemental review items were returned.</p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Check</th>
+              <th scope="col">Labels</th>
+              <th scope="col">Provider state</th>
+              <th scope="col">Outcome</th>
+              <th scope="col">Confidence and limits</th>
+              <th scope="col">Source-use warning</th>
+            </tr>
+          </thead>
+          <tbody>
+            {supplementalItems.map((item) => (
+              <tr key={item.id}>
+                <th scope="row">{item.title}</th>
+                <td>{item.evidenceLabels.join(", ")}</td>
+                <td>{providerStateLabel(item.providerState)}</td>
+                <td>{outcomeStateLabel(item.outcome)} ({item.recordCount})</td>
+                <td>{item.confidenceLabel} {item.limitationLabel}</td>
+                <td>{item.sourceUseWarning ?? "None returned"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
       <details open>
         <summary>Web presence</summary>
         <p>

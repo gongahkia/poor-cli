@@ -17,7 +17,13 @@ import { buildDossierExportManifest } from "@/lib/export/manifest";
 import { followUpCategoryLabel, followUpPriorityLabel, formatAnalystFollowUpInputSummary, getAnalystFollowUps } from "@/lib/next-checks";
 import { DEFAULT_REPORT_TEMPLATE, REPORT_SECTION_LABELS, REPORT_WRITING_STYLE_LABELS, type ReportSectionId, type ReportTemplate } from "@/lib/report-template";
 import { buildSourceUseWarnings } from "@/lib/source-use-warnings";
-import type { WebPresence } from "@/lib/api/client";
+import {
+  buildSupplementalEvidenceReviewItems,
+  outcomeStateLabel,
+  providerStateLabel,
+  supplementalEvidenceCaveat,
+} from "@/lib/supplemental-evidence";
+import type { PeopleDiscovery, WebPresence } from "@/lib/api/client";
 import type { AnalystMemoReady } from "@/types/analyst-memo";
 import type { BriefArtifact, BriefProvenanceItem, BriefSummaryItem } from "@/types/dossier";
 import type { CddOrchestrationTrace } from "@/types/orchestration";
@@ -27,6 +33,7 @@ type ExportDossierPdfOptions = {
   filename?: string;
   generatedAt?: Date;
   orchestration?: CddOrchestrationTrace;
+  peopleDiscovery?: PeopleDiscovery;
   reportTemplate?: ReportTemplate;
   webPresence?: WebPresence;
 };
@@ -129,10 +136,12 @@ export async function exportDossierPdf(
     generatedAt: generatedAt.toISOString(),
     ...(options.analystMemo === undefined ? {} : { analystMemo: options.analystMemo }),
     ...(options.orchestration === undefined ? {} : { orchestration: options.orchestration }),
+    ...(options.peopleDiscovery === undefined ? {} : { peopleDiscovery: options.peopleDiscovery }),
     ...(options.webPresence === undefined ? {} : { webPresence: options.webPresence }),
   });
   const sourceUseWarnings = buildSourceUseWarnings({
     dossier: brief,
+    ...(options.peopleDiscovery === undefined ? {} : { peopleDiscovery: options.peopleDiscovery }),
     ...(options.webPresence === undefined ? {} : { webPresence: options.webPresence }),
   });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -340,19 +349,39 @@ export async function exportDossierPdf(
   if (includes("supplemental_discovery")) {
     y = ensurePage(doc, y);
     y = addSectionTitle(doc, REPORT_SECTION_LABELS.supplemental_discovery, y);
+    const supplementalItems = buildSupplementalEvidenceReviewItems({
+      dossier: brief,
+      ...(options.peopleDiscovery === undefined ? {} : { peopleDiscovery: options.peopleDiscovery }),
+      ...(options.webPresence === undefined ? {} : { webPresence: options.webPresence }),
+    });
     y = addSummaryRows(
       doc,
-      options.webPresence === undefined
-        ? [{ label: "Web discovery", value: "Not included in this export." }]
-        : [
-            { label: "Evidence type", value: "Web discovery, not registry evidence." },
-            { label: "TinyFish configured", value: options.webPresence.configured ? "yes" : "no" },
-            { label: "Possible official website", value: options.webPresence.possibleOfficialWebsite },
-            ...options.webPresence.results.map((result) => ({
-              label: result.siteName ?? result.url,
-              value: `${result.title} - ${result.url}`,
-            })),
-          ],
+      [
+        { label: "Caveat", value: supplementalEvidenceCaveat },
+        ...(supplementalItems.length === 0
+          ? [{ label: "Supplemental evidence", value: "No supplemental checks were included in this export." }]
+          : supplementalItems.map((item) => ({
+              label: item.title,
+              value: [
+                item.evidenceLabels.join(", "),
+                `provider state: ${providerStateLabel(item.providerState)}`,
+                `outcome: ${outcomeStateLabel(item.outcome)}`,
+                `records: ${item.recordCount}`,
+                item.confidenceLabel,
+                item.limitationLabel,
+                item.sourceUseWarning === null ? null : item.sourceUseWarning,
+              ].filter(Boolean).join("; "),
+            }))),
+        ...(options.webPresence === undefined
+          ? []
+          : [
+              { label: "Possible official website", value: options.webPresence.possibleOfficialWebsite },
+              ...options.webPresence.results.map((result) => ({
+                label: result.siteName ?? result.url,
+                value: `${result.title} - ${result.url}`,
+              })),
+            ]),
+      ],
       y,
       maxWidth,
     ) + 4;

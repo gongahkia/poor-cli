@@ -19,6 +19,12 @@ import {
   type ReportTemplate,
 } from "@/lib/report-template";
 import { buildSourceUseWarnings } from "@/lib/source-use-warnings";
+import {
+  buildSupplementalEvidenceReviewItems,
+  outcomeStateLabel,
+  providerStateLabel,
+  supplementalEvidenceCaveat,
+} from "@/lib/supplemental-evidence";
 import { followUpPriorityLabel, getAnalystFollowUps } from "@/lib/next-checks";
 import type { BusinessDossier, BriefSummaryItem } from "@/types/dossier";
 import type { AnalystMemoState } from "@/components/dossier/AnalystMemoSection";
@@ -192,13 +198,31 @@ function gapRows(dossier: BusinessDossier): PreviewLine[] {
 }
 
 function supplementalRows(
+  dossier: BusinessDossier,
   peopleDiscoveryState: PeopleDiscoveryState,
   webPresenceState: WebPresenceState,
 ): PreviewLine[] {
-  const rows: PreviewLine[] = [];
+  const items = buildSupplementalEvidenceReviewItems({
+    dossier,
+    ...(peopleDiscoveryState.status === "success" ? { peopleDiscovery: peopleDiscoveryState.discovery } : {}),
+    ...(webPresenceState.status === "success" ? { webPresence: webPresenceState.presence } : {}),
+  });
+  const rows: PreviewLine[] = [{ label: "Caveat", value: supplementalEvidenceCaveat }];
+  rows.push(...items.map((item) => ({
+    label: item.title,
+    value: [
+      item.evidenceLabels.join(", "),
+      `provider state: ${providerStateLabel(item.providerState)}`,
+      `outcome: ${outcomeStateLabel(item.outcome)}`,
+      `records: ${item.recordCount}`,
+      item.confidenceLabel,
+      item.limitationLabel,
+      item.sourceUseWarning === null ? null : item.sourceUseWarning,
+    ].filter(Boolean).join("; "),
+  })));
   if (webPresenceState.status === "success") {
     rows.push(
-      { label: "Web discovery", value: `${webPresenceState.presence.results.length} result(s)` },
+      { label: "Web discovery detail", value: `${webPresenceState.presence.results.length} result(s)` },
       { label: "Possible official website", value: webPresenceState.presence.possibleOfficialWebsite ?? "Not returned" },
     );
     rows.push(...webPresenceState.presence.results.slice(0, 3).map((result) => ({
@@ -209,7 +233,7 @@ function supplementalRows(
     rows.push({ label: "Web discovery", value: webPresenceState.status });
   }
   if (peopleDiscoveryState.status === "success") {
-    rows.push({ label: "People discovery", value: `${peopleDiscoveryState.discovery.results.length} candidate snippet(s)` });
+    rows.push({ label: "People discovery detail", value: `${peopleDiscoveryState.discovery.results.length} candidate snippet(s)` });
   } else {
     rows.push({ label: "People discovery", value: peopleDiscoveryState.status });
   }
@@ -246,7 +270,7 @@ function sectionRows({
     case "evidence_records":
       return evidenceRows(dossier);
     case "supplemental_discovery":
-      return supplementalRows(peopleDiscoveryState, webPresenceState);
+      return supplementalRows(dossier, peopleDiscoveryState, webPresenceState);
     case "gaps":
       return gapRows(dossier);
     case "provenance":
@@ -277,6 +301,7 @@ export function ReportPreview({
 }: ReportPreviewProps) {
   const sourceWarnings = buildSourceUseWarnings({
     dossier,
+    ...(peopleDiscoveryState.status === "success" ? { peopleDiscovery: peopleDiscoveryState.discovery } : {}),
     ...(webPresenceState.status === "success" ? { webPresence: webPresenceState.presence } : {}),
   });
 

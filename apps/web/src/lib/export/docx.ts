@@ -25,13 +25,19 @@ import { buildDossierExportManifest } from "@/lib/export/manifest";
 import { followUpCategoryLabel, followUpPriorityLabel, formatAnalystFollowUpInputSummary, getAnalystFollowUps } from "@/lib/next-checks";
 import { buildSourceUseWarnings } from "@/lib/source-use-warnings";
 import {
+  buildSupplementalEvidenceReviewItems,
+  outcomeStateLabel,
+  providerStateLabel,
+  supplementalEvidenceCaveat,
+} from "@/lib/supplemental-evidence";
+import {
   DEFAULT_REPORT_TEMPLATE,
   REPORT_SECTION_LABELS,
   REPORT_WRITING_STYLE_LABELS,
   type ReportSectionId,
   type ReportTemplate,
 } from "@/lib/report-template";
-import type { WebPresence } from "@/lib/api/client";
+import type { PeopleDiscovery, WebPresence } from "@/lib/api/client";
 import type { AnalystMemoReady } from "@/types/analyst-memo";
 import type { BriefArtifact, BriefSummaryItem } from "@/types/dossier";
 import type { CddOrchestrationTrace } from "@/types/orchestration";
@@ -41,6 +47,7 @@ type ExportDossierDocxOptions = {
   filename?: string;
   generatedAt?: Date;
   orchestration?: CddOrchestrationTrace;
+  peopleDiscovery?: PeopleDiscovery;
   reportTemplate?: ReportTemplate;
   webPresence?: WebPresence;
 };
@@ -96,10 +103,12 @@ export async function exportDossierDocx(
     generatedAt: generatedAt.toISOString(),
     ...(options.analystMemo === undefined ? {} : { analystMemo: options.analystMemo }),
     ...(options.orchestration === undefined ? {} : { orchestration: options.orchestration }),
+    ...(options.peopleDiscovery === undefined ? {} : { peopleDiscovery: options.peopleDiscovery }),
     ...(options.webPresence === undefined ? {} : { webPresence: options.webPresence }),
   });
   const sourceUseWarnings = buildSourceUseWarnings({
     dossier,
+    ...(options.peopleDiscovery === undefined ? {} : { peopleDiscovery: options.peopleDiscovery }),
     ...(options.webPresence === undefined ? {} : { webPresence: options.webPresence }),
   });
   const children: Paragraph[] = [
@@ -214,13 +223,29 @@ export async function exportDossierDocx(
 
   if (includes("supplemental_discovery")) {
     children.push(heading(REPORT_SECTION_LABELS.supplemental_discovery));
-    if (options.webPresence === undefined) {
-      children.push(paragraph("Web discovery was not included in this export."));
+    const supplementalItems = buildSupplementalEvidenceReviewItems({
+      dossier,
+      ...(options.peopleDiscovery === undefined ? {} : { peopleDiscovery: options.peopleDiscovery }),
+      ...(options.webPresence === undefined ? {} : { webPresence: options.webPresence }),
+    });
+    children.push(paragraph(`Caveat: ${supplementalEvidenceCaveat}`));
+    if (supplementalItems.length === 0) {
+      children.push(paragraph("No supplemental checks were included in this export."));
     } else {
-      children.push(
-        paragraph("Evidence type: Web discovery, not official registry evidence."),
-        paragraph(`Possible official website: ${options.webPresence.possibleOfficialWebsite ?? "Not available"}`),
-      );
+      supplementalItems.forEach((item) => {
+        children.push(paragraph(`${item.title}: ${[
+          item.evidenceLabels.join(", "),
+          `provider state: ${providerStateLabel(item.providerState)}`,
+          `outcome: ${outcomeStateLabel(item.outcome)}`,
+          `records: ${item.recordCount}`,
+          item.confidenceLabel,
+          item.limitationLabel,
+          item.sourceUseWarning === null ? null : item.sourceUseWarning,
+        ].filter(Boolean).join("; ")}`));
+      });
+    }
+    if (options.webPresence !== undefined) {
+      children.push(paragraph(`Possible official website: ${options.webPresence.possibleOfficialWebsite ?? "Not available"}`));
       options.webPresence.results.forEach((result) => {
         children.push(paragraph(`${result.siteName ?? result.url}: ${result.title} - ${result.url}`));
       });

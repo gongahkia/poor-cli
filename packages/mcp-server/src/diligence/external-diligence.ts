@@ -48,9 +48,6 @@ const normalizeName = (value: unknown): string =>
     ? ""
     : value.toLowerCase().replace(/\b(pte|ltd|private|limited|llp|llc|inc|co)\b/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
 
-const entityRoot = (value: unknown): string =>
-  normalizeName(value).split(" ").filter((part) => part.length > 2).slice(0, 3).join(" ");
-
 const asRecord = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 
@@ -407,8 +404,6 @@ type GraphEdge = {
   readonly to: string;
   readonly kind:
     | "registered_address"
-    | "shared_registered_address"
-    | "name_family"
     | "declared_shareholder"
     | "declared_director"
     | "declared_owner"
@@ -417,7 +412,7 @@ type GraphEdge = {
     | "declared_subsidiary"
     | "declared_related_entity";
   readonly evidence: string;
-  readonly confidence: "evidence" | "heuristic" | "source_declared";
+  readonly confidence: "source_declared";
 };
 
 const firstString = (record: Record<string, unknown>, keys: readonly string[]): string | null => {
@@ -498,8 +493,6 @@ export const buildRelationshipGraphArtifact = (
   const explicitRelationships = collectExplicitRelationshipRecords(params.records);
   const nodes = new Map<string, GraphNode>();
   const edges: GraphEdge[] = [];
-  const byAddress = new Map<string, string[]>();
-  const byRoot = new Map<string, string[]>();
 
   for (const record of acra) {
     const name = firstString(record, ["entityName", "companyName", "name"]) ?? "Unnamed entity";
@@ -524,14 +517,9 @@ export const buildRelationshipGraphArtifact = (
         from: companyId,
         to: addressId,
         kind: "registered_address",
-        evidence: "ACRA registered address fields.",
-        confidence: "evidence",
+        evidence: "ACRA source-declared registered address fields; Dude did not infer ownership, control, or affiliation from this address.",
+        confidence: "source_declared",
       });
-      byAddress.set(addressId, [...(byAddress.get(addressId) ?? []), companyId]);
-    }
-    const root = entityRoot(name);
-    if (root !== "") {
-      byRoot.set(root, [...(byRoot.get(root) ?? []), companyId]);
     }
   }
 
@@ -576,33 +564,6 @@ export const buildRelationshipGraphArtifact = (
     });
   }
 
-  for (const [addressId, companyIds] of byAddress.entries()) {
-    if (companyIds.length < 2) continue;
-    for (const companyId of companyIds) {
-      edges.push({
-        from: companyId,
-        to: addressId,
-        kind: "shared_registered_address",
-        evidence: "Multiple ACRA records share the same normalized registered address.",
-        confidence: "heuristic",
-      });
-    }
-  }
-
-  for (const [root, companyIds] of byRoot.entries()) {
-    const unique = Array.from(new Set(companyIds));
-    if (unique.length < 2) continue;
-    for (let index = 1; index < unique.length; index += 1) {
-      edges.push({
-        from: unique[0]!,
-        to: unique[index]!,
-        kind: "name_family",
-        evidence: `Normalized entity-name root "${root}" appears across multiple ACRA records.`,
-        confidence: "heuristic",
-      });
-    }
-  }
-
   const graph = {
     nodes: Array.from(nodes.values()),
     edges,
@@ -614,7 +575,7 @@ export const buildRelationshipGraphArtifact = (
       { label: "Nodes", value: graph.nodes.length, source: "Graph builder" },
       { label: "Edges", value: graph.edges.length, source: "Graph builder" },
       { label: "Source-declared edges", value: graph.edges.filter((edge) => edge.confidence === "source_declared").length, source: "Graph builder" },
-      { label: "Heuristic edges", value: graph.edges.filter((edge) => edge.confidence === "heuristic").length, source: "Graph builder" },
+      { label: "Inferred ownership/control edges", value: 0, source: "Graph builder" },
     ],
     evidence: [
       { label: "ACRA records inspected", value: acra.length, source: "ACRA" },
@@ -629,7 +590,7 @@ export const buildRelationshipGraphArtifact = (
     limits: [
       toLimit("NO_INFERRED_OWNERSHIP_OR_CONTROL", "The graph does not infer directors, shareholders, beneficial owners, subsidiaries, parent entities, or control. It represents those relationships only when supplied records explicitly declare them."),
       toLimit("DECLARED_RELATIONSHIPS_REQUIRE_SOURCE_REVIEW", "Source-declared relationship edges must be reviewed against the underlying source record before relying on them."),
-      toLimit("HEURISTIC_EDGES_REQUIRE_REVIEW", "Shared-address and name-family edges are triage heuristics, not proof of relationship."),
+      toLimit("NO_SHARED_ADDRESS_OR_NAME_FAMILY_INFERENCE", "Shared registered addresses and similar entity names are not converted into relationship edges."),
     ],
   };
 };
