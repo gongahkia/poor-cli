@@ -163,6 +163,9 @@ const buildExternalItem = (
   const coverage = findCoverage(params.dossier, params.family);
   const state = providerState(coverage, params.artifact);
   const recordCount = params.recordCount;
+  const coverageGaps = coverage === undefined
+    ? []
+    : (coverage.gapCodes ?? []).map((code) => `${code}: ${coverage.reason}`);
   const evidenceLabels = Array.from(new Set([
     ...(params.labels ?? ["Third-party provider"]),
     "Not official registry fact",
@@ -173,7 +176,7 @@ const buildExternalItem = (
     confidenceLabel: recordCount > 0 ? params.confidenceWithResult : params.confidenceNoResult,
     evidenceLabels,
     gaps: [
-      ...(coverage?.gapCodes ?? []).map((code) => `${code}: ${coverage.reason}`),
+      ...coverageGaps,
       ...artifactGaps(params.artifact),
     ],
     id: params.family,

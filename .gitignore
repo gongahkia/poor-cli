@@ -10,3 +10,4 @@ dist/
 CLAUDE.md
 artifacts/release/
 output/
+.playwright-cli/
