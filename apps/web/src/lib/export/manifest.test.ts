@@ -11,6 +11,15 @@ const dossier: BusinessDossier = {
   freshness: [{ source: "ACRA", observedAt: "2026-05-17T00:00:00Z", upstreamTimestamp: null }],
   gaps: [],
   limits: [{ code: "PUBLIC_DATA_ONLY", message: "Public records only." }],
+  analystFollowUps: [{
+    action: "Record source coverage limitation before export.",
+    category: "report_quality",
+    evidenceBasis: [{ detail: "Public records only.", kind: "evidence_limitation", ref: "limit.PUBLIC_DATA_ONLY", source: "Dossier limit" }],
+    id: "follow-up-01-optional-report-quality-limit-public-data-only",
+    priority: "optional",
+    reason: "PUBLIC_DATA_ONLY: Public records only.",
+    whyThisMatters: "Report readers need the same evidence boundaries.",
+  }],
   provenance: [{ authRequired: false, coverage: "Registry", recordCount: 1, source: "ACRA", tool: "sg_acra_entities" }],
   records: { acra: [{ entityName: "DBS BANK LTD", uen: "03591300B" }] },
   sourceCoverage: [{
@@ -44,6 +53,13 @@ describe("export manifest", () => {
     ]));
     expect(first.sourceCoverage).toEqual([
       expect.objectContaining({ family: "acra", status: "checked", coverageLevel: "full" }),
+    ]);
+    expect(first.analystFollowUps).toEqual([
+      expect.objectContaining({
+        category: "report_quality",
+        evidenceRefs: ["limit.PUBLIC_DATA_ONLY"],
+        priority: "optional",
+      }),
     ]);
     await expect(verifyDossierExportManifest({ dossier, manifest: first })).resolves.toBe(true);
   });

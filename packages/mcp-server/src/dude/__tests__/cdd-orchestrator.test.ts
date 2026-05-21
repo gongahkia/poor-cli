@@ -131,6 +131,13 @@ describe("CDD orchestrator", () => {
 
     expect(response).toMatchObject({
       dossier: expect.objectContaining({
+        analystFollowUps: expect.arrayContaining([
+          expect.objectContaining({
+            category: "credential_required",
+            evidenceBasis: [expect.objectContaining({ ref: "sourceCoverage.people_discovery" })],
+            priority: "recommended",
+          }),
+        ]),
         sourceCoverage: expect.arrayContaining([
           expect.objectContaining({ family: "web_presence", status: "checked", recordCount: 1 }),
           expect.objectContaining({ family: "people_discovery", status: "credential_blocked" }),

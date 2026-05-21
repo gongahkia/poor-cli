@@ -8,6 +8,7 @@ import {
   formatTimestamp,
   getSummaryString,
 } from "@/lib/dossier";
+import { followUpCategoryLabel, followUpPriorityLabel, getAnalystFollowUps } from "@/lib/next-checks";
 import type { BusinessDossier, BusinessDossierModule } from "@/types/dossier";
 
 const EMPTY_VALUE = "None returned.";
@@ -81,12 +82,12 @@ function buildHandoffGroups(dossier: BusinessDossier): HandoffSectionGroup[] {
       }],
     },
     {
-      title: "Recommended next checks",
+      title: "Prioritized analyst follow-ups",
       rows: [{
         label: "Follow-ups",
-        value: joinLines(dossier.nextChecks?.map((check) =>
-          `${readableLabel(check.tool)} (${check.tool}): ${check.reason}`,
-        ) ?? []),
+        value: joinLines(getAnalystFollowUps(dossier).map((followUp) =>
+          `${followUpPriorityLabel(followUp.priority)} / ${followUpCategoryLabel(followUp.category)}: ${followUp.action}\nEvidence gap: ${followUp.reason}\nWhy this matters: ${followUp.whyThisMatters}`,
+        )),
       }],
     },
     {

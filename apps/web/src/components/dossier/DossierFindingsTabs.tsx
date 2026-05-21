@@ -48,9 +48,10 @@ import {
 } from "@/lib/report-template";
 import { callTool } from "@/lib/api/client";
 import { BUSINESS_MODULE_LABELS, getSummaryString, type FollowUpBusinessModule } from "@/lib/dossier";
+import { followUpCategoryLabel, followUpPriorityLabel, getAnalystFollowUps } from "@/lib/next-checks";
 import { cn } from "@/lib/utils";
 import type { AnalystMemoCitation, AnalystMemoReady } from "@/types/analyst-memo";
-import type { BusinessDossier, BusinessDossierModule, NextCheck } from "@/types/dossier";
+import type { AnalystFollowUp, BusinessDossier, BusinessDossierModule, NextCheck } from "@/types/dossier";
 import type { CddOrchestrationTrace, CddOrchestratorStage } from "@/types/orchestration";
 
 type DossierFindingsTabsProps = {
@@ -189,7 +190,7 @@ const supportedFollowUpActions: readonly SupportedFollowUpAction[] = [
     tool: "sg_acra_entities",
   },
   {
-    description: "Dude can run OpenSanctions candidate screening when the licensed API key is configured. Results are analyst-review candidates, not clearance.",
+    description: "Dude can run OpenSanctions candidate screening when the licensed API key is configured. Results are analyst-review candidates, not a regulated determination.",
     label: "OpenSanctions",
     linkPattern: /OpenSanctions|sanctions\/watchlist|sanctions|watchlist/i,
     tool: "sg_sanctions_screen",
@@ -257,7 +258,11 @@ function getDossierIdentity(dossier: BusinessDossier): { entity: string; uen: st
   };
 }
 
-function buildSupportedToolInput(tool: string, dossier: BusinessDossier, nextCheck?: NextCheck): Record<string, unknown> {
+function buildSupportedToolInput(
+  tool: string,
+  dossier: BusinessDossier,
+  nextCheck?: Pick<NextCheck, "input"> | Pick<AnalystFollowUp, "input">,
+): Record<string, unknown> {
   const identity = getDossierIdentity(dossier);
   const entityOrUen = identity.entity !== "" ? identity.entity : identity.uen ?? dossier.title;
   if (tool === "sg_acra_entities") {
@@ -323,7 +328,26 @@ function findNextCheckForStep(step: string, dossier: BusinessDossier): NextCheck
   });
 }
 
+function findAnalystFollowUpForStep(step: string, dossier: BusinessDossier): AnalystFollowUp | undefined {
+  const normalizedStep = normalizeText(step);
+  return getAnalystFollowUps(dossier).find((followUp) => {
+    const normalizedAction = normalizeText(followUp.action);
+    const normalizedReason = normalizeText(followUp.reason);
+    return normalizedAction === normalizedStep
+      || normalizedAction.includes(normalizedStep)
+      || normalizedStep.includes(normalizedAction)
+      || normalizedReason.includes(normalizedStep)
+      || normalizedStep.includes(normalizedReason)
+      || (followUp.tool !== undefined && normalizedStep.includes(normalizeText(followUp.tool)));
+  });
+}
+
 function findFollowUpAction(step: string, dossier: BusinessDossier): { action: SupportedFollowUpAction; nextCheck?: NextCheck } | null {
+  const analystFollowUp = findAnalystFollowUpForStep(step, dossier);
+  if (analystFollowUp?.tool !== undefined) {
+    const directAction = actionForTool(analystFollowUp.tool);
+    if (directAction !== null) return { action: directAction, nextCheck: analystFollowUp as NextCheck };
+  }
   const nextCheck = findNextCheckForStep(step, dossier);
   if (nextCheck !== undefined) {
     const directAction = actionForTool(nextCheck.tool);
@@ -830,6 +854,7 @@ function CitedSummary({
   const citationById = buildCitationMap(dossier, memo, peopleDiscoveryState, webPresenceState);
   const executiveOverview = buildExecutiveOverviewSegments(dossier, memo, citationById, peopleDiscoveryState, webPresenceState);
   const confidenceBlockers = buildConfidenceBlockers(dossier, memo);
+  const analystFollowUps = getAnalystFollowUps(dossier);
 
   return (
     <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
@@ -904,27 +929,48 @@ function CitedSummary({
           <div className="flex items-start gap-3">
             <ListChecks className="mt-0.5 h-5 w-5 text-muted-foreground" />
             <div>
-              <h3 className="text-sm font-semibold text-foreground">Required follow-up</h3>
+              <h3 className="text-sm font-semibold text-foreground">Prioritized follow-ups</h3>
               <ol className="mt-3 space-y-3 text-sm leading-6 text-muted-foreground">
-                {memo.decisionAid.nextSteps.map((step, index) => {
-                  const followUp = findFollowUpAction(step, dossier);
+                {(analystFollowUps.length > 0
+                  ? analystFollowUps
+                  : memo.decisionAid.nextSteps.map((step, index) => ({
+                      action: step,
+                      category: "manual_confirmation" as const,
+                      evidenceBasis: [],
+                      id: `memo-next-step-${index + 1}`,
+                      priority: "recommended" as const,
+                      reason: "Memo-generated operational follow-up.",
+                      whyThisMatters: "The memo identified this as an operational next step.",
+                    }))).map((step, index) => {
+                  const followUp = findFollowUpAction(step.action, dossier);
                   const openFollowUp = () => {
                     if (followUp !== null) {
                       onOpenEvidence(buildFollowUpDialogState({
                         action: followUp.action,
                         dossier,
                         nextCheck: followUp.nextCheck,
-                        step,
+                        step: step.action,
                       }));
                     }
                   };
                   return (
-                    <li className="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2" key={step}>
+                    <li className="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2" key={step.id}>
                       <span className="flex h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-xs font-semibold text-foreground">
                         {index + 1}
                       </span>
                       <span className="min-w-0 break-words">
-                        {renderLinkedFollowUpText(step, followUp?.action ?? null, openFollowUp)}
+                        <span className="font-medium text-foreground">
+                          {followUpPriorityLabel(step.priority)} / {followUpCategoryLabel(step.category)}
+                        </span>
+                        <span className="mt-1 block">
+                          {renderLinkedFollowUpText(step.action, followUp?.action ?? null, openFollowUp)}
+                        </span>
+                        <span className="mt-1 block text-xs text-muted-foreground">
+                          Evidence gap: {step.reason}
+                        </span>
+                        <span className="mt-1 block text-xs text-muted-foreground">
+                          Why this matters: {step.whyThisMatters}
+                        </span>
                         {followUp === null ? null : (
                           <span className="mt-1 block text-xs text-muted-foreground">
                             Supported in Dude via{" "}

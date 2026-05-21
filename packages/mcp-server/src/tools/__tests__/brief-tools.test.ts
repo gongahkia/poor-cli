@@ -330,6 +330,36 @@ describe("brief tools", () => {
     });
   });
 
+  it("derives deterministic prioritized analyst follow-ups from evidence gaps", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([]);
+
+    const firstResult = await handleBusinessDossier({
+      uen: "201912345K",
+      format: "json",
+    });
+    const secondResult = await handleBusinessDossier({
+      uen: "201912345K",
+      format: "json",
+    });
+    const firstPayload = parseBrief(getText(firstResult));
+    const secondPayload = parseBrief(getText(secondResult));
+    const followUps = firstPayload.analystFollowUps ?? [];
+
+    expect(followUps.length).toBeGreaterThan(0);
+    expect(followUps).toEqual(secondPayload.analystFollowUps);
+    expect(followUps[0]).toMatchObject({
+      priority: "critical",
+      category: "identity_confidence",
+      tool: "sg_acra_entities",
+      evidenceBasis: [expect.objectContaining({
+        kind: expect.stringMatching(/source_gap|confidence_blocker/),
+        ref: expect.stringMatching(/^(sourceCoverage\.acra|gap\.ACRA_NO_MATCH)$/),
+      })],
+    });
+    expect(followUps.every((followUp) => followUp.evidenceBasis.length > 0)).toBe(true);
+    expect(JSON.stringify(followUps)).not.toMatch(/\b(approve|reject|clear|safe)\b/i);
+  });
+
   it("keeps exact ACRA identity confidence high when explicit BCA coverage has no match", async () => {
     vi.mocked(getAcraEntities).mockResolvedValue([
       {

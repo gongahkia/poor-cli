@@ -494,6 +494,14 @@ const slugId = (value: string): string =>
 const followUpId = (index: number, followUp: AnalystFollowUpDraft): string =>
   `follow-up-${String(index + 1).padStart(2, "0")}-${followUp.priority}-${slugId(followUp.category)}-${slugId(followUp.evidenceBasis[0]?.ref ?? followUp.action)}`;
 
+const followUpToolInput = (
+  tool: string | undefined,
+  input: Readonly<Record<string, unknown>> | undefined,
+): Pick<AnalystFollowUpDraft, "input" | "tool"> => ({
+  ...(input === undefined ? {} : { input }),
+  ...(tool === undefined ? {} : { tool }),
+});
+
 const buildCoverageFollowUp = (
   item: SourceCoverageItem,
   nextCheckByTool: ReadonlyMap<string, NextCheck>,
@@ -519,13 +527,12 @@ const buildCoverageFollowUp = (
       action: `Configure access for ${item.label} or record that the source was unavailable in this review.`,
       category: "credential_required",
       evidenceBasis: [basis],
-      input: nextCheck?.input,
       priority: item.family === "web_presence" || item.family === "people_discovery" ? "recommended" : "critical",
       reason: item.requiredCredentials === undefined || item.requiredCredentials.length === 0
         ? `${item.label} was blocked by missing source access.`
         : `${item.label} was blocked by missing credential(s): ${item.requiredCredentials.join(", ")}.`,
-      tool: nextCheck?.tool ?? item.tools.find((tool) => !/tinyfish/i.test(tool)),
       whyThisMatters: "The dossier is missing a configured source family, so reviewers should not treat the absent provider output as reviewed evidence.",
+      ...followUpToolInput(nextCheck?.tool ?? item.tools.find((tool) => !/tinyfish/i.test(tool)), nextCheck?.input),
     };
   }
 
@@ -534,13 +541,12 @@ const buildCoverageFollowUp = (
       action: `Retry ${item.label} source lookup or record the unresolved provider gap in the analyst file.`,
       category: "source_unavailable",
       evidenceBasis: [basis],
-      input: nextCheck?.input,
       priority: item.family === "acra" ? "critical" : "recommended",
       reason: item.gapCodes === undefined || item.gapCodes.length === 0
         ? item.reason
         : `${item.reason} Gap code(s): ${item.gapCodes.join(", ")}.`,
-      tool: nextCheck?.tool ?? item.tools.find((tool) => !/tinyfish/i.test(tool)),
       whyThisMatters: "A failed or partial source read limits the evidence base behind the current CDD summary.",
+      ...followUpToolInput(nextCheck?.tool ?? item.tools.find((tool) => !/tinyfish/i.test(tool)), nextCheck?.input),
     };
   }
 
@@ -552,13 +558,12 @@ const buildCoverageFollowUp = (
         : `Run ${item.label} with a source-specific identifier or document why this source family stayed out of scope.`,
       category: supplemental ? "supplemental_review" : "sector_gap",
       evidenceBasis: [basis],
-      input: nextCheck?.input,
       priority: supplemental ? "optional" : "recommended",
       reason: item.reason,
-      tool: nextCheck?.tool ?? item.tools.find((tool) => !/tinyfish/i.test(tool)),
       whyThisMatters: supplemental
         ? "Supplemental sources are analyst-review evidence only, but skipped coverage should remain visible in the review trail."
         : "A selected official source family did not run, so the report should show that the sector evidence is incomplete.",
+      ...followUpToolInput(nextCheck?.tool ?? item.tools.find((tool) => !/tinyfish/i.test(tool)), nextCheck?.input),
     };
   }
 
@@ -568,11 +573,10 @@ const buildCoverageFollowUp = (
         action: "Confirm the counterparty name or UEN against ACRA source rows before using this dossier.",
         category: "identity_confidence",
         evidenceBasis: [basis],
-        input: nextCheck?.input,
         priority: "critical",
         reason: item.reason,
-        tool: nextCheck?.tool ?? "sg_acra_entities",
         whyThisMatters: "ACRA identity evidence is the gate for the rest of the CDD workflow.",
+        ...followUpToolInput(nextCheck?.tool ?? "sg_acra_entities", nextCheck?.input),
       };
     }
     if (hasOfficialGap) {
@@ -580,22 +584,20 @@ const buildCoverageFollowUp = (
         action: `Review whether ${item.label} needs a more specific identifier for this counterparty.`,
         category: "sector_gap",
         evidenceBasis: [basis],
-        input: nextCheck?.input,
         priority: "recommended",
         reason: item.reason,
-        tool: nextCheck?.tool ?? item.tools[0],
         whyThisMatters: "A zero-record official source result is missing public evidence, not a positive finding.",
+        ...followUpToolInput(nextCheck?.tool ?? item.tools[0], nextCheck?.input),
       };
     }
     return {
       action: `Review ${item.label} results and note the source limitation in the analyst file.`,
       category: "supplemental_review",
       evidenceBasis: [basis],
-      input: nextCheck?.input,
       priority: "optional",
       reason: item.reason,
-      tool: nextCheck?.tool ?? item.tools.find((tool) => !/tinyfish/i.test(tool)),
       whyThisMatters: "Supplemental search results can be incomplete, so absent snippets should not be overstated.",
+      ...followUpToolInput(nextCheck?.tool ?? item.tools.find((tool) => !/tinyfish/i.test(tool)), nextCheck?.input),
     };
   }
 
@@ -619,11 +621,10 @@ const buildGapFollowUp = (
       action: "Confirm the selected registry candidate against source rows before relying on this dossier.",
       category: "manual_confirmation",
       evidenceBasis: [basis],
-      input: acraCheck?.input,
       priority: "critical",
       reason: gap.message,
-      tool: acraCheck?.tool ?? "sg_acra_entities",
       whyThisMatters: "Ambiguous entity resolution can attach evidence to the wrong counterparty record.",
+      ...followUpToolInput(acraCheck?.tool ?? "sg_acra_entities", acraCheck?.input),
     };
   }
 
@@ -632,11 +633,10 @@ const buildGapFollowUp = (
       action: "Re-run ACRA identity lookup with the exact UEN or normalized company name.",
       category: "identity_confidence",
       evidenceBasis: [basis],
-      input: acraCheck?.input,
       priority: "critical",
       reason: gap.message,
-      tool: acraCheck?.tool ?? "sg_acra_entities",
       whyThisMatters: "The CDD summary depends on a source-backed counterparty identity before sector evidence is useful.",
+      ...followUpToolInput(acraCheck?.tool ?? "sg_acra_entities", acraCheck?.input),
     };
   }
 
@@ -677,11 +677,13 @@ const buildMatchConfidenceFollowUp = (
       : `Provide a more exact identifier for ${match.source} lookup.`,
     category: match.confidence === "name-fuzzy" ? "manual_confirmation" : "identity_confidence",
     evidenceBasis: [basis],
-    input: match.source === "ACRA" ? acraCheck?.input : undefined,
     priority: match.confidence === "name-fuzzy" ? "recommended" : "critical",
     reason: basis.detail,
-    tool: match.source === "ACRA" ? acraCheck?.tool ?? "sg_acra_entities" : undefined,
     whyThisMatters: "Identity confidence affects how much weight the reviewer can place on the attached evidence.",
+    ...followUpToolInput(
+      match.source === "ACRA" ? acraCheck?.tool ?? "sg_acra_entities" : undefined,
+      match.source === "ACRA" ? acraCheck?.input : undefined,
+    ),
   };
 };
 

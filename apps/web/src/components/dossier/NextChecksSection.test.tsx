@@ -11,16 +11,26 @@ describe("NextChecksSection", () => {
       freshness: [],
       gaps: [],
       limits: [],
-      nextChecks: [
+      analystFollowUps: [
         {
+          action: "Cross-link the entity to OpenCorporates identifiers for analyst review.",
+          category: "credential_required",
+          evidenceBasis: [{
+            detail: "OpenCorporates token is not configured.",
+            kind: "source_gap",
+            ref: "sourceCoverage.opencorporates",
+            source: "OpenCorporates cross-links",
+          }],
+          id: "follow-up-01-recommended-credential-required-sourcecoverage-opencorporates",
           input: {
             entityName: "DBS PTE. LTD.",
             jurisdictionCode: "sg",
             uen: "197700546G",
           },
-          reason:
-            "Cross-link the entity to OpenCorporates identifiers without inferring ownership or control.",
+          priority: "recommended",
+          reason: "OpenCorporates cross-links were blocked by missing credential(s): OPENCORPORATES_API_TOKEN.",
           tool: "sg_opencorporates_links",
+          whyThisMatters: "The dossier is missing a configured source family.",
         },
       ],
       provenance: [],
@@ -37,10 +47,12 @@ describe("NextChecksSection", () => {
     expect(html).toContain("197700546G");
     expect(html).toContain("Dossier follow-up");
     expect(html).toContain("To-do 01");
-    expect(html).toContain("Pending");
+    expect(html).toContain("Recommended");
+    expect(html).toContain("Credential Required");
     expect(html).toContain("Reviewed by analyst");
     expect(html).toContain("Inputs");
-    expect(html).toContain("Outcome");
+    expect(html).toContain("Why this matters");
+    expect(html).toContain("Evidence basis");
     expect(html).toContain("1 open todo");
     expect(html).not.toContain("{&quot;");
   });

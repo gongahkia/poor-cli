@@ -128,8 +128,18 @@ const buildContinuationHints = (
   if (isRecord(structured)) {
     const artifact = isRecord(structured["record"]) ? structured["record"] : undefined;
     if (artifact !== undefined) {
+      const analystFollowUps = artifact["analystFollowUps"];
+      if (Array.isArray(analystFollowUps)) {
+        for (const followUp of analystFollowUps) {
+          if (!isRecord(followUp) || typeof followUp["tool"] !== "string") {
+            continue;
+          }
+          const input = isRecord(followUp["input"]) ? followUp["input"] : {};
+          hints.push(`Call ${followUp["tool"]} with ${JSON.stringify(input)} for prioritized analyst follow-up.`);
+        }
+      }
       const nextChecks = artifact["nextChecks"];
-      if (Array.isArray(nextChecks)) {
+      if (!Array.isArray(analystFollowUps) && Array.isArray(nextChecks)) {
         for (const check of nextChecks) {
           if (!isRecord(check) || typeof check["tool"] !== "string") {
             continue;

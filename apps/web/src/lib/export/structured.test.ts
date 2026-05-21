@@ -11,6 +11,16 @@ const dossier: BusinessDossier = {
   freshness: [],
   gaps: [{ code: "NO_MATCH", message: "No exact match." }],
   limits: [{ code: "PUBLIC_DATA_ONLY", message: "Public data only." }],
+  analystFollowUps: [{
+    action: "Confirm the ACRA identity source rows.",
+    category: "identity_confidence",
+    evidenceBasis: [{ detail: "No exact match.", kind: "source_gap", ref: "gap.NO_MATCH", source: "NO_MATCH" }],
+    id: "follow-up-01-critical-identity-confidence-gap-no-match",
+    priority: "critical",
+    reason: "NO_MATCH: No exact match.",
+    tool: "sg_acra_entities",
+    whyThisMatters: "Identity confidence affects report quality.",
+  }],
   provenance: [{ authRequired: false, coverage: "Entity identity", recordCount: 1, source: "ACRA", tool: "sg_acra_entities" }],
   records: { acra: [{ entityName: "Example Pte Ltd" }] },
   sourceCoverage: [{
@@ -39,6 +49,11 @@ describe("structured dossier exports", () => {
         publicDataLimitsNotice: expect.stringContaining("Missing public-data evidence is a gap"),
       },
       generatedAt: "2026-05-16T00:00:00.000Z",
+      analystFollowUps: [expect.objectContaining({
+        priority: "critical",
+        category: "identity_confidence",
+        reason: "NO_MATCH: No exact match.",
+      })],
       limits: dossier.limits,
       manifest: {
         generatedAt: "2026-05-16T00:00:00.000Z",
@@ -62,6 +77,7 @@ describe("structured dossier exports", () => {
     expect(row).toMatchObject({
       complianceUseNotice: expect.stringContaining("licensed compliance advice"),
       generatedAt: "2026-05-16T00:00:00.000Z",
+      analystFollowUps: expect.stringContaining("Critical:identity_confidence:Confirm the ACRA identity source rows."),
       limits: "PUBLIC_DATA_ONLY: Public data only.",
       sourceCoverage: expect.stringContaining("ACRA entity identity:Checked/Full"),
       sourceUseWarnings: expect.stringContaining("ACRA source-use review required"),

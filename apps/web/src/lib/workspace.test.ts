@@ -137,6 +137,17 @@ describe("CDD case workflow store", () => {
     const caseId = buildCddCaseId(session, { counterpartyIdentifier: "03591300B" });
     const dossierWithNextCheck: BusinessDossier = {
       ...fixtureDossier,
+      analystFollowUps: [{
+        action: "Screen aliases before handoff.",
+        category: "supplemental_review",
+        evidenceBasis: [{ detail: "Supplemental source was not reviewed.", kind: "source_gap", ref: "sourceCoverage.opensanctions", source: "OpenSanctions" }],
+        id: "follow-up-01-recommended-supplemental-review-sourcecoverage-opensanctions",
+        input: { name: "DBS BANK LTD" },
+        priority: "recommended",
+        reason: "OpenSanctions source coverage was skipped.",
+        tool: "sg_sanctions_screen",
+        whyThisMatters: "Supplemental sources are analyst-review evidence.",
+      }],
       nextChecks: [{ tool: "sg_sanctions_screen", reason: "Screen aliases before handoff.", input: { name: "DBS BANK LTD" } }],
     };
 
@@ -169,9 +180,16 @@ describe("CDD case workflow store", () => {
       status: "in_review",
       dossier: { title: "Business Dossier" },
       memoState: { status: "ready" },
-      evidencePack: { dossierTitle: "Business Dossier" },
+      evidencePack: {
+        dossierTitle: "Business Dossier",
+        analystFollowUps: [expect.objectContaining({ priority: "recommended" })],
+      },
     });
     expect(record?.followUpTasks).toHaveLength(2);
+    expect(record?.followUpTasks[0]).toMatchObject({
+      source: "dossier_analyst_follow_up",
+      title: "Recommended: Screen aliases before handoff.",
+    });
     expect(record?.analystNotes[0]?.body).toContain("private ownership");
     expect(JSON.stringify(record?.evidencePack)).not.toContain("private ownership");
   });
